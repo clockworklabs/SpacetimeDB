@@ -180,3 +180,11 @@ Cargo.lock
 # Support for Project snippet scope
 
 # End of https://www.toptal.com/developers/gitignore/api/rust,node,visualstudiocode
+
+
+# Added by cargo
+#
+# already existing elements were commented out
+
+/target
+#Cargo.lock
