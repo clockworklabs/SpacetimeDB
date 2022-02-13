@@ -5,4 +5,16 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+members = [
+  "hello-wasm",
+]
+
+[profile.release]
+opt-level = 's'
+lto = true
+
 [dependencies]
+wasmer = "2.1.1"
+wasm-bindgen = "0.2.79"
+wasmer-middlewares = "2.1.1"
