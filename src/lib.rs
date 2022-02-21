@@ -1,3 +1,4 @@
+pub mod content_addressed_table;
 
 #[cfg(test)]
 mod tests {

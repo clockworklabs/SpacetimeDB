@@ -18,3 +18,6 @@ lto = true
 wasmer = "2.1.1"
 wasm-bindgen = "0.2.79"
 wasmer-middlewares = "2.1.1"
+sha3 = "0.10.0"
+hex-literal = "0.3.4"
+hex = "0.4.3"
