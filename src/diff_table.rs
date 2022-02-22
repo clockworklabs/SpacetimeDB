@@ -1,6 +1,8 @@
 use std::collections::HashSet;
-use crate::object_db::ObjectDB;
-use crate::hash::{Hash, hash_bytes};
+use sha3::digest::{generic_array::GenericArray, generic_array::typenum::U32};
+use crate::{object_db::ObjectDB, hash::hash_bytes};
+
+type Hash = GenericArray<u8, U32>;
 
 unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     ::std::slice::from_raw_parts(
@@ -18,6 +20,7 @@ pub struct MyRowObj {
     my_hash: Hash
 }
 
+#[derive(Debug, Copy, Clone)]
 enum Write {
     Insert(Hash),
     Delete(Hash),
@@ -31,67 +34,71 @@ pub struct Transaction {
 
 struct CommitObj {
     parent_commit_hash: Option<Hash>,
-    table_hash: Hash,
-}
-
-struct TableObj {
-    row_hashes: Vec<Hash>
+    writes: Vec<Write>,
 }
 
 pub struct Table {
-    odb: ObjectDB,
-    latest_commit: Hash
+    pub odb: ObjectDB,
+    closed_state: HashSet<Hash>,
+    closed_commit: Hash,
+    closed_commit_offset: u64,
+    open_commits: Vec<Hash>,
+    branched_commits: Vec<Hash>,
 }
 
 impl Table {
     pub fn new() -> Self {
         let mut odb = ObjectDB::new();
-        let table_bytes = Self::encode_table(TableObj {
-            row_hashes: Vec::new(),
-        });
-        let table_hash = odb.add(table_bytes);
         let initial_commit_bytes = Self::encode_commit(CommitObj {
             parent_commit_hash: None,
-            table_hash,
+            writes: Vec::new(),
         });
         let commit_hash = odb.add(initial_commit_bytes);
         Self {
             odb,
-            latest_commit: commit_hash,
+            closed_state: HashSet::new(),
+            closed_commit: commit_hash,
+            closed_commit_offset: 0,
+            branched_commits: Vec::new(),
+            open_commits: Vec::new(),
         }
     }
 
     fn decode_commit(bytes: &[u8]) -> CommitObj {
-        if bytes.len() == 32 {
-            let mut table_hash = Hash::default();
-            table_hash.clone_from_slice(&bytes[0..32]);
+        if bytes.len() == 0 {
             return CommitObj {
                 parent_commit_hash: None,
-                table_hash,
+                writes: Vec::new(),
             }
         }
-        assert_eq!(bytes.len(), 64);
+
+        let start = 0;
+        let end = 32;
         let mut parent_commit_hash = Hash::default();
-        parent_commit_hash.clone_from_slice(&bytes[0..32]);
-        let mut table_hash = Hash::default();
-        table_hash.clone_from_slice(&bytes[32..64]);
+        parent_commit_hash.copy_from_slice(&bytes[start..end]);
+
+        let start = end;
+        let end = start + 4;
+        let mut dst = [0u8; 4];
+        dst.copy_from_slice(&bytes[start..end]);
+        let length = u32::from_be_bytes(dst);
+
+        let mut writes: Vec<Write> = Vec::new();
+        for i in 0..length {
+            let start = (i * 33) as usize + end;
+            let end = start + 33;
+            let op = bytes[start];
+            let mut hash = Hash::default();
+            hash.copy_from_slice(&bytes[start+1..end]);
+            if op == 0 {
+                writes.push(Write::Delete(hash));
+            } else {
+                writes.push(Write::Insert(hash));
+            }
+        }
         CommitObj {
             parent_commit_hash: Some(parent_commit_hash),
-            table_hash,
-        }
-    }
-
-    fn decode_table(bytes: &[u8]) -> TableObj {
-        let mut curr = 0;
-        let mut row_hashes = Vec::new();
-        while curr < bytes.len() {
-            let mut hash = Hash::default();
-            hash.clone_from_slice(&bytes[curr..curr+32]);
-            row_hashes.push(hash);
-            curr += 32;
-        }
-        TableObj {
-            row_hashes,
+            writes,
         }
     }
 
@@ -100,36 +107,53 @@ impl Table {
     }
     
     fn encode_commit(commit: CommitObj) -> Vec<u8> {
+        if commit.parent_commit_hash.is_none() {
+            return Vec::new();
+        }
+
         let mut commit_bytes = Vec::new();
-        commit_bytes.reserve(64);
+        commit_bytes.reserve(32 + 4 + 1 + 32);
         if let Some(parent_commit_hash) = commit.parent_commit_hash {
             for byte in parent_commit_hash {
                 commit_bytes.push(byte);
             }
         }
-        for byte in commit.table_hash {
-            commit_bytes.push(byte);
-        }
-        return commit_bytes;
-    }
 
-    fn encode_table(table: TableObj) -> Vec<u8> {
-        let mut table_bytes = Vec::new();
-        for hash in table.row_hashes {
-            for byte in hash {
-                table_bytes.push(byte);
+        commit_bytes.extend((commit.writes.len() as u32).to_be_bytes());
+
+        for write in commit.writes {
+            match write {
+                Write::Insert(hash) => {
+                    commit_bytes.push(1);
+                    for byte in hash {
+                        commit_bytes.push(byte);
+                    }
+                },
+                Write::Delete(hash) => {
+                    commit_bytes.push(0);
+                    for byte in hash {
+                        commit_bytes.push(byte);
+                    }
+                },
             }
         }
-        return table_bytes;
+
+        return commit_bytes;
     }
 
     fn encode_row(row: MyRowObj) -> Vec<u8> {
         unsafe { any_as_u8_slice(&row) }.to_vec()
     }
 
-    pub fn begin_tx(&self) -> Transaction {
+    fn latest_commit(&self) -> Hash {
+        self.open_commits.last().map(|h| *h).unwrap_or(self.closed_commit)
+    }
+
+    pub fn begin_tx(&mut self) -> Transaction {
+        let parent = self.latest_commit();
+        self.branched_commits.push(parent);
         Transaction {
-            parent_commit: self.latest_commit,
+            parent_commit: parent,
             reads: Vec::new(),
             writes: Vec::new(),
         }
@@ -146,6 +170,7 @@ impl Table {
         // only if you're sure everything is in the odb.
         let row_obj = self.odb.get(hash).map(|r| Self::decode_row(r));
 
+        // Search back through this transaction
         for i in (0..tx.writes.len()).rev() {
             match &tx.writes[i] {
                 Write::Insert(h) => {
@@ -160,14 +185,38 @@ impl Table {
                 },
             };
         }
-        
-        let latest_commit_obj = Self::decode_commit(self.odb.get(self.latest_commit).unwrap());
-        let latest_table_obj = Self::decode_table(self.odb.get(latest_commit_obj.table_hash).unwrap());
 
-        let mut rows: HashSet<Hash> = HashSet::new();
-        rows.extend(latest_table_obj.row_hashes);
+        // Search backwards through all open commits that are parents of this transaction.
+        // if you find a delete it's not there.
+        // if you find an insert it is there. If you find no mention of it, then whether
+        // it's there or not is dependent on the closed_state.
+        let mut i = self.open_commits.iter().position(|h| *h == tx.parent_commit).unwrap_or(0);
+        loop {
+            let next_open = self.open_commits.get(i).map(|h| *h);
+            if let Some(next_open) = next_open {
+                let commit_obj = Self::decode_commit(self.odb.get(next_open).unwrap());
+                for write in commit_obj.writes {
+                    match write {
+                        Write::Insert(h) => {
+                            if h == hash {
+                                return row_obj;
+                            }
+                        },
+                        Write::Delete(h) => {
+                            if h == hash {
+                                return None;
+                            }
+                        },
+                    }
+                }
+            } else {
+                // No more commits to process
+                break;
+            }
+            i -= 1;
+        }
 
-        if rows.contains(&hash) {
+        if self.closed_state.contains(&hash) {
             return Some(row_obj.unwrap());
         }
 
@@ -175,24 +224,21 @@ impl Table {
     }
 
     pub fn scan(&self, tx: &mut Transaction, filter: fn(MyRowObj) -> bool) {
-        let latest_commit_obj = Self::decode_commit(self.odb.get(self.latest_commit).unwrap());
-        let latest_table_obj = Self::decode_table(self.odb.get(latest_commit_obj.table_hash).unwrap());
+        // let latest_commit_obj = Self::decode_commit(self.odb.get(self.latest_commit()).unwrap());
 
-        let mut rows: HashSet<Hash> = HashSet::new();
-        rows.extend(latest_table_obj.row_hashes);
-        
-        for i in 0..tx.writes.len() {
-            match &tx.writes[i] {
-                Write::Insert(hash) => rows.insert(*hash),
-                Write::Delete(hash) => rows.remove(hash),
-            };
-        }
+        // let mut rows: HashSet<Hash> = self.closed_state;
+        // for i in 0..tx.writes.len() {
+        //     match &tx.writes[i] {
+        //         Write::Insert(hash) => rows.insert(*hash),
+        //         Write::Delete(hash) => rows.remove(hash),
+        //     };
+        // }
 
-        for hash in rows {
-            let row_obj = Self::decode_row(self.odb.get(hash).unwrap());
-            filter(row_obj);
-            tx.reads.push(hash);
-        }
+        // for hash in rows {
+        //     let row_obj = Self::decode_row(self.odb.get(hash).unwrap());
+        //     filter(row_obj);
+        //     tx.reads.push(hash);
+        // }
     }
 
     pub fn delete(&mut self, tx: &mut Transaction, hash: Hash) {
@@ -210,46 +256,62 @@ impl Table {
         hash
     }
 
-    fn finalize(&mut self, tx: &Transaction, mut rows: HashSet<Hash>) {
-        for i in 0..tx.writes.len() {
-            match tx.writes[i] {
-                Write::Insert(hash) => {
-                    rows.insert(hash);
-                },
-                Write::Delete(hash) => {
-                    rows.remove(&hash);
-                },
-            }
-        }
-
-        // Create a new table object with the new row
-        let table = TableObj {
-            row_hashes: Vec::from_iter(rows),
-        };
-        let table_bytes = Self::encode_table(table);
-
+    fn finalize(&mut self, tx: Transaction) {
+        // Rebase on the last open commit (or closed commit if none open)
         let new_commit = CommitObj {
-            parent_commit_hash: Some(self.latest_commit),
-            table_hash: hash_bytes(&table_bytes),
+            parent_commit_hash: Some(self.latest_commit()),
+            writes: tx.writes,
         };
+
         let commit_bytes = Self::encode_commit(new_commit);
         let commit_hash = hash_bytes(&commit_bytes);
 
-        self.odb.add(table_bytes);
         self.odb.add(commit_bytes);
+        self.open_commits.push(commit_hash);
 
-        self.latest_commit = commit_hash;
+        // Remove my branch
+        let index = self.branched_commits.iter().position(|hash| *hash == tx.parent_commit).unwrap();
+        self.branched_commits.swap_remove(index);
+
+        if tx.parent_commit == self.closed_commit {
+            let index = self.branched_commits.iter().position(|hash| *hash == tx.parent_commit);
+            if index == None {
+                // I was the last branch preventing closing of the next open commit.
+                // Close the open commits until the next branch.
+                loop {
+                    let next_open = self.open_commits.first().map(|h| *h);
+                    if let Some(next_open) = next_open {
+                        self.closed_commit = next_open;
+                        self.closed_commit_offset += 1;
+                        self.open_commits.remove(0);
+
+                        let commit_obj = Self::decode_commit(self.odb.get(next_open).unwrap());
+                        for write in commit_obj.writes {
+                            match write {
+                                Write::Insert(hash) => {
+                                    self.closed_state.insert(hash);
+                                },
+                                Write::Delete(hash) => {
+                                    self.closed_state.remove(&hash);
+                                },
+                            }
+                        }
+                        // If someone branched off of me, we're done otherwise continue
+                        if self.branched_commits.contains(&next_open) {
+                            break;
+                        }
+                    } else {
+                        // No more commits to process
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     pub fn commit_tx(&mut self, tx: Transaction) -> bool {
-        let latest_commit_obj = Self::decode_commit(self.odb.get(self.latest_commit).unwrap());
-        let latest_table_obj = Self::decode_table(self.odb.get(latest_commit_obj.table_hash).unwrap());
-
-        let mut rows: HashSet<Hash> = HashSet::with_capacity(latest_table_obj.row_hashes.len());
-        rows.extend(latest_table_obj.row_hashes);
-
-        if self.latest_commit == tx.parent_commit {
-            self.finalize(&tx, rows);
+        if self.latest_commit() == tx.parent_commit {
+            self.finalize(tx);
             return true;
         }
 
@@ -262,25 +324,37 @@ impl Table {
         // of the database (basically rebase off latest_commit). Really this just means the
         // transaction has failed, and the transaction should be tried again with a a new
         // parent commit.
-        let parent_commit_obj = Self::decode_commit(self.odb.get(tx.parent_commit).unwrap());
-        
-        let parent_table_obj = Self::decode_table(self.odb.get(parent_commit_obj.table_hash).unwrap());
-        let mut parent_rows: HashSet<Hash> = HashSet::with_capacity(parent_table_obj.row_hashes.len());
-        parent_rows.extend(parent_table_obj.row_hashes);
-
-        // Tyler, this is correct. You might have tried to check for non-existance of a hash
-        // during the transaction which was subsequently added.
-        let added: HashSet<_> = rows.difference(&parent_rows).collect(); 
-        let removed: HashSet<_> = parent_rows.difference(&rows).collect();
-
+        let mut read_set: HashSet<Hash> = HashSet::new();
         for read in &tx.reads {
-            if added.contains(read) || removed.contains(read) {
-                return false;
-            }
+            read_set.insert(*read);
         }
 
-        self.finalize(&tx, rows);
+        let mut commit_hash = self.latest_commit();
+        loop {
+            let commit_obj = Self::decode_commit(self.odb.get(commit_hash).unwrap());
+            for write in commit_obj.writes {
+                match write {
+                    Write::Insert(hash) => {
+                        if read_set.contains(&hash) {
+                            return false;
+                        }
+                    },
+                    Write::Delete(hash) => {
+                        if read_set.contains(&hash) {
+                            return false;
+                        }
+                    },
+                }
+            }
 
+            if commit_obj.parent_commit_hash == Some(tx.parent_commit) {
+                break;
+            }
+
+            commit_hash = commit_obj.parent_commit_hash.unwrap();
+        }
+
+        self.finalize(tx);
         true
     }
 }
@@ -402,7 +476,7 @@ mod tests {
         let duration = start.elapsed();
 
         println!("{}", table.odb.total_mem_size_bytes());
-        println!("{}", duration.as_millis());
+        println!("{}", duration.as_micros());
     }
 
 }

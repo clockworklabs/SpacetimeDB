@@ -1,4 +1,7 @@
 pub mod content_addressed_table;
+pub mod diff_table;
+pub mod object_db;
+pub mod hash;
 
 #[cfg(test)]
 mod tests {

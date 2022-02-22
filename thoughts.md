@@ -119,12 +119,21 @@ entity:<table_hash>
 // state>2 3
 // if 1 delete 2 3 -> should fail
 // state>2 3
-
 type Pointer = usize;
 let rows: Vec<PlayerInfoRow> = Vec::new();
 let primary_index: HashMap<PrimaryKey, Pointer> = HashMap::new();
 let secondary_index: HashMap<SecondaryKey, Pointer> = HashMap::new();
 let rows: Vec<(PrimaryKey, SecondaryKey, Value)> = Vec::new();
+```
+
+```rust
+
+/*
+1 a
+2 a
+3 b
+*/
+
 ```
 
 ### Lightning
