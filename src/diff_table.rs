@@ -476,7 +476,7 @@ mod tests {
         let duration = start.elapsed();
 
         println!("{}", table.odb.total_mem_size_bytes());
-        println!("{}", duration.as_micros());
+        println!("{}", duration.as_millis());
     }
 
 }
