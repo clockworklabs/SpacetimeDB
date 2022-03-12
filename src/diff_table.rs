@@ -223,7 +223,7 @@ impl Table {
         None
     }
 
-    pub fn scan(&self, tx: &mut Transaction, filter: fn(MyRowObj) -> bool) {
+    pub fn scan(&self, _tx: &mut Transaction, _filter: fn(MyRowObj) -> bool) {
         // let latest_commit_obj = Self::decode_commit(self.odb.get(self.latest_commit()).unwrap());
 
         // let mut rows: HashSet<Hash> = self.closed_state;

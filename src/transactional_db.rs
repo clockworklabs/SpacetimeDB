@@ -7,7 +7,7 @@ type Hash = GenericArray<u8, U32>;
 pub struct Transaction {
     parent_commit: Hash,
     reads: Vec<Read>,
-    updates: Vec<Write>,
+    writes: Vec<Write>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -78,14 +78,14 @@ impl CommitObj {
         parent_commit_hash.copy_from_slice(&bytes[start..end]);
 
         *bytes = &bytes[end..];
-        let mut table_updates: Vec<Write> = Vec::new();
+        let mut writes: Vec<Write> = Vec::new();
         while bytes.len() > 0 {
-            table_updates.push(Write::decode(bytes));
+            writes.push(Write::decode(bytes));
         }
 
         CommitObj {
             parent_commit_hash: Some(parent_commit_hash),
-            writes: table_updates,
+            writes,
         }
     }
 
@@ -106,14 +106,6 @@ impl CommitObj {
     }
 
 }
-
-// Insert: <table_id><tuple>
-// // Delete: <table_id><tuple_hash>
-// pub struct DataSet {
-//     id: u32,
-//     name: String,
-//     closed_state: HashSet<Hash>,
-// }
 
 pub struct TransactionalDB {
     pub odb: ObjectDB,
@@ -155,7 +147,7 @@ impl TransactionalDB {
         Transaction {
             parent_commit: parent,
             reads: Vec::new(),
-            updates: Vec::new(),
+            writes: Vec::new(),
         }
     }
 
@@ -207,14 +199,13 @@ impl TransactionalDB {
         // Rebase on the last open commit (or closed commit if none open)
         let new_commit = CommitObj {
             parent_commit_hash: Some(self.latest_commit()),
-            writes: tx.updates,
+            writes: tx.writes,
         };
 
         let mut commit_bytes = Vec::new();
         new_commit.encode(&mut commit_bytes);
         let commit_hash = hash_bytes(&commit_bytes);
 
-        println!("{:?}", commit_bytes.len());
         self.odb.add(commit_bytes);
         self.open_commits.push(commit_hash);
 
@@ -269,8 +260,8 @@ impl TransactionalDB {
         let row_obj = self.odb.get(hash);
 
         // Search back through this transaction
-        for i in (0..tx.updates.len()).rev() {
-            match &tx.updates[i] {
+        for i in (0..tx.writes.len()).rev() {
+            match &tx.writes[i] {
                 Write::Insert(h) => {
                     if *h == hash {
                         return Some(row_obj.unwrap());
@@ -322,14 +313,14 @@ impl TransactionalDB {
     }
 
     pub fn delete(&mut self, tx: &mut Transaction, hash: Hash) {
-        tx.updates.push(Write::Delete(hash));
+        tx.writes.push(Write::Delete(hash));
     }
 
     pub fn insert(&mut self, tx: &mut Transaction, bytes: Vec<u8>) -> Hash {
         // Add bytes to the odb
         let hash = hash_bytes(&bytes);
         self.odb.add(bytes);
-        tx.updates.push(Write::Insert(hash));
+        tx.writes.push(Write::Insert(hash));
         hash
     }
 }
@@ -473,7 +464,7 @@ mod tests {
     fn test_size() {
         let start = std::time::Instant::now();
         let mut db = TransactionalDB::new();
-        let iterations: u128 = 1;
+        let iterations: u128 = 1000;
         println!("{} odb base size bytes",  db.odb.total_mem_size_bytes());
 
         let mut raw_data_size = 0;
@@ -492,8 +483,8 @@ mod tests {
                 my_hash: hash_bytes(b"This will be turned into a hash."),
             }.encode();
 
-            raw_data_size += val_1.len() as u64 + 32;
-            raw_data_size += val_2.len() as u64 + 32;
+            raw_data_size += val_1.len() as u64;
+            raw_data_size += val_2.len() as u64;
 
             db.insert(&mut tx_1, val_1);
             db.insert(&mut tx_1, val_2);
@@ -508,7 +499,6 @@ mod tests {
         // commit key: 32 bytes
         // commit: 98 bytes <parent(32)><write(<type(1)><hash(32)>)><write(<type(1)><hash(32)>)>
         // total: 194
-
         let data_overhead = db.odb.total_mem_size_bytes() - raw_data_size;
         println!("{} overhead bytes per tx",  data_overhead / iterations as u64);
         println!("{} us per tx", duration.as_micros() / iterations);
