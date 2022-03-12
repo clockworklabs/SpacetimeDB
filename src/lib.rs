@@ -1,7 +1,9 @@
-pub mod content_addressed_table;
+pub mod git_table;
 pub mod diff_table;
 pub mod object_db;
 pub mod hash;
+pub mod transactional_db;
+mod messages;
 
 #[cfg(test)]
 mod tests {
