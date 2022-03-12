@@ -1,27 +1,18 @@
 use std::collections::HashSet;
 use sha3::digest::{generic_array::GenericArray, generic_array::typenum::U32};
-use crate::{hash::hash_bytes, messages::Commit, object_db::ObjectDB};
+use crate::{hash::hash_bytes, object_db::ObjectDB};
 // TODO: maybe use serde?
 
 type Hash = GenericArray<u8, U32>;
-
-unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
-    ::std::slice::from_raw_parts(
-        (p as *const T) as *const u8,
-        ::std::mem::size_of::<T>(),
-    )
-}
-
 pub struct Transaction {
     parent_commit: Hash,
-    table_reads: Vec<TableRead>,
-    table_updates: Vec<TableUpdate>
+    reads: Vec<Read>,
+    updates: Vec<Write>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-struct TableRead {
-    table_id: u32,
-    tuple_hash: Hash,
+struct Read {
+    hash: Hash,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -31,7 +22,7 @@ enum Write {
 }
 
 impl Write {
-    // write: <write_type(1)><tuple_hash(32)>
+    // write: <write_type(1)><hash(32)>
     fn decode(bytes: &mut &[u8]) -> Self {
         let start = 0;
         let end = 33;
@@ -66,65 +57,18 @@ impl Write {
 }
 
 #[derive(Debug)]
-struct TableUpdate {
-    table_id: u32,
-    writes: Vec<Write>
-}
-
-impl TableUpdate {
-    // table_update: <table_id(4)><length_bytes(4)>[<write(N)>...]*
-    fn decode(bytes: &mut &[u8]) -> Self {
-        let mut dst = [0u8; 4];
-        dst.copy_from_slice(&bytes[0..4]);
-        *bytes = &bytes[4..];
-
-        let table_id = u32::from_be_bytes(dst);
-
-        let mut dst = [0u8; 4];
-        dst.copy_from_slice(&bytes[0..4]);
-        *bytes = &bytes[4..];
-
-        // TODO: do we not need length here?
-        let _length = u32::from_be_bytes(dst);
-
-        let mut writes: Vec<Write> = Vec::new();
-        while bytes.len() > 0 {
-            writes.push(Write::decode(bytes));
-        }
-
-        Self {
-            table_id,
-            writes
-        }
-    }
-
-    fn encode(&self, bytes: &mut Vec<u8>) {
-        bytes.extend(self.table_id.to_be_bytes());
-
-        let num_writes = self.writes.len();
-        let size_of_write = 33; // TODO
-        bytes.extend(((num_writes * size_of_write) as u32).to_be_bytes());
-
-        for write in &self.writes {
-            write.encode(bytes);
-        }
-    }
-}
-
-#[derive(Debug)]
 struct CommitObj {
     parent_commit_hash: Option<Hash>,
-    table_updates: Vec<TableUpdate>,
+    writes: Vec<Write>,
 }
 
 impl CommitObj {
-
     // commit: <parent_commit_hash(32)>[<table_update>...(dedupped and sorted_numerically)]*
     fn decode(bytes: &mut &[u8]) -> Self {
         if bytes.len() == 0 {
             return CommitObj {
                 parent_commit_hash: None,
-                table_updates: Vec::new(),
+                writes: Vec::new(),
             }
         }
 
@@ -134,14 +78,14 @@ impl CommitObj {
         parent_commit_hash.copy_from_slice(&bytes[start..end]);
 
         *bytes = &bytes[end..];
-        let mut table_updates: Vec<TableUpdate> = Vec::new();
+        let mut table_updates: Vec<Write> = Vec::new();
         while bytes.len() > 0 {
-            table_updates.push(TableUpdate::decode(bytes));
+            table_updates.push(Write::decode(bytes));
         }
 
         CommitObj {
             parent_commit_hash: Some(parent_commit_hash),
-            table_updates,
+            writes: table_updates,
         }
     }
 
@@ -156,7 +100,7 @@ impl CommitObj {
             }
         }
 
-        for update in &self.table_updates {
+        for update in &self.writes {
             update.encode(bytes);
         }
     }
@@ -164,16 +108,16 @@ impl CommitObj {
 }
 
 // Insert: <table_id><tuple>
-// Delete: <table_id><tuple_hash>
-pub struct Table {
-    id: u32,
-    name: String,
-    closed_state: HashSet<Hash>,
-}
+// // Delete: <table_id><tuple_hash>
+// pub struct DataSet {
+//     id: u32,
+//     name: String,
+//     closed_state: HashSet<Hash>,
+// }
 
 pub struct TransactionalDB {
     pub odb: ObjectDB,
-    tables: Vec<Table>,
+    closed_state: HashSet<Hash>,
     closed_commit: Hash,
     open_commits: Vec<Hash>,
     branched_commits: Vec<Hash>,
@@ -183,7 +127,7 @@ impl TransactionalDB {
     pub fn new() -> Self {
         let commit = CommitObj {
             parent_commit_hash: None,
-            table_updates: Vec::new(),
+            writes: Vec::new(),
         };
 
         let mut odb = ObjectDB::new();
@@ -197,7 +141,7 @@ impl TransactionalDB {
             closed_commit: commit_hash,
             branched_commits: Vec::new(),
             open_commits: Vec::new(),
-            tables: Vec::new(),
+            closed_state: HashSet::new(),
         }
     }
 
@@ -210,8 +154,8 @@ impl TransactionalDB {
         self.branched_commits.push(parent);
         Transaction {
             parent_commit: parent,
-            table_reads: Vec::new(),
-            table_updates: Vec::new(),
+            reads: Vec::new(),
+            updates: Vec::new(),
         }
     }
 
@@ -230,31 +174,29 @@ impl TransactionalDB {
         // of the database (basically rebase off latest_commit). Really this just means the
         // transaction has failed, and the transaction should be tried again with a a new
         // parent commit.
-        let mut read_set: HashSet<TableRead> = HashSet::new();
-        for read in &tx.table_reads {
+        let mut read_set: HashSet<Read> = HashSet::new();
+        for read in &tx.reads {
             read_set.insert(*read);
         }
 
         let mut commit_hash = self.latest_commit();
         loop {
-            let commit_obj = CommitObj::decode(&mut self.odb.get(commit_hash).unwrap());
-            for table_update in commit_obj.table_updates {
-                for write in table_update.writes {
-                    let hash = match write {
-                        Write::Insert(hash) => hash,
-                        Write::Delete(hash) => hash,
-                    };
-                    if read_set.contains(&TableRead { table_id: table_update.table_id, tuple_hash: hash}) {
-                        return false;
-                    }
+            let commit = CommitObj::decode(&mut self.odb.get(commit_hash).unwrap());
+            for write in commit.writes {
+                let hash = match write {
+                    Write::Insert(hash) => hash,
+                    Write::Delete(hash) => hash,
+                };
+                if read_set.contains(&Read { hash }) {
+                    return false;
                 }
             }
 
-            if commit_obj.parent_commit_hash == Some(tx.parent_commit) {
+            if commit.parent_commit_hash == Some(tx.parent_commit) {
                 break;
             }
 
-            commit_hash = commit_obj.parent_commit_hash.unwrap();
+            commit_hash = commit.parent_commit_hash.unwrap();
         }
 
         self.finalize(tx);
@@ -265,13 +207,14 @@ impl TransactionalDB {
         // Rebase on the last open commit (or closed commit if none open)
         let new_commit = CommitObj {
             parent_commit_hash: Some(self.latest_commit()),
-            table_updates: tx.table_updates,
+            writes: tx.updates,
         };
 
         let mut commit_bytes = Vec::new();
         new_commit.encode(&mut commit_bytes);
         let commit_hash = hash_bytes(&commit_bytes);
 
+        println!("{:?}", commit_bytes.len());
         self.odb.add(commit_bytes);
         self.open_commits.push(commit_hash);
 
@@ -291,18 +234,14 @@ impl TransactionalDB {
                         self.open_commits.remove(0);
 
                         let commit_obj = CommitObj::decode(&mut self.odb.get(next_open).unwrap());
-                        for table_update in commit_obj.table_updates {
-                            // TODO: index the tables by id
-                            let table = self.tables.iter_mut().find(|t| t.id == table_update.table_id).unwrap();
-                            for write in table_update.writes {
-                                match write {
-                                    Write::Insert(hash) => {
-                                        table.closed_state.insert(hash);
-                                    },
-                                    Write::Delete(hash) => {
-                                        table.closed_state.remove(&hash);
-                                    },
-                                }
+                        for write in commit_obj.writes {
+                            match write {
+                                Write::Insert(hash) => {
+                                    self.closed_state.insert(hash);
+                                },
+                                Write::Delete(hash) => {
+                                    self.closed_state.remove(&hash);
+                                },
                             }
                         }
                         // If someone branched off of me, we're done otherwise continue
@@ -318,10 +257,10 @@ impl TransactionalDB {
         }
     }
 
-    pub fn seek(&self, tx: &mut Transaction, table_id: u32, hash: Hash) -> Option<&[u8]> {
+    pub fn seek(&self, tx: &mut Transaction, hash: Hash) -> Option<&[u8]> {
         // I'm not sure if this just needs to track reads from the parent commit
         // or reads from the transaction as well.
-        tx.table_reads.push(TableRead { table_id, tuple_hash: hash });
+        tx.reads.push(Read { hash });
 
         // Even uncommitted rows will be in the odb. This will accumulate garbage over time,
         // but we could also clear it if a commit fails (or store uncommited changes in a different odb).
@@ -330,22 +269,19 @@ impl TransactionalDB {
         let row_obj = self.odb.get(hash);
 
         // Search back through this transaction
-        let table_update = tx.table_updates.iter().find(|t| t.table_id == table_id);
-        if let Some(table_update) = table_update {
-            for i in (0..table_update.writes.len()).rev() {
-                match &table_update.writes[i] {
-                    Write::Insert(h) => {
-                        if *h == hash {
-                            return Some(row_obj.unwrap());
-                        } 
-                    },
-                    Write::Delete(h) => {
-                        if *h == hash {
-                            return None;
-                        }
-                    },
-                };
-            }
+        for i in (0..tx.updates.len()).rev() {
+            match &tx.updates[i] {
+                Write::Insert(h) => {
+                    if *h == hash {
+                        return Some(row_obj.unwrap());
+                    } 
+                },
+                Write::Delete(h) => {
+                    if *h == hash {
+                        return None;
+                    }
+                },
+            };
         }
 
         // Search backwards through all open commits that are parents of this transaction.
@@ -357,8 +293,7 @@ impl TransactionalDB {
             let next_open = self.open_commits.get(i).map(|h| *h);
             if let Some(next_open) = next_open {
                 let commit_obj = CommitObj::decode(&mut self.odb.get(next_open).unwrap());
-                let table_update = commit_obj.table_updates.iter().find(|t| t.table_id == table_id).unwrap();
-                for write in &table_update.writes {
+                for write in &commit_obj.writes {
                     match write {
                         Write::Insert(h) => {
                             if *h == hash {
@@ -379,173 +314,205 @@ impl TransactionalDB {
             i -= 1;
         }
 
-        let table = self.tables.iter().find(|t| t.id == table_id).unwrap();
-        if table.closed_state.contains(&hash) {
+        if self.closed_state.contains(&hash) {
             return Some(row_obj.unwrap());
         }
 
         None
     }
 
-    pub fn delete(&mut self, tx: &mut Transaction, table_id: u32, hash: Hash) {
-        for table_update in &mut tx.table_updates {
-            if table_update.table_id == table_id {
-                table_update.writes.push(Write::Delete(hash));
-                return;
-            }
-        }
-        tx.table_updates.push(TableUpdate {
-            table_id,
-            writes: vec![Write::Delete(hash)],
-        });
+    pub fn delete(&mut self, tx: &mut Transaction, hash: Hash) {
+        tx.updates.push(Write::Delete(hash));
     }
 
-    pub fn insert(&mut self, tx: &mut Transaction, table_id: u32, bytes: Vec<u8>) -> Hash {
+    pub fn insert(&mut self, tx: &mut Transaction, bytes: Vec<u8>) -> Hash {
         // Add bytes to the odb
         let hash = hash_bytes(&bytes);
         self.odb.add(bytes);
-
-        for table_update in &mut tx.table_updates {
-            if table_update.table_id == table_id {
-                table_update.writes.push(Write::Insert(hash));
-                return hash;
-            }
-        }
-        tx.table_updates.push(TableUpdate {
-            table_id,
-            writes: vec![Write::Insert(hash)],
-        });
-
+        tx.updates.push(Write::Insert(hash));
         hash
-    }
-
-    // TODO: DDL (domain definition language) statements should also be transactional maybe
-    pub fn create_table(&mut self, name: &str) -> u32 {
-        // TODO: doesn't work when tables can be removed
-        let id = self.tables.len() as u32;
-        self.tables.push(Table {
-            id,
-            name: name.to_owned(),
-            closed_state: HashSet::new(),
-        });
-        id
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::hash::hash_bytes;
+    use crate::hash::Hash;
     use super::TransactionalDB;
 
+    unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+        ::std::slice::from_raw_parts(
+            (p as *const T) as *const u8,
+            ::std::mem::size_of::<T>(),
+        )
+    }
+    
+    #[repr(C, packed)]
+    #[derive(Debug, Copy, Clone)]
+    pub struct MyStruct {
+        my_name: Hash,
+        my_i32: i32,
+        my_u64: u64,
+        my_hash: Hash
+    }
+
+    impl MyStruct {
+        fn encode(&self) -> Vec<u8> {
+            unsafe { any_as_u8_slice(self) }.to_vec()
+        }
+
+        fn decode(bytes: &[u8]) -> Self {
+            unsafe { std::ptr::read(bytes.as_ptr() as *const _) }
+        }
+    }
+
     #[test]
-    fn test_insert_and_seek() {
+    fn test_insert_and_seek_bytes() {
         let mut db = TransactionalDB::new();
         let mut tx = db.begin_tx();
-        let table = db.create_table("my_table");
-        let row_key_1 = db.insert(&mut tx, table, b"this is a byte string".to_vec());
+        let row_key_1 = db.insert(&mut tx, b"this is a byte string".to_vec());
         db.commit_tx(tx);
 
         let mut tx = db.begin_tx();
-        let row = db.seek(&mut tx, table, row_key_1).unwrap();
+        let row = db.seek(&mut tx, row_key_1).unwrap();
 
         assert_eq!(b"this is a byte string", row);
     }
 
-    // #[test]
-    // fn test_read_isolation() {
-    //     let mut table = Table::new();
-    //     let mut tx_1 = table.begin_tx();
-    //     let row_key_1 = table.insert(&mut tx_1, MyRowObj {
-    //         my_name: hash_bytes(b"This is a byte string."),
-    //         my_i32: -1,
-    //         my_u64: 1,
-    //         my_hash: hash_bytes(b"This will be turned into a hash."),
-    //     });
+    #[test]
+    fn test_insert_and_seek_struct() {
+        let mut db = TransactionalDB::new();
+        let mut tx = db.begin_tx();
+        let row_key_1 = db.insert(&mut tx, MyStruct {
+            my_name: hash_bytes(b"This is a byte string."),
+            my_i32: -1,
+            my_u64: 1,
+            my_hash: hash_bytes(b"This will be turned into a hash."),
+        }.encode());
+        db.commit_tx(tx);
 
-    //     let mut tx_2 = table.begin_tx();
-    //     let row = table.seek(&mut tx_2, row_key_1);
-    //     assert!(row.is_none());
+        let mut tx = db.begin_tx();
+        let row = MyStruct::decode(db.seek(&mut tx, row_key_1).unwrap());
+
+        let i = row.my_i32;
+        assert_eq!(i, -1);
+    }
+
+    #[test]
+    fn test_read_isolation() {
+        let mut db = TransactionalDB::new();
+        let mut tx_1 = db.begin_tx();
+        let row_key_1 = db.insert(&mut tx_1, MyStruct {
+            my_name: hash_bytes(b"This is a byte string."),
+            my_i32: -1,
+            my_u64: 1,
+            my_hash: hash_bytes(b"This will be turned into a hash."),
+        }.encode());
+
+        let mut tx_2 = db.begin_tx();
+        let row = db.seek(&mut tx_2, row_key_1);
+        assert!(row.is_none());
         
-    //     table.commit_tx(tx_1);
+        db.commit_tx(tx_1);
         
-    //     let mut tx_3 = table.begin_tx();
-    //     let row = table.seek(&mut tx_3, row_key_1);
-    //     assert!(row.is_some());
-    // }
+        let mut tx_3 = db.begin_tx();
+        let row = db.seek(&mut tx_3, row_key_1);
+        assert!(row.is_some());
+    }
 
-    // #[test]
-    // fn test_write_skew_conflict() {
-    //     let mut table = Table::new();
-    //     let mut tx_1 = table.begin_tx();
-    //     let row_key_1 = table.insert(&mut tx_1, MyRowObj {
-    //         my_name: hash_bytes(b"This is a byte string."),
-    //         my_i32: -1,
-    //         my_u64: 1,
-    //         my_hash: hash_bytes(b"This will be turned into a hash."),
-    //     });
+    #[test]
+    fn test_write_skew_conflict() {
+        let mut db = TransactionalDB::new();
+        let mut tx_1 = db.begin_tx();
+        let row_key_1 = db.insert(&mut tx_1, MyStruct {
+            my_name: hash_bytes(b"This is a byte string."),
+            my_i32: -1,
+            my_u64: 1,
+            my_hash: hash_bytes(b"This will be turned into a hash."),
+        }.encode());
 
-    //     let mut tx_2 = table.begin_tx();
-    //     let row = table.seek(&mut tx_2, row_key_1);
-    //     assert!(row.is_none());
+        let mut tx_2 = db.begin_tx();
+        let row = db.seek(&mut tx_2, row_key_1);
+        assert!(row.is_none());
         
-    //     assert!(table.commit_tx(tx_1));
-    //     assert!(!table.commit_tx(tx_2));
-    // }
+        assert!(db.commit_tx(tx_1));
+        assert!(!db.commit_tx(tx_2));
+    }
 
-    // #[test]
-    // fn test_write_skew_no_conflict() {
-    //     let mut table = Table::new();
-    //     let mut tx_1 = table.begin_tx();
-    //     let row_key_1 = table.insert(&mut tx_1, MyRowObj {
-    //         my_name: hash_bytes(b"This is a byte string."),
-    //         my_i32: -1,
-    //         my_u64: 1,
-    //         my_hash: hash_bytes(b"This will be turned into a hash."),
-    //     });
-    //     let row_key_2 = table.insert(&mut tx_1, MyRowObj {
-    //         my_name: hash_bytes(b"This is a byte string."),
-    //         my_i32: -2,
-    //         my_u64: 1,
-    //         my_hash: hash_bytes(b"This will be turned into a hash."),
-    //     });
-    //     assert!(table.commit_tx(tx_1));
+    #[test]
+    fn test_write_skew_no_conflict() {
+        let mut db = TransactionalDB::new();
+        let mut tx_1 = db.begin_tx();
+        let row_key_1 = db.insert(&mut tx_1, MyStruct {
+            my_name: hash_bytes(b"This is a byte string."),
+            my_i32: -1,
+            my_u64: 1,
+            my_hash: hash_bytes(b"This will be turned into a hash."),
+        }.encode());
+        let row_key_2 = db.insert(&mut tx_1, MyStruct {
+            my_name: hash_bytes(b"This is a byte string."),
+            my_i32: -2,
+            my_u64: 1,
+            my_hash: hash_bytes(b"This will be turned into a hash."),
+        }.encode());
+        assert!(db.commit_tx(tx_1));
 
-    //     let mut tx_2 = table.begin_tx();
-    //     let row = table.seek(&mut tx_2, row_key_1);
-    //     assert!(row.is_some());
-    //     table.delete(&mut tx_2, row_key_2);
+        let mut tx_2 = db.begin_tx();
+        let row = db.seek(&mut tx_2, row_key_1);
+        assert!(row.is_some());
+        db.delete(&mut tx_2, row_key_2);
         
-    //     let mut tx_3 = table.begin_tx();
-    //     table.delete(&mut tx_3, row_key_1);
+        let mut tx_3 = db.begin_tx();
+        db.delete(&mut tx_3, row_key_1);
         
-    //     assert!(table.commit_tx(tx_2));
-    //     assert!(table.commit_tx(tx_3));
-    // }
+        assert!(db.commit_tx(tx_2));
+        assert!(db.commit_tx(tx_3));
+    }
 
-    // #[test]
-    // fn test_size() {
-    //     let start = std::time::Instant::now();
-    //     let mut table = Table::new();
-    //     for i in 0..1000 {
-    //         let mut tx_1 = table.begin_tx();
-    //         table.insert(&mut tx_1, MyRowObj {
-    //             my_name: hash_bytes(b"This is a byte string."),
-    //             my_i32: -i,
-    //             my_u64: i as u64,
-    //             my_hash: hash_bytes(b"This will be turned into a hash."),
-    //         });
-    //         table.insert(&mut tx_1, MyRowObj {
-    //             my_name: hash_bytes(b"This is a byte string."),
-    //             my_i32: -2 * i,
-    //             my_u64: i as u64,
-    //             my_hash: hash_bytes(b"This will be turned into a hash."),
-    //         });
-    //         assert!(table.commit_tx(tx_1));
-    //     }
-    //     let duration = start.elapsed();
+    #[test]
+    fn test_size() {
+        let start = std::time::Instant::now();
+        let mut db = TransactionalDB::new();
+        let iterations: u128 = 1;
+        println!("{} odb base size bytes",  db.odb.total_mem_size_bytes());
 
-    //     println!("{}", table.odb.total_mem_size_bytes());
-    //     println!("{}", duration.as_millis());
-    // }
+        let mut raw_data_size = 0;
+        for i in 0..iterations {
+            let mut tx_1 = db.begin_tx();
+            let val_1 = MyStruct {
+                my_name: hash_bytes(b"This is a byte string."),
+                my_i32: -(i as i32),
+                my_u64: i as u64,
+                my_hash: hash_bytes(b"This will be turned into a hash."),
+            }.encode();
+            let val_2 = MyStruct {
+                my_name: hash_bytes(b"This is a byte string."),
+                my_i32: -2 * (i as i32),
+                my_u64: i as u64,
+                my_hash: hash_bytes(b"This will be turned into a hash."),
+            }.encode();
+
+            raw_data_size += val_1.len() as u64 + 32;
+            raw_data_size += val_2.len() as u64 + 32;
+
+            db.insert(&mut tx_1, val_1);
+            db.insert(&mut tx_1, val_2);
+
+            assert!(db.commit_tx(tx_1));
+        }
+        let duration = start.elapsed();
+        println!("{} odb after size bytes",  db.odb.total_mem_size_bytes());
+
+        // each key is this long: "qwertyuiopasdfghjklzxcvbnm123456";
+        // key x2: 64 bytes
+        // commit key: 32 bytes
+        // commit: 98 bytes <parent(32)><write(<type(1)><hash(32)>)><write(<type(1)><hash(32)>)>
+        // total: 194
+
+        let data_overhead = db.odb.total_mem_size_bytes() - raw_data_size;
+        println!("{} overhead bytes per tx",  data_overhead / iterations as u64);
+        println!("{} us per tx", duration.as_micros() / iterations);
+    }
 
 }
 
