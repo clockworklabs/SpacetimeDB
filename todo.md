@@ -1,0 +1,9 @@
+- Determine where data will leave (host or client?)
+- Create a database API in Rust which stores rows
+- Augment the API to include indexes and ways to query by an index
+- Implement a macro system to allow querying the database easier while being able to introspect the query and determine if an index should be used
+- Make database API MVCC
+- Make database out of a Merkle structure
+- Code gen to make database API easier to deal with
+- Allow for special stuff like TerrainChunk
+- Allow for files

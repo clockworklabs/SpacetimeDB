@@ -29,6 +29,9 @@ impl ObjectDB {
     pub fn add(&mut self, bytes: Vec<u8>) -> Hash {
         let hash = hash_bytes(&bytes);
         self.obj_size += bytes.len() as u64;
+        if self.map.contains_key(&hash) {
+            return hash;
+        }
         self.map.insert(hash, bytes);
         hash
     }

@@ -11,6 +11,17 @@ fn transactional_db(c: &mut Criterion) {
             assert!(db.commit_tx(tx));
         });
     });
+    c.bench_function("seek", |bench| {
+        let mut db = TransactionalDB::new();
+        let mut tx = db.begin_tx();
+        let bytes = b"test".to_vec();
+        let hash = db.insert(&mut tx, bytes);
+        assert!(db.commit_tx(tx));
+        bench.iter(move || {
+            let mut tx = db.begin_tx();
+            db.seek(&mut tx, hash);
+        });
+    });
 }
 
 criterion_group!(scheduler, transactional_db);

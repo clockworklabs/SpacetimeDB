@@ -3,6 +3,11 @@ use sha3::digest::{generic_array::GenericArray, generic_array::typenum::U32};
 use crate::{hash::hash_bytes, object_db::ObjectDB};
 // TODO: maybe use serde?
 
+struct Namespace {
+    name: String,
+
+}
+
 type Hash = GenericArray<u8, U32>;
 pub struct Transaction {
     parent_commit: Hash,
@@ -57,16 +62,16 @@ impl Write {
 }
 
 #[derive(Debug)]
-struct CommitObj {
+struct Commit {
     parent_commit_hash: Option<Hash>,
     writes: Vec<Write>,
 }
 
-impl CommitObj {
+impl Commit {
     // commit: <parent_commit_hash(32)>[<table_update>...(dedupped and sorted_numerically)]*
     fn decode(bytes: &mut &[u8]) -> Self {
         if bytes.len() == 0 {
-            return CommitObj {
+            return Commit {
                 parent_commit_hash: None,
                 writes: Vec::new(),
             }
@@ -83,7 +88,7 @@ impl CommitObj {
             writes.push(Write::decode(bytes));
         }
 
-        CommitObj {
+        Commit {
             parent_commit_hash: Some(parent_commit_hash),
             writes,
         }
@@ -107,6 +112,10 @@ impl CommitObj {
 
 }
 
+// TODO: implement some kind of tag/dataset/namespace system
+// which allows the user to restrict the search for data
+// to a tag or set of tags. Honestly, maybe forget the content
+// addressing and just use a map like CockroachDB, idk.
 pub struct TransactionalDB {
     pub odb: ObjectDB,
     closed_state: HashSet<Hash>,
@@ -117,7 +126,7 @@ pub struct TransactionalDB {
 
 impl TransactionalDB {
     pub fn new() -> Self {
-        let commit = CommitObj {
+        let commit = Commit {
             parent_commit_hash: None,
             writes: Vec::new(),
         };
@@ -173,7 +182,7 @@ impl TransactionalDB {
 
         let mut commit_hash = self.latest_commit();
         loop {
-            let commit = CommitObj::decode(&mut self.odb.get(commit_hash).unwrap());
+            let commit = Commit::decode(&mut self.odb.get(commit_hash).unwrap());
             for write in commit.writes {
                 let hash = match write {
                     Write::Insert(hash) => hash,
@@ -197,7 +206,7 @@ impl TransactionalDB {
 
     fn finalize(&mut self, tx: Transaction) {
         // Rebase on the last open commit (or closed commit if none open)
-        let new_commit = CommitObj {
+        let new_commit = Commit {
             parent_commit_hash: Some(self.latest_commit()),
             writes: tx.writes,
         };
@@ -224,7 +233,7 @@ impl TransactionalDB {
                         self.closed_commit = next_open;
                         self.open_commits.remove(0);
 
-                        let commit_obj = CommitObj::decode(&mut self.odb.get(next_open).unwrap());
+                        let commit_obj = Commit::decode(&mut self.odb.get(next_open).unwrap());
                         for write in commit_obj.writes {
                             match write {
                                 Write::Insert(hash) => {
@@ -283,7 +292,7 @@ impl TransactionalDB {
         loop {
             let next_open = self.open_commits.get(i).map(|h| *h);
             if let Some(next_open) = next_open {
-                let commit_obj = CommitObj::decode(&mut self.odb.get(next_open).unwrap());
+                let commit_obj = Commit::decode(&mut self.odb.get(next_open).unwrap());
                 for write in &commit_obj.writes {
                     match write {
                         Write::Insert(h) => {
@@ -312,15 +321,131 @@ impl TransactionalDB {
         None
     }
 
+    pub fn scan<F>(&mut self, tx: &mut Transaction, mut callback: F)
+    where
+        Self: Sized,
+        F: FnMut(&[u8]),
+    {
+        let mut scanned: HashSet<Hash> = HashSet::new();
+
+        // Search back through this transaction
+        for i in (0..tx.writes.len()).rev() {
+            match &tx.writes[i] {
+                Write::Insert(h) => {
+                    tx.reads.push(Read { hash: *h });
+                    let row_obj = self.odb.get(*h).unwrap();
+                    scanned.insert(*h);
+                    callback(row_obj);
+                },
+                Write::Delete(h) => {
+                    tx.reads.push(Read { hash: *h });
+                    scanned.insert(*h);
+                }
+            };
+        } 
+
+        // Search backwards through all open commits that are parents of this transaction.
+        // if you find a delete it's not there.
+        // if you find an insert it is there. If you find no mention of it, then whether
+        // it's there or not is dependent on the closed_state. 
+        let mut i = self.open_commits.iter().position(|h| *h == tx.parent_commit).unwrap_or(0);
+        loop {
+            let next_open = self.open_commits.get(i).map(|h| *h);
+            if let Some(next_open) = next_open {
+                let commit_obj = Commit::decode(&mut self.odb.get(next_open).unwrap());
+                for write in &commit_obj.writes {
+                    match write {
+                        Write::Insert(h) => {
+                            if !scanned.contains(h) {
+                                tx.reads.push(Read { hash: *h });
+                                let row_obj = self.odb.get(*h).unwrap();
+                                scanned.insert(*h);
+                                callback(row_obj);
+                            }
+                        },
+                        Write::Delete(h) => {
+                            tx.reads.push(Read { hash: *h });
+                            scanned.insert(*h);
+                        },
+                    }
+                }
+            } else {
+                // No more commits to process
+                break;
+            }
+            i -= 1;
+        }
+
+        for h in &self.closed_state {
+            if !scanned.contains(h) {
+                tx.reads.push(Read { hash: *h });
+                let row_obj = self.odb.get(*h).unwrap();
+                callback(row_obj);
+            }
+        }
+    }
+
     pub fn delete(&mut self, tx: &mut Transaction, hash: Hash) {
-        tx.writes.push(Write::Delete(hash));
+        // Search backwards in the transaction:
+        // if not there: add delete
+        // if insert there: replace with delete
+        // if delete there: do nothing
+        let mut found = false;
+        for i in (0..tx.writes.len()).rev() {
+            let write = tx.writes[i];
+            match write {
+                Write::Insert(h) => {
+                    if h == hash {
+                        found = true;
+                        tx.writes[i] = Write::Delete(hash);
+                        break;
+                    }
+                },
+                Write::Delete(h) => {
+                    if h == hash {
+                        found = true;
+                        break;
+                    }
+                },
+            }
+        }
+        if !found {
+            tx.writes.push(Write::Delete(hash));
+        }
     }
 
     pub fn insert(&mut self, tx: &mut Transaction, bytes: Vec<u8>) -> Hash {
-        // Add bytes to the odb
         let hash = hash_bytes(&bytes);
-        self.odb.add(bytes);
-        tx.writes.push(Write::Insert(hash));
+
+        // Search backwards in the transaction:
+        // if not there: add insert
+        // if insert there: do nothing
+        // if delete there: overwrite as insert
+        let mut found = false;
+        for i in (0..tx.writes.len()).rev() {
+            let write = tx.writes[i];
+            match write {
+                Write::Insert(h) => {
+                    if h == hash {
+                        found = true;
+                        break;
+                    }
+                },
+                Write::Delete(h) => {
+                    if h == hash {
+                        found = true;
+                        tx.writes[i] = Write::Insert(hash);
+                        break;
+                    }
+                },
+            }
+        }
+        if !found {
+            // Add bytes to the odb
+            self.odb.add(bytes);
+            tx.writes.push(Write::Insert(hash));
+        }
+
         hash
     }
 }
