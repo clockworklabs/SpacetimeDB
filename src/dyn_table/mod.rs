@@ -403,8 +403,8 @@ fn test() {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Index;
     use criterion::black_box;
-
     use crate::dyn_table::{ColValue, DynTable, schema::{ColType, Column, DataLayout, IndexType, Schema}};
 
     #[test]

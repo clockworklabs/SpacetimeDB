@@ -140,7 +140,8 @@ impl RelationalDB {
         let mut bytes = Vec::new();
         schema.encode(&mut bytes);
 
-        self.schema_ref = self.txdb.insert(tx, bytes);
+        // NOTE: This is wrong! If the tx is not committed, this ref will no longer be valid
+        self.schema_ref = self.txdb.insert(tx, bytes); 
         self.table_id_state += 1;
     }
 

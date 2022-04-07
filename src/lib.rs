@@ -7,6 +7,7 @@ mod test_code;
 pub mod relational_db;
 mod messages;
 pub mod dyn_table;
+pub mod db;
 
 #[cfg(test)]
 mod tests {
