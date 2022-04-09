@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+#![allow(dead_code)]
 type Pointer = usize;
 
 enum IndexType {

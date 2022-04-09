@@ -1,12 +1,5 @@
-pub mod git_table;
-pub mod diff_table;
-pub mod object_db;
 pub mod hash;
-pub mod transactional_db;
-mod test_code;
-pub mod relational_db;
 mod messages;
-pub mod dyn_table;
 pub mod db;
 
 #[cfg(test)]
@@ -39,11 +32,11 @@ mod tests {
             (data (;0;) (i32.const 1048576) "\04"))
         "#)?;
 
-        fn get_health(_entity_id: i64) -> i32 {
+        fn get_health(_entity_id: i32) -> i32 {
             unsafe { HEALTH }
         }
         
-        fn set_health(_entity_id: i64, health: i32) {
+        fn set_health(_entity_id: i32, health: i32) {
             unsafe { HEALTH = health }
         }
 

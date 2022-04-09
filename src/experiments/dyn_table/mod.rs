@@ -124,18 +124,18 @@ impl ColValue {
 }
 
 pub struct HashIndex {
-    col_index: usize,
+    _col_index: usize,
     hash_map: HashMap<ColValue, Pointer>
 }
 pub struct BTreeIndex {
-    col_index: usize,
+    _col_index: usize,
     btree_map: BTreeMap<ColValue, Pointer>
 }
 
 pub struct DynTable {
     schema: Schema,
     row_count: usize,
-    soa_data: Vec<u8>,
+    _soa_data: Vec<u8>,
     aos_data: Vec<u8>,
     hash_indexes: HashMap<usize, HashIndex>,
     btree_indexes: HashMap<usize, BTreeIndex>
@@ -163,13 +163,13 @@ impl DynTable {
                 match index_type {
                     IndexType::Hash => {
                         hash_indexes.insert(i, HashIndex {
-                            col_index: i,
+                            _col_index: i,
                             hash_map: HashMap::new(),
                         });
                     },
                     IndexType::BTree => {
                         btree_indexes.insert(i, BTreeIndex {
-                            col_index: i,
+                            _col_index: i,
                             btree_map: BTreeMap::new(),
                         });
                     },
@@ -178,7 +178,7 @@ impl DynTable {
         }
 
         Self {
-            soa_data: Vec::new(), 
+            _soa_data: Vec::new(), 
             aos_data: Vec::new(), 
             schema,
             hash_indexes,
@@ -225,7 +225,7 @@ impl DynTable {
         }
 
         for i in 0..self.schema.columns.len() {
-            let col = &self.schema.columns[i];
+            let _col = &self.schema.columns[i];
             let val = &row[i];
             let hash_index = self.hash_indexes.get_mut(&i);
             if let Some(hash_index) = hash_index {
@@ -285,15 +285,15 @@ impl DynTable {
         });
     }
 
-    pub fn delete(&self, f: fn(&Vec<ColValue>) -> bool) {
+    pub fn delete(&self, _f: fn(&Vec<ColValue>) -> bool) {
         // TODO
     }
 
-    pub fn delete_eq(&mut self, col_name: &str, key: ColValue) {
+    pub fn delete_eq(&mut self, _col_name: &str, _key: ColValue) {
         // TODO
     }
 
-    pub fn delete_range(&mut self, col_name: &str, key: ColValue) {
+    pub fn delete_range(&mut self, _col_name: &str, _key: ColValue) {
         // TODO
     }
 }
@@ -386,24 +386,8 @@ impl<'a> Iterator for DynTableFilterIterator<'a> {
     }
 }
 
-fn test() {
-    // let mut table = DynTable::new(Schema {
-    //     columns: vec![
-    //         Column { col_type: ColType::F32, name: "x".to_owned() },
-    //         Column { col_type: ColType::F32, name: "z".to_owned() },
-    //         Column { col_type: ColType::U64, name: "id".to_owned() },
-    //         Column { col_type: ColType::String, name: "title".to_owned() },
-    //     ],
-    // });
-    // //let x = table.filter(|x| ).collect::<Vec<Vec<ColValue>>>();
-    // table.add_index("x", IndexType::BTree);
-    // table.add_index("id", IndexType::Hash);
-    // table.insert(vec![ColValue::F32(0.0), ColValue::F32(0.0), ColValue::U64(123), ColValue::String("Hello, World!".to_owned())]);
-}
-
 #[cfg(test)]
 mod tests {
-    use std::ops::Index;
     use criterion::black_box;
     use crate::dyn_table::{ColValue, DynTable, schema::{ColType, Column, DataLayout, IndexType, Schema}};
 

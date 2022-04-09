@@ -343,7 +343,7 @@ impl<'a> Iterator for FilterIter<'a> {
     }
 }
 
-
+#[cfg(test)]
 mod tests {
     use crate::db::{Column, Schema, schema::ColType};
     use super::{SpacetimeDB, col_value::ColValue};

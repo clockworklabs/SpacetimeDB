@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use sha3::digest::{generic_array::GenericArray, generic_array::typenum::U32};
-use crate::{hash::hash_bytes, object_db::ObjectDB};
+use crate::hash::hash_bytes;
+
+use super::object_db::ObjectDB;
 
 // TODO: maybe use serde?
 type Hash = GenericArray<u8, U32>;
