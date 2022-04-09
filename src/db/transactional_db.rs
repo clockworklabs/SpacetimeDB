@@ -613,16 +613,17 @@ mod tests {
             my_hash: hash_bytes(b"This will be turned into a hash."),
         }.encode());
         
-        let scan_1 = db.scan(&mut tx_1, 0).map(|b| b.to_owned()).collect::<Vec<Vec<u8>>>();
+        let mut scan_1 = db.scan(&mut tx_1, 0).map(|b| b.to_owned()).collect::<Vec<Vec<u8>>>();
+        scan_1.sort();
         
         db.commit_tx(tx_1);
 
         let mut tx_2 = db.begin_tx();
-        let scan_2 = db.scan(&mut tx_2, 0).collect::<Vec<&[u8]>>();
+        let mut scan_2 = db.scan(&mut tx_2, 0).collect::<Vec<&[u8]>>();
+        scan_2.sort();
 
         assert_eq!(scan_1.len(), scan_2.len());
 
-        // TODO: this is wrong and will sometimes fail because of ordering
         for (i, _) in scan_1.iter().enumerate() {
             let val_1 = &scan_1[i];
             let val_2 = scan_2[i];
@@ -631,7 +632,6 @@ mod tests {
             }
         }
     }
-
 
     #[test]
     fn test_write_skew_conflict() {
