@@ -1,6 +1,6 @@
 mod schema;
-use std::{collections::{BTreeMap, HashMap, btree_map}, iter::Filter, ops::{Range, RangeBounds}};
-use self::schema::{ColType, Column, IndexType, Schema};
+use std::{collections::{BTreeMap, HashMap, btree_map}, ops::Range};
+use self::schema::{ColType, IndexType, Schema};
 
 type Pointer = usize;
 

@@ -3,12 +3,6 @@ use sha3::digest::{generic_array::GenericArray, generic_array::typenum::U32};
 use crate::{hash::hash_bytes, object_db::ObjectDB};
 
 // TODO: maybe use serde?
-
-struct Namespace {
-    name: String,
-
-}
-
 type Hash = GenericArray<u8, U32>;
 
 pub struct Transaction {
@@ -344,14 +338,16 @@ impl TransactionalDB {
         None
     }
 
-    pub fn scan<'a>(&'a mut self, tx: &'a mut Transaction, set_id: u32) -> ScanIter<'a> {
+    pub fn scan<'a>(&'a self, tx: &'a mut Transaction, set_id: u32) -> ScanIter<'a> {
+        let tx_writes_index = tx.writes.len() as i32 - 1;
         ScanIter {
             txdb: self,
             tx,
             set_id,
-            tx_writes_index: tx.writes.len(),
-            open_commits_index: 0,
+            tx_writes_index,
+            open_commits_index: None,
             scanned: HashSet::new(),
+            closed_set_iter: None,
         }
     }
 
@@ -420,30 +416,31 @@ impl TransactionalDB {
     }
 }
 
-struct ScanIter<'a> {
-    txdb: &'a mut TransactionalDB,
+pub struct ScanIter<'a> {
+    txdb: &'a TransactionalDB,
     tx: &'a mut Transaction,
     set_id: u32,
     scanned: HashSet<Hash>,
-    tx_writes_index: usize,
-    open_commits_index: usize,
+    tx_writes_index: i32,
+    open_commits_index: Option<usize>,
+    closed_set_iter: Option<std::collections::hash_set::Iter<'a, Hash>>,
 }
 
-impl<'a> Iterator for &'a ScanIter<'a> {
+impl<'a> Iterator for ScanIter<'a> {
     type Item = &'a [u8];
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut scanned  = self.scanned;
+        let scanned  = &mut self.scanned;
         let set_id = self.set_id;
-        let tx = self.tx;
 
         // Search back through this transaction
-        if self.tx_writes_index > 0 {
-            let i = self.tx_writes_index;
-            match &tx.writes[i] {
+        if self.tx_writes_index > -1 {
+            let i = self.tx_writes_index as usize;
+            self.tx_writes_index -= 1;
+            match &self.tx.writes[i] {
                 Write::Insert { set_id: s , hash: h } => {
                     if *s == set_id {
-                        tx.reads.push(Read { set_id: *s, hash: *h });
+                        self.tx.reads.push(Read { set_id: *s, hash: *h });
                         let row_obj = self.txdb.odb.get(*h).unwrap();
                         scanned.insert(*h);
                         return Some(row_obj);
@@ -451,57 +448,63 @@ impl<'a> Iterator for &'a ScanIter<'a> {
                 },
                 Write::Delete { set_id: s , hash: h } => {
                     if *s == set_id {
-                        tx.reads.push(Read { set_id: *s, hash: *h });
+                        self.tx.reads.push(Read { set_id: *s, hash: *h });
                         scanned.insert(*h);
                     }
                 }
             };
-            self.tx_writes_index -= 1;
-        } 
+        }
 
         // Search backwards through all open commits that are parents of this transaction.
         // if you find a delete it's not there.
         // if you find an insert it is there. If you find no mention of it, then whether
         // it's there or not is dependent on the closed_state. 
-        let mut i = self.txdb.open_commits.iter().position(|h| *h == tx.parent_commit).unwrap_or(0);
-        loop {
-            let next_open = self.txdb.open_commits.get(i).map(|h| *h);
-            if let Some(next_open) = next_open {
-                let commit_obj = Commit::decode(&mut self.txdb.odb.get(next_open).unwrap());
-                for write in &commit_obj.writes {
-                    match write {
-                        Write::Insert { set_id: s , hash: h } => {
-                            if *s == set_id && !scanned.contains(h) {
-                                tx.reads.push(Read { set_id: *s, hash: *h });
-                                let row_obj = self.txdb.odb.get(*h).unwrap();
-                                scanned.insert(*h);
-                                return Some(row_obj);
-                            }
-                        },
-                        Write::Delete { set_id: s , hash: h } => {
-                            if *s == set_id {
-                                tx.reads.push(Read { set_id: *s, hash: *h });
-                                scanned.insert(*h);
-                            }
-                        },
-                    }
+        if self.open_commits_index.is_none() {
+            self.open_commits_index = Some(self.txdb.open_commits.iter().position(|h| *h == self.tx.parent_commit).unwrap_or(0));
+        }
+        if let Some(next_open) = self.txdb.open_commits.get(self.open_commits_index.unwrap()).map(|h| *h) {
+            *self.open_commits_index.as_mut().unwrap() -= 1;
+            let commit_obj = Commit::decode(&mut self.txdb.odb.get(next_open).unwrap());
+            for write in &commit_obj.writes {
+                match write {
+                    Write::Insert { set_id: s , hash: h } => {
+                        if *s == set_id && !scanned.contains(h) {
+                            self.tx.reads.push(Read { set_id: *s, hash: *h });
+                            let row_obj = self.txdb.odb.get(*h).unwrap();
+                            scanned.insert(*h);
+                            return Some(row_obj);
+                        }
+                    },
+                    Write::Delete { set_id: s , hash: h } => {
+                        if *s == set_id {
+                            self.tx.reads.push(Read { set_id: *s, hash: *h });
+                            scanned.insert(*h);
+                        }
+                    },
                 }
-            } else {
-                // No more commits to process
-                break;
             }
-            i -= 1;
         }
 
-        // if let Some(closed_set) = self.closed_state.get(&set_id) {
-        //     for h in closed_set {
-        //         if !scanned.contains(h) {
-        //             tx.reads.push(Read { set_id, hash: *h });
-        //             let row_obj = self.odb.get(*h).unwrap();
-        //             callback(row_obj);
-        //         }
-        //     }
-        // }
+        if self.closed_set_iter.is_none() {
+            if let Some(closed_set) = self.txdb.closed_state.get(&set_id) {
+                self.closed_set_iter = Some(closed_set.iter());
+            }
+        }
+
+        if let Some(closed_set) = &mut self.closed_set_iter {
+            loop {
+                let h = closed_set.next();
+                if let Some(h) = h {
+                    if !scanned.contains(h) {
+                        self.tx.reads.push(Read { set_id, hash: *h });
+                        let row_obj = self.txdb.odb.get(*h).unwrap();
+                        return Some(row_obj);
+                    }
+                } else {
+                    return None;
+                }
+            }
+        }
 
         None
     }
@@ -592,6 +595,43 @@ mod tests {
         let row = db.seek(&mut tx_3, 0, row_key_1);
         assert!(row.is_some());
     }
+
+    #[test]
+    fn test_scan() {
+        let mut db = TransactionalDB::new();
+        let mut tx_1 = db.begin_tx();
+        let _row_key_1 = db.insert(&mut tx_1, 0, MyStruct {
+            my_name: hash_bytes(b"This is a byte string."),
+            my_i32: -1,
+            my_u64: 1,
+            my_hash: hash_bytes(b"This will be turned into a hash."),
+        }.encode());
+        let _row_key_2 = db.insert(&mut tx_1, 0, MyStruct {
+            my_name: hash_bytes(b"This is a byte string."),
+            my_i32: -2,
+            my_u64: 1,
+            my_hash: hash_bytes(b"This will be turned into a hash."),
+        }.encode());
+        
+        let scan_1 = db.scan(&mut tx_1, 0).map(|b| b.to_owned()).collect::<Vec<Vec<u8>>>();
+        
+        db.commit_tx(tx_1);
+
+        let mut tx_2 = db.begin_tx();
+        let scan_2 = db.scan(&mut tx_2, 0).collect::<Vec<&[u8]>>();
+
+        assert_eq!(scan_1.len(), scan_2.len());
+
+        // TODO: this is wrong and will sometimes fail because of ordering
+        for (i, _) in scan_1.iter().enumerate() {
+            let val_1 = &scan_1[i];
+            let val_2 = scan_2[i];
+            for i in 0..val_1.len() {
+                assert_eq!(val_1[i], val_2[i]);
+            }
+        }
+    }
+
 
     #[test]
     fn test_write_skew_conflict() {

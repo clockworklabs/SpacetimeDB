@@ -14,7 +14,7 @@ pub enum ConstraintType {
     Unique,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum ColType {
     U8,
     U16,

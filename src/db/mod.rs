@@ -1,28 +1,26 @@
-mod schema;
+pub mod schema;
 mod col_value;
-mod table;
-mod indexes;
-mod transaction;
-mod object_db;
-mod transactional_db;
+pub mod object_db;
+pub mod transactional_db;
 
-use crate::db::col_value::ColValue;
+use std::ops::{Range, RangeBounds};
+use crate::{db::col_value::ColValue, hash::hash_bytes};
+use self::{schema::ColType, transactional_db::{ScanIter, Transaction, TransactionalDB}};
 
-use self::{schema::ColType, table::Table, transactional_db::{Transaction, TransactionalDB}};
+const ST_TABLES_ID: u32 = 5555;
+const ST_COLUMNS_ID: u32 = 5556;
 
-const ST_TABLES_ID: u32 = 0;
-const ST_COLUMNS_ID: u32 = 1;
-
-struct TableQuery<'a> {
-    table: &'a Table,
-    tx: Transaction
-}
+// struct TableQuery<'a> {
+//     table: &'a Table,
+//     tx: Transaction
+// }
 
 pub struct SpacetimeDB {
     txdb: TransactionalDB,
     //tables: Vec<Table>,
 }
 
+#[derive(Debug)]
 pub struct Column {
     pub col_id: u32,
     pub col_type: ColType,
@@ -108,17 +106,17 @@ impl SpacetimeDB {
         
         // Insert information about st_tables into st_columns
         let row = vec![ColValue::U32(ST_TABLES_ID), ColValue::U32(0), ColValue::U32(ColType::U32.to_u32())];
-        Self::insert_row_raw(&mut txdb, &mut tx, ST_TABLES_ID, row);
+        Self::insert_row_raw(&mut txdb, &mut tx, ST_COLUMNS_ID, row);
 
         // Insert information about st_columns into st_columns
         let row = vec![ColValue::U32(ST_COLUMNS_ID), ColValue::U32(0), ColValue::U32(ColType::U32.to_u32())];
-        Self::insert_row_raw(&mut txdb, &mut tx, ST_TABLES_ID, row);
+        Self::insert_row_raw(&mut txdb, &mut tx, ST_COLUMNS_ID, row);
         
         let row = vec![ColValue::U32(ST_COLUMNS_ID), ColValue::U32(1), ColValue::U32(ColType::U32.to_u32())];
-        Self::insert_row_raw(&mut txdb, &mut tx, ST_TABLES_ID, row);
+        Self::insert_row_raw(&mut txdb, &mut tx, ST_COLUMNS_ID, row);
         
         let row = vec![ColValue::U32(ST_COLUMNS_ID), ColValue::U32(2), ColValue::U32(ColType::U32.to_u32())];
-        Self::insert_row_raw(&mut txdb, &mut tx, ST_TABLES_ID, row);
+        Self::insert_row_raw(&mut txdb, &mut tx, ST_COLUMNS_ID, row);
         
         txdb.commit_tx(tx);
 
@@ -133,11 +131,17 @@ impl SpacetimeDB {
         }
     }
 
-    fn decode_row(txdb: &TransactionalDB, tx: &mut Transaction, table_id: u32, bytes: &mut &[u8]) -> Vec<ColValue> {
+    fn decode_row(columns: &Vec<Column>, bytes: &mut &[u8]) -> Vec<ColValue> {
         let mut row = Vec::new();
+        for col in columns {
+            row.push(ColValue::from_data(&col.col_type, bytes));
+        }
+        row
+    }
 
+    fn schema_for_table(txdb: &TransactionalDB, tx: &mut Transaction, table_id: u32) -> Vec<Column> {
         let mut columns = Vec::new();
-        for bytes in &txdb.scan(tx, ST_COLUMNS_ID) {
+        for bytes in txdb.scan(tx, ST_COLUMNS_ID) {
             let mut dst = [0u8; 4];
             dst.copy_from_slice(&bytes[0..4]);
             let t_id = u32::from_be_bytes(dst);
@@ -151,7 +155,7 @@ impl SpacetimeDB {
             let col_id = u32::from_be_bytes(dst);
 
             let mut dst = [0u8; 4];
-            dst.copy_from_slice(&bytes[4..8]);
+            dst.copy_from_slice(&bytes[8..12]);
             let col_type = ColType::from_u32(u32::from_be_bytes(dst));
 
             columns.push(Column {
@@ -159,19 +163,14 @@ impl SpacetimeDB {
                 col_type,
             })
         };
-
         columns.sort_by(|a, b| a.col_id.cmp(&b.col_id));
-        for col in &columns {
-            row.push(ColValue::from_data(&col.col_type, bytes));
-        }
-
-        row
+        columns
     }
     
     fn insert_row_raw(txdb: &mut TransactionalDB, tx: &mut Transaction, table_id: u32, row: Vec<ColValue>) {
         let mut bytes = Vec::new();
         Self::encode_row(row, &mut bytes);
-        txdb.insert(&mut tx, table_id, bytes);
+        txdb.insert(tx, table_id, bytes);
     }
 
     pub fn begin_tx(&mut self) -> Transaction {
@@ -184,26 +183,27 @@ impl SpacetimeDB {
 
     pub fn create_table(&mut self, tx: &mut Transaction, table_id: u32, schema: Schema) -> Result<(), String> {
         // Scan st_tables for this id
-        for bytes in &self.txdb.scan(tx, ST_TABLES_ID) {
-            let row = Self::decode_row(&self.txdb, tx, ST_TABLES_ID, &mut bytes);
+
+        // TODO: allocations remove with fixes to ownership
+        for row in self.iter(tx, table_id) {
             let t_id = row[0];
             let t_id = match t_id {
                 ColValue::U32(t_id) => t_id,
                 _ => panic!("Woah ur columns r messed up.")
             };
-            if t_id != table_id {
+            if t_id == table_id {
                 return Err("Table exists.".into());
             }
         }
 
         // Insert the table row into st_tables
         let row = vec![ColValue::U32(table_id)];
-        Self::insert_row_raw(&mut self.txdb, &mut tx, ST_TABLES_ID, row);
+        Self::insert_row_raw(&mut self.txdb, tx, ST_TABLES_ID, row);
 
         let mut i = 0;
         for col in schema.columns {
             let row = vec![ColValue::U32(table_id), ColValue::U32(i), ColValue::U32(col.col_type.to_u32())];
-            Self::insert_row_raw(&mut self.txdb, &mut tx, ST_COLUMNS_ID, row);
+            Self::insert_row_raw(&mut self.txdb, tx, ST_COLUMNS_ID, row);
             i += 1;
         }
 
@@ -211,19 +211,12 @@ impl SpacetimeDB {
     }
 
     pub fn drop_table(&mut self, tx: &mut Transaction, table_id: u32) -> Result<(), String> {
-        for bytes in &self.txdb.scan(tx, ST_TABLES_ID) {
-            let row = Self::decode_row(&self.txdb, tx, ST_TABLES_ID, &mut bytes);
-            let t_id = row[0];
-            let t_id = match t_id {
-                ColValue::U32(t_id) => t_id,
-                _ => panic!("Woah ur columns r messed up.")
-            };
-            if t_id == table_id {
-                // TODO: do the deletion
-                return Ok(());
-            }
+        let num_deleted = self.delete_range(tx, ST_TABLES_ID, 0, ColValue::U32(table_id)..ColValue::U32(table_id));
+        if num_deleted == 0 {
+            return Err("No such table.".into());
         }
-        Err("No such table.".into())
+        self.delete_range(tx, ST_COLUMNS_ID, 0, ColValue::U32(table_id)..ColValue::U32(table_id));
+        Ok(())
     }
     
     pub fn insert(&mut self, tx: &mut Transaction, table_id: u32, row: Vec<ColValue>) {
@@ -231,7 +224,62 @@ impl SpacetimeDB {
         Self::insert_row_raw(&mut self.txdb, tx, table_id, row);
     }
 
+    pub fn iter<'a>(&'a self, tx: &'a mut Transaction, table_id: u32) -> TableIter<'a> {
+        let columns = Self::schema_for_table(&self.txdb, tx, table_id);
+        println!("{:?}", columns);
+        TableIter {
+            txdb_iter: self.txdb.scan(tx, table_id),
+            schema: columns,
+        }
+    }
 
+    // AKA: scan
+    pub fn filter<'a>(&'a self, tx: &'a mut Transaction, table_id: u32, f: fn(&Vec<ColValue>) -> bool) -> FilterIter<'a> {
+        FilterIter {
+            table_iter: self.iter(tx, table_id),
+            filter: f,
+        }
+    }
+
+    // AKA: seek_range
+    pub fn filter_range<'a, R: RangeBounds<ColValue>>(&'a self, tx: &'a mut Transaction, table_id: u32, col_id: u32, range: R) -> RangeIter<'a, R>
+    where
+        R: RangeBounds<ColValue>
+    {
+        RangeIter::Scan(ScanRangeIter {
+            table_iter: self.iter(tx, table_id),
+            col_index: col_id,
+            range,
+        })
+    }
+
+    pub fn delete_filter(&mut self, tx: &mut Transaction, table_id: u32, f: fn(row: &Vec<ColValue>) -> bool) -> usize {
+        let mut hashes = Vec::new();
+        for x in self.filter(tx, table_id, f) {
+            let mut bytes = Vec::new();
+            Self::encode_row(x, &mut bytes);
+            hashes.push(hash_bytes(&bytes));
+        }
+        let len = hashes.len();
+        for hash in hashes {
+            self.txdb.delete(tx, table_id, hash);
+        }
+        len
+    }
+
+    pub fn delete_range(&mut self, tx: &mut Transaction, table_id: u32, col_id: u32, range: Range<ColValue>) -> usize {
+        let mut hashes = Vec::new();
+        for x in self.filter_range(tx, table_id, col_id, range) {
+            let mut bytes = Vec::new();
+            Self::encode_row(x, &mut bytes);
+            hashes.push(hash_bytes(&bytes));
+        }
+        let len = hashes.len();
+        for hash in hashes {
+            self.txdb.delete(tx, table_id, hash);
+        }
+        len
+    }
 
     // pub fn from(&self, tx: &mut Transaction, table_name: &str) -> Option<&TableQuery> {
     //     self.tables.iter().find(|t| t.schema.name == table_name)
@@ -240,46 +288,96 @@ impl SpacetimeDB {
     // pub fn from_mut(&mut self, tx: &mut Transaction, table_name: &str) -> Option<&mut TableQuery> {
     //     self.tables.iter_mut().find(|t| t.schema.name == table_name)
     // }
+}
 
-    // pub fn from_commit_log(commit_log: Vec<Commit>) -> Self {
-    //     let mut db = Self::new();
-    //     for commit in commit_log {
-    //         db.apply_commit(commit);
-    //     }
-    //     db
-    // }
+pub struct TableIter<'a> {
+    schema: Vec<Column>,
+    txdb_iter: ScanIter<'a>,
+}
 
-    // fn apply_commit(&mut self, commit: Commit) {
-    //     for write in commit.writes {
-    //         match write {
-    //             transaction::Write::Insert { table_id, content } => todo!(),
-    //             transaction::Write::Delete { table_id, row_key } => todo!(),
-    //         }
-    //     }
-    // }
+impl<'a> Iterator for TableIter<'a> {
+    type Item = Vec<ColValue>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(bytes) = self.txdb_iter.next() {
+            let row = SpacetimeDB::decode_row(&self.schema, &mut &bytes[..]);
+            return Some(row);
+        }
+        return None;
+    }
+}
+
+pub enum RangeIter<'a, R: RangeBounds<ColValue>> {
+    Scan(ScanRangeIter<'a, R>),
+}
+
+impl<'a, R: RangeBounds<ColValue>> Iterator for RangeIter<'a, R> {
+    type Item = Vec<ColValue>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            RangeIter::Scan(range) => range.next(),
+        }
+    }
+
+}
+pub struct ScanRangeIter<'a, R: RangeBounds<ColValue>> {
+    table_iter: TableIter<'a>,
+    col_index: u32,
+    range: R,
+}
+
+impl<'a, R: RangeBounds<ColValue>> Iterator for ScanRangeIter<'a, R> {
+    type Item = Vec<ColValue>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(row) = self.table_iter.next() {
+            if self.range.contains(&row[self.col_index as usize]) {
+                return Some(row);
+            }
+        }
+        None
+    }
+}
 
 
+pub struct FilterIter<'a> {
+    table_iter: TableIter<'a>,
+    filter: fn(&Vec<ColValue>) -> bool,
+}
+
+impl<'a> Iterator for FilterIter<'a> {
+    type Item = Vec<ColValue>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(row) = self.table_iter.next() {
+            if (self.filter)(&row) {
+                return Some(row);
+            }
+        }
+        None
+    }
 }
 
 
 mod tests {
-    use std::mem::size_of;
-
-    use crate::db::transaction::Write;
-
-    use super::{SpacetimeDB, col_value::ColValue, schema::Schema};
+    use crate::db::{Column, Schema, schema::ColType};
+    use super::{SpacetimeDB, col_value::ColValue};
 
     #[test]
     fn test_scan() {
-        println!("{}", size_of::<Write>());
-        // let x = vec![0].iter();
-        // let mut stdb = SpacetimeDB::new();
-        // let mut tx = stdb.begin_tx();
-        // stdb.create_table(&mut tx, Schema {
-        //     name: "health".into(),
-        //     columns: Vec::new(),
-        //     data_layout: super::schema::DataLayout::SOA,
-        // });
+        let mut stdb = SpacetimeDB::new();
+        let mut tx = stdb.begin_tx();
+        stdb.create_table(&mut tx, 0, Schema {
+            columns: vec![Column {col_id: 0, col_type: ColType::I32}],
+        }).unwrap();
+        stdb.insert(&mut tx, 0, vec![ColValue::I32(-1)]);
+        stdb.insert(&mut tx, 0, vec![ColValue::I32(0)]);
+        stdb.insert(&mut tx, 0, vec![ColValue::I32(1)]);
+
+        for x in stdb.filter_range(&mut tx, 0, 0, ..ColValue::I32(0)) {
+            println!("x: {:?}", x);
+        }
 
         // let ptr = stdb.from(&mut tx, "health")
         //     .unwrap()
