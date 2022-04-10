@@ -48,7 +48,7 @@ impl ColValue {
             },
             ColType::U32 => {
                 let mut dst = [0u8; 4];
-                dst.copy_from_slice(data);
+                dst.copy_from_slice(&data[0..4]);
                 ColValue::U32(u32::from_be_bytes(dst))
             },
             ColType::U64 => {

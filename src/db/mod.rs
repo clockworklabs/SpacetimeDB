@@ -11,8 +11,7 @@ const ST_TABLES_ID: u32 = u32::MAX;
 const ST_COLUMNS_ID: u32 = u32::MAX - 1;
 
 pub struct SpacetimeDB {
-    txdb: TransactionalDB,
-    //tables: Vec<Table>,
+    pub txdb: TransactionalDB,
 }
 
 #[derive(Debug)]
@@ -91,7 +90,7 @@ impl SpacetimeDB {
         }
     }
 
-    fn decode_row(columns: &Vec<Column>, bytes: &mut &[u8]) -> Vec<ColValue> {
+    pub fn decode_row(columns: &Vec<Column>, bytes: &[u8]) -> Vec<ColValue> {
         let mut row = Vec::new();
         for col in columns {
             row.push(ColValue::from_data(&col.col_type, bytes));
@@ -99,7 +98,7 @@ impl SpacetimeDB {
         row
     }
 
-    fn schema_for_table(txdb: &TransactionalDB, tx: &mut Transaction, table_id: u32) -> Vec<Column> {
+    pub fn schema_for_table(txdb: &TransactionalDB, tx: &mut Transaction, table_id: u32) -> Vec<Column> {
         let mut columns = Vec::new();
         for bytes in txdb.scan(tx, ST_COLUMNS_ID) {
             let mut dst = [0u8; 4];
