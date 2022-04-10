@@ -5,6 +5,17 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[[bin]]
+name = "spacetimedb"   # The name of the target.
+path = "src/main.rs"   # The source file of the target.
+test = true            # Is tested by default.
+bench = true           # Is benchmarked by default.
+doc = false            # Is documented by default.
+plugin = false         # Used as a compiler plugin (deprecated).
+proc-macro = false     # Set to `true` for a proc-macro library.
+harness = true         # Use libtest harness.
+required-features = [] # Features required to build this target (N/A for lib)
+
 [workspace]
 members = [
   "hello-wasm",
@@ -18,7 +29,8 @@ lto = true
 name = "transactional_db"
 harness = false
 
-[dependencies]
+[dependencies] 
+tokio = { version = "1.2", features = ["full"] }
 wasmer = "2.1.1"
 wasm-bindgen = "0.2.79"
 wasmer-middlewares = "2.1.1"
