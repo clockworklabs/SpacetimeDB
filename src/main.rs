@@ -1,13 +1,9 @@
-use spacetimedb::db::{Column, Schema, SpacetimeDB, schema::ColType, transactional_db::Transaction};
+use spacetimedb::db::{Column, ColValue, Schema, SpacetimeDB, schema::ColType, transactional_db::Transaction};
 use tokio::runtime::Builder;
 use tokio::fs;
-use std::{collections::HashMap, error::Error, sync::{Arc, Mutex}, usize};
-use wasmer::{Bytes, CompilerConfig, Cranelift, Function, Instance, Memory, MemoryType, Module, Pages, Store, Universal, Value, imports, wasmparser::Operator, wat2wasm};
-use wasmer_middlewares::{
-    metering::get_remaining_points,
-    Metering,
-};
-use wasmer::Extern;
+use std::{error::Error, sync::{Arc, Mutex}, usize};
+use wasmer::{CompilerConfig, Cranelift, Function, Instance, Module, Store, Universal, imports, wasmparser::Operator, wat2wasm};
+use wasmer_middlewares::{Metering, metering::{MeteringPoints, get_remaining_points}};
 use lazy_static::lazy_static;
 
 lazy_static! {
@@ -45,13 +41,44 @@ fn abort(message: u32, file_name: u32, line: u32, column: u32) {
 }
 
 fn scan() {
-    println!("SCANNING:");
+    println!("stdb=# select * from 0;");
+
     let stdb = STDB.lock().unwrap();
     let mut tx_mutex = TX.lock().unwrap();
     let tx = tx_mutex.as_mut().unwrap();
-    for x in stdb.iter(tx, 0) {
-        println!("{:?}", x);
+
+    let rows = stdb.iter(tx, 0);
+    if let Some(rows) = rows {
+        let rows: Vec<Vec<ColValue>> = rows.collect();
+        let schema = stdb.schema_for_table(tx, 0).unwrap();
+        for (i, c) in schema.iter().enumerate() {
+            print!("  {} ({:?})  ", c.col_id, c.col_type);
+            if i != schema.len() - 1 {
+                print!("|");
+            } 
+        }
+        println!();
+        for (i, _) in schema.iter().enumerate() {
+            print!("-----------");
+            if i != schema.len() - 1 {
+                print!("+");
+            } 
+        }
+        println!();
+        for r in &rows {
+            for (i, v) in r.iter().enumerate() {
+                print!("    {}     ", v);
+                if i != r.len() - 1 {
+                    print!("|");
+                } 
+            }
+            println!();
+        }
+        println!("{} row(s)", rows.len());
+    } else {
+        println!("ERROR: Table \"0\" does not exist.");
     }
+    println!();
 }
 
 fn begin_tx() {
@@ -65,13 +92,11 @@ fn decode_schema(bytes: &mut &[u8]) -> Schema {
     while bytes.len() > 0 && bytes[0] != 0 {
         let mut dst = [0u8; 4];
         dst.copy_from_slice(&bytes[0..4]);
-        println!("dst: {:?}", dst);
         *bytes = &bytes[4..];
         let col_type = ColType::from_u32(u32::from_le_bytes(dst));
 
         let mut dst = [0u8; 4];
         dst.copy_from_slice(&bytes[0..4]);
-        println!("dst: {:?}", dst);
         *bytes = &bytes[4..];
         let col_id = u32::from_le_bytes(dst);
 
@@ -100,7 +125,7 @@ fn insert(table_id: u32) {
     let mut tx_mutex = TX.lock().unwrap();
     let tx = tx_mutex.as_mut().unwrap();
 
-    let schema = SpacetimeDB::schema_for_table(&stdb.txdb, tx, table_id);
+    let schema = stdb.schema_for_table(tx, table_id).unwrap();
     let row = SpacetimeDB::decode_row(&schema, &buffer[..]);
     stdb.insert(tx, table_id, row);
 }
@@ -117,7 +142,7 @@ fn create_table(table_id: u32) {
 }
 
 async fn async_main() -> Result<(), Box<dyn Error>> {
-    let path = fs::canonicalize(format!("{}{}", env!("CARGO_MANIFEST_DIR"),"/wasm-test/build/debug.wat")).await.unwrap();
+    let path = fs::canonicalize(format!("{}{}", env!("CARGO_MANIFEST_DIR"),"/wasm-test/build/release.wat")).await.unwrap();
     let wat = fs::read(path).await?;
     // println!("{}", String::from_utf8(wat.to_owned()).unwrap());
     let wasm_bytes= wat2wasm(&wat)?;
@@ -126,13 +151,15 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
         match operator {
             Operator::LocalGet { .. } => 1,
             Operator::I32Const { .. } => 1,
-            Operator::I32Add { .. } => 5,
-            _ => 0,
+            Operator::I32Add { .. } => 1,
+            _ => 1,
         }
     };
 
-    let metering = Arc::new(Metering::new(100000, cost_function));
+    let initial_points = 100000;
+    let metering = Arc::new(Metering::new(initial_points, cost_function));
     let mut compiler_config = Cranelift::default();
+    compiler_config.opt_level(wasmer::CraneliftOptLevel::Speed);
     compiler_config.push_middleware(metering);
 
     let store = Store::new(&Universal::new(compiler_config).engine());
@@ -149,26 +176,37 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
     };
 
     let instance = Instance::new(&module, &import_object)?;
-    println!("HAP");
-
-    for (name, value) in instance.exports.iter() {
-        println!("{:?} {:?}", name, value);
-        match value {
-            Extern::Function(f) => {},
-            Extern::Global(_g) => {},
-            Extern::Table(_t) => {},
-            Extern::Memory(_m) => {},
-        }
-    }
 
     let reduce = instance.exports.get_function("reduce")?.native::<u64, ()>()?;
+    let warmup = instance.exports.get_function("warmup")?.native::<(), ()>()?;
+
+    println!("Running warmup...");
+    let start = std::time::Instant::now();
+    warmup.call()?;
+    let duration = start.elapsed();
+    println!("warmup time {} us", duration.as_micros());
+    println!();
+
     *INSTANCE.lock().unwrap() = Some(instance);
+
     begin_tx();
     scan();
 
+    let start = std::time::Instant::now();
+    println!("Running Wasm tx...");
     reduce.call(34234)?;
+    let duration = start.elapsed();
+    let inst = &INSTANCE.lock().unwrap();
+    let remaining_points = get_remaining_points(inst.as_ref().unwrap());
+    let remaining_points = match remaining_points {
+        MeteringPoints::Remaining(x) => x,
+        MeteringPoints::Exhausted => 0,
+    };
+    println!("Wasm tx: time {} us, gas {}", duration.as_micros(), initial_points - remaining_points);
+    println!();
 
     scan();
+
 
     Ok(())
 }
@@ -182,3 +220,4 @@ fn main() {
         .block_on(async_main())
         .unwrap();
 }
+

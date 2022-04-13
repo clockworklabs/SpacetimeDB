@@ -48,22 +48,22 @@ impl ColValue {
             ColType::U16 => {
                 let mut dst = [0u8; 2];
                 dst.copy_from_slice(data);
-                ColValue::U16(u16::from_be_bytes(dst))
+                ColValue::U16(u16::from_le_bytes(dst))
             },
             ColType::U32 => {
                 let mut dst = [0u8; 4];
                 dst.copy_from_slice(data);
-                ColValue::U32(u32::from_be_bytes(dst))
+                ColValue::U32(u32::from_le_bytes(dst))
             },
             ColType::U64 => {
                 let mut dst = [0u8; 8];
                 dst.copy_from_slice(data);
-                ColValue::U64(u64::from_be_bytes(dst))
+                ColValue::U64(u64::from_le_bytes(dst))
             },
             ColType::U128 => {
                 let mut dst = [0u8; 16];
                 dst.copy_from_slice(data);
-                ColValue::U128(u128::from_be_bytes(dst))
+                ColValue::U128(u128::from_le_bytes(dst))
             },
             ColType::I8 => {
                 ColValue::I8(data[0] as i8)
@@ -71,22 +71,22 @@ impl ColValue {
             ColType::I16 => {
                 let mut dst = [0u8; 2];
                 dst.copy_from_slice(data);
-                ColValue::I16(i16::from_be_bytes(dst))
+                ColValue::I16(i16::from_le_bytes(dst))
             },
             ColType::I32 => {
                 let mut dst = [0u8; 4];
                 dst.copy_from_slice(data);
-                ColValue::I32(i32::from_be_bytes(dst))
+                ColValue::I32(i32::from_le_bytes(dst))
             },
             ColType::I64 => {
                 let mut dst = [0u8; 8];
                 dst.copy_from_slice(data);
-                ColValue::I64(i64::from_be_bytes(dst))
+                ColValue::I64(i64::from_le_bytes(dst))
             },
             ColType::I128 => {
                 let mut dst = [0u8; 16];
                 dst.copy_from_slice(data);
-                ColValue::I128(i128::from_be_bytes(dst))
+                ColValue::I128(i128::from_le_bytes(dst))
             },
             ColType::Bool => {
                 ColValue::Bool(if data[0] == 0 {false} else {true})
@@ -94,31 +94,31 @@ impl ColValue {
             // ColType::F32 => {
             //     let mut dst = [0u8; 4];
             //     dst.copy_from_slice(data);
-            //     ColValue::F32(f32::from_be_bytes(dst))
+            //     ColValue::F32(f32::from_le_bytes(dst))
             // },
             // ColType::F64 => {
             //     let mut dst = [0u8; 8];
             //     dst.copy_from_slice(data);
-            //     ColValue::F64(f64::from_be_bytes(dst))
+            //     ColValue::F64(f64::from_le_bytes(dst))
             // },
         }
     }
 
     fn to_data(&self) -> Vec<u8> {
         match self {
-            ColValue::U8(x) => x.to_be_bytes().to_vec(),
-            ColValue::U16(x) => x.to_be_bytes().to_vec(),
-            ColValue::U32(x) => x.to_be_bytes().to_vec(),
-            ColValue::U64(x) => x.to_be_bytes().to_vec(),
-            ColValue::U128(x) => x.to_be_bytes().to_vec(),
-            ColValue::I8(x) => x.to_be_bytes().to_vec(),
-            ColValue::I16(x) => x.to_be_bytes().to_vec(),
-            ColValue::I32(x) => x.to_be_bytes().to_vec(),
-            ColValue::I64(x) => x.to_be_bytes().to_vec(),
-            ColValue::I128(x) => x.to_be_bytes().to_vec(),
-            ColValue::Bool(x) => (if *x { 1 as u8 } else { 0 as u8}).to_be_bytes().to_vec(),
-            // ColValue::F32(x) => x.to_be_bytes().to_vec(),
-            // ColValue::F64(x) => x.to_be_bytes().to_vec(),
+            ColValue::U8(x) => x.to_le_bytes().to_vec(),
+            ColValue::U16(x) => x.to_le_bytes().to_vec(),
+            ColValue::U32(x) => x.to_le_bytes().to_vec(),
+            ColValue::U64(x) => x.to_le_bytes().to_vec(),
+            ColValue::U128(x) => x.to_le_bytes().to_vec(),
+            ColValue::I8(x) => x.to_le_bytes().to_vec(),
+            ColValue::I16(x) => x.to_le_bytes().to_vec(),
+            ColValue::I32(x) => x.to_le_bytes().to_vec(),
+            ColValue::I64(x) => x.to_le_bytes().to_vec(),
+            ColValue::I128(x) => x.to_le_bytes().to_vec(),
+            ColValue::Bool(x) => (if *x { 1 as u8 } else { 0 as u8}).to_le_bytes().to_vec(),
+            // ColValue::F32(x) => x.to_le_bytes().to_vec(),
+            // ColValue::F64(x) => x.to_le_bytes().to_vec(),
         }
     }
 }

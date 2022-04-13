@@ -40,6 +40,7 @@ hex = "0.4.3"
 protobuf = { version = "2" }
 prost = "0.6"
 lazy_static = "1.4.0"
+wasmer-compiler-llvm = "2.2.1"
 
 [dev-dependencies]
 criterion = { version = "0.3", features = ["async", "async_tokio", "html_reports"] }

@@ -81,7 +81,7 @@ impl Table {
         let end = start + 4;
         let mut dst = [0u8; 4];
         dst.copy_from_slice(&bytes[start..end]);
-        let length = u32::from_be_bytes(dst);
+        let length = u32::from_le_bytes(dst);
 
         let mut writes: Vec<Write> = Vec::new();
         for i in 0..length {
@@ -119,7 +119,7 @@ impl Table {
             }
         }
 
-        commit_bytes.extend((commit.writes.len() as u32).to_be_bytes());
+        commit_bytes.extend((commit.writes.len() as u32).to_le_bytes());
 
         for write in commit.writes {
             match write {

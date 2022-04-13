@@ -55,21 +55,21 @@ impl ColValue {
 
     fn to_data(&self) -> Vec<u8> {
         match self {
-            ColValue::U8(x) => x.to_be_bytes().to_vec(),
-            ColValue::U16(x) => x.to_be_bytes().to_vec(),
-            ColValue::U32(x) => x.to_be_bytes().to_vec(),
-            ColValue::U64(x) => x.to_be_bytes().to_vec(),
-            ColValue::U128(x) => x.to_be_bytes().to_vec(),
+            ColValue::U8(x) => x.to_le_bytes().to_vec(),
+            ColValue::U16(x) => x.to_le_bytes().to_vec(),
+            ColValue::U32(x) => x.to_le_bytes().to_vec(),
+            ColValue::U64(x) => x.to_le_bytes().to_vec(),
+            ColValue::U128(x) => x.to_le_bytes().to_vec(),
             ColValue::U256(x) => x.to_owned(),
-            ColValue::I8(x) => x.to_be_bytes().to_vec(),
-            ColValue::I16(x) => x.to_be_bytes().to_vec(),
-            ColValue::I32(x) => x.to_be_bytes().to_vec(),
-            ColValue::I64(x) => x.to_be_bytes().to_vec(),
-            ColValue::I128(x) => x.to_be_bytes().to_vec(),
+            ColValue::I8(x) => x.to_le_bytes().to_vec(),
+            ColValue::I16(x) => x.to_le_bytes().to_vec(),
+            ColValue::I32(x) => x.to_le_bytes().to_vec(),
+            ColValue::I64(x) => x.to_le_bytes().to_vec(),
+            ColValue::I128(x) => x.to_le_bytes().to_vec(),
             ColValue::I256(x) => x.to_owned(),
-            ColValue::Bool(x) => (if *x { 1 as u8 } else { 0 as u8}).to_be_bytes().to_vec(),
-            ColValue::F32(x) => x.to_be_bytes().to_vec(),
-            ColValue::F64(x) => x.to_be_bytes().to_vec(),
+            ColValue::Bool(x) => (if *x { 1 as u8 } else { 0 as u8}).to_le_bytes().to_vec(),
+            ColValue::F32(x) => x.to_le_bytes().to_vec(),
+            ColValue::F64(x) => x.to_le_bytes().to_vec(),
             ColValue::String(x) => {
                 let mut vec = x.as_bytes().to_vec();
                 vec.truncate(32); // TODO: this is wrong
