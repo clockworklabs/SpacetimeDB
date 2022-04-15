@@ -143,10 +143,14 @@ impl SpacetimeDB {
         self.txdb.begin_tx()
     }
 
+    pub fn rollback_tx(&mut self, tx: Transaction) {
+        self.txdb.rollback_tx(tx);
+    }
+
     pub fn commit_tx(&mut self, tx: Transaction) {
         self.txdb.commit_tx(tx);
     }
-
+    
     pub fn create_table(&mut self, tx: &mut Transaction, table_id: u32, schema: Schema) -> Result<(), String> {
         // Scan st_tables for this id
 

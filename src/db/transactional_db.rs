@@ -163,6 +163,10 @@ impl TransactionalDB {
         }
     }
 
+    pub fn rollback_tx(&mut self, _tx: Transaction) {
+        // TODO: clean up branched_commits
+    }
+
     pub fn commit_tx(&mut self, tx: Transaction) -> bool {
         if self.latest_commit() == tx.parent_commit {
             self.finalize(tx);
@@ -427,7 +431,7 @@ pub struct ScanIter<'a> {
 
 enum ScanStage<'a> {
     CurTx { index: i32 },
-    OpenCommits { index: usize },
+    OpenCommits { commit: Commit, write_index: Option<usize> },
     ClosedSet(std::collections::hash_set::Iter<'a, Hash>) 
 }
 
@@ -443,8 +447,19 @@ impl<'a> Iterator for ScanIter<'a> {
                 Some(ScanStage::CurTx { index }) => {
                     // Search back through this transaction
                     if index == -1 {
-                        let open_commits_index = self.txdb.open_commits.iter().position(|h| *h == self.tx.parent_commit).unwrap_or(0);
-                        self.scan_stage = Some(ScanStage::OpenCommits { index: open_commits_index });
+                        let open_commits_index = self.txdb.open_commits.iter().position(|h| *h == self.tx.parent_commit);
+                        if let Some(open_commits_index) = open_commits_index {
+                            let open_commit = self.txdb.open_commits[open_commits_index];
+                            let commit= Commit::decode(&mut self.txdb.odb.get(open_commit).unwrap());
+                            let index = if commit.writes.len() > 0 { Some(commit.writes.len() - 1) } else { None };
+                            self.scan_stage = Some(ScanStage::OpenCommits { commit, write_index: index });
+                        } else {
+                            if let Some(closed_set) = self.txdb.closed_state.get(&set_id) {
+                                self.scan_stage = Some(ScanStage::ClosedSet(closed_set.iter()));
+                            } else {
+                                return None;
+                            }
+                        }
                         continue;
                     } else {
                         self.scan_stage = Some(ScanStage::CurTx { index: index - 1 });
@@ -466,21 +481,24 @@ impl<'a> Iterator for ScanIter<'a> {
                         }
                     };
                 },
-                Some(ScanStage::OpenCommits { index }) => {
+                Some(ScanStage::OpenCommits { commit, write_index }) => {
                     // Search backwards through all open commits that are parents of this transaction.
                     // if you find a delete it's not there.
                     // if you find an insert it is there. If you find no mention of it, then whether
                     // it's there or not is dependent on the closed_state. 
-                    if let Some(next_open) = self.txdb.open_commits.get(index).map(|h| *h) {
-                        self.scan_stage = Some(ScanStage::OpenCommits { index: index - 1 });
-                        let commit_obj = Commit::decode(&mut self.txdb.odb.get(next_open).unwrap());
-                        for write in &commit_obj.writes {
+                    let parent = commit.parent_commit_hash;
+                    let mut opt_index = write_index;
+                    loop {
+                        if let Some(index) = opt_index {
+                            let write = &commit.writes[index];
+                            opt_index = if index > 0 { Some(index - 1) } else { None };
                             match write {
                                 Write::Insert { set_id: s , hash: h } => {
                                     if *s == set_id && !scanned.contains(h) {
                                         self.tx.reads.push(Read { set_id: *s, hash: *h });
                                         let row_obj = self.txdb.odb.get(*h).unwrap();
                                         scanned.insert(*h);
+                                        self.scan_stage = Some(ScanStage::OpenCommits { commit, write_index: opt_index });
                                         return Some(row_obj);
                                     }
                                 },
@@ -491,7 +509,18 @@ impl<'a> Iterator for ScanIter<'a> {
                                     }
                                 },
                             }
+                        } else {
+                            break;
                         }
+                    }
+                    // TODO: can be optimized by storing the index
+                    let open_commits_index = parent 
+                        .and_then(|parent| self.txdb.open_commits.iter().position(|h| *h == parent));
+                    if let Some(open_commits_index) = open_commits_index {
+                        let open_commit = self.txdb.open_commits[open_commits_index];
+                        let commit= Commit::decode(&mut self.txdb.odb.get(open_commit).unwrap());
+                        let index = if commit.writes.len() > 0 { Some(commit.writes.len() - 1) } else { None };
+                        self.scan_stage = Some(ScanStage::OpenCommits { commit, write_index: index });
                     } else {
                         if let Some(closed_set) = self.txdb.closed_state.get(&set_id) {
                             self.scan_stage = Some(ScanStage::ClosedSet(closed_set.iter()));
@@ -499,6 +528,7 @@ impl<'a> Iterator for ScanIter<'a> {
                             return None;
                         }
                     }
+                    continue;
                 },
                 Some(ScanStage::ClosedSet(mut closed_set_iter)) => {
                     let h = closed_set_iter.next();

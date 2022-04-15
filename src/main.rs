@@ -5,6 +5,7 @@ use std::{error::Error, sync::{Arc, Mutex}, usize};
 use wasmer::{CompilerConfig, Cranelift, Function, Instance, Module, Store, Universal, imports, wasmparser::Operator, wat2wasm};
 use wasmer_middlewares::{Metering, metering::{MeteringPoints, get_remaining_points}};
 use lazy_static::lazy_static;
+use wasmer_compiler_llvm;
 
 lazy_static! {
     static ref STDB: Mutex<SpacetimeDB> = Mutex::new(SpacetimeDB::new());
@@ -87,6 +88,31 @@ fn begin_tx() {
     *TX.lock().unwrap() = Some(tx);
 }
 
+fn rollback_tx() {
+    {
+        // TODO: need to actually roll this back because begin_tx does hold open commits
+        let tx = TX.lock().unwrap().take().unwrap();
+        let mut stdb = STDB.lock().unwrap();
+        stdb.rollback_tx(tx);
+    }
+
+    let mut stdb = STDB.lock().unwrap();
+    let tx = stdb.begin_tx();
+    *TX.lock().unwrap() = Some(tx);
+}
+
+fn commit_tx() {
+    {
+        let tx = TX.lock().unwrap().take().unwrap();
+        let mut stdb = STDB.lock().unwrap();
+        stdb.commit_tx(tx);
+    }
+
+    let mut stdb = STDB.lock().unwrap();
+    let tx = stdb.begin_tx();
+    *TX.lock().unwrap() = Some(tx);
+}
+
 fn decode_schema(bytes: &mut &[u8]) -> Schema {
     let mut columns: Vec<Column> = Vec::new();
     while bytes.len() > 0 && bytes[0] != 0 {
@@ -141,6 +167,32 @@ fn create_table(table_id: u32) {
     stdb.create_table(tx, table_id, schema).unwrap();
 }
 
+fn get_remaining_points_value() -> u64 {
+    let inst = &INSTANCE.lock().unwrap();
+    let remaining_points = get_remaining_points(inst.as_ref().unwrap());
+    let remaining_points = match remaining_points {
+        MeteringPoints::Remaining(x) => x,
+        MeteringPoints::Exhausted => 0,
+    };
+    return remaining_points;
+}
+
+fn rust_reduce() {
+    let mut stdb = STDB.lock().unwrap();
+    let mut tx_mutex = TX.lock().unwrap();
+    let tx = tx_mutex.as_mut().unwrap();
+    
+    stdb.create_table(tx, 0, Schema { columns: vec![
+        Column { col_id: 0, col_type: ColType::U32 },
+        Column { col_id: 1, col_type: ColType::U32 },
+        Column { col_id: 2, col_type: ColType::U32 },
+    ] }).unwrap();
+
+    for i in 0..100 {
+        stdb.insert(tx, 0, vec![ColValue::U32(i), ColValue::U32(87), ColValue::U32(33)]);
+    }
+}
+
 async fn async_main() -> Result<(), Box<dyn Error>> {
     let path = fs::canonicalize(format!("{}{}", env!("CARGO_MANIFEST_DIR"),"/wasm-test/build/release.wat")).await.unwrap();
     let wat = fs::read(path).await?;
@@ -156,10 +208,12 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let initial_points = 100000;
+    let initial_points = 1000000;
     let metering = Arc::new(Metering::new(initial_points, cost_function));
-    let mut compiler_config = Cranelift::default();
-    compiler_config.opt_level(wasmer::CraneliftOptLevel::Speed);
+    let mut compiler_config = wasmer_compiler_llvm::LLVM::default();
+    compiler_config.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
+    // let mut compiler_config = Cranelift::default();
+    // compiler_config.opt_level(wasmer::CraneliftOptLevel::Speed);
     compiler_config.push_middleware(metering);
 
     let store = Store::new(&Universal::new(compiler_config).engine());
@@ -176,37 +230,57 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
     };
 
     let instance = Instance::new(&module, &import_object)?;
-
     let reduce = instance.exports.get_function("reduce")?.native::<u64, ()>()?;
     let warmup = instance.exports.get_function("warmup")?.native::<(), ()>()?;
+    *INSTANCE.lock().unwrap() = Some(instance);
 
     println!("Running warmup...");
     let start = std::time::Instant::now();
     warmup.call()?;
     let duration = start.elapsed();
-    println!("warmup time {} us", duration.as_micros());
+    let remaining_points = get_remaining_points_value();
+    println!("warmup: time {} us, gas used {}", duration.as_micros(), initial_points - remaining_points);
     println!();
-
-    *INSTANCE.lock().unwrap() = Some(instance);
 
     begin_tx();
     scan();
 
     let start = std::time::Instant::now();
-    println!("Running Wasm tx...");
+    println!("Running Wasm reduce...");
     reduce.call(34234)?;
     let duration = start.elapsed();
-    let inst = &INSTANCE.lock().unwrap();
-    let remaining_points = get_remaining_points(inst.as_ref().unwrap());
-    let remaining_points = match remaining_points {
-        MeteringPoints::Remaining(x) => x,
-        MeteringPoints::Exhausted => 0,
-    };
-    println!("Wasm tx: time {} us, gas {}", duration.as_micros(), initial_points - remaining_points);
+    let remaining_points = get_remaining_points_value();
+    println!("Wasm reduce: time {} us, gas used {}", duration.as_micros(), initial_points - remaining_points);
     println!();
 
     scan();
 
+    rollback_tx();
+    
+    scan();
+    
+    let start = std::time::Instant::now();
+    println!("Running Wasm reduce...");
+    reduce.call(34234)?;
+    let duration = start.elapsed();
+    let remaining_points = get_remaining_points_value();
+    println!("Wasm reduce: time {} us, gas used {}", duration.as_micros(), initial_points - remaining_points);
+    println!();
+
+    scan();
+    
+    rollback_tx();
+   
+    let start = std::time::Instant::now();
+    println!("Running Rust reduce...");
+    rust_reduce();
+    let duration = start.elapsed();
+    println!("Rust reduce: time {} us", duration.as_micros());
+    println!();
+    
+    commit_tx();
+
+    scan();
 
     Ok(())
 }
