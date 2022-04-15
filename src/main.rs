@@ -2,10 +2,11 @@ use spacetimedb::db::{Column, ColValue, Schema, SpacetimeDB, schema::ColType, tr
 use tokio::runtime::Builder;
 use tokio::fs;
 use std::{error::Error, sync::{Arc, Mutex}, usize};
-use wasmer::{CompilerConfig, Cranelift, Function, Instance, Module, Store, Universal, imports, wasmparser::Operator, wat2wasm};
+use wasmer::{CompilerConfig, Function, Instance, Module, Store, Universal, imports, wasmparser::Operator, wat2wasm};
 use wasmer_middlewares::{Metering, metering::{MeteringPoints, get_remaining_points}};
 use lazy_static::lazy_static;
 use wasmer_compiler_llvm;
+//use wasmer::Cranelift;
 
 lazy_static! {
     static ref STDB: Mutex<SpacetimeDB> = Mutex::new(SpacetimeDB::new());
@@ -194,7 +195,7 @@ fn rust_reduce() {
 }
 
 async fn async_main() -> Result<(), Box<dyn Error>> {
-    let path = fs::canonicalize(format!("{}{}", env!("CARGO_MANIFEST_DIR"),"/wasm-test/build/release.wat")).await.unwrap();
+    let path = fs::canonicalize(format!("{}{}", env!("CARGO_MANIFEST_DIR"),"/assemblyscript-test/build/release.wat")).await.unwrap();
     let wat = fs::read(path).await?;
     // println!("{}", String::from_utf8(wat.to_owned()).unwrap());
     let wasm_bytes= wat2wasm(&wat)?;

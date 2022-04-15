@@ -18,7 +18,7 @@ required-features = [] # Features required to build this target (N/A for lib)
 
 [workspace]
 members = [
-  "hello-wasm",
+  "rust-wasm-test",
 ]
 
 [profile.release]
