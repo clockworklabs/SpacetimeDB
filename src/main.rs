@@ -137,16 +137,18 @@ fn decode_schema(bytes: &mut &[u8]) -> Schema {
     }
 }
 
-fn read_output_bytes() -> Vec<u8> {
+fn read_output_bytes(ptr: u32) -> Vec<u8> {
     let mut instance_mutex = INSTANCE.lock().unwrap();
     let instance = instance_mutex.as_mut().unwrap();
     let memory = instance.exports.get_memory("memory").unwrap();
     let view = memory.view::<u8>();
-    view[0..256].iter().map(|c| c.get()).collect::<Vec<u8>>()
+    let start = ptr as usize;
+    let end = ptr as usize + 256;
+    view[start..end].iter().map(|c| c.get()).collect::<Vec<u8>>()
 }
 
-fn insert(table_id: u32) {
-    let buffer = read_output_bytes();
+fn insert(table_id: u32, ptr: u32) {
+    let buffer = read_output_bytes(ptr);
 
     let mut stdb = STDB.lock().unwrap();
     let mut tx_mutex = TX.lock().unwrap();
@@ -157,8 +159,8 @@ fn insert(table_id: u32) {
     stdb.insert(tx, table_id, row);
 }
 
-fn create_table(table_id: u32) {
-    let buffer = read_output_bytes();
+fn create_table(table_id: u32, ptr: u32) {
+    let buffer = read_output_bytes(ptr);
     
     let mut stdb = STDB.lock().unwrap();
     let mut tx_mutex = TX.lock().unwrap();
@@ -195,7 +197,7 @@ fn rust_reduce() {
 }
 
 async fn async_main() -> Result<(), Box<dyn Error>> {
-    let path = fs::canonicalize(format!("{}{}", env!("CARGO_MANIFEST_DIR"),"/assemblyscript-test/build/release.wat")).await.unwrap();
+    let path = fs::canonicalize(format!("{}{}", env!("CARGO_MANIFEST_DIR"),"/rust-wasm-test/wat")).await.unwrap();
     let wat = fs::read(path).await?;
     // println!("{}", String::from_utf8(wat.to_owned()).unwrap());
     let wasm_bytes= wat2wasm(&wat)?;
@@ -220,19 +222,18 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
     let store = Store::new(&Universal::new(compiler_config).engine());
     let module = Module::new(&store, wasm_bytes)?;
     let import_object = imports! {
-        "stdb" => {
-            "_insert" => Function::new_native(&store, insert),
-            "_createTable" => Function::new_native(&store, create_table),
-        },
         "env" => {
+            "_insert" => Function::new_native(&store, insert),
+            "_create_table" => Function::new_native(&store, create_table),
             "abort" => Function::new_native(&store, abort),
             "console.log" => Function::new_native(&store, console_log),
         }
     };
 
     let instance = Instance::new(&module, &import_object)?;
-    let reduce = instance.exports.get_function("reduce")?.native::<u64, ()>()?;
+
     let warmup = instance.exports.get_function("warmup")?.native::<(), ()>()?;
+    let reduce = instance.exports.get_function("reduce")?.native::<u64, ()>()?;
     *INSTANCE.lock().unwrap() = Some(instance);
 
     println!("Running warmup...");
