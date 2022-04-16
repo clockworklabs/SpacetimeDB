@@ -9,5 +9,5 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-# wasm-bindgen = "0.2.80"
 spacetimedb-bindings = { path = "../spacetimedb-bindings" }
+backtrace = "0.3.64"

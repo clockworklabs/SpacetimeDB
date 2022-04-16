@@ -1,4 +1,4 @@
-use spacetimedb::db::{Column, ColValue, Schema, SpacetimeDB, ColType, transactional_db::Transaction};
+use spacetimedb::{db::{Column, ColValue, Schema, SpacetimeDB, ColType, transactional_db::Transaction}, wasm_host::Host};
 use tokio::runtime::Builder;
 use tokio::fs;
 use std::{error::Error, sync::{Arc, Mutex}, usize};
@@ -170,6 +170,15 @@ fn create_table(table_id: u32, ptr: u32) {
     stdb.create_table(tx, table_id, schema).unwrap();
 }
 
+fn iter_next(table_id: u32, ptr: u32) {
+    // let mut stdb = STDB.lock().unwrap();
+    // let mut tx_mutex = TX.lock().unwrap();
+    // let tx = tx_mutex.as_mut().unwrap();
+
+    // let schema = decode_schema(&mut &buffer[..]);
+    // stdb.create_table(tx, table_id, schema).unwrap();
+}
+
 fn get_remaining_points_value() -> u64 {
     let inst = &INSTANCE.lock().unwrap();
     let remaining_points = get_remaining_points(inst.as_ref().unwrap());
@@ -225,6 +234,7 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
         "env" => {
             "_insert" => Function::new_native(&store, insert),
             "_create_table" => Function::new_native(&store, create_table),
+            "_iter_next" => Function::new_native(&store, iter_next),
             "abort" => Function::new_native(&store, abort),
             "console.log" => Function::new_native(&store, console_log),
         }
@@ -287,13 +297,25 @@ async fn async_main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+async fn async_main2() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let path = fs::canonicalize(format!("{}{}", env!("CARGO_MANIFEST_DIR"),"/rust-wasm-test/wat")).await.unwrap();
+    let wat = fs::read(path).await?;
+    // println!("{}", String::from_utf8(wat.to_owned()).unwrap());
+    let wasm_bytes = wat2wasm(&wat)?.to_vec();
+    let host = Host::new();
+    let reducer = host.add_reducer(wasm_bytes).await?;
+    host.run_reducer(reducer).await?;
+    host.run_reducer(reducer).await?;
+    Ok(())
+}
+
 fn main() {
     // Create a single threaded run loop
     Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
-        .block_on(async_main())
+        .block_on(async_main2())
         .unwrap();
 }
 

@@ -7,7 +7,7 @@ use super::object_db::ObjectDB;
 // TODO: maybe use serde?
 type Hash = GenericArray<u8, U32>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Transaction {
     parent_commit: Hash,
     reads: Vec<Read>,

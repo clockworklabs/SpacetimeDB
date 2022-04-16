@@ -1,7 +1,4 @@
-use spacetimedb_bindings::{Column, ColValue, ColType, create_table, insert};
-
-#[no_mangle]
-pub extern fn warmup() {}
+use spacetimedb_bindings::*;
 
 /*
 TODO:
@@ -14,24 +11,12 @@ Impl stdb as a server
 Impl uploading new contract
 */
 
-// struct SpacetimeDB {}
-// struct Run {}
-
 #[no_mangle]
 pub extern fn reduce(_actor: u64) {
     create_table(0, vec![
-        Column {
-            col_type: ColType::U32,
-            col_id: 0,
-        }, 
-        Column {
-            col_type: ColType::U32,
-            col_id: 1,
-        },
-        Column {
-            col_type: ColType::U32,
-            col_id: 2,
-        }
+        Column { col_id: 0, col_type: ColType::U32 },
+        Column { col_id: 1, col_type: ColType::U32 },
+        Column { col_id: 2, col_type: ColType::U32 },
     ]);
     for i in 0..100 {
         insert(0, vec![
