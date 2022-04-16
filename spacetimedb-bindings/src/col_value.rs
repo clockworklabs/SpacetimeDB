@@ -1,6 +1,6 @@
-use std::fmt::Display;
 
-use super::schema::ColType;
+use std::fmt::Display;
+use super::col_type::ColType;
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Debug, PartialOrd, Ord)]
 pub enum ColValue {

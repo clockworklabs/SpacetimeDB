@@ -1,24 +1,17 @@
 pub mod schema;
-pub mod col_value;
 pub mod object_db;
 pub mod transactional_db;
 
-pub use col_value::ColValue;
+pub use spacetimedb_bindings::{ColValue, ColType, Column};
 use std::ops::{Range, RangeBounds};
 use crate::hash::hash_bytes;
-use self::{schema::ColType, transactional_db::{ScanIter, Transaction, TransactionalDB}};
+use transactional_db::{ScanIter, Transaction, TransactionalDB};
 
 const ST_TABLES_ID: u32 = u32::MAX;
 const ST_COLUMNS_ID: u32 = u32::MAX - 1;
 
 pub struct SpacetimeDB {
     pub txdb: TransactionalDB,
-}
-
-#[derive(Debug)]
-pub struct Column {
-    pub col_id: u32,
-    pub col_type: ColType,
 }
 
 pub struct Schema {
@@ -373,8 +366,9 @@ impl<'a> Iterator for FilterIter<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::db::{Column, Schema, schema::ColType};
-    use super::{SpacetimeDB, col_value::ColValue};
+    use spacetimedb_bindings::{Column, ColType, ColValue};
+    use crate::db::Schema;
+    use super::SpacetimeDB;
 
         // let ptr = stdb.from(&mut tx, "health")
         //     .unwrap()

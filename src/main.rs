@@ -1,4 +1,4 @@
-use spacetimedb::db::{Column, ColValue, Schema, SpacetimeDB, schema::ColType, transactional_db::Transaction};
+use spacetimedb::db::{Column, ColValue, Schema, SpacetimeDB, ColType, transactional_db::Transaction};
 use tokio::runtime::Builder;
 use tokio::fs;
 use std::{error::Error, sync::{Arc, Mutex}, usize};

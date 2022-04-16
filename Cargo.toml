@@ -19,6 +19,7 @@ required-features = [] # Features required to build this target (N/A for lib)
 [workspace]
 members = [
   "rust-wasm-test",
+  "spacetimedb-bindings",
 ]
 
 [profile.release]
@@ -41,6 +42,7 @@ protobuf = { version = "2" }
 prost = "0.6"
 lazy_static = "1.4.0"
 wasmer-compiler-llvm = "2.2.1"
+spacetimedb-bindings = { path = "./spacetimedb-bindings" }
 
 [dev-dependencies]
 criterion = { version = "0.3", features = ["async", "async_tokio", "html_reports"] }
