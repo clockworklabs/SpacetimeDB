@@ -305,7 +305,7 @@ async fn async_main2() -> Result<(), Box<dyn Error + Send + Sync>> {
     let host = Host::new();
     let reducer = host.add_reducer(wasm_bytes).await?;
     host.run_reducer(reducer).await?;
-    host.run_reducer(reducer).await?;
+    //host.run_reducer(reducer).await?;
     Ok(())
 }
 

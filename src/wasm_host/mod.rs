@@ -1,9 +1,9 @@
 use std::{error::Error, collections::HashMap, sync::{Mutex, Arc}, ffi::{CString, CStr}, os::raw::c_char};
-use spacetimedb_bindings::{Column, ColType};
+use spacetimedb_bindings::{Column, ColType, decode_schema, encode_row, encode_schema, Schema};
 use tokio::{spawn, sync::{mpsc, oneshot}};
-use wasmer::{Store, Universal, Module, Instance, imports, Function, WasmerEnv, LazyInit, Memory, NativeFunc, ValType, wasmparser::Operator, CompilerConfig};
+use wasmer::{Store, Universal, Module, Instance, imports, Function, WasmerEnv, LazyInit, Memory, NativeFunc, ValType, wasmparser::Operator, CompilerConfig, WasmPtr, Array};
 use wasmer_middlewares::{metering::{set_remaining_points, get_remaining_points, MeteringPoints}, Metering};
-use crate::{hash::{Hash, hash_bytes}, db::{SpacetimeDB, transactional_db::Transaction, Schema}};
+use crate::{hash::{Hash, hash_bytes}, db::{SpacetimeDB, transactional_db::Transaction}};
 use lazy_static::lazy_static;
 
 lazy_static! {
@@ -21,29 +21,8 @@ pub struct ReducerEnv {
     memory: LazyInit<Memory>,
     #[wasmer(export(name = "reduce"))]
     reduce: LazyInit<NativeFunc<u64, ()>>,
-}
-
-fn decode_schema(bytes: &mut &[u8]) -> Schema {
-    let mut columns: Vec<Column> = Vec::new();
-    while bytes.len() > 0 && bytes[0] != 0 {
-        let mut dst = [0u8; 4];
-        dst.copy_from_slice(&bytes[0..4]);
-        *bytes = &bytes[4..];
-        let col_type = ColType::from_u32(u32::from_le_bytes(dst));
-
-        let mut dst = [0u8; 4];
-        dst.copy_from_slice(&bytes[0..4]);
-        *bytes = &bytes[4..];
-        let col_id = u32::from_le_bytes(dst);
-
-        columns.push(Column {
-            col_type, 
-            col_id,
-        });
-    }
-    Schema {
-        columns,
-    }
+    #[wasmer(export(name = "alloc"))]
+    alloc: LazyInit<NativeFunc<u32, WasmPtr<u8, Array>>>,
 }
 
 fn c_str_to_string(memory: &Memory, ptr: u32) -> String {
@@ -93,22 +72,43 @@ fn insert(env: &ReducerEnv, table_id: u32, ptr: u32) {
 }
 
 fn create_table(env: &ReducerEnv, table_id: u32, ptr: u32) {
-    let buffer = read_output_bytes(env.memory.get_ref().expect("initialized memory"), ptr);
+    let buffer = read_output_bytes(env.memory.get_ref().expect("Initialized memory"), ptr);
 
     let mut stdb = STDB.lock().unwrap();
     let mut tx_map = TX_MAP.lock().unwrap();
     let tx = tx_map.get_mut(&env.tx_id).unwrap();
 
     let schema = decode_schema(&mut &buffer[..]);
-    stdb.create_table(tx, table_id, schema);
+    stdb.create_table(tx, table_id, schema).unwrap();
 }
 
-fn iter_next(env: &ReducerEnv, table_id: u32, ptr: u32) {
-    let mut stdb = STDB.lock().unwrap();
+fn iter(env: &ReducerEnv, table_id: u32) -> u64 {
+    let stdb = STDB.lock().unwrap();
     let mut tx_map = TX_MAP.lock().unwrap();
     let tx = tx_map.get_mut(&env.tx_id).unwrap();
 
-    // TODO: write into memory
+    let memory = env.memory.get_ref().expect("Initialized memory");
+
+    let mut bytes = Vec::new();
+    let schema = stdb.schema_for_table(tx, table_id).unwrap();
+    encode_schema(Schema { columns: schema}, &mut bytes);
+
+    for row in stdb.iter(tx, table_id).unwrap() {
+        SpacetimeDB::encode_row(row, &mut bytes);
+    }
+
+    let alloc_func = env.alloc.get_ref().expect("Intialized alloc function");
+    let ptr = alloc_func.call(bytes.len() as u32).unwrap();
+    let values = ptr.deref(memory, 0, bytes.len() as u32).unwrap();
+
+    for (i, byte) in bytes.iter().enumerate() {
+        values[i].set(*byte);
+    }
+
+    let mut data = ptr.offset() as u64;
+    data = data << 32 | bytes.len() as u64;
+    println!("{:?}", data.to_be_bytes());
+    return data;
 }
 
 fn get_remaining_points_value(instance: &Instance) -> u64 {
@@ -147,10 +147,10 @@ fn run(store: &Store, module: &Module, points: u64) -> Result<(), Box<dyn Error 
                 ReducerEnv { tx_id, ..Default::default()},
                 create_table,
             ),
-            "_iter_next" => Function::new_native_with_env(
+            "_iter" => Function::new_native_with_env(
                 &store,
                 ReducerEnv { tx_id, ..Default::default()},
-                iter_next
+                iter
             ),
             "_console_log" => Function::new_native_with_env(
                 &store,

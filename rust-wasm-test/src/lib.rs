@@ -1,4 +1,5 @@
 use spacetimedb_bindings::*;
+use spacetimedb_bindings::{println};
 
 /*
 TODO:
@@ -24,5 +25,8 @@ pub extern fn reduce(_actor: u64) {
             ColValue::U32(1),
             ColValue::U32(2),
         ]);
+    }
+    for row in iter(0).unwrap() {
+        println!("{:?}", row);
     }
 }

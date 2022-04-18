@@ -2,7 +2,7 @@ pub mod schema;
 pub mod object_db;
 pub mod transactional_db;
 
-pub use spacetimedb_bindings::{ColValue, ColType, Column};
+pub use spacetimedb_bindings::{ColValue, ColType, Column, Schema};
 use std::ops::{Range, RangeBounds};
 use crate::hash::hash_bytes;
 use transactional_db::{ScanIter, Transaction, TransactionalDB};
@@ -12,10 +12,6 @@ const ST_COLUMNS_ID: u32 = u32::MAX - 1;
 
 pub struct SpacetimeDB {
     pub txdb: TransactionalDB,
-}
-
-pub struct Schema {
-    pub columns: Vec<Column>,
 }
 
 /*
@@ -78,7 +74,7 @@ impl SpacetimeDB {
         }
     }
 
-    fn encode_row(row: Vec<ColValue>, bytes: &mut Vec<u8>) {
+    pub fn encode_row(row: Vec<ColValue>, bytes: &mut Vec<u8>) {
         for col in row {
             bytes.extend(col.to_data());
         }
