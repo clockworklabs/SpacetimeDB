@@ -1,5 +1,5 @@
-use std::{error::Error, collections::HashMap, sync::{Mutex, Arc}, ffi::{CString, CStr}, os::raw::c_char};
-use spacetimedb_bindings::{Column, ColType, decode_schema, encode_row, encode_schema, Schema};
+use std::{error::Error, collections::HashMap, sync::{Mutex, Arc}};
+use spacetimedb_bindings::{decode_schema, encode_schema, Schema};
 use tokio::{spawn, sync::{mpsc, oneshot}};
 use wasmer::{Store, Universal, Module, Instance, imports, Function, WasmerEnv, LazyInit, Memory, NativeFunc, ValType, wasmparser::Operator, CompilerConfig, WasmPtr, Array};
 use wasmer_middlewares::{metering::{set_remaining_points, get_remaining_points, MeteringPoints}, Metering};

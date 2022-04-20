@@ -1,4 +1,5 @@
 {
+  "libs": ["es2019"],
   "extends": "assemblyscript/std/assembly.json",
   "include": [
     "./**/*.ts"

@@ -5,6 +5,6 @@ pub struct Diagnostic {
 }
 
 /// Takes the parsed input from a `#[wasm_bindgen]` macro and returns the generated bindings
-pub fn expand(attr: TokenStream, input: TokenStream) -> Result<TokenStream, Diagnostic> {
+pub fn expand(_attr: TokenStream, _input: TokenStream) -> Result<TokenStream, Diagnostic> {
     unimplemented!()
 }
