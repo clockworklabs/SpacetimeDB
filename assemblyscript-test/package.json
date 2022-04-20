@@ -13,7 +13,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "assemblyscript": "^0.20.3"
+    "assemblyscript": "0.19.23"
   },
   "type": "module",
   "exports": {
