@@ -136,7 +136,7 @@ pub fn sign_out(actor: u64) {
     PlayerStateSignedOut::insert(player);
 }
 
-#[spacetimedb(reducer, actor=self, repeat=50ms)]
+#[spacetimedb(reducer, actor=self, repeat=50)]
 pub fn health_regen() {
     for player in PlayerStateSignedIn::all() {
         for mut health in Health::where_player_id(player.id) {
@@ -147,7 +147,7 @@ pub fn health_regen() {
 }
 
 #[spacetimedb(reducer, actor=self, repeat=50ms)]
-pub fn physics() {
+pub fn physics(state: GameState) {
     // TODO
 }
 
@@ -213,6 +213,7 @@ See also: https://medium.com/spadebuilders/actor-factor-2b0005fde786
 
 // This one is basically spacetimedb but with akka actors
 See also: https://doc.akka.io/docs/akka/current/persistence.html#relaxed-local-consistency-requirements-and-high-throughput-use-cases
+See also: https://github.com/dk14/2pc
 
 // Partial ordering of transactions with a DAG
 A tx -> tx         tx -> 

@@ -1,5 +1,5 @@
 use spacetimedb_bindings::*;
-use spacetimedb_bindings::{println};
+use spacetimedb_bindings::println;
 
 /*
 TODO:
@@ -11,6 +11,7 @@ Impl schema code-gen
 Impl stdb as a server
 Impl uploading new contract
 */
+
 
 #[no_mangle]
 pub extern fn reduce(_actor: u64) {

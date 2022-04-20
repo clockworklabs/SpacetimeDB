@@ -20,6 +20,8 @@ required-features = [] # Features required to build this target (N/A for lib)
 members = [
   "rust-wasm-test",
   "spacetimedb-bindings",
+  "spacetimedb-bindgen",
+  "spacetimedb-macro",
 ]
 
 [profile.release]
