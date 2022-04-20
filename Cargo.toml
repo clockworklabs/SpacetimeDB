@@ -45,6 +45,11 @@ prost = "0.6"
 lazy_static = "1.4.0"
 wasmer-compiler-llvm = "2.2.1"
 spacetimedb-bindings = { path = "./spacetimedb-bindings" }
+log = "0.4.16"
+gotham = "0.7.1"
+hyper = "0.14.18"
+log4rs = { version = "1.0.0", features = ["background_rotation", "rolling_file_appender", "compound_policy", "size_trigger", "fixed_window_roller"] }
+serde = "1.0.136"
 
 [dev-dependencies]
 criterion = { version = "0.3", features = ["async", "async_tokio", "html_reports"] }
