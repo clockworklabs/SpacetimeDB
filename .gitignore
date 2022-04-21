@@ -188,3 +188,6 @@ Cargo.lock
 
 /target
 #Cargo.lock
+
+## JetBrains
+.idea/
