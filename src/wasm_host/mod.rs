@@ -163,7 +163,7 @@ fn run(store: &Store, module: &Module, points: u64) -> Result<(), Box<dyn Error 
     set_remaining_points(&instance, points);
 
     // Init if available
-    let init = instance.exports.get_native_function::<(), ()>("_init");
+    let init = instance.exports.get_native_function::<(), ()>("__init");
     if let Some(init) = init.ok() {
         let _ = init.call();
     }

@@ -10396,7 +10396,7 @@
   (func $_ZN4core3ptr28drop_in_place$LT$$RF$u32$GT$17hae2af32e673410b9E (type 4) (param i32))
   (func $_ZN4core3ptr28drop_in_place$LT$$RF$u16$GT$17hf2ffd87a67dc251aE (type 4) (param i32))
   (func $_ZN4core3ptr27drop_in_place$LT$$RF$u8$GT$17h2b11784902192599E (type 4) (param i32))
-  (func $_init (type 10)
+  (func $__init (type 10)
     (local i32 i32 i32)
     block  ;; label = @1
       block  ;; label = @2
@@ -14052,7 +14052,7 @@
   (global (;2;) i32 (i32.const 1054864))
   (export "memory" (memory 0))
   (export "reduce" (func $reduce))
-  (export "_init" (func $_init))
+  (export "__init" (func $__init))
   (export "alloc" (func $alloc))
   (export "dealloc" (func $dealloc))
   (export "__data_end" (global 1))
