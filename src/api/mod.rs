@@ -8,10 +8,13 @@ pub fn sign_in(username: String, password: String) {
 }
 
 pub mod database {
-    use crate::hash::Hash;
+    use std::error::Error;
+    use crate::{hash::Hash, wasm_host::{self, HOST}};
 
-    pub fn init(namespace: String, name: String, wasm_bytecode: impl AsRef<[u8]>) {
-
+    pub async fn init_module(namespace: String, name: String, wasm_bytes: Vec<u8>) -> Result<Hash, Box<dyn Error + Send + Sync>> {
+        let host = { HOST.lock().unwrap().clone() };
+        let address = host.init_module(namespace, name, wasm_bytes).await?;
+        Ok(address)
     }
 
     pub fn update(namespace: String, name: String, wasm_bytecode: impl AsRef<[u8]>) {
@@ -34,8 +37,8 @@ pub mod database {
 
     }
 
-    pub fn call(namespace: String, name: String, reducer: String, arg_data: Vec<u8>) {
-
+    pub async fn call(namespace: String, name: String, reducer: String, arg_data: Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        Ok(())
     }
 
     pub fn address(namespace: String, name: String) -> String {

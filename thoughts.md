@@ -116,8 +116,8 @@ entity:<table_hash>
 // Order 2
 // state>1 2 3
 // delete 1 -> ok
-// state>2 3
-// if 1 delete 2 3 -> should fail
+// state>1 2 3
+// if 1 delete 2 3 -> ok
 // state>2 3
 
 type Pointer = usize;

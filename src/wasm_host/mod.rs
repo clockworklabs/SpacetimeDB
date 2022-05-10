@@ -7,6 +7,7 @@ use crate::{hash::{Hash, hash_bytes}, db::{SpacetimeDB, transactional_db::Transa
 use lazy_static::lazy_static;
 
 lazy_static! {
+    pub static ref HOST: Mutex<Host> = Mutex::new(HostActor::spawn());
     static ref STDB: Mutex<SpacetimeDB> = Mutex::new(SpacetimeDB::new());
 
     // TODO: probably store these inside STDB
@@ -230,62 +231,191 @@ fn add(modules: &mut HashMap<Hash, Module>, store: &Store, wasm_bytes: impl AsRe
     Ok(hash)
 }
 
+struct HostActor {
+    store: Store,
+    modules: HashMap<Hash, Module>,
+}
+
+impl HostActor {
+
+    pub fn spawn() -> Host {
+        let (tx, mut rx) = mpsc::channel(8);
+        tokio::spawn(async move {
+            let mut actor = HostActor::new();
+            while let Some(command) = rx.recv().await {
+                actor.handle_message(command);
+            }
+        });
+        Host { tx }
+    }
+
+    fn new() -> Self {
+        let cost_function = |operator: &Operator| -> u64 {
+            match operator {
+                Operator::LocalGet { .. } => 1,
+                Operator::I32Const { .. } => 1,
+                Operator::I32Add { .. } => 1,
+                _ => 1,
+            }
+        };
+        let initial_points = 1000000;
+        let metering = Arc::new(Metering::new(initial_points, cost_function));
+
+        let mut compiler_config = wasmer_compiler_llvm::LLVM::default();
+        compiler_config.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
+        compiler_config.push_middleware(metering);
+
+        let store = Store::new(&Universal::new(compiler_config).engine());
+        let mut modules: HashMap<Hash, Module> = HashMap::new();
+
+        Self {
+            store,
+            modules,
+        }
+    }
+
+    fn handle_message(&mut self, message: HostCommand) {
+        match message {
+            HostCommand::Add { wasm_bytes, respond_to } => {
+                respond_to.send(self.add(wasm_bytes)).unwrap();
+            },
+            HostCommand::Run { hash, respond_to } => {
+                respond_to.send(self.run(hash)).unwrap();
+            },
+        }
+    }
+
+    fn add(&mut self, wasm_bytes: Vec<u8>) -> Result<Hash, Box<dyn Error + Send + Sync>> {
+        let hash = hash_bytes(&wasm_bytes);
+        let module = Module::new(&self.store, wasm_bytes)?;
+        let mut found = false;
+        for f in module.exports().functions() {
+            if f.name() != "reduce" {
+                continue;
+            }
+            found = true;
+            let ty = f.ty();
+            if ty.params().len() != 1 {
+                return Err("Reduce function has wrong number of params.".into());
+            }
+            if ty.params()[0] != ValType::I64 {
+                return Err("Incorrect param type for reducer.".into());
+            }
+        }
+        if !found {
+            return Err("Reduce function not found in module.".into());
+        }
+        self.modules.insert(hash, module);
+        Ok(hash)
+    }
+
+    fn run(&mut self, hash: Hash) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let tx_id = {
+            let mut stdb = STDB.lock().unwrap();
+            let tx = stdb.begin_tx();
+            let id = *TX_ID.lock().unwrap();
+            *TX_ID.lock().unwrap() += 1;
+            TX_MAP.lock().unwrap().insert(id, tx);
+            id
+        };
+
+        let module = self.modules.get(&hash);
+        let module = match module {
+            Some(x) => x,
+            None => return Err("No such module.".into())
+        };
+
+        let import_object = imports! {
+            "env" => {
+                "_insert" => Function::new_native_with_env(
+                    &self.store,
+                    ReducerEnv { tx_id, ..Default::default()},
+                    insert,
+                ),
+                "_create_table" => Function::new_native_with_env(
+                    &self.store,
+                    ReducerEnv { tx_id, ..Default::default()},
+                    create_table,
+                ),
+                "_iter" => Function::new_native_with_env(
+                    &self.store,
+                    ReducerEnv { tx_id, ..Default::default()},
+                    iter
+                ),
+                "_console_log" => Function::new_native_with_env(
+                    &self.store,
+                    ReducerEnv { tx_id, ..Default::default()},
+                    console_log
+                ),
+            }
+        };
+
+        let points = 1_000_000;
+        let instance = Instance::new(&module, &import_object)?;
+        set_remaining_points(&instance, points);
+
+        // Init if available
+        let init = instance.exports.get_native_function::<(), ()>("_init");
+        if let Some(init) = init.ok() {
+            let _ = init.call();
+        }
+
+        let reduce = instance.exports.get_function("reduce")?.native::<u64, ()>()?;
+
+        let start = std::time::Instant::now();
+        println!("Running Wasm reduce...");
+        let result = reduce.call(0);
+        let duration = start.elapsed();
+        let remaining_points = get_remaining_points_value(&instance);
+        println!("Wasm reduce: time {} us, gas used {}", duration.as_micros(), 1_000_000 - remaining_points);
+        println!();
+
+        if let Some(err) = result.err() {
+            let mut stdb = STDB.lock().unwrap();
+            let mut tx_map = TX_MAP.lock().unwrap();
+            let tx = tx_map.remove(&tx_id).unwrap();
+            stdb.rollback_tx(tx);
+
+            let e = &err;
+            let frames = e.trace();
+            let frames_len = frames.len();
+
+            println!("Runtime error:");
+            for i in 0..frames_len {
+                println!(
+                    "  Frame #{}: {:?}::{:?}",
+                    frames_len - i,
+                    frames[i].module_name(),
+                    frames[i].function_name().or(Some("<func>")).unwrap()
+                );
+            }
+        } else {
+            let mut stdb = STDB.lock().unwrap();
+            let mut tx_map = TX_MAP.lock().unwrap();
+            let tx = tx_map.remove(&tx_id).unwrap();
+            stdb.commit_tx(tx);
+        }
+        Ok(())
+    }
+
+}
+
+#[derive(Clone)]
 pub struct Host {
     tx: mpsc::Sender<HostCommand>
 }
 
 impl Host {
-    pub fn new() -> Self {
-        let (tx, mut rx) = mpsc::channel::<HostCommand>(1024);
-        spawn(async move {
-            let cost_function = |operator: &Operator| -> u64 {
-                match operator {
-                    Operator::LocalGet { .. } => 1,
-                    Operator::I32Const { .. } => 1,
-                    Operator::I32Add { .. } => 1,
-                    _ => 1,
-                }
-            };
-            let initial_points = 1000000;
-            let metering = Arc::new(Metering::new(initial_points, cost_function));
 
-            let mut compiler_config = wasmer_compiler_llvm::LLVM::default();
-            compiler_config.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
-            compiler_config.push_middleware(metering);
-
-            let store = Store::new(&Universal::new(compiler_config).engine());
-            let mut reducers: HashMap<Hash, Module> = HashMap::new();
-
-            while let Some(command) = rx.recv().await {
-                match command {
-                    HostCommand::Add { wasm_bytes, respond_to } => {
-                        let res = add(&mut reducers, &store, wasm_bytes);
-                        respond_to.send(res).unwrap();
-                    }
-                    HostCommand::Run { hash, respond_to } => {
-                        let module = reducers.get(&hash);
-                        if let Some(module) = module {
-                            let res = run(&store, module, 1_000_000);
-                            respond_to.send(res).unwrap();
-                        }
-                    },
-                }
-            }
-        });
-        Self {
-            tx
-        }
-    }
-
-    pub async fn add_reducer(&self, wasm_bytes: Vec<u8>) -> Result<Hash, Box<dyn Error + Send + Sync>> {
+    pub async fn init_module(&self, namespace: String, name: String, wasm_bytes: Vec<u8>) -> Result<Hash, Box<dyn Error + Send + Sync>> {
         let (tx, rx) = oneshot::channel::<Result<Hash, Box<dyn Error + Send + Sync>>>();
-        self.tx.send(HostCommand::Add { wasm_bytes, respond_to: tx }).await.unwrap();
+        self.tx.send(HostCommand::Add { wasm_bytes, respond_to: tx }).await?;
         rx.await.unwrap()
     }
 
     pub async fn run_reducer(&self, hash: Hash) -> Result<(), Box<dyn Error + Send + Sync>>  {
         let (tx, rx) = oneshot::channel::<Result<(), Box<dyn Error + Send + Sync>>>();
-        self.tx.send(HostCommand::Run { hash, respond_to: tx }).await.unwrap();
+        self.tx.send(HostCommand::Run { hash, respond_to: tx }).await?;
         rx.await.unwrap()
     }
 }

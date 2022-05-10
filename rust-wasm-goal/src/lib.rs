@@ -136,7 +136,7 @@ pub fn sign_out(actor: u64) {
     PlayerStateSignedOut::insert(player);
 }
 
-#[spacetimedb(reducer, actor=self, repeat=50)]
+#[spacetimedb(reducer, actor=self, repeat=50ms)]
 pub fn health_regen() {
     for player in PlayerStateSignedIn::all() {
         for mut health in Health::where_player_id(player.id) {
@@ -156,6 +156,16 @@ pub fn delegate() {
 
 }
 
+
+pub fn get_schema_for_concract() -> Vec::<TableSchema> {
+   return vec![
+        TableSchema {
+            name: "User",
+            id: 0,
+        }
+    ] 
+}
+
 #[spacetimedb(migration)]
 pub fn migrate() {
     let old_db_address = spacetimedb::previous_address();
@@ -165,6 +175,17 @@ pub fn migrate() {
             username: row[0],
             // etc.
         });
+    }
+}
+
+mod CoolBitCraftAlliance {
+    pub fn apply_to_my_bitcraft_alliance(actor: u32) {
+        // look up player in public table
+        // evaluate if they are qualified
+
+        // TODO: make this code gen somehow?
+        // NOTE: This call is fire and forget (see Actor model)
+        call("clockworklabs.bitcraft", add_alliance_member(u64), actor);
     }
 }
 

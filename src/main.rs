@@ -1,23 +1,31 @@
 use log::*;
 use spacetimedb::routes::router;
-use spacetimedb::wasm_host::Host;
+use spacetimedb::wasm_host::{Host, HOST};
 use tokio::runtime::Builder;
 use tokio::{fs, spawn};
 use std::error::Error;
 use std::net::SocketAddr;
 use wasmer::wat2wasm;
+use spacetimedb::api;
 
 async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
     configure_logging();
 
     let path = fs::canonicalize(format!("{}{}", env!("CARGO_MANIFEST_DIR"),"/rust-wasm-test/wat")).await.unwrap();
     let wat = fs::read(path).await?;
+    
     // println!("{}", String::from_utf8(wat.to_owned()).unwrap());
+
     let wasm_bytes = wat2wasm(&wat)?.to_vec();
-    let host = Host::new();
-    let reducer = host.add_reducer(wasm_bytes).await?;
-    host.run_reducer(reducer).await?;
-    //host.run_reducer(reducer).await?;S
+    let namespace = "clockworklabs".into();
+    let name = "bitcraft".into();
+    api::database::init_module(namespace, name, wasm_bytes).await?;
+    let reducer = "reduce".into();
+
+    let namespace = "clockworklabs".into();
+    let name = "bitcraft".into();
+    let arg_data = vec![0,0,0];
+    api::database::call(namespace, name, reducer, arg_data).await?;
 
     spawn(async move {
         // Start https server

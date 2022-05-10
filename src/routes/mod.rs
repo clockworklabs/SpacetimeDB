@@ -30,9 +30,14 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
         );
     }
     let data = data.unwrap();
-    let wasm_bytecode = data.unwrap();
+    let wasm_bytes = data.unwrap().to_vec();
 
-    api::database::init(namespace, name, wasm_bytecode);
+    match api::database::init_module(namespace, name, wasm_bytes).await {
+        Ok(_) => {},
+        Err(e) => {
+            println!("{}", e)
+        },
+    }
     
     let res = Response::builder()
         .status(StatusCode::OK)
