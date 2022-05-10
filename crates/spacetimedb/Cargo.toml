@@ -1,0 +1,48 @@
+[package]
+name = "spacetimedb"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "spacetimedb"   # The name of the target.
+path = "src/main.rs"   # The source file of the target.
+test = true            # Is tested by default.
+bench = true           # Is benchmarked by default.
+doc = false            # Is documented by default.
+plugin = false         # Used as a compiler plugin (deprecated).
+proc-macro = false     # Set to `true` for a proc-macro library.
+harness = true         # Use libtest harness.
+required-features = [] # Features required to build this target (N/A for lib)
+
+[[bench]]
+name = "transactional_db"
+harness = false
+
+[dependencies] 
+tokio = { version = "1.2", features = ["full"] }
+wasmer = "2.1.1"
+wasm-bindgen = "0.2.79"
+wasmer-middlewares = "2.1.1"
+sha3 = "0.10.0"
+hex-literal = "0.3.4"
+hex = "0.4.3"
+protobuf = { version = "2" }
+prost = "0.6"
+lazy_static = "1.4.0"
+wasmer-compiler-llvm = "2.2.1"
+spacetimedb-bindings = { path = "../spacetimedb-bindings" }
+log = "0.4.16"
+gotham = "0.7.1"
+hyper = "0.14.18"
+log4rs = { version = "1.0.0", features = ["background_rotation", "rolling_file_appender", "compound_policy", "size_trigger", "fixed_window_roller"] }
+serde = "1.0.136"
+
+[dev-dependencies]
+criterion = { version = "0.3", features = ["async", "async_tokio", "html_reports"] }
+prost-build = { version = "0.6.1" }
+
+[build-dependencies]
+glob = "0.3.0"
+prost-build = { version = "0.6.1" }
