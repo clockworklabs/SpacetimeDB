@@ -1,4 +1,3 @@
-
 pub fn sign_up(username: String, password: String) {
 
 }
@@ -9,11 +8,15 @@ pub fn sign_in(username: String, password: String) {
 
 pub mod database {
     use std::error::Error;
-    use crate::{hash::Hash, wasm_host::{self, HOST}};
+    use crate::{hash::Hash, wasm_host::HOST, db::persistent_object_db::odb};
 
-    pub async fn init_module(namespace: String, name: String, wasm_bytes: Vec<u8>) -> Result<Hash, Box<dyn Error + Send + Sync>> {
+    pub async fn init_module(identity: String, name: String, wasm_bytes: Vec<u8>) -> Result<Hash, Box<dyn Error + Send + Sync>> {
         let host = { HOST.lock().unwrap().clone() };
-        let address = host.init_module(namespace, name, wasm_bytes).await?;
+        let address = host.init_module(identity, name, wasm_bytes.clone()).await?;
+
+        // If the module successfully initialized add it to the object database
+        odb::add(&wasm_bytes).await;
+
         Ok(address)
     }
 

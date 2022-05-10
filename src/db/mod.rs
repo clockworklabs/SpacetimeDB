@@ -1,6 +1,7 @@
 pub mod schema;
 pub mod object_db;
 pub mod transactional_db;
+pub mod persistent_object_db;
 
 pub use spacetimedb_bindings::{ColValue, ColType, Column, Schema};
 use std::ops::{Range, RangeBounds};

@@ -266,7 +266,7 @@ impl HostActor {
         compiler_config.push_middleware(metering);
 
         let store = Store::new(&Universal::new(compiler_config).engine());
-        let mut modules: HashMap<Hash, Module> = HashMap::new();
+        let modules: HashMap<Hash, Module> = HashMap::new();
 
         Self {
             store,
@@ -407,7 +407,7 @@ pub struct Host {
 
 impl Host {
 
-    pub async fn init_module(&self, namespace: String, name: String, wasm_bytes: Vec<u8>) -> Result<Hash, Box<dyn Error + Send + Sync>> {
+    pub async fn init_module(&self, identity: String, name: String, wasm_bytes: Vec<u8>) -> Result<Hash, Box<dyn Error + Send + Sync>> {
         let (tx, rx) = oneshot::channel::<Result<Hash, Box<dyn Error + Send + Sync>>>();
         self.tx.send(HostCommand::Add { wasm_bytes, respond_to: tx }).await?;
         rx.await.unwrap()

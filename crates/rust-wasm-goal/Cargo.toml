@@ -1,5 +1,5 @@
 [package]
-name = "rust-wasm-test"
+name = "rust-wasm-goal"
 version = "0.1.0"
 edition = "2021"
 

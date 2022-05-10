@@ -17,12 +17,8 @@ harness = true         # Use libtest harness.
 required-features = [] # Features required to build this target (N/A for lib)
 
 [workspace]
-members = [
-  "rust-wasm-test",
-  "spacetimedb-bindings",
-  "spacetimedb-bindgen",
-  "spacetimedb-macro",
-]
+members = ["crates/*"]
+exclude = ["crates/rust-wasm-goal"]
 
 [profile.release]
 opt-level = 's'
@@ -44,7 +40,7 @@ protobuf = { version = "2" }
 prost = "0.6"
 lazy_static = "1.4.0"
 wasmer-compiler-llvm = "2.2.1"
-spacetimedb-bindings = { path = "./spacetimedb-bindings" }
+spacetimedb-bindings = { path = "./crates/spacetimedb-bindings" }
 log = "0.4.16"
 gotham = "0.7.1"
 hyper = "0.14.18"
