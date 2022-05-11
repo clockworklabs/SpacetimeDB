@@ -9,10 +9,8 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help query for more detailed information.\n`")
 }
 
-
 pub fn exec(args: &ArgMatches) {
     let query = args.value_of("query").unwrap();
 
     println!("This is your query: {}", query);
-
 }

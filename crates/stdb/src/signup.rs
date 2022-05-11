@@ -9,10 +9,8 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help signup for more detailed information.\n`")
 }
 
-
 pub fn exec(args: &ArgMatches) {
     let email = args.value_of("email").unwrap();
 
     println!("This is your email: {}", email);
-
 }

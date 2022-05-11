@@ -10,12 +10,10 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help revert for more detailed information.\n`")
 }
 
-
 pub fn exec(args: &ArgMatches) {
     let project_name = args.value_of("project name").unwrap();
     let timestamp_or_hash = args.value_of("timestamp").unwrap();
 
     println!("This is your project name: {}", project_name);
     println!("This is your timestamp: {}", timestamp_or_hash);
-
 }

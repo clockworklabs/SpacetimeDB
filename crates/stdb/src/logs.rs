@@ -9,10 +9,8 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help logs for more detailed information.\n`")
 }
 
-
 pub fn exec(args: &ArgMatches) {
     let project_name = args.value_of("project name").unwrap();
 
     println!("This is your project_name: {}", project_name);
-
 }
