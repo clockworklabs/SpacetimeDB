@@ -4,7 +4,17 @@ use clap::ArgMatches;
 use clap::error::ContextKind;
 use clap::error::ContextValue;
 
+mod address;
+mod call;
+mod energy;
+mod init;
+mod login;
+mod logs;
+mod metrics;
+mod query;
+mod revert;
 mod signup;
+mod update;
 
 fn main() {
     match main_app().try_get_matches() {
@@ -70,13 +80,33 @@ Some common SpacetimeDB commands are
 
 fn builtin() -> Vec<Command<'static>> {
     vec![
+        address::cli(),
+        call::cli(),
+        energy::cli(),
+        init::cli(),
+        login::cli(),
+        logs::cli(),
+        metrics::cli(),
+        query::cli(),
+        revert::cli(),
         signup::cli(),
+        update::cli(),
     ]
 }
 
 fn builtin_exec(cmd: &str) -> Option<fn(&ArgMatches)> {
     let f = match cmd {
+        "address" => address::exec,
+        "call" => call::exec,
+        "energy" => energy::exec,
+        "init" => init::exec,
+        "login" => login::exec,
+        "logs" => logs::exec,
+        "metrics" => metrics::exec,
+        "query" => query::exec,
+        "revert" => revert::exec,
         "signup" => signup::exec,
+        "update" => update::exec,
         _ => return None,
     };
     Some(f)
