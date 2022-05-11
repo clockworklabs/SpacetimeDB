@@ -1,6 +1,5 @@
 use clap::Arg;
 use clap::ArgMatches;
-use clap::Parser;
 
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("login")
@@ -14,7 +13,7 @@ pub fn cli() -> clap::Command<'static> {
 
 pub fn exec(args: &ArgMatches) {
     let username = args.value_of("username").unwrap();
-    let password = args.value_of("password").unwrap();
+    let _password = args.value_of("password").unwrap();
 
     println!("This is your username: {}", username);
 

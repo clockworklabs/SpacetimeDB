@@ -1,6 +1,5 @@
-use clap::Arg;
+// use clap::Arg;
 use clap::ArgMatches;
-use clap::Parser;
 
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("energy")
@@ -11,7 +10,7 @@ pub fn cli() -> clap::Command<'static> {
 }
 
 
-pub fn exec(args: &ArgMatches) {
+pub fn exec(_args: &ArgMatches) {
     // let project_name = args.value_of("project name").unwrap();
 
     // println!("This is your project_name: {}", project_name);

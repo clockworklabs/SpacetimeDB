@@ -1,6 +1,5 @@
 use clap::Arg;
 use clap::ArgMatches;
-use clap::Parser;
 
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("logs")

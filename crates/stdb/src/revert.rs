@@ -16,6 +16,6 @@ pub fn exec(args: &ArgMatches) {
     let timestamp_or_hash = args.value_of("timestamp").unwrap();
 
     println!("This is your project name: {}", project_name);
-    println!("This is your timestamp: {}", timestamp);
+    println!("This is your timestamp: {}", timestamp_or_hash);
 
 }
