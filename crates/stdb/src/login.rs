@@ -1,0 +1,21 @@
+use clap::Arg;
+use clap::ArgMatches;
+use clap::Parser;
+
+pub fn cli() -> clap::Command<'static> {
+    clap::Command::new("login")
+        .about("Login using an existing identity")
+        .override_usage("stdb login <username> <password>")
+        .arg(Arg::new("username").required(true))
+        .arg(Arg::new("password").required(true))
+        .after_help("Run `stdb help login for more detailed information.\n`")
+}
+
+
+pub fn exec(args: &ArgMatches) {
+    let username = args.value_of("username").unwrap();
+    let password = args.value_of("password").unwrap();
+
+    println!("This is your username: {}", username);
+
+}
