@@ -245,7 +245,8 @@ impl Iterator for TableIter {
     type Item = Vec<ColValue>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(self.ptr, self.size as usize, self.size as usize) };
+        let bytes: Vec<u8> =
+            unsafe { Vec::from_raw_parts(self.ptr, self.size as usize, self.size as usize) };
         let slice = &mut &bytes[..];
         if slice.len() > 0 {
             let (row, num_read) = decode_row(&self.schema.columns, slice);
