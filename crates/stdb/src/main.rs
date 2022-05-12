@@ -41,8 +41,10 @@ fn main() {
                     })
                     .expect("UnrecognizedSubcommand implies the presence of InvalidSubcommand");
 
-                println!("invalid command: {}", cmd)
-            }
+                println!("invalid command: {}", cmd);
+            } else {
+                let val = e.into();
+			}
         }
     }
 }
