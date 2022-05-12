@@ -34,9 +34,7 @@ fn main() {
                 let cmd = e
                     .context()
                     .find_map(|c| match c {
-                        (ContextKind::InvalidSubcommand, &ContextValue::String(ref cmd)) => {
-                            Some(cmd)
-                        }
+                        (ContextKind::InvalidSubcommand, &ContextValue::String(ref cmd)) => Some(cmd),
                         _ => None,
                     })
                     .expect("UnrecognizedSubcommand implies the presence of InvalidSubcommand");
@@ -44,7 +42,7 @@ fn main() {
                 println!("invalid command: {}", cmd);
             } else {
                 let _ = e.print();
-			}
+            }
         }
     }
 }
