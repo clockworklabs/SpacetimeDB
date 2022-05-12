@@ -25,7 +25,8 @@ fn main() {
             }
 
             None => {
-                panic!("No subcommand found!")
+                main_app().print_help();
+                return;
             }
         },
 

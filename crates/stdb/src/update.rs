@@ -3,7 +3,7 @@ use clap::ArgMatches;
 
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("update")
-        .about("???")
+        .about("Updates a SpacetimeDB agent.")
         .override_usage("stdb update <project name> <path to project>")
         .arg(Arg::new("project name").required(true))
         .arg(Arg::new("path to project").required(true))
