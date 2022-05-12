@@ -43,7 +43,7 @@ fn main() {
 
                 println!("invalid command: {}", cmd);
             } else {
-                let val = e.into();
+                let _ = e.print();
 			}
         }
     }
