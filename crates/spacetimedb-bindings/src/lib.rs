@@ -1,14 +1,14 @@
-mod col_value;
 mod col_type;
+mod col_value;
 mod column;
 mod schema;
-pub use col_value::ColValue;
 pub use col_type::ColType;
+pub use col_value::ColValue;
 pub use column::Column;
 pub use schema::Schema;
+use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
 use std::ffi::CString;
 use std::os::raw::c_char;
-use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
 use std::panic;
 
 #[global_allocator]
@@ -23,7 +23,7 @@ extern "C" {
 
 // TODO: probably do something lighter weight here
 #[no_mangle]
-extern fn __init() {
+extern "C" fn __init() {
     panic::set_hook(Box::new(panic_hook));
 }
 
@@ -36,28 +36,36 @@ fn panic_hook(info: &panic::PanicInfo) {
 pub fn _console_log_debug(string: String) {
     let s = CString::new(string).unwrap();
     let ptr = s.as_ptr();
-    unsafe { _console_log(3, ptr); }
+    unsafe {
+        _console_log(3, ptr);
+    }
 }
 
 #[doc(hidden)]
 pub fn _console_log_info(string: String) {
     let s = CString::new(string).unwrap();
     let ptr = s.as_ptr();
-    unsafe { _console_log(2, ptr); }
+    unsafe {
+        _console_log(2, ptr);
+    }
 }
 
 #[doc(hidden)]
 pub fn _console_log_warn(string: &str) {
     let s = CString::new(string).unwrap();
     let ptr = s.as_ptr();
-    unsafe { _console_log(1, ptr); }
+    unsafe {
+        _console_log(1, ptr);
+    }
 }
 
 #[doc(hidden)]
 pub fn _console_log_error(string: &str) {
     let s = CString::new(string).unwrap();
     let ptr = s.as_ptr();
-    unsafe { _console_log(0, ptr); }
+    unsafe {
+        _console_log(0, ptr);
+    }
 }
 
 #[macro_export]
@@ -109,14 +117,14 @@ const ROW_BUF_LEN: usize = 1024;
 static mut ROW_BUF: Option<*mut u8> = None;
 
 #[no_mangle]
-unsafe extern fn alloc(size: usize) -> *mut u8 {
+unsafe extern "C" fn alloc(size: usize) -> *mut u8 {
     let align = std::mem::align_of::<usize>();
     let layout = Layout::from_size_align_unchecked(size, align);
     _alloc(layout)
 }
 
 #[no_mangle]
-unsafe extern fn dealloc(ptr: *mut u8, size: usize) {
+unsafe extern "C" fn dealloc(ptr: *mut u8, size: usize) {
     let align = std::mem::align_of::<usize>();
     let layout = Layout::from_size_align_unchecked(size, align);
     _dealloc(ptr, layout);
@@ -179,14 +187,9 @@ pub fn decode_schema(bytes: &mut &[u8]) -> Schema {
         *bytes = &bytes[4..];
         let col_id = u32::from_le_bytes(dst);
 
-        columns.push(Column {
-            col_type, 
-            col_id,
-        });
+        columns.push(Column { col_type, col_id });
     }
-    Schema {
-        columns,
-    }
+    Schema { columns }
 }
 
 pub fn create_table(table_id: u32, schema: Vec<Column>) {
@@ -242,7 +245,8 @@ impl Iterator for TableIter {
     type Item = Vec<ColValue>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(self.ptr, self.size as usize, self.size as usize) };
+        let bytes: Vec<u8> =
+            unsafe { Vec::from_raw_parts(self.ptr, self.size as usize, self.size as usize) };
         let slice = &mut &bytes[..];
         if slice.len() > 0 {
             let (row, num_read) = decode_row(&self.schema.columns, slice);

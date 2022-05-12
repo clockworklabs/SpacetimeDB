@@ -1,11 +1,10 @@
-
 pub mod odb {
-    use tokio::fs;
-    use std::path::PathBuf;
     use crate::hash::hash_bytes;
     use crate::hash::Hash;
     use hex;
-    
+    use std::path::PathBuf;
+    use tokio::fs;
+
     const ROOT: &str = "/odb";
 
     pub async fn total_key_size_bytes() -> u64 {

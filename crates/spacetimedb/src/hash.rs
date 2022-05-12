@@ -1,4 +1,7 @@
-use sha3::{Digest, Sha3_256, digest::{generic_array::GenericArray, generic_array::typenum::U32}};
+use sha3::{
+    digest::{generic_array::typenum::U32, generic_array::GenericArray},
+    Digest, Sha3_256,
+};
 pub type Hash = GenericArray<u8, U32>;
 
 pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> Hash {

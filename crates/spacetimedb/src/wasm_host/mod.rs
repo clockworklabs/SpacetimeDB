@@ -1,10 +1,26 @@
-use std::{error::Error, collections::HashMap, sync::{Mutex, Arc}};
-use spacetimedb_bindings::{decode_schema, encode_schema, Schema};
-use tokio::{spawn, sync::{mpsc, oneshot}};
-use wasmer::{Store, Universal, Module, Instance, imports, Function, WasmerEnv, LazyInit, Memory, NativeFunc, ValType, wasmparser::Operator, CompilerConfig, WasmPtr, Array};
-use wasmer_middlewares::{metering::{set_remaining_points, get_remaining_points, MeteringPoints}, Metering};
-use crate::{hash::{Hash, hash_bytes}, db::{SpacetimeDB, transactional_db::Transaction}};
+use crate::{
+    db::{transactional_db::Transaction, SpacetimeDB},
+    hash::{hash_bytes, Hash},
+};
 use lazy_static::lazy_static;
+use spacetimedb_bindings::{decode_schema, encode_schema, Schema};
+use std::{
+    collections::HashMap,
+    error::Error,
+    sync::{Arc, Mutex},
+};
+use tokio::{
+    spawn,
+    sync::{mpsc, oneshot},
+};
+use wasmer::{
+    imports, wasmparser::Operator, Array, CompilerConfig, Function, Instance, LazyInit, Memory,
+    Module, NativeFunc, Store, Universal, ValType, WasmPtr, WasmerEnv,
+};
+use wasmer_middlewares::{
+    metering::{get_remaining_points, set_remaining_points, MeteringPoints},
+    Metering,
+};
 
 lazy_static! {
     pub static ref HOST: Mutex<Host> = Mutex::new(HostActor::spawn());
@@ -56,7 +72,10 @@ fn read_output_bytes(memory: &Memory, ptr: u32) -> Vec<u8> {
     let view = memory.view::<u8>();
     let start = ptr as usize;
     let end = ptr as usize + 256;
-    view[start..end].iter().map(|c| c.get()).collect::<Vec<u8>>()
+    view[start..end]
+        .iter()
+        .map(|c| c.get())
+        .collect::<Vec<u8>>()
 }
 
 fn insert(env: &ReducerEnv, table_id: u32, ptr: u32) {
@@ -92,7 +111,7 @@ fn iter(env: &ReducerEnv, table_id: u32) -> u64 {
 
     let mut bytes = Vec::new();
     let schema = stdb.schema_for_table(tx, table_id).unwrap();
-    encode_schema(Schema { columns: schema}, &mut bytes);
+    encode_schema(Schema { columns: schema }, &mut bytes);
 
     for row in stdb.iter(tx, table_id).unwrap() {
         SpacetimeDB::encode_row(row, &mut bytes);
@@ -123,8 +142,14 @@ fn get_remaining_points_value(instance: &Instance) -> u64 {
 
 #[derive(Debug)]
 enum HostCommand {
-    Add { wasm_bytes: Vec<u8>, respond_to: oneshot::Sender<Result<Hash, Box<dyn Error + Send + Sync>>> },
-    Run { hash: Hash, respond_to: oneshot::Sender<Result<(), Box<dyn Error + Send + Sync>>> }
+    Add {
+        wasm_bytes: Vec<u8>,
+        respond_to: oneshot::Sender<Result<Hash, Box<dyn Error + Send + Sync>>>,
+    },
+    Run {
+        hash: Hash,
+        respond_to: oneshot::Sender<Result<(), Box<dyn Error + Send + Sync>>>,
+    },
 }
 
 fn run(store: &Store, module: &Module, points: u64) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -169,14 +194,21 @@ fn run(store: &Store, module: &Module, points: u64) -> Result<(), Box<dyn Error 
         let _ = init.call();
     }
 
-    let reduce = instance.exports.get_function("reduce")?.native::<u64, ()>()?;
+    let reduce = instance
+        .exports
+        .get_function("reduce")?
+        .native::<u64, ()>()?;
 
     let start = std::time::Instant::now();
     println!("Running Wasm reduce...");
     let result = reduce.call(0);
     let duration = start.elapsed();
     let remaining_points = get_remaining_points_value(&instance);
-    println!("Wasm reduce: time {} us, gas used {}", duration.as_micros(), 1_000_000 - remaining_points);
+    println!(
+        "Wasm reduce: time {} us, gas used {}",
+        duration.as_micros(),
+        1_000_000 - remaining_points
+    );
     println!();
 
     if let Some(err) = result.err() {
@@ -207,7 +239,11 @@ fn run(store: &Store, module: &Module, points: u64) -> Result<(), Box<dyn Error 
     Ok(())
 }
 
-fn add(modules: &mut HashMap<Hash, Module>, store: &Store, wasm_bytes: impl AsRef<[u8]>) -> Result<Hash, Box<dyn Error + Send + Sync>> {
+fn add(
+    modules: &mut HashMap<Hash, Module>,
+    store: &Store,
+    wasm_bytes: impl AsRef<[u8]>,
+) -> Result<Hash, Box<dyn Error + Send + Sync>> {
     let hash = hash_bytes(&wasm_bytes);
     let module = Module::new(store, wasm_bytes)?;
     let mut found = false;
@@ -237,7 +273,6 @@ struct HostActor {
 }
 
 impl HostActor {
-
     pub fn spawn() -> Host {
         let (tx, mut rx) = mpsc::channel(8);
         tokio::spawn(async move {
@@ -268,20 +303,20 @@ impl HostActor {
         let store = Store::new(&Universal::new(compiler_config).engine());
         let modules: HashMap<Hash, Module> = HashMap::new();
 
-        Self {
-            store,
-            modules,
-        }
+        Self { store, modules }
     }
 
     fn handle_message(&mut self, message: HostCommand) {
         match message {
-            HostCommand::Add { wasm_bytes, respond_to } => {
+            HostCommand::Add {
+                wasm_bytes,
+                respond_to,
+            } => {
                 respond_to.send(self.add(wasm_bytes)).unwrap();
-            },
+            }
             HostCommand::Run { hash, respond_to } => {
                 respond_to.send(self.run(hash)).unwrap();
-            },
+            }
         }
     }
 
@@ -322,7 +357,7 @@ impl HostActor {
         let module = self.modules.get(&hash);
         let module = match module {
             Some(x) => x,
-            None => return Err("No such module.".into())
+            None => return Err("No such module.".into()),
         };
 
         let import_object = imports! {
@@ -360,14 +395,21 @@ impl HostActor {
             let _ = init.call();
         }
 
-        let reduce = instance.exports.get_function("reduce")?.native::<u64, ()>()?;
+        let reduce = instance
+            .exports
+            .get_function("reduce")?
+            .native::<u64, ()>()?;
 
         let start = std::time::Instant::now();
         println!("Running Wasm reduce...");
         let result = reduce.call(0);
         let duration = start.elapsed();
         let remaining_points = get_remaining_points_value(&instance);
-        println!("Wasm reduce: time {} us, gas used {}", duration.as_micros(), 1_000_000 - remaining_points);
+        println!(
+            "Wasm reduce: time {} us, gas used {}",
+            duration.as_micros(),
+            1_000_000 - remaining_points
+        );
         println!();
 
         if let Some(err) = result.err() {
@@ -397,25 +439,38 @@ impl HostActor {
         }
         Ok(())
     }
-
 }
 
 #[derive(Clone)]
 pub struct Host {
-    tx: mpsc::Sender<HostCommand>
+    tx: mpsc::Sender<HostCommand>,
 }
 
 impl Host {
-
-    pub async fn init_module(&self, identity: String, name: String, wasm_bytes: Vec<u8>) -> Result<Hash, Box<dyn Error + Send + Sync>> {
+    pub async fn init_module(
+        &self,
+        identity: String,
+        name: String,
+        wasm_bytes: Vec<u8>,
+    ) -> Result<Hash, Box<dyn Error + Send + Sync>> {
         let (tx, rx) = oneshot::channel::<Result<Hash, Box<dyn Error + Send + Sync>>>();
-        self.tx.send(HostCommand::Add { wasm_bytes, respond_to: tx }).await?;
+        self.tx
+            .send(HostCommand::Add {
+                wasm_bytes,
+                respond_to: tx,
+            })
+            .await?;
         rx.await.unwrap()
     }
 
-    pub async fn run_reducer(&self, hash: Hash) -> Result<(), Box<dyn Error + Send + Sync>>  {
+    pub async fn run_reducer(&self, hash: Hash) -> Result<(), Box<dyn Error + Send + Sync>> {
         let (tx, rx) = oneshot::channel::<Result<(), Box<dyn Error + Send + Sync>>>();
-        self.tx.send(HostCommand::Run { hash, respond_to: tx }).await?;
+        self.tx
+            .send(HostCommand::Run {
+                hash,
+                respond_to: tx,
+            })
+            .await?;
         rx.await.unwrap()
     }
 }
@@ -483,9 +538,9 @@ impl Host {
 //     scan();
 
 //     rollback_tx();
-    
+
 //     scan();
-    
+
 //     let start = std::time::Instant::now();
 //     println!("Running Wasm reduce...");
 //     reduce.call(34234)?;
@@ -495,16 +550,16 @@ impl Host {
 //     println!();
 
 //     scan();
-    
+
 //     rollback_tx();
-   
+
 //     let start = std::time::Instant::now();
 //     println!("Running Rust reduce...");
 //     rust_reduce();
 //     let duration = start.elapsed();
 //     println!("Rust reduce: time {} us", duration.as_micros());
 //     println!();
-    
+
 //     commit_tx();
 
 //     scan();

@@ -1,17 +1,17 @@
+use crate::api;
 use gotham::anyhow::anyhow;
 use gotham::handler::HandlerError;
 use gotham::handler::SimpleHandlerResult;
+use gotham::prelude::FromState;
 use gotham::prelude::StaticResponseExtender;
 use gotham::router::builder::*;
-use gotham::prelude::FromState;
 use gotham::router::Router;
 use gotham::state::State;
 use gotham::state::StateData;
-use hyper::Body;
 use hyper::body::HttpBody;
+use hyper::Body;
 use hyper::{Response, StatusCode};
 use serde::Deserialize;
-use crate::api;
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct DatabaseInitParams {
@@ -24,21 +24,19 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
     let body = state.borrow_mut::<Body>();
     let data = body.data().await;
     if data.is_none() {
-        return Err(
-            HandlerError::from(anyhow!("Missing request body."))
-            .with_status(StatusCode::BAD_REQUEST)
-        );
+        return Err(HandlerError::from(anyhow!("Missing request body."))
+            .with_status(StatusCode::BAD_REQUEST));
     }
     let data = data.unwrap();
     let wasm_bytes = data.unwrap().to_vec();
 
     match api::database::init_module(namespace, name, wasm_bytes).await {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
             println!("{}", e)
-        },
+        }
     }
-    
+
     let res = Response::builder()
         .status(StatusCode::OK)
         .body(Body::empty())

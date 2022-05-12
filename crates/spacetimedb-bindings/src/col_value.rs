@@ -1,6 +1,5 @@
-
-use std::fmt::Display;
 use super::col_type::ColType;
+use std::fmt::Display;
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Debug, PartialOrd, Ord)]
 pub enum ColValue {
@@ -40,55 +39,49 @@ impl ColValue {
 
     pub fn from_data(col_type: &ColType, data: &[u8]) -> Self {
         match col_type {
-            ColType::U8 => {
-                ColValue::U8(data[0])
-            },
+            ColType::U8 => ColValue::U8(data[0]),
             ColType::U16 => {
                 let mut dst = [0u8; 2];
                 dst.copy_from_slice(data);
                 ColValue::U16(u16::from_le_bytes(dst))
-            },
+            }
             ColType::U32 => {
                 let mut dst = [0u8; 4];
                 dst.copy_from_slice(&data[0..4]);
                 ColValue::U32(u32::from_le_bytes(dst))
-            },
+            }
             ColType::U64 => {
                 let mut dst = [0u8; 8];
                 dst.copy_from_slice(data);
                 ColValue::U64(u64::from_le_bytes(dst))
-            },
+            }
             ColType::U128 => {
                 let mut dst = [0u8; 16];
                 dst.copy_from_slice(data);
                 ColValue::U128(u128::from_le_bytes(dst))
-            },
-            ColType::I8 => {
-                ColValue::I8(data[0] as i8)
-            },
+            }
+            ColType::I8 => ColValue::I8(data[0] as i8),
             ColType::I16 => {
                 let mut dst = [0u8; 2];
                 dst.copy_from_slice(data);
                 ColValue::I16(i16::from_le_bytes(dst))
-            },
+            }
             ColType::I32 => {
                 let mut dst = [0u8; 4];
                 dst.copy_from_slice(data);
                 ColValue::I32(i32::from_le_bytes(dst))
-            },
+            }
             ColType::I64 => {
                 let mut dst = [0u8; 8];
                 dst.copy_from_slice(data);
                 ColValue::I64(i64::from_le_bytes(dst))
-            },
+            }
             ColType::I128 => {
                 let mut dst = [0u8; 16];
                 dst.copy_from_slice(data);
                 ColValue::I128(i128::from_le_bytes(dst))
-            },
-            ColType::Bool => {
-                ColValue::Bool(if data[0] == 0 {false} else {true})
-            },
+            }
+            ColType::Bool => ColValue::Bool(if data[0] == 0 { false } else { true }),
             // ColType::F32 => {
             //     let mut dst = [0u8; 4];
             //     dst.copy_from_slice(data);
@@ -114,7 +107,7 @@ impl ColValue {
             ColValue::I32(x) => x.to_le_bytes().to_vec(),
             ColValue::I64(x) => x.to_le_bytes().to_vec(),
             ColValue::I128(x) => x.to_le_bytes().to_vec(),
-            ColValue::Bool(x) => (if *x { 1 as u8 } else { 0 as u8}).to_le_bytes().to_vec(),
+            ColValue::Bool(x) => (if *x { 1 as u8 } else { 0 as u8 }).to_le_bytes().to_vec(),
             // ColValue::F32(x) => x.to_le_bytes().to_vec(),
             // ColValue::F64(x) => x.to_le_bytes().to_vec(),
         }
@@ -126,37 +119,37 @@ impl Display for ColValue {
         match self {
             ColValue::U8(v) => {
                 write!(f, "{}", *v)
-            },
+            }
             ColValue::U16(v) => {
                 write!(f, "{}", *v)
-            },
+            }
             ColValue::U32(v) => {
                 write!(f, "{}", *v)
-            },
+            }
             ColValue::U64(v) => {
                 write!(f, "{}", *v)
-            },
+            }
             ColValue::U128(v) => {
                 write!(f, "{}", *v)
-            },
+            }
             ColValue::I8(v) => {
                 write!(f, "{}", *v)
-            },
+            }
             ColValue::I16(v) => {
                 write!(f, "{}", *v)
-            },
+            }
             ColValue::I32(v) => {
                 write!(f, "{}", *v)
-            },
+            }
             ColValue::I64(v) => {
                 write!(f, "{}", *v)
-            },
+            }
             ColValue::I128(v) => {
                 write!(f, "{}", *v)
-            },
+            }
             ColValue::Bool(v) => {
                 write!(f, "{}", *v)
-            },
+            }
         }
     }
 }

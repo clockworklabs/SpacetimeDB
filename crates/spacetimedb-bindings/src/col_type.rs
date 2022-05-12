@@ -1,4 +1,3 @@
-
 #[derive(PartialEq, Debug)]
 pub enum ColType {
     U8,

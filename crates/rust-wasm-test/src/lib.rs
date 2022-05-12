@@ -1,5 +1,5 @@
-use spacetimedb_bindings::*;
 use spacetimedb_bindings::println;
+use spacetimedb_bindings::*;
 
 /*
 TODO:
@@ -12,20 +12,30 @@ Impl stdb as a server
 Impl uploading new contract
 */
 
-
 #[no_mangle]
-pub extern fn reduce(_actor: u64) {
-    create_table(0, vec![
-        Column { col_id: 0, col_type: ColType::U32 },
-        Column { col_id: 1, col_type: ColType::U32 },
-        Column { col_id: 2, col_type: ColType::U32 },
-    ]);
+pub extern "C" fn reduce(_actor: u64) {
+    create_table(
+        0,
+        vec![
+            Column {
+                col_id: 0,
+                col_type: ColType::U32,
+            },
+            Column {
+                col_id: 1,
+                col_type: ColType::U32,
+            },
+            Column {
+                col_id: 2,
+                col_type: ColType::U32,
+            },
+        ],
+    );
     for i in 0..100 {
-        insert(0, vec![
-            ColValue::U32(i),
-            ColValue::U32(1),
-            ColValue::U32(2),
-        ]);
+        insert(
+            0,
+            vec![ColValue::U32(i), ColValue::U32(1), ColValue::U32(2)],
+        );
     }
     for row in iter(0).unwrap() {
         println!("{:?}", row);

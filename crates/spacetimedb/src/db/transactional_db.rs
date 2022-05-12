@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
-use sha3::digest::{generic_array::GenericArray, generic_array::typenum::U32};
 use crate::hash::hash_bytes;
+use sha3::digest::{generic_array::typenum::U32, generic_array::GenericArray};
+use std::collections::{HashMap, HashSet};
 
 use super::object_db::ObjectDB;
 
@@ -54,12 +54,12 @@ impl Write {
                 bytes.push(1);
                 bytes.extend(set_id.to_le_bytes());
                 bytes.extend(hash);
-            },
+            }
             Write::Delete { set_id, hash } => {
                 bytes.push(0);
                 bytes.extend(set_id.to_le_bytes());
                 bytes.extend(hash);
-            },
+            }
         }
     }
 }
@@ -77,7 +77,7 @@ impl Commit {
             return Commit {
                 parent_commit_hash: None,
                 writes: Vec::new(),
-            }
+            };
         }
 
         let start = 0;
@@ -112,7 +112,6 @@ impl Commit {
             update.encode(bytes);
         }
     }
-
 }
 
 // TODO: implement some kind of tag/dataset/namespace system
@@ -150,7 +149,10 @@ impl TransactionalDB {
     }
 
     fn latest_commit(&self) -> Hash {
-        self.open_commits.last().map(|h| *h).unwrap_or(self.closed_commit)
+        self.open_commits
+            .last()
+            .map(|h| *h)
+            .unwrap_or(self.closed_commit)
     }
 
     pub fn begin_tx(&mut self) -> Transaction {
@@ -226,11 +228,18 @@ impl TransactionalDB {
         self.open_commits.push(commit_hash);
 
         // Remove my branch
-        let index = self.branched_commits.iter().position(|hash| *hash == tx.parent_commit).unwrap();
+        let index = self
+            .branched_commits
+            .iter()
+            .position(|hash| *hash == tx.parent_commit)
+            .unwrap();
         self.branched_commits.swap_remove(index);
 
         if tx.parent_commit == self.closed_commit {
-            let index = self.branched_commits.iter().position(|hash| *hash == tx.parent_commit);
+            let index = self
+                .branched_commits
+                .iter()
+                .position(|hash| *hash == tx.parent_commit);
             if index == None {
                 // I was the last branch preventing closing of the next open commit.
                 // Close the open commits until the next branch.
@@ -251,7 +260,7 @@ impl TransactionalDB {
                                         hash_set.insert(hash);
                                         self.closed_state.insert(set_id, hash_set);
                                     }
-                                },
+                                }
                                 Write::Delete { set_id, hash } => {
                                     if let Some(closed_set) = self.closed_state.get_mut(&set_id) {
                                         closed_set.remove(&hash);
@@ -263,7 +272,7 @@ impl TransactionalDB {
                                     } else {
                                         // Do nothing
                                     }
-                                },
+                                }
                             }
                         }
                         // If someone branched off of me, we're done otherwise continue
@@ -293,16 +302,16 @@ impl TransactionalDB {
         // Search back through this transaction
         for i in (0..tx.writes.len()).rev() {
             match &tx.writes[i] {
-                Write::Insert { set_id: s , hash: h } => {
+                Write::Insert { set_id: s, hash: h } => {
                     if *h == hash && *s == set_id {
                         return Some(row_obj.unwrap());
-                    } 
-                },
-                Write::Delete { set_id: s , hash: h } => {
+                    }
+                }
+                Write::Delete { set_id: s, hash: h } => {
                     if *h == hash && *s == set_id {
                         return None;
                     }
-                },
+                }
             };
         }
 
@@ -310,23 +319,27 @@ impl TransactionalDB {
         // if you find a delete it's not there.
         // if you find an insert it is there. If you find no mention of it, then whether
         // it's there or not is dependent on the closed_state.
-        let mut i = self.open_commits.iter().position(|h| *h == tx.parent_commit).unwrap_or(0);
+        let mut i = self
+            .open_commits
+            .iter()
+            .position(|h| *h == tx.parent_commit)
+            .unwrap_or(0);
         loop {
             let next_open = self.open_commits.get(i).map(|h| *h);
             if let Some(next_open) = next_open {
                 let commit_obj = Commit::decode(&mut self.odb.get(next_open).unwrap());
                 for write in &commit_obj.writes {
                     match write {
-                        Write::Insert { set_id: s , hash: h } => {
+                        Write::Insert { set_id: s, hash: h } => {
                             if *h == hash && *s == set_id {
                                 return row_obj;
                             }
-                        },
-                        Write::Delete { set_id: s , hash: h } => {
+                        }
+                        Write::Delete { set_id: s, hash: h } => {
                             if *h == hash && *s == set_id {
                                 return None;
                             }
-                        },
+                        }
                     }
                 }
             } else {
@@ -352,7 +365,9 @@ impl TransactionalDB {
             tx,
             set_id,
             scanned: HashSet::new(),
-            scan_stage: Some(ScanStage::CurTx { index: tx_writes_index }),
+            scan_stage: Some(ScanStage::CurTx {
+                index: tx_writes_index,
+            }),
         }
     }
 
@@ -365,19 +380,19 @@ impl TransactionalDB {
         for i in (0..tx.writes.len()).rev() {
             let write = tx.writes[i];
             match write {
-                Write::Insert { set_id: s , hash: h } => {
+                Write::Insert { set_id: s, hash: h } => {
                     if h == hash && s == set_id {
                         found = true;
                         tx.writes[i] = Write::Delete { set_id, hash };
                         break;
                     }
-                },
-                Write::Delete { set_id: s , hash: h } => {
+                }
+                Write::Delete { set_id: s, hash: h } => {
                     if h == hash && s == set_id {
                         found = true;
                         break;
                     }
-                },
+                }
             }
         }
         if !found {
@@ -396,19 +411,19 @@ impl TransactionalDB {
         for i in (0..tx.writes.len()).rev() {
             let write = tx.writes[i];
             match write {
-                Write::Insert { set_id: s , hash: h } => {
+                Write::Insert { set_id: s, hash: h } => {
                     if h == hash && s == set_id {
                         found = true;
                         break;
                     }
-                },
+                }
                 Write::Delete { set_id: s, hash: h } => {
                     if h == hash && s == set_id {
                         found = true;
                         tx.writes[i] = Write::Insert { set_id, hash };
                         break;
                     }
-                },
+                }
             }
         }
         if !found {
@@ -430,16 +445,21 @@ pub struct ScanIter<'a> {
 }
 
 enum ScanStage<'a> {
-    CurTx { index: i32 },
-    OpenCommits { commit: Commit, write_index: Option<usize> },
-    ClosedSet(std::collections::hash_set::Iter<'a, Hash>) 
+    CurTx {
+        index: i32,
+    },
+    OpenCommits {
+        commit: Commit,
+        write_index: Option<usize>,
+    },
+    ClosedSet(std::collections::hash_set::Iter<'a, Hash>),
 }
 
 impl<'a> Iterator for ScanIter<'a> {
     type Item = &'a [u8];
 
     fn next(&mut self) -> Option<Self::Item> {
-        let scanned  = &mut self.scanned;
+        let scanned = &mut self.scanned;
         let set_id = self.set_id;
 
         loop {
@@ -447,12 +467,24 @@ impl<'a> Iterator for ScanIter<'a> {
                 Some(ScanStage::CurTx { index }) => {
                     // Search back through this transaction
                     if index == -1 {
-                        let open_commits_index = self.txdb.open_commits.iter().position(|h| *h == self.tx.parent_commit);
+                        let open_commits_index = self
+                            .txdb
+                            .open_commits
+                            .iter()
+                            .position(|h| *h == self.tx.parent_commit);
                         if let Some(open_commits_index) = open_commits_index {
                             let open_commit = self.txdb.open_commits[open_commits_index];
-                            let commit= Commit::decode(&mut self.txdb.odb.get(open_commit).unwrap());
-                            let index = if commit.writes.len() > 0 { Some(commit.writes.len() - 1) } else { None };
-                            self.scan_stage = Some(ScanStage::OpenCommits { commit, write_index: index });
+                            let commit =
+                                Commit::decode(&mut self.txdb.odb.get(open_commit).unwrap());
+                            let index = if commit.writes.len() > 0 {
+                                Some(commit.writes.len() - 1)
+                            } else {
+                                None
+                            };
+                            self.scan_stage = Some(ScanStage::OpenCommits {
+                                commit,
+                                write_index: index,
+                            });
                         } else {
                             if let Some(closed_set) = self.txdb.closed_state.get(&set_id) {
                                 self.scan_stage = Some(ScanStage::ClosedSet(closed_set.iter()));
@@ -465,27 +497,36 @@ impl<'a> Iterator for ScanIter<'a> {
                         self.scan_stage = Some(ScanStage::CurTx { index: index - 1 });
                     }
                     match &self.tx.writes[index as usize] {
-                        Write::Insert { set_id: s , hash: h } => {
+                        Write::Insert { set_id: s, hash: h } => {
                             if *s == set_id {
-                                self.tx.reads.push(Read { set_id: *s, hash: *h });
+                                self.tx.reads.push(Read {
+                                    set_id: *s,
+                                    hash: *h,
+                                });
                                 let row_obj = self.txdb.odb.get(*h).unwrap();
                                 scanned.insert(*h);
                                 return Some(row_obj);
                             }
-                        },
-                        Write::Delete { set_id: s , hash: h } => {
+                        }
+                        Write::Delete { set_id: s, hash: h } => {
                             if *s == set_id {
-                                self.tx.reads.push(Read { set_id: *s, hash: *h });
+                                self.tx.reads.push(Read {
+                                    set_id: *s,
+                                    hash: *h,
+                                });
                                 scanned.insert(*h);
                             }
                         }
                     };
-                },
-                Some(ScanStage::OpenCommits { commit, write_index }) => {
+                }
+                Some(ScanStage::OpenCommits {
+                    commit,
+                    write_index,
+                }) => {
                     // Search backwards through all open commits that are parents of this transaction.
                     // if you find a delete it's not there.
                     // if you find an insert it is there. If you find no mention of it, then whether
-                    // it's there or not is dependent on the closed_state. 
+                    // it's there or not is dependent on the closed_state.
                     let parent = commit.parent_commit_hash;
                     let mut opt_index = write_index;
                     loop {
@@ -493,34 +534,51 @@ impl<'a> Iterator for ScanIter<'a> {
                             let write = &commit.writes[index];
                             opt_index = if index > 0 { Some(index - 1) } else { None };
                             match write {
-                                Write::Insert { set_id: s , hash: h } => {
+                                Write::Insert { set_id: s, hash: h } => {
                                     if *s == set_id && !scanned.contains(h) {
-                                        self.tx.reads.push(Read { set_id: *s, hash: *h });
+                                        self.tx.reads.push(Read {
+                                            set_id: *s,
+                                            hash: *h,
+                                        });
                                         let row_obj = self.txdb.odb.get(*h).unwrap();
                                         scanned.insert(*h);
-                                        self.scan_stage = Some(ScanStage::OpenCommits { commit, write_index: opt_index });
+                                        self.scan_stage = Some(ScanStage::OpenCommits {
+                                            commit,
+                                            write_index: opt_index,
+                                        });
                                         return Some(row_obj);
                                     }
-                                },
-                                Write::Delete { set_id: s , hash: h } => {
+                                }
+                                Write::Delete { set_id: s, hash: h } => {
                                     if *s == set_id {
-                                        self.tx.reads.push(Read { set_id: *s, hash: *h });
+                                        self.tx.reads.push(Read {
+                                            set_id: *s,
+                                            hash: *h,
+                                        });
                                         scanned.insert(*h);
                                     }
-                                },
+                                }
                             }
                         } else {
                             break;
                         }
                     }
                     // TODO: can be optimized by storing the index
-                    let open_commits_index = parent 
-                        .and_then(|parent| self.txdb.open_commits.iter().position(|h| *h == parent));
+                    let open_commits_index = parent.and_then(|parent| {
+                        self.txdb.open_commits.iter().position(|h| *h == parent)
+                    });
                     if let Some(open_commits_index) = open_commits_index {
                         let open_commit = self.txdb.open_commits[open_commits_index];
-                        let commit= Commit::decode(&mut self.txdb.odb.get(open_commit).unwrap());
-                        let index = if commit.writes.len() > 0 { Some(commit.writes.len() - 1) } else { None };
-                        self.scan_stage = Some(ScanStage::OpenCommits { commit, write_index: index });
+                        let commit = Commit::decode(&mut self.txdb.odb.get(open_commit).unwrap());
+                        let index = if commit.writes.len() > 0 {
+                            Some(commit.writes.len() - 1)
+                        } else {
+                            None
+                        };
+                        self.scan_stage = Some(ScanStage::OpenCommits {
+                            commit,
+                            write_index: index,
+                        });
                     } else {
                         if let Some(closed_set) = self.txdb.closed_state.get(&set_id) {
                             self.scan_stage = Some(ScanStage::ClosedSet(closed_set.iter()));
@@ -529,7 +587,7 @@ impl<'a> Iterator for ScanIter<'a> {
                         }
                     }
                     continue;
-                },
+                }
                 Some(ScanStage::ClosedSet(mut closed_set_iter)) => {
                     let h = closed_set_iter.next();
                     if let Some(h) = h {
@@ -542,7 +600,7 @@ impl<'a> Iterator for ScanIter<'a> {
                     } else {
                         return None;
                     }
-                },
+                }
                 None => {
                     return None;
                 }
@@ -553,24 +611,21 @@ impl<'a> Iterator for ScanIter<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::TransactionalDB;
     use crate::hash::hash_bytes;
     use crate::hash::Hash;
-    use super::TransactionalDB;
 
     unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
-        ::std::slice::from_raw_parts(
-            (p as *const T) as *const u8,
-            ::std::mem::size_of::<T>(),
-        )
+        ::std::slice::from_raw_parts((p as *const T) as *const u8, ::std::mem::size_of::<T>())
     }
-    
+
     #[repr(C, packed)]
     #[derive(Debug, Copy, Clone)]
     pub struct MyStruct {
         my_name: Hash,
         my_i32: i32,
         my_u64: u64,
-        my_hash: Hash
+        my_hash: Hash,
     }
 
     impl MyStruct {
@@ -600,12 +655,17 @@ mod tests {
     fn test_insert_and_seek_struct() {
         let mut db = TransactionalDB::new();
         let mut tx = db.begin_tx();
-        let row_key_1 = db.insert(&mut tx, 0, MyStruct {
-            my_name: hash_bytes(b"This is a byte string."),
-            my_i32: -1,
-            my_u64: 1,
-            my_hash: hash_bytes(b"This will be turned into a hash."),
-        }.encode());
+        let row_key_1 = db.insert(
+            &mut tx,
+            0,
+            MyStruct {
+                my_name: hash_bytes(b"This is a byte string."),
+                my_i32: -1,
+                my_u64: 1,
+                my_hash: hash_bytes(b"This will be turned into a hash."),
+            }
+            .encode(),
+        );
         db.commit_tx(tx);
 
         let mut tx = db.begin_tx();
@@ -619,19 +679,24 @@ mod tests {
     fn test_read_isolation() {
         let mut db = TransactionalDB::new();
         let mut tx_1 = db.begin_tx();
-        let row_key_1 = db.insert(&mut tx_1, 0, MyStruct {
-            my_name: hash_bytes(b"This is a byte string."),
-            my_i32: -1,
-            my_u64: 1,
-            my_hash: hash_bytes(b"This will be turned into a hash."),
-        }.encode());
+        let row_key_1 = db.insert(
+            &mut tx_1,
+            0,
+            MyStruct {
+                my_name: hash_bytes(b"This is a byte string."),
+                my_i32: -1,
+                my_u64: 1,
+                my_hash: hash_bytes(b"This will be turned into a hash."),
+            }
+            .encode(),
+        );
 
         let mut tx_2 = db.begin_tx();
         let row = db.seek(&mut tx_2, 0, row_key_1);
         assert!(row.is_none());
-        
+
         db.commit_tx(tx_1);
-        
+
         let mut tx_3 = db.begin_tx();
         let row = db.seek(&mut tx_3, 0, row_key_1);
         assert!(row.is_some());
@@ -641,22 +706,35 @@ mod tests {
     fn test_scan() {
         let mut db = TransactionalDB::new();
         let mut tx_1 = db.begin_tx();
-        let _row_key_1 = db.insert(&mut tx_1, 0, MyStruct {
-            my_name: hash_bytes(b"This is a byte string."),
-            my_i32: -1,
-            my_u64: 1,
-            my_hash: hash_bytes(b"This will be turned into a hash."),
-        }.encode());
-        let _row_key_2 = db.insert(&mut tx_1, 0, MyStruct {
-            my_name: hash_bytes(b"This is a byte string."),
-            my_i32: -2,
-            my_u64: 1,
-            my_hash: hash_bytes(b"This will be turned into a hash."),
-        }.encode());
-        
-        let mut scan_1 = db.scan(&mut tx_1, 0).map(|b| b.to_owned()).collect::<Vec<Vec<u8>>>();
+        let _row_key_1 = db.insert(
+            &mut tx_1,
+            0,
+            MyStruct {
+                my_name: hash_bytes(b"This is a byte string."),
+                my_i32: -1,
+                my_u64: 1,
+                my_hash: hash_bytes(b"This will be turned into a hash."),
+            }
+            .encode(),
+        );
+        let _row_key_2 = db.insert(
+            &mut tx_1,
+            0,
+            MyStruct {
+                my_name: hash_bytes(b"This is a byte string."),
+                my_i32: -2,
+                my_u64: 1,
+                my_hash: hash_bytes(b"This will be turned into a hash."),
+            }
+            .encode(),
+        );
+
+        let mut scan_1 = db
+            .scan(&mut tx_1, 0)
+            .map(|b| b.to_owned())
+            .collect::<Vec<Vec<u8>>>();
         scan_1.sort();
-        
+
         db.commit_tx(tx_1);
 
         let mut tx_2 = db.begin_tx();
@@ -678,17 +756,22 @@ mod tests {
     fn test_write_skew_conflict() {
         let mut db = TransactionalDB::new();
         let mut tx_1 = db.begin_tx();
-        let row_key_1 = db.insert(&mut tx_1, 0, MyStruct {
-            my_name: hash_bytes(b"This is a byte string."),
-            my_i32: -1,
-            my_u64: 1,
-            my_hash: hash_bytes(b"This will be turned into a hash."),
-        }.encode());
+        let row_key_1 = db.insert(
+            &mut tx_1,
+            0,
+            MyStruct {
+                my_name: hash_bytes(b"This is a byte string."),
+                my_i32: -1,
+                my_u64: 1,
+                my_hash: hash_bytes(b"This will be turned into a hash."),
+            }
+            .encode(),
+        );
 
         let mut tx_2 = db.begin_tx();
         let row = db.seek(&mut tx_2, 0, row_key_1);
         assert!(row.is_none());
-        
+
         assert!(db.commit_tx(tx_1));
         assert!(!db.commit_tx(tx_2));
     }
@@ -697,28 +780,38 @@ mod tests {
     fn test_write_skew_no_conflict() {
         let mut db = TransactionalDB::new();
         let mut tx_1 = db.begin_tx();
-        let row_key_1 = db.insert(&mut tx_1, 0, MyStruct {
-            my_name: hash_bytes(b"This is a byte string."),
-            my_i32: -1,
-            my_u64: 1,
-            my_hash: hash_bytes(b"This will be turned into a hash."),
-        }.encode());
-        let row_key_2 = db.insert(&mut tx_1, 0, MyStruct {
-            my_name: hash_bytes(b"This is a byte string."),
-            my_i32: -2,
-            my_u64: 1,
-            my_hash: hash_bytes(b"This will be turned into a hash."),
-        }.encode());
+        let row_key_1 = db.insert(
+            &mut tx_1,
+            0,
+            MyStruct {
+                my_name: hash_bytes(b"This is a byte string."),
+                my_i32: -1,
+                my_u64: 1,
+                my_hash: hash_bytes(b"This will be turned into a hash."),
+            }
+            .encode(),
+        );
+        let row_key_2 = db.insert(
+            &mut tx_1,
+            0,
+            MyStruct {
+                my_name: hash_bytes(b"This is a byte string."),
+                my_i32: -2,
+                my_u64: 1,
+                my_hash: hash_bytes(b"This will be turned into a hash."),
+            }
+            .encode(),
+        );
         assert!(db.commit_tx(tx_1));
 
         let mut tx_2 = db.begin_tx();
         let row = db.seek(&mut tx_2, 0, row_key_1);
         assert!(row.is_some());
         db.delete(&mut tx_2, 0, row_key_2);
-        
+
         let mut tx_3 = db.begin_tx();
         db.delete(&mut tx_3, 0, row_key_1);
-        
+
         assert!(db.commit_tx(tx_2));
         assert!(db.commit_tx(tx_3));
     }
@@ -728,7 +821,7 @@ mod tests {
         let start = std::time::Instant::now();
         let mut db = TransactionalDB::new();
         let iterations: u128 = 1000;
-        println!("{} odb base size bytes",  db.odb.total_mem_size_bytes());
+        println!("{} odb base size bytes", db.odb.total_mem_size_bytes());
 
         let mut raw_data_size = 0;
         for i in 0..iterations {
@@ -738,13 +831,15 @@ mod tests {
                 my_i32: -(i as i32),
                 my_u64: i as u64,
                 my_hash: hash_bytes(b"This will be turned into a hash."),
-            }.encode();
+            }
+            .encode();
             let val_2 = MyStruct {
                 my_name: hash_bytes(b"This is a byte string."),
                 my_i32: -2 * (i as i32),
                 my_u64: i as u64,
                 my_hash: hash_bytes(b"This will be turned into a hash."),
-            }.encode();
+            }
+            .encode();
 
             raw_data_size += val_1.len() as u64;
             raw_data_size += val_2.len() as u64;
@@ -755,7 +850,7 @@ mod tests {
             assert!(db.commit_tx(tx_1));
         }
         let duration = start.elapsed();
-        println!("{} odb after size bytes",  db.odb.total_mem_size_bytes());
+        println!("{} odb after size bytes", db.odb.total_mem_size_bytes());
 
         // each key is this long: "qwertyuiopasdfghjklzxcvbnm123456";
         // key x2: 64 bytes
@@ -763,10 +858,10 @@ mod tests {
         // commit: 98 bytes <parent(32)><write(<type(1)><hash(32)>)><write(<type(1)><hash(32)>)>
         // total: 194
         let data_overhead = db.odb.total_mem_size_bytes() - raw_data_size;
-        println!("{} overhead bytes per tx",  data_overhead / iterations as u64);
+        println!(
+            "{} overhead bytes per tx",
+            data_overhead / iterations as u64
+        );
         println!("{} us per tx", duration.as_micros() / iterations);
     }
-
 }
-
-
