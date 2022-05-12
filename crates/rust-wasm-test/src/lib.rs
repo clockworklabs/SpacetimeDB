@@ -32,10 +32,7 @@ pub extern "C" fn reduce(_actor: u64) {
         ],
     );
     for i in 0..100 {
-        insert(
-            0,
-            vec![ColValue::U32(i), ColValue::U32(1), ColValue::U32(2)],
-        );
+        insert(0, vec![ColValue::U32(i), ColValue::U32(1), ColValue::U32(2)]);
     }
     for row in iter(0).unwrap() {
         println!("{:?}", row);

@@ -1,0 +1,4 @@
+max_width = 120
+ignore = [
+    "crates/spacetimedb/src/messages.rs",
+]

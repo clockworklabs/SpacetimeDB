@@ -14,8 +14,8 @@ use tokio::{
     sync::{mpsc, oneshot},
 };
 use wasmer::{
-    imports, wasmparser::Operator, Array, CompilerConfig, Function, Instance, LazyInit, Memory,
-    Module, NativeFunc, Store, Universal, ValType, WasmPtr, WasmerEnv,
+    imports, wasmparser::Operator, Array, CompilerConfig, Function, Instance, LazyInit, Memory, Module, NativeFunc,
+    Store, Universal, ValType, WasmPtr, WasmerEnv,
 };
 use wasmer_middlewares::{
     metering::{get_remaining_points, set_remaining_points, MeteringPoints},
@@ -72,10 +72,7 @@ fn read_output_bytes(memory: &Memory, ptr: u32) -> Vec<u8> {
     let view = memory.view::<u8>();
     let start = ptr as usize;
     let end = ptr as usize + 256;
-    view[start..end]
-        .iter()
-        .map(|c| c.get())
-        .collect::<Vec<u8>>()
+    view[start..end].iter().map(|c| c.get()).collect::<Vec<u8>>()
 }
 
 fn insert(env: &ReducerEnv, table_id: u32, ptr: u32) {
@@ -194,10 +191,7 @@ fn run(store: &Store, module: &Module, points: u64) -> Result<(), Box<dyn Error 
         let _ = init.call();
     }
 
-    let reduce = instance
-        .exports
-        .get_function("reduce")?
-        .native::<u64, ()>()?;
+    let reduce = instance.exports.get_function("reduce")?.native::<u64, ()>()?;
 
     let start = std::time::Instant::now();
     println!("Running Wasm reduce...");
@@ -308,10 +302,7 @@ impl HostActor {
 
     fn handle_message(&mut self, message: HostCommand) {
         match message {
-            HostCommand::Add {
-                wasm_bytes,
-                respond_to,
-            } => {
+            HostCommand::Add { wasm_bytes, respond_to } => {
                 respond_to.send(self.add(wasm_bytes)).unwrap();
             }
             HostCommand::Run { hash, respond_to } => {
@@ -395,10 +386,7 @@ impl HostActor {
             let _ = init.call();
         }
 
-        let reduce = instance
-            .exports
-            .get_function("reduce")?
-            .native::<u64, ()>()?;
+        let reduce = instance.exports.get_function("reduce")?.native::<u64, ()>()?;
 
         let start = std::time::Instant::now();
         println!("Running Wasm reduce...");
@@ -465,12 +453,7 @@ impl Host {
 
     pub async fn run_reducer(&self, hash: Hash) -> Result<(), Box<dyn Error + Send + Sync>> {
         let (tx, rx) = oneshot::channel::<Result<(), Box<dyn Error + Send + Sync>>>();
-        self.tx
-            .send(HostCommand::Run {
-                hash,
-                respond_to: tx,
-            })
-            .await?;
+        self.tx.send(HostCommand::Run { hash, respond_to: tx }).await?;
         rx.await.unwrap()
     }
 }

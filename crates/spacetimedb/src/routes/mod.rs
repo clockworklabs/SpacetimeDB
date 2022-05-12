@@ -24,8 +24,7 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
     let body = state.borrow_mut::<Body>();
     let data = body.data().await;
     if data.is_none() {
-        return Err(HandlerError::from(anyhow!("Missing request body."))
-            .with_status(StatusCode::BAD_REQUEST));
+        return Err(HandlerError::from(anyhow!("Missing request body.")).with_status(StatusCode::BAD_REQUEST));
     }
     let data = data.unwrap();
     let wasm_bytes = data.unwrap().to_vec();
@@ -37,10 +36,7 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
         }
     }
 
-    let res = Response::builder()
-        .status(StatusCode::OK)
-        .body(Body::empty())
-        .unwrap();
+    let res = Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap();
 
     Ok(res)
 }
@@ -69,11 +65,7 @@ mod tests {
         let uri = "http://localhost/database/init/clockworklabs/bitcraft";
         let body = Body::empty();
         let mime = "application/octet-stream".parse().unwrap();
-        let response = test_server
-            .client()
-            .post(uri, body, mime)
-            .perform()
-            .unwrap();
+        let response = test_server.client().post(uri, body, mime).perform().unwrap();
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }

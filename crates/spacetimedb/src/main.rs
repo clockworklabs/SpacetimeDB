@@ -11,13 +11,9 @@ use wasmer::wat2wasm;
 async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
     configure_logging();
 
-    let path = fs::canonicalize(format!(
-        "{}{}",
-        env!("CARGO_MANIFEST_DIR"),
-        "/rust-wasm-test/wat"
-    ))
-    .await
-    .unwrap();
+    let path = fs::canonicalize(format!("{}{}", env!("CARGO_MANIFEST_DIR"), "/rust-wasm-test/wat"))
+        .await
+        .unwrap();
     let wat = fs::read(path).await?;
 
     // println!("{}", String::from_utf8(wat.to_owned()).unwrap());

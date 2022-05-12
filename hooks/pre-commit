@@ -49,4 +49,4 @@
 # exec git diff-index --check --cached $against --
 
 # Run the rust formatter
-cargo fmt
+cargo +nightly fmt

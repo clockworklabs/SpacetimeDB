@@ -133,12 +133,7 @@ impl SpacetimeDB {
         }
     }
 
-    fn insert_row_raw(
-        txdb: &mut TransactionalDB,
-        tx: &mut Transaction,
-        table_id: u32,
-        row: Vec<ColValue>,
-    ) {
+    fn insert_row_raw(txdb: &mut TransactionalDB, tx: &mut Transaction, table_id: u32, row: Vec<ColValue>) {
         let mut bytes = Vec::new();
         Self::encode_row(row, &mut bytes);
         txdb.insert(tx, table_id, bytes);
@@ -156,12 +151,7 @@ impl SpacetimeDB {
         self.txdb.commit_tx(tx);
     }
 
-    pub fn create_table(
-        &mut self,
-        tx: &mut Transaction,
-        table_id: u32,
-        schema: Schema,
-    ) -> Result<(), String> {
+    pub fn create_table(&mut self, tx: &mut Transaction, table_id: u32, schema: Schema) -> Result<(), String> {
         // Scan st_tables for this id
 
         // TODO: allocations remove with fixes to ownership
@@ -195,21 +185,11 @@ impl SpacetimeDB {
     }
 
     pub fn drop_table(&mut self, tx: &mut Transaction, table_id: u32) -> Result<(), String> {
-        let t = self.delete_range(
-            tx,
-            ST_TABLES_ID,
-            0,
-            ColValue::U32(table_id)..ColValue::U32(table_id),
-        );
+        let t = self.delete_range(tx, ST_TABLES_ID, 0, ColValue::U32(table_id)..ColValue::U32(table_id));
         if t.is_none() {
             return Err("No such table.".into());
         }
-        self.delete_range(
-            tx,
-            ST_COLUMNS_ID,
-            0,
-            ColValue::U32(table_id)..ColValue::U32(table_id),
-        );
+        self.delete_range(tx, ST_COLUMNS_ID, 0, ColValue::U32(table_id)..ColValue::U32(table_id));
         Ok(())
     }
 
@@ -238,10 +218,7 @@ impl SpacetimeDB {
         f: fn(&Vec<ColValue>) -> bool,
     ) -> Option<FilterIter<'a>> {
         if let Some(table_iter) = self.iter(tx, table_id) {
-            return Some(FilterIter {
-                table_iter,
-                filter: f,
-            });
+            return Some(FilterIter { table_iter, filter: f });
         }
         None
     }
@@ -307,13 +284,7 @@ impl SpacetimeDB {
         None
     }
 
-    pub fn delete_eq(
-        &mut self,
-        tx: &mut Transaction,
-        table_id: u32,
-        col_id: u32,
-        value: ColValue,
-    ) -> Option<usize> {
+    pub fn delete_eq(&mut self, tx: &mut Transaction, table_id: u32, col_id: u32, value: ColValue) -> Option<usize> {
         if let Some(x) = self.filter_eq(tx, table_id, col_id, value) {
             let mut hashes = Vec::new();
             let mut bytes = Vec::new();
@@ -516,17 +487,10 @@ mod tests {
         stdb.insert(&mut tx, 0, vec![ColValue::I32(0)]);
         stdb.insert(&mut tx, 0, vec![ColValue::I32(1)]);
 
-        let mut rows = stdb
-            .iter(&mut tx, 0)
-            .unwrap()
-            .map(|r| r[0])
-            .collect::<Vec<ColValue>>();
+        let mut rows = stdb.iter(&mut tx, 0).unwrap().map(|r| r[0]).collect::<Vec<ColValue>>();
         rows.sort();
 
-        assert_eq!(
-            rows,
-            vec![ColValue::I32(-1), ColValue::I32(0), ColValue::I32(1)]
-        );
+        assert_eq!(rows, vec![ColValue::I32(-1), ColValue::I32(0), ColValue::I32(1)]);
     }
 
     #[test]
@@ -550,17 +514,10 @@ mod tests {
         stdb.commit_tx(tx);
 
         let mut tx = stdb.begin_tx();
-        let mut rows = stdb
-            .iter(&mut tx, 0)
-            .unwrap()
-            .map(|r| r[0])
-            .collect::<Vec<ColValue>>();
+        let mut rows = stdb.iter(&mut tx, 0).unwrap().map(|r| r[0]).collect::<Vec<ColValue>>();
         rows.sort();
 
-        assert_eq!(
-            rows,
-            vec![ColValue::I32(-1), ColValue::I32(0), ColValue::I32(1)]
-        );
+        assert_eq!(rows, vec![ColValue::I32(-1), ColValue::I32(0), ColValue::I32(1)]);
     }
 
     #[test]
@@ -666,11 +623,7 @@ mod tests {
         drop(tx);
 
         let mut tx = stdb.begin_tx();
-        let mut rows = stdb
-            .iter(&mut tx, 0)
-            .unwrap()
-            .map(|r| r[0])
-            .collect::<Vec<ColValue>>();
+        let mut rows = stdb.iter(&mut tx, 0).unwrap().map(|r| r[0]).collect::<Vec<ColValue>>();
         rows.sort();
 
         assert_eq!(rows, vec![]);
