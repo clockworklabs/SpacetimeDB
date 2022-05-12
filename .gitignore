@@ -191,6 +191,3 @@ Cargo.lock
 
 ## JetBrains
 .idea/
-
-# Rust format temporary files
-*.rs.rustfmt
