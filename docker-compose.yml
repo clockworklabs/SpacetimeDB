@@ -1,0 +1,31 @@
+version: "3.6"
+
+services:
+  server:
+    working_dir: /usr/src/app
+    build:
+      context: ./
+      dockerfile: ./crates/spacetimedb/Dockerfile
+    volumes:
+      - /odb
+    ports:
+      - "3000:3000"
+    # I have no idea why I can't ignore the specific 'src/game/handlers/mod.rs' file
+    entrypoint: bash -c "RUST_BACKTRACE=1 cargo watch --why -x 'run'"
+    environment:
+      ENV: dev
+
+  postgres:
+    build:
+      context: ./packages/postgres
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      PGPASSFILE: /etc/pg/.pgpass
+
+  prometheus:
+    build:
+      context: ./packages/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./packages/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
