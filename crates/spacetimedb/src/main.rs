@@ -1,8 +1,8 @@
 use log::*;
-use spacetimedb::hash::Hash;
-use spacetimedb::db::persistent_object_db::odb;
-use spacetimedb::postgres;
 use spacetimedb::api;
+use spacetimedb::db::persistent_object_db::odb;
+use spacetimedb::hash::Hash;
+use spacetimedb::postgres;
 use spacetimedb::routes::router;
 use spacetimedb::wasm_host;
 use std::error::Error;
@@ -22,11 +22,16 @@ async fn startup() {
     // }
 
     let client = postgres::get_client().await;
-    let result = client.query(r"
+    let result = client
+        .query(
+            r"
         SELECT DISTINCT ON (actor_name, st_identity, module_version)
             actor_name, st_identity, module_version, module_address
         FROM registry.module
-        ORDER BY module_version DESC;", &[]).await;
+        ORDER BY module_version DESC;",
+            &[],
+        )
+        .await;
     let rows = result.unwrap();
     for row in rows {
         let module_address: String = row.get(3);

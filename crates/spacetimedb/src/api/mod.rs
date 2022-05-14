@@ -1,25 +1,27 @@
 use anyhow;
 
-pub fn sign_up(username: String, password: String) {
+pub fn sign_up(username: String, password: String) {}
 
-}
-
-pub fn sign_in(username: String, password: String) {
-
-}
+pub fn sign_in(username: String, password: String) {}
 
 pub mod database {
     use tokio_postgres::types::ToSql;
 
-    use crate::{db::persistent_object_db::odb, hash::Hash, wasm_host::{self, get_host}, postgres};
+    use crate::{
+        db::persistent_object_db::odb,
+        hash::Hash,
+        postgres,
+        wasm_host::{self, get_host},
+    };
 
-    pub async fn init_module(
-        identity: String,
-        name: String,
-        wasm_bytes: Vec<u8>,
-    ) -> Result<Hash, anyhow::Error> {
+    pub async fn init_module(identity: String, name: String, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let client = postgres::get_client().await;
-        let result = client.query("SELECT * from registry.module WHERE actor_name = $1 AND st_identity = $2", &[&name, &identity]).await;
+        let result = client
+            .query(
+                "SELECT * from registry.module WHERE actor_name = $1 AND st_identity = $2",
+                &[&name, &identity],
+            )
+            .await;
 
         if let Ok(rows) = result {
             if rows.len() > 0 {
@@ -52,16 +54,20 @@ pub mod database {
         reducer: String,
         arg_data: Vec<u8>, // TODO
     ) -> Result<(), anyhow::Error> {
-
         // TODO: optimize by loading all these into memory
         let client = postgres::get_client().await;
-        let result = client.query_one(r"
+        let result = client
+            .query_one(
+                r"
             SELECT DISTINCT ON (actor_name, st_identity, module_version)
                 actor_name, st_identity, module_version, module_address
             FROM registry.module
                 WHERE actor_name = $1
                 AND st_identity = $2
-            ORDER BY module_version DESC;", &[&name, &identity]).await;
+            ORDER BY module_version DESC;",
+                &[&name, &identity],
+            )
+            .await;
         let row = result?;
         let module_address: String = row.get(3);
         let hash: Hash = Hash::from_iter(hex::decode(module_address).unwrap());
@@ -70,7 +76,7 @@ pub mod database {
 
         Ok(())
     }
-    
+
     pub fn logs(_identity: String, name: String) {
         unimplemented!()
     }

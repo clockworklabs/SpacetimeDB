@@ -2,6 +2,7 @@ use crate::{
     db::{transactional_db::Transaction, SpacetimeDB},
     hash::{hash_bytes, Hash},
 };
+use anyhow;
 use lazy_static::lazy_static;
 use spacetimedb_bindings::{decode_schema, encode_schema, Schema};
 use std::{
@@ -9,9 +10,7 @@ use std::{
     error::Error,
     sync::{Arc, Mutex},
 };
-use tokio::{
-    sync::{mpsc, oneshot},
-};
+use tokio::sync::{mpsc, oneshot};
 use wasmer::{
     imports, wasmparser::Operator, Array, CompilerConfig, Function, Instance, LazyInit, Memory, Module, NativeFunc,
     Store, Universal, ValType, WasmPtr, WasmerEnv,
@@ -20,7 +19,6 @@ use wasmer_middlewares::{
     metering::{get_remaining_points, set_remaining_points, MeteringPoints},
     Metering,
 };
-use anyhow;
 
 lazy_static! {
     pub static ref HOST: Mutex<Host> = Mutex::new(HostActor::spawn());
@@ -196,7 +194,11 @@ impl HostActor {
             HostCommand::Add { wasm_bytes, respond_to } => {
                 respond_to.send(self.add(wasm_bytes)).unwrap();
             }
-            HostCommand::Call { hash, reducer_name, respond_to } => {
+            HostCommand::Call {
+                hash,
+                reducer_name,
+                respond_to,
+            } => {
                 respond_to.send(self.run(hash, reducer_name)).unwrap();
             }
         }
@@ -329,10 +331,7 @@ pub struct Host {
 }
 
 impl Host {
-    pub async fn init_module(
-        &self,
-        wasm_bytes: Vec<u8>,
-    ) -> Result<Hash, anyhow::Error> {
+    pub async fn init_module(&self, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<Hash, anyhow::Error>>();
         self.tx
             .send(HostCommand::Add {
@@ -345,7 +344,13 @@ impl Host {
 
     pub async fn call_reducer(&self, hash: Hash, reducer_name: String) -> Result<(), anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.tx.send(HostCommand::Call { hash, reducer_name, respond_to: tx }).await?;
+        self.tx
+            .send(HostCommand::Call {
+                hash,
+                reducer_name,
+                respond_to: tx,
+            })
+            .await?;
         rx.await.unwrap()
     }
 }
