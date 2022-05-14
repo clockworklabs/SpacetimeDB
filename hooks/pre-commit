@@ -50,25 +50,31 @@
 
 # Run the rust formatter
 #!/bin/bash -e
-declare -a rust_files=()
-files=$(git diff-index --name-only HEAD)
-echo 'Formatting source files'
-for file in $files; do
-    if [ ! -f "${file}" ]; then
-        continue
-    fi
-    if [[ "${file}" == *.rs ]]; then
-        rust_files+=("${file}")
-    fi
-done
-if [ ${#rust_files[@]} -ne 0 ]; then
-    command -v cargo +nightly fmt >/dev/null 2>&1 || { echo >&2 "Rustfmt is required but it's not installed. Aborting."; exit 1; }
-    $(command -v cargo +nightly fmt) ${rust_files[@]} &
-fi
-wait
-if [ ${#rust_files[@]} -ne 0 ]; then
-    git add ${rust_files[@]}
-    echo "Formatting done, changed files: ${rust_files[@]}"
+#!/bin/bash
+
+exe=$(which rustfmt)
+
+if [ -n "$exe" ]
+then
+    # field separator to the new line
+    IFS=$'\n'
+
+    for line in $(git status -s)
+    do
+        # if added or modified
+        if [[ $line == A* || $line == M* ]]
+        then
+            # check file extension
+            if [[ $line == *.rs ]]
+            then
+                # format file
+                cargo +nightly fmt $(pwd)/${line:3}
+                # add changes
+                git add $(pwd)/${line:3}
+            fi
+        fi
+    done
+
 else
-    echo "No changes, formatting skipped"
+    echo "rustfmt was not found"
 fi
