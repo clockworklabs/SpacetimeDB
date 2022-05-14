@@ -7,7 +7,6 @@ use lazy_static::lazy_static;
 use spacetimedb_bindings::{decode_schema, encode_schema, Schema};
 use std::{
     collections::HashMap,
-    error::Error,
     sync::{Arc, Mutex},
 };
 use tokio::sync::{mpsc, oneshot};
@@ -270,9 +269,7 @@ impl HostActor {
         };
 
         let points = 1_000_000;
-        println!("HAP");
         let instance = Instance::new(&module, &import_object)?;
-        println!("HAP2");
         set_remaining_points(&instance, points);
 
         // Init if available
