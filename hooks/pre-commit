@@ -68,7 +68,7 @@ then
             if [[ $line == *.rs ]]
             then
                 # format file
-                cargo +nightly fmt $(pwd)/${line:3}
+                cargo +nightly fmt -- $(pwd)/${line:3}
                 # add changes
                 git add $(pwd)/${line:3}
             fi

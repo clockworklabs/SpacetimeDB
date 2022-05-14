@@ -52,7 +52,7 @@ pub mod database {
         identity: String,
         name: String,
         reducer: String,
-        arg_data: Vec<u8>, // TODO
+        _arg_data: Vec<u8>, // TODO
     ) -> Result<(), anyhow::Error> {
         // TODO: optimize by loading all these into memory
         let client = postgres::get_client().await;
