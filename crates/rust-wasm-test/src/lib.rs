@@ -13,7 +13,7 @@ Impl uploading new contract
 */
 
 #[no_mangle]
-pub extern "C" fn reduce(_actor: u64) {
+pub extern "C" fn _reducer_test(_actor: u64) {
     create_table(
         0,
         vec![

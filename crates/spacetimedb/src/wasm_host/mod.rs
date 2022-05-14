@@ -10,7 +10,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tokio::{
-    spawn,
     sync::{mpsc, oneshot},
 };
 use wasmer::{
@@ -21,6 +20,7 @@ use wasmer_middlewares::{
     metering::{get_remaining_points, set_remaining_points, MeteringPoints},
     Metering,
 };
+use anyhow;
 
 lazy_static! {
     pub static ref HOST: Mutex<Host> = Mutex::new(HostActor::spawn());
@@ -31,13 +31,15 @@ lazy_static! {
     static ref TX_ID: Mutex<u64> = Mutex::new(0);
 }
 
+pub fn get_host() -> Host {
+    HOST.lock().unwrap().clone()
+}
+
 #[derive(WasmerEnv, Clone, Default)]
 pub struct ReducerEnv {
     tx_id: u64,
     #[wasmer(export)]
     memory: LazyInit<Memory>,
-    #[wasmer(export(name = "reduce"))]
-    reduce: LazyInit<NativeFunc<u64, ()>>,
     #[wasmer(export(name = "alloc"))]
     alloc: LazyInit<NativeFunc<u32, WasmPtr<u8, Array>>>,
 }
@@ -141,124 +143,13 @@ fn get_remaining_points_value(instance: &Instance) -> u64 {
 enum HostCommand {
     Add {
         wasm_bytes: Vec<u8>,
-        respond_to: oneshot::Sender<Result<Hash, Box<dyn Error + Send + Sync>>>,
+        respond_to: oneshot::Sender<Result<Hash, anyhow::Error>>,
     },
-    Run {
+    Call {
         hash: Hash,
-        respond_to: oneshot::Sender<Result<(), Box<dyn Error + Send + Sync>>>,
+        reducer_name: String,
+        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
     },
-}
-
-fn run(store: &Store, module: &Module, points: u64) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let tx_id = {
-        let mut stdb = STDB.lock().unwrap();
-        let tx = stdb.begin_tx();
-        let id = *TX_ID.lock().unwrap();
-        *TX_ID.lock().unwrap() += 1;
-        TX_MAP.lock().unwrap().insert(id, tx);
-        id
-    };
-    let import_object = imports! {
-        "env" => {
-            "_insert" => Function::new_native_with_env(
-                &store,
-                ReducerEnv { tx_id, ..Default::default()},
-                insert,
-            ),
-            "_create_table" => Function::new_native_with_env(
-                &store,
-                ReducerEnv { tx_id, ..Default::default()},
-                create_table,
-            ),
-            "_iter" => Function::new_native_with_env(
-                &store,
-                ReducerEnv { tx_id, ..Default::default()},
-                iter
-            ),
-            "_console_log" => Function::new_native_with_env(
-                &store,
-                ReducerEnv { tx_id, ..Default::default()},
-                console_log
-            ),
-        }
-    };
-    let instance = Instance::new(&module, &import_object)?;
-    set_remaining_points(&instance, points);
-
-    // Init if available
-    let init = instance.exports.get_native_function::<(), ()>("__init");
-    if let Some(init) = init.ok() {
-        let _ = init.call();
-    }
-
-    let reduce = instance.exports.get_function("reduce")?.native::<u64, ()>()?;
-
-    let start = std::time::Instant::now();
-    println!("Running Wasm reduce...");
-    let result = reduce.call(0);
-    let duration = start.elapsed();
-    let remaining_points = get_remaining_points_value(&instance);
-    println!(
-        "Wasm reduce: time {} us, gas used {}",
-        duration.as_micros(),
-        1_000_000 - remaining_points
-    );
-    println!();
-
-    if let Some(err) = result.err() {
-        let mut stdb = STDB.lock().unwrap();
-        let mut tx_map = TX_MAP.lock().unwrap();
-        let tx = tx_map.remove(&tx_id).unwrap();
-        stdb.rollback_tx(tx);
-
-        let e = &err;
-        let frames = e.trace();
-        let frames_len = frames.len();
-
-        println!("Runtime error:");
-        for i in 0..frames_len {
-            println!(
-                "  Frame #{}: {:?}::{:?}",
-                frames_len - i,
-                frames[i].module_name(),
-                frames[i].function_name().or(Some("<func>")).unwrap()
-            );
-        }
-    } else {
-        let mut stdb = STDB.lock().unwrap();
-        let mut tx_map = TX_MAP.lock().unwrap();
-        let tx = tx_map.remove(&tx_id).unwrap();
-        stdb.commit_tx(tx);
-    }
-    Ok(())
-}
-
-fn add(
-    modules: &mut HashMap<Hash, Module>,
-    store: &Store,
-    wasm_bytes: impl AsRef<[u8]>,
-) -> Result<Hash, Box<dyn Error + Send + Sync>> {
-    let hash = hash_bytes(&wasm_bytes);
-    let module = Module::new(store, wasm_bytes)?;
-    let mut found = false;
-    for f in module.exports().functions() {
-        if f.name() != "reduce" {
-            continue;
-        }
-        found = true;
-        let ty = f.ty();
-        if ty.params().len() != 1 {
-            return Err("Reduce function has wrong number of params.".into());
-        }
-        if ty.params()[0] != ValType::I64 {
-            return Err("Incorrect param type for reducer.".into());
-        }
-    }
-    if !found {
-        return Err("Reduce function not found in module.".into());
-    }
-    modules.insert(hash, module);
-    Ok(hash)
 }
 
 struct HostActor {
@@ -305,37 +196,37 @@ impl HostActor {
             HostCommand::Add { wasm_bytes, respond_to } => {
                 respond_to.send(self.add(wasm_bytes)).unwrap();
             }
-            HostCommand::Run { hash, respond_to } => {
-                respond_to.send(self.run(hash)).unwrap();
+            HostCommand::Call { hash, reducer_name, respond_to } => {
+                respond_to.send(self.run(hash, reducer_name)).unwrap();
             }
         }
     }
 
-    fn add(&mut self, wasm_bytes: Vec<u8>) -> Result<Hash, Box<dyn Error + Send + Sync>> {
+    fn add(&mut self, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let hash = hash_bytes(&wasm_bytes);
         let module = Module::new(&self.store, wasm_bytes)?;
         let mut found = false;
         for f in module.exports().functions() {
-            if f.name() != "reduce" {
+            if !f.name().starts_with("_reducer_") {
                 continue;
             }
             found = true;
             let ty = f.ty();
             if ty.params().len() != 1 {
-                return Err("Reduce function has wrong number of params.".into());
+                return Err(anyhow::anyhow!("Reduce function has wrong number of params."));
             }
             if ty.params()[0] != ValType::I64 {
-                return Err("Incorrect param type for reducer.".into());
+                return Err(anyhow::anyhow!("Incorrect param type for reducer."));
             }
         }
         if !found {
-            return Err("Reduce function not found in module.".into());
+            return Err(anyhow::anyhow!("Reduce function not found in module."));
         }
         self.modules.insert(hash, module);
         Ok(hash)
     }
 
-    fn run(&mut self, hash: Hash) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn run(&mut self, hash: Hash, reducer_name: String) -> Result<(), anyhow::Error> {
         let tx_id = {
             let mut stdb = STDB.lock().unwrap();
             let tx = stdb.begin_tx();
@@ -348,7 +239,7 @@ impl HostActor {
         let module = self.modules.get(&hash);
         let module = match module {
             Some(x) => x,
-            None => return Err("No such module.".into()),
+            None => return Err(anyhow::anyhow!("No such module.")),
         };
 
         let import_object = imports! {
@@ -377,7 +268,9 @@ impl HostActor {
         };
 
         let points = 1_000_000;
+        println!("HAP");
         let instance = Instance::new(&module, &import_object)?;
+        println!("HAP2");
         set_remaining_points(&instance, points);
 
         // Init if available
@@ -386,7 +279,8 @@ impl HostActor {
             let _ = init.call();
         }
 
-        let reduce = instance.exports.get_function("reduce")?.native::<u64, ()>()?;
+        let reducer_name = format!("_reducer_{}", reducer_name);
+        let reduce = instance.exports.get_function(&reducer_name)?.native::<u64, ()>()?;
 
         let start = std::time::Instant::now();
         println!("Running Wasm reduce...");
@@ -437,11 +331,9 @@ pub struct Host {
 impl Host {
     pub async fn init_module(
         &self,
-        identity: String,
-        name: String,
         wasm_bytes: Vec<u8>,
-    ) -> Result<Hash, Box<dyn Error + Send + Sync>> {
-        let (tx, rx) = oneshot::channel::<Result<Hash, Box<dyn Error + Send + Sync>>>();
+    ) -> Result<Hash, anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<Hash, anyhow::Error>>();
         self.tx
             .send(HostCommand::Add {
                 wasm_bytes,
@@ -451,9 +343,9 @@ impl Host {
         rx.await.unwrap()
     }
 
-    pub async fn run_reducer(&self, hash: Hash) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let (tx, rx) = oneshot::channel::<Result<(), Box<dyn Error + Send + Sync>>>();
-        self.tx.send(HostCommand::Run { hash, respond_to: tx }).await?;
+    pub async fn call_reducer(&self, hash: Hash, reducer_name: String) -> Result<(), anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.tx.send(HostCommand::Call { hash, reducer_name, respond_to: tx }).await?;
         rx.await.unwrap()
     }
 }

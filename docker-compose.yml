@@ -7,10 +7,11 @@ services:
       context: ./
       dockerfile: ./crates/spacetimedb/Dockerfile
     volumes:
+      - ./crates/spacetimedb:/usr/src/app
+      - ./crates/rust-wasm-test:/usr/src/rust-wasm-test
       - /odb
     ports:
       - "3000:3000"
-    # I have no idea why I can't ignore the specific 'src/game/handlers/mod.rs' file
     entrypoint: bash -c "RUST_BACKTRACE=1 cargo watch --why -x 'run'"
     environment:
       ENV: dev

@@ -38,6 +38,10 @@ gotham = "0.7.1"
 hyper = "0.14.18"
 log4rs = { version = "1.0.0", features = ["background_rotation", "rolling_file_appender", "compound_policy", "size_trigger", "fixed_window_roller"] }
 serde = "1.0.136"
+tokio-postgres = "0.7.6"
+bb8-postgres = "0.8.0"
+anyhow = { version = "1.0.57", features = ["backtrace"] }
+# gluesql = "0.10"
 
 [dev-dependencies]
 criterion = { version = "0.3", features = ["async", "async_tokio", "html_reports"] }

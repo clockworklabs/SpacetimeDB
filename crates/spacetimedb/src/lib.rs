@@ -1,6 +1,7 @@
 pub mod api;
 pub mod db;
-mod hash;
+pub mod hash;
 mod messages;
 pub mod routes;
 pub mod wasm_host;
+pub mod postgres;
