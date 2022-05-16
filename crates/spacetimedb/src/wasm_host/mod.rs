@@ -18,6 +18,7 @@ use wasmer_middlewares::{
     metering::{get_remaining_points, set_remaining_points, MeteringPoints},
     Metering,
 };
+use crate::logs;
 
 lazy_static! {
     pub static ref HOST: Mutex<Host> = Mutex::new(HostActor::spawn());
@@ -34,6 +35,7 @@ pub fn get_host() -> Host {
 
 #[derive(WasmerEnv, Clone, Default)]
 pub struct ReducerEnv {
+    module_address: Hash,
     tx_id: u64,
     #[wasmer(export)]
     memory: LazyInit<Memory>,
@@ -58,13 +60,7 @@ fn c_str_to_string(memory: &Memory, ptr: u32) -> String {
 fn console_log(env: &ReducerEnv, level: u8, ptr: u32) {
     let memory = env.memory.get_ref().expect("Initialized memory");
     let s = c_str_to_string(memory, ptr);
-    match level {
-        0 => eprintln!("error: {}", s),
-        1 => println!("warn: {}", s),
-        2 => println!("info: {}", s),
-        3 => println!("debug: {}", s),
-        _ => println!("debug: {}", s),
-    }
+    logs::write(env.module_address, level, s);
 }
 
 fn read_output_bytes(memory: &Memory, ptr: u32) -> Vec<u8> {
@@ -247,22 +243,22 @@ impl HostActor {
             "env" => {
                 "_insert" => Function::new_native_with_env(
                     &self.store,
-                    ReducerEnv { tx_id, ..Default::default()},
+                    ReducerEnv { tx_id, module_address: hash, ..Default::default()},
                     insert,
                 ),
                 "_create_table" => Function::new_native_with_env(
                     &self.store,
-                    ReducerEnv { tx_id, ..Default::default()},
+                    ReducerEnv { tx_id, module_address: hash, ..Default::default()},
                     create_table,
                 ),
                 "_iter" => Function::new_native_with_env(
                     &self.store,
-                    ReducerEnv { tx_id, ..Default::default()},
+                    ReducerEnv { tx_id, module_address: hash, ..Default::default()},
                     iter
                 ),
                 "_console_log" => Function::new_native_with_env(
                     &self.store,
-                    ReducerEnv { tx_id, ..Default::default()},
+                    ReducerEnv { tx_id, module_address: hash, ..Default::default()},
                     console_log
                 ),
             }
@@ -279,6 +275,7 @@ impl HostActor {
         }
 
         let reducer_name = format!("_reducer_{}", reducer_name);
+        let x = instance.exports.get_function(&reducer_name)?;
         let reduce = instance.exports.get_function(&reducer_name)?.native::<u64, ()>()?;
 
         let start = std::time::Instant::now();

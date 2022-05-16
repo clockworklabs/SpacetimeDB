@@ -33,7 +33,14 @@ async fn startup() {
         )
         .await;
     let rows = result.unwrap();
+    println!("modules");
+
     for row in rows {
+        let actor_name: String = row.get(0);
+        let st_identity: String = row.get(1);
+        let version: i32 = row.get(2);
+        let address: String = row.get(3);
+        println!("[{}, {}, {}, {}]", actor_name, st_identity, version, address);
         let module_address: String = row.get(3);
         let hash: Hash = Hash::from_iter(hex::decode(module_address).unwrap());
         let wasm_bytes = odb::get(hash).await.unwrap();
@@ -67,6 +74,12 @@ async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let arg_data = vec![0, 0, 0];
     api::database::call(identity, name, reducer, arg_data).await?;
+
+    let (identity, token) = api::spacetime_identity().await?;
+    println!("identity: {:?}", identity);
+    println!("token: {}", token);
+
+    api::spacetime_identity_associate_email("tyler@clockworklabs.io", &token).await?;
     //////////////////
 
     spawn(async move {

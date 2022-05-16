@@ -1,17 +1,28 @@
-use anyhow;
+use crate::{hash::Hash, identity::{alloc_spacetime_identity, encode_token, decode_token}, postgres};
 
-pub fn sign_up(username: String, password: String) {}
+pub async fn spacetime_identity() -> Result<(Hash, String), anyhow::Error> {
+    let identity = alloc_spacetime_identity().await?;
+    let identity_token = encode_token(identity)?;
+    Ok((identity, identity_token))
+}
 
-pub fn sign_in(username: String, password: String) {}
+pub async fn spacetime_identity_associate_email(email: &str, identity_token: &str) -> Result<(), anyhow::Error> {
+    let token = decode_token(identity_token)?;
+    let hex_identity = token.claims.hex_identity;
+    let client = postgres::get_client().await;
+    client.query("INSERT INTO registry.email (st_identity, email) VALUES ($1)", &[&hex_identity, &email]).await?;
+    Ok(())
+}
 
 pub mod database {
     use crate::{
         db::persistent_object_db::odb,
         hash::Hash,
         postgres,
-        wasm_host::{self, get_host},
+        wasm_host::{self, get_host}, logs::init_log,
     };
 
+    // TODO: Verify identity?
     pub async fn init_module(identity: String, name: String, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let client = postgres::get_client().await;
         let result = client
@@ -38,6 +49,8 @@ pub mod database {
             "INSERT INTO registry.module (actor_name, st_identity, module_version, module_address) VALUES ($1, $2, $3, $4)", 
             &[&name, &identity, &0_i32, &hex::encode(address)]
         ).await?;
+
+        init_log(address);
 
         Ok(address)
     }
@@ -74,20 +87,21 @@ pub mod database {
 
         Ok(())
     }
-
-    pub fn logs(_identity: String, name: String) {
+    
+    pub fn query(_identity: String, name: String, query: String) {
         unimplemented!()
     }
 
+    pub fn logs(_identity: String, name: String) -> String {
+        unimplemented!()
+    }
+
+    // Optional
     pub fn revert_ts(_identity: String, name: String, timestamp: u64) {
         unimplemented!()
     }
 
     pub fn revert_hash(_identity: String, name: String, hash: Hash) {
-        unimplemented!()
-    }
-
-    pub fn query(_identity: String, name: String, query: String) {
         unimplemented!()
     }
 

@@ -5,7 +5,7 @@ pub mod odb {
     use std::path::PathBuf;
     use tokio::fs;
 
-    const ROOT: &str = "/odb";
+    const ROOT: &str = "/stdb/odb";
 
     pub async fn total_key_size_bytes() -> u64 {
         unimplemented!()

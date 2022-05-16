@@ -9,7 +9,7 @@ services:
     volumes:
       - ./crates/spacetimedb:/usr/src/app
       - ./crates/rust-wasm-test:/usr/src/rust-wasm-test
-      - /odb
+      - /stdb
     ports:
       - "3000:3000"
     entrypoint: bash -c "RUST_BACKTRACE=1 cargo watch --why -x 'run'"
