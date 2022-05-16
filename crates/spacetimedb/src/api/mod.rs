@@ -16,7 +16,7 @@ pub async fn spacetime_identity_associate_email(email: &str, identity_token: &st
     let client = postgres::get_client().await;
     client
         .query(
-            "INSERT INTO registry.email (st_identity, email) VALUES ($1)",
+            "INSERT INTO registry.email (st_identity, email) VALUES ($1, $2)",
             &[&hex_identity, &email],
         )
         .await?;

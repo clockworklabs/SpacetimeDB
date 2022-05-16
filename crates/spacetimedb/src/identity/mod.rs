@@ -3,9 +3,8 @@ use crate::{
     postgres,
 };
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
-use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use std::time::SystemTime;
+use std::{time::SystemTime, collections::HashSet};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SpacetimeIdentityClaims {
@@ -13,9 +12,16 @@ pub struct SpacetimeIdentityClaims {
     pub iat: usize,
 }
 
-lazy_static! {
-    static ref SIGNING_SECRET: String = "This is a secret yo.".into();
-}
+    const PRIVATE_KEY: &'static [u8; 240] = b"-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgfv97uvAWHCwiUozf
+8Qu6yHFpmV7Tx27QTjwY/BU9ZxKhRANCAATKxjFoZkGB6ih2SQdeG7KtyBVujSp7
+JChJw40MnxgBExJMZv3xDpfPNFChUDgtkMGqQS1OhOLtExrmdUNe7ySb
+-----END PRIVATE KEY-----";
+
+    const PUBLIC_KEY: &'static [u8; 177] = b"-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEysYxaGZBgeoodkkHXhuyrcgVbo0q
+eyQoScONDJ8YARMSTGb98Q6XzzRQoVA4LZDBqkEtToTi7RMa5nVDXu8kmw==
+-----END PUBLIC KEY-----";
 
 pub async fn alloc_spacetime_identity() -> Result<Hash, anyhow::Error> {
     // TODO: this really doesn't need to be a single global count
@@ -43,10 +49,11 @@ pub fn encode_token(identity: Hash) -> Result<String, jsonwebtoken::errors::Erro
             .unwrap()
             .as_secs() as usize,
     };
-    encode(&header, &claims, &EncodingKey::from_secret(SIGNING_SECRET.as_ref()))
+    encode(&header, &claims, &EncodingKey::from_ec_pem(PRIVATE_KEY).unwrap())
 }
 
 pub fn decode_token(token: &str) -> Result<TokenData<SpacetimeIdentityClaims>, jsonwebtoken::errors::Error> {
-    let validation = Validation::new(jsonwebtoken::Algorithm::ES256);
-    decode::<SpacetimeIdentityClaims>(token, &DecodingKey::from_secret(SIGNING_SECRET.as_ref()), &validation)
+    let mut validation = Validation::new(jsonwebtoken::Algorithm::ES256);
+    validation.required_spec_claims = HashSet::new();
+    decode::<SpacetimeIdentityClaims>(token, &DecodingKey::from_ec_pem(PUBLIC_KEY).unwrap(), &validation)
 }
