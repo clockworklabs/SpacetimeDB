@@ -1,3 +1,4 @@
+use crate::logs;
 use crate::{
     db::{transactional_db::Transaction, SpacetimeDB},
     hash::{hash_bytes, Hash},
@@ -18,7 +19,6 @@ use wasmer_middlewares::{
     metering::{get_remaining_points, set_remaining_points, MeteringPoints},
     Metering,
 };
-use crate::logs;
 
 lazy_static! {
     pub static ref HOST: Mutex<Host> = Mutex::new(HostActor::spawn());

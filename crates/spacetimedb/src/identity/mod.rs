@@ -1,8 +1,11 @@
-use crate::{hash::{Hash, hash_bytes}, postgres};
+use crate::{
+    hash::{hash_bytes, Hash},
+    postgres,
+};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use lazy_static::lazy_static;
-use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
+use std::time::SystemTime;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SpacetimeIdentityClaims {
@@ -35,16 +38,15 @@ pub fn encode_token(identity: Hash) -> Result<String, jsonwebtoken::errors::Erro
     let hex_identity = hex::encode(identity);
     let claims = SpacetimeIdentityClaims {
         hex_identity,
-        iat: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() as usize,
+        iat: SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize,
     };
     encode(&header, &claims, &EncodingKey::from_secret(SIGNING_SECRET.as_ref()))
 }
 
 pub fn decode_token(token: &str) -> Result<TokenData<SpacetimeIdentityClaims>, jsonwebtoken::errors::Error> {
     let validation = Validation::new(jsonwebtoken::Algorithm::ES256);
-    decode::<SpacetimeIdentityClaims>(
-        token,
-        &DecodingKey::from_secret(SIGNING_SECRET.as_ref()),
-        &validation,
-    )
+    decode::<SpacetimeIdentityClaims>(token, &DecodingKey::from_secret(SIGNING_SECRET.as_ref()), &validation)
 }

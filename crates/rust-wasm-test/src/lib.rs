@@ -1,6 +1,6 @@
+use serde::{Deserialize, Deserializer, Serialize};
 use spacetimedb_bindings::println;
 use spacetimedb_bindings::*;
-use serde::{Deserialize, Serialize, Deserializer};
 
 /*
 TODO:
@@ -15,14 +15,14 @@ Impl uploading new contract
 
 #[derive(Serialize, Deserialize)]
 struct TestA {
-    x: i32, 
-    y: i32, 
-    z: i32, 
+    x: i32,
+    y: i32,
+    z: i32,
 }
 
 #[derive(Serialize, Deserialize)]
 struct TestB {
-    foo: String, 
+    foo: String,
 }
 
 /*
@@ -82,7 +82,14 @@ pub extern "C" fn _reducer_test(arg_ptr: u32, arg_size: u32) {
     );
 
     for i in 0..100 {
-        insert(0, vec![ColValue::U32(i + arg.x as u32), ColValue::U32(1 + arg.y as u32), ColValue::U32(2 + arg.z as u32)]);
+        insert(
+            0,
+            vec![
+                ColValue::U32(i + arg.x as u32),
+                ColValue::U32(1 + arg.y as u32),
+                ColValue::U32(2 + arg.z as u32),
+            ],
+        );
     }
 
     for row in iter(0).unwrap() {

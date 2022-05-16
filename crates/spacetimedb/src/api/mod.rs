@@ -1,4 +1,8 @@
-use crate::{hash::Hash, identity::{alloc_spacetime_identity, encode_token, decode_token}, postgres};
+use crate::{
+    hash::Hash,
+    identity::{alloc_spacetime_identity, decode_token, encode_token},
+    postgres,
+};
 
 pub async fn spacetime_identity() -> Result<(Hash, String), anyhow::Error> {
     let identity = alloc_spacetime_identity().await?;
@@ -10,7 +14,12 @@ pub async fn spacetime_identity_associate_email(email: &str, identity_token: &st
     let token = decode_token(identity_token)?;
     let hex_identity = token.claims.hex_identity;
     let client = postgres::get_client().await;
-    client.query("INSERT INTO registry.email (st_identity, email) VALUES ($1)", &[&hex_identity, &email]).await?;
+    client
+        .query(
+            "INSERT INTO registry.email (st_identity, email) VALUES ($1)",
+            &[&hex_identity, &email],
+        )
+        .await?;
     Ok(())
 }
 
@@ -18,8 +27,9 @@ pub mod database {
     use crate::{
         db::persistent_object_db::odb,
         hash::Hash,
+        logs::init_log,
         postgres,
-        wasm_host::{self, get_host}, logs::init_log,
+        wasm_host::{self, get_host},
     };
 
     // TODO: Verify identity?
@@ -87,7 +97,7 @@ pub mod database {
 
         Ok(())
     }
-    
+
     pub fn query(_identity: String, name: String, query: String) {
         unimplemented!()
     }
