@@ -21,6 +21,9 @@ use wasmer_middlewares::{
 };
 use log;
 
+const REDUCE_DUNDER: &str = "__reducer__";
+const INIT_PANIC_DUNDER: &str = "__init_panic__";
+
 lazy_static! {
     pub static ref HOST: Mutex<Host> = Mutex::new(HostActor::spawn());
     static ref STDB: Mutex<SpacetimeDB> = Mutex::new(SpacetimeDB::new());
@@ -204,22 +207,26 @@ impl HostActor {
         let module = Module::new(&self.store, wasm_bytes)?;
         let mut found = false;
         for f in module.exports().functions() {
-            if !f.name().starts_with("_reducer_") {
+            if !f.name().starts_with(REDUCE_DUNDER) {
                 continue;
             }
             found = true;
             let ty = f.ty();
-            if ty.params().len() != 1 {
+            if ty.params().len() != 2 {
                 return Err(anyhow::anyhow!("Reduce function has wrong number of params."));
             }
-            if ty.params()[0] != ValType::I64 {
-                return Err(anyhow::anyhow!("Incorrect param type for reducer."));
+            if ty.params()[0] != ValType::I32 {
+                return Err(anyhow::anyhow!("Incorrect param type {} for reducer.", ty.params()[0]));
+            }
+            if ty.params()[1] != ValType::I32 {
+                return Err(anyhow::anyhow!("Incorrect param type {} for reducer.", ty.params()[0]));
             }
         }
         if !found {
             return Err(anyhow::anyhow!("Reduce function not found in module."));
         }
         self.modules.insert(hash, module);
+
         Ok(hash)
     }
 
@@ -269,17 +276,18 @@ impl HostActor {
         set_remaining_points(&instance, points);
 
         // Init panic if available
-        let init_panic = instance.exports.get_native_function::<(), ()>("__init_panic__");
+        let init_panic = instance.exports.get_native_function::<(), ()>(INIT_PANIC_DUNDER);
         if let Some(init_panic) = init_panic.ok() {
             let _ = init_panic.call();
         }
 
-        let reducer_name = format!("__reducer__{}", reducer_name);
-        let reduce = instance.exports.get_function(&reducer_name)?.native::<u64, ()>()?;
+        let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
+
+        let reduce = instance.exports.get_function(&reducer_symbol)?.native::<(u32, u32), ()>()?;
 
         let start = std::time::Instant::now();
         log::trace!("Start reducer \"{}\"...", reducer_name);
-        let result = reduce.call(0);
+        let result = reduce.call(0, 0);
         let duration = start.elapsed();
         let remaining_points = get_remaining_points_value(&instance);
         log::trace!("Reducer \"{}\" ran: {} us, {} eV", reducer_name, duration.as_micros(), points - remaining_points);

@@ -3,17 +3,6 @@ use spacetimedb_bindings::println;
 use spacetimedb_bindings::*;
 
 /*
-TODO:
-Handle strings
-Handle structs
-Handle contract parameters supplied from host
-Impl reading from the db
-Impl schema code-gen
-Impl stdb as a server
-Impl uploading new contract
-*/
-/*
-
 #[spacetimedb(table)]
 struct Table {
     a: u32,

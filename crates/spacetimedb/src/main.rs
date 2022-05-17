@@ -33,7 +33,6 @@ async fn startup() {
         )
         .await;
     let rows = result.unwrap();
-    println!("modules");
 
     for row in rows {
         // let actor_name: String = row.get(0);
@@ -65,8 +64,9 @@ async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let wasm_bytes = wat2wasm(&wat)?.to_vec();
     let identity = "clockworklabs";
     let name = "bitcraft";
-    if let Err(_) = api::database::init_module(identity, name, wasm_bytes).await {
+    if let Err(e) = api::database::init_module(identity, name, wasm_bytes).await {
         // TODO: check if it failed because it's already been created
+        log::error!("{:?}", e);
     }
 
     let reducer = "test".into();
