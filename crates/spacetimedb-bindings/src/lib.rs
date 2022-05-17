@@ -23,7 +23,7 @@ extern "C" {
 
 // TODO: probably do something lighter weight here
 #[no_mangle]
-extern "C" fn __init() {
+extern "C" fn __init_panic__() {
     panic::set_hook(Box::new(panic_hook));
 }
 

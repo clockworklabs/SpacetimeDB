@@ -36,11 +36,10 @@ async fn startup() {
     println!("modules");
 
     for row in rows {
-        let actor_name: String = row.get(0);
-        let st_identity: String = row.get(1);
-        let version: i32 = row.get(2);
-        let address: String = row.get(3);
-        println!("[{}, {}, {}, {}]", actor_name, st_identity, version, address);
+        // let actor_name: String = row.get(0);
+        // let st_identity: String = row.get(1);
+        // let version: i32 = row.get(2);
+        // let address: String = row.get(3);
         let module_address: String = row.get(3);
         let hash: Hash = Hash::from_iter(hex::decode(module_address).unwrap());
         let wasm_bytes = odb::get(hash).await.unwrap();
@@ -64,16 +63,18 @@ async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
     // println!("{}", String::from_utf8(wat.to_owned()).unwrap());
 
     let wasm_bytes = wat2wasm(&wat)?.to_vec();
-    let identity: String = "clockworklabs".into();
-    let name: String = "bitcraft".into();
-    if let Err(_) = api::database::init_module(identity.clone(), name.clone(), wasm_bytes).await {
+    let identity = "clockworklabs";
+    let name = "bitcraft";
+    if let Err(_) = api::database::init_module(identity, name, wasm_bytes).await {
         // TODO: check if it failed because it's already been created
     }
 
     let reducer = "test".into();
 
     let arg_data = vec![0, 0, 0];
-    api::database::call(identity, name, reducer, arg_data).await?;
+    api::database::call(&identity, &name, reducer, arg_data).await?;
+
+    print!("{}", api::database::logs(&identity, &name, 100).await);
 
     let (identity, token) = api::spacetime_identity().await?;
     println!("identity: {:?}", identity);

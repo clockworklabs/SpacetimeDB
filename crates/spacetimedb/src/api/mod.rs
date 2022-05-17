@@ -27,13 +27,13 @@ pub mod database {
     use crate::{
         db::persistent_object_db::odb,
         hash::Hash,
-        logs::init_log,
+        logs::{init_log, self},
         postgres,
         wasm_host::{self, get_host},
     };
 
     // TODO: Verify identity?
-    pub async fn init_module(identity: String, name: String, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+    pub async fn init_module(identity: &str, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let client = postgres::get_client().await;
         let result = client
             .query(
@@ -65,13 +65,13 @@ pub mod database {
         Ok(address)
     }
 
-    pub fn update(_identity: String, name: String, wasm_bytecode: impl AsRef<[u8]>) {
+    pub fn update(_identity: String, _name: String, _wasm_bytecode: impl AsRef<[u8]>) {
         unimplemented!()
     }
 
     pub async fn call(
-        identity: String,
-        name: String,
+        identity: &str,
+        name: &str,
         reducer: String,
         _arg_data: Vec<u8>, // TODO
     ) -> Result<(), anyhow::Error> {
@@ -98,37 +98,51 @@ pub mod database {
         Ok(())
     }
 
-    pub fn query(_identity: String, name: String, query: String) {
+    pub fn query(_identity: String, _name: String, _query: String) {
         unimplemented!()
     }
 
-    pub fn logs(_identity: String, name: String) -> String {
-        unimplemented!()
+    pub async fn logs(identity: &str, name: &str, num_lines: u32) -> String {
+        let client = postgres::get_client().await;
+        let result = client
+            .query(
+                "SELECT (module_address) from registry.module WHERE actor_name = $1 AND st_identity = $2",
+                &[&name, &identity],
+            )
+            .await;
+        
+        // TODO: actually handle errors
+        let rows = result.unwrap();
+        let row = rows.first().unwrap();
+        let hex_address: String = row.get(0);
+
+        let module_address = Hash::from_iter(hex::decode(hex_address).unwrap());
+        logs::read_latest(module_address, num_lines).await
     }
 
     // Optional
-    pub fn revert_ts(_identity: String, name: String, timestamp: u64) {
+    pub fn revert_ts(_identity: String, _name: String, _timestamp: u64) {
         unimplemented!()
     }
 
-    pub fn revert_hash(_identity: String, name: String, hash: Hash) {
+    pub fn revert_hash(_identity: String, _name: String, _hash: Hash) {
         unimplemented!()
     }
 
-    pub fn address(_identity: String, name: String) -> String {
+    pub fn address(_identity: String, _name: String) -> String {
         unimplemented!()
     }
 
-    pub fn metrics(_identity: String, name: String) {
+    pub fn metrics(_identity: String, _name: String) {
         unimplemented!()
     }
 
     pub mod energy {
-        pub fn info(_identity: String, name: String) {
+        pub fn info(_identity: String, _name: String) {
             unimplemented!()
         }
 
-        pub fn buy(_identity: String, name: String, amount: u64) {
+        pub fn buy(_identity: String, _name: String, _amount: u64) {
             unimplemented!()
         }
     }

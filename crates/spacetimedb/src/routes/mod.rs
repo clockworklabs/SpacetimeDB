@@ -15,12 +15,12 @@ use serde::Deserialize;
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct DatabaseInitParams {
-    namespace: String,
+    identity: String,
     name: String,
 }
 
 async fn init_database(state: &mut State) -> SimpleHandlerResult {
-    let DatabaseInitParams { namespace, name } = DatabaseInitParams::take_from(state);
+    let DatabaseInitParams { identity, name } = DatabaseInitParams::take_from(state);
     let body = state.borrow_mut::<Body>();
     let data = body.data().await;
     if data.is_none() {
@@ -29,10 +29,10 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
     let data = data.unwrap();
     let wasm_bytes = data.unwrap().to_vec();
 
-    match api::database::init_module(namespace, name, wasm_bytes).await {
+    match api::database::init_module(&identity, &name, wasm_bytes).await {
         Ok(_) => {}
         Err(e) => {
-            println!("{}", e)
+            log::error!("{}", e)
         }
     }
 

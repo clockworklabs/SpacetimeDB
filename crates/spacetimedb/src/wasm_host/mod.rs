@@ -19,6 +19,7 @@ use wasmer_middlewares::{
     metering::{get_remaining_points, set_remaining_points, MeteringPoints},
     Metering,
 };
+use log;
 
 lazy_static! {
     pub static ref HOST: Mutex<Host> = Mutex::new(HostActor::spawn());
@@ -119,7 +120,6 @@ fn iter(env: &ReducerEnv, table_id: u32) -> u64 {
 
     let mut data = ptr.offset() as u64;
     data = data << 32 | bytes.len() as u64;
-    println!("{:?}", data.to_be_bytes());
     return data;
 }
 
@@ -268,27 +268,21 @@ impl HostActor {
         let instance = Instance::new(&module, &import_object)?;
         set_remaining_points(&instance, points);
 
-        // Init if available
-        let init = instance.exports.get_native_function::<(), ()>("_init");
-        if let Some(init) = init.ok() {
-            let _ = init.call();
+        // Init panic if available
+        let init_panic = instance.exports.get_native_function::<(), ()>("__init_panic__");
+        if let Some(init_panic) = init_panic.ok() {
+            let _ = init_panic.call();
         }
 
-        let reducer_name = format!("_reducer_{}", reducer_name);
-        let x = instance.exports.get_function(&reducer_name)?;
+        let reducer_name = format!("__reducer__{}", reducer_name);
         let reduce = instance.exports.get_function(&reducer_name)?.native::<u64, ()>()?;
 
         let start = std::time::Instant::now();
-        println!("Running Wasm reduce...");
+        log::trace!("Start reducer \"{}\"...", reducer_name);
         let result = reduce.call(0);
         let duration = start.elapsed();
         let remaining_points = get_remaining_points_value(&instance);
-        println!(
-            "Wasm reduce: time {} us, gas used {}",
-            duration.as_micros(),
-            1_000_000 - remaining_points
-        );
-        println!();
+        log::trace!("Reducer \"{}\" ran: {} us, {} eV", reducer_name, duration.as_micros(), points - remaining_points);
 
         if let Some(err) = result.err() {
             let mut stdb = STDB.lock().unwrap();
@@ -300,9 +294,9 @@ impl HostActor {
             let frames = e.trace();
             let frames_len = frames.len();
 
-            println!("Runtime error:");
+            log::info!("Reducer \"{}\" runtime error:", reducer_name);
             for i in 0..frames_len {
-                println!(
+                log::info!(
                     "  Frame #{}: {:?}::{:?}",
                     frames_len - i,
                     frames[i].module_name(),

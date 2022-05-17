@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use spacetimedb_bindings::println;
 use spacetimedb_bindings::*;
 
@@ -12,31 +12,21 @@ Impl schema code-gen
 Impl stdb as a server
 Impl uploading new contract
 */
-
-#[derive(Serialize, Deserialize)]
-struct TestA {
-    x: i32,
-    y: i32,
-    z: i32,
-}
-
-#[derive(Serialize, Deserialize)]
-struct TestB {
-    foo: String,
-}
-
 /*
 
-pub fn _init_() {
-
+#[spacetimedb(table)]
+struct Table {
+    a: u32,
+    b: u32,
+    c: u32,
 }
 
-#[spacetimedb(migrate)]
+#[spacetimedb(migration)]
 pub fn migrate() {
 
 }
 
-#[spacetimedb]
+#[spacetimedb(reducer)]
 pub fn test(arg: TestA, arg2: TestB) {
     println!("foo: {:?}", arg2.foo);
 
@@ -52,17 +42,20 @@ pub fn test(arg: TestA, arg2: TestB) {
 // converted to:
 */
 
+#[derive(Serialize, Deserialize)]
+struct TestA {
+    x: i32,
+    y: i32,
+    z: i32,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TestB {
+    foo: String,
+}
+
 #[no_mangle]
-pub extern "C" fn _reducer_test(arg_ptr: u32, arg_size: u32) {
-    let arg_ptr = arg_ptr as *mut u8;
-    let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(arg_ptr, arg_size as usize, arg_size as usize) };
-    let arg_json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    let args = arg_json.as_array().unwrap();
-    let arg: TestA = serde_json::from_value(args[0].clone()).unwrap();
-    let arg2: TestB = serde_json::from_value(args[1].clone()).unwrap();
-
-    println!("foo: {:?}", arg2.foo);
-
+pub extern "C" fn __init_database__() {
     create_table(
         0,
         vec![
@@ -80,6 +73,23 @@ pub extern "C" fn _reducer_test(arg_ptr: u32, arg_size: u32) {
             },
         ],
     );
+}
+
+#[no_mangle]
+pub extern "C" fn __migrate_database__() {
+    // User defined
+}
+
+#[no_mangle]
+pub extern "C" fn __reducer__test(arg_ptr: u32, arg_size: u32) {
+    let arg_ptr = arg_ptr as *mut u8;
+    let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(arg_ptr, arg_size as usize, arg_size as usize) };
+    let arg_json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let args = arg_json.as_array().unwrap();
+    let arg: TestA = serde_json::from_value(args[0].clone()).unwrap();
+    let arg2: TestB = serde_json::from_value(args[1].clone()).unwrap();
+
+    println!("foo: {:?}", arg2.foo);
 
     for i in 0..100 {
         insert(
