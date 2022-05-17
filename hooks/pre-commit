@@ -49,8 +49,8 @@
 # exec git diff-index --check --cached $against --
 
 # Run the rust formatter
-#!/bin/bash -e
-#!/bin/bash
+
+set -x
 
 exe=$(which rustfmt)
 
