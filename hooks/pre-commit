@@ -52,9 +52,11 @@
 
 set -x
 
-exe=$(which rustfmt)
+exe="$(which rustfmt)"
 
-if [ -n "$exe" ]
+git_repo="$(git rev-parse --show-toplevel)"
+
+if [ -n $exe ]
 then
     # field separator to the new line
     IFS=$'\n'
@@ -68,9 +70,9 @@ then
             if [[ "$line" == *.rs ]]
             then
                 # format file
-                rustfmt "$(pwd)/${line:3}"
+                rustfmt "$git_repo/${line:3}"
                 # add changes
-                git add "$(pwd)/${line:3}"
+                git add "$git_repo/${line:3}"
             fi
         fi
     done
