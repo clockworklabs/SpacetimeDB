@@ -50,8 +50,6 @@
 
 # Run the rust formatter
 
-set -x
-
 exe="$(which rustfmt)"
 
 git_repo="$(git rev-parse --show-toplevel)"
