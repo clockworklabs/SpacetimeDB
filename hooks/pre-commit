@@ -80,3 +80,4 @@ then
 else
     echo "rustfmt was not found"
 fi
+
