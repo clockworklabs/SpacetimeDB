@@ -5,8 +5,6 @@ pub fn sign_up(username: String, password: String) {}
 pub fn sign_in(username: String, password: String) {}
 
 pub mod database {
-    use tokio_postgres::types::ToSql;
-
     use crate::{
         db::persistent_object_db::odb,
         hash::Hash,

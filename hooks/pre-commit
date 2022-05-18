@@ -68,7 +68,7 @@ then
             if [[ "$line" == *.rs ]]
             then
                 # format file
-                rustfmt "$git_repo/${line:3}"
+                rustfmt +nightly --edition 2021 "$git_repo/${line:3}"
                 # add changes
                 git add "$git_repo/${line:3}"
             fi
