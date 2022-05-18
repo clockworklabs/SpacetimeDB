@@ -23,6 +23,7 @@ use log;
 
 const REDUCE_DUNDER: &str = "__reducer__";
 const INIT_PANIC_DUNDER: &str = "__init_panic__";
+const INIT_DATABASE_DUNDER: &str = "__init_database__";
 
 lazy_static! {
     pub static ref HOST: Mutex<Host> = Mutex::new(HostActor::spawn());
@@ -137,11 +138,15 @@ fn get_remaining_points_value(instance: &Instance) -> u64 {
 
 #[derive(Debug)]
 enum HostCommand {
-    Add {
+    InitModule {
         wasm_bytes: Vec<u8>,
         respond_to: oneshot::Sender<Result<Hash, anyhow::Error>>,
     },
-    Call {
+    AddModule {
+        wasm_bytes: Vec<u8>,
+        respond_to: oneshot::Sender<Result<Hash, anyhow::Error>>,
+    },
+    CallReducer {
         hash: Hash,
         reducer_name: String,
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
@@ -189,22 +194,23 @@ impl HostActor {
 
     fn handle_message(&mut self, message: HostCommand) {
         match message {
-            HostCommand::Add { wasm_bytes, respond_to } => {
-                respond_to.send(self.add(wasm_bytes)).unwrap();
+            HostCommand::InitModule { wasm_bytes, respond_to } => {
+                respond_to.send(self.init_module(wasm_bytes)).unwrap();
             }
-            HostCommand::Call {
+            HostCommand::AddModule { wasm_bytes, respond_to } => {
+                respond_to.send(self.add_module(wasm_bytes)).unwrap();
+            }
+            HostCommand::CallReducer {
                 hash,
                 reducer_name,
                 respond_to,
             } => {
-                respond_to.send(self.run(hash, reducer_name)).unwrap();
+                respond_to.send(self.call_reducer(hash, &reducer_name)).unwrap();
             }
         }
     }
 
-    fn add(&mut self, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
-        let hash = hash_bytes(&wasm_bytes);
-        let module = Module::new(&self.store, wasm_bytes)?;
+    fn validate_module(module: &Module) -> Result<(), anyhow::Error> {
         let mut found = false;
         for f in module.exports().functions() {
             if !f.name().starts_with(REDUCE_DUNDER) {
@@ -225,12 +231,54 @@ impl HostActor {
         if !found {
             return Err(anyhow::anyhow!("Reduce function not found in module."));
         }
+        Ok(())
+    }
+
+    fn init_module(&mut self, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+        let hash = hash_bytes(&wasm_bytes);
+        let module = Module::new(&self.store, wasm_bytes)?;
+
+        Self::validate_module(&module)?;
+        self.init_database(&module, hash)?;
+
         self.modules.insert(hash, module);
 
         Ok(hash)
     }
 
-    fn run(&mut self, hash: Hash, reducer_name: String) -> Result<(), anyhow::Error> {
+    fn add_module(&mut self, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+        let hash = hash_bytes(&wasm_bytes);
+        let module = Module::new(&self.store, wasm_bytes)?;
+        
+        self.modules.insert(hash, module);
+
+        Ok(hash)
+    }
+
+    fn init_database(&mut self, module: &Module, hash: Hash) -> Result<(), anyhow::Error> {
+
+        let reducer_symbol = INIT_DATABASE_DUNDER;
+        self.execute_reducer(module, reducer_symbol, hash)?;
+
+        Ok(())
+    }
+
+    fn call_reducer(&self, hash: Hash, reducer_name: &str) -> Result<(), anyhow::Error> {
+        // TODO: disallow calling non-reducer dunder functions
+        let module = self.modules.get(&hash);
+        let module = match module {
+            Some(x) => x,
+            None => return Err(anyhow::anyhow!("No such module.")),
+        };
+
+        let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
+
+        self.execute_reducer(module, &reducer_symbol, hash)?;
+
+        Ok(())
+    }
+
+    fn execute_reducer(&self, module: &Module, reducer_symbol: &str, hash: Hash) -> Result<(), anyhow::Error> {
         let tx_id = {
             let mut stdb = STDB.lock().unwrap();
             let tx = stdb.begin_tx();
@@ -238,12 +286,6 @@ impl HostActor {
             *TX_ID.lock().unwrap() += 1;
             TX_MAP.lock().unwrap().insert(id, tx);
             id
-        };
-
-        let module = self.modules.get(&hash);
-        let module = match module {
-            Some(x) => x,
-            None => return Err(anyhow::anyhow!("No such module.")),
         };
 
         let import_object = imports! {
@@ -281,16 +323,14 @@ impl HostActor {
             let _ = init_panic.call();
         }
 
-        let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
-
         let reduce = instance.exports.get_function(&reducer_symbol)?.native::<(u32, u32), ()>()?;
 
         let start = std::time::Instant::now();
-        log::trace!("Start reducer \"{}\"...", reducer_name);
+        log::trace!("Start reducer \"{}\"...", reducer_symbol);
         let result = reduce.call(0, 0);
         let duration = start.elapsed();
         let remaining_points = get_remaining_points_value(&instance);
-        log::trace!("Reducer \"{}\" ran: {} us, {} eV", reducer_name, duration.as_micros(), points - remaining_points);
+        log::trace!("Reducer \"{}\" ran: {} us, {} eV", reducer_symbol, duration.as_micros(), points - remaining_points);
 
         if let Some(err) = result.err() {
             let mut stdb = STDB.lock().unwrap();
@@ -302,7 +342,7 @@ impl HostActor {
             let frames = e.trace();
             let frames_len = frames.len();
 
-            log::info!("Reducer \"{}\" runtime error:", reducer_name);
+            log::info!("Reducer \"{}\" runtime error:", reducer_symbol);
             for i in 0..frames_len {
                 log::info!(
                     "  Frame #{}: {:?}::{:?}",
@@ -330,7 +370,18 @@ impl Host {
     pub async fn init_module(&self, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<Hash, anyhow::Error>>();
         self.tx
-            .send(HostCommand::Add {
+            .send(HostCommand::InitModule {
+                wasm_bytes,
+                respond_to: tx,
+            })
+            .await?;
+        rx.await.unwrap()
+    }
+
+    pub async fn add_module(&self, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<Hash, anyhow::Error>>();
+        self.tx
+            .send(HostCommand::AddModule {
                 wasm_bytes,
                 respond_to: tx,
             })
@@ -341,7 +392,7 @@ impl Host {
     pub async fn call_reducer(&self, hash: Hash, reducer_name: String) -> Result<(), anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.tx
-            .send(HostCommand::Call {
+            .send(HostCommand::CallReducer {
                 hash,
                 reducer_name,
                 respond_to: tx,
@@ -350,95 +401,3 @@ impl Host {
         rx.await.unwrap()
     }
 }
-
-// async fn async_main() -> Result<(), Box<dyn Error>> {
-//     let path = fs::canonicalize(format!("{}{}", env!("CARGO_MANIFEST_DIR"),"/rust-wasm-test/wat")).await.unwrap();
-//     let wat = fs::read(path).await?;
-//     // println!("{}", String::from_utf8(wat.to_owned()).unwrap());
-//     let wasm_bytes= wat2wasm(&wat)?;
-
-//     let cost_function = |operator: &Operator| -> u64 {
-//         match operator {
-//             Operator::LocalGet { .. } => 1,
-//             Operator::I32Const { .. } => 1,
-//             Operator::I32Add { .. } => 1,
-//             _ => 1,
-//         }
-//     };
-
-//     let initial_points = 1000000;
-//     let metering = Arc::new(Metering::new(initial_points, cost_function));
-//     let mut compiler_config = wasmer_compiler_llvm::LLVM::default();
-//     compiler_config.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
-//     // let mut compiler_config = Cranelift::default();
-//     // compiler_config.opt_level(wasmer::CraneliftOptLevel::Speed);
-//     compiler_config.push_middleware(metering);
-
-//     let store = Store::new(&Universal::new(compiler_config).engine());
-//     let module = Module::new(&store, wasm_bytes)?;
-//     let import_object = imports! {
-//         "env" => {
-//             "_insert" => Function::new_native(&store, insert),
-//             "_create_table" => Function::new_native(&store, create_table),
-//             "_iter_next" => Function::new_native(&store, iter_next),
-//             "abort" => Function::new_native(&store, abort),
-//             "console.log" => Function::new_native(&store, console_log),
-//         }
-//     };
-
-//     let instance = Instance::new(&module, &import_object)?;
-
-//     let warmup = instance.exports.get_function("warmup")?.native::<(), ()>()?;
-//     let reduce = instance.exports.get_function("reduce")?.native::<u64, ()>()?;
-//     *INSTANCE.lock().unwrap() = Some(instance);
-
-//     println!("Running warmup...");
-//     let start = std::time::Instant::now();
-//     warmup.call()?;
-//     let duration = start.elapsed();
-//     let remaining_points = get_remaining_points_value();
-//     println!("warmup: time {} us, gas used {}", duration.as_micros(), initial_points - remaining_points);
-//     println!();
-
-//     begin_tx();
-//     scan();
-
-//     let start = std::time::Instant::now();
-//     println!("Running Wasm reduce...");
-//     reduce.call(34234)?;
-//     let duration = start.elapsed();
-//     let remaining_points = get_remaining_points_value();
-//     println!("Wasm reduce: time {} us, gas used {}", duration.as_micros(), initial_points - remaining_points);
-//     println!();
-
-//     scan();
-
-//     rollback_tx();
-
-//     scan();
-
-//     let start = std::time::Instant::now();
-//     println!("Running Wasm reduce...");
-//     reduce.call(34234)?;
-//     let duration = start.elapsed();
-//     let remaining_points = get_remaining_points_value();
-//     println!("Wasm reduce: time {} us, gas used {}", duration.as_micros(), initial_points - remaining_points);
-//     println!();
-
-//     scan();
-
-//     rollback_tx();
-
-//     let start = std::time::Instant::now();
-//     println!("Running Rust reduce...");
-//     rust_reduce();
-//     let duration = start.elapsed();
-//     println!("Rust reduce: time {} us", duration.as_micros());
-//     println!();
-
-//     commit_tx();
-
-//     scan();
-
-//     Ok(())
-// }

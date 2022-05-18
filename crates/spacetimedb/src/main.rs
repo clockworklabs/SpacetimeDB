@@ -42,7 +42,7 @@ async fn startup() {
         let module_address: String = row.get(3);
         let hash: Hash = Hash::from_iter(hex::decode(module_address).unwrap());
         let wasm_bytes = odb::get(hash).await.unwrap();
-        wasm_host::get_host().init_module(wasm_bytes.clone()).await.unwrap();
+        wasm_host::get_host().add_module(wasm_bytes.clone()).await.unwrap();
     }
 }
 
