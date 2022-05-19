@@ -42,6 +42,7 @@ tokio-postgres = "0.7.6"
 bb8-postgres = "0.8.0"
 anyhow = { version = "1.0.57", features = ["backtrace"] }
 jsonwebtoken = { version = "8.1.0" }
+rocksdb = "0.18.0"
 # gluesql = "0.10"
 
 [dev-dependencies]

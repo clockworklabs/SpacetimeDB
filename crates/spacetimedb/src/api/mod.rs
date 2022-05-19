@@ -3,6 +3,7 @@ use crate::{
     identity::{alloc_spacetime_identity, decode_token, encode_token},
     postgres,
 };
+use rocksdb;
 
 pub async fn spacetime_identity() -> Result<(Hash, String), anyhow::Error> {
     let identity = alloc_spacetime_identity().await?;

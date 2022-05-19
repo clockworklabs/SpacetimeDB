@@ -10,6 +10,12 @@ struct Table {
     c: u32,
 }
 
+impl Table {
+    fn insert(table: Table) {
+
+    }
+}
+
 #[spacetimedb(migration)]
 pub fn migrate() {
 
@@ -21,6 +27,9 @@ pub fn test(arg: TestA, arg2: TestB) {
 
     for i in 0..100 {
         Table::insert(Table { a: i + arg.x as u32, b: 1 + arg.y as u32, c: 2 + arg.z as u32 });
+        Table::delete_a_eq(4);
+        Table::delete_b_eq(4);
+        Table::delete_c_eq(4);
     }
 
     for row in Table::iter() {

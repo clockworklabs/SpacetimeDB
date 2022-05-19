@@ -2,6 +2,13 @@ pub mod object_db;
 pub mod persistent_object_db;
 pub mod schema;
 pub mod transactional_db;
+mod rocksdb_object_db;
+mod rocksdb_tx_db;
+mod commit;
+mod write;
+mod serde;
+mod object_decoder;
+mod message_log;
 
 use crate::hash::hash_bytes;
 pub use spacetimedb_bindings::{ColType, ColValue, Column, Schema};
