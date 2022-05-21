@@ -28,6 +28,7 @@ pub struct MessageLog {
     open_segment_size: u64,
 }
 
+// TODO: do we build the concept of batches into the message log?
 impl MessageLog {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, anyhow::Error> {
         let root = path.as_ref();
@@ -186,6 +187,9 @@ impl<'a> Iterator for MessageLogIter<'a> {
             self.open_segment_file = Some(file);
             open_segment_file = self.open_segment_file.as_mut().unwrap();
         }
+
+        // TODO: use offset to jump to the right spot in the file
+        // open_segment_file.seek_relative(byte_offset(self.offset));
 
         let mut buf = [0; HEADER_SIZE];
         if let Err(err) = open_segment_file.read_exact(&mut buf) {
