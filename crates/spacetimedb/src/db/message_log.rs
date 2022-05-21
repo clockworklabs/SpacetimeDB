@@ -1,5 +1,6 @@
-use std::{fs::{OpenOptions, File, read_dir}, path::{PathBuf, Path}, io::{BufWriter, Write, Read}, os::unix::prelude::{MetadataExt, FileExt}};
+use std::{fs::{OpenOptions, File, read_dir}, path::{PathBuf, Path}, io::{BufWriter, Write, Read, BufReader}, os::unix::prelude::{MetadataExt, FileExt}};
 
+#[derive(Clone, Copy, Debug)]
 struct Segment {
     min_offset: u64,
     size: u64
@@ -11,7 +12,7 @@ impl Segment {
     }
 }
 
-struct MessageLog {
+pub struct MessageLog {
     root: PathBuf,
     segments: Vec<Segment>,
     open_segment_file: BufWriter<File>,
@@ -20,8 +21,9 @@ struct MessageLog {
 }
 
 impl MessageLog {
-    fn open(path: &str) -> Result<Self, anyhow::Error> {
-        let root = Path::new(path);
+
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, anyhow::Error> {
+        let root = path.as_ref();
 
         let mut segments = Vec::new();
         for file in read_dir(root)? {
@@ -45,12 +47,16 @@ impl MessageLog {
             segments.push(Segment { min_offset: 0, size: 0 });
         }
 
+        for segment in &segments {
+            println!("{:?}", segment);
+        }
+
         let last_segment = segments.get(segments.len() - 1).unwrap();
-        let last_segment_path = root.join(last_segment.name());
+        let last_segment_path = root.join(last_segment.name() + ".log");
         let last_segment_size = last_segment.size;
         let file = OpenOptions::new().read(true).append(true).create(true).open(&last_segment_path)?;
 
-        let mut max_offset = 0;
+        let mut max_offset = last_segment.min_offset;
         let mut cursor: u64 = 0;
         while cursor < last_segment.size {
             let mut buf = [0; 8];
@@ -72,20 +78,22 @@ impl MessageLog {
         })
     }
 
-    fn append(&mut self, message: impl AsRef<[u8]>) -> Result<(), anyhow::Error> {
+    pub fn append(&mut self, message: impl AsRef<[u8]>) -> Result<(), anyhow::Error> {
+        const HEADER_SIZE: u64 = 8;
         let message = message.as_ref();
-        let size = message.len() as u64;
+        let size = message.len() as u64 + HEADER_SIZE;
 
         let end_size = self.open_segment_size + size;
-        if end_size > 1_000_000_000 {
-            self.flush();
+        if end_size > 1_073_741_824 {
+            println!("{}", end_size);
+            self.flush()?;
             self.segments.push(Segment {
                 min_offset: self.open_segment_max_offset + 1,
                 size: 0,
             });
 
             let last_segment = self.segments.get(self.segments.len() - 1).unwrap();
-            let last_segment_path = self.root.join(last_segment.name());
+            let last_segment_path = self.root.join(last_segment.name() + ".log");
 
             let file = OpenOptions::new().append(true).create(true).open(&last_segment_path)?;
             let file = BufWriter::new(file);
@@ -96,45 +104,126 @@ impl MessageLog {
 
         self.open_segment_file.write_all(&size.to_le_bytes())?;
         self.open_segment_file.write_all(message)?;
-        
-        self.open_segment_size = end_size;
+       
+        self.open_segment_size += size;
+        self.open_segment_max_offset += 1;
 
         Ok(())
     }
 
-    fn flush(&mut self) -> Result<(), anyhow::Error> {
+    // NOTE: Flushing a `File` does nothing (just returns Ok(())), but flushing a BufWriter will
+    // write the current buffer to the `File` by calling write. All `File` writes are atomic
+    // so if you want to do an atomic action, make sure it all fits within the BufWriter buffer.
+    // https://www.evanjones.ca/durability-filesystem.html
+    // https://stackoverflow.com/questions/42442387/is-write-safe-to-be-called-from-multiple-threads-simultaneously/42442926#42442926
+    // https://github.com/facebook/rocksdb/wiki/WAL-Performance
+    pub fn flush(&mut self) -> Result<(), anyhow::Error> {
         self.open_segment_file.flush()?;
         Ok(())
     }
+    
+    // This will not return until the data is physically written to disk, as opposed to having
+    // been pushed to the OS. You probably don't need to call this function, unless you need it
+    // to be for sure durably written.
+    // SEE: https://stackoverflow.com/questions/69819990/whats-the-difference-between-flush-and-sync-all
+    pub fn sync_all(&mut self) -> Result<(), anyhow::Error> {
+        let file = self.open_segment_file.get_ref();
+        file.sync_all()?;
+        Ok(())
+    }
 
-    fn iter(&self) -> MessageLogIter {
+    pub fn iter(&self) -> MessageLogIter {
         self.iter_from(0)
     }
 
-    fn iter_from(&self, start_offset: u64) -> MessageLogIter {
+    pub fn iter_from(&self, start_offset: u64) -> MessageLogIter {
         MessageLogIter { 
             offset: start_offset,
             message_log: self,
-            open_segment_file: todo!(),
-            open_segment_cursor: todo!(),
+            open_segment_file: None, 
         }
     }
+
+    fn segment_for_offset(&self, offset: u64) -> Option<Segment> {
+        let prev = self.segments[0];
+        for segment in &self.segments {
+            if segment.min_offset > offset {
+                return Some(prev);
+            }
+        }
+        if offset <= self.open_segment_max_offset {
+            return Some(*self.segments.last().unwrap());
+        }
+        return None;
+    }
+
 }
 
-struct MessageLogIter<'a> {
+pub struct MessageLogIter<'a> {
     offset: u64,
     message_log: &'a MessageLog,
-    open_segment_file: BufWriter<File>,
-    open_segment_cursor: u64,
+    open_segment_file: Option<BufReader<File>>
 }
 
 impl<'a> Iterator for MessageLogIter<'a> {
-    type Item = &'a [u8];
+    type Item = Vec<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        unimplemented!()
+        let open_segment_file: &mut BufReader<File>;
+        if let Some(f) = &mut self.open_segment_file {
+            open_segment_file = f;
+        } else {
+            let segment = self.message_log.segment_for_offset(self.offset).unwrap();
+            let file = OpenOptions::new().read(true).open(self.message_log.root.join(segment.name() + ".log")).unwrap();
+            let file = BufReader::new(file);
+            self.open_segment_file = Some(file);
+            open_segment_file = self.open_segment_file.as_mut().unwrap();
+        }
+
+        let mut buf = [0; 8];
+        if let Err(err) = open_segment_file.read_exact(&mut buf) {
+            match err.kind() {
+                std::io::ErrorKind::UnexpectedEof => return None,
+                _ => panic!("{:?}", err),
+            }
+        };
+        let message_len = u64::from_le_bytes(buf);
+      
+        let mut buf = vec![0; message_len as usize];
+        if let Err(err) = open_segment_file.read_exact(&mut buf) {
+            match err.kind() {
+                std::io::ErrorKind::UnexpectedEof => return None,
+                _ => panic!("{:?}", err),
+            }
+        }
+
+        self.offset += 1;
+
+        Some(buf)
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::MessageLog;
+    use tempdir::{self, TempDir};
 
+    #[test]
+    fn test_message_log() {
+        let tmp_dir = TempDir::new("message_log_test").unwrap();
+        let path = tmp_dir.path();
+        //let path = "/Users/tylercloutier/Developer/SpacetimeDB/test";
+        let mut message_log = MessageLog::open(path).unwrap();
 
+        const MESSAGE_COUNT: i32 = 100_000_000;
+        let start = std::time::Instant::now();
+        for _i in 0..MESSAGE_COUNT {
+            let s = b"yo this is tyler";
+            //let message = s.as_bytes();
+            message_log.append(s).unwrap();
+        }
+        let duration = start.elapsed();
+        println!("{} us ({} ns / message)", duration.as_micros(), duration.as_nanos() / MESSAGE_COUNT as u128);
+        message_log.flush().unwrap();
+    }
+}
