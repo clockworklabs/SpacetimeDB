@@ -5,6 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+const HEADER_SIZE: usize = 4;
+const MAX_SEGMENT_SIZE: u64 = 1_073_741_824;
+
 #[derive(Clone, Copy, Debug)]
 struct Segment {
     min_offset: u64,
@@ -51,10 +54,6 @@ impl MessageLog {
             segments.push(Segment { min_offset: 0, size: 0 });
         }
 
-        for segment in &segments {
-            println!("{:?}", segment);
-        }
-
         let last_segment = segments.get(segments.len() - 1).unwrap();
         let last_segment_path = root.join(last_segment.name() + ".log");
         let last_segment_size = last_segment.size;
@@ -67,12 +66,12 @@ impl MessageLog {
         let mut max_offset = last_segment.min_offset;
         let mut cursor: u64 = 0;
         while cursor < last_segment.size {
-            let mut buf = [0; 8];
+            let mut buf = [0; HEADER_SIZE];
             file.read_exact_at(&mut buf, cursor)?;
-            let message_len = u64::from_le_bytes(buf);
+            let message_len = u32::from_le_bytes(buf);
 
             max_offset += 1;
-            cursor += 8 + message_len;
+            cursor += HEADER_SIZE as u64 + message_len as u64;
         }
 
         let file = BufWriter::new(file);
@@ -87,13 +86,11 @@ impl MessageLog {
     }
 
     pub fn append(&mut self, message: impl AsRef<[u8]>) -> Result<(), anyhow::Error> {
-        const HEADER_SIZE: u64 = 8;
         let message = message.as_ref();
-        let size = message.len() as u64 + HEADER_SIZE;
+        let size: u32 = message.len() as u32 + HEADER_SIZE as u32;
 
-        let end_size = self.open_segment_size + size;
-        if end_size > 1_073_741_824 {
-            println!("{}", end_size);
+        let end_size = self.open_segment_size + size as u64;
+        if end_size > MAX_SEGMENT_SIZE {
             self.flush()?;
             self.segments.push(Segment {
                 min_offset: self.open_segment_max_offset + 1,
@@ -113,7 +110,7 @@ impl MessageLog {
         self.open_segment_file.write_all(&size.to_le_bytes())?;
         self.open_segment_file.write_all(message)?;
 
-        self.open_segment_size += size;
+        self.open_segment_size += size as u64;
         self.open_segment_max_offset += 1;
 
         Ok(())
@@ -190,14 +187,14 @@ impl<'a> Iterator for MessageLogIter<'a> {
             open_segment_file = self.open_segment_file.as_mut().unwrap();
         }
 
-        let mut buf = [0; 8];
+        let mut buf = [0; HEADER_SIZE];
         if let Err(err) = open_segment_file.read_exact(&mut buf) {
             match err.kind() {
                 std::io::ErrorKind::UnexpectedEof => return None,
                 _ => panic!("{:?}", err),
             }
         };
-        let message_len = u64::from_le_bytes(buf);
+        let message_len = u32::from_le_bytes(buf);
 
         let mut buf = vec![0; message_len as usize];
         if let Err(err) = open_segment_file.read_exact(&mut buf) {
