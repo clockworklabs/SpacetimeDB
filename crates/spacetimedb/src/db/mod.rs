@@ -1,14 +1,14 @@
-pub mod object_db;
-pub mod persistent_object_db;
-pub mod schema;
-pub mod transactional_db;
+mod commit;
 pub mod message_log;
+pub mod object_db;
+mod object_decoder;
+pub mod persistent_object_db;
 mod rocksdb_object_db;
 mod rocksdb_tx_db;
-mod commit;
-mod write;
+pub mod schema;
 mod serde;
-mod object_decoder;
+pub mod transactional_db;
+mod write;
 
 use crate::hash::hash_bytes;
 pub use spacetimedb_bindings::{ColType, ColValue, Column, Schema};

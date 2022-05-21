@@ -12,7 +12,7 @@
 //         // let cf_handle = cf_handle.to_owned();
 //         Self {
 //             rocksdb,
-//             // cf_handle, 
+//             // cf_handle,
 //         }
 //     }
 
@@ -43,4 +43,3 @@
 //     }
 
 // }
-

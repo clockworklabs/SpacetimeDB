@@ -28,7 +28,7 @@ pub mod database {
     use crate::{
         db::persistent_object_db::odb,
         hash::Hash,
-        logs::{init_log, self},
+        logs::{self, init_log},
         postgres,
         wasm_host::{self, get_host},
     };
@@ -111,7 +111,7 @@ pub mod database {
                 &[&name, &identity],
             )
             .await;
-        
+
         // TODO: actually handle errors
         let rows = result.unwrap();
         let row = rows.first().unwrap();

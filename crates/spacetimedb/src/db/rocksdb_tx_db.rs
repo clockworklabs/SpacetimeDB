@@ -51,7 +51,7 @@
 //         // rdb.put_cf(metadata, b"")
 
 //         let mut odb = ObjectDB::new(&mut rdb);
-        
+
 //         let commit = Commit {
 //             parent_commit_hash: None,
 //             writes: Vec::new(),

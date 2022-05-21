@@ -4,7 +4,7 @@ use crate::{
 };
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
-use std::{time::SystemTime, collections::HashSet};
+use std::{collections::HashSet, time::SystemTime};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SpacetimeIdentityClaims {
@@ -12,13 +12,13 @@ pub struct SpacetimeIdentityClaims {
     pub iat: usize,
 }
 
-    const PRIVATE_KEY: &'static [u8; 240] = b"-----BEGIN PRIVATE KEY-----
+const PRIVATE_KEY: &'static [u8; 240] = b"-----BEGIN PRIVATE KEY-----
 MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgfv97uvAWHCwiUozf
 8Qu6yHFpmV7Tx27QTjwY/BU9ZxKhRANCAATKxjFoZkGB6ih2SQdeG7KtyBVujSp7
 JChJw40MnxgBExJMZv3xDpfPNFChUDgtkMGqQS1OhOLtExrmdUNe7ySb
 -----END PRIVATE KEY-----";
 
-    const PUBLIC_KEY: &'static [u8; 177] = b"-----BEGIN PUBLIC KEY-----
+const PUBLIC_KEY: &'static [u8; 177] = b"-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEysYxaGZBgeoodkkHXhuyrcgVbo0q
 eyQoScONDJ8YARMSTGb98Q6XzzRQoVA4LZDBqkEtToTi7RMa5nVDXu8kmw==
 -----END PUBLIC KEY-----";

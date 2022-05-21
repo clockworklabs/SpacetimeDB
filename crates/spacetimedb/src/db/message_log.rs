@@ -1,9 +1,14 @@
-use std::{fs::{OpenOptions, File, read_dir}, path::{PathBuf, Path}, io::{BufWriter, Write, Read, BufReader}, os::unix::prelude::{MetadataExt, FileExt}};
+use std::{
+    fs::{read_dir, File, OpenOptions},
+    io::{BufReader, BufWriter, Read, Write},
+    os::unix::prelude::{FileExt, MetadataExt},
+    path::{Path, PathBuf},
+};
 
 #[derive(Clone, Copy, Debug)]
 struct Segment {
     min_offset: u64,
-    size: u64
+    size: u64,
 }
 
 impl Segment {
@@ -21,7 +26,6 @@ pub struct MessageLog {
 }
 
 impl MessageLog {
-
     pub fn open(path: impl AsRef<Path>) -> Result<Self, anyhow::Error> {
         let root = path.as_ref();
 
@@ -40,7 +44,7 @@ impl MessageLog {
                 });
             }
         }
-        
+
         segments.sort_unstable_by_key(|s| s.min_offset);
 
         if segments.len() == 0 {
@@ -54,7 +58,11 @@ impl MessageLog {
         let last_segment = segments.get(segments.len() - 1).unwrap();
         let last_segment_path = root.join(last_segment.name() + ".log");
         let last_segment_size = last_segment.size;
-        let file = OpenOptions::new().read(true).append(true).create(true).open(&last_segment_path)?;
+        let file = OpenOptions::new()
+            .read(true)
+            .append(true)
+            .create(true)
+            .open(&last_segment_path)?;
 
         let mut max_offset = last_segment.min_offset;
         let mut cursor: u64 = 0;
@@ -69,7 +77,7 @@ impl MessageLog {
 
         let file = BufWriter::new(file);
 
-        Ok(Self { 
+        Ok(Self {
             root: root.to_owned(),
             segments,
             open_segment_file: file,
@@ -97,14 +105,14 @@ impl MessageLog {
 
             let file = OpenOptions::new().append(true).create(true).open(&last_segment_path)?;
             let file = BufWriter::new(file);
-            
+
             self.open_segment_size = 0;
             self.open_segment_file = file;
         }
 
         self.open_segment_file.write_all(&size.to_le_bytes())?;
         self.open_segment_file.write_all(message)?;
-       
+
         self.open_segment_size += size;
         self.open_segment_max_offset += 1;
 
@@ -121,7 +129,7 @@ impl MessageLog {
         self.open_segment_file.flush()?;
         Ok(())
     }
-    
+
     // This will not return until the data is physically written to disk, as opposed to having
     // been pushed to the OS. You probably don't need to call this function, unless you need it
     // to be for sure durably written.
@@ -137,10 +145,10 @@ impl MessageLog {
     }
 
     pub fn iter_from(&self, start_offset: u64) -> MessageLogIter {
-        MessageLogIter { 
+        MessageLogIter {
             offset: start_offset,
             message_log: self,
-            open_segment_file: None, 
+            open_segment_file: None,
         }
     }
 
@@ -156,13 +164,12 @@ impl MessageLog {
         }
         return None;
     }
-
 }
 
 pub struct MessageLogIter<'a> {
     offset: u64,
     message_log: &'a MessageLog,
-    open_segment_file: Option<BufReader<File>>
+    open_segment_file: Option<BufReader<File>>,
 }
 
 impl<'a> Iterator for MessageLogIter<'a> {
@@ -174,7 +181,10 @@ impl<'a> Iterator for MessageLogIter<'a> {
             open_segment_file = f;
         } else {
             let segment = self.message_log.segment_for_offset(self.offset).unwrap();
-            let file = OpenOptions::new().read(true).open(self.message_log.root.join(segment.name() + ".log")).unwrap();
+            let file = OpenOptions::new()
+                .read(true)
+                .open(self.message_log.root.join(segment.name() + ".log"))
+                .unwrap();
             let file = BufReader::new(file);
             self.open_segment_file = Some(file);
             open_segment_file = self.open_segment_file.as_mut().unwrap();
@@ -188,7 +198,7 @@ impl<'a> Iterator for MessageLogIter<'a> {
             }
         };
         let message_len = u64::from_le_bytes(buf);
-      
+
         let mut buf = vec![0; message_len as usize];
         if let Err(err) = open_segment_file.read_exact(&mut buf) {
             match err.kind() {
@@ -223,7 +233,11 @@ mod tests {
             message_log.append(s).unwrap();
         }
         let duration = start.elapsed();
-        println!("{} us ({} ns / message)", duration.as_micros(), duration.as_nanos() / MESSAGE_COUNT as u128);
+        println!(
+            "{} us ({} ns / message)",
+            duration.as_micros(),
+            duration.as_nanos() / MESSAGE_COUNT as u128
+        );
         message_log.flush().unwrap();
     }
 }

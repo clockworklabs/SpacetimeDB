@@ -5,6 +5,7 @@ use crate::{
 };
 use anyhow;
 use lazy_static::lazy_static;
+use log;
 use spacetimedb_bindings::{decode_schema, encode_schema, Schema};
 use std::{
     collections::HashMap,
@@ -19,7 +20,6 @@ use wasmer_middlewares::{
     metering::{get_remaining_points, set_remaining_points, MeteringPoints},
     Metering,
 };
-use log;
 
 const REDUCE_DUNDER: &str = "__reducer__";
 const INIT_PANIC_DUNDER: &str = "__init_panic__";
@@ -249,14 +249,13 @@ impl HostActor {
     fn add_module(&mut self, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let hash = hash_bytes(&wasm_bytes);
         let module = Module::new(&self.store, wasm_bytes)?;
-        
+
         self.modules.insert(hash, module);
 
         Ok(hash)
     }
 
     fn init_database(&mut self, module: &Module, hash: Hash) -> Result<(), anyhow::Error> {
-
         let reducer_symbol = INIT_DATABASE_DUNDER;
         self.execute_reducer(module, reducer_symbol, hash)?;
 
@@ -323,14 +322,22 @@ impl HostActor {
             let _ = init_panic.call();
         }
 
-        let reduce = instance.exports.get_function(&reducer_symbol)?.native::<(u32, u32), ()>()?;
+        let reduce = instance
+            .exports
+            .get_function(&reducer_symbol)?
+            .native::<(u32, u32), ()>()?;
 
         let start = std::time::Instant::now();
         log::trace!("Start reducer \"{}\"...", reducer_symbol);
         let result = reduce.call(0, 0);
         let duration = start.elapsed();
         let remaining_points = get_remaining_points_value(&instance);
-        log::trace!("Reducer \"{}\" ran: {} us, {} eV", reducer_symbol, duration.as_micros(), points - remaining_points);
+        log::trace!(
+            "Reducer \"{}\" ran: {} us, {} eV",
+            reducer_symbol,
+            duration.as_micros(),
+            points - remaining_points
+        );
 
         if let Some(err) = result.err() {
             let mut stdb = STDB.lock().unwrap();

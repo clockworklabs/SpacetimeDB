@@ -53,7 +53,11 @@ pub async fn read_latest(module_address: Hash, num_lines: u32) -> String {
     // }
 
     let path = path_from_address(module_address);
-    let mut file = tokio::fs::OpenOptions::new().read(true).open(path).await.expect("opening file");
+    let mut file = tokio::fs::OpenOptions::new()
+        .read(true)
+        .open(path)
+        .await
+        .expect("opening file");
     let mut text = String::new();
     file.read_to_string(&mut text).await.expect("reading file");
 
@@ -63,7 +67,7 @@ pub async fn read_latest(module_address: Hash, num_lines: u32) -> String {
         0_usize
     } else {
         lines.len() - num_lines as usize
-    }; 
+    };
     let end = lines.len();
     let latest = &lines[start..end];
 

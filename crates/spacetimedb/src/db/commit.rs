@@ -1,4 +1,4 @@
-use crate::{hash::Hash};
+use crate::hash::Hash;
 
 use super::write::Write;
 
@@ -13,15 +13,18 @@ impl Commit {
     pub fn decode(bytes: impl AsRef<[u8]>) -> (Self, usize) {
         let bytes = &mut bytes.as_ref();
         if bytes.len() == 0 {
-            return (Commit {
-                parent_commit_hash: None,
-                writes: Vec::new(),
-            }, 0);
+            return (
+                Commit {
+                    parent_commit_hash: None,
+                    writes: Vec::new(),
+                },
+                0,
+            );
         }
 
         let mut start = 0;
         let mut parent_commit_hash = Hash::default();
-        parent_commit_hash.copy_from_slice(&bytes[start..start+32]);
+        parent_commit_hash.copy_from_slice(&bytes[start..start + 32]);
         start += 32;
 
         let mut writes: Vec<Write> = Vec::new();
@@ -31,10 +34,13 @@ impl Commit {
             writes.push(write);
         }
 
-        (Commit {
-            parent_commit_hash: Some(parent_commit_hash),
-            writes,
-        }, start)
+        (
+            Commit {
+                parent_commit_hash: Some(parent_commit_hash),
+                writes,
+            },
+            start,
+        )
     }
 
     pub fn encode(&self, bytes: &mut Vec<u8>) {

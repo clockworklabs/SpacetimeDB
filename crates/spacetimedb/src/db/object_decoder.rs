@@ -1,5 +1,3 @@
-
-
 // struct Decoder<'de> {
 //     input: &'de [u8],
 //     bytes_read: usize,
