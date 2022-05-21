@@ -3,8 +3,6 @@ pub mod message_log;
 pub mod object_db;
 mod object_decoder;
 pub mod persistent_object_db;
-mod rocksdb_object_db;
-mod rocksdb_tx_db;
 pub mod schema;
 mod serde;
 pub mod transactional_db;
