@@ -23,6 +23,7 @@ impl Segment {
 pub struct MessageLog {
     root: PathBuf,
     segments: Vec<Segment>,
+    total_size: u64,
     open_segment_file: BufWriter<File>,
     open_segment_max_offset: u64,
     open_segment_size: u64,
@@ -34,6 +35,7 @@ impl MessageLog {
         let root = path.as_ref();
 
         let mut segments = Vec::new();
+        let mut total_size = 0;
         for file in read_dir(root)? {
             let dir_entry = file?;
             let path = dir_entry.path();
@@ -42,6 +44,7 @@ impl MessageLog {
                 let offset = file_stem.to_os_string().into_string().unwrap();
                 let offset = offset.parse::<u64>()?;
                 let size = dir_entry.metadata()?.size();
+                total_size += size;
                 segments.push(Segment {
                     min_offset: offset,
                     size,
@@ -80,6 +83,7 @@ impl MessageLog {
         Ok(Self {
             root: root.to_owned(),
             segments,
+            total_size,
             open_segment_file: file,
             open_segment_max_offset: max_offset,
             open_segment_size: last_segment_size,
@@ -113,6 +117,7 @@ impl MessageLog {
 
         self.open_segment_size += size as u64;
         self.open_segment_max_offset += 1;
+        self.total_size += size as u64;
 
         Ok(())
     }
@@ -136,6 +141,10 @@ impl MessageLog {
         let file = self.open_segment_file.get_ref();
         file.sync_all()?;
         Ok(())
+    }
+
+    pub fn size(&self) -> u64 {
+        self.total_size
     }
 
     pub fn iter(&self) -> MessageLogIter {
@@ -240,5 +249,6 @@ mod tests {
             duration.as_nanos() / MESSAGE_COUNT as u128
         );
         message_log.flush().unwrap();
+        println!("total_size: {}", message_log.size())
     }
 }

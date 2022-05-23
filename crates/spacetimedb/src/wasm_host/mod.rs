@@ -1,6 +1,6 @@
 use crate::logs;
 use crate::{
-    db::{transactional_db::Transaction, SpacetimeDB},
+    db::{transactional_db::Tx, spacetime_db::SpacetimeDB},
     hash::{hash_bytes, Hash},
 };
 use anyhow;
@@ -30,7 +30,7 @@ lazy_static! {
     static ref STDB: Mutex<SpacetimeDB> = Mutex::new(SpacetimeDB::new());
 
     // TODO: probably store these inside STDB
-    static ref TX_MAP: Mutex<HashMap<u64, Transaction>> = Mutex::new(HashMap::new());
+    static ref TX_MAP: Mutex<HashMap<u64, Tx>> = Mutex::new(HashMap::new());
     static ref TX_ID: Mutex<u64> = Mutex::new(0);
 }
 

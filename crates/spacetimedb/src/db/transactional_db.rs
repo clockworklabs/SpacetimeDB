@@ -1,173 +1,301 @@
-use crate::hash::hash_bytes;
-use sha3::digest::{generic_array::typenum::U32, generic_array::GenericArray};
-use std::collections::{HashMap, HashSet};
-
-use super::object_db::ObjectDB;
-
-// TODO: maybe use serde?
-type Hash = GenericArray<u8, U32>;
-
-#[derive(Debug, Clone)]
-pub struct Transaction {
-    parent_commit: Hash,
-    reads: Vec<Read>,
-    writes: Vec<Write>,
-}
+use std::{collections::{HashMap, HashSet, hash_set::Iter}, sync::RwLock};
+use super::{object_db::ObjectDB, messages::{write::{Write, Value, Operation}, transaction::Transaction, commit::Commit}, message_log::MessageLog};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct Read {
     set_id: u32,
-    hash: Hash,
+    value: Value,
 }
 
-#[derive(Debug, Copy, Clone)]
-enum Write {
-    Insert { set_id: u32, hash: Hash },
-    Delete { set_id: u32, hash: Hash },
-}
-
-impl Write {
-    // write: <write_type(1)><hash(32)>
-    fn decode(bytes: &mut &[u8]) -> Self {
-        let op = bytes[0];
-        *bytes = &bytes[1..];
-
-        let mut dst = [0u8; 4];
-        dst.copy_from_slice(&bytes[0..4]);
-        let set_id = u32::from_le_bytes(dst);
-        *bytes = &bytes[4..];
-
-        let mut hash = Hash::default();
-        hash.copy_from_slice(&bytes[..32]);
-        *bytes = &bytes[32..];
-
-        if op == 0 {
-            Write::Delete { set_id, hash }
-        } else {
-            Write::Insert { set_id, hash }
-        }
-    }
-
-    fn encode(&self, bytes: &mut Vec<u8>) {
-        match self {
-            Write::Insert { set_id, hash } => {
-                bytes.push(1);
-                bytes.extend(set_id.to_le_bytes());
-                bytes.extend(hash);
-            }
-            Write::Delete { set_id, hash } => {
-                bytes.push(0);
-                bytes.extend(set_id.to_le_bytes());
-                bytes.extend(hash);
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Commit {
-    parent_commit_hash: Option<Hash>,
+#[derive(Debug, Clone)]
+pub struct Tx {
+    parent_tx_offset: u64,
     writes: Vec<Write>,
-}
-
-impl Commit {
-    // commit: <parent_commit_hash(32)>[<table_update>...(dedupped and sorted_numerically)]*
-    fn decode(bytes: &mut &[u8]) -> Self {
-        if bytes.len() == 0 {
-            return Commit {
-                parent_commit_hash: None,
-                writes: Vec::new(),
-            };
-        }
-
-        let start = 0;
-        let end = 32;
-        let mut parent_commit_hash = Hash::default();
-        parent_commit_hash.copy_from_slice(&bytes[start..end]);
-
-        *bytes = &bytes[end..];
-        let mut writes: Vec<Write> = Vec::new();
-        while bytes.len() > 0 {
-            writes.push(Write::decode(bytes));
-        }
-
-        Commit {
-            parent_commit_hash: Some(parent_commit_hash),
-            writes,
-        }
-    }
-
-    fn encode(&self, bytes: &mut Vec<u8>) {
-        if self.parent_commit_hash.is_none() {
-            return;
-        }
-
-        if let Some(parent_commit_hash) = self.parent_commit_hash {
-            for byte in parent_commit_hash {
-                bytes.push(byte);
-            }
-        }
-
-        for update in &self.writes {
-            update.encode(bytes);
-        }
-    }
+    reads: Vec<Read>,
 }
 
 // TODO: implement some kind of tag/dataset/namespace system
 // which allows the user to restrict the search for data
 // to a tag or set of tags. Honestly, maybe forget the content
 // addressing and just use a map like CockroachDB, idk.
+
+pub struct TransactionalDBThreadSafe {
+    inner: RwLock<TransactionalDB> 
+}
+
+pub struct PageTuplePointer {
+    page_offset: u32,
+    tuple_offset: u8,
+}
+
+
+pub struct Page {
+    tuples: Vec<Tuple>,
+}
+
+pub struct Tuple {
+    tx_id: u64,
+    value: [u8; 32],
+}
+
+// A page based structure would allow us to do soa vs aos
+// but in that case the TxDB would have to know something
+// about the structure of the tuples
+pub struct ClosedPageSet {
+    pages: Vec<RwLock<Page>>
+}
+
+pub struct ClosedHashSet {
+    set: RwLock<HashSet<Value>>,
+}
+
+impl ClosedHashSet {
+    fn contains(&self, value: Value) -> bool {
+        let set = self.set.read().unwrap();
+        set.contains(&value)
+    }
+
+    fn insert(&mut self, value: Value) {
+        let mut set = self.set.write().unwrap();
+        set.insert(value);
+    }
+
+    fn delete(&mut self, value: Value) {
+        let mut set = self.set.write().unwrap();
+        set.remove(&value);
+    }
+
+    fn len(&self) -> usize {
+        let set = self.set.read().unwrap();
+        set.len()
+    }
+}
+
+pub struct OpenSetRecord {
+    write: Write,
+    tx_id: u64,
+}
+
+impl OpenSetRecord {
+    
+    // <set_id(4)><value(33)><tx_id(8)><write_flags(1)>
+    pub fn encode(&self, bytes: &mut Vec<u8>) {
+        // Maybe should be big endian but doesn't matter based on how we're using it.
+        bytes.extend(self.write.set_id.to_le_bytes());
+        
+        let written = self.write.value.encode(bytes);
+        // Pad value
+        for _ in 0..(33-written) {
+            bytes.push(0);
+        }
+
+        // NOTE: big endian for lex sorting
+        bytes.extend(self.tx_id.to_be_bytes());
+
+        // NOTE: if write flags change this needs to be updated
+        // TODO: fix this
+        // Also note that this is not serializing the flags correctly
+        // This will break at some point and some poor engineer will
+        // be very confused for probably a whole day.
+        bytes.push(self.write.operation.to_u8());
+    }
+
+    pub fn decode(bytes: impl AsRef<[u8]>) -> (Self, usize) {
+        let bytes = bytes.as_ref();
+        let mut read_count = 0;
+
+        let mut dst = [0u8; 4];
+        dst.copy_from_slice(&bytes[read_count..read_count+4]);
+        let set_id = u32::from_le_bytes(dst);
+        read_count += 4;
+
+        let (value, rc) = Value::decode(bytes);
+        read_count += 33;
+
+        let mut dst = [0u8; 8];
+        dst.copy_from_slice(&bytes[read_count..read_count+4]);
+        let tx_id = u64::from_le_bytes(dst);
+        read_count += 8;
+
+        let flags = bytes[read_count];
+        read_count += 1;
+
+        let operation = Operation::from_u8(flags);
+
+        (Self { write: Write { operation, set_id, value }, tx_id }, read_count)
+    }
+
+}
+
+pub struct ClosedState {
+    //open_set: BTreeSet<[u8; 46]>,
+    page_sets: RwLock<HashMap<u32, ClosedPageSet>>,
+    hash_sets: RwLock<HashMap<u32, ClosedHashSet>>,
+}
+
+impl ClosedState {
+
+    fn new() -> Self {
+        Self {
+            //open_set: BTreeSet::new(),
+            page_sets: RwLock::new(HashMap::new()),
+            hash_sets: RwLock::new(HashMap::new())
+        }
+    }
+
+    fn contains(&self, set_id: u32, value: Value) -> bool {
+        // TODO: thoughts
+        // let mut min_bytes = Vec::with_capacity(46);
+        // let min_record = OpenSetRecord {
+        //     write: Write { operation: Operation::Delete, set_id, value },
+        //     tx_id: 0,
+        // };
+        // min_record.encode(&mut min_bytes);
+        // let min_bytes_buf = [0; 46];
+        // min_bytes_buf.copy_from_slice(&min_bytes);
+
+        // let max_bytes = Vec::with_capacity(46);
+        // let max_record = OpenSetRecord {
+        //     write: Write { operation: Operation::Insert, set_id, value },
+        //     tx_id: u64::max_value(),
+        // };
+        // max_record.encode(&mut max_bytes);
+        // let max_bytes_buf = [0; 46];
+        // max_bytes_buf.copy_from_slice(&max_bytes);
+
+        // let start = std::ops::Bound::Included(min_bytes_buf);
+        // let end = std::ops::Bound::Included(max_bytes_buf);
+
+        // for record_buf in self.open_set.range((start, end)) {
+        //     let (record, _) = OpenSetRecord::decode(record_buf);
+        //     if record.tx_id < 
+        // }
+
+        let sets = self.hash_sets.read().unwrap();
+        if let Some(set) = sets.get(&set_id) {
+            set.contains(value)
+        } else {
+            false
+        }
+    }
+
+    fn insert(&mut self, set_id: u32, value: Value) {
+        let mut sets = self.hash_sets.write().unwrap();
+        if let Some(set) = sets.get_mut(&set_id) {
+            set.insert(value)
+        } else {
+            let mut set = HashSet::new();
+            set.insert(value);
+            let lock = RwLock::new(set);
+            sets.insert(set_id, ClosedHashSet {
+                set: lock,
+            });
+        }
+    }
+
+    fn delete(&mut self, set_id: u32, value: Value) {
+        let mut sets = self.hash_sets.write().unwrap();
+        if let Some(set) = sets.get_mut(&set_id) {
+            // Not atomic, but also correct
+            set.delete(value);
+            if set.len() == 0 {
+                drop(set);
+                sets.remove(&set_id);
+            }
+        } else {
+            // Do nothing
+        }
+    }
+
+    fn iter(&self, set_id: u32) -> Option<Iter<Value>> {
+        let sets = self.hash_sets.read().unwrap();
+        if let Some(set) = sets.get(&set_id) {
+            let x = set.set.read().unwrap();
+            let y = x.iter();
+            Some(y)
+        } else {
+            None
+        }
+    }
+
+}
+
 pub struct TransactionalDB {
     pub odb: ObjectDB,
-    closed_state: HashMap<u32, HashSet<Hash>>,
-    closed_commit: Hash,
-    open_commits: Vec<Hash>,
-    branched_commits: Vec<Hash>,
+    closed_state: ClosedState,
+
+    // TODO: it may be possible to move all this logic directly
+    // into the values themselves which might make it easier to
+    // index open transaction values
+    closed_transaction_offset: u64,
+    open_transactions: Vec<Transaction>,
+    open_transaction_offsets: Vec<u64>,
+    branched_transaction_offsets: Vec<u64>,
 }
 
 impl TransactionalDB {
     pub fn new() -> Self {
-        let commit = Commit {
-            parent_commit_hash: None,
+        let transaction = Transaction {
             writes: Vec::new(),
         };
 
         let mut odb = ObjectDB::new();
 
-        let mut initial_commit_bytes: Vec<u8> = Vec::new();
-        commit.encode(&mut initial_commit_bytes);
-        let commit_hash = odb.add(initial_commit_bytes);
+        let mut initial_transaction_bytes: Vec<u8> = Vec::new();
+        transaction.encode(&mut initial_transaction_bytes);
+        let transaction_hash = odb.add(initial_transaction_bytes);
 
         Self {
             odb,
-            closed_commit: commit_hash,
-            branched_commits: Vec::new(),
-            open_commits: Vec::new(),
-            closed_state: HashMap::new(),
+            closed_state: ClosedState::new(),
+            closed_transaction_offset: 0,
+            open_transactions: Vec::new(),
+            open_transaction_offsets: Vec::new(),
+            branched_transaction_offsets: Vec::new(),
         }
     }
 
-    fn latest_commit(&self) -> Hash {
-        self.open_commits.last().map(|h| *h).unwrap_or(self.closed_commit)
+    pub fn from_log(message_log: &MessageLog) {
+        let txdb = Self::new();
+        for message in message_log.iter() {
+            let (commit, _) = Commit::decode(message);
+            for transaction in commit.transactions {
+                txdb.reduce(transaction);
+            }
+        }
     }
 
-    pub fn begin_tx(&mut self) -> Transaction {
-        let parent = self.latest_commit();
-        self.branched_commits.push(parent);
-        Transaction {
-            parent_commit: parent,
+    fn reduce(&self, transaction: Transaction) {
+        unimplemented!();
+    }
+
+    fn latest_transaction_offset(&self) -> u64 {
+        self.open_transaction_offsets.last().map(|h| *h).unwrap_or(self.closed_transaction_offset)
+    }
+
+    fn get_open_transaction(&self, offset: u64) -> &Transaction {
+        let index = offset - self.closed_transaction_offset;
+        // Assumes open transactions are deleted from the beginning
+        &self.open_transactions[index as usize]
+    }
+
+    pub fn begin_tx(&mut self) -> Tx {
+        let parent = self.latest_transaction_offset();
+        self.branched_transaction_offsets.push(parent);
+        Tx {
+            parent_tx_offset: parent,
             reads: Vec::new(),
             writes: Vec::new(),
         }
     }
 
-    pub fn rollback_tx(&mut self, _tx: Transaction) {
-        // TODO: clean up branched_commits
+    pub fn rollback_tx(&mut self, _tx: Tx) {
+        // TODO: clean up branched_transactions
+        unimplemented!();
     }
 
-    pub fn commit_tx(&mut self, tx: Transaction) -> bool {
-        if self.latest_commit() == tx.parent_commit {
+    pub fn commit_tx(&mut self, tx: Tx) -> bool {
+        if self.latest_transaction_offset() == tx.parent_tx_offset {
             self.finalize(tx);
             return true;
         }
@@ -178,103 +306,76 @@ impl TransactionalDB {
         // - If I did read something someone else wrote to, then the issue is that I am
         // potentially basing my changes off of stuff that has changed since I last pulled.
         // I should pull and then try to reapply my changes based on the most current state
-        // of the database (basically rebase off latest_commit). Really this just means the
+        // of the database (basically rebase off latest_transaction). Really this just means the
         // transaction has failed, and the transaction should be tried again with a a new
-        // parent commit.
+        // parent transaction.
         let mut read_set: HashSet<Read> = HashSet::new();
         for read in &tx.reads {
             read_set.insert(*read);
         }
 
-        let mut commit_hash = self.latest_commit();
+        // NOTE: latest transaction cannot be a closed transaction and not also be the parent
+        let mut transaction_offset = self.latest_transaction_offset();
         loop {
-            let commit = Commit::decode(&mut self.odb.get(commit_hash).unwrap());
-            for write in commit.writes {
-                let (set_id, hash) = match write {
-                    Write::Insert { set_id, hash } => (set_id, hash),
-                    Write::Delete { set_id, hash } => (set_id, hash),
-                };
-                if read_set.contains(&Read { set_id, hash }) {
+            let transaction = self.get_open_transaction(transaction_offset);
+            for write in &transaction.writes {
+                if read_set.contains(&Read {set_id: write.set_id, value: write.value}) {
                     return false;
                 }
             }
 
-            if commit.parent_commit_hash == Some(tx.parent_commit) {
+            if transaction_offset == tx.parent_tx_offset {
                 break;
             }
 
-            commit_hash = commit.parent_commit_hash.unwrap();
+            transaction_offset -= 1;
         }
 
         self.finalize(tx);
         true
     }
 
-    fn finalize(&mut self, tx: Transaction) {
-        // Rebase on the last open commit (or closed commit if none open)
-        let new_commit = Commit {
-            parent_commit_hash: Some(self.latest_commit()),
+    fn finalize(&mut self, tx: Tx) {
+        // Rebase on the last open transaction (or closed transaction if none open)
+        let new_transaction = Transaction {
             writes: tx.writes,
         };
 
-        let mut commit_bytes = Vec::new();
-        new_commit.encode(&mut commit_bytes);
-        let commit_hash = hash_bytes(&commit_bytes);
-
-        self.odb.add(commit_bytes);
-        self.open_commits.push(commit_hash);
+        self.open_transactions.push(new_transaction);
 
         // Remove my branch
         let index = self
-            .branched_commits
+            .branched_transaction_offsets
             .iter()
-            .position(|hash| *hash == tx.parent_commit)
+            .position(|offset| *offset == tx.parent_tx_offset)
             .unwrap();
-        self.branched_commits.swap_remove(index);
+        self.branched_transaction_offsets.swap_remove(index);
 
-        if tx.parent_commit == self.closed_commit {
-            let index = self.branched_commits.iter().position(|hash| *hash == tx.parent_commit);
+        if tx.parent_tx_offset == self.closed_transaction_offset {
+            let index = self.branched_transaction_offsets.iter().position(|offset| *offset == tx.parent_tx_offset);
             if index == None {
-                // I was the last branch preventing closing of the next open commit.
-                // Close the open commits until the next branch.
+                // I was the last branch preventing closing of the next open transaction.
+                // Close the open transactions until the next branch.
                 loop {
-                    let next_open = self.open_commits.first().map(|h| *h);
-                    if let Some(next_open) = next_open {
-                        self.closed_commit = next_open;
-                        self.open_commits.remove(0);
+                    let next_open_offset  = self.open_transaction_offsets.first().map(|h| *h);
+                    if let Some(next_open_offset) = next_open_offset {
+                        let next_open = self.get_open_transaction(next_open_offset);
+                        self.closed_transaction_offset = next_open_offset;
+                        self.open_transactions.remove(0);
 
-                        let commit_obj = Commit::decode(&mut self.odb.get(next_open).unwrap());
-                        for write in commit_obj.writes {
-                            match write {
-                                Write::Insert { set_id, hash } => {
-                                    if let Some(closed_set) = self.closed_state.get_mut(&set_id) {
-                                        closed_set.insert(hash);
-                                    } else {
-                                        let mut hash_set = HashSet::new();
-                                        hash_set.insert(hash);
-                                        self.closed_state.insert(set_id, hash_set);
-                                    }
-                                }
-                                Write::Delete { set_id, hash } => {
-                                    if let Some(closed_set) = self.closed_state.get_mut(&set_id) {
-                                        closed_set.remove(&hash);
-
-                                        if closed_set.len() == 0 {
-                                            drop(closed_set);
-                                            self.closed_state.remove(&set_id);
-                                        }
-                                    } else {
-                                        // Do nothing
-                                    }
-                                }
+                        for write in &next_open.writes {
+                            if write.operation.to_u8() == 0 {
+                                self.closed_state.delete(write.set_id, write.value);
+                            } else {
+                                self.closed_state.insert(write.set_id, write.value);
                             }
                         }
                         // If someone branched off of me, we're done otherwise continue
-                        if self.branched_commits.contains(&next_open) {
+                        if self.branched_transaction_offsets.contains(&next_open_offset) {
                             break;
                         }
                     } else {
-                        // No more commits to process
+                        // No more transactions to process
                         break;
                     }
                 }
@@ -282,77 +383,71 @@ impl TransactionalDB {
         }
     }
 
-    pub fn seek(&self, tx: &mut Transaction, set_id: u32, hash: Hash) -> Option<&[u8]> {
-        // I'm not sure if this just needs to track reads from the parent commit
-        // or reads from the transaction as well.
-        tx.reads.push(Read { set_id, hash });
+    pub fn data_from_value(&self, value: Value) -> Option<&[u8]> {
+        let data = match value {
+            Value::Data { len, buf } => Some(&buf[0..(len as usize)]),
+            Value::Hash(hash) => self.odb.get(hash),
+        };
+        data
+    }
 
-        // Even uncommitted rows will be in the odb. This will accumulate garbage over time,
-        // but we could also clear it if a commit fails (or store uncommited changes in a different odb).
-        // You could potentially check if this is None to short circuit things, but that's
-        // only if you're sure everything is in the odb.
-        let row_obj = self.odb.get(hash);
+    pub fn seek(&self, tx: &mut Tx, set_id: u32, value: Value) -> Option<&[u8]> {
+        // I'm not sure if this just needs to track reads from the parent transaction
+        // or reads from the transaction as well.
+        // TODO: Replace this with relation, page, row level SIREAD locks
+        // SEE: https://www.interdb.jp/pg/pgsql05.html
+        tx.reads.push(Read { set_id, value });
+
+        // Even uncommitted objects will be in the odb. This will accumulate garbage over time,
+        // but we could also clear it if a transaction fails (or store uncommited changes in a different odb).
+        let data = self.data_from_value(value);
 
         // Search back through this transaction
         for i in (0..tx.writes.len()).rev() {
-            match &tx.writes[i] {
-                Write::Insert { set_id: s, hash: h } => {
-                    if *h == hash && *s == set_id {
-                        return Some(row_obj.unwrap());
-                    }
+            let write = &tx.writes[i];
+            if write.operation.to_u8() == 0 {
+                if set_id == write.set_id && write.value == value {
+                    return None;
                 }
-                Write::Delete { set_id: s, hash: h } => {
-                    if *h == hash && *s == set_id {
-                        return None;
-                    }
+            } else {
+                if set_id == write.set_id && write.value == value {
+                    return Some(data.unwrap());
                 }
-            };
+            }
         }
 
-        // Search backwards through all open commits that are parents of this transaction.
+        // Search backwards through all open transactions that are parents of this transaction.
         // if you find a delete it's not there.
         // if you find an insert it is there. If you find no mention of it, then whether
         // it's there or not is dependent on the closed_state.
-        let mut i = self
-            .open_commits
-            .iter()
-            .position(|h| *h == tx.parent_commit)
-            .unwrap_or(0);
+        let mut next_open_offset = tx.parent_tx_offset; 
         loop {
-            let next_open = self.open_commits.get(i).map(|h| *h);
-            if let Some(next_open) = next_open {
-                let commit_obj = Commit::decode(&mut self.odb.get(next_open).unwrap());
-                for write in &commit_obj.writes {
-                    match write {
-                        Write::Insert { set_id: s, hash: h } => {
-                            if *h == hash && *s == set_id {
-                                return row_obj;
-                            }
-                        }
-                        Write::Delete { set_id: s, hash: h } => {
-                            if *h == hash && *s == set_id {
-                                return None;
-                            }
-                        }
-                    }
-                }
-            } else {
-                // No more commits to process
+            if next_open_offset == self.closed_transaction_offset {
                 break;
             }
-            i -= 1;
+            let next_open = self.get_open_transaction(next_open_offset);
+            for write in &next_open.writes {
+                if write.operation.to_u8() == 0 {
+                    if set_id == write.set_id && write.value == value {
+                        return None;
+                    }
+                } else {
+                    if set_id == write.set_id && write.value == value {
+                        return Some(data.unwrap());
+                    }
+                }
+            }
+            next_open_offset -= 1;
         }
 
-        if let Some(closed_set) = self.closed_state.get(&set_id) {
-            if closed_set.contains(&hash) {
-                return Some(row_obj.unwrap());
-            }
+        if self.closed_state.contains(set_id, value) {
+            return Some(data.unwrap());
         }
 
         None
     }
 
-    pub fn scan<'a>(&'a self, tx: &'a mut Transaction, set_id: u32) -> ScanIter<'a> {
+    pub fn scan<'a>(&'a self, tx: &'a mut Tx, set_id: u32) -> ScanIter<'a> {
         let tx_writes_index = tx.writes.len() as i32 - 1;
         ScanIter {
             txdb: self,
@@ -363,83 +458,86 @@ impl TransactionalDB {
         }
     }
 
-    pub fn delete(&mut self, tx: &mut Transaction, set_id: u32, hash: Hash) {
+    pub fn delete(&mut self, tx: &mut Tx, set_id: u32, value: Value) {
         // Search backwards in the transaction:
         // if not there: add delete
-        // if insert there: replace with delete
         // if delete there: do nothing
+        // if insert there: replace with delete
         let mut found = false;
         for i in (0..tx.writes.len()).rev() {
             let write = tx.writes[i];
-            match write {
-                Write::Insert { set_id: s, hash: h } => {
-                    if h == hash && s == set_id {
-                        found = true;
-                        tx.writes[i] = Write::Delete { set_id, hash };
-                        break;
-                    }
+            if write.operation.to_u8() == 0 {
+                if set_id == write.set_id && write.value == value {
+                    found = true;
+                    break;
                 }
-                Write::Delete { set_id: s, hash: h } => {
-                    if h == hash && s == set_id {
-                        found = true;
-                        break;
-                    }
+            } else {
+                if set_id == write.set_id && write.value == value {
+                    found = true;
+                    tx.writes[i] = Write { operation: Operation::Delete, set_id, value };
+                    break;
                 }
             }
         }
         if !found {
-            tx.writes.push(Write::Delete { set_id, hash });
+            tx.writes.push(Write { operation: Operation::Delete, set_id, value });
         }
     }
 
-    pub fn insert(&mut self, tx: &mut Transaction, set_id: u32, bytes: Vec<u8>) -> Hash {
-        let hash = hash_bytes(&bytes);
+    pub fn insert(&mut self, tx: &mut Tx, set_id: u32, bytes: Vec<u8>) -> Value {
+        let value = if bytes.len() > 32 {
+            let hash = self.odb.add(bytes);
+            Value::Hash(hash)
+        } else {
+            let buf = [0; 32];
+            buf.copy_from_slice(&bytes[0..bytes.len()]);
+            Value::Data {
+                len: bytes.len() as u8,
+                buf
+            }
+        };
 
         // Search backwards in the transaction:
         // if not there: add insert
-        // if insert there: do nothing
         // if delete there: overwrite as insert
+        // if insert there: do nothing
         let mut found = false;
         for i in (0..tx.writes.len()).rev() {
             let write = tx.writes[i];
-            match write {
-                Write::Insert { set_id: s, hash: h } => {
-                    if h == hash && s == set_id {
-                        found = true;
-                        break;
-                    }
+            if write.operation.to_u8() == 0 {
+                if set_id == write.set_id && write.value == value {
+                    found = true;
+                    tx.writes[i] = Write { operation: Operation::Insert, set_id, value };
+                    break;
                 }
-                Write::Delete { set_id: s, hash: h } => {
-                    if h == hash && s == set_id {
-                        found = true;
-                        tx.writes[i] = Write::Insert { set_id, hash };
-                        break;
-                    }
+            } else {
+                if set_id == write.set_id && write.value == value {
+                    found = true;
+                    break;
                 }
             }
         }
+
         if !found {
-            // Add bytes to the odb
-            self.odb.add(bytes);
-            tx.writes.push(Write::Insert { set_id, hash });
+            tx.writes.push(Write { operation: Operation::Insert, set_id, value });
         }
 
-        hash
+        value
     }
 }
 
 pub struct ScanIter<'a> {
     txdb: &'a TransactionalDB,
-    tx: &'a mut Transaction,
+    tx: &'a mut Tx,
     set_id: u32,
-    scanned: HashSet<Hash>,
+    scanned: HashSet<Value>,
     scan_stage: Option<ScanStage<'a>>,
 }
 
 enum ScanStage<'a> {
     CurTx { index: i32 },
-    OpenCommits { commit: Commit, write_index: Option<usize> },
-    ClosedSet(std::collections::hash_set::Iter<'a, Hash>),
+    OpenTransactions { transaction_offset: u64, write_index: Option<i32> },
+    ClosedSet(std::collections::hash_set::Iter<'a, Value>),
 }
 
 impl<'a> Iterator for ScanIter<'a> {
@@ -452,117 +550,103 @@ impl<'a> Iterator for ScanIter<'a> {
         loop {
             match self.scan_stage.take() {
                 Some(ScanStage::CurTx { index }) => {
-                    // Search back through this transaction
                     if index == -1 {
-                        let open_commits_index =
-                            self.txdb.open_commits.iter().position(|h| *h == self.tx.parent_commit);
-                        if let Some(open_commits_index) = open_commits_index {
-                            let open_commit = self.txdb.open_commits[open_commits_index];
-                            let commit = Commit::decode(&mut self.txdb.odb.get(open_commit).unwrap());
-                            let index = if commit.writes.len() > 0 {
-                                Some(commit.writes.len() - 1)
-                            } else {
-                                None
-                            };
-                            self.scan_stage = Some(ScanStage::OpenCommits {
-                                commit,
-                                write_index: index,
-                            });
-                        } else {
-                            if let Some(closed_set) = self.txdb.closed_state.get(&set_id) {
-                                self.scan_stage = Some(ScanStage::ClosedSet(closed_set.iter()));
-                            } else {
-                                return None;
-                            }
-                        }
+                        self.scan_stage = Some(ScanStage::OpenTransactions {
+                            transaction_offset: self.tx.parent_tx_offset,
+                            write_index: None,
+                        });
                         continue;
                     } else {
                         self.scan_stage = Some(ScanStage::CurTx { index: index - 1 });
                     }
-                    match &self.tx.writes[index as usize] {
-                        Write::Insert { set_id: s, hash: h } => {
-                            if *s == set_id {
-                                self.tx.reads.push(Read { set_id: *s, hash: *h });
-                                let row_obj = self.txdb.odb.get(*h).unwrap();
-                                scanned.insert(*h);
-                                return Some(row_obj);
+                    // Search back through this transaction
+                    let write = &self.tx.writes[index as usize];
+                    match write.operation {
+                        Operation::Insert => {
+                            if write.set_id == set_id {
+                                self.tx.reads.push(Read { set_id: write.set_id, value: write.value });
+                                let data = self.txdb.data_from_value(write.value);
+                                scanned.insert(write.value);
+                                return Some(data.unwrap());
                             }
                         }
-                        Write::Delete { set_id: s, hash: h } => {
-                            if *s == set_id {
-                                self.tx.reads.push(Read { set_id: *s, hash: *h });
-                                scanned.insert(*h);
+                        Operation::Delete => {
+                            if write.set_id == set_id {
+                                self.tx.reads.push(Read { set_id: write.set_id, value: write.value });
+                                scanned.insert(write.value);
                             }
                         }
                     };
                 }
-                Some(ScanStage::OpenCommits { commit, write_index }) => {
-                    // Search backwards through all open commits that are parents of this transaction.
+                Some(ScanStage::OpenTransactions { transaction_offset, write_index }) => {
+                    // Search backwards through all open transactions that are parents of this transaction.
                     // if you find a delete it's not there.
                     // if you find an insert it is there. If you find no mention of it, then whether
                     // it's there or not is dependent on the closed_state.
-                    let parent = commit.parent_commit_hash;
-                    let mut opt_index = write_index;
-                    loop {
-                        if let Some(index) = opt_index {
-                            let write = &commit.writes[index];
-                            opt_index = if index > 0 { Some(index - 1) } else { None };
-                            match write {
-                                Write::Insert { set_id: s, hash: h } => {
-                                    if *s == set_id && !scanned.contains(h) {
-                                        self.tx.reads.push(Read { set_id: *s, hash: *h });
-                                        let row_obj = self.txdb.odb.get(*h).unwrap();
-                                        scanned.insert(*h);
-                                        self.scan_stage = Some(ScanStage::OpenCommits {
-                                            commit,
-                                            write_index: opt_index,
-                                        });
-                                        return Some(row_obj);
-                                    }
-                                }
-                                Write::Delete { set_id: s, hash: h } => {
-                                    if *s == set_id {
-                                        self.tx.reads.push(Read { set_id: *s, hash: *h });
-                                        scanned.insert(*h);
-                                    }
-                                }
-                            }
-                        } else {
-                            break;
-                        }
-                    }
-                    // TODO: can be optimized by storing the index
-                    let open_commits_index =
-                        parent.and_then(|parent| self.txdb.open_commits.iter().position(|h| *h == parent));
-                    if let Some(open_commits_index) = open_commits_index {
-                        let open_commit = self.txdb.open_commits[open_commits_index];
-                        let commit = Commit::decode(&mut self.txdb.odb.get(open_commit).unwrap());
-                        let index = if commit.writes.len() > 0 {
-                            Some(commit.writes.len() - 1)
-                        } else {
-                            None
-                        };
-                        self.scan_stage = Some(ScanStage::OpenCommits {
-                            commit,
-                            write_index: index,
-                        });
-                    } else {
-                        if let Some(closed_set) = self.txdb.closed_state.get(&set_id) {
-                            self.scan_stage = Some(ScanStage::ClosedSet(closed_set.iter()));
+
+                    // There are no open transactions, go next
+                    if self.txdb.closed_transaction_offset == transaction_offset {
+                        if let Some(closed_set) = self.txdb.closed_state.iter(set_id) {
+                            self.scan_stage = Some(ScanStage::ClosedSet(closed_set));
                         } else {
                             return None;
                         }
+                        continue;
                     }
+
+                    // Loop through cur transaction
+                    loop {
+                        let transaction = self.txdb.get_open_transaction(transaction_offset);
+                        let write_index = if let Some(write_index) = write_index {
+                            write_index
+                        } else {
+                            transaction.writes.len() as i32 - 1
+                        };
+
+                        if write_index == -1 {
+                            break;
+                        }
+
+                        let index = write_index as usize;
+                        let write = &transaction.writes[index];
+                        let opt_index = Some(write_index - 1);
+                        match write.operation {
+                            Operation::Insert => {
+                                if write.set_id == set_id && !scanned.contains(&write.value) {
+                                    self.tx.reads.push(Read { set_id: write.set_id, value: write.value });
+                                    let data = self.txdb.data_from_value(write.value).unwrap();
+                                    scanned.insert(write.value);
+                                    self.scan_stage = Some(ScanStage::OpenTransactions {
+                                        transaction_offset,
+                                        write_index: opt_index,
+                                    });
+                                    return Some(data);
+                                }
+                            }
+                            Operation::Delete => {
+                                if write.set_id == set_id {
+                                    self.tx.reads.push(Read { set_id: write.set_id, value: write.value });
+                                    scanned.insert(write.value);
+                                }
+                            }
+                        }
+                    }
+
+                    // Move to next transaction
+                    self.scan_stage = Some(ScanStage::OpenTransactions {
+                        transaction_offset: transaction_offset - 1,
+                        write_index: None,
+                    });
                     continue;
                 }
                 Some(ScanStage::ClosedSet(mut closed_set_iter)) => {
-                    let h = closed_set_iter.next();
-                    if let Some(h) = h {
+                    let v = closed_set_iter.next();
+                    if let Some(v) = v {
                         self.scan_stage = Some(ScanStage::ClosedSet(closed_set_iter));
-                        if !scanned.contains(h) {
-                            self.tx.reads.push(Read { set_id, hash: *h });
-                            let row_obj = self.txdb.odb.get(*h).unwrap();
-                            return Some(row_obj);
+                        if !scanned.contains(v) {
+                            self.tx.reads.push(Read { set_id, value: *v });
+                            let data = self.txdb.data_from_value(*v).unwrap();
+                            return Some(data);
                         }
                     } else {
                         return None;
