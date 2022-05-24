@@ -1,4 +1,3 @@
-use crate::hash::hash_bytes;
 use std::ops::{Range, RangeBounds};
 use super::{transactional_db::{ScanIter, Tx, TransactionalDB}, messages::write::Value};
 pub use spacetimedb_bindings::{ColType, ColValue, Column, Schema};
@@ -185,7 +184,8 @@ impl SpacetimeDB {
 
     pub fn drop_table(&mut self, tx: &mut Tx, table_id: u32) -> Result<(), String> {
         let t = self.delete_range(tx, ST_TABLES_ID, 0, ColValue::U32(table_id)..ColValue::U32(table_id));
-        if t.is_none() {
+        let t = t.expect("ST_TABLES_ID should exist");
+        if t == 0 {
             return Err("No such table.".into());
         }
         self.delete_range(tx, ST_COLUMNS_ID, 0, ColValue::U32(table_id)..ColValue::U32(table_id));
@@ -616,6 +616,9 @@ mod tests {
             },
         )
         .unwrap();
+        stdb.commit_tx(tx);
+
+        let mut tx = stdb.begin_tx();
         stdb.insert(&mut tx, 0, vec![ColValue::I32(-1)]);
         stdb.insert(&mut tx, 0, vec![ColValue::I32(0)]);
         stdb.insert(&mut tx, 0, vec![ColValue::I32(1)]);

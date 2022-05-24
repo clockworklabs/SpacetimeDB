@@ -46,27 +46,27 @@ pub struct ClosedPageSet {
 }
 
 pub struct ClosedHashSet {
-    set: RwLock<HashSet<Value>>,
+    set: HashSet<Value>,
 }
 
 impl ClosedHashSet {
     fn contains(&self, value: Value) -> bool {
-        let set = self.set.read().unwrap();
+        let set = &self.set;
         set.contains(&value)
     }
 
     fn insert(&mut self, value: Value) {
-        let mut set = self.set.write().unwrap();
+        let set = &mut self.set;
         set.insert(value);
     }
 
     fn delete(&mut self, value: Value) {
-        let mut set = self.set.write().unwrap();
+        let set = &mut self.set;
         set.remove(&value);
     }
 
     fn len(&self) -> usize {
-        let set = self.set.read().unwrap();
+        let set = &self.set;
         set.len()
     }
 }
@@ -130,7 +130,7 @@ impl OpenSetRecord {
 pub struct ClosedState {
     //open_set: BTreeSet<[u8; 46]>,
     page_sets: RwLock<HashMap<u32, ClosedPageSet>>,
-    hash_sets: RwLock<HashMap<u32, ClosedHashSet>>,
+    hash_sets: HashMap<u32, ClosedHashSet>,
 }
 
 impl ClosedState {
@@ -139,7 +139,7 @@ impl ClosedState {
         Self {
             //open_set: BTreeSet::new(),
             page_sets: RwLock::new(HashMap::new()),
-            hash_sets: RwLock::new(HashMap::new())
+            hash_sets: HashMap::new()
         }
     }
 
@@ -171,8 +171,7 @@ impl ClosedState {
         //     if record.tx_id < 
         // }
 
-        let sets = self.hash_sets.read().unwrap();
-        if let Some(set) = sets.get(&set_id) {
+        if let Some(set) = self.hash_sets.get(&set_id) {
             set.contains(value)
         } else {
             false
@@ -180,21 +179,19 @@ impl ClosedState {
     }
 
     fn insert(&mut self, set_id: u32, value: Value) {
-        let mut sets = self.hash_sets.write().unwrap();
-        if let Some(set) = sets.get_mut(&set_id) {
+        if let Some(set) = self.hash_sets.get_mut(&set_id) {
             set.insert(value)
         } else {
             let mut set = HashSet::new();
             set.insert(value);
-            let lock = RwLock::new(set);
-            sets.insert(set_id, ClosedHashSet {
-                set: lock,
+            self.hash_sets.insert(set_id, ClosedHashSet {
+                set,
             });
         }
     }
 
     fn delete(&mut self, set_id: u32, value: Value) {
-        let mut sets = self.hash_sets.write().unwrap();
+        let mut sets = &mut self.hash_sets;
         if let Some(set) = sets.get_mut(&set_id) {
             // Not atomic, but also correct
             set.delete(value);
@@ -208,11 +205,9 @@ impl ClosedState {
     }
 
     fn iter(&self, set_id: u32) -> Option<Iter<Value>> {
-        let sets = self.hash_sets.read().unwrap();
+        let sets = &self.hash_sets;
         if let Some(set) = sets.get(&set_id) {
-            let x = set.set.read().unwrap();
-            let y = x.iter();
-            Some(y)
+            Some(set.set.iter())
         } else {
             None
         }
@@ -235,18 +230,8 @@ pub struct TransactionalDB {
 
 impl TransactionalDB {
     pub fn new() -> Self {
-        let transaction = Transaction {
-            writes: Vec::new(),
-        };
-
-        let mut odb = ObjectDB::new();
-
-        let mut initial_transaction_bytes: Vec<u8> = Vec::new();
-        transaction.encode(&mut initial_transaction_bytes);
-        let transaction_hash = odb.add(initial_transaction_bytes);
-
         Self {
-            odb,
+            odb: ObjectDB::new(),
             closed_state: ClosedState::new(),
             closed_transaction_offset: 0,
             open_transactions: Vec::new(),
@@ -274,7 +259,7 @@ impl TransactionalDB {
     }
 
     fn get_open_transaction(&self, offset: u64) -> &Transaction {
-        let index = offset - self.closed_transaction_offset;
+        let index = (offset - self.closed_transaction_offset) - 1;
         // Assumes open transactions are deleted from the beginning
         &self.open_transactions[index as usize]
     }
@@ -289,9 +274,15 @@ impl TransactionalDB {
         }
     }
 
-    pub fn rollback_tx(&mut self, _tx: Tx) {
-        // TODO: clean up branched_transactions
-        unimplemented!();
+    pub fn rollback_tx(&mut self, tx: Tx) {
+        // Remove my branch
+        let index = self
+            .branched_transaction_offsets
+            .iter()
+            .position(|offset| *offset == tx.parent_tx_offset)
+            .unwrap();
+        self.branched_transaction_offsets.swap_remove(index);
+        self.vacuum_open_transactions();
     }
 
     pub fn commit_tx(&mut self, tx: Tx) -> bool {
@@ -324,11 +315,11 @@ impl TransactionalDB {
                 }
             }
 
+            transaction_offset -= 1;
+
             if transaction_offset == tx.parent_tx_offset {
                 break;
             }
-
-            transaction_offset -= 1;
         }
 
         self.finalize(tx);
@@ -342,6 +333,7 @@ impl TransactionalDB {
         };
 
         self.open_transactions.push(new_transaction);
+        self.open_transaction_offsets.push(tx.parent_tx_offset + 1);
 
         // Remove my branch
         let index = self
@@ -350,48 +342,52 @@ impl TransactionalDB {
             .position(|offset| *offset == tx.parent_tx_offset)
             .unwrap();
         self.branched_transaction_offsets.swap_remove(index);
-
+        
         if tx.parent_tx_offset == self.closed_transaction_offset {
-            let index = self.branched_transaction_offsets.iter().position(|offset| *offset == tx.parent_tx_offset);
-            if index == None {
-                // I was the last branch preventing closing of the next open transaction.
-                // Close the open transactions until the next branch.
-                loop {
-                    let next_open_offset  = self.open_transaction_offsets.first().map(|h| *h);
-                    if let Some(next_open_offset) = next_open_offset {
-                        let next_open = self.get_open_transaction(next_open_offset);
-                        self.closed_transaction_offset = next_open_offset;
-                        self.open_transactions.remove(0);
+            self.vacuum_open_transactions();
+        }
+    }
 
-                        for write in &next_open.writes {
-                            if write.operation.to_u8() == 0 {
-                                self.closed_state.delete(write.set_id, write.value);
-                            } else {
-                                self.closed_state.insert(write.set_id, write.value);
-                            }
-                        }
-                        // If someone branched off of me, we're done otherwise continue
-                        if self.branched_transaction_offsets.contains(&next_open_offset) {
-                            break;
-                        }
+    fn vacuum_open_transactions(&mut self) {
+        loop {
+            // If someone branched off of the closed transaction, we're done otherwise continue
+            if self.branched_transaction_offsets.contains(&self.closed_transaction_offset) {
+                break;
+            }
+
+            // No one is branched off of the closed transaction so close the first open
+            // transaction and make it the new closed transaction
+            let first_open_offset = self.open_transaction_offsets.first().map(|h| *h);
+            if let Some(first_open_offset) = first_open_offset {
+                // Assumes open transactions are deleted from the beginning
+                let first_open = self.open_transactions.remove(0);
+                self.open_transaction_offsets.remove(0);
+                self.closed_transaction_offset = first_open_offset;
+
+                for write in &first_open.writes {
+                    if write.operation.to_u8() == 0 {
+                        self.closed_state.delete(write.set_id, write.value);
                     } else {
-                        // No more transactions to process
-                        break;
+                        self.closed_state.insert(write.set_id, write.value);
                     }
                 }
+            } else {
+                // No more transactions to process
+                break;
             }
         }
     }
 
-    pub fn data_from_value(&self, value: Value) -> Option<&[u8]> {
+    // TODO: copies
+    pub fn data_from_value(&self, value: Value) -> Option<Vec<u8>> {
         let data = match value {
-            Value::Data { len, buf } => Some(&buf[0..(len as usize)]),
-            Value::Hash(hash) => self.odb.get(hash),
+            Value::Data { len, buf } => Some(buf[0..(len as usize)].to_vec()),
+            Value::Hash(hash) => Some(self.odb.get(hash).unwrap().to_vec()),
         };
         data
     }
 
-    pub fn seek(&self, tx: &mut Tx, set_id: u32, value: Value) -> Option<&[u8]> {
+    pub fn seek(&self, tx: &mut Tx, set_id: u32, value: Value) -> Option<Vec<u8>> {
         // I'm not sure if this just needs to track reads from the parent transaction
         // or reads from the transaction as well.
         // TODO: Replace this with relation, page, row level SIREAD locks
@@ -489,8 +485,8 @@ impl TransactionalDB {
             let hash = self.odb.add(bytes);
             Value::Hash(hash)
         } else {
-            let buf = [0; 32];
-            buf.copy_from_slice(&bytes[0..bytes.len()]);
+            let mut buf = [0; 32];
+            buf[0..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
             Value::Data {
                 len: bytes.len() as u8,
                 buf
@@ -541,7 +537,7 @@ enum ScanStage<'a> {
 }
 
 impl<'a> Iterator for ScanIter<'a> {
-    type Item = &'a [u8];
+    type Item = Vec<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let scanned = &mut self.scanned;
@@ -699,7 +695,7 @@ mod tests {
         let mut tx = db.begin_tx();
         let row = db.seek(&mut tx, 0, row_key_1).unwrap();
 
-        assert_eq!(b"this is a byte string", row);
+        assert_eq!(b"this is a byte string", row.as_slice());
     }
 
     #[test]
@@ -720,7 +716,7 @@ mod tests {
         db.commit_tx(tx);
 
         let mut tx = db.begin_tx();
-        let row = MyStruct::decode(db.seek(&mut tx, 0, row_key_1).unwrap());
+        let row = MyStruct::decode(db.seek(&mut tx, 0, row_key_1).unwrap().as_slice());
 
         let i = row.my_i32;
         assert_eq!(i, -1);
@@ -786,14 +782,14 @@ mod tests {
         db.commit_tx(tx_1);
 
         let mut tx_2 = db.begin_tx();
-        let mut scan_2 = db.scan(&mut tx_2, 0).collect::<Vec<&[u8]>>();
+        let mut scan_2 = db.scan(&mut tx_2, 0).collect::<Vec<Vec<u8>>>();
         scan_2.sort();
 
         assert_eq!(scan_1.len(), scan_2.len());
 
         for (i, _) in scan_1.iter().enumerate() {
             let val_1 = &scan_1[i];
-            let val_2 = scan_2[i];
+            let val_2 = &scan_2[i];
             for i in 0..val_1.len() {
                 assert_eq!(val_1[i], val_2[i]);
             }
