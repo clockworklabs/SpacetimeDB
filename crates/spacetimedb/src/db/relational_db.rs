@@ -5,7 +5,7 @@ pub use spacetimedb_bindings::{ColType, ColValue, Column, Schema};
 const ST_TABLES_ID: u32 = u32::MAX;
 const ST_COLUMNS_ID: u32 = u32::MAX - 1;
 
-pub struct SpacetimeDB {
+pub struct RelationalDB {
     pub txdb: TransactionalDB,
 }
 
@@ -29,7 +29,7 @@ pub struct SpacetimeDB {
 -x non-primitive type columns (e.g. struct in column)
 */
 
-impl SpacetimeDB {
+impl RelationalDB {
     pub fn new() -> Self {
         // Create tables that must always exist
         // i.e. essentially bootstrap the creation of the schema
@@ -79,7 +79,7 @@ impl SpacetimeDB {
 
         txdb.commit_tx(tx);
 
-        SpacetimeDB { txdb }
+        RelationalDB { txdb }
     }
 
     pub fn encode_row(row: Vec<ColValue>, bytes: &mut Vec<u8>) {
@@ -340,7 +340,7 @@ impl<'a> Iterator for TableIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(bytes) = self.txdb_iter.next() {
-            let row = SpacetimeDB::decode_row(&self.schema, &mut &bytes[..]);
+            let row = RelationalDB::decode_row(&self.schema, &mut &bytes[..]);
             return Some(row);
         }
         return None;
@@ -399,7 +399,7 @@ impl<'a> Iterator for FilterIter<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::SpacetimeDB;
+    use super::RelationalDB;
     use crate::db::Schema;
     use spacetimedb_bindings::{ColType, ColValue, Column};
 
@@ -424,7 +424,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let mut stdb = SpacetimeDB::new();
+        let mut stdb = RelationalDB::new();
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -441,7 +441,7 @@ mod tests {
 
     #[test]
     fn test_create_table_pre_commit() {
-        let mut stdb = SpacetimeDB::new();
+        let mut stdb = RelationalDB::new();
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -469,7 +469,7 @@ mod tests {
 
     #[test]
     fn test_pre_commit() {
-        let mut stdb = SpacetimeDB::new();
+        let mut stdb = RelationalDB::new();
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn test_post_commit() {
-        let mut stdb = SpacetimeDB::new();
+        let mut stdb = RelationalDB::new();
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -521,7 +521,7 @@ mod tests {
 
     #[test]
     fn test_filter_range_pre_commit() {
-        let mut stdb = SpacetimeDB::new();
+        let mut stdb = RelationalDB::new();
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn test_filter_range_post_commit() {
-        let mut stdb = SpacetimeDB::new();
+        let mut stdb = RelationalDB::new();
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -581,7 +581,7 @@ mod tests {
 
     #[test]
     fn test_create_table_rollback() {
-        let mut stdb = SpacetimeDB::new();
+        let mut stdb = RelationalDB::new();
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -603,7 +603,7 @@ mod tests {
 
     #[test]
     fn test_rollback() {
-        let mut stdb = SpacetimeDB::new();
+        let mut stdb = RelationalDB::new();
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,

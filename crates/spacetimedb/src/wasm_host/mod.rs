@@ -1,6 +1,6 @@
 use crate::logs;
 use crate::{
-    db::{transactional_db::Tx, spacetime_db::SpacetimeDB},
+    db::{transactional_db::Tx, relational_db::RelationalDB},
     hash::{hash_bytes, Hash},
 };
 use anyhow;
@@ -27,7 +27,7 @@ const INIT_DATABASE_DUNDER: &str = "__init_database__";
 
 lazy_static! {
     pub static ref HOST: Mutex<Host> = Mutex::new(HostActor::spawn());
-    static ref STDB: Mutex<SpacetimeDB> = Mutex::new(SpacetimeDB::new());
+    static ref STDB: Mutex<RelationalDB> = Mutex::new(RelationalDB::new());
 
     // TODO: probably store these inside STDB
     static ref TX_MAP: Mutex<HashMap<u64, Tx>> = Mutex::new(HashMap::new());
@@ -83,7 +83,7 @@ fn insert(env: &ReducerEnv, table_id: u32, ptr: u32) {
     let tx = tx_map.get_mut(&env.tx_id).unwrap();
 
     let schema = stdb.schema_for_table(tx, table_id).unwrap();
-    let row = SpacetimeDB::decode_row(&schema, &buffer[..]);
+    let row = RelationalDB::decode_row(&schema, &buffer[..]);
 
     stdb.insert(tx, table_id, row);
 }
@@ -111,7 +111,7 @@ fn iter(env: &ReducerEnv, table_id: u32) -> u64 {
     encode_schema(Schema { columns: schema }, &mut bytes);
 
     for row in stdb.iter(tx, table_id).unwrap() {
-        SpacetimeDB::encode_row(row, &mut bytes);
+        RelationalDB::encode_row(row, &mut bytes);
     }
 
     let alloc_func = env.alloc.get_ref().expect("Intialized alloc function");
