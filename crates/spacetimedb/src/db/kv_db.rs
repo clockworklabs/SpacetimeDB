@@ -1,5 +1,5 @@
 // NOTE: This file is thoughts on how we might use a generic KV store
-// to implement transactional indexes of various types. This way 
+// to implement transactional indexes of various types. This way
 // indexes would be by default MVCC. Here be dragons, but it's an interesting
 // direction
 
@@ -109,7 +109,6 @@
 //                 unimplemented!();
 //             }
 //         }
-
 
 //     }
 

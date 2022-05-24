@@ -1,5 +1,5 @@
-use crate::hash::Hash;
 use super::transaction::Transaction;
+use crate::hash::Hash;
 
 // aka "Block" from blockchain, aka RecordBatch, aka TxBatch
 #[derive(Debug)]
@@ -13,7 +13,6 @@ pub struct Commit {
 // TODO: Maybe a transaction buffer hash?
 // commit: <parent_commit_hash(32)><commit_offset(8)><min_tx_offset(8)>[<transaction>...]*
 impl Commit {
-
     pub fn decode(bytes: impl AsRef<[u8]>) -> (Self, usize) {
         let bytes = &mut bytes.as_ref();
         if bytes.len() == 0 {
@@ -34,12 +33,12 @@ impl Commit {
         read_count += 32;
 
         let mut dst = [0u8; 8];
-        dst.copy_from_slice(&bytes[read_count..read_count+8]);
+        dst.copy_from_slice(&bytes[read_count..read_count + 8]);
         let min_tx_offset = u64::from_le_bytes(dst);
         read_count += 8;
 
         let mut dst = [0u8; 8];
-        dst.copy_from_slice(&bytes[read_count..read_count+8]);
+        dst.copy_from_slice(&bytes[read_count..read_count + 8]);
         let commit_offset = u64::from_le_bytes(dst);
         read_count += 8;
 
@@ -74,5 +73,4 @@ impl Commit {
             tx.encode(bytes);
         }
     }
-
 }

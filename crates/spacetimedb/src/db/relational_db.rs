@@ -1,6 +1,9 @@
-use std::ops::{Range, RangeBounds};
-use super::{transactional_db::{ScanIter, Tx, TransactionalDB}, messages::write::Value};
+use super::{
+    messages::write::Value,
+    transactional_db::{ScanIter, TransactionalDB, Tx},
+};
 pub use spacetimedb_bindings::{ColType, ColValue, Column, Schema};
+use std::ops::{Range, RangeBounds};
 
 const ST_TABLES_ID: u32 = u32::MAX;
 const ST_COLUMNS_ID: u32 = u32::MAX - 1;
@@ -261,12 +264,7 @@ impl RelationalDB {
         None
     }
 
-    pub fn delete_filter(
-        &mut self,
-        tx: &mut Tx,
-        table_id: u32,
-        f: fn(row: &Vec<ColValue>) -> bool,
-    ) -> Option<usize> {
+    pub fn delete_filter(&mut self, tx: &mut Tx, table_id: u32, f: fn(row: &Vec<ColValue>) -> bool) -> Option<usize> {
         if let Some(filter) = self.filter(tx, table_id, f) {
             let mut values = Vec::new();
             for x in filter {
@@ -298,13 +296,7 @@ impl RelationalDB {
         None
     }
 
-    pub fn delete_range(
-        &mut self,
-        tx: &mut Tx,
-        table_id: u32,
-        col_id: u32,
-        range: Range<ColValue>,
-    ) -> Option<usize> {
+    pub fn delete_range(&mut self, tx: &mut Tx, table_id: u32, col_id: u32, range: Range<ColValue>) -> Option<usize> {
         if let Some(filter) = self.filter_range(tx, table_id, col_id, range) {
             let mut values = Vec::new();
             for x in filter {

@@ -1,5 +1,16 @@
-use std::{collections::{HashMap, HashSet, hash_set::Iter}, sync::RwLock};
-use super::{object_db::ObjectDB, messages::{write::{Write, Value, Operation}, transaction::Transaction, commit::Commit}, message_log::MessageLog};
+use super::{
+    message_log::MessageLog,
+    messages::{
+        commit::Commit,
+        transaction::Transaction,
+        write::{Operation, Value, Write},
+    },
+    object_db::ObjectDB,
+};
+use std::{
+    collections::{hash_set::Iter, HashMap, HashSet},
+    sync::RwLock,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct Read {
@@ -20,14 +31,13 @@ pub struct Tx {
 // addressing and just use a map like CockroachDB, idk.
 
 pub struct TransactionalDBThreadSafe {
-    inner: RwLock<TransactionalDB> 
+    inner: RwLock<TransactionalDB>,
 }
 
 pub struct PageTuplePointer {
     page_offset: u32,
     tuple_offset: u8,
 }
-
 
 pub struct Page {
     tuples: Vec<Tuple>,
@@ -42,7 +52,7 @@ pub struct Tuple {
 // but in that case the TxDB would have to know something
 // about the structure of the tuples
 pub struct ClosedPageSet {
-    pages: Vec<RwLock<Page>>
+    pages: Vec<RwLock<Page>>,
 }
 
 pub struct ClosedHashSet {
@@ -77,15 +87,14 @@ pub struct OpenSetRecord {
 }
 
 impl OpenSetRecord {
-    
     // <set_id(4)><value(33)><tx_id(8)><write_flags(1)>
     pub fn encode(&self, bytes: &mut Vec<u8>) {
         // Maybe should be big endian but doesn't matter based on how we're using it.
         bytes.extend(self.write.set_id.to_le_bytes());
-        
+
         let written = self.write.value.encode(bytes);
         // Pad value
-        for _ in 0..(33-written) {
+        for _ in 0..(33 - written) {
             bytes.push(0);
         }
 
@@ -105,7 +114,7 @@ impl OpenSetRecord {
         let mut read_count = 0;
 
         let mut dst = [0u8; 4];
-        dst.copy_from_slice(&bytes[read_count..read_count+4]);
+        dst.copy_from_slice(&bytes[read_count..read_count + 4]);
         let set_id = u32::from_le_bytes(dst);
         read_count += 4;
 
@@ -113,7 +122,7 @@ impl OpenSetRecord {
         read_count += 33;
 
         let mut dst = [0u8; 8];
-        dst.copy_from_slice(&bytes[read_count..read_count+4]);
+        dst.copy_from_slice(&bytes[read_count..read_count + 4]);
         let tx_id = u64::from_le_bytes(dst);
         read_count += 8;
 
@@ -122,9 +131,18 @@ impl OpenSetRecord {
 
         let operation = Operation::from_u8(flags);
 
-        (Self { write: Write { operation, set_id, value }, tx_id }, read_count)
+        (
+            Self {
+                write: Write {
+                    operation,
+                    set_id,
+                    value,
+                },
+                tx_id,
+            },
+            read_count,
+        )
     }
-
 }
 
 pub struct ClosedState {
@@ -134,12 +152,11 @@ pub struct ClosedState {
 }
 
 impl ClosedState {
-
     fn new() -> Self {
         Self {
             //open_set: BTreeSet::new(),
             page_sets: RwLock::new(HashMap::new()),
-            hash_sets: HashMap::new()
+            hash_sets: HashMap::new(),
         }
     }
 
@@ -168,7 +185,7 @@ impl ClosedState {
 
         // for record_buf in self.open_set.range((start, end)) {
         //     let (record, _) = OpenSetRecord::decode(record_buf);
-        //     if record.tx_id < 
+        //     if record.tx_id <
         // }
 
         if let Some(set) = self.hash_sets.get(&set_id) {
@@ -184,9 +201,7 @@ impl ClosedState {
         } else {
             let mut set = HashSet::new();
             set.insert(value);
-            self.hash_sets.insert(set_id, ClosedHashSet {
-                set,
-            });
+            self.hash_sets.insert(set_id, ClosedHashSet { set });
         }
     }
 
@@ -212,7 +227,6 @@ impl ClosedState {
             None
         }
     }
-
 }
 
 pub struct TransactionalDB {
@@ -255,7 +269,10 @@ impl TransactionalDB {
     }
 
     fn latest_transaction_offset(&self) -> u64 {
-        self.open_transaction_offsets.last().map(|h| *h).unwrap_or(self.closed_transaction_offset)
+        self.open_transaction_offsets
+            .last()
+            .map(|h| *h)
+            .unwrap_or(self.closed_transaction_offset)
     }
 
     fn get_open_transaction(&self, offset: u64) -> &Transaction {
@@ -310,7 +327,10 @@ impl TransactionalDB {
         loop {
             let transaction = self.get_open_transaction(transaction_offset);
             for write in &transaction.writes {
-                if read_set.contains(&Read {set_id: write.set_id, value: write.value}) {
+                if read_set.contains(&Read {
+                    set_id: write.set_id,
+                    value: write.value,
+                }) {
                     return false;
                 }
             }
@@ -328,9 +348,7 @@ impl TransactionalDB {
 
     fn finalize(&mut self, tx: Tx) {
         // Rebase on the last open transaction (or closed transaction if none open)
-        let new_transaction = Transaction {
-            writes: tx.writes,
-        };
+        let new_transaction = Transaction { writes: tx.writes };
 
         self.open_transactions.push(new_transaction);
         self.open_transaction_offsets.push(tx.parent_tx_offset + 1);
@@ -342,7 +360,7 @@ impl TransactionalDB {
             .position(|offset| *offset == tx.parent_tx_offset)
             .unwrap();
         self.branched_transaction_offsets.swap_remove(index);
-        
+
         if tx.parent_tx_offset == self.closed_transaction_offset {
             self.vacuum_open_transactions();
         }
@@ -351,7 +369,10 @@ impl TransactionalDB {
     fn vacuum_open_transactions(&mut self) {
         loop {
             // If someone branched off of the closed transaction, we're done otherwise continue
-            if self.branched_transaction_offsets.contains(&self.closed_transaction_offset) {
+            if self
+                .branched_transaction_offsets
+                .contains(&self.closed_transaction_offset)
+            {
                 break;
             }
 
@@ -416,7 +437,7 @@ impl TransactionalDB {
         // if you find a delete it's not there.
         // if you find an insert it is there. If you find no mention of it, then whether
         // it's there or not is dependent on the closed_state.
-        let mut next_open_offset = tx.parent_tx_offset; 
+        let mut next_open_offset = tx.parent_tx_offset;
         loop {
             if next_open_offset == self.closed_transaction_offset {
                 break;
@@ -470,13 +491,21 @@ impl TransactionalDB {
             } else {
                 if set_id == write.set_id && write.value == value {
                     found = true;
-                    tx.writes[i] = Write { operation: Operation::Delete, set_id, value };
+                    tx.writes[i] = Write {
+                        operation: Operation::Delete,
+                        set_id,
+                        value,
+                    };
                     break;
                 }
             }
         }
         if !found {
-            tx.writes.push(Write { operation: Operation::Delete, set_id, value });
+            tx.writes.push(Write {
+                operation: Operation::Delete,
+                set_id,
+                value,
+            });
         }
     }
 
@@ -489,7 +518,7 @@ impl TransactionalDB {
             buf[0..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
             Value::Data {
                 len: bytes.len() as u8,
-                buf
+                buf,
             }
         };
 
@@ -503,7 +532,11 @@ impl TransactionalDB {
             if write.operation.to_u8() == 0 {
                 if set_id == write.set_id && write.value == value {
                     found = true;
-                    tx.writes[i] = Write { operation: Operation::Insert, set_id, value };
+                    tx.writes[i] = Write {
+                        operation: Operation::Insert,
+                        set_id,
+                        value,
+                    };
                     break;
                 }
             } else {
@@ -515,7 +548,11 @@ impl TransactionalDB {
         }
 
         if !found {
-            tx.writes.push(Write { operation: Operation::Insert, set_id, value });
+            tx.writes.push(Write {
+                operation: Operation::Insert,
+                set_id,
+                value,
+            });
         }
 
         value
@@ -531,8 +568,13 @@ pub struct ScanIter<'a> {
 }
 
 enum ScanStage<'a> {
-    CurTx { index: i32 },
-    OpenTransactions { transaction_offset: u64, write_index: Option<i32> },
+    CurTx {
+        index: i32,
+    },
+    OpenTransactions {
+        transaction_offset: u64,
+        write_index: Option<i32>,
+    },
     ClosedSet(std::collections::hash_set::Iter<'a, Value>),
 }
 
@@ -560,7 +602,10 @@ impl<'a> Iterator for ScanIter<'a> {
                     match write.operation {
                         Operation::Insert => {
                             if write.set_id == set_id {
-                                self.tx.reads.push(Read { set_id: write.set_id, value: write.value });
+                                self.tx.reads.push(Read {
+                                    set_id: write.set_id,
+                                    value: write.value,
+                                });
                                 let data = self.txdb.data_from_value(write.value);
                                 scanned.insert(write.value);
                                 return Some(data.unwrap());
@@ -568,13 +613,19 @@ impl<'a> Iterator for ScanIter<'a> {
                         }
                         Operation::Delete => {
                             if write.set_id == set_id {
-                                self.tx.reads.push(Read { set_id: write.set_id, value: write.value });
+                                self.tx.reads.push(Read {
+                                    set_id: write.set_id,
+                                    value: write.value,
+                                });
                                 scanned.insert(write.value);
                             }
                         }
                     };
                 }
-                Some(ScanStage::OpenTransactions { transaction_offset, write_index }) => {
+                Some(ScanStage::OpenTransactions {
+                    transaction_offset,
+                    write_index,
+                }) => {
                     // Search backwards through all open transactions that are parents of this transaction.
                     // if you find a delete it's not there.
                     // if you find an insert it is there. If you find no mention of it, then whether
@@ -609,7 +660,10 @@ impl<'a> Iterator for ScanIter<'a> {
                         match write.operation {
                             Operation::Insert => {
                                 if write.set_id == set_id && !scanned.contains(&write.value) {
-                                    self.tx.reads.push(Read { set_id: write.set_id, value: write.value });
+                                    self.tx.reads.push(Read {
+                                        set_id: write.set_id,
+                                        value: write.value,
+                                    });
                                     let data = self.txdb.data_from_value(write.value).unwrap();
                                     scanned.insert(write.value);
                                     self.scan_stage = Some(ScanStage::OpenTransactions {
@@ -621,7 +675,10 @@ impl<'a> Iterator for ScanIter<'a> {
                             }
                             Operation::Delete => {
                                 if write.set_id == set_id {
-                                    self.tx.reads.push(Read { set_id: write.set_id, value: write.value });
+                                    self.tx.reads.push(Read {
+                                        set_id: write.set_id,
+                                        value: write.value,
+                                    });
                                     scanned.insert(write.value);
                                 }
                             }

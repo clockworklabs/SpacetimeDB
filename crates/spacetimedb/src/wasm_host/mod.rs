@@ -1,6 +1,6 @@
 use crate::logs;
 use crate::{
-    db::{transactional_db::Tx, relational_db::RelationalDB},
+    db::{relational_db::RelationalDB, transactional_db::Tx},
     hash::{hash_bytes, Hash},
 };
 use anyhow;
