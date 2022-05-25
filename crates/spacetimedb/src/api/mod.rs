@@ -5,6 +5,27 @@ use crate::{
 };
 // use rocksdb;
 
+/*
+-x SpacetimeDB API
+-x indexing of columns
+-x atomic transactions (including creation of tables)
+-x diff commits
+- snapshot commits
+-x SQL query -> API call support
+-x Smart contract which calls APIs
+- Schema migration
+- Schema code generation to improve ergonomics of smart contract
+- Metrics tables (data size, tx/sec)
+- Dashboard for displaying metrics
+-x (some way to upload smart contracts and track the versions to our website??)
+-x subscription API (subscription queries)
+- read permissions
+- partial in-memory state
+- (client library for syncing data based on queries??)
+-x non-primitive type columns (e.g. struct in column)
+*/
+
+
 pub async fn spacetime_identity() -> Result<(Hash, String), anyhow::Error> {
     let identity = alloc_spacetime_identity().await?;
     let identity_token = encode_token(identity)?;

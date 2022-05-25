@@ -25,7 +25,7 @@ fn main() {
             }
 
             None => {
-                main_app().print_help();
+                main_app().print_help().unwrap();
                 return;
             }
         },
