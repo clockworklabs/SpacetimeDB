@@ -95,7 +95,11 @@ pub fn set_static_data(actor: u64, static_data: StaticData) {
 #[spacetimedb(reducer)]
 pub fn player_move(actor: u64, direction: i32, running: bool, expected_origin: HexCoordinates) {
     let direction = HexDirection::from(direction).unwrap_or_fail("Invalid direction.");
-    let player = PlayerStateSignedIn::where_actor_eq(actor).unwrap_or_fail("No player for actor.");
+   
+    let player = PlayerTable::table().where(actor, Cmp::Equal)
+    
+    
+    .unwrap_or_fail("No player for actor.");
     let location = Location::where_entity_id_eq(player.entity_id).unwrap();
 
     let new_coords = location.coordinates().neighbor(direction);

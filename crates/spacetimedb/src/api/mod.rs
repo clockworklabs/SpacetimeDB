@@ -25,7 +25,6 @@ use crate::{
 -x non-primitive type columns (e.g. struct in column)
 */
 
-
 pub async fn spacetime_identity() -> Result<(Hash, String), anyhow::Error> {
     let identity = alloc_spacetime_identity().await?;
     let identity_token = encode_token(identity)?;
@@ -47,11 +46,10 @@ pub async fn spacetime_identity_associate_email(email: &str, identity_token: &st
 
 pub mod database {
     use crate::{
-        db::persistent_object_db::odb,
         hash::Hash,
         logs::{self, init_log},
         postgres,
-        wasm_host::{self, get_host},
+        wasm_host::{self, get_host, STDB},
     };
 
     // TODO: Verify identity?
@@ -74,7 +72,10 @@ pub mod database {
         let address = host.init_module(wasm_bytes.clone()).await?;
 
         // If the module successfully initialized add it to the object database
-        odb::add(&wasm_bytes).await;
+        {
+            let mut stdb = STDB.lock().unwrap();
+            stdb.txdb.odb.add(wasm_bytes);
+        }
 
         // Store this module metadata in postgres
         client.query(

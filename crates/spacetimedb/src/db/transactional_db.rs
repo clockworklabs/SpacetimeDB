@@ -9,6 +9,7 @@ use super::{
 };
 use std::{
     collections::{hash_set::Iter, HashMap, HashSet},
+    path::Path,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -109,6 +110,7 @@ impl ClosedState {
 
 pub struct TransactionalDB {
     pub odb: ObjectDB,
+    message_log: MessageLog,
     closed_state: ClosedState,
 
     // TODO: it may be possible to move all this logic directly
@@ -121,25 +123,28 @@ pub struct TransactionalDB {
 }
 
 impl TransactionalDB {
-    pub fn new() -> Self {
-        Self {
-            odb: ObjectDB::new(),
+    pub fn open(root: &Path) -> Result<Self, anyhow::Error> {
+        let odb = ObjectDB::open(root.to_path_buf().join("odb"))?;
+        let message_log = MessageLog::open(root.to_path_buf().join("mlog"))?;
+
+        // TODO: read in the messages and apply them
+        // let txdb = Self::new();
+        // for message in message_log.iter() {
+        //     let (commit, _) = Commit::decode(message);
+        //     for transaction in commit.transactions {
+        //         txdb.reduce(transaction);
+        //     }
+        // }
+
+        Ok(Self {
+            odb,
+            message_log,
             closed_state: ClosedState::new(),
             closed_transaction_offset: 0,
             open_transactions: Vec::new(),
             open_transaction_offsets: Vec::new(),
             branched_transaction_offsets: Vec::new(),
-        }
-    }
-
-    pub fn from_log(message_log: &MessageLog) {
-        let txdb = Self::new();
-        for message in message_log.iter() {
-            let (commit, _) = Commit::decode(message);
-            for transaction in commit.transactions {
-                txdb.reduce(transaction);
-            }
-        }
+        })
     }
 
     fn reduce(&self, _transaction: Transaction) {
@@ -230,6 +235,9 @@ impl TransactionalDB {
 
         self.open_transactions.push(new_transaction);
         self.open_transaction_offsets.push(tx.parent_tx_offset + 1);
+
+        // let commit = Commit {
+        // };
 
         // Remove my branch
         let index = self
@@ -593,6 +601,8 @@ impl<'a> Iterator for ScanIter<'a> {
 
 #[cfg(test)]
 mod tests {
+    use tempdir::TempDir;
+
     use super::TransactionalDB;
     use crate::hash::hash_bytes;
     use crate::hash::Hash;
@@ -622,7 +632,8 @@ mod tests {
 
     #[test]
     fn test_insert_and_seek_bytes() {
-        let mut db = TransactionalDB::new();
+        let tmp_dir = TempDir::new("txdb_test").unwrap();
+        let mut db = TransactionalDB::open(tmp_dir.path()).unwrap();
         let mut tx = db.begin_tx();
         let row_key_1 = db.insert(&mut tx, 0, b"this is a byte string".to_vec());
         db.commit_tx(tx);
@@ -635,7 +646,8 @@ mod tests {
 
     #[test]
     fn test_insert_and_seek_struct() {
-        let mut db = TransactionalDB::new();
+        let tmp_dir = TempDir::new("txdb_test").unwrap();
+        let mut db = TransactionalDB::open(tmp_dir.path()).unwrap();
         let mut tx = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx,
@@ -659,7 +671,8 @@ mod tests {
 
     #[test]
     fn test_read_isolation() {
-        let mut db = TransactionalDB::new();
+        let tmp_dir = TempDir::new("txdb_test").unwrap();
+        let mut db = TransactionalDB::open(tmp_dir.path()).unwrap();
         let mut tx_1 = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx_1,
@@ -686,7 +699,8 @@ mod tests {
 
     #[test]
     fn test_scan() {
-        let mut db = TransactionalDB::new();
+        let tmp_dir = TempDir::new("txdb_test").unwrap();
+        let mut db = TransactionalDB::open(tmp_dir.path()).unwrap();
         let mut tx_1 = db.begin_tx();
         let _row_key_1 = db.insert(
             &mut tx_1,
@@ -733,7 +747,8 @@ mod tests {
 
     #[test]
     fn test_write_skew_conflict() {
-        let mut db = TransactionalDB::new();
+        let tmp_dir = TempDir::new("txdb_test").unwrap();
+        let mut db = TransactionalDB::open(tmp_dir.path()).unwrap();
         let mut tx_1 = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx_1,
@@ -757,7 +772,8 @@ mod tests {
 
     #[test]
     fn test_write_skew_no_conflict() {
-        let mut db = TransactionalDB::new();
+        let tmp_dir = TempDir::new("txdb_test").unwrap();
+        let mut db = TransactionalDB::open(tmp_dir.path()).unwrap();
         let mut tx_1 = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx_1,
@@ -797,8 +813,9 @@ mod tests {
 
     #[test]
     fn test_size() {
+        let tmp_dir = TempDir::new("txdb_test").unwrap();
+        let mut db = TransactionalDB::open(tmp_dir.path()).unwrap();
         let start = std::time::Instant::now();
-        let mut db = TransactionalDB::new();
         let iterations: u128 = 1000;
         println!("{} odb base size bytes", db.odb.total_mem_size_bytes());
 

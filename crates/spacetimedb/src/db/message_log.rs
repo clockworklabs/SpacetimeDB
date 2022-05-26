@@ -1,5 +1,5 @@
 use std::{
-    fs::{read_dir, File, OpenOptions},
+    fs::{self, read_dir, File, OpenOptions},
     io::{BufReader, BufWriter, Read, Write},
     os::unix::prelude::{FileExt, MetadataExt},
     path::{Path, PathBuf},
@@ -33,6 +33,7 @@ pub struct MessageLog {
 impl MessageLog {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, anyhow::Error> {
         let root = path.as_ref();
+        fs::create_dir_all(root).unwrap();
 
         let mut segments = Vec::new();
         let mut total_size = 0;

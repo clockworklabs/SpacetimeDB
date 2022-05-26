@@ -7,6 +7,7 @@ use anyhow;
 use lazy_static::lazy_static;
 use log;
 use spacetimedb_bindings::{decode_schema, encode_schema, Schema};
+use std::path::Path;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -27,7 +28,7 @@ const INIT_DATABASE_DUNDER: &str = "__init_database__";
 
 lazy_static! {
     pub static ref HOST: Mutex<Host> = Mutex::new(HostActor::spawn());
-    static ref STDB: Mutex<RelationalDB> = Mutex::new(RelationalDB::new());
+    pub static ref STDB: Mutex<RelationalDB> = Mutex::new(RelationalDB::open(&Path::new("/stdb")));
 
     // TODO: probably store these inside STDB
     static ref TX_MAP: Mutex<HashMap<u64, Tx>> = Mutex::new(HashMap::new());

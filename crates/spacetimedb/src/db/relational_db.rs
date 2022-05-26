@@ -3,7 +3,10 @@ use super::{
     transactional_db::{ScanIter, TransactionalDB, Tx},
 };
 pub use spacetimedb_bindings::{ColType, ColValue, Column, Schema};
-use std::ops::{Range, RangeBounds};
+use std::{
+    ops::{Range, RangeBounds},
+    path::Path,
+};
 
 const ST_TABLES_ID: u32 = u32::MAX;
 const ST_COLUMNS_ID: u32 = u32::MAX - 1;
@@ -13,11 +16,12 @@ pub struct RelationalDB {
 }
 
 impl RelationalDB {
-    pub fn new() -> Self {
+    pub fn open(root: &Path) -> Self {
         // Create tables that must always exist
         // i.e. essentially bootstrap the creation of the schema
         // tables by hard coding the schema of the schema tables
-        let mut txdb = TransactionalDB::new();
+
+        let mut txdb = TransactionalDB::open(&root.to_path_buf().join("txdb")).unwrap();
         let mut tx = txdb.begin_tx();
 
         // Create the st_tables table and insert the information about itself into itself
@@ -374,6 +378,7 @@ mod tests {
     use super::RelationalDB;
     use crate::db::Schema;
     use spacetimedb_bindings::{ColType, ColValue, Column};
+    use tempdir::TempDir;
 
     // let ptr = stdb.from(&mut tx, "health")
     //     .unwrap()
@@ -396,7 +401,8 @@ mod tests {
 
     #[test]
     fn test() {
-        let mut stdb = RelationalDB::new();
+        let tmp_dir = TempDir::new("stdb_test").unwrap();
+        let mut stdb = RelationalDB::open(tmp_dir.path());
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -413,7 +419,8 @@ mod tests {
 
     #[test]
     fn test_create_table_pre_commit() {
-        let mut stdb = RelationalDB::new();
+        let tmp_dir = TempDir::new("stdb_test").unwrap();
+        let mut stdb = RelationalDB::open(tmp_dir.path());
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -441,7 +448,8 @@ mod tests {
 
     #[test]
     fn test_pre_commit() {
-        let mut stdb = RelationalDB::new();
+        let tmp_dir = TempDir::new("stdb_test").unwrap();
+        let mut stdb = RelationalDB::open(tmp_dir.path());
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -466,7 +474,8 @@ mod tests {
 
     #[test]
     fn test_post_commit() {
-        let mut stdb = RelationalDB::new();
+        let tmp_dir = TempDir::new("stdb_test").unwrap();
+        let mut stdb = RelationalDB::open(tmp_dir.path());
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -493,7 +502,8 @@ mod tests {
 
     #[test]
     fn test_filter_range_pre_commit() {
-        let mut stdb = RelationalDB::new();
+        let tmp_dir = TempDir::new("stdb_test").unwrap();
+        let mut stdb = RelationalDB::open(tmp_dir.path());
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -522,7 +532,8 @@ mod tests {
 
     #[test]
     fn test_filter_range_post_commit() {
-        let mut stdb = RelationalDB::new();
+        let tmp_dir = TempDir::new("stdb_test").unwrap();
+        let mut stdb = RelationalDB::open(tmp_dir.path());
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -553,7 +564,8 @@ mod tests {
 
     #[test]
     fn test_create_table_rollback() {
-        let mut stdb = RelationalDB::new();
+        let tmp_dir = TempDir::new("stdb_test").unwrap();
+        let mut stdb = RelationalDB::open(tmp_dir.path());
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -575,7 +587,8 @@ mod tests {
 
     #[test]
     fn test_rollback() {
-        let mut stdb = RelationalDB::new();
+        let tmp_dir = TempDir::new("stdb_test").unwrap();
+        let mut stdb = RelationalDB::open(tmp_dir.path());
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,

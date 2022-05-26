@@ -1,10 +1,9 @@
 use log::*;
 use spacetimedb::api;
-use spacetimedb::db::persistent_object_db::odb;
 use spacetimedb::hash::Hash;
 use spacetimedb::postgres;
 use spacetimedb::routes::router;
-use spacetimedb::wasm_host;
+use spacetimedb::wasm_host::{self, STDB};
 use std::error::Error;
 use std::net::SocketAddr;
 use tokio::runtime::Builder;
@@ -41,8 +40,11 @@ async fn startup() {
         // let address: String = row.get(3);
         let module_address: String = row.get(3);
         let hash: Hash = Hash::from_iter(hex::decode(module_address).unwrap());
-        let wasm_bytes = odb::get(hash).await.unwrap();
-        wasm_host::get_host().add_module(wasm_bytes.clone()).await.unwrap();
+        let wasm_bytes = {
+            let stdb = STDB.lock().unwrap();
+            stdb.txdb.odb.get(hash).unwrap().to_vec()
+        };
+        wasm_host::get_host().add_module(wasm_bytes).await.unwrap();
     }
 }
 
