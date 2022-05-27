@@ -51,7 +51,7 @@ impl Commit {
         read_count += 8;
 
         let mut transactions: Vec<Transaction> = Vec::new();
-        while bytes.len() > 0 {
+        while read_count < bytes.len() {
             let (tx, read) = Transaction::decode(&bytes[read_count..]);
             read_count += read;
             transactions.push(tx);
