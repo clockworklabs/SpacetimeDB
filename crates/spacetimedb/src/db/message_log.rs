@@ -81,6 +81,8 @@ impl MessageLog {
 
         let file = BufWriter::new(file);
 
+        log::debug!("Initialized with offset {}", max_offset);
+
         Ok(Self {
             root: root.to_owned(),
             segments,
@@ -93,7 +95,8 @@ impl MessageLog {
 
     pub fn append(&mut self, message: impl AsRef<[u8]>) -> Result<(), anyhow::Error> {
         let message = message.as_ref();
-        let size: u32 = message.len() as u32 + HEADER_SIZE as u32;
+        let mess_size = message.len() as u32;
+        let size: u32 = mess_size + HEADER_SIZE as u32;
 
         let end_size = self.open_segment_size + size as u64;
         if end_size > MAX_SEGMENT_SIZE {
@@ -113,7 +116,7 @@ impl MessageLog {
             self.open_segment_file = file;
         }
 
-        self.open_segment_file.write_all(&size.to_le_bytes())?;
+        self.open_segment_file.write_all(&mess_size.to_le_bytes())?;
         self.open_segment_file.write_all(message)?;
 
         self.open_segment_size += size as u64;
@@ -139,6 +142,8 @@ impl MessageLog {
     // to be for sure durably written.
     // SEE: https://stackoverflow.com/questions/69819990/whats-the-difference-between-flush-and-sync-all
     pub fn sync_all(&mut self) -> Result<(), anyhow::Error> {
+        log::trace!("fsync log file");
+        self.flush()?;
         let file = self.open_segment_file.get_ref();
         file.sync_all()?;
         Ok(())

@@ -2,7 +2,7 @@ use super::write::Write;
 
 // aka Record
 // Must be atomically, durably written to disk
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Transaction {
     pub writes: Vec<Write>,
 }
@@ -18,7 +18,7 @@ impl Transaction {
         let mut bytes_read = 0;
 
         let mut writes: Vec<Write> = Vec::new();
-        while bytes.len() > 0 {
+        while bytes_read < bytes.len() {
             let (write, read) = Write::decode(&bytes[bytes_read..]);
             bytes_read += read;
             writes.push(write);

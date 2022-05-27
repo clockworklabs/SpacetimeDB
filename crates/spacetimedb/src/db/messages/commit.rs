@@ -28,9 +28,17 @@ impl Commit {
         }
 
         let mut read_count = 0;
-        let mut parent_commit_hash = Hash::default();
-        parent_commit_hash.copy_from_slice(&bytes[read_count..read_count + 32]);
-        read_count += 32;
+
+        let parent_commit_hash = if bytes[read_count] != 0 {
+            read_count += 1;
+            let mut parent_commit_hash = Hash::default();
+            parent_commit_hash.copy_from_slice(&bytes[read_count..read_count + 32]);
+            read_count += 32;
+            Some(parent_commit_hash)
+        } else {
+            read_count += 1;
+            None
+        };
 
         let mut dst = [0u8; 8];
         dst.copy_from_slice(&bytes[read_count..read_count + 8]);
@@ -51,7 +59,7 @@ impl Commit {
 
         (
             Commit {
-                parent_commit_hash: Some(parent_commit_hash),
+                parent_commit_hash,
                 commit_offset,
                 min_tx_offset,
                 transactions,
@@ -62,10 +70,12 @@ impl Commit {
 
     pub fn encode(&self, bytes: &mut Vec<u8>) {
         if self.parent_commit_hash.is_none() {
-            return;
+            bytes.push(0);
+        } else {
+            bytes.push(1);
+            bytes.extend(self.parent_commit_hash.unwrap());
         }
 
-        bytes.extend(self.parent_commit_hash.unwrap());
         bytes.extend(self.commit_offset.to_le_bytes());
         bytes.extend(self.min_tx_offset.to_le_bytes());
 

@@ -7,6 +7,7 @@ use super::{
     },
     object_db::ObjectDB,
 };
+use crate::hash::{hash_bytes, Hash};
 use std::{
     collections::{hash_set::Iter, HashMap, HashSet},
     path::Path,
@@ -110,8 +111,9 @@ impl ClosedState {
 
 pub struct TransactionalDB {
     pub odb: ObjectDB,
-    message_log: MessageLog,
+    pub message_log: MessageLog,
     closed_state: ClosedState,
+    unwritten_commit: Commit,
 
     // TODO: it may be possible to move all this logic directly
     // into the values themselves which might make it easier to
@@ -127,28 +129,55 @@ impl TransactionalDB {
         let odb = ObjectDB::open(root.to_path_buf().join("odb"))?;
         let message_log = MessageLog::open(root.to_path_buf().join("mlog"))?;
 
-        // TODO: read in the messages and apply them
-        // let txdb = Self::new();
-        // for message in message_log.iter() {
-        //     let (commit, _) = Commit::decode(message);
-        //     for transaction in commit.transactions {
-        //         txdb.reduce(transaction);
-        //     }
-        // }
+        let mut closed_state = ClosedState::new();
+        let mut closed_transaction_offset = 0;
+        let mut last_commit_offset = None;
+        let mut last_hash: Option<Hash> = None;
+        for message in message_log.iter() {
+            let (commit, _) = Commit::decode(message);
+            last_hash = commit.parent_commit_hash;
+            last_commit_offset = Some(commit.commit_offset);
+            for transaction in commit.transactions {
+                closed_transaction_offset += 1;
+                for write in &transaction.writes {
+                    if write.operation.to_u8() == 0 {
+                        closed_state.delete(write.set_id, write.value);
+                    } else {
+                        closed_state.insert(write.set_id, write.value);
+                    }
+                }
+            }
+        }
 
-        Ok(Self {
+        let commit_offset = if let Some(last_commit_offset) = last_commit_offset {
+            last_commit_offset + 1
+        } else {
+            0
+        };
+
+        log::debug!(
+            "Initialized with {} commits and tx offset {}",
+            commit_offset,
+            closed_transaction_offset
+        );
+
+        let txdb = Self {
             odb,
             message_log,
-            closed_state: ClosedState::new(),
-            closed_transaction_offset: 0,
+            closed_state,
+            unwritten_commit: Commit {
+                parent_commit_hash: last_hash,
+                commit_offset,
+                min_tx_offset: closed_transaction_offset,
+                transactions: Vec::new(),
+            },
+            closed_transaction_offset,
             open_transactions: Vec::new(),
             open_transaction_offsets: Vec::new(),
             branched_transaction_offsets: Vec::new(),
-        })
-    }
+        };
 
-    fn reduce(&self, _transaction: Transaction) {
-        unimplemented!();
+        Ok(txdb)
     }
 
     fn latest_transaction_offset(&self) -> u64 {
@@ -233,11 +262,16 @@ impl TransactionalDB {
         // Rebase on the last open transaction (or closed transaction if none open)
         let new_transaction = Transaction { writes: tx.writes };
 
+        const COMMIT_SIZE: usize = 1;
+        // TODO: avoid copy
+        // TODO: use an estimated byte size to determine how much to put in here
+        self.unwritten_commit.transactions.push(new_transaction.clone());
+        if self.unwritten_commit.transactions.len() > COMMIT_SIZE {
+            self.persist_commit();
+        }
+
         self.open_transactions.push(new_transaction);
         self.open_transaction_offsets.push(tx.parent_tx_offset + 1);
-
-        // let commit = Commit {
-        // };
 
         // Remove my branch
         let index = self
@@ -282,6 +316,25 @@ impl TransactionalDB {
                 // No more transactions to process
                 break;
             }
+        }
+    }
+
+    fn persist_commit(&mut self) {
+        let mut bytes = Vec::new();
+        self.unwritten_commit.encode(&mut bytes);
+
+        let parent_commit_hash = Some(hash_bytes(&bytes));
+        self.message_log.append(bytes).unwrap();
+
+        let commit_offset = self.unwritten_commit.commit_offset + 1;
+        let num_tx = self.unwritten_commit.transactions.len();
+        let min_tx_offset = self.unwritten_commit.min_tx_offset + num_tx as u64;
+
+        self.unwritten_commit = Commit {
+            parent_commit_hash,
+            commit_offset,
+            min_tx_offset,
+            transactions: Vec::new(),
         }
     }
 

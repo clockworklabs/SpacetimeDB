@@ -4,13 +4,14 @@ use crate::hash::Hash;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::prelude::*;
+use std::path::PathBuf;
 
 const ROOT: &str = "/stdb/logs";
 
-fn path_from_address(module_address: Hash) -> String {
+fn path_from_address(module_address: Hash) -> PathBuf {
     let hex_address = hex::encode(module_address);
     let path = format!("{}/{}/{}.log", ROOT, &hex_address[0..2], &hex_address[2..]);
-    path
+    PathBuf::from(path)
 }
 
 fn dir_from_address(module_address: Hash) -> String {
@@ -28,7 +29,14 @@ pub fn init_log(module_address: Hash) {
 
 pub fn write(module_address: Hash, level: u8, value: String) {
     let path = path_from_address(module_address);
-    let mut file = OpenOptions::new().append(true).write(true).open(path).unwrap();
+    let parent_dir = path.parent().unwrap();
+    fs::create_dir_all(parent_dir).unwrap();
+    let mut file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(true)
+        .open(path)
+        .unwrap();
 
     match level {
         0 => writeln!(file, "error: {}", value).unwrap(),

@@ -46,7 +46,7 @@ impl Value {
             Value::Hash(hash_bytes(&bytes))
         } else {
             let mut buf = [0; 32];
-            buf.copy_from_slice(&bytes[0..bytes.len()]);
+            buf[0..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
             Value::Data {
                 len: bytes.len() as u8,
                 buf,
@@ -61,12 +61,12 @@ impl Value {
         let flags = bytes[read_count];
         read_count += 1;
 
-        let is_data = ((flags & 0b1000_0000) >> 7) == 1;
+        let is_data = ((flags & 0b1000_0000) >> 7) == 0;
 
         if is_data {
             let len = flags & 0b0111_1111;
             let mut buf = [0; 32];
-            buf.copy_from_slice(&bytes[read_count..read_count + (len as usize)]);
+            buf[0..len as usize].copy_from_slice(&bytes[read_count..(read_count + len as usize)]);
             read_count += len as usize;
             (Self::Data { len, buf }, read_count)
         } else {
@@ -82,7 +82,7 @@ impl Value {
                 let flags: u8 = 0b0000_0000;
                 let flags = flags | (len & 0b0111_1111);
                 bytes.push(flags);
-                bytes.extend(buf);
+                bytes.extend(&buf[0..(*len as usize)]);
                 1 + *len as usize
             }
             Value::Hash(hash) => {
@@ -116,7 +116,7 @@ impl Write {
         let set_id = u32::from_le_bytes(dst);
         read_count += 4;
 
-        let (value, rc) = Value::decode(bytes);
+        let (value, rc) = Value::decode(&bytes[read_count..]);
         read_count += rc;
 
         (

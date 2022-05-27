@@ -25,6 +25,7 @@ use wasmer_middlewares::{
 const REDUCE_DUNDER: &str = "__reducer__";
 const INIT_PANIC_DUNDER: &str = "__init_panic__";
 const INIT_DATABASE_DUNDER: &str = "__init_database__";
+const _MIGRATE_DATABASE_DUNDER: &str = "__migrate_database__";
 
 lazy_static! {
     pub static ref HOST: Mutex<Host> = Mutex::new(HostActor::spawn());
@@ -213,7 +214,9 @@ impl HostActor {
 
     fn validate_module(module: &Module) -> Result<(), anyhow::Error> {
         let mut found = false;
+        log::trace!("Module validation:");
         for f in module.exports().functions() {
+            log::trace!("   {:?}", f);
             if !f.name().starts_with(REDUCE_DUNDER) {
                 continue;
             }
@@ -258,8 +261,7 @@ impl HostActor {
 
     fn init_database(&mut self, module: &Module, hash: Hash) -> Result<(), anyhow::Error> {
         let reducer_symbol = INIT_DATABASE_DUNDER;
-        self.execute_reducer(module, reducer_symbol, hash)?;
-
+        self.execute_reducer(module, reducer_symbol, hash, Vec::new())?;
         Ok(())
     }
 
@@ -271,14 +273,23 @@ impl HostActor {
             None => return Err(anyhow::anyhow!("No such module.")),
         };
 
-        let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
+        // TODO: actually handle args
+        let arg_str = r#"[{"x": 0, "y": 1, "z": 2}, {"foo": "This is a string."}]"#;
+        let arg_bytes = arg_str.as_bytes();
 
-        self.execute_reducer(module, &reducer_symbol, hash)?;
+        let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
+        self.execute_reducer(module, &reducer_symbol, hash, arg_bytes)?;
 
         Ok(())
     }
 
-    fn execute_reducer(&self, module: &Module, reducer_symbol: &str, hash: Hash) -> Result<(), anyhow::Error> {
+    fn execute_reducer(
+        &self,
+        module: &Module,
+        reducer_symbol: &str,
+        hash: Hash,
+        arg_bytes: impl AsRef<[u8]>,
+    ) -> Result<(), anyhow::Error> {
         let tx_id = {
             let mut stdb = STDB.lock().unwrap();
             let tx = stdb.begin_tx();
@@ -323,6 +334,21 @@ impl HostActor {
             let _ = init_panic.call();
         }
 
+        // Prepare arguments
+        let memory = instance.exports.get_memory("memory").unwrap();
+        let alloc = instance
+            .exports
+            .get_function("alloc")?
+            .native::<u32, WasmPtr<u8, Array>>()?;
+
+        let arg_bytes = arg_bytes.as_ref();
+        let ptr = alloc.call(arg_bytes.len() as u32).unwrap();
+
+        let values = ptr.deref(memory, 0, arg_bytes.len() as u32).unwrap();
+        for (i, byte) in arg_bytes.iter().enumerate() {
+            values[i].set(*byte);
+        }
+
         let reduce = instance
             .exports
             .get_function(&reducer_symbol)?
@@ -330,7 +356,7 @@ impl HostActor {
 
         let start = std::time::Instant::now();
         log::trace!("Start reducer \"{}\"...", reducer_symbol);
-        let result = reduce.call(0, 0);
+        let result = reduce.call(ptr.offset(), arg_bytes.len() as u32);
         let duration = start.elapsed();
         let remaining_points = get_remaining_points_value(&instance);
         log::trace!(
@@ -364,6 +390,7 @@ impl HostActor {
             let mut tx_map = TX_MAP.lock().unwrap();
             let tx = tx_map.remove(&tx_id).unwrap();
             stdb.commit_tx(tx);
+            stdb.txdb.message_log.sync_all().unwrap();
         }
         Ok(())
     }

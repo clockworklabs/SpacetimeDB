@@ -53,7 +53,7 @@ struct TestB {
 }
 
 #[no_mangle]
-pub extern "C" fn __init_database__() {
+pub extern "C" fn __init_database__(_arg_ptr: u32, _arg_size: u32) {
     create_table(
         0,
         vec![
@@ -74,7 +74,7 @@ pub extern "C" fn __init_database__() {
 }
 
 #[no_mangle]
-pub extern "C" fn __migrate_database__() {
+pub extern "C" fn __migrate_database__(_arg_ptr: u32, _arg_size: u32) {
     // User defined
 }
 

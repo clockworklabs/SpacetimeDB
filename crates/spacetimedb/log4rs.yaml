@@ -28,4 +28,4 @@ root:
 
 loggers:
   spacetimedb:
-    level: debug
+    level: trace
