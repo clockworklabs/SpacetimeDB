@@ -100,7 +100,9 @@ pub extern "C" fn __reducer__test(arg_ptr: u32, arg_size: u32) {
         );
     }
 
-    for row in iter(0).unwrap() {
-        println!("{:?}", row);
+    let mut row_count = 0;
+    for _row in iter(0).unwrap() {
+        row_count += 1;
     }
+    println!("Row count: {row_count}");
 }

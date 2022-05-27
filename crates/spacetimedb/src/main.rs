@@ -76,7 +76,7 @@ async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let arg_data = vec![0, 0, 0];
     api::database::call(&identity, &name, reducer, arg_data).await?;
 
-    print!("{}", api::database::logs(&identity, &name, 100).await);
+    println!("{}", api::database::logs(&identity, &name, 10).await);
 
     let (identity, token) = api::spacetime_identity().await?;
     println!("identity: {:?}", identity);

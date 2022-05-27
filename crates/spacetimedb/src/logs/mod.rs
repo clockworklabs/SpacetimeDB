@@ -79,5 +79,5 @@ pub async fn read_latest(module_address: Hash, num_lines: u32) -> String {
     let end = lines.len();
     let latest = &lines[start..end];
 
-    latest.concat()
+    latest.join("\n")
 }
