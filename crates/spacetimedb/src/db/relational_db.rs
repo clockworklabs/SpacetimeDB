@@ -16,10 +16,11 @@ pub struct RelationalDB {
 }
 
 impl RelationalDB {
-    pub fn open(root: &Path) -> Self {
+    pub fn open(root: impl AsRef<Path>) -> Self {
         // Create tables that must always exist
         // i.e. essentially bootstrap the creation of the schema
         // tables by hard coding the schema of the schema tables
+        let root = root.as_ref();
 
         let mut txdb = TransactionalDB::open(&root.to_path_buf().join("txdb")).unwrap();
         let mut tx = txdb.begin_tx();
@@ -219,6 +220,8 @@ impl RelationalDB {
     ) -> Option<Vec<ColValue>> {
         if let Some(table_iter) = self.iter(tx, table_id) {
             for row in table_iter {
+                // TODO: more than one row can have this value if col_id
+                // is not the primary key
                 if row[col_id as usize] == value {
                     return Some(row);
                 }

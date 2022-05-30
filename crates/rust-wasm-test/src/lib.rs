@@ -53,7 +53,7 @@ struct TestB {
 }
 
 #[no_mangle]
-pub extern "C" fn __init_database__(_arg_ptr: u32, _arg_size: u32) {
+pub extern "C" fn __create_table__TestA(_arg_ptr: u32, _arg_size: u32) {
     create_table(
         0,
         vec![
@@ -100,9 +100,12 @@ pub extern "C" fn __reducer__test(arg_ptr: u32, arg_size: u32) {
         );
     }
 
+    println!("HAP");
     let mut row_count = 0;
     for _row in iter(0).unwrap() {
         row_count += 1;
     }
-    println!("Row count: {row_count}");
+    println!("HAP2");
+
+    println!("Row count: {}", row_count);
 }

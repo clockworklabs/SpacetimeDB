@@ -1,8 +1,11 @@
 use crate::{
+    db::object_db::ObjectDB,
     hash::Hash,
     identity::{alloc_spacetime_identity, decode_token, encode_token},
     postgres,
 };
+use lazy_static::lazy_static;
+use std::sync::Mutex;
 // use rocksdb;
 
 /*
@@ -24,6 +27,10 @@ use crate::{
 - (client library for syncing data based on queries??)
 -x non-primitive type columns (e.g. struct in column)
 */
+
+lazy_static! {
+    pub static ref MODULE_ODB: Mutex<ObjectDB> = Mutex::new(ObjectDB::open("/stdb/module_odb").unwrap());
+}
 
 pub async fn spacetime_identity() -> Result<(Hash, String), anyhow::Error> {
     let identity = alloc_spacetime_identity().await?;
@@ -49,8 +56,10 @@ pub mod database {
         hash::Hash,
         logs::{self, init_log},
         postgres,
-        wasm_host::{self, get_host, STDB},
+        wasm_host::{self, get_host},
     };
+
+    use super::MODULE_ODB;
 
     // TODO: Verify identity?
     pub async fn init_module(identity: &str, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
@@ -73,8 +82,8 @@ pub mod database {
 
         // If the module successfully initialized add it to the object database
         {
-            let mut stdb = STDB.lock().unwrap();
-            stdb.txdb.odb.add(wasm_bytes);
+            let mut object_db = MODULE_ODB.lock().unwrap();
+            object_db.add(wasm_bytes);
         }
 
         // Store this module metadata in postgres

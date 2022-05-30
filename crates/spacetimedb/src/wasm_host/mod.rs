@@ -1,141 +1,29 @@
-use crate::logs;
-use crate::{
-    db::{relational_db::RelationalDB, transactional_db::Tx},
-    hash::{hash_bytes, Hash},
-};
+mod instance_env;
+mod module_host;
+
+use crate::hash::{hash_bytes, Hash};
 use anyhow;
 use lazy_static::lazy_static;
 use log;
-use spacetimedb_bindings::{decode_schema, encode_schema, Schema};
-use std::path::Path;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
 use tokio::sync::{mpsc, oneshot};
-use wasmer::{
-    imports, wasmparser::Operator, Array, CompilerConfig, Function, Instance, LazyInit, Memory, Module, NativeFunc,
-    Store, Universal, ValType, WasmPtr, WasmerEnv,
-};
-use wasmer_middlewares::{
-    metering::{get_remaining_points, set_remaining_points, MeteringPoints},
-    Metering,
-};
+use wasmer::{wasmparser::Operator, CompilerConfig, Module, Store, Universal, ValType};
+use wasmer_middlewares::Metering;
+
+use self::module_host::ModuleHost;
 
 const REDUCE_DUNDER: &str = "__reducer__";
-const INIT_PANIC_DUNDER: &str = "__init_panic__";
-const INIT_DATABASE_DUNDER: &str = "__init_database__";
 const _MIGRATE_DATABASE_DUNDER: &str = "__migrate_database__";
 
 lazy_static! {
-    pub static ref HOST: Mutex<Host> = Mutex::new(HostActor::spawn());
-    pub static ref STDB: Mutex<RelationalDB> = Mutex::new(RelationalDB::open(&Path::new("/stdb")));
-
-    // TODO: probably store these inside STDB
-    static ref TX_MAP: Mutex<HashMap<u64, Tx>> = Mutex::new(HashMap::new());
-    static ref TX_ID: Mutex<u64> = Mutex::new(0);
+    pub static ref HOST: Mutex<Host> = Mutex::new(Host::spawn());
 }
 
 pub fn get_host() -> Host {
     HOST.lock().unwrap().clone()
-}
-
-#[derive(WasmerEnv, Clone, Default)]
-pub struct ReducerEnv {
-    module_address: Hash,
-    tx_id: u64,
-    #[wasmer(export)]
-    memory: LazyInit<Memory>,
-    #[wasmer(export(name = "alloc"))]
-    alloc: LazyInit<NativeFunc<u32, WasmPtr<u8, Array>>>,
-}
-
-fn c_str_to_string(memory: &Memory, ptr: u32) -> String {
-    let view = memory.view::<u8>();
-    let start = ptr as usize;
-    let mut bytes = Vec::new();
-    for c in view[start..].iter() {
-        let v = c.get();
-        if v == 0 {
-            break;
-        }
-        bytes.push(v);
-    }
-    String::from_utf8(bytes).unwrap()
-}
-
-fn console_log(env: &ReducerEnv, level: u8, ptr: u32) {
-    let memory = env.memory.get_ref().expect("Initialized memory");
-    let s = c_str_to_string(memory, ptr);
-    logs::write(env.module_address, level, s);
-}
-
-fn read_output_bytes(memory: &Memory, ptr: u32) -> Vec<u8> {
-    let view = memory.view::<u8>();
-    let start = ptr as usize;
-    let end = ptr as usize + 256;
-    view[start..end].iter().map(|c| c.get()).collect::<Vec<u8>>()
-}
-
-fn insert(env: &ReducerEnv, table_id: u32, ptr: u32) {
-    let buffer = read_output_bytes(env.memory.get_ref().expect("Initialized memory"), ptr);
-
-    let mut stdb = STDB.lock().unwrap();
-    let mut tx_map = TX_MAP.lock().unwrap();
-    let tx = tx_map.get_mut(&env.tx_id).unwrap();
-
-    let schema = stdb.schema_for_table(tx, table_id).unwrap();
-    let row = RelationalDB::decode_row(&schema, &buffer[..]);
-
-    stdb.insert(tx, table_id, row);
-}
-
-fn create_table(env: &ReducerEnv, table_id: u32, ptr: u32) {
-    let buffer = read_output_bytes(env.memory.get_ref().expect("Initialized memory"), ptr);
-
-    let mut stdb = STDB.lock().unwrap();
-    let mut tx_map = TX_MAP.lock().unwrap();
-    let tx = tx_map.get_mut(&env.tx_id).unwrap();
-
-    let schema = decode_schema(&mut &buffer[..]);
-    stdb.create_table(tx, table_id, schema).unwrap();
-}
-
-fn iter(env: &ReducerEnv, table_id: u32) -> u64 {
-    let stdb = STDB.lock().unwrap();
-    let mut tx_map = TX_MAP.lock().unwrap();
-    let tx = tx_map.get_mut(&env.tx_id).unwrap();
-
-    let memory = env.memory.get_ref().expect("Initialized memory");
-
-    let mut bytes = Vec::new();
-    let schema = stdb.schema_for_table(tx, table_id).unwrap();
-    encode_schema(Schema { columns: schema }, &mut bytes);
-
-    for row in stdb.iter(tx, table_id).unwrap() {
-        RelationalDB::encode_row(row, &mut bytes);
-    }
-
-    let alloc_func = env.alloc.get_ref().expect("Intialized alloc function");
-    let ptr = alloc_func.call(bytes.len() as u32).unwrap();
-    let values = ptr.deref(memory, 0, bytes.len() as u32).unwrap();
-
-    for (i, byte) in bytes.iter().enumerate() {
-        values[i].set(*byte);
-    }
-
-    let mut data = ptr.offset() as u64;
-    data = data << 32 | bytes.len() as u64;
-    return data;
-}
-
-fn get_remaining_points_value(instance: &Instance) -> u64 {
-    let remaining_points = get_remaining_points(instance);
-    let remaining_points = match remaining_points {
-        MeteringPoints::Remaining(x) => x,
-        MeteringPoints::Exhausted => 0,
-    };
-    return remaining_points;
 }
 
 #[derive(Debug)]
@@ -157,21 +45,10 @@ enum HostCommand {
 
 struct HostActor {
     store: Store,
-    modules: HashMap<Hash, Module>,
+    modules: HashMap<Hash, ModuleHost>,
 }
 
 impl HostActor {
-    pub fn spawn() -> Host {
-        let (tx, mut rx) = mpsc::channel(8);
-        tokio::spawn(async move {
-            let mut actor = HostActor::new();
-            while let Some(command) = rx.recv().await {
-                actor.handle_message(command);
-            }
-        });
-        Host { tx }
-    }
-
     fn new() -> Self {
         let cost_function = |operator: &Operator| -> u64 {
             match operator {
@@ -189,15 +66,15 @@ impl HostActor {
         compiler_config.push_middleware(metering);
 
         let store = Store::new(&Universal::new(compiler_config).engine());
-        let modules: HashMap<Hash, Module> = HashMap::new();
+        let modules: HashMap<Hash, ModuleHost> = HashMap::new();
 
         Self { store, modules }
     }
 
-    fn handle_message(&mut self, message: HostCommand) {
+    async fn handle_message(&mut self, message: HostCommand) {
         match message {
             HostCommand::InitModule { wasm_bytes, respond_to } => {
-                respond_to.send(self.init_module(wasm_bytes)).unwrap();
+                respond_to.send(self.init_module(wasm_bytes).await).unwrap();
             }
             HostCommand::AddModule { wasm_bytes, respond_to } => {
                 respond_to.send(self.add_module(wasm_bytes)).unwrap();
@@ -207,7 +84,7 @@ impl HostActor {
                 reducer_name,
                 respond_to,
             } => {
-                respond_to.send(self.call_reducer(hash, &reducer_name)).unwrap();
+                respond_to.send(self.call_reducer(hash, &reducer_name).await).unwrap();
             }
         }
     }
@@ -238,160 +115,34 @@ impl HostActor {
         Ok(())
     }
 
-    fn init_module(&mut self, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
-        let hash = hash_bytes(&wasm_bytes);
-        let module = Module::new(&self.store, wasm_bytes)?;
-
-        Self::validate_module(&module)?;
-        self.init_database(&module, hash)?;
-
-        self.modules.insert(hash, module);
-
-        Ok(hash)
+    async fn init_module(&mut self, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+        let module_hash = self.add_module(wasm_bytes)?;
+        let module_host = self.modules.get(&module_hash).unwrap().clone();
+        module_host.init_database().await?;
+        Ok(module_hash)
     }
 
     fn add_module(&mut self, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
-        let hash = hash_bytes(&wasm_bytes);
+        let module_hash = hash_bytes(&wasm_bytes);
         let module = Module::new(&self.store, wasm_bytes)?;
 
-        self.modules.insert(hash, module);
+        Self::validate_module(&module)?;
 
-        Ok(hash)
+        let identity = hash_bytes(b"");
+        let name = "test".into();
+        let store = self.store.clone();
+        let module_host = ModuleHost::spawn(identity, name, module_hash, module, store);
+        self.modules.insert(module_hash, module_host);
+
+        Ok(module_hash)
     }
 
-    fn init_database(&mut self, module: &Module, hash: Hash) -> Result<(), anyhow::Error> {
-        let reducer_symbol = INIT_DATABASE_DUNDER;
-        self.execute_reducer(module, reducer_symbol, hash, Vec::new())?;
-        Ok(())
-    }
-
-    fn call_reducer(&self, hash: Hash, reducer_name: &str) -> Result<(), anyhow::Error> {
-        // TODO: disallow calling non-reducer dunder functions
-        let module = self.modules.get(&hash);
-        let module = match module {
-            Some(x) => x,
-            None => return Err(anyhow::anyhow!("No such module.")),
-        };
-
-        // TODO: actually handle args
-        let arg_str = r#"[{"x": 0, "y": 1, "z": 2}, {"foo": "This is a string."}]"#;
-        let arg_bytes = arg_str.as_bytes();
-
-        let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
-        self.execute_reducer(module, &reducer_symbol, hash, arg_bytes)?;
-
-        Ok(())
-    }
-
-    fn execute_reducer(
-        &self,
-        module: &Module,
-        reducer_symbol: &str,
-        hash: Hash,
-        arg_bytes: impl AsRef<[u8]>,
-    ) -> Result<(), anyhow::Error> {
-        let tx_id = {
-            let mut stdb = STDB.lock().unwrap();
-            let tx = stdb.begin_tx();
-            let id = *TX_ID.lock().unwrap();
-            *TX_ID.lock().unwrap() += 1;
-            TX_MAP.lock().unwrap().insert(id, tx);
-            id
-        };
-
-        let import_object = imports! {
-            "env" => {
-                "_insert" => Function::new_native_with_env(
-                    &self.store,
-                    ReducerEnv { tx_id, module_address: hash, ..Default::default()},
-                    insert,
-                ),
-                "_create_table" => Function::new_native_with_env(
-                    &self.store,
-                    ReducerEnv { tx_id, module_address: hash, ..Default::default()},
-                    create_table,
-                ),
-                "_iter" => Function::new_native_with_env(
-                    &self.store,
-                    ReducerEnv { tx_id, module_address: hash, ..Default::default()},
-                    iter
-                ),
-                "_console_log" => Function::new_native_with_env(
-                    &self.store,
-                    ReducerEnv { tx_id, module_address: hash, ..Default::default()},
-                    console_log
-                ),
-            }
-        };
-
-        let points = 1_000_000;
-        let instance = Instance::new(&module, &import_object)?;
-        set_remaining_points(&instance, points);
-
-        // Init panic if available
-        let init_panic = instance.exports.get_native_function::<(), ()>(INIT_PANIC_DUNDER);
-        if let Some(init_panic) = init_panic.ok() {
-            let _ = init_panic.call();
-        }
-
-        // Prepare arguments
-        let memory = instance.exports.get_memory("memory").unwrap();
-        let alloc = instance
-            .exports
-            .get_function("alloc")?
-            .native::<u32, WasmPtr<u8, Array>>()?;
-
-        let arg_bytes = arg_bytes.as_ref();
-        let ptr = alloc.call(arg_bytes.len() as u32).unwrap();
-
-        let values = ptr.deref(memory, 0, arg_bytes.len() as u32).unwrap();
-        for (i, byte) in arg_bytes.iter().enumerate() {
-            values[i].set(*byte);
-        }
-
-        let reduce = instance
-            .exports
-            .get_function(&reducer_symbol)?
-            .native::<(u32, u32), ()>()?;
-
-        let start = std::time::Instant::now();
-        log::trace!("Start reducer \"{}\"...", reducer_symbol);
-        let result = reduce.call(ptr.offset(), arg_bytes.len() as u32);
-        let duration = start.elapsed();
-        let remaining_points = get_remaining_points_value(&instance);
-        log::trace!(
-            "Reducer \"{}\" ran: {} us, {} eV",
-            reducer_symbol,
-            duration.as_micros(),
-            points - remaining_points
-        );
-
-        if let Some(err) = result.err() {
-            let mut stdb = STDB.lock().unwrap();
-            let mut tx_map = TX_MAP.lock().unwrap();
-            let tx = tx_map.remove(&tx_id).unwrap();
-            stdb.rollback_tx(tx);
-
-            let e = &err;
-            let frames = e.trace();
-            let frames_len = frames.len();
-
-            log::info!("Reducer \"{}\" runtime error:", reducer_symbol);
-            for i in 0..frames_len {
-                log::info!(
-                    "  Frame #{}: {:?}::{:?}",
-                    frames_len - i,
-                    frames[i].module_name(),
-                    frames[i].function_name().or(Some("<func>")).unwrap()
-                );
-            }
-        } else {
-            let mut stdb = STDB.lock().unwrap();
-            let mut tx_map = TX_MAP.lock().unwrap();
-            let tx = tx_map.remove(&tx_id).unwrap();
-            stdb.commit_tx(tx);
-            stdb.txdb.message_log.sync_all().unwrap();
-        }
+    async fn call_reducer(&self, hash: Hash, reducer_name: &str) -> Result<(), anyhow::Error> {
+        let module_host = self
+            .modules
+            .get(&hash)
+            .ok_or(anyhow::anyhow!("No such module found."))?;
+        module_host.call_reducer(reducer_name.into()).await?;
         Ok(())
     }
 }
@@ -402,6 +153,18 @@ pub struct Host {
 }
 
 impl Host {
+    pub fn spawn() -> Host {
+        let (tx, mut rx) = mpsc::channel(8);
+        tokio::spawn(async move {
+            let mut actor = HostActor::new();
+            while let Some(command) = rx.recv().await {
+                // TODO: this really shouldn't await, but doing this for now just to get it working
+                actor.handle_message(command).await;
+            }
+        });
+        Host { tx }
+    }
+
     pub async fn init_module(&self, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<Hash, anyhow::Error>>();
         self.tx

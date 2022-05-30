@@ -1,9 +1,9 @@
 use log::*;
-use spacetimedb::api;
+use spacetimedb::api::{self, MODULE_ODB};
 use spacetimedb::hash::Hash;
 use spacetimedb::postgres;
 use spacetimedb::routes::router;
-use spacetimedb::wasm_host::{self, STDB};
+use spacetimedb::wasm_host;
 use std::error::Error;
 use std::net::SocketAddr;
 use tokio::runtime::Builder;
@@ -41,8 +41,8 @@ async fn startup() {
         let module_address: String = row.get(3);
         let hash: Hash = Hash::from_iter(hex::decode(module_address).unwrap());
         let wasm_bytes = {
-            let stdb = STDB.lock().unwrap();
-            stdb.txdb.odb.get(hash).unwrap().to_vec()
+            let object_db = MODULE_ODB.lock().unwrap();
+            object_db.get(hash).unwrap().to_vec()
         };
         wasm_host::get_host().add_module(wasm_bytes).await.unwrap();
     }
@@ -71,11 +71,13 @@ async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
         log::error!("{:?}", e);
     }
 
-    let reducer = "test".into();
+    let reducer: String = "test".into();
 
     let arg_data = vec![0, 0, 0];
+    api::database::call(&identity, &name, reducer.clone(), arg_data.clone()).await?;
     api::database::call(&identity, &name, reducer, arg_data).await?;
 
+    println!("logs:");
     println!("{}", api::database::logs(&identity, &name, 10).await);
 
     let (identity, token) = api::spacetime_identity().await?;
