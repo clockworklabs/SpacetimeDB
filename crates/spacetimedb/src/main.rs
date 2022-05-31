@@ -96,7 +96,7 @@ async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     spawn(async move {
         // Start https server
-        let addr = SocketAddr::from(([0, 0, 0, 0], 3010));
+        let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
 
         debug!("Listening for http requests at http://{}", addr);
         gotham::init_server(addr, router()).await.unwrap();

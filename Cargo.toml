@@ -1,6 +1,7 @@
 [workspace]
 members = ["crates/*"]
 exclude = ["crates/rust-wasm-goal"]
+default-members = ["crates/stdb"]
 
 [profile.release]
 opt-level = 's'
