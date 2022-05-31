@@ -61,7 +61,7 @@ impl ModuleHost {
 
 const REDUCE_DUNDER: &str = "__reducer__";
 const INIT_PANIC_DUNDER: &str = "__init_panic__";
-const INIT_DATABASE_DUNDER: &str = "__init_database__";
+const CREATE_TABLE_DUNDER: &str = "__create_table__";
 const _MIGRATE_DATABASE_DUNDER: &str = "__migrate_database__";
 
 fn get_remaining_points_value(instance: &Instance) -> u64 {
@@ -169,13 +169,16 @@ impl ModuleHostActor {
     }
 
     fn init_database(&mut self) -> Result<(), anyhow::Error> {
-        let reducer_symbol = INIT_DATABASE_DUNDER;
-        self.execute_reducer(reducer_symbol, Vec::new())?;
+        for f in self.module.exports().functions() {
+            if !f.name().starts_with(CREATE_TABLE_DUNDER) {
+                continue;
+            }
+            self.execute_reducer(f.name(), Vec::new())?;
+        }
         Ok(())
     }
 
     fn call_reducer(&self, reducer_name: &str) -> Result<(), anyhow::Error> {
-        // TODO: disallow calling non-reducer dunder functions
         // TODO: actually handle args
         let arg_str = r#"[{"x": 0, "y": 1, "z": 2}, {"foo": "This is a string."}]"#;
         let arg_bytes = arg_str.as_bytes();
@@ -187,6 +190,7 @@ impl ModuleHostActor {
     }
 
     fn execute_reducer(&self, reducer_symbol: &str, arg_bytes: impl AsRef<[u8]>) -> Result<(), anyhow::Error> {
+        // TODO: disallow calling non-reducer dunder functions
         let tx = {
             let mut stdb = self.relational_db.lock().unwrap();
             stdb.begin_tx()
@@ -241,7 +245,7 @@ impl ModuleHostActor {
             let frames = e.trace();
             let frames_len = frames.len();
 
-            log::info!("Reducer \"{}\" runtime error:", reducer_symbol);
+            log::info!("Reducer \"{}\" runtime error: {}", reducer_symbol, e.message());
             for i in 0..frames_len {
                 log::info!(
                     "  Frame #{}: {:?}::{:?}",

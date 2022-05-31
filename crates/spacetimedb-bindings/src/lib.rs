@@ -7,8 +7,6 @@ pub use col_value::ColValue;
 pub use column::Column;
 pub use schema::Schema;
 use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
-use std::ffi::CString;
-use std::os::raw::c_char;
 use std::panic;
 
 #[global_allocator]
@@ -18,7 +16,7 @@ extern "C" {
     fn _create_table(table_id: u32, ptr: *mut u8);
     fn _insert(table_id: u32, ptr: *mut u8);
     fn _iter(table_id: u32) -> u64;
-    fn _console_log(level: u8, ptr: *const c_char);
+    fn _console_log(level: u8, ptr: *const u8, len: u32);
 }
 
 // TODO: probably do something lighter weight here
@@ -33,49 +31,49 @@ fn panic_hook(info: &panic::PanicInfo) {
 }
 
 #[doc(hidden)]
-pub fn _console_log_debug(string: String) {
-    let s = CString::new(string).unwrap();
+pub fn _console_log_debug(string: &str) {
+    let s = string.as_bytes();
     let ptr = s.as_ptr();
     unsafe {
-        _console_log(3, ptr);
+        _console_log(3, ptr, s.len() as u32);
     }
 }
 
 #[doc(hidden)]
-pub fn _console_log_info(string: String) {
-    let s = CString::new(string).unwrap();
+pub fn _console_log_info(string: &str) {
+    let s = string.as_bytes();
     let ptr = s.as_ptr();
     unsafe {
-        _console_log(2, ptr);
+        _console_log(2, ptr, s.len() as u32);
     }
 }
 
 #[doc(hidden)]
 pub fn _console_log_warn(string: &str) {
-    let s = CString::new(string).unwrap();
+    let s = string.as_bytes();
     let ptr = s.as_ptr();
     unsafe {
-        _console_log(1, ptr);
+        _console_log(1, ptr, s.len() as u32);
     }
 }
 
 #[doc(hidden)]
 pub fn _console_log_error(string: &str) {
-    let s = CString::new(string).unwrap();
+    let s = string.as_bytes();
     let ptr = s.as_ptr();
     unsafe {
-        _console_log(0, ptr);
+        _console_log(0, ptr, s.len() as u32);
     }
 }
 
 #[macro_export]
 macro_rules! println {
-    ($($arg:tt)*) => ($crate::_console_log_info(format!($($arg)*)))
+    ($($arg:tt)*) => ($crate::_console_log_info(&format!($($arg)*)))
 }
 
 #[macro_export]
 macro_rules! print {
-    ($($arg:tt)*) => ($crate::_console_log_info(format!($($arg)*)))
+    ($($arg:tt)*) => ($crate::_console_log_info(&format!($($arg)*)))
 }
 
 #[macro_export]
@@ -117,27 +115,29 @@ const ROW_BUF_LEN: usize = 1024;
 static mut ROW_BUF: Option<*mut u8> = None;
 
 #[no_mangle]
-unsafe extern "C" fn alloc(size: usize) -> *mut u8 {
+extern "C" fn alloc(size: usize) -> *mut u8 {
     let align = std::mem::align_of::<usize>();
-    let layout = Layout::from_size_align_unchecked(size, align);
-    _alloc(layout)
+    unsafe {
+        let layout = Layout::from_size_align_unchecked(size, align);
+        _alloc(layout)
+    }
 }
 
 #[no_mangle]
-unsafe extern "C" fn dealloc(ptr: *mut u8, size: usize) {
+extern "C" fn dealloc(ptr: *mut u8, size: usize) {
     let align = std::mem::align_of::<usize>();
-    let layout = Layout::from_size_align_unchecked(size, align);
-    _dealloc(ptr, layout);
+    unsafe {
+        let layout = Layout::from_size_align_unchecked(size, align);
+        _dealloc(ptr, layout);
+    }
 }
 
-fn row_buf() -> *mut u8 {
-    unsafe {
-        if ROW_BUF.is_none() {
-            let ptr = alloc(ROW_BUF_LEN);
-            ROW_BUF = Some(ptr);
-        }
-        ROW_BUF.unwrap()
+unsafe fn row_buf() -> *mut u8 {
+    if ROW_BUF.is_none() {
+        let ptr = alloc(ROW_BUF_LEN);
+        ROW_BUF = Some(ptr);
     }
+    ROW_BUF.unwrap()
 }
 
 pub fn encode_row(row: Vec<ColValue>, bytes: &mut Vec<u8>) {
@@ -197,6 +197,7 @@ pub fn create_table(table_id: u32, schema: Vec<Column>) {
         let ptr = row_buf();
         let mut memory = Vec::from_raw_parts(ptr, 0, ROW_BUF_LEN);
         encode_schema(Schema { columns: schema }, &mut memory);
+        std::mem::forget(memory);
         _create_table(table_id, ptr);
     }
 }
@@ -208,6 +209,7 @@ pub fn insert(table_id: u32, row: Vec<ColValue>) {
         for col in row {
             memory.extend(col.to_data());
         }
+        std::mem::forget(memory);
         _insert(table_id, ptr);
     }
 }
@@ -217,25 +219,29 @@ pub fn iter(table_id: u32) -> Option<TableIter> {
     let ptr = (data >> 32) as u32 as *mut u8;
     let size = data as u32;
     let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(ptr, size as usize, size as usize) };
+
     let slice = &mut &bytes[..];
-    let start_size = slice.len() as u32;
+    let initial_size = slice.len() as u32;
     let schema = decode_schema(slice);
-    let size = slice.len() as u32;
+
+    let data_size = slice.len() as u32;
+    let schema_size = initial_size - data_size;
     let start_ptr = ptr;
-    let ptr = unsafe { start_ptr.add((start_size - size) as usize) };
+    let data_ptr = unsafe { start_ptr.add(schema_size as usize) };
+
     std::mem::forget(bytes);
     Some(TableIter {
-        start_ptr: ptr,
-        start_size,
-        ptr,
-        size,
+        start_ptr,
+        initial_size,
+        ptr: data_ptr,
+        size: data_size,
         schema,
     })
 }
 
 pub struct TableIter {
     start_ptr: *mut u8,
-    start_size: u32,
+    initial_size: u32,
     ptr: *mut u8,
     size: u32,
     schema: Schema,
@@ -256,7 +262,7 @@ impl Iterator for TableIter {
         }
         // TODO: potential memory leak if they don't read all the stuff, figure out how to do this
         std::mem::forget(bytes);
-        unsafe { dealloc(self.start_ptr, self.start_size as usize) };
+        dealloc(self.start_ptr, self.initial_size as usize);
         return None;
     }
 }
