@@ -17,6 +17,7 @@ use super::instance_env::InstanceEnv;
 enum ModuleHostCommand {
     CallReducer {
         reducer_name: String,
+        arg_bytes: Vec<u8>,
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
     },
     InitDatabase {
@@ -41,11 +42,12 @@ impl ModuleHost {
         ModuleHost { tx }
     }
 
-    pub async fn call_reducer(&self, reducer_name: String) -> Result<(), anyhow::Error> {
+    pub async fn call_reducer(&self, reducer_name: String, arg_bytes: Vec<u8>) -> Result<(), anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.tx
             .send(ModuleHostCommand::CallReducer {
                 reducer_name,
+                arg_bytes,
                 respond_to: tx,
             })
             .await?;
@@ -108,9 +110,10 @@ impl ModuleHostActor {
         match message {
             ModuleHostCommand::CallReducer {
                 reducer_name,
+                arg_bytes,
                 respond_to,
             } => {
-                respond_to.send(self.call_reducer(&reducer_name)).unwrap();
+                respond_to.send(self.call_reducer(&reducer_name, &arg_bytes)).unwrap();
             }
             ModuleHostCommand::InitDatabase { respond_to } => {
                 respond_to.send(self.init_database()).unwrap();
@@ -178,11 +181,8 @@ impl ModuleHostActor {
         Ok(())
     }
 
-    fn call_reducer(&self, reducer_name: &str) -> Result<(), anyhow::Error> {
-        // TODO: actually handle args
-        let arg_str = r#"[{"x": 0, "y": 1, "z": 2}, {"foo": "This is a string."}]"#;
-        let arg_bytes = arg_str.as_bytes();
-
+    fn call_reducer(&self, reducer_name: &str, arg_bytes: &[u8]) -> Result<(), anyhow::Error> {
+        // TODO: validate arg_bytes
         let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
         self.execute_reducer(&reducer_symbol, arg_bytes)?;
 

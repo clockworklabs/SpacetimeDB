@@ -89,7 +89,7 @@ pub extern "C" fn __reducer__test(arg_ptr: u32, arg_size: u32) {
 
     println!("foo: {:?}", arg2.foo);
 
-    for i in 0..100 {
+    for i in 0..1 {
         insert(
             0,
             vec![

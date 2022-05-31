@@ -1,6 +1,6 @@
 use log::*;
 use spacetimedb::api::{self, MODULE_ODB};
-use spacetimedb::hash::Hash;
+use spacetimedb::hash::{hash_bytes, Hash};
 use spacetimedb::postgres;
 use spacetimedb::routes::router;
 use spacetimedb::wasm_host;
@@ -34,8 +34,10 @@ async fn startup() {
     let rows = result.unwrap();
 
     for row in rows {
-        // let actor_name: String = row.get(0);
-        // let st_identity: String = row.get(1);
+        let name: String = row.get(0);
+        let hex_identity: String = row.get(1);
+        let identity = *Hash::from_slice(&hex::decode(hex_identity).unwrap());
+
         // let version: i32 = row.get(2);
         // let address: String = row.get(3);
         let module_address: String = row.get(3);
@@ -44,7 +46,10 @@ async fn startup() {
             let object_db = MODULE_ODB.lock().unwrap();
             object_db.get(hash).unwrap().to_vec()
         };
-        wasm_host::get_host().add_module(wasm_bytes).await.unwrap();
+        wasm_host::get_host()
+            .add_module(identity, name, wasm_bytes)
+            .await
+            .unwrap();
     }
 }
 
@@ -64,21 +69,23 @@ async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
     // println!("{}", String::from_utf8(wat.to_owned()).unwrap());
 
     let wasm_bytes = wat2wasm(&wat)?.to_vec();
-    let identity = "clockworklabs";
-    let name = "bitcraft";
-    if let Err(e) = api::database::init_module(identity, name, wasm_bytes).await {
+    let hex_identity = hex::encode(hash_bytes(""));
+    let name = "test";
+    if let Err(e) = api::database::init_module(&hex_identity, name, wasm_bytes).await {
         // TODO: check if it failed because it's already been created
         log::error!("{:?}", e);
     }
 
     let reducer: String = "test".into();
 
-    let arg_data = vec![0, 0, 0];
-    api::database::call(&identity, &name, reducer.clone(), arg_data.clone()).await?;
-    api::database::call(&identity, &name, reducer, arg_data).await?;
+    // TODO: actually handle args
+    let arg_str = r#"[{"x": 0, "y": 1, "z": 2}, {"foo": "This is a string."}]"#;
+    let arg_bytes = arg_str.as_bytes().to_vec();
+    api::database::call(&hex_identity, &name, reducer.clone(), arg_bytes.clone()).await?;
+    api::database::call(&hex_identity, &name, reducer, arg_bytes).await?;
 
     println!("logs:");
-    println!("{}", api::database::logs(&identity, &name, 10).await);
+    println!("{}", api::database::logs(&hex_identity, &name, 10).await);
 
     let (identity, token) = api::spacetime_identity().await?;
     println!("identity: {:?}", identity);

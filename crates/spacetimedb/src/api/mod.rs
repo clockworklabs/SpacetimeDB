@@ -62,12 +62,12 @@ pub mod database {
     use super::MODULE_ODB;
 
     // TODO: Verify identity?
-    pub async fn init_module(identity: &str, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+    pub async fn init_module(hex_identity: &str, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let client = postgres::get_client().await;
         let result = client
             .query(
                 "SELECT * from registry.module WHERE actor_name = $1 AND st_identity = $2",
-                &[&name, &identity],
+                &[&name, &hex_identity],
             )
             .await;
 
@@ -77,8 +77,9 @@ pub mod database {
             }
         }
 
+        let identity = *Hash::from_slice(&hex::decode(hex_identity).unwrap());
         let host = wasm_host::get_host();
-        let address = host.init_module(wasm_bytes.clone()).await?;
+        let address = host.init_module(identity, name.into(), wasm_bytes.clone()).await?;
 
         // If the module successfully initialized add it to the object database
         {
@@ -89,7 +90,7 @@ pub mod database {
         // Store this module metadata in postgres
         client.query(
             "INSERT INTO registry.module (actor_name, st_identity, module_version, module_address) VALUES ($1, $2, $3, $4)", 
-            &[&name, &identity, &0_i32, &hex::encode(address)]
+            &[&name, &hex_identity, &0_i32, &hex::encode(address)]
         ).await?;
 
         init_log(address);
@@ -101,12 +102,7 @@ pub mod database {
         unimplemented!()
     }
 
-    pub async fn call(
-        identity: &str,
-        name: &str,
-        reducer: String,
-        _arg_data: Vec<u8>, // TODO
-    ) -> Result<(), anyhow::Error> {
+    pub async fn call(identity: &str, name: &str, reducer: String, arg_bytes: Vec<u8>) -> Result<(), anyhow::Error> {
         // TODO: optimize by loading all these into memory
         let client = postgres::get_client().await;
         let result = client
@@ -125,7 +121,7 @@ pub mod database {
         let module_address: String = row.get(3);
         let hash: Hash = Hash::from_iter(hex::decode(module_address).unwrap());
 
-        get_host().call_reducer(hash, reducer).await?;
+        get_host().call_reducer(hash, reducer, arg_bytes).await?;
 
         Ok(())
     }
