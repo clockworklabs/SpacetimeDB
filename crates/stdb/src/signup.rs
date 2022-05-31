@@ -1,3 +1,4 @@
+use anyhow::Ok;
 use clap::Arg;
 use clap::ArgMatches;
 
@@ -9,8 +10,9 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help signup for more detailed information.\n`")
 }
 
-pub fn exec(args: &ArgMatches) {
+pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
     let email = args.value_of("email").unwrap();
 
     println!("This is your email: {}", email);
+    Ok(())
 }

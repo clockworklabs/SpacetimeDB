@@ -9,8 +9,9 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help energy for more detailed information.\n`")
 }
 
-pub fn exec(_args: &ArgMatches) {
+pub async fn exec(_args: &ArgMatches) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
 
     // println!("This is your project_name: {}", project_name);
+    Ok(())
 }

@@ -10,10 +10,11 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help update for more detailed information.\n`")
 }
 
-pub fn exec(args: &ArgMatches) {
+pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
     let project_name = args.value_of("project name").unwrap();
     let path_to_project = args.value_of("path to project").unwrap();
 
     println!("This is your project_name: {}", project_name);
     println!("This is the path to your project: {}", path_to_project);
+    Ok(())
 }

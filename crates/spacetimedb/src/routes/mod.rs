@@ -19,34 +19,6 @@ struct InitModuleParams {
     name: String,
 }
 
-    // // println!("{}", String::from_utf8(wat.to_owned()).unwrap());
-
-    // let wasm_bytes = wat2wasm(&wat)?.to_vec();
-    // let hex_identity = hex::encode(hash_bytes(""));
-    // let name = "test";
-    // if let Err(e) = api::database::init_module(&hex_identity, name, wasm_bytes).await {
-    //     // TODO: check if it failed because it's already been created
-    //     log::error!("{:?}", e);
-    // }
-
-    // let reducer: String = "test".into();
-
-    // // TODO: actually handle args
-    // let arg_str = r#"[{"x": 0, "y": 1, "z": 2}, {"foo": "This is a string."}]"#;
-    // let arg_bytes = arg_str.as_bytes().to_vec();
-    // api::database::call(&hex_identity, &name, reducer.clone(), arg_bytes.clone()).await?;
-    // api::database::call(&hex_identity, &name, reducer, arg_bytes).await?;
-
-    // println!("logs:");
-    // println!("{}", api::database::logs(&hex_identity, &name, 10).await);
-
-    // let (identity, token) = api::spacetime_identity().await?;
-    // println!("identity: {:?}", identity);
-    // println!("token: {}", token);
-
-    // api::spacetime_identity_associate_email("tyler@clockworklabs.io", &token).await?;
-    // //////////////////
-
 async fn init_module(state: &mut State) -> SimpleHandlerResult {
     let InitModuleParams { identity, name } = InitModuleParams::take_from(state);
     let body = state.borrow_mut::<Body>();
@@ -60,7 +32,8 @@ async fn init_module(state: &mut State) -> SimpleHandlerResult {
     match api::database::init_module(&identity, &name, wasm_bytes).await {
         Ok(_) => {}
         Err(e) => {
-            log::error!("{}", e)
+            log::error!("{}", e);
+            return Err(HandlerError::from(e));
         }
     }
 
@@ -77,7 +50,11 @@ struct CallParams {
 }
 
 async fn call(state: &mut State) -> SimpleHandlerResult {
-    let CallParams { identity, name, reducer } = CallParams::take_from(state);
+    let CallParams {
+        identity,
+        name,
+        reducer,
+    } = CallParams::take_from(state);
     let body = state.borrow_mut::<Body>();
     let data = body.data().await;
     if data.is_none() {
@@ -115,11 +92,13 @@ async fn logs(state: &mut State) -> SimpleHandlerResult {
 
     let lines = api::database::logs(&identity, &name, num_lines).await;
 
-    let res = Response::builder().status(StatusCode::OK).body(Body::from(lines)).unwrap();
+    let res = Response::builder()
+        .status(StatusCode::OK)
+        .body(Body::from(lines))
+        .unwrap();
 
     Ok(res)
 }
-
 
 pub fn router() -> Router {
     build_simple_router(|route| {

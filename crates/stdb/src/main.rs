@@ -1,7 +1,9 @@
+use anyhow;
 use clap::error::ContextKind;
 use clap::error::ContextValue;
 use clap::ArgMatches;
 use clap::Command;
+use std::process::exit;
 use std::vec;
 
 mod address;
@@ -16,20 +18,10 @@ mod revert;
 mod signup;
 mod update;
 
-fn main() {
-    match main_app().try_get_matches() {
-        Ok(args) => match args.subcommand() {
-            Some((cmd, subcommand_args)) => {
-                let func = builtin_exec(cmd).unwrap();
-                func(subcommand_args);
-            }
-
-            None => {
-                main_app().print_help().unwrap();
-                return;
-            }
-        },
-
+#[tokio::main]
+async fn main() -> Result<(), anyhow::Error> {
+    let args = match get_command().try_get_matches() {
+        Ok(args) => args,
         Err(e) => {
             if e.kind() == clap::ErrorKind::UnrecognizedSubcommand {
                 let cmd = e
@@ -41,17 +33,26 @@ fn main() {
                     .expect("UnrecognizedSubcommand implies the presence of InvalidSubcommand");
 
                 println!("invalid command: {}", cmd);
+                exit(0);
             } else {
-                let _ = e.print();
+                e.exit();
             }
         }
+    };
+    match args.subcommand() {
+        Some((cmd, subcommand_args)) => exec_subcommand(cmd, subcommand_args).await?,
+        None => {
+            get_command().print_help().unwrap();
+            exit(0);
+        }
     }
+    Ok(())
 }
 
-fn main_app() -> Command<'static> {
+fn get_command() -> Command<'static> {
     Command::new("stdb")
         .allow_external_subcommands(true)
-        .subcommands(builtin())
+        .subcommands(get_subcommands())
         .override_usage("stdb [OPTIONS] [SUBCOMMAND]")
         .help_template(
             "\
@@ -77,7 +78,7 @@ Some common SpacetimeDB commands are
         )
 }
 
-fn builtin() -> Vec<Command<'static>> {
+fn get_subcommands() -> Vec<Command<'static>> {
     vec![
         address::cli(),
         call::cli(),
@@ -93,20 +94,19 @@ fn builtin() -> Vec<Command<'static>> {
     ]
 }
 
-fn builtin_exec(cmd: &str) -> Option<fn(&ArgMatches)> {
-    let f = match cmd {
-        "address" => address::exec,
-        "call" => call::exec,
-        "energy" => energy::exec,
-        "init" => init::exec,
-        "login" => login::exec,
-        "logs" => logs::exec,
-        "metrics" => metrics::exec,
-        "query" => query::exec,
-        "revert" => revert::exec,
-        "signup" => signup::exec,
-        "update" => update::exec,
-        _ => return None,
-    };
-    Some(f)
+async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    match cmd {
+        "address" => address::exec(args).await,
+        "call" => call::exec(args).await,
+        "energy" => energy::exec(args).await,
+        "init" => init::exec(args).await,
+        "login" => login::exec(args).await,
+        "logs" => logs::exec(args).await,
+        "metrics" => metrics::exec(args).await,
+        "query" => query::exec(args).await,
+        "revert" => revert::exec(args).await,
+        "signup" => signup::exec(args).await,
+        "update" => update::exec(args).await,
+        _ => Err(anyhow::anyhow!("invalid subcommand")),
+    }
 }
