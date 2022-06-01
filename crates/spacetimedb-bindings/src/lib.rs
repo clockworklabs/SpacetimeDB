@@ -14,7 +14,10 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 extern "C" {
     fn _create_table(table_id: u32, ptr: *mut u8);
+    fn _create_index(table_id: u32, col_id: u32, index_type: u8);
     fn _insert(table_id: u32, ptr: *mut u8);
+    fn _filter_eq(table_id: u32, col_id: u32, src_ptr: *mut u8, result_ptr: *mut u8);
+    fn _delete_eq(table_id: u32, col_id: u32, ptr: *mut u8);
     fn _iter(table_id: u32) -> u64;
     fn _console_log(level: u8, ptr: *const u8, len: u32);
 }
@@ -213,6 +216,31 @@ pub fn insert(table_id: u32, row: Vec<ColValue>) {
         _insert(table_id, ptr);
     }
 }
+
+pub fn create_index(table_id: u32, index_type: u8, col_ids: Vec::<u32>) {
+
+}
+
+pub fn filter_eq(table_id: u32, col_id : u32, eq_value : ColValue) -> Option<Vec::<ColValue>> {
+    return None;
+}
+
+// pub fn delete_eq(table_id: u32, col_id : u32, eq_value : ColValue) {
+//     unsafe {
+//         let ptr = row_buf();
+//         let mut memory = Vec::from_raw_parts(ptr, 0, ROW_BUF_LEN);
+//         memory.extend(eq_value.to_data());
+//         _delete_eq(table_id, col_id, ptr);
+//     }
+// }
+//
+// pub fn delete_filter() {
+//
+// }
+//
+// fn page_table(table_id : u32, pager_token : u32, read_entries : u32) {
+//
+// }
 
 pub fn iter(table_id: u32) -> Option<TableIter> {
     let data = unsafe { _iter(table_id) };

@@ -17,11 +17,21 @@ pub struct Entity {
     id: u64,
 }
 
+#[spacetimedb(1)] // define table with id with 1
 #[spacetimedb(table(SignedIn, SignedOut))]
+#[spacetimedb_index(btree, name=index1, entity_id, id)] // advance feature
+#[spacetimedb_index(btree, entity_id, id)] // advance feature
 pub struct PlayerState {
-    #[spacetimedb(foreign_key=Entity(id))]
+    #[foreign_key(Entity(id))]
     entity_id: u64,
-    #[spacetimedb(index = hash)]
+    #[spacetimedb(index = btree)]
+    x: i32,
+    #[spacetimedb(index = btree)]
+    z: i32,
+
+    #[index(btree), primary_key, col_id(5)] // be able to override col_id
+    entity_id: u64,
+    #[primary_key] // simple index
     id: u64,
     #[spacetimedb(index = hash)]
     actor: u64,
@@ -33,7 +43,7 @@ pub struct PlayerState {
 
 #[spacetimedb(table)]
 pub struct Location {
-    #[spacetimedb(foreign_key=Entity(id))]
+    #[foreign_key(Entity(id))]
     entity_id: u64,
     #[spacetimedb(index = btree)]
     x: i32,
@@ -61,9 +71,9 @@ pub struct Resource {
 
 #[spacetimedb(table)]
 pub struct ResourceDef {
-    #[spacetimedb]
+    #[primary_key, foreign_key(Entities.id)]
     pub resource_id: u32,
-    #[spacetimedb]
+    #[primary_key]
     pub walkable: bool,
 }
 
