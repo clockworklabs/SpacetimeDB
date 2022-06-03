@@ -5,13 +5,14 @@ use crate::hash::{hash_bytes, Hash};
 use anyhow;
 use lazy_static::lazy_static;
 use log;
+use wasmer_middlewares::Metering;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Mutex, Arc},
 };
 use tokio::sync::{mpsc, oneshot};
-use wasmer::{wasmparser::Operator, CompilerConfig, Module, Store, Universal, ValType};
-use wasmer_middlewares::Metering;
+use wasmer::{Module, ValType, wasmparser::Operator, CompilerConfig, Store, Universal};
+
 
 use self::module_host::ModuleHost;
 
@@ -49,31 +50,14 @@ enum HostCommand {
 }
 
 struct HostActor {
-    store: Store,
     modules: HashMap<Hash, ModuleHost>,
 }
 
 impl HostActor {
     fn new() -> Self {
-        let cost_function = |operator: &Operator| -> u64 {
-            match operator {
-                Operator::LocalGet { .. } => 1,
-                Operator::I32Const { .. } => 1,
-                Operator::I32Add { .. } => 1,
-                _ => 1,
-            }
-        };
-        let initial_points = 1000000;
-        let metering = Arc::new(Metering::new(initial_points, cost_function));
-
-        let mut compiler_config = wasmer_compiler_llvm::LLVM::default();
-        compiler_config.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
-        compiler_config.push_middleware(metering);
-
-        let store = Store::new(&Universal::new(compiler_config).engine());
         let modules: HashMap<Hash, ModuleHost> = HashMap::new();
 
-        Self { store, modules }
+        Self { modules }
     }
 
     async fn handle_message(&mut self, message: HostCommand) {
@@ -144,11 +128,30 @@ impl HostActor {
 
     fn add_module(&mut self, identity: Hash, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let module_hash = hash_bytes(&wasm_bytes);
-        let module = Module::new(&self.store, wasm_bytes)?;
+        if self.modules.contains_key(&module_hash) {
+            return Ok(module_hash);
+        }
+
+        let cost_function = |operator: &Operator| -> u64 {
+            match operator {
+                Operator::LocalGet { .. } => 1,
+                Operator::I32Const { .. } => 1,
+                Operator::I32Add { .. } => 1,
+                _ => 1,
+            }
+        };
+        let initial_points = 1000000;
+        let metering = Arc::new(Metering::new(initial_points, cost_function));
+
+        let mut compiler_config = wasmer_compiler_llvm::LLVM::default();
+        compiler_config.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
+        compiler_config.push_middleware(metering);
+
+        let store = Store::new(&Universal::new(compiler_config).engine());
+        let module = Module::new(&store, wasm_bytes)?;
 
         Self::validate_module(&module)?;
 
-        let store = self.store.clone();
         let module_host = ModuleHost::spawn(identity, name.into(), module_hash, module, store);
         self.modules.insert(module_hash, module_host);
 

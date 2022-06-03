@@ -220,11 +220,11 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
     let table_func_name = format_ident!("__create_table__{}", original_struct_ident.to_token_stream().to_string());
     let table_func = quote! {
         #[no_mangle]
-        pub extern "C" fn #table_func_name(table_id: u32) {
+        pub extern "C" fn #table_func_name(arg_ptr: u32, arg_size: u32) {
             unsafe {
-                #table_id_field_name = table_id;
+                #table_id_field_name = 0;
             }
-            spacetimedb_bindings::create_table(table_id, vec![
+            spacetimedb_bindings::create_table(0, vec![
                     #(#columns),*
                 ]);
         }
@@ -308,13 +308,13 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
     let db_funcs = quote! {
         impl #original_struct_ident {
-            // pub fn insert(ins: #original_struct_ident) {
-            //     unsafe {
-            //         spacetimedb_bindings::insert(#table_id_field_name, vec![
-            //             #(#insert_columns),*
-            //         ]);
-            //     }
-            // }
+            pub fn insert(ins: #original_struct_ident) {
+                unsafe {
+                    spacetimedb_bindings::insert(#table_id_field_name, vec![
+                        #(#insert_columns),*
+                    ]);
+                }
+            }
 
             pub fn delete(f: fn (#original_struct_ident) -> bool) -> usize {
                 0
@@ -329,7 +329,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             fn table_row_to_struct(entry: Vec<ColValue>) -> Option<#original_struct_ident> {
                 return match (#(#row_to_struct_entries),*) {
                     (#(#row_to_struct_entries_values),*) => {
-                        Some(MyStruct {
+                        Some(#original_struct_ident {
                             #(#column_idents),*
                         })
                     }

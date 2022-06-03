@@ -217,11 +217,11 @@ pub fn insert(table_id: u32, row: Vec<ColValue>) {
     }
 }
 
-pub fn create_index(table_id: u32, index_type: u8, col_ids: Vec::<u32>) {
+pub fn create_index(_table_id: u32, _index_type: u8, _col_ids: Vec::<u32>) {
 
 }
 
-pub fn filter_eq(table_id: u32, col_id : u32, eq_value : ColValue) -> Option<Vec::<ColValue>> {
+pub fn filter_eq(_table_id: u32, _col_id: u32, _eq_value: ColValue) -> Option<Vec::<ColValue>> {
     return None;
 }
 

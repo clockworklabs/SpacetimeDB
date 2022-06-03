@@ -22,12 +22,14 @@ struct InitModuleParams {
 async fn init_module(state: &mut State) -> SimpleHandlerResult {
     let InitModuleParams { identity, name } = InitModuleParams::take_from(state);
     let body = state.borrow_mut::<Body>();
-    let data = body.data().await;
-    if data.is_none() {
-        return Err(HandlerError::from(anyhow!("Missing request body.")).with_status(StatusCode::BAD_REQUEST));
-    }
-    let data = data.unwrap();
-    let wasm_bytes = data.unwrap().to_vec();
+    let data = hyper::body::to_bytes(body).await;
+    let data = match data {
+        Ok(data) => data,
+        Err(_) => {
+            return Err(HandlerError::from(anyhow!("Invalid request body")).with_status(StatusCode::BAD_REQUEST))
+        }
+    };
+    let wasm_bytes = data.to_vec();
 
     match api::database::init_module(&identity, &name, wasm_bytes).await {
         Ok(_) => {}

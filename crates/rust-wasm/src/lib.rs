@@ -88,7 +88,7 @@ fn my_migration_fun() {
 
 #[cfg(test)]
 mod tests {
-    use spacetimedb_bindings::ColValue;
+    // use spacetimedb_bindings::ColValue;
     use crate::MyStruct;
 
     #[test]
@@ -101,7 +101,7 @@ mod tests {
             my_int2: 0
         };
 
-        MyStruct::insert(0, str);
+        // MyStruct::insert(0, str);
         // MyStruct::delete_eq(1, 0, ColValue::I32(0));
     }
 }

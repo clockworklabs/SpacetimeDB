@@ -9,7 +9,7 @@ use crate::{
 };
 use tokio::sync::{mpsc, oneshot};
 use wasmer::{imports, Array, Function, Instance, LazyInit, Module, Store, WasmPtr};
-use wasmer_middlewares::metering::{get_remaining_points, set_remaining_points, MeteringPoints};
+use wasmer_middlewares::{metering::{get_remaining_points, set_remaining_points, MeteringPoints}};
 
 use super::instance_env::InstanceEnv;
 
@@ -178,6 +178,8 @@ impl ModuleHostActor {
             }
             self.execute_reducer(f.name(), Vec::new())?;
         }
+
+        // TODO: call __create_index__IndexName
         Ok(())
     }
 
