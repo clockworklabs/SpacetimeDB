@@ -492,3 +492,55 @@ impl From<&RangeTypeValue> for TypeValue {
         }
     }
 }
+
+// impl Display for ColValue {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         match self {
+//             ColValue::Integer(IntValue::U8(v)) => {
+//                 write!(f, "{}", *v)
+//             }
+//             ColValue::Integer(IntValue::U16(v)) => {
+//                 write!(f, "{}", *v)
+//             }
+//             ColValue::Integer(IntValue::U32(v)) => {
+//                 write!(f, "{}", *v)
+//             }
+//             ColValue::Integer(IntValue::U64(v)) => {
+//                 write!(f, "{}", *v)
+//             }
+//             ColValue::Integer(IntValue::U128(v)) => {
+//                 write!(f, "{}", *v)
+//             }
+//             ColValue::Integer(IntValue::I8(v)) => {
+//                 write!(f, "{}", *v)
+//             }
+//             ColValue::Integer(IntValue::I16(v)) => {
+//                 write!(f, "{}", *v)
+//             }
+//             ColValue::Integer(IntValue::I32(v)) => {
+//                 write!(f, "{}", *v)
+//             }
+//             ColValue::Integer(IntValue::I64(v)) => {
+//                 write!(f, "{}", *v)
+//             }
+//             ColValue::Integer(IntValue::I128(v)) => {
+//                 write!(f, "{}", *v)
+//             }
+//             ColValue::Boolean(v) => {
+//                 write!(f, "{}", *v)
+//             }
+//             ColValue::Float(FloatValue::F32(v)) => {
+//                 write!(f, "{}", *v)
+//             }
+//             ColValue::Float(FloatValue::F64(v)) => {
+//                 write!(f, "{}", *v)
+//             }
+//             ColValue::String(v) => {
+//                 write!(f, "{}", v)
+//             },
+//             ColValue::Bytes(v) => {
+//                 write!(f, "{:?}", v)
+//             },
+//         }
+//     }
+// }
