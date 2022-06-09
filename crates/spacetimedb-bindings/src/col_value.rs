@@ -1,8 +1,17 @@
+use crate::{Value, hash::hash_bytes};
+
 use super::col_type::ColType;
 use std::fmt::Display;
+use enum_as_inner::EnumAsInner;
+use super::hash::Hash;
 
-#[derive(PartialEq, Eq, Hash, Copy, Clone, Debug, PartialOrd, Ord)]
-pub enum ColValue {
+pub trait ObjectResolver {
+    fn get(&self, hash: Hash) -> Vec<u8>;
+    fn add(&mut self, bytes: Vec<u8>) -> Hash;
+}
+
+#[derive(EnumAsInner, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum IntValue {
     U8(u8),
     U16(u16),
     U32(u32),
@@ -13,143 +22,260 @@ pub enum ColValue {
     I32(i32),
     I64(i64),
     I128(i128),
-    Bool(bool),
-    //F32(f32),
-    //F64(f64),
+}
+
+#[derive(EnumAsInner, Debug, Copy, Clone, PartialEq, PartialOrd)]
+pub enum FloatValue {
+    F32(f32),
+    F64(f64)
+}
+
+/*
+type ItemStack = (
+    item_id: u32,
+    quantity: u32 
+)
+type Pocket = (
+    item_stack: ItemStack,
+    volumn: u32 
+)
+type Inventory = (pockets: Vec<Pocket>)
+type Position = (x: u32, y: u32, z: u32)
+*/
+
+// TODO!!!
+// A ColValue should not contain any type information and really
+// should just be a bag of bytes. Therefore, it would only be Eq, PartialEq,
+// etc when interpreted in the context of a "type". "type"s should be
+// general types which can be either sum types or product types and tables
+// should just be relations of those generic types.
+//
+// Type = Enum | Tuple
+// Tuple = (name: Type, ...)
+// Enum = (Type | ...)
+//
+// Basically I'm saying I want to generalize tables to be sets of arbitrary algebraic types
+//
+// For now I am going to just assume basic types so that I can get this working
+// but this should eventually be replaced with a more intelligent and 
+// generic type system
+#[derive(EnumAsInner, Debug, Clone, PartialEq, PartialOrd)]
+pub enum ColValue {
+    Integer(IntValue),
+    Boolean(bool),
+    Float(FloatValue),
+    String(String),
+    Bytes(Vec<u8>),
+}
+
+impl ColValue {
+    pub fn decode(col_type: &ColType, bytes: impl AsRef<[u8]>) -> (Self, usize) {
+        let bytes = bytes.as_ref();
+        match col_type {
+            ColType::U8 => (ColValue::Integer(IntValue::U8(bytes[0])), 1),
+            ColType::U16 => {
+                let mut dst = [0u8; 2];
+                dst.copy_from_slice(bytes);
+                (ColValue::Integer(IntValue::U16(u16::from_le_bytes(dst))), 2)
+            }
+            ColType::U32 => {
+                let mut dst = [0u8; 4];
+                dst.copy_from_slice(bytes);
+                (ColValue::Integer(IntValue::U32(u32::from_le_bytes(dst))), 4)
+            }
+            ColType::U64 => {
+                let mut dst = [0u8; 8];
+                dst.copy_from_slice(bytes);
+                (ColValue::Integer(IntValue::U64(u64::from_le_bytes(dst))), 8)
+            }
+            ColType::U128 => {
+                let mut dst = [0u8; 16];
+                dst.copy_from_slice(bytes);
+                (ColValue::Integer(IntValue::U128(u128::from_le_bytes(dst))), 16)
+            }
+            ColType::I8 => (ColValue::Integer(IntValue::I8(bytes[0] as i8)), 1),
+            ColType::I16 => {
+                let mut dst = [0u8; 2];
+                dst.copy_from_slice(bytes);
+                (ColValue::Integer(IntValue::I16(i16::from_le_bytes(dst))), 2)
+            }
+            ColType::I32 => {
+                let mut dst = [0u8; 4];
+                dst.copy_from_slice(bytes);
+                (ColValue::Integer(IntValue::I32(i32::from_le_bytes(dst))), 4)
+            }
+            ColType::I64 => {
+                let mut dst = [0u8; 8];
+                dst.copy_from_slice(bytes);
+                (ColValue::Integer(IntValue::I64(i64::from_le_bytes(dst))), 8)
+            }
+            ColType::I128 => {
+                let mut dst = [0u8; 16];
+                dst.copy_from_slice(bytes);
+                (ColValue::Integer(IntValue::I128(i128::from_le_bytes(dst))), 16)
+            }
+            ColType::Bool => (ColValue::Boolean(if bytes[0] == 0 { false } else { true }), 1),
+            ColType::F32 => {
+                let mut dst = [0u8; 4];
+                dst.copy_from_slice(bytes);
+                (ColValue::Float(FloatValue::F32(f32::from_le_bytes(dst))), 4)
+            },
+            ColType::F64 => {
+                let mut dst = [0u8; 8];
+                dst.copy_from_slice(bytes);
+                (ColValue::Float(FloatValue::F64(f64::from_le_bytes(dst))), 8)
+            },
+            ColType::String => {
+                let (v, num_bytes) = Value::decode(bytes);
+                match v {
+                    Value::Data { len, buf } => {
+                        let slice = &buf[0..len as usize];
+                        let str = String::from_utf8(slice.to_vec()).unwrap();
+                        (ColValue::String(str), num_bytes)
+                    },
+                    Value::Hash(h) => {
+                        let data = object_db.get(h);
+                        let str = String::from_utf8(data).unwrap();
+                        (ColValue::String(str), num_bytes)
+                    },
+                }
+            },
+            ColType::Bytes => {
+                let (v, num_bytes) = Value::decode(bytes);
+                match v {
+                    Value::Data { len, buf } => {
+                        let slice = &buf[0..len as usize];
+                        let data = slice.to_vec();
+                        (ColValue::Bytes(data), num_bytes)
+                    },
+                    Value::Hash(h) => {
+                        let data = object_db.get(h);
+                        (ColValue::Bytes(data), num_bytes)
+                    },
+                }
+            },
+        }
+    }
+
+    pub fn encode(&self, object_db: &dyn ObjectResolver, bytes: &mut Vec<u8>) {
+        match self {
+            ColValue::Integer(IntValue::U8(x)) => bytes.copy_from_slice(&x.to_le_bytes()),
+            ColValue::Integer(IntValue::U16(x)) => bytes.copy_from_slice(&x.to_le_bytes()),
+            ColValue::Integer(IntValue::U32(x)) => bytes.copy_from_slice(&x.to_le_bytes()),
+            ColValue::Integer(IntValue::U64(x)) => bytes.copy_from_slice(&x.to_le_bytes()),
+            ColValue::Integer(IntValue::U128(x)) => bytes.copy_from_slice(&x.to_le_bytes()),
+            ColValue::Integer(IntValue::I8(x)) => bytes.copy_from_slice(&x.to_le_bytes()),
+            ColValue::Integer(IntValue::I16(x)) => bytes.copy_from_slice(&x.to_le_bytes()),
+            ColValue::Integer(IntValue::I32(x)) => bytes.copy_from_slice(&x.to_le_bytes()),
+            ColValue::Integer(IntValue::I64(x)) => bytes.copy_from_slice(&x.to_le_bytes()),
+            ColValue::Integer(IntValue::I128(x)) => bytes.copy_from_slice(&x.to_le_bytes()),
+            ColValue::Boolean(x) => bytes.copy_from_slice(&(if *x { 1 as u8 } else { 0 as u8 }).to_le_bytes()),
+            ColValue::Float(FloatValue::F32(x)) => bytes.copy_from_slice(&x.to_le_bytes()),
+            ColValue::Float(FloatValue::F64(x)) => bytes.copy_from_slice(&x.to_le_bytes()),
+            ColValue::String(s) => {
+                let sbytes = s.as_bytes();
+                let v = if sbytes.len() > 32 {
+                    object_db.add(sbytes.to_vec());
+                    Value::Hash(hash_bytes(sbytes))
+                } else {
+                    let buf = [0; 32];
+                    buf.copy_from_slice(sbytes);
+                    Value::Data { len: sbytes.len() as u8, buf, }
+                };
+            },
+            ColValue::Bytes(sbytes) => {
+                let v = if sbytes.len() > 32 {
+                    Value::Hash(hash_bytes(sbytes))
+                } else {
+                    let buf = [0; 32];
+                    buf.copy_from_slice(sbytes);
+                    Value::Data { len: sbytes.len() as u8, buf, }
+                };
+            },
+        };
+    }
+
 }
 
 impl ColValue {
     pub fn col_type(&self) -> ColType {
         match self {
-            ColValue::U8(_) => ColType::U8,
-            ColValue::U16(_) => ColType::U16,
-            ColValue::U32(_) => ColType::U32,
-            ColValue::U64(_) => ColType::U64,
-            ColValue::U128(_) => ColType::U128,
-            ColValue::I8(_) => ColType::I8,
-            ColValue::I16(_) => ColType::I16,
-            ColValue::I32(_) => ColType::I32,
-            ColValue::I64(_) => ColType::I64,
-            ColValue::I128(_) => ColType::I128,
-            ColValue::Bool(_) => ColType::Bool,
-            //ColValue::F32(_) => ColType::F32,
-            //ColValue::F64(_) => ColType::F64,
+            ColValue::Integer(i) => {
+                match i {
+                    IntValue::U8(_) => ColType::U8,
+                    IntValue::U16(_) => ColType::U16,
+                    IntValue::U32(_) => todo!(),
+                    IntValue::U64(_) => todo!(),
+                    IntValue::U128(_) => todo!(),
+                    IntValue::I8(_) => todo!(),
+                    IntValue::I16(_) => todo!(),
+                    IntValue::I32(_) => todo!(),
+                    IntValue::I64(_) => todo!(),
+                    IntValue::I128(_) => todo!(),
+                }
+            },
+            ColValue::Boolean(b) => ColType::Bool,
+            ColValue::Float(f) => {
+                match f {
+                    FloatValue::F32(_) => ColType::F32,
+                    FloatValue::F64(_) => ColType::F64,
+                }
+            },
+            ColValue::String(s) => ColType::String,
+            ColValue::Bytes(b) => ColType::Bytes,
         }
     }
 
-    pub fn from_data(col_type: &ColType, data: &[u8]) -> Self {
-        match col_type {
-            ColType::U8 => ColValue::U8(data[0]),
-            ColType::U16 => {
-                let mut dst = [0u8; 2];
-                dst.copy_from_slice(data);
-                ColValue::U16(u16::from_le_bytes(dst))
-            }
-            ColType::U32 => {
-                let mut dst = [0u8; 4];
-                dst.copy_from_slice(&data[0..4]);
-                ColValue::U32(u32::from_le_bytes(dst))
-            }
-            ColType::U64 => {
-                let mut dst = [0u8; 8];
-                dst.copy_from_slice(data);
-                ColValue::U64(u64::from_le_bytes(dst))
-            }
-            ColType::U128 => {
-                let mut dst = [0u8; 16];
-                dst.copy_from_slice(data);
-                ColValue::U128(u128::from_le_bytes(dst))
-            }
-            ColType::I8 => ColValue::I8(data[0] as i8),
-            ColType::I16 => {
-                let mut dst = [0u8; 2];
-                dst.copy_from_slice(data);
-                ColValue::I16(i16::from_le_bytes(dst))
-            }
-            ColType::I32 => {
-                let mut dst = [0u8; 4];
-                dst.copy_from_slice(data);
-                ColValue::I32(i32::from_le_bytes(dst))
-            }
-            ColType::I64 => {
-                let mut dst = [0u8; 8];
-                dst.copy_from_slice(data);
-                ColValue::I64(i64::from_le_bytes(dst))
-            }
-            ColType::I128 => {
-                let mut dst = [0u8; 16];
-                dst.copy_from_slice(data);
-                ColValue::I128(i128::from_le_bytes(dst))
-            }
-            ColType::Bool => ColValue::Bool(if data[0] == 0 { false } else { true }),
-            // ColType::F32 => {
-            //     let mut dst = [0u8; 4];
-            //     dst.copy_from_slice(data);
-            //     ColValue::F32(f32::from_le_bytes(dst))
-            // },
-            // ColType::F64 => {
-            //     let mut dst = [0u8; 8];
-            //     dst.copy_from_slice(data);
-            //     ColValue::F64(f64::from_le_bytes(dst))
-            // },
-        }
-    }
-
-    pub fn to_data(&self) -> Vec<u8> {
-        match self {
-            ColValue::U8(x) => x.to_le_bytes().to_vec(),
-            ColValue::U16(x) => x.to_le_bytes().to_vec(),
-            ColValue::U32(x) => x.to_le_bytes().to_vec(),
-            ColValue::U64(x) => x.to_le_bytes().to_vec(),
-            ColValue::U128(x) => x.to_le_bytes().to_vec(),
-            ColValue::I8(x) => x.to_le_bytes().to_vec(),
-            ColValue::I16(x) => x.to_le_bytes().to_vec(),
-            ColValue::I32(x) => x.to_le_bytes().to_vec(),
-            ColValue::I64(x) => x.to_le_bytes().to_vec(),
-            ColValue::I128(x) => x.to_le_bytes().to_vec(),
-            ColValue::Bool(x) => (if *x { 1 as u8 } else { 0 as u8 }).to_le_bytes().to_vec(),
-            // ColValue::F32(x) => x.to_le_bytes().to_vec(),
-            // ColValue::F64(x) => x.to_le_bytes().to_vec(),
-        }
-    }
 }
 
 impl Display for ColValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ColValue::U8(v) => {
+            ColValue::Integer(IntValue::U8(v)) => {
                 write!(f, "{}", *v)
             }
-            ColValue::U16(v) => {
+            ColValue::Integer(IntValue::U16(v)) => {
                 write!(f, "{}", *v)
             }
-            ColValue::U32(v) => {
+            ColValue::Integer(IntValue::U32(v)) => {
                 write!(f, "{}", *v)
             }
-            ColValue::U64(v) => {
+            ColValue::Integer(IntValue::U64(v)) => {
                 write!(f, "{}", *v)
             }
-            ColValue::U128(v) => {
+            ColValue::Integer(IntValue::U128(v)) => {
                 write!(f, "{}", *v)
             }
-            ColValue::I8(v) => {
+            ColValue::Integer(IntValue::I8(v)) => {
                 write!(f, "{}", *v)
             }
-            ColValue::I16(v) => {
+            ColValue::Integer(IntValue::I16(v)) => {
                 write!(f, "{}", *v)
             }
-            ColValue::I32(v) => {
+            ColValue::Integer(IntValue::I32(v)) => {
                 write!(f, "{}", *v)
             }
-            ColValue::I64(v) => {
+            ColValue::Integer(IntValue::I64(v)) => {
                 write!(f, "{}", *v)
             }
-            ColValue::I128(v) => {
+            ColValue::Integer(IntValue::I128(v)) => {
                 write!(f, "{}", *v)
             }
-            ColValue::Bool(v) => {
+            ColValue::Boolean(v) => {
                 write!(f, "{}", *v)
             }
+            ColValue::Float(FloatValue::F32(v)) => {
+                write!(f, "{}", *v)
+            }
+            ColValue::Float(FloatValue::F64(v)) => {
+                write!(f, "{}", *v)
+            }
+            ColValue::String(v) => {
+                write!(f, "{}", v)
+            },
+            ColValue::Bytes(v) => {
+                write!(f, "{:?}", v)
+            },
         }
     }
 }

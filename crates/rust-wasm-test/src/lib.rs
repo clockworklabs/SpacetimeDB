@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
+use spacetimedb_bindgen::spacetimedb;
 use spacetimedb_bindings::println;
 use spacetimedb_bindings::*;
-use spacetimedb_bindgen::spacetimedb;
 
 #[spacetimedb(table)]
 pub struct TestA {
     pub x: u32,
     pub y: u32,
-    pub z: u32,
+    pub z: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -16,9 +16,7 @@ pub struct TestB {
 }
 
 #[spacetimedb(migrate)]
-pub fn migrate() {
-
-}
+pub fn migrate() {}
 
 #[spacetimedb(reducer)]
 pub fn test(arg: TestA, arg2: TestB) {
@@ -28,7 +26,7 @@ pub fn test(arg: TestA, arg2: TestB) {
         TestA::insert(TestA {
             x: i + arg.x,
             y: i + arg.y,
-            z: i + arg.z,
+            z: "Yo".to_owned(),
         });
     }
 
@@ -39,17 +37,6 @@ pub fn test(arg: TestA, arg2: TestB) {
 
     println!("Row count: {:?}", row_count);
 }
-
-
-
-
-
-
-
-
-
-
-
 
 // #[no_mangle]
 // pub extern "C" fn __reducer__test(arg_ptr: u32, arg_size: u32) {

@@ -1,6 +1,6 @@
 use crate::db::relational_db::RelationalDB;
 use crate::{db::transactional_db::Tx, hash::Hash, logs};
-use spacetimedb_bindings::{decode_schema, encode_schema, Schema};
+use spacetimedb_bindings::{decode_schema, encode_schema};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -67,7 +67,7 @@ impl InstanceEnv {
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
-        let schema = decode_schema(&mut &buffer[..]);
+        let (schema, _) = decode_schema(&mut &buffer[..]);
         stdb.create_table(tx, table_id, schema).unwrap();
     }
 
@@ -80,7 +80,7 @@ impl InstanceEnv {
 
         let mut bytes = Vec::new();
         let schema = stdb.schema_for_table(tx, table_id).unwrap();
-        encode_schema(Schema { columns: schema }, &mut bytes);
+        encode_schema(schema, &mut bytes);
 
         for row in stdb.iter(tx, table_id).unwrap() {
             RelationalDB::encode_row(row, &mut bytes);

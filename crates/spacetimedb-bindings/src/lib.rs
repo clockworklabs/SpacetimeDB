@@ -1,13 +1,12 @@
-mod col_type;
-mod col_value;
-mod column;
-mod schema;
-pub use col_type::ColType;
-pub use col_value::ColValue;
-pub use column::Column;
-pub use schema::Schema;
+mod hash;
+mod type_def;
+mod type_value;
+mod value;
 use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
 use std::panic;
+pub use type_def::{ElementDef, TupleDef, TypeDef};
+pub use type_value::{EqTypeValue, RangeTypeValue, TupleValue, TypeValue};
+pub use value::Value;
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -143,85 +142,48 @@ unsafe fn row_buf() -> *mut u8 {
     ROW_BUF.unwrap()
 }
 
-pub fn encode_row(row: Vec<ColValue>, bytes: &mut Vec<u8>) {
-    for col in row {
-        bytes.extend(col.to_data());
-    }
+pub fn encode_row(row: TupleValue, bytes: &mut Vec<u8>) {
+    row.encode(bytes);
 }
 
-pub fn decode_row(columns: &Vec<Column>, bytes: &mut &[u8]) -> (Vec<ColValue>, usize) {
-    let mut row = Vec::new();
-    let mut total_read = 0;
-    for col in columns {
-        row.push(ColValue::from_data(&col.col_type, bytes));
-        let num_read = col.col_type.size() as usize;
-        total_read += num_read;
-        *bytes = &bytes[num_read..];
-    }
-    (row, total_read)
+pub fn decode_row(schema: &TupleDef, bytes: &mut &[u8]) -> (TupleValue, usize) {
+    TupleValue::decode(schema, bytes)
 }
 
-pub fn encode_schema(schema: Schema, bytes: &mut Vec<u8>) {
-    bytes.push(schema.columns.len() as u8);
-    for col in schema.columns {
-        let v = col.col_type.to_u32().to_le_bytes();
-        for i in 0..v.len() {
-            bytes.push(v[i]);
-        }
-        let v = col.col_id.to_le_bytes();
-        for i in 0..v.len() {
-            bytes.push(v[i]);
-        }
-    }
+pub fn encode_schema(schema: TupleDef, bytes: &mut Vec<u8>) {
+    schema.encode(bytes);
 }
 
-pub fn decode_schema(bytes: &mut &[u8]) -> Schema {
-    let mut columns: Vec<Column> = Vec::new();
-    let len = bytes[0];
-    *bytes = &bytes[1..];
-    for _ in 0..len {
-        let mut dst = [0u8; 4];
-        dst.copy_from_slice(&bytes[0..4]);
-        *bytes = &bytes[4..];
-        let col_type = ColType::from_u32(u32::from_le_bytes(dst));
-
-        let mut dst = [0u8; 4];
-        dst.copy_from_slice(&bytes[0..4]);
-        *bytes = &bytes[4..];
-        let col_id = u32::from_le_bytes(dst);
-
-        columns.push(Column { col_type, col_id });
-    }
-    Schema { columns }
+pub fn decode_schema(bytes: &mut &[u8]) -> (TupleDef, usize) {
+    TupleDef::decode(bytes)
 }
 
-pub fn create_table(table_id: u32, schema: Vec<Column>) {
+pub fn create_table(table_id: u32, schema: TupleDef) {
     unsafe {
         let ptr = row_buf();
-        let mut memory = Vec::from_raw_parts(ptr, 0, ROW_BUF_LEN);
-        encode_schema(Schema { columns: schema }, &mut memory);
-        std::mem::forget(memory);
+        let mut bytes = Vec::from_raw_parts(ptr, 0, ROW_BUF_LEN);
+        schema.encode(&mut bytes);
+        std::mem::forget(bytes);
         _create_table(table_id, ptr);
     }
 }
 
-pub fn insert(table_id: u32, row: Vec<ColValue>) {
+pub fn insert(table_id: u32, row: TupleValue) {
     unsafe {
         let ptr = row_buf();
-        let mut memory = Vec::from_raw_parts(ptr, 0, ROW_BUF_LEN);
-        for col in row {
-            memory.extend(col.to_data());
+        let mut bytes = Vec::from_raw_parts(ptr, 0, ROW_BUF_LEN);
+        for col in row.elements {
+            col.encode(&mut bytes);
         }
-        std::mem::forget(memory);
+        std::mem::forget(bytes);
         _insert(table_id, ptr);
     }
 }
 
-pub fn create_index(_table_id: u32, _index_type: u8, _col_ids: Vec::<u32>) {
+pub fn create_index(_table_id: u32, _index_type: u8, _col_ids: Vec<u32>) {}
 
-}
-
-pub fn filter_eq(_table_id: u32, _col_id: u32, _eq_value: ColValue) -> Option<Vec::<ColValue>> {
+// TODO: going to have to somehow ensure TypeValue is equatable
+pub fn filter_eq(_table_id: u32, _col_id: u32, _eq_value: TypeValue) -> Option<TupleValue> {
     return None;
 }
 
@@ -250,10 +212,9 @@ pub fn iter(table_id: u32) -> Option<TableIter> {
 
     let slice = &mut &bytes[..];
     let initial_size = slice.len() as u32;
-    let schema = decode_schema(slice);
+    let (schema, schema_size) = decode_schema(slice);
 
-    let data_size = slice.len() as u32;
-    let schema_size = initial_size - data_size;
+    let data_size = (slice.len() - schema_size) as u32;
     let start_ptr = ptr;
     let data_ptr = unsafe { start_ptr.add(schema_size as usize) };
 
@@ -272,17 +233,17 @@ pub struct TableIter {
     initial_size: u32,
     ptr: *mut u8,
     size: u32,
-    schema: Schema,
+    schema: TupleDef,
 }
 
 impl Iterator for TableIter {
-    type Item = Vec<ColValue>;
+    type Item = TupleValue;
 
     fn next(&mut self) -> Option<Self::Item> {
         let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(self.ptr, self.size as usize, self.size as usize) };
         let slice = &mut &bytes[..];
         if slice.len() > 0 {
-            let (row, num_read) = decode_row(&self.schema.columns, slice);
+            let (row, num_read) = decode_row(&self.schema, slice);
             self.ptr = unsafe { self.ptr.add(num_read) };
             self.size = self.size - num_read as u32;
             std::mem::forget(bytes);

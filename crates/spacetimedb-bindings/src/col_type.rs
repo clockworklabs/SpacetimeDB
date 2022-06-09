@@ -11,29 +11,13 @@ pub enum ColType {
     I64,
     I128,
     Bool,
-    // F32,
-    // F64,
+    F32,
+    F64,
+    String,
+    Bytes,
 }
 
 impl ColType {
-    pub fn size(&self) -> u8 {
-        match self {
-            ColType::U8 => 1,
-            ColType::U16 => 2,
-            ColType::U32 => 4,
-            ColType::U64 => 8,
-            ColType::U128 => 16,
-            ColType::I8 => 1,
-            ColType::I16 => 2,
-            ColType::I32 => 4,
-            ColType::I64 => 8,
-            ColType::I128 => 16,
-            ColType::Bool => 1,
-            // ColType::F32 => 4,
-            // ColType::F64 => 8,
-        }
-    }
-
     pub fn to_u32(&self) -> u32 {
         match self {
             ColType::U8 => 1,
@@ -47,8 +31,10 @@ impl ColType {
             ColType::I64 => 9,
             ColType::I128 => 10,
             ColType::Bool => 11,
-            // ColType::F32 => 4,
-            // ColType::F64 => 8,
+            ColType::F32 => 12,
+            ColType::F64 => 13,
+            ColType::String => 14,
+            ColType::Bytes => 15,
         }
     }
 
@@ -65,6 +51,10 @@ impl ColType {
             9 => Self::I64,
             10 => Self::I128,
             11 => Self::Bool,
+            12 => Self::F32,
+            13 => Self::F64,
+            14 => Self::String,
+            15 => Self::Bytes,
             _ => panic!("Unknown value: {}", value),
         }
     }

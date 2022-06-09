@@ -4,12 +4,10 @@ use std::prelude::rust_2021::*;
 #[macro_use]
 extern crate std;
 use spacetimedb_bindgen::spacetimedb;
-use spacetimedb_bindings::ColValue;
 pub struct MyStruct {
-    #[primary_key]
-    my_int0: i32,
-    my_int1: u32,
-    my_int2: i32,
+    pub my_int0: i32,
+    pub my_int1: u32,
+    pub my_int2: i32,
 }
 impl MyStruct {
     fn __create_index__my_index_name(arg_ptr: u32, arg_size: u32) {
@@ -367,42 +365,62 @@ const _: () = {
     }
 };
 #[no_mangle]
-pub extern "C" fn __create_table__MyStruct(table_id: u32) {
+pub extern "C" fn __create_table__MyStruct(arg_ptr: u32, arg_size: u32) {
     unsafe {
-        __table_id__MyStruct = table_id;
+        __table_id__MyStruct = 0;
     }
     spacetimedb_bindings::create_table(
-        table_id,
-        <[_]>::into_vec(box [
-            spacetimedb_bindings::Column {
-                col_id: 0u32,
-                col_type: spacetimedb_bindings::ColType::I32,
-            },
-            spacetimedb_bindings::Column {
-                col_id: 1u32,
-                col_type: spacetimedb_bindings::ColType::U32,
-            },
-            spacetimedb_bindings::Column {
-                col_id: 2u32,
-                col_type: spacetimedb_bindings::ColType::I32,
-            },
-        ]),
+        0,
+        spacetimedb_bindings::TupleDef {
+            elements: <[_]>::into_vec(box [
+                spacetimedb_bindings::ElementDef {
+                    tag: 0u8,
+                    element_type: Box::new(spacetimedb_bindings::TypeDef::I32),
+                },
+                spacetimedb_bindings::ElementDef {
+                    tag: 1u8,
+                    element_type: Box::new(spacetimedb_bindings::TypeDef::U32),
+                },
+                spacetimedb_bindings::ElementDef {
+                    tag: 2u8,
+                    element_type: Box::new(spacetimedb_bindings::TypeDef::I32),
+                },
+            ]),
+        },
     );
 }
 static mut __table_id__MyStruct: u32 = 0;
 impl MyStruct {
+    pub fn insert(ins: MyStruct) {
+        unsafe {
+            spacetimedb_bindings::insert(
+                __table_id__MyStruct,
+                spacetimedb_bindings::TupleValue {
+                    elements: <[_]>::into_vec(box [
+                        spacetimedb_bindings::TypeValue::I32(ins.my_int0),
+                        spacetimedb_bindings::TypeValue::U32(ins.my_int1),
+                        spacetimedb_bindings::TypeValue::I32(ins.my_int2),
+                    ]),
+                },
+            );
+        }
+    }
     pub fn delete(f: fn(MyStruct) -> bool) -> usize {
         0
     }
     pub fn update(value: MyStruct) -> bool {
         false
     }
-    fn table_row_to_struct(entry: Vec<ColValue>) -> Option<MyStruct> {
-        return match (entry[0usize], entry[1usize], entry[2usize]) {
+    fn table_row_to_struct(row: spacetimedb_bindings::TupleValue) -> Option<MyStruct> {
+        return match (
+            (&row.elements[0usize]).clone(),
+            (&row.elements[1usize]).clone(),
+            (&row.elements[2usize]).clone(),
+        ) {
             (
-                spacetimedb_bindings::ColValue::I32(my_int0),
-                spacetimedb_bindings::ColValue::U32(my_int1),
-                spacetimedb_bindings::ColValue::I32(my_int2),
+                spacetimedb_bindings::TypeValue::I32(my_int0),
+                spacetimedb_bindings::TypeValue::U32(my_int1),
+                spacetimedb_bindings::TypeValue::I32(my_int2),
             ) => Some(MyStruct {
                 my_int0,
                 my_int1,
@@ -415,11 +433,11 @@ impl MyStruct {
         unsafe {
             let table_iter = spacetimedb_bindings::iter(__table_id__MyStruct);
             if let Some(table_iter) = table_iter {
-                for entry in table_iter {
-                    let data = entry[0usize];
-                    if let spacetimedb_bindings::ColValue::I32(data) = data {
+                for row in table_iter {
+                    let data = row.elements[0usize];
+                    if let spacetimedb_bindings::TypeValue::I32(data) = data {
                         if my_int0 == data {
-                            let value = MyStruct::table_row_to_struct(entry);
+                            let value = MyStruct::table_row_to_struct(row);
                             if let Some(value) = value {
                                 return Some(value);
                             }
@@ -438,11 +456,11 @@ impl MyStruct {
             let mut result = Vec::<MyStruct>::new();
             let table_iter = spacetimedb_bindings::iter(__table_id__MyStruct);
             if let Some(table_iter) = table_iter {
-                for entry in table_iter {
-                    let data = entry[0usize];
-                    if let spacetimedb_bindings::ColValue::U32(data) = data {
+                for row in table_iter {
+                    let data = row.elements[0usize];
+                    if let spacetimedb_bindings::TypeValue::U32(data) = data {
                         if my_int1 == data {
-                            let value = MyStruct::table_row_to_struct(entry);
+                            let value = MyStruct::table_row_to_struct(row);
                             if let Some(value) = value {
                                 result.push(value);
                             }
@@ -461,11 +479,11 @@ impl MyStruct {
             let mut result = Vec::<MyStruct>::new();
             let table_iter = spacetimedb_bindings::iter(__table_id__MyStruct);
             if let Some(table_iter) = table_iter {
-                for entry in table_iter {
-                    let data = entry[1usize];
-                    if let spacetimedb_bindings::ColValue::I32(data) = data {
+                for row in table_iter {
+                    let data = row.elements[1usize];
+                    if let spacetimedb_bindings::TypeValue::I32(data) = data {
                         if my_int2 == data {
-                            let value = MyStruct::table_row_to_struct(entry);
+                            let value = MyStruct::table_row_to_struct(row);
                             if let Some(value) = value {
                                 result.push(value);
                             }

@@ -1,24 +1,21 @@
 use spacetimedb_bindgen::spacetimedb;
-use spacetimedb_bindings::ColValue;
 
 #[spacetimedb(table)]
-#[spacetimedb(index(btree), name="my_index_name", my_int0, my_int1)]
+#[spacetimedb(index(btree), name = "my_index_name", my_int0, my_int1)]
 pub struct MyStruct {
     #[primary_key]
-    my_int0 : i32,
-    my_int1 : u32,
-    my_int2 : i32,
+    pub my_int0: i32,
+    pub my_int1: u32,
+    pub my_int2: i32,
 }
 
 #[spacetimedb(reducer)]
-fn my_spacetime_func(_a : i32, _b : i32) {
+fn my_spacetime_func(_a: i32, _b: i32) {
     println!("I am a standard function!");
 }
 
 #[spacetimedb(migrate)]
-fn my_migration_fun() {
-
-}
+fn my_migration_fun() {}
 
 // __table__<name>
 // __migrate__
@@ -85,7 +82,6 @@ fn my_migration_fun() {
 //     }
 // }
 
-
 #[cfg(test)]
 mod tests {
     // use spacetimedb_bindings::ColValue;
@@ -98,7 +94,7 @@ mod tests {
         let str = MyStruct {
             my_int0: 0,
             my_int1: 0,
-            my_int2: 0
+            my_int2: 0,
         };
 
         // MyStruct::insert(0, str);

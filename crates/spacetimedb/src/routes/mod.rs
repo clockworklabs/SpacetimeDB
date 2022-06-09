@@ -25,9 +25,7 @@ async fn init_module(state: &mut State) -> SimpleHandlerResult {
     let data = hyper::body::to_bytes(body).await;
     let data = match data {
         Ok(data) => data,
-        Err(_) => {
-            return Err(HandlerError::from(anyhow!("Invalid request body")).with_status(StatusCode::BAD_REQUEST))
-        }
+        Err(_) => return Err(HandlerError::from(anyhow!("Invalid request body")).with_status(StatusCode::BAD_REQUEST)),
     };
     let wasm_bytes = data.to_vec();
 
@@ -137,6 +135,6 @@ mod tests {
         let mime = "application/octet-stream".parse().unwrap();
         let response = test_server.client().post(uri, body, mime).perform().unwrap();
 
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

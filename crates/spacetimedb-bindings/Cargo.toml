@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 wee_alloc = "0.4.5"
 custom-print = "0.1.0"
+enum-as-inner = "0.5.0"
+sha3 = "0.10.0"

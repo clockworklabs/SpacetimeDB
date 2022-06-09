@@ -4,4 +4,4 @@ pub mod object_db;
 pub mod relational_db;
 pub mod transactional_db;
 
-pub use spacetimedb_bindings::{ColType, ColValue, Column, Schema};
+pub use spacetimedb_bindings::{TupleDef, TupleValue, TypeDef, TypeValue};

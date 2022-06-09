@@ -5,14 +5,13 @@ use crate::hash::{hash_bytes, Hash};
 use anyhow;
 use lazy_static::lazy_static;
 use log;
-use wasmer_middlewares::Metering;
 use std::{
     collections::HashMap,
-    sync::{Mutex, Arc},
+    sync::{Arc, Mutex},
 };
 use tokio::sync::{mpsc, oneshot};
-use wasmer::{Module, ValType, wasmparser::Operator, CompilerConfig, Store, Universal};
-
+use wasmer::{wasmparser::Operator, CompilerConfig, Module, Store, Universal, ValType};
+use wasmer_middlewares::Metering;
 
 use self::module_host::ModuleHost;
 

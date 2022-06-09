@@ -2,7 +2,8 @@ use super::{
     messages::write::Value,
     transactional_db::{ScanIter, TransactionalDB, Tx},
 };
-pub use spacetimedb_bindings::{ColType, ColValue, Column, Schema};
+use spacetimedb_bindings::{ElementDef, EqTypeValue, RangeTypeValue};
+pub use spacetimedb_bindings::{TupleDef, TupleValue, TypeDef, TypeValue};
 use std::{
     ops::{Range, RangeBounds},
     path::Path,
@@ -27,42 +28,58 @@ impl RelationalDB {
 
         // Create the st_tables table and insert the information about itself into itself
         // schema: (table_id: u32)
-        let row = vec![ColValue::U32(ST_TABLES_ID)];
+        let row = TupleValue {
+            elements: vec![TypeValue::U32(ST_TABLES_ID)],
+        };
         Self::insert_row_raw(&mut txdb, &mut tx, ST_TABLES_ID, row);
 
         // Create the st_columns table
         // schema: (table_id: u32, col_id: u32, col_type: u32)
-        let row = vec![ColValue::U32(ST_COLUMNS_ID)];
+        let row = TupleValue {
+            elements: vec![TypeValue::U32(ST_COLUMNS_ID)],
+        };
         Self::insert_row_raw(&mut txdb, &mut tx, ST_TABLES_ID, row);
 
         // Insert information about st_tables into st_columns
-        let row = vec![
-            ColValue::U32(ST_TABLES_ID),
-            ColValue::U32(0),
-            ColValue::U32(ColType::U32.to_u32()),
-        ];
+        let mut bytes = Vec::new();
+        TypeDef::U32.encode(&mut bytes);
+        let row = TupleValue {
+            elements: vec![TypeValue::U32(ST_TABLES_ID), TypeValue::U32(0), TypeValue::Bytes(bytes)],
+        };
         Self::insert_row_raw(&mut txdb, &mut tx, ST_COLUMNS_ID, row);
 
         // Insert information about st_columns into st_columns
-        let row = vec![
-            ColValue::U32(ST_COLUMNS_ID),
-            ColValue::U32(0),
-            ColValue::U32(ColType::U32.to_u32()),
-        ];
+        let mut bytes = Vec::new();
+        TypeDef::U32.encode(&mut bytes);
+        let row = TupleValue {
+            elements: vec![
+                TypeValue::U32(ST_COLUMNS_ID),
+                TypeValue::U32(0),
+                TypeValue::Bytes(bytes),
+            ],
+        };
         Self::insert_row_raw(&mut txdb, &mut tx, ST_COLUMNS_ID, row);
 
-        let row = vec![
-            ColValue::U32(ST_COLUMNS_ID),
-            ColValue::U32(1),
-            ColValue::U32(ColType::U32.to_u32()),
-        ];
+        let mut bytes = Vec::new();
+        TypeDef::U32.encode(&mut bytes);
+        let row = TupleValue {
+            elements: vec![
+                TypeValue::U32(ST_COLUMNS_ID),
+                TypeValue::U32(1),
+                TypeValue::Bytes(bytes),
+            ],
+        };
         Self::insert_row_raw(&mut txdb, &mut tx, ST_COLUMNS_ID, row);
 
-        let row = vec![
-            ColValue::U32(ST_COLUMNS_ID),
-            ColValue::U32(2),
-            ColValue::U32(ColType::U32.to_u32()),
-        ];
+        let mut bytes = Vec::new();
+        TypeDef::U32.encode(&mut bytes);
+        let row = TupleValue {
+            elements: vec![
+                TypeValue::U32(ST_COLUMNS_ID),
+                TypeValue::U32(2),
+                TypeValue::Bytes(bytes),
+            ],
+        };
         Self::insert_row_raw(&mut txdb, &mut tx, ST_COLUMNS_ID, row);
 
         txdb.commit_tx(tx);
@@ -70,52 +87,65 @@ impl RelationalDB {
         RelationalDB { txdb }
     }
 
-    pub fn encode_row(row: Vec<ColValue>, bytes: &mut Vec<u8>) {
-        for col in row {
-            bytes.extend(col.to_data());
-        }
+    pub fn encode_row(row: TupleValue, bytes: &mut Vec<u8>) {
+        // TODO: large file storage the row elements
+        row.encode(bytes);
     }
 
-    pub fn decode_row(columns: &Vec<Column>, bytes: &[u8]) -> Vec<ColValue> {
-        let mut row = Vec::new();
-        let mut bytes_read: usize = 0;
-        for col in columns {
-            row.push(ColValue::from_data(&col.col_type, &bytes[bytes_read..]));
-            bytes_read += col.col_type.size() as usize;
-        }
-        row
+    pub fn decode_row(schema: &TupleDef, bytes: impl AsRef<[u8]>) -> TupleValue {
+        // TODO: large file storage the row elements
+        let (tuple_value, _) = TupleValue::decode(schema, bytes);
+        tuple_value
     }
 
-    pub fn schema_for_table(&self, tx: &mut Tx, table_id: u32) -> Option<Vec<Column>> {
+    pub fn schema_for_table(&self, tx: &mut Tx, table_id: u32) -> Option<TupleDef> {
         let mut columns = Vec::new();
         for bytes in self.txdb.scan(tx, ST_COLUMNS_ID) {
-            let mut dst = [0u8; 4];
-            dst.copy_from_slice(&bytes[0..4]);
-            let t_id = u32::from_le_bytes(dst);
-
+            let schema = TupleDef {
+                elements: vec![
+                    ElementDef {
+                        tag: 0,
+                        element_type: Box::new(TypeDef::U32),
+                    },
+                    ElementDef {
+                        tag: 1,
+                        element_type: Box::new(TypeDef::U32),
+                    },
+                    ElementDef {
+                        tag: 2,
+                        element_type: Box::new(TypeDef::Bytes),
+                    },
+                ],
+            };
+            let row = Self::decode_row(&schema, bytes);
+            let col = &row.elements[0];
+            let t_id: u32 = *col.as_u32().unwrap();
             if t_id != table_id {
                 continue;
             }
 
-            let mut dst = [0u8; 4];
-            dst.copy_from_slice(&bytes[4..8]);
-            let col_id = u32::from_le_bytes(dst);
+            let col = &row.elements[1];
+            let col_id: u32 = *col.as_u32().unwrap();
 
-            let mut dst = [0u8; 4];
-            dst.copy_from_slice(&bytes[8..12]);
-            let col_type = ColType::from_u32(u32::from_le_bytes(dst));
+            let col = &row.elements[2];
+            let bytes: &Vec<u8> = col.as_bytes().unwrap();
+            let (col_type, _) = TypeDef::decode(bytes);
 
-            columns.push(Column { col_id, col_type })
+            let element = ElementDef {
+                tag: col_id as u8, // TODO?
+                element_type: Box::new(col_type),
+            };
+            columns.push(element)
         }
-        columns.sort_by(|a, b| a.col_id.cmp(&b.col_id));
+        columns.sort_by(|a, b| a.tag.cmp(&b.tag));
         if columns.len() > 0 {
-            Some(columns)
+            Some(TupleDef { elements: columns })
         } else {
             None
         }
     }
 
-    fn insert_row_raw(txdb: &mut TransactionalDB, tx: &mut Tx, table_id: u32, row: Vec<ColValue>) {
+    fn insert_row_raw(txdb: &mut TransactionalDB, tx: &mut Tx, table_id: u32, row: TupleValue) {
         let mut bytes = Vec::new();
         Self::encode_row(row, &mut bytes);
         txdb.insert(tx, table_id, bytes);
@@ -137,14 +167,14 @@ impl RelationalDB {
         self.txdb.commit_tx(tx);
     }
 
-    pub fn create_table(&mut self, tx: &mut Tx, table_id: u32, schema: Schema) -> Result<(), String> {
+    pub fn create_table(&mut self, tx: &mut Tx, table_id: u32, schema: TupleDef) -> Result<(), String> {
         // Scan st_tables for this id
 
         // TODO: allocations remove with fixes to ownership
         for row in self.iter(tx, ST_TABLES_ID).unwrap() {
-            let t_id = row[0];
+            let t_id = &row.elements[0];
             let t_id = match t_id {
-                ColValue::U32(t_id) => t_id,
+                TypeValue::U32(t_id) => *t_id,
                 _ => panic!("Woah ur columns r messed up."),
             };
             if t_id == table_id {
@@ -153,16 +183,18 @@ impl RelationalDB {
         }
 
         // Insert the table row into st_tables
-        let row = vec![ColValue::U32(table_id)];
+        let row = TupleValue {
+            elements: vec![TypeValue::U32(table_id)],
+        };
         Self::insert_row_raw(&mut self.txdb, tx, ST_TABLES_ID, row);
 
         let mut i = 0;
-        for col in schema.columns {
-            let row = vec![
-                ColValue::U32(table_id),
-                ColValue::U32(i),
-                ColValue::U32(col.col_type.to_u32()),
-            ];
+        for col in schema.elements {
+            let mut bytes = Vec::new();
+            col.element_type.encode(&mut bytes);
+            let row = TupleValue {
+                elements: vec![TypeValue::U32(table_id), TypeValue::U32(i), TypeValue::Bytes(bytes)],
+            };
             Self::insert_row_raw(&mut self.txdb, tx, ST_COLUMNS_ID, row);
             i += 1;
         }
@@ -171,16 +203,26 @@ impl RelationalDB {
     }
 
     pub fn drop_table(&mut self, tx: &mut Tx, table_id: u32) -> Result<(), String> {
-        let t = self.delete_range(tx, ST_TABLES_ID, 0, ColValue::U32(table_id)..ColValue::U32(table_id));
+        let t = self.delete_range(
+            tx,
+            ST_TABLES_ID,
+            0,
+            RangeTypeValue::U32(table_id)..RangeTypeValue::U32(table_id),
+        );
         let t = t.expect("ST_TABLES_ID should exist");
         if t == 0 {
             return Err("No such table.".into());
         }
-        self.delete_range(tx, ST_COLUMNS_ID, 0, ColValue::U32(table_id)..ColValue::U32(table_id));
+        self.delete_range(
+            tx,
+            ST_COLUMNS_ID,
+            0,
+            RangeTypeValue::U32(table_id)..RangeTypeValue::U32(table_id),
+        );
         Ok(())
     }
 
-    pub fn insert(&mut self, tx: &mut Tx, table_id: u32, row: Vec<ColValue>) {
+    pub fn insert(&mut self, tx: &mut Tx, table_id: u32, row: TupleValue) {
         // TODO: verify schema
         Self::insert_row_raw(&mut self.txdb, tx, table_id, row);
     }
@@ -198,12 +240,7 @@ impl RelationalDB {
     }
 
     // AKA: scan
-    pub fn filter<'a>(
-        &'a self,
-        tx: &'a mut Tx,
-        table_id: u32,
-        f: fn(&Vec<ColValue>) -> bool,
-    ) -> Option<FilterIter<'a>> {
+    pub fn filter<'a>(&'a self, tx: &'a mut Tx, table_id: u32, f: fn(&TupleValue) -> bool) -> Option<FilterIter<'a>> {
         if let Some(table_iter) = self.iter(tx, table_id) {
             return Some(FilterIter { table_iter, filter: f });
         }
@@ -216,13 +253,16 @@ impl RelationalDB {
         tx: &'a mut Tx,
         table_id: u32,
         col_id: u32,
-        value: ColValue,
-    ) -> Option<Vec<ColValue>> {
+        value: EqTypeValue,
+    ) -> Option<TupleValue> {
         if let Some(table_iter) = self.iter(tx, table_id) {
             for row in table_iter {
                 // TODO: more than one row can have this value if col_id
                 // is not the primary key
-                if row[col_id as usize] == value {
+                let col_value = &row.elements[col_id as usize];
+                // TODO: This should not unwrap because it will crash the server
+                let eq_col_value: EqTypeValue = col_value.try_into().unwrap();
+                if eq_col_value == value {
                     return Some(row);
                 }
             }
@@ -231,7 +271,7 @@ impl RelationalDB {
     }
 
     // AKA: seek_range
-    pub fn filter_range<'a, R: RangeBounds<ColValue>>(
+    pub fn filter_range<'a, R: RangeBounds<RangeTypeValue>>(
         &'a self,
         tx: &'a mut Tx,
         table_id: u32,
@@ -239,7 +279,7 @@ impl RelationalDB {
         range: R,
     ) -> Option<RangeIter<'a, R>>
     where
-        R: RangeBounds<ColValue>,
+        R: RangeBounds<RangeTypeValue>,
     {
         if let Some(table_iter) = self.iter(tx, table_id) {
             return Some(RangeIter::Scan(ScanRangeIter {
@@ -251,7 +291,7 @@ impl RelationalDB {
         None
     }
 
-    pub fn delete_filter(&mut self, tx: &mut Tx, table_id: u32, f: fn(row: &Vec<ColValue>) -> bool) -> Option<usize> {
+    pub fn delete_filter(&mut self, tx: &mut Tx, table_id: u32, f: fn(row: &TupleValue) -> bool) -> Option<usize> {
         if let Some(filter) = self.filter(tx, table_id, f) {
             let mut values = Vec::new();
             for x in filter {
@@ -268,7 +308,7 @@ impl RelationalDB {
         None
     }
 
-    pub fn delete_eq(&mut self, tx: &mut Tx, table_id: u32, col_id: u32, value: ColValue) -> Option<usize> {
+    pub fn delete_eq(&mut self, tx: &mut Tx, table_id: u32, col_id: u32, value: EqTypeValue) -> Option<usize> {
         if let Some(x) = self.filter_eq(tx, table_id, col_id, value) {
             let mut values = Vec::new();
             let mut bytes = Vec::new();
@@ -283,7 +323,13 @@ impl RelationalDB {
         None
     }
 
-    pub fn delete_range(&mut self, tx: &mut Tx, table_id: u32, col_id: u32, range: Range<ColValue>) -> Option<usize> {
+    pub fn delete_range(
+        &mut self,
+        tx: &mut Tx,
+        table_id: u32,
+        col_id: u32,
+        range: Range<RangeTypeValue>,
+    ) -> Option<usize> {
         if let Some(filter) = self.filter_range(tx, table_id, col_id, range) {
             let mut values = Vec::new();
             for x in filter {
@@ -310,12 +356,12 @@ impl RelationalDB {
 }
 
 pub struct TableIter<'a> {
-    schema: Vec<Column>,
+    schema: TupleDef,
     txdb_iter: ScanIter<'a>,
 }
 
 impl<'a> Iterator for TableIter<'a> {
-    type Item = Vec<ColValue>;
+    type Item = TupleValue;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(bytes) = self.txdb_iter.next() {
@@ -326,12 +372,12 @@ impl<'a> Iterator for TableIter<'a> {
     }
 }
 
-pub enum RangeIter<'a, R: RangeBounds<ColValue>> {
+pub enum RangeIter<'a, R: RangeBounds<RangeTypeValue>> {
     Scan(ScanRangeIter<'a, R>),
 }
 
-impl<'a, R: RangeBounds<ColValue>> Iterator for RangeIter<'a, R> {
-    type Item = Vec<ColValue>;
+impl<'a, R: RangeBounds<RangeTypeValue>> Iterator for RangeIter<'a, R> {
+    type Item = TupleValue;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -339,18 +385,21 @@ impl<'a, R: RangeBounds<ColValue>> Iterator for RangeIter<'a, R> {
         }
     }
 }
-pub struct ScanRangeIter<'a, R: RangeBounds<ColValue>> {
+pub struct ScanRangeIter<'a, R: RangeBounds<RangeTypeValue>> {
     table_iter: TableIter<'a>,
     col_index: u32,
     range: R,
 }
 
-impl<'a, R: RangeBounds<ColValue>> Iterator for ScanRangeIter<'a, R> {
-    type Item = Vec<ColValue>;
+impl<'a, R: RangeBounds<RangeTypeValue>> Iterator for ScanRangeIter<'a, R> {
+    type Item = TupleValue;
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(row) = self.table_iter.next() {
-            if self.range.contains(&row[self.col_index as usize]) {
+            let value = &row.elements[self.col_index as usize];
+            // TODO: This should not unwrap
+            let range_value: RangeTypeValue = value.try_into().unwrap();
+            if self.range.contains(&range_value) {
                 return Some(row);
             }
         }
@@ -360,11 +409,11 @@ impl<'a, R: RangeBounds<ColValue>> Iterator for ScanRangeIter<'a, R> {
 
 pub struct FilterIter<'a> {
     table_iter: TableIter<'a>,
-    filter: fn(&Vec<ColValue>) -> bool,
+    filter: fn(&TupleValue) -> bool,
 }
 
 impl<'a> Iterator for FilterIter<'a> {
-    type Item = Vec<ColValue>;
+    type Item = TupleValue;
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(row) = self.table_iter.next() {
@@ -379,8 +428,7 @@ impl<'a> Iterator for FilterIter<'a> {
 #[cfg(test)]
 mod tests {
     use super::RelationalDB;
-    use crate::db::Schema;
-    use spacetimedb_bindings::{ColType, ColValue, Column};
+    use spacetimedb_bindings::{ElementDef, RangeTypeValue, TupleDef, TupleValue, TypeDef, TypeValue};
     use tempdir::TempDir;
 
     // let ptr = stdb.from(&mut tx, "health")
@@ -410,10 +458,10 @@ mod tests {
         stdb.create_table(
             &mut tx,
             0,
-            Schema {
-                columns: vec![Column {
-                    col_id: 0,
-                    col_type: ColType::I32,
+            TupleDef {
+                elements: vec![ElementDef {
+                    tag: 0,
+                    element_type: Box::new(TypeDef::I32),
                 }],
             },
         )
@@ -428,10 +476,10 @@ mod tests {
         stdb.create_table(
             &mut tx,
             0,
-            Schema {
-                columns: vec![Column {
-                    col_id: 0,
-                    col_type: ColType::I32,
+            TupleDef {
+                elements: vec![ElementDef {
+                    tag: 0,
+                    element_type: Box::new(TypeDef::I32),
                 }],
             },
         )
@@ -439,10 +487,10 @@ mod tests {
         let result = stdb.create_table(
             &mut tx,
             0,
-            Schema {
-                columns: vec![Column {
-                    col_id: 0,
-                    col_type: ColType::I32,
+            TupleDef {
+                elements: vec![ElementDef {
+                    tag: 0,
+                    element_type: Box::new(TypeDef::I32),
                 }],
             },
         );
@@ -457,22 +505,44 @@ mod tests {
         stdb.create_table(
             &mut tx,
             0,
-            Schema {
-                columns: vec![Column {
-                    col_id: 0,
-                    col_type: ColType::I32,
+            TupleDef {
+                elements: vec![ElementDef {
+                    tag: 0,
+                    element_type: Box::new(TypeDef::I32),
                 }],
             },
         )
         .unwrap();
-        stdb.insert(&mut tx, 0, vec![ColValue::I32(-1)]);
-        stdb.insert(&mut tx, 0, vec![ColValue::I32(0)]);
-        stdb.insert(&mut tx, 0, vec![ColValue::I32(1)]);
+        stdb.insert(
+            &mut tx,
+            0,
+            TupleValue {
+                elements: vec![TypeValue::I32(-1)],
+            },
+        );
+        stdb.insert(
+            &mut tx,
+            0,
+            TupleValue {
+                elements: vec![TypeValue::I32(0)],
+            },
+        );
+        stdb.insert(
+            &mut tx,
+            0,
+            TupleValue {
+                elements: vec![TypeValue::I32(1)],
+            },
+        );
 
-        let mut rows = stdb.iter(&mut tx, 0).unwrap().map(|r| r[0]).collect::<Vec<ColValue>>();
+        let mut rows = stdb
+            .iter(&mut tx, 0)
+            .unwrap()
+            .map(|r| *r.elements[0].as_i32().unwrap())
+            .collect::<Vec<i32>>();
         rows.sort();
 
-        assert_eq!(rows, vec![ColValue::I32(-1), ColValue::I32(0), ColValue::I32(1)]);
+        assert_eq!(rows, vec![-1, 0, 1]);
     }
 
     #[test]
@@ -483,24 +553,46 @@ mod tests {
         stdb.create_table(
             &mut tx,
             0,
-            Schema {
-                columns: vec![Column {
-                    col_id: 0,
-                    col_type: ColType::I32,
+            TupleDef {
+                elements: vec![ElementDef {
+                    tag: 0,
+                    element_type: Box::new(TypeDef::I32),
                 }],
             },
         )
         .unwrap();
-        stdb.insert(&mut tx, 0, vec![ColValue::I32(-1)]);
-        stdb.insert(&mut tx, 0, vec![ColValue::I32(0)]);
-        stdb.insert(&mut tx, 0, vec![ColValue::I32(1)]);
+        stdb.insert(
+            &mut tx,
+            0,
+            TupleValue {
+                elements: vec![TypeValue::I32(-1)],
+            },
+        );
+        stdb.insert(
+            &mut tx,
+            0,
+            TupleValue {
+                elements: vec![TypeValue::I32(0)],
+            },
+        );
+        stdb.insert(
+            &mut tx,
+            0,
+            TupleValue {
+                elements: vec![TypeValue::I32(1)],
+            },
+        );
         stdb.commit_tx(tx);
 
         let mut tx = stdb.begin_tx();
-        let mut rows = stdb.iter(&mut tx, 0).unwrap().map(|r| r[0]).collect::<Vec<ColValue>>();
+        let mut rows = stdb
+            .iter(&mut tx, 0)
+            .unwrap()
+            .map(|r| *r.elements[0].as_i32().unwrap())
+            .collect::<Vec<i32>>();
         rows.sort();
 
-        assert_eq!(rows, vec![ColValue::I32(-1), ColValue::I32(0), ColValue::I32(1)]);
+        assert_eq!(rows, vec![-1, 0, 1]);
     }
 
     #[test]
@@ -511,26 +603,44 @@ mod tests {
         stdb.create_table(
             &mut tx,
             0,
-            Schema {
-                columns: vec![Column {
-                    col_id: 0,
-                    col_type: ColType::I32,
+            TupleDef {
+                elements: vec![ElementDef {
+                    tag: 0,
+                    element_type: Box::new(TypeDef::I32),
                 }],
             },
         )
         .unwrap();
-        stdb.insert(&mut tx, 0, vec![ColValue::I32(-1)]);
-        stdb.insert(&mut tx, 0, vec![ColValue::I32(0)]);
-        stdb.insert(&mut tx, 0, vec![ColValue::I32(1)]);
+        stdb.insert(
+            &mut tx,
+            0,
+            TupleValue {
+                elements: vec![TypeValue::I32(-1)],
+            },
+        );
+        stdb.insert(
+            &mut tx,
+            0,
+            TupleValue {
+                elements: vec![TypeValue::I32(0)],
+            },
+        );
+        stdb.insert(
+            &mut tx,
+            0,
+            TupleValue {
+                elements: vec![TypeValue::I32(1)],
+            },
+        );
 
         let mut rows = stdb
-            .filter_range(&mut tx, 0, 0, ColValue::I32(0)..)
+            .filter_range(&mut tx, 0, 0, RangeTypeValue::I32(0)..)
             .unwrap()
-            .map(|r| r[0])
-            .collect::<Vec<ColValue>>();
+            .map(|r| *r.elements[0].as_i32().unwrap())
+            .collect::<Vec<i32>>();
         rows.sort();
 
-        assert_eq!(rows, vec![ColValue::I32(0), ColValue::I32(1)]);
+        assert_eq!(rows, vec![0, 1]);
     }
 
     #[test]
@@ -541,28 +651,46 @@ mod tests {
         stdb.create_table(
             &mut tx,
             0,
-            Schema {
-                columns: vec![Column {
-                    col_id: 0,
-                    col_type: ColType::I32,
+            TupleDef {
+                elements: vec![ElementDef {
+                    tag: 0,
+                    element_type: Box::new(TypeDef::I32),
                 }],
             },
         )
         .unwrap();
-        stdb.insert(&mut tx, 0, vec![ColValue::I32(-1)]);
-        stdb.insert(&mut tx, 0, vec![ColValue::I32(0)]);
-        stdb.insert(&mut tx, 0, vec![ColValue::I32(1)]);
+        stdb.insert(
+            &mut tx,
+            0,
+            TupleValue {
+                elements: vec![TypeValue::I32(-1)],
+            },
+        );
+        stdb.insert(
+            &mut tx,
+            0,
+            TupleValue {
+                elements: vec![TypeValue::I32(0)],
+            },
+        );
+        stdb.insert(
+            &mut tx,
+            0,
+            TupleValue {
+                elements: vec![TypeValue::I32(1)],
+            },
+        );
         stdb.commit_tx(tx);
 
         let mut tx = stdb.begin_tx();
         let mut rows = stdb
-            .filter_range(&mut tx, 0, 0, ColValue::I32(0)..)
+            .filter_range(&mut tx, 0, 0, RangeTypeValue::I32(0)..)
             .unwrap()
-            .map(|r| r[0])
-            .collect::<Vec<ColValue>>();
+            .map(|r| *r.elements[0].as_i32().unwrap())
+            .collect::<Vec<i32>>();
         rows.sort();
 
-        assert_eq!(rows, vec![ColValue::I32(0), ColValue::I32(1)]);
+        assert_eq!(rows, vec![0, 1]);
     }
 
     #[test]
@@ -573,10 +701,10 @@ mod tests {
         stdb.create_table(
             &mut tx,
             0,
-            Schema {
-                columns: vec![Column {
-                    col_id: 0,
-                    col_type: ColType::I32,
+            TupleDef {
+                elements: vec![ElementDef {
+                    tag: 0,
+                    element_type: Box::new(TypeDef::I32),
                 }],
             },
         )
@@ -596,10 +724,10 @@ mod tests {
         stdb.create_table(
             &mut tx,
             0,
-            Schema {
-                columns: vec![Column {
-                    col_id: 0,
-                    col_type: ColType::I32,
+            TupleDef {
+                elements: vec![ElementDef {
+                    tag: 0,
+                    element_type: Box::new(TypeDef::I32),
                 }],
             },
         )
@@ -607,15 +735,38 @@ mod tests {
         stdb.commit_tx(tx);
 
         let mut tx = stdb.begin_tx();
-        stdb.insert(&mut tx, 0, vec![ColValue::I32(-1)]);
-        stdb.insert(&mut tx, 0, vec![ColValue::I32(0)]);
-        stdb.insert(&mut tx, 0, vec![ColValue::I32(1)]);
+        stdb.insert(
+            &mut tx,
+            0,
+            TupleValue {
+                elements: vec![TypeValue::I32(-1)],
+            },
+        );
+        stdb.insert(
+            &mut tx,
+            0,
+            TupleValue {
+                elements: vec![TypeValue::I32(0)],
+            },
+        );
+        stdb.insert(
+            &mut tx,
+            0,
+            TupleValue {
+                elements: vec![TypeValue::I32(1)],
+            },
+        );
         drop(tx);
 
         let mut tx = stdb.begin_tx();
-        let mut rows = stdb.iter(&mut tx, 0).unwrap().map(|r| r[0]).collect::<Vec<ColValue>>();
+        let mut rows = stdb
+            .iter(&mut tx, 0)
+            .unwrap()
+            .map(|r| *r.elements[0].as_i32().unwrap())
+            .collect::<Vec<i32>>();
         rows.sort();
 
-        assert_eq!(rows, vec![]);
+        let expected: Vec<i32> = Vec::new();
+        assert_eq!(rows, expected);
     }
 }

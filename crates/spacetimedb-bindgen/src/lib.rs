@@ -1,13 +1,13 @@
 #![crate_type = "proc-macro"]
 
-extern crate proc_macro;
 extern crate core;
+extern crate proc_macro;
 
-use proc_macro::{TokenStream};
+use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::{format_ident, quote, ToTokens};
-use syn::{AttributeArgs, FnArg, ItemStruct, parse_macro_input, ItemFn};
 use syn::Fields::{Named, Unit, Unnamed};
+use syn::{parse_macro_input, AttributeArgs, FnArg, ItemFn, ItemStruct};
 
 #[proc_macro_attribute]
 pub fn spacetimedb(macro_args: TokenStream, item: TokenStream) -> TokenStream {
@@ -22,15 +22,13 @@ pub fn spacetimedb(macro_args: TokenStream, item: TokenStream) -> TokenStream {
         "index(hash)" => spacetimedb_index(attribute_args, item),
         _ => proc_macro::TokenStream::from(quote! {
             compile_error!("Please pass a valid attribute to the spacetimedb macro: reducer, ...");
-        })
+        }),
     }
 }
 
-
 fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
     if *(&args.len()) > 1 {
-        let str = format!("Unexpected macro argument: {}",
-                          args[1].to_token_stream().to_string());
+        let str = format!("Unexpected macro argument: {}", args[1].to_token_stream().to_string());
         return proc_macro::TokenStream::from(quote! {
             compile_error!(#str);
         });
@@ -89,8 +87,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
 fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
     if *(&args.len()) > 1 {
-        let str = format!("Unexpected macro argument: {}",
-                          args[1].to_token_stream().to_string());
+        let str = format!("Unexpected macro argument: {}", args[1].to_token_stream().to_string());
         return proc_macro::TokenStream::from(quote! {
             compile_error!(#str);
         });
@@ -146,19 +143,25 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
     let mut primary_key_set = false;
     let mut col_num: usize = 0;
 
-
     for field in &original_struct.fields {
         let col_name = &field.ident.clone().unwrap();
-        let col_type_tok: proc_macro2::TokenStream = format!("spacetimedb_bindings::ColType::{}",
-                                                             field.ty.to_token_stream().to_string().to_uppercase()).parse().unwrap();
-        let col_value_type: proc_macro2::TokenStream = format!("spacetimedb_bindings::ColValue::{}",
-                                                               field.ty.to_token_stream().to_string().to_uppercase()).parse().unwrap();
-        let col_value_insert: proc_macro2::TokenStream = format!("{}({})", col_value_type,
-                                                                 format!("ins.{}", col_name)).parse().unwrap();
-        let col_num_u32: u32 = col_num as u32;
+        let mut type_def_case = field.ty.to_token_stream().to_string();
+        type_def_case[0..1].make_ascii_uppercase();
+        let col_type_tok: proc_macro2::TokenStream = format!("spacetimedb_bindings::TypeDef::{}", type_def_case)
+            .parse()
+            .unwrap();
+        let mut type_value_case = field.ty.to_token_stream().to_string();
+        type_value_case[0..1].make_ascii_uppercase();
+        let col_value_type: proc_macro2::TokenStream = format!("spacetimedb_bindings::TypeValue::{}", type_value_case)
+            .parse()
+            .unwrap();
+        let col_value_insert: proc_macro2::TokenStream = format!("{}({})", col_value_type, format!("ins.{}", col_name))
+            .parse()
+            .unwrap();
+        let col_num_u8: u8 = col_num as u8;
 
         row_to_struct_let_values.push(quote!(
-            let #col_value_type(#col_name) = entry[#col_num];
+            let #col_value_type(#col_name) = &row.elements[#col_num];
         ));
 
         let col_type = field.clone().ty;
@@ -187,17 +190,17 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         if !is_primary {
             non_primary_columns_idents.push(col_name.clone());
             non_primary_columns.push(quote!(
-                    #col_name: #col_type
-                ));
+                #col_name: #col_type
+            ));
             non_primary_let_data_statements.push(quote!(
                 if let #col_value_type(data) = data
             ));
         }
 
         columns.push(quote! {
-            spacetimedb_bindings::Column {
-                col_id: #col_num_u32,
-                col_type: #col_type_tok,
+            spacetimedb_bindings::ElementDef {
+                tag: #col_num_u8,
+                element_type: Box::new(#col_type_tok),
             }
         });
 
@@ -207,7 +210,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
         column_idents.push(format_ident!("{}", col_name));
         row_to_struct_entries.push(quote!(
-            entry[#col_num]
+            &row.elements[#col_num]
         ));
 
         row_to_struct_entries_values.push(quote!(
@@ -217,22 +220,36 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         col_num = col_num + 1;
     }
 
-    let table_func_name = format_ident!("__create_table__{}", original_struct_ident.to_token_stream().to_string());
+    let table_func_name = format_ident!(
+        "__create_table__{}",
+        original_struct_ident.to_token_stream().to_string()
+    );
     let table_func = quote! {
         #[no_mangle]
         pub extern "C" fn #table_func_name(arg_ptr: u32, arg_size: u32) {
             unsafe {
                 #table_id_field_name = 0;
             }
-            spacetimedb_bindings::create_table(0, vec![
+            spacetimedb_bindings::create_table(0, spacetimedb_bindings::TupleDef {
+                elements: vec![
                     #(#columns),*
-                ]);
+                ]
+            });
         }
     };
 
-    match (primary_key_column_def, primary_key_column_ident, primary_let_data_statement, primary_key_column_index) {
-        (Some(primary_key_column_def), Some(primary_key_column_ident),
-            Some(primary_let_data_statement), Some(primary_key_column_index)) => {
+    match (
+        primary_key_column_def,
+        primary_key_column_ident,
+        primary_let_data_statement,
+        primary_key_column_index,
+    ) {
+        (
+            Some(primary_key_column_def),
+            Some(primary_key_column_ident),
+            Some(primary_let_data_statement),
+            Some(primary_key_column_index),
+        ) => {
             let filter_func_ident = format_ident!("filter_{}_eq", primary_key_column_ident);
             let delete_func_ident = format_ident!("delete_{}_eq", primary_key_column_ident);
             table_funcs.push(quote!(
@@ -240,11 +257,11 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                     unsafe {
                         let table_iter = spacetimedb_bindings::iter(#table_id_field_name);
                         if let Some(table_iter) = table_iter {
-                            for entry in table_iter {
-                                let data = entry[#primary_key_column_index];
+                            for row in table_iter {
+                                let data = row.elements[#primary_key_column_index].clone();
                                 #primary_let_data_statement {
                                     if #primary_key_column_ident == data {
-                                        let value = #original_struct_ident::table_row_to_struct(entry);
+                                        let value = #original_struct_ident::table_row_to_struct(row);
                                         if let Some(value) = value {
                                             return Some(value);
                                         }
@@ -278,11 +295,11 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                    let mut result = Vec::<#original_struct_ident>::new();
                     let table_iter = spacetimedb_bindings::iter(#table_id_field_name);
                     if let Some(table_iter) = table_iter {
-                        for entry in table_iter {
-                            let data = entry[#x];
+                        for row in table_iter {
+                            let data = row.elements[#x].clone();
                             #let_statement {
                                 if #non_primary_column_ident == data {
-                                    let value = #original_struct_ident::table_row_to_struct(entry);
+                                    let value = #original_struct_ident::table_row_to_struct(row);
                                     if let Some(value) = value {
                                         result.push(value);
                                     }
@@ -296,23 +313,24 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             }
         );
         let delete_func = quote!(
-                pub fn #delete_func_ident(#column_def) -> usize {
-                    0
-                }
-            );
+            pub fn #delete_func_ident(#column_def) -> usize {
+                0
+            }
+        );
 
         table_funcs.push(filter_func);
         table_funcs.push(delete_func);
     }
 
-
     let db_funcs = quote! {
         impl #original_struct_ident {
             pub fn insert(ins: #original_struct_ident) {
                 unsafe {
-                    spacetimedb_bindings::insert(#table_id_field_name, vec![
-                        #(#insert_columns),*
-                    ]);
+                    spacetimedb_bindings::insert(#table_id_field_name, spacetimedb_bindings::TupleValue {
+                        elements: vec![
+                            #(#insert_columns),*
+                        ]
+                    });
                 }
             }
 
@@ -326,8 +344,8 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                 false
             }
 
-            fn table_row_to_struct(entry: Vec<ColValue>) -> Option<#original_struct_ident> {
-                return match (#(#row_to_struct_entries),*) {
+            fn table_row_to_struct(row: spacetimedb_bindings::TupleValue) -> Option<#original_struct_ident> {
+                return match (#((#row_to_struct_entries).clone()),*) {
                     (#(#row_to_struct_entries_values),*) => {
                         Some(#original_struct_ident {
                             #(#column_idents),*
@@ -366,8 +384,10 @@ fn spacetimedb_index(args: AttributeArgs, item: TokenStream) -> TokenStream {
             index_type = 1;
         }
         _ => {
-            let invalid_index = format!("Invalid index type: {}\nValid options are: index(btree), index(hash)",
-                                        args[0].to_token_stream().to_string());
+            let invalid_index = format!(
+                "Invalid index type: {}\nValid options are: index(btree), index(hash)",
+                args[0].to_token_stream().to_string()
+            );
             return proc_macro::TokenStream::from(quote! {
                 compile_error!(#invalid_index);
             });
@@ -385,11 +405,15 @@ fn spacetimedb_index(args: AttributeArgs, item: TokenStream) -> TokenStream {
         let arg_str = arg.to_token_stream().to_string();
         let name_prefix = "name = ";
         if arg_str.starts_with(name_prefix) {
-            index_name = arg_str.chars().skip(name_prefix.len() + 1).take(
-                arg_str.len() - name_prefix.len() - 2).collect();
+            index_name = arg_str
+                .chars()
+                .skip(name_prefix.len() + 1)
+                .take(arg_str.len() - name_prefix.len() - 2)
+                .collect();
         } else {
-            let field_index = all_fields.iter().position(|a|
-                a.to_token_stream().to_string() == arg_str);
+            let field_index = all_fields
+                .iter()
+                .position(|a| a.to_token_stream().to_string() == arg_str);
             match field_index {
                 Some(field_index) => {
                     index_fields.push(field_index as u32);
