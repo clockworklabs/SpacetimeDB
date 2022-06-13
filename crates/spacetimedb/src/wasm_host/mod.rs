@@ -16,7 +16,6 @@ use wasmer_middlewares::Metering;
 use self::module_host::ModuleHost;
 
 const REDUCE_DUNDER: &str = "__reducer__";
-const _MIGRATE_DATABASE_DUNDER: &str = "__migrate_database__";
 
 lazy_static! {
     pub static ref HOST: Mutex<Host> = Mutex::new(Host::spawn());
@@ -34,6 +33,12 @@ enum HostCommand {
         wasm_bytes: Vec<u8>,
         respond_to: oneshot::Sender<Result<Hash, anyhow::Error>>,
     },
+    UpdateModule {
+        identity: Hash,
+        name: String,
+        wasm_bytes: Vec<u8>,
+        respond_to: oneshot::Sender<Result<Hash, anyhow::Error>>,
+    },
     AddModule {
         identity: Hash,
         name: String,
@@ -41,7 +46,8 @@ enum HostCommand {
         respond_to: oneshot::Sender<Result<Hash, anyhow::Error>>,
     },
     CallReducer {
-        hash: Hash,
+        identity: Hash,
+        name: String,
         reducer_name: String,
         arg_bytes: Vec<u8>,
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
@@ -49,12 +55,12 @@ enum HostCommand {
 }
 
 struct HostActor {
-    modules: HashMap<Hash, ModuleHost>,
+    modules: HashMap<(Hash, String), ModuleHost>,
 }
 
 impl HostActor {
     fn new() -> Self {
-        let modules: HashMap<Hash, ModuleHost> = HashMap::new();
+        let modules: HashMap<(Hash, String), ModuleHost> = HashMap::new();
 
         Self { modules }
     }
@@ -71,22 +77,33 @@ impl HostActor {
                     .send(self.init_module(identity, &name, wasm_bytes).await)
                     .unwrap();
             }
+            HostCommand::UpdateModule {
+                identity,
+                name,
+                wasm_bytes,
+                respond_to,
+            } => {
+                respond_to
+                    .send(self.update_module(identity, &name, wasm_bytes).await)
+                    .unwrap();
+            }
             HostCommand::AddModule {
                 identity,
                 name,
                 wasm_bytes,
                 respond_to,
             } => {
-                respond_to.send(self.add_module(identity, &name, wasm_bytes)).unwrap();
+                respond_to.send(self.add_module(identity, &name, wasm_bytes).await).unwrap();
             }
             HostCommand::CallReducer {
-                hash,
+                identity,
+                name,
                 reducer_name,
                 arg_bytes,
                 respond_to,
             } => {
                 respond_to
-                    .send(self.call_reducer(hash, &reducer_name, arg_bytes).await)
+                    .send(self.call_reducer(identity, &name, &reducer_name, arg_bytes).await)
                     .unwrap();
             }
         }
@@ -119,16 +136,26 @@ impl HostActor {
     }
 
     async fn init_module(&mut self, identity: Hash, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
-        let module_hash = self.add_module(identity, name, wasm_bytes)?;
-        let module_host = self.modules.get(&module_hash).unwrap().clone();
+        let module_hash = self.add_module(identity, name, wasm_bytes).await?;
+        let key = (identity, name.to_string());
+        let module_host = self.modules.get(&key).unwrap().clone();
         module_host.init_database().await?;
         Ok(module_hash)
     }
+    
+    async fn update_module(&mut self, identity: Hash, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+        let module_hash = self.add_module(identity, name, wasm_bytes).await?;
+        let key = (identity, name.to_string());
+        let module_host = self.modules.get(&key).unwrap().clone();
+        module_host.migrate_database().await?;
+        Ok(module_hash)
+    }
 
-    fn add_module(&mut self, identity: Hash, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+    async fn add_module(&mut self, identity: Hash, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let module_hash = hash_bytes(&wasm_bytes);
-        if self.modules.contains_key(&module_hash) {
-            return Ok(module_hash);
+        let key = (identity, name.to_string());
+        if let Some(module_host) = self.modules.get(&key) {
+            module_host.exit().await?;
         }
 
         let cost_function = |operator: &Operator| -> u64 {
@@ -152,20 +179,22 @@ impl HostActor {
         Self::validate_module(&module)?;
 
         let module_host = ModuleHost::spawn(identity, name.into(), module_hash, module, store);
-        self.modules.insert(module_hash, module_host);
+        self.modules.insert(key, module_host);
 
         Ok(module_hash)
     }
 
     async fn call_reducer(
         &self,
-        hash: Hash,
+        identity: Hash,
+        name: &str,
         reducer_name: &str,
         arg_bytes: impl AsRef<[u8]>,
     ) -> Result<(), anyhow::Error> {
+        let key = (identity, name.to_string());
         let module_host = self
             .modules
-            .get(&hash)
+            .get(&key)
             .ok_or(anyhow::anyhow!("No such module found."))?;
         module_host
             .call_reducer(reducer_name.into(), arg_bytes.as_ref().to_vec())
@@ -204,6 +233,19 @@ impl Host {
             .await?;
         rx.await.unwrap()
     }
+    
+    pub async fn update_module(&self, identity: Hash, name: String, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<Hash, anyhow::Error>>();
+        self.tx
+            .send(HostCommand::UpdateModule {
+                identity,
+                name,
+                wasm_bytes,
+                respond_to: tx,
+            })
+            .await?;
+        rx.await.unwrap()
+    }
 
     pub async fn add_module(&self, identity: Hash, name: String, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<Hash, anyhow::Error>>();
@@ -220,14 +262,16 @@ impl Host {
 
     pub async fn call_reducer(
         &self,
-        hash: Hash,
+        identity: Hash,
+        name: String, 
         reducer_name: String,
         arg_bytes: Vec<u8>,
     ) -> Result<(), anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.tx
             .send(HostCommand::CallReducer {
-                hash,
+                identity,
+                name,
                 reducer_name,
                 arg_bytes,
                 respond_to: tx,

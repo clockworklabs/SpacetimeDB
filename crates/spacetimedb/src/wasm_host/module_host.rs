@@ -23,6 +23,10 @@ enum ModuleHostCommand {
     InitDatabase {
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
     },
+    MigrateDatabase {
+        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+    },
+    Exit {},
 }
 
 #[derive(Clone)]
@@ -36,7 +40,9 @@ impl ModuleHost {
         tokio::spawn(async move {
             let mut actor = ModuleHostActor::new(identity, name, module_hash, module, store);
             while let Some(command) = rx.recv().await {
-                actor.handle_message(command);
+                if actor.handle_message(command) {
+                    break;
+                }
             }
         });
         ModuleHost { tx }
@@ -59,12 +65,23 @@ impl ModuleHost {
         self.tx.send(ModuleHostCommand::InitDatabase { respond_to: tx }).await?;
         rx.await.unwrap()
     }
+    
+    pub async fn migrate_database(&self) -> Result<(), anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.tx.send(ModuleHostCommand::MigrateDatabase { respond_to: tx }).await?;
+        rx.await.unwrap()
+    }
+    
+    pub async fn exit(&self) -> Result<(), anyhow::Error> {
+        self.tx.send(ModuleHostCommand::Exit {}).await?;
+        Ok(())
+    }
 }
 
 const REDUCE_DUNDER: &str = "__reducer__";
 const INIT_PANIC_DUNDER: &str = "__init_panic__";
 const CREATE_TABLE_DUNDER: &str = "__create_table__";
-const _MIGRATE_DATABASE_DUNDER: &str = "__migrate_database__";
+const MIGRATE_DATABASE_DUNDER: &str = "__migrate_database__";
 
 fn get_remaining_points_value(instance: &Instance) -> u64 {
     let remaining_points = get_remaining_points(instance);
@@ -106,7 +123,7 @@ impl ModuleHostActor {
         host
     }
 
-    fn handle_message(&mut self, message: ModuleHostCommand) {
+    fn handle_message(&mut self, message: ModuleHostCommand) -> bool {
         match message {
             ModuleHostCommand::CallReducer {
                 reducer_name,
@@ -114,10 +131,19 @@ impl ModuleHostActor {
                 respond_to,
             } => {
                 respond_to.send(self.call_reducer(&reducer_name, &arg_bytes)).unwrap();
+                false
             }
             ModuleHostCommand::InitDatabase { respond_to } => {
                 respond_to.send(self.init_database()).unwrap();
+                false
             }
+            ModuleHostCommand::MigrateDatabase { respond_to } => {
+                respond_to.send(self.migrate_database()).unwrap();
+                false
+            },
+            ModuleHostCommand::Exit {} => {
+                true
+            },
         }
     }
 
@@ -174,6 +200,18 @@ impl ModuleHostActor {
     fn init_database(&mut self) -> Result<(), anyhow::Error> {
         for f in self.module.exports().functions() {
             if !f.name().starts_with(CREATE_TABLE_DUNDER) {
+                continue;
+            }
+            self.execute_reducer(f.name(), Vec::new())?;
+        }
+
+        // TODO: call __create_index__IndexName
+        Ok(())
+    }
+    
+    fn migrate_database(&mut self) -> Result<(), anyhow::Error> {
+        for f in self.module.exports().functions() {
+            if !f.name().starts_with(MIGRATE_DATABASE_DUNDER) {
                 continue;
             }
             self.execute_reducer(f.name(), Vec::new())?;

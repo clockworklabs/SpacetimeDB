@@ -43,6 +43,35 @@ async fn init_module(state: &mut State) -> SimpleHandlerResult {
 }
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
+struct UpdateModuleParams {
+    identity: String,
+    name: String,
+}
+
+async fn update_module(state: &mut State) -> SimpleHandlerResult {
+    let UpdateModuleParams { identity, name } = UpdateModuleParams::take_from(state);
+    let body = state.borrow_mut::<Body>();
+    let data = hyper::body::to_bytes(body).await;
+    let data = match data {
+        Ok(data) => data,
+        Err(_) => return Err(HandlerError::from(anyhow!("Invalid request body")).with_status(StatusCode::BAD_REQUEST)),
+    };
+    let wasm_bytes = data.to_vec();
+
+    match api::database::update_module(&identity, &name, wasm_bytes).await {
+        Ok(_) => {}
+        Err(e) => {
+            log::error!("{}", e);
+            return Err(HandlerError::from(e));
+        }
+    }
+
+    let res = Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap();
+
+    Ok(res)
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
 struct CallParams {
     identity: String,
     name: String,
@@ -107,6 +136,10 @@ pub fn router() -> Router {
             .post("/database/init/:identity/:name")
             .with_path_extractor::<InitModuleParams>()
             .to_async_borrowing(init_module);
+        route
+            .post("/database/update/:identity/:name")
+            .with_path_extractor::<UpdateModuleParams>()
+            .to_async_borrowing(update_module);
         route
             .post("/database/call/:identity/:name/:reducer")
             .with_path_extractor::<CallParams>()

@@ -98,8 +98,31 @@ pub mod database {
         Ok(address)
     }
 
-    pub fn update(_identity: String, _name: String, _wasm_bytecode: impl AsRef<[u8]>) {
-        unimplemented!()
+    pub async fn update_module(hex_identity: &str, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+        let client = postgres::get_client().await;
+        let identity = *Hash::from_slice(&hex::decode(hex_identity).unwrap());
+        let host = wasm_host::get_host();
+        let address = host.update_module(identity, name.into(), wasm_bytes.clone()).await?;
+
+        // If the module successfully initialized add it to the object database
+        {
+            let mut object_db = MODULE_ODB.lock().unwrap();
+            object_db.add(wasm_bytes);
+        }
+        
+        let result = client
+            .query(
+                "UPDATE registry.module SET module_address = $1, module_version = module_version + 1 WHERE actor_name = $2 AND st_identity = $3",
+                &[&hex::encode(address), &name, &hex_identity],
+            )
+            .await;
+       
+        if let Err(err) = result {
+            return Err(anyhow::anyhow!("Error updating module. {}", err));
+        }
+
+        init_log(address);
+        Ok(address)
     }
 
     pub async fn call(identity: &str, name: &str, reducer: String, arg_bytes: Vec<u8>) -> Result<(), anyhow::Error> {
@@ -117,11 +140,10 @@ pub mod database {
                 &[&name, &identity],
             )
             .await;
-        let row = result?;
-        let module_address: String = row.get(3);
-        let hash: Hash = Hash::from_iter(hex::decode(module_address).unwrap());
+        let _ = result?;
+        let identity_hash: Hash = Hash::from_iter(hex::decode(identity).unwrap());
 
-        get_host().call_reducer(hash, reducer, arg_bytes).await?;
+        get_host().call_reducer(identity_hash, name.to_string(), reducer, arg_bytes).await?;
 
         Ok(())
     }
