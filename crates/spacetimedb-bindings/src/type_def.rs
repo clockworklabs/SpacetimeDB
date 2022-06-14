@@ -19,6 +19,9 @@ pub struct ElementDef {
     // In the case of tuples, this is the id of the column
     // In the case of enums, this is the id of the variant
     pub tag: u8,
+    // TODO: Allow named elements? Probably need for SQL and nice for JSON
+    // slow though so need to be careful
+    // pub name: Option<String>,
     // TODO: not my favorite for cache friendliness since many types will be
     // simple. Maybe move this Box to TypeDef
     pub element_type: Box<TypeDef>,
@@ -128,6 +131,7 @@ pub enum TypeDef {
     F64,
     String,
     Bytes,
+    Unit,
 }
 
 impl TypeDef {
@@ -166,6 +170,7 @@ impl TypeDef {
             15 => (TypeDef::F64, 1),
             16 => (TypeDef::String, 1),
             17 => (TypeDef::Bytes, 1),
+            18 => (TypeDef::Bytes, 1),
             b => panic!("Unknown {}", b),
         }
     }
@@ -199,6 +204,7 @@ impl TypeDef {
             TypeDef::F64 => bytes.push(15),
             TypeDef::String => bytes.push(16),
             TypeDef::Bytes => bytes.push(17),
+            TypeDef::Unit => bytes.push(18),
         }
     }
 }

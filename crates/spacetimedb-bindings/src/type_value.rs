@@ -90,6 +90,7 @@ pub enum EqTypeValue {
     I128(i128),
     Bool(bool),
     String(String),
+    Unit,
 }
 
 impl TryFrom<TypeValue> for EqTypeValue {
@@ -115,6 +116,7 @@ impl TryFrom<TypeValue> for EqTypeValue {
             TypeValue::F64(_) => Err("Floats are not equatable"),
             TypeValue::String(v) => Ok(Self::String(v)),
             TypeValue::Bytes(_) => Err("Bytes are not equatable"),
+            TypeValue::Unit => Ok(Self::Unit),
         }
     }
 }
@@ -142,6 +144,7 @@ impl TryFrom<&TypeValue> for EqTypeValue {
             TypeValue::F64(_) => Err("Floats are not equatable"),
             TypeValue::String(v) => Ok(Self::String(v.clone())),
             TypeValue::Bytes(_) => Err("Bytes are not equatable"),
+            TypeValue::Unit => Ok(Self::Unit),
         }
     }
 }
@@ -163,6 +166,7 @@ pub enum RangeTypeValue {
     F64(f64),
     Bool(bool),
     String(String),
+    Unit,
 }
 
 impl TryFrom<TypeValue> for RangeTypeValue {
@@ -188,6 +192,7 @@ impl TryFrom<TypeValue> for RangeTypeValue {
             TypeValue::F64(v) => Ok(Self::F64(v)),
             TypeValue::String(v) => Ok(Self::String(v)),
             TypeValue::Bytes(_) => Err("Bytes are not rangeable"),
+            TypeValue::Unit => Ok(Self::Unit),
         }
     }
 }
@@ -215,6 +220,7 @@ impl TryFrom<&TypeValue> for RangeTypeValue {
             TypeValue::F64(v) => Ok(Self::F64(v.clone())),
             TypeValue::String(v) => Ok(Self::String(v.clone())),
             TypeValue::Bytes(_) => Err("Bytes are not rangeable"),
+            TypeValue::Unit => Ok(Self::Unit),
         }
     }
 }
@@ -241,7 +247,7 @@ pub enum TypeValue {
     F64(f64),
     String(String),
     Bytes(Vec<u8>),
-    // TypeDef(TypeDef), TODO?
+    Unit,
 }
 
 impl TypeValue {
@@ -342,6 +348,9 @@ impl TypeValue {
                 num_read += len as usize;
                 (TypeValue::Bytes(output.to_owned()), num_read)
             }
+            TypeDef::Unit => {
+                (TypeValue::Unit, 0)
+            },
         }
     }
 
@@ -409,6 +418,9 @@ impl TypeValue {
                 bytes.extend(len.to_le_bytes());
                 bytes.extend(v);
             }
+            TypeValue::Unit => {
+                // Do nothing.
+            },
         }
     }
 }
@@ -428,6 +440,7 @@ impl From<EqTypeValue> for TypeValue {
             EqTypeValue::I128(v) => Self::I128(v),
             EqTypeValue::Bool(v) => Self::Bool(v),
             EqTypeValue::String(v) => Self::String(v),
+            EqTypeValue::Unit => Self::Unit,
         }
     }
 }
@@ -447,6 +460,7 @@ impl From<&EqTypeValue> for TypeValue {
             EqTypeValue::I128(v) => Self::I128(v.clone()),
             EqTypeValue::Bool(v) => Self::Bool(v.clone()),
             EqTypeValue::String(v) => Self::String(v.clone()),
+            EqTypeValue::Unit => Self::Unit,
         }
     }
 }
@@ -468,6 +482,7 @@ impl From<RangeTypeValue> for TypeValue {
             RangeTypeValue::F64(v) => Self::F64(v),
             RangeTypeValue::Bool(v) => Self::Bool(v),
             RangeTypeValue::String(v) => Self::String(v),
+            RangeTypeValue::Unit => Self::Unit,
         }
     }
 }
@@ -489,6 +504,7 @@ impl From<&RangeTypeValue> for TypeValue {
             RangeTypeValue::F64(v) => Self::F64(v.clone()),
             RangeTypeValue::Bool(v) => Self::Bool(v.clone()),
             RangeTypeValue::String(v) => Self::String(v.clone()),
+            RangeTypeValue::Unit => Self::Unit,
         }
     }
 }

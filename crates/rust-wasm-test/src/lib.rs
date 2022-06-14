@@ -20,7 +20,7 @@ pub fn migrate() {}
 
 #[spacetimedb(reducer)]
 pub fn test(arg: TestA, arg2: TestB) {
-    println!("foo: {:?}", arg2.foo);
+    println!("bar: {:?}", arg2.foo);
 
     for i in 0..10 {
         TestA::insert(TestA {
@@ -31,7 +31,10 @@ pub fn test(arg: TestA, arg2: TestB) {
     }
 
     let mut row_count = 0;
-    for _row in iter(0).unwrap() {
+    for row in iter(0).unwrap() {
+        let x = &row.elements[2];
+        // let y: &String = x.as_string().unwrap();
+        println!("{:?}", x);
         row_count += 1;
     }
 
