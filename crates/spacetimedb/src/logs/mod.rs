@@ -5,32 +5,40 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::io::prelude::*;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 const ROOT: &str = "/stdb/logs";
 
-fn path_from_address(module_address: Hash) -> PathBuf {
-    let hex_address = hex::encode(module_address);
-    let path = format!("{}/{}/{}.log", ROOT, &hex_address[0..2], &hex_address[2..]);
+fn path_from_hash(hash: Hash) -> PathBuf {
+    let hex_address = hex::encode(hash);
+    let path = format!("{}/{}", &hex_address[0..2], &hex_address[2..]);
     PathBuf::from(path)
 }
 
-fn dir_from_address(module_address: Hash) -> String {
-    let hex_address = hex::encode(module_address);
-    let path = format!("{}/{}", ROOT, &hex_address[0..2]);
+fn log_dir_from(identity: Hash, _name: &str) -> PathBuf {
+    let mut path = PathBuf::from(ROOT);
+    path.push(path_from_hash(identity));
     path
 }
 
-pub fn init_log(module_address: Hash) {
-    let path = path_from_address(module_address);
-    let dir = dir_from_address(module_address);
+fn log_path_from(identity: Hash, name: &str) -> PathBuf {
+    let mut path = log_dir_from(identity, name);
+    path.push(PathBuf::from_str(&format!("{}.log", name)).unwrap());
+    path
+}
+
+pub fn init_log(identity: Hash, name: &str) {
+    let dir = log_dir_from(identity, name);
+    let path = log_path_from(identity, name);
     fs::create_dir_all(dir).unwrap();
     OpenOptions::new().create(true).write(true).open(path).unwrap();
 }
 
-pub fn write(module_address: Hash, level: u8, value: String) {
-    let path = path_from_address(module_address);
-    let parent_dir = path.parent().unwrap();
-    fs::create_dir_all(parent_dir).unwrap();
+pub fn write(identity: Hash, name: &str, level: u8, value: String) {
+    let dir = log_dir_from(identity, name);
+    fs::create_dir_all(dir).unwrap();
+
+    let path = log_path_from(identity, name);
     let mut file = OpenOptions::new()
         .create(true)
         .write(true)
@@ -47,20 +55,20 @@ pub fn write(module_address: Hash, level: u8, value: String) {
     }
 }
 
-pub async fn _read_all(module_address: Hash) -> String {
+pub async fn _read_all(identity: Hash, name: &str) -> String {
     use tokio::fs;
-    let path = path_from_address(module_address);
+    let path = log_path_from(identity, name);
     let contents = String::from_utf8(fs::read(path).await.unwrap()).unwrap();
     contents
 }
 
-pub async fn read_latest(module_address: Hash, num_lines: u32) -> String {
+pub async fn read_latest(identity: Hash, name: &str, num_lines: u32) -> String {
     // let file = fs::File::open(path).await.unwrap();
     // let reader = BufReader::new(file);
     // while let Some(line) = reader.lines().next_line().await.unwrap() {
     // }
 
-    let path = path_from_address(module_address);
+    let path = log_path_from(identity, name);
     let mut file = tokio::fs::OpenOptions::new()
         .read(true)
         .open(path)

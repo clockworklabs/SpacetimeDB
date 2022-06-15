@@ -33,8 +33,8 @@ pub fn test(arg: TestA, arg2: TestB) {
     let mut row_count = 0;
     for row in iter(0).unwrap() {
         let x = &row.elements[2];
-        // let y: &String = x.as_string().unwrap();
-        println!("{:?}", x);
+        let y: &String = x.as_string().unwrap();
+        println!("{:?}", y);
         row_count += 1;
     }
 

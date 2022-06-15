@@ -93,7 +93,7 @@ pub mod database {
             &[&name, &hex_identity, &0_i32, &hex::encode(address)]
         ).await?;
 
-        init_log(address);
+        init_log(identity, name);
 
         Ok(address)
     }
@@ -121,7 +121,7 @@ pub mod database {
             return Err(anyhow::anyhow!("Error updating module. {}", err));
         }
 
-        init_log(address);
+        init_log(identity, name);
         Ok(address)
     }
 
@@ -152,22 +152,9 @@ pub mod database {
         unimplemented!()
     }
 
-    pub async fn logs(identity: &str, name: &str, num_lines: u32) -> String {
-        let client = postgres::get_client().await;
-        let result = client
-            .query(
-                "SELECT (module_address) from registry.module WHERE actor_name = $1 AND st_identity = $2",
-                &[&name, &identity],
-            )
-            .await;
-
-        // TODO: actually handle errors
-        let rows = result.unwrap();
-        let row = rows.first().unwrap();
-        let hex_address: String = row.get(0);
-
-        let module_address = Hash::from_iter(hex::decode(hex_address).unwrap());
-        logs::read_latest(module_address, num_lines).await
+    pub async fn logs(hex_identity: &str, name: &str, num_lines: u32) -> String {
+        let identity = *Hash::from_slice(&hex::decode(hex_identity).unwrap());
+        logs::read_latest(identity, name, num_lines).await
     }
 
     // Optional

@@ -12,7 +12,8 @@ pub struct InstanceEnv {
     pub instance_id: u32,
     pub relational_db: Arc<Mutex<RelationalDB>>,
     pub instance_tx_map: Arc<Mutex<HashMap<u32, Tx>>>,
-    pub module_hash: Hash,
+    pub identity: Hash,
+    pub name: String,
     #[wasmer(export)]
     pub memory: LazyInit<Memory>,
     #[wasmer(export)]
@@ -44,7 +45,7 @@ impl InstanceEnv {
         let memory = self.memory.get_ref().expect("Initialized memory");
 
         let s = Self::bytes_to_string(memory, ptr, len);
-        logs::write(self.module_hash, level, s);
+        logs::write(self.identity, &self.name, level, s);
     }
 
     pub fn insert(&self, table_id: u32, ptr: u32) {

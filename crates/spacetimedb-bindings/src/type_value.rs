@@ -343,7 +343,6 @@ impl TypeValue {
                 dst.copy_from_slice(&bytes[0..2]);
                 let mut num_read = 2;
                 let len = u16::from_le_bytes(dst);
-                println!("{}", len);
                 let output = &bytes[num_read..(num_read + (len as usize))];
                 num_read += len as usize;
                 (TypeValue::Bytes(output.to_owned()), num_read)

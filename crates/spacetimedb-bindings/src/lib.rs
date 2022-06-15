@@ -172,9 +172,8 @@ pub fn insert(table_id: u32, row: TupleValue) {
     unsafe {
         let ptr = row_buf();
         let mut bytes = Vec::from_raw_parts(ptr, 0, ROW_BUF_LEN);
-        for col in row.elements {
-            col.encode(&mut bytes);
-        }
+        println!("{:?}", &bytes);
+        row.encode(&mut bytes);
         std::mem::forget(bytes);
         _insert(table_id, ptr);
     }

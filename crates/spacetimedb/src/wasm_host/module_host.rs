@@ -93,9 +93,9 @@ fn get_remaining_points_value(instance: &Instance) -> u64 {
 }
 
 struct ModuleHostActor {
-    // identity: Hash,
-    // name: String,
-    module_hash: Hash,
+    identity: Hash,
+    name: String,
+    _module_hash: Hash,
     module: Module,
     store: Store,
     instances: Vec<(u32, Instance)>,
@@ -107,15 +107,15 @@ impl ModuleHostActor {
     pub fn new(identity: Hash, name: String, module_hash: Hash, module: Module, store: Store) -> Self {
         let hex_identity = hex::encode(identity);
         let mut host = Self {
-            // identity,
-            // name,
-            module,
-            // TODO
             relational_db: Arc::new(Mutex::new(RelationalDB::open(format!(
                 "/stdb/dbs/{hex_identity}/{name}"
             )))),
+            identity,
+            name,
+            module,
+            // TODO
             instance_tx_map: Arc::new(Mutex::new(HashMap::new())),
-            module_hash,
+            _module_hash: module_hash,
             store,
             instances: Vec::new(),
         };
@@ -149,10 +149,12 @@ impl ModuleHostActor {
 
     fn create_instance(&mut self) -> Result<u32, anyhow::Error> {
         let instance_id = self.instances.len() as u32;
-        let module_hash = self.module_hash;
+        let identity = self.identity;
+        let name = self.name.clone();
         let env = InstanceEnv {
             instance_id,
-            module_hash,
+            identity,
+            name,
             relational_db: self.relational_db.clone(),
             instance_tx_map: self.instance_tx_map.clone(),
             memory: LazyInit::new(),
