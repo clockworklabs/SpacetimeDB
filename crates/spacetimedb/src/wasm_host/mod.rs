@@ -45,6 +45,11 @@ enum HostCommand {
         wasm_bytes: Vec<u8>,
         respond_to: oneshot::Sender<Result<Hash, anyhow::Error>>,
     },
+    GetModule {
+        identity: Hash,
+        name: String,
+        respond_to: oneshot::Sender<Result<ModuleHost, anyhow::Error>>,
+    },
     CallReducer {
         identity: Hash,
         name: String,
@@ -106,6 +111,9 @@ impl HostActor {
                     .send(self.call_reducer(identity, &name, &reducer_name, arg_bytes).await)
                     .unwrap();
             }
+            HostCommand::GetModule { identity, name, respond_to } => {
+                respond_to.send(self.get_module(identity, &name));
+            },
         }
     }
 
@@ -201,6 +209,16 @@ impl HostActor {
             .await?;
         Ok(())
     }
+
+    fn get_module(&self, identity: Hash, name: &str) -> Result<ModuleHost, anyhow::Error> {
+        let key = (identity, name.to_string());
+        let module_host = self
+            .modules
+            .get(&key)
+            .ok_or(anyhow::anyhow!("No such module found."))?;
+        Ok(module_host.clone())
+    }
+
 }
 
 #[derive(Clone)]
@@ -279,4 +297,21 @@ impl Host {
             .await?;
         rx.await.unwrap()
     }
+
+    pub async fn get_module(
+        &self,
+        identity: Hash,
+        name: String, 
+    ) -> Result<ModuleHost, anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<ModuleHost, anyhow::Error>>();
+        self.tx
+            .send(HostCommand::GetModule {
+                identity,
+                name,
+                respond_to: tx,
+            })
+            .await?;
+        rx.await.unwrap()
+    }
+
 }

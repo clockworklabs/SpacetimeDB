@@ -214,10 +214,9 @@ impl TransactionalDB {
         self.vacuum_open_transactions();
     }
 
-    pub fn commit_tx(&mut self, tx: Tx) -> bool {
+    pub fn commit_tx(&mut self, tx: Tx) -> Option<Transaction> {
         if self.latest_transaction_offset() == tx.parent_tx_offset {
-            self.finalize(tx);
-            return true;
+            return Some(self.finalize(tx));
         }
 
         // If not, we need to merge.
@@ -243,7 +242,7 @@ impl TransactionalDB {
                     set_id: write.set_id,
                     value: write.value,
                 }) {
-                    return false;
+                    return None;
                 }
             }
 
@@ -254,11 +253,10 @@ impl TransactionalDB {
             }
         }
 
-        self.finalize(tx);
-        true
+        return Some(self.finalize(tx))
     }
 
-    fn finalize(&mut self, tx: Tx) {
+    fn finalize(&mut self, tx: Tx) -> Transaction {
         // Rebase on the last open transaction (or closed transaction if none open)
         let new_transaction = Transaction { writes: tx.writes };
 
@@ -270,7 +268,8 @@ impl TransactionalDB {
             self.persist_commit();
         }
 
-        self.open_transactions.push(new_transaction);
+        // TODO: avoid copy
+        self.open_transactions.push(new_transaction.clone());
         self.open_transaction_offsets.push(tx.parent_tx_offset + 1);
 
         // Remove my branch
@@ -284,6 +283,8 @@ impl TransactionalDB {
         if tx.parent_tx_offset == self.closed_transaction_offset {
             self.vacuum_open_transactions();
         }
+
+        return new_transaction;
     }
 
     fn vacuum_open_transactions(&mut self) {
@@ -819,8 +820,8 @@ mod tests {
         let row = db.seek(&mut tx_2, 0, row_key_1);
         assert!(row.is_none());
 
-        assert!(db.commit_tx(tx_1));
-        assert!(!db.commit_tx(tx_2));
+        assert!(db.commit_tx(tx_1).is_some());
+        assert!(db.commit_tx(tx_2).is_none());
     }
 
     #[test]
@@ -850,7 +851,7 @@ mod tests {
             }
             .encode(),
         );
-        assert!(db.commit_tx(tx_1));
+        assert!(db.commit_tx(tx_1).is_some());
 
         let mut tx_2 = db.begin_tx();
         let row = db.seek(&mut tx_2, 0, row_key_1);
@@ -860,8 +861,8 @@ mod tests {
         let mut tx_3 = db.begin_tx();
         db.delete(&mut tx_3, 0, row_key_1);
 
-        assert!(db.commit_tx(tx_2));
-        assert!(db.commit_tx(tx_3));
+        assert!(db.commit_tx(tx_2).is_some());
+        assert!(db.commit_tx(tx_3).is_some());
     }
 
     #[test]
@@ -896,7 +897,7 @@ mod tests {
             db.insert(&mut tx_1, 0, val_1);
             db.insert(&mut tx_1, 0, val_2);
 
-            assert!(db.commit_tx(tx_1));
+            assert!(db.commit_tx(tx_1).is_some());
         }
         let duration = start.elapsed();
         println!("{} odb after size bytes", db.odb.total_mem_size_bytes());

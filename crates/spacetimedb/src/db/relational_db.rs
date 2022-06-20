@@ -1,5 +1,5 @@
 use super::{
-    messages::write::Value,
+    messages::{write::Value, transaction::Transaction},
     transactional_db::{ScanIter, TransactionalDB, Tx},
 };
 use spacetimedb_bindings::{ElementDef, EqTypeValue, RangeTypeValue};
@@ -163,8 +163,8 @@ impl RelationalDB {
         self.txdb.rollback_tx(tx);
     }
 
-    pub fn commit_tx(&mut self, tx: Tx) {
-        self.txdb.commit_tx(tx);
+    pub fn commit_tx(&mut self, tx: Tx) -> Option<Transaction> {
+        self.txdb.commit_tx(tx)
     }
 
     pub fn create_table(&mut self, tx: &mut Tx, table_id: u32, schema: TupleDef) -> Result<(), String> {

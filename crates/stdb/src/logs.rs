@@ -18,7 +18,7 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
 
     let client = reqwest::Client::new();
     let res = client
-        .get(format!("http://localhost:3000/database/logs/{}/{}", hex_identity, name))
+        .get(format!("http://localhost:3000/database/{}/{}/logs", hex_identity, name))
         .query(&[("num_lines", num_lines)])
         .send()
         .await?;

@@ -10,7 +10,7 @@ fn transactional_db(c: &mut Criterion) {
             let mut tx = db.begin_tx();
             let bytes = b"test".to_vec();
             db.insert(&mut tx, 0, bytes);
-            assert!(db.commit_tx(tx));
+            assert!(db.commit_tx(tx).is_some());
         });
     });
     c.bench_function("seek", |bench| {
@@ -19,7 +19,7 @@ fn transactional_db(c: &mut Criterion) {
         let mut tx = db.begin_tx();
         let bytes = b"test".to_vec();
         let hash = db.insert(&mut tx, 0, bytes);
-        assert!(db.commit_tx(tx));
+        assert!(db.commit_tx(tx).is_some());
         bench.iter(move || {
             let mut tx = db.begin_tx();
             db.seek(&mut tx, 0, hash);

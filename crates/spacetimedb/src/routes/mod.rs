@@ -1,3 +1,4 @@
+mod subscribe;
 use crate::api;
 use gotham::anyhow::anyhow;
 use gotham::handler::HandlerError;
@@ -12,6 +13,9 @@ use hyper::body::HttpBody;
 use hyper::Body;
 use hyper::{Response, StatusCode};
 use serde::Deserialize;
+
+use self::subscribe::SubscribeParams;
+use self::subscribe::handle_websocket;
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct InitModuleParams {
@@ -129,28 +133,32 @@ async fn logs(state: &mut State) -> SimpleHandlerResult {
     Ok(res)
 }
 
+
 pub fn router() -> Router {
     build_simple_router(|route| {
-        route.get("/").to(|state| (state, "Hello, World!"));
-        route
-            .post("/database/init/:identity/:name")
-            .with_path_extractor::<InitModuleParams>()
-            .to_async_borrowing(init_module);
-        route
-            .post("/database/update/:identity/:name")
-            .with_path_extractor::<UpdateModuleParams>()
-            .to_async_borrowing(update_module);
-        route
-            .post("/database/call/:identity/:name/:reducer")
-            .with_path_extractor::<CallParams>()
-            .to_async_borrowing(call);
-        route
-            .get("/database/logs/:identity/:name")
-            .with_path_extractor::<LogsParams>()
-            .with_query_string_extractor::<LogsQuery>()
-            .to_async_borrowing(logs);
-        // route.delegate("/auth").to_router(auth_router());
-        // route.delegate("/admin").to_router(admin_router());
+        route.scope("/database/:identity/:name", |route| {
+            route
+                .get("/subscribe")
+                .with_path_extractor::<SubscribeParams>()
+                .to_async(handle_websocket);
+            route
+                .post("/init")
+                .with_path_extractor::<InitModuleParams>()
+                .to_async_borrowing(init_module);
+            route
+                .post("/update")
+                .with_path_extractor::<UpdateModuleParams>()
+                .to_async_borrowing(update_module);
+            route
+                .post("/call/:reducer")
+                .with_path_extractor::<CallParams>()
+                .to_async_borrowing(call);
+            route
+                .get("/logs")
+                .with_path_extractor::<LogsParams>()
+                .with_query_string_extractor::<LogsQuery>()
+                .to_async_borrowing(logs);
+        });
         // route.delegate("/metrics").to_router(metrics_router());
     })
 }

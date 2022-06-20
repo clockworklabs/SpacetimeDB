@@ -21,7 +21,7 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
     let client = reqwest::Client::new();
     let res = client
         .post(format!(
-            "http://localhost:3000/database/call/{}/{}/{}",
+            "http://localhost:3000/database/{}/{}/call/{}",
             hex_identity, name, function_name
         ))
         .body(arg_json.to_owned())

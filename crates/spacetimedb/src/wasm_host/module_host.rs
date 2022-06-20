@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     db::{relational_db::RelationalDB, transactional_db::Tx},
-    hash::Hash,
+    hash::Hash, clients::{module_subscription_actor::ModuleSubscription, client_connection_index::ClientActorId},
 };
 use tokio::sync::{mpsc, oneshot};
 use wasmer::{imports, Array, Function, Instance, LazyInit, Module, Store, WasmPtr};
@@ -26,10 +26,14 @@ enum ModuleHostCommand {
     MigrateDatabase {
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
     },
+    AddSubscriber {
+        client_id: ClientActorId,
+        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+    },
     Exit {},
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ModuleHost {
     tx: mpsc::Sender<ModuleHostCommand>,
 }
@@ -76,6 +80,12 @@ impl ModuleHost {
         self.tx.send(ModuleHostCommand::Exit {}).await?;
         Ok(())
     }
+    
+    pub async fn add_subscriber(&self, client_id: ClientActorId) -> Result<(), anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.tx.send(ModuleHostCommand::AddSubscriber { client_id, respond_to: tx }).await?;
+        rx.await.unwrap()
+    }
 }
 
 const REDUCE_DUNDER: &str = "__reducer__";
@@ -101,11 +111,14 @@ struct ModuleHostActor {
     instances: Vec<(u32, Instance)>,
     instance_tx_map: Arc<Mutex<HashMap<u32, Tx>>>,
     relational_db: Arc<Mutex<RelationalDB>>,
+    subscription: ModuleSubscription,
 }
 
 impl ModuleHostActor {
     pub fn new(identity: Hash, name: String, module_hash: Hash, module: Module, store: Store) -> Self {
         let hex_identity = hex::encode(identity);
+        let subscription = ModuleSubscription::spawn();
+
         let mut host = Self {
             relational_db: Arc::new(Mutex::new(RelationalDB::open(format!(
                 "/stdb/dbs/{hex_identity}/{name}"
@@ -118,6 +131,7 @@ impl ModuleHostActor {
             _module_hash: module_hash,
             store,
             instances: Vec::new(),
+            subscription,
         };
         host.create_instance().unwrap();
         host
@@ -143,6 +157,10 @@ impl ModuleHostActor {
             },
             ModuleHostCommand::Exit {} => {
                 true
+            },
+            ModuleHostCommand::AddSubscriber { client_id, respond_to } => {
+                respond_to.send(self.add_subscriber(client_id)).unwrap();
+                false
             },
         }
     }
@@ -231,6 +249,10 @@ impl ModuleHostActor {
         Ok(())
     }
 
+    fn add_subscriber(&self, client_id: ClientActorId) -> Result<(), anyhow::Error> {
+        self.subscription.add_subscriber(client_id)
+    }
+
     fn execute_reducer(&self, reducer_symbol: &str, arg_bytes: impl AsRef<[u8]>) -> Result<(), anyhow::Error> {
         // TODO: disallow calling non-reducer dunder functions
         let tx = {
@@ -300,8 +322,12 @@ impl ModuleHostActor {
             let mut stdb = self.relational_db.lock().unwrap();
             let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
             let tx = instance_tx_map.remove(&instance_id).unwrap();
-            stdb.commit_tx(tx);
-            stdb.txdb.message_log.sync_all().unwrap();
+            if let Some(tx) = stdb.commit_tx(tx) {
+                stdb.txdb.message_log.sync_all().unwrap();
+                self.subscription.publish_transaction(tx).unwrap();
+            } else {
+                todo!("Write skew, you need to implement retries my man, T-dawg.");
+            }
         }
         Ok(())
     }

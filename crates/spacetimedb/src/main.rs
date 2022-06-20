@@ -1,15 +1,17 @@
 use log::*;
-use spacetimedb::api::{self, MODULE_ODB};
-use spacetimedb::hash::{hash_bytes, Hash};
+use spacetimedb::clients::SubscriptionManager;
+use spacetimedb::api::MODULE_ODB;
+use spacetimedb::clients::client_connection_index::{CLIENT_ACTOR_INDEX, ClientActorIndex};
+use spacetimedb::db::messages::transaction::Transaction;
+use spacetimedb::hash::Hash;
 use spacetimedb::postgres;
 use spacetimedb::routes::router;
 use spacetimedb::wasm_host;
+use tokio::sync::mpsc;
 use std::error::Error;
 use std::net::SocketAddr;
 use tokio::runtime::Builder;
-use tokio::{fs, spawn};
-use wasmer::wat2wasm;
-// use gluesql::prelude::*;
+use tokio::spawn;
 
 async fn startup() {
     // TODO: maybe replace storage layer with something like rocksdb or sled
@@ -19,6 +21,7 @@ async fn startup() {
     // if let Ok(x) = x {
     //     let y: i32 = x.into();
     // }
+    ClientActorIndex::start_liveliness_check();
 
     let client = postgres::get_client().await;
     let result = client
@@ -46,53 +49,21 @@ async fn startup() {
             let object_db = MODULE_ODB.lock().unwrap();
             object_db.get(hash).unwrap().to_vec()
         };
-        wasm_host::get_host()
-            .add_module(identity, name, wasm_bytes)
+
+        let host = wasm_host::get_host();
+        host.add_module(identity, name, wasm_bytes)
             .await
             .unwrap();
+
     }
 }
 
 async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
     configure_logging();
-
     postgres::init().await;
-
     startup().await;
-
-    //////////////////
-    let path = fs::canonicalize(format!("{}{}", env!("CARGO_MANIFEST_DIR"), "/../rust-wasm-test/wat"))
-        .await
-        .unwrap();
-    let wat = fs::read(path).await?;
-
-    // println!("{}", String::from_utf8(wat.to_owned()).unwrap());
-
-    let wasm_bytes = wat2wasm(&wat)?.to_vec();
-    let hex_identity = hex::encode(hash_bytes(""));
-    let name = "test";
-    if let Err(e) = api::database::init_module(&hex_identity, name, wasm_bytes).await {
-        // TODO: check if it failed because it's already been created
-        log::error!("{:?}", e);
-    }
-
-    let reducer: String = "test".into();
-
-    // TODO: actually handle args
-    let arg_str = r#"[{"x": 0, "y": 1, "z": 2}, {"foo": "This is a string."}]"#;
-    let arg_bytes = arg_str.as_bytes().to_vec();
-    api::database::call(&hex_identity, &name, reducer.clone(), arg_bytes.clone()).await?;
-    api::database::call(&hex_identity, &name, reducer, arg_bytes).await?;
-
-    println!("logs:");
-    println!("{}", api::database::logs(&hex_identity, &name, 10).await);
-
-    let (identity, token) = api::spacetime_identity().await?;
-    println!("identity: {:?}", identity);
-    println!("token: {}", token);
-
-    api::spacetime_identity_associate_email("tyler@clockworklabs.io", &token).await?;
-    //////////////////
+    // let (identity, token) = api::spacetime_identity().await?;
+    // api::spacetime_identity_associate_email("tyler@clockworklabs.io", &token).await?;
 
     spawn(async move {
         // Start https server

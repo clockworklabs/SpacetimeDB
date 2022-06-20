@@ -38,10 +38,17 @@ gotham = "0.7.1"
 hyper = "0.14.18"
 log4rs = { version = "1.0.0", features = ["background_rotation", "rolling_file_appender", "compound_policy", "size_trigger", "fixed_window_roller"] }
 serde = "1.0.136"
+serde_json = "1.0"
 tokio-postgres = "0.7.6"
 bb8-postgres = "0.8.0"
 anyhow = { version = "1.0.57", features = ["backtrace"] }
 jsonwebtoken = { version = "8.1.0" }
+sha1 = "0.10.1"
+base64 = "0.13.0"
+tokio-tungstenite = "*"
+regex = "1"
+futures = "0.3"
+prometheus = "0.13.0"
 # rocksdb = "0.18.0"
 # gluesql = "0.10"
 
