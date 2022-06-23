@@ -14,4 +14,5 @@ syn = {version="1.0.57", features=["full","fold"]}
 quote = "1.0.8"
 serde = { version = "1.0.136", features = ["derive"] }
 serde_json = "1.0.81"
+convert_case = "0.5.0"
 spacetimedb-bindings = { path = "../spacetimedb-bindings" }
