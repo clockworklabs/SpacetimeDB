@@ -10,15 +10,33 @@ use proc_macro2::Ident;
 use quote::{format_ident, quote, ToTokens};
 use syn::Fields::{Named, Unit, Unnamed};
 use syn::{parse_macro_input, AttributeArgs, FnArg, ItemFn, ItemStruct};
+use regex::Regex;
+use substring::Substring;
 
 #[proc_macro_attribute]
 pub fn spacetimedb(macro_args: TokenStream, item: TokenStream) -> TokenStream {
     let attribute_args = parse_macro_input!(macro_args as AttributeArgs);
     let attribute_str = attribute_args[0].to_token_stream().to_string();
     let attribute_str = attribute_str.as_str();
+    let create_table_regex = Regex::new(r"table\(\d+\)").unwrap();
+    if create_table_regex.is_match(attribute_str) {
+        let table_num_str = attribute_str.substring(6, attribute_str.len() - 1);
+        let table_id_parsed = table_num_str.parse::<u32>();
+        return match table_id_parsed {
+            Ok(table_id) => {
+                spacetimedb_table(attribute_args, item, table_id)
+            }
+            Err(_) => {
+                let str = format!("Invalid table ID provided in macro: {}", table_num_str);
+                proc_macro::TokenStream::from(quote! {
+                        compile_error!(#str);
+                    })
+            }
+        }
+    }
+
     match attribute_str {
         "reducer" => spacetimedb_reducer(attribute_args, item),
-        "table" => spacetimedb_table(attribute_args, item),
         "connect" => spacetimedb_connect_disconnect(attribute_args, item, true),
         "disconnect" => spacetimedb_connect_disconnect(attribute_args, item, false),
         "migrate" => spacetimedb_migrate(attribute_args, item),
@@ -26,7 +44,7 @@ pub fn spacetimedb(macro_args: TokenStream, item: TokenStream) -> TokenStream {
         "index(btree)" => spacetimedb_index(attribute_args, item),
         "index(hash)" => spacetimedb_index(attribute_args, item),
         _ => proc_macro::TokenStream::from(quote! {
-            compile_error!("Please pass a valid attribute to the spacetimedb macro: reducer, ...");
+            compile_error!("Please pass a valid attribute to the spacetimedb macro: reducer, table, connect, disconnect, migrate, tuple, index, ...");
         }),
     }
 }
@@ -124,7 +142,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
     })
 }
 
-fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
+fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> TokenStream {
     if *(&args.len()) > 1 {
         let str = format!("Unexpected macro argument: {}", args[1].to_token_stream().to_string());
         return proc_macro::TokenStream::from(quote! {
@@ -134,10 +152,6 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
     let original_struct = parse_macro_input!(item as ItemStruct);
     let original_struct_ident = &original_struct.clone().ident;
-    let table_id_field_name = format_ident!("__table_id__{}", original_struct_ident.to_token_stream().to_string());
-    let table_id_field = quote!(
-        static mut #table_id_field_name: u32 = 0;
-    );
 
     match original_struct.clone().fields {
         Named(_) => {
@@ -263,7 +277,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                 #[allow(non_snake_case)]
                 pub fn #filter_func_ident(#primary_key_column_def) -> Option<#original_struct_ident> {
                     unsafe {
-                        let table_iter = spacetimedb_bindings::iter(#table_id_field_name);
+                        let table_iter = #original_struct_ident::iter();
                         if let Some(table_iter) = table_iter {
                             for row in table_iter {
                                 let data = row.elements[#primary_key_column_index].clone();
@@ -306,7 +320,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             pub fn #filter_func_ident(#column_def) -> Vec<#original_struct_ident> {
                 unsafe {
                    let mut result = Vec::<#original_struct_ident>::new();
-                    let table_iter = spacetimedb_bindings::iter(#table_id_field_name);
+                    let table_iter = #original_struct_ident::iter();
                     if let Some(table_iter) = table_iter {
                         for row in table_iter {
                             let data = row.elements[#x].clone();
@@ -342,7 +356,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             #[allow(unused_variables)]
             pub fn insert(ins: #original_struct_ident) {
                 unsafe {
-                    spacetimedb_bindings::insert(#table_id_field_name, spacetimedb_bindings::TupleValue {
+                    spacetimedb_bindings::insert(#table_id, spacetimedb_bindings::TupleValue {
                         elements: vec![
                             #(#insert_columns),*
                         ]
@@ -360,6 +374,11 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                 // delete on primary key
                 // insert on primary key
                 false
+            }
+
+            #[allow(unused_variables)]
+            pub fn iter() -> Option<TableIter> {
+                __iter__(#table_id)
             }
 
             #(#table_funcs)*
@@ -382,16 +401,21 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                 let def = #get_schema_func_name();
                 let mut bytes = Vec::from_raw_parts(ptr, 0, arg_size);
                 def.encode(&mut bytes);
+
+                if let spacetimedb_bindings::TypeDef::Tuple(tuple_def) = def {
+                    create_table(#table_id, tuple_def);
+                } else {
+                    // The type is not a tuple for some reason, table not created.
+                    std::panic!("This type is not a tuple: {{#original_struct_ident}}");
+                }
             }
         }
     };
-
 
     // Output all macro data
     proc_macro::TokenStream::from(quote! {
         #[derive(serde::Serialize, serde::Deserialize, spacetimedb_bindgen::PrimaryKey, spacetimedb_bindgen::Index)]
         #original_struct
-        #table_id_field
         #db_funcs
         #protobuf
         #schema_func

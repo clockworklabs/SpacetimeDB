@@ -3,7 +3,7 @@ use spacetimedb_bindgen::spacetimedb;
 use spacetimedb_bindings::println;
 use spacetimedb_bindings::*;
 
-#[spacetimedb(table)]
+#[spacetimedb(table(1))]
 pub struct TestA {
     pub x: u32,
     pub y: u32,
@@ -31,7 +31,7 @@ pub fn test(arg: TestA, arg2: TestB) {
     }
 
     let mut row_count = 0;
-    for row in iter(0).unwrap() {
+    for row in TestA::iter().unwrap() {
         let x = &row.elements[2];
         let y: &String = x.as_string().unwrap();
         println!("{:?}", y);

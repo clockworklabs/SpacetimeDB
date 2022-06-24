@@ -203,7 +203,7 @@ pub fn filter_eq(_table_id: u32, _col_id: u32, _eq_value: TypeValue) -> Option<T
 //
 // }
 
-pub fn iter(table_id: u32) -> Option<TableIter> {
+pub fn __iter__(table_id: u32) -> Option<TableIter> {
     let data = unsafe { _iter(table_id) };
     let ptr = (data >> 32) as u32 as *mut u8;
     let size = data as u32;

@@ -14,3 +14,5 @@ serde_json = "1.0.81"
 spacetimedb-bindings = { path = "../spacetimedb-bindings" }
 spacetimedb-bindgen = { path = "../spacetimedb-bindgen" }
 backtrace = "0.3.64"
+regex = "1.5.6"
+substring = "1.4.5"
