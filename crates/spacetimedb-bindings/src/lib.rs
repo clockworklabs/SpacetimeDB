@@ -1,12 +1,12 @@
 mod hash;
 mod type_def;
 mod type_value;
-mod value;
+mod data_key;
 use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
 use std::panic;
 pub use type_def::{ElementDef, TupleDef, TypeDef};
 pub use type_value::{EqTypeValue, RangeTypeValue, TupleValue, TypeValue};
-pub use value::Value;
+pub use data_key::DataKey;
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -172,7 +172,6 @@ pub fn insert(table_id: u32, row: TupleValue) {
     unsafe {
         let ptr = row_buf();
         let mut bytes = Vec::from_raw_parts(ptr, 0, ROW_BUF_LEN);
-        println!("{:?}", &bytes);
         row.encode(&mut bytes);
         std::mem::forget(bytes);
         _insert(table_id, ptr);

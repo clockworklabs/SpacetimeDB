@@ -232,12 +232,19 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
             if !is_primary {
                 non_primary_columns_idents.push(col_name.clone());
                 non_primary_columns.push(quote!(
-                #col_name: #col_type
-            ));
+                    #col_name: #col_type
+                ));
                 non_primary_let_data_statements.push(quote!(
-                if let #col_value_type(data) = data
-            ));
+                    if let #col_value_type(data) = data
+                ));
             }
+
+            // columns.push(quote! {
+            //     spacetimedb_bindings::ElementDef {
+            //         tag: #col_num_u8,
+            //         element_type: #col_type_tok,
+            //     }
+            // });
 
             insert_columns.push(quote! {
                 #col_value_insert
@@ -700,7 +707,7 @@ fn struct_to_schema_func_generator(original_struct: ItemStruct) -> proc_macro2::
                 fields.push(quote! {
                     spacetimedb_bindings::ElementDef {
                         tag: #col_num,
-                        element_type: Box::new(#get_func()),
+                        element_type: #get_func(),
                     }
                 });
             }
@@ -711,16 +718,16 @@ fn struct_to_schema_func_generator(original_struct: ItemStruct) -> proc_macro2::
                     fields.push(quote! {
                         spacetimedb_bindings::ElementDef {
                                 tag: #col_num,
-                                element_type: Box::new(spacetimedb_bindings::TypeDef::Vec{
-                                        element_type:
-                                    }),
+                                element_type: spacetimedb_bindings::TypeDef::Vec{
+                                    element_type:
+                                },
                             }
                         });
                 } else {
                     fields.push(quote! {
                         spacetimedb_bindings::ElementDef {
                                 tag: #col_num,
-                                element_type: Box::new(spacetimedb_bindings::TypeDef::#spacetimedb_type),
+                                element_type: spacetimedb_bindings::TypeDef::#spacetimedb_type,
                             }
                         });
                 }

@@ -1,13 +1,14 @@
 use crate::type_def::{EnumDef, TupleDef, TypeDef};
 use enum_as_inner::EnumAsInner;
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElementValue {
     pub tag: u8,
     pub type_value: Box<TypeValue>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TupleValue {
     pub elements: Vec<TypeValue>,
 }
@@ -39,7 +40,7 @@ impl TupleValue {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnumValue {
     pub item_value: ElementValue,
 }
@@ -225,7 +226,8 @@ impl TryFrom<&TypeValue> for RangeTypeValue {
     }
 }
 
-#[derive(EnumAsInner, Debug, Clone)]
+#[derive(EnumAsInner, Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum TypeValue {
     Tuple(TupleValue),
     Enum(EnumValue),

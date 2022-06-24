@@ -8,6 +8,8 @@ services:
       dockerfile: ./crates/spacetimedb/Dockerfile
     volumes:
       - ./crates/spacetimedb:/usr/src/app
+      - ./crates/spacetimedb-bindings:/usr/src/spacetimedb-bindings
+      - ./crates/spacetimedb-bindgen:/usr/src/spacetimedb-bindgen
       - ./crates/rust-wasm-test:/usr/src/rust-wasm-test
       - /stdb
     ports:

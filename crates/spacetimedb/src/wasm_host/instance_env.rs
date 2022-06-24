@@ -84,7 +84,7 @@ impl InstanceEnv {
         encode_schema(schema, &mut bytes);
 
         for row in stdb.iter(tx, table_id).unwrap() {
-            RelationalDB::encode_row(row, &mut bytes);
+            RelationalDB::encode_row(&row, &mut bytes);
         }
 
         let alloc_func = self.alloc.get_ref().expect("Intialized alloc function");

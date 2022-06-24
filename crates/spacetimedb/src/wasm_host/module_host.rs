@@ -117,12 +117,12 @@ struct ModuleHostActor {
 impl ModuleHostActor {
     pub fn new(identity: Hash, name: String, module_hash: Hash, module: Module, store: Store) -> Self {
         let hex_identity = hex::encode(identity);
-        let subscription = ModuleSubscription::spawn();
-
+        let relational_db = Arc::new(Mutex::new(RelationalDB::open(format!(
+            "/stdb/dbs/{hex_identity}/{name}"
+        ))));
+        let subscription = ModuleSubscription::spawn(relational_db.clone());
         let mut host = Self {
-            relational_db: Arc::new(Mutex::new(RelationalDB::open(format!(
-                "/stdb/dbs/{hex_identity}/{name}"
-            )))),
+            relational_db,
             identity,
             name,
             module,

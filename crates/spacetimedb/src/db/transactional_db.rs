@@ -3,7 +3,7 @@ use super::{
     messages::{
         commit::Commit,
         transaction::Transaction,
-        write::{Operation, Value, Write},
+        write::{Operation, DataKey, Write},
     },
     object_db::ObjectDB,
 };
@@ -16,7 +16,7 @@ use std::{
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct Read {
     set_id: u32,
-    value: Value,
+    value: DataKey,
 }
 
 #[derive(Debug, Clone)]
@@ -31,23 +31,23 @@ pub struct Tx {
 // to a tag or set of tags. Honestly, maybe forget the content
 // addressing and just use a map like CockroachDB, idk.
 pub struct ClosedHashSet {
-    set: HashSet<Value>,
+    set: HashSet<DataKey>,
 }
 
 impl ClosedHashSet {
-    fn contains(&self, value: Value) -> bool {
+    fn contains(&self, data_key: DataKey) -> bool {
         let set = &self.set;
-        set.contains(&value)
+        set.contains(&data_key)
     }
 
-    fn insert(&mut self, value: Value) {
+    fn insert(&mut self, data_key: DataKey) {
         let set = &mut self.set;
-        set.insert(value);
+        set.insert(data_key);
     }
 
-    fn delete(&mut self, value: Value) {
+    fn delete(&mut self, data_key: DataKey) {
         let set = &mut self.set;
-        set.remove(&value);
+        set.remove(&data_key);
     }
 
     fn len(&self) -> usize {
@@ -67,7 +67,7 @@ impl ClosedState {
         }
     }
 
-    fn contains(&self, set_id: u32, value: Value) -> bool {
+    fn contains(&self, set_id: u32, value: DataKey) -> bool {
         if let Some(set) = self.hash_sets.get(&set_id) {
             set.contains(value)
         } else {
@@ -75,21 +75,21 @@ impl ClosedState {
         }
     }
 
-    fn insert(&mut self, set_id: u32, value: Value) {
+    fn insert(&mut self, set_id: u32, data_key: DataKey) {
         if let Some(set) = self.hash_sets.get_mut(&set_id) {
-            set.insert(value)
+            set.insert(data_key)
         } else {
             let mut set = HashSet::new();
-            set.insert(value);
+            set.insert(data_key);
             self.hash_sets.insert(set_id, ClosedHashSet { set });
         }
     }
 
-    fn delete(&mut self, set_id: u32, value: Value) {
+    fn delete(&mut self, set_id: u32, data_key: DataKey) {
         let sets = &mut self.hash_sets;
         if let Some(set) = sets.get_mut(&set_id) {
             // Not atomic, but also correct
-            set.delete(value);
+            set.delete(data_key);
             if set.len() == 0 {
                 drop(set);
                 sets.remove(&set_id);
@@ -99,7 +99,7 @@ impl ClosedState {
         }
     }
 
-    fn iter(&self, set_id: u32) -> Option<Iter<Value>> {
+    fn iter(&self, set_id: u32) -> Option<Iter<DataKey>> {
         let sets = &self.hash_sets;
         if let Some(set) = sets.get(&set_id) {
             Some(set.set.iter())
@@ -141,9 +141,9 @@ impl TransactionalDB {
                 closed_transaction_offset += 1;
                 for write in &transaction.writes {
                     if write.operation.to_u8() == 0 {
-                        closed_state.delete(write.set_id, write.value);
+                        closed_state.delete(write.set_id, write.data_key);
                     } else {
-                        closed_state.insert(write.set_id, write.value);
+                        closed_state.insert(write.set_id, write.data_key);
                     }
                 }
             }
@@ -240,7 +240,7 @@ impl TransactionalDB {
             for write in &transaction.writes {
                 if read_set.contains(&Read {
                     set_id: write.set_id,
-                    value: write.value,
+                    value: write.data_key,
                 }) {
                     return None;
                 }
@@ -308,9 +308,9 @@ impl TransactionalDB {
 
                 for write in &first_open.writes {
                     if write.operation.to_u8() == 0 {
-                        self.closed_state.delete(write.set_id, write.value);
+                        self.closed_state.delete(write.set_id, write.data_key);
                     } else {
-                        self.closed_state.insert(write.set_id, write.value);
+                        self.closed_state.insert(write.set_id, write.data_key);
                     }
                 }
             } else {
@@ -339,35 +339,40 @@ impl TransactionalDB {
         }
     }
 
-    // TODO: copies
-    pub fn data_from_value(&self, value: Value) -> Option<Vec<u8>> {
-        let data = match value {
-            Value::Data { len, buf } => Some(buf[0..(len as usize)].to_vec()),
-            Value::Hash(hash) => Some(self.odb.get(hash).unwrap().to_vec()),
+    pub fn from_data_key<T, F: Fn(&[u8]) -> T>(&self, data_key: &DataKey, f: F) -> Option<T> {
+        let data = match data_key {
+            DataKey::Data { len, buf } => {
+                let t = f(&buf[0..(*len as usize)]);
+                Some(t)
+            },
+            DataKey::Hash(hash) => {
+                let t = f(self.odb.get(*hash).unwrap());
+                Some(t)
+            },
         };
         data
     }
 
-    pub fn seek(&self, tx: &mut Tx, set_id: u32, value: Value) -> Option<Vec<u8>> {
+    pub fn seek(&self, tx: &mut Tx, set_id: u32, data_key: DataKey) -> Option<Vec<u8>> {
         // I'm not sure if this just needs to track reads from the parent transaction
         // or reads from the transaction as well.
         // TODO: Replace this with relation, page, row level SIREAD locks
         // SEE: https://www.interdb.jp/pg/pgsql05.html
-        tx.reads.push(Read { set_id, value });
+        tx.reads.push(Read { set_id, value: data_key });
 
         // Even uncommitted objects will be in the odb. This will accumulate garbage over time,
         // but we could also clear it if a transaction fails (or store uncommited changes in a different odb).
-        let data = self.data_from_value(value);
+        let data = self.from_data_key(&data_key, |data| data.to_vec());
 
         // Search back through this transaction
         for i in (0..tx.writes.len()).rev() {
             let write = &tx.writes[i];
             if write.operation.to_u8() == 0 {
-                if set_id == write.set_id && write.value == value {
+                if set_id == write.set_id && write.data_key == data_key {
                     return None;
                 }
             } else {
-                if set_id == write.set_id && write.value == value {
+                if set_id == write.set_id && write.data_key == data_key {
                     return Some(data.unwrap());
                 }
             }
@@ -385,11 +390,11 @@ impl TransactionalDB {
             let next_open = self.get_open_transaction(next_open_offset);
             for write in &next_open.writes {
                 if write.operation.to_u8() == 0 {
-                    if set_id == write.set_id && write.value == value {
+                    if set_id == write.set_id && write.data_key == data_key {
                         return None;
                     }
                 } else {
-                    if set_id == write.set_id && write.value == value {
+                    if set_id == write.set_id && write.data_key == data_key {
                         return Some(data.unwrap());
                     }
                 }
@@ -397,7 +402,7 @@ impl TransactionalDB {
             next_open_offset -= 1;
         }
 
-        if self.closed_state.contains(set_id, value) {
+        if self.closed_state.contains(set_id, data_key) {
             return Some(data.unwrap());
         }
 
@@ -415,7 +420,7 @@ impl TransactionalDB {
         }
     }
 
-    pub fn delete(&mut self, tx: &mut Tx, set_id: u32, value: Value) {
+    pub fn delete(&mut self, tx: &mut Tx, set_id: u32, data_key: DataKey) {
         // Search backwards in the transaction:
         // if not there: add delete
         // if delete there: do nothing
@@ -424,17 +429,17 @@ impl TransactionalDB {
         for i in (0..tx.writes.len()).rev() {
             let write = tx.writes[i];
             if write.operation.to_u8() == 0 {
-                if set_id == write.set_id && write.value == value {
+                if set_id == write.set_id && write.data_key == data_key {
                     found = true;
                     break;
                 }
             } else {
-                if set_id == write.set_id && write.value == value {
+                if set_id == write.set_id && write.data_key == data_key {
                     found = true;
                     tx.writes[i] = Write {
                         operation: Operation::Delete,
                         set_id,
-                        value,
+                        data_key,
                     };
                     break;
                 }
@@ -444,19 +449,19 @@ impl TransactionalDB {
             tx.writes.push(Write {
                 operation: Operation::Delete,
                 set_id,
-                value,
+                data_key,
             });
         }
     }
 
-    pub fn insert(&mut self, tx: &mut Tx, set_id: u32, bytes: Vec<u8>) -> Value {
+    pub fn insert(&mut self, tx: &mut Tx, set_id: u32, bytes: Vec<u8>) -> DataKey {
         let value = if bytes.len() > 32 {
             let hash = self.odb.add(bytes);
-            Value::Hash(hash)
+            DataKey::Hash(hash)
         } else {
             let mut buf = [0; 32];
             buf[0..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
-            Value::Data {
+            DataKey::Data {
                 len: bytes.len() as u8,
                 buf,
             }
@@ -470,17 +475,17 @@ impl TransactionalDB {
         for i in (0..tx.writes.len()).rev() {
             let write = tx.writes[i];
             if write.operation.to_u8() == 0 {
-                if set_id == write.set_id && write.value == value {
+                if set_id == write.set_id && write.data_key == value {
                     found = true;
                     tx.writes[i] = Write {
                         operation: Operation::Insert,
                         set_id,
-                        value,
+                        data_key: value,
                     };
                     break;
                 }
             } else {
-                if set_id == write.set_id && write.value == value {
+                if set_id == write.set_id && write.data_key == value {
                     found = true;
                     break;
                 }
@@ -491,7 +496,7 @@ impl TransactionalDB {
             tx.writes.push(Write {
                 operation: Operation::Insert,
                 set_id,
-                value,
+                data_key: value,
             });
         }
 
@@ -503,7 +508,7 @@ pub struct ScanIter<'a> {
     txdb: &'a TransactionalDB,
     tx: &'a mut Tx,
     set_id: u32,
-    scanned: HashSet<Value>,
+    scanned: HashSet<DataKey>,
     scan_stage: Option<ScanStage<'a>>,
 }
 
@@ -515,7 +520,7 @@ enum ScanStage<'a> {
         transaction_offset: u64,
         write_index: Option<i32>,
     },
-    ClosedSet(std::collections::hash_set::Iter<'a, Value>),
+    ClosedSet(std::collections::hash_set::Iter<'a, DataKey>),
 }
 
 impl<'a> Iterator for ScanIter<'a> {
@@ -544,10 +549,10 @@ impl<'a> Iterator for ScanIter<'a> {
                             if write.set_id == set_id {
                                 self.tx.reads.push(Read {
                                     set_id: write.set_id,
-                                    value: write.value,
+                                    value: write.data_key,
                                 });
-                                let data = self.txdb.data_from_value(write.value);
-                                scanned.insert(write.value);
+                                let data = self.txdb.from_data_key(&write.data_key, |data| data.to_vec());
+                                scanned.insert(write.data_key);
                                 return Some(data.unwrap());
                             }
                         }
@@ -555,9 +560,9 @@ impl<'a> Iterator for ScanIter<'a> {
                             if write.set_id == set_id {
                                 self.tx.reads.push(Read {
                                     set_id: write.set_id,
-                                    value: write.value,
+                                    value: write.data_key,
                                 });
-                                scanned.insert(write.value);
+                                scanned.insert(write.data_key);
                             }
                         }
                     };
@@ -599,13 +604,13 @@ impl<'a> Iterator for ScanIter<'a> {
                         let opt_index = Some(write_index - 1);
                         match write.operation {
                             Operation::Insert => {
-                                if write.set_id == set_id && !scanned.contains(&write.value) {
+                                if write.set_id == set_id && !scanned.contains(&write.data_key) {
                                     self.tx.reads.push(Read {
                                         set_id: write.set_id,
-                                        value: write.value,
+                                        value: write.data_key,
                                     });
-                                    let data = self.txdb.data_from_value(write.value).unwrap();
-                                    scanned.insert(write.value);
+                                    let data = self.txdb.from_data_key(&write.data_key, |data| data.to_vec()).unwrap();
+                                    scanned.insert(write.data_key);
                                     self.scan_stage = Some(ScanStage::OpenTransactions {
                                         transaction_offset,
                                         write_index: opt_index,
@@ -617,9 +622,9 @@ impl<'a> Iterator for ScanIter<'a> {
                                 if write.set_id == set_id {
                                     self.tx.reads.push(Read {
                                         set_id: write.set_id,
-                                        value: write.value,
+                                        value: write.data_key,
                                     });
-                                    scanned.insert(write.value);
+                                    scanned.insert(write.data_key);
                                 }
                             }
                         }
@@ -638,7 +643,7 @@ impl<'a> Iterator for ScanIter<'a> {
                         self.scan_stage = Some(ScanStage::ClosedSet(closed_set_iter));
                         if !scanned.contains(v) {
                             self.tx.reads.push(Read { set_id, value: *v });
-                            let data = self.txdb.data_from_value(*v).unwrap();
+                            let data = self.txdb.from_data_key(v, |data| data.to_vec()).unwrap();
                             return Some(data);
                         }
                     } else {

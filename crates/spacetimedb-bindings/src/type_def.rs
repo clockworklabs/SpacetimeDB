@@ -15,6 +15,7 @@
 // (1: u32, 2: u32) -> 2-tuple (* operator)
 // (1: u32 | 2: u32) -> 2-tuple (+ operator)
 
+#[derive(Debug)]
 pub struct ElementDef {
     // In the case of tuples, this is the id of the column
     // In the case of enums, this is the id of the variant
@@ -22,9 +23,7 @@ pub struct ElementDef {
     // TODO: Allow named elements? Probably need for SQL and nice for JSON
     // slow though so need to be careful
     // pub name: Option<String>,
-    // TODO: not my favorite for cache friendliness since many types will be
-    // simple. Maybe move this Box to TypeDef
-    pub element_type: Box<TypeDef>,
+    pub element_type: TypeDef,
 }
 
 impl ElementDef {
@@ -40,7 +39,7 @@ impl ElementDef {
         (
             ElementDef {
                 tag,
-                element_type: Box::new(element_type),
+                element_type,
             },
             num_read,
         )
@@ -52,6 +51,7 @@ impl ElementDef {
     }
 }
 
+#[derive(Debug)]
 pub struct TupleDef {
     pub elements: Vec<ElementDef>,
 }
@@ -82,6 +82,7 @@ impl TupleDef {
 
 // TODO: probably implement this with a tuple but store whether the tuple
 // is a sum tuple or a product tuple, then we have uniformity over types
+#[derive(Debug)]
 pub struct EnumDef {
     pub items: Vec<ElementDef>,
 }
@@ -110,6 +111,7 @@ impl EnumDef {
     }
 }
 
+#[derive(Debug)]
 pub enum TypeDef {
     Tuple(TupleDef),
     Enum(EnumDef),

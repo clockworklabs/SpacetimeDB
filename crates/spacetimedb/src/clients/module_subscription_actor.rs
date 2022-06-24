@@ -1,21 +1,23 @@
+use std::sync::{Arc, Mutex};
 use serde::{Serialize, Deserialize};
+use spacetimedb_bindings::{TupleValue, TypeValue};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
-use crate::db::messages::transaction::{Transaction, self};
+use crate::db::{messages::transaction::Transaction, relational_db::{RelationalDB, ST_TABLES_ID}};
 use super::{client_connection::{ClientConnectionSender, ClientActorId}, client_connection_index::CLIENT_ACTOR_INDEX};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WriteJson {
     table_id: u32, 
     op: String,
-    value: String,
+    row_pk: String,
+    row: Vec<TypeValue>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageJson {
     writes: Vec<WriteJson>
 }
-
 
 #[derive(Debug)]
 enum ModuleSubscriptionCommand {
@@ -33,10 +35,10 @@ pub struct ModuleSubscription {
 }
 
 impl ModuleSubscription {
-    pub fn spawn() -> Self {
+    pub fn spawn(relational_db: Arc<Mutex<RelationalDB>>) -> Self {
         let (tx, mut rx) = mpsc::unbounded_channel();
         tokio::spawn(async move {
-            let mut actor = ModuleSubscriptionActor::new();
+            let mut actor = ModuleSubscriptionActor::new(relational_db);
             while let Some(command) = rx.recv().await {
                 if actor.handle_message(command) {
                     break;
@@ -63,12 +65,14 @@ impl ModuleSubscription {
 
 
 struct ModuleSubscriptionActor {
+    relational_db: Arc<Mutex<RelationalDB>>,
     subscribers: Vec<ClientConnectionSender>
 }
 
 impl ModuleSubscriptionActor {
-    pub fn new() -> Self {
+    pub fn new(relational_db: Arc<Mutex<RelationalDB>>) -> Self {
         Self {
+            relational_db,
             subscribers: Vec::new()
         }
     }
@@ -92,36 +96,80 @@ impl ModuleSubscriptionActor {
     pub fn add_subscriber(&mut self, client_id: ClientActorId) -> bool {
         let cai = CLIENT_ACTOR_INDEX.lock().unwrap();
         let sender = cai.get_client(&client_id).unwrap().sender();
-        self.subscribers.push(sender);
+        self.subscribers.push(sender.clone());
+
+        self.publish_state(sender);
         false
+    }
+
+    fn publish_state(&mut self, subscriber: ClientConnectionSender) {
+        // For all tables, push all state
+        // TODO: We need some way to namespace tables so we don't send all the internal tables and stuff
+        let mut message_json = MessageJson {
+            writes: Vec::new(),
+        };
+        let mut stdb = self.relational_db.lock().unwrap();
+        let mut tx = stdb.begin_tx();
+        let tables = stdb.iter(&mut tx, ST_TABLES_ID).unwrap().map(|row| *row.elements[0].as_u32().unwrap()).collect::<Vec<u32>>();
+        for table_id in tables {
+            for row in stdb.iter(&mut tx, table_id).unwrap() {
+                let row_pk = stdb.pk_for_row(&row);
+                let row_pk = base64::encode(row_pk.to_bytes());
+                message_json.writes.push(WriteJson { table_id, op: "insert".to_string(), row_pk, row: row.elements })
+            }
+        }
+        stdb.rollback_tx(tx);
+
+        let message = serde_json::to_string(&message_json).unwrap();
+        let subscriber = subscriber.clone();
+        Self::send_async(subscriber, message);
     }
 
     pub fn publish_transaction(&mut self, transaction: Transaction) -> bool {
         let mut message_json = MessageJson {
             writes: Vec::new(),
         };
+
         for write in transaction.writes {
             let op_string = match write.operation {
                 crate::db::messages::write::Operation::Delete => "delete".to_string(),
                 crate::db::messages::write::Operation::Insert => "insert".to_string(),
             };
-            let value_string = match write.value {
-                spacetimedb_bindings::Value::Data { len, buf } => {
-                    base64::encode(&buf[0..len as usize])
-                },
-                spacetimedb_bindings::Value::Hash(hash) => base64::encode(hash),
+
+            let (row, row_pk) = {
+                // TODO: probably awfully slow for very little reason
+                let mut stdb = self.relational_db.lock().unwrap();
+                let mut tx = stdb.begin_tx();
+                let tuple_def = stdb.schema_for_table(&mut tx, write.set_id).unwrap();
+                stdb.rollback_tx(tx);
+                let tuple = stdb.txdb.from_data_key(&write.data_key, |data| {
+                    let (tuple, _) = TupleValue::decode(&tuple_def, data);
+                    tuple
+                }).unwrap();
+                (tuple, base64::encode(write.data_key.to_bytes()))
             };
-            message_json.writes.push(WriteJson { table_id: write.set_id, op: op_string, value: value_string })
+
+            message_json.writes.push(WriteJson { table_id: write.set_id, op: op_string, row_pk, row: row.elements })
         }
-        let message = serde_json::to_string(&message_json).unwrap();
+
+        self.broadcast_message_json(&message_json);
+
+        false
+    }
+
+    fn broadcast_message_json(&self, message_json: &MessageJson) {
+        let message = serde_json::to_string(message_json).unwrap();
         for subscriber in &self.subscribers {
             let message = message.clone();
             let subscriber = subscriber.clone();
-            tokio::spawn(async move {
-                let message = Message::Text(message);
-                subscriber.send(message).await.unwrap();
-            });
+            Self::send_async(subscriber, message);
         }
-        false
+    }
+
+    fn send_async(subscriber: ClientConnectionSender, message: String) {
+        tokio::spawn(async move {
+            let message = Message::Text(message);
+            subscriber.send(message).await.unwrap();
+        });
     }
 }

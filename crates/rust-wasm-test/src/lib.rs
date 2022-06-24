@@ -41,6 +41,8 @@ pub fn test(arg: TestA, arg2: TestB) {
     println!("Row count: {:?}", row_count);
 }
 
+
+
 // #[no_mangle]
 // pub extern "C" fn __reducer__test(arg_ptr: u32, arg_size: u32) {
 //     let arg_ptr = arg_ptr as *mut u8;

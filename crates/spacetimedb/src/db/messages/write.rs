@@ -1,10 +1,10 @@
-pub use spacetimedb_bindings::Value;
+pub use spacetimedb_bindings::DataKey;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Write {
     pub operation: Operation,
     pub set_id: u32,
-    pub value: Value,
+    pub data_key: DataKey,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -51,14 +51,14 @@ impl Write {
         let set_id = u32::from_le_bytes(dst);
         read_count += 4;
 
-        let (value, rc) = Value::decode(&bytes[read_count..]);
+        let (value, rc) = DataKey::decode(&bytes[read_count..]);
         read_count += rc;
 
         (
             Write {
                 operation: Operation::from_u8(op),
                 set_id,
-                value,
+                data_key: value,
             },
             read_count,
         )
@@ -73,6 +73,6 @@ impl Write {
         };
         bytes.push(flags);
         bytes.extend(self.set_id.to_le_bytes());
-        self.value.encode(bytes);
+        self.data_key.encode(bytes);
     }
 }

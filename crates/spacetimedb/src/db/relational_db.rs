@@ -1,5 +1,5 @@
 use super::{
-    messages::{write::Value, transaction::Transaction},
+    messages::{write::DataKey, transaction::Transaction},
     transactional_db::{ScanIter, TransactionalDB, Tx},
 };
 use spacetimedb_bindings::{ElementDef, EqTypeValue, RangeTypeValue};
@@ -9,8 +9,19 @@ use std::{
     path::Path,
 };
 
-const ST_TABLES_ID: u32 = u32::MAX;
-const ST_COLUMNS_ID: u32 = u32::MAX - 1;
+pub const ST_TABLES_ID: u32 = u32::MAX;
+pub const ST_COLUMNS_ID: u32 = u32::MAX - 1;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct PrimaryKey {
+    data_key: DataKey
+}
+
+impl PrimaryKey {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.data_key.to_bytes()
+    }
+}
 
 pub struct RelationalDB {
     pub txdb: TransactionalDB,
@@ -72,7 +83,7 @@ impl RelationalDB {
         Self::insert_row_raw(&mut txdb, &mut tx, ST_COLUMNS_ID, row);
 
         let mut bytes = Vec::new();
-        TypeDef::U32.encode(&mut bytes);
+        TypeDef::Bytes.encode(&mut bytes);
         let row = TupleValue {
             elements: vec![
                 TypeValue::U32(ST_COLUMNS_ID),
@@ -87,7 +98,16 @@ impl RelationalDB {
         RelationalDB { txdb }
     }
 
-    pub fn encode_row(row: TupleValue, bytes: &mut Vec<u8>) {
+    pub fn pk_for_row(&self, row: &TupleValue) -> PrimaryKey {
+        let mut bytes = Vec::new();
+        row.encode(&mut bytes);
+        let data_key = DataKey::from_data(bytes);
+        PrimaryKey {
+            data_key
+        }
+    }
+
+    pub fn encode_row(row: &TupleValue, bytes: &mut Vec<u8>) {
         // TODO: large file storage the row elements
         row.encode(bytes);
     }
@@ -105,15 +125,15 @@ impl RelationalDB {
                 elements: vec![
                     ElementDef {
                         tag: 0,
-                        element_type: Box::new(TypeDef::U32),
+                        element_type: TypeDef::U32,
                     },
                     ElementDef {
                         tag: 1,
-                        element_type: Box::new(TypeDef::U32),
+                        element_type: TypeDef::U32,
                     },
                     ElementDef {
                         tag: 2,
-                        element_type: Box::new(TypeDef::Bytes),
+                        element_type: TypeDef::Bytes,
                     },
                 ],
             };
@@ -133,7 +153,7 @@ impl RelationalDB {
 
             let element = ElementDef {
                 tag: col_id as u8, // TODO?
-                element_type: Box::new(col_type),
+                element_type: col_type,
             };
             columns.push(element)
         }
@@ -147,7 +167,7 @@ impl RelationalDB {
 
     fn insert_row_raw(txdb: &mut TransactionalDB, tx: &mut Tx, table_id: u32, row: TupleValue) {
         let mut bytes = Vec::new();
-        Self::encode_row(row, &mut bytes);
+        Self::encode_row(&row, &mut bytes);
         txdb.insert(tx, table_id, bytes);
 
         // https://stackoverflow.com/questions/43581810/how-postgresql-index-deals-with-mvcc
@@ -293,14 +313,14 @@ impl RelationalDB {
 
     pub fn delete_filter(&mut self, tx: &mut Tx, table_id: u32, f: fn(row: &TupleValue) -> bool) -> Option<usize> {
         if let Some(filter) = self.filter(tx, table_id, f) {
-            let mut values = Vec::new();
+            let mut data_keys = Vec::new();
             for x in filter {
                 let mut bytes = Vec::new();
-                Self::encode_row(x, &mut bytes);
-                values.push(Value::from_data(bytes));
+                Self::encode_row(&x, &mut bytes);
+                data_keys.push(DataKey::from_data(bytes));
             }
-            let len = values.len();
-            for value in values {
+            let len = data_keys.len();
+            for value in data_keys {
                 self.txdb.delete(tx, table_id, value);
             }
             return Some(len);
@@ -310,12 +330,12 @@ impl RelationalDB {
 
     pub fn delete_eq(&mut self, tx: &mut Tx, table_id: u32, col_id: u32, value: EqTypeValue) -> Option<usize> {
         if let Some(x) = self.filter_eq(tx, table_id, col_id, value) {
-            let mut values = Vec::new();
+            let mut data_keys = Vec::new();
             let mut bytes = Vec::new();
-            Self::encode_row(x, &mut bytes);
-            values.push(Value::from_data(bytes));
-            let len = values.len();
-            for value in values {
+            Self::encode_row(&x, &mut bytes);
+            data_keys.push(DataKey::from_data(bytes));
+            let len = data_keys.len();
+            for value in data_keys {
                 self.txdb.delete(tx, table_id, value);
             }
             return Some(len);
@@ -334,8 +354,8 @@ impl RelationalDB {
             let mut values = Vec::new();
             for x in filter {
                 let mut bytes = Vec::new();
-                Self::encode_row(x, &mut bytes);
-                values.push(Value::from_data(&bytes));
+                Self::encode_row(&x, &mut bytes);
+                values.push(DataKey::from_data(&bytes));
             }
             let len = values.len();
             for value in values {
@@ -461,7 +481,7 @@ mod tests {
             TupleDef {
                 elements: vec![ElementDef {
                     tag: 0,
-                    element_type: Box::new(TypeDef::I32),
+                    element_type: TypeDef::I32,
                 }],
             },
         )
@@ -479,7 +499,7 @@ mod tests {
             TupleDef {
                 elements: vec![ElementDef {
                     tag: 0,
-                    element_type: Box::new(TypeDef::I32),
+                    element_type: TypeDef::I32,
                 }],
             },
         )
@@ -490,7 +510,7 @@ mod tests {
             TupleDef {
                 elements: vec![ElementDef {
                     tag: 0,
-                    element_type: Box::new(TypeDef::I32),
+                    element_type: TypeDef::I32,
                 }],
             },
         );
@@ -508,7 +528,7 @@ mod tests {
             TupleDef {
                 elements: vec![ElementDef {
                     tag: 0,
-                    element_type: Box::new(TypeDef::I32),
+                    element_type: TypeDef::I32,
                 }],
             },
         )
@@ -556,7 +576,7 @@ mod tests {
             TupleDef {
                 elements: vec![ElementDef {
                     tag: 0,
-                    element_type: Box::new(TypeDef::I32),
+                    element_type: TypeDef::I32,
                 }],
             },
         )
@@ -606,7 +626,7 @@ mod tests {
             TupleDef {
                 elements: vec![ElementDef {
                     tag: 0,
-                    element_type: Box::new(TypeDef::I32),
+                    element_type: TypeDef::I32,
                 }],
             },
         )
@@ -654,7 +674,7 @@ mod tests {
             TupleDef {
                 elements: vec![ElementDef {
                     tag: 0,
-                    element_type: Box::new(TypeDef::I32),
+                    element_type: TypeDef::I32,
                 }],
             },
         )
@@ -704,7 +724,7 @@ mod tests {
             TupleDef {
                 elements: vec![ElementDef {
                     tag: 0,
-                    element_type: Box::new(TypeDef::I32),
+                    element_type: TypeDef::I32,
                 }],
             },
         )
@@ -727,7 +747,7 @@ mod tests {
             TupleDef {
                 elements: vec![ElementDef {
                     tag: 0,
-                    element_type: Box::new(TypeDef::I32),
+                    element_type: TypeDef::I32,
                 }],
             },
         )
