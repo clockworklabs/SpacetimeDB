@@ -5,6 +5,7 @@ use spacetimedb::hash::Hash;
 use spacetimedb::postgres;
 use spacetimedb::routes::router;
 use spacetimedb::wasm_host;
+use spacetimedb::metrics;
 use std::error::Error;
 use std::net::SocketAddr;
 use tokio::runtime::Builder;
@@ -54,10 +55,9 @@ async fn startup() {
 
 async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
     configure_logging();
+    metrics::register_custom_metrics();
     postgres::init().await;
     startup().await;
-    // let (identity, token) = api::spacetime_identity().await?;
-    // api::spacetime_identity_associate_email("tyler@clockworklabs.io", &token).await?;
 
     spawn(async move {
         // Start https server

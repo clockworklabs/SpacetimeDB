@@ -6,7 +6,7 @@ use clap::Command;
 use std::process::exit;
 use std::vec;
 
-mod address;
+mod identity;
 mod call;
 mod energy;
 mod init;
@@ -64,23 +64,23 @@ Options:
 {options}
 
 Some common SpacetimeDB commands are
-    signup      Creates a new SpacetimeDB identity using your email
-    login       Login using an existing identity
-    init        Initializes a new project
-    update      ???
-    logs        Prints logs from a SpacetimeDB database
-    energy      Invokes commands related to energy
-    revert      Reverts the database to a given point in time
-    query       Run a SQL query on the database
-    call        Invokes a SpacetimeDB function
-    address     ???
-    metrics     Prints metrics",
-        )
+    init        Initializes a new Spacetime database
+    update      Updates the Wasm module of an existing Spacetime database
+    logs        Prints logs from a Spacetime database
+    call        Invokes a Spacetime function
+    identity    Requests a new Spacetime Identity and token
+",)
+    //signup      Creates a new SpacetimeDB identity using your email
+    //login       Login using an existing identity
+    //energy      Invokes commands related to energy
+    //query       Run a SQL query on the database
+    //revert      Reverts the database to a given point in time
+    //metrics     Prints metrics
 }
 
 fn get_subcommands() -> Vec<Command<'static>> {
     vec![
-        address::cli(),
+        identity::cli(),
         call::cli(),
         energy::cli(),
         init::cli(),
@@ -96,7 +96,7 @@ fn get_subcommands() -> Vec<Command<'static>> {
 
 async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     match cmd {
-        "address" => address::exec(args).await,
+        "identity" => identity::exec(args).await,
         "call" => call::exec(args).await,
         "energy" => energy::exec(args).await,
         "init" => init::exec(args).await,
