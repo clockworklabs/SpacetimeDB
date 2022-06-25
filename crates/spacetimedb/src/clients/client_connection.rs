@@ -80,7 +80,7 @@ impl ClientConnectionSender {
 pub struct ClientConnection {
     pub id: ClientActorId,
     pub alive: bool,
-    module_identity: Hash,
+    _module_identity: Hash,
     hex_module_identity: String,
     module_name: String,
     stream: Option<SplitStream<WebSocketStream<Upgraded>>>,
@@ -105,7 +105,7 @@ impl ClientConnection {
         Self {
             id,
             alive: true,
-            module_identity,
+            _module_identity: module_identity,
             hex_module_identity,
             module_name,
             stream: Some(stream),

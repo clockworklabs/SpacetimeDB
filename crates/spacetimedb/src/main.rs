@@ -1,13 +1,10 @@
 use log::*;
-use spacetimedb::clients::SubscriptionManager;
 use spacetimedb::api::MODULE_ODB;
-use spacetimedb::clients::client_connection_index::{CLIENT_ACTOR_INDEX, ClientActorIndex};
-use spacetimedb::db::messages::transaction::Transaction;
+use spacetimedb::clients::client_connection_index::ClientActorIndex;
 use spacetimedb::hash::Hash;
 use spacetimedb::postgres;
 use spacetimedb::routes::router;
 use spacetimedb::wasm_host;
-use tokio::sync::mpsc;
 use std::error::Error;
 use std::net::SocketAddr;
 use tokio::runtime::Builder;

@@ -80,13 +80,6 @@ fn invalid_protocol_res() -> Response<Body> {
         .unwrap()
 }
 
-fn missing_creds_res() -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::UNAUTHORIZED)
-        .body(Body::empty())
-        .unwrap()
-}
-
 fn invalid_token_res() -> Response<Body> {
     Response::builder()
         .status(StatusCode::BAD_REQUEST)

@@ -112,7 +112,7 @@ impl HostActor {
                     .unwrap();
             }
             HostCommand::GetModule { identity, name, respond_to } => {
-                respond_to.send(self.get_module(identity, &name));
+                respond_to.send(self.get_module(identity, &name)).unwrap();
             },
         }
     }
