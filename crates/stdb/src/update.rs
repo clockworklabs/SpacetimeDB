@@ -1,6 +1,6 @@
-use std::fs;
 use clap::Arg;
 use clap::ArgMatches;
+use std::fs;
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("update")
         .about("Update a new SpacetimeDB actor.")
@@ -21,7 +21,10 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
 
     let client = reqwest::Client::new();
     let res = client
-        .post(format!("http://localhost:3000/database/{}/{}/update", hex_identity, name))
+        .post(format!(
+            "http://localhost:3000/database/{}/{}/update",
+            hex_identity, name
+        ))
         .body(wasm_bytes)
         .send()
         .await?;

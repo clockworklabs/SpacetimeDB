@@ -98,7 +98,9 @@ impl HostActor {
                 wasm_bytes,
                 respond_to,
             } => {
-                respond_to.send(self.add_module(identity, &name, wasm_bytes).await).unwrap();
+                respond_to
+                    .send(self.add_module(identity, &name, wasm_bytes).await)
+                    .unwrap();
             }
             HostCommand::CallReducer {
                 identity,
@@ -111,9 +113,13 @@ impl HostActor {
                     .send(self.call_reducer(identity, &name, &reducer_name, arg_bytes).await)
                     .unwrap();
             }
-            HostCommand::GetModule { identity, name, respond_to } => {
+            HostCommand::GetModule {
+                identity,
+                name,
+                respond_to,
+            } => {
                 respond_to.send(self.get_module(identity, &name)).unwrap();
-            },
+            }
         }
     }
 
@@ -150,7 +156,7 @@ impl HostActor {
         module_host.init_database().await?;
         Ok(module_hash)
     }
-    
+
     async fn update_module(&mut self, identity: Hash, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let module_hash = self.add_module(identity, name, wasm_bytes).await?;
         let key = (identity, name.to_string());
@@ -200,10 +206,7 @@ impl HostActor {
         arg_bytes: impl AsRef<[u8]>,
     ) -> Result<(), anyhow::Error> {
         let key = (identity, name.to_string());
-        let module_host = self
-            .modules
-            .get(&key)
-            .ok_or(anyhow::anyhow!("No such module found."))?;
+        let module_host = self.modules.get(&key).ok_or(anyhow::anyhow!("No such module found."))?;
         module_host
             .call_reducer(reducer_name.into(), arg_bytes.as_ref().to_vec())
             .await?;
@@ -212,13 +215,9 @@ impl HostActor {
 
     fn get_module(&self, identity: Hash, name: &str) -> Result<ModuleHost, anyhow::Error> {
         let key = (identity, name.to_string());
-        let module_host = self
-            .modules
-            .get(&key)
-            .ok_or(anyhow::anyhow!("No such module found."))?;
+        let module_host = self.modules.get(&key).ok_or(anyhow::anyhow!("No such module found."))?;
         Ok(module_host.clone())
     }
-
 }
 
 #[derive(Clone)]
@@ -251,8 +250,13 @@ impl Host {
             .await?;
         rx.await.unwrap()
     }
-    
-    pub async fn update_module(&self, identity: Hash, name: String, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+
+    pub async fn update_module(
+        &self,
+        identity: Hash,
+        name: String,
+        wasm_bytes: Vec<u8>,
+    ) -> Result<Hash, anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<Hash, anyhow::Error>>();
         self.tx
             .send(HostCommand::UpdateModule {
@@ -281,7 +285,7 @@ impl Host {
     pub async fn call_reducer(
         &self,
         identity: Hash,
-        name: String, 
+        name: String,
         reducer_name: String,
         arg_bytes: Vec<u8>,
     ) -> Result<(), anyhow::Error> {
@@ -298,11 +302,7 @@ impl Host {
         rx.await.unwrap()
     }
 
-    pub async fn get_module(
-        &self,
-        identity: Hash,
-        name: String, 
-    ) -> Result<ModuleHost, anyhow::Error> {
+    pub async fn get_module(&self, identity: Hash, name: String) -> Result<ModuleHost, anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<ModuleHost, anyhow::Error>>();
         self.tx
             .send(HostCommand::GetModule {
@@ -313,5 +313,4 @@ impl Host {
             .await?;
         rx.await.unwrap()
     }
-
 }

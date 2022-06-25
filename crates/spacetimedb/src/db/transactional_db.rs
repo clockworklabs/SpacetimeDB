@@ -3,7 +3,7 @@ use super::{
     messages::{
         commit::Commit,
         transaction::Transaction,
-        write::{Operation, DataKey, Write},
+        write::{DataKey, Operation, Write},
     },
     object_db::ObjectDB,
 };
@@ -253,7 +253,7 @@ impl TransactionalDB {
             }
         }
 
-        return Some(self.finalize(tx))
+        return Some(self.finalize(tx));
     }
 
     fn finalize(&mut self, tx: Tx) -> Transaction {
@@ -344,11 +344,11 @@ impl TransactionalDB {
             DataKey::Data { len, buf } => {
                 let t = f(&buf[0..(*len as usize)]);
                 Some(t)
-            },
+            }
             DataKey::Hash(hash) => {
                 let t = f(self.odb.get(*hash).unwrap());
                 Some(t)
-            },
+            }
         };
         data
     }
@@ -358,7 +358,10 @@ impl TransactionalDB {
         // or reads from the transaction as well.
         // TODO: Replace this with relation, page, row level SIREAD locks
         // SEE: https://www.interdb.jp/pg/pgsql05.html
-        tx.reads.push(Read { set_id, value: data_key });
+        tx.reads.push(Read {
+            set_id,
+            value: data_key,
+        });
 
         // Even uncommitted objects will be in the odb. This will accumulate garbage over time,
         // but we could also clear it if a transaction fails (or store uncommited changes in a different odb).

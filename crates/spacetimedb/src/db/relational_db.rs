@@ -1,5 +1,5 @@
 use super::{
-    messages::{write::DataKey, transaction::Transaction},
+    messages::{transaction::Transaction, write::DataKey},
     transactional_db::{ScanIter, TransactionalDB, Tx},
 };
 use spacetimedb_bindings::{ElementDef, EqTypeValue, RangeTypeValue};
@@ -14,7 +14,7 @@ pub const ST_COLUMNS_ID: u32 = u32::MAX - 1;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct PrimaryKey {
-    data_key: DataKey
+    data_key: DataKey,
 }
 
 impl PrimaryKey {
@@ -102,9 +102,7 @@ impl RelationalDB {
         let mut bytes = Vec::new();
         row.encode(&mut bytes);
         let data_key = DataKey::from_data(bytes);
-        PrimaryKey {
-            data_key
-        }
+        PrimaryKey { data_key }
     }
 
     pub fn encode_row(row: &TupleValue, bytes: &mut Vec<u8>) {

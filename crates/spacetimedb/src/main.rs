@@ -48,10 +48,7 @@ async fn startup() {
         };
 
         let host = wasm_host::get_host();
-        host.add_module(identity, name, wasm_bytes)
-            .await
-            .unwrap();
-
+        host.add_module(identity, name, wasm_bytes).await.unwrap();
     }
 }
 

@@ -14,8 +14,8 @@ use hyper::Body;
 use hyper::{Response, StatusCode};
 use serde::Deserialize;
 
-use self::subscribe::SubscribeParams;
 use self::subscribe::handle_websocket;
+use self::subscribe::SubscribeParams;
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct InitModuleParams {
@@ -132,7 +132,6 @@ async fn logs(state: &mut State) -> SimpleHandlerResult {
 
     Ok(res)
 }
-
 
 pub fn router() -> Router {
     build_simple_router(|route| {

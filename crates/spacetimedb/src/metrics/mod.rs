@@ -1,7 +1,5 @@
 use lazy_static::lazy_static;
-use prometheus::{
-    HistogramOpts, HistogramVec, IntCounter, IntGauge, Registry,
-};
+use prometheus::{HistogramOpts, HistogramVec, IntCounter, IntGauge, Registry};
 
 lazy_static! {
     pub static ref REGISTRY: Registry = Registry::new();
@@ -25,7 +23,7 @@ lazy_static! {
         &["request_type"]
     )
     .expect("metric can be created");
-    
+
     pub static ref TX_SIZE_COLLECTOR: HistogramVec = HistogramVec::new(
         HistogramOpts::new("transaction_size", "Transaction Sizes"),
         &["request_type"]
@@ -45,7 +43,7 @@ pub fn register_custom_metrics() {
     REGISTRY
         .register(Box::new(TX_LATENCY_COLLECTOR.clone()))
         .expect("collector can be registered");
-    
+
     REGISTRY
         .register(Box::new(TX_SIZE_COLLECTOR.clone()))
         .expect("collector can be registered");

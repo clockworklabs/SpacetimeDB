@@ -36,13 +36,7 @@ impl ElementDef {
         let (element_type, nr) = TypeDef::decode(&bytes[num_read..]);
         num_read += nr;
 
-        (
-            ElementDef {
-                tag,
-                element_type,
-            },
-            num_read,
-        )
+        (ElementDef { tag, element_type }, num_read)
     }
 
     pub fn encode(&self, bytes: &mut Vec<u8>) {

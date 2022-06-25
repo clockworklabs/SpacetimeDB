@@ -4,8 +4,9 @@ use std::{
 };
 
 use crate::{
+    clients::{client_connection_index::ClientActorId, module_subscription_actor::ModuleSubscription},
     db::{relational_db::RelationalDB, transactional_db::Tx},
-    hash::Hash, clients::{module_subscription_actor::ModuleSubscription, client_connection_index::ClientActorId},
+    hash::Hash,
 };
 use tokio::sync::{mpsc, oneshot};
 use wasmer::{imports, Array, Function, Instance, LazyInit, Module, Store, WasmPtr};
@@ -69,21 +70,28 @@ impl ModuleHost {
         self.tx.send(ModuleHostCommand::InitDatabase { respond_to: tx }).await?;
         rx.await.unwrap()
     }
-    
+
     pub async fn migrate_database(&self) -> Result<(), anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.tx.send(ModuleHostCommand::MigrateDatabase { respond_to: tx }).await?;
+        self.tx
+            .send(ModuleHostCommand::MigrateDatabase { respond_to: tx })
+            .await?;
         rx.await.unwrap()
     }
-    
+
     pub async fn exit(&self) -> Result<(), anyhow::Error> {
         self.tx.send(ModuleHostCommand::Exit {}).await?;
         Ok(())
     }
-    
+
     pub async fn add_subscriber(&self, client_id: ClientActorId) -> Result<(), anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.tx.send(ModuleHostCommand::AddSubscriber { client_id, respond_to: tx }).await?;
+        self.tx
+            .send(ModuleHostCommand::AddSubscriber {
+                client_id,
+                respond_to: tx,
+            })
+            .await?;
         rx.await.unwrap()
     }
 }
@@ -154,14 +162,12 @@ impl ModuleHostActor {
             ModuleHostCommand::MigrateDatabase { respond_to } => {
                 respond_to.send(self.migrate_database()).unwrap();
                 false
-            },
-            ModuleHostCommand::Exit {} => {
-                true
-            },
+            }
+            ModuleHostCommand::Exit {} => true,
             ModuleHostCommand::AddSubscriber { client_id, respond_to } => {
                 respond_to.send(self.add_subscriber(client_id)).unwrap();
                 false
-            },
+            }
         }
     }
 
@@ -228,7 +234,7 @@ impl ModuleHostActor {
         // TODO: call __create_index__IndexName
         Ok(())
     }
-    
+
     fn migrate_database(&mut self) -> Result<(), anyhow::Error> {
         for f in self.module.exports().functions() {
             if !f.name().starts_with(MIGRATE_DATABASE_DUNDER) {

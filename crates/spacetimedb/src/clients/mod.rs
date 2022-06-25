@@ -1,5 +1,5 @@
-pub mod client_connection_index;
 mod client_connection;
-mod subscription_manager;
+pub mod client_connection_index;
 pub mod module_subscription_actor;
+mod subscription_manager;
 pub use subscription_manager::*;

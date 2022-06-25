@@ -1,12 +1,12 @@
+mod data_key;
 mod hash;
 mod type_def;
 mod type_value;
-mod data_key;
+pub use data_key::DataKey;
 use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
 use std::panic;
 pub use type_def::{ElementDef, TupleDef, TypeDef};
 pub use type_value::{EqTypeValue, RangeTypeValue, TupleValue, TypeValue};
-pub use data_key::DataKey;
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;

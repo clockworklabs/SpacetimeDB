@@ -109,14 +109,14 @@ pub mod database {
             let mut object_db = MODULE_ODB.lock().unwrap();
             object_db.add(wasm_bytes);
         }
-        
+
         let result = client
             .query(
                 "UPDATE registry.module SET module_address = $1, module_version = module_version + 1 WHERE actor_name = $2 AND st_identity = $3",
                 &[&hex::encode(address), &name, &hex_identity],
             )
             .await;
-       
+
         if let Err(err) = result {
             return Err(anyhow::anyhow!("Error updating module. {}", err));
         }
@@ -143,7 +143,9 @@ pub mod database {
         let _ = result?;
         let identity_hash: Hash = Hash::from_iter(hex::decode(identity).unwrap());
 
-        get_host().call_reducer(identity_hash, name.to_string(), reducer, arg_bytes).await?;
+        get_host()
+            .call_reducer(identity_hash, name.to_string(), reducer, arg_bytes)
+            .await?;
 
         Ok(())
     }

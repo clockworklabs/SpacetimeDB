@@ -1,33 +1,33 @@
 use crate::api;
-use crate::hash::Hash;
 use crate::clients::client_connection_index::CLIENT_ACTOR_INDEX;
+use crate::hash::Hash;
+use crate::identity::decode_token;
 use crate::wasm_host;
 use gotham::handler::HandlerError;
 use gotham::prelude::StaticResponseExtender;
+use gotham::state::request_id;
 use gotham::state::FromState;
 use gotham::state::State;
 use gotham::state::StateData;
-use gotham::state::request_id;
-use hyper::Body;
-use hyper::HeaderMap;
-use hyper::Response;
-use hyper::StatusCode;
+use hyper::header::HeaderValue;
 use hyper::header::AUTHORIZATION;
 use hyper::header::CONNECTION;
-use hyper::header::HeaderValue;
 use hyper::header::SEC_WEBSOCKET_ACCEPT;
 use hyper::header::SEC_WEBSOCKET_KEY;
 use hyper::header::SEC_WEBSOCKET_PROTOCOL;
 use hyper::header::UPGRADE;
 use hyper::upgrade::OnUpgrade;
 use hyper::upgrade::Upgraded;
+use hyper::Body;
+use hyper::HeaderMap;
+use hyper::Response;
+use hyper::StatusCode;
+use lazy_static::lazy_static;
 use regex::Regex;
 use serde::Deserialize;
-use sha1::{Sha1, Digest};
-use tokio_tungstenite::WebSocketStream;
+use sha1::{Digest, Sha1};
 use tokio_tungstenite::tungstenite::protocol::Role;
-use lazy_static::lazy_static;
-use crate::identity::decode_token;
+use tokio_tungstenite::WebSocketStream;
 
 lazy_static! {
     static ref SEPARATOR: Regex = Regex::new(r"\s*,\s*").unwrap();
@@ -129,7 +129,13 @@ fn meets_protocol_requirements(test_protocol_version: &str) -> bool {
     return true;
 }
 
-async fn on_connected(identity: Hash, module_identity: Hash, module_name: String, headers: HeaderMap, ws: WebSocketStream<Upgraded>) {
+async fn on_connected(
+    identity: Hash,
+    module_identity: Hash,
+    module_name: String,
+    headers: HeaderMap,
+    ws: WebSocketStream<Upgraded>,
+) {
     let ip_address = headers.get("x-forwarded-for").and_then(|value| {
         value.to_str().ok().and_then(|str| {
             let split = SEPARATOR.split(str);
@@ -153,11 +159,15 @@ async fn on_connected(identity: Hash, module_identity: Hash, module_name: String
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
     // to connect to multiple modules
     let host = wasm_host::get_host();
-    let module = host.get_module(module_identity, module_name).await.unwrap(); 
+    let module = host.get_module(module_identity, module_name).await.unwrap();
     module.add_subscriber(id).await.unwrap();
 }
 
-async fn on_upgrade(mut state: State, headers: HeaderMap, on_upgrade: OnUpgrade) -> Result<(State, Response<Body>), (State, HandlerError)> {
+async fn on_upgrade(
+    mut state: State,
+    headers: HeaderMap,
+    on_upgrade: OnUpgrade,
+) -> Result<(State, Response<Body>), (State, HandlerError)> {
     let key = match headers.get(SEC_WEBSOCKET_KEY).ok_or(()) {
         Ok(value) => value,
         Err(_) => {
@@ -190,7 +200,8 @@ async fn on_upgrade(mut state: State, headers: HeaderMap, on_upgrade: OnUpgrade)
     if !meets_protocol_requirements(protocol_version) {
         log::debug!(
             "Client with protocol version {} did not meet the requirement of {}",
-            protocol_version, 22
+            protocol_version,
+            22
         );
         return Ok((state, invalid_protocol_res()));
     }
@@ -199,7 +210,6 @@ async fn on_upgrade(mut state: State, headers: HeaderMap, on_upgrade: OnUpgrade)
     // Validate the credentials of this connection
     let auth_header = headers.get(AUTHORIZATION);
     let (identity, identity_token) = if let Some(auth_header) = auth_header {
-
         // Yes, this is using basic auth. See the below issues.
         // The current form is: Authorization: Basic base64("token:<token>")
         // FOOLS, the lot of them!
@@ -207,10 +217,10 @@ async fn on_upgrade(mut state: State, headers: HeaderMap, on_upgrade: OnUpgrade)
         // basic auth, to a `Authorization: Bearer <token>` header
         // https://github.com/whatwg/websockets/issues/16
         // https://github.com/sta/websocket-sharp/pull/22
-        
+
         let auth_header = auth_header.to_str().unwrap_or_default().to_string();
         let encoded_token = auth_header.split("Basic ").collect::<Vec<&str>>().get(1).map(|s| *s);
-        let token_string = encoded_token 
+        let token_string = encoded_token
             .and_then(|encoded_token| base64::decode(encoded_token).ok())
             .and_then(|token_buf| String::from_utf8(token_buf).ok());
         let token_string = token_string.as_deref();
@@ -259,7 +269,7 @@ async fn on_upgrade(mut state: State, headers: HeaderMap, on_upgrade: OnUpgrade)
         Ok(i) => Hash::from_iter(i),
         Err(error) => {
             log::info!("Can't decode {}", error);
-            return Ok((state, bad_request_res()))
+            return Ok((state, bad_request_res()));
         }
     };
 
@@ -275,7 +285,10 @@ async fn on_upgrade(mut state: State, headers: HeaderMap, on_upgrade: OnUpgrade)
         }
     });
 
-    Ok((state, accept_ws_res(&key, &protocol_version_header, identity, identity_token)))
+    Ok((
+        state,
+        accept_ws_res(&key, &protocol_version_header, identity, identity_token),
+    ))
 }
 
 pub async fn handle_websocket(mut state: State) -> Result<(State, Response<Body>), (State, HandlerError)> {

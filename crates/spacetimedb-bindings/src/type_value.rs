@@ -1,6 +1,6 @@
 use crate::type_def::{EnumDef, TupleDef, TypeDef};
 use enum_as_inner::EnumAsInner;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElementValue {
@@ -349,9 +349,7 @@ impl TypeValue {
                 num_read += len as usize;
                 (TypeValue::Bytes(output.to_owned()), num_read)
             }
-            TypeDef::Unit => {
-                (TypeValue::Unit, 0)
-            },
+            TypeDef::Unit => (TypeValue::Unit, 0),
         }
     }
 
@@ -421,7 +419,7 @@ impl TypeValue {
             }
             TypeValue::Unit => {
                 // Do nothing.
-            },
+            }
         }
     }
 }

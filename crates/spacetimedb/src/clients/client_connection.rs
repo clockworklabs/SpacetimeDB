@@ -3,19 +3,19 @@ use std::fmt;
 use crate::api;
 use crate::clients::client_connection_index::CLIENT_ACTOR_INDEX;
 use crate::hash::Hash;
+use futures::{prelude::*, stream::SplitStream, SinkExt};
 use hyper::upgrade::Upgraded;
 use tokio::spawn;
-use tokio::sync::{oneshot, mpsc};
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
-use futures::{prelude::*, stream::SplitStream, SinkExt};
-use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::protocol::{CloseFrame, Message as WebSocketMessage};
+use tokio_tungstenite::WebSocketStream;
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub struct ClientActorId {
     pub identity: Hash,
-    pub name: u64
+    pub name: u64,
 }
 
 impl fmt::Display for ClientActorId {
@@ -76,7 +76,6 @@ impl ClientConnectionSender {
     }
 }
 
-
 pub struct ClientConnection {
     pub id: ClientActorId,
     pub alive: bool,
@@ -89,7 +88,12 @@ pub struct ClientConnection {
 }
 
 impl ClientConnection {
-    pub fn new(id: ClientActorId, ws: WebSocketStream<Upgraded>, module_identity: Hash, module_name: String) -> ClientConnection {
+    pub fn new(
+        id: ClientActorId,
+        ws: WebSocketStream<Upgraded>,
+        module_identity: Hash,
+        module_name: String,
+    ) -> ClientConnection {
         let (mut sink, stream) = ws.split();
 
         // Buffer up to 64 client messages
@@ -252,7 +256,9 @@ impl ClientConnection {
         let args = obj.get("args").unwrap();
         let arg_bytes = args.to_string().as_bytes().to_vec();
 
-        api::database::call(hex_module_identity, module_name, reducer.to_owned(), arg_bytes).await.unwrap();
+        api::database::call(hex_module_identity, module_name, reducer.to_owned(), arg_bytes)
+            .await
+            .unwrap();
         false
     }
 }

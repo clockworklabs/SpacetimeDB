@@ -1,11 +1,11 @@
 use crate::hash::Hash;
-use std::{sync::Mutex, collections::HashMap, time::Duration};
+use crate::metrics::CONNECTED_GAME_CLIENTS;
 use hyper::upgrade::Upgraded;
 use lazy_static::lazy_static;
+use std::{collections::HashMap, sync::Mutex, time::Duration};
 use tokio::{task::JoinHandle, time::sleep};
+use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
 use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::tungstenite::protocol::{Message as WebSocketMessage};
-use crate::metrics::CONNECTED_GAME_CLIENTS;
 
 pub use super::client_connection::{ClientActorId, ClientConnection, ClientConnectionSender};
 
@@ -19,7 +19,6 @@ lazy_static! {
         })
     };
 }
-
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash)]
 struct Pointer(usize);
@@ -67,7 +66,7 @@ impl ClientActorIndex {
             }
         }));
     }
-    
+
     pub fn get_client(&self, id: &ClientActorId) -> Option<&ClientConnection> {
         let index = self.id_index.get(id);
         if let Some(i) = index {
@@ -99,7 +98,13 @@ impl ClientActorIndex {
         }
     }
 
-    pub fn new_client(&mut self, identity: Hash, module_identity: Hash, module_name: String, ws: WebSocketStream<Upgraded>) -> ClientActorId {
+    pub fn new_client(
+        &mut self,
+        identity: Hash,
+        module_identity: Hash,
+        module_name: String,
+        ws: WebSocketStream<Upgraded>,
+    ) -> ClientActorId {
         CONNECTED_GAME_CLIENTS.inc();
 
         let client_name = self.client_name_auto_increment_state;
@@ -125,5 +130,4 @@ impl ClientActorIndex {
 
         client_id
     }
-
 }
