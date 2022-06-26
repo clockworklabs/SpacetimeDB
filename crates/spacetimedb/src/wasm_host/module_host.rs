@@ -1,11 +1,12 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex}, time::{SystemTime, UNIX_EPOCH},
+    sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
     clients::{client_connection_index::ClientActorId, module_subscription_actor::ModuleSubscription},
-    db::{relational_db::RelationalDB, transactional_db::Tx, messages::write::Write},
+    db::{messages::write::Write, relational_db::RelationalDB, transactional_db::Tx},
     hash::Hash,
 };
 use tokio::sync::{mpsc, oneshot};
@@ -23,7 +24,7 @@ pub enum EventStatus {
 #[derive(Debug, Clone)]
 pub struct ModuleFunctionCall {
     pub reducer: String,
-    pub arg_bytes: Vec<u8>
+    pub arg_bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +32,7 @@ pub struct ModuleEvent {
     pub timestamp: u64,
     pub caller_identity: String, // hex identity
     pub function_call: ModuleFunctionCall,
-    pub status: EventStatus, 
+    pub status: EventStatus,
 }
 
 #[derive(Debug)]
@@ -344,14 +345,14 @@ impl ModuleHostActor {
                     frames[i].function_name().or(Some("<func>")).unwrap()
                 );
             }
-            let timestamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_micros() as u64;
+            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
             let event = ModuleEvent {
                 timestamp,
                 caller_identity: "TODO".to_owned(),
-                function_call: ModuleFunctionCall { reducer: reducer_symbol.to_string(), arg_bytes: arg_bytes.to_owned() },
+                function_call: ModuleFunctionCall {
+                    reducer: reducer_symbol.to_string(),
+                    arg_bytes: arg_bytes.to_owned(),
+                },
                 status: EventStatus::Failed,
             };
             self.subscription.publish_event(event).unwrap();
@@ -361,14 +362,14 @@ impl ModuleHostActor {
             let tx = instance_tx_map.remove(&instance_id).unwrap();
             if let Some(tx) = stdb.commit_tx(tx) {
                 stdb.txdb.message_log.sync_all().unwrap();
-                let timestamp = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_micros() as u64;
+                let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
                 let event = ModuleEvent {
                     timestamp,
                     caller_identity: "TODO".to_owned(),
-                    function_call: ModuleFunctionCall { reducer: reducer_symbol.to_string(), arg_bytes: arg_bytes.to_owned() },
+                    function_call: ModuleFunctionCall {
+                        reducer: reducer_symbol.to_string(),
+                        arg_bytes: arg_bytes.to_owned(),
+                    },
                     status: EventStatus::Committed(tx.writes),
                 };
                 self.subscription.publish_event(event).unwrap();

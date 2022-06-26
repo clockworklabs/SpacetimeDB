@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use spacetimedb_bindings::TypeValue;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,7 +12,7 @@ pub enum MessageJson {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionCallJson {
     pub reducer: String,
-    pub arg_bytes: Vec<u8>
+    pub arg_bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,15 +30,15 @@ pub struct TableRowOperationJson {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubscriptionUpdateJson {
-    pub table_updates: Vec<TableUpdateJson>
+    pub table_updates: Vec<TableUpdateJson>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EventJson {
     pub timestamp: u64,
-    pub status: String, // committed, failed
+    pub status: String,          // committed, failed
     pub caller_identity: String, // hex identity
-    pub function_call: FunctionCallJson
+    pub function_call: FunctionCallJson,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -216,7 +216,12 @@ impl ClientConnection {
         }));
     }
 
-    async fn on_binary(client_id: ClientActorId, hex_module_identity: &str, module_name: &str, message_buf: Vec<u8>) -> Result<(), anyhow::Error> {
+    async fn on_binary(
+        client_id: ClientActorId,
+        hex_module_identity: &str,
+        module_name: &str,
+        message_buf: Vec<u8>,
+    ) -> Result<(), anyhow::Error> {
         let message = Message::decode(Bytes::from(message_buf))?;
         match message.r#type {
             Some(message::Type::FunctionCall(f)) => {
@@ -227,7 +232,7 @@ impl ClientConnection {
                     .unwrap();
 
                 Ok(())
-            },
+            }
             Some(_) => Err(anyhow::anyhow!("Unexpected client message type.")),
             None => Err(anyhow::anyhow!("No message from client")),
         }

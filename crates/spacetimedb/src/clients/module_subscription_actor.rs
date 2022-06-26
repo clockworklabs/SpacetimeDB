@@ -2,11 +2,19 @@ use super::{
     client_connection::{ClientActorId, ClientConnectionSender},
     client_connection_index::CLIENT_ACTOR_INDEX,
 };
-use crate::{db::{
-    relational_db::{RelationalDB, ST_TABLES_ID},
-}, json::websocket::{MessageJson, TransactionUpdateJson, EventJson, FunctionCallJson, SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson}, wasm_host::module_host::ModuleEvent};
-use spacetimedb_bindings::{TupleValue, TupleDef};
-use std::{sync::{Arc, Mutex}, collections::HashMap};
+use crate::{
+    db::relational_db::{RelationalDB, ST_TABLES_ID},
+    json::websocket::{
+        EventJson, FunctionCallJson, MessageJson, SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson,
+        TransactionUpdateJson,
+    },
+    wasm_host::module_host::ModuleEvent,
+};
+use spacetimedb_bindings::{TupleDef, TupleValue};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -41,8 +49,7 @@ impl ModuleSubscription {
     }
 
     pub fn publish_event(&self, event: ModuleEvent) -> Result<(), anyhow::Error> {
-        self.tx
-            .send(ModuleSubscriptionCommand::PublishEvent { event })?;
+        self.tx.send(ModuleSubscriptionCommand::PublishEvent { event })?;
         Ok(())
     }
 }
@@ -100,7 +107,7 @@ impl ModuleSubscriptionActor {
                 table_row_operations.push(TableRowOperationJson {
                     op: "insert".to_string(),
                     row_pk,
-                    row: row.elements, 
+                    row: row.elements,
                 });
             }
             subscription_update.table_updates.push(TableUpdateJson {
@@ -118,12 +125,8 @@ impl ModuleSubscriptionActor {
 
     pub fn publish_event(&mut self, event: ModuleEvent) -> bool {
         let (status_str, writes) = match event.status {
-            crate::wasm_host::module_host::EventStatus::Committed(writes) => {
-                ("committed", writes)
-            },
-            crate::wasm_host::module_host::EventStatus::Failed => {
-                ("failed", Vec::new())
-            },
+            crate::wasm_host::module_host::EventStatus::Committed(writes) => ("committed", writes),
+            crate::wasm_host::module_host::EventStatus::Failed => ("failed", Vec::new()),
         };
 
         let event = EventJson {
@@ -189,9 +192,7 @@ impl ModuleSubscriptionActor {
             });
         }
 
-        let subscription_update = SubscriptionUpdateJson {
-            table_updates,
-        };
+        let subscription_update = SubscriptionUpdateJson { table_updates };
 
         let tx_update = TransactionUpdateJson {
             event,
