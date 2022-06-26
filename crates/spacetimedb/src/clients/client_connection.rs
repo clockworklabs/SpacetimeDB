@@ -3,14 +3,23 @@ use std::fmt;
 use crate::api;
 use crate::clients::client_connection_index::CLIENT_ACTOR_INDEX;
 use crate::hash::Hash;
+use crate::protobuf::websocket::{message, Message};
 use futures::{prelude::*, stream::SplitStream, SinkExt};
 use hyper::upgrade::Upgraded;
+use prost::bytes::Bytes;
+use prost::Message as OtherMessage;
 use tokio::spawn;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::protocol::{CloseFrame, Message as WebSocketMessage};
 use tokio_tungstenite::WebSocketStream;
+
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub enum Protocol {
+    Text,
+    Binary,
+}
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub struct ClientActorId {
@@ -82,6 +91,7 @@ pub struct ClientConnection {
     _module_identity: Hash,
     hex_module_identity: String,
     module_name: String,
+    protocol: Protocol,
     stream: Option<SplitStream<WebSocketStream<Upgraded>>>,
     sendtx: mpsc::Sender<SendCommand>,
     read_handle: Option<JoinHandle<()>>,
@@ -93,6 +103,7 @@ impl ClientConnection {
         ws: WebSocketStream<Upgraded>,
         module_identity: Hash,
         module_name: String,
+        protocol: Protocol,
     ) -> ClientConnection {
         let (mut sink, stream) = ws.split();
 
@@ -112,6 +123,7 @@ impl ClientConnection {
             _module_identity: module_identity,
             hex_module_identity,
             module_name,
+            protocol,
             stream: Some(stream),
             sendtx,
             read_handle: None,
@@ -134,14 +146,14 @@ impl ClientConnection {
             while let Some(message) = stream.next().await {
                 match message {
                     Ok(WebSocketMessage::Text(message)) => {
-                        let drop_client = Self::on_text(id, &hex_module_identity, &module_name, message).await;
-                        if drop_client {
+                        if let Err(e) = Self::on_text(id, &hex_module_identity, &module_name, message).await {
+                            log::debug!("Client caused error on text message: {}", e);
                             break;
                         }
                     }
                     Ok(WebSocketMessage::Binary(message_buf)) => {
-                        let drop_client = Self::on_binary(id, message_buf).await;
-                        if drop_client {
+                        if let Err(e) = Self::on_binary(id, &hex_module_identity, &module_name, message_buf).await {
+                            log::debug!("Client caused error on binary message: {}", e);
                             break;
                         }
                     }
@@ -204,62 +216,43 @@ impl ClientConnection {
         }));
     }
 
-    async fn on_binary(client_id: ClientActorId, message_buf: Vec<u8>) -> bool {
-        todo!();
-        // let message = Message::decode(Bytes::from(message_buf));
-        // let message = match message {
-        //     Ok(message) => message,
-        //     Err(error) => {
-        //         log::warn!("Client sent poorly formed message: {}", error);
-        //         return true; // Client is misbehaving, unceremoniously drop it
-        //     }
-        // };
-        // let message = match message.r#type {
-        //     Some(value) => value,
-        //     None => {
-        //         log::warn!("Client sent a message with no type");
-        //         return false;
-        //     } // TBH I don't even know why prost does this. I don't think this is possible
-        // };
-        // match message {
-        //     Type::ActionRequest(request) => {
-        //         GameClientDelegate::shared().send(actor_id, request).await;
-        //     }
-        //     Type::DataRequest(request) => {
-        //         let response = GameClientDelegate::handle_data_request(actor_id, request);
-        //         let client = { GAME_CLIENT_INDEX.lock().unwrap().get_client(&client_id).unwrap().sender() };
-        //         // NOTE: This is not the way we were doing it on the old server, but I think it's the
-        //         // cause of "unknown message from server on the client"
-        //         if let Some(response) = response {
-        //             client
-        //                 .send_message_warn_fail(&Message {
-        //                     r#type: Some(message::Type::DataResponse(response)),
-        //                 })
-        //                 .await;
-        //         }
-        //     }
-        //     Type::SignInComplete(_complete) => {
-        //         // TODO: It's unclear if we still need this
-        //     }
-        //     _ => {
-        //         warn!("Client sent an unrecognized message");
-        //     }
-        // };
-        // return false;
+    async fn on_binary(client_id: ClientActorId, hex_module_identity: &str, module_name: &str, message_buf: Vec<u8>) -> Result<(), anyhow::Error> {
+        let message = Message::decode(Bytes::from(message_buf))?;
+        match message.r#type {
+            Some(message::Type::FunctionCall(f)) => {
+                let reducer = f.reducer;
+                let arg_bytes = f.arg_bytes;
+                api::database::call(hex_module_identity, module_name, reducer.to_owned(), arg_bytes)
+                    .await
+                    .unwrap();
+
+                Ok(())
+            },
+            Some(_) => Err(anyhow::anyhow!("Unexpected client message type.")),
+            None => Err(anyhow::anyhow!("No message from client")),
+        }
     }
 
-    async fn on_text(client_id: ClientActorId, hex_module_identity: &str, module_name: &str, message: String) -> bool {
-        // TODO: Throw error and close connection if invalid
-        let v: serde_json::Value = serde_json::from_str(&message).unwrap();
-        let obj = v.as_object().unwrap();
-        let reducer = obj.get("fn").unwrap().as_str().unwrap();
-        let args = obj.get("args").unwrap();
+    async fn on_text(
+        client_id: ClientActorId,
+        hex_module_identity: &str,
+        module_name: &str,
+        message: String,
+    ) -> Result<(), anyhow::Error> {
+        let v: serde_json::Value = serde_json::from_str(&message)?;
+        let obj = v.as_object().ok_or(anyhow::anyhow!("not object"))?;
+        let reducer = obj
+            .get("fn")
+            .ok_or(anyhow::anyhow!("no fn"))?
+            .as_str()
+            .ok_or(anyhow::anyhow!("can't convert fn to str"))?;
+        let args = obj.get("args").ok_or(anyhow::anyhow!("no args"))?;
         let arg_bytes = args.to_string().as_bytes().to_vec();
 
         api::database::call(hex_module_identity, module_name, reducer.to_owned(), arg_bytes)
             .await
             .unwrap();
-        false
+        Ok(())
     }
 }
 

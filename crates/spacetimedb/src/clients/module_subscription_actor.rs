@@ -2,33 +2,18 @@ use super::{
     client_connection::{ClientActorId, ClientConnectionSender},
     client_connection_index::CLIENT_ACTOR_INDEX,
 };
-use crate::db::{
-    messages::transaction::Transaction,
+use crate::{db::{
     relational_db::{RelationalDB, ST_TABLES_ID},
-};
-use serde::{Deserialize, Serialize};
-use spacetimedb_bindings::{TupleValue, TypeValue};
-use std::sync::{Arc, Mutex};
+}, json::websocket::{MessageJson, TransactionUpdateJson, EventJson, FunctionCallJson, SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson}, wasm_host::module_host::ModuleEvent};
+use spacetimedb_bindings::{TupleValue, TupleDef};
+use std::{sync::{Arc, Mutex}, collections::HashMap};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WriteJson {
-    table_id: u32,
-    op: String,
-    row_pk: String,
-    row: Vec<TypeValue>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MessageJson {
-    writes: Vec<WriteJson>,
-}
 
 #[derive(Debug)]
 enum ModuleSubscriptionCommand {
     AddSubscriber { client_id: ClientActorId },
-    PublishTransaction { transaction: Transaction },
+    PublishEvent { event: ModuleEvent },
 }
 
 #[derive(Clone)]
@@ -55,9 +40,9 @@ impl ModuleSubscription {
         Ok(())
     }
 
-    pub fn publish_transaction(&self, transaction: Transaction) -> Result<(), anyhow::Error> {
+    pub fn publish_event(&self, event: ModuleEvent) -> Result<(), anyhow::Error> {
         self.tx
-            .send(ModuleSubscriptionCommand::PublishTransaction { transaction })?;
+            .send(ModuleSubscriptionCommand::PublishEvent { event })?;
         Ok(())
     }
 }
@@ -81,7 +66,7 @@ impl ModuleSubscriptionActor {
                 let should_exit = self.add_subscriber(client_id);
                 should_exit
             }
-            ModuleSubscriptionCommand::PublishTransaction { transaction } => self.publish_transaction(transaction),
+            ModuleSubscriptionCommand::PublishEvent { event } => self.publish_event(event),
         }
     }
 
@@ -97,7 +82,9 @@ impl ModuleSubscriptionActor {
     fn publish_state(&mut self, subscriber: ClientConnectionSender) {
         // For all tables, push all state
         // TODO: We need some way to namespace tables so we don't send all the internal tables and stuff
-        let mut message_json = MessageJson { writes: Vec::new() };
+        let mut subscription_update = SubscriptionUpdateJson {
+            table_updates: Vec::new(),
+        };
         let mut stdb = self.relational_db.lock().unwrap();
         let mut tx = stdb.begin_tx();
         let tables = stdb
@@ -106,39 +93,77 @@ impl ModuleSubscriptionActor {
             .map(|row| *row.elements[0].as_u32().unwrap())
             .collect::<Vec<u32>>();
         for table_id in tables {
+            let mut table_row_operations = Vec::new();
             for row in stdb.iter(&mut tx, table_id).unwrap() {
                 let row_pk = stdb.pk_for_row(&row);
                 let row_pk = base64::encode(row_pk.to_bytes());
-                message_json.writes.push(WriteJson {
-                    table_id,
+                table_row_operations.push(TableRowOperationJson {
                     op: "insert".to_string(),
                     row_pk,
-                    row: row.elements,
-                })
+                    row: row.elements, 
+                });
             }
+            subscription_update.table_updates.push(TableUpdateJson {
+                table_id,
+                table_row_operations,
+            })
         }
         stdb.rollback_tx(tx);
 
+        let message_json = MessageJson::SubscriptionUpdate(subscription_update);
         let message = serde_json::to_string(&message_json).unwrap();
         let subscriber = subscriber.clone();
         Self::send_async(subscriber, message);
     }
 
-    pub fn publish_transaction(&mut self, transaction: Transaction) -> bool {
-        let mut message_json = MessageJson { writes: Vec::new() };
+    pub fn publish_event(&mut self, event: ModuleEvent) -> bool {
+        let (status_str, writes) = match event.status {
+            crate::wasm_host::module_host::EventStatus::Committed(writes) => {
+                ("committed", writes)
+            },
+            crate::wasm_host::module_host::EventStatus::Failed => {
+                ("failed", Vec::new())
+            },
+        };
 
-        for write in transaction.writes {
+        let event = EventJson {
+            timestamp: event.timestamp,
+            status: status_str.to_string(),
+            caller_identity: event.caller_identity,
+            function_call: FunctionCallJson {
+                reducer: event.function_call.reducer,
+                arg_bytes: event.function_call.arg_bytes,
+            },
+        };
+
+        let mut schemas: HashMap<u32, TupleDef> = HashMap::new();
+        let mut map: HashMap<u32, Vec<TableRowOperationJson>> = HashMap::new();
+        for write in writes {
             let op_string = match write.operation {
                 crate::db::messages::write::Operation::Delete => "delete".to_string(),
                 crate::db::messages::write::Operation::Insert => "insert".to_string(),
             };
 
-            let (row, row_pk) = {
-                // TODO: probably awfully slow for very little reason
+            let tuple_def = if let Some(tuple_def) = schemas.get(&write.set_id) {
+                tuple_def
+            } else {
                 let mut stdb = self.relational_db.lock().unwrap();
                 let mut tx = stdb.begin_tx();
                 let tuple_def = stdb.schema_for_table(&mut tx, write.set_id).unwrap();
                 stdb.rollback_tx(tx);
+                schemas.insert(write.set_id, tuple_def);
+                schemas.get(&write.set_id).unwrap()
+            };
+
+            let vec = if let Some(vec) = map.get_mut(&write.set_id) {
+                vec
+            } else {
+                map.insert(write.set_id, Vec::new());
+                map.get_mut(&write.set_id).unwrap()
+            };
+
+            let (row, row_pk) = {
+                let stdb = self.relational_db.lock().unwrap();
                 let tuple = stdb
                     .txdb
                     .from_data_key(&write.data_key, |data| {
@@ -149,15 +174,31 @@ impl ModuleSubscriptionActor {
                 (tuple, base64::encode(write.data_key.to_bytes()))
             };
 
-            message_json.writes.push(WriteJson {
-                table_id: write.set_id,
+            vec.push(TableRowOperationJson {
                 op: op_string,
                 row_pk,
                 row: row.elements,
-            })
+            });
         }
 
-        self.broadcast_message_json(&message_json);
+        let mut table_updates = Vec::new();
+        for (table_id, table_row_operations) in map.drain() {
+            table_updates.push(TableUpdateJson {
+                table_id,
+                table_row_operations,
+            });
+        }
+
+        let subscription_update = SubscriptionUpdateJson {
+            table_updates,
+        };
+
+        let tx_update = TransactionUpdateJson {
+            event,
+            subscription_update,
+        };
+
+        self.broadcast_message_json(&MessageJson::TransactionUpdate(tx_update));
 
         false
     }

@@ -1,9 +1,13 @@
+use std::fmt::Binary;
+
 use crate::api;
+use crate::clients::client_connection::Protocol;
 use crate::clients::client_connection_index::CLIENT_ACTOR_INDEX;
 use crate::hash::Hash;
 use crate::identity::decode_token;
 use crate::wasm_host;
 use gotham::handler::HandlerError;
+use gotham::mime::TEXT;
 use gotham::prelude::StaticResponseExtender;
 use gotham::state::request_id;
 use gotham::state::FromState;
@@ -34,6 +38,8 @@ lazy_static! {
 }
 
 const PROTO_WEBSOCKET: &str = "websocket";
+const TEXT_PROTOCOL: &str = "v1.text.spacetimedb";
+const BIN_PROTOCOL: &str = "v1.bin.spacetimedb";
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 pub struct SubscribeParams {
@@ -134,6 +140,7 @@ async fn on_connected(
     module_identity: Hash,
     module_name: String,
     headers: HeaderMap,
+    protocol: Protocol,
     ws: WebSocketStream<Upgraded>,
 ) {
     let ip_address = headers.get("x-forwarded-for").and_then(|value| {
@@ -151,7 +158,7 @@ async fn on_connected(
 
     let id = {
         let cai = &mut CLIENT_ACTOR_INDEX.lock().unwrap();
-        cai.new_client(identity, module_identity, module_name.clone(), ws)
+        cai.new_client(identity, module_identity, module_name.clone(), protocol, ws)
     };
 
     // Get the right module and add this client as a subscriber
@@ -177,19 +184,19 @@ async fn on_upgrade(
     }
     .clone();
 
-    let protocol_versions = headers.get_all(SEC_WEBSOCKET_PROTOCOL);
+    let protocols = headers.get_all(SEC_WEBSOCKET_PROTOCOL);
     let mut count = 0;
-    let mut protocol_version: Option<&HeaderValue> = None;
-    for version in protocol_versions {
+    let mut protocol: Option<&HeaderValue> = None;
+    for p in protocols {
         count += 1;
-        protocol_version = Some(version);
+        protocol = Some(p);
     }
     if count != 1 {
         log::debug!("Client tried to connect without protocol version (or provided mulitple).");
         return Ok((state, invalid_protocol_res()));
     }
-    let protocol_version_header = protocol_version.unwrap();
-    let protocol_version = match protocol_version_header.to_str() {
+    let protocol_header = protocol.unwrap();
+    let protocol = match protocol_header.to_str() {
         Ok(value) => value,
         Err(_) => {
             log::debug!("Could not convert protocol version to string.");
@@ -197,15 +204,16 @@ async fn on_upgrade(
         }
     };
 
-    if !meets_protocol_requirements(protocol_version) {
-        log::debug!(
-            "Client with protocol version {} did not meet the requirement of {}",
-            protocol_version,
-            22
-        );
-        return Ok((state, invalid_protocol_res()));
-    }
-    let protocol_version_header = protocol_version_header.clone();
+    let protocol = match protocol {
+        TEXT_PROTOCOL => Protocol::Text,
+        BIN_PROTOCOL => Protocol::Binary,
+        _ => {
+            log::debug!("Unsupported protocol: {}", protocol);
+            return Ok((state, invalid_protocol_res()));
+        }
+    };
+
+    let protocol_header = protocol_header.clone();
 
     // Validate the credentials of this connection
     let auth_header = headers.get(AUTHORIZATION);
@@ -280,15 +288,12 @@ async fn on_upgrade(
             Err(err) => Err(err),
         };
         match ws {
-            Ok(ws) => on_connected(identity, module_identity, module_name, headers, ws).await,
+            Ok(ws) => on_connected(identity, module_identity, module_name, headers, protocol, ws).await,
             Err(err) => log::error!("WebSocket init error for req_id {}: {}", req_id, err),
         }
     });
 
-    Ok((
-        state,
-        accept_ws_res(&key, &protocol_version_header, identity, identity_token),
-    ))
+    Ok((state, accept_ws_res(&key, &protocol_header, identity, identity_token)))
 }
 
 pub async fn handle_websocket(mut state: State) -> Result<(State, Response<Body>), (State, HandlerError)> {

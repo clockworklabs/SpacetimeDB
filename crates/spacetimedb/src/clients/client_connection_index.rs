@@ -7,6 +7,7 @@ use tokio::{task::JoinHandle, time::sleep};
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
 use tokio_tungstenite::WebSocketStream;
 
+use super::client_connection::Protocol;
 pub use super::client_connection::{ClientActorId, ClientConnection, ClientConnectionSender};
 
 lazy_static! {
@@ -103,6 +104,7 @@ impl ClientActorIndex {
         identity: Hash,
         module_identity: Hash,
         module_name: String,
+        protocol: Protocol,
         ws: WebSocketStream<Upgraded>,
     ) -> ClientActorId {
         CONNECTED_GAME_CLIENTS.inc();
@@ -116,7 +118,7 @@ impl ClientActorIndex {
             identity,
             name: client_name,
         };
-        let mut game_client = ClientConnection::new(client_id, ws, module_identity, module_name);
+        let mut game_client = ClientConnection::new(client_id, ws, module_identity, module_name, protocol);
 
         // NOTE: Begin receiving when we create a new client. This only really works
         // because authentication is provided in the headers of the request. That is to say,

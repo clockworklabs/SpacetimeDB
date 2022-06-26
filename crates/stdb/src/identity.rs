@@ -9,10 +9,7 @@ pub fn cli() -> clap::Command<'static> {
 
 pub async fn exec(_args: &ArgMatches) -> Result<(), anyhow::Error> {
     let client = reqwest::Client::new();
-    let res = client
-        .get(format!("http://localhost:3000/identity"))
-        .send()
-        .await?;
+    let res = client.get(format!("http://localhost:3000/identity")).send().await?;
 
     let res = res.error_for_status()?;
 

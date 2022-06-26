@@ -1,14 +1,17 @@
-mod subscribe;
 mod database;
 mod identity;
-use gotham::{router::{build_simple_router, Router}, prelude::*};
+pub mod subscribe;
 use database::router as database_router;
+use gotham::{
+    prelude::*,
+    router::{build_simple_router, Router},
+};
 use identity::router as identity_router;
 
 pub fn router() -> Router {
     build_simple_router(|route| {
         // route.delegate("/metrics").to_router(metrics_router());
-        route.delegate("/database/:identity/:name").to_router(database_router());
+        route.delegate("/database").to_router(database_router());
         route.delegate("/identity").to_router(identity_router());
     })
 }

@@ -1,6 +1,11 @@
-use gotham::{router::{build_simple_router, Router}, handler::SimpleHandlerResult, state::State, prelude::*};
-use hyper::{Response, StatusCode, Body};
-use serde::{Serialize, Deserialize};
+use gotham::{
+    handler::SimpleHandlerResult,
+    prelude::*,
+    router::{build_simple_router, Router},
+    state::State,
+};
+use hyper::{Body, Response, StatusCode};
+use serde::{Deserialize, Serialize};
 
 use crate::api::spacetime_identity;
 
@@ -29,10 +34,6 @@ async fn get_identity(_state: &mut State) -> SimpleHandlerResult {
 
 pub fn router() -> Router {
     build_simple_router(|route| {
-
-        route
-            .get("/")
-            .to_async_borrowing(get_identity);
-
+        route.get("/").to_async_borrowing(get_identity);
     })
 }

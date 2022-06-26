@@ -1,3 +1,64 @@
 syntax = "proto3";
 
-package spacetimedb;
+package websocket;
+
+////// Generic Message //////
+// TODO: Theoretically this format could be replaced by TypeValue/TypeDef
+// but I don't think we want to do that yet.
+// TODO: Split this up into ServerBound and ClientBound if there's no overlap
+message Message {
+    oneof type {
+        FunctionCall functionCall = 1;
+        SubscriptionUpdate subscriptionUpdate = 2;
+        Event event = 3;
+        TransactionUpdate transactionUpdate = 4;
+    }
+}
+
+// TODO: Evaluate if it makes sense for this to also include the
+// identity and name of the module this is calling
+message FunctionCall {
+    // TODO: Maybe this should be replaced with an int identifier for performance?
+    string reducer = 1;
+    bytes argBytes = 2;
+}
+
+message Event {
+    enum Status {
+        committed = 0;
+        failed = 1;
+    }
+    uint64 timestamp = 1;
+    bytes callerIdentity = 2;
+    FunctionCall functionCall = 3;
+
+    // TODO: arguably these should go inside an EventStatus message
+    // since success doesn't have a message
+    Status status = 4;
+    string message = 5;
+}
+
+// TODO: Maybe call this StateUpdate if it's implied to be a subscription update
+message SubscriptionUpdate {
+    repeated TableUpdate tableUpdates = 1;
+}
+
+message TableUpdate {
+    uint32 tableId = 1;
+    repeated TableRowOperation tableRowOperations = 2;
+}
+
+message TableRowOperation {
+    enum OperationType {
+        DELETE = 0;
+        INSERT = 1;
+    }
+    OperationType op = 1;
+    bytes row_pk = 2;
+    bytes row = 3;
+}
+
+message TransactionUpdate {
+    Event event = 1;
+    SubscriptionUpdate subscriptionUpdate = 2;
+}

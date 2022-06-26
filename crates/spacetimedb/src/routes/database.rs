@@ -1,4 +1,3 @@
-use hyper::Body;
 use crate::api;
 use gotham::anyhow::anyhow;
 use gotham::handler::HandlerError;
@@ -10,11 +9,12 @@ use gotham::router::Router;
 use gotham::state::State;
 use gotham::state::StateData;
 use hyper::body::HttpBody;
+use hyper::Body;
 use hyper::{Response, StatusCode};
 use serde::Deserialize;
 
-use super::subscribe::SubscribeParams;
 use super::subscribe::handle_websocket;
+use super::subscribe::SubscribeParams;
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct InitModuleParams {
@@ -134,32 +134,30 @@ async fn logs(state: &mut State) -> SimpleHandlerResult {
 
 pub fn router() -> Router {
     build_simple_router(|route| {
-
         route
-            .get("/subscribe")
+            .get("/:identity/:name/subscribe")
             .with_path_extractor::<SubscribeParams>()
             .to_async(handle_websocket);
 
         route
-            .post("/init")
+            .post("/:identity/:name/init")
             .with_path_extractor::<InitModuleParams>()
             .to_async_borrowing(init_module);
 
         route
-            .post("/update")
+            .post("/:identity/:name/update")
             .with_path_extractor::<UpdateModuleParams>()
             .to_async_borrowing(update_module);
 
         route
-            .post("/call/:reducer")
+            .post("/:identity/:name/call/:reducer")
             .with_path_extractor::<CallParams>()
             .to_async_borrowing(call);
 
         route
-            .get("/logs")
+            .get("/:identity/:name/logs")
             .with_path_extractor::<LogsParams>()
             .with_query_string_extractor::<LogsQuery>()
             .to_async_borrowing(logs);
-
     })
 }

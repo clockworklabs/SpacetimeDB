@@ -1,11 +1,11 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex}, time::{SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
     clients::{client_connection_index::ClientActorId, module_subscription_actor::ModuleSubscription},
-    db::{relational_db::RelationalDB, transactional_db::Tx},
+    db::{relational_db::RelationalDB, transactional_db::Tx, messages::write::Write},
     hash::Hash,
 };
 use tokio::sync::{mpsc, oneshot};
@@ -13,6 +13,26 @@ use wasmer::{imports, Array, Function, Instance, LazyInit, Module, Store, WasmPt
 use wasmer_middlewares::metering::{get_remaining_points, set_remaining_points, MeteringPoints};
 
 use super::instance_env::InstanceEnv;
+
+#[derive(Debug, Clone)]
+pub enum EventStatus {
+    Committed(Vec<Write>),
+    Failed,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModuleFunctionCall {
+    pub reducer: String,
+    pub arg_bytes: Vec<u8>
+}
+
+#[derive(Debug, Clone)]
+pub struct ModuleEvent {
+    pub timestamp: u64,
+    pub caller_identity: String, // hex identity
+    pub function_call: ModuleFunctionCall,
+    pub status: EventStatus, 
+}
 
 #[derive(Debug)]
 enum ModuleHostCommand {
@@ -324,13 +344,34 @@ impl ModuleHostActor {
                     frames[i].function_name().or(Some("<func>")).unwrap()
                 );
             }
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_micros() as u64;
+            let event = ModuleEvent {
+                timestamp,
+                caller_identity: "TODO".to_owned(),
+                function_call: ModuleFunctionCall { reducer: reducer_symbol.to_string(), arg_bytes: arg_bytes.to_owned() },
+                status: EventStatus::Failed,
+            };
+            self.subscription.publish_event(event).unwrap();
         } else {
             let mut stdb = self.relational_db.lock().unwrap();
             let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
             let tx = instance_tx_map.remove(&instance_id).unwrap();
             if let Some(tx) = stdb.commit_tx(tx) {
                 stdb.txdb.message_log.sync_all().unwrap();
-                self.subscription.publish_transaction(tx).unwrap();
+                let timestamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_micros() as u64;
+                let event = ModuleEvent {
+                    timestamp,
+                    caller_identity: "TODO".to_owned(),
+                    function_call: ModuleFunctionCall { reducer: reducer_symbol.to_string(), arg_bytes: arg_bytes.to_owned() },
+                    status: EventStatus::Committed(tx.writes),
+                };
+                self.subscription.publish_event(event).unwrap();
             } else {
                 todo!("Write skew, you need to implement retries my man, T-dawg.");
             }

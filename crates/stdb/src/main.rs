@@ -6,9 +6,9 @@ use clap::Command;
 use std::process::exit;
 use std::vec;
 
-mod identity;
 mod call;
 mod energy;
+mod identity;
 mod init;
 mod login;
 mod logs;
@@ -69,7 +69,8 @@ Some common SpacetimeDB commands are
     logs        Prints logs from a Spacetime database
     call        Invokes a Spacetime function
     identity    Requests a new Spacetime Identity and token
-",)
+",
+        )
     //signup      Creates a new SpacetimeDB identity using your email
     //login       Login using an existing identity
     //energy      Invokes commands related to energy

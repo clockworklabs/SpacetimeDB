@@ -1,5 +1,5 @@
 mod instance_env;
-mod module_host;
+pub mod module_host;
 
 use crate::hash::{hash_bytes, Hash};
 use anyhow;
@@ -183,8 +183,11 @@ impl HostActor {
         let initial_points = 1000000;
         let metering = Arc::new(Metering::new(initial_points, cost_function));
 
-        let mut compiler_config = wasmer_compiler_llvm::LLVM::default();
-        compiler_config.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
+        // let mut compiler_config = wasmer_compiler_llvm::LLVM::default();
+        // compiler_config.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
+        // compiler_config.push_middleware(metering);
+        let mut compiler_config = wasmer::Cranelift::default();
+        compiler_config.opt_level(wasmer::CraneliftOptLevel::Speed);
         compiler_config.push_middleware(metering);
 
         let store = Store::new(&Universal::new(compiler_config).engine());

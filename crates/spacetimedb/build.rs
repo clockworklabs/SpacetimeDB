@@ -15,7 +15,7 @@ fn main() {
     let mut config = prost_build::Config::new();
     config.btree_map(&["."]);
 
-    let out_dir = &PathBuf::from("src/messages");
+    let out_dir = &PathBuf::from("src/protobuf");
     fs::create_dir_all(out_dir).expect("failed to create prefix directory");
     config.out_dir(out_dir);
 
