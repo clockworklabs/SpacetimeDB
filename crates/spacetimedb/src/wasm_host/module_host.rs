@@ -6,7 +6,11 @@ use std::{
 
 use crate::{
     clients::{client_connection_index::ClientActorId, module_subscription_actor::ModuleSubscription},
-    db::{messages::write::Write, relational_db::RelationalDB, transactional_db::Tx},
+    db::{
+        messages::{transaction::Transaction, write::Write},
+        relational_db::RelationalDB,
+        transactional_db::Tx,
+    },
     hash::Hash,
 };
 use tokio::sync::{mpsc, oneshot};
@@ -30,7 +34,7 @@ pub struct ModuleFunctionCall {
 #[derive(Debug, Clone)]
 pub struct ModuleEvent {
     pub timestamp: u64,
-    pub caller_identity: String, // hex identity
+    pub caller_identity: Hash,
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
 }
@@ -38,6 +42,7 @@ pub struct ModuleEvent {
 #[derive(Debug)]
 enum ModuleHostCommand {
     CallReducer {
+        caller_identity: Hash,
         reducer_name: String,
         arg_bytes: Vec<u8>,
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
@@ -74,10 +79,16 @@ impl ModuleHost {
         ModuleHost { tx }
     }
 
-    pub async fn call_reducer(&self, reducer_name: String, arg_bytes: Vec<u8>) -> Result<(), anyhow::Error> {
+    pub async fn call_reducer(
+        &self,
+        caller_identity: Hash,
+        reducer_name: String,
+        arg_bytes: Vec<u8>,
+    ) -> Result<(), anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.tx
             .send(ModuleHostCommand::CallReducer {
+                caller_identity,
                 reducer_name,
                 arg_bytes,
                 respond_to: tx,
@@ -169,11 +180,14 @@ impl ModuleHostActor {
     fn handle_message(&mut self, message: ModuleHostCommand) -> bool {
         match message {
             ModuleHostCommand::CallReducer {
+                caller_identity,
                 reducer_name,
                 arg_bytes,
                 respond_to,
             } => {
-                respond_to.send(self.call_reducer(&reducer_name, &arg_bytes)).unwrap();
+                respond_to
+                    .send(self.call_reducer(caller_identity, &reducer_name, &arg_bytes))
+                    .unwrap();
                 false
             }
             ModuleHostCommand::InitDatabase { respond_to } => {
@@ -268,11 +282,28 @@ impl ModuleHostActor {
         Ok(())
     }
 
-    fn call_reducer(&self, reducer_name: &str, arg_bytes: &[u8]) -> Result<(), anyhow::Error> {
+    fn call_reducer(&self, caller_identity: Hash, reducer_name: &str, arg_bytes: &[u8]) -> Result<(), anyhow::Error> {
         // TODO: validate arg_bytes
         let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
-        self.execute_reducer(&reducer_symbol, arg_bytes)?;
+        let tx = self.execute_reducer(&reducer_symbol, arg_bytes)?;
 
+        let status = if let Some(tx) = tx {
+            EventStatus::Committed(tx.writes)
+        } else {
+            EventStatus::Failed
+        };
+
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
+        let event = ModuleEvent {
+            timestamp,
+            caller_identity,
+            function_call: ModuleFunctionCall {
+                reducer: reducer_name.to_string(),
+                arg_bytes: arg_bytes.to_owned(),
+            },
+            status,
+        };
+        self.subscription.broadcast_event(event).unwrap();
         Ok(())
     }
 
@@ -280,7 +311,11 @@ impl ModuleHostActor {
         self.subscription.add_subscriber(client_id)
     }
 
-    fn execute_reducer(&self, reducer_symbol: &str, arg_bytes: impl AsRef<[u8]>) -> Result<(), anyhow::Error> {
+    fn execute_reducer(
+        &self,
+        reducer_symbol: &str,
+        arg_bytes: impl AsRef<[u8]>,
+    ) -> Result<Option<Transaction>, anyhow::Error> {
         // TODO: disallow calling non-reducer dunder functions
         let tx = {
             let mut stdb = self.relational_db.lock().unwrap();
@@ -345,38 +380,17 @@ impl ModuleHostActor {
                     frames[i].function_name().or(Some("<func>")).unwrap()
                 );
             }
-            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
-            let event = ModuleEvent {
-                timestamp,
-                caller_identity: "TODO".to_owned(),
-                function_call: ModuleFunctionCall {
-                    reducer: reducer_symbol.to_string(),
-                    arg_bytes: arg_bytes.to_owned(),
-                },
-                status: EventStatus::Failed,
-            };
-            self.subscription.publish_event(event).unwrap();
+            Ok(None)
         } else {
             let mut stdb = self.relational_db.lock().unwrap();
             let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
             let tx = instance_tx_map.remove(&instance_id).unwrap();
             if let Some(tx) = stdb.commit_tx(tx) {
                 stdb.txdb.message_log.sync_all().unwrap();
-                let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
-                let event = ModuleEvent {
-                    timestamp,
-                    caller_identity: "TODO".to_owned(),
-                    function_call: ModuleFunctionCall {
-                        reducer: reducer_symbol.to_string(),
-                        arg_bytes: arg_bytes.to_owned(),
-                    },
-                    status: EventStatus::Committed(tx.writes),
-                };
-                self.subscription.publish_event(event).unwrap();
+                Ok(Some(tx))
             } else {
                 todo!("Write skew, you need to implement retries my man, T-dawg.");
             }
         }
-        Ok(())
     }
 }

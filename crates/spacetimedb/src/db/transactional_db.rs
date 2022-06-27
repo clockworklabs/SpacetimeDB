@@ -257,8 +257,30 @@ impl TransactionalDB {
     }
 
     fn finalize(&mut self, tx: Tx) -> Transaction {
+        // TODO: This is a gross hack, need a better way to do this.
+        // Essentially what this is doing is searching the database to
+        // see if any of the inserts in this tx are already in the database
+        // so that we don't actually have to write any of the ones that are
+        // already there. Probably better to do in the insert function, but
+        // there are performance considerations.
+        let writes = tx
+            .writes
+            .into_iter()
+            .filter(|write| {
+                let mut tx_temp = Tx {
+                    parent_tx_offset: tx.parent_tx_offset,
+                    writes: Vec::new(),
+                    reads: Vec::new(),
+                };
+                match write.operation {
+                    Operation::Delete => self.seek(&mut tx_temp, write.set_id, write.data_key).is_some(),
+                    Operation::Insert => self.seek(&mut tx_temp, write.set_id, write.data_key).is_none(),
+                }
+            })
+            .collect::<Vec<_>>();
+
         // Rebase on the last open transaction (or closed transaction if none open)
-        let new_transaction = Transaction { writes: tx.writes };
+        let new_transaction = Transaction { writes };
 
         const COMMIT_SIZE: usize = 1;
         // TODO: avoid copy

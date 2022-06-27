@@ -53,6 +53,7 @@ enum HostCommand {
     CallReducer {
         identity: Hash,
         name: String,
+        caller_identity: Hash,
         reducer_name: String,
         arg_bytes: Vec<u8>,
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
@@ -105,12 +106,16 @@ impl HostActor {
             HostCommand::CallReducer {
                 identity,
                 name,
+                caller_identity,
                 reducer_name,
                 arg_bytes,
                 respond_to,
             } => {
                 respond_to
-                    .send(self.call_reducer(identity, &name, &reducer_name, arg_bytes).await)
+                    .send(
+                        self.call_reducer(identity, &name, caller_identity, &reducer_name, arg_bytes)
+                            .await,
+                    )
                     .unwrap();
             }
             HostCommand::GetModule {
@@ -205,13 +210,14 @@ impl HostActor {
         &self,
         identity: Hash,
         name: &str,
+        caller_identity: Hash,
         reducer_name: &str,
         arg_bytes: impl AsRef<[u8]>,
     ) -> Result<(), anyhow::Error> {
         let key = (identity, name.to_string());
         let module_host = self.modules.get(&key).ok_or(anyhow::anyhow!("No such module found."))?;
         module_host
-            .call_reducer(reducer_name.into(), arg_bytes.as_ref().to_vec())
+            .call_reducer(caller_identity, reducer_name.into(), arg_bytes.as_ref().to_vec())
             .await?;
         Ok(())
     }
@@ -289,6 +295,7 @@ impl Host {
         &self,
         identity: Hash,
         name: String,
+        caller_identity: Hash,
         reducer_name: String,
         arg_bytes: Vec<u8>,
     ) -> Result<(), anyhow::Error> {
@@ -297,6 +304,7 @@ impl Host {
             .send(HostCommand::CallReducer {
                 identity,
                 name,
+                caller_identity,
                 reducer_name,
                 arg_bytes,
                 respond_to: tx,

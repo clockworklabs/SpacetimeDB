@@ -91,7 +91,7 @@ pub struct ClientConnection {
     _module_identity: Hash,
     hex_module_identity: String,
     module_name: String,
-    protocol: Protocol,
+    pub protocol: Protocol,
     stream: Option<SplitStream<WebSocketStream<Upgraded>>>,
     sendtx: mpsc::Sender<SendCommand>,
     read_handle: Option<JoinHandle<()>>,
@@ -227,9 +227,15 @@ impl ClientConnection {
             Some(message::Type::FunctionCall(f)) => {
                 let reducer = f.reducer;
                 let arg_bytes = f.arg_bytes;
-                api::database::call(hex_module_identity, module_name, reducer.to_owned(), arg_bytes)
-                    .await
-                    .unwrap();
+                api::database::call(
+                    hex_module_identity,
+                    module_name,
+                    client_id.identity,
+                    reducer.to_owned(),
+                    arg_bytes,
+                )
+                .await
+                .unwrap();
 
                 Ok(())
             }
@@ -254,9 +260,15 @@ impl ClientConnection {
         let args = obj.get("args").ok_or(anyhow::anyhow!("no args"))?;
         let arg_bytes = args.to_string().as_bytes().to_vec();
 
-        api::database::call(hex_module_identity, module_name, reducer.to_owned(), arg_bytes)
-            .await
-            .unwrap();
+        api::database::call(
+            hex_module_identity,
+            module_name,
+            client_id.identity,
+            reducer.to_owned(),
+            arg_bytes,
+        )
+        .await
+        .unwrap();
         Ok(())
     }
 }

@@ -95,7 +95,9 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     let data = data.unwrap();
     let arg_bytes = data.unwrap().to_vec();
 
-    match api::database::call(&identity, &name, reducer, arg_bytes).await {
+    let caller_identity = todo!("Need to implement auth for HTTP requests");
+
+    match api::database::call(&identity, &name, caller_identity, reducer, arg_bytes).await {
         Ok(_) => {}
         Err(e) => {
             log::error!("{}", e)

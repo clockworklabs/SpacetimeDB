@@ -1,5 +1,3 @@
-use std::fmt::Binary;
-
 use crate::api;
 use crate::clients::client_connection::Protocol;
 use crate::clients::client_connection_index::CLIENT_ACTOR_INDEX;
@@ -7,7 +5,6 @@ use crate::hash::Hash;
 use crate::identity::decode_token;
 use crate::wasm_host;
 use gotham::handler::HandlerError;
-use gotham::mime::TEXT;
 use gotham::prelude::StaticResponseExtender;
 use gotham::state::request_id;
 use gotham::state::FromState;
@@ -91,48 +88,6 @@ fn invalid_token_res() -> Response<Body> {
         .status(StatusCode::BAD_REQUEST)
         .body(Body::empty())
         .unwrap()
-}
-
-fn meets_protocol_requirements(test_protocol_version: &str) -> bool {
-    let target_protocol_version = "20"; // TODO
-
-    let test_components = test_protocol_version.split(".");
-    let target_components = target_protocol_version.split(".");
-
-    let mut test_ints: [u32; 3] = [0, 0, 0];
-    let mut target_ints: [u32; 3] = [0, 0, 0];
-
-    for (i, component) in test_components.enumerate() {
-        if i > test_ints.len() {
-            return false;
-        }
-        let parsed = component.parse::<u32>();
-        let parsed = match parsed {
-            Ok(value) => value,
-            Err(_) => return false,
-        };
-        test_ints[i] = parsed;
-    }
-
-    for (i, component) in target_components.enumerate() {
-        if i > target_ints.len() {
-            return false;
-        }
-        let parsed = component.parse::<u32>();
-        let parsed = match parsed {
-            Ok(value) => value,
-            Err(_) => return false,
-        };
-        target_ints[i] = parsed;
-    }
-
-    for i in 0..test_ints.len() {
-        if test_ints[i] < target_ints[i] {
-            return false;
-        }
-    }
-
-    return true;
 }
 
 async fn on_connected(

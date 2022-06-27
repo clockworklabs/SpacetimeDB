@@ -125,7 +125,13 @@ pub mod database {
         Ok(address)
     }
 
-    pub async fn call(identity: &str, name: &str, reducer: String, arg_bytes: Vec<u8>) -> Result<(), anyhow::Error> {
+    pub async fn call(
+        identity: &str,
+        name: &str,
+        caller_identity: Hash,
+        reducer: String,
+        arg_bytes: Vec<u8>,
+    ) -> Result<(), anyhow::Error> {
         // TODO: optimize by loading all these into memory
         let client = postgres::get_client().await;
         let result = client
@@ -144,7 +150,7 @@ pub mod database {
         let identity_hash: Hash = Hash::from_iter(hex::decode(identity).unwrap());
 
         get_host()
-            .call_reducer(identity_hash, name.to_string(), reducer, arg_bytes)
+            .call_reducer(identity_hash, name.to_string(), caller_identity, reducer, arg_bytes)
             .await?;
 
         Ok(())
