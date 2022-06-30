@@ -20,7 +20,10 @@ pub fn migrate() {}
 
 // pub fn test(sender: Hash, timestamp: u64, arg: TestA, arg2: TestB) {
 #[spacetimedb(reducer)]
-pub fn test(arg: TestA, arg2: TestB) {
+pub fn test(sender: Hash, timestamp: u64, arg: TestA, arg2: TestB) {
+    println!("BEGIN");
+    println!("sender: {:?}", sender);
+    println!("timestamp: {}", timestamp);
     println!("bar: {:?}", arg2.foo);
 
     for i in 0..10 {
@@ -51,4 +54,5 @@ pub fn test(arg: TestA, arg2: TestB) {
     }
 
     println!("Row count after delete: {:?}", row_count);
+    println!("END");
 }

@@ -80,7 +80,8 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
     let mut parse_json_to_args = Vec::new();
     let mut function_call_args = Vec::new();
     let mut arg_num: usize = 0;
-    for function_argument in original_function.sig.inputs.iter() {
+    let function_arguments = &original_function.sig.inputs.iter().collect::<Vec<_>>()[2..];
+    for function_argument in function_arguments {
         match function_argument {
             FnArg::Receiver(_) => {
                 return proc_macro::TokenStream::from(quote! {
@@ -138,16 +139,25 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #[no_mangle]
         #[allow(non_snake_case)]
         pub extern "C" fn #reducer_func_name(arg_ptr: usize, arg_size: usize) {
+            const HEADER_SIZE: usize = 40;
+
             let arg_ptr = arg_ptr as *mut u8;
-            let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(arg_ptr, arg_size, arg_size) };
-            let arg_json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(arg_ptr, arg_size + HEADER_SIZE, arg_size + HEADER_SIZE) };
+
+            let sender = *Hash::from_slice(&bytes[0..32]);
+
+            let mut buf = [0; 8];
+            buf.copy_from_slice(&bytes[32..HEADER_SIZE]);
+            let timestamp = u64::from_le_bytes(buf);
+            
+            let arg_json: serde_json::Value = serde_json::from_slice(&bytes[HEADER_SIZE..]).unwrap();
             let args = arg_json.as_array().unwrap();
 
             // Deserialize the json argument list
             #(#parse_json_to_args);*
 
             // Invoke the function with the deserialized args
-            #func_name(#(#function_call_args),*);
+            #func_name(sender, timestamp, #(#function_call_args),*);
         }
     };
 

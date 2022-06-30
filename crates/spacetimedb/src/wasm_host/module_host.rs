@@ -283,7 +283,8 @@ impl ModuleHostActor {
             if !f.name().starts_with(CREATE_TABLE_DUNDER) {
                 continue;
             }
-            self.execute_reducer(f.name(), Vec::new())?;
+            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
+            self.execute_reducer(self.identity, timestamp, f.name(), Vec::new())?;
         }
 
         // TODO: call __create_index__IndexName
@@ -295,7 +296,8 @@ impl ModuleHostActor {
             if !f.name().starts_with(MIGRATE_DATABASE_DUNDER) {
                 continue;
             }
-            self.execute_reducer(f.name(), Vec::new())?;
+            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
+            self.execute_reducer(self.identity, timestamp, f.name(), Vec::new())?;
         }
 
         // TODO: call __create_index__IndexName
@@ -305,7 +307,8 @@ impl ModuleHostActor {
     fn call_reducer(&self, caller_identity: Hash, reducer_name: &str, arg_bytes: &[u8]) -> Result<(), anyhow::Error> {
         // TODO: validate arg_bytes
         let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
-        let tx = self.execute_reducer(&reducer_symbol, arg_bytes)?;
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
+        let tx = self.execute_reducer(caller_identity, timestamp, &reducer_symbol, arg_bytes)?;
 
         let status = if let Some(tx) = tx {
             EventStatus::Committed(tx.writes)
@@ -313,7 +316,6 @@ impl ModuleHostActor {
             EventStatus::Failed
         };
 
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
         let event = ModuleEvent {
             timestamp,
             caller_identity,
@@ -333,6 +335,8 @@ impl ModuleHostActor {
 
     fn execute_reducer(
         &self,
+        sender: Hash,
+        timestamp: u64,
         reducer_symbol: &str,
         arg_bytes: impl AsRef<[u8]>,
     ) -> Result<Option<Transaction>, anyhow::Error> {
@@ -357,13 +361,21 @@ impl ModuleHostActor {
             .native::<u32, WasmPtr<u8, Array>>()?;
 
         let arg_bytes = arg_bytes.as_ref();
-        let ptr = alloc.call(arg_bytes.len() as u32).unwrap();
+        const HEADER_SIZE: usize = 40;
+        let buf_len = HEADER_SIZE as u32 + arg_bytes.len() as u32;
+        let ptr = alloc.call(buf_len).unwrap();
 
-        let values = ptr.deref(memory, 0, arg_bytes.len() as u32).unwrap();
-        for (i, byte) in arg_bytes.iter().enumerate() {
-            values[i].set(*byte);
+        let values = ptr.deref(memory, 0, buf_len).unwrap();
+        let timestamp_buf = timestamp.to_le_bytes();
+        for i in 0..(buf_len as usize) {
+            if i < 32 {
+                values[i].set(sender[i]);
+            } else if i < HEADER_SIZE {
+                values[i].set(timestamp_buf[i - 32]);
+            } else {
+                values[i].set(arg_bytes[i - HEADER_SIZE]);
+            }
         }
-
         let reduce = instance
             .exports
             .get_function(&reducer_symbol)?

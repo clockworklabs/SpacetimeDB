@@ -138,7 +138,6 @@ impl InstanceEnv {
         let start = RangeTypeValue::try_from(tuple.elements[0]).unwrap();
         let end = RangeTypeValue::try_from(tuple.elements[1]).unwrap();
 
-        let (primary_key, _) = PrimaryKey::decode(&buffer[..]);
         if let Some(count) = stdb.delete_range(tx, table_id, col_id, start..end) {
             return count as i32;
         } else {
