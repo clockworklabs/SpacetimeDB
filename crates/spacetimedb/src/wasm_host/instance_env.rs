@@ -1,6 +1,8 @@
 use crate::db::relational_db::RelationalDB;
 use crate::{db::transactional_db::Tx, hash::Hash, logs};
-use spacetimedb_bindings::{decode_schema, encode_schema, PrimaryKey, EqTypeValue, TupleValue, TupleDef, ElementDef, RangeTypeValue};
+use spacetimedb_bindings::{
+    decode_schema, encode_schema, ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue, TupleDef, TupleValue,
+};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -75,7 +77,7 @@ impl InstanceEnv {
             return 0;
         }
     }
-    
+
     pub fn delete_value(&self, table_id: u32, ptr: u32) -> u8 {
         let buffer = Self::read_output_bytes(self.memory.get_ref().expect("Initialized memory"), ptr);
 
@@ -100,7 +102,7 @@ impl InstanceEnv {
         let mut stdb = self.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
-        
+
         let schema = stdb.schema_for_table(tx, table_id).unwrap();
         let type_def = &schema.elements[col_id as usize].element_type;
 
@@ -112,7 +114,7 @@ impl InstanceEnv {
             return -1;
         }
     }
-    
+
     pub fn delete_range(&self, table_id: u32, col_id: u32, ptr: u32) -> i32 {
         let buffer = Self::read_output_bytes(self.memory.get_ref().expect("Initialized memory"), ptr);
 
@@ -121,13 +123,16 @@ impl InstanceEnv {
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
         let tuple_def = TupleDef {
-            elements: vec![ElementDef {
-                tag: 0,
-                element_type: todo!("Somehow need to get this info"),
-            }, ElementDef {
-                tag: todo!(),
-                element_type: todo!(),
-            }],
+            elements: vec![
+                ElementDef {
+                    tag: 0,
+                    element_type: todo!("Somehow need to get this info"),
+                },
+                ElementDef {
+                    tag: todo!(),
+                    element_type: todo!(),
+                },
+            ],
         };
         let (tuple, _) = TupleValue::decode(&tuple_def, &buffer[..]);
         let start = RangeTypeValue::try_from(tuple.elements[0]).unwrap();
@@ -153,7 +158,6 @@ impl InstanceEnv {
     }
 
     pub fn iter(&self, table_id: u32) -> u64 {
-        println!("Iter table: {}", table_id);
         let stdb = self.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();

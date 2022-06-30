@@ -12,9 +12,7 @@ impl PrimaryKey {
 
     pub fn decode(bytes: impl AsRef<[u8]>) -> (Self, usize) {
         let (data_key, nr) = DataKey::decode(bytes);
-        (PrimaryKey {
-            data_key
-        }, nr)
+        (PrimaryKey { data_key }, nr)
     }
 
     pub fn encode(&self, bytes: &mut Vec<u8>) -> usize {

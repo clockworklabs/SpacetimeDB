@@ -1,16 +1,16 @@
 mod data_key;
 mod hash;
+mod primary_key;
 mod type_def;
 mod type_value;
-mod primary_key;
 pub use data_key::DataKey;
+pub use hash::Hash;
 pub use primary_key::PrimaryKey;
 use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
 use std::ops::Range;
 use std::panic;
 pub use type_def::{ElementDef, TupleDef, TypeDef};
 pub use type_value::{EqTypeValue, RangeTypeValue, TupleValue, TypeValue};
-pub use hash::Hash;
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -198,7 +198,7 @@ pub fn delete_pk(table_id: u32, primary_key: PrimaryKey) -> Option<usize> {
         _delete_pk(table_id, ptr)
     };
     if result == 0 {
-        return None
+        return None;
     }
     return Some(1);
 }

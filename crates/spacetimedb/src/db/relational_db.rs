@@ -2,7 +2,7 @@ use super::{
     messages::{transaction::Transaction, write::DataKey},
     transactional_db::{ScanIter, TransactionalDB, Tx},
 };
-use spacetimedb_bindings::{ElementDef, EqTypeValue, RangeTypeValue, PrimaryKey};
+use spacetimedb_bindings::{ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue};
 pub use spacetimedb_bindings::{TupleDef, TupleValue, TypeDef, TypeValue};
 use std::{
     ops::{Range, RangeBounds},
@@ -279,13 +279,7 @@ impl RelationalDB {
     }
 
     // AKA: seek
-    pub fn filter_eq<'a>(
-        &'a self,
-        tx: &'a mut Tx,
-        table_id: u32,
-        col_id: u32,
-        value: EqTypeValue,
-    ) -> Vec<TupleValue> {
+    pub fn filter_eq<'a>(&'a self, tx: &'a mut Tx, table_id: u32, col_id: u32, value: EqTypeValue) -> Vec<TupleValue> {
         if let Some(table_iter) = self.iter(tx, table_id) {
             for row in table_iter {
                 // TODO: more than one row can have this value if col_id

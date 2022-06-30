@@ -35,7 +35,7 @@ pub fn test(arg: TestA, arg2: TestB) {
     for _row in TestA::iter().unwrap() {
         row_count += 1;
     }
-    
+
     println!("Row count before delete: {:?}", row_count);
 
     delete_filter(1, |value| {
@@ -44,7 +44,7 @@ pub fn test(arg: TestA, arg2: TestB) {
 
         x == 5
     });
-    
+
     let mut row_count = 0;
     for _row in TestA::iter().unwrap() {
         row_count += 1;
