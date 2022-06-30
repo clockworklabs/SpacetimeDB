@@ -2,11 +2,15 @@ mod data_key;
 mod hash;
 mod type_def;
 mod type_value;
+mod primary_key;
 pub use data_key::DataKey;
+pub use primary_key::PrimaryKey;
 use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
+use std::ops::Range;
 use std::panic;
 pub use type_def::{ElementDef, TupleDef, TypeDef};
 pub use type_value::{EqTypeValue, RangeTypeValue, TupleValue, TypeValue};
+pub use hash::Hash;
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -14,9 +18,16 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 extern "C" {
     fn _create_table(table_id: u32, ptr: *mut u8);
     fn _create_index(table_id: u32, col_id: u32, index_type: u8);
+
     fn _insert(table_id: u32, ptr: *mut u8);
+
+    fn _delete_pk(table_id: u32, ptr: *mut u8) -> u8;
+    fn _delete_value(table_id: u32, ptr: *mut u8) -> u8;
+    fn _delete_eq(table_id: u32, col_id: u32, ptr: *mut u8) -> i32;
+    fn _delete_range(table_id: u32, col_id: u32, ptr: *mut u8) -> i32;
+
     fn _filter_eq(table_id: u32, col_id: u32, src_ptr: *mut u8, result_ptr: *mut u8);
-    fn _delete_eq(table_id: u32, col_id: u32, ptr: *mut u8);
+
     fn _iter(table_id: u32) -> u64;
     fn _console_log(level: u8, ptr: *const u8, len: u32);
 }
@@ -178,6 +189,69 @@ pub fn insert(table_id: u32, row: TupleValue) {
     }
 }
 
+pub fn delete_pk(table_id: u32, primary_key: PrimaryKey) -> Option<usize> {
+    let result = unsafe {
+        let ptr = row_buf();
+        let mut bytes = Vec::from_raw_parts(ptr, 0, ROW_BUF_LEN);
+        primary_key.encode(&mut bytes);
+        std::mem::forget(bytes);
+        _delete_pk(table_id, ptr)
+    };
+    if result == 0 {
+        return None
+    }
+    return Some(1);
+}
+
+pub fn delete_filter<F: Fn(&TupleValue) -> bool>(table_id: u32, f: F) -> Option<usize> {
+    let mut count = 0;
+    for tuple_value in __iter__(table_id).unwrap() {
+        if f(&tuple_value) {
+            count += 1;
+            unsafe {
+                let ptr = row_buf();
+                let mut bytes = Vec::from_raw_parts(ptr, 0, ROW_BUF_LEN);
+                tuple_value.encode(&mut bytes);
+                if _delete_value(table_id, ptr) == 0 {
+                    panic!("Something ain't right.");
+                }
+            }
+        }
+    }
+    Some(count)
+}
+
+pub fn delete_eq(table_id: u32, col_id: u32, eq_value: EqTypeValue) -> Option<usize> {
+    let result = unsafe {
+        let ptr = row_buf();
+        let mut bytes = Vec::from_raw_parts(ptr, 0, ROW_BUF_LEN);
+        eq_value.encode(&mut bytes);
+        _delete_eq(table_id, col_id, ptr)
+    };
+    if result == -1 {
+        return None;
+    }
+    return Some(result as usize);
+}
+
+pub fn delete_range(table_id: u32, col_id: u32, range: Range<RangeTypeValue>) -> Option<usize> {
+    let result = unsafe {
+        let ptr = row_buf();
+        let mut bytes = Vec::from_raw_parts(ptr, 0, ROW_BUF_LEN);
+        let start = TypeValue::from(range.start);
+        let end = TypeValue::from(range.end);
+        let tuple = TupleValue {
+            elements: vec![start, end],
+        };
+        tuple.encode(&mut bytes);
+        _delete_range(table_id, col_id, ptr)
+    };
+    if result == -1 {
+        return None;
+    }
+    return Some(result as usize);
+}
+
 pub fn create_index(_table_id: u32, _index_type: u8, _col_ids: Vec<u32>) {}
 
 // TODO: going to have to somehow ensure TypeValue is equatable
@@ -185,18 +259,6 @@ pub fn filter_eq(_table_id: u32, _col_id: u32, _eq_value: TypeValue) -> Option<T
     return None;
 }
 
-// pub fn delete_eq(table_id: u32, col_id : u32, eq_value : ColValue) {
-//     unsafe {
-//         let ptr = row_buf();
-//         let mut memory = Vec::from_raw_parts(ptr, 0, ROW_BUF_LEN);
-//         memory.extend(eq_value.to_data());
-//         _delete_eq(table_id, col_id, ptr);
-//     }
-// }
-//
-// pub fn delete_filter() {
-//
-// }
 //
 // fn page_table(table_id : u32, pager_token : u32, read_entries : u32) {
 //

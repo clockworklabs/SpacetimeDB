@@ -2,7 +2,7 @@ use super::{
     messages::{transaction::Transaction, write::DataKey},
     transactional_db::{ScanIter, TransactionalDB, Tx},
 };
-use spacetimedb_bindings::{ElementDef, EqTypeValue, RangeTypeValue};
+use spacetimedb_bindings::{ElementDef, EqTypeValue, RangeTypeValue, PrimaryKey};
 pub use spacetimedb_bindings::{TupleDef, TupleValue, TypeDef, TypeValue};
 use std::{
     ops::{Range, RangeBounds},
@@ -11,17 +11,6 @@ use std::{
 
 pub const ST_TABLES_ID: u32 = u32::MAX;
 pub const ST_COLUMNS_ID: u32 = u32::MAX - 1;
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct PrimaryKey {
-    data_key: DataKey,
-}
-
-impl PrimaryKey {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        self.data_key.to_bytes()
-    }
-}
 
 pub struct RelationalDB {
     pub txdb: TransactionalDB,
@@ -98,7 +87,7 @@ impl RelationalDB {
         RelationalDB { txdb }
     }
 
-    pub fn pk_for_row(&self, row: &TupleValue) -> PrimaryKey {
+    pub fn pk_for_row(row: &TupleValue) -> PrimaryKey {
         let mut bytes = Vec::new();
         row.encode(&mut bytes);
         let data_key = DataKey::from_data(bytes);
@@ -245,6 +234,18 @@ impl RelationalDB {
         Self::insert_row_raw(&mut self.txdb, tx, table_id, row);
     }
 
+    pub fn iter_pk<'a>(&'a self, tx: &'a mut Tx, table_id: u32) -> Option<PrimaryKeyTableIter<'a>> {
+        let columns = self.schema_for_table(tx, table_id);
+        if let Some(columns) = columns {
+            Some(PrimaryKeyTableIter {
+                txdb_iter: self.txdb.scan(tx, table_id),
+                schema: columns,
+            })
+        } else {
+            None
+        }
+    }
+
     pub fn iter<'a>(&'a self, tx: &'a mut Tx, table_id: u32) -> Option<TableIter<'a>> {
         let columns = self.schema_for_table(tx, table_id);
         if let Some(columns) = columns {
@@ -255,6 +256,18 @@ impl RelationalDB {
         } else {
             None
         }
+    }
+
+    pub fn filter_pk<'a>(&'a self, tx: &'a mut Tx, table_id: u32, primary_key: PrimaryKey) -> Option<TupleValue> {
+        let schema = self.schema_for_table(tx, table_id);
+        if let Some(schema) = schema {
+            let bytes = self.txdb.seek(tx, table_id, primary_key.data_key);
+            if let Some(bytes) = bytes {
+                let row = RelationalDB::decode_row(&schema, &mut &bytes[..]);
+                return Some(row);
+            }
+        }
+        return None;
     }
 
     // AKA: scan
@@ -272,7 +285,7 @@ impl RelationalDB {
         table_id: u32,
         col_id: u32,
         value: EqTypeValue,
-    ) -> Option<TupleValue> {
+    ) -> Vec<TupleValue> {
         if let Some(table_iter) = self.iter(tx, table_id) {
             for row in table_iter {
                 // TODO: more than one row can have this value if col_id
@@ -281,11 +294,11 @@ impl RelationalDB {
                 // TODO: This should not unwrap because it will crash the server
                 let eq_col_value: EqTypeValue = col_value.try_into().unwrap();
                 if eq_col_value == value {
-                    return Some(row);
+                    return vec![row];
                 }
             }
         }
-        None
+        Vec::new()
     }
 
     // AKA: seek_range
@@ -309,6 +322,15 @@ impl RelationalDB {
         None
     }
 
+    pub fn delete_pk(&mut self, tx: &mut Tx, table_id: u32, primary_key: PrimaryKey) -> Option<bool> {
+        // TODO: our use of options here doesn't seem correct, I think we might want to double up on options
+        if let Some(_) = self.filter_pk(tx, table_id, primary_key) {
+            self.txdb.delete(tx, table_id, primary_key.data_key);
+            return Some(true);
+        }
+        None
+    }
+
     pub fn delete_filter(&mut self, tx: &mut Tx, table_id: u32, f: fn(row: &TupleValue) -> bool) -> Option<usize> {
         if let Some(filter) = self.filter(tx, table_id, f) {
             let mut data_keys = Vec::new();
@@ -327,7 +349,7 @@ impl RelationalDB {
     }
 
     pub fn delete_eq(&mut self, tx: &mut Tx, table_id: u32, col_id: u32, value: EqTypeValue) -> Option<usize> {
-        if let Some(x) = self.filter_eq(tx, table_id, col_id, value) {
+        for x in self.filter_eq(tx, table_id, col_id, value) {
             let mut data_keys = Vec::new();
             let mut bytes = Vec::new();
             Self::encode_row(&x, &mut bytes);
@@ -371,6 +393,24 @@ impl RelationalDB {
     // pub fn from_mut(&mut self, tx: &mut Transaction, table_name: &str) -> Option<&mut TableQuery> {
     //     self.tables.iter_mut().find(|t| t.schema.name == table_name)
     // }
+}
+
+pub struct PrimaryKeyTableIter<'a> {
+    schema: TupleDef,
+    txdb_iter: ScanIter<'a>,
+}
+
+impl<'a> Iterator for PrimaryKeyTableIter<'a> {
+    type Item = PrimaryKey;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(bytes) = self.txdb_iter.next() {
+            // TODO: for performance ditch the reading the row and read the primary key directly or something
+            let row = RelationalDB::decode_row(&self.schema, &mut &bytes[..]);
+            return Some(RelationalDB::pk_for_row(&row));
+        }
+        return None;
+    }
 }
 
 pub struct TableIter<'a> {

@@ -163,7 +163,7 @@ impl ModuleSubscriptionActor {
             }
             let mut table_row_operations = Vec::new();
             for row in stdb.iter(&mut tx, table_id).unwrap() {
-                let row_pk = stdb.pk_for_row(&row);
+                let row_pk = RelationalDB::pk_for_row(&row);
                 let row_pk = row_pk.to_bytes();
                 let mut row_bytes = Vec::new();
                 row.encode(&mut row_bytes);
@@ -289,7 +289,7 @@ impl ModuleSubscriptionActor {
             }
             let mut table_row_operations = Vec::new();
             for row in stdb.iter(&mut tx, table_id).unwrap() {
-                let row_pk = stdb.pk_for_row(&row);
+                let row_pk = RelationalDB::pk_for_row(&row);
                 let row_pk = base64::encode(row_pk.to_bytes());
                 table_row_operations.push(TableRowOperationJson {
                     op: "insert".to_string(),

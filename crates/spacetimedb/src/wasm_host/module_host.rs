@@ -221,6 +221,26 @@ impl ModuleHostActor {
         };
         let import_object = imports! {
             "env" => {
+                "_delete_pk" => Function::new_native_with_env(
+                    &self.store,
+                    env.clone(),
+                    InstanceEnv::delete_pk,
+                ),
+                "_delete_value" => Function::new_native_with_env(
+                    &self.store,
+                    env.clone(),
+                    InstanceEnv::delete_value,
+                ),
+                "_delete_eq" => Function::new_native_with_env(
+                    &self.store,
+                    env.clone(),
+                    InstanceEnv::delete_eq,
+                ),
+                "_delete_range" => Function::new_native_with_env(
+                    &self.store,
+                    env.clone(),
+                    InstanceEnv::delete_range,
+                ),
                 "_insert" => Function::new_native_with_env(
                     &self.store,
                     env.clone(),

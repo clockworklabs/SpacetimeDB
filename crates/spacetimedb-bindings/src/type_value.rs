@@ -94,6 +94,18 @@ pub enum EqTypeValue {
     Unit,
 }
 
+impl EqTypeValue {
+    pub fn decode(type_def: &TypeDef, bytes: impl AsRef<[u8]>) -> (Result<Self, &'static str>, usize) {
+        let (v, nr) = TypeValue::decode(type_def, bytes);
+        (Self::try_from(v), nr)
+    }
+
+    pub fn encode(&self, bytes: &mut Vec<u8>) {
+        let v = TypeValue::from(self);
+        v.encode(bytes);
+    }
+}
+
 impl TryFrom<TypeValue> for EqTypeValue {
     type Error = &'static str;
 
@@ -168,6 +180,18 @@ pub enum RangeTypeValue {
     Bool(bool),
     String(String),
     Unit,
+}
+
+impl RangeTypeValue {
+    pub fn decode(type_def: &TypeDef, bytes: impl AsRef<[u8]>) -> (Result<Self, &'static str>, usize) {
+        let (v, nr) = TypeValue::decode(type_def, bytes);
+        (Self::try_from(v), nr)
+    }
+
+    pub fn encode(&self, bytes: &mut Vec<u8>) {
+        let v = TypeValue::from(self);
+        v.encode(bytes);
+    }
 }
 
 impl TryFrom<TypeValue> for RangeTypeValue {
