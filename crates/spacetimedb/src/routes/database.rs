@@ -1,4 +1,6 @@
 use crate::api;
+use crate::auth::get_creds_from_header;
+use crate::auth::invalid_token_res;
 use gotham::anyhow::anyhow;
 use gotham::handler::HandlerError;
 use gotham::handler::SimpleHandlerResult;
@@ -8,8 +10,10 @@ use gotham::router::builder::*;
 use gotham::router::Router;
 use gotham::state::State;
 use gotham::state::StateData;
+use hyper::HeaderMap;
 use hyper::body::HttpBody;
 use hyper::Body;
+use hyper::header::AUTHORIZATION;
 use hyper::{Response, StatusCode};
 use serde::Deserialize;
 
@@ -87,6 +91,20 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
         name,
         reducer,
     } = CallParams::take_from(state);
+    let headers = state.borrow::<HeaderMap>();
+    let auth_header = headers.get(AUTHORIZATION);
+    let (caller_identity, caller_identity_token) = if let Some(auth_header) = auth_header {
+        // Validate the credentials of this connection
+        match get_creds_from_header(auth_header) {
+            Ok(v) => v,
+            Err(_) => return Ok(invalid_token_res()),
+        }
+    } else {
+        // Generate a new identity if this request doesn't have one already
+        let (identity, identity_token) = api::spacetime_identity().await.unwrap();
+        (identity, identity_token)
+    };
+
     let body = state.borrow_mut::<Body>();
     let data = body.data().await;
     if data.is_none() {
@@ -95,8 +113,6 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     let data = data.unwrap();
     let arg_bytes = data.unwrap().to_vec();
 
-    let caller_identity = todo!("Need to implement auth for HTTP requests");
-
     match api::database::call(&identity, &name, caller_identity, reducer, arg_bytes).await {
         Ok(_) => {}
         Err(e) => {
@@ -104,8 +120,10 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
         }
     }
 
-    let res = Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap();
-
+    let res = Response::builder()
+        .header("Spacetime-Identity", hex::encode(caller_identity))
+        .header("Spacetime-Identity-Token", caller_identity_token)
+        .status(StatusCode::OK).body(Body::empty()).unwrap();
     Ok(res)
 }
 

@@ -1,4 +1,4 @@
-use crate::type_def::{EnumDef, TupleDef, TypeDef};
+use crate::{type_def::{EnumDef, TupleDef, TypeDef}};
 use enum_as_inner::EnumAsInner;
 use serde::{Deserialize, Serialize};
 
@@ -42,7 +42,7 @@ impl TupleValue {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnumValue {
-    pub item_value: ElementValue,
+    pub element_value: ElementValue,
 }
 
 impl EnumValue {
@@ -54,7 +54,7 @@ impl EnumValue {
 
         let mut i = 0;
         let type_def = loop {
-            let item = &enum_def.items[i];
+            let item = &enum_def.elements[i];
             if item.tag == tag {
                 break &item.element_type;
             }
@@ -67,13 +67,14 @@ impl EnumValue {
             tag,
             type_value: Box::new(type_value),
         };
-        (EnumValue { item_value }, num_read)
+        (EnumValue { element_value: item_value }, num_read)
     }
 
     pub fn encode(&self, bytes: &mut Vec<u8>) {
-        bytes.push(self.item_value.tag);
-        self.item_value.type_value.encode(bytes);
+        bytes.push(self.element_value.tag);
+        self.element_value.type_value.encode(bytes);
     }
+
 }
 
 // TODO: Clone copies :(

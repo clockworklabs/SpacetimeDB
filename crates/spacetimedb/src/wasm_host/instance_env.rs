@@ -122,21 +122,15 @@ impl InstanceEnv {
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
-        let tuple_def = TupleDef {
-            elements: vec![
-                ElementDef {
-                    tag: 0,
-                    element_type: todo!("Somehow need to get this info"),
-                },
-                ElementDef {
-                    tag: todo!(),
-                    element_type: todo!(),
-                },
-            ],
-        };
+
+        let schema = stdb.schema_for_table(tx, table_id).unwrap();
+        let col_type = &schema.elements[col_id as usize].element_type;
+
+        let tuple_def = TupleDef { elements: vec![ElementDef { tag: 0, element_type: col_type.clone() }, ElementDef { tag: 1, element_type: col_type.clone() }] };
+
         let (tuple, _) = TupleValue::decode(&tuple_def, &buffer[..]);
-        let start = RangeTypeValue::try_from(tuple.elements[0]).unwrap();
-        let end = RangeTypeValue::try_from(tuple.elements[1]).unwrap();
+        let start = RangeTypeValue::try_from(&tuple.elements[0]).unwrap();
+        let end = RangeTypeValue::try_from(&tuple.elements[1]).unwrap();
 
         if let Some(count) = stdb.delete_range(tx, table_id, col_id, start..end) {
             return count as i32;

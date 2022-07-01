@@ -15,7 +15,7 @@
 // (1: u32, 2: u32) -> 2-tuple (* operator)
 // (1: u32 | 2: u32) -> 2-tuple (+ operator)
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ElementDef {
     // In the case of tuples, this is the id of the column
     // In the case of enums, this is the id of the variant
@@ -45,7 +45,7 @@ impl ElementDef {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TupleDef {
     pub elements: Vec<ElementDef>,
 }
@@ -76,9 +76,9 @@ impl TupleDef {
 
 // TODO: probably implement this with a tuple but store whether the tuple
 // is a sum tuple or a product tuple, then we have uniformity over types
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EnumDef {
-    pub items: Vec<ElementDef>,
+    pub elements: Vec<ElementDef>,
 }
 
 impl EnumDef {
@@ -94,18 +94,18 @@ impl EnumDef {
             items.push(item);
             num_read += nr;
         }
-        (EnumDef { items }, num_read)
+        (EnumDef { elements: items }, num_read)
     }
 
     pub fn encode(&self, bytes: &mut Vec<u8>) {
-        bytes.push(self.items.len() as u8);
-        for item in &self.items {
+        bytes.push(self.elements.len() as u8);
+        for item in &self.elements {
             item.encode(bytes);
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TypeDef {
     Tuple(TupleDef),
     Enum(EnumDef),

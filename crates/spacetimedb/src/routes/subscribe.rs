@@ -1,8 +1,9 @@
 use crate::api;
+use crate::auth::get_creds_from_header;
+use crate::auth::invalid_token_res;
 use crate::clients::client_connection::Protocol;
 use crate::clients::client_connection_index::CLIENT_ACTOR_INDEX;
 use crate::hash::Hash;
-use crate::identity::decode_token;
 use crate::wasm_host;
 use gotham::handler::HandlerError;
 use gotham::prelude::StaticResponseExtender;
@@ -79,13 +80,6 @@ fn invalid_protocol_res() -> Response<Body> {
         .header(UPGRADE, PROTO_WEBSOCKET)
         .header(CONNECTION, "upgrade")
         .header(SEC_WEBSOCKET_PROTOCOL, "null")
-        .body(Body::empty())
-        .unwrap()
-}
-
-fn invalid_token_res() -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::BAD_REQUEST)
         .body(Body::empty())
         .unwrap()
 }
@@ -170,54 +164,13 @@ async fn on_upgrade(
 
     let protocol_header = protocol_header.clone();
 
-    // Validate the credentials of this connection
     let auth_header = headers.get(AUTHORIZATION);
     let (identity, identity_token) = if let Some(auth_header) = auth_header {
-        // Yes, this is using basic auth. See the below issues.
-        // The current form is: Authorization: Basic base64("token:<token>")
-        // FOOLS, the lot of them!
-        // If/when they fix this issue, this should be changed from
-        // basic auth, to a `Authorization: Bearer <token>` header
-        // https://github.com/whatwg/websockets/issues/16
-        // https://github.com/sta/websocket-sharp/pull/22
-
-        let auth_header = auth_header.to_str().unwrap_or_default().to_string();
-        let encoded_token = auth_header.split("Basic ").collect::<Vec<&str>>().get(1).map(|s| *s);
-        let token_string = encoded_token
-            .and_then(|encoded_token| base64::decode(encoded_token).ok())
-            .and_then(|token_buf| String::from_utf8(token_buf).ok());
-        let token_string = token_string.as_deref();
-        let token = match token_string {
-            Some(token_str) => {
-                let split = token_str.split(":").collect::<Vec<&str>>();
-                if split.get(0).map(|s| *s) != Some("token") {
-                    None
-                } else {
-                    split.get(1).map(|s| *s)
-                }
-            }
-            None => None,
-        };
-
-        let token_str = if let Some(token) = token {
-            token
-        } else {
-            return Ok((state, invalid_token_res()));
-        };
-
-        let token = decode_token(&token_str);
-        let token = match token {
-            Ok(token) => token,
-            Err(error) => {
-                log::info!("Deny upgrade. Invalid token: {}", error);
-                return Ok((state, invalid_token_res()));
-            }
-        };
-
-        let hex_identity = token.claims.hex_identity;
-        let identity = hex::decode(hex_identity).expect("If this happens we gave out invalid claims.");
-        let identity = Hash::from_iter(identity);
-        (identity, token_str.to_string())
+        // Validate the credentials of this connection
+        match get_creds_from_header(auth_header) {
+            Ok(v) => v,
+            Err(_) => return Ok((state, invalid_token_res())),
+        }
     } else {
         // Generate a new identity if this connection doesn't have one already
         let (identity, identity_token) = api::spacetime_identity().await.unwrap();
@@ -262,50 +215,6 @@ pub async fn handle_websocket(mut state: State) -> Result<(State, Response<Body>
 
     match on_upgrade_value {
         Some(on_upgrade_value) if requested(&headers) => on_upgrade(state, headers, on_upgrade_value).await,
-        _ => Ok((
-            state,
-            Response::new(Body::from(
-                r#"
-<!DOCTYPE html>
-<body>
-<h1>Websocket Echo Server</h1>
-<form id="ws" onsubmit="return send(this.message);">
-    <input name="message">
-    <input type="submit" value="Send">
-</form>
-<script>
-    var sock = new WebSocket("ws://" + window.location.host + "/database/subscribe/c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470/test", ["22"]);
-    sock.onopen = recv.bind(window, "Connected");
-    sock.onclose = function(event) {
-        recv("Disconnected");
-        console.log(event);
-    }
-    sock.onmessage = function(msg) { recv(msg.data) };
-    sock.onerror = function(err) {
-        recv("Error: " + err);
-        console.log(err);
-    };
-
-    function recv(msg) {
-        var e = document.createElement("PRE");
-        e.innerText = msg;
-        document.body.appendChild(e);
-    }
-
-    function send(msg) {
-        if (msg.value === "close") {
-            sock.close(1000);
-            return false;
-        }
-        sock.send(msg.value);
-        msg.value = "";
-        return false;
-    }
-
-    //setInterval(function () { send({value: "hey"}); }, 1);
-</script>
-</body>"#,
-            )),
-        )),
+        _ => Err((state, HandlerError::from(anyhow::anyhow!("Missing upgrade header.")).with_status(StatusCode::BAD_REQUEST))),
     }
 }

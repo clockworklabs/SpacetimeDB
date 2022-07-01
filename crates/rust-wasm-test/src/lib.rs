@@ -18,7 +18,6 @@ pub struct TestB {
 #[spacetimedb(migrate)]
 pub fn migrate() {}
 
-// pub fn test(sender: Hash, timestamp: u64, arg: TestA, arg2: TestB) {
 #[spacetimedb(reducer)]
 pub fn test(sender: Hash, timestamp: u64, arg: TestA, arg2: TestB) {
     println!("BEGIN");
@@ -41,12 +40,13 @@ pub fn test(sender: Hash, timestamp: u64, arg: TestA, arg2: TestB) {
 
     println!("Row count before delete: {:?}", row_count);
 
-    delete_filter(1, |value| {
-        let x = *value.elements[0].as_u32().unwrap();
-        //let y = *value.elements[0].as_u32().unwrap();
+    delete_range(1, 0, RangeTypeValue::U32(5)..RangeTypeValue::U32(10));
+    // delete_filter(1, |value| {
+    //     let x = *value.elements[0].as_u32().unwrap();
+    //     //let y = *value.elements[0].as_u32().unwrap();
 
-        x == 5
-    });
+    //     x == 5
+    // });
 
     let mut row_count = 0;
     for _row in TestA::iter().unwrap() {
