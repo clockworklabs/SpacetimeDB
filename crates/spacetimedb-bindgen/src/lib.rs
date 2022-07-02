@@ -149,7 +149,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
             let mut buf = [0; 8];
             buf.copy_from_slice(&bytes[32..HEADER_SIZE]);
             let timestamp = u64::from_le_bytes(buf);
-            
+
             let arg_json: serde_json::Value = serde_json::from_slice(&bytes[HEADER_SIZE..]).unwrap();
             let args = arg_json.as_array().unwrap();
 

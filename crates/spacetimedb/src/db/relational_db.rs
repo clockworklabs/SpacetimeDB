@@ -87,6 +87,11 @@ impl RelationalDB {
         RelationalDB { txdb }
     }
 
+    pub fn reset_hard(&mut self) -> Result<(), anyhow::Error> {
+        self.txdb.reset_hard()?;
+        Ok(())
+    }
+
     pub fn pk_for_row(row: &TupleValue) -> PrimaryKey {
         let mut bytes = Vec::new();
         row.encode(&mut bytes);

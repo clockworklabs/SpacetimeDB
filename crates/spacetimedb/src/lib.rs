@@ -1,11 +1,11 @@
 pub mod api;
+mod auth;
 pub mod clients;
 pub mod db;
 pub mod hash;
 mod identity;
 mod json;
 mod logs;
-mod auth;
 pub mod metrics;
 pub mod postgres;
 mod protobuf;

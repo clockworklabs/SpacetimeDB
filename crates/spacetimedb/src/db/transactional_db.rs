@@ -1,3 +1,5 @@
+use anyhow::Ok;
+
 use super::{
     message_log::MessageLog,
     messages::{
@@ -10,7 +12,7 @@ use super::{
 use crate::hash::{hash_bytes, Hash};
 use std::{
     collections::{hash_set::Iter, HashMap, HashSet},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -112,6 +114,7 @@ impl ClosedState {
 pub struct TransactionalDB {
     pub odb: ObjectDB,
     pub message_log: MessageLog,
+    root: PathBuf,
     closed_state: ClosedState,
     unwritten_commit: Commit,
 
@@ -163,6 +166,7 @@ impl TransactionalDB {
 
         let txdb = Self {
             odb,
+            root: root.to_owned(),
             message_log,
             closed_state,
             unwritten_commit: Commit {
@@ -178,6 +182,12 @@ impl TransactionalDB {
         };
 
         Ok(txdb)
+    }
+
+    pub fn reset_hard(&mut self) -> Result<(), anyhow::Error> {
+        self.message_log.reset_hard()?;
+        *self = Self::open(&self.root)?;
+        Ok(())
     }
 
     fn latest_transaction_offset(&self) -> u64 {

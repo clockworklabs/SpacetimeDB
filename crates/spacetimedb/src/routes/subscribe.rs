@@ -215,6 +215,9 @@ pub async fn handle_websocket(mut state: State) -> Result<(State, Response<Body>
 
     match on_upgrade_value {
         Some(on_upgrade_value) if requested(&headers) => on_upgrade(state, headers, on_upgrade_value).await,
-        _ => Err((state, HandlerError::from(anyhow::anyhow!("Missing upgrade header.")).with_status(StatusCode::BAD_REQUEST))),
+        _ => Err((
+            state,
+            HandlerError::from(anyhow::anyhow!("Missing upgrade header.")).with_status(StatusCode::BAD_REQUEST),
+        )),
     }
 }

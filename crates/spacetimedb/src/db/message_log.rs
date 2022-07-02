@@ -93,6 +93,12 @@ impl MessageLog {
         })
     }
 
+    pub fn reset_hard(&mut self) -> Result<(), anyhow::Error> {
+        fs::remove_dir_all(&self.root)?;
+        *self = Self::open(&self.root)?;
+        Ok(())
+    }
+
     pub fn append(&mut self, message: impl AsRef<[u8]>) -> Result<(), anyhow::Error> {
         let message = message.as_ref();
         let mess_size = message.len() as u32;

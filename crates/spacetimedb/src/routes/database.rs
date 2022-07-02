@@ -10,10 +10,10 @@ use gotham::router::builder::*;
 use gotham::router::Router;
 use gotham::state::State;
 use gotham::state::StateData;
-use hyper::HeaderMap;
 use hyper::body::HttpBody;
-use hyper::Body;
 use hyper::header::AUTHORIZATION;
+use hyper::Body;
+use hyper::HeaderMap;
 use hyper::{Response, StatusCode};
 use serde::Deserialize;
 
@@ -26,8 +26,15 @@ struct InitModuleParams {
     name: String,
 }
 
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct InitModuleQueryParams {
+    force: Option<bool>,
+}
+
 async fn init_module(state: &mut State) -> SimpleHandlerResult {
     let InitModuleParams { identity, name } = InitModuleParams::take_from(state);
+    let InitModuleQueryParams { force } = InitModuleQueryParams::take_from(state);
+    let force = force.unwrap_or(false);
     let body = state.borrow_mut::<Body>();
     let data = hyper::body::to_bytes(body).await;
     let data = match data {
@@ -36,10 +43,10 @@ async fn init_module(state: &mut State) -> SimpleHandlerResult {
     };
     let wasm_bytes = data.to_vec();
 
-    match api::database::init_module(&identity, &name, wasm_bytes).await {
+    match api::database::init_module(&identity, &name, force, wasm_bytes).await {
         Ok(_) => {}
         Err(e) => {
-            log::error!("{}", e);
+            log::error!("{}", e.backtrace());
             return Err(HandlerError::from(e));
         }
     }
@@ -123,7 +130,9 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     let res = Response::builder()
         .header("Spacetime-Identity", hex::encode(caller_identity))
         .header("Spacetime-Identity-Token", caller_identity_token)
-        .status(StatusCode::OK).body(Body::empty()).unwrap();
+        .status(StatusCode::OK)
+        .body(Body::empty())
+        .unwrap();
     Ok(res)
 }
 
@@ -162,6 +171,7 @@ pub fn router() -> Router {
         route
             .post("/:identity/:name/init")
             .with_path_extractor::<InitModuleParams>()
+            .with_query_string_extractor::<InitModuleQueryParams>()
             .to_async_borrowing(init_module);
 
         route

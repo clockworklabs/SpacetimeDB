@@ -50,6 +50,9 @@ enum ModuleHostCommand {
     InitDatabase {
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
     },
+    DeleteDatabase {
+        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+    },
     MigrateDatabase {
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
     },
@@ -100,6 +103,14 @@ impl ModuleHost {
     pub async fn init_database(&self) -> Result<(), anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.tx.send(ModuleHostCommand::InitDatabase { respond_to: tx }).await?;
+        rx.await.unwrap()
+    }
+
+    pub async fn delete_database(&self) -> Result<(), anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.tx
+            .send(ModuleHostCommand::DeleteDatabase { respond_to: tx })
+            .await?;
         rx.await.unwrap()
     }
 
@@ -193,6 +204,10 @@ impl ModuleHostActor {
             ModuleHostCommand::InitDatabase { respond_to } => {
                 respond_to.send(self.init_database()).unwrap();
                 false
+            }
+            ModuleHostCommand::DeleteDatabase { respond_to } => {
+                respond_to.send(self.delete_database()).unwrap();
+                true
             }
             ModuleHostCommand::MigrateDatabase { respond_to } => {
                 respond_to.send(self.migrate_database()).unwrap();
@@ -288,6 +303,12 @@ impl ModuleHostActor {
         }
 
         // TODO: call __create_index__IndexName
+        Ok(())
+    }
+
+    fn delete_database(&mut self) -> Result<(), anyhow::Error> {
+        let mut stdb = self.relational_db.lock().unwrap();
+        stdb.reset_hard()?;
         Ok(())
     }
 

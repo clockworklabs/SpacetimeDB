@@ -62,7 +62,12 @@ pub mod database {
     use super::MODULE_ODB;
 
     // TODO: Verify identity?
-    pub async fn init_module(hex_identity: &str, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+    pub async fn init_module(
+        hex_identity: &str,
+        name: &str,
+        force: bool,
+        wasm_bytes: Vec<u8>,
+    ) -> Result<Hash, anyhow::Error> {
         let client = postgres::get_client().await;
         let result = client
             .query(
@@ -71,14 +76,17 @@ pub mod database {
             )
             .await;
 
+        let identity = *Hash::from_slice(&hex::decode(hex_identity).unwrap());
+        let host = wasm_host::get_host();
+
         if let Ok(rows) = result {
-            if rows.len() > 0 {
+            if rows.len() > 0 && !force {
                 return Err(anyhow::anyhow!("Cannot init existing actor."));
+            } else {
+                host.delete_module(identity, name.into()).await?;
             }
         }
 
-        let identity = *Hash::from_slice(&hex::decode(hex_identity).unwrap());
-        let host = wasm_host::get_host();
         let address = host.init_module(identity, name.into(), wasm_bytes.clone()).await?;
 
         // If the module successfully initialized add it to the object database

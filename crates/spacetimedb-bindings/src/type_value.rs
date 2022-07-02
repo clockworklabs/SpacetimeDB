@@ -1,4 +1,4 @@
-use crate::{type_def::{EnumDef, TupleDef, TypeDef}};
+use crate::type_def::{EnumDef, TupleDef, TypeDef};
 use enum_as_inner::EnumAsInner;
 use serde::{Deserialize, Serialize};
 
@@ -67,14 +67,18 @@ impl EnumValue {
             tag,
             type_value: Box::new(type_value),
         };
-        (EnumValue { element_value: item_value }, num_read)
+        (
+            EnumValue {
+                element_value: item_value,
+            },
+            num_read,
+        )
     }
 
     pub fn encode(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.element_value.tag);
         self.element_value.type_value.encode(bytes);
     }
-
 }
 
 // TODO: Clone copies :(

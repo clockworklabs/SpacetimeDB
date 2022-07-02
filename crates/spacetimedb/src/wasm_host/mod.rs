@@ -33,6 +33,11 @@ enum HostCommand {
         wasm_bytes: Vec<u8>,
         respond_to: oneshot::Sender<Result<Hash, anyhow::Error>>,
     },
+    DeleteModule {
+        identity: Hash,
+        name: String,
+        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+    },
     UpdateModule {
         identity: Hash,
         name: String,
@@ -82,6 +87,13 @@ impl HostActor {
                 respond_to
                     .send(self.init_module(identity, &name, wasm_bytes).await)
                     .unwrap();
+            }
+            HostCommand::DeleteModule {
+                identity,
+                name,
+                respond_to,
+            } => {
+                respond_to.send(self.delete_module(identity, &name).await).unwrap();
             }
             HostCommand::UpdateModule {
                 identity,
@@ -160,6 +172,15 @@ impl HostActor {
         let module_host = self.modules.get(&key).unwrap().clone();
         module_host.init_database().await?;
         Ok(module_hash)
+    }
+
+    async fn delete_module(&mut self, identity: Hash, name: &str) -> Result<(), anyhow::Error> {
+        let key = (identity, name.to_string());
+        if let Some(module_host) = self.modules.get(&key) {
+            module_host.delete_database().await?;
+        }
+        self.modules.remove(&key);
+        Ok(())
     }
 
     async fn update_module(&mut self, identity: Hash, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
@@ -254,6 +275,18 @@ impl Host {
                 identity,
                 name,
                 wasm_bytes,
+                respond_to: tx,
+            })
+            .await?;
+        rx.await.unwrap()
+    }
+
+    pub async fn delete_module(&self, identity: Hash, name: String) -> Result<(), anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.tx
+            .send(HostCommand::DeleteModule {
+                identity,
+                name,
                 respond_to: tx,
             })
             .await?;

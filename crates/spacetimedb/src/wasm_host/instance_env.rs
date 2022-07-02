@@ -122,11 +122,21 @@ impl InstanceEnv {
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
-
         let schema = stdb.schema_for_table(tx, table_id).unwrap();
         let col_type = &schema.elements[col_id as usize].element_type;
 
-        let tuple_def = TupleDef { elements: vec![ElementDef { tag: 0, element_type: col_type.clone() }, ElementDef { tag: 1, element_type: col_type.clone() }] };
+        let tuple_def = TupleDef {
+            elements: vec![
+                ElementDef {
+                    tag: 0,
+                    element_type: col_type.clone(),
+                },
+                ElementDef {
+                    tag: 1,
+                    element_type: col_type.clone(),
+                },
+            ],
+        };
 
         let (tuple, _) = TupleValue::decode(&tuple_def, &buffer[..]);
         let start = RangeTypeValue::try_from(&tuple.elements[0]).unwrap();
