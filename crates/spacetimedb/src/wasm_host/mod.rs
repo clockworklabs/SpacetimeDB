@@ -1,7 +1,7 @@
 mod instance_env;
 pub mod module_host;
 
-use crate::hash::{hash_bytes, Hash};
+use crate::hash::{hash_bytes, Hash, ToHexString};
 use anyhow;
 use lazy_static::lazy_static;
 use log;
@@ -142,7 +142,6 @@ impl HostActor {
 
     fn validate_module(module: &Module) -> Result<(), anyhow::Error> {
         let mut found = false;
-        log::trace!("Module validation:");
         for f in module.exports().functions() {
             log::trace!("   {:?}", f);
             if !f.name().starts_with(REDUCE_DUNDER) {
@@ -219,6 +218,7 @@ impl HostActor {
         let store = Store::new(&Universal::new(compiler_config).engine());
         let module = Module::new(&store, wasm_bytes)?;
 
+        log::trace!("Validating module \"{}/{}\":", identity.to_hex_string(), name);
         Self::validate_module(&module)?;
 
         let module_host = ModuleHost::spawn(identity, name.into(), module_hash, module, store);

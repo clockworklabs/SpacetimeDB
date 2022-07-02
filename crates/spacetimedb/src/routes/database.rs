@@ -57,6 +57,26 @@ async fn init_module(state: &mut State) -> SimpleHandlerResult {
 }
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
+struct DeleteModuleParams {
+    identity: String,
+    name: String,
+}
+
+async fn delete_module(state: &mut State) -> SimpleHandlerResult {
+    let DeleteModuleParams { identity, name } = DeleteModuleParams::take_from(state);
+    match api::database::delete_module(&identity, &name).await {
+        Ok(_) => {}
+        Err(e) => {
+            log::error!("{}", e.backtrace());
+            return Err(HandlerError::from(e));
+        }
+    }
+    let res = Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap();
+    Ok(res)
+}
+
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
 struct UpdateModuleParams {
     identity: String,
     name: String,
@@ -173,6 +193,11 @@ pub fn router() -> Router {
             .with_path_extractor::<InitModuleParams>()
             .with_query_string_extractor::<InitModuleQueryParams>()
             .to_async_borrowing(init_module);
+
+        route
+            .post("/:identity/:name/delete")
+            .with_path_extractor::<DeleteModuleParams>()
+            .to_async_borrowing(delete_module);
 
         route
             .post("/:identity/:name/update")

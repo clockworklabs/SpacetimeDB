@@ -54,7 +54,7 @@ pub async fn spacetime_identity_associate_email(email: &str, identity_token: &st
 pub mod database {
     use crate::{
         hash::Hash,
-        logs::{self, init_log},
+        logs::{self, init_log, delete_log},
         postgres,
         wasm_host::{self, get_host},
     };
@@ -106,6 +106,39 @@ pub mod database {
         Ok(address)
     }
 
+    pub async fn delete_module(hex_identity: &str, name: &str) -> Result<(), anyhow::Error> {
+        let client = postgres::get_client().await;
+        let result = client
+            .query(
+                "SELECT * from registry.module WHERE actor_name = $1 AND st_identity = $2",
+                &[&name, &hex_identity],
+            )
+            .await;
+
+        let identity = *Hash::from_slice(&hex::decode(hex_identity).unwrap());
+        let host = wasm_host::get_host();
+
+        if let Ok(rows) = result {
+            if rows.len() > 0 {
+                host.delete_module(identity, name.into()).await?;
+            } else {
+                return Err(anyhow::anyhow!("No such module to delete."));
+            }
+        }
+
+        host.delete_module(identity, name.into()).await?;
+
+        // Delete the metadata for this module
+        client.query(
+            "DELETE FROM registry.module WHERE actor_name = $1 AND st_identity = $2", 
+            &[&name, &hex_identity]
+        ).await?;
+
+        delete_log(identity, name);
+
+        Ok(())
+    }
+
     pub async fn update_module(hex_identity: &str, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let client = postgres::get_client().await;
         let identity = *Hash::from_slice(&hex::decode(hex_identity).unwrap());
@@ -145,12 +178,12 @@ pub mod database {
         let result = client
             .query_one(
                 r"
-            SELECT DISTINCT ON (actor_name, st_identity, module_version)
+            SELECT DISTINCT ON (actor_name, st_identity)
                 actor_name, st_identity, module_version, module_address
             FROM registry.module
                 WHERE actor_name = $1
                 AND st_identity = $2
-            ORDER BY module_version DESC;",
+            ORDER BY actor_name, st_identity, module_version DESC;",
                 &[&name, &identity],
             )
             .await;

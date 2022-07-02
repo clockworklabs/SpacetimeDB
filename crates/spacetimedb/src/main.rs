@@ -25,10 +25,11 @@ async fn startup() {
     let result = client
         .query(
             r"
-        SELECT DISTINCT ON (actor_name, st_identity, module_version)
+        SELECT DISTINCT ON (actor_name, st_identity)
             actor_name, st_identity, module_version, module_address
         FROM registry.module
-        ORDER BY module_version DESC;",
+        ORDER BY actor_name, st_identity, module_version DESC;
+        ",
             &[],
         )
         .await;
@@ -39,8 +40,6 @@ async fn startup() {
         let hex_identity: String = row.get(1);
         let identity = *Hash::from_slice(&hex::decode(hex_identity).unwrap());
 
-        // let version: i32 = row.get(2);
-        // let address: String = row.get(3);
         let module_address: String = row.get(3);
         let hash: Hash = Hash::from_iter(hex::decode(module_address).unwrap());
         let wasm_bytes = {

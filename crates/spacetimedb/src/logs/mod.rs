@@ -34,6 +34,11 @@ pub fn init_log(identity: Hash, name: &str) {
     OpenOptions::new().create(true).write(true).open(path).unwrap();
 }
 
+pub fn delete_log(identity: Hash, name: &str) {
+    let dir = log_dir_from(identity, name);
+    fs::remove_dir_all(dir).unwrap();
+}
+
 pub fn write(identity: Hash, name: &str, level: u8, value: String) {
     let dir = log_dir_from(identity, name);
     fs::create_dir_all(dir).unwrap();

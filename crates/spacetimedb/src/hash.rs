@@ -9,3 +9,13 @@ pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> Hash {
     hasher.update(bytes);
     hasher.finalize()
 }
+
+pub trait ToHexString {
+    fn to_hex_string(&self) -> String;
+}
+
+impl ToHexString for Hash {
+    fn to_hex_string(&self) -> String {
+        hex::encode(self)
+    }
+}

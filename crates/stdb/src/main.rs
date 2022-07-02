@@ -17,6 +17,7 @@ mod query;
 mod revert;
 mod signup;
 mod update;
+mod rm;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -66,6 +67,7 @@ Options:
 Some common SpacetimeDB commands are
     init        Initializes a new Spacetime database
     update      Updates the Wasm module of an existing Spacetime database
+    rm          Removes the Wasm module of an existing Spacetime database
     logs        Prints logs from a Spacetime database
     call        Invokes a Spacetime function
     identity    Requests a new Spacetime Identity and token
@@ -81,17 +83,20 @@ Some common SpacetimeDB commands are
 
 fn get_subcommands() -> Vec<Command<'static>> {
     vec![
-        identity::cli(),
-        call::cli(),
-        energy::cli(),
         init::cli(),
-        login::cli(),
+        update::cli(),
+        rm::cli(),
         logs::cli(),
+        call::cli(),
+        identity::cli(),
+
+        // TODO
+        energy::cli(),
+        login::cli(),
         metrics::cli(),
         query::cli(),
         revert::cli(),
         signup::cli(),
-        update::cli(),
     ]
 }
 
@@ -101,6 +106,7 @@ async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Err
         "call" => call::exec(args).await,
         "energy" => energy::exec(args).await,
         "init" => init::exec(args).await,
+        "rm" => rm::exec(args).await,
         "login" => login::exec(args).await,
         "logs" => logs::exec(args).await,
         "metrics" => metrics::exec(args).await,
