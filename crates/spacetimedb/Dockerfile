@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM rust:1.60.0 AS rust
+FROM rust:1.60.0 AS rust
 WORKDIR /usr/src/app
 
 RUN cargo install cargo-watch

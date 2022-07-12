@@ -1,5 +1,5 @@
 mod data_key;
-mod hash;
+pub mod hash;
 mod primary_key;
 mod type_def;
 mod type_value;

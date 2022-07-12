@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use spacetimedb_bindgen::spacetimedb;
-use spacetimedb_bindings::println;
-use spacetimedb_bindings::*;
+use spacetimedb_bindings::{delete_filter, Hash};
+
 
 #[spacetimedb(table(1))]
 pub struct TestA {

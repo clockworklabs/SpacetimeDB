@@ -191,3 +191,5 @@ Cargo.lock
 
 ## JetBrains
 .idea/
+
+protobuf/

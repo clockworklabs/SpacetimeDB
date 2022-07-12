@@ -390,7 +390,7 @@ impl ModuleSubscriptionActor {
     fn send_async_text(subscriber: ClientConnectionSender, message: String) {
         tokio::spawn(async move {
             let message = Message::Text(message);
-            subscriber.send(message).await.unwrap();
+            let _ = subscriber.send(message).await;
         });
     }
 
@@ -398,7 +398,7 @@ impl ModuleSubscriptionActor {
         let message = message.as_ref().to_owned();
         tokio::spawn(async move {
             let message = Message::Binary(message);
-            subscriber.send(message).await.unwrap();
+            let _ = subscriber.send(message).await;
         });
     }
 }
