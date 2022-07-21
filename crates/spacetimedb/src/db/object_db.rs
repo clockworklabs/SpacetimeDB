@@ -143,3 +143,86 @@ impl ObjectDB {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::db::object_db::ObjectDB;
+    use crate::hash::hash_bytes;
+    use anyhow::Error;
+    use tempdir::TempDir;
+
+    const TEST_DB_DIR_PREFIX: &str = "objdb_test";
+    const TEST_DATA1: &[u8; 21] = b"this is a byte string";
+    const TEST_DATA2: &[u8; 26] = b"this is also a byte string";
+
+    fn setup() -> Result<ObjectDB, Error> {
+        let tmp_dir = TempDir::new(TEST_DB_DIR_PREFIX).unwrap();
+        ObjectDB::open(tmp_dir.path())
+    }
+
+    #[test]
+    fn test_add_and_get() {
+        let mut db = setup().unwrap();
+
+        let hash1 = db.add(TEST_DATA1.to_vec());
+        let hash2 = db.add(TEST_DATA2.to_vec());
+
+        let result = db.get(hash1).unwrap();
+        assert_eq!(TEST_DATA1, result);
+
+        let result = db.get(hash2).unwrap();
+        assert_eq!(TEST_DATA2, result);
+    }
+
+    #[test]
+    fn test_flush() {
+        let mut db = setup().unwrap();
+
+        db.add(TEST_DATA1.to_vec());
+        db.add(TEST_DATA2.to_vec());
+
+        assert!(db.flush().is_ok());
+    }
+
+    #[test]
+    fn test_flush_sync_all() {
+        let mut db = setup().unwrap();
+
+        db.add(TEST_DATA1.to_vec());
+        db.add(TEST_DATA2.to_vec());
+
+        assert!(db.sync_all().is_ok());
+    }
+
+    #[test]
+    fn test_miss() {
+        let mut db = setup().unwrap();
+
+        let _hash2 = db.add(TEST_DATA2.to_vec());
+
+        let hash = hash_bytes(TEST_DATA1);
+        let result = db.get(hash);
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_size() {
+        let mut db = setup().unwrap();
+
+        let hash1 = db.add(TEST_DATA1.to_vec());
+        db.add(TEST_DATA1.to_vec());
+
+        assert_eq!(db.total_key_size_bytes(), hash1.len() as u64);
+        assert_eq!(db.total_obj_size_bytes(), TEST_DATA1.len() as u64);
+        assert_eq!(db.total_mem_size_bytes(), (TEST_DATA1.len() + hash1.len()) as u64);
+
+        let hash2 = db.add(TEST_DATA2.to_vec());
+        assert_eq!(db.total_key_size_bytes(), (hash1.len() + hash2.len()) as u64);
+        assert_eq!(db.total_obj_size_bytes(), (TEST_DATA1.len() + TEST_DATA2.len()) as u64);
+        assert_eq!(
+            db.total_mem_size_bytes(),
+            (TEST_DATA1.len() + TEST_DATA2.len() + hash1.len() + hash2.len()) as u64
+        );
+    }
+}
