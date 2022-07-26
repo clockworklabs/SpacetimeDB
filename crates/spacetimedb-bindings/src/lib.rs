@@ -12,6 +12,7 @@ use std::panic;
 pub use type_def::{ElementDef, TupleDef, TypeDef};
 pub use type_value::{EqTypeValue, RangeTypeValue, TupleValue, TypeValue};
 
+#[cfg(target_arch = "wasm32")]
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
