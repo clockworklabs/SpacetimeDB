@@ -15,9 +15,9 @@ mod logs;
 mod metrics;
 mod query;
 mod revert;
+mod rm;
 mod signup;
 mod update;
-mod rm;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -89,7 +89,6 @@ fn get_subcommands() -> Vec<Command<'static>> {
         logs::cli(),
         call::cli(),
         identity::cli(),
-
         // TODO
         energy::cli(),
         login::cli(),

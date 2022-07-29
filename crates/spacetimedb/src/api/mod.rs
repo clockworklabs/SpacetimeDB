@@ -54,7 +54,7 @@ pub async fn spacetime_identity_associate_email(email: &str, identity_token: &st
 pub mod database {
     use crate::{
         hash::Hash,
-        logs::{self, init_log, delete_log},
+        logs::{self, delete_log, init_log},
         postgres,
         wasm_host::{self, get_host},
     };
@@ -129,10 +129,12 @@ pub mod database {
         host.delete_module(identity, name.into()).await?;
 
         // Delete the metadata for this module
-        client.query(
-            "DELETE FROM registry.module WHERE actor_name = $1 AND st_identity = $2", 
-            &[&name, &hex_identity]
-        ).await?;
+        client
+            .query(
+                "DELETE FROM registry.module WHERE actor_name = $1 AND st_identity = $2",
+                &[&name, &hex_identity],
+            )
+            .await?;
 
         delete_log(identity, name);
 

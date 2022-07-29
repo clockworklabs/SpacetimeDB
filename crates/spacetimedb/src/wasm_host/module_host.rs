@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
@@ -13,8 +13,12 @@ use crate::{
     },
     hash::Hash,
 };
-use tokio::sync::{mpsc, oneshot};
-use wasmer::{imports, Array, Function, Instance, LazyInit, Module, Store, WasmPtr};
+use tokio::{
+    spawn,
+    sync::{mpsc, oneshot},
+    time::sleep,
+};
+use wasmer::{imports, Array, Function, Instance, LazyInit, Module, Store, Value, WasmPtr};
 use wasmer_middlewares::metering::{get_remaining_points, set_remaining_points, MeteringPoints};
 
 use super::instance_env::InstanceEnv;
@@ -47,6 +51,12 @@ enum ModuleHostCommand {
         arg_bytes: Vec<u8>,
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
     },
+    CallRepeatingReducer {
+        reducer_name: String,
+        prev_call_time: u64,
+        respond_to: oneshot::Sender<Result<(u64, u64), anyhow::Error>>,
+    },
+    StartRepeatingReducers,
     InitDatabase {
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
     },
@@ -71,8 +81,10 @@ pub struct ModuleHost {
 impl ModuleHost {
     pub fn spawn(identity: Hash, name: String, module_hash: Hash, module: Module, store: Store) -> ModuleHost {
         let (tx, mut rx) = mpsc::channel(8);
+        let inner_tx = tx.clone();
         tokio::spawn(async move {
-            let mut actor = ModuleHostActor::new(identity, name, module_hash, module, store);
+            let module_host = ModuleHost { tx: inner_tx };
+            let mut actor = ModuleHostActor::new(identity, name, module_hash, module, store, module_host);
             while let Some(command) = rx.recv().await {
                 if actor.handle_message(command) {
                     break;
@@ -98,6 +110,27 @@ impl ModuleHost {
             })
             .await?;
         rx.await.unwrap()
+    }
+
+    pub async fn call_repeating_reducer(
+        &self,
+        reducer_name: String,
+        prev_call_time: u64,
+    ) -> Result<(u64, u64), anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<(u64, u64), anyhow::Error>>();
+        self.tx
+            .send(ModuleHostCommand::CallRepeatingReducer {
+                reducer_name,
+                prev_call_time,
+                respond_to: tx,
+            })
+            .await?;
+        rx.await.unwrap()
+    }
+    
+    pub async fn start_repeating_reducers(&self) -> Result<(), anyhow::Error> {
+        self.tx.send(ModuleHostCommand::StartRepeatingReducers).await?;
+        Ok(())
     }
 
     pub async fn init_database(&self) -> Result<(), anyhow::Error> {
@@ -140,6 +173,7 @@ impl ModuleHost {
 }
 
 const REDUCE_DUNDER: &str = "__reducer__";
+const REPEATING_REDUCER_DUNDER: &str = "__repeating_reducer__";
 const INIT_PANIC_DUNDER: &str = "__init_panic__";
 const CREATE_TABLE_DUNDER: &str = "__create_table__";
 const MIGRATE_DATABASE_DUNDER: &str = "__migrate_database__";
@@ -154,6 +188,7 @@ fn get_remaining_points_value(instance: &Instance) -> u64 {
 }
 
 struct ModuleHostActor {
+    module_host: ModuleHost,
     identity: Hash,
     name: String,
     _module_hash: Hash,
@@ -166,13 +201,21 @@ struct ModuleHostActor {
 }
 
 impl ModuleHostActor {
-    pub fn new(identity: Hash, name: String, module_hash: Hash, module: Module, store: Store) -> Self {
+    pub fn new(
+        identity: Hash,
+        name: String,
+        module_hash: Hash,
+        module: Module,
+        store: Store,
+        module_host: ModuleHost,
+    ) -> Self {
         let hex_identity = hex::encode(identity);
         let relational_db = Arc::new(Mutex::new(RelationalDB::open(format!(
             "/stdb/dbs/{hex_identity}/{name}"
         ))));
         let subscription = ModuleSubscription::spawn(relational_db.clone());
         let mut host = Self {
+            module_host,
             relational_db,
             identity,
             name,
@@ -201,6 +244,16 @@ impl ModuleHostActor {
                     .unwrap();
                 false
             }
+            ModuleHostCommand::CallRepeatingReducer {
+                reducer_name,
+                prev_call_time,
+                respond_to,
+            } => {
+                respond_to
+                    .send(self.call_repeating_reducer(&reducer_name, prev_call_time))
+                    .unwrap();
+                false
+            }
             ModuleHostCommand::InitDatabase { respond_to } => {
                 respond_to.send(self.init_database()).unwrap();
                 false
@@ -218,6 +271,10 @@ impl ModuleHostActor {
                 respond_to.send(self.add_subscriber(client_id)).unwrap();
                 false
             }
+            ModuleHostCommand::StartRepeatingReducers => {
+                self.start_repeating_reducers();
+                false
+            },
         }
     }
 
@@ -293,16 +350,58 @@ impl ModuleHostActor {
         Ok(instance_id)
     }
 
+    fn start_repeating_reducers(&mut self) {
+        for f in self.module.exports().functions() {
+            if f.name().starts_with(REPEATING_REDUCER_DUNDER) {
+                let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
+                let prev_call_time = timestamp - 20;
+
+                // TODO: We should really have another function inside of the module that we can use to get the initial repeat
+                // duration. It doesn't make sense to just make up a random value here.
+                let name = f.name()[REPEATING_REDUCER_DUNDER.len()..].to_string();
+                let result = self.call_repeating_reducer(&name, prev_call_time);
+                let (repeat_duration, call_timestamp) = match result {
+                    Ok((repeat_duration, call_timestamp)) => (repeat_duration, call_timestamp),
+                    Err(err) => {
+                        log::warn!("Error in repeating reducer: {}", err);
+                        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
+                        (20, timestamp)
+                    },
+                };
+                let module_host = self.module_host.clone();
+                let mut prev_call_time = call_timestamp;
+                let mut cur_repeat_duration = repeat_duration;
+                spawn(async move {
+                    loop {
+                        sleep(Duration::from_millis(cur_repeat_duration)).await;
+                        let res = module_host
+                            .call_repeating_reducer(name.clone(), prev_call_time)
+                            .await;
+                        if let Err(err) = res {
+                            // If we get an error trying to call this, then the module host has probably restarted
+                            // just break out of the loop and end this task
+                            log::debug!("Error calling repeating reducer: {}", err);
+                            break;
+                        }
+                        if let Ok((repeat_duration, call_timestamp)) = res {
+                            prev_call_time = call_timestamp;
+                            cur_repeat_duration = repeat_duration;
+                        }
+                    }
+                });
+            }
+        }
+    }
+
     fn init_database(&mut self) -> Result<(), anyhow::Error> {
         for f in self.module.exports().functions() {
-            if !f.name().starts_with(CREATE_TABLE_DUNDER) {
-                continue;
+            if f.name().starts_with(CREATE_TABLE_DUNDER) {
+                self.call_create_table(&f.name()[CREATE_TABLE_DUNDER.len()..])?;
             }
-            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
-            self.execute_reducer(self.identity, timestamp, f.name(), Vec::new())?;
         }
 
         // TODO: call __create_index__IndexName
+
         Ok(())
     }
 
@@ -317,11 +416,26 @@ impl ModuleHostActor {
             if !f.name().starts_with(MIGRATE_DATABASE_DUNDER) {
                 continue;
             }
-            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
-            self.execute_reducer(self.identity, timestamp, f.name(), Vec::new())?;
+            self.call_migrate(&f.name()[MIGRATE_DATABASE_DUNDER.len()..])?;
         }
 
         // TODO: call __create_index__IndexName
+        Ok(())
+    }
+
+    fn add_subscriber(&self, client_id: ClientActorId) -> Result<(), anyhow::Error> {
+        self.subscription.add_subscriber(client_id)
+    }
+
+    fn call_create_table(&self, create_table_name: &str) -> Result<(), anyhow::Error> {
+        let create_table_symbol = format!("{}{}", CREATE_TABLE_DUNDER, create_table_name);
+        let (_tx, _repeat_duration) = self.execute_reducer(&create_table_symbol, &[])?;
+        Ok(())
+    }
+
+    fn call_migrate(&self, migrate_name: &str) -> Result<(), anyhow::Error> {
+        let migrate_symbol = format!("{}{}", MIGRATE_DATABASE_DUNDER, migrate_name);
+        let (_tx, _repeat_duration) = self.execute_reducer(&migrate_symbol, &[])?;
         Ok(())
     }
 
@@ -329,7 +443,22 @@ impl ModuleHostActor {
         // TODO: validate arg_bytes
         let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
-        let tx = self.execute_reducer(caller_identity, timestamp, &reducer_symbol, arg_bytes)?;
+
+        let mut new_arg_bytes = Vec::with_capacity(40 + arg_bytes.len());
+        for b in caller_identity {
+            new_arg_bytes.push(b);
+        }
+
+        let timestamp_buf = timestamp.to_le_bytes();
+        for b in timestamp_buf {
+            new_arg_bytes.push(b)
+        }
+
+        for b in arg_bytes {
+            new_arg_bytes.push(*b);
+        }
+
+        let (tx, _repeat_duration) = self.execute_reducer(&reducer_symbol, new_arg_bytes)?;
 
         let status = if let Some(tx) = tx {
             EventStatus::Committed(tx.writes)
@@ -347,20 +476,55 @@ impl ModuleHostActor {
             status,
         };
         self.subscription.broadcast_event(event).unwrap();
+
         Ok(())
     }
 
-    fn add_subscriber(&self, client_id: ClientActorId) -> Result<(), anyhow::Error> {
-        self.subscription.add_subscriber(client_id)
+    fn call_repeating_reducer(&self, reducer_name: &str, prev_call_time: u64) -> Result<(u64, u64), anyhow::Error> {
+        // TODO: validate arg_bytes
+        let reducer_symbol = format!("{}{}", REPEATING_REDUCER_DUNDER, reducer_name);
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
+
+        let mut arg_bytes = Vec::with_capacity(16);
+
+        let timestamp_buf = timestamp.to_le_bytes();
+        for b in timestamp_buf {
+            arg_bytes.push(b)
+        }
+
+        let delta_time = timestamp - prev_call_time;
+        let delta_time_buf = delta_time.to_le_bytes();
+        for b in delta_time_buf {
+            arg_bytes.push(b);
+        }
+
+        let (tx, repeat_duration) = self.execute_reducer(&reducer_symbol, &arg_bytes)?;
+
+        let status = if let Some(tx) = tx {
+            EventStatus::Committed(tx.writes)
+        } else {
+            EventStatus::Failed
+        };
+
+        let event = ModuleEvent {
+            timestamp,
+            caller_identity: self.identity,
+            function_call: ModuleFunctionCall {
+                reducer: reducer_name.to_string(),
+                arg_bytes: arg_bytes.to_owned(),
+            },
+            status,
+        };
+        self.subscription.broadcast_event(event).unwrap();
+
+        Ok((repeat_duration.unwrap(), timestamp))
     }
 
     fn execute_reducer(
         &self,
-        sender: Hash,
-        timestamp: u64,
         reducer_symbol: &str,
         arg_bytes: impl AsRef<[u8]>,
-    ) -> Result<Option<Transaction>, anyhow::Error> {
+    ) -> Result<(Option<Transaction>, Option<u64>), anyhow::Error> {
         // TODO: disallow calling non-reducer dunder functions
         let tx = {
             let mut stdb = self.relational_db.lock().unwrap();
@@ -382,29 +546,18 @@ impl ModuleHostActor {
             .native::<u32, WasmPtr<u8, Array>>()?;
 
         let arg_bytes = arg_bytes.as_ref();
-        const HEADER_SIZE: usize = 40;
-        let buf_len = HEADER_SIZE as u32 + arg_bytes.len() as u32;
+        let buf_len = arg_bytes.len() as u32;
         let ptr = alloc.call(buf_len).unwrap();
-
         let values = ptr.deref(memory, 0, buf_len).unwrap();
-        let timestamp_buf = timestamp.to_le_bytes();
-        for i in 0..(buf_len as usize) {
-            if i < 32 {
-                values[i].set(sender[i]);
-            } else if i < HEADER_SIZE {
-                values[i].set(timestamp_buf[i - 32]);
-            } else {
-                values[i].set(arg_bytes[i - HEADER_SIZE]);
-            }
+        for (i, b) in arg_bytes.iter().enumerate() {
+            values[i].set(*b);
         }
-        let reduce = instance
-            .exports
-            .get_function(&reducer_symbol)?
-            .native::<(u32, u32), ()>()?;
+
+        let reduce = instance.exports.get_function(&reducer_symbol)?;
 
         let start = std::time::Instant::now();
         log::trace!("Start reducer \"{}\"...", reducer_symbol);
-        let result = reduce.call(ptr.offset(), arg_bytes.len() as u32);
+        let result = reduce.call(&[Value::I32(ptr.offset() as i32), Value::I32(buf_len as i32)]);
         let duration = start.elapsed();
         let remaining_points = get_remaining_points_value(&instance);
         log::trace!(
@@ -414,35 +567,43 @@ impl ModuleHostActor {
             points - remaining_points
         );
 
-        if let Some(err) = result.err() {
-            let mut stdb = self.relational_db.lock().unwrap();
-            let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
-            let tx = instance_tx_map.remove(&instance_id).unwrap();
-            stdb.rollback_tx(tx);
+        match result {
+            Err(err) => {
+                let mut stdb = self.relational_db.lock().unwrap();
+                let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
+                let tx = instance_tx_map.remove(&instance_id).unwrap();
+                stdb.rollback_tx(tx);
 
-            let e = &err;
-            let frames = e.trace();
-            let frames_len = frames.len();
+                let e = &err;
+                let frames = e.trace();
+                let frames_len = frames.len();
 
-            log::info!("Reducer \"{}\" runtime error: {}", reducer_symbol, e.message());
-            for i in 0..frames_len {
-                log::info!(
-                    "  Frame #{}: {:?}::{:?}",
-                    frames_len - i,
-                    frames[i].module_name(),
-                    frames[i].function_name().or(Some("<func>")).unwrap()
-                );
+                log::info!("Reducer \"{}\" runtime error: {}", reducer_symbol, e.message());
+                for i in 0..frames_len {
+                    log::info!(
+                        "  Frame #{}: {:?}::{:?}",
+                        frames_len - i,
+                        frames[i].module_name(),
+                        frames[i].function_name().or(Some("<func>")).unwrap()
+                    );
+                }
+                Ok((None, None))
             }
-            Ok(None)
-        } else {
-            let mut stdb = self.relational_db.lock().unwrap();
-            let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
-            let tx = instance_tx_map.remove(&instance_id).unwrap();
-            if let Some(tx) = stdb.commit_tx(tx) {
-                stdb.txdb.message_log.sync_all().unwrap();
-                Ok(Some(tx))
-            } else {
-                todo!("Write skew, you need to implement retries my man, T-dawg.");
+            Ok(ret) => {
+                let repeat_duration = if ret.len() == 1 {
+                    ret.first().unwrap().i64().map(|i| i as u64)
+                } else {
+                    None
+                };
+                let mut stdb = self.relational_db.lock().unwrap();
+                let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
+                let tx = instance_tx_map.remove(&instance_id).unwrap();
+                if let Some(tx) = stdb.commit_tx(tx) {
+                    stdb.txdb.message_log.sync_all().unwrap();
+                    Ok((Some(tx), repeat_duration))
+                } else {
+                    todo!("Write skew, you need to implement retries my man, T-dawg.");
+                }
             }
         }
     }

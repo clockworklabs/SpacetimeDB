@@ -20,7 +20,7 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
     let res = client
         .post(format!(
             "http://localhost:3000/database/{}/{}/delete",
-            hex_identity, name 
+            hex_identity, name
         ))
         .send()
         .await?;

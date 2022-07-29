@@ -10,6 +10,7 @@ use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::{format_ident, quote, ToTokens};
 use regex::Regex;
+use std::time::Duration;
 use substring::Substring;
 use syn::Fields::{Named, Unit, Unnamed};
 use syn::{parse_macro_input, AttributeArgs, FnArg, ItemFn, ItemStruct};
@@ -83,10 +84,38 @@ pub fn spacetimedb(macro_args: TokenStream, item: TokenStream) -> TokenStream {
 
 fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
     if *(&args.len()) > 1 {
-        let str = format!("Unexpected macro argument: {}", args[1].to_token_stream().to_string());
-        return proc_macro::TokenStream::from(quote! {
-            compile_error!(#str);
-        });
+        let arg = args[1].to_token_stream();
+        let arg_components = arg.into_iter().collect::<Vec<_>>();
+        let arg_name = &arg_components[0];
+        let repeat = match arg_name {
+            proc_macro2::TokenTree::Group(_) => false,
+            proc_macro2::TokenTree::Ident(ident) => {
+                if ident.to_string() != "repeat" {
+                    false
+                } else {
+                    true
+                }
+            }
+            proc_macro2::TokenTree::Punct(_) => false,
+            proc_macro2::TokenTree::Literal(_) => false,
+        };
+        if !repeat {
+            let str = format!("Unexpected macro argument name: {}", arg_name.to_string());
+            return proc_macro::TokenStream::from(quote! {
+                compile_error!(#str);
+            });
+        }
+        let arg_value = &arg_components[2];
+        let res = parse_duration::parse(&arg_value.to_string());
+        if let Err(_) = res {
+            let str = format!("Can't parse repeat time: {}", arg_value.to_string());
+            return proc_macro::TokenStream::from(quote! {
+                compile_error!(#str);
+            });
+        }
+        let repeat_duration = res.unwrap();
+
+        return spacetimedb_repeating_reducer(args, item, repeat_duration);
     }
 
     let original_function = parse_macro_input!(item as ItemFn);
@@ -114,7 +143,10 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
                 // First argument must be Hash (sender)
                 if arg_num == 0 {
                     if arg_type_str != "spacetimedb_bindings :: hash :: Hash" && arg_type_str != "Hash" {
-                        let error_str = format!("Parameter 1 of reducer {} must be of type \'Hash\'.", func_name.to_string());
+                        let error_str = format!(
+                            "Parameter 1 of reducer {} must be of type \'Hash\'.",
+                            func_name.to_string()
+                        );
                         return proc_macro::TokenStream::from(quote! {
                             compile_error!(#error_str);
                         });
@@ -126,7 +158,10 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
                 // Second argument must be a u64 (timestamp)
                 if arg_num == 1 {
                     if arg_type_str != "u64" {
-                        let error_str = format!("Parameter 2 of reducer {} must be of type \'u64\'.", func_name.to_string());
+                        let error_str = format!(
+                            "Parameter 2 of reducer {} must be of type \'u64\'.",
+                            func_name.to_string()
+                        );
                         return proc_macro::TokenStream::from(quote! {
                             compile_error!(#error_str);
                         });
@@ -134,7 +169,6 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
                     arg_num += 1;
                     continue;
                 }
-
 
                 parse_json_to_args.push(quote! {
                     let #var_name : #arg_token = serde_json::from_value(args[#json_arg_num].clone()).unwrap();
@@ -156,7 +190,6 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
             let arg_ptr = arg_ptr as *mut u8;
             let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(arg_ptr, arg_size + HEADER_SIZE, arg_size + HEADER_SIZE) };
 
-            println!("Parsing sender");
             let sender = *spacetimedb_bindings::hash::Hash::from_slice(&bytes[0..32]);
 
             let mut buf = [0; 8];
@@ -165,20 +198,105 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
             let arg_json: serde_json::Value = serde_json::from_slice(&bytes[HEADER_SIZE..]).unwrap();
 
-            println!("unwrapping args");
             let args = arg_json.as_array().unwrap();
 
-            println!("deserialize arguments");
             // Deserialize the json argument list
             #(#parse_json_to_args);*
 
-            println!("invoke function call");
             // Invoke the function with the deserialized args
             #func_name(sender, timestamp, #(#function_call_args),*);
         }
     };
 
     spacetimedb_csharp_reducer(original_function.clone());
+
+    proc_macro::TokenStream::from(quote! {
+        #generated_function
+        #original_function
+    })
+}
+
+fn spacetimedb_repeating_reducer(_args: AttributeArgs, item: TokenStream, repeat_duration: Duration) -> TokenStream {
+    let original_function = parse_macro_input!(item as ItemFn);
+    let func_name = &original_function.sig.ident;
+    let reducer_func_name = format_ident!("__repeating_reducer__{}", &func_name);
+
+    let mut arg_num: usize = 0;
+    let function_arguments = &original_function.sig.inputs;
+    if function_arguments.len() != 2 {
+        return proc_macro::TokenStream::from(quote! {
+            compile_error!("Expected 2 arguments (timestamp: u64, delta_time: u64) for repeating reducer.");
+        });
+    }
+    for function_argument in function_arguments {
+        match function_argument {
+            FnArg::Receiver(_) => {
+                return proc_macro::TokenStream::from(quote! {
+                    compile_error!("Receiver types in reducer parameters not supported!");
+                });
+            }
+            FnArg::Typed(typed) => {
+                let arg_type = &typed.ty;
+                let arg_token = arg_type.to_token_stream();
+                let arg_type_str = arg_token.to_string();
+
+                // First argument must be a u64 (timestamp)
+                if arg_num == 0 {
+                    if arg_type_str != "u64" {
+                        let error_str = format!(
+                            "Parameter 1 of reducer {} must be of type \'u64\'.",
+                            func_name.to_string()
+                        );
+                        return proc_macro::TokenStream::from(quote! {
+                            compile_error!(#error_str);
+                        });
+                    }
+                    arg_num += 1;
+                    continue;
+                }
+
+                // Second argument must be an u64 (delta_time)
+                if arg_num == 1 {
+                    if arg_type_str != "u64" {
+                        let error_str = format!(
+                            "Parameter 2 of reducer {} must be of type \'u64\'.",
+                            func_name.to_string()
+                        );
+                        return proc_macro::TokenStream::from(quote! {
+                            compile_error!(#error_str);
+                        });
+                    }
+                    arg_num += 1;
+                    continue;
+                }
+            }
+        }
+        arg_num = arg_num + 1;
+    }
+
+    let duration_as_millis = repeat_duration.as_millis() as u64;
+    let generated_function = quote! {
+        #[no_mangle]
+        #[allow(non_snake_case)]
+        pub extern "C" fn #reducer_func_name(arg_ptr: usize, arg_size: usize) -> u64 {
+            const HEADER_SIZE: usize = 16;
+            let arg_ptr = arg_ptr as *mut u8;
+            let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(arg_ptr, arg_size + HEADER_SIZE, arg_size + HEADER_SIZE) };
+
+            let mut buf = [0; 8];
+            buf.copy_from_slice(&bytes[0..8]);
+            let timestamp = u64::from_le_bytes(buf);
+
+            let mut buf = [0; 8];
+            buf.copy_from_slice(&bytes[8..HEADER_SIZE]);
+            let delta_time = u64::from_le_bytes(buf);
+
+            // Invoke the function with the deserialized args
+            #func_name(timestamp, delta_time);
+
+            return #duration_as_millis;
+        }
+    };
 
     proc_macro::TokenStream::from(quote! {
         #generated_function
@@ -542,15 +660,12 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
         #[allow(non_snake_case)]
         #[no_mangle]
         pub extern "C" fn #create_table_func_name(arg_ptr: usize, arg_size: usize) {
-            unsafe {
-                let def = #get_schema_func_name();
-
-                if let spacetimedb_bindings::TypeDef::Tuple(tuple_def) = def {
-                    spacetimedb_bindings::create_table(#table_id, tuple_def);
-                } else {
-                    // The type is not a tuple for some reason, table not created.
-                    std::panic!("This type is not a tuple: {{#original_struct_ident}}");
-                }
+            let def = #get_schema_func_name();
+            if let spacetimedb_bindings::TypeDef::Tuple(tuple_def) = def {
+                spacetimedb_bindings::create_table(#table_id, tuple_def);
+            } else {
+                // The type is not a tuple for some reason, table not created.
+                std::panic!("This type is not a tuple: {{#original_struct_ident}}");
             }
         }
     };
@@ -792,7 +907,6 @@ fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connec
     })
 }
 
-
 // This derive is actually a no-op, we need the helper attribute for spacetimedb
 #[proc_macro_derive(PrimaryKey, attributes(primary_key))]
 pub fn derive_primary_key(_: TokenStream) -> TokenStream {
@@ -822,9 +936,7 @@ pub(crate) fn rust_to_spacetimedb_ident(input_type: &str) -> Option<Ident> {
         "&str" => Some(format_ident!("String")),
         "f32" => Some(format_ident!("F32")),
         "f64" => Some(format_ident!("F64")),
-        _ => {
-            None
-        }
+        _ => None,
     };
 }
 

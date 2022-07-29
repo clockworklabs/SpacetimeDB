@@ -166,10 +166,11 @@ impl HostActor {
     }
 
     async fn init_module(&mut self, identity: Hash, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
-        let module_hash = self.add_module(identity, name, wasm_bytes).await?;
+        let module_hash = self.spawn_module(identity, name, wasm_bytes).await?;
         let key = (identity, name.to_string());
         let module_host = self.modules.get(&key).unwrap().clone();
         module_host.init_database().await?;
+        module_host.start_repeating_reducers().await?;
         Ok(module_hash)
     }
 
@@ -183,14 +184,23 @@ impl HostActor {
     }
 
     async fn update_module(&mut self, identity: Hash, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
-        let module_hash = self.add_module(identity, name, wasm_bytes).await?;
+        let module_hash = self.spawn_module(identity, name, wasm_bytes).await?;
         let key = (identity, name.to_string());
         let module_host = self.modules.get(&key).unwrap().clone();
         module_host.migrate_database().await?;
+        module_host.start_repeating_reducers().await?;
         Ok(module_hash)
     }
 
     async fn add_module(&mut self, identity: Hash, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+        let module_hash = self.spawn_module(identity, name, wasm_bytes).await?;
+        let key = (identity, name.to_string());
+        let module_host = self.modules.get(&key).unwrap().clone();
+        module_host.start_repeating_reducers().await?;
+        Ok(module_hash)
+    }
+
+    async fn spawn_module(&mut self, identity: Hash, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let module_hash = hash_bytes(&wasm_bytes);
         let key = (identity, name.to_string());
         if let Some(module_host) = self.modules.get(&key) {

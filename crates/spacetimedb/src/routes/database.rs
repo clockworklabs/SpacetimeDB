@@ -75,7 +75,6 @@ async fn delete_module(state: &mut State) -> SimpleHandlerResult {
     Ok(res)
 }
 
-
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct UpdateModuleParams {
     identity: String,

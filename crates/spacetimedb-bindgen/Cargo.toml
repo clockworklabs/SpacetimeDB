@@ -18,3 +18,4 @@ convert_case = "0.5.0"
 spacetimedb-bindings = { path = "../spacetimedb-bindings" }
 substring = "1.4.5"
 regex = "1.5.6"
+parse_duration = "2.1.1"
