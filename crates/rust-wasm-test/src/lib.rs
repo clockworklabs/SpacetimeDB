@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use spacetimedb_bindgen::spacetimedb;
 use spacetimedb_bindings::{delete_range, Hash, RangeTypeValue};
 
-#[derive(Serialize, Deserialize)]
 #[spacetimedb(table(1))]
 pub struct TestA {
     pub x: u32,

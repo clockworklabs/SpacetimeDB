@@ -673,7 +673,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
     // Output all macro data
     proc_macro::TokenStream::from(quote! {
         #[derive(spacetimedb_bindgen::PrimaryKey, spacetimedb_bindgen::Index)]
-        // #[derive(serde::Serialize, serde::Deserialize)]
+        #[derive(serde::Serialize, serde::Deserialize)]
         #original_struct
         impl #original_struct_ident {
             #db_insert
