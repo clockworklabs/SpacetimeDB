@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use spacetimedb_bindgen::spacetimedb;
-use spacetimedb_bindings::{delete_filter, Hash};
+use spacetimedb_bindings::{delete_range, Hash, RangeTypeValue};
 
 
 #[spacetimedb(table(1))]
