@@ -1,11 +1,12 @@
 use crate::{
-    db::object_db::ObjectDB,
     hash::Hash,
     identity::{alloc_spacetime_identity, decode_token, encode_token},
     postgres,
 };
 use lazy_static::lazy_static;
 use std::sync::Mutex;
+use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
+
 // use rocksdb;
 
 /*
@@ -29,7 +30,7 @@ use std::sync::Mutex;
 */
 
 lazy_static! {
-    pub static ref MODULE_ODB: Mutex<ObjectDB> = Mutex::new(ObjectDB::open("/stdb/module_odb").unwrap());
+    pub static ref MODULE_ODB: Mutex<HashMapObjectDB> = Mutex::new(HashMapObjectDB::open("/stdb/module_odb").unwrap());
 }
 
 pub async fn spacetime_identity() -> Result<(Hash, String), anyhow::Error> {
@@ -58,6 +59,7 @@ pub mod database {
         postgres,
         wasm_host::{self, get_host},
     };
+    use crate::db::ostorage::ObjectDB;
 
     use super::MODULE_ODB;
 

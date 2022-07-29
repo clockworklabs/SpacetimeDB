@@ -10,6 +10,7 @@ use std::error::Error;
 use std::net::SocketAddr;
 use tokio::runtime::Builder;
 use tokio::spawn;
+use spacetimedb::db::ostorage::ObjectDB;
 
 async fn startup() {
     // TODO: maybe replace storage layer with something like rocksdb or sled

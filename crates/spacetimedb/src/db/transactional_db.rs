@@ -7,12 +7,15 @@ use super::{
         transaction::Transaction,
         write::{DataKey, Operation, Write},
     },
-    object_db::ObjectDB,
 };
-use crate::hash::{hash_bytes, Hash};
+use crate::hash::{Hash, hash_bytes};
 use std::{
     collections::{hash_set::Iter, HashMap, HashSet},
     path::{Path, PathBuf},
+};
+use crate::db::ostorage::{
+    ObjectDB,
+    hashmap_object_db::HashMapObjectDB
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -112,7 +115,7 @@ impl ClosedState {
 }
 
 pub struct TransactionalDB {
-    pub odb: ObjectDB,
+    pub odb: Box<dyn ObjectDB + Send>,
     pub message_log: MessageLog,
     root: PathBuf,
     closed_state: ClosedState,
@@ -129,7 +132,7 @@ pub struct TransactionalDB {
 
 impl TransactionalDB {
     pub fn open(root: &Path) -> Result<Self, anyhow::Error> {
-        let odb = ObjectDB::open(root.to_path_buf().join("odb"))?;
+        let odb = HashMapObjectDB::open(root.to_path_buf().join("odb"))?;
         let message_log = MessageLog::open(root.to_path_buf().join("mlog"))?;
 
         let mut closed_state = ClosedState::new();
@@ -165,7 +168,7 @@ impl TransactionalDB {
         );
 
         let txdb = Self {
-            odb,
+            odb: Box::new(odb),
             root: root.to_owned(),
             message_log,
             closed_state,
@@ -903,52 +906,5 @@ mod tests {
 
         assert!(db.commit_tx(tx_2).is_some());
         assert!(db.commit_tx(tx_3).is_some());
-    }
-
-    #[test]
-    fn test_size() {
-        let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mut db = TransactionalDB::open(tmp_dir.path()).unwrap();
-        let start = std::time::Instant::now();
-        let iterations: u128 = 1000;
-        println!("{} odb base size bytes", db.odb.total_mem_size_bytes());
-
-        let mut raw_data_size = 0;
-        for i in 0..iterations {
-            let mut tx_1 = db.begin_tx();
-            let val_1 = MyStruct {
-                my_name: hash_bytes(b"This is a byte string."),
-                my_i32: -(i as i32),
-                my_u64: i as u64,
-                my_hash: hash_bytes(b"This will be turned into a hash."),
-            }
-            .encode();
-            let val_2 = MyStruct {
-                my_name: hash_bytes(b"This is a byte string."),
-                my_i32: -2 * (i as i32),
-                my_u64: i as u64,
-                my_hash: hash_bytes(b"This will be turned into a hash."),
-            }
-            .encode();
-
-            raw_data_size += val_1.len() as u64;
-            raw_data_size += val_2.len() as u64;
-
-            db.insert(&mut tx_1, 0, val_1);
-            db.insert(&mut tx_1, 0, val_2);
-
-            assert!(db.commit_tx(tx_1).is_some());
-        }
-        let duration = start.elapsed();
-        println!("{} odb after size bytes", db.odb.total_mem_size_bytes());
-
-        // each key is this long: "qwertyuiopasdfghjklzxcvbnm123456";
-        // key x2: 64 bytes
-        // commit key: 32 bytes
-        // commit: 98 bytes <parent(32)><write(<type(1)><hash(32)>)><write(<type(1)><hash(32)>)>
-        // total: 194
-        let data_overhead = db.odb.total_mem_size_bytes() - raw_data_size;
-        println!("{} overhead bytes per tx", data_overhead / iterations as u64);
-        println!("{} us per tx", duration.as_micros() / iterations);
     }
 }

@@ -20,6 +20,10 @@ required-features = [] # Features required to build this target (N/A for lib)
 name = "transactional_db"
 harness = false
 
+[[bench]]
+name = "object_db"
+harness = false
+
 [dependencies] 
 tokio = { version = "1.2", features = ["full"] }
 wasmer = "2.1.1"
@@ -56,6 +60,7 @@ prometheus = "0.13.0"
 criterion = { version = "0.3", features = ["async", "async_tokio", "html_reports"] }
 prost-build = { version = "0.6.1" }
 tempdir = "0.3.7"
+rand = "0.8.5"
 
 [build-dependencies]
 glob = "0.3.0"

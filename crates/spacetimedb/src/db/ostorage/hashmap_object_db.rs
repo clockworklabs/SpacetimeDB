@@ -1,4 +1,4 @@
-use super::super::hash::{hash_bytes, Hash};
+use crate::hash::{hash_bytes, Hash};
 use hex;
 use std::os::unix::prelude::MetadataExt;
 use std::{
@@ -7,15 +7,16 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
 };
+use crate::db::ostorage::ObjectDB;
 
-pub struct ObjectDB {
+pub struct HashMapObjectDB {
     root: PathBuf,
     map: HashMap<Hash, Vec<u8>>,
     obj_size: u64,
     unsynced: Vec<File>,
 }
 
-impl ObjectDB {
+impl HashMapObjectDB {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, anyhow::Error> {
         let root = path.as_ref();
         fs::create_dir_all(root).unwrap();
@@ -89,8 +90,10 @@ impl ObjectDB {
     pub fn total_mem_size_bytes(&self) -> u64 {
         self.total_key_size_bytes() + self.total_obj_size_bytes()
     }
+}
 
-    pub fn add(&mut self, bytes: Vec<u8>) -> Hash {
+impl ObjectDB for HashMapObjectDB {
+    fn add(&mut self, bytes: Vec<u8>) -> Hash {
         let hash = hash_bytes(&bytes);
         if self.map.contains_key(&hash) {
             return hash;
@@ -117,7 +120,7 @@ impl ObjectDB {
         hash
     }
 
-    pub fn get(&self, hash: Hash) -> Option<&[u8]> {
+    fn get(&self, hash: Hash) -> Option<&[u8]> {
         self.map.get(&hash).map(|v| &v[..])
     }
 
@@ -127,7 +130,7 @@ impl ObjectDB {
     // https://www.evanjones.ca/durability-filesystem.html
     // https://stackoverflow.com/questions/42442387/is-write-safe-to-be-called-from-multiple-threads-simultaneously/42442926#42442926
     // https://github.com/facebook/rocksdb/wiki/WAL-Performance
-    pub fn flush(&mut self) -> Result<(), anyhow::Error> {
+    fn flush(&mut self) -> Result<(), anyhow::Error> {
         // TODO if we start buffering
         Ok(())
     }
@@ -136,7 +139,7 @@ impl ObjectDB {
     // been pushed to the OS. You probably don't need to call this function, unless you need it
     // to be for sure durably written.
     // SEE: https://stackoverflow.com/questions/69819990/whats-the-difference-between-flush-and-sync-all
-    pub fn sync_all(&mut self) -> Result<(), anyhow::Error> {
+    fn sync_all(&mut self) -> Result<(), anyhow::Error> {
         for file in self.unsynced.drain(..) {
             file.sync_all()?;
         }
@@ -146,7 +149,7 @@ impl ObjectDB {
 
 #[cfg(test)]
 mod tests {
-    use crate::db::object_db::ObjectDB;
+    use crate::db::ostorage::{ObjectDB, hashmap_object_db::HashMapObjectDB};
     use crate::hash::hash_bytes;
     use anyhow::Error;
     use tempdir::TempDir;
@@ -155,9 +158,9 @@ mod tests {
     const TEST_DATA1: &[u8; 21] = b"this is a byte string";
     const TEST_DATA2: &[u8; 26] = b"this is also a byte string";
 
-    fn setup() -> Result<ObjectDB, Error> {
+    fn setup() -> Result<HashMapObjectDB, Error> {
         let tmp_dir = TempDir::new(TEST_DB_DIR_PREFIX).unwrap();
-        ObjectDB::open(tmp_dir.path())
+        HashMapObjectDB::open(tmp_dir.path())
     }
 
     #[test]
