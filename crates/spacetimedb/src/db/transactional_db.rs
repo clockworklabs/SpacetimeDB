@@ -8,14 +8,11 @@ use super::{
         write::{DataKey, Operation, Write},
     },
 };
-use crate::hash::{Hash, hash_bytes};
+use crate::db::ostorage::ObjectDB;
+use crate::hash::{hash_bytes, Hash};
 use std::{
     collections::{hash_set::Iter, HashMap, HashSet},
     path::{Path, PathBuf},
-};
-use crate::db::ostorage::{
-    ObjectDB,
-    hashmap_object_db::HashMapObjectDB
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -116,6 +113,7 @@ impl ClosedState {
 
 pub struct TransactionalDB {
     pub odb: Box<dyn ObjectDB + Send>,
+    pub make_odb_fun: fn(&Path) -> Box<dyn ObjectDB + Send>,
     pub message_log: MessageLog,
     root: PathBuf,
     closed_state: ClosedState,
@@ -131,8 +129,8 @@ pub struct TransactionalDB {
 }
 
 impl TransactionalDB {
-    pub fn open(root: &Path) -> Result<Self, anyhow::Error> {
-        let odb = HashMapObjectDB::open(root.to_path_buf().join("odb"))?;
+    pub fn open(root: &Path, make_odb_fun: fn(&Path) -> Box<dyn ObjectDB + Send>) -> Result<Self, anyhow::Error> {
+        let odb = make_odb_fun(root);
         let message_log = MessageLog::open(root.to_path_buf().join("mlog"))?;
 
         let mut closed_state = ClosedState::new();
@@ -168,7 +166,8 @@ impl TransactionalDB {
         );
 
         let txdb = Self {
-            odb: Box::new(odb),
+            odb,
+            make_odb_fun,
             root: root.to_owned(),
             message_log,
             closed_state,
@@ -189,7 +188,7 @@ impl TransactionalDB {
 
     pub fn reset_hard(&mut self) -> Result<(), anyhow::Error> {
         self.message_log.reset_hard()?;
-        *self = Self::open(&self.root)?;
+        *self = Self::open(&self.root, self.make_odb_fun)?;
         Ok(())
     }
 
@@ -381,7 +380,7 @@ impl TransactionalDB {
                 Some(t)
             }
             DataKey::Hash(hash) => {
-                let t = f(self.odb.get(*hash).unwrap());
+                let t = f(self.odb.get(*hash).unwrap().to_vec().as_slice());
                 Some(t)
             }
         };
@@ -698,7 +697,9 @@ impl<'a> Iterator for ScanIter<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::db::ostorage::ObjectDB;
     use tempdir::TempDir;
+    use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 
     use super::TransactionalDB;
     use crate::hash::hash_bytes;
@@ -706,6 +707,10 @@ mod tests {
 
     unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
         ::std::slice::from_raw_parts((p as *const T) as *const u8, ::std::mem::size_of::<T>())
+    }
+
+    fn make_odb(path: &std::path::Path) -> Box<dyn ObjectDB + Send> {
+        Box::new(HashMapObjectDB::open(path).unwrap())
     }
 
     #[repr(C, packed)]
@@ -730,7 +735,7 @@ mod tests {
     #[test]
     fn test_insert_and_seek_bytes() {
         let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mut db = TransactionalDB::open(tmp_dir.path()).unwrap();
+        let mut db = TransactionalDB::open(tmp_dir.path(), make_odb).unwrap();
         let mut tx = db.begin_tx();
         let row_key_1 = db.insert(&mut tx, 0, b"this is a byte string".to_vec());
         db.commit_tx(tx);
@@ -744,7 +749,7 @@ mod tests {
     #[test]
     fn test_insert_and_seek_struct() {
         let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mut db = TransactionalDB::open(tmp_dir.path()).unwrap();
+        let mut db = TransactionalDB::open(tmp_dir.path(), make_odb).unwrap();
         let mut tx = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx,
@@ -769,7 +774,7 @@ mod tests {
     #[test]
     fn test_read_isolation() {
         let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mut db = TransactionalDB::open(tmp_dir.path()).unwrap();
+        let mut db = TransactionalDB::open(tmp_dir.path(), make_odb).unwrap();
         let mut tx_1 = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx_1,
@@ -797,7 +802,7 @@ mod tests {
     #[test]
     fn test_scan() {
         let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mut db = TransactionalDB::open(tmp_dir.path()).unwrap();
+        let mut db = TransactionalDB::open(tmp_dir.path(), make_odb).unwrap();
         let mut tx_1 = db.begin_tx();
         let _row_key_1 = db.insert(
             &mut tx_1,
@@ -845,7 +850,7 @@ mod tests {
     #[test]
     fn test_write_skew_conflict() {
         let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mut db = TransactionalDB::open(tmp_dir.path()).unwrap();
+        let mut db = TransactionalDB::open(tmp_dir.path(), make_odb).unwrap();
         let mut tx_1 = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx_1,
@@ -870,7 +875,7 @@ mod tests {
     #[test]
     fn test_write_skew_no_conflict() {
         let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mut db = TransactionalDB::open(tmp_dir.path()).unwrap();
+        let mut db = TransactionalDB::open(tmp_dir.path(), make_odb).unwrap();
         let mut tx_1 = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx_1,

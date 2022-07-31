@@ -120,8 +120,8 @@ impl ObjectDB for HashMapObjectDB {
         hash
     }
 
-    fn get(&self, hash: Hash) -> Option<&[u8]> {
-        self.map.get(&hash).map(|v| &v[..])
+    fn get(&self, hash: Hash) -> Option<bytes::Bytes> {
+        self.map.get(&hash).map(|v| bytes::Bytes::from(v.clone()))
     }
 
     // NOTE: Flushing a `File` does nothing (just returns Ok(())), but flushing a BufWriter will
@@ -171,10 +171,10 @@ mod tests {
         let hash2 = db.add(TEST_DATA2.to_vec());
 
         let result = db.get(hash1).unwrap();
-        assert_eq!(TEST_DATA1, result);
+        assert_eq!(TEST_DATA1.to_vec(), result);
 
         let result = db.get(hash2).unwrap();
-        assert_eq!(TEST_DATA2, result);
+        assert_eq!(TEST_DATA2.to_vec(), result);
     }
 
     #[test]

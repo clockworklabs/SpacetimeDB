@@ -99,7 +99,7 @@ pub mod database {
 
         // Store this module metadata in postgres
         client.query(
-            "INSERT INTO registry.module (actor_name, st_identity, module_version, module_address) VALUES ($1, $2, $3, $4)", 
+            "INSERT INTO registry.module (actor_name, st_identity, module_version, module_address) VALUES ($1, $2, $3, $4)",
             &[&name, &hex_identity, &0_i32, &hex::encode(address)]
         ).await?;
 
