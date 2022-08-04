@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use prost::bytes::BufMut;
 
 use crate::{
     clients::{client_connection_index::ClientActorId, module_subscription_actor::ModuleSubscription},
@@ -209,7 +210,7 @@ impl ModuleHostActor {
         store: Store,
         module_host: ModuleHost,
     ) -> Self {
-        let hex_identity = hex::encode(identity);
+        let hex_identity = identity.to_hex();
         let relational_db = Arc::new(Mutex::new(RelationalDB::open(format!(
             "/stdb/dbs/{hex_identity}/{name}"
         ))));
@@ -445,9 +446,7 @@ impl ModuleHostActor {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
 
         let mut new_arg_bytes = Vec::with_capacity(40 + arg_bytes.len());
-        for b in caller_identity {
-            new_arg_bytes.push(b);
-        }
+        new_arg_bytes.put_slice(&caller_identity.data[..]);
 
         let timestamp_buf = timestamp.to_le_bytes();
         for b in timestamp_buf {

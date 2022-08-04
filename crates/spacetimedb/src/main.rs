@@ -39,10 +39,10 @@ async fn startup() {
     for row in rows {
         let name: String = row.get(0);
         let hex_identity: String = row.get(1);
-        let identity = *Hash::from_slice(&hex::decode(hex_identity).unwrap());
+        let identity = Hash::from_hex(hex_identity.as_str()).unwrap();
 
         let module_address: String = row.get(3);
-        let hash: Hash = Hash::from_iter(hex::decode(module_address).unwrap());
+        let hash: Hash = Hash::from_hex(module_address.as_str()).unwrap();
         let wasm_bytes = {
             let object_db = MODULE_ODB.lock().unwrap();
             object_db.get(hash).unwrap().to_vec()

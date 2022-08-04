@@ -6,6 +6,8 @@ mod module;
 extern crate core;
 extern crate proc_macro;
 
+use crate::csharp::{spacetimedb_csharp_reducer, spacetimedb_csharp_tuple};
+use crate::module::{autogen_module_struct_to_schema, autogen_module_struct_to_tuple, autogen_module_tuple_to_struct};
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::{format_ident, quote, ToTokens};
@@ -14,8 +16,6 @@ use std::time::Duration;
 use substring::Substring;
 use syn::Fields::{Named, Unit, Unnamed};
 use syn::{parse_macro_input, AttributeArgs, FnArg, ItemFn, ItemStruct};
-use crate::csharp::{spacetimedb_csharp_reducer, spacetimedb_csharp_tuple};
-use crate::module::{autogen_module_struct_to_schema, autogen_module_struct_to_tuple, autogen_module_tuple_to_struct};
 
 // When we add support for more than 1 language uncomment this. For now its just cumbersome.
 // enum Lang {
@@ -190,7 +190,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
             let arg_ptr = arg_ptr as *mut u8;
             let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(arg_ptr, arg_size + HEADER_SIZE, arg_size + HEADER_SIZE) };
 
-            let sender = *spacetimedb_bindings::hash::Hash::from_slice(&bytes[0..32]);
+            let sender = spacetimedb_bindings::hash::Hash::from_slice(&bytes[0..32]);
 
             let mut buf = [0; 8];
             buf.copy_from_slice(&bytes[32..HEADER_SIZE]);
@@ -390,24 +390,20 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
             Some(ident) => {
                 col_type = field.ty.clone().to_token_stream().to_string().parse().unwrap();
                 col_type_full = col_type.clone();
-                col_type_value = format!("spacetimedb_bindings::TypeValue::{}", ident)
-                    .parse()
-                    .unwrap();
+                col_type_value = format!("spacetimedb_bindings::TypeValue::{}", ident).parse().unwrap();
             }
-            None => {
-                match field.ty.clone().to_token_stream().to_string().as_str() {
-                    "Hash" => {
-                        col_type = "Hash".parse().unwrap();
-                        col_type_full = "spacetimedb_bindings::Hash".parse().unwrap();
-                        col_type_value = format!("spacetimedb_bindings::TypeValue::Bytes").parse().unwrap();
-                    }
-                    custom_type => {
-                        col_type = custom_type.parse().unwrap();
-                        col_type_full = col_type.clone();
-                        col_type_value = "spacetimedb_bindings::TypeValue::Tuple".parse().unwrap();
-                    }
+            None => match field.ty.clone().to_token_stream().to_string().as_str() {
+                "Hash" => {
+                    col_type = "Hash".parse().unwrap();
+                    col_type_full = "spacetimedb_bindings::Hash".parse().unwrap();
+                    col_type_value = format!("spacetimedb_bindings::TypeValue::Bytes").parse().unwrap();
                 }
-            }
+                custom_type => {
+                    col_type = custom_type.parse().unwrap();
+                    col_type_full = col_type.clone();
+                    col_type_value = "spacetimedb_bindings::TypeValue::Tuple".parse().unwrap();
+                }
+            },
         }
 
         col_value_insert = format!("{}({})", col_type_value.clone(), format!("ins.{}", col_name))
@@ -457,27 +453,26 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
                     #col_value_insert
                 });
             }
-            None => {
-                match field.ty.clone().to_token_stream().to_string().as_str() {
-                    "Hash" => {
-                        if is_primary {
-                            primary_conversion_from_raw_to_stdb_statement = Some(quote!(
-                                let data = #col_type_value(data.to_vec());
-                            ));
-                        }
+            None => match field.ty.clone().to_token_stream().to_string().as_str() {
+                "Hash" => {
+                    if is_primary {
+                        primary_conversion_from_raw_to_stdb_statement = Some(quote!(
+                            let data = #col_type_value(data.to_vec());
+                        ));
+                    }
 
-                        insert_columns.push(quote! {
-                            spacetimedb_bindings::TypeValue::Bytes(ins.#col_name.to_vec())
-                        });
-                    }
-                    _ => {
-                        let struct_to_tuple = format_ident!("__struct_to_tuple__{}", col_type.to_token_stream().to_string());
-                        insert_columns.push(quote! {
-                            #struct_to_tuple(ins.#col_name)
-                        });
-                    }
+                    insert_columns.push(quote! {
+                        spacetimedb_bindings::TypeValue::Bytes(ins.#col_name.to_vec())
+                    });
                 }
-            }
+                _ => {
+                    let struct_to_tuple =
+                        format_ident!("__struct_to_tuple__{}", col_type.to_token_stream().to_string());
+                    insert_columns.push(quote! {
+                        #struct_to_tuple(ins.#col_name)
+                    });
+                }
+            },
         }
 
         column_idents.push(format_ident!("{}", col_name));
@@ -512,7 +507,9 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
             let comparison_block = tuple_field_comparison_block(
                 original_struct.ident.clone().to_token_stream().to_string().as_str(),
                 primary_key_rust_type.to_string().as_str(),
-                primary_key_column_ident.clone(), true);
+                primary_key_column_ident.clone(),
+                true,
+            );
             primary_filter_func = quote! {
                 #[allow(unused_variables)]
                 #[allow(non_snake_case)]
@@ -575,20 +572,25 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
     }
 
     for (x, non_primary_column_ident) in non_primary_column_idents.iter().enumerate() {
-        let filter_func_ident: proc_macro2::TokenStream = format!("filter_{}_eq", non_primary_column_ident).parse().unwrap();
+        let filter_func_ident: proc_macro2::TokenStream =
+            format!("filter_{}_eq", non_primary_column_ident).parse().unwrap();
         let column_type = non_primary_column_types[x].clone();
         let column_def = non_primary_column_defs[x].clone();
         let row_index = non_primary_index_lookup[x] as usize;
 
         let comparison_block = tuple_field_comparison_block(
             original_struct_ident.clone().to_token_stream().to_string().as_str(),
-            column_type.to_string().as_str(), non_primary_column_ident.clone(), false);
+            column_type.to_string().as_str(),
+            non_primary_column_ident.clone(),
+            false,
+        );
 
         if let None = rust_to_spacetimedb_ident(column_type.to_string().as_str()) {
             match column_type.to_string().as_str() {
                 "Hash" => {
                     // This is fine
-                }, _ => {
+                }
+                _ => {
                     // Just skip this, its not supported.
                     continue;
                 }
@@ -940,12 +942,21 @@ pub(crate) fn rust_to_spacetimedb_ident(input_type: &str) -> Option<Ident> {
     };
 }
 
-fn tuple_field_comparison_block(tuple_type_str: &str, filter_field_type_str: &str, filter_field_name: Ident, is_primary: bool) -> proc_macro2::TokenStream {
+fn tuple_field_comparison_block(
+    tuple_type_str: &str,
+    filter_field_type_str: &str,
+    filter_field_name: Ident,
+    is_primary: bool,
+) -> proc_macro2::TokenStream {
     let stdb_type_value: proc_macro2::TokenStream;
     let comparison_and_result_statement: proc_macro2::TokenStream;
     let result_statement: proc_macro2::TokenStream;
-    let tuple_to_struct_func: proc_macro2::TokenStream = format!("__tuple_to_struct__{}", tuple_type_str).parse().unwrap();
-    let err_string = format!("Internal stdb error: Can't convert from tuple to struct (wrong version?) {}", tuple_type_str);
+    let tuple_to_struct_func: proc_macro2::TokenStream =
+        format!("__tuple_to_struct__{}", tuple_type_str).parse().unwrap();
+    let err_string = format!(
+        "Internal stdb error: Can't convert from tuple to struct (wrong version?) {}",
+        tuple_type_str
+    );
 
     if is_primary {
         result_statement = quote! {
@@ -981,7 +992,7 @@ fn tuple_field_comparison_block(tuple_type_str: &str, filter_field_type_str: &st
                 "Hash" => {
                     stdb_type_value = format!("spacetimedb_bindings::TypeValue::Bytes").parse().unwrap();
                     comparison_and_result_statement = quote! {
-                        let entry_data = *spacetimedb_bindings::hash::Hash::from_slice(&entry_data[0..32]);
+                        let entry_data = spacetimedb_bindings::hash::Hash::from_slice(&entry_data[0..32]);
                         if #filter_field_name.eq(&entry_data) {
                             #result_statement
                         }

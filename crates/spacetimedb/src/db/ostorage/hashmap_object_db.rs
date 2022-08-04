@@ -1,3 +1,4 @@
+use crate::db::ostorage::ObjectDB;
 use crate::hash::{hash_bytes, Hash};
 use hex;
 use std::os::unix::prelude::MetadataExt;
@@ -7,7 +8,6 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
 };
-use crate::db::ostorage::ObjectDB;
 
 pub struct HashMapObjectDB {
     root: PathBuf,
@@ -66,7 +66,7 @@ impl HashMapObjectDB {
                 file.read_to_end(&mut contents).unwrap();
 
                 let hash = Hash::from_slice(&bytes);
-                cache.insert(*hash, contents);
+                cache.insert(hash, contents);
                 obj_size += size;
             }
         }
@@ -99,8 +99,8 @@ impl ObjectDB for HashMapObjectDB {
             return hash;
         }
 
-        let folder = hex::encode(&hash[0..1]);
-        let filename = hex::encode(&hash[1..]);
+        let folder = hex::encode(&hash.data[0..1]);
+        let filename = hex::encode(&hash.data[1..]);
         let path = self.root.join(folder).join(filename);
 
         if let Some(p) = path.parent() {
@@ -149,7 +149,7 @@ impl ObjectDB for HashMapObjectDB {
 
 #[cfg(test)]
 mod tests {
-    use crate::db::ostorage::{ObjectDB, hashmap_object_db::HashMapObjectDB};
+    use crate::db::ostorage::{hashmap_object_db::HashMapObjectDB, ObjectDB};
     use crate::hash::hash_bytes;
     use anyhow::Error;
     use tempdir::TempDir;
@@ -216,16 +216,16 @@ mod tests {
         let hash1 = db.add(TEST_DATA1.to_vec());
         db.add(TEST_DATA1.to_vec());
 
-        assert_eq!(db.total_key_size_bytes(), hash1.len() as u64);
+        assert_eq!(db.total_key_size_bytes(), hash1.data.len() as u64);
         assert_eq!(db.total_obj_size_bytes(), TEST_DATA1.len() as u64);
-        assert_eq!(db.total_mem_size_bytes(), (TEST_DATA1.len() + hash1.len()) as u64);
+        assert_eq!(db.total_mem_size_bytes(), (TEST_DATA1.len() + hash1.data.len()) as u64);
 
         let hash2 = db.add(TEST_DATA2.to_vec());
-        assert_eq!(db.total_key_size_bytes(), (hash1.len() + hash2.len()) as u64);
+        assert_eq!(db.total_key_size_bytes(), (hash1.data.len() + hash2.data.len()) as u64);
         assert_eq!(db.total_obj_size_bytes(), (TEST_DATA1.len() + TEST_DATA2.len()) as u64);
         assert_eq!(
             db.total_mem_size_bytes(),
-            (TEST_DATA1.len() + TEST_DATA2.len() + hash1.len() + hash2.len()) as u64
+            (TEST_DATA1.len() + TEST_DATA2.len() + hash1.data.len() + hash2.data.len()) as u64
         );
     }
 }

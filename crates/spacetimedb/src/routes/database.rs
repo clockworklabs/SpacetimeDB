@@ -147,7 +147,7 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     }
 
     let res = Response::builder()
-        .header("Spacetime-Identity", hex::encode(caller_identity))
+        .header("Spacetime-Identity", caller_identity.to_hex())
         .header("Spacetime-Identity-Token", caller_identity_token)
         .status(StatusCode::OK)
         .body(Body::empty())

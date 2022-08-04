@@ -10,7 +10,7 @@ use std::str::FromStr;
 const ROOT: &str = "/stdb/logs";
 
 fn path_from_hash(hash: Hash) -> PathBuf {
-    let hex_address = hex::encode(hash);
+    let hex_address = hash.to_hex();
     let path = format!("{}/{}", &hex_address[0..2], &hex_address[2..]);
     PathBuf::from(path)
 }

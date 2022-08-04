@@ -29,7 +29,7 @@ pub struct ClientActorId {
 
 impl fmt::Display for ClientActorId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ClientActorId({}/{})", hex::encode(self.identity), self.name)
+        write!(f, "ClientActorId({}/{})", self.identity.to_hex(), self.name)
     }
 }
 
@@ -116,7 +116,7 @@ impl ClientConnection {
             }
         });
 
-        let hex_module_identity = hex::encode(module_identity);
+        let hex_module_identity = module_identity.to_hex();
         Self {
             id,
             alive: true,

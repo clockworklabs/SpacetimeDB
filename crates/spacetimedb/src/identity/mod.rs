@@ -41,7 +41,7 @@ pub async fn alloc_spacetime_identity() -> Result<Hash, anyhow::Error> {
 
 pub fn encode_token(identity: Hash) -> Result<String, jsonwebtoken::errors::Error> {
     let header = Header::new(jsonwebtoken::Algorithm::ES256);
-    let hex_identity = hex::encode(identity);
+    let hex_identity = identity.to_hex();
     let claims = SpacetimeIdentityClaims {
         hex_identity,
         iat: SystemTime::now()

@@ -78,7 +78,7 @@ pub mod database {
             )
             .await;
 
-        let identity = *Hash::from_slice(&hex::decode(hex_identity).unwrap());
+        let identity = Hash::from_hex(hex_identity).unwrap();
         let host = wasm_host::get_host();
 
         if let Ok(rows) = result {
@@ -100,7 +100,7 @@ pub mod database {
         // Store this module metadata in postgres
         client.query(
             "INSERT INTO registry.module (actor_name, st_identity, module_version, module_address) VALUES ($1, $2, $3, $4)",
-            &[&name, &hex_identity, &0_i32, &hex::encode(address)]
+            &[&name, &hex_identity, &0_i32, &address.to_hex()]
         ).await?;
 
         init_log(identity, name);
@@ -117,7 +117,7 @@ pub mod database {
             )
             .await;
 
-        let identity = *Hash::from_slice(&hex::decode(hex_identity).unwrap());
+        let identity = Hash::from_hex(hex_identity).unwrap();
         let host = wasm_host::get_host();
 
         if let Ok(rows) = result {
@@ -145,7 +145,7 @@ pub mod database {
 
     pub async fn update_module(hex_identity: &str, name: &str, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let client = postgres::get_client().await;
-        let identity = *Hash::from_slice(&hex::decode(hex_identity).unwrap());
+        let identity = Hash::from_hex(hex_identity).unwrap();
         let host = wasm_host::get_host();
         let address = host.update_module(identity, name.into(), wasm_bytes.clone()).await?;
 
@@ -158,7 +158,7 @@ pub mod database {
         let result = client
             .query(
                 "UPDATE registry.module SET module_address = $1, module_version = module_version + 1 WHERE actor_name = $2 AND st_identity = $3",
-                &[&hex::encode(address), &name, &hex_identity],
+                &[&hex::encode(address.data), &name, &hex_identity],
             )
             .await;
 
@@ -192,7 +192,7 @@ pub mod database {
             )
             .await;
         let _ = result?;
-        let identity_hash: Hash = Hash::from_iter(hex::decode(identity).unwrap());
+        let identity_hash: Hash = Hash::from_hex(identity).unwrap();
 
         get_host()
             .call_reducer(identity_hash, name.to_string(), caller_identity, reducer, arg_bytes)
@@ -206,7 +206,7 @@ pub mod database {
     }
 
     pub async fn logs(hex_identity: &str, name: &str, num_lines: u32) -> String {
-        let identity = *Hash::from_slice(&hex::decode(hex_identity).unwrap());
+        let identity = Hash::from_hex(hex_identity).unwrap();
         logs::read_latest(identity, name, num_lines).await
     }
 

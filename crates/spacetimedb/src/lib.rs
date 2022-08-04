@@ -1,3 +1,5 @@
+extern crate core;
+
 pub mod api;
 mod auth;
 pub mod clients;

@@ -19,7 +19,7 @@ async fn get_identity(_state: &mut State) -> SimpleHandlerResult {
     let (identity, token) = spacetime_identity().await.unwrap();
 
     let identity_response = IdentityResponse {
-        identity: hex::encode(identity),
+        identity: identity.to_hex(),
         token,
     };
     let json = serde_json::to_string(&identity_response).unwrap();

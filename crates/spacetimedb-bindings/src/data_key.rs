@@ -49,7 +49,7 @@ impl DataKey {
         } else {
             let hash = Hash::from_slice(&bytes[read_count..read_count + 32]);
             read_count += 32;
-            (Self::Hash(*hash), read_count)
+            (Self::Hash(hash), read_count)
         }
     }
 
@@ -65,7 +65,7 @@ impl DataKey {
             DataKey::Hash(hash) => {
                 let flags: u8 = 0b1000_0000;
                 bytes.push(flags);
-                bytes.extend(hash);
+                bytes.extend_from_slice(&hash.data[..]);
                 33
             }
         }

@@ -380,7 +380,7 @@ impl TransactionalDB {
                 Some(t)
             }
             DataKey::Hash(hash) => {
-                let t = f(self.odb.get(*hash).unwrap().to_vec().as_slice());
+                let t = f(self.odb.get(Hash::from_arr(&hash.data)).unwrap().to_vec().as_slice());
                 Some(t)
             }
         };
@@ -494,7 +494,7 @@ impl TransactionalDB {
     pub fn insert(&mut self, tx: &mut Tx, set_id: u32, bytes: Vec<u8>) -> DataKey {
         let value = if bytes.len() > 32 {
             let hash = self.odb.add(bytes);
-            DataKey::Hash(hash)
+            DataKey::Hash(spacetimedb_bindings::Hash::from_arr(&hash.data))
         } else {
             let mut buf = [0; 32];
             buf[0..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
@@ -697,9 +697,9 @@ impl<'a> Iterator for ScanIter<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
     use crate::db::ostorage::ObjectDB;
     use tempdir::TempDir;
-    use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 
     use super::TransactionalDB;
     use crate::hash::hash_bytes;

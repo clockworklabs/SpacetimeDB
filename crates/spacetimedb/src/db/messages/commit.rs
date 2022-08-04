@@ -31,8 +31,7 @@ impl Commit {
 
         let parent_commit_hash = if bytes[read_count] != 0 {
             read_count += 1;
-            let mut parent_commit_hash = Hash::default();
-            parent_commit_hash.copy_from_slice(&bytes[read_count..read_count + 32]);
+            let parent_commit_hash = Hash::from_slice(&bytes[read_count..read_count + 32]);
             read_count += 32;
             Some(parent_commit_hash)
         } else {
@@ -73,7 +72,7 @@ impl Commit {
             bytes.push(0);
         } else {
             bytes.push(1);
-            bytes.extend(self.parent_commit_hash.unwrap());
+            bytes.extend(self.parent_commit_hash.unwrap().data);
         }
 
         bytes.extend(self.commit_offset.to_le_bytes());

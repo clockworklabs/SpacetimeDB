@@ -60,7 +60,7 @@ fn accept_ws_res(key: &HeaderValue, protocol: &HeaderValue, identity: Hash, iden
         .header(CONNECTION, "upgrade")
         .header(SEC_WEBSOCKET_ACCEPT, accept_key(key.as_bytes()))
         .header(SEC_WEBSOCKET_PROTOCOL, protocol)
-        .header("Spacetime-Identity", hex::encode(identity))
+        .header("Spacetime-Identity", identity.to_hex())
         .header("Spacetime-Identity-Token", identity_token)
         .status(StatusCode::SWITCHING_PROTOCOLS)
         .body(Body::empty())
@@ -181,8 +181,8 @@ async fn on_upgrade(
         identity: hex_module_identity,
         name: module_name,
     } = SubscribeParams::take_from(&mut state);
-    let module_identity = match hex::decode(hex_module_identity) {
-        Ok(i) => Hash::from_iter(i),
+    let module_identity = match Hash::from_hex(hex_module_identity.as_str()) {
+        Ok(h) => h,
         Err(error) => {
             log::info!("Can't decode {}", error);
             return Ok((state, bad_request_res()));

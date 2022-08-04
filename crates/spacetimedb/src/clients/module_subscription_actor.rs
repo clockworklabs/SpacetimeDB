@@ -195,7 +195,7 @@ impl ModuleSubscriptionActor {
         let event = Event {
             timestamp: event.timestamp,
             status: status.into(),
-            caller_identity: event.caller_identity.to_vec(),
+            caller_identity: event.caller_identity.data.to_vec(),
             function_call: Some(FunctionCall {
                 reducer: event.function_call.reducer.to_owned(),
                 arg_bytes: event.function_call.arg_bytes.to_owned(),
@@ -317,7 +317,7 @@ impl ModuleSubscriptionActor {
         let event = EventJson {
             timestamp: event.timestamp,
             status: status_str.to_string(),
-            caller_identity: hex::encode(event.caller_identity),
+            caller_identity: event.caller_identity.to_hex(),
             function_call: FunctionCallJson {
                 reducer: event.function_call.reducer.to_owned(),
                 arg_bytes: event.function_call.arg_bytes.to_owned(),

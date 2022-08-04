@@ -51,7 +51,6 @@ pub fn get_creds_from_header(auth_header: &HeaderValue) -> Result<(Hash, String)
     };
 
     let hex_identity = token.claims.hex_identity;
-    let identity = hex::decode(hex_identity).expect("If this happens we gave out invalid claims.");
-    let identity = Hash::from_iter(identity);
+    let identity = Hash::from_hex(hex_identity.as_str()).expect("If this happens we gave out invalid claims");
     Ok((identity, token_str.to_string()))
 }

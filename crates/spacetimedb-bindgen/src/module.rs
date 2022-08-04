@@ -1,9 +1,9 @@
 extern crate core;
 extern crate proc_macro;
 
+use crate::rust_to_spacetimedb_ident;
 use quote::{format_ident, quote, ToTokens};
 use syn::ItemStruct;
-use crate::rust_to_spacetimedb_ident;
 
 /// This returns a function which will return the schema (TypeDef) for a struct. The signature
 /// for this function is as follows:
@@ -27,24 +27,24 @@ pub(crate) fn autogen_module_struct_to_schema(original_struct: ItemStruct) -> pr
                         element_type: spacetimedb_bindings::TypeDef::#spacetimedb_type,
                     }
                 });
-            }, None => {
-                match field_type {
-                    "Hash" => {
-                        fields.push(quote! {
-                            spacetimedb_bindings::ElementDef {
-                                tag: #col_num,
-                                element_type: spacetimedb_bindings::TypeDef::Bytes,
-                            }
-                        });
-                    }, _ => {
-                        let get_func = format_ident!("__get_struct_schema__{}", field_type);
-                        fields.push(quote! {
-                            spacetimedb_bindings::ElementDef {
-                                tag: #col_num,
-                                element_type: #get_func(),
-                            }
-                        });
-                    }
+            }
+            None => match field_type {
+                "Hash" => {
+                    fields.push(quote! {
+                        spacetimedb_bindings::ElementDef {
+                            tag: #col_num,
+                            element_type: spacetimedb_bindings::TypeDef::Bytes,
+                        }
+                    });
+                }
+                _ => {
+                    let get_func = format_ident!("__get_struct_schema__{}", field_type);
+                    fields.push(quote! {
+                        spacetimedb_bindings::ElementDef {
+                            tag: #col_num,
+                            element_type: #get_func(),
+                        }
+                    });
                 }
             },
         }
@@ -103,31 +103,31 @@ pub(crate) fn autogen_module_tuple_to_struct(original_struct: ItemStruct) -> pro
                 match_paren2.push(quote! {
                     spacetimedb_bindings::TypeValue::#spacetimedb_type(#tmp_name)
                 });
-            }, None => {
-                match field.ty.clone().to_token_stream().to_string().as_str() {
-                    "Hash" => {
-                        match_paren2.push(quote! {
-                            spacetimedb_bindings::TypeValue::Bytes(#tmp_name)
+            }
+            None => match field.ty.clone().to_token_stream().to_string().as_str() {
+                "Hash" => {
+                    match_paren2.push(quote! {
+                        spacetimedb_bindings::TypeValue::Bytes(#tmp_name)
+                    });
+                    extra_assignments.push(quote! {
+                           let #tmp_name : spacetimedb_bindings::hash::Hash = spacetimedb_bindings::hash::Hash::from_slice(#tmp_name.as_slice());
                         });
-                        extra_assignments.push(quote! {
-                           let #tmp_name : spacetimedb_bindings::hash::Hash = *spacetimedb_bindings::hash::Hash::from_slice(#tmp_name.as_slice());
-                        });
-                    }, _ => {
-                        let get_func = format_ident!("__tuple_to_struct__{}", field_type);
-                        match_paren2.push(quote! {
-                            spacetimedb_bindings::TypeValue::Tuple(#tmp_name)
-                        });
+                }
+                _ => {
+                    let get_func = format_ident!("__tuple_to_struct__{}", field_type);
+                    match_paren2.push(quote! {
+                        spacetimedb_bindings::TypeValue::Tuple(#tmp_name)
+                    });
 
-                        tuple_match1.push(quote! {
-                            #get_func(#tmp_name)
-                        });
+                    tuple_match1.push(quote! {
+                        #get_func(#tmp_name)
+                    });
 
-                        tuple_match2.push(quote! {
-                            Some(#tmp_name)
-                        });
+                    tuple_match2.push(quote! {
+                        Some(#tmp_name)
+                    });
 
-                        tuple_num += 1;
-                    }
+                    tuple_num += 1;
                 }
             },
         }
@@ -216,22 +216,19 @@ pub(crate) fn autogen_module_struct_to_tuple(original_struct: ItemStruct) -> pro
                     spacetimedb_bindings::TypeValue::#spacetimedb_type(value.#field_ident)
                 });
             }
-            _ => {
-                match field_type_str.as_str() {
-                    "Hash" => {
-                        type_values.push(quote! {
-                            spacetimedb_bindings::TypeValue::Bytes(value.#field_ident.to_vec())
-                        });
-                    }, _ => {
-                        let struct_to_tuple_value_func_name = format_ident!("__struct_to_tuple__{}", field_type_str);
-                        type_values.push(quote! {
-                            #struct_to_tuple_value_func_name(value.#field_ident)
-                        });
-                    }
+            _ => match field_type_str.as_str() {
+                "Hash" => {
+                    type_values.push(quote! {
+                        spacetimedb_bindings::TypeValue::Bytes(value.#field_ident.to_vec())
+                    });
                 }
-
-
-            }
+                _ => {
+                    let struct_to_tuple_value_func_name = format_ident!("__struct_to_tuple__{}", field_type_str);
+                    type_values.push(quote! {
+                        #struct_to_tuple_value_func_name(value.#field_ident)
+                    });
+                }
+            },
         }
 
         col_num = col_num + 1;
