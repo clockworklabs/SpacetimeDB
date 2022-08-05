@@ -188,7 +188,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
         pub extern "C" fn #reducer_func_name(arg_ptr: usize, arg_size: usize) {
             const HEADER_SIZE: usize = 40;
             let arg_ptr = arg_ptr as *mut u8;
-            let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(arg_ptr, arg_size + HEADER_SIZE, arg_size + HEADER_SIZE) };
+            let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(arg_ptr, arg_size, arg_size) };
 
             let sender = spacetimedb_bindings::hash::Hash::from_slice(&bytes[0..32]);
 
