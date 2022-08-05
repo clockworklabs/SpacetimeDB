@@ -53,6 +53,7 @@ pub async fn spacetime_identity_associate_email(email: &str, identity_token: &st
 }
 
 pub mod database {
+
     use crate::{
         hash::Hash,
         logs::{self, delete_log, init_log},
@@ -70,7 +71,7 @@ pub mod database {
         force: bool,
         wasm_bytes: Vec<u8>,
     ) -> Result<Hash, anyhow::Error> {
-        let client = postgres::get_client().await;
+        let mut client = postgres::get_client().await;
         let result = client
             .query(
                 "SELECT * from registry.module WHERE actor_name = $1 AND st_identity = $2",
@@ -98,10 +99,15 @@ pub mod database {
         }
 
         // Store this module metadata in postgres
-        client.query(
+        // Delete any old module versions and insert a new module
+        // NOTE: arguably we should not be deleting anything, but this is fine for now
+        let tx = client.transaction().await?;
+        tx.query("DELETE FROM registry.module WHERE actor_name = $1 AND st_identity = $2", &[&name, &hex_identity]).await?;
+        tx.query(
             "INSERT INTO registry.module (actor_name, st_identity, module_version, module_address) VALUES ($1, $2, $3, $4)",
             &[&name, &hex_identity, &0_i32, &address.to_hex()]
         ).await?;
+        tx.commit().await;
 
         init_log(identity, name);
 
@@ -155,6 +161,7 @@ pub mod database {
             object_db.add(wasm_bytes);
         }
 
+        // TODO: store the transaction offset of the new module
         let result = client
             .query(
                 "UPDATE registry.module SET module_address = $1, module_version = module_version + 1 WHERE actor_name = $2 AND st_identity = $3",
