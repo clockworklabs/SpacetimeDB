@@ -107,7 +107,7 @@ pub mod database {
             "INSERT INTO registry.module (actor_name, st_identity, module_version, module_address) VALUES ($1, $2, $3, $4)",
             &[&name, &hex_identity, &0_i32, &address.to_hex()]
         ).await?;
-        tx.commit().await;
+        tx.commit().await?;
 
         init_log(identity, name);
 
