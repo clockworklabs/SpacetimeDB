@@ -1,0 +1,14 @@
+# Merely starts docker containers for the application then immediately brings them down.
+# Later iterations should run some integration tests.
+name: Docker Compose Actions Workflow
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Start containers
+        run: docker-compose up -d
+      - name: Stop containers
+        if: always()
+        run: docker-compose down

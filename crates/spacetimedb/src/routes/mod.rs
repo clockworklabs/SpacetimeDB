@@ -22,6 +22,7 @@ mod tests {
     use gotham::test::TestServer;
     use hyper::{Body, StatusCode};
 
+    #[ignore] // Disabled for now.
     #[test]
     fn init_database() {
         let test_server = TestServer::new(router()).unwrap();

@@ -17,7 +17,7 @@ COPY ./crates/spacetimedb-bindings ../spacetimedb-bindings
 COPY ./crates/spacetimedb/src ./src
 COPY ./crates/spacetimedb/protobuf ./protobuf
 
-COPY ./Cargo.lock ./
+#COPY ./Cargo.lock ./
 COPY ./crates/spacetimedb/Cargo.toml ./
 
 RUN echo "fn main() {}" > dummy.rs
