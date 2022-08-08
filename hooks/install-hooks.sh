@@ -1,7 +1,6 @@
 #!/bin/bash
 
-rustup install nightly
-rustup component add rustfmt --toolchain nightly
+rustup component add rustfmt
 
 cd "$(dirname "$0")"
 

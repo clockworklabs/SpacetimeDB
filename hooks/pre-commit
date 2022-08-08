@@ -51,8 +51,11 @@
 # Run the rust formatter
 
 exe="$(which rustfmt)"
+echo "Running rustfmt precommit $exe..."
 
 git_repo="$(git rev-parse --show-toplevel)"
+
+echo "For git repo: $git_repo..."
 
 if [ -n $exe ]
 then
@@ -62,13 +65,19 @@ then
     for line in $(git status -s)
     do
         # if added or modified
-        if [[ "$line" == ' A'* || "$line" == ' M'* ]]
+        if [[ "$line" == 'A'* || "$line" == 'M'* ]]
         then
+	    if [[ "${line:3}" == "crates/spacetimedb/src/messages.rs" ]]
+	    then
+	       echo "Skipping format for messages.rs..."
+	       continue
+	    fi
             # check file extension
             if [[ "$line" == *.rs ]]
             then
+		echo "Formatting changed file: ${line:3}..."
                 # format file
-                rustfmt +nightly --edition 2021 "$git_repo/${line:3}"
+                rustfmt --edition 2021 "$git_repo/${line:3}"	      
                 # add changes
                 git add "$git_repo/${line:3}"
             fi
