@@ -182,6 +182,17 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
         arg_num = arg_num + 1;
     }
 
+    let unwrap_args = match arg_num > 2 {
+        true => {
+            quote! {
+                let arg_json: serde_json::Value = serde_json::from_slice(&bytes[HEADER_SIZE..]).unwrap();
+                let args = arg_json.as_array().unwrap();
+            }
+        }, false => {
+            quote!{}
+        }
+    };
+
     let generated_function = quote! {
         #[no_mangle]
         #[allow(non_snake_case)]
@@ -196,9 +207,8 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
             buf.copy_from_slice(&bytes[32..HEADER_SIZE]);
             let timestamp = u64::from_le_bytes(buf);
 
-            let arg_json: serde_json::Value = serde_json::from_slice(&bytes[HEADER_SIZE..]).unwrap();
-
-            let args = arg_json.as_array().unwrap();
+            // Unwrap extra arguments, conditional on whether or not there are extra args.
+            #unwrap_args
 
             // Deserialize the json argument list
             #(#parse_json_to_args);*
