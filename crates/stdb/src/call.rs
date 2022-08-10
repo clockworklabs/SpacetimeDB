@@ -16,7 +16,10 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
     let hex_identity = args.value_of("identity").unwrap();
     let name = args.value_of("name").unwrap();
     let function_name = args.value_of("function_name").unwrap();
-    let arg_json = args.value_of("arg_json").unwrap();
+    let arg_json = match args.value_of("arg_json") {
+        Some(value) => value,
+        None => "{}",
+    };
 
     let client = reqwest::Client::new();
     let res = client
