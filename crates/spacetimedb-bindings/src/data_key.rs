@@ -1,10 +1,9 @@
-use super::hash::Hash;
 use crate::hash::hash_bytes;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum DataKey {
     Data { len: u8, buf: [u8; 32] },
-    Hash(Hash),
+    Hash(super::Hash),
 }
 
 // <flags(1)><value(0-32)>
@@ -47,7 +46,7 @@ impl DataKey {
             read_count += len as usize;
             (Self::Data { len, buf }, read_count)
         } else {
-            let hash = Hash::from_slice(&bytes[read_count..read_count + 32]);
+            let hash = super::hash::Hash::from_slice(&bytes[read_count..read_count + 32]);
             read_count += 32;
             (Self::Hash(hash), read_count)
         }

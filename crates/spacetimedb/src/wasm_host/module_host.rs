@@ -3,7 +3,6 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use prost::bytes::BufMut;
 
 use crate::{
     clients::{client_connection_index::ClientActorId, module_subscription_actor::ModuleSubscription},
@@ -14,6 +13,8 @@ use crate::{
     },
     hash::Hash,
 };
+use spacetimedb_bindings::args::{Arguments, ReducerArguments, RepeatingReducerArguments};
+use spacetimedb_bindings::buffer::VectorBufWriter;
 use tokio::{
     spawn,
     sync::{mpsc, oneshot},
@@ -128,7 +129,7 @@ impl ModuleHost {
             .await?;
         rx.await.unwrap()
     }
-    
+
     pub async fn start_repeating_reducers(&self) -> Result<(), anyhow::Error> {
         self.tx.send(ModuleHostCommand::StartRepeatingReducers).await?;
         Ok(())
@@ -275,7 +276,7 @@ impl ModuleHostActor {
             ModuleHostCommand::StartRepeatingReducers => {
                 self.start_repeating_reducers();
                 false
-            },
+            }
         }
     }
 
@@ -367,7 +368,7 @@ impl ModuleHostActor {
                         log::warn!("Error in repeating reducer: {}", err);
                         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
                         (20, timestamp)
-                    },
+                    }
                 };
                 let module_host = self.module_host.clone();
                 let mut prev_call_time = call_timestamp;
@@ -375,9 +376,7 @@ impl ModuleHostActor {
                 spawn(async move {
                     loop {
                         sleep(Duration::from_millis(cur_repeat_duration)).await;
-                        let res = module_host
-                            .call_repeating_reducer(name.clone(), prev_call_time)
-                            .await;
+                        let res = module_host.call_repeating_reducer(name.clone(), prev_call_time).await;
                         if let Err(err) = res {
                             // If we get an error trying to call this, then the module host has probably restarted
                             // just break out of the loop and end this task
@@ -443,19 +442,20 @@ impl ModuleHostActor {
     fn call_reducer(&self, caller_identity: Hash, reducer_name: &str, arg_bytes: &[u8]) -> Result<(), anyhow::Error> {
         // TODO: validate arg_bytes
         let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
+
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
+        let arguments = ReducerArguments::new(
+            spacetimedb_bindings::Hash::from_arr(&caller_identity.data),
+            timestamp,
+            Vec::from(arg_bytes),
+        );
 
-        let mut new_arg_bytes = Vec::with_capacity(40 + arg_bytes.len());
-        new_arg_bytes.put_slice(&caller_identity.data[..]);
-
-        let timestamp_buf = timestamp.to_le_bytes();
-        for b in timestamp_buf {
-            new_arg_bytes.push(b)
-        }
-
-        for b in arg_bytes {
-            new_arg_bytes.push(*b);
-        }
+        // TODO: It's possible to push this down further into execute_reducer, and write directly
+        // into the WASM memory, but ModuleEvent.function_call also wants a copy, so it doesn't
+        // quite work.
+        let mut new_arg_bytes = Vec::with_capacity(arguments.encoded_size());
+        let mut writer = VectorBufWriter::new(&mut new_arg_bytes);
+        arguments.encode(&mut writer);
 
         let (tx, _repeat_duration) = self.execute_reducer(&reducer_symbol, new_arg_bytes)?;
 
@@ -480,22 +480,14 @@ impl ModuleHostActor {
     }
 
     fn call_repeating_reducer(&self, reducer_name: &str, prev_call_time: u64) -> Result<(u64, u64), anyhow::Error> {
-        // TODO: validate arg_bytes
         let reducer_symbol = format!("{}{}", REPEATING_REDUCER_DUNDER, reducer_name);
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
-
-        let mut arg_bytes = Vec::with_capacity(16);
-
-        let timestamp_buf = timestamp.to_le_bytes();
-        for b in timestamp_buf {
-            arg_bytes.push(b)
-        }
-
         let delta_time = timestamp - prev_call_time;
-        let delta_time_buf = delta_time.to_le_bytes();
-        for b in delta_time_buf {
-            arg_bytes.push(b);
-        }
+        let arguments = RepeatingReducerArguments::new(timestamp, delta_time);
+
+        let mut arg_bytes = Vec::with_capacity(arguments.encoded_size());
+        let mut writer = VectorBufWriter::new(&mut arg_bytes);
+        arguments.encode(&mut writer);
 
         let (tx, repeat_duration) = self.execute_reducer(&reducer_symbol, &arg_bytes)?;
 

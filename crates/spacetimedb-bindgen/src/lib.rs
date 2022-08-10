@@ -185,11 +185,15 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
     let unwrap_args = match arg_num > 2 {
         true => {
             quote! {
-                let arg_json: serde_json::Value = serde_json::from_slice(&bytes[HEADER_SIZE..]).unwrap();
-                let args = arg_json.as_array().unwrap();
+                let arg_json: serde_json::Value = serde_json::from_slice(
+                    arguments.argument_bytes.as_slice()).
+                expect(format!("Unable to parse arguments as JSON: {} bytes/arg_size: {}: {:?}",
+                    arguments.argument_bytes.len(), arg_size, arguments.argument_bytes).as_str());
+                let args = arg_json.as_array().expect("Unable to extract reducer arguments list");
             }
-        }, false => {
-            quote!{}
+        }
+        false => {
+            quote! {}
         }
     };
 
@@ -197,15 +201,8 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #[no_mangle]
         #[allow(non_snake_case)]
         pub extern "C" fn #reducer_func_name(arg_ptr: usize, arg_size: usize) {
-            const HEADER_SIZE: usize = 40;
-            let arg_ptr = arg_ptr as *mut u8;
-            let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(arg_ptr, arg_size, arg_size) };
-
-            let sender = spacetimedb_bindings::hash::Hash::from_slice(&bytes[0..32]);
-
-            let mut buf = [0; 8];
-            buf.copy_from_slice(&bytes[32..HEADER_SIZE]);
-            let timestamp = u64::from_le_bytes(buf);
+            let arguments = spacetimedb_bindings::args::ReducerArguments::decode_mem(
+                unsafe {arg_ptr as *mut u8 }, arg_size).expect("Unable to decode module arguments");
 
             // Unwrap extra arguments, conditional on whether or not there are extra args.
             #unwrap_args
@@ -214,7 +211,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
             #(#parse_json_to_args);*
 
             // Invoke the function with the deserialized args
-            #func_name(sender, timestamp, #(#function_call_args),*);
+            #func_name(arguments.identity, arguments.timestamp, #(#function_call_args),*);
         }
     };
 
@@ -289,20 +286,12 @@ fn spacetimedb_repeating_reducer(_args: AttributeArgs, item: TokenStream, repeat
         #[no_mangle]
         #[allow(non_snake_case)]
         pub extern "C" fn #reducer_func_name(arg_ptr: usize, arg_size: usize) -> u64 {
-            const HEADER_SIZE: usize = 16;
-            let arg_ptr = arg_ptr as *mut u8;
-            let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(arg_ptr, arg_size + HEADER_SIZE, arg_size + HEADER_SIZE) };
-
-            let mut buf = [0; 8];
-            buf.copy_from_slice(&bytes[0..8]);
-            let timestamp = u64::from_le_bytes(buf);
-
-            let mut buf = [0; 8];
-            buf.copy_from_slice(&bytes[8..HEADER_SIZE]);
-            let delta_time = u64::from_le_bytes(buf);
+            // Deserialize the arguments
+            let arguments = spacetimedb_bindings::args::RepeatingReducerArguments::decode_mem(
+                unsafe {arg_ptr as *mut u8 }, arg_size).expect("Unable to decode module arguments");
 
             // Invoke the function with the deserialized args
-            #func_name(timestamp, delta_time);
+            #func_name(arguments.timestamp, arguments.delta_time);
 
             return #duration_as_millis;
         }
