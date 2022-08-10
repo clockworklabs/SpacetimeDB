@@ -47,7 +47,8 @@ impl InstanceEnv {
         let memory = self.memory.get_ref().expect("Initialized memory");
 
         let s = Self::bytes_to_string(memory, ptr, len);
-        logs::write(self.identity, &self.name, level, s);
+        logs::write(self.identity, &self.name, level, s.clone());
+        log::debug!("MOD: {}", s);
     }
 
     pub fn insert(&self, table_id: u32, ptr: u32) {
