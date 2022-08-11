@@ -4,7 +4,6 @@ use crate::auth::invalid_token_res;
 use crate::clients::client_connection::Protocol;
 use crate::clients::client_connection_index::CLIENT_ACTOR_INDEX;
 use crate::hash::Hash;
-use crate::wasm_host;
 use gotham::handler::HandlerError;
 use gotham::prelude::StaticResponseExtender;
 use gotham::state::request_id;
@@ -105,18 +104,10 @@ async fn on_connected(
         None => log::debug!("New client connected from unknown ip"),
     }
 
-    let id = {
+    {
         let cai = &mut CLIENT_ACTOR_INDEX.lock().unwrap();
         cai.new_client(identity, module_identity, module_name.clone(), protocol, ws)
     };
-
-    // Get the right module and add this client as a subscriber
-    // TODO: Should maybe even do this before the upgrade and refuse connection
-    // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
-    // to connect to multiple modules
-    let host = wasm_host::get_host();
-    let module = host.get_module(module_identity, module_name).await.unwrap();
-    module.add_subscriber(id).await.unwrap();
 }
 
 async fn on_upgrade(

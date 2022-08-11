@@ -1,9 +1,10 @@
 use crate::hash::Hash;
 use crate::metrics::CONNECTED_GAME_CLIENTS;
+use crate::wasm_host;
 use hyper::upgrade::Upgraded;
 use lazy_static::lazy_static;
 use std::{collections::HashMap, sync::Mutex, time::Duration};
-use tokio::{task::JoinHandle, time::sleep};
+use tokio::{spawn, task::JoinHandle, time::sleep};
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
 use tokio_tungstenite::WebSocketStream;
 
@@ -88,11 +89,13 @@ impl ClientActorIndex {
         CONNECTED_GAME_CLIENTS.dec();
 
         let index = self.id_index.remove(id);
+
         if let Some(index) = index {
             // Swizzle around the indexes to match the swap remove
             self.clients.swap_remove(index.0);
             let last = self.clients.get(index.0);
             if let Some(last) = last {
+                log::debug!("Swizzle insert...");
                 let last_id = last.id;
                 self.id_index.insert(last_id, index);
             }
@@ -118,7 +121,7 @@ impl ClientActorIndex {
             identity,
             name: client_name,
         };
-        let mut game_client = ClientConnection::new(client_id, ws, module_identity, module_name, protocol);
+        let mut game_client = ClientConnection::new(client_id, ws, module_identity, module_name.clone(), protocol);
 
         // NOTE: Begin receiving when we create a new client. This only really works
         // because authentication is provided in the headers of the request. That is to say,
@@ -130,6 +133,17 @@ impl ClientActorIndex {
         // Update id index
         self.id_index.insert(client_id, pointer);
 
+        // Schedule module subscription for the future.
+        // We do this since new_client can't really be async.
+        spawn(async move {
+            // Get the right module and add this client as a subscriber
+            // TODO: Should maybe even do this before the upgrade and refuse connection
+            // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
+            // to connect to multiple modules
+            let host = wasm_host::get_host();
+            let module = host.get_module(module_identity, module_name).await.unwrap();
+            module.add_subscriber(client_id).await.unwrap();
+        });
         client_id
     }
 }

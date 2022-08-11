@@ -26,6 +26,7 @@ use tokio_tungstenite::tungstenite::Message;
 #[derive(Debug)]
 enum ModuleSubscriptionCommand {
     AddSubscriber { client_id: ClientActorId },
+    RemoveSubscriber { client_id: ClientActorId },
     BroadcastEvent { event: ModuleEvent },
 }
 
@@ -59,6 +60,12 @@ impl ModuleSubscription {
         Ok(())
     }
 
+    pub fn remove_subscriber(&self, client_id: ClientActorId) -> Result<(), anyhow::Error> {
+        self.tx
+            .send(ModuleSubscriptionCommand::RemoveSubscriber { client_id })?;
+        Ok(())
+    }
+
     pub fn broadcast_event(&self, event: ModuleEvent) -> Result<(), anyhow::Error> {
         self.tx.send(ModuleSubscriptionCommand::BroadcastEvent { event })?;
         Ok(())
@@ -84,6 +91,10 @@ impl ModuleSubscriptionActor {
                 let should_exit = self.add_subscriber(client_id);
                 should_exit
             }
+            ModuleSubscriptionCommand::RemoveSubscriber { client_id } => {
+                let should_exit = self.remove_subscriber(client_id);
+                should_exit
+            }
             ModuleSubscriptionCommand::BroadcastEvent { event } => {
                 self.broadcast_event(event);
                 false
@@ -102,6 +113,22 @@ impl ModuleSubscriptionActor {
         });
 
         self.send_state(protocol, sender);
+        false
+    }
+
+    pub fn remove_subscriber(&mut self, client_id: ClientActorId) -> bool {
+        let position = self.subscribers.iter().position(|s| s.sender.id == client_id);
+        match position {
+            None => {
+                log::warn!(
+                    "Unable to find subscription for client_id: {} while attempting to unsubscribe",
+                    client_id
+                );
+            }
+            Some(position) => {
+                self.subscribers.remove(position);
+            }
+        }
         false
     }
 

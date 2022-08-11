@@ -72,6 +72,10 @@ enum ModuleHostCommand {
         client_id: ClientActorId,
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
     },
+    RemoveSubscriber {
+        client_id: ClientActorId,
+        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+    },
     Exit {},
 }
 
@@ -166,6 +170,17 @@ impl ModuleHost {
         let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.tx
             .send(ModuleHostCommand::AddSubscriber {
+                client_id,
+                respond_to: tx,
+            })
+            .await?;
+        rx.await.unwrap()
+    }
+
+    pub async fn remove_subscriber(&self, client_id: ClientActorId) -> Result<(), anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.tx
+            .send(ModuleHostCommand::RemoveSubscriber {
                 client_id,
                 respond_to: tx,
             })
@@ -271,6 +286,10 @@ impl ModuleHostActor {
             ModuleHostCommand::Exit {} => true,
             ModuleHostCommand::AddSubscriber { client_id, respond_to } => {
                 respond_to.send(self.add_subscriber(client_id)).unwrap();
+                false
+            }
+            ModuleHostCommand::RemoveSubscriber { client_id, respond_to } => {
+                respond_to.send(self.remove_subscriber(client_id)).unwrap();
                 false
             }
             ModuleHostCommand::StartRepeatingReducers => {
@@ -425,6 +444,10 @@ impl ModuleHostActor {
 
     fn add_subscriber(&self, client_id: ClientActorId) -> Result<(), anyhow::Error> {
         self.subscription.add_subscriber(client_id)
+    }
+
+    fn remove_subscriber(&self, client_id: ClientActorId) -> Result<(), anyhow::Error> {
+        self.subscription.remove_subscriber(client_id)
     }
 
     fn call_create_table(&self, create_table_name: &str) -> Result<(), anyhow::Error> {

@@ -28,7 +28,16 @@ impl SubscriptionManager {
             let cai = CLIENT_ACTOR_INDEX.lock().unwrap();
             self.subscribers
                 .iter()
-                .map(|id| cai.get_client(id).unwrap().sender())
+                .filter_map(|id| {
+                    let c = cai.get_client(id);
+                    match c {
+                        None => {
+                            log::error!("Attempt to broadcast to invalid client id: {}", id);
+                            None
+                        }
+                        Some(c) => Some(c.sender()),
+                    }
+                })
                 .collect::<Vec<_>>()
         };
         let mut bytes = Vec::new();

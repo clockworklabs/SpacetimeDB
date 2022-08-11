@@ -1,9 +1,9 @@
 use std::fmt;
 
-use crate::api;
 use crate::clients::client_connection_index::CLIENT_ACTOR_INDEX;
 use crate::hash::Hash;
 use crate::protobuf::websocket::{message, Message};
+use crate::{api, wasm_host};
 use futures::{prelude::*, stream::SplitStream, SinkExt};
 use hyper::upgrade::Upgraded;
 use prost::bytes::Bytes;
@@ -41,7 +41,7 @@ struct SendCommand {
 
 #[derive(Clone, Debug)]
 pub struct ClientConnectionSender {
-    id: ClientActorId,
+    pub id: ClientActorId,
     sendtx: mpsc::Sender<SendCommand>,
 }
 
@@ -54,7 +54,10 @@ impl ClientConnectionSender {
         // We could also not do multithreading or do something more intelligent
         // I'm sure there's something out there
         let (ostx, osrx) = tokio::sync::oneshot::channel::<Result<(), tokio_tungstenite::tungstenite::Error>>();
-        self.sendtx.send(SendCommand { message, ostx }).await.unwrap();
+        self.sendtx
+            .send(SendCommand { message, ostx })
+            .await
+            .expect("Unable to send SendCommand");
         osrx.await.unwrap()
     }
 
@@ -88,9 +91,9 @@ impl ClientConnectionSender {
 pub struct ClientConnection {
     pub id: ClientActorId,
     pub alive: bool,
-    _module_identity: Hash,
+    pub module_identity: Hash,
     hex_module_identity: String,
-    module_name: String,
+    pub module_name: String,
     pub protocol: Protocol,
     stream: Option<SplitStream<WebSocketStream<Upgraded>>>,
     sendtx: mpsc::Sender<SendCommand>,
@@ -109,18 +112,21 @@ impl ClientConnection {
 
         // Buffer up to 64 client messages
         let (sendtx, mut sendrx) = mpsc::channel::<SendCommand>(64);
+        let inner_id = id.clone();
         spawn(async move {
             // NOTE: This recv returns None if the channel is closed
             while let Some(command) = sendrx.recv().await {
                 command.ostx.send(sink.send(command.message).await).unwrap();
             }
+
+            log::debug!("Dropped all senders to client websocket: {}", inner_id);
         });
 
         let hex_module_identity = module_identity.to_hex();
         Self {
             id,
             alive: true,
-            _module_identity: module_identity,
+            module_identity,
             hex_module_identity,
             module_name,
             protocol,
@@ -275,6 +281,29 @@ impl ClientConnection {
 
 impl Drop for ClientConnection {
     fn drop(&mut self) {
+        // Schedule removal of the module subscription for the future.
+        let module_name = self.module_name.clone();
+        let module_identity = self.module_identity.clone();
+        let client_id = self.id.clone();
+
+        spawn(async move {
+            let host = wasm_host::get_host();
+            let module = host.get_module(module_identity.clone(), module_name.clone()).await;
+            match module {
+                Ok(module) => module
+                    .remove_subscriber(client_id)
+                    .await
+                    .expect("Could not remove module subscription"),
+                Err(e) => {
+                    log::warn!(
+                        "Could not find module {}/{} to unsubscribe dropped connection {:?}",
+                        module_identity.to_hex(),
+                        module_name,
+                        e
+                    )
+                }
+            }
+        });
         if let Some(read_handle) = self.read_handle.take() {
             read_handle.abort();
         }
