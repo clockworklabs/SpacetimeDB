@@ -8,7 +8,7 @@ pub fn cli() -> clap::Command<'static> {
         .arg(Arg::new("identity").required(true))
         .arg(Arg::new("name").required(true))
         .arg(Arg::new("function_name").required(true))
-        .arg(Arg::new("arg_json").required(false))
+        .arg(Arg::new("arg_json").required(true))
         .after_help("Run `stdb help call for more detailed information.\n`")
 }
 

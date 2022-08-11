@@ -193,7 +193,7 @@ impl ClientConnection {
                         // Maybe check their close frame or something
                         log::trace!("Close frame {:?}", close_frame);
                     }
-                    Ok(WebSocketMessage::Frame(_)) => {
+                    Ok(WebSocketMessage::Frame(frame)) => {
                         // TODO: I don't know what this is for, since it's new
                         // I assume probably for sending large files?
                     }

@@ -6,8 +6,10 @@ mod module;
 extern crate core;
 extern crate proc_macro;
 
-use crate::csharp::{spacetimedb_csharp_reducer, spacetimedb_csharp_tuple};
-use crate::module::{autogen_module_struct_to_schema, autogen_module_struct_to_tuple, autogen_module_tuple_to_struct};
+use crate::csharp::{autogen_csharp_reducer, autogen_csharp_tuple};
+use crate::module::{
+    autogen_module_struct_to_schema, autogen_module_struct_to_tuple, autogen_module_tuple_to_struct, parse_generic_arg,
+};
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::{format_ident, quote, ToTokens};
@@ -215,7 +217,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
         }
     };
 
-    spacetimedb_csharp_reducer(original_function.clone());
+    autogen_csharp_reducer(original_function.clone());
 
     proc_macro::TokenStream::from(quote! {
         #generated_function
@@ -372,6 +374,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
     let mut non_primary_filter_func: Vec<proc_macro2::TokenStream> = Vec::new();
 
     let mut insert_columns: Vec<proc_macro2::TokenStream> = Vec::new();
+    let mut insert_vec_construction: Vec<proc_macro2::TokenStream> = Vec::new();
     let mut col_num: u32 = 0;
 
     for field in &original_struct.fields {
@@ -452,26 +455,78 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
                     #col_value_insert
                 });
             }
-            None => match field.ty.clone().to_token_stream().to_string().as_str() {
-                "Hash" => {
-                    if is_primary {
-                        primary_conversion_from_raw_to_stdb_statement = Some(quote!(
-                            let data = #col_type_value(data.to_vec());
-                        ));
-                    }
+            None => {
+                if let syn::Type::Path(syn::TypePath { ref path, .. }) = field.ty {
+                    if path.segments.len() > 0 {
+                        match path.segments[0].ident.to_token_stream().to_string().as_str() {
+                            "Hash" => {
+                                if is_primary {
+                                    primary_conversion_from_raw_to_stdb_statement = Some(quote!(
+                                        let data = #col_type_value(data.to_vec());
+                                    ));
+                                }
 
-                    insert_columns.push(quote! {
-                        spacetimedb_bindings::TypeValue::Bytes(ins.#col_name.to_vec())
-                    });
+                                insert_columns.push(quote! {
+                                    spacetimedb_bindings::TypeValue::Bytes(ins.#col_name.to_vec())
+                                });
+                            }
+                            "Vec" => {
+                                let vec_param = parse_generic_arg(path.segments[0].arguments.to_token_stream());
+                                match vec_param {
+                                    Ok(param) => {
+                                        let vec_name: proc_macro2::TokenStream =
+                                            format!("type_value_vec_{}", col_name).parse().unwrap();
+                                        insert_columns.push(quote! {
+                                            spacetimedb_bindings::TypeValue::Vec(#vec_name)
+                                        });
+
+                                        match rust_to_spacetimedb_ident(param.to_string().as_str()) {
+                                            Some(spacetimedb_type) => {
+                                                insert_vec_construction.push(quote!{
+                                                    let mut #vec_name: Vec<spacetimedb_bindings::TypeValue> = Vec::<spacetimedb_bindings::TypeValue>::new();
+                                                    for value in ins.#col_name {
+                                                        #vec_name.push(spacetimedb_bindings::TypeValue::#spacetimedb_type(value));
+                                                    }
+                                                });
+                                            }
+                                            None => match param.to_string().as_str() {
+                                                "Hash" => {
+                                                    return quote! {
+                                                        compile_error!("TODO: Implement vec support for hashes")
+                                                    }
+                                                    .into();
+                                                }
+                                                other_type => {
+                                                    let conversion_func_name: proc_macro2::TokenStream =
+                                                        format!("__struct_to_tuple__{}", other_type).parse().unwrap();
+                                                    insert_vec_construction.push(quote!{
+                                                        let mut #vec_name: Vec<spacetimedb_bindings::TypeValue> = Vec::<spacetimedb_bindings::TypeValue>::new();
+                                                        for value in ins.#col_name {
+                                                            #vec_name.push(#conversion_func_name(value));
+                                                        }
+                                                    });
+                                                }
+                                            },
+                                        }
+                                    }
+                                    Err(e) => {
+                                        return quote! {
+                                            compile_error!(#e)
+                                        }
+                                        .into();
+                                    }
+                                }
+                            }
+                            other_type => {
+                                let struct_to_tuple = format_ident!("__struct_to_tuple__{}", other_type);
+                                insert_columns.push(quote! {
+                                    #struct_to_tuple(ins.#col_name)
+                                });
+                            }
+                        }
+                    }
                 }
-                _ => {
-                    let struct_to_tuple =
-                        format_ident!("__struct_to_tuple__{}", col_type.to_token_stream().to_string());
-                    insert_columns.push(quote! {
-                        #struct_to_tuple(ins.#col_name)
-                    });
-                }
-            },
+            }
         }
 
         column_idents.push(format_ident!("{}", col_name));
@@ -509,6 +564,8 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
                 primary_key_column_ident.clone(),
                 true,
             );
+            let iterator_failure_text = format!("Failed to get iterator for table: {}", original_struct_ident);
+
             primary_filter_func = quote! {
                 #[allow(unused_variables)]
                 #[allow(non_snake_case)]
@@ -519,6 +576,8 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
                             let column_data = row.elements[#primary_key_column_index_usize].clone();
                             #comparison_block
                         }
+                    } else {
+                        spacetimedb_bindings::println!(#iterator_failure_text);
                     }
 
                     return None;
@@ -546,19 +605,20 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
                     let equatable = spacetimedb_bindings::EqTypeValue::try_from(data);
                     match equatable {
                         Ok(value) => {
-                            let result = spacetimedb_bindings::delete_eq(1, #primary_key_column_index, value);
+                            let result = spacetimedb_bindings::delete_eq(#table_id, #primary_key_column_index, value);
                             match result {
                                 None => {
-                                    println!("Internal server error on equatable type: {}", #primary_key_tuple_type_str);
+                                    //TODO: Returning here was supposed to signify an error, but it can also return none when there is nothing to delete.
+                                    //spacetimedb_bindings::println!("Internal server error on equatable type: {}", #primary_key_tuple_type_str);
                                     false
                                 },
                                 Some(count) => {
                                     count > 0
                                 }
                             }
-                        }, Err(E) => {
+                        }, Err(e) => {
                             // We cannot complete this call because this type is not equatable
-                            println!("This type is not equatable: {} Error:{}", #primary_key_tuple_type_str, E);
+                            spacetimedb_bindings::println!("This type is not equatable: {} Error:{}", #primary_key_tuple_type_str, e);
                             false
                         }
                     }
@@ -617,13 +677,12 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
     let db_insert = quote! {
         #[allow(unused_variables)]
         pub fn insert(ins: #original_struct_ident) {
-            unsafe {
-                spacetimedb_bindings::insert(#table_id, spacetimedb_bindings::TupleValue {
-                    elements: vec![
-                        #(#insert_columns),*
-                    ]
-                });
-            }
+            #(#insert_vec_construction)*
+            spacetimedb_bindings::insert(#table_id, spacetimedb_bindings::TupleValue {
+                elements: vec![
+                    #(#insert_columns),*
+                ]
+            });
         }
     };
 
@@ -652,7 +711,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
 
     let tuple_to_struct_func = autogen_module_tuple_to_struct(original_struct.clone());
     let struct_to_tuple_func = autogen_module_struct_to_tuple(original_struct.clone());
-    let csharp_output = spacetimedb_csharp_tuple(original_struct.clone(), Some(table_id));
+    let csharp_output = autogen_csharp_tuple(original_struct.clone(), Some(table_id));
 
     let schema_func = autogen_module_struct_to_schema(original_struct.clone());
     let create_table_func_name = format_ident!("__create_table__{}", original_struct_ident);
@@ -794,7 +853,7 @@ fn spacetimedb_tuple(_: AttributeArgs, item: TokenStream) -> TokenStream {
     }
 
     let return_schema = autogen_module_struct_to_schema(original_struct.clone());
-    let csharp_output = spacetimedb_csharp_tuple(original_struct.clone(), None);
+    let csharp_output = autogen_csharp_tuple(original_struct.clone(), None);
     let tuple_to_struct_func = autogen_module_tuple_to_struct(original_struct.clone());
     let struct_to_tuple_func = autogen_module_struct_to_tuple(original_struct.clone());
 
@@ -961,7 +1020,7 @@ fn tuple_field_comparison_block(
         result_statement = quote! {
             let tuple = #tuple_to_struct_func(row);
             if let None = tuple {
-                println!(#err_string);
+                spacetimedb_bindings::println!(#err_string);
                 return None;
             }
             return Some(tuple.unwrap());
@@ -970,7 +1029,7 @@ fn tuple_field_comparison_block(
         result_statement = quote! {
             let tuple = #tuple_to_struct_func(row);
             if let None = tuple {
-                println!(#err_string);
+                spacetimedb_bindings::println!(#err_string);
                 continue;
             }
             result.push(tuple.unwrap());
