@@ -1,0 +1,49 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+import "control_db.proto";
+
+package control_worker_api;
+
+message ControlBoundMessage {
+}
+
+message WorkerBoundMessage {
+    oneof type {
+        ScheduleState schedule_state = 1;
+        ScheduleUpdate schedule_update = 2; 
+    }
+}
+
+message ScheduleState {
+    repeated control_db.DatabaseInstance database_instances = 1;
+    repeated control_db.Database databases = 2;
+}
+
+message ScheduleUpdate {
+    oneof type {
+        InsertOperation insert = 1;
+        UpdateOperation update = 2;
+        DeleteOperation delete = 3;
+    }
+}
+
+message InsertOperation {
+    oneof type {
+        control_db.DatabaseInstance database_instance = 1;
+        control_db.Database database = 2;
+    }
+}
+
+message UpdateOperation {
+    oneof type {
+        control_db.DatabaseInstance database_instance = 1;
+        control_db.Database database = 2;
+    }
+}
+
+message DeleteOperation {
+    oneof type {
+        uint64 database_instance_id = 1;
+        uint64 database_id = 2;
+    }
+}

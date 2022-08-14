@@ -1,8 +1,8 @@
 use crate::{
     hash::Hash,
-    identity::{alloc_spacetime_identity, decode_token, encode_token},
     postgres,
 };
+use crate::auth::identity::{alloc_spacetime_identity, decode_token, encode_token};
 use lazy_static::lazy_static;
 use std::sync::Mutex;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;

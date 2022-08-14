@@ -1,4 +1,6 @@
-use crate::{hash::Hash, identity::decode_token};
+pub(crate) mod identity;
+use identity::decode_token;
+use crate::hash::Hash;
 use hyper::{header::HeaderValue, Body, Response, StatusCode};
 
 pub fn invalid_token_res() -> Response<Body> {

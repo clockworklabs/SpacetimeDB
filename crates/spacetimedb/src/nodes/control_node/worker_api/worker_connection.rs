@@ -1,37 +1,13 @@
-use std::fmt;
-
-use crate::clients::client_connection_index::CLIENT_ACTOR_INDEX;
-use crate::hash::Hash;
-use crate::protobuf::client_api::{message, Message};
-use crate::{api, wasm_host};
+use crate::nodes::control_node::controller;
+use super::worker_connection_index::WORKER_CONNECTION_INDEX;
 use futures::{prelude::*, stream::SplitStream, SinkExt};
 use hyper::upgrade::Upgraded;
-use prost::bytes::Bytes;
-use prost::Message as OtherMessage;
 use tokio::spawn;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::protocol::{CloseFrame, Message as WebSocketMessage};
 use tokio_tungstenite::WebSocketStream;
-
-#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
-pub enum Protocol {
-    Text,
-    Binary,
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
-pub struct ClientActorId {
-    pub identity: Hash,
-    pub name: u64,
-}
-
-impl fmt::Display for ClientActorId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ClientActorId({}/{})", self.identity.to_hex(), self.name)
-    }
-}
 
 #[derive(Debug)]
 struct SendCommand {
@@ -40,12 +16,12 @@ struct SendCommand {
 }
 
 #[derive(Clone, Debug)]
-pub struct ClientConnectionSender {
-    pub id: ClientActorId,
+pub struct WorkerConnectionSender {
+    id: u64,
     sendtx: mpsc::Sender<SendCommand>,
 }
 
-impl ClientConnectionSender {
+impl WorkerConnectionSender {
     pub async fn send(self, message: WebSocketMessage) -> Result<(), tokio_tungstenite::tungstenite::Error> {
         // TODO: It's tricky to avoid allocation here because of multithreading,
         // but maybe we can do that in the future with a custom allocator or a
@@ -54,17 +30,14 @@ impl ClientConnectionSender {
         // We could also not do multithreading or do something more intelligent
         // I'm sure there's something out there
         let (ostx, osrx) = tokio::sync::oneshot::channel::<Result<(), tokio_tungstenite::tungstenite::Error>>();
-        self.sendtx
-            .send(SendCommand { message, ostx })
-            .await
-            .expect("Unable to send SendCommand");
+        self.sendtx.send(SendCommand { message, ostx }).await.unwrap();
         osrx.await.unwrap()
     }
 
     pub async fn send_message_warn_fail(self, message: WebSocketMessage) {
         let id = self.id;
         if let Err(error) = self.send(message).await {
-            log::warn!("Message send failed for client {:?}: {}", id, error);
+            log::warn!("Message send failed for worker {:?}: {}", id, error);
         }
     }
 
@@ -75,7 +48,7 @@ impl ClientConnectionSender {
         let close_frame = close_frame.map(|msg| msg.into_owned());
         let id = self.id;
         if let Err(error) = self.send(WebSocketMessage::Close(close_frame)).await {
-            log::warn!("Failed to send close frame for client {:?}: {}", id, error);
+            log::warn!("Failed to send close frame for worker {:?}: {}", id, error);
         }
     }
 
@@ -88,56 +61,41 @@ impl ClientConnectionSender {
     }
 }
 
-pub struct ClientConnection {
-    pub id: ClientActorId,
+pub struct WorkerConnection {
+    pub id: u64,
     pub alive: bool,
-    pub module_identity: Hash,
-    hex_module_identity: String,
-    pub module_name: String,
-    pub protocol: Protocol,
     stream: Option<SplitStream<WebSocketStream<Upgraded>>>,
     sendtx: mpsc::Sender<SendCommand>,
     read_handle: Option<JoinHandle<()>>,
 }
 
-impl ClientConnection {
+impl WorkerConnection {
     pub fn new(
-        id: ClientActorId,
+        id: u64,
         ws: WebSocketStream<Upgraded>,
-        module_identity: Hash,
-        module_name: String,
-        protocol: Protocol,
-    ) -> ClientConnection {
+    ) -> WorkerConnection {
         let (mut sink, stream) = ws.split();
 
         // Buffer up to 64 client messages
         let (sendtx, mut sendrx) = mpsc::channel::<SendCommand>(64);
-        let inner_id = id.clone();
         spawn(async move {
             // NOTE: This recv returns None if the channel is closed
             while let Some(command) = sendrx.recv().await {
                 command.ostx.send(sink.send(command.message).await).unwrap();
             }
-
-            log::debug!("Dropped all senders to client websocket: {}", inner_id);
         });
 
-        let hex_module_identity = module_identity.to_hex();
         Self {
             id,
             alive: true,
-            module_identity,
-            hex_module_identity,
-            module_name,
-            protocol,
             stream: Some(stream),
             sendtx,
             read_handle: None,
         }
     }
 
-    pub fn sender(&self) -> ClientConnectionSender {
-        return ClientConnectionSender {
+    pub fn sender(&self) -> WorkerConnectionSender {
+        return WorkerConnectionSender {
             id: self.id,
             sendtx: self.sendtx.clone(),
         };
@@ -146,32 +104,28 @@ impl ClientConnection {
     pub fn recv(&mut self) {
         let id = self.id;
         let mut stream = self.stream.take().unwrap();
-        let hex_module_identity = self.hex_module_identity.clone();
-        let module_name = self.module_name.clone();
         self.read_handle = Some(spawn(async move {
             while let Some(message) = stream.next().await {
                 match message {
-                    Ok(WebSocketMessage::Text(message)) => {
-                        if let Err(e) = Self::on_text(id, &hex_module_identity, &module_name, message).await {
-                            log::debug!("Client caused error on text message: {}", e);
-                            break;
-                        }
+                    Ok(WebSocketMessage::Text(_)) => {
+                        log::debug!("Text not supported for worker API. Drop worker.");
+                        break;
                     }
                     Ok(WebSocketMessage::Binary(message_buf)) => {
-                        if let Err(e) = Self::on_binary(id, &hex_module_identity, &module_name, message_buf).await {
-                            log::debug!("Client caused error on binary message: {}", e);
+                        if let Err(e) = Self::on_binary(id, message_buf).await {
+                            log::debug!("Worker caused error on binary message: {}", e);
                             break;
                         }
                     }
                     Ok(WebSocketMessage::Ping(_message)) => {
-                        log::trace!("Received ping from client {}", id);
+                        log::trace!("Received ping from worker {}", id);
                     }
                     Ok(WebSocketMessage::Pong(_message)) => {
-                        log::trace!("Received heartbeat from client {}", id);
-                        let mut cai = CLIENT_ACTOR_INDEX.lock().unwrap();
-                        match cai.get_client_mut(&id) {
+                        log::trace!("Received heartbeat from worker {}", id);
+                        let mut wci = WORKER_CONNECTION_INDEX.lock().unwrap();
+                        match wci.get_client_mut(&id) {
                             Some(client) => client.alive = true,
-                            None => log::warn!("Received heartbeat from missing client {}", id), // Oh well, client must be gone.
+                            None => log::warn!("Received heartbeat from missing worker {}", id), // Oh well, client must be gone.
                         }
                     }
                     Ok(WebSocketMessage::Close(close_frame)) => {
@@ -193,7 +147,7 @@ impl ClientConnection {
                         // Maybe check their close frame or something
                         log::trace!("Close frame {:?}", close_frame);
                     }
-                    Ok(WebSocketMessage::Frame(_frame)) => {
+                    Ok(WebSocketMessage::Frame(_)) => {
                         // TODO: I don't know what this is for, since it's new
                         // I assume probably for sending large files?
                     }
@@ -213,7 +167,7 @@ impl ClientConnection {
             // That's not actually an error, but rather a notification saying that the handshake has been
             // completed. At this point it's safe to drop the underlying connection.
             {
-                let mut cai = CLIENT_ACTOR_INDEX.lock().unwrap();
+                let mut cai = WORKER_CONNECTION_INDEX.lock().unwrap();
                 cai.drop_client(&id);
             }
             // NOTE: we sign the player in before recv so we'll sign the player out here
@@ -223,90 +177,25 @@ impl ClientConnection {
     }
 
     async fn on_binary(
-        client_id: ClientActorId,
-        hex_module_identity: &str,
-        module_name: &str,
+        _worker_id: u64,
         message_buf: Vec<u8>,
     ) -> Result<(), anyhow::Error> {
-        let message = Message::decode(Bytes::from(message_buf))?;
-        match message.r#type {
-            Some(message::Type::FunctionCall(f)) => {
-                let reducer = f.reducer;
-                let arg_bytes = f.arg_bytes;
-                api::database::call(
-                    hex_module_identity,
-                    module_name,
-                    client_id.identity,
-                    reducer.to_owned(),
-                    arg_bytes,
-                )
-                .await
-                .unwrap();
-
-                Ok(())
-            }
-            Some(_) => Err(anyhow::anyhow!("Unexpected client message type.")),
-            None => Err(anyhow::anyhow!("No message from client")),
-        }
-    }
-
-    async fn on_text(
-        client_id: ClientActorId,
-        hex_module_identity: &str,
-        module_name: &str,
-        message: String,
-    ) -> Result<(), anyhow::Error> {
-        let v: serde_json::Value = serde_json::from_str(&message)?;
-        let obj = v.as_object().ok_or(anyhow::anyhow!("not object"))?;
-        let reducer = obj
-            .get("fn")
-            .ok_or(anyhow::anyhow!("no fn"))?
-            .as_str()
-            .ok_or(anyhow::anyhow!("can't convert fn to str"))?;
-        let args = obj.get("args").ok_or(anyhow::anyhow!("no args"))?;
-        let arg_bytes = args.to_string().as_bytes().to_vec();
-
-        api::database::call(
-            hex_module_identity,
-            module_name,
-            client_id.identity,
-            reducer.to_owned(),
-            arg_bytes,
-        )
-        .await
-        .unwrap();
+        log::error!("Not expecting control bound worker messages! {:?}", message_buf);
+        // let message = ControlBoundMessage::decode(Bytes::from(message_buf))?;
         Ok(())
     }
+
 }
 
-impl Drop for ClientConnection {
+impl Drop for WorkerConnection {
     fn drop(&mut self) {
-        // Schedule removal of the module subscription for the future.
-        let module_name = self.module_name.clone();
-        let module_identity = self.module_identity.clone();
-        let client_id = self.id.clone();
-
-        spawn(async move {
-            let host = wasm_host::get_host();
-            let module = host.get_module(module_identity.clone(), module_name.clone()).await;
-            match module {
-                Ok(module) => module
-                    .remove_subscriber(client_id)
-                    .await
-                    .expect("Could not remove module subscription"),
-                Err(e) => {
-                    log::warn!(
-                        "Could not find module {}/{} to unsubscribe dropped connection {:?}",
-                        module_identity.to_hex(),
-                        module_name,
-                        e
-                    )
-                }
-            }
-        });
         if let Some(read_handle) = self.read_handle.take() {
             read_handle.abort();
         }
-        log::trace!("Client {} dropped", self.id);
+        let id = self.id;
+        spawn(async move {
+            controller::node_disconnected(id).await.unwrap();
+        });
+        log::trace!("Worker connection {} dropped", self.id);
     }
 }

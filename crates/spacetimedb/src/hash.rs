@@ -22,10 +22,15 @@ impl Hash {
         hex::encode(self.data)
     }
 
-    pub fn from_slice(slice: &[u8]) -> Self {
+    pub fn from_slice(slice: impl AsRef<[u8]>) -> Self {
+        let slice = slice.as_ref();
         Self {
             data: slice.try_into().unwrap(),
         }
+    }
+    
+    pub fn as_slice(&self) -> &[u8] {
+        self.data.as_slice()
     }
 }
 

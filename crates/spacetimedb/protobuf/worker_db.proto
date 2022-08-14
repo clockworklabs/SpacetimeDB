@@ -1,0 +1,9 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+
+package worker_db;
+
+message DatabaseInstanceState {
+    uint64 database_instance_id = 1;
+    bool initialized = 2;
+}

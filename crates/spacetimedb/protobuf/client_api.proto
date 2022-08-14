@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package websocket;
+package client_api;
 
 ////// Generic Message //////
 // TODO: Theoretically this format could be replaced by TypeValue/TypeDef

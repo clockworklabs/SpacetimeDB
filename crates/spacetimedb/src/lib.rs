@@ -1,15 +1,17 @@
 extern crate core;
 
-pub mod api;
+mod api;
 mod auth;
-pub mod clients;
+mod clients;
 pub mod db;
 pub mod hash;
-mod identity;
 mod json;
 mod logs;
 pub mod metrics;
-pub mod postgres;
+mod postgres;
 mod protobuf;
-pub mod routes;
-pub mod wasm_host;
+mod websocket;
+mod routes;
+mod wasm_host;
+pub mod nodes;
+pub mod startup;

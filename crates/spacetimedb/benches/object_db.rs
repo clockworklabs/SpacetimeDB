@@ -6,7 +6,6 @@ use spacetimedb::db::ostorage::hashmap_object_db::HashMapObjectDB;
 #[cfg(feature = "rocksdb")]
 use spacetimedb::db::ostorage::rocks_object_db::RocksDBObjectDB;
 
-#[cfg(feature = "sled")]
 use spacetimedb::db::ostorage::sled_object_db::SledObjectDB;
 
 use spacetimedb::db::ostorage::ObjectDB;
@@ -35,14 +34,12 @@ pub enum ODBFlavor {
     HashMap,
     #[cfg(feature = "rocksdb")]
     Sled,
-    #[cfg(feature = "sled")]
     Rocks,
 }
 impl Display for ODBFlavor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             ODBFlavor::HashMap => f.write_str("HashMap"),
-            #[cfg(feature = "sled")]
             ODBFlavor::Sled => f.write_str("Sled"),
             #[cfg(feature = "rocksdb")]
             ODBFlavor::Rocks => f.write_str("Rocks"),
@@ -53,7 +50,6 @@ impl Display for ODBFlavor {
 fn open_db(root: &Path, flavor: ODBFlavor) -> Result<Box<dyn ObjectDB + Send>, anyhow::Error> {
     let odb: Box<dyn ObjectDB + Send> = match flavor {
         ODBFlavor::HashMap => Box::new(HashMapObjectDB::open(root.to_path_buf().join("odb"))?),
-        #[cfg(feature = "sled")]
         ODBFlavor::Sled => Box::new(SledObjectDB::open(root.to_path_buf().join("odb"))?),
         #[cfg(feature = "rocksdb")]
         ODBFlavor::Rocks => Box::new(RocksDBObjectDB::open(root.to_path_buf().join("odb"))?),
@@ -170,7 +166,6 @@ fn latency_bench(c: &mut Criterion) {
     let latency_valgen = || generate_random_sized_value();
 
     perform_bench(&mut latency_bench_group, &latency_valgen, ODBFlavor::HashMap);
-    #[cfg(feature = "sled")]
     perform_bench(&mut latency_bench_group, &latency_valgen, ODBFlavor::Sled);
     #[cfg(feature = "rocksdb")]
     perform_bench(&mut latency_bench_group, &latency_valgen, ODBFlavor::Rocks);
@@ -184,7 +179,6 @@ fn throughput_bench(c: &mut Criterion) {
     let throughput_valgen = || generate_value(THROUGHPUT_BENCH_VALUE_SIZE);
 
     perform_bench(&mut throughput_bench_group, &throughput_valgen, ODBFlavor::HashMap);
-    #[cfg(feature = "sled")]
     perform_bench(&mut throughput_bench_group, &throughput_valgen, ODBFlavor::Sled);
     #[cfg(feature = "rocksdb")]
     perform_bench(&mut throughput_bench_group, &throughput_valgen, ODBFlavor::Rocks);

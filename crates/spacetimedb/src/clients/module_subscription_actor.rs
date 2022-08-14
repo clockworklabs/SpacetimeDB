@@ -8,7 +8,7 @@ use crate::{
         EventJson, FunctionCallJson, MessageJson, SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson,
         TransactionUpdateJson,
     },
-    protobuf::websocket::{
+    protobuf::client_api::{
         event, message, table_row_operation, Event, FunctionCall, Message as MessageProtobuf, SubscriptionUpdate,
         TableRowOperation, TableUpdate, TransactionUpdate,
     },

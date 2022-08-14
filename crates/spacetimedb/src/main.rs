@@ -1,90 +1,184 @@
-use log::*;
-use spacetimedb::api::MODULE_ODB;
-use spacetimedb::clients::client_connection_index::ClientActorIndex;
-use spacetimedb::hash::Hash;
+use clap::Subcommand;
+use futures::FutureExt;
+use futures::future::join_all;
+use spacetimedb::nodes::control_node;
+use spacetimedb::nodes::worker_node;
+use spacetimedb::nodes::node_options::NodeOptions;
+use spacetimedb::nodes::node_config::NodeConfig;
 use spacetimedb::metrics;
-use spacetimedb::postgres;
-use spacetimedb::routes::router;
-use spacetimedb::wasm_host;
+use spacetimedb::startup;
 use std::error::Error;
-use std::net::SocketAddr;
 use tokio::runtime::Builder;
-use tokio::spawn;
-use spacetimedb::db::ostorage::ObjectDB;
+use clap::Parser;
 
-async fn startup() {
-    // TODO: maybe replace storage layer with something like rocksdb or sled
-    // let storage = SledStorage::new("data/doc-db").unwrap();
-    // let mut glue = Glue::new(storage);
-    // let x = glue.execute("");
-    // if let Ok(x) = x {
-    //     let y: i32 = x.into();
-    // }
-    ClientActorIndex::start_liveliness_check();
-
-    let client = postgres::get_client().await;
-    let result = client
-        .query(
-            r"
-        SELECT DISTINCT ON (actor_name, st_identity)
-            actor_name, st_identity, module_version, module_address
-        FROM registry.module
-        ORDER BY actor_name, st_identity, module_version DESC;
-        ",
-            &[],
-        )
-        .await;
-    let rows = result.unwrap();
-
-    for row in rows {
-        let name: String = row.get(0);
-        let hex_identity: String = row.get(1);
-        let identity = Hash::from_hex(hex_identity.as_str()).unwrap();
-
-        let module_address: String = row.get(3);
-        let hash: Hash = Hash::from_hex(module_address.as_str()).unwrap();
-        let wasm_bytes = {
-            let object_db = MODULE_ODB.lock().unwrap();
-            object_db.get(hash).unwrap().to_vec()
-        };
-
-        let host = wasm_host::get_host();
-        host.add_module(identity, name, wasm_bytes).await.unwrap();
-    }
-}
-
-async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    configure_logging();
+/// Module API (worker nodes, port 80/443): The API for manipulating Wasm SpacetimeDB modules
+///     - HTTP 1.1 (/) + WebSocket + standardized protobuf/json messages + TypeDefs
+///     - (gRPC eventually?, but that requires module aware code gen, so I'm not sure how to do this)
+/// Cluster API (control nodes, worker node forwarding, port 26258): The API for manipulating the cluster
+///     - gRPC (/)
+///     - (json eventually?)
+/// Consensus API (control nodes, port 26259): The API for communicating with other control nodes
+///     - gRPC (/)
+///     - (WebSocket eventually?)
+async fn init(options: NodeOptions) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let config = NodeConfig::from_options(options);
+    startup::configure_logging();
     metrics::register_custom_metrics();
-    postgres::init().await;
-    startup().await;
 
-    spawn(async move {
-        // Start https server
-        let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let mut service_handles = Vec::new();
+    if config.worker_node.is_some() {
+        service_handles.push(worker_node::start(config.clone()).boxed());
+    }
+    if config.control_node.is_some() {
+        service_handles.push(control_node::start(config).boxed());
+    }
 
-        debug!("Listening for http requests at http://{}", addr);
-        gotham::init_server(addr, router()).await.unwrap();
-    })
-    .await?;
-
+    join_all(service_handles).await;
     Ok(())
 }
 
+async fn version() -> Result<(), Box<dyn Error + Send + Sync>> {
+    // e.g. kubeadm version: &version.Info{Major:"1", Minor:"24", GitVersion:"v1.24.2", GitCommit:"f66044f4361b9f1f96f0053dd46cb7dce5e990a8", GitTreeState:"clean", BuildDate:"2022-06-15T14:20:54Z", GoVersion:"go1.18.3", Compiler:"gc", Platform:"linux/arm64"}
+    println!("0.0.0");
+    Ok(())
+}
+
+async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let args = Args::parse();
+    match args.command {
+        Subcommands::Init { listen_addr, advertise_addr, worker_node } => {
+            let options = NodeOptions {
+                control_node: true,
+                worker_node,
+                listen_addr,
+                advertise_addr,
+                bootstrap_addrs: Vec::new(),
+                peer_api_listen_addr: None,
+                peer_api_advertise_addr: None,
+                peer_api_bootstrap_addrs: Vec::new(),
+                worker_api_listen_addr: None,
+                worker_api_advertise_addr: None,
+                control_api_listen_addr: None,
+                control_api_advertise_addr: None,
+            };
+            init(options).await?
+        },
+        Subcommands::Join { advertise_addr, listen_addr, bootstrap_addrs, control_node, worker_node } => {
+            let options = NodeOptions {
+                control_node,
+                worker_node,
+                listen_addr,
+                advertise_addr,
+                bootstrap_addrs: if let Some(bootstrap_addrs) = &bootstrap_addrs {
+                    bootstrap_addrs.split(",").map(str::to_string).collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                },
+                peer_api_listen_addr: None,
+                peer_api_advertise_addr: None,
+                // TODO(cloutiertyler): I think it's fine to use the bootstrap addrs here too,
+                // although it could get confusing with ports
+                peer_api_bootstrap_addrs: if let Some(bootstrap_addrs) = &bootstrap_addrs {
+                    bootstrap_addrs.split(",").map(str::to_string).collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                },
+                worker_api_listen_addr: None,
+                worker_api_advertise_addr: None,
+                control_api_listen_addr: None,
+                control_api_advertise_addr: None,
+            };
+            init(options).await?;
+        },
+        Subcommands::Version => version().await?,
+    }
+    Ok(())
+}
+
+#[derive(Subcommand, Debug)]
+enum Subcommands {
+    /// Run this command in order to set up the SpacetimeDB control plane
+    Init {
+        /// <node-host>:<node-port>
+        #[clap(short, long, value_parser)]
+        advertise_addr: Option<String>,
+
+        #[clap(short, long, value_parser)]
+        listen_addr: Option<String>,
+
+        #[clap(short, long, value_parser, default_value = "false")]
+        worker_node: bool,
+    },
+    /// Run this on any machine you wish to join an existing SpacetimeDB cluster
+    Join {
+        /// <node-host>:<node-port>
+        #[clap(short, long, value_parser)]
+        advertise_addr: Option<String>,
+
+        /// <node-host>:<node-port>
+        #[clap(short, long, value_parser)]
+        listen_addr: Option<String>,
+
+        /// <node-host-1>:<node-port>,<node-host-2>:<node-port>,...
+        #[clap(short, long, value_parser)]
+        bootstrap_addrs: Option<String>,
+
+        #[clap(short, long, value_parser, default_value = "false")]
+        control_node: bool,
+
+        #[clap(short, long, value_parser, default_value = "true")]
+        worker_node: bool,
+    },
+    /// Print the version of spacetime
+    Version,
+}
+
+#[derive(Parser, Debug)]
+#[clap(author, version, long_about=None, about=r#"
+┌──────────────────────────────────────────────────────────┐
+│ spacetime                                                │
+│ Easily bootstrap a secure SpacetimeDB cluster            │
+│                                                          │
+│ Please give us feedback at:                              │
+│ https://github.com/clockworklabs/SpacetimeDB/issues      │
+└──────────────────────────────────────────────────────────┘
+Example usage:
+Create a two-machine cluster with one control node
+(which controls the cluster), and one worker node
+(where your Spacetime Modules run).
+┌──────────────────────────────────────────────────────────┐
+│ On the first machine:                                    │
+├──────────────────────────────────────────────────────────┤
+│ control# spacetime init                                  │
+└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│ On the second machine:                                   │
+├──────────────────────────────────────────────────────────┤
+│ worker# spacetime join <arguments-returned-from-init>    │
+└──────────────────────────────────────────────────────────┘
+You can then repeat the second step on as many other machines as you like.
+"#)]
+struct Args {
+    #[clap(subcommand)]
+    command: Subcommands,
+}
+
+/// Cluster Architecture
+///  
+/// spacetime - spacetimedb executable responsible for starting nodes (like kubeadm or cockroach, should do everything that stdb does as well eventually)
+/// stdb - lite command line interface for controlling the cluster (like kubectl or cockroach, a subset of spacetime that doesn't require the whole executable)
+/// spacetime node - a process running the spacetime daemon (like kubernetes or cockroach node, can be both worker and control)
+///     NOTE: Ethereum doesn't have the concept of worker/control notes, but it also has no need for scheduling since all nodes are the same
+/// spacetime worker node - a spacetime node process configured to be a worker which runs spacetime modules (maybe call this a host node?)
+/// spacetime control node - a spacetime node process configured to be a controller that exposes the control API
+/// TODO: spacetime pubsub node - a node that manages the communication between workers and clients
+/// 
 fn main() {
-    // Create a single threaded run loop
-    Builder::new_current_thread()
+    // Create a multi-threaded run loop
+    Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap()
         .block_on(async_main())
         .unwrap();
-}
-
-fn configure_logging() {
-    // Use this to change log levels at runtime.
-    // This means you can change the default log level to trace
-    // if you are trying to debug an issue and need more logs on then turn it off
-    // once you are done.
-    log4rs::init_file("log4rs.yaml", Default::default()).unwrap();
 }

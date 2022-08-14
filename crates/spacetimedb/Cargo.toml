@@ -53,6 +53,8 @@ tokio-tungstenite = "*"
 regex = "1"
 futures = "0.3"
 prometheus = "0.13.0"
+hostname = "^0.3"
+clap = { version = "3.2.8", features = ["derive"] }
 
 # gluesql = "0.10"
 bytes = "1.2.0" # TODO(rdaum): there's also a copy/fork of this inside prost. hmph.
@@ -60,7 +62,6 @@ bytes = "1.2.0" # TODO(rdaum): there's also a copy/fork of this inside prost. hm
 # Sled ostorage backend, linked only if "sled" feature enabled.
 [dependencies.sled]
 version = "0.34.7"
-optional = true
 
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
 [dependencies.rocksdb]
@@ -72,7 +73,7 @@ features = ["lz4"] # if we link bzip, we get multiple defs
 [features]
 # Optional storage engines.
 rocksdb = ["dep:rocksdb"]
-sled = ["dep:sled"]
+# sled = ["dep:sled"]
 
 [dev-dependencies]
 criterion = { version = "0.3", features = ["async", "async_tokio", "html_reports"] }

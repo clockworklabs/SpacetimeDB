@@ -1,0 +1,44 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+
+package control_db;
+
+message IdentityEmail {
+    bytes identity = 1;
+    string email = 2;
+}
+
+message Database {
+    uint64 id = 1;
+    bytes identity = 2;
+    string name = 3;
+    uint32 num_replicas = 4;
+    bytes wasm_bytes_address = 5;
+}
+
+message DatabaseStatus {
+    string state = 2;
+}
+
+message DatabaseInstance {
+    uint64 id = 1;
+    uint64 database_id = 2;
+    uint64 node_id = 3;
+    bool leader = 4;
+}
+
+message DatabaseInstanceStatus {
+    string state = 2;
+}
+
+message Node {
+    uint64 id = 1;
+    bool unschedulable = 2;
+}
+
+message NodeStatus {
+    string state = 1;
+    // TODO: node memory, CPU, and storage capacity
+    // TODO: node memory, CPU, and storage allocatable capacity
+    // SEE: https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/node-v1/#NodeStatus
+}

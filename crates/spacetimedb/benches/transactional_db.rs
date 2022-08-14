@@ -6,7 +6,6 @@ use spacetimedb::db::ostorage::hashmap_object_db::HashMapObjectDB;
 #[cfg(feature = "rocksdb")]
 use spacetimedb::db::ostorage::rocks_object_db::RocksDBObjectDB;
 
-#[cfg(feature = "sled")]
 use spacetimedb::db::ostorage::sled_object_db::SledObjectDB;
 
 use spacetimedb::db::ostorage::ObjectDB;
@@ -24,16 +23,14 @@ const THROUGHPUT_BENCH_VALUE_SIZE: usize = 1024;
 #[derive(Clone, Copy)]
 pub enum ODBFlavor {
     HashMap,
-    #[cfg(feature = "rocksdb")]
     Sled,
-    #[cfg(feature = "sled")]
+    #[cfg(feature = "rocksdb")]
     Rocks,
 }
 impl Display for ODBFlavor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             ODBFlavor::HashMap => f.write_str("HashMap"),
-            #[cfg(feature = "sled")]
             ODBFlavor::Sled => f.write_str("Sled"),
             #[cfg(feature = "rocksdb")]
             ODBFlavor::Rocks => f.write_str("Rocks"),
@@ -44,10 +41,11 @@ impl Display for ODBFlavor {
 fn open_hm(root: &Path) -> Box<dyn ObjectDB + Send> {
     Box::new(HashMapObjectDB::open(root.to_path_buf().join("odb")).unwrap())
 }
-#[cfg(feature = "sled")]
+
 fn open_sled(root: &Path) -> Box<dyn ObjectDB + Send> {
     Box::new(SledObjectDB::open(root.to_path_buf().join("odb")).unwrap())
 }
+
 #[cfg(feature = "rocksdb")]
 fn open_rocks(root: &Path) -> Box<dyn ObjectDB + Send> {
     Box::new(RocksDBObjectDB::open(root.to_path_buf().join("odb")).unwrap())
@@ -56,7 +54,6 @@ fn open_rocks(root: &Path) -> Box<dyn ObjectDB + Send> {
 fn open_db(flavor: ODBFlavor) -> fn(&Path) -> Box<dyn ObjectDB + Send> {
     match flavor {
         ODBFlavor::HashMap => open_hm,
-        #[cfg(feature = "sled")]
         ODBFlavor::Sled => open_sled,
         #[cfg(feature = "rocksdb")]
         ODBFlavor::Rocks => open_rocks
