@@ -11,7 +11,7 @@ pub async fn start(config: crate::nodes::node_config::NodeConfig) {
     spawn(async move {
         let listen_addr: SocketAddr = config.control_node.as_ref().unwrap().worker_api_listen_addr.parse().unwrap();
 
-        log::debug!("Worker API listening for http requests at http://{}", listen_addr);
+        log::debug!("Control node worker API listening for http requests at http://{}", listen_addr);
         gotham::init_server(listen_addr, router()).await.unwrap();
     }).await.unwrap();
 }

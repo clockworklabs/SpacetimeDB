@@ -6,7 +6,7 @@ use gotham::{
     router::{build_simple_router, Router}, state::request_id,
 };
 use tokio::spawn;
-use crate::{websocket, nodes::control_node::controller};
+use crate::{websocket, nodes::control_node::{controller, object_db}, hash::Hash};
 use super::worker_connection_index::WORKER_CONNECTION_INDEX;
 use gotham::handler::HandlerError;
 use gotham::prelude::StaticResponseExtender;
@@ -26,10 +26,19 @@ lazy_static! {
 
 pub const BIN_PROTOCOL: &str = "v1.bin.spacetimedb-worker-api";
 
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+pub struct JoinParams {
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct JoinQueryParams {
+    node_id: Option<u64>,
+}
+
 async fn join(state: State) -> Result<(State, Response<Body>), (State, HandlerError)> {
     let (mut state, headers, key, on_upgrade, protocol) = websocket::validate_upgrade(state)?;
     let JoinQueryParams { node_id } = JoinQueryParams::take_from(&mut state);
-    
+
     if BIN_PROTOCOL != protocol {
         log::debug!("Unsupported protocol: {}", protocol);
         return Err((
@@ -80,12 +89,35 @@ async fn join(state: State) -> Result<(State, Response<Body>), (State, HandlerEr
 }
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
-pub struct JoinParams {
+pub struct WasmBytesParams {
+    wasm_bytes_address: String,
 }
 
-#[derive(Deserialize, StateData, StaticResponseExtender)]
-struct JoinQueryParams {
-    node_id: Option<u64>,
+async fn wasm_bytes(mut state: State) -> Result<(State, Response<Body>), (State, HandlerError)> {
+    let WasmBytesParams { wasm_bytes_address } = WasmBytesParams::take_from(&mut state);
+
+    let hash = match Hash::from_hex(&wasm_bytes_address) {
+        Ok(hash) => hash,
+        Err(err) => {
+            log::debug!("{}", err);
+            return Err((state, HandlerError::from(anyhow::anyhow!("Unable to decode object address.")).with_status(StatusCode::BAD_REQUEST)));
+        },
+    };
+    let wasm_bytes = object_db::get_object(&hash).await.unwrap();
+
+    if let Some(wasm_bytes) = wasm_bytes {
+        let res = Response::builder()
+            .status(StatusCode::OK)
+            .body(Body::from(wasm_bytes))
+            .unwrap();
+        Ok((state, res))
+    } else {
+        let res = Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .unwrap();
+        Ok((state, res))
+    }
 }
 
 pub fn router() -> Router {
@@ -95,6 +127,10 @@ pub fn router() -> Router {
             .with_path_extractor::<JoinParams>()
             .with_query_string_extractor::<JoinQueryParams>()
             .to_async(join);
+        route
+            .get("/wasm_bytes/:wasm_bytes_address")
+            .with_path_extractor::<WasmBytesParams>()
+            .to_async(wasm_bytes);
     })
 }
 

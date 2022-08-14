@@ -11,7 +11,7 @@ lazy_static::lazy_static! {
 
 fn init() -> Result<sled::Db, anyhow::Error> {
     let config = sled::Config::default()
-        .path("/stdb/worker_db")
+        .path("/stdb/worker_node/worker_db")
         .flush_every_ms(Some(50))
         .mode(sled::Mode::HighThroughput);
     let db = config.open()?;

@@ -2,16 +2,13 @@
 
 use std::{time::Duration, sync::Mutex, collections::HashMap};
 use futures::StreamExt;
-use hyper::{Uri, Request};
-use lazy_static::lazy_static;
+use hyper::{Uri, Request, Body, body};
 use prost::Message;
 use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::handshake::client::generate_key;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
-use wasmer::Instance;
 use crate::{protobuf::{control_worker_api::{WorkerBoundMessage, worker_bound_message, schedule_update, insert_operation, update_operation, delete_operation, ScheduleUpdate, ScheduleState}, control_db::{Database, DatabaseInstance}, worker_db::DatabaseInstanceState}, hash::Hash, nodes::worker_node::worker_db, api, wasm_host};
-
 
 pub async fn start(bootstrap_addr: String) {
     let node_id = worker_db::get_node_id().unwrap();
@@ -61,7 +58,7 @@ pub async fn start(bootstrap_addr: String) {
                 break;
             }
             Ok(WebSocketMessage::Binary(message_buf)) => {
-                if let Err(e) = on_binary(node_id, message_buf).await {
+                if let Err(e) = on_binary(&bootstrap_addr, node_id, message_buf).await {
                     log::debug!("Worker caused error on binary message: {}", e);
                     break;
                 }
@@ -108,7 +105,7 @@ pub async fn start(bootstrap_addr: String) {
     }
 }
 
-async fn on_binary(node_id: u64, message: Vec<u8>) -> Result<(), anyhow::Error> {
+async fn on_binary(bootstrap_addr: &str, node_id: u64, message: Vec<u8>) -> Result<(), anyhow::Error> {
     let message = WorkerBoundMessage::decode(&message[..]);
     let message = match message {
         Ok(message) => message,
@@ -126,16 +123,16 @@ async fn on_binary(node_id: u64, message: Vec<u8>) -> Result<(), anyhow::Error> 
     };
     match message {
         worker_bound_message::Type::ScheduleUpdate(schedule_update) => {
-            on_schedule_update(node_id, schedule_update).await;
+            on_schedule_update(bootstrap_addr, node_id, schedule_update).await;
         },
         worker_bound_message::Type::ScheduleState(schedule_state) => {
-            on_schedule_state(node_id, schedule_state).await;
+            on_schedule_state(bootstrap_addr, node_id, schedule_state).await;
         },
     };
     Ok(())
 }
 
-async fn on_schedule_state(node_id: u64, schedule_state: ScheduleState) {
+async fn on_schedule_state(bootstrap_addr: &str, node_id: u64, schedule_state: ScheduleState) {
     println!("node_id: {}", node_id);
     println!("schedule_update: {:?}", schedule_state);
     worker_db::init_with_schedule_state(schedule_state);
@@ -145,11 +142,11 @@ async fn on_schedule_state(node_id: u64, schedule_state: ScheduleState) {
         if let Some(mut state) = state {
             if !state.initialized {
                 // Start and init the service
-                init_module_on_database(instance.database_id).await;
+                init_module_on_database(bootstrap_addr, instance.database_id).await;
                 state.initialized = true;
                 worker_db::upsert_database_instance_state(state).unwrap();
             } else {
-                start_module_on_database(instance.database_id).await;
+                start_module_on_database(bootstrap_addr, instance.database_id).await;
             }
         } else {
             // Start and init the service
@@ -158,14 +155,14 @@ async fn on_schedule_state(node_id: u64, schedule_state: ScheduleState) {
                 initialized: false,
             };
             worker_db::upsert_database_instance_state(state.clone()).unwrap();
-            init_module_on_database(instance.database_id).await;
+            init_module_on_database(bootstrap_addr, instance.database_id).await;
             state.initialized = true;
             worker_db::upsert_database_instance_state(state).unwrap();
         }
     }
 }
 
-async fn on_schedule_update(node_id: u64, schedule_update: ScheduleUpdate) {
+async fn on_schedule_update(bootstrap_addr: &str, node_id: u64, schedule_update: ScheduleUpdate) {
     println!("node_id: {}", node_id);
     println!("schedule_update: {:?}", schedule_update);
     // match schedule_update.r#type {
@@ -239,28 +236,40 @@ async fn on_schedule_update(node_id: u64, schedule_update: ScheduleUpdate) {
     // }
 }
 
-async fn get_wasm_bytes(wasm_bytes_address: &Hash) -> Vec<u8> {
+async fn get_wasm_bytes(bootstrap_addr: &str, wasm_bytes_address: &Hash) -> Vec<u8> {
+    let uri = format!("http://{}/wasm_bytes/{}", bootstrap_addr, wasm_bytes_address.to_hex()).parse::<Uri>().unwrap();
 
-    Vec::new()
+    let request = Request::builder()
+        .method("GET")
+        .uri(&uri)
+        .body(Body::empty())
+        .unwrap();    
+   
+    let client = hyper::Client::new();
+    let res = client.request(request).await.unwrap();
+    let body = res.into_body();
+    let bytes = body::to_bytes(body).await.unwrap();
+
+    bytes.to_vec()
 }
 
-async fn init_module_on_database(database_id: u64) {
+async fn init_module_on_database(bootstrap_addr: &str, database_id: u64) {
     let database = worker_db::get_database_by_id(database_id).unwrap();
     let identity = Hash::from_slice(database.identity);
     let name = database.name;
     let wasm_bytes_address = Hash::from_slice(database.wasm_bytes_address);
-    let wasm_bytes = get_wasm_bytes(&wasm_bytes_address).await;
+    let wasm_bytes = get_wasm_bytes(bootstrap_addr, &wasm_bytes_address).await;
     let host = wasm_host::get_host();
     let _address = host.init_module(identity, name.clone(), wasm_bytes.clone()).await.unwrap();
     crate::logs::init_log(identity, &name);
 }
 
-async fn start_module_on_database(database_id: u64) {
+async fn start_module_on_database(bootstrap_addr: &str, database_id: u64) {
     let database = worker_db::get_database_by_id(database_id).unwrap();
     let identity = Hash::from_slice(database.identity);
     let name = database.name;
     let wasm_bytes_address = Hash::from_slice(database.wasm_bytes_address);
-    let wasm_bytes = get_wasm_bytes(&wasm_bytes_address).await;
+    let wasm_bytes = get_wasm_bytes(bootstrap_addr, &wasm_bytes_address).await;
     let host = wasm_host::get_host();
     let _address = host.add_module(identity, name.clone(), wasm_bytes.clone()).await.unwrap();
     crate::logs::init_log(identity, &name);
