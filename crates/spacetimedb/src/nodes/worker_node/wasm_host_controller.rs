@@ -82,7 +82,7 @@ impl WasmHostController {
         Ok(())
     }
 
-    pub async fn update_module(&self, worker_database_instance: WorkerDatabaseInstance, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+    pub async fn _update_module(&self, worker_database_instance: WorkerDatabaseInstance, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
         let key = worker_database_instance.database_instance_id;
         let module_hash = self.spawn_module(worker_database_instance, wasm_bytes).await?;
         let module_host = {

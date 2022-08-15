@@ -6,8 +6,7 @@ use gotham::{
 };
 use hyper::{Body, Response, StatusCode};
 use serde::{Deserialize, Serialize};
-
-use crate::api::spacetime_identity;
+use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct IdentityResponse {
@@ -16,7 +15,7 @@ struct IdentityResponse {
 }
 
 async fn get_identity(_state: &mut State) -> SimpleHandlerResult {
-    let (identity, token) = spacetime_identity().await.unwrap();
+    let (identity, token) = ControlNodeClient::get_shared().get_new_identity().await.unwrap();
 
     let identity_response = IdentityResponse {
         identity: identity.to_hex(),

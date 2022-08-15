@@ -1,6 +1,10 @@
-use crate::api;
 use crate::auth::get_creds_from_header;
 use crate::auth::invalid_token_res;
+use crate::hash::Hash;
+use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
+use crate::nodes::worker_node::database_logger::DatabaseLogger;
+use crate::nodes::worker_node::wasm_host_controller;
+use crate::nodes::worker_node::worker_db;
 use gotham::anyhow::anyhow;
 use gotham::handler::HandlerError;
 use gotham::handler::SimpleHandlerResult;
@@ -43,7 +47,7 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
         }
     } else {
         // Generate a new identity if this request doesn't have one already
-        let (identity, identity_token) = api::spacetime_identity().await.unwrap();
+        let (identity, identity_token) = ControlNodeClient::get_shared().get_new_identity().await.unwrap();
         (identity, identity_token)
     };
 
@@ -55,7 +59,17 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     let data = data.unwrap();
     let arg_bytes = data.unwrap().to_vec();
 
-    match api::database::call(&identity, &name, caller_identity, reducer, arg_bytes).await {
+    let identity = Hash::from_hex(&identity).expect("that the client passed a valid hex identity lol");
+
+    let database = match worker_db::get_database_by_address(&identity, &name) {
+        Some(database) => database,
+        None => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
+    };
+    let database_instance = worker_db::get_leader_database_instance_by_database(database.id);
+    let instance_id = database_instance.unwrap().id;
+    let host = wasm_host_controller::get_host();
+
+    match host.call_reducer(instance_id, caller_identity, &reducer, arg_bytes).await {
         Ok(_) => {}
         Err(e) => {
             log::error!("{}", e)
@@ -86,7 +100,17 @@ async fn logs(state: &mut State) -> SimpleHandlerResult {
     let LogsParams { identity, name } = LogsParams::take_from(state);
     let LogsQuery { num_lines } = LogsQuery::take_from(state);
 
-    let lines = api::database::logs(&identity, &name, num_lines).await;
+    let identity = Hash::from_hex(&identity).expect("that the client passed a valid hex identity lol");
+
+    let database = match worker_db::get_database_by_address(&identity, &name) {
+        Some(database) => database,
+        None => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
+    };
+    let database_instance = worker_db::get_leader_database_instance_by_database(database.id);
+    let instance_id = database_instance.unwrap().id;
+
+    let filepath = DatabaseLogger::filepath(&identity, &name, instance_id);
+    let lines = DatabaseLogger::read_latest(&filepath, num_lines).await;
 
     let res = Response::builder()
         .status(StatusCode::OK)

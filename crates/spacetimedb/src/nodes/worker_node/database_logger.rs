@@ -1,5 +1,4 @@
 use tokio::io::AsyncReadExt;
-
 use crate::hash::Hash;
 use std::fs::{self, File};
 use std::fs::OpenOptions;
@@ -8,7 +7,6 @@ use std::path::{PathBuf, Path};
 use std::str::FromStr;
 
 pub struct DatabaseLogger {
-    filepath: PathBuf,
     file: File
 }
 
@@ -32,21 +30,25 @@ impl DatabaseLogger {
     //     PathBuf::from(path)
     // }
 
-    pub fn open(root: impl AsRef<Path>, filename: &str) -> Self {
+    pub fn filepath(identity: &Hash, name: &str, instance_id: u64) -> String {
+        let root = format!("/stdb/worker_node/database_instances");
+        format!("{}/{}/{}/{}/{}", root, identity.to_hex(), name, instance_id, "module_logs")
+    }
+
+    pub fn open(root: impl AsRef<Path>) -> Self {
         let root = root.as_ref();
         fs::create_dir_all(root).unwrap();
 
         let mut filepath = PathBuf::from(root);
-        filepath.push(&PathBuf::from_str(&format!("{}", filename)).unwrap());
+        filepath.push(&PathBuf::from_str("0.log").unwrap());
 
         let file = OpenOptions::new().create(true).append(true).open(&filepath).unwrap();
         Self {
-            file,
-            filepath,
+            file
         }
     }
 
-    pub fn delete(&mut self) {
+    pub fn _delete(&mut self) {
         self.file.set_len(0).unwrap();
         self.file.seek(SeekFrom::End(0)).unwrap();
     }
@@ -62,17 +64,23 @@ impl DatabaseLogger {
         }
     }
 
-    pub async fn _read_all(&self) -> String {
+    pub async fn _read_all(root: &str) -> String {
+        let mut filepath = PathBuf::from(root);
+        filepath.push(&PathBuf::from_str("0.log").unwrap());
+
         use tokio::fs;
-        let contents = String::from_utf8(fs::read(&self.filepath).await.unwrap()).unwrap();
+        let contents = String::from_utf8(fs::read(filepath).await.unwrap()).unwrap();
         contents
     }
 
-    pub async fn read_latest(&self, num_lines: u32) -> String {
+    pub async fn read_latest(root: &str, num_lines: u32) -> String {
+        let mut filepath = PathBuf::from(root);
+        filepath.push(&PathBuf::from_str("0.log").unwrap());
+
         // TODO: Read backwards from the end of the file to only read in the latest lines
         let mut file = tokio::fs::OpenOptions::new()
             .read(true)
-            .open(&self.filepath)
+            .open(filepath)
             .await
             .expect("opening file");
 

@@ -34,7 +34,7 @@ impl WorkerConnectionSender {
         osrx.await.unwrap()
     }
 
-    pub async fn send_message_warn_fail(self, message: WebSocketMessage) {
+    pub async fn _send_message_warn_fail(self, message: WebSocketMessage) {
         let id = self.id;
         if let Err(error) = self.send(message).await {
             log::warn!("Message send failed for worker {:?}: {}", id, error);
@@ -44,7 +44,7 @@ impl WorkerConnectionSender {
     // Waits for the close frame to be sent, but not for the connection to be closed
     // Once the client sends a close frame back, the connection will be closed
     // and the client will be removed from the GCI
-    pub async fn close_warn_fail(self, close_frame: Option<CloseFrame<'_>>) {
+    pub async fn _close_warn_fail(self, close_frame: Option<CloseFrame<'_>>) {
         let close_frame = close_frame.map(|msg| msg.into_owned());
         let id = self.id;
         if let Err(error) = self.send(WebSocketMessage::Close(close_frame)).await {
@@ -52,8 +52,8 @@ impl WorkerConnectionSender {
         }
     }
 
-    pub async fn close_normally(self) {
-        self.close_warn_fail(Some(CloseFrame {
+    pub async fn _close_normally(self) {
+        self._close_warn_fail(Some(CloseFrame {
             code: CloseCode::Normal,
             reason: "Connection closed by server.".into(),
         }))

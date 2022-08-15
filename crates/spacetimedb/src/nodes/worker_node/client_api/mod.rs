@@ -1,9 +1,7 @@
 pub mod client_connection;
 pub mod client_connection_index;
 pub mod module_subscription_actor;
-mod subscription_manager;
 use std::net::SocketAddr;
-pub use subscription_manager::*;
 mod routes;
 
 use routes::router;

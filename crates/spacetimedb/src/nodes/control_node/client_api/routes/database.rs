@@ -1,6 +1,7 @@
 use crate::nodes::control_node::controller;
 use crate::hash::Hash;
 use crate::hash::hash_bytes;
+use crate::nodes::control_node::object_db;
 use gotham::anyhow::anyhow;
 use gotham::handler::HandlerError;
 use gotham::handler::SimpleHandlerResult;
@@ -28,7 +29,7 @@ struct InitDatabaseQueryParams {
 async fn init_database(state: &mut State) -> SimpleHandlerResult {
     let InitDatabaseParams { identity, name } = InitDatabaseParams::take_from(state);
     let InitDatabaseQueryParams { force } = InitDatabaseQueryParams::take_from(state);
-    let force = force.unwrap_or(false);
+    let _force = force.unwrap_or(false);
     let body = state.borrow_mut::<Body>();
     let data = hyper::body::to_bytes(body).await;
     let data = match data {
@@ -36,12 +37,17 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
         Err(_) => return Err(HandlerError::from(anyhow!("Invalid request body")).with_status(StatusCode::BAD_REQUEST)),
     };
     let wasm_bytes = data.to_vec();
-    let wasm_bytes_address = hash_bytes(wasm_bytes);
+    let wasm_bytes_address = hash_bytes(&wasm_bytes);
+    object_db::insert_object(wasm_bytes).await.unwrap();
+
     let identity = Hash::from_hex(&identity).unwrap();
 
     let num_replicas = 1;
 
-    controller::insert_database(&identity, &name, &wasm_bytes_address, num_replicas, force).await?;
+
+    // TODO: do something with force
+
+    controller::insert_database(&identity, &name, &wasm_bytes_address, num_replicas).await?;
 
     let res = Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap();
     Ok(res)
@@ -62,7 +68,9 @@ async fn update_database(state: &mut State) -> SimpleHandlerResult {
         Err(_) => return Err(HandlerError::from(anyhow!("Invalid request body")).with_status(StatusCode::BAD_REQUEST)),
     };
     let wasm_bytes = data.to_vec();
-    let wasm_bytes_address = hash_bytes(wasm_bytes);
+    let wasm_bytes_address = hash_bytes(&wasm_bytes);
+    object_db::insert_object(wasm_bytes).await.unwrap();
+
     let identity = Hash::from_hex(&identity).unwrap();
     let num_replicas = 1;
 

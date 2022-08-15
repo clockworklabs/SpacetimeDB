@@ -3,7 +3,7 @@ use prost::Message;
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
 use crate::{hash::Hash, protobuf::{control_db::{Database, DatabaseInstance, Node}, control_worker_api::{ScheduleState, WorkerBoundMessage, worker_bound_message, ScheduleUpdate, schedule_update, InsertOperation, insert_operation, update_operation, UpdateOperation, DeleteOperation, delete_operation}}};
 
-use super::{control_db, worker_api::worker_connection_index::{WorkerConnectionIndex, WORKER_CONNECTION_INDEX}};
+use super::{control_db, worker_api::worker_connection_index::WORKER_CONNECTION_INDEX};
 
 pub async fn create_node() -> Result<u64, anyhow::Error> {
     let node = Node {
@@ -23,14 +23,14 @@ pub async fn node_connected(id: u64) -> Result<(), anyhow::Error> {
     Ok(())
 } 
 
-pub async fn node_disconnected(id: u64) -> Result<(), anyhow::Error> {
+pub async fn node_disconnected(_id: u64) -> Result<(), anyhow::Error> {
 
     // TODO: change the node status or whatever
 
     Ok(())
 } 
 
-pub async fn insert_database(identity: &Hash, name: &str, wasm_bytes_address: &Hash, num_replicas: u32, force: bool) -> Result<(), anyhow::Error> {
+pub async fn insert_database(identity: &Hash, name: &str, wasm_bytes_address: &Hash, num_replicas: u32) -> Result<(), anyhow::Error> {
     let database = Database {
         id: 0,
         identity: identity.as_slice().to_owned(),
@@ -112,7 +112,7 @@ async fn insert_database_instance(database_instance: DatabaseInstance) -> Result
     Ok(())
 }
 
-async fn update_database_instance(database_instance: DatabaseInstance) -> Result<(), anyhow::Error> {
+async fn _update_database_instance(database_instance: DatabaseInstance) -> Result<(), anyhow::Error> {
     let new_database_instance = database_instance.clone();
     control_db::update_database_instance(database_instance).await?;
 

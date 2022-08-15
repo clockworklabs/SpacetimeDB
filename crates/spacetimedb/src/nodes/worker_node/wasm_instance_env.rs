@@ -1,5 +1,5 @@
 use crate::db::relational_db::RelationalDB;
-use crate::{db::transactional_db::Tx, hash::Hash, logs};
+use crate::db::transactional_db::Tx;
 use spacetimedb_bindings::{
     decode_schema, encode_schema, ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue, TupleDef, TupleValue,
 };
@@ -162,7 +162,7 @@ impl InstanceEnv {
     }
 
     pub fn iter(&self, table_id: u32) -> u64 {
-        let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
+        let stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 

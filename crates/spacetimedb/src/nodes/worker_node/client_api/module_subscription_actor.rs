@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     db::relational_db::{RelationalDB, ST_COLUMNS_ID, ST_TABLES_ID},
-    json::websocket::{
+    json::client_api::{
         EventJson, FunctionCallJson, MessageJson, SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson,
         TransactionUpdateJson,
     },

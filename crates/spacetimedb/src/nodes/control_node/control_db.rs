@@ -9,7 +9,7 @@ lazy_static::lazy_static! {
 
 fn init() -> Result<sled::Db, anyhow::Error> {
     let config = sled::Config::default()
-        .path("/stdb/control_db")
+        .path("/stdb/control_node/control_db")
         .flush_every_ms(Some(50))
         .mode(sled::Mode::HighThroughput);
     let db = config.open()?;
@@ -26,7 +26,7 @@ pub async fn alloc_spacetime_identity() -> Result<Hash, anyhow::Error> {
     Ok(hash)
 }
 
-pub async fn associate_email_spacetime_identity(identity: &Hash, email: &str) -> Result<(), anyhow::Error> {
+pub async fn _associate_email_spacetime_identity(identity: &Hash, email: &str) -> Result<(), anyhow::Error> {
     let tree = SLED_DB.open_tree("email")?;
     let identity_email = IdentityEmail {
         identity: identity.as_slice().to_vec(),
@@ -43,7 +43,7 @@ pub async fn get_databases() -> Result<Vec<Database>, anyhow::Error> {
     let mut databases = Vec::new();
     let scan_key: &[u8] = b"";
     for result in tree.range(scan_key..) {
-        let (key, value) = result?;
+        let (_key, value) = result?;
         let database = Database::decode(&value.to_vec()[..]).unwrap();
         databases.push(database);
     }
@@ -194,7 +194,7 @@ pub async fn get_nodes() -> Result<Vec<Node>, anyhow::Error> {
     Ok(nodes)
 }
 
-pub async fn get_node(id: u64) -> Result<Option<Node>, anyhow::Error> {
+pub async fn _get_node(id: u64) -> Result<Option<Node>, anyhow::Error> {
     let tree = SLED_DB.open_tree("node")?;
 
     let value = tree.get(id.to_be_bytes())?;
@@ -220,7 +220,7 @@ pub async fn insert_node(mut node: Node) -> Result<u64, anyhow::Error> {
     Ok(id)
 }
 
-pub async fn update_node(node: Node) -> Result<(), anyhow::Error> {
+pub async fn _update_node(node: Node) -> Result<(), anyhow::Error> {
     let tree = SLED_DB.open_tree("node")?;
 
     let mut buf = Vec::new();
@@ -230,7 +230,7 @@ pub async fn update_node(node: Node) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-pub async fn delete_node(id: u64) -> Result<(), anyhow::Error> {
+pub async fn _delete_node(id: u64) -> Result<(), anyhow::Error> {
     let tree = SLED_DB.open_tree("node")?;
     tree.remove(id.to_be_bytes())?;
     Ok(())

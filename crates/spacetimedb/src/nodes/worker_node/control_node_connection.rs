@@ -4,16 +4,17 @@ use std::{time::Duration, sync::{Mutex, Arc}};
 use futures::StreamExt;
 use hyper::{Uri, Request, Body, body};
 use prost::Message;
+use serde::{Serialize, Deserialize};
 use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::handshake::client::generate_key;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
 use crate::{protobuf::{control_worker_api::{WorkerBoundMessage, worker_bound_message, schedule_update, insert_operation, update_operation, delete_operation, ScheduleUpdate, ScheduleState}, control_db::DatabaseInstance, worker_db::DatabaseInstanceState}, hash::Hash, nodes::worker_node::worker_db, db::relational_db::RelationalDB};
-
 use super::{wasm_host_controller, database_logger::DatabaseLogger, worker_database_instance::WorkerDatabaseInstance};
 
-
 pub async fn start(bootstrap_addr: String) {
+    ControlNodeClient::set_shared(&bootstrap_addr);
+
     let node_id = worker_db::get_node_id().unwrap();
     let uri = if let Some(node_id) = node_id {
         format!("ws://{}/join?node_id={}", bootstrap_addr, node_id).parse::<Uri>().unwrap()
@@ -61,7 +62,7 @@ pub async fn start(bootstrap_addr: String) {
                 break;
             }
             Ok(WebSocketMessage::Binary(message_buf)) => {
-                if let Err(e) = on_binary(&bootstrap_addr, node_id, message_buf).await {
+                if let Err(e) = on_binary(node_id, message_buf).await {
                     log::debug!("Worker caused error on binary message: {}", e);
                     break;
                 }
@@ -108,7 +109,7 @@ pub async fn start(bootstrap_addr: String) {
     }
 }
 
-async fn on_binary(bootstrap_addr: &str, node_id: u64, message: Vec<u8>) -> Result<(), anyhow::Error> {
+async fn on_binary(node_id: u64, message: Vec<u8>) -> Result<(), anyhow::Error> {
     let message = WorkerBoundMessage::decode(&message[..]);
     let message = match message {
         Ok(message) => message,
@@ -126,33 +127,33 @@ async fn on_binary(bootstrap_addr: &str, node_id: u64, message: Vec<u8>) -> Resu
     };
     match message {
         worker_bound_message::Type::ScheduleUpdate(schedule_update) => {
-            on_schedule_update(bootstrap_addr, node_id, schedule_update).await;
+            on_schedule_update(node_id, schedule_update).await;
         },
         worker_bound_message::Type::ScheduleState(schedule_state) => {
-            on_schedule_state(bootstrap_addr, node_id, schedule_state).await;
+            on_schedule_state(node_id, schedule_state).await;
         },
     };
     Ok(())
 }
 
-async fn on_schedule_state(bootstrap_addr: &str, node_id: u64, schedule_state: ScheduleState) {
+async fn on_schedule_state(node_id: u64, schedule_state: ScheduleState) {
     println!("node_id: {}", node_id);
     println!("schedule_state: {:?}", schedule_state);
     worker_db::init_with_schedule_state(schedule_state);
 
     for instance in worker_db::get_database_instances() {
-        on_insert_database_instance(bootstrap_addr, instance).await;
+        on_insert_database_instance(instance).await;
     }
 }
 
-async fn on_schedule_update(bootstrap_addr: &str, node_id: u64, schedule_update: ScheduleUpdate) {
+async fn on_schedule_update(node_id: u64, schedule_update: ScheduleUpdate) {
     println!("node_id: {}", node_id);
     println!("schedule_update: {:?}", schedule_update);
     match schedule_update.r#type {
         Some(schedule_update::Type::Insert(insert_operation)) => {
             match insert_operation.r#type {
                 Some(insert_operation::Type::DatabaseInstance(database_instance)) => {
-                    on_insert_database_instance(bootstrap_addr, database_instance).await;
+                    on_insert_database_instance(database_instance).await;
                 },
                 Some(insert_operation::Type::Database(database)) => {
                     worker_db::insert_database(database);
@@ -165,7 +166,7 @@ async fn on_schedule_update(bootstrap_addr: &str, node_id: u64, schedule_update:
         Some(schedule_update::Type::Update(update_operation)) => {
             match update_operation.r#type {
                 Some(update_operation::Type::DatabaseInstance(database_instance)) => {
-                    on_update_database_instance(bootstrap_addr, database_instance).await;
+                    on_update_database_instance(database_instance).await;
                 },
                 Some(update_operation::Type::Database(database)) => {
                     worker_db::insert_database(database);
@@ -190,16 +191,16 @@ async fn on_schedule_update(bootstrap_addr: &str, node_id: u64, schedule_update:
     }
 }
 
-async fn on_insert_database_instance(bootstrap_addr: &str, instance: DatabaseInstance) {
+async fn on_insert_database_instance(instance: DatabaseInstance) {
     let state = worker_db::get_database_instance_state(instance.id).unwrap();
     if let Some(mut state) = state {
         if !state.initialized {
             // Start and init the service
-            init_module_on_database_instance(bootstrap_addr, instance.database_id, instance.id).await;
+            init_module_on_database_instance(instance.database_id, instance.id).await;
             state.initialized = true;
             worker_db::upsert_database_instance_state(state).unwrap();
         } else {
-            start_module_on_database_instance(bootstrap_addr, instance.database_id, instance.id).await;
+            start_module_on_database_instance(instance.database_id, instance.id).await;
         }
     } else {
         // Start and init the service
@@ -208,15 +209,15 @@ async fn on_insert_database_instance(bootstrap_addr: &str, instance: DatabaseIns
             initialized: false,
         };
         worker_db::upsert_database_instance_state(state.clone()).unwrap();
-        init_module_on_database_instance(bootstrap_addr, instance.database_id, instance.id).await;
+        init_module_on_database_instance(instance.database_id, instance.id).await;
         state.initialized = true;
         worker_db::upsert_database_instance_state(state).unwrap();
     }
 }
 
-async fn on_update_database_instance(bootstrap_addr: &str, instance: DatabaseInstance) {
+async fn on_update_database_instance(instance: DatabaseInstance) {
     // This logic is the same right now
-    on_insert_database_instance(bootstrap_addr, instance).await;
+    on_insert_database_instance(instance).await;
 }
 
 async fn on_delete_database_instance(instance_id: u64) {
@@ -228,31 +229,15 @@ async fn on_delete_database_instance(instance_id: u64) {
     }
 }
 
-async fn get_wasm_bytes(bootstrap_addr: &str, wasm_bytes_address: &Hash) -> Vec<u8> {
-    let uri = format!("http://{}/wasm_bytes/{}", bootstrap_addr, wasm_bytes_address.to_hex()).parse::<Uri>().unwrap();
-
-    let request = Request::builder()
-        .method("GET")
-        .uri(&uri)
-        .body(Body::empty())
-        .unwrap();    
-   
-    let client = hyper::Client::new();
-    let res = client.request(request).await.unwrap();
-    let body = res.into_body();
-    let bytes = body::to_bytes(body).await.unwrap();
-
-    bytes.to_vec()
-}
-
-async fn init_module_on_database_instance(bootstrap_addr: &str, database_id: u64, instance_id: u64) {
+async fn init_module_on_database_instance(database_id: u64, instance_id: u64) {
     let database = worker_db::get_database_by_id(database_id).unwrap();
     let identity = Hash::from_slice(database.identity);
     let name = database.name;
     let wasm_bytes_address = Hash::from_slice(database.wasm_bytes_address);
-    let wasm_bytes = get_wasm_bytes(bootstrap_addr, &wasm_bytes_address).await;
+    let wasm_bytes = ControlNodeClient::get_shared().get_wasm_bytes(&wasm_bytes_address).await;
+
+    let log_path = DatabaseLogger::filepath(&identity, &name, instance_id);
     let root = format!("/stdb/worker_node/database_instances");
-    let log_path = format!("{}/{}/{}/{}/{}", root, identity.to_hex(), name, instance_id, "module_logs");
     let db_path = format!("{}/{}/{}/{}/{}", root, identity.to_hex(), name, instance_id, "database");
 
     let worker_database_instance = WorkerDatabaseInstance {
@@ -260,25 +245,23 @@ async fn init_module_on_database_instance(bootstrap_addr: &str, database_id: u64
         database_id,
         identity,
         name: name.clone(),
-        logger: Arc::new(Mutex::new(DatabaseLogger::open(&log_path, &format!("{}.log", name)))),
+        logger: Arc::new(Mutex::new(DatabaseLogger::open(&log_path))),
         relational_db: Arc::new(Mutex::new(RelationalDB::open(db_path))),
     };
 
     let host = wasm_host_controller::get_host();
     let _address = host.init_module(worker_database_instance, wasm_bytes.clone()).await.unwrap();
-
-    crate::logs::init_log(identity, &name);
 }
 
-async fn start_module_on_database_instance(bootstrap_addr: &str, database_id: u64, instance_id: u64) {
+async fn start_module_on_database_instance(database_id: u64, instance_id: u64) {
     let database = worker_db::get_database_by_id(database_id).unwrap();
     let identity = Hash::from_slice(database.identity);
     let name = database.name;
     let wasm_bytes_address = Hash::from_slice(database.wasm_bytes_address);
-    let wasm_bytes = get_wasm_bytes(bootstrap_addr, &wasm_bytes_address).await;
+    let wasm_bytes = ControlNodeClient::get_shared().get_wasm_bytes(&wasm_bytes_address).await;
 
+    let log_path = DatabaseLogger::filepath(&identity, &name, instance_id);
     let root = format!("/stdb/worker_node/database_instances");
-    let log_path = format!("{}/{}/{}/{}/{}", root, identity.to_hex(), name, instance_id, "module_logs");
     let db_path = format!("{}/{}/{}/{}/{}", root, identity.to_hex(), name, instance_id, "database");
 
     let worker_database_instance = WorkerDatabaseInstance {
@@ -286,11 +269,74 @@ async fn start_module_on_database_instance(bootstrap_addr: &str, database_id: u6
         database_id,
         identity,
         name: name.clone(),
-        logger: Arc::new(Mutex::new(DatabaseLogger::open(&log_path, &format!("{}.log", name)))),
+        logger: Arc::new(Mutex::new(DatabaseLogger::open(&log_path))),
         relational_db: Arc::new(Mutex::new(RelationalDB::open(db_path))),
     };
 
     let host = wasm_host_controller::get_host();
     let _address = host.add_module(worker_database_instance, wasm_bytes.clone()).await.unwrap();
-    crate::logs::init_log(identity, &name);
+}
+
+lazy_static::lazy_static! {
+    static ref CONTROL_NODE_CLIENT: Mutex<Option<ControlNodeClient>> = Mutex::new(None);
+}
+
+#[derive(Debug, Clone)]
+pub struct ControlNodeClient {
+    bootstrap_addr: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct IdentityResponse {
+    identity: String,
+    token: String,
+}
+
+impl ControlNodeClient {
+
+    fn set_shared(bootstrap_addr: &str) {
+        *CONTROL_NODE_CLIENT.lock().unwrap() = Some(ControlNodeClient {
+            bootstrap_addr: bootstrap_addr.to_string(),
+        })
+    }
+
+    pub fn get_shared() -> Self {
+        CONTROL_NODE_CLIENT.lock().unwrap().clone().unwrap()
+    }
+
+    pub async fn get_new_identity(&self) -> Result<(Hash, String), anyhow::Error> {
+        let uri = format!("http://{}/identity", self.bootstrap_addr).parse::<Uri>().unwrap();
+
+        let request = Request::builder()
+            .method("POST")
+            .uri(&uri)
+            .body(Body::empty())
+            .unwrap();    
+    
+        let client = hyper::Client::new();
+        let res = client.request(request).await.unwrap();
+        let body = res.into_body();
+        let bytes = body::to_bytes(body).await.unwrap();
+
+        let res: IdentityResponse = serde_json::from_slice(&bytes[..])?;
+
+        Ok((Hash::from_hex(&res.identity).unwrap(), res.token))
+    }
+
+    async fn get_wasm_bytes(&self, wasm_bytes_address: &Hash) -> Vec<u8> {
+        let uri = format!("http://{}/wasm_bytes/{}", self.bootstrap_addr, wasm_bytes_address.to_hex()).parse::<Uri>().unwrap();
+
+        let request = Request::builder()
+            .method("GET")
+            .uri(&uri)
+            .body(Body::empty())
+            .unwrap();    
+    
+        let client = hyper::Client::new();
+        let res = client.request(request).await.unwrap();
+        let body = res.into_body();
+        let bytes = body::to_bytes(body).await.unwrap();
+
+        bytes.to_vec()
+    }
 }

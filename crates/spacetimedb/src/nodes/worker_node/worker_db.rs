@@ -83,7 +83,7 @@ pub fn get_database_by_address(identity: &Hash, name: &str) -> Option<Database> 
     None
 }
 
-pub fn get_databases() -> Vec<Database> {
+pub fn _get_databases() -> Vec<Database> {
     let databases = DATABASES.lock().unwrap();
     databases.values().map(|d| d.to_owned()).collect()
 }
@@ -98,7 +98,7 @@ pub fn delete_database(database_id: u64) {
     databases.remove(&database_id);
 }
 
-pub fn get_database_instance_by_id(id: u64) -> Option<DatabaseInstance> {
+pub fn _get_database_instance_by_id(id: u64) -> Option<DatabaseInstance> {
     let instances = DATABASE_INSTANCES.lock().unwrap();
     instances.get(&id).map(|d| d.to_owned())
 }
@@ -117,7 +117,7 @@ pub fn get_leader_database_instance_by_database(database_id: u64) -> Option<Data
     None
 }
 
-pub fn insert_database_instance(database_instance: DatabaseInstance) {
+pub fn _insert_database_instance(database_instance: DatabaseInstance) {
     let mut instances = DATABASE_INSTANCES.lock().unwrap();
     instances.insert(database_instance.id, database_instance);
 }

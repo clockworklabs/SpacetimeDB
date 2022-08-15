@@ -61,7 +61,7 @@ impl ClientConnectionSender {
         osrx.await.unwrap()
     }
 
-    pub async fn send_message_warn_fail(self, message: WebSocketMessage) {
+    pub async fn _send_message_warn_fail(self, message: WebSocketMessage) {
         let id = self.id;
         if let Err(error) = self.send(message).await {
             log::warn!("Message send failed for client {:?}: {}", id, error);
@@ -71,7 +71,7 @@ impl ClientConnectionSender {
     // Waits for the close frame to be sent, but not for the connection to be closed
     // Once the client sends a close frame back, the connection will be closed
     // and the client will be removed from the GCI
-    pub async fn close_warn_fail(self, close_frame: Option<CloseFrame<'_>>) {
+    pub async fn _close_warn_fail(self, close_frame: Option<CloseFrame<'_>>) {
         let close_frame = close_frame.map(|msg| msg.into_owned());
         let id = self.id;
         if let Err(error) = self.send(WebSocketMessage::Close(close_frame)).await {
@@ -79,8 +79,8 @@ impl ClientConnectionSender {
         }
     }
 
-    pub async fn close_normally(self) {
-        self.close_warn_fail(Some(CloseFrame {
+    pub async fn _close_normally(self) {
+        self._close_warn_fail(Some(CloseFrame {
             code: CloseCode::Normal,
             reason: "Connection closed by server.".into(),
         }))
@@ -153,18 +153,18 @@ impl ClientConnection {
     pub fn recv(&mut self) {
         let id = self.id;
         let mut stream = self.stream.take().unwrap();
-        let module_name = self.module_name.clone();
+        let instance_id = self.get_database_instance_id(); 
         self.read_handle = Some(spawn(async move {
             while let Some(message) = stream.next().await {
                 match message {
                     Ok(WebSocketMessage::Text(message)) => {
-                        if let Err(e) = Self::on_text(id, message).await {
+                        if let Err(e) = Self::on_text(id, instance_id, message).await {
                             log::debug!("Client caused error on text message: {}", e);
                             break;
                         }
                     }
                     Ok(WebSocketMessage::Binary(message_buf)) => {
-                        if let Err(e) = Self::on_binary(id, message_buf).await {
+                        if let Err(e) = Self::on_binary(id, instance_id, message_buf).await {
                             log::debug!("Client caused error on binary message: {}", e);
                             break;
                         }
@@ -230,6 +230,7 @@ impl ClientConnection {
 
     async fn on_binary(
         client_id: ClientActorId,
+        instance_id: u64,
         message_buf: Vec<u8>,
     ) -> Result<(), anyhow::Error> {
         let message = Message::decode(Bytes::from(message_buf))?;
@@ -237,8 +238,20 @@ impl ClientConnection {
             Some(message::Type::FunctionCall(f)) => {
                 let reducer = f.reducer;
                 let arg_bytes = f.arg_bytes;
-                
-                // TODO: call reducer
+
+                let database_instance = worker_db::get_leader_database_instance_by_database(instance_id);
+                let database_instance = match database_instance {
+                    Some(d) => d,
+                    None => return Err(anyhow::anyhow!("No such database.")),
+                };
+                let instance_id = database_instance.id;
+                let host = wasm_host_controller::get_host();
+                match host.call_reducer(instance_id, client_id.identity, &reducer, arg_bytes).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::error!("{}", e)
+                    }
+                }
 
                 Ok(())
             }
@@ -249,6 +262,7 @@ impl ClientConnection {
 
     async fn on_text(
         client_id: ClientActorId,
+        instance_id: u64,
         message: String,
     ) -> Result<(), anyhow::Error> {
         let v: serde_json::Value = serde_json::from_str(&message)?;
@@ -261,7 +275,21 @@ impl ClientConnection {
         let args = obj.get("args").ok_or(anyhow::anyhow!("no args"))?;
         let arg_bytes = args.to_string().as_bytes().to_vec();
 
-        // TODO: call reducer
+        // TODO(cloutiertyler): should be checking message type as in the above case
+
+        let database_instance = worker_db::get_leader_database_instance_by_database(instance_id);
+        let database_instance = match database_instance {
+            Some(d) => d,
+            None => return Err(anyhow::anyhow!("No such database.")),
+        };
+        let instance_id = database_instance.id;
+        let host = wasm_host_controller::get_host();
+        match host.call_reducer(instance_id, client_id.identity, &reducer, arg_bytes).await {
+            Ok(_) => {}
+            Err(e) => {
+                log::error!("{}", e)
+            }
+        }
 
         Ok(())
     }

@@ -1,6 +1,6 @@
-use crate::api;
 use crate::auth::get_creds_from_header;
 use crate::auth::invalid_token_res;
+use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
 use super::super::client_connection::Protocol;
 use super::super::client_connection_index::CLIENT_ACTOR_INDEX;
 use crate::hash::Hash;
@@ -164,7 +164,7 @@ async fn on_upgrade(
         }
     } else {
         // Generate a new identity if this connection doesn't have one already
-        let (identity, identity_token) = api::spacetime_identity().await.unwrap();
+        let (identity, identity_token) = ControlNodeClient::get_shared().get_new_identity().await.unwrap();
         (identity, identity_token)
     };
 

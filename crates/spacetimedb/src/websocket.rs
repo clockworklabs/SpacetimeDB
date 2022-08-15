@@ -1,28 +1,11 @@
 use std::collections::HashMap;
 
-use gotham::{state::{State, FromState, request_id}, handler::HandlerError};
+use gotham::{state::{State, FromState}, handler::HandlerError};
 use hyper::{Response, Body, HeaderMap, upgrade::{OnUpgrade, Upgraded}, header::{UPGRADE, HeaderValue, SEC_WEBSOCKET_KEY, CONNECTION, SEC_WEBSOCKET_PROTOCOL, SEC_WEBSOCKET_ACCEPT}, StatusCode};
 use sha1::{Sha1, Digest};
 use tokio_tungstenite::{WebSocketStream, tungstenite::protocol::Role};
 
 const PROTO_WEBSOCKET: &str = "websocket";
-
-pub fn bad_request_res() -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::BAD_REQUEST)
-        .body(Body::empty())
-        .unwrap()
-}
-
-pub fn invalid_protocol_res() -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::UPGRADE_REQUIRED)
-        .header(UPGRADE, PROTO_WEBSOCKET)
-        .header(CONNECTION, "upgrade")
-        .header(SEC_WEBSOCKET_PROTOCOL, "null")
-        .body(Body::empty())
-        .unwrap()
-}
 
 pub fn accept_ws_res(key: &HeaderValue, protocol: &str, custom_headers: HashMap<String, String>) -> Response<Body> {
     fn accept_key(key: &[u8]) -> String {

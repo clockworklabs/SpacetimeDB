@@ -1,7 +1,4 @@
-use crate::{
-    hash::{hash_bytes, Hash},
-    postgres,
-};
+use crate::hash::Hash;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, time::SystemTime};
@@ -22,22 +19,6 @@ const PUBLIC_KEY: &'static [u8; 177] = b"-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEysYxaGZBgeoodkkHXhuyrcgVbo0q
 eyQoScONDJ8YARMSTGb98Q6XzzRQoVA4LZDBqkEtToTi7RMa5nVDXu8kmw==
 -----END PUBLIC KEY-----";
-
-pub async fn alloc_spacetime_identity() -> Result<Hash, anyhow::Error> {
-    // TODO: this really doesn't need to be a single global count
-    let client = postgres::get_client().await;
-    let result = client.query(
-        "INSERT INTO registry.st_identity (num) VALUES (0) ON CONFLICT (onerow_id) DO UPDATE SET num = st_identity.num + 1 RETURNING num",
-        &[]
-    ).await?;
-    let row = result.first().unwrap();
-    let count: i32 = row.get(0);
-    let bytes: &[u8] = &count.to_le_bytes();
-    let name = b"clockworklabs:";
-    let bytes = [name, bytes].concat();
-    let hash = hash_bytes(bytes);
-    Ok(hash)
-}
 
 pub fn encode_token(identity: Hash) -> Result<String, jsonwebtoken::errors::Error> {
     let header = Header::new(jsonwebtoken::Algorithm::ES256);
