@@ -1,5 +1,5 @@
 use std::{sync::Mutex, collections::HashMap};
-
+use crate::hash::Hash;
 use prost::Message;
 use crate::protobuf::{worker_db::DatabaseInstanceState, control_worker_api::ScheduleState, control_db::{Database, DatabaseInstance}};
 
@@ -73,9 +73,29 @@ pub fn get_database_by_id(id: u64) -> Option<Database> {
     databases.get(&id).map(|d| d.to_owned())
 }
 
+pub fn get_database_by_address(identity: &Hash, name: &str) -> Option<Database> {
+    let databases = DATABASES.lock().unwrap();
+    for database in databases.values() {
+        if Hash::from_slice(&database.identity) == *identity && database.name == name {
+            return Some(database.clone());
+        }
+    }
+    None
+}
+
 pub fn get_databases() -> Vec<Database> {
     let databases = DATABASES.lock().unwrap();
     databases.values().map(|d| d.to_owned()).collect()
+}
+
+pub fn insert_database(database: Database) {
+    let mut databases = DATABASES.lock().unwrap();
+    databases.insert(database.id, database);
+}
+
+pub fn delete_database(database_id: u64) {
+    let mut databases = DATABASES.lock().unwrap();
+    databases.remove(&database_id);
 }
 
 pub fn get_database_instance_by_id(id: u64) -> Option<DatabaseInstance> {
@@ -86,4 +106,23 @@ pub fn get_database_instance_by_id(id: u64) -> Option<DatabaseInstance> {
 pub fn get_database_instances() -> Vec<DatabaseInstance> {
     let instances = DATABASE_INSTANCES.lock().unwrap();
     instances.values().map(|d| d.to_owned()).collect()
+}
+
+pub fn get_leader_database_instance_by_database(database_id: u64) -> Option<DatabaseInstance> {
+    for instance in get_database_instances() {
+        if instance.database_id == database_id && instance.leader {
+            return Some(instance);
+        }
+    }
+    None
+}
+
+pub fn insert_database_instance(database_instance: DatabaseInstance) {
+    let mut instances = DATABASE_INSTANCES.lock().unwrap();
+    instances.insert(database_instance.id, database_instance);
+}
+
+pub fn delete_database_instance(database_instance_id: u64) {
+    let mut instances = DATABASE_INSTANCES.lock().unwrap();
+    instances.remove(&database_instance_id);
 }

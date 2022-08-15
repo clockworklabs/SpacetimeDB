@@ -1,6 +1,6 @@
 
 
-use std::{time::Duration, sync::Mutex, collections::HashMap};
+use std::{time::Duration, sync::{Mutex, Arc}};
 use futures::StreamExt;
 use hyper::{Uri, Request, Body, body};
 use prost::Message;
@@ -8,7 +8,10 @@ use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::handshake::client::generate_key;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
-use crate::{protobuf::{control_worker_api::{WorkerBoundMessage, worker_bound_message, schedule_update, insert_operation, update_operation, delete_operation, ScheduleUpdate, ScheduleState}, control_db::{Database, DatabaseInstance}, worker_db::DatabaseInstanceState}, hash::Hash, nodes::worker_node::worker_db, api, wasm_host};
+use crate::{protobuf::{control_worker_api::{WorkerBoundMessage, worker_bound_message, schedule_update, insert_operation, update_operation, delete_operation, ScheduleUpdate, ScheduleState}, control_db::DatabaseInstance, worker_db::DatabaseInstanceState}, hash::Hash, nodes::worker_node::worker_db, db::relational_db::RelationalDB};
+
+use super::{wasm_host_controller, database_logger::DatabaseLogger, worker_database_instance::WorkerDatabaseInstance};
+
 
 pub async fn start(bootstrap_addr: String) {
     let node_id = worker_db::get_node_id().unwrap();
@@ -134,106 +137,95 @@ async fn on_binary(bootstrap_addr: &str, node_id: u64, message: Vec<u8>) -> Resu
 
 async fn on_schedule_state(bootstrap_addr: &str, node_id: u64, schedule_state: ScheduleState) {
     println!("node_id: {}", node_id);
-    println!("schedule_update: {:?}", schedule_state);
+    println!("schedule_state: {:?}", schedule_state);
     worker_db::init_with_schedule_state(schedule_state);
 
     for instance in worker_db::get_database_instances() {
-        let state = worker_db::get_database_instance_state(instance.id).unwrap();
-        if let Some(mut state) = state {
-            if !state.initialized {
-                // Start and init the service
-                init_module_on_database(bootstrap_addr, instance.database_id).await;
-                state.initialized = true;
-                worker_db::upsert_database_instance_state(state).unwrap();
-            } else {
-                start_module_on_database(bootstrap_addr, instance.database_id).await;
-            }
-        } else {
-            // Start and init the service
-            let mut state = DatabaseInstanceState {
-                database_instance_id: instance.id,
-                initialized: false,
-            };
-            worker_db::upsert_database_instance_state(state.clone()).unwrap();
-            init_module_on_database(bootstrap_addr, instance.database_id).await;
-            state.initialized = true;
-            worker_db::upsert_database_instance_state(state).unwrap();
-        }
+        on_insert_database_instance(bootstrap_addr, instance).await;
     }
 }
 
 async fn on_schedule_update(bootstrap_addr: &str, node_id: u64, schedule_update: ScheduleUpdate) {
     println!("node_id: {}", node_id);
     println!("schedule_update: {:?}", schedule_update);
-    // match schedule_update.r#type {
-    //     Some(schedule_update::Type::Insert(insert_operation)) => {
-    //         match insert_operation.r#type {
-    //             Some(insert_operation::Type::DatabaseInstance(database_instance)) => {
-    //                 let (identity, name, wasm_bytes) = {
-    //                     let database_id = database_instance.database_id;
-    //                     let mut database_instances = DATABASE_INSTANCES.lock().unwrap();
-    //                     database_instances.insert(database_instance.id, database_instance);
+    match schedule_update.r#type {
+        Some(schedule_update::Type::Insert(insert_operation)) => {
+            match insert_operation.r#type {
+                Some(insert_operation::Type::DatabaseInstance(database_instance)) => {
+                    on_insert_database_instance(bootstrap_addr, database_instance).await;
+                },
+                Some(insert_operation::Type::Database(database)) => {
+                    worker_db::insert_database(database);
+                }
+                None => {
+                    log::debug!("Not supposed to happen.");
+                },
+            }
+        },
+        Some(schedule_update::Type::Update(update_operation)) => {
+            match update_operation.r#type {
+                Some(update_operation::Type::DatabaseInstance(database_instance)) => {
+                    on_update_database_instance(bootstrap_addr, database_instance).await;
+                },
+                Some(update_operation::Type::Database(database)) => {
+                    worker_db::insert_database(database);
+                },
+                None => {
+                    log::debug!("Not supposed to happen.");
+                },
+            }
+        },
+        Some(schedule_update::Type::Delete(delete_operation)) => {
+            match delete_operation.r#type {
+                Some(delete_operation::Type::DatabaseInstanceId(database_instance_id)) => {
+                    on_delete_database_instance(database_instance_id).await;
+                },
+                Some(delete_operation::Type::DatabaseId(database_id)) => {
+                    worker_db::delete_database(database_id);
+                }
+                None => {},
+            }
+        },
+        None => todo!(),
+    }
+}
 
-    //                     let databases = DATABASES.lock().unwrap();
-    //                     let database = databases.get(&database_id).unwrap();
+async fn on_insert_database_instance(bootstrap_addr: &str, instance: DatabaseInstance) {
+    let state = worker_db::get_database_instance_state(instance.id).unwrap();
+    if let Some(mut state) = state {
+        if !state.initialized {
+            // Start and init the service
+            init_module_on_database_instance(bootstrap_addr, instance.database_id, instance.id).await;
+            state.initialized = true;
+            worker_db::upsert_database_instance_state(state).unwrap();
+        } else {
+            start_module_on_database_instance(bootstrap_addr, instance.database_id, instance.id).await;
+        }
+    } else {
+        // Start and init the service
+        let mut state = DatabaseInstanceState {
+            database_instance_id: instance.id,
+            initialized: false,
+        };
+        worker_db::upsert_database_instance_state(state.clone()).unwrap();
+        init_module_on_database_instance(bootstrap_addr, instance.database_id, instance.id).await;
+        state.initialized = true;
+        worker_db::upsert_database_instance_state(state).unwrap();
+    }
+}
 
-    //                     let identity = Hash::from_slice(database.identity.clone());
-    //                     let wasm_bytes = database.wasm_bytes_address.clone();
-    //                     // TODO!
-    //                     (identity, database.name.clone(), wasm_bytes)
-    //                 };
-    //                 client_api::api::init_module(&identity, &name, wasm_bytes).await?;
-    //             },
-    //             Some(insert_operation::Type::Database(database)) => {
+async fn on_update_database_instance(bootstrap_addr: &str, instance: DatabaseInstance) {
+    // This logic is the same right now
+    on_insert_database_instance(bootstrap_addr, instance).await;
+}
 
-    //             }
-    //             None => {},
-    //         }
-    //     },
-    //     Some(schedule_update::Type::Update(update_operation)) => {
-    //         match update_operation.r#type {
-    //             Some(update_operation::Type::DatabaseInstance(database_instance)) => {
-    //                 let (identity, name, wasm_bytes) = {
-    //                     let database_id = database_instance.database_id;
-    //                     let mut database_instances = DATABASE_INSTANCES.lock().unwrap();
-    //                     database_instances.insert(database_instance.id, database_instance);
-
-    //                     let databases = DATABASES.lock().unwrap();
-    //                     let database = databases.get(&database_id).unwrap();
-
-    //                     let identity = Hash::from_slice(database.identity.clone());
-    //                     let wasm_bytes = database.wasm_bytes_address.clone();
-    //                     // TODO!
-    //                     (identity, database.name.clone(), wasm_bytes)
-    //                 };
-    //                 client_api::api::update_module(&identity, &name, wasm_bytes).await?;
-    //             },
-    //             None => {},
-    //         }
-    //     },
-    //     Some(schedule_update::Type::Delete(delete_operation)) => {
-    //         match delete_operation.r#type {
-    //             Some(delete_operation::Type::DatabaseInstanceId(database_instance_id)) => {
-    //                 let (identity, name, wasm_bytes) = {
-    //                     let mut database_instances = DATABASE_INSTANCES.lock().unwrap();
-    //                     let database_instance = database_instances.remove(&database_instance_id).unwrap();
-
-    //                     let database_id = database_instance.database_id;
-
-    //                     let databases = DATABASES.lock().unwrap();
-    //                     let database = databases.get(&database_id).unwrap();
-
-    //                     let identity = Hash::from_slice(database.identity.clone());
-    //                     let wasm_bytes = database.wasm_bytes_address.clone(); // TODO!
-    //                     (identity, database.name.clone(), wasm_bytes)
-    //                 };
-    //                 client_api::api::delete_module(&identity, &name).await?;
-    //             },
-    //             None => {},
-    //         }
-    //     },
-    //     None => todo!(),
-    // }
+async fn on_delete_database_instance(instance_id: u64) {
+    let state = worker_db::get_database_instance_state(instance_id).unwrap();
+    if let Some(_state) = state {
+        let host = wasm_host_controller::get_host();
+        let _address = host.delete_module(instance_id).await.unwrap();
+        worker_db::delete_database_instance(instance_id);
+    }
 }
 
 async fn get_wasm_bytes(bootstrap_addr: &str, wasm_bytes_address: &Hash) -> Vec<u8> {
@@ -253,24 +245,52 @@ async fn get_wasm_bytes(bootstrap_addr: &str, wasm_bytes_address: &Hash) -> Vec<
     bytes.to_vec()
 }
 
-async fn init_module_on_database(bootstrap_addr: &str, database_id: u64) {
+async fn init_module_on_database_instance(bootstrap_addr: &str, database_id: u64, instance_id: u64) {
     let database = worker_db::get_database_by_id(database_id).unwrap();
     let identity = Hash::from_slice(database.identity);
     let name = database.name;
     let wasm_bytes_address = Hash::from_slice(database.wasm_bytes_address);
     let wasm_bytes = get_wasm_bytes(bootstrap_addr, &wasm_bytes_address).await;
-    let host = wasm_host::get_host();
-    let _address = host.init_module(identity, name.clone(), wasm_bytes.clone()).await.unwrap();
+    let root = format!("/stdb/worker_node/database_instances");
+    let log_path = format!("{}/{}/{}/{}/{}", root, identity.to_hex(), name, instance_id, "module_logs");
+    let db_path = format!("{}/{}/{}/{}/{}", root, identity.to_hex(), name, instance_id, "database");
+
+    let worker_database_instance = WorkerDatabaseInstance {
+        database_instance_id: instance_id,
+        database_id,
+        identity,
+        name: name.clone(),
+        logger: Arc::new(Mutex::new(DatabaseLogger::open(&log_path, &format!("{}.log", name)))),
+        relational_db: Arc::new(Mutex::new(RelationalDB::open(db_path))),
+    };
+
+    let host = wasm_host_controller::get_host();
+    let _address = host.init_module(worker_database_instance, wasm_bytes.clone()).await.unwrap();
+
     crate::logs::init_log(identity, &name);
 }
 
-async fn start_module_on_database(bootstrap_addr: &str, database_id: u64) {
+async fn start_module_on_database_instance(bootstrap_addr: &str, database_id: u64, instance_id: u64) {
     let database = worker_db::get_database_by_id(database_id).unwrap();
     let identity = Hash::from_slice(database.identity);
     let name = database.name;
     let wasm_bytes_address = Hash::from_slice(database.wasm_bytes_address);
     let wasm_bytes = get_wasm_bytes(bootstrap_addr, &wasm_bytes_address).await;
-    let host = wasm_host::get_host();
-    let _address = host.add_module(identity, name.clone(), wasm_bytes.clone()).await.unwrap();
+
+    let root = format!("/stdb/worker_node/database_instances");
+    let log_path = format!("{}/{}/{}/{}/{}", root, identity.to_hex(), name, instance_id, "module_logs");
+    let db_path = format!("{}/{}/{}/{}/{}", root, identity.to_hex(), name, instance_id, "database");
+
+    let worker_database_instance = WorkerDatabaseInstance {
+        database_instance_id: instance_id,
+        database_id,
+        identity,
+        name: name.clone(),
+        logger: Arc::new(Mutex::new(DatabaseLogger::open(&log_path, &format!("{}.log", name)))),
+        relational_db: Arc::new(Mutex::new(RelationalDB::open(db_path))),
+    };
+
+    let host = wasm_host_controller::get_host();
+    let _address = host.add_module(worker_database_instance, wasm_bytes.clone()).await.unwrap();
     crate::logs::init_log(identity, &name);
 }
