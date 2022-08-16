@@ -192,5 +192,5 @@ Cargo.lock
 ## JetBrains
 .idea/
 
-protobuf/
+/protobuf
 cs-src/
