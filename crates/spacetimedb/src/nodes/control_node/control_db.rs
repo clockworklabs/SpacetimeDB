@@ -4,7 +4,7 @@ use crate::hash::{Hash, hash_bytes};
 use crate::protobuf::control_db::{IdentityEmail, Database, DatabaseInstance, Node};
 
 lazy_static::lazy_static! {
-    static ref SLED_DB: sled::Db = init().unwrap();
+    static ref CONTROL_DB: sled::Db = init().unwrap();
 }
 
 fn init() -> Result<sled::Db, anyhow::Error> {
@@ -18,7 +18,7 @@ fn init() -> Result<sled::Db, anyhow::Error> {
 
 pub async fn alloc_spacetime_identity() -> Result<Hash, anyhow::Error> {
     // TODO: this really doesn't need to be a single global count
-    let id = SLED_DB.generate_id()?;
+    let id = CONTROL_DB.generate_id()?;
     let bytes: &[u8] = &id.to_le_bytes();
     let name = b"clockworklabs:";
     let bytes = [name, bytes].concat();
@@ -27,7 +27,7 @@ pub async fn alloc_spacetime_identity() -> Result<Hash, anyhow::Error> {
 }
 
 pub async fn _associate_email_spacetime_identity(identity: &Hash, email: &str) -> Result<(), anyhow::Error> {
-    let tree = SLED_DB.open_tree("email")?;
+    let tree = CONTROL_DB.open_tree("email")?;
     let identity_email = IdentityEmail {
         identity: identity.as_slice().to_vec(),
         email: email.to_string(),
@@ -39,7 +39,7 @@ pub async fn _associate_email_spacetime_identity(identity: &Hash, email: &str) -
 }
 
 pub async fn get_databases() -> Result<Vec<Database>, anyhow::Error> {
-    let tree = SLED_DB.open_tree("database")?;
+    let tree = CONTROL_DB.open_tree("database")?;
     let mut databases = Vec::new();
     let scan_key: &[u8] = b"";
     for result in tree.range(scan_key..) {
@@ -51,7 +51,7 @@ pub async fn get_databases() -> Result<Vec<Database>, anyhow::Error> {
 }
 
 pub async fn get_database_by_address(identity: &Hash, name: &str) -> Result<Option<Database>, anyhow::Error> {
-    let tree = SLED_DB.open_tree("database_by_address")?;
+    let tree = CONTROL_DB.open_tree("database_by_address")?;
     let key = format!("{}/{}", identity.to_hex(), name);
     let value = tree.get(key.as_bytes())?;
     if let Some(value) = value {
@@ -62,8 +62,8 @@ pub async fn get_database_by_address(identity: &Hash, name: &str) -> Result<Opti
 }
 
 pub async fn insert_database(mut database: Database) -> Result<u64, anyhow::Error> {
-    let id = SLED_DB.generate_id()?;
-    let tree = SLED_DB.open_tree("database_by_address")?;
+    let id = CONTROL_DB.generate_id()?;
+    let tree = CONTROL_DB.open_tree("database_by_address")?;
 
     let key = format!("{}/{}", Hash::from_slice(&database.identity).to_hex(), database.name);
     if tree.contains_key(key.as_bytes())? {
@@ -77,15 +77,15 @@ pub async fn insert_database(mut database: Database) -> Result<u64, anyhow::Erro
 
     tree.insert(key, buf.clone())?;
 
-    let tree = SLED_DB.open_tree("database")?;
+    let tree = CONTROL_DB.open_tree("database")?;
     tree.insert(id.to_be_bytes(), buf)?;
 
     Ok(id)
 }
 
 pub async fn update_database(database: Database) -> Result<(), anyhow::Error> {
-    let tree = SLED_DB.open_tree("database")?;
-    let tree_by_address = SLED_DB.open_tree("database_by_address")?;
+    let tree = CONTROL_DB.open_tree("database")?;
+    let tree_by_address = CONTROL_DB.open_tree("database_by_address")?;
     let key = format!("{}/{}", Hash::from_slice(&database.identity).to_hex(), database.name);
   
     let old_value = tree.get(database.id.to_be_bytes())?;
@@ -111,8 +111,8 @@ pub async fn update_database(database: Database) -> Result<(), anyhow::Error> {
 }
 
 pub async fn delete_database(id: u64) -> Result<Option<u64>, anyhow::Error> {
-    let tree = SLED_DB.open_tree("database")?;
-    let tree_by_address = SLED_DB.open_tree("database_by_address")?;
+    let tree = CONTROL_DB.open_tree("database")?;
+    let tree_by_address = CONTROL_DB.open_tree("database_by_address")?;
 
     if let Some(old_value) = tree.get(id.to_be_bytes())? {
         let database = Database::decode(&old_value.to_vec()[..])?;
@@ -127,7 +127,7 @@ pub async fn delete_database(id: u64) -> Result<Option<u64>, anyhow::Error> {
 }
 
 pub async fn get_database_instances() -> Result<Vec<DatabaseInstance>, anyhow::Error> {
-    let tree = SLED_DB.open_tree("database_instance")?;
+    let tree = CONTROL_DB.open_tree("database_instance")?;
     let mut database_instances = Vec::new();
     let scan_key: &[u8] = b"";
     for result in tree.range(scan_key..) {
@@ -139,7 +139,7 @@ pub async fn get_database_instances() -> Result<Vec<DatabaseInstance>, anyhow::E
 }
 
 pub async fn get_database_instances_by_database(database_id: u64) -> Result<Vec<DatabaseInstance>, anyhow::Error> {
-    let tree = SLED_DB.open_tree("database")?;
+    let tree = CONTROL_DB.open_tree("database")?;
     if !tree.contains_key(database_id.to_be_bytes())? {
         return Err(anyhow::anyhow!("No such database."));
     }
@@ -153,9 +153,9 @@ pub async fn get_database_instances_by_database(database_id: u64) -> Result<Vec<
 }
 
 pub async fn insert_database_instance(mut database_instance: DatabaseInstance) -> Result<u64, anyhow::Error> {
-    let tree = SLED_DB.open_tree("database_instance")?;
+    let tree = CONTROL_DB.open_tree("database_instance")?;
 
-    let id = SLED_DB.generate_id()?;
+    let id = CONTROL_DB.generate_id()?;
 
     database_instance.id = id;
     let mut buf = Vec::new();
@@ -167,7 +167,7 @@ pub async fn insert_database_instance(mut database_instance: DatabaseInstance) -
 }
 
 pub async fn update_database_instance(database_instance: DatabaseInstance) -> Result<(), anyhow::Error> {
-    let tree = SLED_DB.open_tree("database_instance")?;
+    let tree = CONTROL_DB.open_tree("database_instance")?;
 
     let mut buf = Vec::new();
     database_instance.encode(&mut buf).unwrap();
@@ -177,13 +177,13 @@ pub async fn update_database_instance(database_instance: DatabaseInstance) -> Re
 }
 
 pub async fn delete_database_instance(id: u64) -> Result<(), anyhow::Error> {
-    let tree = SLED_DB.open_tree("database_instance")?;
+    let tree = CONTROL_DB.open_tree("database_instance")?;
     tree.remove(id.to_be_bytes())?;
     Ok(())
 }
 
 pub async fn get_nodes() -> Result<Vec<Node>, anyhow::Error> {
-    let tree = SLED_DB.open_tree("node")?;
+    let tree = CONTROL_DB.open_tree("node")?;
     let mut nodes = Vec::new();
     let scan_key: &[u8] = b"";
     for result in tree.range(scan_key..) {
@@ -195,7 +195,7 @@ pub async fn get_nodes() -> Result<Vec<Node>, anyhow::Error> {
 }
 
 pub async fn _get_node(id: u64) -> Result<Option<Node>, anyhow::Error> {
-    let tree = SLED_DB.open_tree("node")?;
+    let tree = CONTROL_DB.open_tree("node")?;
 
     let value = tree.get(id.to_be_bytes())?;
     if let Some(value) = value {
@@ -207,9 +207,9 @@ pub async fn _get_node(id: u64) -> Result<Option<Node>, anyhow::Error> {
 }
 
 pub async fn insert_node(mut node: Node) -> Result<u64, anyhow::Error> {
-    let tree = SLED_DB.open_tree("node")?;
+    let tree = CONTROL_DB.open_tree("node")?;
 
-    let id = SLED_DB.generate_id()?;
+    let id = CONTROL_DB.generate_id()?;
 
     node.id = id;
     let mut buf = Vec::new();
@@ -221,7 +221,7 @@ pub async fn insert_node(mut node: Node) -> Result<u64, anyhow::Error> {
 }
 
 pub async fn _update_node(node: Node) -> Result<(), anyhow::Error> {
-    let tree = SLED_DB.open_tree("node")?;
+    let tree = CONTROL_DB.open_tree("node")?;
 
     let mut buf = Vec::new();
     node.encode(&mut buf).unwrap();
@@ -231,7 +231,7 @@ pub async fn _update_node(node: Node) -> Result<(), anyhow::Error> {
 }
 
 pub async fn _delete_node(id: u64) -> Result<(), anyhow::Error> {
-    let tree = SLED_DB.open_tree("node")?;
+    let tree = CONTROL_DB.open_tree("node")?;
     tree.remove(id.to_be_bytes())?;
     Ok(())
 }

@@ -4,7 +4,7 @@ use prost::Message;
 use crate::protobuf::{worker_db::DatabaseInstanceState, control_worker_api::ScheduleState, control_db::{Database, DatabaseInstance}};
 
 lazy_static::lazy_static! {
-    static ref SLED_DB: sled::Db = init().unwrap();
+    static ref WORKER_DB: sled::Db = init().unwrap();
     static ref DATABASES: Mutex<HashMap<u64, Database>> = Mutex::new(HashMap::new());
     static ref DATABASE_INSTANCES: Mutex<HashMap<u64, DatabaseInstance>> = Mutex::new(HashMap::new());
 }
@@ -19,12 +19,12 @@ fn init() -> Result<sled::Db, anyhow::Error> {
 }
 
 pub fn set_node_id(node_id: u64) -> Result<(), anyhow::Error> {
-    SLED_DB.insert("node_id", &node_id.to_be_bytes())?;
+    WORKER_DB.insert("node_id", &node_id.to_be_bytes())?;
     Ok(())
 }
 
 pub fn get_node_id() -> Result<Option<u64>, anyhow::Error> {
-    if let Some(value) = SLED_DB.get("node_id")? {
+    if let Some(value) = WORKER_DB.get("node_id")? {
         let mut dst = [0u8; 8];
         dst.copy_from_slice(&value[..]);
         let node_id = u64::from_be_bytes(dst);
@@ -36,7 +36,7 @@ pub fn get_node_id() -> Result<Option<u64>, anyhow::Error> {
 }
 
 pub fn upsert_database_instance_state(state: DatabaseInstanceState) -> Result<(), anyhow::Error> {
-    let tree = SLED_DB.open_tree("worker_database_instance")?;
+    let tree = WORKER_DB.open_tree("worker_database_instance")?;
 
     let mut buf = Vec::new();
     state.encode(&mut buf).unwrap();
@@ -46,7 +46,7 @@ pub fn upsert_database_instance_state(state: DatabaseInstanceState) -> Result<()
 }
 
 pub fn get_database_instance_state(database_instance_id: u64) -> Result<Option<DatabaseInstanceState>, anyhow::Error> {
-    let tree = SLED_DB.open_tree("worker_database_instance")?;
+    let tree = WORKER_DB.open_tree("worker_database_instance")?;
 
     if let Some(value) = tree.get(database_instance_id.to_be_bytes())? {
         let state  = DatabaseInstanceState::decode(&value[..])?;
