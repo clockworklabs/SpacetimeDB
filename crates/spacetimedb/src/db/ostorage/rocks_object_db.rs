@@ -1,18 +1,17 @@
-use std::fs;
-use std::path::Path;
+use crate::db::ostorage::ObjectDB;
+use crate::hash::{hash_bytes, Hash};
 use anyhow::Error;
 use bytes::Bytes;
-use crate::db::ostorage::ObjectDB;
-use rocksdb::{ColumnFamilyDescriptor, DB, Options};
-use crate::hash::{Hash, hash_bytes};
+use rocksdb::{ColumnFamilyDescriptor, Options, DB};
+use std::fs;
+use std::path::Path;
 
 pub struct RocksDBObjectDB {
     db: DB,
 }
 
 impl RocksDBObjectDB {
-
-    const OBJECTS_CF : &'static str = "objects";
+    const OBJECTS_CF: &'static str = "objects";
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self, anyhow::Error> {
         let root = path.as_ref();
@@ -40,7 +39,7 @@ impl ObjectDB for RocksDBObjectDB {
 
         let cf = self.db.cf_handle(RocksDBObjectDB::OBJECTS_CF).unwrap();
 
-        self.db.put_cf(&cf, hash.as_slice(), bytes.as_slice()).unwrap();
+        self.db.put_cf(&cf, hash.data.as_slice(), bytes.as_slice()).unwrap();
 
         hash
     }
@@ -48,28 +47,20 @@ impl ObjectDB for RocksDBObjectDB {
     fn get(&self, hash: Hash) -> Option<Bytes> {
         let cf = self.db.cf_handle(RocksDBObjectDB::OBJECTS_CF).unwrap();
 
-        match self.db.get_cf(cf,hash.as_slice()) {
-           Ok(Some(value)) => {
-               Some(bytes::Bytes::from(value))
-           }
-           Ok(None) => {
-               None
-           }
-           Err(e) => {
+        match self.db.get_cf(cf, hash.data.as_slice()) {
+            Ok(Some(value)) => Some(bytes::Bytes::from(value)),
+            Ok(None) => None,
+            Err(e) => {
                 panic!("error in rocksdb::get: {:?}", e)
-           }
-       }
+            }
+        }
     }
 
     fn flush(&mut self) -> Result<(), Error> {
-       match self.db.flush() {
-           Ok(_) => {
-               Ok(())
-           }
-           Err(e) => {
-               Err(anyhow::Error::new(e))
-           }
-       }
+        match self.db.flush() {
+            Ok(_) => Ok(()),
+            Err(e) => Err(anyhow::Error::new(e)),
+        }
     }
 
     fn sync_all(&mut self) -> Result<(), Error> {
@@ -79,11 +70,11 @@ impl ObjectDB for RocksDBObjectDB {
 
 #[cfg(test)]
 mod tests {
+    use crate::db::ostorage::rocks_object_db::RocksDBObjectDB;
+    use crate::db::ostorage::ObjectDB;
     use crate::hash::hash_bytes;
     use anyhow::Error;
     use tempdir::TempDir;
-    use crate::db::ostorage::ObjectDB;
-    use crate::db::ostorage::rocks_object_db::RocksDBObjectDB;
 
     const TEST_DB_DIR_PREFIX: &str = "rocksdb_test";
     const TEST_DATA1: &[u8; 21] = b"this is a byte string";

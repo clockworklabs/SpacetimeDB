@@ -1,10 +1,10 @@
-use std::path::Path;
+use crate::db::ostorage::ObjectDB;
+use crate::hash::{hash_bytes, Hash};
 use anyhow::Error;
 use bytes::Bytes;
-use crate::db::ostorage::ObjectDB;
-use crate::hash::{Hash, hash_bytes};
 use sled;
 use sled::Mode::HighThroughput;
+use std::path::Path;
 
 pub struct SledObjectDB {
     db: sled::Db,
@@ -12,7 +12,6 @@ pub struct SledObjectDB {
 
 impl SledObjectDB {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, anyhow::Error> {
-
         let config = sled::Config::default()
             .path(path)
             .flush_every_ms(Some(50))
@@ -24,37 +23,28 @@ impl SledObjectDB {
 }
 
 impl ObjectDB for SledObjectDB {
-
     fn add(&mut self, bytes: Vec<u8>) -> Hash {
         let hash = hash_bytes(&bytes);
 
-        self.db.insert(hash.as_slice(), bytes.as_slice()).unwrap();
+        self.db.insert(hash.data.as_slice(), bytes.as_slice()).unwrap();
 
         hash
     }
 
     fn get(&self, hash: Hash) -> Option<Bytes> {
-        match self.db.get(hash.as_slice()) {
-            Ok(v) => {
-                v.map(|v| {
-                    let bytes = bytes::Bytes::from(v.to_vec());
-                    bytes
-                })
-            }
-            Err(_) => {
-                None
-            }
+        match self.db.get(hash.data.as_slice()) {
+            Ok(v) => v.map(|v| {
+                let bytes = bytes::Bytes::from(v.to_vec());
+                bytes
+            }),
+            Err(_) => None,
         }
     }
 
     fn flush(&mut self) -> Result<(), Error> {
         match self.db.flush() {
-            Ok(_) => {
-                Ok(())
-            }
-            Err(e) => {
-                Err(anyhow::Error::new(e))
-            }
+            Ok(_) => Ok(()),
+            Err(e) => Err(anyhow::Error::new(e)),
         }
     }
 
