@@ -143,21 +143,3 @@ pub fn router() -> Router {
             .to_async(wasm_bytes);
     })
 }
-
-#[cfg(test)]
-mod tests {
-    // use super::*;
-    // use gotham::test::TestServer;
-    // use hyper::{Body, StatusCode};
-
-    #[test]
-    fn init_database() {
-        // let test_server = TestServer::new(router()).unwrap();
-        // let uri = "http://localhost/database/init/clockworklabs/bitcraft";
-        // let body = Body::empty();
-        // let mime = "application/octet-stream".parse().unwrap();
-        // let response = test_server.client().post(uri, body, mime).perform().unwrap();
-
-        // assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    }
-}
