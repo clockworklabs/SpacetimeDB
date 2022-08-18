@@ -7,6 +7,7 @@ use crate::protobuf::{
 use prost::Message;
 use std::{collections::HashMap, sync::Mutex};
 
+// TODO: Consider making not static
 lazy_static::lazy_static! {
     static ref WORKER_DB: sled::Db = init().unwrap();
     static ref DATABASES: Mutex<HashMap<u64, Database>> = Mutex::new(HashMap::new());

@@ -1,5 +1,6 @@
 use crate::hash::{hash_bytes, Hash};
 
+// TODO: Consider making not static
 lazy_static::lazy_static! {
     static ref CONTROL_NODE_OBJECT_DB: sled::Db = init().unwrap();
 }
