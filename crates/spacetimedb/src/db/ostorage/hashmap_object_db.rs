@@ -30,7 +30,7 @@ impl HashMapObjectDB {
             let dir_name = path.file_name().unwrap().to_str().unwrap();
             let hex_dir_name = hex::decode(dir_name);
             if let Err(err) = hex_dir_name {
-                log::warn!("invalid object dir found: {:?}", err);
+                log::warn!("invalid object dir found: {} {:?}", dir_name, err);
                 continue;
             }
             let hex_dir_bytes = hex_dir_name.unwrap();

@@ -239,12 +239,6 @@ impl ClientConnection {
                 let reducer = f.reducer;
                 let arg_bytes = f.arg_bytes;
 
-                let database_instance = worker_db::get_leader_database_instance_by_database(instance_id);
-                let database_instance = match database_instance {
-                    Some(d) => d,
-                    None => return Err(anyhow::anyhow!("No such database.")),
-                };
-                let instance_id = database_instance.id;
                 let host = wasm_host_controller::get_host();
                 match host.call_reducer(instance_id, client_id.identity, &reducer, arg_bytes).await {
                     Ok(_) => {}
@@ -277,12 +271,6 @@ impl ClientConnection {
 
         // TODO(cloutiertyler): should be checking message type as in the above case
 
-        let database_instance = worker_db::get_leader_database_instance_by_database(instance_id);
-        let database_instance = match database_instance {
-            Some(d) => d,
-            None => return Err(anyhow::anyhow!("No such database.")),
-        };
-        let instance_id = database_instance.id;
         let host = wasm_host_controller::get_host();
         match host.call_reducer(instance_id, client_id.identity, &reducer, arg_bytes).await {
             Ok(_) => {}

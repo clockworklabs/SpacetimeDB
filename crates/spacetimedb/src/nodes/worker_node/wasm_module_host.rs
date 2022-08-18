@@ -64,7 +64,7 @@ enum ModuleHostCommand {
     DeleteDatabase {
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
     },
-    MigrateDatabase {
+    _MigrateDatabase {
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
     },
     AddSubscriber {
@@ -152,10 +152,10 @@ impl ModuleHost {
         rx.await.unwrap()
     }
 
-    pub async fn migrate_database(&self) -> Result<(), anyhow::Error> {
+    pub async fn _migrate_database(&self) -> Result<(), anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.tx
-            .send(ModuleHostCommand::MigrateDatabase { respond_to: tx })
+            .send(ModuleHostCommand::_MigrateDatabase { respond_to: tx })
             .await?;
         rx.await.unwrap()
     }
@@ -269,7 +269,7 @@ impl ModuleHostActor {
                 respond_to.send(self.delete_database()).unwrap();
                 true
             }
-            ModuleHostCommand::MigrateDatabase { respond_to } => {
+            ModuleHostCommand::_MigrateDatabase { respond_to } => {
                 respond_to.send(self.migrate_database()).unwrap();
                 false
             }

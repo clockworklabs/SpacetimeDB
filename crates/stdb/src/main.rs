@@ -21,6 +21,7 @@ mod update;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    let host = "localhost:3000";
     let args = match get_command().try_get_matches() {
         Ok(args) => args,
         Err(e) => {
@@ -41,7 +42,7 @@ async fn main() -> Result<(), anyhow::Error> {
         }
     };
     match args.subcommand() {
-        Some((cmd, subcommand_args)) => exec_subcommand(cmd, subcommand_args).await?,
+        Some((cmd, subcommand_args)) => exec_subcommand(host, cmd, subcommand_args).await?,
         None => {
             get_command().print_help().unwrap();
             exit(0);
@@ -99,20 +100,20 @@ fn get_subcommands() -> Vec<Command<'static>> {
     ]
 }
 
-async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_subcommand(host: &str, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     match cmd {
-        "identity" => identity::exec(args).await,
-        "call" => call::exec(args).await,
-        "energy" => energy::exec(args).await,
-        "init" => init::exec(args).await,
-        "rm" => rm::exec(args).await,
-        "login" => login::exec(args).await,
-        "logs" => logs::exec(args).await,
-        "metrics" => metrics::exec(args).await,
-        "query" => query::exec(args).await,
-        "revert" => revert::exec(args).await,
-        "signup" => signup::exec(args).await,
-        "update" => update::exec(args).await,
+        "identity" => identity::exec(host, args).await,
+        "call" => call::exec(host, args).await,
+        "energy" => energy::exec(host, args).await,
+        "init" => init::exec(host, args).await,
+        "rm" => rm::exec(host, args).await,
+        "login" => login::exec(host, args).await,
+        "logs" => logs::exec(host, args).await,
+        "metrics" => metrics::exec(host, args).await,
+        "query" => query::exec(host, args).await,
+        "revert" => revert::exec(host, args).await,
+        "signup" => signup::exec(host, args).await,
+        "update" => update::exec(host, args).await,
         _ => Err(anyhow::anyhow!("invalid subcommand")),
     }
 }

@@ -10,7 +10,7 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help login for more detailed information.\n`")
 }
 
-pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(_host: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let username = args.value_of("username").unwrap();
     let _password = args.value_of("password").unwrap();
 

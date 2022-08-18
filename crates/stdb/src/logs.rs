@@ -11,14 +11,14 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help logs for more detailed information.\n`")
 }
 
-pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(host: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let hex_identity = args.value_of("identity").unwrap();
     let name = args.value_of("name").unwrap();
     let num_lines = args.value_of("num_lines").unwrap();
 
     let client = reqwest::Client::new();
     let res = client
-        .get(format!("http://localhost:3000/database/{}/{}/logs", hex_identity, name))
+        .get(format!("http://{}/database/{}/{}/logs", host, hex_identity, name))
         .query(&[("num_lines", num_lines)])
         .send()
         .await?;

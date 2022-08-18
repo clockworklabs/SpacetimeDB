@@ -10,7 +10,7 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help signup for more detailed information.\n`")
 }
 
-pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(_host: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let email = args.value_of("email").unwrap();
 
     println!("This is your email: {}", email);

@@ -139,10 +139,15 @@ pub async fn get_database_instances() -> Result<Vec<DatabaseInstance>, anyhow::E
 }
 
 pub async fn get_database_instances_by_database(database_id: u64) -> Result<Vec<DatabaseInstance>, anyhow::Error> {
-    let tree = CONTROL_DB.open_tree("database")?;
-    if !tree.contains_key(database_id.to_be_bytes())? {
-        return Err(anyhow::anyhow!("No such database."));
-    }
+    // TODO: because we don't have foreign key constraints it's actually possible to have
+    // instances in here with no database. Although we'd be in a bit of a corrupted state
+    // in that case
+    // 
+    // let tree = CONTROL_DB.open_tree("database")?;
+    // if !tree.contains_key(database_id.to_be_bytes())? {
+    //     return Err(anyhow::anyhow!("No such database."));
+    // }
+    //
     let database_instances = get_database_instances()
         .await?
         .iter()
@@ -166,7 +171,7 @@ pub async fn insert_database_instance(mut database_instance: DatabaseInstance) -
     Ok(id)
 }
 
-pub async fn update_database_instance(database_instance: DatabaseInstance) -> Result<(), anyhow::Error> {
+pub async fn _update_database_instance(database_instance: DatabaseInstance) -> Result<(), anyhow::Error> {
     let tree = CONTROL_DB.open_tree("database_instance")?;
 
     let mut buf = Vec::new();
@@ -194,7 +199,7 @@ pub async fn get_nodes() -> Result<Vec<Node>, anyhow::Error> {
     Ok(nodes)
 }
 
-pub async fn _get_node(id: u64) -> Result<Option<Node>, anyhow::Error> {
+pub async fn get_node(id: u64) -> Result<Option<Node>, anyhow::Error> {
     let tree = CONTROL_DB.open_tree("node")?;
 
     let value = tree.get(id.to_be_bytes())?;

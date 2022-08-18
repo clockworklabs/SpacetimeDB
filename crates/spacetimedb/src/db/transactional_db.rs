@@ -130,7 +130,7 @@ pub struct TransactionalDB {
 
 impl TransactionalDB {
     pub fn open(root: &Path, make_odb_fun: fn(&Path) -> Box<dyn ObjectDB + Send>) -> Result<Self, anyhow::Error> {
-        let odb = make_odb_fun(root);
+        let odb = make_odb_fun(&root.to_path_buf().join("odb"));
         let message_log = MessageLog::open(root.to_path_buf().join("mlog"))?;
 
         let mut closed_state = ClosedState::new();

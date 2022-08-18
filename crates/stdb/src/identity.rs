@@ -7,9 +7,9 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help identity for more detailed information.\n`")
 }
 
-pub async fn exec(_args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(host: &str, _args: &ArgMatches) -> Result<(), anyhow::Error> {
     let client = reqwest::Client::new();
-    let res = client.get(format!("http://localhost:3000/identity")).send().await?;
+    let res = client.get(format!("http://{}/identity", host)).send().await?;
 
     let res = res.error_for_status()?;
 

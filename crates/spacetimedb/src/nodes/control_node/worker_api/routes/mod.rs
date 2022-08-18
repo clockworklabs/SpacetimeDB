@@ -6,7 +6,7 @@ use gotham::{
     router::{build_simple_router, Router}, state::request_id,
 };
 use tokio::spawn;
-use crate::{websocket, nodes::control_node::{controller, object_db}, hash::Hash};
+use crate::{websocket, nodes::control_node::{controller, object_db, control_db}, hash::Hash};
 use super::worker_connection_index::WORKER_CONNECTION_INDEX;
 use gotham::handler::HandlerError;
 use gotham::prelude::StaticResponseExtender;
@@ -53,7 +53,11 @@ async fn join(state: State) -> Result<(State, Response<Body>), (State, HandlerEr
     }
         
     let node_id = if let Some(node_id) = node_id {
-        node_id
+        if let Some(node) = control_db::get_node(node_id).await.unwrap() {
+            node.id
+        } else {
+            controller::create_node().await.unwrap()
+        }
     } else {
         controller::create_node().await.unwrap()
     };

@@ -117,7 +117,7 @@ pub fn get_leader_database_instance_by_database(database_id: u64) -> Option<Data
     None
 }
 
-pub fn _insert_database_instance(database_instance: DatabaseInstance) {
+pub fn insert_database_instance(database_instance: DatabaseInstance) {
     let mut instances = DATABASE_INSTANCES.lock().unwrap();
     instances.insert(database_instance.id, database_instance);
 }

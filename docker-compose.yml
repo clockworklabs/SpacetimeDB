@@ -19,7 +19,7 @@ services:
       - ./crates/rust-wasm-test:/usr/src/rust-wasm-test
       - /stdb
     ports:
-      - "3000:3000"
+      - "3000:80"
     entrypoint: bash -c "RUST_LOG='raft=trace', CARGO_INCREMENTAL=0 RUST_BACKTRACE=1 cargo watch --why -x 'run --release -- init --worker-node'"
     privileged: true
     environment:

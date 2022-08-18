@@ -10,6 +10,7 @@ pub async fn create_node() -> Result<u64, anyhow::Error> {
         id: 0,
         unschedulable: false,
     };
+
     let id = control_db::insert_node(node).await?;
     Ok(id)
 }
@@ -30,7 +31,7 @@ pub async fn node_disconnected(_id: u64) -> Result<(), anyhow::Error> {
     Ok(())
 } 
 
-pub async fn insert_database(identity: &Hash, name: &str, wasm_bytes_address: &Hash, num_replicas: u32) -> Result<(), anyhow::Error> {
+pub async fn insert_database(identity: &Hash, name: &str, wasm_bytes_address: &Hash, num_replicas: u32, force: bool) -> Result<(), anyhow::Error> {
     let database = Database {
         id: 0,
         identity: identity.as_slice().to_owned(),
@@ -38,6 +39,19 @@ pub async fn insert_database(identity: &Hash, name: &str, wasm_bytes_address: &H
         num_replicas,
         wasm_bytes_address: wasm_bytes_address.as_slice().to_owned(),
     };
+
+    if force {
+        if let Some(database) = control_db::get_database_by_address(identity, name).await? {
+            let database_id = database.id;
+            schedule_database(None, Some(database)).await?;
+            control_db::delete_database(database_id).await?;
+            broadcast_schedule_update(ScheduleUpdate {
+                r#type: Some(schedule_update::Type::Delete(DeleteOperation {
+                    r#type: Some(delete_operation::Type::DatabaseId(database_id)),
+                })) 
+            }).await?;
+        }
+    }
 
     let mut new_database = database.clone();
     let id = control_db::insert_database(database).await?;
@@ -99,9 +113,12 @@ pub async fn delete_database(identity: &Hash, name: &str) -> Result<(), anyhow::
 } 
 
 async fn insert_database_instance(database_instance: DatabaseInstance) -> Result<(), anyhow::Error> {
+    println!("HAPPP1");
     let mut new_database_instance = database_instance.clone();
     let id = control_db::insert_database_instance(database_instance).await?;
     new_database_instance.id = id;
+
+    println!("HAPPP2");
 
     broadcast_schedule_update(ScheduleUpdate {
         r#type: Some(schedule_update::Type::Insert(InsertOperation {
@@ -114,7 +131,7 @@ async fn insert_database_instance(database_instance: DatabaseInstance) -> Result
 
 async fn _update_database_instance(database_instance: DatabaseInstance) -> Result<(), anyhow::Error> {
     let new_database_instance = database_instance.clone();
-    control_db::update_database_instance(database_instance).await?;
+    control_db::_update_database_instance(database_instance).await?;
 
     broadcast_schedule_update(ScheduleUpdate {
         r#type: Some(schedule_update::Type::Update(UpdateOperation {
@@ -143,8 +160,13 @@ async fn schedule_database(database: Option<Database>, old_database: Option<Data
     let old_replicas = old_database.as_ref().map(|db| db.num_replicas).unwrap_or(0) as i32;
     let replica_diff = new_replicas - old_replicas;
 
-    let database_id = database.map(|db| db.id).unwrap_or(old_database.unwrap().id);
+    let database_id = if let Some(database) = database {
+        database.id
+    } else {
+        old_database.unwrap().id
+    };
 
+    println!("REPLICA DIFF {} {}", database_id, replica_diff);
     if replica_diff > 0 {
         schedule_replicas(database_id, replica_diff as u32).await?;
     } else if replica_diff < 0 {
@@ -167,7 +189,12 @@ async fn schedule_replicas(database_id: u64, num_replicas: u32) -> Result<(), an
         }
 
         for instance in instances {
-            let count = histogram.get(&instance.node_id).unwrap();
+            let count = if let Some(count) = histogram.get(&instance.node_id) {
+                count
+            } else {
+                log::warn!("WARNING! You have an instanced scheduled to a node that was never created.");
+                continue;
+            };
             histogram.insert(instance.node_id, count + 1);
         }
 

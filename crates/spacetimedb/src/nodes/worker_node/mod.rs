@@ -11,9 +11,10 @@ mod worker_database_instance;
 use tokio::spawn;
 
 pub async fn start(config: crate::nodes::node_config::NodeConfig) {
-    let bootstrap_addr = config.worker_node.as_ref().unwrap().bootstrap_addrs.first().unwrap().clone();
+    let worker_api_bootstrap_addr = config.worker_node.as_ref().unwrap().worker_api_bootstrap_addrs.first().unwrap().clone();
+    let client_api_bootstrap_addr = config.worker_node.as_ref().unwrap().client_api_bootstrap_addrs.first().unwrap().clone();
     spawn(async move {
-        control_node_connection::start(bootstrap_addr).await;
+        control_node_connection::start(worker_api_bootstrap_addr, client_api_bootstrap_addr).await;
     });
 
     let client_listen_addr = config.worker_node.as_ref().unwrap().listen_addr.clone();

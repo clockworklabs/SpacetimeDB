@@ -52,7 +52,8 @@ async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 worker_node,
                 listen_addr,
                 advertise_addr,
-                bootstrap_addrs: Vec::new(),
+                worker_api_bootstrap_addrs: Vec::new(),
+                client_api_bootstrap_addrs: Vec::new(),
                 peer_api_listen_addr: None,
                 peer_api_advertise_addr: None,
                 peer_api_bootstrap_addrs: Vec::new(),
@@ -69,7 +70,12 @@ async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 worker_node,
                 listen_addr,
                 advertise_addr,
-                bootstrap_addrs: if let Some(bootstrap_addrs) = &bootstrap_addrs {
+                worker_api_bootstrap_addrs: if let Some(bootstrap_addrs) = &bootstrap_addrs {
+                    bootstrap_addrs.split(",").map(str::to_string).collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                },
+                client_api_bootstrap_addrs: if let Some(bootstrap_addrs) = &bootstrap_addrs {
                     bootstrap_addrs.split(",").map(str::to_string).collect::<Vec<_>>()
                 } else {
                     Vec::new()

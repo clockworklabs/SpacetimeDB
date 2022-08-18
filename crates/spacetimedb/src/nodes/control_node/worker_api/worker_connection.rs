@@ -17,7 +17,7 @@ struct SendCommand {
 
 #[derive(Clone, Debug)]
 pub struct WorkerConnectionSender {
-    id: u64,
+    _id: u64,
     sendtx: mpsc::Sender<SendCommand>,
 }
 
@@ -35,7 +35,7 @@ impl WorkerConnectionSender {
     }
 
     pub async fn _send_message_warn_fail(self, message: WebSocketMessage) {
-        let id = self.id;
+        let id = self._id;
         if let Err(error) = self.send(message).await {
             log::warn!("Message send failed for worker {:?}: {}", id, error);
         }
@@ -46,7 +46,7 @@ impl WorkerConnectionSender {
     // and the client will be removed from the GCI
     pub async fn _close_warn_fail(self, close_frame: Option<CloseFrame<'_>>) {
         let close_frame = close_frame.map(|msg| msg.into_owned());
-        let id = self.id;
+        let id = self._id;
         if let Err(error) = self.send(WebSocketMessage::Close(close_frame)).await {
             log::warn!("Failed to send close frame for worker {:?}: {}", id, error);
         }
@@ -96,7 +96,7 @@ impl WorkerConnection {
 
     pub fn sender(&self) -> WorkerConnectionSender {
         return WorkerConnectionSender {
-            id: self.id,
+            _id: self.id,
             sendtx: self.sendtx.clone(),
         };
     }

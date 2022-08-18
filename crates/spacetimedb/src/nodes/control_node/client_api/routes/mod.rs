@@ -11,9 +11,9 @@ use node::router as node_router;
 
 pub fn router() -> Router {
     build_simple_router(|route| {
-        route.delegate("/node").to_router(node_router());
         route.delegate("/database").to_router(database_router());
         route.delegate("/identity").to_router(identity_router());
+        route.delegate("/node").to_router(node_router());
     })
 }
 

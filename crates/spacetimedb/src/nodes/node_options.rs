@@ -8,7 +8,8 @@ pub struct NodeOptions {
     // Worker flags
     pub listen_addr: Option<String>, 
     pub advertise_addr: Option<String>, 
-    pub bootstrap_addrs: Vec<String>, 
+    pub worker_api_bootstrap_addrs: Vec<String>, 
+    pub client_api_bootstrap_addrs: Vec<String>, 
 
     // Control flags
     pub peer_api_listen_addr: Option<String>,
@@ -27,21 +28,34 @@ impl NodeOptions {
 
     const PEER_API_DEFAULT_PORT: u16 = 26259;
     const WORKER_API_DEFAULT_PORT: u16 = 26260;
-    const CLIENT_API_DEFAULT_PORT: u16 = 80;
+    const CLIENT_API_DEFAULT_PORT: u16 = 26258;
 
     pub fn normalize(&mut self) {
-        // Worker Client API
-        let mut bootstrap_addrs_defaults = Vec::new();
-        if self.bootstrap_addrs.len() > 0 {
-            for addr in &self.bootstrap_addrs {
+        // So workers can connect to the Control node worker API
+        let mut worker_api_bootstrap_addrs_defaults = Vec::new();
+        if self.worker_api_bootstrap_addrs.len() > 0 {
+            for addr in &self.worker_api_bootstrap_addrs {
                 if addr.contains(":") {
-                    bootstrap_addrs_defaults.push(addr.clone());
+                    worker_api_bootstrap_addrs_defaults.push(addr.clone());
                 } else {
-                    bootstrap_addrs_defaults.push(format!("{}:{}", addr, Self::WORKER_API_DEFAULT_PORT))
+                    worker_api_bootstrap_addrs_defaults.push(format!("{}:{}", addr, Self::WORKER_API_DEFAULT_PORT))
                 }
             }
         }
-        self.bootstrap_addrs = bootstrap_addrs_defaults;
+        self.worker_api_bootstrap_addrs = worker_api_bootstrap_addrs_defaults;
+        
+        // So workers can connect to the Control node client API
+        let mut client_api_bootstrap_addrs_defaults = Vec::new();
+        if self.client_api_bootstrap_addrs.len() > 0 {
+            for addr in &self.client_api_bootstrap_addrs {
+                if addr.contains(":") {
+                    client_api_bootstrap_addrs_defaults.push(addr.clone());
+                } else {
+                    client_api_bootstrap_addrs_defaults.push(format!("{}:{}", addr, Self::CLIENT_API_DEFAULT_PORT))
+                }
+            }
+        }
+        self.client_api_bootstrap_addrs = client_api_bootstrap_addrs_defaults;
 
         if self.advertise_addr.is_none() {
             if self.listen_addr.is_none() {

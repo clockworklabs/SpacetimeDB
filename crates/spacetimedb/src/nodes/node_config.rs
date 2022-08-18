@@ -15,7 +15,8 @@ pub struct ControlNodeConfig {
 #[derive(Debug, Clone)]
 pub struct WorkerNodeConfig {
     // Address to contact a bootstrap control node
-    pub bootstrap_addrs: Vec<String>, 
+    pub worker_api_bootstrap_addrs: Vec<String>, 
+    pub client_api_bootstrap_addrs: Vec<String>, 
     pub listen_addr: String, 
 }
 
@@ -27,8 +28,12 @@ pub struct NodeConfig {
 
 impl NodeConfig {
     pub fn from_options(mut options: NodeOptions) -> Self {
-        if options.control_node && options.worker_node && options.bootstrap_addrs.len() == 0 {
-            options.bootstrap_addrs = vec!["localhost".to_owned()];
+        if options.control_node && options.worker_node && options.worker_api_bootstrap_addrs.len() == 0 {
+            options.worker_api_bootstrap_addrs = vec!["localhost".to_owned()];
+        }
+        
+        if options.control_node && options.worker_node && options.client_api_bootstrap_addrs.len() == 0 {
+            options.client_api_bootstrap_addrs = vec!["localhost".to_owned()];
         }
 
         options.normalize();
@@ -49,7 +54,8 @@ impl NodeConfig {
 
         let worker_node = if options.worker_node {
             Some(WorkerNodeConfig {
-                bootstrap_addrs: options.bootstrap_addrs,
+                worker_api_bootstrap_addrs: options.worker_api_bootstrap_addrs,
+                client_api_bootstrap_addrs: options.client_api_bootstrap_addrs,
                 listen_addr: options.listen_addr.unwrap(),
             })
         } else {

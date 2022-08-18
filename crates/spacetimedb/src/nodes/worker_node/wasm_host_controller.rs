@@ -89,7 +89,7 @@ impl WasmHostController {
             let modules = self.modules.lock().unwrap();
             modules.get(&key).unwrap().clone()
         };
-        module_host.migrate_database().await?;
+        module_host._migrate_database().await?;
         module_host.start_repeating_reducers().await?;
         Ok(module_hash)
     }

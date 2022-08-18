@@ -33,6 +33,6 @@ async fn get_identity(_state: &mut State) -> SimpleHandlerResult {
 
 pub fn router() -> Router {
     build_simple_router(|route| {
-        route.get("/").to_async_borrowing(get_identity);
+        route.post("/").to_async_borrowing(get_identity);
     })
 }
