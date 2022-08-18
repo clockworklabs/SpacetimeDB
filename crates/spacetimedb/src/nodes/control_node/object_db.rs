@@ -1,7 +1,7 @@
 use crate::hash::{hash_bytes, Hash};
 
 lazy_static::lazy_static! {
-    static ref SLED_DB: sled::Db = init().unwrap();
+    static ref CONTROL_NODE_OBJECT_DB: sled::Db = init().unwrap();
 }
 
 fn init() -> Result<sled::Db, anyhow::Error> {
@@ -14,7 +14,7 @@ fn init() -> Result<sled::Db, anyhow::Error> {
 }
 
 pub async fn get_object(hash: &Hash) -> Result<Option<Vec<u8>>, anyhow::Error> {
-    let value = SLED_DB.get(hash.as_slice())?;
+    let value = CONTROL_NODE_OBJECT_DB.get(hash.as_slice())?;
     if let Some(value) = value {
         Ok(Some(value.to_vec()))
     } else {
@@ -24,6 +24,6 @@ pub async fn get_object(hash: &Hash) -> Result<Option<Vec<u8>>, anyhow::Error> {
 
 pub async fn insert_object(bytes: Vec<u8>) -> Result<(), anyhow::Error> {
     let hash = hash_bytes(&bytes);
-    SLED_DB.insert(hash.as_slice(), bytes)?;
+    CONTROL_NODE_OBJECT_DB.insert(hash.as_slice(), bytes)?;
     Ok(())
 }
