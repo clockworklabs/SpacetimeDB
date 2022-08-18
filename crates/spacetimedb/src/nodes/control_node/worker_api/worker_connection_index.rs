@@ -1,10 +1,10 @@
+use super::worker_connection::WorkerConnection;
 use hyper::upgrade::Upgraded;
 use lazy_static::lazy_static;
 use std::{collections::HashMap, sync::Mutex, time::Duration};
 use tokio::{task::JoinHandle, time::sleep};
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
 use tokio_tungstenite::WebSocketStream;
-use super::worker_connection::WorkerConnection;
 
 lazy_static! {
     pub static ref WORKER_CONNECTION_INDEX: Mutex<WorkerConnectionIndex> = {
@@ -91,11 +91,7 @@ impl WorkerConnectionIndex {
         }
     }
 
-    pub fn new_client(
-        &mut self,
-        worker_id: u64,
-        ws: WebSocketStream<Upgraded>,
-    ) -> u64 {
+    pub fn new_client(&mut self, worker_id: u64, ws: WebSocketStream<Upgraded>) -> u64 {
         let pointer = Pointer(self.connections.len());
 
         let mut worker = WorkerConnection::new(worker_id, ws);

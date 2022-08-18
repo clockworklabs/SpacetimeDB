@@ -56,7 +56,7 @@ fn open_db(flavor: ODBFlavor) -> fn(&Path) -> Box<dyn ObjectDB + Send> {
         ODBFlavor::HashMap => open_hm,
         ODBFlavor::Sled => open_sled,
         #[cfg(feature = "rocksdb")]
-        ODBFlavor::Rocks => open_rocks
+        ODBFlavor::Rocks => open_rocks,
     }
 }
 
@@ -75,8 +75,8 @@ fn generate_random_sized_value() -> (u32 /* set_id */, Vec<u8>) {
 
 // Spam the DB continuous with inserting new values.
 fn insert_commit<F>(bench: &mut Bencher, flavor: ODBFlavor, valgen: F)
-    where
-        F: Fn() -> (u32 /* set_id */, Vec<u8>),
+where
+    F: Fn() -> (u32 /* set_id */, Vec<u8>),
 {
     let tmp_dir = TempDir::new("txdb_bench").unwrap();
     let mut db = TransactionalDB::open(tmp_dir.path(), open_db(flavor)).unwrap();
@@ -90,8 +90,8 @@ fn insert_commit<F>(bench: &mut Bencher, flavor: ODBFlavor, valgen: F)
 
 // Insert one set value then retrieve it over and over to measure (cached) retrieval times.
 fn seek<F>(bench: &mut Bencher, flavor: ODBFlavor, valgen: F)
-    where
-        F: Fn() -> (u32 /* set_id */, Vec<u8>),
+where
+    F: Fn() -> (u32 /* set_id */, Vec<u8>),
 {
     let tmp_dir = TempDir::new("txdb_bench").unwrap();
     let mut db = TransactionalDB::open(tmp_dir.path(), open_db(flavor)).unwrap();
@@ -107,8 +107,8 @@ fn seek<F>(bench: &mut Bencher, flavor: ODBFlavor, valgen: F)
 
 // Add new values and then retrieve them immediately over and over again in the same tx.
 fn insert_seek<F>(bench: &mut Bencher, flavor: ODBFlavor, valgen: F)
-    where
-        F: Fn() -> (u32 /* set_id */, Vec<u8>),
+where
+    F: Fn() -> (u32 /* set_id */, Vec<u8>),
 {
     let tmp_dir = TempDir::new("txdb_bench").unwrap();
     let mut db = TransactionalDB::open(tmp_dir.path(), open_db(flavor)).unwrap();
@@ -124,8 +124,8 @@ fn insert_seek<F>(bench: &mut Bencher, flavor: ODBFlavor, valgen: F)
 // Add new values and then retrieve them immediately over and over again, but in two separate
 // transactions.
 fn insert_seek_new_tx<F>(bench: &mut Bencher, flavor: ODBFlavor, valgen: F)
-    where
-        F: Fn() -> (u32 /* set_id */, Vec<u8>),
+where
+    F: Fn() -> (u32 /* set_id */, Vec<u8>),
 {
     let tmp_dir = TempDir::new("txdb_bench").unwrap();
     let mut db = TransactionalDB::open(tmp_dir.path(), open_db(flavor)).unwrap();
@@ -146,8 +146,8 @@ fn insert_seek_new_tx<F>(bench: &mut Bencher, flavor: ODBFlavor, valgen: F)
 
 // Add new values but retrieve them later instead of immediately after inserting.
 fn insert_seek_delayed<F>(bench: &mut Bencher, valgen: F, flavor: ODBFlavor, delay_count: usize)
-    where
-        F: Fn() -> (u32 /* set_id */, Vec<u8>),
+where
+    F: Fn() -> (u32 /* set_id */, Vec<u8>),
 {
     let tmp_dir = TempDir::new("txdb_bench").unwrap();
     let mut db = TransactionalDB::open(tmp_dir.path(), open_db(flavor)).unwrap();
@@ -187,8 +187,8 @@ impl Display for FlavoredDelayedCount {
 }
 
 fn perform_bench<F>(bench_group: &mut BenchmarkGroup<WallTime>, valgen: &F, flavor: ODBFlavor)
-    where
-        F: Fn() -> (u32 /* set_id */, Vec<u8>),
+where
+    F: Fn() -> (u32 /* set_id */, Vec<u8>),
 {
     bench_group.bench_with_input(BenchmarkId::new("insert_commit", &flavor), &flavor, |bench, &flavor| {
         insert_commit(bench, flavor, valgen)

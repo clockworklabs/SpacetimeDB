@@ -2,14 +2,14 @@ use super::{
     messages::{transaction::Transaction, write::DataKey},
     transactional_db::{ScanIter, TransactionalDB, Tx},
 };
+use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
+use crate::db::ostorage::ObjectDB;
 use spacetimedb_bindings::{ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue};
 pub use spacetimedb_bindings::{TupleDef, TupleValue, TypeDef, TypeValue};
 use std::{
     ops::{Range, RangeBounds},
     path::Path,
 };
-use crate::db::ostorage::ObjectDB;
-use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 
 pub const ST_TABLES_ID: u32 = u32::MAX;
 pub const ST_COLUMNS_ID: u32 = u32::MAX - 1;
@@ -18,7 +18,7 @@ pub struct RelationalDB {
     pub txdb: TransactionalDB,
 }
 
-fn make_default_ostorage(path:&Path) -> Box<dyn ObjectDB + Send> {
+fn make_default_ostorage(path: &Path) -> Box<dyn ObjectDB + Send> {
     Box::new(HashMapObjectDB::open(path).unwrap())
 }
 
@@ -29,8 +29,7 @@ impl RelationalDB {
         // tables by hard coding the schema of the schema tables
         let root = root.as_ref();
 
-        let mut txdb = TransactionalDB::open(&root.to_path_buf().join("txdb"),
-                                             make_default_ostorage).unwrap();
+        let mut txdb = TransactionalDB::open(&root.to_path_buf().join("txdb"), make_default_ostorage).unwrap();
         let mut tx = txdb.begin_tx();
 
         // Create the st_tables table and insert the information about itself into itself

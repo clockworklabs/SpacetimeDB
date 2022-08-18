@@ -1,3 +1,4 @@
+use crate::{json::control_db::NodeJson, nodes::control_node::control_db};
 use gotham::{
     handler::SimpleHandlerResult,
     prelude::*,
@@ -5,7 +6,6 @@ use gotham::{
     state::State,
 };
 use hyper::{Body, Response, StatusCode};
-use crate::{nodes::control_node::control_db, json::control_db::NodeJson};
 
 async fn get_nodes(_state: &mut State) -> SimpleHandlerResult {
     // TODO(cloutiertyler): security

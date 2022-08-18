@@ -1,6 +1,6 @@
-use std::sync::{Arc, Mutex};
-use crate::{hash::Hash, db::relational_db::RelationalDB};
 use super::database_logger::DatabaseLogger;
+use crate::{db::relational_db::RelationalDB, hash::Hash};
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 pub struct WorkerDatabaseInstance {

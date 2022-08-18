@@ -1,3 +1,4 @@
+use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
 use gotham::{
     handler::SimpleHandlerResult,
     prelude::*,
@@ -6,7 +7,6 @@ use gotham::{
 };
 use hyper::{Body, Response, StatusCode};
 use serde::{Deserialize, Serialize};
-use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct IdentityResponse {

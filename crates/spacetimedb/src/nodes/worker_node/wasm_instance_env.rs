@@ -47,7 +47,11 @@ impl InstanceEnv {
         let memory = self.memory.get_ref().expect("Initialized memory");
 
         let s = Self::bytes_to_string(memory, ptr, len);
-        self.worker_database_instance.logger.lock().unwrap().write(level, s.clone());
+        self.worker_database_instance
+            .logger
+            .lock()
+            .unwrap()
+            .write(level, s.clone());
         log::debug!("MOD: {}", s);
     }
 

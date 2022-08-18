@@ -47,7 +47,7 @@ impl ObjectDB for RocksDBObjectDB {
     fn get(&self, hash: Hash) -> Option<Bytes> {
         let cf = self.db.cf_handle(RocksDBObjectDB::OBJECTS_CF).unwrap();
 
-        match self.db.get_cf(cf, hash.data.as_slice()) {
+        match self.db.get_cf(cf, hash.as_slice()) {
             Ok(Some(value)) => Some(bytes::Bytes::from(value)),
             Ok(None) => None,
             Err(e) => {

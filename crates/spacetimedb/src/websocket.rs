@@ -1,9 +1,16 @@
 use std::collections::HashMap;
 
-use gotham::{state::{State, FromState}, handler::HandlerError};
-use hyper::{Response, Body, HeaderMap, upgrade::{OnUpgrade, Upgraded}, header::{UPGRADE, HeaderValue, SEC_WEBSOCKET_KEY, CONNECTION, SEC_WEBSOCKET_PROTOCOL, SEC_WEBSOCKET_ACCEPT}, StatusCode};
-use sha1::{Sha1, Digest};
-use tokio_tungstenite::{WebSocketStream, tungstenite::protocol::Role};
+use gotham::{
+    handler::HandlerError,
+    state::{FromState, State},
+};
+use hyper::{
+    header::{HeaderValue, CONNECTION, SEC_WEBSOCKET_ACCEPT, SEC_WEBSOCKET_KEY, SEC_WEBSOCKET_PROTOCOL, UPGRADE},
+    upgrade::{OnUpgrade, Upgraded},
+    Body, HeaderMap, Response, StatusCode,
+};
+use sha1::{Digest, Sha1};
+use tokio_tungstenite::{tungstenite::protocol::Role, WebSocketStream};
 
 const PROTO_WEBSOCKET: &str = "websocket";
 
@@ -33,7 +40,9 @@ pub fn accept_ws_res(key: &HeaderValue, protocol: &str, custom_headers: HashMap<
         .unwrap()
 }
 
-pub fn validate_upgrade(mut state: State) -> Result<(State, HeaderMap, HeaderValue, OnUpgrade, String), (State, HandlerError)> {
+pub fn validate_upgrade(
+    mut state: State,
+) -> Result<(State, HeaderMap, HeaderValue, OnUpgrade, String), (State, HandlerError)> {
     let headers = HeaderMap::take_from(&mut state);
     let on_upgrade_value = OnUpgrade::try_take_from(&mut state);
 
@@ -56,7 +65,10 @@ pub fn validate_upgrade(mut state: State) -> Result<(State, HeaderMap, HeaderVal
         Ok(value) => value,
         Err(_) => {
             log::debug!("Client did not provide a sec-websocket-key.");
-            return Err((state, HandlerError::from(anyhow::anyhow!("Missing sec-websocket-key.")).with_status(StatusCode::BAD_REQUEST)));
+            return Err((
+                state,
+                HandlerError::from(anyhow::anyhow!("Missing sec-websocket-key.")).with_status(StatusCode::BAD_REQUEST),
+            ));
         }
     }
     .clone();
@@ -70,14 +82,20 @@ pub fn validate_upgrade(mut state: State) -> Result<(State, HeaderMap, HeaderVal
     }
     if count != 1 {
         log::debug!("Client tried to connect without protocol version (or provided mulitple).");
-        return Err((state, HandlerError::from(anyhow::anyhow!("Invalid protocol.")).with_status(StatusCode::UPGRADE_REQUIRED)));
+        return Err((
+            state,
+            HandlerError::from(anyhow::anyhow!("Invalid protocol.")).with_status(StatusCode::UPGRADE_REQUIRED),
+        ));
     }
     let protocol_header = protocol_header.unwrap().clone();
     let protocol = match protocol_header.to_str() {
         Ok(value) => value,
         Err(_) => {
             log::debug!("Could not convert protocol version to string.");
-            return Err((state, HandlerError::from(anyhow::anyhow!("Malformed protocol.")).with_status(StatusCode::BAD_REQUEST)));
+            return Err((
+                state,
+                HandlerError::from(anyhow::anyhow!("Malformed protocol.")).with_status(StatusCode::BAD_REQUEST),
+            ));
         }
     };
 
@@ -86,13 +104,11 @@ pub fn validate_upgrade(mut state: State) -> Result<(State, HeaderMap, HeaderVal
 
 pub async fn execute_upgrade(req_id: &str, on_upgrade: OnUpgrade) -> Result<WebSocketStream<Upgraded>, anyhow::Error> {
     let ws = match on_upgrade.await {
-        Ok(upgraded) => {
-            WebSocketStream::from_raw_socket(upgraded, Role::Server, None).await
-        },
+        Ok(upgraded) => WebSocketStream::from_raw_socket(upgraded, Role::Server, None).await,
         Err(err) => {
             log::error!("WebSocket init error for req_id {}: {}", req_id, err);
             return Err(anyhow::anyhow!("Upgrade failed."));
-        },
+        }
     };
     Ok(ws)
 }

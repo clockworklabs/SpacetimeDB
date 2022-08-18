@@ -21,10 +21,7 @@ pub async fn exec(host: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
 
     let client = reqwest::Client::new();
     let res = client
-        .post(format!(
-            "http://{}/database/{}/{}/update",
-            host, hex_identity, name
-        ))
+        .post(format!("http://{}/database/{}/{}/update", host, hex_identity, name))
         .body(wasm_bytes)
         .send()
         .await?;

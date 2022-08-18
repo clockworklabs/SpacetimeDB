@@ -1,13 +1,13 @@
-use std::fmt;
 use super::client_connection_index::CLIENT_ACTOR_INDEX;
 use crate::hash::Hash;
+use crate::nodes::worker_node::wasm_host_controller;
 use crate::nodes::worker_node::worker_db;
 use crate::protobuf::client_api::{message, Message};
-use crate::nodes::worker_node::wasm_host_controller;
 use futures::{prelude::*, stream::SplitStream, SinkExt};
 use hyper::upgrade::Upgraded;
 use prost::bytes::Bytes;
 use prost::Message as OtherMessage;
+use std::fmt;
 use tokio::spawn;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -100,7 +100,6 @@ pub struct ClientConnection {
 }
 
 impl ClientConnection {
-
     pub fn get_database_instance_id(&self) -> u64 {
         let module_identity = &self.module_identity;
         let module_name = &self.module_name;
@@ -153,7 +152,7 @@ impl ClientConnection {
     pub fn recv(&mut self) {
         let id = self.id;
         let mut stream = self.stream.take().unwrap();
-        let instance_id = self.get_database_instance_id(); 
+        let instance_id = self.get_database_instance_id();
         self.read_handle = Some(spawn(async move {
             while let Some(message) = stream.next().await {
                 match message {
@@ -228,11 +227,7 @@ impl ClientConnection {
         }));
     }
 
-    async fn on_binary(
-        client_id: ClientActorId,
-        instance_id: u64,
-        message_buf: Vec<u8>,
-    ) -> Result<(), anyhow::Error> {
+    async fn on_binary(client_id: ClientActorId, instance_id: u64, message_buf: Vec<u8>) -> Result<(), anyhow::Error> {
         let message = Message::decode(Bytes::from(message_buf))?;
         match message.r#type {
             Some(message::Type::FunctionCall(f)) => {
@@ -240,7 +235,10 @@ impl ClientConnection {
                 let arg_bytes = f.arg_bytes;
 
                 let host = wasm_host_controller::get_host();
-                match host.call_reducer(instance_id, client_id.identity, &reducer, arg_bytes).await {
+                match host
+                    .call_reducer(instance_id, client_id.identity, &reducer, arg_bytes)
+                    .await
+                {
                     Ok(_) => {}
                     Err(e) => {
                         log::error!("{}", e)
@@ -254,11 +252,7 @@ impl ClientConnection {
         }
     }
 
-    async fn on_text(
-        client_id: ClientActorId,
-        instance_id: u64,
-        message: String,
-    ) -> Result<(), anyhow::Error> {
+    async fn on_text(client_id: ClientActorId, instance_id: u64, message: String) -> Result<(), anyhow::Error> {
         let v: serde_json::Value = serde_json::from_str(&message)?;
         let obj = v.as_object().ok_or(anyhow::anyhow!("not object"))?;
         let reducer = obj
@@ -272,7 +266,10 @@ impl ClientConnection {
         // TODO(cloutiertyler): should be checking message type as in the above case
 
         let host = wasm_host_controller::get_host();
-        match host.call_reducer(instance_id, client_id.identity, &reducer, arg_bytes).await {
+        match host
+            .call_reducer(instance_id, client_id.identity, &reducer, arg_bytes)
+            .await
+        {
             Ok(_) => {}
             Err(e) => {
                 log::error!("{}", e)

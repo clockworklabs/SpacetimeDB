@@ -4,7 +4,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use super::{client_api::{client_connection_index::ClientActorId, module_subscription_actor::ModuleSubscription}, worker_database_instance::WorkerDatabaseInstance};
+use super::{
+    client_api::{client_connection_index::ClientActorId, module_subscription_actor::ModuleSubscription},
+    worker_database_instance::WorkerDatabaseInstance,
+};
 use crate::{
     db::{
         messages::{transaction::Transaction, write::Write},
@@ -84,7 +87,12 @@ pub struct ModuleHost {
 }
 
 impl ModuleHost {
-    pub fn spawn(worker_database_instance: WorkerDatabaseInstance, module_hash: Hash, module: Module, store: Store) -> ModuleHost {
+    pub fn spawn(
+        worker_database_instance: WorkerDatabaseInstance,
+        module_hash: Hash,
+        module: Module,
+        store: Store,
+    ) -> ModuleHost {
         let (tx, mut rx) = mpsc::channel(8);
         let inner_tx = tx.clone();
         tokio::spawn(async move {

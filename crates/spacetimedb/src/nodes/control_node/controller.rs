@@ -1,7 +1,16 @@
-use std::collections::HashMap;
+use crate::{
+    hash::Hash,
+    protobuf::{
+        control_db::{Database, DatabaseInstance, Node},
+        control_worker_api::{
+            delete_operation, insert_operation, schedule_update, update_operation, worker_bound_message,
+            DeleteOperation, InsertOperation, ScheduleState, ScheduleUpdate, UpdateOperation, WorkerBoundMessage,
+        },
+    },
+};
 use prost::Message;
+use std::collections::HashMap;
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
-use crate::{hash::Hash, protobuf::{control_db::{Database, DatabaseInstance, Node}, control_worker_api::{ScheduleState, WorkerBoundMessage, worker_bound_message, ScheduleUpdate, schedule_update, InsertOperation, insert_operation, update_operation, UpdateOperation, DeleteOperation, delete_operation}}};
 
 use super::{control_db, worker_api::worker_connection_index::WORKER_CONNECTION_INDEX};
 
@@ -16,22 +25,26 @@ pub async fn create_node() -> Result<u64, anyhow::Error> {
 }
 
 pub async fn node_connected(id: u64) -> Result<(), anyhow::Error> {
-
     // TODO: change the node status or whatever
 
     publish_schedule_state(id).await?;
 
     Ok(())
-} 
+}
 
 pub async fn node_disconnected(_id: u64) -> Result<(), anyhow::Error> {
-
     // TODO: change the node status or whatever
 
     Ok(())
-} 
+}
 
-pub async fn insert_database(identity: &Hash, name: &str, wasm_bytes_address: &Hash, num_replicas: u32, force: bool) -> Result<(), anyhow::Error> {
+pub async fn insert_database(
+    identity: &Hash,
+    name: &str,
+    wasm_bytes_address: &Hash,
+    num_replicas: u32,
+    force: bool,
+) -> Result<(), anyhow::Error> {
     let database = Database {
         id: 0,
         identity: identity.as_slice().to_owned(),
@@ -48,8 +61,9 @@ pub async fn insert_database(identity: &Hash, name: &str, wasm_bytes_address: &H
             broadcast_schedule_update(ScheduleUpdate {
                 r#type: Some(schedule_update::Type::Delete(DeleteOperation {
                     r#type: Some(delete_operation::Type::DatabaseId(database_id)),
-                })) 
-            }).await?;
+                })),
+            })
+            .await?;
         }
     }
 
@@ -60,15 +74,21 @@ pub async fn insert_database(identity: &Hash, name: &str, wasm_bytes_address: &H
     broadcast_schedule_update(ScheduleUpdate {
         r#type: Some(schedule_update::Type::Insert(InsertOperation {
             r#type: Some(insert_operation::Type::Database(new_database.clone())),
-        })) 
-    }).await?;
+        })),
+    })
+    .await?;
 
     schedule_database(Some(new_database), None).await?;
 
     Ok(())
-} 
+}
 
-pub async fn update_database(identity: &Hash, name: &str, wasm_bytes_address: &Hash, num_replicas: u32) -> Result<(), anyhow::Error> {
+pub async fn update_database(
+    identity: &Hash,
+    name: &str,
+    wasm_bytes_address: &Hash,
+    num_replicas: u32,
+) -> Result<(), anyhow::Error> {
     let database = control_db::get_database_by_address(identity, name).await?;
     let mut database = match database {
         Some(database) => database,
@@ -81,17 +101,18 @@ pub async fn update_database(identity: &Hash, name: &str, wasm_bytes_address: &H
     database.num_replicas = num_replicas;
     let new_database = database.clone();
     control_db::update_database(database).await?;
-    
+
     broadcast_schedule_update(ScheduleUpdate {
         r#type: Some(schedule_update::Type::Update(UpdateOperation {
             r#type: Some(update_operation::Type::Database(new_database.clone())),
-        })) 
-    }).await?;
+        })),
+    })
+    .await?;
 
     schedule_database(Some(new_database), Some(old_database)).await?;
 
     Ok(())
-} 
+}
 
 pub async fn delete_database(identity: &Hash, name: &str) -> Result<(), anyhow::Error> {
     let database = control_db::get_database_by_address(identity, name).await?;
@@ -104,13 +125,14 @@ pub async fn delete_database(identity: &Hash, name: &str) -> Result<(), anyhow::
     broadcast_schedule_update(ScheduleUpdate {
         r#type: Some(schedule_update::Type::Delete(DeleteOperation {
             r#type: Some(delete_operation::Type::DatabaseId(database.id)),
-        })) 
-    }).await?;
+        })),
+    })
+    .await?;
 
     schedule_database(None, Some(database)).await?;
 
     Ok(())
-} 
+}
 
 async fn insert_database_instance(database_instance: DatabaseInstance) -> Result<(), anyhow::Error> {
     let mut new_database_instance = database_instance.clone();
@@ -120,8 +142,9 @@ async fn insert_database_instance(database_instance: DatabaseInstance) -> Result
     broadcast_schedule_update(ScheduleUpdate {
         r#type: Some(schedule_update::Type::Insert(InsertOperation {
             r#type: Some(insert_operation::Type::DatabaseInstance(new_database_instance)),
-        })) 
-    }).await?;
+        })),
+    })
+    .await?;
 
     Ok(())
 }
@@ -133,20 +156,22 @@ async fn _update_database_instance(database_instance: DatabaseInstance) -> Resul
     broadcast_schedule_update(ScheduleUpdate {
         r#type: Some(schedule_update::Type::Update(UpdateOperation {
             r#type: Some(update_operation::Type::DatabaseInstance(new_database_instance)),
-        })) 
-    }).await?;
+        })),
+    })
+    .await?;
 
     Ok(())
 }
 
 async fn delete_database_instance(database_instance_id: u64) -> Result<(), anyhow::Error> {
     control_db::delete_database_instance(database_instance_id).await?;
-    
+
     broadcast_schedule_update(ScheduleUpdate {
         r#type: Some(schedule_update::Type::Delete(DeleteOperation {
             r#type: Some(delete_operation::Type::DatabaseInstanceId(database_instance_id)),
-        })) 
-    }).await?;
+        })),
+    })
+    .await?;
 
     Ok(())
 }

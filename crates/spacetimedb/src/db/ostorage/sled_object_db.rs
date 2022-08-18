@@ -32,7 +32,7 @@ impl ObjectDB for SledObjectDB {
     }
 
     fn get(&self, hash: Hash) -> Option<Bytes> {
-        match self.db.get(hash.data.as_slice()) {
+        match self.db.get(hash.as_slice()) {
             Ok(v) => v.map(|v| {
                 let bytes = bytes::Bytes::from(v.to_vec());
                 bytes

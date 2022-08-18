@@ -11,13 +11,12 @@ pub struct ControlNodeConfig {
     pub client_api_advertise_addr: String,
 }
 
-
 #[derive(Debug, Clone)]
 pub struct WorkerNodeConfig {
     // Address to contact a bootstrap control node
-    pub worker_api_bootstrap_addrs: Vec<String>, 
-    pub client_api_bootstrap_addrs: Vec<String>, 
-    pub listen_addr: String, 
+    pub worker_api_bootstrap_addrs: Vec<String>,
+    pub client_api_bootstrap_addrs: Vec<String>,
+    pub listen_addr: String,
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +30,7 @@ impl NodeConfig {
         if options.control_node && options.worker_node && options.worker_api_bootstrap_addrs.len() == 0 {
             options.worker_api_bootstrap_addrs = vec!["localhost".to_owned()];
         }
-        
+
         if options.control_node && options.worker_node && options.client_api_bootstrap_addrs.len() == 0 {
             options.client_api_bootstrap_addrs = vec!["localhost".to_owned()];
         }

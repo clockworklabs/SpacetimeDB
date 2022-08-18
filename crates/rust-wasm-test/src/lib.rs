@@ -1,5 +1,5 @@
-use std::time::Duration;
 use spacetimedb_bindings::println;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use spacetimedb_bindgen::spacetimedb;

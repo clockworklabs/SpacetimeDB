@@ -1,3 +1,4 @@
+use super::super::wasm_module_host::ModuleEvent;
 use super::{
     client_connection::{ClientActorId, ClientConnectionSender, Protocol},
     client_connection_index::CLIENT_ACTOR_INDEX,
@@ -13,7 +14,6 @@ use crate::{
         TableRowOperation, TableUpdate, TransactionUpdate,
     },
 };
-use super::super::wasm_module_host::ModuleEvent;
 use prost::Message as ProstMessage;
 use spacetimedb_bindings::{TupleDef, TupleValue};
 use std::{

@@ -1,4 +1,4 @@
-use crate::hash::{Hash, hash_bytes};
+use crate::hash::{hash_bytes, Hash};
 
 lazy_static::lazy_static! {
     static ref SLED_DB: sled::Db = init().unwrap();

@@ -1,16 +1,29 @@
-
-
-use std::{time::Duration, sync::{Mutex, Arc}};
+use super::{database_logger::DatabaseLogger, wasm_host_controller, worker_database_instance::WorkerDatabaseInstance};
+use crate::{
+    db::relational_db::RelationalDB,
+    hash::Hash,
+    nodes::worker_node::worker_db,
+    protobuf::{
+        control_db::DatabaseInstance,
+        control_worker_api::{
+            delete_operation, insert_operation, schedule_update, update_operation, worker_bound_message, ScheduleState,
+            ScheduleUpdate, WorkerBoundMessage,
+        },
+        worker_db::DatabaseInstanceState,
+    },
+};
 use futures::StreamExt;
-use hyper::{Uri, Request, Body, body};
+use hyper::{body, Body, Request, Uri};
 use prost::Message;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tokio::time::sleep;
-use tokio_tungstenite::tungstenite::handshake::client::generate_key;
 use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::handshake::client::generate_key;
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
-use crate::{protobuf::{control_worker_api::{WorkerBoundMessage, worker_bound_message, schedule_update, insert_operation, update_operation, delete_operation, ScheduleUpdate, ScheduleState}, control_db::DatabaseInstance, worker_db::DatabaseInstanceState}, hash::Hash, nodes::worker_node::worker_db, db::relational_db::RelationalDB};
-use super::{wasm_host_controller, database_logger::DatabaseLogger, worker_database_instance::WorkerDatabaseInstance};
 
 pub async fn start(worker_api_bootstrap_addr: String, client_api_bootstrap_addr: String) {
     ControlNodeClient::set_shared(&worker_api_bootstrap_addr, &client_api_bootstrap_addr);
@@ -18,7 +31,9 @@ pub async fn start(worker_api_bootstrap_addr: String, client_api_bootstrap_addr:
 
     let node_id = worker_db::get_node_id().unwrap();
     let uri = if let Some(node_id) = node_id {
-        format!("ws://{}/join?node_id={}", bootstrap_addr, node_id).parse::<Uri>().unwrap()
+        format!("ws://{}/join?node_id={}", bootstrap_addr, node_id)
+            .parse::<Uri>()
+            .unwrap()
     } else {
         format!("ws://{}/join", bootstrap_addr).parse::<Uri>().unwrap()
     };
@@ -36,22 +51,32 @@ pub async fn start(worker_api_bootstrap_addr: String, client_api_bootstrap_addr:
             .header("Upgrade", "websocket")
             .header("Sec-WebSocket-Version", "13")
             .header("Sec-WebSocket-Key", generate_key())
-            .header("Sec-WebSocket-Protocol", crate::nodes::control_node::worker_api::routes::BIN_PROTOCOL)
+            .header(
+                "Sec-WebSocket-Protocol",
+                crate::nodes::control_node::worker_api::routes::BIN_PROTOCOL,
+            )
             .uri(&uri)
             .body(())
             .unwrap();
 
         match connect_async(request).await {
             Ok((socket, response)) => {
-                let node_id = response.headers().get("spacetimedb-node-id").unwrap().to_str().unwrap().parse::<u64>().unwrap();
+                let node_id = response
+                    .headers()
+                    .get("spacetimedb-node-id")
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .parse::<u64>()
+                    .unwrap();
                 break (socket, node_id);
-            },
+            }
             Err(err) => {
                 let millis = 5000;
                 log::debug!("Error connecting to control node: {:?}", err);
                 log::debug!("Retrying connection in {} ms", millis);
                 sleep(Duration::from_millis(millis)).await;
-            },
+            }
         }
     };
 
@@ -129,10 +154,10 @@ async fn on_binary(node_id: u64, message: Vec<u8>) -> Result<(), anyhow::Error> 
     match message {
         worker_bound_message::Type::ScheduleUpdate(schedule_update) => {
             on_schedule_update(node_id, schedule_update).await;
-        },
+        }
         worker_bound_message::Type::ScheduleState(schedule_state) => {
             on_schedule_state(node_id, schedule_state).await;
-        },
+        }
     };
     Ok(())
 }
@@ -147,45 +172,39 @@ async fn on_schedule_state(_node_id: u64, schedule_state: ScheduleState) {
 
 async fn on_schedule_update(_node_id: u64, schedule_update: ScheduleUpdate) {
     match schedule_update.r#type {
-        Some(schedule_update::Type::Insert(insert_operation)) => {
-            match insert_operation.r#type {
-                Some(insert_operation::Type::DatabaseInstance(database_instance)) => {
-                    worker_db::insert_database_instance(database_instance.clone());
-                    on_insert_database_instance(database_instance).await;
-                },
-                Some(insert_operation::Type::Database(database)) => {
-                    worker_db::insert_database(database);
-                }
-                None => {
-                    log::debug!("Not supposed to happen.");
-                },
+        Some(schedule_update::Type::Insert(insert_operation)) => match insert_operation.r#type {
+            Some(insert_operation::Type::DatabaseInstance(database_instance)) => {
+                worker_db::insert_database_instance(database_instance.clone());
+                on_insert_database_instance(database_instance).await;
+            }
+            Some(insert_operation::Type::Database(database)) => {
+                worker_db::insert_database(database);
+            }
+            None => {
+                log::debug!("Not supposed to happen.");
             }
         },
-        Some(schedule_update::Type::Update(update_operation)) => {
-            match update_operation.r#type {
-                Some(update_operation::Type::DatabaseInstance(database_instance)) => {
-                    worker_db::insert_database_instance(database_instance.clone());
-                    on_update_database_instance(database_instance).await;
-                },
-                Some(update_operation::Type::Database(database)) => {
-                    worker_db::insert_database(database);
-                },
-                None => {
-                    log::debug!("Not supposed to happen.");
-                },
+        Some(schedule_update::Type::Update(update_operation)) => match update_operation.r#type {
+            Some(update_operation::Type::DatabaseInstance(database_instance)) => {
+                worker_db::insert_database_instance(database_instance.clone());
+                on_update_database_instance(database_instance).await;
+            }
+            Some(update_operation::Type::Database(database)) => {
+                worker_db::insert_database(database);
+            }
+            None => {
+                log::debug!("Not supposed to happen.");
             }
         },
-        Some(schedule_update::Type::Delete(delete_operation)) => {
-            match delete_operation.r#type {
-                Some(delete_operation::Type::DatabaseInstanceId(database_instance_id)) => {
-                    worker_db::delete_database_instance(database_instance_id);
-                    on_delete_database_instance(database_instance_id).await;
-                },
-                Some(delete_operation::Type::DatabaseId(database_id)) => {
-                    worker_db::delete_database(database_id);
-                }
-                None => {},
+        Some(schedule_update::Type::Delete(delete_operation)) => match delete_operation.r#type {
+            Some(delete_operation::Type::DatabaseInstanceId(database_instance_id)) => {
+                worker_db::delete_database_instance(database_instance_id);
+                on_delete_database_instance(database_instance_id).await;
             }
+            Some(delete_operation::Type::DatabaseId(database_id)) => {
+                worker_db::delete_database(database_id);
+            }
+            None => {}
         },
         None => todo!(),
     }
@@ -238,7 +257,9 @@ async fn init_module_on_database_instance(database_id: u64, instance_id: u64) {
     let identity = Hash::from_slice(database.identity);
     let name = database.name;
     let wasm_bytes_address = Hash::from_slice(database.wasm_bytes_address);
-    let wasm_bytes = ControlNodeClient::get_shared().get_wasm_bytes(&wasm_bytes_address).await;
+    let wasm_bytes = ControlNodeClient::get_shared()
+        .get_wasm_bytes(&wasm_bytes_address)
+        .await;
 
     let log_path = DatabaseLogger::filepath(&identity, &name, instance_id);
     let root = format!("/stdb/worker_node/database_instances");
@@ -254,7 +275,10 @@ async fn init_module_on_database_instance(database_id: u64, instance_id: u64) {
     };
 
     let host = wasm_host_controller::get_host();
-    let _address = host.init_module(worker_database_instance, wasm_bytes.clone()).await.unwrap();
+    let _address = host
+        .init_module(worker_database_instance, wasm_bytes.clone())
+        .await
+        .unwrap();
 }
 
 async fn start_module_on_database_instance(database_id: u64, instance_id: u64) {
@@ -266,7 +290,9 @@ async fn start_module_on_database_instance(database_id: u64, instance_id: u64) {
     let identity = Hash::from_slice(database.identity);
     let name = database.name;
     let wasm_bytes_address = Hash::from_slice(database.wasm_bytes_address);
-    let wasm_bytes = ControlNodeClient::get_shared().get_wasm_bytes(&wasm_bytes_address).await;
+    let wasm_bytes = ControlNodeClient::get_shared()
+        .get_wasm_bytes(&wasm_bytes_address)
+        .await;
 
     let log_path = DatabaseLogger::filepath(&identity, &name, instance_id);
     let root = format!("/stdb/worker_node/database_instances");
@@ -282,7 +308,10 @@ async fn start_module_on_database_instance(database_id: u64, instance_id: u64) {
     };
 
     let host = wasm_host_controller::get_host();
-    let _address = host.add_module(worker_database_instance, wasm_bytes.clone()).await.unwrap();
+    let _address = host
+        .add_module(worker_database_instance, wasm_bytes.clone())
+        .await
+        .unwrap();
 }
 
 lazy_static::lazy_static! {
@@ -302,7 +331,6 @@ struct IdentityResponse {
 }
 
 impl ControlNodeClient {
-
     fn set_shared(worker_api_bootstrap_addr: &str, client_api_bootstrap_addr: &str) {
         *CONTROL_NODE_CLIENT.lock().unwrap() = Some(ControlNodeClient {
             worker_api_bootstrap_addr: worker_api_bootstrap_addr.to_string(),
@@ -315,14 +343,12 @@ impl ControlNodeClient {
     }
 
     pub async fn get_new_identity(&self) -> Result<(Hash, String), anyhow::Error> {
-        let uri = format!("http://{}/identity", self.client_api_bootstrap_addr).parse::<Uri>().unwrap();
+        let uri = format!("http://{}/identity", self.client_api_bootstrap_addr)
+            .parse::<Uri>()
+            .unwrap();
 
-        let request = Request::builder()
-            .method("POST")
-            .uri(&uri)
-            .body(Body::empty())
-            .unwrap();    
-    
+        let request = Request::builder().method("POST").uri(&uri).body(Body::empty()).unwrap();
+
         let client = hyper::Client::new();
         let res = client.request(request).await.unwrap();
         let body = res.into_body();
@@ -333,14 +359,16 @@ impl ControlNodeClient {
     }
 
     async fn get_wasm_bytes(&self, wasm_bytes_address: &Hash) -> Vec<u8> {
-        let uri = format!("http://{}/wasm_bytes/{}", self.worker_api_bootstrap_addr, wasm_bytes_address.to_hex()).parse::<Uri>().unwrap();
+        let uri = format!(
+            "http://{}/wasm_bytes/{}",
+            self.worker_api_bootstrap_addr,
+            wasm_bytes_address.to_hex()
+        )
+        .parse::<Uri>()
+        .unwrap();
 
-        let request = Request::builder()
-            .method("GET")
-            .uri(&uri)
-            .body(Body::empty())
-            .unwrap();    
-    
+        let request = Request::builder().method("GET").uri(&uri).body(Body::empty()).unwrap();
+
         let client = hyper::Client::new();
         let res = client.request(request).await.unwrap();
         let body = res.into_body();
@@ -352,14 +380,19 @@ impl ControlNodeClient {
     pub async fn init_database(&self, identity: &Hash, name: &str, wasm_bytes: Vec<u8>, force: bool) {
         let hex_identity = identity.to_hex();
         let force_str = if force { "true" } else { "false" };
-        let uri = format!("http://{}/database/{}/{}/init?force={}", self.client_api_bootstrap_addr, hex_identity, name, force_str).parse::<Uri>().unwrap();
+        let uri = format!(
+            "http://{}/database/{}/{}/init?force={}",
+            self.client_api_bootstrap_addr, hex_identity, name, force_str
+        )
+        .parse::<Uri>()
+        .unwrap();
 
         let request = Request::builder()
             .method("POST")
             .uri(&uri)
             .body(Body::from(wasm_bytes))
-            .unwrap();    
-    
+            .unwrap();
+
         let client = hyper::Client::new();
         let res = client.request(request).await.unwrap();
         if !res.status().is_success() {
@@ -369,36 +402,41 @@ impl ControlNodeClient {
 
     pub async fn update_database(&self, identity: &Hash, name: &str, wasm_bytes: Vec<u8>) {
         let hex_identity = identity.to_hex();
-        let uri = format!("http://{}/database/{}/{}/update", self.client_api_bootstrap_addr, hex_identity, name).parse::<Uri>().unwrap();
+        let uri = format!(
+            "http://{}/database/{}/{}/update",
+            self.client_api_bootstrap_addr, hex_identity, name
+        )
+        .parse::<Uri>()
+        .unwrap();
 
         let request = Request::builder()
             .method("POST")
             .uri(&uri)
             .body(Body::from(wasm_bytes))
-            .unwrap();    
-    
+            .unwrap();
+
         let client = hyper::Client::new();
         let res = client.request(request).await.unwrap();
         if !res.status().is_success() {
             todo!("handle this: {:?}", res);
         }
     }
-    
+
     pub async fn delete_database(&self, identity: &Hash, name: &str) {
         let hex_identity = identity.to_hex();
-        let uri = format!("http://{}/database/{}/{}/delete", self.client_api_bootstrap_addr, hex_identity, name).parse::<Uri>().unwrap();
+        let uri = format!(
+            "http://{}/database/{}/{}/delete",
+            self.client_api_bootstrap_addr, hex_identity, name
+        )
+        .parse::<Uri>()
+        .unwrap();
 
-        let request = Request::builder()
-            .method("POST")
-            .uri(&uri)
-            .body(Body::empty())
-            .unwrap();    
-    
+        let request = Request::builder().method("POST").uri(&uri).body(Body::empty()).unwrap();
+
         let client = hyper::Client::new();
         let res = client.request(request).await.unwrap();
         if !res.status().is_success() {
             todo!("handle this: {:?}", res);
         }
     }
-
 }

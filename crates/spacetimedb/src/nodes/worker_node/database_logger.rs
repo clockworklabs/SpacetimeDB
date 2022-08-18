@@ -1,17 +1,16 @@
-use tokio::io::AsyncReadExt;
 use crate::hash::Hash;
-use std::fs::{self, File};
 use std::fs::OpenOptions;
+use std::fs::{self, File};
 use std::io::{prelude::*, SeekFrom};
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use tokio::io::AsyncReadExt;
 
 pub struct DatabaseLogger {
-    file: File
+    file: File,
 }
 
 impl DatabaseLogger {
-
     // fn log_dir_from(identity: Hash, _name: &str) -> PathBuf {
     //     let mut path = PathBuf::from(ROOT);
     //     path.push(Self::path_from_hash(identity));
@@ -32,7 +31,14 @@ impl DatabaseLogger {
 
     pub fn filepath(identity: &Hash, name: &str, instance_id: u64) -> String {
         let root = format!("/stdb/worker_node/database_instances");
-        format!("{}/{}/{}/{}/{}", root, identity.to_hex(), name, instance_id, "module_logs")
+        format!(
+            "{}/{}/{}/{}/{}",
+            root,
+            identity.to_hex(),
+            name,
+            instance_id,
+            "module_logs"
+        )
     }
 
     pub fn open(root: impl AsRef<Path>) -> Self {
@@ -43,9 +49,7 @@ impl DatabaseLogger {
         filepath.push(&PathBuf::from_str("0.log").unwrap());
 
         let file = OpenOptions::new().create(true).append(true).open(&filepath).unwrap();
-        Self {
-            file
-        }
+        Self { file }
     }
 
     pub fn _delete(&mut self) {
@@ -99,7 +103,4 @@ impl DatabaseLogger {
 
         latest.join("\n")
     }
-
 }
-
-

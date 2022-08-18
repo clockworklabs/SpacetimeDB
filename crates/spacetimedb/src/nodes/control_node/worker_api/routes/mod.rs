@@ -1,17 +1,18 @@
-
-
-use std::collections::HashMap;
-use gotham::{
-    prelude::*,
-    router::{build_simple_router, Router}, state::request_id,
-};
-use tokio::spawn;
-use crate::{websocket, nodes::control_node::{controller, object_db, control_db}, hash::Hash};
 use super::worker_connection_index::WORKER_CONNECTION_INDEX;
+use crate::{
+    hash::Hash,
+    nodes::control_node::{control_db, controller, object_db},
+    websocket,
+};
 use gotham::handler::HandlerError;
 use gotham::prelude::StaticResponseExtender;
 use gotham::state::State;
 use gotham::state::StateData;
+use gotham::{
+    prelude::*,
+    router::{build_simple_router, Router},
+    state::request_id,
+};
 use hyper::header::AUTHORIZATION;
 use hyper::Body;
 use hyper::Response;
@@ -19,6 +20,8 @@ use hyper::StatusCode;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::Deserialize;
+use std::collections::HashMap;
+use tokio::spawn;
 
 lazy_static! {
     static ref SEPARATOR: Regex = Regex::new(r"\s*,\s*").unwrap();
@@ -27,8 +30,7 @@ lazy_static! {
 pub const BIN_PROTOCOL: &str = "v1.bin.spacetimedb-worker-api";
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
-pub struct JoinParams {
-}
+pub struct JoinParams {}
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct JoinQueryParams {
@@ -51,7 +53,7 @@ async fn join(state: State) -> Result<(State, Response<Body>), (State, HandlerEr
     if let Some(_auth_header) = auth_header {
         // TODO(cloutiertyler): Validate the credentials of this connection
     }
-        
+
     let node_id = if let Some(node_id) = node_id {
         if let Some(node) = control_db::get_node(node_id).await.unwrap() {
             node.id
@@ -83,7 +85,7 @@ async fn join(state: State) -> Result<(State, Response<Body>), (State, HandlerEr
             let wci = &mut WORKER_CONNECTION_INDEX.lock().unwrap();
             wci.new_client(node_id, ws);
         }
-        
+
         controller::node_connected(node_id).await.unwrap();
     });
 
@@ -104,8 +106,12 @@ async fn wasm_bytes(mut state: State) -> Result<(State, Response<Body>), (State,
         Ok(hash) => hash,
         Err(err) => {
             log::debug!("{}", err);
-            return Err((state, HandlerError::from(anyhow::anyhow!("Unable to decode object address.")).with_status(StatusCode::BAD_REQUEST)));
-        },
+            return Err((
+                state,
+                HandlerError::from(anyhow::anyhow!("Unable to decode object address."))
+                    .with_status(StatusCode::BAD_REQUEST),
+            ));
+        }
     };
     let wasm_bytes = object_db::get_object(&hash).await.unwrap();
 

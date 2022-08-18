@@ -1,5 +1,5 @@
-use crate::nodes::control_node::controller;
 use super::worker_connection_index::WORKER_CONNECTION_INDEX;
+use crate::nodes::control_node::controller;
 use futures::{prelude::*, stream::SplitStream, SinkExt};
 use hyper::upgrade::Upgraded;
 use tokio::spawn;
@@ -70,10 +70,7 @@ pub struct WorkerConnection {
 }
 
 impl WorkerConnection {
-    pub fn new(
-        id: u64,
-        ws: WebSocketStream<Upgraded>,
-    ) -> WorkerConnection {
+    pub fn new(id: u64, ws: WebSocketStream<Upgraded>) -> WorkerConnection {
         let (mut sink, stream) = ws.split();
 
         // Buffer up to 64 client messages
@@ -176,15 +173,11 @@ impl WorkerConnection {
         }));
     }
 
-    async fn on_binary(
-        _worker_id: u64,
-        message_buf: Vec<u8>,
-    ) -> Result<(), anyhow::Error> {
+    async fn on_binary(_worker_id: u64, message_buf: Vec<u8>) -> Result<(), anyhow::Error> {
         log::error!("Not expecting control bound worker messages! {:?}", message_buf);
         // let message = ControlBoundMessage::decode(Bytes::from(message_buf))?;
         Ok(())
     }
-
 }
 
 impl Drop for WorkerConnection {

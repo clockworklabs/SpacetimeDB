@@ -53,7 +53,9 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
     };
     let wasm_bytes = data.to_vec();
 
-    ControlNodeClient::get_shared().init_database(&identity, &name, wasm_bytes, force).await;
+    ControlNodeClient::get_shared()
+        .init_database(&identity, &name, wasm_bytes, force)
+        .await;
 
     let res = Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap();
 
@@ -82,7 +84,9 @@ async fn update_module(state: &mut State) -> SimpleHandlerResult {
         }
     };
 
-    ControlNodeClient::get_shared().update_database(&identity, &name, wasm_bytes).await;
+    ControlNodeClient::get_shared()
+        .update_database(&identity, &name, wasm_bytes)
+        .await;
 
     let res = Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap();
 
@@ -109,7 +113,6 @@ async fn delete_module(state: &mut State) -> SimpleHandlerResult {
     let res = Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap();
     Ok(res)
 }
-
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct CallParams {
@@ -162,16 +165,25 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     };
     let database_instance = match worker_db::get_leader_database_instance_by_database(database.id) {
         Some(database) => database,
-        None => return Err(HandlerError::from(anyhow!("Database instance not scheduled to this node yet.")).with_status(StatusCode::NOT_FOUND)),
+        None => {
+            return Err(
+                HandlerError::from(anyhow!("Database instance not scheduled to this node yet."))
+                    .with_status(StatusCode::NOT_FOUND),
+            )
+        }
     };
     let instance_id = database_instance.id;
     let host = wasm_host_controller::get_host();
 
-    match host.call_reducer(instance_id, caller_identity, &reducer, arg_bytes).await {
+    match host
+        .call_reducer(instance_id, caller_identity, &reducer, arg_bytes)
+        .await
+    {
         Ok(_) => {}
         Err(e) => {
             log::error!("{}", e);
-            return Err(HandlerError::from(anyhow!("Database instance not ready.")).with_status(StatusCode::SERVICE_UNAVAILABLE));
+            return Err(HandlerError::from(anyhow!("Database instance not ready."))
+                .with_status(StatusCode::SERVICE_UNAVAILABLE));
         }
     }
 

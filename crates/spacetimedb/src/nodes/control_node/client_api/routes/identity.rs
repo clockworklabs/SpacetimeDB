@@ -1,3 +1,4 @@
+use crate::{auth::identity::encode_token, nodes::control_node::control_db};
 use gotham::{
     handler::SimpleHandlerResult,
     prelude::*,
@@ -6,7 +7,6 @@ use gotham::{
 };
 use hyper::{Body, Response, StatusCode};
 use serde::{Deserialize, Serialize};
-use crate::{nodes::control_node::control_db, auth::identity::encode_token};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct IdentityResponse {

@@ -1,15 +1,15 @@
+use clap::Parser;
 use clap::Subcommand;
-use futures::FutureExt;
 use futures::future::join_all;
-use spacetimedb::nodes::control_node;
-use spacetimedb::nodes::worker_node;
-use spacetimedb::nodes::node_options::NodeOptions;
-use spacetimedb::nodes::node_config::NodeConfig;
+use futures::FutureExt;
 use spacetimedb::metrics;
+use spacetimedb::nodes::control_node;
+use spacetimedb::nodes::node_config::NodeConfig;
+use spacetimedb::nodes::node_options::NodeOptions;
+use spacetimedb::nodes::worker_node;
 use spacetimedb::startup;
 use std::error::Error;
 use tokio::runtime::Builder;
-use clap::Parser;
 
 /// Module API (worker nodes, port 80/443): The API for manipulating Wasm SpacetimeDB modules
 ///     - HTTP 1.1 (/) + WebSocket + standardized protobuf/json messages + TypeDefs
@@ -46,7 +46,11 @@ async fn version() -> Result<(), Box<dyn Error + Send + Sync>> {
 async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let args = Args::parse();
     match args.command {
-        Subcommands::Init { listen_addr, advertise_addr, worker_node } => {
+        Subcommands::Init {
+            listen_addr,
+            advertise_addr,
+            worker_node,
+        } => {
             let options = NodeOptions {
                 control_node: true,
                 worker_node,
@@ -63,8 +67,14 @@ async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 control_api_advertise_addr: None,
             };
             init(options).await?
-        },
-        Subcommands::Join { advertise_addr, listen_addr, bootstrap_addrs, control_node, worker_node } => {
+        }
+        Subcommands::Join {
+            advertise_addr,
+            listen_addr,
+            bootstrap_addrs,
+            control_node,
+            worker_node,
+        } => {
             let options = NodeOptions {
                 control_node,
                 worker_node,
@@ -95,7 +105,7 @@ async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 control_api_advertise_addr: None,
             };
             init(options).await?;
-        },
+        }
         Subcommands::Version => version().await?,
     }
     Ok(())
@@ -178,7 +188,7 @@ struct Args {
 /// spacetime worker node - a spacetime node process configured to be a worker which runs spacetime modules (maybe call this a host node?)
 /// spacetime control node - a spacetime node process configured to be a controller that exposes the control API
 /// TODO: spacetime pubsub node - a node that manages the communication between workers and clients
-/// 
+///
 fn main() {
     // Create a multi-threaded run loop
     Builder::new_multi_thread()

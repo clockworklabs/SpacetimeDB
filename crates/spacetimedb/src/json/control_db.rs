@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeJson {
@@ -13,4 +13,3 @@ pub struct NodeStatus {
     // TODO: node memory, CPU, and storage allocatable capacity
     // SEE: https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/node-v1/#NodeStatus
 }
-

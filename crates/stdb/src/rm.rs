@@ -18,10 +18,7 @@ pub async fn exec(host: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
 
     let client = reqwest::Client::new();
     let res = client
-        .post(format!(
-            "http://{}/database/{}/{}/delete",
-            host, hex_identity, name
-        ))
+        .post(format!("http://{}/database/{}/{}/delete", host, hex_identity, name))
         .send()
         .await?;
 

@@ -28,7 +28,7 @@ impl Hash {
             data: slice.try_into().unwrap(),
         }
     }
-    
+
     pub fn as_slice(&self) -> &[u8] {
         self.data.as_slice()
     }

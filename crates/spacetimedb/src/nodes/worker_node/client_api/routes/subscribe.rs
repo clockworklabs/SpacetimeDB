@@ -1,9 +1,9 @@
-use crate::auth::get_creds_from_header;
-use crate::auth::invalid_token_res;
-use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
 use super::super::client_connection::Protocol;
 use super::super::client_connection_index::CLIENT_ACTOR_INDEX;
+use crate::auth::get_creds_from_header;
+use crate::auth::invalid_token_res;
 use crate::hash::Hash;
+use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
 use gotham::handler::HandlerError;
 use gotham::prelude::StaticResponseExtender;
 use gotham::state::request_id;

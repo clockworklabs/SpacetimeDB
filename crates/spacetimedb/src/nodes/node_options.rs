@@ -6,10 +6,10 @@ pub struct NodeOptions {
     pub worker_node: bool,
 
     // Worker flags
-    pub listen_addr: Option<String>, 
-    pub advertise_addr: Option<String>, 
-    pub worker_api_bootstrap_addrs: Vec<String>, 
-    pub client_api_bootstrap_addrs: Vec<String>, 
+    pub listen_addr: Option<String>,
+    pub advertise_addr: Option<String>,
+    pub worker_api_bootstrap_addrs: Vec<String>,
+    pub client_api_bootstrap_addrs: Vec<String>,
 
     // Control flags
     pub peer_api_listen_addr: Option<String>,
@@ -43,7 +43,7 @@ impl NodeOptions {
             }
         }
         self.worker_api_bootstrap_addrs = worker_api_bootstrap_addrs_defaults;
-        
+
         // So workers can connect to the Control node client API
         let mut client_api_bootstrap_addrs_defaults = Vec::new();
         if self.client_api_bootstrap_addrs.len() > 0 {

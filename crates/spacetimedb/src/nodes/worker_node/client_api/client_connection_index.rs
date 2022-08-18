@@ -1,6 +1,6 @@
-use crate::{hash::Hash, nodes::worker_node::worker_db};
-use crate::metrics::CONNECTED_GAME_CLIENTS;
 use super::super::wasm_host_controller;
+use crate::metrics::CONNECTED_GAME_CLIENTS;
+use crate::{hash::Hash, nodes::worker_node::worker_db};
 use hyper::upgrade::Upgraded;
 use lazy_static::lazy_static;
 use std::{collections::HashMap, sync::Mutex, time::Duration};

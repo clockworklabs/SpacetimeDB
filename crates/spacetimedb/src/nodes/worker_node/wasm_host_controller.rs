@@ -1,4 +1,4 @@
-
+use super::{wasm_module_host::ModuleHost, worker_database_instance::WorkerDatabaseInstance};
 use crate::hash::{hash_bytes, Hash, ToHexString};
 use anyhow;
 use lazy_static::lazy_static;
@@ -9,7 +9,6 @@ use std::{
 };
 use wasmer::{wasmparser::Operator, CompilerConfig, Module, Store, Universal, ValType};
 use wasmer_middlewares::Metering;
-use super::{wasm_module_host::ModuleHost, worker_database_instance::WorkerDatabaseInstance};
 
 const REDUCE_DUNDER: &str = "__reducer__";
 
@@ -56,7 +55,11 @@ impl WasmHostController {
         Ok(())
     }
 
-    pub async fn init_module(&self, worker_database_instance: WorkerDatabaseInstance, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+    pub async fn init_module(
+        &self,
+        worker_database_instance: WorkerDatabaseInstance,
+        wasm_bytes: Vec<u8>,
+    ) -> Result<Hash, anyhow::Error> {
         let key = worker_database_instance.database_instance_id;
         let module_hash = self.spawn_module(worker_database_instance, wasm_bytes).await?;
         let module_host = {
@@ -82,7 +85,11 @@ impl WasmHostController {
         Ok(())
     }
 
-    pub async fn _update_module(&self, worker_database_instance: WorkerDatabaseInstance, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+    pub async fn _update_module(
+        &self,
+        worker_database_instance: WorkerDatabaseInstance,
+        wasm_bytes: Vec<u8>,
+    ) -> Result<Hash, anyhow::Error> {
         let key = worker_database_instance.database_instance_id;
         let module_hash = self.spawn_module(worker_database_instance, wasm_bytes).await?;
         let module_host = {
@@ -94,7 +101,11 @@ impl WasmHostController {
         Ok(module_hash)
     }
 
-    pub async fn add_module(&self, worker_database_instance: WorkerDatabaseInstance, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+    pub async fn add_module(
+        &self,
+        worker_database_instance: WorkerDatabaseInstance,
+        wasm_bytes: Vec<u8>,
+    ) -> Result<Hash, anyhow::Error> {
         let key = worker_database_instance.database_instance_id;
         let module_hash = self.spawn_module(worker_database_instance, wasm_bytes).await?;
         let module_host = {
@@ -105,7 +116,11 @@ impl WasmHostController {
         Ok(module_hash)
     }
 
-    pub async fn spawn_module(&self, worker_database_instance: WorkerDatabaseInstance, wasm_bytes: Vec<u8>) -> Result<Hash, anyhow::Error> {
+    pub async fn spawn_module(
+        &self,
+        worker_database_instance: WorkerDatabaseInstance,
+        wasm_bytes: Vec<u8>,
+    ) -> Result<Hash, anyhow::Error> {
         let module_hash = hash_bytes(&wasm_bytes);
         let key = worker_database_instance.database_instance_id;
         let module_host = {
@@ -159,7 +174,10 @@ impl WasmHostController {
         let key = instance_id;
         let module_host = {
             let modules = self.modules.lock().unwrap();
-            modules.get(&key).ok_or(anyhow::anyhow!("No such module found."))?.clone()
+            modules
+                .get(&key)
+                .ok_or(anyhow::anyhow!("No such module found."))?
+                .clone()
         };
         module_host
             .call_reducer(caller_identity, reducer_name.into(), arg_bytes.as_ref().to_vec())
@@ -171,7 +189,10 @@ impl WasmHostController {
         let key = instance_id;
         let module_host = {
             let modules = self.modules.lock().unwrap();
-            modules.get(&key).ok_or(anyhow::anyhow!("No such module found."))?.clone()
+            modules
+                .get(&key)
+                .ok_or(anyhow::anyhow!("No such module found."))?
+                .clone()
         };
         Ok(module_host)
     }

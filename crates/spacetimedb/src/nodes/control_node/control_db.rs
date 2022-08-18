@@ -1,7 +1,7 @@
 use prost::Message;
 
-use crate::hash::{Hash, hash_bytes};
-use crate::protobuf::control_db::{IdentityEmail, Database, DatabaseInstance, Node};
+use crate::hash::{hash_bytes, Hash};
+use crate::protobuf::control_db::{Database, DatabaseInstance, IdentityEmail, Node};
 
 lazy_static::lazy_static! {
     static ref CONTROL_DB: sled::Db = init().unwrap();
@@ -56,7 +56,7 @@ pub async fn get_database_by_address(identity: &Hash, name: &str) -> Result<Opti
     let value = tree.get(key.as_bytes())?;
     if let Some(value) = value {
         let database = Database::decode(&value.to_vec()[..]).unwrap();
-        return Ok(Some(database))
+        return Ok(Some(database));
     }
     return Ok(None);
 }
@@ -69,9 +69,9 @@ pub async fn insert_database(mut database: Database) -> Result<u64, anyhow::Erro
     if tree.contains_key(key.as_bytes())? {
         return Err(anyhow::anyhow!("Database with address {} already exists", key));
     }
-    
+
     database.id = id;
-    
+
     let mut buf = Vec::new();
     database.encode(&mut buf).unwrap();
 
@@ -87,11 +87,11 @@ pub async fn update_database(database: Database) -> Result<(), anyhow::Error> {
     let tree = CONTROL_DB.open_tree("database")?;
     let tree_by_address = CONTROL_DB.open_tree("database_by_address")?;
     let key = format!("{}/{}", Hash::from_slice(&database.identity).to_hex(), database.name);
-  
+
     let old_value = tree.get(database.id.to_be_bytes())?;
     if let Some(old_value) = old_value {
         let old_database = Database::decode(&old_value.to_vec()[..])?;
-        
+
         if database.identity != old_database.identity || database.name != old_database.name {
             if tree_by_address.contains_key(key.as_bytes())? {
                 return Err(anyhow::anyhow!("Database with address {} already exists", key));
@@ -142,7 +142,7 @@ pub async fn get_database_instances_by_database(database_id: u64) -> Result<Vec<
     // TODO: because we don't have foreign key constraints it's actually possible to have
     // instances in here with no database. Although we'd be in a bit of a corrupted state
     // in that case
-    // 
+    //
     // let tree = CONTROL_DB.open_tree("database")?;
     // if !tree.contains_key(database_id.to_be_bytes())? {
     //     return Err(anyhow::anyhow!("No such database."));

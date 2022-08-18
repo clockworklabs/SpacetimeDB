@@ -1,6 +1,6 @@
-use crate::nodes::control_node::controller;
-use crate::hash::Hash;
 use crate::hash::hash_bytes;
+use crate::hash::Hash;
+use crate::nodes::control_node::controller;
 use crate::nodes::control_node::object_db;
 use gotham::anyhow::anyhow;
 use gotham::handler::HandlerError;
@@ -119,6 +119,5 @@ pub fn router() -> Router {
             .post("/:identity/:name/delete")
             .with_path_extractor::<DeleteDatabaseParams>()
             .to_async_borrowing(delete_database);
-
     })
 }
