@@ -137,9 +137,7 @@ async fn on_binary(node_id: u64, message: Vec<u8>) -> Result<(), anyhow::Error> 
     Ok(())
 }
 
-async fn on_schedule_state(node_id: u64, schedule_state: ScheduleState) {
-    println!("node_id: {}", node_id);
-    println!("schedule_state: {:?}", schedule_state);
+async fn on_schedule_state(_node_id: u64, schedule_state: ScheduleState) {
     worker_db::init_with_schedule_state(schedule_state);
 
     for instance in worker_db::get_database_instances() {
@@ -147,9 +145,7 @@ async fn on_schedule_state(node_id: u64, schedule_state: ScheduleState) {
     }
 }
 
-async fn on_schedule_update(node_id: u64, schedule_update: ScheduleUpdate) {
-    println!("node_id: {}", node_id);
-    println!("schedule_update: {:?}", schedule_update);
+async fn on_schedule_update(_node_id: u64, schedule_update: ScheduleUpdate) {
     match schedule_update.r#type {
         Some(schedule_update::Type::Insert(insert_operation)) => {
             match insert_operation.r#type {
@@ -196,7 +192,6 @@ async fn on_schedule_update(node_id: u64, schedule_update: ScheduleUpdate) {
 }
 
 async fn on_insert_database_instance(instance: DatabaseInstance) {
-    println!("SNAPPP {:?}", instance);
     let state = worker_db::get_database_instance_state(instance.id).unwrap();
     if let Some(mut state) = state {
         if !state.initialized {
@@ -330,10 +325,8 @@ impl ControlNodeClient {
     
         let client = hyper::Client::new();
         let res = client.request(request).await.unwrap();
-        println!("{:?}", res);
         let body = res.into_body();
         let bytes = body::to_bytes(body).await.unwrap();
-        println!("{}", String::from_utf8(bytes.to_vec().clone()).unwrap());
         let res: IdentityResponse = serde_json::from_slice(&bytes[..])?;
 
         Ok((Hash::from_hex(&res.identity).unwrap(), res.token))
@@ -361,7 +354,6 @@ impl ControlNodeClient {
         let force_str = if force { "true" } else { "false" };
         let uri = format!("http://{}/database/{}/{}/init?force={}", self.client_api_bootstrap_addr, hex_identity, name, force_str).parse::<Uri>().unwrap();
 
-        println!("{}", uri);
         let request = Request::builder()
             .method("POST")
             .uri(&uri)
