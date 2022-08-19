@@ -317,10 +317,16 @@ impl Drop for ClientConnection {
             let host = wasm_host_controller::get_host();
             let module = host.get_module(instance_id);
             match module {
-                Ok(module) => module
-                    .remove_subscriber(client_id)
-                    .await
-                    .expect("Could not remove module subscription"),
+                Ok(module) => {
+                    module
+                        .call_identity_connected_disconnected(client_id.identity, false)
+                        .await
+                        .unwrap();
+                    module
+                        .remove_subscriber(client_id)
+                        .await
+                        .expect("Could not remove module subscription")
+                }
                 Err(e) => {
                     log::warn!(
                         "Could not find module {} to unsubscribe dropped connection {:?}",

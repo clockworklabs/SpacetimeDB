@@ -108,6 +108,50 @@ impl Arguments for RepeatingReducerArguments {
     }
 }
 
+// Represents the arguments to a reducer.
+#[derive(Clone, Debug)]
+pub struct ConnectDisconnectArguments {
+    pub identity: Hash,
+    pub timestamp: u64,
+}
+
+impl ConnectDisconnectArguments {
+    pub fn new(identity: Hash, timestamp: u64) -> Self {
+        Self { identity, timestamp }
+    }
+}
+
+impl ConnectDisconnectArguments {
+    pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let mut r = SliceReader::new(bytes);
+        let identity = Hash::from_slice(r.get_slice(HASH_SIZE)?);
+        let timestamp = r.get_u64()?;
+
+        Ok(Self { identity, timestamp })
+    }
+
+    pub fn decode_mem(arg_ptr: *mut u8, arg_size: usize) -> Result<Self, DecodeError> {
+        if arg_size < std::mem::size_of::<u64>() + HASH_SIZE {
+            return Err(BufferLength);
+        }
+
+        let bytes = unsafe { std::slice::from_raw_parts(arg_ptr, arg_size) };
+
+        Self::decode(bytes)
+    }
+}
+
+impl Arguments for ConnectDisconnectArguments {
+    fn encoded_size(&self) -> usize {
+        std::mem::size_of::<u64>() + HASH_SIZE
+    }
+
+    fn encode<W: BufWriter>(&self, writer: &mut W) {
+        writer.put_slice(&self.identity.data[..]);
+        writer.put_u64(self.timestamp);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::args::{Arguments, ReducerArguments, RepeatingReducerArguments};

@@ -149,6 +149,10 @@ impl ClientActorIndex {
             let host = wasm_host_controller::get_host();
             let module = host.get_module(instance_id).unwrap();
             module.add_subscriber(client_id).await.unwrap();
+            module
+                .call_identity_connected_disconnected(identity, true)
+                .await
+                .unwrap();
         });
         client_id
     }

@@ -197,7 +197,18 @@ async fn on_upgrade(
             Err(err) => Err(err),
         };
         match ws {
-            Ok(ws) => on_connected(identity, identity_token_clone, module_identity, module_name, headers, protocol, ws).await,
+            Ok(ws) => {
+                on_connected(
+                    identity,
+                    identity_token_clone,
+                    module_identity,
+                    module_name,
+                    headers,
+                    protocol,
+                    ws,
+                )
+                .await
+            }
             Err(err) => log::error!("WebSocket init error for req_id {}: {}", req_id, err),
         }
     });

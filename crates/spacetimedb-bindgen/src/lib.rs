@@ -915,9 +915,9 @@ fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connec
 
     let mut arg_num: usize = 0;
     for function_argument in original_function.sig.inputs.iter() {
-        if arg_num > 0 {
+        if arg_num > 1 {
             return proc_macro::TokenStream::from(quote! {
-                compile_error!("Client connected/disconnected can only have one argument (u64)");
+                compile_error!("Client connect/disconnect can only have one argument (identity: Hash)");
             });
         }
 
@@ -930,13 +930,36 @@ fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connec
             FnArg::Typed(typed) => {
                 let arg_type = &typed.ty;
                 let arg_token = arg_type.to_token_stream();
-                let arg_string = arg_token.to_string();
-                let arg_string = arg_string.as_str();
+                let arg_type_str = arg_token.to_string();
 
-                if !arg_string.eq("u64") {
-                    return proc_macro::TokenStream::from(quote! {
-                        compile_error!("Client connected/disconnected can only have one argument (u64)");
-                    });
+                // First argument must be Hash (sender)
+                if arg_num == 0 {
+                    if arg_type_str != "spacetimedb_bindings :: hash :: Hash" && arg_type_str != "Hash" {
+                        let error_str = format!(
+                            "Parameter 1 of connect/disconnect {} must be of type \'Hash\'.",
+                            func_name.to_string()
+                        );
+                        return proc_macro::TokenStream::from(quote! {
+                            compile_error!(#error_str);
+                        });
+                    }
+                    arg_num += 1;
+                    continue;
+                }
+
+                // Second argument must be a u64 (timestamp)
+                if arg_num == 1 {
+                    if arg_type_str != "u64" {
+                        let error_str = format!(
+                            "Parameter 1 of connect/disconnect {} must be of type \'Hash\'.",
+                            func_name.to_string()
+                        );
+                        return proc_macro::TokenStream::from(quote! {
+                            compile_error!(#error_str);
+                        });
+                    }
+                    arg_num += 1;
+                    continue;
                 }
             }
         }
@@ -948,16 +971,11 @@ fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connec
         #[no_mangle]
         #[allow(non_snake_case)]
         pub extern "C" fn #connect_disconnect_ident(arg_ptr: usize, arg_size: usize) {
-            let arg_ptr = arg_ptr as *mut u8;
-            let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(arg_ptr, arg_size, arg_size) };
-            let arg_json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-            let args = arg_json.as_array().unwrap();
-
-            // Deserialize the json argument list
-            let actor_id : u64 = serde_json::from_value(args[0].clone()).unwrap();
+            let arguments = spacetimedb_bindings::args::ConnectDisconnectArguments::decode_mem(
+                unsafe {arg_ptr as *mut u8 }, arg_size).expect("Unable to decode module arguments");
 
             // Invoke the function with the deserialized args
-            #func_name(actor_id);
+            #func_name(arguments.identity, arguments.timestamp,);
         }
     };
 
