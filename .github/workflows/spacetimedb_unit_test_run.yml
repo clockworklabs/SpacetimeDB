@@ -22,7 +22,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: check
-          args: --all --features rocksdb,sled
+          args: --all --features odb_rocksdb,odb_sled
 
   test:
     name: Test Suite
@@ -42,7 +42,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all  --features rocksdb,sled
+          args: --all  --features odb_rocksdb,odb_sled
 
   lints:
     name: Lints

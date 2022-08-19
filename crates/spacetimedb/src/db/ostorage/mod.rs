@@ -4,9 +4,10 @@ use crate::hash::Hash;
 
 pub mod hashmap_object_db;
 
-#[cfg(feature = "rocksdb")]
+#[cfg(feature = "odb_rocksdb")]
 pub mod rocks_object_db;
 
+#[cfg(feature = "odb_sled")]
 pub mod sled_object_db;
 
 // Trait defined for any object store which maps keys ("Hash") to their in-memory or secondary
