@@ -4,7 +4,7 @@
 /// TODO: Split this up into ServerBound and ClientBound if there's no overlap
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Message {
-    #[prost(oneof="message::Type", tags="1, 2, 3, 4")]
+    #[prost(oneof="message::Type", tags="1, 2, 3, 4, 5")]
     pub r#type: ::std::option::Option<message::Type>,
 }
 pub mod message {
@@ -18,7 +18,16 @@ pub mod message {
         Event(super::Event),
         #[prost(message, tag="4")]
         TransactionUpdate(super::TransactionUpdate),
+        #[prost(message, tag="5")]
+        IdentityToken(super::IdentityToken),
     }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IdentityToken {
+    #[prost(bytes, tag="1")]
+    pub identity: std::vec::Vec<u8>,
+    #[prost(string, tag="2")]
+    pub token: std::string::String,
 }
 /// TODO: Evaluate if it makes sense for this to also include the
 /// identity and name of the module this is calling

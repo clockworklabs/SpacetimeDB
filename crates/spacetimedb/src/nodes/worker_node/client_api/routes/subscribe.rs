@@ -85,6 +85,7 @@ fn invalid_protocol_res() -> Response<Body> {
 
 async fn on_connected(
     identity: Hash,
+    identity_token: String,
     module_identity: Hash,
     module_name: String,
     headers: HeaderMap,
@@ -104,10 +105,18 @@ async fn on_connected(
         None => log::debug!("New client connected from unknown ip"),
     }
 
-    {
+    let sender = {
         let cai = &mut CLIENT_ACTOR_INDEX.lock().unwrap();
-        cai.new_client(identity, module_identity, module_name.clone(), protocol, ws)
+        let id = cai.new_client(identity, module_identity, module_name.clone(), protocol, ws);
+        cai.get_client(&id).unwrap().sender()
     };
+
+    // Send the client their identity token message as the first message
+    // NOTE: We're adding this to the protocol because some client libraries are
+    // unable to access the http response headers.
+    // Clients that receive the token from the response headers should ignore this
+    // message.
+    sender.send_identity_token_message(identity, identity_token).await;
 }
 
 async fn on_upgrade(
@@ -181,13 +190,14 @@ async fn on_upgrade(
     };
 
     let req_id = request_id(&state).to_owned();
+    let identity_token_clone = identity_token.clone();
     tokio::spawn(async move {
         let ws = match on_upgrade.await {
             Ok(upgraded) => Ok(WebSocketStream::from_raw_socket(upgraded, Role::Server, None).await),
             Err(err) => Err(err),
         };
         match ws {
-            Ok(ws) => on_connected(identity, module_identity, module_name, headers, protocol, ws).await,
+            Ok(ws) => on_connected(identity, identity_token_clone, module_identity, module_name, headers, protocol, ws).await,
             Err(err) => log::error!("WebSocket init error for req_id {}: {}", req_id, err),
         }
     });

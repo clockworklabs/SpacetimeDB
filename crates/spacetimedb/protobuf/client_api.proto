@@ -12,7 +12,13 @@ message Message {
         SubscriptionUpdate subscriptionUpdate = 2;
         Event event = 3;
         TransactionUpdate transactionUpdate = 4;
+        IdentityToken identityToken = 5;
     }
+}
+
+message IdentityToken {
+    bytes identity = 1;
+    string token = 2;
 }
 
 // TODO: Evaluate if it makes sense for this to also include the

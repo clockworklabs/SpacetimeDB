@@ -1,7 +1,10 @@
 use super::client_connection_index::CLIENT_ACTOR_INDEX;
 use crate::hash::Hash;
+use crate::json::client_api::IdentityTokenJson;
+use crate::json::client_api::MessageJson;
 use crate::nodes::worker_node::wasm_host_controller;
 use crate::nodes::worker_node::worker_db;
+use crate::protobuf::client_api::IdentityToken;
 use crate::protobuf::client_api::{message, Message};
 use futures::{prelude::*, stream::SplitStream, SinkExt};
 use hyper::upgrade::Upgraded;
@@ -42,6 +45,7 @@ struct SendCommand {
 #[derive(Clone, Debug)]
 pub struct ClientConnectionSender {
     pub id: ClientActorId,
+    pub protocol: Protocol,
     sendtx: mpsc::Sender<SendCommand>,
 }
 
@@ -61,7 +65,29 @@ impl ClientConnectionSender {
         osrx.await.unwrap()
     }
 
-    pub async fn _send_message_warn_fail(self, message: WebSocketMessage) {
+    pub async fn send_identity_token_message(self, identity: Hash, identity_token: String) {
+        let message = if self.protocol == Protocol::Binary {
+            let message = Message {
+                r#type: Some(message::Type::IdentityToken(IdentityToken {
+                    identity: identity.as_slice().to_vec(),
+                    token: identity_token,
+                })),
+            };
+            let mut buf = Vec::new();
+            message.encode(&mut buf).unwrap();
+            WebSocketMessage::Binary(buf)
+        } else {
+            let message = MessageJson::IdentityToken(IdentityTokenJson {
+                identity: identity.to_hex(),
+                token: identity_token,
+            });
+            let json = serde_json::to_string(&message).unwrap();
+            WebSocketMessage::Text(json)
+        };
+        self.send_message_warn_fail(message).await;
+    }
+
+    pub async fn send_message_warn_fail(self, message: WebSocketMessage) {
         let id = self.id;
         if let Err(error) = self.send(message).await {
             log::warn!("Message send failed for client {:?}: {}", id, error);
@@ -146,6 +172,7 @@ impl ClientConnection {
         return ClientConnectionSender {
             id: self.id,
             sendtx: self.sendtx.clone(),
+            protocol: self.protocol,
         };
     }
 

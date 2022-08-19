@@ -7,6 +7,13 @@ pub enum MessageJson {
     SubscriptionUpdate(SubscriptionUpdateJson),
     Event(EventJson),
     TransactionUpdate(TransactionUpdateJson),
+    IdentityToken(IdentityTokenJson),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityTokenJson {
+    pub identity: String,
+    pub token: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
