@@ -2,6 +2,8 @@ use clap::Arg;
 use clap::ArgMatches;
 use std::fs;
 
+use crate::config::Config;
+
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("init")
         .about("Create a new SpacetimeDB account.")
@@ -13,7 +15,7 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help init for more detailed information.\n`")
 }
 
-pub async fn exec(host: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let hex_identity = args.value_of("identity").unwrap();
     let name = args.value_of("name").unwrap();
     let path_to_project = args.value_of("path to project").unwrap();
@@ -26,7 +28,7 @@ pub async fn exec(host: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let res = client
         .post(format!(
             "http://{}/database/{}/{}/init?force={}",
-            host, hex_identity, name, force
+            config.host, hex_identity, name, force
         ))
         .body(wasm_bytes)
         .send()

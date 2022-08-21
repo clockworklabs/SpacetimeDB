@@ -3,6 +3,7 @@ use prost::Message;
 use crate::hash::{hash_bytes, Hash};
 use crate::protobuf::control_db::{Database, DatabaseInstance, IdentityEmail, Node};
 
+// TODO: Consider making not static
 lazy_static::lazy_static! {
     static ref CONTROL_DB: sled::Db = init().unwrap();
 }
@@ -26,7 +27,10 @@ pub async fn alloc_spacetime_identity() -> Result<Hash, anyhow::Error> {
     Ok(hash)
 }
 
-pub async fn _associate_email_spacetime_identity(identity: &Hash, email: &str) -> Result<(), anyhow::Error> {
+pub async fn associate_email_spacetime_identity(identity: &Hash, email: &str) -> Result<(), anyhow::Error> {
+    // Lowercase the email before storing
+    let email = email.to_lowercase();
+
     let tree = CONTROL_DB.open_tree("email")?;
     let identity_email = IdentityEmail {
         identity: identity.as_slice().to_vec(),

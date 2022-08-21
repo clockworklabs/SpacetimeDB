@@ -1,9 +1,8 @@
 use crate::nodes::worker_node::client_api::proxy::proxy_to_control_node_client_api;
 use gotham::{
     prelude::*,
-    router::{build_simple_router, Router},
+    router::{build_simple_router, Router, route::matcher::AnyRouteMatcher},
 };
-use gotham::router::route::matcher::AnyRouteMatcher;
 
 pub fn router() -> Router {
     build_simple_router(|route| {

@@ -1,6 +1,8 @@
 use clap::Arg;
 use clap::ArgMatches;
 
+use crate::config::Config;
+
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("call")
         .about("Invokes a SpacetimeDB function.")
@@ -12,7 +14,7 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help call for more detailed information.\n`")
 }
 
-pub async fn exec(host: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let hex_identity = args.value_of("identity").unwrap();
     let name = args.value_of("name").unwrap();
     let function_name = args.value_of("function_name").unwrap();
@@ -22,7 +24,7 @@ pub async fn exec(host: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let res = client
         .post(format!(
             "http://{}/database/{}/{}/call/{}",
-            host, hex_identity, name, function_name
+            config.host, hex_identity, name, function_name
         ))
         .body(arg_json.to_owned())
         .send()

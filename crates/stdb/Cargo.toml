@@ -10,3 +10,8 @@ clap = { version = "3.1.17", features = ["derive"] }
 reqwest = "0.11.10"
 tokio = { version = "1", features = ["full"] }
 anyhow = { version = "1.0.57", features = ["backtrace"] }
+serde = { version = "1.0.136" , features = ["derive"] }
+serde_json = "1.0"
+toml = "0.5"
+dirs = "4.0"
+tabled = "0.8.0"

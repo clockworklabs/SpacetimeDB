@@ -320,8 +320,8 @@ lazy_static::lazy_static! {
 
 #[derive(Debug, Clone)]
 pub struct ControlNodeClient {
-    worker_api_bootstrap_addr: String,
-    client_api_bootstrap_addr: String,
+    pub worker_api_bootstrap_addr: String,
+    pub client_api_bootstrap_addr: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -377,7 +377,7 @@ impl ControlNodeClient {
         bytes.to_vec()
     }
 
-    pub async fn init_database(&self, identity: &Hash, name: &str, wasm_bytes: Vec<u8>, force: bool) {
+    pub async fn _init_database(&self, identity: &Hash, name: &str, wasm_bytes: Vec<u8>, force: bool) {
         let hex_identity = identity.to_hex();
         let force_str = if force { "true" } else { "false" };
         let uri = format!(
@@ -400,7 +400,7 @@ impl ControlNodeClient {
         }
     }
 
-    pub async fn update_database(&self, identity: &Hash, name: &str, wasm_bytes: Vec<u8>) {
+    pub async fn _update_database(&self, identity: &Hash, name: &str, wasm_bytes: Vec<u8>) {
         let hex_identity = identity.to_hex();
         let uri = format!(
             "http://{}/database/{}/{}/update",
@@ -422,7 +422,7 @@ impl ControlNodeClient {
         }
     }
 
-    pub async fn delete_database(&self, identity: &Hash, name: &str) {
+    pub async fn _delete_database(&self, identity: &Hash, name: &str) {
         let hex_identity = identity.to_hex();
         let uri = format!(
             "http://{}/database/{}/{}/delete",

@@ -1,6 +1,8 @@
 use clap::Arg;
 use clap::ArgMatches;
 
+use crate::config::Config;
+
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("revert")
         .about("Reverts the database to a given point in time.")
@@ -10,7 +12,7 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help revert for more detailed information.\n`")
 }
 
-pub async fn exec(_host: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let project_name = args.value_of("project name").unwrap();
     let timestamp_or_hash = args.value_of("timestamp").unwrap();
 

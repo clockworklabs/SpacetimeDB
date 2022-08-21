@@ -2,6 +2,8 @@ use anyhow::Ok;
 use clap::Arg;
 use clap::ArgMatches;
 
+use crate::config::Config;
+
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("metrics")
         .about("Prints metrics.")
@@ -10,7 +12,7 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help metrics for more detailed information.\n`")
 }
 
-pub async fn exec(_host: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let project_name = args.value_of("project name").unwrap();
 
     println!("This is your project name: {}", project_name);

@@ -1,6 +1,8 @@
 use clap::Arg;
 use clap::ArgMatches;
 
+use crate::config::Config;
+
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("logs")
         .about("Prints logs from a SpacetimeDB database.")
@@ -11,14 +13,14 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help logs for more detailed information.\n`")
 }
 
-pub async fn exec(host: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let hex_identity = args.value_of("identity").unwrap();
     let name = args.value_of("name").unwrap();
     let num_lines = args.value_of("num_lines").unwrap();
 
     let client = reqwest::Client::new();
     let res = client
-        .get(format!("http://{}/database/{}/{}/logs", host, hex_identity, name))
+        .get(format!("http://{}/database/{}/{}/logs", config.host, hex_identity, name))
         .query(&[("num_lines", num_lines)])
         .send()
         .await?;

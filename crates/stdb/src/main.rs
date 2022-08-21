@@ -1,118 +1,88 @@
-use clap::error::ContextKind;
-use clap::error::ContextValue;
+mod subcommands;
+mod config;
+mod util;
+use anyhow;
 use clap::ArgMatches;
 use clap::Command;
-use std::process::exit;
 use std::vec;
+use subcommands::*;
+use crate::config::Config;
 
-mod call;
-mod energy;
-mod identity;
-mod init;
-mod login;
-mod logs;
-mod metrics;
-mod query;
-mod revert;
-mod rm;
-mod signup;
-mod update;
+
+// Postgres table output example
+//  id  |         created_at         |              email               | email_is_verified | unsubscribed |         updated_at         | signed_pre_release_nda
+// -----+----------------------------+----------------------------------+-------------------+--------------+----------------------------+------------------------
+//    3 | 2021-09-14 16:15:15.588103 | alessandro@clockworklabs.io      | f                 | f            | 2022-02-02 15:30:19.954958 | t
+//    1 | 2021-09-13 19:25:54.022595 | tyler@clockworklabs.io           | f                 | f            | 2022-02-02 15:27:20.231872 | f
+//    4 | 2021-09-14 17:21:36.542987 | carterminshull@hotmail.com       | f                 | f            | 2022-02-02 15:27:20.231872 | f
+//    5 | 2021-09-16 13:15:32.673589 | yoyeswell@gmail.com              | t                 | f            | 2022-02-02 15:27:20.231872 | f
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let host = "localhost:3000";
-    let args = match get_command().try_get_matches() {
-        Ok(args) => args,
-        Err(e) => {
-            if e.kind() == clap::ErrorKind::UnrecognizedSubcommand {
-                let cmd = e
-                    .context()
-                    .find_map(|c| match c {
-                        (ContextKind::InvalidSubcommand, &ContextValue::String(ref cmd)) => Some(cmd),
-                        _ => None,
-                    })
-                    .expect("UnrecognizedSubcommand implies the presence of InvalidSubcommand");
+    let config = Config::load(); 
+    // Save a default version to disk
+    config.save();
 
-                println!("invalid command: {}", cmd);
-                exit(0);
-            } else {
-                e.exit();
-            }
-        }
-    };
-    match args.subcommand() {
-        Some((cmd, subcommand_args)) => exec_subcommand(host, cmd, subcommand_args).await?,
-        None => {
-            get_command().print_help().unwrap();
-            exit(0);
-        }
-    }
+    let (cmd, subcommand_args) = util::match_subcommand_or_exit(get_command());
+    exec_subcommand(config, &cmd, &subcommand_args).await?;
+
     Ok(())
 }
 
 fn get_command() -> Command<'static> {
     Command::new("stdb")
-        .allow_external_subcommands(true)
+        .args_conflicts_with_subcommands(true)
+        .subcommand_required(true)
         .subcommands(get_subcommands())
-        .override_usage("stdb [OPTIONS] [SUBCOMMAND]")
         .help_template(
             "\
-Client program for SpacetimeDB
-
-Usage: {usage}
+┌──────────────────────────────────────────────────────────┐
+│ SpacetimeDB Command Line Tool                            │
+│ Easily interact with a SpacetimeDB cluster               │
+│                                                          │
+│ Please give us feedback at:                              │
+│ https://github.com/clockworklabs/SpacetimeDB/issues      │
+└──────────────────────────────────────────────────────────┘
+Usage:
+{usage}
 
 Options:
 {options}
 
-Some common SpacetimeDB commands are
-    init        Initializes a new Spacetime database
-    update      Updates the Wasm module of an existing Spacetime database
-    rm          Removes the Wasm module of an existing Spacetime database
-    logs        Prints logs from a Spacetime database
-    call        Invokes a Spacetime function
-    identity    Requests a new Spacetime Identity and token
-",
-        )
-    //signup      Creates a new SpacetimeDB identity using your email
-    //login       Login using an existing identity
-    //energy      Invokes commands related to energy
-    //query       Run a SQL query on the database
-    //revert      Reverts the database to a given point in time
-    //metrics     Prints metrics
+Commands:
+{subcommands}
+")
 }
 
 fn get_subcommands() -> Vec<Command<'static>> {
     vec![
+        version::cli(),
         init::cli(),
         update::cli(),
         rm::cli(),
         logs::cli(),
         call::cli(),
         identity::cli(),
-        // TODO
         energy::cli(),
-        login::cli(),
         metrics::cli(),
         query::cli(),
         revert::cli(),
-        signup::cli(),
     ]
 }
 
-async fn exec_subcommand(host: &str, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     match cmd {
-        "identity" => identity::exec(host, args).await,
-        "call" => call::exec(host, args).await,
-        "energy" => energy::exec(host, args).await,
-        "init" => init::exec(host, args).await,
-        "rm" => rm::exec(host, args).await,
-        "login" => login::exec(host, args).await,
-        "logs" => logs::exec(host, args).await,
-        "metrics" => metrics::exec(host, args).await,
-        "query" => query::exec(host, args).await,
-        "revert" => revert::exec(host, args).await,
-        "signup" => signup::exec(host, args).await,
-        "update" => update::exec(host, args).await,
-        _ => Err(anyhow::anyhow!("invalid subcommand")),
+        "version" => version::exec(config, args).await,
+        "identity" => identity::exec(config, args).await,
+        "call" => call::exec(config, args).await,
+        "energy" => energy::exec(config, args).await,
+        "init" => init::exec(config, args).await,
+        "rm" => rm::exec(config, args).await,
+        "logs" => logs::exec(config, args).await,
+        "metrics" => metrics::exec(config, args).await,
+        "query" => query::exec(config, args).await,
+        "revert" => revert::exec(config, args).await,
+        "update" => update::exec(config, args).await,
+        unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
