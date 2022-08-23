@@ -1,13 +1,21 @@
-use crate::{auth::{identity::{encode_token, decode_token}, get_creds_from_header, invalid_token_res}, nodes::control_node::control_db, hash::Hash};
+use crate::{
+    auth::{
+        get_creds_from_header,
+        identity::{decode_token, encode_token},
+        invalid_token_res,
+    },
+    hash::Hash,
+    nodes::control_node::control_db,
+};
+use email_address;
 use gotham::{
     handler::SimpleHandlerResult,
     prelude::*,
     router::{build_simple_router, Router},
     state::State,
 };
-use hyper::{Body, Response, StatusCode, HeaderMap, header::AUTHORIZATION};
+use hyper::{header::AUTHORIZATION, Body, HeaderMap, Response, StatusCode};
 use serde::{Deserialize, Serialize};
-use email_address;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct IdentityResponse {
@@ -44,12 +52,8 @@ struct SetEmailQueryParams {
 }
 
 async fn set_email(state: &mut State) -> SimpleHandlerResult {
-    let SetEmailParams {
-        identity,
-    } = SetEmailParams::take_from(state);
-    let SetEmailQueryParams {
-        email,
-    } = SetEmailQueryParams::take_from(state);
+    let SetEmailParams { identity } = SetEmailParams::take_from(state);
+    let SetEmailQueryParams { email } = SetEmailQueryParams::take_from(state);
     let headers = state.borrow::<HeaderMap>();
     let auth_header = headers.get(AUTHORIZATION);
     let (_caller_identity, caller_identity_token) = if let Some(auth_header) = auth_header {
@@ -86,15 +90,14 @@ async fn set_email(state: &mut State) -> SimpleHandlerResult {
                 .status(StatusCode::BAD_REQUEST)
                 .body(Body::empty())
                 .unwrap());
-        },
+        }
     };
 
-    control_db::associate_email_spacetime_identity(&identity, &email).await.unwrap();
-
-    let res = Response::builder()
-        .status(StatusCode::OK)
-        .body(Body::empty())
+    control_db::associate_email_spacetime_identity(&identity, &email)
+        .await
         .unwrap();
+
+    let res = Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap();
 
     Ok(res)
 }
@@ -102,7 +105,8 @@ async fn set_email(state: &mut State) -> SimpleHandlerResult {
 pub fn router() -> Router {
     build_simple_router(|route| {
         route.post("/").to_async_borrowing(get_identity);
-        route.post("/:identity/set-email")
+        route
+            .post("/:identity/set-email")
             .with_path_extractor::<SetEmailParams>()
             .with_query_string_extractor::<SetEmailQueryParams>()
             .to_async_borrowing(set_email);

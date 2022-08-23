@@ -1,13 +1,12 @@
-mod subcommands;
 mod config;
+mod subcommands;
 mod util;
+use crate::config::Config;
 use anyhow;
 use clap::ArgMatches;
 use clap::Command;
 use std::vec;
 use subcommands::*;
-use crate::config::Config;
-
 
 // Postgres table output example
 //  id  |         created_at         |              email               | email_is_verified | unsubscribed |         updated_at         | signed_pre_release_nda
@@ -19,7 +18,7 @@ use crate::config::Config;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let config = Config::load(); 
+    let config = Config::load();
     // Save a default version to disk
     config.save();
 
@@ -51,7 +50,8 @@ Options:
 
 Commands:
 {subcommands}
-")
+",
+        )
 }
 
 fn get_subcommands() -> Vec<Command<'static>> {

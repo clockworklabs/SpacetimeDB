@@ -1,7 +1,7 @@
+use crate::config::Config;
 use clap::Arg;
 use clap::ArgMatches;
 use std::fs;
-use crate::config::Config;
 
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("update")
@@ -23,7 +23,10 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let client = reqwest::Client::new();
     let res = client
-        .post(format!("http://{}/database/{}/{}/update", config.host, hex_identity, name))
+        .post(format!(
+            "http://{}/database/{}/{}/update",
+            config.host, hex_identity, name
+        ))
         .body(wasm_bytes)
         .send()
         .await?;

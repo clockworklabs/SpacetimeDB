@@ -1,6 +1,8 @@
-use std::{fs, io::{Read, Write}};
-use serde::{Serialize, Deserialize};
-
+use serde::{Deserialize, Serialize};
+use std::{
+    fs,
+    io::{Read, Write},
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct IdentityConfig {
@@ -71,7 +73,7 @@ impl Config {
             .write(true)
             .open(config_path)
             .unwrap();
-        
+
         let str = toml::to_string_pretty(self).unwrap();
 
         file.set_len(0).unwrap();
@@ -98,24 +100,30 @@ impl Config {
     }
 
     pub fn get_identity_config_by_name(&self, name: &str) -> Option<&IdentityConfig> {
-        self.identity_configs.iter().find(|c| c.nickname.as_ref() == Some(&name.to_string()))
+        self.identity_configs
+            .iter()
+            .find(|c| c.nickname.as_ref() == Some(&name.to_string()))
     }
-    
+
     pub fn get_identity_config_by_identity(&self, identity: &str) -> Option<&IdentityConfig> {
         self.identity_configs.iter().find(|c| &c.identity == identity)
     }
-    
+
     pub fn get_identity_config_by_identity_mut(&mut self, identity: &str) -> Option<&mut IdentityConfig> {
         self.identity_configs.iter_mut().find(|c| &c.identity == identity)
     }
 
     pub fn update_default_identity(&mut self) {
         if let Some(default_identity) = &self.default_identity {
-            if self.identity_configs.iter().map(|c| &c.identity).any(|i| i == default_identity) {
+            if self
+                .identity_configs
+                .iter()
+                .map(|c| &c.identity)
+                .any(|i| i == default_identity)
+            {
                 return;
             }
         }
         self.default_identity = self.identity_configs.first().map(|c| c.identity.clone())
     }
-
 }

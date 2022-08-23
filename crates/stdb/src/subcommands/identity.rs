@@ -1,7 +1,7 @@
-use clap::{ArgMatches, Command, arg, ArgAction, Arg};
-use serde::Deserialize;
-use tabled::{Table, Tabled, Style, Modify, object::Columns, Alignment};
 use crate::config::{Config, IdentityConfig};
+use clap::{arg, Arg, ArgAction, ArgMatches, Command};
+use serde::Deserialize;
+use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
 
 #[derive(Deserialize)]
 struct IdentityTokenJson {
@@ -20,16 +20,28 @@ pub fn cli() -> Command<'static> {
 fn get_subcommands() -> Vec<Command<'static>> {
     vec![
         Command::new("ls").about("List saved identities"),
-        Command::new("set-default").about("Set the default identity")
+        Command::new("set-default")
+            .about("Set the default identity")
             .arg(Arg::new("identity").conflicts_with("name").required(true))
             .arg(arg!(-n --name <NAME> "name").conflicts_with("identity").required(true)),
-        Command::new("set-email").about("Associates an identity with an email address")
+        Command::new("set-email")
+            .about("Associates an identity with an email address")
             .arg(Arg::new("identity").required(true))
             .arg(Arg::new("email").required(true)),
-        Command::new("new").about("Create a new identity")
-            .arg(arg!(-s --save "Save to config").action(ArgAction::SetTrue).required(false))
-            .arg(arg!(-n --name "Nickname for this identity").required(false).default_missing_value("")),
-        Command::new("rm").about("Delete a saved identity")
+        Command::new("new")
+            .about("Create a new identity")
+            .arg(
+                arg!(-s --save "Save to config")
+                    .action(ArgAction::SetTrue)
+                    .required(false),
+            )
+            .arg(
+                arg!(-n --name "Nickname for this identity")
+                    .required(false)
+                    .default_missing_value(""),
+            ),
+        Command::new("rm")
+            .about("Delete a saved identity")
             .arg(Arg::new("identity").conflicts_with("name").required(true))
             .arg(arg!(-n --name <NAME> "name").conflicts_with("identity").required(true)),
     ]
@@ -79,7 +91,10 @@ async fn exec_default(mut config: Config, args: &ArgMatches) -> Result<(), anyho
 async fn exec_rm(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let name = args.get_one::<String>("name");
     if let Some(name) = name {
-        let index = config.identity_configs.iter().position(|c| c.nickname.as_ref() == Some(name));
+        let index = config
+            .identity_configs
+            .iter()
+            .position(|c| c.nickname.as_ref() == Some(name));
         if let Some(index) = index {
             let ic = config.identity_configs.remove(index);
             config.update_default_identity();
@@ -168,7 +183,7 @@ struct LsRow {
     identity: String,
     name: String,
     email: String,
-} 
+}
 
 async fn exec_ls(config: Config, _args: &ArgMatches) -> Result<(), anyhow::Error> {
     let mut rows: Vec<LsRow> = Vec::new();
@@ -197,7 +212,10 @@ async fn exec_email(mut config: Config, args: &ArgMatches) -> Result<(), anyhow:
     let identity = args.get_one::<String>("identity").unwrap().clone();
 
     let client = reqwest::Client::new();
-    let mut builder = client.post(format!("http://{}/identity/{}/set-email?email={}", config.host, identity, email));
+    let mut builder = client.post(format!(
+        "http://{}/identity/{}/set-email?email={}",
+        config.host, identity, email
+    ));
 
     if let Some(identity_token) = config.get_identity_config_by_identity(&identity) {
         builder = builder.basic_auth("token", Some(identity_token.token.clone()));
@@ -212,7 +230,7 @@ async fn exec_email(mut config: Config, args: &ArgMatches) -> Result<(), anyhow:
     let ic = config.get_identity_config_by_identity_mut(&identity).unwrap();
     ic.email = Some(email.clone());
     config.save();
-        
+
     println!(" Associated email with identity");
     println!(" IDENTITY  {}", identity);
     println!(" EMAIL     {}", email);

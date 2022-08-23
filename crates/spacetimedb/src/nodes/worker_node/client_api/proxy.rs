@@ -1,8 +1,10 @@
-use gotham::{state::State, handler::HandlerError};
-use hyper::{Method, Response, Body, Uri, Request};
 use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
+use gotham::{handler::HandlerError, state::State};
+use hyper::{Body, Method, Request, Response, Uri};
 
-pub async fn proxy_to_control_node_client_api(mut state: State) -> Result<(State, Response<Body>), (State, HandlerError)> {
+pub async fn proxy_to_control_node_client_api(
+    mut state: State,
+) -> Result<(State, Response<Body>), (State, HandlerError)> {
     let method = state.take::<Method>();
     let proxy_uri = state.take::<Uri>();
     let headers = state.take::<hyper::HeaderMap>();
@@ -14,8 +16,7 @@ pub async fn proxy_to_control_node_client_api(mut state: State) -> Result<(State
         .build()
         .unwrap();
 
-    let mut builder = Request::builder()
-        .method(method).uri(&uri);
+    let mut builder = Request::builder().method(method).uri(&uri);
 
     for (header_name, header_value) in headers.iter() {
         builder = builder.header(header_name, header_value);
