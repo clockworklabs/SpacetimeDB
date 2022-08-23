@@ -583,7 +583,6 @@ fn autogen_csharp_access_funcs_for_struct(original_struct: ItemStruct, table_num
     let csharp_struct_type = original_struct_ident.to_string().to_case(Case::Pascal);
 
     let mut output_contents: String = String::new();
-    let mut primary_key_set = false;
 
     for field in &original_struct.fields {
         let field_type = field.ty.clone().to_token_stream().to_string();
@@ -625,13 +624,8 @@ fn autogen_csharp_access_funcs_for_struct(original_struct: ItemStruct, table_num
 
         let mut is_primary = false;
         for attr in &field.attrs {
-            if attr.path.to_token_stream().to_string().eq("primary_key") {
-                if primary_key_set {
-                    return Err("Only one primary key is allowed per table (for now)");
-                }
-
+            if attr.path.to_token_stream().to_string().eq("unique") {
                 is_primary = true;
-                primary_key_set = true;
             }
         }
 

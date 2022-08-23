@@ -305,6 +305,22 @@ fn spacetimedb_repeating_reducer(_args: AttributeArgs, item: TokenStream, repeat
     })
 }
 
+// TODO: We actually need to add a constraint that requires this column to be unique!
+struct UniqueColumn {
+    // The raw rust type as a token stream
+    rust_type: proc_macro2::TokenStream,
+    // The TypeValue representation of the unique column's type (e.g. TypeValue::I32, TypeValue::F32, etc.)
+    type_value: proc_macro2::TokenStream,
+    // The column's name as an identity (e.g. player_id)
+    column_ident: Ident,
+    // The statement that converts from a raw type to spacetimedb type, e.g. i32 to TypeValue::I32 or Hash to TypeValue::Bytes.
+    conversion_from_raw_to_stdb_statement: proc_macro2::TokenStream,
+    // The statement for declaring the unique column, e.g. my_value: i32
+    column_def: proc_macro2::TokenStream,
+    // The index of the unique column
+    column_index: u32,
+}
+
 fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> TokenStream {
     if *(&args.len()) > 1 {
         let str = format!("Unexpected macro argument: {}", args[1].to_token_stream().to_string());
@@ -345,20 +361,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
     let mut column_idents: Vec<Ident> = Vec::new();
     let mut row_to_struct_entries: Vec<proc_macro2::TokenStream> = Vec::new();
 
-    // The raw rust type of the primary key column
-    let mut primary_key_rust_type: Option<proc_macro2::TokenStream> = None;
-    // The TypeValue representation of the primary key's type (e.g. TypeValue::I32, TypeValue::F32, etc.)
-    let mut primary_key_type_value: Option<proc_macro2::TokenStream> = None;
-    // The primary key column's name (e.g. player_id)
-    let mut primary_key_column_ident: Option<Ident> = None;
-    // The statement that converts from a raw type to spacetimedb type, e.g. i32 to TypeValue::I32 or Hash to TypeValue::Bytes.
-    let mut primary_conversion_from_raw_to_stdb_statement: Option<proc_macro2::TokenStream> = None;
-    // The statement for declaring the primary type, e.g. my_value: i32
-    let mut primary_key_column_def: Option<proc_macro2::TokenStream> = None;
-    // The index of the primary key column, this is typically 0
-    let mut primary_key_column_index: Option<u32> = None;
-
-    let mut primary_key_set = false;
+    let mut unique_columns = Vec::<UniqueColumn>::new();
 
     // The identities for each non primary column
     let mut non_primary_column_idents: Vec<Ident> = Vec::new();
@@ -368,9 +371,9 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
     let mut non_primary_index_lookup: Vec<u32> = Vec::new();
     let mut non_primary_column_defs: Vec<proc_macro2::TokenStream> = Vec::new();
 
-    let mut primary_filter_func: proc_macro2::TokenStream = quote!();
-    let mut primary_update_func: proc_macro2::TokenStream = quote!();
-    let mut primary_delete_func: proc_macro2::TokenStream = quote!();
+    let mut unique_filter_funcs: Vec<proc_macro2::TokenStream> = Vec::<proc_macro2::TokenStream>::new();
+    let mut unique_update_funcs: Vec<proc_macro2::TokenStream> = Vec::<proc_macro2::TokenStream>::new();
+    let mut unique_delete_funcs: Vec<proc_macro2::TokenStream> = Vec::<proc_macro2::TokenStream>::new();
     let mut non_primary_filter_func: Vec<proc_macro2::TokenStream> = Vec::new();
 
     let mut insert_columns: Vec<proc_macro2::TokenStream> = Vec::new();
@@ -412,41 +415,31 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
             .parse()
             .unwrap();
 
-        let mut is_primary = false;
+        let mut unique_column: Option<UniqueColumn> = None;
         for attr in &field.attrs {
-            if attr.path.to_token_stream().to_string().eq("primary_key") {
-                if primary_key_set {
-                    return proc_macro::TokenStream::from(quote! {
-                        compile_error!("Only one primary key is allowed per table (for now)");
-                    });
-                }
-
-                is_primary = true;
-                primary_key_set = true;
+            if attr.path.to_token_stream().to_string().eq("unique") {
+                unique_column = Some(UniqueColumn {
+                    rust_type: col_type.clone(),
+                    type_value: col_type_value.clone(),
+                    column_ident: col_name.clone(),
+                    conversion_from_raw_to_stdb_statement: quote!(
+                        let data = #col_type_value(data);
+                    ),
+                    column_def: quote!(
+                        #col_name: #col_type
+                    ),
+                    column_index: col_num,
+                });
             }
         }
 
-        match is_primary {
-            true => {
-                primary_key_column_ident = Some(col_name.clone());
-                primary_key_rust_type = Some(col_type.clone());
-                primary_key_type_value = Some(col_type_value.clone());
-                primary_key_column_def = Some(quote!(
-                    #col_name: #col_type
-                ));
-                primary_key_column_index = Some(col_num);
-                primary_conversion_from_raw_to_stdb_statement = Some(quote!(
-                    let data = #col_type_value(data);
-                ));
-            }
-            false => {
-                non_primary_column_idents.push(col_name.clone());
-                non_primary_column_types.push(col_type.clone());
-                non_primary_column_defs.push(quote!(
-                    #col_name: #col_type_full
-                ));
-                non_primary_index_lookup.push(col_num);
-            }
+        if let None = unique_column {
+            non_primary_column_idents.push(col_name.clone());
+            non_primary_column_types.push(col_type.clone());
+            non_primary_column_defs.push(quote!(
+                #col_name: #col_type_full
+            ));
+            non_primary_index_lookup.push(col_num);
         }
 
         match rust_to_spacetimedb_ident(field.ty.clone().to_token_stream().to_string().as_str()) {
@@ -459,17 +452,19 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
                 if let syn::Type::Path(syn::TypePath { ref path, .. }) = field.ty {
                     if path.segments.len() > 0 {
                         match path.segments[0].ident.to_token_stream().to_string().as_str() {
-                            "Hash" => {
-                                if is_primary {
-                                    primary_conversion_from_raw_to_stdb_statement = Some(quote!(
+                            "Hash" => match unique_column {
+                                Some(mut some) => {
+                                    some.conversion_from_raw_to_stdb_statement = quote!(
                                         let data = #col_type_value(data.to_vec());
-                                    ));
+                                    );
+                                    unique_column = Some(some);
                                 }
-
-                                insert_columns.push(quote! {
-                                    spacetimedb_bindings::TypeValue::Bytes(ins.#col_name.to_vec())
-                                });
-                            }
+                                None => {
+                                    insert_columns.push(quote! {
+                                        spacetimedb_bindings::TypeValue::Bytes(ins.#col_name.to_vec())
+                                    });
+                                }
+                            },
                             "Vec" => {
                                 let vec_param = parse_generic_arg(path.segments[0].arguments.to_token_stream());
                                 match vec_param {
@@ -482,7 +477,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
 
                                         match rust_to_spacetimedb_ident(param.to_string().as_str()) {
                                             Some(spacetimedb_type) => {
-                                                insert_vec_construction.push(quote!{
+                                                insert_vec_construction.push(quote! {
                                                     let mut #vec_name: Vec<spacetimedb_bindings::TypeValue> = Vec::<spacetimedb_bindings::TypeValue>::new();
                                                     for value in ins.#col_name {
                                                         #vec_name.push(spacetimedb_bindings::TypeValue::#spacetimedb_type(value));
@@ -499,7 +494,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
                                                 other_type => {
                                                     let conversion_func_name: proc_macro2::TokenStream =
                                                         format!("__struct_to_tuple__{}", other_type).parse().unwrap();
-                                                    insert_vec_construction.push(quote!{
+                                                    insert_vec_construction.push(quote! {
                                                         let mut #vec_name: Vec<spacetimedb_bindings::TypeValue> = Vec::<spacetimedb_bindings::TypeValue>::new();
                                                         for value in ins.#col_name {
                                                             #vec_name.push(#conversion_func_name(value));
@@ -534,100 +529,90 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
             &row.elements[#col_num]
         ));
 
+        if let Some(col) = unique_column {
+            unique_columns.push(col);
+        }
+
         col_num = col_num + 1;
     }
 
-    match (
-        primary_key_column_ident,
-        primary_key_rust_type,
-        primary_key_type_value,
-        primary_key_column_def,
-        primary_key_column_index,
-        primary_conversion_from_raw_to_stdb_statement,
-    ) {
-        (
-            Some(primary_key_column_ident),
-            Some(primary_key_rust_type),
-            Some(primary_key_type_value),
-            Some(primary_key_column_def),
-            Some(primary_key_column_index),
-            Some(primary_conversion_from_raw_to_stdb_statement),
-        ) => {
-            let filter_func_ident = format_ident!("filter_{}_eq", primary_key_column_ident);
-            let update_func_ident = format_ident!("update_{}_eq", primary_key_column_ident);
-            let delete_func_ident = format_ident!("delete_{}_eq", primary_key_column_ident);
-            let primary_key_tuple_type_str: String = format!("{}", primary_key_type_value);
-            let primary_key_column_index_usize = primary_key_column_index as usize;
-            let comparison_block = tuple_field_comparison_block(
-                original_struct.ident.clone().to_token_stream().to_string().as_str(),
-                primary_key_rust_type.to_string().as_str(),
-                primary_key_column_ident.clone(),
-                true,
-            );
-            let iterator_failure_text = format!("Failed to get iterator for table: {}", original_struct_ident);
+    for unique in unique_columns {
+        let filter_func_ident = format_ident!("filter_{}_eq", unique.column_ident);
+        let update_func_ident = format_ident!("update_{}_eq", unique.column_ident);
+        let delete_func_ident = format_ident!("delete_{}_eq", unique.column_ident);
+        let unique_tuple_type_str: String = format!("{}", unique.type_value);
+        let unique_column_index_usize = unique.column_index as usize;
+        let comparison_block = tuple_field_comparison_block(
+            original_struct.ident.clone().to_token_stream().to_string().as_str(),
+            unique.rust_type.to_string().as_str(),
+            unique.column_ident.clone(),
+            true,
+        );
+        let iterator_failure_text = format!("Failed to get iterator for table: {}", original_struct_ident);
 
-            primary_filter_func = quote! {
-                #[allow(unused_variables)]
-                #[allow(non_snake_case)]
-                pub fn #filter_func_ident(#primary_key_column_def) -> Option<#original_struct_ident> {
-                    let table_iter = #original_struct_ident::iter();
-                    if let Some(table_iter) = table_iter {
-                        for row in table_iter {
-                            let column_data = row.elements[#primary_key_column_index_usize].clone();
-                            #comparison_block
-                        }
-                    } else {
-                        spacetimedb_bindings::println!(#iterator_failure_text);
+        let unique_column_def = unique.column_def;
+        let unique_column_ident = unique.column_ident;
+        let unique_conversion_from_raw_to_stdb_statement = unique.conversion_from_raw_to_stdb_statement;
+        let unique_column_index = unique.column_index;
+
+        unique_filter_funcs.push(quote! {
+            #[allow(unused_variables)]
+            #[allow(non_snake_case)]
+            pub fn #filter_func_ident(#unique_column_def) -> Option<#original_struct_ident> {
+                let table_iter = #original_struct_ident::iter();
+                if let Some(table_iter) = table_iter {
+                    for row in table_iter {
+                        let column_data = row.elements[#unique_column_index_usize].clone();
+                        #comparison_block
                     }
-
-                    return None;
+                } else {
+                    spacetimedb_bindings::println!(#iterator_failure_text);
                 }
-            };
 
-            primary_update_func = quote! {
-                #[allow(unused_variables)]
-                #[allow(non_snake_case)]
-                pub fn #update_func_ident(#primary_key_column_def, new_value: #original_struct_ident) -> bool {
-                    #original_struct_ident::#delete_func_ident(#primary_key_column_ident);
-                    #original_struct_ident::insert(new_value);
+                return None;
+            }
+        });
 
-                    // For now this is always successful
-                    true
-                }
-            };
+        unique_update_funcs.push(quote! {
+            #[allow(unused_variables)]
+            #[allow(non_snake_case)]
+            pub fn #update_func_ident(#unique_column_def, new_value: #original_struct_ident) -> bool {
+                #original_struct_ident::#delete_func_ident(#unique_column_ident);
+                #original_struct_ident::insert(new_value);
 
-            primary_delete_func = quote! {
-                #[allow(unused_variables)]
-                #[allow(non_snake_case)]
-                pub fn #delete_func_ident(#primary_key_column_def) -> bool {
-                    let data = #primary_key_column_ident;
-                    #primary_conversion_from_raw_to_stdb_statement
-                    let equatable = spacetimedb_bindings::EqTypeValue::try_from(data);
-                    match equatable {
-                        Ok(value) => {
-                            let result = spacetimedb_bindings::delete_eq(#table_id, #primary_key_column_index, value);
-                            match result {
-                                None => {
-                                    //TODO: Returning here was supposed to signify an error, but it can also return none when there is nothing to delete.
-                                    //spacetimedb_bindings::println!("Internal server error on equatable type: {}", #primary_key_tuple_type_str);
-                                    false
-                                },
-                                Some(count) => {
-                                    count > 0
-                                }
+                // For now this is always successful
+                true
+            }
+        });
+
+        unique_delete_funcs.push(quote! {
+            #[allow(unused_variables)]
+            #[allow(non_snake_case)]
+            pub fn #delete_func_ident(#unique_column_def) -> bool {
+                let data = #unique_column_ident;
+                #unique_conversion_from_raw_to_stdb_statement
+                let equatable = spacetimedb_bindings::EqTypeValue::try_from(data);
+                match equatable {
+                    Ok(value) => {
+                        let result = spacetimedb_bindings::delete_eq(#table_id, #unique_column_index, value);
+                        match result {
+                            None => {
+                                //TODO: Returning here was supposed to signify an error, but it can also return none when there is nothing to delete.
+                                //spacetimedb_bindings::println!("Internal server error on equatable type: {}", #primary_key_tuple_type_str);
+                                false
+                            },
+                            Some(count) => {
+                                count > 0
                             }
-                        }, Err(e) => {
-                            // We cannot complete this call because this type is not equatable
-                            spacetimedb_bindings::println!("This type is not equatable: {} Error:{}", #primary_key_tuple_type_str, e);
-                            false
                         }
+                    }, Err(e) => {
+                        // We cannot complete this call because this type is not equatable
+                        spacetimedb_bindings::println!("This type is not equatable: {} Error:{}", #unique_tuple_type_str, e);
+                        false
                     }
                 }
-            };
-        }
-        _ => {
-            // We allow tables with no primary key for now
-        }
+            }
+        });
     }
 
     for (x, non_primary_column_ident) in non_primary_column_idents.iter().enumerate() {
@@ -659,12 +644,12 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
         non_primary_filter_func.push(quote!(
             #[allow(non_snake_case)]
             #[allow(unused_variables)]
-            pub fn #filter_func_ident(#column_def) -> Vec<#original_struct_ident> {
+            pub fn #filter_func_ident(#column_def) -> Vec <#original_struct_ident> {
                 let mut result = Vec::<#original_struct_ident>::new();
                 let table_iter = #original_struct_ident::iter();
                 if let Some(table_iter) = table_iter {
                     for row in table_iter {
-                        let column_data = row.elements[#row_index].clone();
+                        let column_data = row.elements[ # row_index].clone();
                         #comparison_block
                     }
                 }
@@ -689,16 +674,14 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
     let db_delete = quote! {
         #[allow(unused_variables)]
         pub fn delete(f: fn (#original_struct_ident) -> bool) -> usize {
-            0
+            panic!("Delete using a function is not supported yet!");
         }
     };
 
     let db_update = quote! {
         #[allow(unused_variables)]
         pub fn update(value: #original_struct_ident) -> bool {
-            // delete on primary key
-            // insert on primary key
-            false
+            panic!("Update using a value is not supported yet!");
         }
     };
 
@@ -732,16 +715,16 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
 
     // Output all macro data
     proc_macro::TokenStream::from(quote! {
-        #[derive(spacetimedb_bindgen::PrimaryKey, spacetimedb_bindgen::Index)]
+        #[derive(spacetimedb_bindgen::Unique, spacetimedb_bindgen::Index)]
         #[derive(serde::Serialize, serde::Deserialize)]
         #original_struct
         impl #original_struct_ident {
             #db_insert
             #db_delete
             #db_update
-            #primary_filter_func
-            #primary_update_func
-            #primary_delete_func
+            #(#unique_filter_funcs)*
+            #(#unique_update_funcs)*
+            #(#unique_delete_funcs)*
 
             #db_iter
             #(#non_primary_filter_func)*
@@ -986,8 +969,8 @@ fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connec
 }
 
 // This derive is actually a no-op, we need the helper attribute for spacetimedb
-#[proc_macro_derive(PrimaryKey, attributes(primary_key))]
-pub fn derive_primary_key(_: TokenStream) -> TokenStream {
+#[proc_macro_derive(Unique, attributes(unique))]
+pub fn derive_unique(_: TokenStream) -> TokenStream {
     TokenStream::new()
 }
 
@@ -1022,7 +1005,7 @@ fn tuple_field_comparison_block(
     tuple_type_str: &str,
     filter_field_type_str: &str,
     filter_field_name: Ident,
-    is_primary: bool,
+    is_unique: bool,
 ) -> proc_macro2::TokenStream {
     let stdb_type_value: proc_macro2::TokenStream;
     let comparison_and_result_statement: proc_macro2::TokenStream;
@@ -1034,7 +1017,7 @@ fn tuple_field_comparison_block(
         tuple_type_str
     );
 
-    if is_primary {
+    if is_unique {
         result_statement = quote! {
             let tuple = #tuple_to_struct_func(row);
             if let None = tuple {
