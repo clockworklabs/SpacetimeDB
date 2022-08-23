@@ -1,7 +1,5 @@
-use anyhow;
 use clap::Arg;
 use clap::ArgMatches;
-use reqwest;
 
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("rm")

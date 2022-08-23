@@ -1,7 +1,5 @@
-use anyhow;
 use clap::Arg;
 use clap::ArgMatches;
-use reqwest;
 use std::fs;
 
 pub fn cli() -> clap::Command<'static> {

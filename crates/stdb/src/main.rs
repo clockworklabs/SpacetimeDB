@@ -1,4 +1,3 @@
-use anyhow;
 use clap::error::ContextKind;
 use clap::error::ContextValue;
 use clap::ArgMatches;
