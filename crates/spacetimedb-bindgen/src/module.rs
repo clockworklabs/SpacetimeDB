@@ -18,12 +18,14 @@ pub(crate) fn autogen_module_struct_to_schema(original_struct: ItemStruct) -> pr
     for field in &original_struct.fields {
         let field_type = field.ty.clone().to_token_stream().to_string();
         let field_type = field_type.as_str();
+        let field_name = field.ident.clone().unwrap().to_token_stream().to_string();
 
         match rust_to_spacetimedb_ident(field_type) {
             Some(spacetimedb_type) => {
                 fields.push(quote! {
                     spacetimedb_bindings::ElementDef {
                         tag: #col_num,
+                        name: Some(#field_name.to_string()),
                         element_type: spacetimedb_bindings::TypeDef::#spacetimedb_type,
                     }
                 });
@@ -36,6 +38,7 @@ pub(crate) fn autogen_module_struct_to_schema(original_struct: ItemStruct) -> pr
                                 fields.push(quote! {
                                     spacetimedb_bindings::ElementDef {
                                         tag: #col_num,
+                                        name: Some(#field_name.to_string()),
                                         element_type: spacetimedb_bindings::TypeDef::Bytes,
                                     }
                                 });
@@ -49,6 +52,7 @@ pub(crate) fn autogen_module_struct_to_schema(original_struct: ItemStruct) -> pr
                                             fields.push(quote! {
                                                     spacetimedb_bindings::ElementDef {
                                                         tag: #col_num,
+                                                        name: Some(#field_name.to_string()),
                                                         element_type: spacetimedb_bindings::TypeDef::Vec{ element_type: spacetimedb_bindings::TypeDef::#spacetimedb_type.into() },
                                                     }
                                                 });
@@ -58,6 +62,7 @@ pub(crate) fn autogen_module_struct_to_schema(original_struct: ItemStruct) -> pr
                                                 fields.push(quote! {
                                                             spacetimedb_bindings::ElementDef {
                                                                 tag: #col_num,
+                                                                name: Some(#field_name.to_string()),
                                                                 element_type: spacetimedb_bindings::TypeDef::Vec{ element_type: spacetimedb_bindings::TypeDef::Bytes },
                                                             }
                                                         });
@@ -68,6 +73,7 @@ pub(crate) fn autogen_module_struct_to_schema(original_struct: ItemStruct) -> pr
                                                 fields.push(quote! {
                                                             spacetimedb_bindings::ElementDef {
                                                                 tag: #col_num,
+                                                                name: Some(#field_name.to_string()),
                                                                 element_type: spacetimedb_bindings::TypeDef::Vec{ element_type: #get_schema_func().into() },
                                                             }
                                                         });
@@ -86,6 +92,7 @@ pub(crate) fn autogen_module_struct_to_schema(original_struct: ItemStruct) -> pr
                                 fields.push(quote! {
                                     spacetimedb_bindings::ElementDef {
                                         tag: #col_num,
+                                        name: Some(#field_name.to_string()),
                                         element_type: #get_func(),
                                     }
                                 });

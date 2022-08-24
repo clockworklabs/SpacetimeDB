@@ -173,11 +173,23 @@ pub fn decode_schema(bytes: &mut &[u8]) -> (Result<TupleDef, String>, usize) {
     TupleDef::decode(bytes)
 }
 
-pub fn create_table(table_id: u32, schema: TupleDef) {
+pub fn create_table(table_id: u32, table_name: &str, schema: TupleDef) {
     unsafe {
         let ptr = row_buf();
+
+        let mut schema_bytes = Vec::new();
+        schema.encode(&mut schema_bytes);
+
+        let table_info = TupleValue {
+            elements: vec![
+                TypeValue::String(table_name.to_string()),
+                TypeValue::Bytes(schema_bytes),
+            ],
+        };
+
         let mut bytes = Vec::from_raw_parts(ptr, 0, ROW_BUF_LEN);
-        schema.encode(&mut bytes);
+        table_info.encode(&mut bytes);
+
         std::mem::forget(bytes);
         _create_table(table_id, ptr);
     }

@@ -20,9 +20,7 @@ pub struct ElementDef {
     // In the case of tuples, this is the id of the column
     // In the case of enums, this is the id of the variant
     pub tag: u8,
-    // TODO: Allow named elements? Probably need for SQL and nice for JSON
-    // slow though so need to be careful
-    // pub name: Option<String>,
+    pub name: Option<String>,
     pub element_type: TypeDef,
 }
 
@@ -37,17 +35,36 @@ impl ElementDef {
         let tag = bytes[num_read];
         num_read += 1;
 
+        let name_len = bytes[num_read];
+        num_read += 1;
+
+        let name = if name_len == 0 {
+            None
+        } else {
+            let name_bytes = &bytes[num_read..num_read + name_len as usize];
+            num_read += name_len as usize;
+            Some(String::from_utf8(name_bytes.to_vec()).expect("Yeah this should really return a result."))
+        };
+
         let (element_type, nr) = TypeDef::decode(&bytes[num_read..]);
         num_read += nr;
 
         return match element_type {
-            Ok(element_type) => (Ok(ElementDef { tag, element_type }), num_read),
+            Ok(element_type) => (Ok(ElementDef { tag, element_type, name}), num_read),
             Err(e) => (Err(e), 0),
         };
     }
 
     pub fn encode(&self, bytes: &mut Vec<u8>) {
         bytes.push(self.tag);
+
+        if let Some(name) = &self.name {
+            bytes.push(name.len() as u8);
+            bytes.extend(name.as_bytes())
+        } else {
+            bytes.push(0);
+        }
+
         self.element_type.encode(bytes);
     }
 }

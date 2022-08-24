@@ -701,13 +701,15 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
     let schema_func = autogen_module_struct_to_schema(original_struct.clone());
     let create_table_func_name = format_ident!("__create_table__{}", original_struct_ident);
     let get_schema_func_name = format_ident!("__get_struct_schema__{}", original_struct_ident);
+    let table_name = original_struct_ident.to_string();
+
     let create_table_func = quote! {
         #[allow(non_snake_case)]
         #[no_mangle]
         pub extern "C" fn #create_table_func_name(arg_ptr: usize, arg_size: usize) {
             let def = #get_schema_func_name();
             if let spacetimedb_bindings::TypeDef::Tuple(tuple_def) = def {
-                spacetimedb_bindings::create_table(#table_id, tuple_def);
+                spacetimedb_bindings::create_table(#table_id, #table_name, tuple_def);
             } else {
                 // The type is not a tuple for some reason, table not created.
                 std::panic!("This type is not a tuple: {{#original_struct_ident}}");

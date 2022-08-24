@@ -1,7 +1,7 @@
 use crate::db::relational_db::RelationalDB;
 use crate::db::transactional_db::Tx;
 use spacetimedb_bindings::{
-    decode_schema, encode_schema, ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue, TupleDef, TupleValue,
+    decode_schema, encode_schema, ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue, TupleDef, TupleValue, TypeDef,
 };
 use std::{
     collections::HashMap,
@@ -142,10 +142,12 @@ impl InstanceEnv {
             elements: vec![
                 ElementDef {
                     tag: 0,
+                    name: None,
                     element_type: col_type.clone(),
                 },
                 ElementDef {
                     tag: 1,
+                    name: None,
                     element_type: col_type.clone(),
                 },
             ],
@@ -175,12 +177,33 @@ impl InstanceEnv {
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
-        let (schema, _) = decode_schema(&mut &buffer[..]);
-        if let Err(e) = schema {
-            panic!("create_table: Could not decode schema! Err: {}", e);
-        }
+        let table_info_schema = TupleDef {
+            elements: vec![
+                ElementDef {
+                    tag: 0,
+                    name: None,
+                    element_type: TypeDef::String,
+                },
+                ElementDef {
+                    tag: 1,
+                    name: None,
+                    element_type: TypeDef::Bytes,
+                },
+            ],
+        };
 
-        stdb.create_table(tx, table_id, schema.unwrap()).unwrap();
+        println!("{:?}", &buffer[..]);
+
+        let (table_info, _) = TupleValue::decode(&table_info_schema, &mut &buffer[..]);
+        let table_info = table_info.unwrap_or_else(|e| {
+            panic!("create_table: Could not decode schema! Err: {}", e);
+        });
+
+        let table_name = table_info.elements[0].as_string().unwrap();
+        let schema_bytes = table_info.elements[1].as_bytes().unwrap();
+
+        let (schema, _) = decode_schema(&mut &schema_bytes[..]);
+        stdb.create_table(tx, table_id, table_name, schema).unwrap();
     }
 
     pub fn iter(&self, table_id: u32) -> u64 {
