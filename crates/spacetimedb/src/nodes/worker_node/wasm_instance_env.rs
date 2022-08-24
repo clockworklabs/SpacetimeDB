@@ -64,8 +64,12 @@ impl InstanceEnv {
 
         let schema = stdb.schema_for_table(tx, table_id).unwrap();
         let row = RelationalDB::decode_row(&schema, &buffer[..]);
+        if let Err(e) = row {
+            log::error!("insert: Failed to decode row: table_id: {} Err: {}", table_id, e);
+            return;
+        }
 
-        stdb.insert(tx, table_id, row);
+        stdb.insert(tx, table_id, row.unwrap());
     }
 
     pub fn delete_pk(&self, table_id: u32, ptr: u32) -> u8 {
@@ -92,8 +96,12 @@ impl InstanceEnv {
 
         let schema = stdb.schema_for_table(tx, table_id).unwrap();
         let row = RelationalDB::decode_row(&schema, &buffer[..]);
+        if let Err(e) = row {
+            log::error!("delete_value: Failed to decode row! table_id: {} Err: {}", table_id, e);
+            return 0;
+        }
 
-        let pk = RelationalDB::pk_for_row(&row);
+        let pk = RelationalDB::pk_for_row(&row.unwrap());
         if let Some(_) = stdb.delete_pk(tx, table_id, pk) {
             return 1;
         } else {
@@ -144,6 +152,12 @@ impl InstanceEnv {
         };
 
         let (tuple, _) = TupleValue::decode(&tuple_def, &buffer[..]);
+        if let Err(e) = tuple {
+            log::error!("delete_range: Failed to decode tuple value: Err: {}", e);
+            return -1;
+        }
+        let tuple = tuple.unwrap();
+
         let start = RangeTypeValue::try_from(&tuple.elements[0]).unwrap();
         let end = RangeTypeValue::try_from(&tuple.elements[1]).unwrap();
 
@@ -162,7 +176,11 @@ impl InstanceEnv {
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
         let (schema, _) = decode_schema(&mut &buffer[..]);
-        stdb.create_table(tx, table_id, schema).unwrap();
+        if let Err(e) = schema {
+            panic!("create_table: Could not decode schema! Err: {}", e);
+        }
+
+        stdb.create_table(tx, table_id, schema.unwrap()).unwrap();
     }
 
     pub fn iter(&self, table_id: u32) -> u64 {

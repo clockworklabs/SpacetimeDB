@@ -161,7 +161,7 @@ pub fn encode_row(row: TupleValue, bytes: &mut Vec<u8>) {
     row.encode(bytes);
 }
 
-pub fn decode_row(schema: &TupleDef, bytes: &mut &[u8]) -> (TupleValue, usize) {
+pub fn decode_row(schema: &TupleDef, bytes: &mut &[u8]) -> (Result<TupleValue, &'static str>, usize) {
     TupleValue::decode(schema, bytes)
 }
 
@@ -169,7 +169,7 @@ pub fn encode_schema(schema: TupleDef, bytes: &mut Vec<u8>) {
     schema.encode(bytes);
 }
 
-pub fn decode_schema(bytes: &mut &[u8]) -> (TupleDef, usize) {
+pub fn decode_schema(bytes: &mut &[u8]) -> (Result<TupleDef, String>, usize) {
     TupleDef::decode(bytes)
 }
 
@@ -277,6 +277,9 @@ pub fn __iter__(table_id: u32) -> Option<TableIter> {
     let slice = &mut &bytes[..];
     let initial_size = slice.len() as u32;
     let (schema, schema_size) = decode_schema(slice);
+    if let Err(e) = schema {
+        panic!("__iter__: Could not decode schema. Err: {}", e);
+    }
 
     let data_size = (slice.len() - schema_size) as u32;
     let start_ptr = ptr;
@@ -288,7 +291,7 @@ pub fn __iter__(table_id: u32) -> Option<TableIter> {
         initial_size,
         ptr: data_ptr,
         size: data_size,
-        schema,
+        schema: schema.unwrap(),
     })
 }
 
@@ -308,10 +311,13 @@ impl Iterator for TableIter {
         let slice = &mut &bytes[..];
         if slice.len() > 0 {
             let (row, num_read) = decode_row(&self.schema, slice);
+            if let Err(e) = row {
+                panic!("TableIter::next: Failed to decode row! Err: {}", e);
+            }
             self.ptr = unsafe { self.ptr.add(num_read) };
             self.size = self.size - num_read as u32;
             std::mem::forget(bytes);
-            return Some(row);
+            return Some(row.unwrap());
         }
         // TODO: potential memory leak if they don't read all the stuff, figure out how to do this
         std::mem::forget(bytes);

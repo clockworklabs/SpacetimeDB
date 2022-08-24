@@ -265,7 +265,12 @@ impl ModuleSubscriptionActor {
                         tuple
                     })
                     .unwrap();
-                (tuple, write.data_key.to_bytes())
+                if let Err(e) = tuple {
+                    log::error!("render_protobuf_event: Failed to decode row: Err: {}", e);
+                    continue;
+                }
+
+                (tuple.unwrap(), write.data_key.to_bytes())
             };
 
             let mut row_bytes = Vec::new();
@@ -386,7 +391,12 @@ impl ModuleSubscriptionActor {
                         tuple
                     })
                     .unwrap();
-                (tuple, base64::encode(write.data_key.to_bytes()))
+                if let Err(e) = tuple {
+                    log::error!("render_json_event: Failed to decode row: {}", e);
+                    continue;
+                }
+
+                (tuple.unwrap(), base64::encode(write.data_key.to_bytes()))
             };
 
             vec.push(TableRowOperationJson {

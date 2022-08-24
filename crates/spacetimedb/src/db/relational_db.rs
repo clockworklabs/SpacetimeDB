@@ -110,7 +110,7 @@ impl RelationalDB {
         row.encode(bytes);
     }
 
-    pub fn decode_row(schema: &TupleDef, bytes: impl AsRef<[u8]>) -> TupleValue {
+    pub fn decode_row(schema: &TupleDef, bytes: impl AsRef<[u8]>) -> Result<TupleValue, &'static str> {
         // TODO: large file storage the row elements
         let (tuple_value, _) = TupleValue::decode(schema, bytes);
         tuple_value
@@ -136,6 +136,12 @@ impl RelationalDB {
                 ],
             };
             let row = Self::decode_row(&schema, bytes);
+            if let Err(e) = row {
+                log::error!("schema_for_table: Table has invalid schema: {} Err: {}", table_id, e);
+                return None;
+            }
+            let row = row.unwrap();
+
             let col = &row.elements[0];
             let t_id: u32 = *col.as_u32().unwrap();
             if t_id != table_id {
@@ -149,11 +155,15 @@ impl RelationalDB {
             let bytes: &Vec<u8> = col.as_bytes().unwrap();
             let (col_type, _) = TypeDef::decode(bytes);
 
-            let element = ElementDef {
+            if let Err(e) = col_type {
+                log::error!("schema_for_table: Table has invalid schema: {} Err: {}", table_id, e);
+                return None;
+            }
+
+            columns.push(ElementDef {
                 tag: col_id as u8, // TODO?
-                element_type: col_type,
-            };
-            columns.push(element)
+                element_type: col_type.unwrap(),
+            });
         }
         columns.sort_by(|a, b| a.tag.cmp(&b.tag));
         if columns.len() > 0 {
@@ -274,8 +284,13 @@ impl RelationalDB {
         if let Some(schema) = schema {
             let bytes = self.txdb.seek(tx, table_id, primary_key.data_key);
             if let Some(bytes) = bytes {
-                let row = RelationalDB::decode_row(&schema, &mut &bytes[..]);
-                return Some(row);
+                return match RelationalDB::decode_row(&schema, &mut &bytes[..]) {
+                    Ok(row) => Some(row),
+                    Err(e) => {
+                        log::error!("filter_pk: Row decode failure: {}", e);
+                        None
+                    }
+                };
             }
         }
         return None;
@@ -412,7 +427,12 @@ impl<'a> Iterator for PrimaryKeyTableIter<'a> {
         if let Some(bytes) = self.txdb_iter.next() {
             // TODO: for performance ditch the reading the row and read the primary key directly or something
             let row = RelationalDB::decode_row(&self.schema, &mut &bytes[..]);
-            return Some(RelationalDB::pk_for_row(&row));
+            if let Err(e) = row {
+                log::error!("PrimaryKeyTableIter::next: Failed to decode row! Err: {}", e);
+                return None;
+            }
+
+            return Some(RelationalDB::pk_for_row(&row.unwrap()));
         }
         return None;
     }
@@ -429,7 +449,11 @@ impl<'a> Iterator for TableIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(bytes) = self.txdb_iter.next() {
             let row = RelationalDB::decode_row(&self.schema, &mut &bytes[..]);
-            return Some(row);
+            if let Err(e) = row {
+                log::error!("TableIter::next: Failed to decode row: Err: {}", e);
+                return None;
+            }
+            return Some(row.unwrap());
         }
         return None;
     }

@@ -1,6 +1,7 @@
 use crate::type_def::{EnumDef, TupleDef, TypeDef};
 use enum_as_inner::EnumAsInner;
 use serde::{Deserialize, Serialize};
+use std::mem::size_of;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElementValue {
@@ -14,10 +15,9 @@ pub struct TupleValue {
 }
 
 impl TupleValue {
-    pub fn decode(tuple_def: &TupleDef, bytes: impl AsRef<[u8]>) -> (Self, usize) {
+    pub fn decode(tuple_def: &TupleDef, bytes: impl AsRef<[u8]>) -> (Result<Self, &'static str>, usize) {
         let mut num_read = 0;
         let bytes = bytes.as_ref();
-
         let len = tuple_def.elements.len();
 
         let mut elements = Vec::new();
@@ -25,12 +25,15 @@ impl TupleValue {
             // TODO: sort by tags or use the tags in some way or remove the tags from the def
             let type_def = &tuple_def.elements[i].element_type;
             let (type_value, nr) = TypeValue::decode(&type_def, &bytes[num_read..]);
+            if let Err(e) = type_value {
+                return (Err(e), 0);
+            }
             num_read += nr;
-            elements.push(type_value);
+            elements.push(type_value.unwrap());
         }
 
         let tuple_value = TupleValue { elements };
-        (tuple_value, num_read)
+        (Ok(tuple_value), num_read)
     }
 
     pub fn encode(&self, bytes: &mut Vec<u8>) {
@@ -46,9 +49,12 @@ pub struct EnumValue {
 }
 
 impl EnumValue {
-    pub fn decode(enum_def: &EnumDef, bytes: impl AsRef<[u8]>) -> (Self, usize) {
+    pub fn decode(enum_def: &EnumDef, bytes: impl AsRef<[u8]>) -> (Result<Self, &'static str>, usize) {
         let mut num_read = 0;
         let bytes = bytes.as_ref();
+        if bytes.len() == 0 {
+            return (Err("EnumValue::decode: Byte array length is invalid."), 0);
+        }
         let tag = bytes[num_read];
         num_read += 1;
 
@@ -61,16 +67,19 @@ impl EnumValue {
             i += 1;
         };
         let (type_value, nr) = TypeValue::decode(&type_def, &bytes[num_read..]);
+        if let Err(e) = type_value {
+            return (Err(e), 0);
+        }
         num_read += nr;
 
         let item_value = ElementValue {
             tag,
-            type_value: Box::new(type_value),
+            type_value: Box::new(type_value.unwrap()),
         };
         (
-            EnumValue {
+            Ok(EnumValue {
                 element_value: item_value,
-            },
+            }),
             num_read,
         )
     }
@@ -102,7 +111,10 @@ pub enum EqTypeValue {
 impl EqTypeValue {
     pub fn decode(type_def: &TypeDef, bytes: impl AsRef<[u8]>) -> (Result<Self, &'static str>, usize) {
         let (v, nr) = TypeValue::decode(type_def, bytes);
-        (Self::try_from(v), nr)
+        if let Err(e) = v {
+            return (Err(e), 0);
+        }
+        (Self::try_from(v.unwrap()), nr)
     }
 
     pub fn encode(&self, bytes: &mut Vec<u8>) {
@@ -190,7 +202,10 @@ pub enum RangeTypeValue {
 impl RangeTypeValue {
     pub fn decode(type_def: &TypeDef, bytes: impl AsRef<[u8]>) -> (Result<Self, &'static str>, usize) {
         let (v, nr) = TypeValue::decode(type_def, bytes);
-        (Self::try_from(v), nr)
+        if let Err(e) = v {
+            return (Err(e), 0);
+        }
+        (Self::try_from(v.unwrap()), nr)
     }
 
     pub fn encode(&self, bytes: &mut Vec<u8>) {
@@ -282,19 +297,31 @@ pub enum TypeValue {
 }
 
 impl TypeValue {
-    pub fn decode(type_def: &TypeDef, bytes: impl AsRef<[u8]>) -> (Self, usize) {
+    pub fn decode(type_def: &TypeDef, bytes: impl AsRef<[u8]>) -> (Result<Self, &'static str>, usize) {
         let bytes = bytes.as_ref();
-        match type_def {
+        let result = match type_def {
             TypeDef::Tuple(tuple_def) => {
                 let (tuple, nr) = TupleValue::decode(tuple_def, &bytes[0..]);
-                (TypeValue::Tuple(tuple), nr)
+                if let Err(e) = tuple {
+                    return (Err(e), 0);
+                }
+                (TypeValue::Tuple(tuple.unwrap()), nr)
             }
             TypeDef::Enum(enum_def) => {
                 let (enum_value, nr) = EnumValue::decode(enum_def, &bytes[0..]);
-                (TypeValue::Enum(enum_value), nr)
+                if let Err(e) = enum_value {
+                    return (Err(e), 0);
+                }
+                (TypeValue::Enum(enum_value.unwrap()), nr)
             }
             TypeDef::Vec { element_type } => {
-                //element_type.
+                if bytes.len() < 2 {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to decode vec."),
+                        0,
+                    );
+                }
+
                 let mut dst = [0u8; 2];
                 dst.copy_from_slice(&bytes[0..2]);
                 let mut num_read = 2;
@@ -303,83 +330,197 @@ impl TypeValue {
                 for _ in 0..len {
                     let (value, nr) = TypeValue::decode(element_type, &bytes[num_read..]);
                     num_read += nr;
-                    vec.push(value);
+                    if let Err(e) = value {
+                        return (Err(e), 0);
+                    }
+                    vec.push(value.unwrap());
                 }
                 (TypeValue::Vec(vec), num_read)
             }
-            TypeDef::U8 => (TypeValue::U8(bytes[0]), 1),
+            TypeDef::U8 => {
+                if bytes.len() < size_of::<u8>() {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to decode U8."),
+                        0,
+                    );
+                }
+                (TypeValue::U8(bytes[0]), 1)
+            }
             TypeDef::U16 => {
+                if bytes.len() < size_of::<u16>() {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to decode U16."),
+                        0,
+                    );
+                }
                 let mut dst = [0u8; 2];
                 dst.copy_from_slice(&bytes[0..2]);
                 (TypeValue::U16(u16::from_le_bytes(dst)), 2)
             }
             TypeDef::U32 => {
+                if bytes.len() < size_of::<u32>() {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to decode U32."),
+                        0,
+                    );
+                }
                 let mut dst = [0u8; 4];
                 dst.copy_from_slice(&bytes[0..4]);
                 (TypeValue::U32(u32::from_le_bytes(dst)), 4)
             }
             TypeDef::U64 => {
+                if bytes.len() < size_of::<u64>() {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to decode U64."),
+                        0,
+                    );
+                }
                 let mut dst = [0u8; 8];
                 dst.copy_from_slice(&bytes[0..8]);
                 (TypeValue::U64(u64::from_le_bytes(dst)), 8)
             }
             TypeDef::U128 => {
+                if bytes.len() < size_of::<u128>() {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to decode U128."),
+                        0,
+                    );
+                }
                 let mut dst = [0u8; 16];
                 dst.copy_from_slice(&bytes[0..16]);
                 (TypeValue::U128(u128::from_le_bytes(dst)), 16)
             }
-            TypeDef::I8 => (TypeValue::I8(bytes[0] as i8), 1),
+            TypeDef::I8 => {
+                if bytes.len() < size_of::<i8>() {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to decode I8."),
+                        0,
+                    );
+                }
+                (TypeValue::I8(bytes[0] as i8), 1)
+            }
             TypeDef::I16 => {
+                if bytes.len() < size_of::<i16>() {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to decode I16."),
+                        0,
+                    );
+                }
                 let mut dst = [0u8; 2];
                 dst.copy_from_slice(&bytes[0..2]);
                 (TypeValue::I16(i16::from_le_bytes(dst)), 2)
             }
             TypeDef::I32 => {
+                if bytes.len() < size_of::<i32>() {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to decode I32."),
+                        0,
+                    );
+                }
                 let mut dst = [0u8; 4];
                 dst.copy_from_slice(&bytes[0..4]);
                 (TypeValue::I32(i32::from_le_bytes(dst)), 4)
             }
             TypeDef::I64 => {
+                if bytes.len() < size_of::<i64>() {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to decode I64."),
+                        0,
+                    );
+                }
                 let mut dst = [0u8; 8];
                 dst.copy_from_slice(&bytes[0..8]);
                 (TypeValue::I64(i64::from_le_bytes(dst)), 8)
             }
             TypeDef::I128 => {
+                if bytes.len() < size_of::<i128>() {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to decode I128."),
+                        0,
+                    );
+                }
                 let mut dst = [0u8; 16];
                 dst.copy_from_slice(&bytes[0..16]);
                 (TypeValue::I128(i128::from_le_bytes(dst)), 16)
             }
-            TypeDef::Bool => (TypeValue::Bool(if bytes[0] == 0 { false } else { true }), 1),
+            TypeDef::Bool => {
+                if bytes.len() < size_of::<bool>() {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to decode Bool."),
+                        0,
+                    );
+                }
+                (TypeValue::Bool(if bytes[0] == 0 { false } else { true }), 1)
+            }
             TypeDef::F32 => {
+                if bytes.len() < size_of::<f32>() {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to decode F32."),
+                        0,
+                    );
+                }
                 let mut dst = [0u8; 4];
                 dst.copy_from_slice(&bytes[0..4]);
                 (TypeValue::F32(f32::from_le_bytes(dst)), 4)
             }
             TypeDef::F64 => {
+                if bytes.len() < size_of::<f64>() {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to decode F64."),
+                        0,
+                    );
+                }
                 let mut dst = [0u8; 8];
                 dst.copy_from_slice(&bytes[0..8]);
                 (TypeValue::F64(f64::from_le_bytes(dst)), 8)
             }
             TypeDef::String => {
+                if bytes.len() < 2 {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to get length of string."),
+                        0,
+                    );
+                }
                 let mut dst = [0u8; 2];
                 dst.copy_from_slice(&bytes[0..2]);
                 let mut num_read = 2;
                 let len = u16::from_le_bytes(dst);
+                if bytes.len() - 2 < len as usize {
+                    return (
+                        Err("TypeValue::decode: Cannot decode string, buffer not long enough."),
+                        0,
+                    );
+                }
+
                 let string = std::str::from_utf8(&bytes[num_read..num_read + (len as usize)]).unwrap();
                 num_read += len as usize;
                 (TypeValue::String(string.to_owned()), num_read)
             }
             TypeDef::Bytes => {
+                if bytes.len() < 2 {
+                    return (
+                        Err("TypeValue::decode: byte array length not long enough to get length of byte array."),
+                        0,
+                    );
+                }
                 let mut dst = [0u8; 2];
                 dst.copy_from_slice(&bytes[0..2]);
                 let mut num_read = 2;
                 let len = u16::from_le_bytes(dst);
+                if bytes.len() - 2 < len as usize {
+                    return (
+                        Err("TypeValue::decode: Cannot decode byte array, buffer not long enough."),
+                        0,
+                    );
+                }
                 let output = &bytes[num_read..(num_read + (len as usize))];
                 num_read += len as usize;
                 (TypeValue::Bytes(output.to_owned()), num_read)
             }
             TypeDef::Unit => (TypeValue::Unit, 0),
-        }
+        };
+
+        (Ok(result.0), result.1)
     }
 
     pub fn encode(&self, bytes: &mut Vec<u8>) {
