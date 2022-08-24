@@ -1,5 +1,6 @@
 use super::worker_database_instance::WorkerDatabaseInstance;
 use crate::hash::{hash_bytes, Hash};
+use crate::nodes::worker_node::host_cpython::make_cpython_module_host_actor;
 use crate::nodes::worker_node::host_wasm32::make_wasm32_module_host_actor;
 use crate::nodes::worker_node::module_host::ModuleHost;
 use crate::nodes::HostType;
@@ -103,6 +104,7 @@ impl HostController {
 
         let module_host = match worker_database_instance.host_type {
             HostType::WASM32 => make_wasm32_module_host_actor(worker_database_instance, module_hash, program_bytes)?,
+            HostType::CPYTHON => make_cpython_module_host_actor(worker_database_instance, module_hash, program_bytes)?,
         };
 
         let mut modules = self.modules.lock().unwrap();

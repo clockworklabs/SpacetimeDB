@@ -11,7 +11,9 @@ RUN ./llvm.sh 12
 
 RUN apt-get update && apt-get install -y \
   cmake \
-  less
+  less \
+  libpython3.9 \
+  libpython3.9-dev
 
 COPY ./crates/spacetimedb-bindings ../spacetimedb-bindings
 COPY ./crates/spacetimedb/src ./src

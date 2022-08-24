@@ -8,11 +8,17 @@ pub fn cli() -> clap::Command<'static> {
     clap::Command::new("init")
         .about("Create a new SpacetimeDB account.")
         .override_usage("stdb init <identity> <name> <path to project>")
+        .arg(
+            Arg::new("host_type")
+                .takes_value(true)
+                .required(false)
+                .long("host_type")
+                .short('t'),
+        )
         .arg(Arg::new("force").long("force").short('f'))
         .arg(Arg::new("identity").required(true))
         .arg(Arg::new("name").required(true))
         .arg(Arg::new("path to project").required(true))
-        .arg(Arg::new("host_type").required(false))
         .after_help("Run `stdb help init for more detailed information.\n`")
 }
 
