@@ -452,19 +452,21 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
                 if let syn::Type::Path(syn::TypePath { ref path, .. }) = field.ty {
                     if path.segments.len() > 0 {
                         match path.segments[0].ident.to_token_stream().to_string().as_str() {
-                            "Hash" => match unique_column {
-                                Some(mut some) => {
-                                    some.conversion_from_raw_to_stdb_statement = quote!(
-                                        let data = #col_type_value(data.to_vec());
-                                    );
-                                    unique_column = Some(some);
+                            "Hash" => {
+                                match unique_column {
+                                    Some(mut some) => {
+                                        some.conversion_from_raw_to_stdb_statement = quote!(
+                                            let data = #col_type_value(data.to_vec());
+                                        );
+                                        unique_column = Some(some);
+                                    }
+                                    None => {}
                                 }
-                                None => {
-                                    insert_columns.push(quote! {
-                                        spacetimedb_bindings::TypeValue::Bytes(ins.#col_name.to_vec())
-                                    });
-                                }
-                            },
+
+                                insert_columns.push(quote! {
+                                    spacetimedb_bindings::TypeValue::Bytes(ins.#col_name.to_vec())
+                                });
+                            }
                             "Vec" => {
                                 let vec_param = parse_generic_arg(path.segments[0].arguments.to_token_stream());
                                 match vec_param {
