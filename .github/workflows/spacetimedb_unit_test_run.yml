@@ -1,5 +1,5 @@
 # GitHub Action to run check/fmt/clippy & test suite.
-on: [push, pull_request]
+on: [pull_request]
 
 name: SpacetimeDB / Ubuntu Latest
 
