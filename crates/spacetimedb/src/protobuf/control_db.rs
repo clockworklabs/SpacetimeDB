@@ -13,10 +13,12 @@ pub struct Database {
     pub identity: std::vec::Vec<u8>,
     #[prost(string, tag="3")]
     pub name: std::string::String,
-    #[prost(uint32, tag="4")]
+    #[prost(enumeration="HostType", tag="4")]
+    pub host_type: i32,
+    #[prost(uint32, tag="5")]
     pub num_replicas: u32,
-    #[prost(bytes, tag="5")]
-    pub wasm_bytes_address: std::vec::Vec<u8>,
+    #[prost(bytes, tag="6")]
+    pub program_bytes_address: std::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DatabaseStatus {
@@ -53,4 +55,9 @@ pub struct NodeStatus {
     /// SEE: https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/node-v1/#NodeStatus
     #[prost(string, tag="1")]
     pub state: std::string::String,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum HostType {
+    Wasm32 = 0,
 }

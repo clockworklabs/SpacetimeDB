@@ -19,7 +19,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let path_to_project = args.value_of("path to project").unwrap();
 
     let path = fs::canonicalize(path_to_project).unwrap();
-    let wasm_bytes = fs::read(path)?;
+    let program_bytes = fs::read(path)?;
 
     let client = reqwest::Client::new();
     let res = client
@@ -27,7 +27,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             "http://{}/database/{}/{}/update",
             config.host, hex_identity, name
         ))
-        .body(wasm_bytes)
+        .body(program_bytes)
         .send()
         .await?;
 

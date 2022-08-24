@@ -58,10 +58,10 @@ impl WasmHostController {
     pub async fn init_module(
         &self,
         worker_database_instance: WorkerDatabaseInstance,
-        wasm_bytes: Vec<u8>,
+        program_bytes: Vec<u8>,
     ) -> Result<Hash, anyhow::Error> {
         let key = worker_database_instance.database_instance_id;
-        let module_hash = self.spawn_module(worker_database_instance, wasm_bytes).await?;
+        let module_hash = self.spawn_module(worker_database_instance, program_bytes).await?;
         let module_host = {
             let modules = self.modules.lock().unwrap();
             modules.get(&key).unwrap().clone()
@@ -88,10 +88,10 @@ impl WasmHostController {
     pub async fn _update_module(
         &self,
         worker_database_instance: WorkerDatabaseInstance,
-        wasm_bytes: Vec<u8>,
+        program_bytes: Vec<u8>,
     ) -> Result<Hash, anyhow::Error> {
         let key = worker_database_instance.database_instance_id;
-        let module_hash = self.spawn_module(worker_database_instance, wasm_bytes).await?;
+        let module_hash = self.spawn_module(worker_database_instance, program_bytes).await?;
         let module_host = {
             let modules = self.modules.lock().unwrap();
             modules.get(&key).unwrap().clone()
@@ -104,10 +104,10 @@ impl WasmHostController {
     pub async fn add_module(
         &self,
         worker_database_instance: WorkerDatabaseInstance,
-        wasm_bytes: Vec<u8>,
+        program_bytes: Vec<u8>,
     ) -> Result<Hash, anyhow::Error> {
         let key = worker_database_instance.database_instance_id;
-        let module_hash = self.spawn_module(worker_database_instance, wasm_bytes).await?;
+        let module_hash = self.spawn_module(worker_database_instance, program_bytes).await?;
         let module_host = {
             let modules = self.modules.lock().unwrap();
             modules.get(&key).unwrap().clone()
@@ -119,9 +119,9 @@ impl WasmHostController {
     pub async fn spawn_module(
         &self,
         worker_database_instance: WorkerDatabaseInstance,
-        wasm_bytes: Vec<u8>,
+        program_bytes: Vec<u8>,
     ) -> Result<Hash, anyhow::Error> {
-        let module_hash = hash_bytes(&wasm_bytes);
+        let module_hash = hash_bytes(&program_bytes);
         let key = worker_database_instance.database_instance_id;
         let module_host = {
             let modules = self.modules.lock().unwrap();
@@ -150,7 +150,7 @@ impl WasmHostController {
         compiler_config.push_middleware(metering);
 
         let store = Store::new(&Universal::new(compiler_config).engine());
-        let module = Module::new(&store, wasm_bytes)?;
+        let module = Module::new(&store, program_bytes)?;
 
         let identity = worker_database_instance.identity;
         let name = &worker_database_instance.name;

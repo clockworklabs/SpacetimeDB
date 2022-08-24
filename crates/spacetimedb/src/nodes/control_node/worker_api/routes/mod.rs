@@ -95,14 +95,14 @@ async fn join(state: State) -> Result<(State, Response<Body>), (State, HandlerEr
 }
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
-pub struct WasmBytesParams {
-    wasm_bytes_address: String,
+pub struct ProgramBytesParams {
+    program_bytes_address: String,
 }
 
-async fn wasm_bytes(mut state: State) -> Result<(State, Response<Body>), (State, HandlerError)> {
-    let WasmBytesParams { wasm_bytes_address } = WasmBytesParams::take_from(&mut state);
+async fn program_bytes(mut state: State) -> Result<(State, Response<Body>), (State, HandlerError)> {
+    let ProgramBytesParams { program_bytes_address } = ProgramBytesParams::take_from(&mut state);
 
-    let hash = match Hash::from_hex(&wasm_bytes_address) {
+    let hash = match Hash::from_hex(&program_bytes_address) {
         Ok(hash) => hash,
         Err(err) => {
             log::debug!("{}", err);
@@ -113,12 +113,12 @@ async fn wasm_bytes(mut state: State) -> Result<(State, Response<Body>), (State,
             ));
         }
     };
-    let wasm_bytes = object_db::get_object(&hash).await.unwrap();
+    let program_bytes = object_db::get_object(&hash).await.unwrap();
 
-    if let Some(wasm_bytes) = wasm_bytes {
+    if let Some(program_bytes) = program_bytes {
         let res = Response::builder()
             .status(StatusCode::OK)
-            .body(Body::from(wasm_bytes))
+            .body(Body::from(program_bytes))
             .unwrap();
         Ok((state, res))
     } else {
@@ -138,8 +138,8 @@ pub fn router() -> Router {
             .with_query_string_extractor::<JoinQueryParams>()
             .to_async(join);
         route
-            .get("/wasm_bytes/:wasm_bytes_address")
-            .with_path_extractor::<WasmBytesParams>()
-            .to_async(wasm_bytes);
+            .get("/program_bytes/:program_bytes_address")
+            .with_path_extractor::<ProgramBytesParams>()
+            .to_async(program_bytes);
     })
 }

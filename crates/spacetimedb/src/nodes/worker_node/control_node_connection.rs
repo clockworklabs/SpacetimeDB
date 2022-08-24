@@ -1,4 +1,5 @@
 use super::{database_logger::DatabaseLogger, wasm_host_controller, worker_database_instance::WorkerDatabaseInstance};
+use crate::nodes::HostType;
 use crate::{
     db::relational_db::RelationalDB,
     hash::Hash,
@@ -14,6 +15,7 @@ use crate::{
 };
 use futures::StreamExt;
 use hyper::{body, Body, Request, Uri};
+use int_enum::IntEnum;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -256,9 +258,9 @@ async fn init_module_on_database_instance(database_id: u64, instance_id: u64) {
     };
     let identity = Hash::from_slice(database.identity);
     let name = database.name;
-    let wasm_bytes_address = Hash::from_slice(database.wasm_bytes_address);
-    let wasm_bytes = ControlNodeClient::get_shared()
-        .get_wasm_bytes(&wasm_bytes_address)
+    let program_bytes_address = Hash::from_slice(database.program_bytes_address);
+    let program_bytes = ControlNodeClient::get_shared()
+        .get_program_bytes(&program_bytes_address)
         .await;
 
     let log_path = DatabaseLogger::filepath(&identity, &name, instance_id);
@@ -268,6 +270,7 @@ async fn init_module_on_database_instance(database_id: u64, instance_id: u64) {
     let worker_database_instance = WorkerDatabaseInstance {
         database_instance_id: instance_id,
         database_id,
+        host_type: HostType::from_int(database.host_type).expect("unknown module host type"),
         identity,
         name: name.clone(),
         logger: Arc::new(Mutex::new(DatabaseLogger::open(&log_path))),
@@ -276,7 +279,7 @@ async fn init_module_on_database_instance(database_id: u64, instance_id: u64) {
 
     let host = wasm_host_controller::get_host();
     let _address = host
-        .init_module(worker_database_instance, wasm_bytes.clone())
+        .init_module(worker_database_instance, program_bytes.clone())
         .await
         .unwrap();
 }
@@ -289,9 +292,9 @@ async fn start_module_on_database_instance(database_id: u64, instance_id: u64) {
     };
     let identity = Hash::from_slice(database.identity);
     let name = database.name;
-    let wasm_bytes_address = Hash::from_slice(database.wasm_bytes_address);
-    let wasm_bytes = ControlNodeClient::get_shared()
-        .get_wasm_bytes(&wasm_bytes_address)
+    let program_bytes_address = Hash::from_slice(database.program_bytes_address);
+    let program_bytes = ControlNodeClient::get_shared()
+        .get_program_bytes(&program_bytes_address)
         .await;
 
     let log_path = DatabaseLogger::filepath(&identity, &name, instance_id);
@@ -301,6 +304,7 @@ async fn start_module_on_database_instance(database_id: u64, instance_id: u64) {
     let worker_database_instance = WorkerDatabaseInstance {
         database_instance_id: instance_id,
         database_id,
+        host_type: HostType::from_int(database.host_type).expect("unknown module host type"),
         identity,
         name: name.clone(),
         logger: Arc::new(Mutex::new(DatabaseLogger::open(&log_path))),
@@ -309,7 +313,7 @@ async fn start_module_on_database_instance(database_id: u64, instance_id: u64) {
 
     let host = wasm_host_controller::get_host();
     let _address = host
-        .add_module(worker_database_instance, wasm_bytes.clone())
+        .add_module(worker_database_instance, program_bytes.clone())
         .await
         .unwrap();
 }
@@ -358,11 +362,11 @@ impl ControlNodeClient {
         Ok((Hash::from_hex(&res.identity).unwrap(), res.token))
     }
 
-    async fn get_wasm_bytes(&self, wasm_bytes_address: &Hash) -> Vec<u8> {
+    async fn get_program_bytes(&self, program_bytes_address: &Hash) -> Vec<u8> {
         let uri = format!(
-            "http://{}/wasm_bytes/{}",
+            "http://{}/program_bytes/{}",
             self.worker_api_bootstrap_addr,
-            wasm_bytes_address.to_hex()
+            program_bytes_address.to_hex()
         )
         .parse::<Uri>()
         .unwrap();
@@ -377,12 +381,23 @@ impl ControlNodeClient {
         bytes.to_vec()
     }
 
-    pub async fn _init_database(&self, identity: &Hash, name: &str, wasm_bytes: Vec<u8>, force: bool) {
+    pub async fn _init_database(
+        &self,
+        identity: &Hash,
+        name: &str,
+        program_bytes: Vec<u8>,
+        host_type: HostType,
+        force: bool,
+    ) {
         let hex_identity = identity.to_hex();
         let force_str = if force { "true" } else { "false" };
         let uri = format!(
-            "http://{}/database/{}/{}/init?force={}",
-            self.client_api_bootstrap_addr, hex_identity, name, force_str
+            "http://{}/database/{}/{}/init?force={}&host_type={}",
+            self.client_api_bootstrap_addr,
+            hex_identity,
+            name,
+            force_str,
+            host_type.as_param_str()
         )
         .parse::<Uri>()
         .unwrap();
@@ -390,7 +405,7 @@ impl ControlNodeClient {
         let request = Request::builder()
             .method("POST")
             .uri(&uri)
-            .body(Body::from(wasm_bytes))
+            .body(Body::from(program_bytes))
             .unwrap();
 
         let client = hyper::Client::new();
@@ -400,7 +415,7 @@ impl ControlNodeClient {
         }
     }
 
-    pub async fn _update_database(&self, identity: &Hash, name: &str, wasm_bytes: Vec<u8>) {
+    pub async fn _update_database(&self, identity: &Hash, name: &str, program_bytes: Vec<u8>) {
         let hex_identity = identity.to_hex();
         let uri = format!(
             "http://{}/database/{}/{}/update",
@@ -412,7 +427,7 @@ impl ControlNodeClient {
         let request = Request::builder()
             .method("POST")
             .uri(&uri)
-            .body(Body::from(wasm_bytes))
+            .body(Body::from(program_bytes))
             .unwrap();
 
         let client = hyper::Client::new();

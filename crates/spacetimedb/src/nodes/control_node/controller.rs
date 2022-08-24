@@ -1,3 +1,4 @@
+use crate::nodes::HostType;
 use crate::{
     hash::Hash,
     protobuf::{
@@ -8,6 +9,7 @@ use crate::{
         },
     },
 };
+use int_enum::IntEnum;
 use prost::Message;
 use std::collections::HashMap;
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
@@ -41,7 +43,8 @@ pub async fn node_disconnected(_id: u64) -> Result<(), anyhow::Error> {
 pub async fn insert_database(
     identity: &Hash,
     name: &str,
-    wasm_bytes_address: &Hash,
+    program_bytes_address: &Hash,
+    host_type: HostType,
     num_replicas: u32,
     force: bool,
 ) -> Result<(), anyhow::Error> {
@@ -49,8 +52,9 @@ pub async fn insert_database(
         id: 0,
         identity: identity.as_slice().to_owned(),
         name: name.to_string(),
+        host_type: host_type.int_value(),
         num_replicas,
-        wasm_bytes_address: wasm_bytes_address.as_slice().to_owned(),
+        program_bytes_address: program_bytes_address.as_slice().to_owned(),
     };
 
     if force {
@@ -86,7 +90,7 @@ pub async fn insert_database(
 pub async fn update_database(
     identity: &Hash,
     name: &str,
-    wasm_bytes_address: &Hash,
+    program_bytes_address: &Hash,
     num_replicas: u32,
 ) -> Result<(), anyhow::Error> {
     let database = control_db::get_database_by_address(identity, name).await?;
@@ -97,7 +101,7 @@ pub async fn update_database(
 
     let old_database = database.clone();
 
-    database.wasm_bytes_address = wasm_bytes_address.as_slice().to_vec();
+    database.program_bytes_address = program_bytes_address.as_slice().to_vec();
     database.num_replicas = num_replicas;
     let new_database = database.clone();
     control_db::update_database(database).await?;

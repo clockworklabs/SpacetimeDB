@@ -2,6 +2,7 @@ use crate::hash::hash_bytes;
 use crate::hash::Hash;
 use crate::nodes::control_node::controller;
 use crate::nodes::control_node::object_db;
+use crate::nodes::HostType;
 use gotham::anyhow::anyhow;
 use gotham::handler::HandlerError;
 use gotham::handler::SimpleHandlerResult;
@@ -24,11 +25,16 @@ struct InitDatabaseParams {
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct InitDatabaseQueryParams {
     force: Option<bool>,
+    host_type: Option<String>,
 }
 
 async fn init_database(state: &mut State) -> SimpleHandlerResult {
     let InitDatabaseParams { identity, name } = InitDatabaseParams::take_from(state);
-    let InitDatabaseQueryParams { force } = InitDatabaseQueryParams::take_from(state);
+    let InitDatabaseQueryParams { force, host_type } = InitDatabaseQueryParams::take_from(state);
+    let host_type = match HostType::parse(host_type) {
+        Ok(ht) => ht,
+        Err(e) => return Err(HandlerError::from(e).with_status(StatusCode::BAD_REQUEST)),
+    };
     let force = force.unwrap_or(false);
     let body = state.borrow_mut::<Body>();
     let data = hyper::body::to_bytes(body).await;
@@ -36,15 +42,17 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
         Ok(data) => data,
         Err(_) => return Err(HandlerError::from(anyhow!("Invalid request body")).with_status(StatusCode::BAD_REQUEST)),
     };
-    let wasm_bytes = data.to_vec();
-    let wasm_bytes_address = hash_bytes(&wasm_bytes);
-    object_db::insert_object(wasm_bytes).await.unwrap();
+    let program_bytes = data.to_vec();
+    let program_bytes_addr = hash_bytes(&program_bytes);
+    object_db::insert_object(program_bytes).await.unwrap();
 
     let identity = Hash::from_hex(&identity).unwrap();
 
     let num_replicas = 1;
 
-    if let Err(err) = controller::insert_database(&identity, &name, &wasm_bytes_address, num_replicas, force).await {
+    if let Err(err) =
+        controller::insert_database(&identity, &name, &program_bytes_addr, host_type, num_replicas, force).await
+    {
         log::debug!("{err}");
         return Err(HandlerError::from(err));
     }
@@ -67,14 +75,14 @@ async fn update_database(state: &mut State) -> SimpleHandlerResult {
         Ok(data) => data,
         Err(_) => return Err(HandlerError::from(anyhow!("Invalid request body")).with_status(StatusCode::BAD_REQUEST)),
     };
-    let wasm_bytes = data.to_vec();
-    let wasm_bytes_address = hash_bytes(&wasm_bytes);
-    object_db::insert_object(wasm_bytes).await.unwrap();
+    let program_bytes = data.to_vec();
+    let program_bytes_address = hash_bytes(&program_bytes);
+    object_db::insert_object(program_bytes).await.unwrap();
 
     let identity = Hash::from_hex(&identity).unwrap();
     let num_replicas = 1;
 
-    if let Err(err) = controller::update_database(&identity, &name, &wasm_bytes_address, num_replicas).await {
+    if let Err(err) = controller::update_database(&identity, &name, &program_bytes_address, num_replicas).await {
         log::debug!("{err}");
         return Err(HandlerError::from(err));
     }
