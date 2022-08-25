@@ -1,51 +1,18 @@
+use crate::nodes::worker_node::host_cpython::translate::translate_arguments;
 use crate::nodes::worker_node::module_host::{ModuleHostActor, ModuleHostCommand};
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
 use anyhow::anyhow;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyFunction, PyList, PyString};
-use serde_json::Value;
-use std::sync::{Arc, Mutex};
-
-// Turn serde_json arguments into PyObjects.
-fn translate_json(py: Python<'_>, v: &Value) -> PyObject {
-    match v {
-        Value::Null => py.None(),
-        Value::Bool(b) => b.into_py(py),
-        Value::Number(n) => {
-            if n.is_f64() {
-                n.as_f64().unwrap().into_py(py)
-            } else {
-                n.as_i64().unwrap().into_py(py)
-            }
-        }
-        Value::String(s) => PyObject::from(PyString::new(py, s)),
-        Value::Array(a) => PyObject::from(PyList::new(py, a.iter().map(|vv| translate_json(py, vv)))),
-        Value::Object(o) => {
-            let dict = PyDict::new(py);
-            for kv in o {
-                dict.setattr(kv.0.as_str(), translate_json(py, kv.1))
-                    .expect("Unable to set dict key")
-            }
-            PyObject::from(dict)
-        }
-    }
-}
-
-// Perform argument translation from JSON.
-fn translate_arguments(py: Python<'_>, argument_bytes_json: Vec<u8>) -> Result<Py<PyAny>, anyhow::Error> {
-    let v: Value = serde_json::from_slice(argument_bytes_json.as_slice())?;
-    Ok(translate_json(py, &v))
-}
+use pyo3::types::{PyFunction, PyString};
 
 pub(crate) struct CPythonModuleHostActor {
     pub prg_module: PyObject,
-    pub worker_database_instance: Arc<Mutex<WorkerDatabaseInstance>>,
+    pub worker_database_instance: WorkerDatabaseInstance,
 }
 
 impl CPythonModuleHostActor {
     fn delete_database(&mut self) -> Result<(), anyhow::Error> {
-        let worker_db_inst = self.worker_database_instance.lock().unwrap();
-        let mut stdb = worker_db_inst.relational_db.lock().unwrap();
+        let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         stdb.reset_hard()?;
         Ok(())
     }
