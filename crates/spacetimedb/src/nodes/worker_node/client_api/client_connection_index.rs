@@ -1,4 +1,4 @@
-use super::super::wasm_host_controller;
+use super::super::host_controller;
 use crate::metrics::CONNECTED_GAME_CLIENTS;
 use crate::{hash::Hash, nodes::worker_node::worker_db};
 use hyper::upgrade::Upgraded;
@@ -146,7 +146,7 @@ impl ClientActorIndex {
             let database = worker_db::get_database_by_address(&module_identity, &module_name).unwrap();
             let database_instance = worker_db::get_leader_database_instance_by_database(database.id);
             let instance_id = database_instance.unwrap().id;
-            let host = wasm_host_controller::get_host();
+            let host = host_controller::get_host();
             let module = host.get_module(instance_id).unwrap();
             module.add_subscriber(client_id).await.unwrap();
             module

@@ -2,7 +2,7 @@ use super::client_connection_index::CLIENT_ACTOR_INDEX;
 use crate::hash::Hash;
 use crate::json::client_api::IdentityTokenJson;
 use crate::json::client_api::MessageJson;
-use crate::nodes::worker_node::wasm_host_controller;
+use crate::nodes::worker_node::host_controller;
 use crate::nodes::worker_node::worker_db;
 use crate::protobuf::client_api::IdentityToken;
 use crate::protobuf::client_api::{message, Message};
@@ -261,7 +261,7 @@ impl ClientConnection {
                 let reducer = f.reducer;
                 let arg_bytes = f.arg_bytes;
 
-                let host = wasm_host_controller::get_host();
+                let host = host_controller::get_host();
                 match host
                     .call_reducer(instance_id, client_id.identity, &reducer, arg_bytes)
                     .await
@@ -292,7 +292,7 @@ impl ClientConnection {
 
         // TODO(cloutiertyler): should be checking message type as in the above case
 
-        let host = wasm_host_controller::get_host();
+        let host = host_controller::get_host();
         match host
             .call_reducer(instance_id, client_id.identity, &reducer, arg_bytes)
             .await
@@ -314,7 +314,7 @@ impl Drop for ClientConnection {
         let client_id = self.id.clone();
 
         spawn(async move {
-            let host = wasm_host_controller::get_host();
+            let host = host_controller::get_host();
             let module = host.get_module(instance_id);
             match module {
                 Ok(module) => {

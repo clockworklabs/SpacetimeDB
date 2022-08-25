@@ -2,9 +2,9 @@
 mod client_api;
 mod control_node_connection;
 mod database_logger;
-mod wasm_host_controller;
-mod wasm_instance_env;
-mod wasm_module_host;
+mod host_controller;
+mod host_wasm32;
+mod module_host;
 mod worker_database_instance;
 mod worker_db;
 

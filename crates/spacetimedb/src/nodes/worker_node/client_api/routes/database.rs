@@ -4,7 +4,7 @@ use crate::hash::Hash;
 use crate::nodes::worker_node::client_api::proxy::proxy_to_control_node_client_api;
 use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
 use crate::nodes::worker_node::database_logger::DatabaseLogger;
-use crate::nodes::worker_node::wasm_host_controller;
+use crate::nodes::worker_node::host_controller;
 use crate::nodes::worker_node::worker_db;
 use gotham::anyhow::anyhow;
 use gotham::handler::HandlerError;
@@ -84,7 +84,7 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
         }
     };
     let instance_id = database_instance.id;
-    let host = wasm_host_controller::get_host();
+    let host = host_controller::get_host();
 
     match host
         .call_reducer(instance_id, caller_identity, &reducer, arg_bytes)

@@ -4,218 +4,23 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use super::{
+use crate::hash::Hash;
+
+use crate::db::{messages::transaction::Transaction, transactional_db::Tx};
+use crate::nodes::worker_node::{
     client_api::{client_connection_index::ClientActorId, module_subscription_actor::ModuleSubscription},
     worker_database_instance::WorkerDatabaseInstance,
 };
-use crate::{
-    db::{
-        messages::{transaction::Transaction, write::Write},
-        transactional_db::Tx,
-    },
-    hash::Hash,
-};
 use spacetimedb_bindings::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
 use spacetimedb_bindings::buffer::VectorBufWriter;
-use tokio::{
-    spawn,
-    sync::{mpsc, oneshot},
-    time::sleep,
-};
+use tokio::{spawn, time::sleep};
 use wasmer::{imports, Array, Function, Instance, LazyInit, Module, Store, Value, WasmPtr};
 use wasmer_middlewares::metering::{get_remaining_points, set_remaining_points, MeteringPoints};
 
-use super::wasm_instance_env::InstanceEnv;
-
-#[derive(Debug, Clone)]
-pub enum EventStatus {
-    Committed(Vec<Write>),
-    Failed,
-}
-
-#[derive(Debug, Clone)]
-pub struct ModuleFunctionCall {
-    pub reducer: String,
-    pub arg_bytes: Vec<u8>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ModuleEvent {
-    pub timestamp: u64,
-    pub caller_identity: Hash,
-    pub function_call: ModuleFunctionCall,
-    pub status: EventStatus,
-}
-
-#[derive(Debug)]
-enum ModuleHostCommand {
-    CallConnectDisconnect {
-        caller_identity: Hash,
-        connected: bool,
-        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
-    },
-    CallReducer {
-        caller_identity: Hash,
-        reducer_name: String,
-        arg_bytes: Vec<u8>,
-        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
-    },
-    CallRepeatingReducer {
-        reducer_name: String,
-        prev_call_time: u64,
-        respond_to: oneshot::Sender<Result<(u64, u64), anyhow::Error>>,
-    },
-    StartRepeatingReducers,
-    InitDatabase {
-        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
-    },
-    DeleteDatabase {
-        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
-    },
-    _MigrateDatabase {
-        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
-    },
-    AddSubscriber {
-        client_id: ClientActorId,
-        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
-    },
-    RemoveSubscriber {
-        client_id: ClientActorId,
-        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
-    },
-    Exit {},
-}
-
-#[derive(Debug, Clone)]
-pub struct ModuleHost {
-    tx: mpsc::Sender<ModuleHostCommand>,
-}
-
-impl ModuleHost {
-    pub fn spawn(
-        worker_database_instance: WorkerDatabaseInstance,
-        module_hash: Hash,
-        module: Module,
-        store: Store,
-    ) -> ModuleHost {
-        let (tx, mut rx) = mpsc::channel(8);
-        let inner_tx = tx.clone();
-        tokio::spawn(async move {
-            let module_host = ModuleHost { tx: inner_tx };
-            let mut actor = ModuleHostActor::new(worker_database_instance, module_hash, module, store, module_host);
-            while let Some(command) = rx.recv().await {
-                if actor.handle_message(command) {
-                    break;
-                }
-            }
-        });
-        ModuleHost { tx }
-    }
-
-    pub async fn call_identity_connected_disconnected(
-        &self,
-        caller_identity: Hash,
-        connected: bool,
-    ) -> Result<(), anyhow::Error> {
-        let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.tx
-            .send(ModuleHostCommand::CallConnectDisconnect {
-                caller_identity,
-                connected,
-                respond_to: tx,
-            })
-            .await?;
-        rx.await.unwrap()
-    }
-
-    pub async fn call_reducer(
-        &self,
-        caller_identity: Hash,
-        reducer_name: String,
-        arg_bytes: Vec<u8>,
-    ) -> Result<(), anyhow::Error> {
-        let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.tx
-            .send(ModuleHostCommand::CallReducer {
-                caller_identity,
-                reducer_name,
-                arg_bytes,
-                respond_to: tx,
-            })
-            .await?;
-        rx.await.unwrap()
-    }
-
-    pub async fn call_repeating_reducer(
-        &self,
-        reducer_name: String,
-        prev_call_time: u64,
-    ) -> Result<(u64, u64), anyhow::Error> {
-        let (tx, rx) = oneshot::channel::<Result<(u64, u64), anyhow::Error>>();
-        self.tx
-            .send(ModuleHostCommand::CallRepeatingReducer {
-                reducer_name,
-                prev_call_time,
-                respond_to: tx,
-            })
-            .await?;
-        rx.await.unwrap()
-    }
-
-    pub async fn start_repeating_reducers(&self) -> Result<(), anyhow::Error> {
-        self.tx.send(ModuleHostCommand::StartRepeatingReducers).await?;
-        Ok(())
-    }
-
-    pub async fn init_database(&self) -> Result<(), anyhow::Error> {
-        let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.tx.send(ModuleHostCommand::InitDatabase { respond_to: tx }).await?;
-        rx.await.unwrap()
-    }
-
-    pub async fn delete_database(&self) -> Result<(), anyhow::Error> {
-        let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.tx
-            .send(ModuleHostCommand::DeleteDatabase { respond_to: tx })
-            .await?;
-        rx.await.unwrap()
-    }
-
-    pub async fn _migrate_database(&self) -> Result<(), anyhow::Error> {
-        let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.tx
-            .send(ModuleHostCommand::_MigrateDatabase { respond_to: tx })
-            .await?;
-        rx.await.unwrap()
-    }
-
-    pub async fn exit(&self) -> Result<(), anyhow::Error> {
-        self.tx.send(ModuleHostCommand::Exit {}).await?;
-        Ok(())
-    }
-
-    pub async fn add_subscriber(&self, client_id: ClientActorId) -> Result<(), anyhow::Error> {
-        let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.tx
-            .send(ModuleHostCommand::AddSubscriber {
-                client_id,
-                respond_to: tx,
-            })
-            .await?;
-        rx.await.unwrap()
-    }
-
-    pub async fn remove_subscriber(&self, client_id: ClientActorId) -> Result<(), anyhow::Error> {
-        let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.tx
-            .send(ModuleHostCommand::RemoveSubscriber {
-                client_id,
-                respond_to: tx,
-            })
-            .await?;
-        rx.await.unwrap()
-    }
-}
+use crate::nodes::worker_node::host_wasm32::wasm_instance_env::InstanceEnv;
+use crate::nodes::worker_node::module_host::{
+    EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHost, ModuleHostActor, ModuleHostCommand,
+};
 
 const REDUCE_DUNDER: &str = "__reducer__";
 const REPEATING_REDUCER_DUNDER: &str = "__repeating_reducer__";
@@ -234,7 +39,7 @@ fn get_remaining_points_value(instance: &Instance) -> u64 {
     return remaining_points;
 }
 
-struct ModuleHostActor {
+pub(crate) struct WasmModuleHostActor {
     worker_database_instance: WorkerDatabaseInstance,
     module_host: ModuleHost,
     _module_hash: Hash,
@@ -245,7 +50,7 @@ struct ModuleHostActor {
     subscription: ModuleSubscription,
 }
 
-impl ModuleHostActor {
+impl WasmModuleHostActor {
     pub fn new(
         worker_database_instance: WorkerDatabaseInstance,
         module_hash: Hash,
@@ -267,67 +72,6 @@ impl ModuleHostActor {
         };
         host.create_instance().unwrap();
         host
-    }
-
-    fn handle_message(&mut self, message: ModuleHostCommand) -> bool {
-        match message {
-            ModuleHostCommand::CallConnectDisconnect {
-                caller_identity,
-                connected,
-                respond_to,
-            } => {
-                respond_to
-                    .send(self.call_identity_connected_disconnected(&caller_identity, connected))
-                    .unwrap();
-                false
-            }
-            ModuleHostCommand::CallReducer {
-                caller_identity,
-                reducer_name,
-                arg_bytes,
-                respond_to,
-            } => {
-                respond_to
-                    .send(self.call_reducer(caller_identity, &reducer_name, &arg_bytes))
-                    .unwrap();
-                false
-            }
-            ModuleHostCommand::CallRepeatingReducer {
-                reducer_name,
-                prev_call_time,
-                respond_to,
-            } => {
-                respond_to
-                    .send(self.call_repeating_reducer(&reducer_name, prev_call_time))
-                    .unwrap();
-                false
-            }
-            ModuleHostCommand::InitDatabase { respond_to } => {
-                respond_to.send(self.init_database()).unwrap();
-                false
-            }
-            ModuleHostCommand::DeleteDatabase { respond_to } => {
-                respond_to.send(self.delete_database()).unwrap();
-                true
-            }
-            ModuleHostCommand::_MigrateDatabase { respond_to } => {
-                respond_to.send(self.migrate_database()).unwrap();
-                false
-            }
-            ModuleHostCommand::Exit {} => true,
-            ModuleHostCommand::AddSubscriber { client_id, respond_to } => {
-                respond_to.send(self.add_subscriber(client_id)).unwrap();
-                false
-            }
-            ModuleHostCommand::RemoveSubscriber { client_id, respond_to } => {
-                respond_to.send(self.remove_subscriber(client_id)).unwrap();
-                false
-            }
-            ModuleHostCommand::StartRepeatingReducers => {
-                self.start_repeating_reducers();
-                false
-            }
-        }
     }
 
     fn create_instance(&mut self) -> Result<u32, anyhow::Error> {
@@ -692,6 +436,69 @@ impl ModuleHostActor {
                 } else {
                     todo!("Write skew, you need to implement retries my man, T-dawg.");
                 }
+            }
+        }
+    }
+}
+
+impl ModuleHostActor for WasmModuleHostActor {
+    fn handle_message(&mut self, message: ModuleHostCommand) -> bool {
+        match message {
+            ModuleHostCommand::CallConnectDisconnect {
+                caller_identity,
+                connected,
+                respond_to,
+            } => {
+                respond_to
+                    .send(self.call_identity_connected_disconnected(&caller_identity, connected))
+                    .unwrap();
+                false
+            }
+            ModuleHostCommand::CallReducer {
+                caller_identity,
+                reducer_name,
+                arg_bytes,
+                respond_to,
+            } => {
+                respond_to
+                    .send(self.call_reducer(caller_identity, &reducer_name, &arg_bytes))
+                    .unwrap();
+                false
+            }
+            ModuleHostCommand::CallRepeatingReducer {
+                reducer_name,
+                prev_call_time,
+                respond_to,
+            } => {
+                respond_to
+                    .send(self.call_repeating_reducer(&reducer_name, prev_call_time))
+                    .unwrap();
+                false
+            }
+            ModuleHostCommand::InitDatabase { respond_to } => {
+                respond_to.send(self.init_database()).unwrap();
+                false
+            }
+            ModuleHostCommand::DeleteDatabase { respond_to } => {
+                respond_to.send(self.delete_database()).unwrap();
+                true
+            }
+            ModuleHostCommand::_MigrateDatabase { respond_to } => {
+                respond_to.send(self.migrate_database()).unwrap();
+                false
+            }
+            ModuleHostCommand::Exit {} => true,
+            ModuleHostCommand::AddSubscriber { client_id, respond_to } => {
+                respond_to.send(self.add_subscriber(client_id)).unwrap();
+                false
+            }
+            ModuleHostCommand::RemoveSubscriber { client_id, respond_to } => {
+                respond_to.send(self.remove_subscriber(client_id)).unwrap();
+                false
+            }
+            ModuleHostCommand::StartRepeatingReducers => {
+                self.start_repeating_reducers();
+                false
             }
         }
     }

@@ -1,8 +1,8 @@
-use super::super::wasm_module_host::ModuleEvent;
 use super::{
     client_connection::{ClientActorId, ClientConnectionSender, Protocol},
     client_connection_index::CLIENT_ACTOR_INDEX,
 };
+use crate::nodes::worker_node::module_host::{EventStatus, ModuleEvent};
 use crate::{
     db::relational_db::{RelationalDB, ST_COLUMNS_ID, ST_TABLES_ID},
     json::client_api::{
@@ -215,8 +215,8 @@ impl ModuleSubscriptionActor {
     pub fn render_protobuf_event(&mut self, event: &ModuleEvent) -> MessageProtobuf {
         let empty_writes = Vec::new();
         let (status, writes) = match &event.status {
-            super::super::wasm_module_host::EventStatus::Committed(writes) => (event::Status::Committed, writes),
-            super::super::wasm_module_host::EventStatus::Failed => (event::Status::Failed, &empty_writes),
+            EventStatus::Committed(writes) => (event::Status::Committed, writes),
+            EventStatus::Failed => (event::Status::Failed, &empty_writes),
         };
 
         let event = Event {
@@ -342,8 +342,8 @@ impl ModuleSubscriptionActor {
     pub fn render_json_event(&self, event: &ModuleEvent) -> TransactionUpdateJson {
         let empty_writes = Vec::new();
         let (status_str, writes) = match &event.status {
-            super::super::wasm_module_host::EventStatus::Committed(writes) => ("committed", writes),
-            super::super::wasm_module_host::EventStatus::Failed => ("failed", &empty_writes),
+            EventStatus::Committed(writes) => ("committed", writes),
+            EventStatus::Failed => ("failed", &empty_writes),
         };
 
         let event = EventJson {

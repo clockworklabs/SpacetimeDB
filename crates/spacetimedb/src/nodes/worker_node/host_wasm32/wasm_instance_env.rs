@@ -9,7 +9,7 @@ use std::{
 };
 use wasmer::{Array, LazyInit, Memory, NativeFunc, WasmPtr, WasmerEnv};
 
-use super::worker_database_instance::WorkerDatabaseInstance;
+use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
 
 #[derive(WasmerEnv, Clone)]
 pub struct InstanceEnv {

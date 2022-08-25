@@ -1,58 +1,28 @@
-use super::{wasm_module_host::ModuleHost, worker_database_instance::WorkerDatabaseInstance};
-use crate::hash::{hash_bytes, Hash, ToHexString};
+use super::worker_database_instance::WorkerDatabaseInstance;
+use crate::hash::{hash_bytes, Hash};
+use crate::nodes::worker_node::host_wasm32::make_wasm32_module_host_actor;
+use crate::nodes::worker_node::module_host::ModuleHost;
+use crate::nodes::HostType;
 use anyhow;
 use lazy_static::lazy_static;
-use log;
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
-use wasmer::{wasmparser::Operator, CompilerConfig, Module, Store, Universal, ValType};
-use wasmer_middlewares::Metering;
-
-const REDUCE_DUNDER: &str = "__reducer__";
+use std::{collections::HashMap, sync::Mutex};
 
 lazy_static! {
-    pub static ref HOST: WasmHostController = WasmHostController::new();
+    pub static ref HOST: HostController = HostController::new();
 }
 
-pub fn get_host() -> &'static WasmHostController {
+pub fn get_host() -> &'static HostController {
     &HOST
 }
 
-pub struct WasmHostController {
+pub struct HostController {
     modules: Mutex<HashMap<u64, ModuleHost>>,
 }
 
-impl WasmHostController {
+impl HostController {
     fn new() -> Self {
         let modules = Mutex::new(HashMap::new());
         Self { modules }
-    }
-
-    fn validate_module(module: &Module) -> Result<(), anyhow::Error> {
-        let mut found = false;
-        for f in module.exports().functions() {
-            log::trace!("   {:?}", f);
-            if !f.name().starts_with(REDUCE_DUNDER) {
-                continue;
-            }
-            found = true;
-            let ty = f.ty();
-            if ty.params().len() != 2 {
-                return Err(anyhow::anyhow!("Reduce function has wrong number of params."));
-            }
-            if ty.params()[0] != ValType::I32 {
-                return Err(anyhow::anyhow!("Incorrect param type {} for reducer.", ty.params()[0]));
-            }
-            if ty.params()[1] != ValType::I32 {
-                return Err(anyhow::anyhow!("Incorrect param type {} for reducer.", ty.params()[0]));
-            }
-        }
-        if !found {
-            return Err(anyhow::anyhow!("Reduce function not found in module."));
-        }
-        Ok(())
     }
 
     pub async fn init_module(
@@ -131,33 +101,10 @@ impl WasmHostController {
             module_host.exit().await?;
         }
 
-        let cost_function = |operator: &Operator| -> u64 {
-            match operator {
-                Operator::LocalGet { .. } => 1,
-                Operator::I32Const { .. } => 1,
-                Operator::I32Add { .. } => 1,
-                _ => 1,
-            }
+        let module_host = match worker_database_instance.host_type {
+            HostType::WASM32 => make_wasm32_module_host_actor(worker_database_instance, module_hash, program_bytes)?,
         };
-        let initial_points = 1000000;
-        let metering = Arc::new(Metering::new(initial_points, cost_function));
 
-        // let mut compiler_config = wasmer_compiler_llvm::LLVM::default();
-        // compiler_config.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
-        // compiler_config.push_middleware(metering);
-        let mut compiler_config = wasmer::Cranelift::default();
-        compiler_config.opt_level(wasmer::CraneliftOptLevel::Speed);
-        compiler_config.push_middleware(metering);
-
-        let store = Store::new(&Universal::new(compiler_config).engine());
-        let module = Module::new(&store, program_bytes)?;
-
-        let identity = worker_database_instance.identity;
-        let name = &worker_database_instance.name;
-        log::trace!("Validating module \"{}/{}\":", identity.to_hex_string(), name);
-        Self::validate_module(&module)?;
-
-        let module_host = ModuleHost::spawn(worker_database_instance, module_hash, module, store);
         let mut modules = self.modules.lock().unwrap();
         modules.insert(key, module_host);
 
