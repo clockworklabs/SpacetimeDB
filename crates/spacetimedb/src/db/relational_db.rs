@@ -288,6 +288,9 @@ impl RelationalDB {
             let col_name = if let Some(col_name) = col.name {
                 col_name
             } else {
+                // TODO: Maybe we should support Options as a special type
+                // in TypeValue? Theoretically they could just be enums, but
+                // that is quite a pain to use.
                 return Err(format!("Column {} is missing a name.", i));
             };
             let row = TupleValue {
@@ -727,7 +730,7 @@ mod tests {
             TupleDef {
                 elements: vec![ElementDef {
                     tag: 0,
-                    name: None,
+                    name: Some("my_col").into(),
                     element_type: TypeDef::I32,
                 }],
             },
