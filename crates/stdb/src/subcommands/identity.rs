@@ -1,6 +1,5 @@
 use crate::config::{Config, IdentityConfig};
 use clap::{arg, Arg, ArgAction, ArgMatches, Command};
-use reqwest::RequestBuilder;
 use serde::Deserialize;
 use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
 
@@ -203,8 +202,8 @@ async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     config.identity_configs.push(
         IdentityConfig {
-            identity: identity,
-            token: token,
+            identity,
+            token,
             nickname: nickname.clone(),
             email: Some(email.clone())
         }
@@ -279,4 +278,3 @@ async fn exec_email(mut config: Config, args: &ArgMatches) -> Result<(), anyhow:
 
     Ok(())
 }
-
