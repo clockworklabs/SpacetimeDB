@@ -1,5 +1,6 @@
 use crate::config::{Config, IdentityConfig};
 use clap::{arg, Arg, ArgAction, ArgMatches, Command};
+use reqwest::RequestBuilder;
 use serde::Deserialize;
 use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
 
@@ -44,6 +45,20 @@ fn get_subcommands() -> Vec<Command<'static>> {
             .about("Delete a saved identity")
             .arg(Arg::new("identity").conflicts_with("name").required(true))
             .arg(arg!(-n --name <NAME> "name").conflicts_with("identity").required(true)),
+        Command::new("add")
+            .about("Add an existing identity")
+            .arg(Arg::new("identity").required(true))
+            .arg(Arg::new("token").required(true))
+            .arg(
+                arg!(-n --name "Nickname for identity")
+                .required(false)
+                .default_missing_value(""),
+            )
+            .arg(
+                arg!(-e --email "Nickname for identity")
+                .required(false)
+                .default_missing_value(""),
+            )
     ]
 }
 
@@ -58,6 +73,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
         "set-default" => exec_default(config, args).await,
         "new" => exec_new(config, args).await,
         "rm" => exec_rm(config, args).await,
+        "add" => exec_add(config, args).await,
         "set-email" => exec_email(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
@@ -176,6 +192,32 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     Ok(())
 }
 
+
+async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let identity: String = args.get_one::<String>("identity").unwrap().clone();
+    let token: String = args.get_one::<String>("token").unwrap().clone();
+
+    //optional
+    let nickname = args.get_one::<String>("name").map(|s| s.clone());
+    let email: String = args.get_one::<String>("email").unwrap_or(&"".to_string()).clone();
+
+    config.identity_configs.push(
+        IdentityConfig {
+            identity: identity,
+            token: token,
+            nickname: nickname.clone(),
+            email: Some(email.clone())
+        }
+    );
+
+    config.save();
+
+    println!(" New Identity Added");
+    println!(" NAME      {}", nickname.unwrap_or("".to_string()));
+
+    Ok(())
+}
+
 #[derive(Tabled)]
 #[tabled(rename_all = "UPPERCASE")]
 struct LsRow {
@@ -237,3 +279,4 @@ async fn exec_email(mut config: Config, args: &ArgMatches) -> Result<(), anyhow:
 
     Ok(())
 }
+
