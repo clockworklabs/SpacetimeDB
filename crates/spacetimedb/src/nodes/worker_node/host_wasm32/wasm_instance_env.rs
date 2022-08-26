@@ -196,13 +196,17 @@ impl InstanceEnv {
 
         let (table_info, _) = TupleValue::decode(&table_info_schema, &mut &buffer[..]);
         let table_info = table_info.unwrap_or_else(|e| {
-            panic!("create_table: Could not decode schema! Err: {}", e);
+            panic!("create_table: Could not decode table_info! Err: {}", e);
         });
 
         let table_name = table_info.elements[0].as_string().unwrap();
         let schema_bytes = table_info.elements[1].as_bytes().unwrap();
 
         let (schema, _) = decode_schema(&mut &schema_bytes[..]);
+        let schema = schema.unwrap_or_else(|e| {
+            panic!("create_table: Could not decode schema! Err: {}", e);
+        });
+
         stdb.create_table(tx, table_id, table_name, schema).unwrap();
     }
 

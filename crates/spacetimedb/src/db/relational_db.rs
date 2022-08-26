@@ -209,10 +209,13 @@ impl RelationalDB {
             let bytes: &Vec<u8> = col.as_bytes().unwrap();
             let (col_type, _) = TypeDef::decode(bytes);
 
-            if let Err(e) = col_type {
-                log::error!("schema_for_table: Table has invalid schema: {} Err: {}", table_id, e);
-                return None;
-            }
+            let col_type = match col_type {
+                Ok(col_type) => col_type,
+                Err(e) => {
+                    log::error!("schema_for_table: Table has invalid schema: {} Err: {}", table_id, e);
+                    return None;
+                }
+            };
 
             let col = &row.elements[3];
             let col_name: &String = col.as_string().unwrap();
