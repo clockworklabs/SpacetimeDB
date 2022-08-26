@@ -63,16 +63,20 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     let identity = Hash::from_hex(&identity).expect("that the client passed a valid hex identity lol");
 
     for database in worker_db::_get_databases() {
-        log::debug!("{:?}", database);
+        let db_identity = Hash::from_slice(database.identity.as_slice());
+        log::debug!("Have database {}/{}", db_identity.to_hex(), database.name);
     }
 
     for instance in worker_db::get_database_instances() {
-        log::debug!("{:?}", instance);
+        log::debug!("Have instance {:?}", instance);
     }
 
     let database = match worker_db::get_database_by_address(&identity, &name) {
         Some(database) => database,
-        None => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
+        None => {
+            log::error!("Could not find: {}/{}", identity.to_hex(), name);
+            return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND));
+        }
     };
     let database_instance = match worker_db::get_leader_database_instance_by_database(database.id) {
         Some(database) => database,
@@ -92,7 +96,7 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     {
         Ok(_) => {}
         Err(e) => {
-            log::error!("{}", e);
+            log::debug!("Unable to call {}", e);
             return Err(HandlerError::from(anyhow!("Database instance not ready."))
                 .with_status(StatusCode::SERVICE_UNAVAILABLE));
         }

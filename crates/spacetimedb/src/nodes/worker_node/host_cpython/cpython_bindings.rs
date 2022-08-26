@@ -22,6 +22,7 @@ impl STDBBindingsClass {
         self_.instance_env.console_log(level, &String::from(s));
         Ok(())
     }
+
     fn insert(self_: PyRef<'_, Self>, table_id: u32, buffer: Vec<u8>) {
         self_.instance_env.insert(table_id, bytes::Bytes::from(buffer));
     }

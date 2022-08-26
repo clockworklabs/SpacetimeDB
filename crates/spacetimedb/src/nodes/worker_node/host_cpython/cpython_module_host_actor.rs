@@ -6,7 +6,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::anyhow;
 use pyo3::prelude::*;
 use pyo3::types::{PyFunction, PyString, PyTuple};
-use pyo3::wrap_pymodule;
 use tokio::spawn;
 use tokio::time::sleep;
 
@@ -18,7 +17,6 @@ use crate::db::transactional_db::Tx;
 use crate::hash::Hash;
 use crate::nodes::worker_node::client_api::client_connection::ClientActorId;
 use crate::nodes::worker_node::client_api::module_subscription_actor::ModuleSubscription;
-use crate::nodes::worker_node::host_cpython::cpython_bindings::stdb;
 use crate::nodes::worker_node::host_cpython::cpython_bindings::STDBBindingsClass;
 use crate::nodes::worker_node::host_cpython::cpython_instance_env::InstanceEnv;
 use crate::nodes::worker_node::host_cpython::translate::translate_arguments;
@@ -68,9 +66,10 @@ impl CPythonModuleHostActor {
         // Compile the provided program code into a module.
         let program_code = String::from_utf8(program_bytes)?;
 
-        let module_name = format!("instance_{}_module_{}.py", instance_id, module_hash.to_hex());
+        let module_name = format!("instance_{}_module_{}", instance_id, module_hash.to_hex());
         let module_file_name = format!("{}.py", module_name);
 
+        log::debug!("Creating instance {}...", module_name);
         let prg_module: Result<Py<PyModule>, PyErr> = Python::with_gil(|py| {
             let prg_module = PyModule::from_code(
                 py,
@@ -93,12 +92,9 @@ impl CPythonModuleHostActor {
                 },
             )?;
 
-            // Instantiate our custom 'stdb' module, and stick the bindings as an instance on
-            // there.
-            // Python programs will see this as 'stdb.bindings'
-            let extensions_module: PyObject = wrap_pymodule!(stdb)(py).into();
-            extensions_module.setattr(py, "bindings", bindings)?;
-            prg_module.add("stdb", extensions_module)?;
+            // Stick the bindings instance directly into the namespace of the instance module.
+            // Python programs will refer to this via "SpacetimeDB"
+            prg_module.add("SpacetimeDB", bindings)?;
 
             Ok(instance_module.clone())
         });
@@ -113,6 +109,13 @@ impl CPythonModuleHostActor {
             }
         };
         self.instances.push((instance_id, prg_module));
+
+        let exported_functions = self.module_export_functions().join(", ");
+        log::debug!(
+            "Created instance {}; exported functions: {}",
+            module_name,
+            exported_functions
+        );
 
         Ok(instance_id)
     }
@@ -247,6 +250,8 @@ impl CPythonModuleHostActor {
         // TODO: validate arg_bytes
         let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
 
+        log::info!("Calling python reducer {}", reducer_symbol);
+
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
 
         let arguments: Result<(PyObject, PyObject, PyObject), anyhow::Error> = Python::with_gil(|py| {
@@ -327,8 +332,10 @@ impl CPythonModuleHostActor {
                         }
                     }
                     Err(e) => {
-                        return Err(anyhow::Error::new(e)
-                            .context(format!("Unable to call reducer with name: {}", reducer_name)))
+                        return Err(anyhow::Error::new(e.clone_ref(py)).context(format!(
+                            "Unable to call reducer with name: {}, error: {}",
+                            reducer_name, e
+                        )))
                     }
                 }
             });
@@ -345,7 +352,7 @@ impl CPythonModuleHostActor {
                 stdb.rollback_tx(tx);
 
                 // TODO(ryan): Make sure proper traceback is fully output here.
-                log::info!("Reducer \"{}\" runtime error: {}", reducer_symbol, err);
+                log::error!("Reducer \"{}\" runtime error: {}", reducer_symbol, err);
                 Ok((None, None))
             }
             Ok(repeat_duration) => {

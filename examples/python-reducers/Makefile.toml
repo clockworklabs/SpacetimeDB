@@ -1,0 +1,18 @@
+[tasks.install]
+command = "stdb"
+args = [
+    "init", "-f", "-t", "python",
+    "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+    "stdb-py",
+    "example-python.py"
+]
+
+[tasks.call]
+command = "stdb"
+args = [
+    "call",
+    "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+    "stdb-py",
+    "test",
+    '{"args": [1,2,3,4]}'
+]

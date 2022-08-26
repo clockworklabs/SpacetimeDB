@@ -2,7 +2,8 @@ use pyo3::types::{PyDict, PyList, PyString};
 use pyo3::{IntoPy, Py, PyAny, PyObject, Python};
 use serde_json::Value;
 
-// Turn serde_json arguments into PyObjects.
+// Recursively translate JSON into PyObjects, doing a naive translation of the fundamental types to
+// their Python equivalents.
 fn translate_json(py: Python<'_>, v: &Value) -> PyObject {
     match v {
         Value::Null => py.None(),
@@ -19,7 +20,7 @@ fn translate_json(py: Python<'_>, v: &Value) -> PyObject {
         Value::Object(o) => {
             let dict = PyDict::new(py);
             for kv in o {
-                dict.setattr(kv.0.as_str(), translate_json(py, kv.1))
+                dict.set_item(kv.0.as_str(), translate_json(py, kv.1))
                     .expect("Unable to set dict key")
             }
             PyObject::from(dict)
