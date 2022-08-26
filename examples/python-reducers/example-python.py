@@ -15,7 +15,7 @@ def __create_table__mock():
 
 
 # An example reducer which merely calls console_log for now.
-def __reducer__test(identity, timestamp, args):
+def __reducer__test(identity, timestamp, a : int, b: int, c: int):
     identity_hex = ''.join('{:02x}'.format(x) for x in identity)
     SpacetimeDB.console_log(1, "'test' call from identity: %s, timestamp: %s, arguments: %s"
-                            % ( identity_hex, timestamp, args))
+                            % ( identity_hex, timestamp, (a, b, c)))

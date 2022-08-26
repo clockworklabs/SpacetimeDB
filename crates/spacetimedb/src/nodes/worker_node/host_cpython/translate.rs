@@ -1,5 +1,5 @@
 use pyo3::types::{PyDict, PyList, PyString};
-use pyo3::{IntoPy, Py, PyAny, PyObject, Python};
+use pyo3::{IntoPy, PyObject, Python};
 use serde_json::Value;
 
 // Recursively translate JSON into PyObjects, doing a naive translation of the fundamental types to
@@ -29,7 +29,14 @@ fn translate_json(py: Python<'_>, v: &Value) -> PyObject {
 }
 
 // Perform argument translation from JSON.
-pub fn translate_arguments(py: Python<'_>, argument_bytes_json: impl AsRef<[u8]>) -> Result<Py<PyAny>, anyhow::Error> {
-    let v: Value = serde_json::from_slice(argument_bytes_json.as_ref())?;
-    Ok(translate_json(py, &v))
+pub fn translate_json_arguments(
+    py: Python<'_>,
+    argument_bytes_json: impl AsRef<[u8]>,
+) -> Result<Vec<PyObject>, anyhow::Error> {
+    let args_json: Vec<Value> = serde_json::from_slice(argument_bytes_json.as_ref())?;
+    let mut values = Vec::with_capacity(args_json.len());
+    for x in args_json {
+        values.push(translate_json(py, &x))
+    }
+    Ok(values)
 }

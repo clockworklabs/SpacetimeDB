@@ -4,8 +4,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::anyhow;
+use ffi::PyObject_Call;
 use pyo3::prelude::*;
 use pyo3::types::{PyFunction, PyString, PyTuple};
+use pyo3::{ffi, AsPyPointer};
 use tokio::spawn;
 use tokio::time::sleep;
 
@@ -19,7 +21,7 @@ use crate::nodes::worker_node::client_api::client_connection::ClientActorId;
 use crate::nodes::worker_node::client_api::module_subscription_actor::ModuleSubscription;
 use crate::nodes::worker_node::host_cpython::cpython_bindings::STDBBindingsClass;
 use crate::nodes::worker_node::host_cpython::cpython_instance_env::InstanceEnv;
-use crate::nodes::worker_node::host_cpython::translate::translate_arguments;
+use crate::nodes::worker_node::host_cpython::translate::translate_json_arguments;
 use crate::nodes::worker_node::module_host::{
     EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHost, ModuleHostActor, ModuleHostCommand,
 };
@@ -31,6 +33,29 @@ const CREATE_TABLE_DUNDER: &str = "__create_table__";
 const MIGRATE_DATABASE_DUNDER: &str = "__migrate_database__";
 const IDENTITY_CONNECTED_DUNDER: &str = "__identity_connected__";
 const IDENTITY_DISCONNECTED_DUNDER: &str = "__identity_disconnected__";
+
+// PyFunction::call does not allow us to just pass our own Tuple in.
+// It only supports IntoPy<PyTuple>, and for some reason PyTuple can't be "Into" itself.
+// So this is basically copy and paste from PyModule::call, to do what we need through the backdoor.
+fn py_call_function<'a>(
+    py: Python<'a>,
+    func: &PyFunction,
+    args: Py<PyTuple>,
+    kwargs: Option<&pyo3::types::PyDict>,
+) -> PyResult<&'a PyAny> {
+    let kwargs = kwargs.into_ptr();
+
+    unsafe {
+        let return_value = PyObject_Call(func.as_ptr(), args.as_ptr(), kwargs);
+        let ret = py.from_owned_ptr_or_err(return_value);
+        ffi::Py_XDECREF(kwargs);
+        ret
+    }
+}
+
+fn empty_args() -> Py<PyTuple> {
+    Python::with_gil(|py| PyTuple::empty(py).into())
+}
 
 pub(crate) struct CPythonModuleHostActor {
     worker_database_instance: WorkerDatabaseInstance,
@@ -160,13 +185,13 @@ impl CPythonModuleHostActor {
 
     fn call_create_table(&self, create_table_name: &str) -> Result<(), anyhow::Error> {
         let create_table_symbol = format!("{}{}", CREATE_TABLE_DUNDER, create_table_name);
-        let (_tx, _repeat_duration) = self.execute_reducer(&create_table_symbol, ())?;
+        let (_tx, _repeat_duration) = self.execute_reducer(&create_table_symbol, empty_args())?;
         Ok(())
     }
 
     fn call_migrate(&self, migrate_name: &str) -> Result<(), anyhow::Error> {
         let migrate_symbol = format!("{}{}", MIGRATE_DATABASE_DUNDER, migrate_name);
-        let (_tx, _repeat_duration) = self.execute_reducer(&migrate_symbol, ())?;
+        let (_tx, _repeat_duration) = self.execute_reducer(&migrate_symbol, empty_args())?;
         Ok(())
     }
 
@@ -179,7 +204,8 @@ impl CPythonModuleHostActor {
             IDENTITY_DISCONNECTED_DUNDER
         };
 
-        let result = self.execute_reducer(reducer_symbol, (identity.data, timestamp));
+        let args = Python::with_gil(|py| (identity.data, timestamp).into_py(py));
+        let result = self.execute_reducer(reducer_symbol, args);
         let tx = match result {
             Ok((tx, _repeat_duration)) => tx,
             Err(err) => {
@@ -217,7 +243,8 @@ impl CPythonModuleHostActor {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
         let delta_time = timestamp - prev_call_time;
 
-        let (tx, repeat_duration) = self.execute_reducer(&reducer_symbol, (timestamp, delta_time))?;
+        let args = Python::with_gil(|py| (timestamp, delta_time).into_py(py));
+        let (tx, repeat_duration) = self.execute_reducer(&reducer_symbol, args)?;
 
         let status = if let Some(tx) = tx {
             EventStatus::Committed(tx.writes)
@@ -254,13 +281,13 @@ impl CPythonModuleHostActor {
 
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
 
-        let arguments: Result<(PyObject, PyObject, PyObject), anyhow::Error> = Python::with_gil(|py| {
-            let user_arguments = translate_arguments(py, arg_bytes)?;
-            Ok((
-                caller_identity.as_slice().into_py(py),
-                timestamp.into_py(py),
-                user_arguments.into_py(py),
-            ))
+        let arguments: Result<Py<PyTuple>, anyhow::Error> = Python::with_gil(|py| {
+            let mut arguments = vec![caller_identity.data.into_py(py), timestamp.into_py(py)];
+            let mut user_arguments = translate_json_arguments(py, arg_bytes)?;
+            arguments.append(&mut user_arguments);
+            let arguments = PyTuple::new(py, arguments.iter());
+
+            Ok(arguments.into())
         });
 
         let (tx, _repeat_duration) = self.execute_reducer(&reducer_symbol, arguments?)?;
@@ -288,7 +315,7 @@ impl CPythonModuleHostActor {
     fn execute_reducer(
         &self,
         reducer_symbol: &str,
-        arguments: impl IntoPy<Py<PyTuple>>,
+        arguments: Py<PyTuple>,
     ) -> Result<(Option<Transaction>, Option<u64>), anyhow::Error> {
         let tx = {
             let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
@@ -321,7 +348,7 @@ impl CPythonModuleHostActor {
                     }
                 };
 
-                match reducer.call(arguments, None) {
+                match py_call_function(py, reducer, arguments, None) {
                     Ok(result) => {
                         if result.is_none() {
                             Ok(None)
