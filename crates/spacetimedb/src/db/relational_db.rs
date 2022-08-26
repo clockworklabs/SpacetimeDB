@@ -730,7 +730,7 @@ mod tests {
             TupleDef {
                 elements: vec![ElementDef {
                     tag: 0,
-                    name: Some("my_col").into(),
+                    name: Some("my_col".into()),
                     element_type: TypeDef::I32,
                 }],
             },
