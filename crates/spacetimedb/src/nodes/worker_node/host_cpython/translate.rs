@@ -28,7 +28,7 @@ fn translate_json(py: Python<'_>, v: &Value) -> PyObject {
 }
 
 // Perform argument translation from JSON.
-pub fn translate_arguments(py: Python<'_>, argument_bytes_json: Vec<u8>) -> Result<Py<PyAny>, anyhow::Error> {
-    let v: Value = serde_json::from_slice(argument_bytes_json.as_slice())?;
+pub fn translate_arguments(py: Python<'_>, argument_bytes_json: impl AsRef<[u8]>) -> Result<Py<PyAny>, anyhow::Error> {
+    let v: Value = serde_json::from_slice(argument_bytes_json.as_ref())?;
     Ok(translate_json(py, &v))
 }
