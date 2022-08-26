@@ -427,8 +427,10 @@ impl CPythonModuleHostActor {
 
 impl ModuleHostActor for CPythonModuleHostActor {
     // TODO(ryan): For now this is 100% identical to WasmModuleHostActor, and that's suspicious.
-    // In the long run this will likely speak over IPC to a remote python instance rather than
-    // to do things locally. And when that happens this duplication will go away.
+    // In the long run this will likely speak over IPC to a child process.
+    // When that happens, this will be replaced with a "parent process module host actor"
+    // and a corresponding "child process module host actor" will use IPC and friends to proxy
+    // between the two processes. And then this duplication will go away.
     fn handle_message(&mut self, message: ModuleHostCommand) -> bool {
         match message {
             ModuleHostCommand::CallConnectDisconnect {
