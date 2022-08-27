@@ -40,7 +40,7 @@ pub(crate) fn csharp_get_type_def_for_struct(original_struct: ItemStruct) -> Str
                                     Ok(arg) => {
                                         match rust_to_spacetimedb_ident(arg.to_token_stream().to_string().as_str()) {
                                             Some(spacetimedb_type) => {
-                                                write!(element_defs, "\t\t\t\tnew SpacetimeDB.ElementDef({}, SpacetimeDB.TypeDef.GetVec(SpacetimeDB.TypeDef.GetBuiltInType(SpacetimeDb.TypeDef.Def.{}))),\n", col_num, spacetimedb_type).unwrap();
+                                                write!(element_defs, "\t\t\t\tnew SpacetimeDB.ElementDef({}, SpacetimeDB.TypeDef.GetVec(SpacetimeDB.TypeDef.BuiltInType(SpacetimeDB.TypeDef.Def.{}))),\n", col_num, spacetimedb_type).unwrap();
                                             }
                                             None => {
                                                 // This case handles all other structs (including Hash)
@@ -305,14 +305,24 @@ pub(crate) fn autogen_csharp_tuple(original_struct: ItemStruct, table_num: Optio
                                 write!(output_contents, "\t\tpublic SpacetimeDB.Hash {};\n", col_name_csharp).unwrap();
                             }
                             "Vec" => match parse_generic_arg(path.segments[0].arguments.to_token_stream()) {
-                                Ok(argument) => {
-                                    write!(
-                                        output_contents,
-                                        "\t\tpublic System.Collections.Generic.List<{}> {};\n",
-                                        argument, col_name_csharp
-                                    )
-                                    .unwrap();
-                                }
+                                Ok(argument) => match rust_type_to_csharp_raw_type(argument.to_string().as_str()) {
+                                    Some(csharp_type) => {
+                                        write!(
+                                            output_contents,
+                                            "\t\tpublic System.Collections.Generic.List<{}> {};\n",
+                                            csharp_type, col_name_csharp
+                                        )
+                                        .unwrap();
+                                    }
+                                    None => {
+                                        write!(
+                                            output_contents,
+                                            "\t\tpublic System.Collections.Generic.List<{}> {};\n",
+                                            argument, col_name_csharp
+                                        )
+                                        .unwrap();
+                                    }
+                                },
                                 Err(e) => {
                                     panic!("Failed to parse Vec: {}", e);
                                 }
@@ -451,37 +461,51 @@ fn autogen_csharp_tuple_to_struct(original_struct: ItemStruct) -> String {
                                 match parse_generic_arg(path.segments[0].arguments.to_token_stream()) {
                                     Ok(arg) => {
                                         match rust_to_spacetimedb_ident(arg.to_token_stream().to_string().as_str()) {
-                                            Some(_) => match rust_type_to_csharp_raw_type(arg.to_string().as_str()) {
-                                                Some(csharp_type) => {
-                                                    write!(vec_conversion, "\t\t\tvar {}_vec = new System.Collections.Generic.List<{}>();\n", field_ident.to_string(), csharp_type).unwrap();
-                                                    write!(vec_conversion, "\t\t\tvar {}_vec_source = tupleValue[{}].GetValue() as System.Collections.Generic.List<SpacetimeDB.TypeValue>;\n", field_ident.to_string(), col_num).unwrap();
-                                                    write!(
-                                                        vec_conversion,
-                                                        "\t\t\tforeach(var entry in {}_vec_source!)\n",
-                                                        field_ident.to_string()
-                                                    )
-                                                    .unwrap();
-                                                    write!(vec_conversion, "\t\t\t{{\n").unwrap();
-                                                    write!(
-                                                        vec_conversion,
-                                                        "\t\t\t\t{}_vec.Add(entry.GetValue() as {});\n",
-                                                        field_ident.to_string(),
-                                                        csharp_type
-                                                    )
-                                                    .unwrap();
-                                                    write!(vec_conversion, "\t\t\t}}\n").unwrap();
-                                                    write!(
-                                                        output_contents_return,
-                                                        "\t\t\t\t{} = {}_vec,\n",
-                                                        csharp_field_name,
-                                                        field_ident.to_string()
-                                                    )
-                                                    .unwrap();
+                                            Some(spacetimedb_type) => {
+                                                match rust_type_to_csharp_raw_type(arg.to_string().as_str()) {
+                                                    Some(csharp_type) => {
+                                                        write!(vec_conversion, "\t\t\tvar {}_vec = new System.Collections.Generic.List<{}>();\n", field_ident.to_string(), csharp_type).unwrap();
+                                                        write!(vec_conversion, "\t\t\tvar {}_vec_source = tupleValue[{}].GetValue(TypeDef.Def.Vec) as System.Collections.Generic.List<SpacetimeDB.TypeValue>;\n", field_ident.to_string(), col_num).unwrap();
+                                                        write!(
+                                                            vec_conversion,
+                                                            "\t\t\tforeach(var entry in {}_vec_source!)\n",
+                                                            field_ident.to_string()
+                                                        )
+                                                        .unwrap();
+                                                        write!(vec_conversion, "\t\t\t{{\n").unwrap();
+                                                        match csharp_type {
+                                                            "string" => {
+                                                                write!(
+                                                                vec_conversion,
+                                                                "\t\t\t\t{}_vec.Add(entry.GetValue(TypeDef.Def.{}) as string);\n",
+                                                                field_ident.to_string(),
+                                                                spacetimedb_type,
+                                                            ).unwrap();
+                                                            }
+                                                            _ => {
+                                                                write!(
+                                                                vec_conversion,
+                                                                "\t\t\t\t{}_vec.Add(({})entry.GetValue(TypeDef.Def.{}));\n",
+                                                                field_ident.to_string(),
+                                                                csharp_type,
+                                                                spacetimedb_type,
+                                                            ).unwrap();
+                                                            }
+                                                        }
+                                                        write!(vec_conversion, "\t\t\t}}\n").unwrap();
+                                                        write!(
+                                                            output_contents_return,
+                                                            "\t\t\t\t{} = {}_vec,\n",
+                                                            csharp_field_name,
+                                                            field_ident.to_string()
+                                                        )
+                                                        .unwrap();
+                                                    }
+                                                    None => {
+                                                        panic!("This type is a native spacetimedb type, but has no C# type: {}", arg.to_string().as_str());
+                                                    }
                                                 }
-                                                None => {
-                                                    panic!("This type is a native spacetimedb type, but has no C# type: {}", arg.to_string().as_str());
-                                                }
-                                            },
+                                            }
                                             None => match arg.to_string().as_str() {
                                                 "Hash" => {
                                                     write!(vec_conversion, "\t\t\tvar {}_vec = new System.Collections.Generic.List<SpacetimeDB.Hash>();\n", field_ident.to_string()).unwrap();
