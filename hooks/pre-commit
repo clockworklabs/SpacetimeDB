@@ -57,24 +57,24 @@ git_repo="$(git rev-parse --show-toplevel)"
 
 echo "For git repo: $git_repo..."
 
-if [ -n $exe ]
-then
+if [ -n "$exe" ]; then
     # field separator to the new line
     IFS=$'\n'
 
-    for line in $(git status -s)
-    do
+    for line in $(git status -s); do
         # if added or modified
-        if [[ "$line" == 'A'* || "$line" == 'M'* ]]
-        then
-	    if [[ "${line:3}" == "crates/spacetimedb/src/messages.rs" ]]
-	    then
+        if [[ "$line" == 'A'* || "$line" == 'M'* ]]; then
+	    if [[ "${line:3}" == "crates/spacetimedb/src/messages.rs" ]]; then
 	       echo "Skipping format for messages.rs..."
 	       continue
 	    fi
+	    if [[ "${line:3}" == crates/spacetimedb/src/protobuf/*.rs ]]; then
+	       echo "Skipping format for protobuf output..."
+	       continue
+	    fi
+
             # check file extension
-            if [[ "$line" == *.rs ]]
-            then
+            if [[ "$line" == *.rs ]]; then
 		echo "Formatting changed file: ${line:3}..."
                 # format file
                 rustfmt --edition 2021 "$git_repo/${line:3}"	      
