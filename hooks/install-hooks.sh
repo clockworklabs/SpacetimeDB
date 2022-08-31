@@ -4,4 +4,6 @@ rustup component add rustfmt
 
 cd "$(dirname "$0")"
 
-cp -v pre-commit ../.git/hooks
+rm -rf ../.git/hooks
+# Soft link the .git/hooks directory onto hooks/
+ln -s ../hooks/hooks ../.git/hooks
