@@ -112,6 +112,84 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
 }
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
+struct DescribeParams {
+    identity: String,
+    name: String,
+    entity_type: String,
+    entity: String,
+}
+
+async fn describe(state: &mut State) -> SimpleHandlerResult {
+    let DescribeParams {
+        identity,
+        name,
+        entity_type,
+        entity
+    } = DescribeParams::take_from(state);
+
+    let headers = state.borrow::<HeaderMap>();
+    let auth_header = headers.get(AUTHORIZATION);
+    let (caller_identity, caller_identity_token) = if let Some(auth_header) = auth_header {
+        // Validate the credentials of this connection
+        match get_creds_from_header(auth_header) {
+            Ok(v) => v,
+            Err(_) => return Ok(invalid_token_res()),
+        }
+    } else {
+        // Generate a new identity if this request doesn't have one already
+        let (identity, identity_token) = ControlNodeClient::get_shared().get_new_identity().await.unwrap();
+        (identity, identity_token)
+    };
+
+    let identity = Hash::from_hex(&identity).expect("that the client passed a valid hex identity lol");
+
+    let database = match worker_db::get_database_by_address(&identity, &name) {
+        Some(database) => database,
+        None => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
+    };
+    let database_instance = match worker_db::get_leader_database_instance_by_database(database.id) {
+        Some(database) => database,
+        None => {
+            return Err(
+                HandlerError::from(anyhow!("Database instance not scheduled to this node yet."))
+                    .with_status(StatusCode::NOT_FOUND),
+            )
+        }
+    };
+    let instance_id = database_instance.id;
+    let host = host_controller::get_host();
+
+    let response = match entity_type.as_str() {
+        "reducers" =>  {
+            let reducer_name = entity;
+            let _rd = match host.describe_reducer(instance_id, &reducer_name).await {
+                Ok(rd) => rd,
+                Err(e) => {
+                    log::error!("{}", e);
+                    return Err(HandlerError::from(anyhow!("Database instance not ready."))
+                        .with_status(StatusCode::SERVICE_UNAVAILABLE));
+                }
+            };
+
+            // TODO(nate?): Implement JSON etc output of reducer etc description
+            Response::builder()
+                .header("Spacetime-Identity", caller_identity.to_hex())
+                .header("Spacetime-Identity-Token", caller_identity_token)
+                .status(StatusCode::OK)
+                .body(Body::empty())
+                .unwrap()
+        }
+        _ => {
+            log::debug!("Request to describe unhandled entity type: {}", entity_type);
+            return Err(HandlerError::from(anyhow!("Invalid entity type for description: {}", entity_type))
+                .with_status(StatusCode::NOT_FOUND));
+        }
+    };
+
+    Ok(response)
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
 struct LogsParams {
     identity: String,
     name: String,
@@ -169,6 +247,11 @@ pub fn router() -> Router {
             .post("/:identity/:name/call/:reducer")
             .with_path_extractor::<CallParams>()
             .to_async_borrowing(call);
+
+        route
+            .get("/:identity/:name/schema/:entity_type/:entity")
+            .with_path_extractor::<DescribeParams>()
+            .to_async_borrowing(describe);
 
         route
             .get("/:identity/:name/logs")

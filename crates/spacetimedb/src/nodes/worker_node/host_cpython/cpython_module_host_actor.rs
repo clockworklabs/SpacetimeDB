@@ -477,6 +477,15 @@ impl ModuleHostActor for CPythonModuleHostActor {
                     .unwrap();
                 false
             }
+            ModuleHostCommand::DescribeReducer {
+                reducer_name,
+                respond_to
+            } => {
+                // TODO(ryan): Implement for Python.
+                // Will involve being able to inspect function signature types.
+                // Which we haven't figured out yet.
+                false
+            }
             ModuleHostCommand::CallReducer {
                 caller_identity,
                 reducer_name,

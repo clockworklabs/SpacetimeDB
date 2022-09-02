@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -13,6 +14,7 @@ use crate::nodes::worker_node::{
 };
 use spacetimedb_bindings::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
 use spacetimedb_bindings::buffer::VectorBufWriter;
+use spacetimedb_bindings::TupleDef;
 use tokio::{spawn, time::sleep};
 use wasmer::{imports, Array, Function, Instance, LazyInit, Module, Store, Value, WasmPtr};
 use wasmer_middlewares::metering::{get_remaining_points, set_remaining_points, MeteringPoints};
@@ -23,6 +25,7 @@ use crate::nodes::worker_node::module_host::{
 };
 
 const REDUCE_DUNDER: &str = "__reducer__";
+const DESCRIBE_DUNDER: &str = "__describe_reducer__";
 const REPEATING_REDUCER_DUNDER: &str = "__repeating_reducer__";
 const INIT_PANIC_DUNDER: &str = "__init_panic__";
 const CREATE_TABLE_DUNDER: &str = "__create_table__";
@@ -353,6 +356,83 @@ impl WasmModuleHostActor {
         Ok(())
     }
 
+    fn describe_reducer(&self, reducer_symbol: &str) -> Result<TupleDef, anyhow::Error> {
+        let describe_sym = format! {"{}{}", DESCRIBE_DUNDER, reducer_symbol};
+        // TODO: choose one at random or whatever
+        let (_instance_id, instance) = &self.instances[0];
+        let describer = instance.exports.get_function(&describe_sym)?;
+
+        let start = std::time::Instant::now();
+        log::trace!("Start describer \"{}\"...", describe_sym);
+
+        let result = describer.call(&[]);
+        let duration = start.elapsed();
+        log::trace!("Describer \"{}\" ran: {} us", describe_sym, duration.as_micros(),);
+        match result {
+            Err(err) => {
+                let e = &err;
+                let frames = e.trace();
+                let frames_len = frames.len();
+
+                log::info!("Reducer \"{}\" runtime error: {}", reducer_symbol, e.message());
+                for i in 0..frames_len {
+                    log::info!(
+                        "  Frame #{}: {:?}::{:?}",
+                        frames_len - i,
+                        frames[i].module_name(),
+                        frames[i].function_name().or(Some("<func>")).unwrap()
+                    );
+                }
+                Err(anyhow!("Could not describe reducer {}", reducer_symbol))
+            }
+            Ok(ret) => {
+                if ret.is_empty() {
+                    return Err(anyhow!("Invalid return buffer arguments from {}", describe_sym));
+                }
+                log::info!("Result {:?}", ret);
+
+                // The return value of the describer is a pointer to a vector.
+                // The upper 32 bits of the 64-bit result is the offset into memory.
+                // The lower 32 bits is its length
+                let return_value = ret.first().unwrap().i64().unwrap() as usize;
+                let offset = return_value >> 32;
+                let length = return_value & 0xffffffff;
+
+                // We have to copy all the memory out in order to use this.
+                // This would be nice to avoid... and just somehow pass the memory contents directly
+                // through to the TupleDef decode, but Wasmer's use of Cell prevents us from getting
+                // a nice contiguous block of bytes?
+                let memory = instance.exports.get_memory("memory").unwrap();
+                let view = memory.view::<u8>();
+                let bytes: Vec<u8> = view[offset..offset + length].iter().map(|c| c.get()).collect();
+                log::info!("Offset {} length {} bytes: {:?}", offset, length, bytes);
+
+                // Decode the memory as TupleDef. Do not exit yet, as we have to dealloc the buffer.
+                let (args, _) = TupleDef::decode(bytes);
+                let result = match args {
+                    Ok(args) => Ok(args),
+                    Err(e) => Err(anyhow!(
+                        "argument tuples has invalid schema: {} Err: {}",
+                        describe_sym,
+                        e
+                    )),
+                };
+
+                // Clean out the vector buffer memory that the wasm-side "forgot" in order to pass
+                // it to us.
+                // TODO(ryan): way to generalize this to some RAII thing?
+                let dealloc = instance
+                    .exports
+                    .get_function("dealloc")?
+                    .native::<(WasmPtr<u8, Array>, u32), ()>()?;
+                let dealloc_result = dealloc.call(WasmPtr::new(offset as u32), length as u32);
+                dealloc_result.expect("Could not dealloc describer buffer memory");
+
+                result
+            }
+        }
+    }
+
     fn execute_reducer(
         &self,
         reducer_symbol: &str,
@@ -463,6 +543,13 @@ impl ModuleHostActor for WasmModuleHostActor {
                 respond_to
                     .send(self.call_reducer(caller_identity, &reducer_name, &arg_bytes))
                     .unwrap();
+                false
+            }
+            ModuleHostCommand::DescribeReducer {
+                reducer_name,
+                respond_to,
+            } => {
+                respond_to.send(self.describe_reducer(reducer_name.as_str())).unwrap();
                 false
             }
             ModuleHostCommand::CallRepeatingReducer {

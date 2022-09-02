@@ -2,8 +2,120 @@ extern crate core;
 extern crate proc_macro;
 
 use crate::rust_to_spacetimedb_ident;
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
-use syn::ItemStruct;
+use syn::punctuated::Iter;
+use syn::{FnArg, ItemStruct};
+
+/// Returns a function which returns the schema (TypeDef) for a given Type. The signature
+/// for this function is as follows:
+/// fn __get_struct_schema__<struct_type_ident>() -> spacetimedb_bindings::TypeDef {
+///   ...
+/// }
+pub(crate) fn module_type_to_schema(path: &syn::Path) -> TokenStream {
+    match path.segments[0].ident.to_token_stream().to_string().as_str() {
+        "Hash" => {
+            quote! {
+               spacetimedb_bindings::TypeDef::Bytes
+            }
+        }
+        "Vec" => {
+            let vec_param = parse_generic_arg(path.segments[0].arguments.to_token_stream());
+
+            match vec_param {
+                Ok(param) => match rust_to_spacetimedb_ident(param.to_string().as_str()) {
+                    Some(spacetimedb_type) => {
+                        quote! {
+                            spacetimedb_bindings::TypeDef::Vec { element_type: spacetimedb_bindings::TypeDef::#spacetimedb_type.into() }
+                        }
+                    }
+                    None => match param.to_string().as_str() {
+                        "Hash" => {
+                            quote! {
+                                 spacetimedb_bindings::TypeDef::Vec{ element_type: spacetimedb_bindings::TypeDef::Bytes }
+                            }
+                        }
+                        other_type => {
+                            let get_schema_func: TokenStream =
+                                format!("__get_struct_schema__{}", other_type).parse().unwrap();
+                            quote! {
+                                spacetimedb_bindings::TypeDef::Vec { element_type:#get_schema_func().into() },
+                            }
+                        }
+                    },
+                },
+                Err(e) => {
+                    quote! {compile_err(#e)}
+                }
+            }
+        }
+        other_type => {
+            let get_func = format_ident!("__get_struct_schema__{}", other_type);
+            quote! { #get_func() }
+        }
+    }
+}
+
+fn type_to_tuple_schema(arg_name : Option<String>, col_num: u8, ty: &syn::Type) -> Option<TokenStream> {
+    let arg_type = ty.clone().to_token_stream().to_string();
+    let arg_type = arg_type.as_str();
+
+    let arg_name_token = match arg_name {
+        None => { quote! { None }}
+        Some(n) => { quote! { Some(#n.to_string())}}
+    };
+    match rust_to_spacetimedb_ident(arg_type) {
+        Some(spacetimedb_type) => {
+            return Some(quote! {
+                spacetimedb_bindings::ElementDef {
+                    tag: #col_num,
+                    name: #arg_name_token,
+                    element_type: spacetimedb_bindings::TypeDef::#spacetimedb_type,
+                }
+            })
+        }
+        None => {
+            if let syn::Type::Path(syn::TypePath { ref path, .. }) = ty {
+                if !path.segments.is_empty() {
+                    let schema = module_type_to_schema(path);
+                    return Some(quote! {
+                            spacetimedb_bindings::ElementDef {
+                                tag: #col_num,
+                                name: #arg_name_token,
+                                element_type: #schema
+                            }
+                    });
+                }
+            }
+        }
+    }
+    None
+}
+
+pub(crate) fn args_to_tuple_schema(args: Iter<'_, FnArg>) -> Vec<TokenStream> {
+    let mut elements = Vec::new();
+    let mut col_num: u8 = 0;
+    for arg in args {
+        match arg {
+            FnArg::Receiver(_) => {
+                continue;
+            }
+            FnArg::Typed(arg) => {
+                let argument = if let syn::Pat::Ident(pat_ident) = *arg.pat.clone() {
+                    Some(pat_ident.ident.to_string())
+                } else {
+                    None
+                };
+                match type_to_tuple_schema( argument, col_num, &*arg.ty) {
+                    None => {}
+                    Some(e) => elements.push(e),
+                }
+                col_num = col_num + 1;
+            }
+        }
+    }
+    elements
+}
 
 /// This returns a function which will return the schema (TypeDef) for a struct. The signature
 /// for this function is as follows:
@@ -16,93 +128,11 @@ pub(crate) fn autogen_module_struct_to_schema(original_struct: ItemStruct) -> pr
     let mut col_num: u8 = 0;
 
     for field in &original_struct.fields {
-        let field_type = field.ty.clone().to_token_stream().to_string();
-        let field_type = field_type.as_str();
         let field_name = field.ident.clone().unwrap().to_token_stream().to_string();
-
-        match rust_to_spacetimedb_ident(field_type) {
-            Some(spacetimedb_type) => {
-                fields.push(quote! {
-                    spacetimedb_bindings::ElementDef {
-                        tag: #col_num,
-                        name: Some(#field_name.to_string()),
-                        element_type: spacetimedb_bindings::TypeDef::#spacetimedb_type,
-                    }
-                });
-            }
-            None => {
-                if let syn::Type::Path(syn::TypePath { ref path, .. }) = field.ty {
-                    if path.segments.len() > 0 {
-                        match path.segments[0].ident.to_token_stream().to_string().as_str() {
-                            "Hash" => {
-                                fields.push(quote! {
-                                    spacetimedb_bindings::ElementDef {
-                                        tag: #col_num,
-                                        name: Some(#field_name.to_string()),
-                                        element_type: spacetimedb_bindings::TypeDef::Bytes,
-                                    }
-                                });
-                            }
-                            "Vec" => {
-                                let vec_param = parse_generic_arg(path.segments[0].arguments.to_token_stream());
-
-                                match vec_param {
-                                    Ok(param) => match rust_to_spacetimedb_ident(param.to_string().as_str()) {
-                                        Some(spacetimedb_type) => {
-                                            fields.push(quote! {
-                                                    spacetimedb_bindings::ElementDef {
-                                                        tag: #col_num,
-                                                        name: Some(#field_name.to_string()),
-                                                        element_type: spacetimedb_bindings::TypeDef::Vec{ element_type: spacetimedb_bindings::TypeDef::#spacetimedb_type.into() },
-                                                    }
-                                                });
-                                        }
-                                        None => match param.to_string().as_str() {
-                                            "Hash" => {
-                                                fields.push(quote! {
-                                                            spacetimedb_bindings::ElementDef {
-                                                                tag: #col_num,
-                                                                name: Some(#field_name.to_string()),
-                                                                element_type: spacetimedb_bindings::TypeDef::Vec{ element_type: spacetimedb_bindings::TypeDef::Bytes },
-                                                            }
-                                                        });
-                                            }
-                                            other_type => {
-                                                let get_schema_func: proc_macro2::TokenStream =
-                                                    format!("__get_struct_schema__{}", other_type).parse().unwrap();
-                                                fields.push(quote! {
-                                                            spacetimedb_bindings::ElementDef {
-                                                                tag: #col_num,
-                                                                name: Some(#field_name.to_string()),
-                                                                element_type: spacetimedb_bindings::TypeDef::Vec{ element_type: #get_schema_func().into() },
-                                                            }
-                                                        });
-                                            }
-                                        },
-                                    },
-                                    Err(e) => {
-                                        return quote! {
-                                            compile_err(#e)
-                                        }
-                                    }
-                                }
-                            }
-                            other_type => {
-                                let get_func = format_ident!("__get_struct_schema__{}", other_type);
-                                fields.push(quote! {
-                                    spacetimedb_bindings::ElementDef {
-                                        tag: #col_num,
-                                        name: Some(#field_name.to_string()),
-                                        element_type: #get_func(),
-                                    }
-                                });
-                            }
-                        }
-                    }
-                }
-            }
+        match type_to_tuple_schema(Some(field_name), col_num, &field.ty) {
+            None => {}
+            Some(e) => fields.push(e),
         }
-
         col_num = col_num + 1;
     }
 

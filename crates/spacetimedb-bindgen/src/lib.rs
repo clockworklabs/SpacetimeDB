@@ -8,7 +8,8 @@ extern crate proc_macro;
 
 use crate::csharp::{autogen_csharp_reducer, autogen_csharp_tuple};
 use crate::module::{
-    autogen_module_struct_to_schema, autogen_module_struct_to_tuple, autogen_module_tuple_to_struct, parse_generic_arg,
+    args_to_tuple_schema, autogen_module_struct_to_schema, autogen_module_struct_to_tuple,
+    autogen_module_tuple_to_struct, parse_generic_arg,
 };
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
@@ -123,12 +124,16 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
     let original_function = parse_macro_input!(item as ItemFn);
     let func_name = &original_function.sig.ident;
     let reducer_func_name = format_ident!("__reducer__{}", &func_name);
+    let descriptor_func_name = format_ident!("__describe_reducer__{}", &func_name);
 
     let mut parse_json_to_args = Vec::new();
-    let mut function_call_args = Vec::new();
+    let mut function_call_arg_names = Vec::new();
     let mut arg_num: usize = 0;
     let mut json_arg_num: usize = 0;
     let function_arguments = &original_function.sig.inputs;
+
+    let function_call_arg_types = args_to_tuple_schema(function_arguments.into_iter());
+
     for function_argument in function_arguments {
         match function_argument {
             FnArg::Receiver(_) => {
@@ -172,11 +177,12 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
                     continue;
                 }
 
+                // Stash the function
                 parse_json_to_args.push(quote! {
                     let #var_name : #arg_token = serde_json::from_value(args[#json_arg_num].clone()).unwrap();
                 });
-                function_call_args.push(var_name);
 
+                function_call_arg_names.push(var_name);
                 json_arg_num += 1;
             }
         }
@@ -213,7 +219,24 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
             #(#parse_json_to_args);*
 
             // Invoke the function with the deserialized args
-            #func_name(arguments.identity, arguments.timestamp, #(#function_call_args),*);
+            #func_name(arguments.identity, arguments.timestamp, #(#function_call_arg_names),*);
+        }
+    };
+
+    let generated_describe_function = quote! {
+        #[no_mangle]
+        #[allow(non_snake_case)]
+        // u64 is offset << 32 | length
+        pub extern "C" fn #descriptor_func_name() -> u64 {
+            let tupledef = spacetimedb_bindings::TupleDef { elements: vec![
+                    #(#function_call_arg_types),*
+                ] };
+            let mut bytes = vec![];
+            tupledef.encode(&mut bytes);
+            let offset = bytes.as_ptr() as u64;
+            let length = bytes.len() as u64;
+            std::mem::forget(bytes);
+            return offset << 32 | length;
         }
     };
 
@@ -221,6 +244,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
     proc_macro::TokenStream::from(quote! {
         #generated_function
+        #generated_describe_function
         #original_function
     })
 }

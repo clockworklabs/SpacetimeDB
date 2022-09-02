@@ -6,6 +6,7 @@ use crate::nodes::worker_node::module_host::ModuleHost;
 use crate::nodes::HostType;
 use anyhow;
 use lazy_static::lazy_static;
+use spacetimedb_bindings::TupleDef;
 use std::{collections::HashMap, sync::Mutex};
 
 lazy_static! {
@@ -18,6 +19,11 @@ pub fn get_host() -> &'static HostController {
 
 pub struct HostController {
     modules: Mutex<HashMap<u64, ModuleHost>>,
+}
+
+pub struct ReducerDescription {
+    reducer : String,
+    arguments : TupleDef
 }
 
 impl HostController {
@@ -132,6 +138,23 @@ impl HostController {
             .call_reducer(caller_identity, reducer_name.into(), arg_bytes.as_ref().to_vec())
             .await?;
         Ok(())
+    }
+
+    pub async fn describe_reducer(&self, instance_id: u64, reducer_name: &str) -> Result<ReducerDescription, anyhow::Error> {
+        let key = instance_id;
+        let module_host = {
+            let modules = self.modules.lock().unwrap();
+            modules
+                .get(&key)
+                .ok_or(anyhow::anyhow!("No such module found."))?
+                .clone()
+        };
+        let arguments = module_host.describe_reducer(reducer_name.into()).await?;
+
+        Ok(ReducerDescription{
+            reducer: reducer_name.to_string(),
+            arguments
+        })
     }
 
     pub fn get_module(&self, instance_id: u64) -> Result<ModuleHost, anyhow::Error> {

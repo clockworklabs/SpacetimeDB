@@ -1,6 +1,7 @@
 use crate::db::messages::write::Write;
 use crate::hash::Hash;
 use crate::nodes::worker_node::client_api::client_connection::ClientActorId;
+use spacetimedb_bindings::TupleDef;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug, Clone)]
@@ -40,6 +41,10 @@ pub enum ModuleHostCommand {
         reducer_name: String,
         prev_call_time: u64,
         respond_to: oneshot::Sender<Result<(u64, u64), anyhow::Error>>,
+    },
+    DescribeReducer {
+        reducer_name: String,
+        respond_to: oneshot::Sender<Result<TupleDef, anyhow::Error>>,
     },
     StartRepeatingReducers,
     InitDatabase {
@@ -145,6 +150,16 @@ impl ModuleHost {
         Ok(())
     }
 
+    pub async fn describe_reducer(&self, reducer_name: String) -> Result<TupleDef, anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<TupleDef, anyhow::Error>>();
+        self.tx
+            .send(ModuleHostCommand::DescribeReducer {
+                reducer_name,
+                respond_to: tx,
+            })
+            .await?;
+        rx.await.unwrap()
+    }
     pub async fn init_database(&self) -> Result<(), anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.tx.send(ModuleHostCommand::InitDatabase { respond_to: tx }).await?;

@@ -1,7 +1,6 @@
 use spacetimedb_bindings::println;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
 use spacetimedb_bindgen::spacetimedb;
 use spacetimedb_bindings::{delete_range, Hash, RangeTypeValue};
 
@@ -12,7 +11,7 @@ pub struct TestA {
     pub z: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[spacetimedb(tuple)]
 pub struct TestB {
     foo: String,
 }
