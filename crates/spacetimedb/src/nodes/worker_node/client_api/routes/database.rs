@@ -21,6 +21,7 @@ use hyper::Body;
 use hyper::HeaderMap;
 use hyper::{Response, StatusCode};
 use serde::Deserialize;
+use serde_json::json;
 
 use super::subscribe::handle_websocket;
 use super::subscribe::SubscribeParams;
@@ -162,7 +163,7 @@ async fn describe(state: &mut State) -> SimpleHandlerResult {
     let response = match entity_type.as_str() {
         "reducers" =>  {
             let reducer_name = entity;
-            let _rd = match host.describe_reducer(instance_id, &reducer_name).await {
+            let reducer_desc = match host.describe_reducer(instance_id, &reducer_name).await {
                 Ok(rd) => rd,
                 Err(e) => {
                     log::error!("{}", e);
@@ -171,12 +172,16 @@ async fn describe(state: &mut State) -> SimpleHandlerResult {
                 }
             };
 
-            // TODO(nate?): Implement JSON etc output of reducer etc description
+            let json = json!({
+                "name": reducer_name,
+                "description": reducer_desc
+            });
+
             Response::builder()
                 .header("Spacetime-Identity", caller_identity.to_hex())
                 .header("Spacetime-Identity-Token", caller_identity_token)
                 .status(StatusCode::OK)
-                .body(Body::empty())
+                .body(Body::from(json.to_string()))
                 .unwrap()
         }
         _ => {

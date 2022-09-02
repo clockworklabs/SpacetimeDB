@@ -15,7 +15,9 @@
 // (1: u32, 2: u32) -> 2-tuple (* operator)
 // (1: u32 | 2: u32) -> 2-tuple (+ operator)
 
-#[derive(Debug, Clone)]
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ElementDef {
     // In the case of tuples, this is the id of the column
     // In the case of enums, this is the id of the variant
@@ -69,7 +71,7 @@ impl ElementDef {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct TupleDef {
     pub elements: Vec<ElementDef>,
 }
@@ -111,7 +113,7 @@ impl TupleDef {
 
 // TODO: probably implement this with a tuple but store whether the tuple
 // is a sum tuple or a product tuple, then we have uniformity over types
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct EnumDef {
     pub elements: Vec<ElementDef>,
 }
@@ -151,7 +153,7 @@ impl EnumDef {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum TypeDef {
     Tuple(TupleDef),
     Enum(EnumDef),

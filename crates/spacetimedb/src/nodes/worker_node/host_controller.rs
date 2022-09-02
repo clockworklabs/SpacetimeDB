@@ -6,6 +6,7 @@ use crate::nodes::worker_node::module_host::ModuleHost;
 use crate::nodes::HostType;
 use anyhow;
 use lazy_static::lazy_static;
+use serde::Serialize;
 use spacetimedb_bindings::TupleDef;
 use std::{collections::HashMap, sync::Mutex};
 
@@ -21,6 +22,7 @@ pub struct HostController {
     modules: Mutex<HashMap<u64, ModuleHost>>,
 }
 
+#[derive(Serialize)]
 pub struct ReducerDescription {
     reducer : String,
     arguments : TupleDef
