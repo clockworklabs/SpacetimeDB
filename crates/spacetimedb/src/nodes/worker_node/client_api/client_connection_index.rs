@@ -1,4 +1,4 @@
-use super::super::host_controller;
+use super::super::host::host_controller;
 use crate::metrics::CONNECTED_GAME_CLIENTS;
 use crate::{hash::Hash, nodes::worker_node::worker_db};
 use hyper::upgrade::Upgraded;

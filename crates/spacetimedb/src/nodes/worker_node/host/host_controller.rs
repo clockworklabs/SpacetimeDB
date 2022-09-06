@@ -1,14 +1,14 @@
-use super::worker_database_instance::WorkerDatabaseInstance;
 use crate::hash::{hash_bytes, Hash};
-use crate::nodes::worker_node::host_cpython::make_cpython_module_host_actor;
-use crate::nodes::worker_node::host_wasm32::make_wasm32_module_host_actor;
-use crate::nodes::worker_node::module_host::ModuleHost;
+use crate::nodes::worker_node::host::host_cpython::make_cpython_module_host_actor;
+use crate::nodes::worker_node::host::host_wasm32::make_wasm32_module_host_actor;
+use crate::nodes::worker_node::host::module_host::ModuleHost;
 use crate::nodes::HostType;
 use anyhow;
 use lazy_static::lazy_static;
 use serde::Serialize;
 use spacetimedb_bindings::TupleDef;
 use std::{collections::HashMap, sync::Mutex};
+use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
 
 lazy_static! {
     pub static ref HOST: HostController = HostController::new();
@@ -26,6 +26,12 @@ pub struct HostController {
 pub struct ReducerDescription {
     reducer : String,
     arguments : TupleDef
+}
+
+#[derive(Serialize)]
+pub struct TableDescription {
+    table: String,
+    domain: TupleDef
 }
 
 impl HostController {
@@ -142,7 +148,7 @@ impl HostController {
         Ok(())
     }
 
-    pub async fn describe_reducer(&self, instance_id: u64, reducer_name: &str) -> Result<ReducerDescription, anyhow::Error> {
+    pub async fn describe_reducer(&self, instance_id: u64, reducer_name: &str) -> Result<Option<ReducerDescription>, anyhow::Error> {
         let key = instance_id;
         let module_host = {
             let modules = self.modules.lock().unwrap();
@@ -153,10 +159,31 @@ impl HostController {
         };
         let arguments = module_host.describe_reducer(reducer_name.into()).await?;
 
-        Ok(ReducerDescription{
-            reducer: reducer_name.to_string(),
-            arguments
-        })
+        Ok(arguments.map(|arguments| {
+            ReducerDescription{
+                reducer: reducer_name.to_string(),
+                arguments
+            }
+        }))
+    }
+
+    pub async fn describe_table(&self, instance_id: u64, table_name: &str) -> Result<Option<TableDescription>, anyhow::Error> {
+        let key = instance_id;
+        let module_host = {
+            let modules = self.modules.lock().unwrap();
+            modules
+                .get(&key)
+                .ok_or(anyhow::anyhow!("No such module found."))?
+                .clone()
+        };
+        let domain = module_host.describe_table(table_name.into()).await?;
+
+        Ok(domain.map(|domain| {
+            TableDescription {
+                table: table_name.to_string(),
+                domain
+            }
+        }))
     }
 
     pub fn get_module(&self, instance_id: u64) -> Result<ModuleHost, anyhow::Error> {

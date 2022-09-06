@@ -6,23 +6,24 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::anyhow;
 use ffi::PyObject_Call;
 use pyo3::prelude::*;
-use pyo3::types::{PyFunction, PyString, PyTuple};
-use pyo3::{ffi, AsPyPointer};
+use pyo3::types::{PyDict, PyFloat, PyFunction, PyInt, PyString, PyTuple};
+use pyo3::{ffi, AsPyPointer, PyTypeInfo};
 use tokio::spawn;
 use tokio::time::sleep;
 
 use spacetimedb_bindings::args::{Arguments, RepeatingReducerArguments};
 use spacetimedb_bindings::buffer::VectorBufWriter;
+use spacetimedb_bindings::{ElementDef, TupleDef, TypeDef};
 
 use crate::db::messages::transaction::Transaction;
 use crate::db::transactional_db::Tx;
 use crate::hash::Hash;
 use crate::nodes::worker_node::client_api::client_connection::ClientActorId;
 use crate::nodes::worker_node::client_api::module_subscription_actor::ModuleSubscription;
-use crate::nodes::worker_node::host_cpython::cpython_bindings::STDBBindingsClass;
-use crate::nodes::worker_node::host_cpython::cpython_instance_env::InstanceEnv;
-use crate::nodes::worker_node::host_cpython::translate::translate_json_arguments;
-use crate::nodes::worker_node::module_host::{
+use crate::nodes::worker_node::host::host_cpython::cpython_bindings::STDBBindingsClass;
+use crate::nodes::worker_node::host::host_cpython::translate::translate_json_arguments;
+use crate::nodes::worker_node::host::instance_env::InstanceEnv;
+use crate::nodes::worker_node::host::module_host::{
     EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHost, ModuleHostActor, ModuleHostCommand,
 };
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
@@ -312,6 +313,100 @@ impl CPythonModuleHostActor {
         Ok(())
     }
 
+    fn describe_type(
+        &self,
+        py: Python,
+        name: &String,
+        tag_num: u8,
+        ty: &PyAny,
+    ) -> Result<Option<ElementDef>, anyhow::Error> {
+        let td = if ty.is(PyInt::type_object(py)) {
+            TypeDef::I64
+        }  else if ty.is(PyFloat::type_object(py)) {
+            TypeDef::F64
+        } else if ty.is(PyString::type_object(py)) {
+            TypeDef::String
+        } else {
+            return Err(anyhow!("Unable to translate argument {}:{} to tuple description", name, ty));
+        };
+
+
+        let arg_element = ElementDef {
+            tag: tag_num,
+            name: Some(name.clone()),
+            element_type: td,
+        };
+        Ok(Some(arg_element))
+    }
+
+    fn describe_reducer(&self, reducer_name: &str) -> Result<Option<TupleDef>, anyhow::Error> {
+        let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
+
+        // TODO: choose one at random or whatever
+        let (_instance_id, instance) = &self.instances[0];
+
+        let arguments: Result<Option<TupleDef>, anyhow::Error> =
+            Python::with_gil(|py| {
+                let reducer_name = PyString::new(py, reducer_symbol.as_str());
+                let reducer = match instance.getattr(py, reducer_name) {
+                    Ok(reducer) => reducer,
+                    Err(_) => {
+                        return Ok(None);
+                    }
+                };
+                let reducer: PyResult<&PyFunction> = reducer.extract(py);
+                let reducer = match reducer {
+                    Ok(reducer) => reducer,
+                    Err(e) => {
+                        return Err(anyhow::Error::new(e)
+                            .context(format!("Unable to extract reducer with name: {}", reducer_name)))
+                    }
+                };
+
+                let annotations = match reducer.getattr("__annotations__") {
+                    Ok(annotations) => annotations,
+                    Err(e) => {
+                        return Err(anyhow::Error::new(e).context(format!(
+                            "Unable to extract annotations from reducer with name: {}",
+                            reducer_name
+                        )));
+                    }
+                };
+                let annotations: &PyDict = annotations.extract()?;
+                let arguments = annotations.iter();
+                let mut arg_tuple_elements = vec![];
+                let mut tag_num = 0;
+                for arg in arguments {
+                    let description = self.describe_type(py, &arg.0.to_string(), tag_num, &arg.1);
+                    match description {
+                        Ok(Some(element)) => {
+                            arg_tuple_elements.push(element);
+                            tag_num = tag_num + 1;
+                        }
+                        Err(e) => {
+                            return Err(e.context(format!(
+                                "Error while converting reducer argument {} : {} to TypeDef",
+                                arg.0.to_string(),
+                                arg.1.to_string()
+                            )));
+                        }
+                        _ => {
+                            return Err(anyhow!(
+                                "No mapping to convert reducer argument {} : {} to TypeDef",
+                                arg.0.to_string(),
+                                arg.1.to_string()
+                            ));
+                        }
+                    }
+                }
+                Ok(Some(TupleDef {
+                   elements: arg_tuple_elements,
+                }))
+            });
+
+        arguments
+    }
+
     fn execute_reducer(
         &self,
         reducer_symbol: &str,
@@ -478,13 +573,18 @@ impl ModuleHostActor for CPythonModuleHostActor {
                 false
             }
             ModuleHostCommand::DescribeReducer {
-                reducer_name: _,
-                respond_to: _,
+                reducer_name,
+                respond_to,
             } => {
-                // TODO(ryan): Implement for Python.
-                // Will involve being able to inspect function signature types.
-                // Which we haven't figured out yet.
+                respond_to.send(self.describe_reducer(reducer_name.as_str())).unwrap();
                 false
+            }
+            ModuleHostCommand::DescribeTable {
+                table_name,
+                respond_to : _respond_to,
+            } => {
+                // TODO(ryan): impl
+                panic!("Unimplemented table ({}) describe for CPython", table_name);
             }
             ModuleHostCommand::CallReducer {
                 caller_identity,

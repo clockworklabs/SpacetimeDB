@@ -2,7 +2,7 @@ use super::client_connection_index::CLIENT_ACTOR_INDEX;
 use crate::hash::Hash;
 use crate::json::client_api::IdentityTokenJson;
 use crate::json::client_api::MessageJson;
-use crate::nodes::worker_node::host_controller;
+use crate::nodes::worker_node::host::host_controller;
 use crate::nodes::worker_node::worker_db;
 use crate::protobuf::client_api::IdentityToken;
 use crate::protobuf::client_api::{message, Message};

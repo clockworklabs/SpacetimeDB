@@ -7,6 +7,15 @@ args = [
     "example-python.py"
 ]
 
+[tasks.describe]
+command = "stdb"
+args = [
+    "describe",
+    "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+    "stdb-py",
+    "test",
+]
+
 [tasks.call]
 command = "stdb"
 args = [

@@ -5,29 +5,31 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::hash::Hash;
+use tokio::{spawn, time::sleep};
+use wasmer::{Array, Function, imports, Instance, LazyInit, Module, Store, Value, WasmPtr};
+use wasmer_middlewares::metering::{get_remaining_points, MeteringPoints, set_remaining_points};
+
+use spacetimedb_bindings::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
+use spacetimedb_bindings::buffer::VectorBufWriter;
+use spacetimedb_bindings::TupleDef;
 
 use crate::db::{messages::transaction::Transaction, transactional_db::Tx};
+use crate::hash::Hash;
 use crate::nodes::worker_node::{
     client_api::{client_connection_index::ClientActorId, module_subscription_actor::ModuleSubscription},
     worker_database_instance::WorkerDatabaseInstance,
 };
-use spacetimedb_bindings::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
-use spacetimedb_bindings::buffer::VectorBufWriter;
-use spacetimedb_bindings::TupleDef;
-use tokio::{spawn, time::sleep};
-use wasmer::{imports, Array, Function, Instance, LazyInit, Module, Store, Value, WasmPtr};
-use wasmer_middlewares::metering::{get_remaining_points, set_remaining_points, MeteringPoints};
-
-use crate::nodes::worker_node::host_wasm32::wasm_instance_env::InstanceEnv;
-use crate::nodes::worker_node::module_host::{
+use crate::nodes::worker_node::host::host_wasm32::wasm_instance_env::WasmInstanceEnv;
+use crate::nodes::worker_node::host::instance_env::InstanceEnv;
+use crate::nodes::worker_node::host::module_host::{
     EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHost, ModuleHostActor, ModuleHostCommand,
 };
 
 const REDUCE_DUNDER: &str = "__reducer__";
-const DESCRIBE_DUNDER: &str = "__describe_reducer__";
+const DESCRIBE_REDUCER_DUNDER: &str = "__describe_reducer__";
 const REPEATING_REDUCER_DUNDER: &str = "__repeating_reducer__";
 const INIT_PANIC_DUNDER: &str = "__init_panic__";
+const DESCRIBE_TABLE_DUNDER: &str = "__describe_table__";
 const CREATE_TABLE_DUNDER: &str = "__create_table__";
 const MIGRATE_DATABASE_DUNDER: &str = "__migrate_database__";
 const IDENTITY_CONNECTED_DUNDER: &str = "__identity_connected__";
@@ -79,10 +81,12 @@ impl WasmModuleHostActor {
 
     fn create_instance(&mut self) -> Result<u32, anyhow::Error> {
         let instance_id = self.instances.len() as u32;
-        let env = InstanceEnv {
-            worker_database_instance: self.worker_database_instance.clone(),
-            instance_id,
-            instance_tx_map: self.instance_tx_map.clone(),
+        let env = WasmInstanceEnv {
+            instance_env: InstanceEnv {
+                worker_database_instance: self.worker_database_instance.clone(),
+                instance_id,
+                instance_tx_map: self.instance_tx_map.clone(),
+            },
             memory: LazyInit::new(),
             alloc: LazyInit::new(),
         };
@@ -91,42 +95,42 @@ impl WasmModuleHostActor {
                 "_delete_pk" => Function::new_native_with_env(
                     &self.store,
                     env.clone(),
-                    InstanceEnv::delete_pk,
+                    WasmInstanceEnv::delete_pk,
                 ),
                 "_delete_value" => Function::new_native_with_env(
                     &self.store,
                     env.clone(),
-                    InstanceEnv::delete_value,
+                    WasmInstanceEnv::delete_value,
                 ),
                 "_delete_eq" => Function::new_native_with_env(
                     &self.store,
                     env.clone(),
-                    InstanceEnv::delete_eq,
+                    WasmInstanceEnv::delete_eq,
                 ),
                 "_delete_range" => Function::new_native_with_env(
                     &self.store,
                     env.clone(),
-                    InstanceEnv::delete_range,
+                    WasmInstanceEnv::delete_range,
                 ),
                 "_insert" => Function::new_native_with_env(
                     &self.store,
                     env.clone(),
-                    InstanceEnv::insert,
+                    WasmInstanceEnv::insert,
                 ),
                 "_create_table" => Function::new_native_with_env(
                     &self.store,
                     env.clone(),
-                    InstanceEnv::create_table,
+                    WasmInstanceEnv::create_table,
                 ),
                 "_iter" => Function::new_native_with_env(
                     &self.store,
                     env.clone(),
-                    InstanceEnv::iter
+                    WasmInstanceEnv::iter
                 ),
                 "_console_log" => Function::new_native_with_env(
                     &self.store,
                     env.clone(),
-                    InstanceEnv::console_log
+                    WasmInstanceEnv::console_log
                 ),
             }
         };
@@ -356,25 +360,40 @@ impl WasmModuleHostActor {
         Ok(())
     }
 
-    fn describe_reducer(&self, reducer_symbol: &str) -> Result<TupleDef, anyhow::Error> {
-        let describe_sym = format! {"{}{}", DESCRIBE_DUNDER, reducer_symbol};
+    fn describe_table(&self, table_symbol:&str)  -> Result<Option<TupleDef>, anyhow::Error> {
+        let describe_sym = format! {"{}{}", DESCRIBE_TABLE_DUNDER, table_symbol};
+        self.call_describer(describe_sym)
+    }
+
+    fn describe_reducer(&self, reducer_symbol: &str) -> Result<Option<TupleDef>, anyhow::Error> {
+        let describe_sym = format! {"{}{}", DESCRIBE_REDUCER_DUNDER, reducer_symbol};
+        self.call_describer(describe_sym)
+    }
+
+    fn call_describer(&self, describer_func_name: String) -> Result<Option<TupleDef>, anyhow::Error> {
         // TODO: choose one at random or whatever
         let (_instance_id, instance) = &self.instances[0];
-        let describer = instance.exports.get_function(&describe_sym)?;
+        let describer = match instance.exports.get_function(&describer_func_name) {
+            Ok(describer) => describer,
+            Err(_) => {
+                // Making the bold assumption here that an error here means this entity doesn't exist.
+                return Ok(None);
+            }
+        };
 
         let start = std::time::Instant::now();
-        log::trace!("Start describer \"{}\"...", describe_sym);
+        log::trace!("Start describer \"{}\"...", describer_func_name);
 
         let result = describer.call(&[]);
         let duration = start.elapsed();
-        log::trace!("Describer \"{}\" ran: {} us", describe_sym, duration.as_micros(),);
+        log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros(),);
         match result {
             Err(err) => {
                 let e = &err;
                 let frames = e.trace();
                 let frames_len = frames.len();
 
-                log::info!("Reducer \"{}\" runtime error: {}", reducer_symbol, e.message());
+                log::info!("Describer\"{}\" runtime error: {}", describer_func_name, e.message());
                 for i in 0..frames_len {
                     log::info!(
                         "  Frame #{}: {:?}::{:?}",
@@ -383,11 +402,11 @@ impl WasmModuleHostActor {
                         frames[i].function_name().or(Some("<func>")).unwrap()
                     );
                 }
-                Err(anyhow!("Could not describe reducer {}", reducer_symbol))
+                Err(anyhow!("Could not invoke describer function {}", describer_func_name))
             }
             Ok(ret) => {
                 if ret.is_empty() {
-                    return Err(anyhow!("Invalid return buffer arguments from {}", describe_sym));
+                    return Err(anyhow!("Invalid return buffer arguments from {}", describer_func_name));
                 }
                 log::info!("Result {:?}", ret);
 
@@ -405,15 +424,14 @@ impl WasmModuleHostActor {
                 let memory = instance.exports.get_memory("memory").unwrap();
                 let view = memory.view::<u8>();
                 let bytes: Vec<u8> = view[offset..offset + length].iter().map(|c| c.get()).collect();
-                log::info!("Offset {} length {} bytes: {:?}", offset, length, bytes);
 
                 // Decode the memory as TupleDef. Do not exit yet, as we have to dealloc the buffer.
                 let (args, _) = TupleDef::decode(bytes);
                 let result = match args {
-                    Ok(args) => Ok(args),
-                    Err(e) => Err(anyhow!(
+                    Ok(args) => args,
+                    Err(e) => return Err(anyhow!(
                         "argument tuples has invalid schema: {} Err: {}",
-                        describe_sym,
+                        describer_func_name,
                         e
                     )),
                 };
@@ -428,7 +446,7 @@ impl WasmModuleHostActor {
                 let dealloc_result = dealloc.call(WasmPtr::new(offset as u32), length as u32);
                 dealloc_result.expect("Could not dealloc describer buffer memory");
 
-                result
+                Ok(Some(result))
             }
         }
     }
@@ -534,6 +552,20 @@ impl ModuleHostActor for WasmModuleHostActor {
                     .unwrap();
                 false
             }
+            ModuleHostCommand::DescribeReducer {
+                reducer_name,
+                respond_to,
+            } => {
+                respond_to.send(self.describe_reducer(reducer_name.as_str())).unwrap();
+                false
+            }
+            ModuleHostCommand::DescribeTable {
+                table_name,
+                respond_to,
+            } => {
+                respond_to.send(self.describe_table(table_name.as_str())).unwrap();
+                false
+            }
             ModuleHostCommand::CallReducer {
                 caller_identity,
                 reducer_name,
@@ -543,13 +575,6 @@ impl ModuleHostActor for WasmModuleHostActor {
                 respond_to
                     .send(self.call_reducer(caller_identity, &reducer_name, &arg_bytes))
                     .unwrap();
-                false
-            }
-            ModuleHostCommand::DescribeReducer {
-                reducer_name,
-                respond_to,
-            } => {
-                respond_to.send(self.describe_reducer(reducer_name.as_str())).unwrap();
                 false
             }
             ModuleHostCommand::CallRepeatingReducer {

@@ -1,7 +1,7 @@
-use pyo3::prelude::*;
 use pyo3::{PyRef, PyResult, Python};
+use pyo3::prelude::*;
 
-use crate::nodes::worker_node::host_cpython::cpython_instance_env::InstanceEnv;
+use crate::nodes::worker_node::host::instance_env::InstanceEnv;
 
 #[pyclass]
 pub(crate) struct STDBBindingsClass {

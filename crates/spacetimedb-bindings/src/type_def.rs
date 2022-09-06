@@ -78,7 +78,6 @@ impl ElementDef {
     }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TupleDef {
     pub elements: Vec<ElementDef>,
@@ -160,7 +159,6 @@ impl EnumDef {
         }
     }
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TypeDef {

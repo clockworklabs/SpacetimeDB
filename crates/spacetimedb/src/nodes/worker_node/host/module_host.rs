@@ -44,7 +44,11 @@ pub enum ModuleHostCommand {
     },
     DescribeReducer {
         reducer_name: String,
-        respond_to: oneshot::Sender<Result<TupleDef, anyhow::Error>>,
+        respond_to: oneshot::Sender<Result<Option<TupleDef>, anyhow::Error>>,
+    },
+    DescribeTable {
+        table_name: String,
+        respond_to: oneshot::Sender<Result<Option<TupleDef>, anyhow::Error>>,
     },
     StartRepeatingReducers,
     InitDatabase {
@@ -150,8 +154,8 @@ impl ModuleHost {
         Ok(())
     }
 
-    pub async fn describe_reducer(&self, reducer_name: String) -> Result<TupleDef, anyhow::Error> {
-        let (tx, rx) = oneshot::channel::<Result<TupleDef, anyhow::Error>>();
+    pub async fn describe_reducer(&self, reducer_name: String) -> Result<Option<TupleDef>, anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<Option<TupleDef>, anyhow::Error>>();
         self.tx
             .send(ModuleHostCommand::DescribeReducer {
                 reducer_name,
@@ -160,6 +164,18 @@ impl ModuleHost {
             .await?;
         rx.await.unwrap()
     }
+
+    pub async fn describe_table(&self, table_name: String) -> Result<Option<TupleDef>, anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<Option<TupleDef>, anyhow::Error>>();
+        self.tx
+            .send(ModuleHostCommand::DescribeTable {
+                table_name,
+                respond_to: tx,
+            })
+            .await?;
+        rx.await.unwrap()
+    }
+
     pub async fn init_database(&self) -> Result<(), anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.tx.send(ModuleHostCommand::InitDatabase { respond_to: tx }).await?;

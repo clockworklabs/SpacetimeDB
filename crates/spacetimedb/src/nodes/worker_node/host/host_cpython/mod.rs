@@ -1,16 +1,16 @@
+use std::sync::Mutex;
+
+use lazy_static::lazy_static;
 use pyo3::prepare_freethreaded_python;
 
 use crate::hash::Hash;
-use crate::nodes::worker_node::host_cpython::cpython_module_host_actor::CPythonModuleHostActor;
-use crate::nodes::worker_node::module_host::ModuleHost;
+use crate::nodes::worker_node::host::host_cpython::cpython_module_host_actor::CPythonModuleHostActor;
+use crate::nodes::worker_node::host::module_host::ModuleHost;
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
-use lazy_static::lazy_static;
-use std::sync::Mutex;
 
 mod cpython_bindings;
-mod cpython_instance_env;
-mod cpython_module_host_actor;
 mod translate;
+mod cpython_module_host_actor;
 
 lazy_static! {
     static ref IS_PYTHON_INITIALIZED: Mutex<bool> = Mutex::new(false);

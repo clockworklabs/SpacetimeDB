@@ -5,7 +5,7 @@ use crate::json::client_api::StmtResultJson;
 use crate::nodes::worker_node::client_api::proxy::proxy_to_control_node_client_api;
 use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
 use crate::nodes::worker_node::database_logger::DatabaseLogger;
-use crate::nodes::worker_node::host_controller;
+use crate::nodes::worker_node::host::host_controller;
 use crate::nodes::worker_node::worker_db;
 use crate::sql;
 use gotham::anyhow::anyhow;
@@ -127,7 +127,7 @@ async fn describe(state: &mut State) -> SimpleHandlerResult {
         identity,
         name,
         entity_type,
-        entity
+        entity,
     } = DescribeParams::take_from(state);
 
     let headers = state.borrow::<HeaderMap>();
@@ -162,11 +162,15 @@ async fn describe(state: &mut State) -> SimpleHandlerResult {
     let instance_id = database_instance.id;
     let host = host_controller::get_host();
 
-    let response = match entity_type.as_str() {
-        "reducers" =>  {
-            let reducer_name = entity;
-            let reducer_desc = match host.describe_reducer(instance_id, &reducer_name).await {
-                Ok(rd) => rd,
+    let response_json = match entity_type.as_str() {
+        "tables" => {
+            let table_name = entity;
+            let table_desc = match host.describe_table(instance_id, &table_name).await {
+                Ok(Some(rd)) => rd,
+                Ok(None) => {
+                    return Err(HandlerError::from(anyhow!("Table not found {}", table_name))
+                        .with_status(StatusCode::NOT_FOUND))
+                }
                 Err(e) => {
                     log::error!("{}", e);
                     return Err(HandlerError::from(anyhow!("Database instance not ready."))
@@ -174,24 +178,46 @@ async fn describe(state: &mut State) -> SimpleHandlerResult {
                 }
             };
 
-            let json = json!({
-                "name": reducer_name,
-                "description": reducer_desc
-            });
+            json!({
+                "type": "table",
+                "description": table_desc
+            })
+        }
+        "reducers" => {
+            let reducer_name = entity;
+            let reducer_desc = match host.describe_reducer(instance_id, &reducer_name).await {
+                Ok(Some(rd)) => rd,
+                Ok(None) => {
+                    return Err(HandlerError::from(anyhow!("Reducer not found {}", reducer_name))
+                        .with_status(StatusCode::NOT_FOUND))
+                }
+                Err(e) => {
+                    log::error!("{}", e);
+                    return Err(HandlerError::from(anyhow!("Database instance not ready."))
+                        .with_status(StatusCode::SERVICE_UNAVAILABLE));
+                }
+            };
 
-            Response::builder()
-                .header("Spacetime-Identity", caller_identity.to_hex())
-                .header("Spacetime-Identity-Token", caller_identity_token)
-                .status(StatusCode::OK)
-                .body(Body::from(json.to_string()))
-                .unwrap()
+            json!({
+                "type": "reducer",
+                "description": reducer_desc
+            })
         }
         _ => {
             log::debug!("Request to describe unhandled entity type: {}", entity_type);
-            return Err(HandlerError::from(anyhow!("Invalid entity type for description: {}", entity_type))
-                .with_status(StatusCode::NOT_FOUND));
+            return Err(
+                HandlerError::from(anyhow!("Invalid entity type for description: {}", entity_type))
+                    .with_status(StatusCode::NOT_FOUND),
+            );
         }
     };
+
+    let response = Response::builder()
+        .header("Spacetime-Identity", caller_identity.to_hex())
+        .header("Spacetime-Identity-Token", caller_identity_token)
+        .status(StatusCode::OK)
+        .body(Body::from(response_json.to_string()))
+        .unwrap();
 
     Ok(response)
 }

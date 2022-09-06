@@ -1,5 +1,5 @@
-use pyo3::types::{PyDict, PyList, PyString};
 use pyo3::{IntoPy, PyObject, Python};
+use pyo3::types::{PyDict, PyList, PyString};
 use serde_json::Value;
 
 // Recursively translate JSON into PyObjects, doing a naive translation of the fundamental types to

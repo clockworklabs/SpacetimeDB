@@ -1,12 +1,14 @@
+use std::sync::Arc;
+
+use wasmer::{CompilerConfig, Module, Store, Universal, ValType};
+use wasmer::wasmparser::Operator;
+use wasmer_middlewares::Metering;
+
 use crate::hash::Hash;
 use crate::hash::ToHexString;
-use crate::nodes::worker_node::host_wasm32::wasm_module_host_actor::WasmModuleHostActor;
-use crate::nodes::worker_node::module_host::ModuleHost;
+use crate::nodes::worker_node::host::host_wasm32::wasm_module_host_actor::WasmModuleHostActor;
+use crate::nodes::worker_node::host::module_host::ModuleHost;
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
-use std::sync::Arc;
-use wasmer::wasmparser::Operator;
-use wasmer::{CompilerConfig, Module, Store, Universal, ValType};
-use wasmer_middlewares::Metering;
 
 mod wasm_instance_env;
 pub mod wasm_module_host_actor;

@@ -724,6 +724,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
 
     let schema_func = autogen_module_struct_to_schema(original_struct.clone());
     let create_table_func_name = format_ident!("__create_table__{}", original_struct_ident);
+    let describe_table_func_name = format_ident!("__describe_table__{}", original_struct_ident);
     let get_schema_func_name = format_ident!("__get_struct_schema__{}", original_struct_ident);
     let table_name = original_struct_ident.to_string();
 
@@ -734,6 +735,25 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
             let def = #get_schema_func_name();
             if let spacetimedb_bindings::TypeDef::Tuple(tuple_def) = def {
                 spacetimedb_bindings::create_table(#table_id, #table_name, tuple_def);
+            } else {
+                // The type is not a tuple for some reason, table not created.
+                std::panic!("This type is not a tuple: {{#original_struct_ident}}");
+            }
+        }
+    };
+
+    let describe_table_func = quote! {
+        #[allow(non_snake_case)]
+        #[no_mangle]
+        pub extern "C" fn #describe_table_func_name() -> u64 {
+            let def = #get_schema_func_name();
+            if let spacetimedb_bindings::TypeDef::Tuple(tuple_def) = def {
+                let mut bytes = vec![];
+                tuple_def.encode(&mut bytes);
+                let offset = bytes.as_ptr() as u64;
+                let length = bytes.len() as u64;
+                std::mem::forget(bytes);
+                return offset << 32 | length;
             } else {
                 // The type is not a tuple for some reason, table not created.
                 std::panic!("This type is not a tuple: {{#original_struct_ident}}");
@@ -760,6 +780,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
 
         #schema_func
         #create_table_func
+        #describe_table_func
         #tuple_to_struct_func
         #struct_to_tuple_func
         #csharp_output

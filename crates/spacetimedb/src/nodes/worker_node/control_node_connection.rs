@@ -1,5 +1,5 @@
 use super::database_instance_context_controller::DatabaseInstanceContextController;
-use super::{database_logger::DatabaseLogger, host_controller, worker_database_instance::WorkerDatabaseInstance};
+use super::{database_logger::DatabaseLogger, host::host_controller, worker_database_instance::WorkerDatabaseInstance};
 use crate::nodes::HostType;
 use crate::{
     db::relational_db::RelationalDB,

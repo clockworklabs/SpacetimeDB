@@ -2,7 +2,7 @@ use super::{
     client_connection::{ClientActorId, ClientConnectionSender, Protocol},
     client_connection_index::CLIENT_ACTOR_INDEX,
 };
-use crate::nodes::worker_node::module_host::{EventStatus, ModuleEvent};
+use crate::nodes::worker_node::host::module_host::{EventStatus, ModuleEvent};
 use crate::{
     db::relational_db::{RelationalDB, ST_COLUMNS_ID, ST_TABLES_ID},
     json::client_api::{

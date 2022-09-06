@@ -3,12 +3,9 @@ mod client_api;
 mod control_node_connection;
 pub(crate) mod database_instance_context_controller;
 mod database_logger;
-mod host_controller;
-mod host_cpython;
-mod host_wasm32;
-mod module_host;
 mod worker_database_instance;
 mod worker_db;
+mod host;
 
 use tokio::spawn;
 
