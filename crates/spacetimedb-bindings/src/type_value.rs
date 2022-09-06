@@ -1,7 +1,11 @@
-use crate::type_def::{EnumDef, TupleDef, TypeDef};
+use crate::{
+    type_def::{EnumDef, TupleDef, TypeDef},
+    DataKey,
+};
 use enum_as_inner::EnumAsInner;
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;
+use std::{fmt::Display, hash::Hash};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElementValue {
@@ -14,7 +18,43 @@ pub struct TupleValue {
     pub elements: Vec<TypeValue>,
 }
 
+impl Display for TupleValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{")?;
+        for (i, e) in self.elements.iter().enumerate() {
+            if i < self.elements.len() - 1 {
+                write!(f, "{}: {}, ", i, e)?;
+            } else {
+                write!(f, "{}: {}", i, e)?;
+            }
+        }
+        write!(f, "}}")?;
+        Ok(())
+    }
+}
+
+impl Hash for TupleValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // TODO(cloutiertyler): Oh my heavens, copies galore.
+        self.to_data_key().hash(state);
+    }
+}
+
+impl PartialEq for TupleValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_data_key() == other.to_data_key()
+    }
+}
+
+impl Eq for TupleValue {}
+
 impl TupleValue {
+    pub fn to_data_key(&self) -> DataKey {
+        let mut bytes = Vec::new();
+        self.encode(&mut bytes);
+        DataKey::from_data(&bytes.iter())
+    }
+
     pub fn decode(tuple_def: &TupleDef, bytes: impl AsRef<[u8]>) -> (Result<Self, &'static str>, usize) {
         let mut num_read = 0;
         let bytes = bytes.as_ref();
@@ -294,6 +334,43 @@ pub enum TypeValue {
     String(String),
     Bytes(Vec<u8>),
     Unit,
+}
+
+impl Display for TypeValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TypeValue::Tuple(v) => write!(f, "{}", v),
+            TypeValue::Enum(_) => write!(f, "<enum>"),
+            TypeValue::Vec(v) => {
+                write!(f, "[")?;
+                for (i, t) in v.iter().enumerate() {
+                    if i < v.len() - 1 {
+                        write!(f, "{}, ", t)?;
+                    } else {
+                        write!(f, "{}", t)?;
+                    }
+                }
+                write!(f, "]")?;
+                Ok(())
+            }
+            TypeValue::U8(n) => write!(f, "{}", n),
+            TypeValue::U16(n) => write!(f, "{}", n),
+            TypeValue::U32(n) => write!(f, "{}", n),
+            TypeValue::U64(n) => write!(f, "{}", n),
+            TypeValue::U128(n) => write!(f, "{}", n),
+            TypeValue::I8(n) => write!(f, "{}", n),
+            TypeValue::I16(n) => write!(f, "{}", n),
+            TypeValue::I32(n) => write!(f, "{}", n),
+            TypeValue::I64(n) => write!(f, "{}", n),
+            TypeValue::I128(n) => write!(f, "{}", n),
+            TypeValue::Bool(n) => write!(f, "{}", n),
+            TypeValue::F32(n) => write!(f, "{}", n),
+            TypeValue::F64(n) => write!(f, "{}", n),
+            TypeValue::String(n) => write!(f, "{}", n),
+            TypeValue::Bytes(bytes) => write!(f, "{}", hex::encode(bytes)),
+            TypeValue::Unit => write!(f, "<unit>"),
+        }
+    }
 }
 
 impl TypeValue {

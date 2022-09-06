@@ -478,8 +478,8 @@ impl ModuleHostActor for CPythonModuleHostActor {
                 false
             }
             ModuleHostCommand::DescribeReducer {
-                reducer_name,
-                respond_to
+                reducer_name: _,
+                respond_to: _,
             } => {
                 // TODO(ryan): Implement for Python.
                 // Will involve being able to inspect function signature types.

@@ -66,7 +66,7 @@ fn get_subcommands() -> Vec<Command<'static>> {
         identity::cli(),
         energy::cli(),
         metrics::cli(),
-        query::cli(),
+        sql::cli(),
         revert::cli(),
     ]
 }
@@ -82,7 +82,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
         "rm" => rm::exec(config, args).await,
         "logs" => logs::exec(config, args).await,
         "metrics" => metrics::exec(config, args).await,
-        "query" => query::exec(config, args).await,
+        "sql" => sql::exec(config, args).await,
         "revert" => revert::exec(config, args).await,
         "update" => update::exec(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),

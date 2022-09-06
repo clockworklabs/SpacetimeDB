@@ -121,11 +121,13 @@ impl InstanceEnv {
 
         let (eq_value, _) = EqTypeValue::decode(type_def, &buffer[..]);
         let eq_value = eq_value.expect("You can't let modules crash you like this you fool.");
-        if let Some(count) = stdb.delete_eq(tx, table_id, col_id, eq_value) {
+        let seek = stdb.seek(tx, table_id, col_id, eq_value);
+        if let Some(seek) = seek {
+            let seek: Vec<TupleValue> = seek.collect::<Vec<_>>();
+            let count = stdb.delete_in(tx, table_id, seek).unwrap();
             return count as i32;
-        } else {
-            return -1;
         }
+        return -1;
     }
 
     pub fn delete_range(&self, table_id: u32, col_id: u32, ptr: u32) -> i32 {
@@ -163,7 +165,10 @@ impl InstanceEnv {
         let start = RangeTypeValue::try_from(&tuple.elements[0]).unwrap();
         let end = RangeTypeValue::try_from(&tuple.elements[1]).unwrap();
 
-        if let Some(count) = stdb.delete_range(tx, table_id, col_id, start..end) {
+        let range = stdb.range_scan(tx, table_id, col_id, start..end);
+        if let Some(range) = range {
+            let range = range.collect::<Vec<_>>();
+            let count = stdb.delete_in(tx, table_id, range).unwrap();
             return count as i32;
         } else {
             return -1;
@@ -221,7 +226,7 @@ impl InstanceEnv {
         let schema = stdb.schema_for_table(tx, table_id).unwrap();
         encode_schema(schema, &mut bytes);
 
-        for row in stdb.iter(tx, table_id).unwrap() {
+        for row in stdb.scan(tx, table_id).unwrap() {
             RelationalDB::encode_row(&row, &mut bytes);
         }
 

@@ -180,7 +180,7 @@ impl ModuleSubscriptionActor {
         let mut stdb = self.relational_db.lock().unwrap();
         let mut tx = stdb.begin_tx();
         let tables = stdb
-            .iter(&mut tx, ST_TABLES_ID)
+            .scan(&mut tx, ST_TABLES_ID)
             .unwrap()
             .map(|row| *row.elements[0].as_u32().unwrap())
             .collect::<Vec<u32>>();
@@ -189,7 +189,7 @@ impl ModuleSubscriptionActor {
                 continue;
             }
             let mut table_row_operations = Vec::new();
-            for row in stdb.iter(&mut tx, table_id).unwrap() {
+            for row in stdb.scan(&mut tx, table_id).unwrap() {
                 let row_pk = RelationalDB::pk_for_row(&row);
                 let row_pk = row_pk.to_bytes();
                 let mut row_bytes = Vec::new();
@@ -311,7 +311,7 @@ impl ModuleSubscriptionActor {
         let mut stdb = self.relational_db.lock().unwrap();
         let mut tx = stdb.begin_tx();
         let tables = stdb
-            .iter(&mut tx, ST_TABLES_ID)
+            .scan(&mut tx, ST_TABLES_ID)
             .unwrap()
             .map(|row| *row.elements[0].as_u32().unwrap())
             .collect::<Vec<u32>>();
@@ -320,7 +320,7 @@ impl ModuleSubscriptionActor {
                 continue;
             }
             let mut table_row_operations = Vec::new();
-            for row in stdb.iter(&mut tx, table_id).unwrap() {
+            for row in stdb.scan(&mut tx, table_id).unwrap() {
                 let row_pk = RelationalDB::pk_for_row(&row);
                 let row_pk = base64::encode(row_pk.to_bytes());
                 table_row_operations.push(TableRowOperationJson {

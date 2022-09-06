@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 // () -> Tuple or enum?
 // (0: 1) -> Tuple or enum?
 // (0: 1, x: (1: 2 | 0: 2))
@@ -15,9 +17,7 @@
 // (1: u32, 2: u32) -> 2-tuple (* operator)
 // (1: u32 | 2: u32) -> 2-tuple (+ operator)
 
-use serde::Serialize;
-
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElementDef {
     // In the case of tuples, this is the id of the column
     // In the case of enums, this is the id of the variant
@@ -52,7 +52,14 @@ impl ElementDef {
         num_read += nr;
 
         return match element_type {
-            Ok(element_type) => (Ok(ElementDef { tag, element_type, name}), num_read),
+            Ok(element_type) => (
+                Ok(ElementDef {
+                    tag,
+                    element_type,
+                    name,
+                }),
+                num_read,
+            ),
             Err(e) => (Err(e), 0),
         };
     }
@@ -71,7 +78,8 @@ impl ElementDef {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TupleDef {
     pub elements: Vec<ElementDef>,
 }
@@ -113,7 +121,7 @@ impl TupleDef {
 
 // TODO: probably implement this with a tuple but store whether the tuple
 // is a sum tuple or a product tuple, then we have uniformity over types
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnumDef {
     pub elements: Vec<ElementDef>,
 }
@@ -153,7 +161,8 @@ impl EnumDef {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TypeDef {
     Tuple(TupleDef),
     Enum(EnumDef),

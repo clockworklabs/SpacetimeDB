@@ -7,5 +7,6 @@ mod json;
 pub mod metrics;
 pub mod nodes;
 mod protobuf;
+mod sql;
 pub mod startup;
 mod websocket;

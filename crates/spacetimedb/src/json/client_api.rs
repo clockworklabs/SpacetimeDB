@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use spacetimedb_bindings::TupleDef;
 use spacetimedb_bindings::TypeValue;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,4 +53,10 @@ pub struct EventJson {
 pub struct TransactionUpdateJson {
     pub event: EventJson,
     pub subscription_update: SubscriptionUpdateJson,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StmtResultJson {
+    pub schema: TupleDef,
+    pub rows: Vec<Vec<TypeValue>>,
 }

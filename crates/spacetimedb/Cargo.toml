@@ -57,6 +57,7 @@ sled = "0.34.7"
 email_address = "0.2.3"
 int-enum = "0.4.0"
 pyo3 = { version = "0.17.0"}
+sqlparser = "0.21.0"
 
 # gluesql = "0.10"
 bytes = "1.2.0" # TODO(rdaum): there's also a copy/fork of this inside prost. hmph.

@@ -1,11 +1,13 @@
 use crate::auth::get_creds_from_header;
 use crate::auth::invalid_token_res;
 use crate::hash::Hash;
+use crate::json::client_api::StmtResultJson;
 use crate::nodes::worker_node::client_api::proxy::proxy_to_control_node_client_api;
 use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
 use crate::nodes::worker_node::database_logger::DatabaseLogger;
 use crate::nodes::worker_node::host_controller;
 use crate::nodes::worker_node::worker_db;
+use crate::sql;
 use gotham::anyhow::anyhow;
 use gotham::handler::HandlerError;
 use gotham::handler::SimpleHandlerResult;
@@ -229,6 +231,63 @@ async fn logs(state: &mut State) -> SimpleHandlerResult {
     Ok(res)
 }
 
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct SqlParams {
+    identity: String,
+    name: String,
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct SqlQueryParams {}
+
+async fn sql(state: &mut State) -> SimpleHandlerResult {
+    let SqlParams { identity, name } = SqlParams::take_from(state);
+    let SqlQueryParams {} = SqlQueryParams::take_from(state);
+
+    let identity = Hash::from_hex(&identity).expect("that the client passed a valid hex identity lol");
+
+    let database = match worker_db::get_database_by_address(&identity, &name) {
+        Some(database) => database,
+        None => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
+    };
+    let database_instance = worker_db::get_leader_database_instance_by_database(database.id);
+    let instance_id = database_instance.unwrap().id;
+
+    let body = state.borrow_mut::<Body>();
+    let data = body.data().await;
+    if data.is_none() {
+        return Err(HandlerError::from(anyhow!("Missing request body.")).with_status(StatusCode::BAD_REQUEST));
+    }
+    let data = data.unwrap();
+
+    let sql_text = match String::from_utf8(data.unwrap().to_vec()) {
+        Ok(s) => s,
+        Err(err) => {
+            log::debug!("{:?}", err);
+            return Err(HandlerError::from(anyhow!("Invalid query string.")).with_status(StatusCode::BAD_REQUEST));
+        }
+    };
+
+    let results = sql::execute(instance_id, sql_text);
+    let mut json = Vec::new();
+
+    for result in results {
+        let stmt_result = result.unwrap();
+        let stmt_res_json = StmtResultJson {
+            schema: stmt_result.schema,
+            rows: stmt_result.rows.iter().map(|x| x.elements.clone()).collect::<Vec<_>>(),
+        };
+        json.push(stmt_res_json)
+    }
+    let body = serde_json::to_string_pretty(&json).unwrap();
+    let res = Response::builder()
+        .status(StatusCode::OK)
+        .body(Body::from(body))
+        .unwrap();
+
+    Ok(res)
+}
+
 pub fn router() -> Router {
     build_simple_router(|route| {
         route
@@ -263,5 +322,11 @@ pub fn router() -> Router {
             .with_path_extractor::<LogsParams>()
             .with_query_string_extractor::<LogsQuery>()
             .to_async_borrowing(logs);
+
+        route
+            .get("/:identity/:name/sql")
+            .with_path_extractor::<SqlParams>()
+            .with_query_string_extractor::<SqlQueryParams>()
+            .to_async_borrowing(sql);
     })
 }

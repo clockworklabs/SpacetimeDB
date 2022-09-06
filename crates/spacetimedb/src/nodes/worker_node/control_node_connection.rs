@@ -1,3 +1,4 @@
+use super::database_instance_context_controller::DatabaseInstanceContextController;
 use super::{database_logger::DatabaseLogger, host_controller, worker_database_instance::WorkerDatabaseInstance};
 use crate::nodes::HostType;
 use crate::{
@@ -245,6 +246,9 @@ async fn on_delete_database_instance(instance_id: u64) {
     let state = worker_db::get_database_instance_state(instance_id).unwrap();
     if let Some(_state) = state {
         let host = host_controller::get_host();
+
+        // TODO: This is getting pretty messy
+        DatabaseInstanceContextController::get_shared().remove(instance_id);
         let _address = host.delete_module(instance_id).await.unwrap();
         worker_db::delete_database_instance(instance_id);
     }
@@ -277,6 +281,8 @@ async fn init_module_on_database_instance(database_id: u64, instance_id: u64) {
         relational_db: Arc::new(Mutex::new(RelationalDB::open(db_path))),
     };
 
+    // TODO: This is getting pretty messy
+    DatabaseInstanceContextController::get_shared().insert(worker_database_instance.clone());
     let host = host_controller::get_host();
     let _address = host
         .init_module(worker_database_instance, program_bytes.clone())
@@ -311,6 +317,8 @@ async fn start_module_on_database_instance(database_id: u64, instance_id: u64) {
         relational_db: Arc::new(Mutex::new(RelationalDB::open(db_path))),
     };
 
+    // TODO: This is getting pretty messy
+    DatabaseInstanceContextController::get_shared().insert(worker_database_instance.clone());
     let host = host_controller::get_host();
     let _address = host
         .add_module(worker_database_instance, program_bytes.clone())

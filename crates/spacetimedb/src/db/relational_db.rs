@@ -1,15 +1,14 @@
 use super::{
-    messages::{transaction::Transaction, write::DataKey},
+    messages::transaction::Transaction,
+    relational_operators::Relation,
     transactional_db::{ScanIter, TransactionalDB, Tx},
 };
+// use super::relational_operators::Project;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
 use spacetimedb_bindings::{ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue};
 pub use spacetimedb_bindings::{TupleDef, TupleValue, TypeDef, TypeValue};
-use std::{
-    ops::{Range, RangeBounds},
-    path::Path,
-};
+use std::{ops::RangeBounds, path::Path};
 
 pub const ST_TABLES_NAME: &'static str = "st_table";
 pub const ST_COLUMNS_NAME: &'static str = "st_columns";
@@ -145,10 +144,9 @@ impl RelationalDB {
     }
 
     pub fn pk_for_row(row: &TupleValue) -> PrimaryKey {
-        let mut bytes = Vec::new();
-        row.encode(&mut bytes);
-        let data_key = DataKey::from_data(bytes);
-        PrimaryKey { data_key }
+        PrimaryKey {
+            data_key: row.to_data_key(),
+        }
     }
 
     pub fn encode_row(row: &TupleValue, bytes: &mut Vec<u8>) {
@@ -268,7 +266,7 @@ impl RelationalDB {
         // Scan st_tables for this id
 
         // TODO: allocations remove with fixes to ownership
-        for row in self.iter(tx, ST_TABLES_ID).unwrap() {
+        for row in self.scan(tx, ST_TABLES_ID).unwrap() {
             let t_id = &row.elements[0];
             let t_id = *t_id.as_u32().expect("Woah ur columns r messed up.");
 
@@ -312,22 +310,29 @@ impl RelationalDB {
     }
 
     pub fn drop_table(&mut self, tx: &mut Tx, table_id: u32) -> Result<(), String> {
-        let t = self.delete_range(
-            tx,
-            ST_TABLES_ID,
-            0,
-            RangeTypeValue::U32(table_id)..RangeTypeValue::U32(table_id),
-        );
-        let t = t.expect("ST_TABLES_ID should exist");
-        if t == 0 {
+        let range = self
+            .range_scan(
+                tx,
+                ST_TABLES_ID,
+                0,
+                RangeTypeValue::U32(table_id)..RangeTypeValue::U32(table_id),
+            )
+            .expect("ST_TABLES_ID should exist")
+            .collect::<Vec<_>>();
+        if let None = self.delete_in(tx, table_id, range) {
             return Err("No such table.".into());
         }
-        self.delete_range(
-            tx,
-            ST_COLUMNS_ID,
-            0,
-            RangeTypeValue::U32(table_id)..RangeTypeValue::U32(table_id),
-        );
+
+        let range = self
+            .range_scan(
+                tx,
+                ST_COLUMNS_ID,
+                0,
+                RangeTypeValue::U32(table_id)..RangeTypeValue::U32(table_id),
+            )
+            .expect("ST_COLUMNS_ID should exist")
+            .collect::<Vec<_>>();
+        let _count = self.delete_in(tx, table_id, range).expect("ST_COLUMNS_ID should exist");
         Ok(())
     }
 
@@ -337,7 +342,7 @@ impl RelationalDB {
     }
 
     pub fn table_id_from_name(&self, tx: &mut Tx, table_name: &str) -> Option<u32> {
-        for row in self.iter(tx, ST_TABLES_ID).unwrap() {
+        for row in self.scan(tx, ST_TABLES_ID).unwrap() {
             let t_id = &row.elements[0];
             let t_id = *t_id.as_u32().expect("Woah ur columns r messed up.");
 
@@ -353,7 +358,7 @@ impl RelationalDB {
 
     pub fn column_id_from_name(&self, tx: &mut Tx, table_id: u32, col_name: &str) -> Option<u32> {
         // schema: (table_id: u32, col_id: u32, col_type: Bytes, col_name: String)
-        for row in self.iter(tx, ST_COLUMNS_ID).unwrap() {
+        for row in self.scan(tx, ST_COLUMNS_ID).unwrap() {
             let t_id = &row.elements[0];
             let t_id = *t_id.as_u32().expect("Woah ur columns r messed up.");
 
@@ -374,7 +379,7 @@ impl RelationalDB {
         None
     }
 
-    pub fn iter_pk<'a>(&'a self, tx: &'a mut Tx, table_id: u32) -> Option<PrimaryKeyTableIter<'a>> {
+    pub fn scan_pk<'a>(&'a self, tx: &'a mut Tx, table_id: u32) -> Option<PrimaryKeyTableIter<'a>> {
         let columns = self.schema_for_table(tx, table_id);
         if let Some(columns) = columns {
             Some(PrimaryKeyTableIter {
@@ -386,7 +391,8 @@ impl RelationalDB {
         }
     }
 
-    pub fn iter<'a>(&'a self, tx: &'a mut Tx, table_id: u32) -> Option<TableIter<'a>> {
+    // AKA: iter
+    pub fn scan<'a>(&'a self, tx: &'a mut Tx, table_id: u32) -> Option<TableIter<'a>> {
         let columns = self.schema_for_table(tx, table_id);
         if let Some(columns) = columns {
             Some(TableIter {
@@ -398,7 +404,7 @@ impl RelationalDB {
         }
     }
 
-    pub fn filter_pk<'a>(&'a self, tx: &'a mut Tx, table_id: u32, primary_key: PrimaryKey) -> Option<TupleValue> {
+    pub fn pk_seek<'a>(&'a self, tx: &'a mut Tx, table_id: u32, primary_key: PrimaryKey) -> Option<TupleValue> {
         let schema = self.schema_for_table(tx, table_id);
         if let Some(schema) = schema {
             let bytes = self.txdb.seek(tx, table_id, primary_key.data_key);
@@ -415,43 +421,25 @@ impl RelationalDB {
         return None;
     }
 
-    // AKA: scan
-    pub fn filter<'a>(&'a self, tx: &'a mut Tx, table_id: u32, f: fn(&TupleValue) -> bool) -> Option<FilterIter<'a>> {
-        if let Some(table_iter) = self.iter(tx, table_id) {
-            return Some(FilterIter { table_iter, filter: f });
+    pub fn seek<'a>(&'a self, tx: &'a mut Tx, table_id: u32, col_id: u32, value: EqTypeValue) -> Option<SeekIter> {
+        if let Some(table_iter) = self.scan(tx, table_id) {
+            return Some(SeekIter::Scan(ScanSeekIter {
+                table_iter,
+                col_index: col_id,
+                value,
+            }));
         }
         None
     }
 
-    // AKA: seek
-    pub fn filter_eq<'a>(&'a self, tx: &'a mut Tx, table_id: u32, col_id: u32, value: EqTypeValue) -> Vec<TupleValue> {
-        if let Some(table_iter) = self.iter(tx, table_id) {
-            for row in table_iter {
-                // TODO: more than one row can have this value if col_id
-                // is not the primary key
-                let col_value = &row.elements[col_id as usize];
-                // TODO: This should not unwrap because it will crash the server
-                let eq_col_value: EqTypeValue = col_value.try_into().unwrap();
-                if eq_col_value == value {
-                    return vec![row];
-                }
-            }
-        }
-        Vec::new()
-    }
-
-    // AKA: seek_range
-    pub fn filter_range<'a, R: RangeBounds<RangeTypeValue>>(
+    pub fn range_scan<'a, R: RangeBounds<RangeTypeValue> + 'a>(
         &'a self,
         tx: &'a mut Tx,
         table_id: u32,
         col_id: u32,
         range: R,
-    ) -> Option<RangeIter<'a, R>>
-    where
-        R: RangeBounds<RangeTypeValue>,
-    {
-        if let Some(table_iter) = self.iter(tx, table_id) {
+    ) -> Option<RangeIter<R>> {
+        if let Some(table_iter) = self.scan(tx, table_id) {
             return Some(RangeIter::Scan(ScanRangeIter {
                 table_iter,
                 col_index: col_id,
@@ -463,75 +451,30 @@ impl RelationalDB {
 
     pub fn delete_pk(&mut self, tx: &mut Tx, table_id: u32, primary_key: PrimaryKey) -> Option<bool> {
         // TODO: our use of options here doesn't seem correct, I think we might want to double up on options
-        if let Some(_) = self.filter_pk(tx, table_id, primary_key) {
+        if let Some(_) = self.pk_seek(tx, table_id, primary_key) {
             self.txdb.delete(tx, table_id, primary_key.data_key);
             return Some(true);
         }
         None
     }
 
-    pub fn delete_filter(&mut self, tx: &mut Tx, table_id: u32, f: fn(row: &TupleValue) -> bool) -> Option<usize> {
-        if let Some(filter) = self.filter(tx, table_id, f) {
-            let mut data_keys = Vec::new();
-            for x in filter {
-                let mut bytes = Vec::new();
-                Self::encode_row(&x, &mut bytes);
-                data_keys.push(DataKey::from_data(bytes));
-            }
-            let len = data_keys.len();
-            for value in data_keys {
-                self.txdb.delete(tx, table_id, value);
-            }
-            return Some(len);
+    pub fn delete_in<R: Relation>(&mut self, tx: &mut Tx, table_id: u32, relation: R) -> Option<usize> {
+        if self.schema_for_table(tx, table_id).is_none() {
+            return None;
         }
-        None
-    }
+        let mut count = 0;
+        for tuple in relation {
+            let data_key = tuple.to_data_key();
 
-    pub fn delete_eq(&mut self, tx: &mut Tx, table_id: u32, col_id: u32, value: EqTypeValue) -> Option<usize> {
-        for x in self.filter_eq(tx, table_id, col_id, value) {
-            let mut data_keys = Vec::new();
-            let mut bytes = Vec::new();
-            Self::encode_row(&x, &mut bytes);
-            data_keys.push(DataKey::from_data(bytes));
-            let len = data_keys.len();
-            for value in data_keys {
-                self.txdb.delete(tx, table_id, value);
+            // TODO: Think about if we need to verify that the key is in
+            // the table before deleting
+            if let Some(_) = self.txdb.seek(tx, table_id, data_key) {
+                count += 1;
+                self.txdb.delete(tx, table_id, data_key);
             }
-            return Some(len);
         }
-        None
+        Some(count)
     }
-
-    pub fn delete_range(
-        &mut self,
-        tx: &mut Tx,
-        table_id: u32,
-        col_id: u32,
-        range: Range<RangeTypeValue>,
-    ) -> Option<usize> {
-        if let Some(filter) = self.filter_range(tx, table_id, col_id, range) {
-            let mut values = Vec::new();
-            for x in filter {
-                let mut bytes = Vec::new();
-                Self::encode_row(&x, &mut bytes);
-                values.push(DataKey::from_data(&bytes));
-            }
-            let len = values.len();
-            for value in values {
-                self.txdb.delete(tx, table_id, value);
-            }
-            return Some(len);
-        }
-        None
-    }
-
-    // pub fn from(&self, tx: &mut Transaction, table_name: &str) -> Option<&TableQuery> {
-    //     self.tables.iter().find(|t| t.schema.name == table_name)
-    // }
-
-    // pub fn from_mut(&mut self, tx: &mut Transaction, table_name: &str) -> Option<&mut TableQuery> {
-    //     self.tables.iter_mut().find(|t| t.schema.name == table_name)
-    // }
 }
 
 pub struct PrimaryKeyTableIter<'a> {
@@ -578,6 +521,41 @@ impl<'a> Iterator for TableIter<'a> {
     }
 }
 
+pub enum SeekIter<'a> {
+    Scan(ScanSeekIter<'a>),
+}
+
+impl<'a> Iterator for SeekIter<'a> {
+    type Item = TupleValue;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            SeekIter::Scan(seek) => seek.next(),
+        }
+    }
+}
+pub struct ScanSeekIter<'a> {
+    table_iter: TableIter<'a>,
+    col_index: u32,
+    value: EqTypeValue,
+}
+
+impl<'a> Iterator for ScanSeekIter<'a> {
+    type Item = TupleValue;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(row) = self.table_iter.next() {
+            let value = &row.elements[self.col_index as usize];
+            // TODO: This should not unwrap
+            let eq_value: EqTypeValue = value.try_into().unwrap();
+            if self.value == eq_value {
+                return Some(row);
+            }
+        }
+        None
+    }
+}
+
 pub enum RangeIter<'a, R: RangeBounds<RangeTypeValue>> {
     Scan(ScanRangeIter<'a, R>),
 }
@@ -606,24 +584,6 @@ impl<'a, R: RangeBounds<RangeTypeValue>> Iterator for ScanRangeIter<'a, R> {
             // TODO: This should not unwrap
             let range_value: RangeTypeValue = value.try_into().unwrap();
             if self.range.contains(&range_value) {
-                return Some(row);
-            }
-        }
-        None
-    }
-}
-
-pub struct FilterIter<'a> {
-    table_iter: TableIter<'a>,
-    filter: fn(&TupleValue) -> bool,
-}
-
-impl<'a> Iterator for FilterIter<'a> {
-    type Item = TupleValue;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while let Some(row) = self.table_iter.next() {
-            if (self.filter)(&row) {
                 return Some(row);
             }
         }
@@ -795,7 +755,7 @@ mod tests {
         );
 
         let mut rows = stdb
-            .iter(&mut tx, 0)
+            .scan(&mut tx, 0)
             .unwrap()
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
@@ -847,7 +807,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let mut rows = stdb
-            .iter(&mut tx, 0)
+            .scan(&mut tx, 0)
             .unwrap()
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
@@ -897,7 +857,7 @@ mod tests {
         );
 
         let mut rows = stdb
-            .filter_range(&mut tx, 0, 0, RangeTypeValue::I32(0)..)
+            .range_scan(&mut tx, 0, 0, RangeTypeValue::I32(0)..)
             .unwrap()
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
@@ -949,7 +909,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let mut rows = stdb
-            .filter_range(&mut tx, 0, 0, RangeTypeValue::I32(0)..)
+            .range_scan(&mut tx, 0, 0, RangeTypeValue::I32(0)..)
             .unwrap()
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
@@ -1029,7 +989,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let mut rows = stdb
-            .iter(&mut tx, 0)
+            .scan(&mut tx, 0)
             .unwrap()
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();

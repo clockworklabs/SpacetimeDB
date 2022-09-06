@@ -1,6 +1,7 @@
 // mod logs;
 mod client_api;
 mod control_node_connection;
+pub(crate) mod database_instance_context_controller;
 mod database_logger;
 mod host_controller;
 mod host_cpython;
