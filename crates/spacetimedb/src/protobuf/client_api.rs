@@ -72,7 +72,9 @@ pub struct SubscriptionUpdate {
 pub struct TableUpdate {
     #[prost(uint32, tag="1")]
     pub table_id: u32,
-    #[prost(message, repeated, tag="2")]
+    #[prost(string, tag="2")]
+    pub table_name: std::string::String,
+    #[prost(message, repeated, tag="3")]
     pub table_row_operations: ::std::vec::Vec<TableRowOperation>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

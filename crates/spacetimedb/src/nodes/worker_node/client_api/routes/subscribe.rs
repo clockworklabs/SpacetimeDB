@@ -28,6 +28,7 @@ use regex::Regex;
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
 use tokio_tungstenite::tungstenite::protocol::Role;
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::WebSocketStream;
 
 lazy_static! {
@@ -192,8 +193,14 @@ async fn on_upgrade(
     let req_id = request_id(&state).to_owned();
     let identity_token_clone = identity_token.clone();
     tokio::spawn(async move {
+        let config = WebSocketConfig {
+            max_send_queue: None,
+            max_message_size: Some(104857600),
+            max_frame_size: None,
+            accept_unmasked_frames: false,
+        };
         let ws = match on_upgrade.await {
-            Ok(upgraded) => Ok(WebSocketStream::from_raw_socket(upgraded, Role::Server, None).await),
+            Ok(upgraded) => Ok(WebSocketStream::from_raw_socket(upgraded, Role::Server, Some(config)).await),
             Err(err) => Err(err),
         };
         match ws {

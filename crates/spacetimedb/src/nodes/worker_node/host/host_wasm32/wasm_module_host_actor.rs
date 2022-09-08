@@ -136,7 +136,7 @@ impl WasmModuleHostActor {
         };
 
         let instance = Instance::new(&self.module, &import_object)?;
-        let points = 1_000_000;
+        let points = 1_000_000_000_000;
         set_remaining_points(&instance, points);
 
         // Init panic if available
@@ -309,7 +309,7 @@ impl WasmModuleHostActor {
         };
         self.subscription.broadcast_event(event).unwrap();
 
-        Ok((repeat_duration.unwrap(), timestamp))
+        Ok((repeat_duration.unwrap_or(delta_time), timestamp))
     }
 
     fn call_identity_connected_disconnected(&self, identity: &Hash, connected: bool) -> Result<(), anyhow::Error> {
@@ -465,7 +465,7 @@ impl WasmModuleHostActor {
         let (instance_id, instance) = &self.instances[0];
         self.instance_tx_map.lock().unwrap().insert(*instance_id, tx);
 
-        let points = 1_000_000;
+        let points = 1_000_000_000_000;
         set_remaining_points(&instance, points);
 
         // Prepare arguments

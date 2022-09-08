@@ -316,8 +316,15 @@ pub enum TypeValue {
     Tuple(TupleValue),
     Enum(EnumValue),
 
-    // base types
+    // TODO(cloutiertyler): This is very inefficient it turns out
+    // we should probably have a packed encoding like protobuf
+    // so if someone tries to make a Vec<f32>, we don't spend all
+    // day encoding and decoding.
+    // We could have:
+    // Vec(TypeDef, Vec<u8>)
+    // or VecF32(Vec<f32>), ... etc
     Vec(Vec<TypeValue>),
+    // base types
     U8(u8),
     U16(u16),
     U32(u32),
@@ -405,6 +412,13 @@ impl TypeValue {
                 let len = u16::from_le_bytes(dst);
                 let mut vec = Vec::new();
                 for _ in 0..len {
+                    if bytes.len() <= num_read {
+                        return (
+                            Err("TypeValue::decode: buffer has no room to decode any more elements from this vec."),
+                            0,
+                        );
+                    }
+
                     let (value, nr) = TypeValue::decode(element_type, &bytes[num_read..]);
                     num_read += nr;
                     if let Err(e) = value {

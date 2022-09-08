@@ -54,7 +54,7 @@ pub fn make_wasm32_module_host_actor(
                 _ => 1,
             }
         };
-        let initial_points = 1000000;
+        let initial_points = 1_000_000_000_000;
         let metering = Arc::new(Metering::new(initial_points, cost_function));
 
         // let mut compiler_config = wasmer_compiler_llvm::LLVM::default();

@@ -51,7 +51,8 @@ message SubscriptionUpdate {
 
 message TableUpdate {
     uint32 tableId = 1;
-    repeated TableRowOperation tableRowOperations = 2;
+    string tableName = 2;
+    repeated TableRowOperation tableRowOperations = 3;
 }
 
 message TableRowOperation {

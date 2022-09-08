@@ -261,7 +261,10 @@ pub(crate) fn autogen_csharp_reducer(original_function: ItemFn) -> TokenStream {
 }
 
 /// Creates a C# class from an ItemStruct, with an optional table number (only for tables).
-pub(crate) fn autogen_csharp_tuple(original_struct: ItemStruct, table_num: Option<u32>) -> proc_macro2::TokenStream {
+pub(crate) fn autogen_csharp_tuple(
+    original_struct: ItemStruct,
+    table_name: Option<String>,
+) -> proc_macro2::TokenStream {
     let namespace = "SpacetimeDB";
 
     let original_struct_ident = &original_struct.clone().ident;
@@ -363,9 +366,9 @@ pub(crate) fn autogen_csharp_tuple(original_struct: ItemStruct, table_num: Optio
     .unwrap();
 
     // If this is a table, we want to include functions for accessing the table data
-    if let Some(table_num) = table_num {
+    if let Some(table_name) = table_name {
         // Insert the funcs for accessing this struct
-        match autogen_csharp_access_funcs_for_struct(original_struct.clone(), table_num) {
+        match autogen_csharp_access_funcs_for_struct(original_struct.clone(), table_name) {
             Ok(func) => {
                 write!(output_contents, "{}", func).unwrap();
             }
@@ -422,7 +425,7 @@ fn autogen_csharp_tuple_to_struct(original_struct: ItemStruct) -> String {
     write!(output_contents_header, "\t\t\t{{\n").unwrap();
     write!(
         output_contents_header,
-        "\t\t\t\tthrow new System.InvalidOperationException(\"Invalid value (must be Tuple): {{value.GetType()}}\");\n"
+        "\t\t\t\tthrow new System.InvalidOperationException($\"Invalid value (must be Tuple): {{value.TypeDef.Type}}\");\n"
     )
     .unwrap();
     write!(output_contents_header, "\t\t\t}}\n\n").unwrap();
@@ -600,7 +603,10 @@ fn autogen_csharp_tuple_to_struct(original_struct: ItemStruct) -> String {
     return output_contents_result;
 }
 
-fn autogen_csharp_access_funcs_for_struct(original_struct: ItemStruct, table_num: u32) -> Result<String, &'static str> {
+fn autogen_csharp_access_funcs_for_struct(
+    original_struct: ItemStruct,
+    table_name: String,
+) -> Result<String, &'static str> {
     let original_struct_ident = &original_struct.clone().ident;
     let mut col_num: usize = 0;
 
@@ -673,8 +679,8 @@ fn autogen_csharp_access_funcs_for_struct(original_struct: ItemStruct, table_num
         write!(output_contents, "\t\t\tvar typeDef = GetTypeDef();\n").unwrap();
         write!(
             output_contents,
-            "\t\t\tforeach(var entry in StdbNetworkManager.clientDB.GetEntries({}))\n",
-            table_num
+            "\t\t\tforeach(var entry in StdbNetworkManager.clientDB.GetEntries(\"{}\"))\n",
+            table_name
         )
         .unwrap();
         write!(output_contents, "\t\t\t{{\n").unwrap();

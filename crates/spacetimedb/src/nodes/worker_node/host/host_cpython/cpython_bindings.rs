@@ -47,8 +47,8 @@ impl STDBBindingsClass {
             .delete_range(table_id, col_id, bytes::Bytes::from(buffer))
     }
 
-    pub fn create_table(self_: PyRef<'_, Self>, table_id: u32, buffer: Vec<u8>) {
-        self_.instance_env.create_table(table_id, bytes::Bytes::from(buffer))
+    pub fn create_table(self_: PyRef<'_, Self>, buffer: Vec<u8>) -> u32 {
+        self_.instance_env.create_table(bytes::Bytes::from(buffer))
     }
 
     pub fn iter(self_: PyRef<'_, Self>, table_id: u32) -> Vec<u8> {

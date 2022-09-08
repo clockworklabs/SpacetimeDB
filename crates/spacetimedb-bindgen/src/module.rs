@@ -9,7 +9,7 @@ use syn::{FnArg, ItemStruct};
 
 /// Returns a function which returns the schema (TypeDef) for a given Type. The signature
 /// for this function is as follows:
-/// fn __get_struct_schema__<struct_type_ident>() -> spacetimedb_bindings::TypeDef {
+/// fn get_struct_schema() -> spacetimedb_bindings::TypeDef {
 ///   ...
 /// }
 pub(crate) fn module_type_to_schema(path: &syn::Path) -> TokenStream {
@@ -36,10 +36,9 @@ pub(crate) fn module_type_to_schema(path: &syn::Path) -> TokenStream {
                             }
                         }
                         other_type => {
-                            let get_schema_func: TokenStream =
-                                format!("__get_struct_schema__{}", other_type).parse().unwrap();
+                            let other_type = format_ident!("{}", other_type);
                             quote! {
-                                spacetimedb_bindings::TypeDef::Vec { element_type:#get_schema_func().into() },
+                                spacetimedb_bindings::TypeDef::Vec { #other_type::get_struct_schema().into() },
                             }
                         }
                     },
@@ -50,19 +49,23 @@ pub(crate) fn module_type_to_schema(path: &syn::Path) -> TokenStream {
             }
         }
         other_type => {
-            let get_func = format_ident!("__get_struct_schema__{}", other_type);
-            quote! { #get_func() }
+            let other_type = format_ident!("{}", other_type);
+            quote! { #other_type::get_struct_schema() }
         }
     }
 }
 
-fn type_to_tuple_schema(arg_name : Option<String>, col_num: u8, ty: &syn::Type) -> Option<TokenStream> {
+fn type_to_tuple_schema(arg_name: Option<String>, col_num: u8, ty: &syn::Type) -> Option<TokenStream> {
     let arg_type = ty.clone().to_token_stream().to_string();
     let arg_type = arg_type.as_str();
 
     let arg_name_token = match arg_name {
-        None => { quote! { None }}
-        Some(n) => { quote! { Some(#n.to_string())}}
+        None => {
+            quote! { None }
+        }
+        Some(n) => {
+            quote! { Some(#n.to_string())}
+        }
     };
     match rust_to_spacetimedb_ident(arg_type) {
         Some(spacetimedb_type) => {
@@ -106,7 +109,7 @@ pub(crate) fn args_to_tuple_schema(args: Iter<'_, FnArg>) -> Vec<TokenStream> {
                 } else {
                     None
                 };
-                match type_to_tuple_schema( argument, col_num, &*arg.ty) {
+                match type_to_tuple_schema(argument, col_num, &*arg.ty) {
                     None => {}
                     Some(e) => elements.push(e),
                 }
@@ -119,11 +122,10 @@ pub(crate) fn args_to_tuple_schema(args: Iter<'_, FnArg>) -> Vec<TokenStream> {
 
 /// This returns a function which will return the schema (TypeDef) for a struct. The signature
 /// for this function is as follows:
-/// fn __get_struct_schema__<struct_type_ident>() -> spacetimedb_bindings::TypeDef {
+/// pub fn get_struct_schema() -> spacetimedb_bindings::TypeDef {
 ///   ...
 /// }
 pub(crate) fn autogen_module_struct_to_schema(original_struct: ItemStruct) -> proc_macro2::TokenStream {
-    let original_struct_ident = &original_struct.clone().ident;
     let mut fields: Vec<proc_macro2::TokenStream> = Vec::new();
     let mut col_num: u8 = 0;
 
@@ -136,10 +138,9 @@ pub(crate) fn autogen_module_struct_to_schema(original_struct: ItemStruct) -> pr
         col_num = col_num + 1;
     }
 
-    let return_schema_func_name = format_ident!("__get_struct_schema__{}", original_struct_ident);
     let table_func = quote! {
         #[allow(non_snake_case)]
-        fn #return_schema_func_name() -> spacetimedb_bindings::TypeDef {
+        pub fn get_struct_schema() -> spacetimedb_bindings::TypeDef {
             return spacetimedb_bindings::TypeDef::Tuple {
                 0: spacetimedb_bindings::TupleDef { elements: vec![
                     #(#fields),*
@@ -157,7 +158,7 @@ pub(crate) fn autogen_module_struct_to_schema(original_struct: ItemStruct) -> pr
 /// Returns a generated function that will return a struct value from a TupleValue. The signature
 /// for this function is as follows:
 ///
-/// fn __tuple_to_struct__<struct_type_ident>(value: TupleValue) -> <struct_type_ident> {
+/// pub fn tuple_to_struct(value: TupleValue) -> <struct_type_ident> {
 ///   ...
 /// }
 ///
@@ -250,14 +251,13 @@ pub(crate) fn autogen_module_tuple_to_struct(original_struct: ItemStruct) -> pro
                                                 other_type => {
                                                     let err_message =
                                                         format!("Vec contains wrong type, expected TypeValue::Tuple");
-                                                    let conversion_func: proc_macro2::TokenStream =
-                                                        format!("__tuple_to_struct__{}", other_type).parse().unwrap();
+                                                    let other_type_ident = format_ident!("{}", other_type);
                                                     extra_assignments.push(quote!{
                                                             let mut #tmp_name_vec: Vec<#param> = Vec::<#param>::new();
                                                             for tuple_val in #tmp_name {
                                                                 match tuple_val {
                                                                     spacetimedb_bindings::TypeValue::Tuple(entry) => {
-                                                                        match #conversion_func(entry) {
+                                                                        match #other_type_ident::tuple_to_struct(entry) {
                                                                             Some(native_value) => {
                                                                                 #tmp_name_vec.push(native_value);
                                                                             } None => {
@@ -283,13 +283,13 @@ pub(crate) fn autogen_module_tuple_to_struct(original_struct: ItemStruct) -> pro
                                 }
                             }
                             other_type => {
-                                let get_func = format_ident!("__tuple_to_struct__{}", other_type);
+                                let other_type = format_ident!("{}", other_type);
                                 match_paren2.push(quote! {
                                     spacetimedb_bindings::TypeValue::Tuple(#tmp_name)
                                 });
 
                                 tuple_match1.push(quote! {
-                                    #get_func(#tmp_name)
+                                    #other_type::tuple_to_struct(#tmp_name)
                                 });
 
                                 tuple_match2.push(quote! {
@@ -311,11 +311,10 @@ pub(crate) fn autogen_module_tuple_to_struct(original_struct: ItemStruct) -> pro
         col_num = col_num + 1;
     }
 
-    let tuple_value_to_struct_func_name = format_ident!("__tuple_to_struct__{}", original_struct_ident);
     if tuple_num > 0 {
         let table_func = quote! {
             #[allow(non_snake_case)]
-            fn #tuple_value_to_struct_func_name(value: spacetimedb_bindings::TupleValue) -> Option<#original_struct_ident> {
+            pub fn tuple_to_struct(value: spacetimedb_bindings::TupleValue) -> Option<#original_struct_ident> {
                 let elements_arr = value.elements;
                 // Here we are enumerating all individual elements in the tuple and matching on the types we're expecting
                 match (#(#match_paren1),*) {
@@ -348,7 +347,7 @@ pub(crate) fn autogen_module_tuple_to_struct(original_struct: ItemStruct) -> pro
     } else {
         let table_func = quote! {
             #[allow(non_snake_case)]
-            fn #tuple_value_to_struct_func_name(value: spacetimedb_bindings::TupleValue) -> Option<#original_struct_ident> {
+            pub fn tuple_to_struct(value: spacetimedb_bindings::TupleValue) -> Option<#original_struct_ident> {
                 let elements_arr = value.elements;
                 return match (#(#match_paren1),*) {
                     (#(#match_paren2),*) => {
@@ -372,7 +371,7 @@ pub(crate) fn autogen_module_tuple_to_struct(original_struct: ItemStruct) -> pro
 /// Returns a generated function that will return a tuple from a struct. The signature for this
 /// function is as follows:
 ///
-/// fn __struct_to_tuple__<struct_type_ident>(value: <struct_type_ident>>) -> TypeValue::Tuple {
+/// pub fn struct_to_tuple(value: <struct_type_ident>>) -> TypeValue::Tuple {
 ///   ...
 /// }
 ///
@@ -433,12 +432,11 @@ pub(crate) fn autogen_module_struct_to_tuple(original_struct: ItemStruct) -> pro
                                                     });
                                                 }
                                                 other_type => {
-                                                    let conversion_func: proc_macro2::TokenStream =
-                                                        format!("__struct_to_tuple__{}", other_type).parse().unwrap();
+                                                    let other_type = format_ident!("{}", other_type);
                                                     vec_conversion.push(quote! {
                                                             let mut #tuple_vec_name: Vec<spacetimedb_bindings::TypeValue> = Vec::<spacetimedb_bindings::TypeValue>::new();
                                                             for entry in value.#field_ident {
-                                                                #tuple_vec_name.push(#conversion_func(entry));
+                                                                #tuple_vec_name.push(#other_type::struct_to_tuple(entry));
                                                             }
                                                         });
 
@@ -457,10 +455,9 @@ pub(crate) fn autogen_module_struct_to_tuple(original_struct: ItemStruct) -> pro
                                 }
                             }
                             other_type => {
-                                let struct_to_tuple_value_func_name =
-                                    format_ident!("__struct_to_tuple__{}", other_type);
+                                let other_type = format_ident!("{}", other_type);
                                 type_values.push(quote! {
-                                    #struct_to_tuple_value_func_name(value.#field_ident)
+                                    #other_type::struct_to_tuple(value.#field_ident)
                                 });
                             }
                         }
@@ -472,10 +469,9 @@ pub(crate) fn autogen_module_struct_to_tuple(original_struct: ItemStruct) -> pro
         col_num = col_num + 1;
     }
 
-    let struct_to_tuple_func_name = format_ident!("__struct_to_tuple__{}", original_struct_ident);
     let table_func = quote! {
         #[allow(non_snake_case)]
-        fn #struct_to_tuple_func_name(value: #original_struct_ident) -> spacetimedb_bindings::TypeValue {
+        pub fn struct_to_tuple(value: #original_struct_ident) -> spacetimedb_bindings::TypeValue {
             #(#vec_conversion)*
             return spacetimedb_bindings::TypeValue::Tuple(spacetimedb_bindings::TupleValue {
                 elements: vec![

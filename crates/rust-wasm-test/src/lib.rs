@@ -4,7 +4,7 @@ use std::time::Duration;
 use spacetimedb_bindgen::spacetimedb;
 use spacetimedb_bindings::{delete_range, Hash, RangeTypeValue};
 
-#[spacetimedb(table(1))]
+#[spacetimedb(table)]
 pub struct TestA {
     pub x: u32,
     pub y: u32,

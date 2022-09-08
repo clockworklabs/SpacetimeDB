@@ -182,9 +182,14 @@ impl ModuleSubscriptionActor {
         let tables = stdb
             .scan(&mut tx, ST_TABLES_ID)
             .unwrap()
-            .map(|row| *row.elements[0].as_u32().unwrap())
-            .collect::<Vec<u32>>();
-        for table_id in tables {
+            .map(|row| {
+                (
+                    *row.elements[0].as_u32().unwrap(),
+                    row.elements[1].as_string().unwrap().clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        for (table_id, table_name) in tables {
             if table_id == ST_TABLES_ID || table_id == ST_COLUMNS_ID {
                 continue;
             }
@@ -202,6 +207,7 @@ impl ModuleSubscriptionActor {
             }
             subscription_update.table_updates.push(TableUpdate {
                 table_id,
+                table_name,
                 table_row_operations,
             })
         }
@@ -282,10 +288,23 @@ impl ModuleSubscriptionActor {
             });
         }
 
+        let mut table_name_map: HashMap<u32, String> = HashMap::new();
         let mut table_updates = Vec::new();
         for (table_id, table_row_operations) in map.drain() {
+            let table_name = if let Some(name) = table_name_map.get(&table_id) {
+                name.clone()
+            } else {
+                let mut stdb = self.relational_db.lock().unwrap();
+                let mut tx = stdb.begin_tx();
+                let table_name = stdb.table_name_from_id(&mut tx, table_id).unwrap();
+                let table_name = table_name.to_string();
+                stdb.rollback_tx(tx);
+                table_name_map.insert(table_id, table_name.clone());
+                table_name
+            };
             table_updates.push(TableUpdate {
                 table_id,
+                table_name,
                 table_row_operations,
             });
         }

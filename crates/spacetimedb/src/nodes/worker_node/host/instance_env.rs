@@ -137,7 +137,7 @@ impl InstanceEnv {
         }
     }
 
-    pub fn create_table(&self, table_id: u32, buffer: bytes::Bytes) {
+    pub fn create_table(&self, buffer: bytes::Bytes) -> u32 {
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
@@ -170,7 +170,7 @@ impl InstanceEnv {
             panic!("create_table: Could not decode schema! Err: {}", e);
         });
 
-        stdb.create_table(tx, table_id, table_name, schema).unwrap();
+        stdb.create_table(tx, table_name, schema).unwrap()
     }
 
     pub fn iter(&self, table_id: u32) -> Vec<u8> {
@@ -182,9 +182,17 @@ impl InstanceEnv {
         let schema = stdb.schema_for_table(tx, table_id).unwrap();
         spacetimedb_bindings::encode_schema(schema, &mut bytes);
 
-        for row in stdb.scan(tx, table_id).unwrap() {
-            RelationalDB::encode_row(&row, &mut bytes);
+        let mut count = 0;
+        for row_bytes in stdb.scan_raw(tx, table_id).unwrap() {
+            count += 1;
+            bytes.extend(row_bytes);
         }
+
+        log::trace!(
+            "Allocating iteration buffer of size {} for {} rows.",
+            bytes.len(),
+            count
+        );
 
         bytes
     }

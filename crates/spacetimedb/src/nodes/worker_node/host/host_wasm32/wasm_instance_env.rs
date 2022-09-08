@@ -27,7 +27,7 @@ impl WasmInstanceEnv {
     }
 
     fn read_output_bytes(memory: &Memory, ptr: u32) -> bytes::Bytes {
-        const ROW_BUF_LEN: usize = 1024;
+        const ROW_BUF_LEN: usize = 1024 * 1024;
         let view = memory.view::<u8>();
         let start = ptr as usize;
         let end = ptr as usize + ROW_BUF_LEN;
@@ -65,21 +65,27 @@ impl WasmInstanceEnv {
         self.instance_env.delete_range(table_id, col_id, buffer)
     }
 
-    pub fn create_table(&self, table_id: u32, ptr: u32) {
+    pub fn create_table(&self, ptr: u32) -> u32 {
         let buffer = Self::read_output_bytes(self.memory.get_ref().expect("Initialized memory"), ptr);
-        self.instance_env.create_table(table_id, buffer)
+        self.instance_env.create_table(buffer)
     }
 
     pub fn iter(&self, table_id: u32) -> u64 {
         let bytes = self.instance_env.iter(table_id);
-
         let memory = self.memory.get_ref().expect("Initialized memory");
+
         let alloc_func = self.alloc.get_ref().expect("Intialized alloc function");
         let ptr = alloc_func.call(bytes.len() as u32).unwrap();
-        let values = ptr.deref(memory, 0, bytes.len() as u32).unwrap();
 
-        for (i, byte) in bytes.iter().enumerate() {
-            values[i].set(*byte);
+        let memory_size = memory.size().bytes().0;
+        let end = (ptr.offset() as usize).checked_add(bytes.len()).unwrap();
+        if end > memory_size {
+            panic!("Ran off end of memory!");
+        }
+
+        unsafe {
+            let write_ptr = memory.data_ptr().add(ptr.offset() as usize);
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), write_ptr, bytes.len());
         }
 
         let mut data = ptr.offset() as u64;

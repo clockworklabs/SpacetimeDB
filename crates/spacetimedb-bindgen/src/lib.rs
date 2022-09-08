@@ -14,9 +14,7 @@ use crate::module::{
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::{format_ident, quote, ToTokens};
-use regex::Regex;
 use std::time::Duration;
-use substring::Substring;
 use syn::Fields::{Named, Unit, Unnamed};
 use syn::{parse_macro_input, AttributeArgs, FnArg, ItemFn, ItemStruct};
 
@@ -56,22 +54,9 @@ pub fn spacetimedb(macro_args: TokenStream, item: TokenStream) -> TokenStream {
     let attribute_args = parse_macro_input!(macro_args as AttributeArgs);
     let attribute_str = attribute_args[0].to_token_stream().to_string();
     let attribute_str = attribute_str.as_str();
-    let create_table_regex = Regex::new(r"table\(\d+\)").unwrap();
-    if create_table_regex.is_match(attribute_str) {
-        let table_num_str = attribute_str.substring(6, attribute_str.len() - 1);
-        let table_id_parsed = table_num_str.parse::<u32>();
-        return match table_id_parsed {
-            Ok(table_id) => spacetimedb_table(attribute_args, item, table_id),
-            Err(_) => {
-                let str = format!("Invalid table ID provided in macro: {}", table_num_str);
-                proc_macro::TokenStream::from(quote! {
-                    compile_error!(#str);
-                })
-            }
-        };
-    }
 
     match attribute_str {
+        "table" => spacetimedb_table(attribute_args, item),
         "reducer" => spacetimedb_reducer(attribute_args, item),
         "connect" => spacetimedb_connect_disconnect(attribute_args, item, true),
         "disconnect" => spacetimedb_connect_disconnect(attribute_args, item, false),
@@ -210,7 +195,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #[allow(non_snake_case)]
         pub extern "C" fn #reducer_func_name(arg_ptr: usize, arg_size: usize) {
             let arguments = spacetimedb_bindings::args::ReducerArguments::decode_mem(
-                unsafe {arg_ptr as *mut u8 }, arg_size).expect("Unable to decode module arguments");
+                unsafe { arg_ptr as *mut u8 }, arg_size).expect("Unable to decode module arguments");
 
             // Unwrap extra arguments, conditional on whether or not there are extra args.
             #unwrap_args
@@ -314,7 +299,7 @@ fn spacetimedb_repeating_reducer(_args: AttributeArgs, item: TokenStream, repeat
         pub extern "C" fn #reducer_func_name(arg_ptr: usize, arg_size: usize) -> u64 {
             // Deserialize the arguments
             let arguments = spacetimedb_bindings::args::RepeatingReducerArguments::decode_mem(
-                unsafe {arg_ptr as *mut u8 }, arg_size).expect("Unable to decode module arguments");
+                unsafe { arg_ptr as *mut u8 }, arg_size).expect("Unable to decode module arguments");
 
             // Invoke the function with the deserialized args
             #func_name(arguments.timestamp, arguments.delta_time);
@@ -345,7 +330,7 @@ struct UniqueColumn {
     column_index: u32,
 }
 
-fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> TokenStream {
+fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
     if *(&args.len()) > 1 {
         let str = format!("Unexpected macro argument: {}", args[1].to_token_stream().to_string());
         return proc_macro::TokenStream::from(quote! {
@@ -403,6 +388,8 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
     let mut insert_columns: Vec<proc_macro2::TokenStream> = Vec::new();
     let mut insert_vec_construction: Vec<proc_macro2::TokenStream> = Vec::new();
     let mut col_num: u32 = 0;
+
+    let table_id_field_name = format_ident!("__table_id__{}", original_struct.ident);
 
     for field in &original_struct.fields {
         let col_name = &field.ident.clone().unwrap();
@@ -518,12 +505,11 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
                                                     .into();
                                                 }
                                                 other_type => {
-                                                    let conversion_func_name: proc_macro2::TokenStream =
-                                                        format!("__struct_to_tuple__{}", other_type).parse().unwrap();
+                                                    let other_type = format_ident!("{}", other_type);
                                                     insert_vec_construction.push(quote! {
                                                         let mut #vec_name: Vec<spacetimedb_bindings::TypeValue> = Vec::<spacetimedb_bindings::TypeValue>::new();
                                                         for value in ins.#col_name {
-                                                            #vec_name.push(#conversion_func_name(value));
+                                                            #vec_name.push(#other_type::struct_to_tuple(value));
                                                         }
                                                     });
                                                 }
@@ -539,9 +525,9 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
                                 }
                             }
                             other_type => {
-                                let struct_to_tuple = format_ident!("__struct_to_tuple__{}", other_type);
+                                let other_type = format_ident!("{}", other_type);
                                 insert_columns.push(quote! {
-                                    #struct_to_tuple(ins.#col_name)
+                                    #other_type::struct_to_tuple(ins.#col_name)
                                 });
                             }
                         }
@@ -620,7 +606,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
                 let equatable = spacetimedb_bindings::EqTypeValue::try_from(data);
                 match equatable {
                     Ok(value) => {
-                        let result = spacetimedb_bindings::delete_eq(#table_id, #unique_column_index, value);
+                        let result = spacetimedb_bindings::delete_eq(unsafe { #table_id_field_name.unwrap() }, #unique_column_index, value);
                         match result {
                             None => {
                                 //TODO: Returning here was supposed to signify an error, but it can also return none when there is nothing to delete.
@@ -689,7 +675,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
         #[allow(unused_variables)]
         pub fn insert(ins: #original_struct_ident) {
             #(#insert_vec_construction)*
-            spacetimedb_bindings::insert(#table_id, spacetimedb_bindings::TupleValue {
+            spacetimedb_bindings::insert(unsafe { #table_id_field_name.unwrap() }, spacetimedb_bindings::TupleValue {
                 elements: vec![
                     #(#insert_columns),*
                 ]
@@ -714,27 +700,33 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
     let db_iter = quote! {
         #[allow(unused_variables)]
         pub fn iter() -> Option<spacetimedb_bindings::TableIter> {
-            spacetimedb_bindings::__iter__(#table_id)
+            spacetimedb_bindings::__iter__(unsafe { #table_id_field_name.unwrap() })
         }
     };
 
     let tuple_to_struct_func = autogen_module_tuple_to_struct(original_struct.clone());
     let struct_to_tuple_func = autogen_module_struct_to_tuple(original_struct.clone());
-    let csharp_output = autogen_csharp_tuple(original_struct.clone(), Some(table_id));
+
+    let csharp_output = autogen_csharp_tuple(original_struct.clone(), Some(original_struct_ident.to_string()));
 
     let schema_func = autogen_module_struct_to_schema(original_struct.clone());
     let create_table_func_name = format_ident!("__create_table__{}", original_struct_ident);
     let describe_table_func_name = format_ident!("__describe_table__{}", original_struct_ident);
-    let get_schema_func_name = format_ident!("__get_struct_schema__{}", original_struct_ident);
     let table_name = original_struct_ident.to_string();
+
+    let table_id_static = quote! {
+        #[allow(non_upper_case_globals)]
+        static mut #table_id_field_name: Option<u32> = None;
+    };
 
     let create_table_func = quote! {
         #[allow(non_snake_case)]
         #[no_mangle]
         pub extern "C" fn #create_table_func_name(arg_ptr: usize, arg_size: usize) {
-            let def = #get_schema_func_name();
+            let def = #original_struct_ident::get_struct_schema();
             if let spacetimedb_bindings::TypeDef::Tuple(tuple_def) = def {
-                spacetimedb_bindings::create_table(#table_id, #table_name, tuple_def);
+                let table_id = spacetimedb_bindings::create_table(#table_name, tuple_def);
+                unsafe { #table_id_field_name = Some(table_id) }
             } else {
                 // The type is not a tuple for some reason, table not created.
                 std::panic!("This type is not a tuple: {{#original_struct_ident}}");
@@ -746,7 +738,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
         #[allow(non_snake_case)]
         #[no_mangle]
         pub extern "C" fn #describe_table_func_name() -> u64 {
-            let def = #get_schema_func_name();
+            let def = #original_struct_ident::get_struct_schema();
             if let spacetimedb_bindings::TypeDef::Tuple(tuple_def) = def {
                 let mut bytes = vec![];
                 tuple_def.encode(&mut bytes);
@@ -763,6 +755,8 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
 
     // Output all macro data
     proc_macro::TokenStream::from(quote! {
+        #table_id_static
+
         #[derive(spacetimedb_bindgen::Unique, spacetimedb_bindgen::Index)]
         #[derive(serde::Serialize, serde::Deserialize)]
         #original_struct
@@ -776,13 +770,14 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream, table_id: u32) -> T
 
             #db_iter
             #(#non_primary_filter_func)*
+
+            #tuple_to_struct_func
+            #struct_to_tuple_func
+            #schema_func
         }
 
-        #schema_func
         #create_table_func
         #describe_table_func
-        #tuple_to_struct_func
-        #struct_to_tuple_func
         #csharp_output
     })
 }
@@ -854,9 +849,7 @@ fn spacetimedb_index(args: AttributeArgs, item: TokenStream) -> TokenStream {
         impl #original_struct_name {
             #[allow(non_snake_case)]
             fn #function_name(arg_ptr: u32, arg_size: u32) {
-                unsafe {
-                    spacetimedb_bindings::create_index(#table_id_field_name, #index_type, vec!(#(#index_fields),*));
-                }
+                spacetimedb_bindings::create_index(unsafe { #table_id_field_name.unwrap() }, #index_type, vec!(#(#index_fields),*));
             }
         }
     };
@@ -889,29 +882,28 @@ fn spacetimedb_tuple(_: AttributeArgs, item: TokenStream) -> TokenStream {
     let tuple_to_struct_func = autogen_module_tuple_to_struct(original_struct.clone());
     let struct_to_tuple_func = autogen_module_struct_to_tuple(original_struct.clone());
 
-    let get_schema_func_name = format_ident!("__get_struct_schema__{}", original_struct_ident);
     let create_tuple_func_name = format_ident!("__create_type__{}", original_struct_ident);
     let create_tuple_func = quote! {
         #[no_mangle]
         #[allow(non_snake_case)]
         pub extern "C" fn #create_tuple_func_name(arg_ptr: usize, arg_size: usize) {
-           unsafe {
-                let ptr = arg_ptr as *mut u8;
-                let def = #get_schema_func_name();
-                let mut bytes = Vec::from_raw_parts(ptr, 0, arg_size);
-                def.encode(&mut bytes);
-            }
+            let ptr = unsafe { arg_ptr as *mut u8 };
+            let def = #original_struct_ident::get_struct_schema();
+            let mut bytes = unsafe { Vec::from_raw_parts(ptr, 0, arg_size) };
+            def.encode(&mut bytes);
         }
     };
 
     return TokenStream::from(quote! {
         #[derive(serde::Serialize, serde::Deserialize)]
         #original_struct
-        #return_schema
+        impl #original_struct_ident {
+            #tuple_to_struct_func
+            #struct_to_tuple_func
+            #return_schema
+        }
         #create_tuple_func
         #csharp_output
-        #tuple_to_struct_func
-        #struct_to_tuple_func
     });
 }
 
@@ -1004,7 +996,7 @@ fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connec
         #[allow(non_snake_case)]
         pub extern "C" fn #connect_disconnect_ident(arg_ptr: usize, arg_size: usize) {
             let arguments = spacetimedb_bindings::args::ConnectDisconnectArguments::decode_mem(
-                unsafe {arg_ptr as *mut u8 }, arg_size).expect("Unable to decode module arguments");
+                unsafe { arg_ptr as *mut u8 }, arg_size).expect("Unable to decode module arguments");
 
             // Invoke the function with the deserialized args
             #func_name(arguments.identity, arguments.timestamp,);
@@ -1059,8 +1051,7 @@ fn tuple_field_comparison_block(
     let stdb_type_value: proc_macro2::TokenStream;
     let comparison_and_result_statement: proc_macro2::TokenStream;
     let result_statement: proc_macro2::TokenStream;
-    let tuple_to_struct_func: proc_macro2::TokenStream =
-        format!("__tuple_to_struct__{}", tuple_type_str).parse().unwrap();
+    let tuple_to_struct_func: proc_macro2::TokenStream = format!("tuple_to_struct").parse().unwrap();
     let err_string = format!(
         "Internal stdb error: Can't convert from tuple to struct (wrong version?) {}",
         tuple_type_str
@@ -1068,7 +1059,7 @@ fn tuple_field_comparison_block(
 
     if is_unique {
         result_statement = quote! {
-            let tuple = #tuple_to_struct_func(row);
+            let tuple = Self::#tuple_to_struct_func(row);
             if let None = tuple {
                 spacetimedb_bindings::println!(#err_string);
                 return None;
@@ -1077,7 +1068,7 @@ fn tuple_field_comparison_block(
         }
     } else {
         result_statement = quote! {
-            let tuple = #tuple_to_struct_func(row);
+            let tuple = Self::#tuple_to_struct_func(row);
             if let None = tuple {
                 spacetimedb_bindings::println!(#err_string);
                 continue;

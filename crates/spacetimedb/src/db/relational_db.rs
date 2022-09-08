@@ -13,8 +13,8 @@ use std::{ops::RangeBounds, path::Path};
 pub const ST_TABLES_NAME: &'static str = "st_table";
 pub const ST_COLUMNS_NAME: &'static str = "st_columns";
 
-pub const ST_TABLES_ID: u32 = u32::MAX;
-pub const ST_COLUMNS_ID: u32 = u32::MAX - 1;
+pub const ST_TABLES_ID: u32 = 0;
+pub const ST_COLUMNS_ID: u32 = 1;
 
 pub struct RelationalDB {
     pub txdb: TransactionalDB,
@@ -256,24 +256,22 @@ impl RelationalDB {
         self.txdb.commit_tx(tx)
     }
 
-    pub fn create_table(
-        &mut self,
-        tx: &mut Tx,
-        table_id: u32,
-        table_name: &str,
-        schema: TupleDef,
-    ) -> Result<(), String> {
+    pub fn create_table(&mut self, tx: &mut Tx, table_name: &str, schema: TupleDef) -> Result<u32, String> {
         // Scan st_tables for this id
 
-        // TODO: allocations remove with fixes to ownership
+        let mut table_count = 0;
         for row in self.scan(tx, ST_TABLES_ID).unwrap() {
-            let t_id = &row.elements[0];
-            let t_id = *t_id.as_u32().expect("Woah ur columns r messed up.");
+            table_count += 1;
+            let t_name = &row.elements[1];
+            let t_name = t_name.as_string().expect("Woah ur columns r messed up.");
 
-            if t_id == table_id {
-                return Err("Table exists.".into());
+            if t_name == table_name {
+                return Err(format!("Table with name {} exists.", t_name));
             }
         }
+
+        // TODO: we probably want to replace this with autoincrementing
+        let table_id = table_count;
 
         // Insert the table row into st_tables
         let row = TupleValue {
@@ -306,7 +304,7 @@ impl RelationalDB {
             i += 1;
         }
 
-        Ok(())
+        Ok(table_id)
     }
 
     pub fn drop_table(&mut self, tx: &mut Tx, table_id: u32) -> Result<(), String> {
@@ -356,6 +354,21 @@ impl RelationalDB {
         None
     }
 
+    pub fn table_name_from_id(&self, tx: &mut Tx, table_id: u32) -> Option<String> {
+        for row in self.scan(tx, ST_TABLES_ID).unwrap() {
+            let t_id = &row.elements[0];
+            let t_id = *t_id.as_u32().expect("Woah ur columns r messed up.");
+
+            let t_name = &row.elements[1];
+            let t_name = t_name.as_string().expect("Woah ur columns r messed up.");
+
+            if t_id == table_id {
+                return Some(t_name.clone());
+            }
+        }
+        None
+    }
+
     pub fn column_id_from_name(&self, tx: &mut Tx, table_id: u32, col_name: &str) -> Option<u32> {
         // schema: (table_id: u32, col_id: u32, col_type: Bytes, col_name: String)
         for row in self.scan(tx, ST_COLUMNS_ID).unwrap() {
@@ -398,6 +411,17 @@ impl RelationalDB {
             Some(TableIter {
                 txdb_iter: self.txdb.scan(tx, table_id),
                 schema: columns,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn scan_raw<'a>(&'a self, tx: &'a mut Tx, table_id: u32) -> Option<TableIterRaw<'a>> {
+        let columns = self.schema_for_table(tx, table_id);
+        if let Some(_) = columns {
+            Some(TableIterRaw {
+                txdb_iter: self.txdb.scan(tx, table_id),
             })
         } else {
             None
@@ -521,6 +545,18 @@ impl<'a> Iterator for TableIter<'a> {
     }
 }
 
+pub struct TableIterRaw<'a> {
+    txdb_iter: ScanIter<'a>,
+}
+
+impl<'a> Iterator for TableIterRaw<'a> {
+    type Item = Vec<u8>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.txdb_iter.next()
+    }
+}
+
 pub enum SeekIter<'a> {
     Scan(ScanSeekIter<'a>),
 }
@@ -623,7 +659,6 @@ mod tests {
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
-            0,
             "MyTable",
             TupleDef {
                 elements: vec![ElementDef {
@@ -641,21 +676,21 @@ mod tests {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
         let mut stdb = RelationalDB::open(tmp_dir.path());
         let mut tx = stdb.begin_tx();
-        stdb.create_table(
-            &mut tx,
-            0,
-            "MyTable",
-            TupleDef {
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }],
-            },
-        )
-        .unwrap();
-        let table_id = stdb.table_id_from_name(&mut tx, "MyTable");
-        assert_eq!(table_id, Some(0))
+        let table_id = stdb
+            .create_table(
+                &mut tx,
+                "MyTable",
+                TupleDef {
+                    elements: vec![ElementDef {
+                        tag: 0,
+                        name: Some("my_col".into()),
+                        element_type: TypeDef::I32,
+                    }],
+                },
+            )
+            .unwrap();
+        let t_id = stdb.table_id_from_name(&mut tx, "MyTable");
+        assert_eq!(t_id, Some(table_id))
     }
 
     #[test]
@@ -665,7 +700,6 @@ mod tests {
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
-            0,
             "MyTable",
             TupleDef {
                 elements: vec![ElementDef {
@@ -688,7 +722,6 @@ mod tests {
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
-            0,
             "MyTable",
             TupleDef {
                 elements: vec![ElementDef {
@@ -701,7 +734,6 @@ mod tests {
         .unwrap();
         let result = stdb.create_table(
             &mut tx,
-            0,
             "MyTable",
             TupleDef {
                 elements: vec![ElementDef {
@@ -719,43 +751,43 @@ mod tests {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
         let mut stdb = RelationalDB::open(tmp_dir.path());
         let mut tx = stdb.begin_tx();
-        stdb.create_table(
-            &mut tx,
-            0,
-            "MyTable",
-            TupleDef {
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }],
-            },
-        )
-        .unwrap();
+        let table_id = stdb
+            .create_table(
+                &mut tx,
+                "MyTable",
+                TupleDef {
+                    elements: vec![ElementDef {
+                        tag: 0,
+                        name: Some("my_col".into()),
+                        element_type: TypeDef::I32,
+                    }],
+                },
+            )
+            .unwrap();
         stdb.insert(
             &mut tx,
-            0,
+            table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(-1)],
             },
         );
         stdb.insert(
             &mut tx,
-            0,
+            table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(0)],
             },
         );
         stdb.insert(
             &mut tx,
-            0,
+            table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(1)],
             },
         );
 
         let mut rows = stdb
-            .scan(&mut tx, 0)
+            .scan(&mut tx, table_id)
             .unwrap()
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
@@ -769,36 +801,36 @@ mod tests {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
         let mut stdb = RelationalDB::open(tmp_dir.path());
         let mut tx = stdb.begin_tx();
-        stdb.create_table(
-            &mut tx,
-            0,
-            "MyTable",
-            TupleDef {
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }],
-            },
-        )
-        .unwrap();
+        let table_id = stdb
+            .create_table(
+                &mut tx,
+                "MyTable",
+                TupleDef {
+                    elements: vec![ElementDef {
+                        tag: 0,
+                        name: Some("my_col".into()),
+                        element_type: TypeDef::I32,
+                    }],
+                },
+            )
+            .unwrap();
         stdb.insert(
             &mut tx,
-            0,
+            table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(-1)],
             },
         );
         stdb.insert(
             &mut tx,
-            0,
+            table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(0)],
             },
         );
         stdb.insert(
             &mut tx,
-            0,
+            table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(1)],
             },
@@ -807,7 +839,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let mut rows = stdb
-            .scan(&mut tx, 0)
+            .scan(&mut tx, table_id)
             .unwrap()
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
@@ -821,43 +853,45 @@ mod tests {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
         let mut stdb = RelationalDB::open(tmp_dir.path());
         let mut tx = stdb.begin_tx();
-        stdb.create_table(
-            &mut tx,
-            0,
-            "MyTable",
-            TupleDef {
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }],
-            },
-        )
-        .unwrap();
+        let table_id = stdb
+            .create_table(
+                &mut tx,
+                "MyTable",
+                TupleDef {
+                    elements: vec![ElementDef {
+                        tag: 0,
+                        name: Some("my_col".into()),
+                        element_type: TypeDef::I32,
+                    }],
+                },
+            )
+            .unwrap();
         stdb.insert(
             &mut tx,
-            0,
+            table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(-1)],
             },
         );
         stdb.insert(
             &mut tx,
-            0,
+            table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(0)],
             },
         );
         stdb.insert(
             &mut tx,
-            0,
+            table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(1)],
             },
         );
 
+        println!("{}", table_id);
+
         let mut rows = stdb
-            .range_scan(&mut tx, 0, 0, RangeTypeValue::I32(0)..)
+            .range_scan(&mut tx, table_id, 0, RangeTypeValue::I32(0)..)
             .unwrap()
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
@@ -871,36 +905,36 @@ mod tests {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
         let mut stdb = RelationalDB::open(tmp_dir.path());
         let mut tx = stdb.begin_tx();
-        stdb.create_table(
-            &mut tx,
-            0,
-            "MyTable",
-            TupleDef {
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }],
-            },
-        )
-        .unwrap();
+        let table_id = stdb
+            .create_table(
+                &mut tx,
+                "MyTable",
+                TupleDef {
+                    elements: vec![ElementDef {
+                        tag: 0,
+                        name: Some("my_col".into()),
+                        element_type: TypeDef::I32,
+                    }],
+                },
+            )
+            .unwrap();
         stdb.insert(
             &mut tx,
-            0,
+            table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(-1)],
             },
         );
         stdb.insert(
             &mut tx,
-            0,
+            table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(0)],
             },
         );
         stdb.insert(
             &mut tx,
-            0,
+            table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(1)],
             },
@@ -909,7 +943,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let mut rows = stdb
-            .range_scan(&mut tx, 0, 0, RangeTypeValue::I32(0)..)
+            .range_scan(&mut tx, table_id, 0, RangeTypeValue::I32(0)..)
             .unwrap()
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
@@ -923,23 +957,23 @@ mod tests {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
         let mut stdb = RelationalDB::open(tmp_dir.path());
         let mut tx = stdb.begin_tx();
-        stdb.create_table(
-            &mut tx,
-            0,
-            "MyTable",
-            TupleDef {
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }],
-            },
-        )
-        .unwrap();
+        let table_id = stdb
+            .create_table(
+                &mut tx,
+                "MyTable",
+                TupleDef {
+                    elements: vec![ElementDef {
+                        tag: 0,
+                        name: Some("my_col".into()),
+                        element_type: TypeDef::I32,
+                    }],
+                },
+            )
+            .unwrap();
         drop(tx);
 
         let mut tx = stdb.begin_tx();
-        let result = stdb.drop_table(&mut tx, 0);
+        let result = stdb.drop_table(&mut tx, table_id);
         assert!(matches!(result, Err(_)));
     }
 
@@ -948,19 +982,19 @@ mod tests {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
         let mut stdb = RelationalDB::open(tmp_dir.path());
         let mut tx = stdb.begin_tx();
-        stdb.create_table(
-            &mut tx,
-            0,
-            "MyTable",
-            TupleDef {
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }],
-            },
-        )
-        .unwrap();
+        let table_id = stdb
+            .create_table(
+                &mut tx,
+                "MyTable",
+                TupleDef {
+                    elements: vec![ElementDef {
+                        tag: 0,
+                        name: Some("my_col".into()),
+                        element_type: TypeDef::I32,
+                    }],
+                },
+            )
+            .unwrap();
         stdb.commit_tx(tx);
 
         let mut tx = stdb.begin_tx();
@@ -989,7 +1023,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let mut rows = stdb
-            .scan(&mut tx, 0)
+            .scan(&mut tx, table_id)
             .unwrap()
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
