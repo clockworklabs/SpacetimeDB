@@ -25,13 +25,6 @@ services:
     environment:
       ENV: dev
 
-  postgres:
-    build:
-      context: ./packages/postgres
-    environment:
-      PGDATA: /var/lib/postgresql/data/pgdata
-      PGPASSFILE: /etc/pg/.pgpass
-
   prometheus:
     build:
       context: ./packages/prometheus
