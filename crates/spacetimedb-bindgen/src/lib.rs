@@ -567,7 +567,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         let unique_conversion_from_raw_to_stdb_statement = unique.conversion_from_raw_to_stdb_statement;
         let unique_column_index = unique.column_index;
 
-        unique_filter_funcs.push(quote! {
+        match parse_generated_func(quote! {
             #[allow(unused_variables)]
             #[allow(non_snake_case)]
             pub fn #filter_func_ident(#unique_column_def) -> Option<#original_struct_ident> {
@@ -583,21 +583,31 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
                 return None;
             }
-        });
+        }) {
+            Ok(func) => unique_filter_funcs.push(func),
+            Err(err) => {
+                return proc_macro::TokenStream::from(err);
+            }
+        }
 
-        unique_update_funcs.push(quote! {
+        match parse_generated_func(quote! {
             #[allow(unused_variables)]
             #[allow(non_snake_case)]
-            pub fn #update_func_ident(#unique_column_def, new_value: #original_struct_ident) -> bool {
+           pub fn #update_func_ident(#unique_column_def, new_value: #original_struct_ident) -> bool {
                 #original_struct_ident::#delete_func_ident(#unique_column_ident);
                 #original_struct_ident::insert(new_value);
 
                 // For now this is always successful
                 true
             }
-        });
+        }) {
+            Ok(func) => unique_update_funcs.push(func),
+            Err(err) => {
+                return proc_macro::TokenStream::from(err);
+            }
+        }
 
-        unique_delete_funcs.push(quote! {
+        match parse_generated_func(quote! {
             #[allow(unused_variables)]
             #[allow(non_snake_case)]
             pub fn #delete_func_ident(#unique_column_def) -> bool {
@@ -624,7 +634,12 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                     }
                 }
             }
-        });
+        }) {
+            Ok(func) => unique_delete_funcs.push(func),
+            Err(err) => {
+                return proc_macro::TokenStream::from(err);
+            }
+        }
     }
 
     for (x, non_primary_column_ident) in non_primary_column_idents.iter().enumerate() {
@@ -653,7 +668,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             }
         }
 
-        non_primary_filter_func.push(quote!(
+        match parse_generated_func(quote! {
             #[allow(non_snake_case)]
             #[allow(unused_variables)]
             pub fn #filter_func_ident(#column_def) -> Vec <#original_struct_ident> {
@@ -668,10 +683,16 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
                 return result;
             }
-        ));
+        }) {
+            Ok(func) => non_primary_filter_func.push(func),
+            Err(err) => {
+                return proc_macro::TokenStream::from(err);
+            }
+        }
     }
 
-    let db_insert = quote! {
+    let db_insert: proc_macro2::TokenStream;
+    match parse_generated_func(quote! {
         #[allow(unused_variables)]
         pub fn insert(ins: #original_struct_ident) {
             #(#insert_vec_construction)*
@@ -681,35 +702,71 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                 ]
             });
         }
-    };
-
-    let db_delete = quote! {
-        #[allow(unused_variables)]
-        pub fn delete(f: fn (#original_struct_ident) -> bool) -> usize {
-            panic!("Delete using a function is not supported yet!");
+    }) {
+        Ok(func) => db_insert = func,
+        Err(err) => {
+            return proc_macro::TokenStream::from(err);
         }
-    };
+    }
 
-    let db_update = quote! {
-        #[allow(unused_variables)]
-        pub fn update(value: #original_struct_ident) -> bool {
-            panic!("Update using a value is not supported yet!");
+    let db_delete: proc_macro2::TokenStream;
+    match parse_generated_func(quote! {
+    #[allow(unused_variables)]
+    pub fn delete(f: fn (#original_struct_ident) -> bool) -> usize {
+        panic!("Delete using a function is not supported yet!");
+    }}) {
+        Ok(func) => db_delete = func,
+        Err(err) => {
+            return proc_macro::TokenStream::from(err);
         }
-    };
+    }
 
-    let db_iter = quote! {
+    let db_update: proc_macro2::TokenStream;
+    match parse_generated_func(quote! {
+    #[allow(unused_variables)]
+    pub fn update(value: #original_struct_ident) -> bool {
+        panic!("Update using a value is not supported yet!");
+    }}) {
+        Ok(func) => db_update = func,
+        Err(err) => {
+            return proc_macro::TokenStream::from(err);
+        }
+    }
+
+    let db_iter: proc_macro2::TokenStream;
+    match parse_generated_func(quote! {
         #[allow(unused_variables)]
         pub fn iter() -> Option<spacetimedb_bindings::TableIter> {
             spacetimedb_bindings::__iter__(unsafe { #table_id_field_name.unwrap() })
         }
-    };
+    }) {
+        Ok(func) => db_iter = func,
+        Err(err) => {
+            return proc_macro::TokenStream::from(err);
+        }
+    }
 
-    let tuple_to_struct_func = autogen_module_tuple_to_struct(original_struct.clone());
-    let struct_to_tuple_func = autogen_module_struct_to_tuple(original_struct.clone());
+    let tuple_to_struct_func = match autogen_module_tuple_to_struct(original_struct.clone()) {
+        Ok(func) => func,
+        Err(err) => {
+            return TokenStream::from(err);
+        }
+    };
+    let struct_to_tuple_func = match autogen_module_struct_to_tuple(original_struct.clone()) {
+        Ok(func) => func,
+        Err(err) => {
+            return TokenStream::from(err);
+        }
+    };
+    let schema_func = match autogen_module_struct_to_schema(original_struct.clone()) {
+        Ok(func) => func,
+        Err(err) => {
+            return TokenStream::from(err);
+        }
+    };
 
     let csharp_output = autogen_csharp_tuple(original_struct.clone(), Some(original_struct_ident.to_string()));
 
-    let schema_func = autogen_module_struct_to_schema(original_struct.clone());
     let create_table_func_name = format_ident!("__create_table__{}", original_struct_ident);
     let describe_table_func_name = format_ident!("__describe_table__{}", original_struct_ident);
     let table_name = original_struct_ident.to_string();
@@ -719,7 +776,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         static mut #table_id_field_name: Option<u32> = None;
     };
 
-    let create_table_func = quote! {
+    let create_table_func = match parse_generated_func(quote! {
         #[allow(non_snake_case)]
         #[no_mangle]
         pub extern "C" fn #create_table_func_name(arg_ptr: usize, arg_size: usize) {
@@ -732,9 +789,14 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                 std::panic!("This type is not a tuple: {{#original_struct_ident}}");
             }
         }
+    }) {
+        Ok(func) => func,
+        Err(err) => {
+            return TokenStream::from(err);
+        }
     };
 
-    let describe_table_func = quote! {
+    let describe_table_func = match parse_generated_func(quote! {
         #[allow(non_snake_case)]
         #[no_mangle]
         pub extern "C" fn #describe_table_func_name() -> u64 {
@@ -751,15 +813,25 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                 std::panic!("This type is not a tuple: {{#original_struct_ident}}");
             }
         }
+    }) {
+        Ok(func) => func,
+        Err(err) => {
+            return TokenStream::from(err);
+        }
     };
 
     // Output all macro data
-    proc_macro::TokenStream::from(quote! {
+    let emission = quote! {
         #table_id_static
+
+        #create_table_func
+        #describe_table_func
+        #csharp_output
 
         #[derive(spacetimedb_bindgen::Unique, spacetimedb_bindgen::Index)]
         #[derive(serde::Serialize, serde::Deserialize)]
         #original_struct
+
         impl #original_struct_ident {
             #db_insert
             #db_delete
@@ -775,11 +847,13 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             #struct_to_tuple_func
             #schema_func
         }
+    };
 
-        #create_table_func
-        #describe_table_func
-        #csharp_output
-    })
+    if std::env::var("PROC_MACRO_DEBUG").is_ok() {
+        println!("{}", emission.to_string());
+    }
+
+    proc_macro::TokenStream::from(emission)
 }
 
 fn spacetimedb_index(args: AttributeArgs, item: TokenStream) -> TokenStream {
@@ -854,6 +928,10 @@ fn spacetimedb_index(args: AttributeArgs, item: TokenStream) -> TokenStream {
         }
     };
 
+    if std::env::var("PROC_MACRO_DEBUG").is_ok() {
+        println!("{}", output.to_string());
+    }
+
     proc_macro::TokenStream::from(output)
 }
 
@@ -877,24 +955,43 @@ fn spacetimedb_tuple(_: AttributeArgs, item: TokenStream) -> TokenStream {
         }
     }
 
-    let return_schema = autogen_module_struct_to_schema(original_struct.clone());
     let csharp_output = autogen_csharp_tuple(original_struct.clone(), None);
-    let tuple_to_struct_func = autogen_module_tuple_to_struct(original_struct.clone());
-    let struct_to_tuple_func = autogen_module_struct_to_tuple(original_struct.clone());
-
-    let create_tuple_func_name = format_ident!("__create_type__{}", original_struct_ident);
-    let create_tuple_func = quote! {
-        #[no_mangle]
-        #[allow(non_snake_case)]
-        pub extern "C" fn #create_tuple_func_name(arg_ptr: usize, arg_size: usize) {
-            let ptr = unsafe { arg_ptr as *mut u8 };
-            let def = #original_struct_ident::get_struct_schema();
-            let mut bytes = unsafe { Vec::from_raw_parts(ptr, 0, arg_size) };
-            def.encode(&mut bytes);
+    let return_schema = match autogen_module_struct_to_schema(original_struct.clone()) {
+        Ok(func) => func,
+        Err(err) => {
+            return TokenStream::from(err);
+        }
+    };
+    let tuple_to_struct_func = match autogen_module_tuple_to_struct(original_struct.clone()) {
+        Ok(func) => func,
+        Err(err) => {
+            return TokenStream::from(err);
+        }
+    };
+    let struct_to_tuple_func = match autogen_module_struct_to_tuple(original_struct.clone()) {
+        Ok(func) => func,
+        Err(err) => {
+            return TokenStream::from(err);
         }
     };
 
-    return TokenStream::from(quote! {
+    let create_tuple_func_name = format_ident!("__create_type__{}", original_struct_ident);
+    let create_tuple_func = match parse_generated_func(quote! {
+    #[no_mangle]
+    #[allow(non_snake_case)]
+    pub extern "C" fn #create_tuple_func_name(arg_ptr: usize, arg_size: usize) {
+        let ptr = unsafe { arg_ptr as *mut u8 };
+        let def = #original_struct_ident::get_struct_schema();
+        let mut bytes = unsafe { Vec::from_raw_parts(ptr, 0, arg_size) };
+        def.encode(&mut bytes);
+    }}) {
+        Ok(func) => func,
+        Err(err) => {
+            return TokenStream::from(err);
+        }
+    };
+
+    let emission = quote! {
         #[derive(serde::Serialize, serde::Deserialize)]
         #original_struct
         impl #original_struct_ident {
@@ -904,20 +1001,38 @@ fn spacetimedb_tuple(_: AttributeArgs, item: TokenStream) -> TokenStream {
         }
         #create_tuple_func
         #csharp_output
-    });
+    };
+
+    if std::env::var("PROC_MACRO_DEBUG").is_ok() {
+        println!("{}", emission.to_string());
+    }
+
+    return TokenStream::from(emission);
 }
 
 fn spacetimedb_migrate(_: AttributeArgs, item: TokenStream) -> TokenStream {
     let original_func = parse_macro_input!(item as ItemFn);
     let func_name = &original_func.sig.ident;
 
-    proc_macro::TokenStream::from(quote! {
-        #[allow(non_snake_case)]
-        pub extern "C" fn __migrate__(arg_ptr: u32, arg_size: u32) {
-            #func_name();
+    let emission = match parse_generated_func(quote! {
+    #[allow(non_snake_case)]
+    pub extern "C" fn __migrate__(arg_ptr: u32, arg_size: u32) {
+        #func_name();
+    }}) {
+        Ok(func) => {
+            quote! {
+                #func
+                #original_func
+            }
         }
-        #original_func
-    })
+        Err(err) => err,
+    };
+
+    if std::env::var("PROC_MACRO_DEBUG").is_ok() {
+        println!("{}", emission.to_string());
+    }
+
+    proc_macro::TokenStream::from(emission)
 }
 
 fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connect: bool) -> TokenStream {
@@ -991,7 +1106,7 @@ fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connec
         arg_num = arg_num + 1;
     }
 
-    let generated_function = quote! {
+    let emission = match parse_generated_func(quote! {
         #[no_mangle]
         #[allow(non_snake_case)]
         pub extern "C" fn #connect_disconnect_ident(arg_ptr: usize, arg_size: usize) {
@@ -1001,12 +1116,19 @@ fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connec
             // Invoke the function with the deserialized args
             #func_name(arguments.identity, arguments.timestamp,);
         }
+    }) {
+        Ok(func) => quote! {
+            #func
+            #original_function
+        },
+        Err(err) => err,
     };
 
-    proc_macro::TokenStream::from(quote! {
-        #generated_function
-        #original_function
-    })
+    if std::env::var("PROC_MACRO_DEBUG").is_ok() {
+        println!("{}", emission.to_string());
+    }
+
+    proc_macro::TokenStream::from(emission)
 }
 
 // This derive is actually a no-op, we need the helper attribute for spacetimedb
@@ -1113,4 +1235,19 @@ fn tuple_field_comparison_block(
             #comparison_and_result_statement
         }
     };
+}
+
+fn parse_generated_func(
+    func_stream: proc_macro2::TokenStream,
+) -> Result<proc_macro2::TokenStream, proc_macro2::TokenStream> {
+    if !syn::parse2::<ItemFn>(func_stream.clone()).is_ok() {
+        println!(
+            "This function has an invalid generation:\n{}",
+            func_stream.clone().to_string()
+        );
+        return Err(quote! {
+            compile_error!("Invalid function produced by spacetimedb macro.");
+        });
+    }
+    Ok(func_stream)
 }
