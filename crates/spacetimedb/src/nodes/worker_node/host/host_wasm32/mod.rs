@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use wasmer::{CompilerConfig, Module, Store, Universal, ValType};
 use wasmer::wasmparser::Operator;
+use wasmer::{CompilerConfig, Module, Store, Universal, ValType};
 use wasmer_middlewares::Metering;
 
 use crate::hash::Hash;

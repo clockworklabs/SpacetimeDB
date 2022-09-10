@@ -50,14 +50,14 @@ fn get_subcommands() -> Vec<Command<'static>> {
             .arg(Arg::new("token").required(true))
             .arg(
                 arg!(-n --name "Nickname for identity")
-                .required(false)
-                .default_missing_value(""),
+                    .required(false)
+                    .default_missing_value(""),
             )
             .arg(
                 arg!(-e --email "Nickname for identity")
-                .required(false)
-                .default_missing_value(""),
-            )
+                    .required(false)
+                    .default_missing_value(""),
+            ),
     ]
 }
 
@@ -191,7 +191,6 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     Ok(())
 }
 
-
 async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let identity: String = args.get_one::<String>("identity").unwrap().clone();
     let token: String = args.get_one::<String>("token").unwrap().clone();
@@ -200,14 +199,12 @@ async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let nickname = args.get_one::<String>("name").map(|s| s.clone());
     let email: String = args.get_one::<String>("email").unwrap_or(&"".to_string()).clone();
 
-    config.identity_configs.push(
-        IdentityConfig {
-            identity,
-            token,
-            nickname: nickname.clone(),
-            email: Some(email.clone())
-        }
-    );
+    config.identity_configs.push(IdentityConfig {
+        identity,
+        token,
+        nickname: nickname.clone(),
+        email: Some(email.clone()),
+    });
 
     config.save();
 

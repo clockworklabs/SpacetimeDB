@@ -6,31 +6,40 @@ use std::{
 };
 
 use tokio::{spawn, time::sleep};
-use wasmer::{Array, Function, imports, Instance, LazyInit, Module, Store, Value, WasmPtr};
-use wasmer_middlewares::metering::{get_remaining_points, MeteringPoints, set_remaining_points};
+use wasmer::{imports, Array, Function, Instance, LazyInit, Module, Store, Value, WasmPtr};
+use wasmer_middlewares::metering::{get_remaining_points, set_remaining_points, MeteringPoints};
 
 use spacetimedb_bindings::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
 use spacetimedb_bindings::buffer::VectorBufWriter;
-use spacetimedb_bindings::TupleDef;
+use spacetimedb_bindings::{ElementDef, TupleDef, TypeDef};
 
 use crate::db::{messages::transaction::Transaction, transactional_db::Tx};
 use crate::hash::Hash;
-use crate::nodes::worker_node::{
-    client_api::{client_connection_index::ClientActorId, module_subscription_actor::ModuleSubscription},
-    worker_database_instance::WorkerDatabaseInstance,
-};
+use crate::nodes::worker_node::host::host_controller::{DescribedEntityType, Entity, EntityDescription};
 use crate::nodes::worker_node::host::host_wasm32::wasm_instance_env::WasmInstanceEnv;
 use crate::nodes::worker_node::host::instance_env::InstanceEnv;
 use crate::nodes::worker_node::host::module_host::{
     EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHost, ModuleHostActor, ModuleHostCommand,
 };
+use crate::nodes::worker_node::{
+    client_api::{client_connection_index::ClientActorId, module_subscription_actor::ModuleSubscription},
+    worker_database_instance::WorkerDatabaseInstance,
+};
 
 const REDUCE_DUNDER: &str = "__reducer__";
 const DESCRIBE_REDUCER_DUNDER: &str = "__describe_reducer__";
+
 const REPEATING_REDUCER_DUNDER: &str = "__repeating_reducer__";
-const INIT_PANIC_DUNDER: &str = "__init_panic__";
-const DESCRIBE_TABLE_DUNDER: &str = "__describe_table__";
+// TODO(ryan): not actually used, since we don't really need to call a describe for repeating
+// reducers as the arguments are always the same. However I'm leaving it here for consistency in
+// the DescribedEntity interface below, and also in case we ever need user arguments on
+// repeaters.
+const DESCRIBE_REPEATING_REDUCER_DUNDER: &str = "__describe_repeating_reducer__";
+
 const CREATE_TABLE_DUNDER: &str = "__create_table__";
+const DESCRIBE_TABLE_DUNDER: &str = "__describe_table__";
+
+const INIT_PANIC_DUNDER: &str = "__init_panic__";
 const MIGRATE_DATABASE_DUNDER: &str = "__migrate_database__";
 const IDENTITY_CONNECTED_DUNDER: &str = "__identity_connected__";
 const IDENTITY_DISCONNECTED_DUNDER: &str = "__identity_disconnected__";
@@ -44,6 +53,26 @@ fn get_remaining_points_value(instance: &Instance) -> u64 {
     return remaining_points;
 }
 
+fn entity_as_prefix_str(entity: &DescribedEntityType) -> &str {
+    match entity {
+        DescribedEntityType::Table => DESCRIBE_TABLE_DUNDER,
+        DescribedEntityType::Reducer => DESCRIBE_REDUCER_DUNDER,
+        DescribedEntityType::RepeatingReducer => DESCRIBE_REPEATING_REDUCER_DUNDER,
+    }
+}
+
+fn entity_from_function_name(fn_name: &str) -> Option<DescribedEntityType> {
+    if fn_name.starts_with(DESCRIBE_TABLE_DUNDER) {
+        Some(DescribedEntityType::Table)
+    } else if fn_name.starts_with(DESCRIBE_REDUCER_DUNDER) {
+        Some(DescribedEntityType::Reducer)
+    } else if fn_name.starts_with(DESCRIBE_REPEATING_REDUCER_DUNDER) {
+        Some(DescribedEntityType::RepeatingReducer)
+    } else {
+        None
+    }
+}
+
 pub(crate) struct WasmModuleHostActor {
     worker_database_instance: WorkerDatabaseInstance,
     module_host: ModuleHost,
@@ -53,6 +82,11 @@ pub(crate) struct WasmModuleHostActor {
     instances: Vec<(u32, Instance)>,
     instance_tx_map: Arc<Mutex<HashMap<u32, Tx>>>,
     subscription: ModuleSubscription,
+
+    // Holds the list of descriptions of each entity.
+    // TODO(ryan): Long run let's replace or augment this with catalog table(s) that hold the
+    // schema. Then standard table query tools could be run against it.
+    description_cache: HashMap<Entity, TupleDef>,
 }
 
 impl WasmModuleHostActor {
@@ -74,9 +108,56 @@ impl WasmModuleHostActor {
             store,
             instances: Vec::new(),
             subscription,
+            description_cache: HashMap::new(),
         };
         host.create_instance().unwrap();
+        host.populate_description_caches()
+            .expect("Unable to populate description cache");
         host
+    }
+
+    fn populate_description_caches(&mut self) -> Result<(), anyhow::Error> {
+        for f in self.module.exports().functions() {
+            let desc_entity_type = match entity_from_function_name(f.name()) {
+                None => continue,
+                Some(desc_entity_type) => desc_entity_type,
+            };
+            // Special case for repeaters.
+            let (entity_name, description) = if desc_entity_type == DescribedEntityType::RepeatingReducer {
+                let entity_name = f.name().strip_prefix(REPEATING_REDUCER_DUNDER).unwrap();
+                let description = TupleDef {
+                    elements: vec![
+                        ElementDef {
+                            tag: 0,
+                            name: Some(String::from("timestamp")),
+                            element_type: TypeDef::U64,
+                        },
+                        ElementDef {
+                            tag: 1,
+                            name: Some(String::from("delta_time")),
+                            element_type: TypeDef::U64,
+                        },
+                    ],
+                };
+                (entity_name, description)
+            } else {
+                let prefix = entity_as_prefix_str(&desc_entity_type);
+                let entity_name = f.name().strip_prefix(prefix).unwrap();
+                let description = self.call_describer(String::from(f.name()))?;
+                let description = match description {
+                    None => return Err(anyhow!("Bad describe function returned None; {}", f.name())),
+                    Some(description) => description,
+                };
+                (entity_name, description)
+            };
+
+            let entity = Entity {
+                entity_name: String::from(entity_name),
+                entity_type: desc_entity_type,
+            };
+            self.description_cache.insert(entity, description);
+        }
+        Ok(())
     }
 
     fn create_instance(&mut self) -> Result<u32, anyhow::Error> {
@@ -360,14 +441,18 @@ impl WasmModuleHostActor {
         Ok(())
     }
 
-    fn describe_table(&self, table_symbol:&str)  -> Result<Option<TupleDef>, anyhow::Error> {
-        let describe_sym = format! {"{}{}", DESCRIBE_TABLE_DUNDER, table_symbol};
-        self.call_describer(describe_sym)
+    fn catalog(&self) -> Vec<EntityDescription> {
+        self.description_cache
+            .iter()
+            .map(|k| EntityDescription {
+                entity: k.0.clone(),
+                schema: k.1.clone(),
+            })
+            .collect()
     }
 
-    fn describe_reducer(&self, reducer_symbol: &str) -> Result<Option<TupleDef>, anyhow::Error> {
-        let describe_sym = format! {"{}{}", DESCRIBE_REDUCER_DUNDER, reducer_symbol};
-        self.call_describer(describe_sym)
+    fn describe(&self, entity: &Entity) -> Option<TupleDef> {
+        self.description_cache.get(entity).map(|t| t.clone())
     }
 
     fn call_describer(&self, describer_func_name: String) -> Result<Option<TupleDef>, anyhow::Error> {
@@ -429,11 +514,13 @@ impl WasmModuleHostActor {
                 let (args, _) = TupleDef::decode(bytes);
                 let result = match args {
                     Ok(args) => args,
-                    Err(e) => return Err(anyhow!(
-                        "argument tuples has invalid schema: {} Err: {}",
-                        describer_func_name,
-                        e
-                    )),
+                    Err(e) => {
+                        return Err(anyhow!(
+                            "argument tuples has invalid schema: {} Err: {}",
+                            describer_func_name,
+                            e
+                        ))
+                    }
                 };
 
                 // Clean out the vector buffer memory that the wasm-side "forgot" in order to pass
@@ -552,20 +639,6 @@ impl ModuleHostActor for WasmModuleHostActor {
                     .unwrap();
                 false
             }
-            ModuleHostCommand::DescribeReducer {
-                reducer_name,
-                respond_to,
-            } => {
-                respond_to.send(self.describe_reducer(reducer_name.as_str())).unwrap();
-                false
-            }
-            ModuleHostCommand::DescribeTable {
-                table_name,
-                respond_to,
-            } => {
-                respond_to.send(self.describe_table(table_name.as_str())).unwrap();
-                false
-            }
             ModuleHostCommand::CallReducer {
                 caller_identity,
                 reducer_name,
@@ -610,6 +683,14 @@ impl ModuleHostActor for WasmModuleHostActor {
             }
             ModuleHostCommand::StartRepeatingReducers => {
                 self.start_repeating_reducers();
+                false
+            }
+            ModuleHostCommand::Catalog { respond_to } => {
+                respond_to.send(self.catalog()).unwrap();
+                false
+            }
+            ModuleHostCommand::Describe { entity, respond_to } => {
+                respond_to.send(self.describe(&entity)).unwrap();
                 false
             }
         }

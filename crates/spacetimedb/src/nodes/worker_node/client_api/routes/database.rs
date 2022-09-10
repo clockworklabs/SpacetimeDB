@@ -3,10 +3,13 @@ use crate::auth::invalid_token_res;
 use crate::hash::Hash;
 use crate::json::client_api::StmtResultJson;
 use crate::nodes::worker_node::client_api::proxy::proxy_to_control_node_client_api;
+use crate::nodes::worker_node::client_api::routes::database::DBCallErr::NoSuchDatabase;
 use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
 use crate::nodes::worker_node::database_logger::DatabaseLogger;
 use crate::nodes::worker_node::host::host_controller;
+use crate::nodes::worker_node::host::host_controller::{DescribedEntityType, Entity, EntityDescription};
 use crate::nodes::worker_node::worker_db;
+use crate::protobuf::control_db::DatabaseInstance;
 use crate::sql;
 use gotham::anyhow::anyhow;
 use gotham::handler::HandlerError;
@@ -23,7 +26,8 @@ use hyper::Body;
 use hyper::HeaderMap;
 use hyper::{Response, StatusCode};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
+use std::collections::HashMap;
 
 use super::subscribe::handle_websocket;
 use super::subscribe::SubscribeParams;
@@ -114,12 +118,96 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     Ok(res)
 }
 
+enum DBCallErr {
+    InvalidToken,
+    NoSuchDatabase,
+    InstanceNotScheduled,
+}
+struct DatabaseInformation {
+    database_instance: DatabaseInstance,
+    caller_identity: Hash,
+    caller_identity_token: String,
+}
+/// Extract some common parameters that most API call invocations to the database will use.
+// TODO(ryan): Use this for call, logs, etc. as well.
+async fn extract_db_call_info(
+    state: &mut State,
+    identity: String,
+    database_name: &str,
+) -> Result<DatabaseInformation, DBCallErr> {
+    let headers = state.borrow::<HeaderMap>();
+    let auth_header = headers.get(AUTHORIZATION);
+    let (caller_identity, caller_identity_token) = if let Some(auth_header) = auth_header {
+        // Validate the credentials of this connection
+        match get_creds_from_header(auth_header) {
+            Ok(v) => v,
+            Err(_) => return Err(DBCallErr::InvalidToken),
+        }
+    } else {
+        // Generate a new identity if this request doesn't have one already
+        let (identity, identity_token) = ControlNodeClient::get_shared().get_new_identity().await.unwrap();
+        (identity, identity_token)
+    };
+
+    let identity = Hash::from_hex(&identity).expect("that the client passed a valid hex identity lol");
+
+    let database = match worker_db::get_database_by_address(&identity, &database_name) {
+        Some(database) => database,
+        None => return Err(DBCallErr::NoSuchDatabase),
+    };
+    let database_instance = match worker_db::get_leader_database_instance_by_database(database.id) {
+        Some(database) => database,
+        None => {
+            return Err(DBCallErr::InstanceNotScheduled);
+        }
+    };
+    Ok(DatabaseInformation {
+        database_instance,
+        caller_identity,
+        caller_identity_token,
+    })
+}
+
+fn handle_db_err(identity: &str, name: &str, err: DBCallErr) -> SimpleHandlerResult {
+    match err {
+        DBCallErr::InvalidToken => Ok(invalid_token_res()),
+        NoSuchDatabase => {
+            log::error!("Could not find: {}/{}", identity, name);
+            Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND))
+        }
+        DBCallErr::InstanceNotScheduled => Err(HandlerError::from(anyhow!(
+            "Database instance not scheduled to this node yet."
+        ))
+        .with_status(StatusCode::NOT_FOUND)),
+    }
+}
+
+fn entity_description_json(description: &EntityDescription, expand: bool) -> Value {
+    if expand {
+        json!({
+            "type": description.entity.entity_type.as_str(),
+            "arity": description.schema.elements.len(),
+            "schema": description.schema
+        })
+    } else {
+        json!({
+            "type": description.entity.entity_type.as_str(),
+            "arity": description.schema.elements.len(),
+        })
+    }
+}
+
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct DescribeParams {
     identity: String,
     name: String,
     entity_type: String,
     entity: String,
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct DescribeQueryParams {
+    expand: Option<bool>,
 }
 
 async fn describe(state: &mut State) -> SimpleHandlerResult {
@@ -130,79 +218,20 @@ async fn describe(state: &mut State) -> SimpleHandlerResult {
         entity,
     } = DescribeParams::take_from(state);
 
-    let headers = state.borrow::<HeaderMap>();
-    let auth_header = headers.get(AUTHORIZATION);
-    let (caller_identity, caller_identity_token) = if let Some(auth_header) = auth_header {
-        // Validate the credentials of this connection
-        match get_creds_from_header(auth_header) {
-            Ok(v) => v,
-            Err(_) => return Ok(invalid_token_res()),
-        }
-    } else {
-        // Generate a new identity if this request doesn't have one already
-        let (identity, identity_token) = ControlNodeClient::get_shared().get_new_identity().await.unwrap();
-        (identity, identity_token)
+    let DescribeQueryParams { expand } = DescribeQueryParams::take_from(state);
+
+    let call_info = match extract_db_call_info(state, identity.clone(), name.as_str()).await {
+        Ok(p) => p,
+        Err(e) => return handle_db_err(identity.as_str(), name.as_str(), e),
     };
 
-    let identity = Hash::from_hex(&identity).expect("that the client passed a valid hex identity lol");
-
-    let database = match worker_db::get_database_by_address(&identity, &name) {
-        Some(database) => database,
-        None => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
-    };
-    let database_instance = match worker_db::get_leader_database_instance_by_database(database.id) {
-        Some(database) => database,
-        None => {
-            return Err(
-                HandlerError::from(anyhow!("Database instance not scheduled to this node yet."))
-                    .with_status(StatusCode::NOT_FOUND),
-            )
-        }
-    };
-    let instance_id = database_instance.id;
+    let instance_id = call_info.database_instance.id;
     let host = host_controller::get_host();
 
-    let response_json = match entity_type.as_str() {
-        "tables" => {
-            let table_name = entity;
-            let table_desc = match host.describe_table(instance_id, &table_name).await {
-                Ok(Some(rd)) => rd,
-                Ok(None) => {
-                    return Err(HandlerError::from(anyhow!("Table not found {}", table_name))
-                        .with_status(StatusCode::NOT_FOUND))
-                }
-                Err(e) => {
-                    log::error!("{}", e);
-                    return Err(HandlerError::from(anyhow!("Database instance not ready."))
-                        .with_status(StatusCode::SERVICE_UNAVAILABLE));
-                }
-            };
-
-            json!({
-                "type": "table",
-                "description": table_desc
-            })
-        }
-        "reducers" => {
-            let reducer_name = entity;
-            let reducer_desc = match host.describe_reducer(instance_id, &reducer_name).await {
-                Ok(Some(rd)) => rd,
-                Ok(None) => {
-                    return Err(HandlerError::from(anyhow!("Reducer not found {}", reducer_name))
-                        .with_status(StatusCode::NOT_FOUND))
-                }
-                Err(e) => {
-                    log::error!("{}", e);
-                    return Err(HandlerError::from(anyhow!("Database instance not ready."))
-                        .with_status(StatusCode::SERVICE_UNAVAILABLE));
-                }
-            };
-
-            json!({
-                "type": "reducer",
-                "description": reducer_desc
-            })
-        }
+    let entity_type = match entity_type.as_str() {
+        "tables" => DescribedEntityType::Table,
+        "reducers" => DescribedEntityType::Reducer,
+        "repeaters" => DescribedEntityType::RepeatingReducer,
         _ => {
             log::debug!("Request to describe unhandled entity type: {}", entity_type);
             return Err(
@@ -211,10 +240,78 @@ async fn describe(state: &mut State) -> SimpleHandlerResult {
             );
         }
     };
+    let description = match host
+        .describe(
+            instance_id,
+            Entity {
+                entity_name: entity.clone(),
+                entity_type: entity_type.clone(),
+            },
+        )
+        .await
+    {
+        Ok(Some(description)) => description,
+        Ok(None) => {
+            return Err(
+                HandlerError::from(anyhow!("{} not found {}", entity_type.as_str(), entity.clone()))
+                    .with_status(StatusCode::NOT_FOUND),
+            )
+        }
+        Err(e) => {
+            log::error!("{}", e);
+            return Err(HandlerError::from(anyhow!("Database instance not ready."))
+                .with_status(StatusCode::SERVICE_UNAVAILABLE));
+        }
+    };
+
+    let expand = expand.unwrap_or(true);
+    let response_json =
+        json!({ description.entity.entity_name.clone(): entity_description_json(&description, expand) });
 
     let response = Response::builder()
-        .header("Spacetime-Identity", caller_identity.to_hex())
-        .header("Spacetime-Identity-Token", caller_identity_token)
+        .header("Spacetime-Identity", call_info.caller_identity.to_hex())
+        .header("Spacetime-Identity-Token", call_info.caller_identity_token)
+        .status(StatusCode::OK)
+        .body(Body::from(response_json.to_string()))
+        .unwrap();
+
+    Ok(response)
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct CatalogParams {
+    identity: String,
+    name: String,
+}
+async fn catalog(state: &mut State) -> SimpleHandlerResult {
+    let CatalogParams { identity, name } = CatalogParams::take_from(state);
+    let DescribeQueryParams { expand } = DescribeQueryParams::take_from(state);
+
+    let call_info = match extract_db_call_info(state, identity.clone(), name.as_str()).await {
+        Ok(p) => p,
+        Err(e) => return handle_db_err(identity.as_str(), name.as_str(), e),
+    };
+
+    let instance_id = call_info.database_instance.id;
+    let host = host_controller::get_host();
+    let catalog = match host.catalog(instance_id).await {
+        Ok(catalog) => catalog,
+        Err(e) => {
+            log::error!("{}", e);
+            return Err(HandlerError::from(anyhow!("Database instance not ready."))
+                .with_status(StatusCode::SERVICE_UNAVAILABLE));
+        }
+    };
+    let expand = expand.unwrap_or(false);
+    let response_catalog: HashMap<_, _> = catalog
+        .iter()
+        .map(|ed| (ed.entity.entity_name.clone(), entity_description_json(&ed, expand)))
+        .collect();
+    let response_json = json!(response_catalog);
+
+    let response = Response::builder()
+        .header("Spacetime-Identity", call_info.caller_identity.to_hex())
+        .header("Spacetime-Identity-Token", call_info.caller_identity_token)
         .status(StatusCode::OK)
         .body(Body::from(response_json.to_string()))
         .unwrap();
@@ -341,7 +438,14 @@ pub fn router() -> Router {
         route
             .get("/:identity/:name/schema/:entity_type/:entity")
             .with_path_extractor::<DescribeParams>()
+            .with_query_string_extractor::<DescribeQueryParams>()
             .to_async_borrowing(describe);
+
+        route
+            .get("/:identity/:name/schema")
+            .with_path_extractor::<CatalogParams>()
+            .with_query_string_extractor::<DescribeQueryParams>()
+            .to_async_borrowing(catalog);
 
         route
             .get("/:identity/:name/logs")

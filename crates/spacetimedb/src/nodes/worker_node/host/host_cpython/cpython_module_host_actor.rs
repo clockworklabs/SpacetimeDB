@@ -20,6 +20,7 @@ use crate::db::transactional_db::Tx;
 use crate::hash::Hash;
 use crate::nodes::worker_node::client_api::client_connection::ClientActorId;
 use crate::nodes::worker_node::client_api::module_subscription_actor::ModuleSubscription;
+use crate::nodes::worker_node::host::host_controller::{DescribedEntityType, EntityDescription};
 use crate::nodes::worker_node::host::host_cpython::cpython_bindings::STDBBindingsClass;
 use crate::nodes::worker_node::host::host_cpython::translate::translate_json_arguments;
 use crate::nodes::worker_node::host::instance_env::InstanceEnv;
@@ -322,14 +323,17 @@ impl CPythonModuleHostActor {
     ) -> Result<Option<ElementDef>, anyhow::Error> {
         let td = if ty.is(PyInt::type_object(py)) {
             TypeDef::I64
-        }  else if ty.is(PyFloat::type_object(py)) {
+        } else if ty.is(PyFloat::type_object(py)) {
             TypeDef::F64
         } else if ty.is(PyString::type_object(py)) {
             TypeDef::String
         } else {
-            return Err(anyhow!("Unable to translate argument {}:{} to tuple description", name, ty));
+            return Err(anyhow!(
+                "Unable to translate argument {}:{} to tuple description",
+                name,
+                ty
+            ));
         };
-
 
         let arg_element = ElementDef {
             tag: tag_num,
@@ -339,70 +343,76 @@ impl CPythonModuleHostActor {
         Ok(Some(arg_element))
     }
 
+    fn catalog(&self) -> Result<Vec<EntityDescription>, anyhow::Error> {
+        // TODO(ryan): Impl catalog for python
+        Ok(vec![])
+    }
+
+    // TODO(ryan): A cache here like in wasm host
     fn describe_reducer(&self, reducer_name: &str) -> Result<Option<TupleDef>, anyhow::Error> {
         let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
 
         // TODO: choose one at random or whatever
         let (_instance_id, instance) = &self.instances[0];
 
-        let arguments: Result<Option<TupleDef>, anyhow::Error> =
-            Python::with_gil(|py| {
-                let reducer_name = PyString::new(py, reducer_symbol.as_str());
-                let reducer = match instance.getattr(py, reducer_name) {
-                    Ok(reducer) => reducer,
-                    Err(_) => {
-                        return Ok(None);
-                    }
-                };
-                let reducer: PyResult<&PyFunction> = reducer.extract(py);
-                let reducer = match reducer {
-                    Ok(reducer) => reducer,
-                    Err(e) => {
-                        return Err(anyhow::Error::new(e)
-                            .context(format!("Unable to extract reducer with name: {}", reducer_name)))
-                    }
-                };
+        let arguments: Result<Option<TupleDef>, anyhow::Error> = Python::with_gil(|py| {
+            let reducer_name = PyString::new(py, reducer_symbol.as_str());
+            let reducer = match instance.getattr(py, reducer_name) {
+                Ok(reducer) => reducer,
+                Err(_) => {
+                    return Ok(None);
+                }
+            };
+            let reducer: PyResult<&PyFunction> = reducer.extract(py);
+            let reducer = match reducer {
+                Ok(reducer) => reducer,
+                Err(e) => {
+                    return Err(
+                        anyhow::Error::new(e).context(format!("Unable to extract reducer with name: {}", reducer_name))
+                    )
+                }
+            };
 
-                let annotations = match reducer.getattr("__annotations__") {
-                    Ok(annotations) => annotations,
+            let annotations = match reducer.getattr("__annotations__") {
+                Ok(annotations) => annotations,
+                Err(e) => {
+                    return Err(anyhow::Error::new(e).context(format!(
+                        "Unable to extract annotations from reducer with name: {}",
+                        reducer_name
+                    )));
+                }
+            };
+            let annotations: &PyDict = annotations.extract()?;
+            let arguments = annotations.iter();
+            let mut arg_tuple_elements = vec![];
+            let mut tag_num = 0;
+            for arg in arguments {
+                let description = self.describe_type(py, &arg.0.to_string(), tag_num, &arg.1);
+                match description {
+                    Ok(Some(element)) => {
+                        arg_tuple_elements.push(element);
+                        tag_num = tag_num + 1;
+                    }
                     Err(e) => {
-                        return Err(anyhow::Error::new(e).context(format!(
-                            "Unable to extract annotations from reducer with name: {}",
-                            reducer_name
+                        return Err(e.context(format!(
+                            "Error while converting reducer argument {} : {} to TypeDef",
+                            arg.0.to_string(),
+                            arg.1.to_string()
                         )));
                     }
-                };
-                let annotations: &PyDict = annotations.extract()?;
-                let arguments = annotations.iter();
-                let mut arg_tuple_elements = vec![];
-                let mut tag_num = 0;
-                for arg in arguments {
-                    let description = self.describe_type(py, &arg.0.to_string(), tag_num, &arg.1);
-                    match description {
-                        Ok(Some(element)) => {
-                            arg_tuple_elements.push(element);
-                            tag_num = tag_num + 1;
-                        }
-                        Err(e) => {
-                            return Err(e.context(format!(
-                                "Error while converting reducer argument {} : {} to TypeDef",
-                                arg.0.to_string(),
-                                arg.1.to_string()
-                            )));
-                        }
-                        _ => {
-                            return Err(anyhow!(
-                                "No mapping to convert reducer argument {} : {} to TypeDef",
-                                arg.0.to_string(),
-                                arg.1.to_string()
-                            ));
-                        }
+                    _ => {
+                        return Err(anyhow!(
+                            "No mapping to convert reducer argument {} : {} to TypeDef",
+                            arg.0.to_string(),
+                            arg.1.to_string()
+                        ));
                     }
                 }
-                Ok(Some(TupleDef {
-                   elements: arg_tuple_elements,
-                }))
-            });
+            }
+            Ok(Some(TupleDef {
+                elements: arg_tuple_elements,
+            }))
+        });
 
         arguments
     }
@@ -572,20 +582,6 @@ impl ModuleHostActor for CPythonModuleHostActor {
                     .unwrap();
                 false
             }
-            ModuleHostCommand::DescribeReducer {
-                reducer_name,
-                respond_to,
-            } => {
-                respond_to.send(self.describe_reducer(reducer_name.as_str())).unwrap();
-                false
-            }
-            ModuleHostCommand::DescribeTable {
-                table_name,
-                respond_to : _respond_to,
-            } => {
-                // TODO(ryan): impl
-                panic!("Unimplemented table ({}) describe for CPython", table_name);
-            }
             ModuleHostCommand::CallReducer {
                 caller_identity,
                 reducer_name,
@@ -630,6 +626,20 @@ impl ModuleHostActor for CPythonModuleHostActor {
             }
             ModuleHostCommand::StartRepeatingReducers => {
                 self.start_repeating_reducers();
+                false
+            }
+            ModuleHostCommand::Describe { entity, respond_to } => {
+                let description = match entity.entity_type {
+                    DescribedEntityType::Reducer => self.describe_reducer(entity.entity_name.as_str()).unwrap(),
+                    // TODO(ryan): Impl describers
+                    _ => None,
+                };
+                respond_to.send(description).unwrap();
+                false
+            }
+            ModuleHostCommand::Catalog { respond_to } => {
+                let catalog = self.catalog().unwrap();
+                respond_to.send(catalog).unwrap();
                 false
             }
         }

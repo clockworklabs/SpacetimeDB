@@ -1,6 +1,7 @@
 use crate::db::messages::write::Write;
 use crate::hash::Hash;
 use crate::nodes::worker_node::client_api::client_connection::ClientActorId;
+use crate::nodes::worker_node::host::host_controller::{Entity, EntityDescription};
 use spacetimedb_bindings::TupleDef;
 use tokio::sync::{mpsc, oneshot};
 
@@ -42,14 +43,6 @@ pub enum ModuleHostCommand {
         prev_call_time: u64,
         respond_to: oneshot::Sender<Result<(u64, u64), anyhow::Error>>,
     },
-    DescribeReducer {
-        reducer_name: String,
-        respond_to: oneshot::Sender<Result<Option<TupleDef>, anyhow::Error>>,
-    },
-    DescribeTable {
-        table_name: String,
-        respond_to: oneshot::Sender<Result<Option<TupleDef>, anyhow::Error>>,
-    },
     StartRepeatingReducers,
     InitDatabase {
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
@@ -67,6 +60,13 @@ pub enum ModuleHostCommand {
     RemoveSubscriber {
         client_id: ClientActorId,
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+    },
+    Describe {
+        entity: Entity,
+        respond_to: oneshot::Sender<Option<TupleDef>>,
+    },
+    Catalog {
+        respond_to: oneshot::Sender<Vec<EntityDescription>>,
     },
     Exit {},
 }
@@ -154,26 +154,18 @@ impl ModuleHost {
         Ok(())
     }
 
-    pub async fn describe_reducer(&self, reducer_name: String) -> Result<Option<TupleDef>, anyhow::Error> {
-        let (tx, rx) = oneshot::channel::<Result<Option<TupleDef>, anyhow::Error>>();
+    pub async fn describe(&self, entity: Entity) -> Result<Option<TupleDef>, anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Option<TupleDef>>();
         self.tx
-            .send(ModuleHostCommand::DescribeReducer {
-                reducer_name,
-                respond_to: tx,
-            })
+            .send(ModuleHostCommand::Describe { entity, respond_to: tx })
             .await?;
-        rx.await.unwrap()
+        rx.await.map_err(|e| anyhow::Error::new(e))
     }
 
-    pub async fn describe_table(&self, table_name: String) -> Result<Option<TupleDef>, anyhow::Error> {
-        let (tx, rx) = oneshot::channel::<Result<Option<TupleDef>, anyhow::Error>>();
-        self.tx
-            .send(ModuleHostCommand::DescribeTable {
-                table_name,
-                respond_to: tx,
-            })
-            .await?;
-        rx.await.unwrap()
+    pub async fn catalog(&self) -> Result<Vec<EntityDescription>, anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Vec<EntityDescription>>();
+        self.tx.send(ModuleHostCommand::Catalog { respond_to: tx }).await?;
+        rx.await.map_err(|e| anyhow::Error::new(e))
     }
 
     pub async fn init_database(&self) -> Result<(), anyhow::Error> {

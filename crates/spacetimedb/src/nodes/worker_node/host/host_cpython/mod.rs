@@ -9,8 +9,8 @@ use crate::nodes::worker_node::host::module_host::ModuleHost;
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
 
 mod cpython_bindings;
-mod translate;
 mod cpython_module_host_actor;
+mod translate;
 
 lazy_static! {
     static ref IS_PYTHON_INITIALIZED: Mutex<bool> = Mutex::new(false);

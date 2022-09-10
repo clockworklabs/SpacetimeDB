@@ -2,13 +2,14 @@ use crate::hash::{hash_bytes, Hash};
 use crate::nodes::worker_node::host::host_cpython::make_cpython_module_host_actor;
 use crate::nodes::worker_node::host::host_wasm32::make_wasm32_module_host_actor;
 use crate::nodes::worker_node::host::module_host::ModuleHost;
+use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
 use crate::nodes::HostType;
 use anyhow;
 use lazy_static::lazy_static;
 use serde::Serialize;
 use spacetimedb_bindings::TupleDef;
+use std::fmt::{Display, Formatter};
 use std::{collections::HashMap, sync::Mutex};
-use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
 
 lazy_static! {
     pub static ref HOST: HostController = HostController::new();
@@ -22,16 +23,38 @@ pub struct HostController {
     modules: Mutex<HashMap<u64, ModuleHost>>,
 }
 
-#[derive(Serialize)]
-pub struct ReducerDescription {
-    reducer : String,
-    arguments : TupleDef
+#[derive(PartialEq, Eq, Hash, Clone, Serialize, Debug)]
+pub enum DescribedEntityType {
+    Table,
+    Reducer,
+    RepeatingReducer,
 }
 
-#[derive(Serialize)]
-pub struct TableDescription {
-    table: String,
-    domain: TupleDef
+#[derive(Serialize, PartialEq, Eq, Hash, Clone, Debug)]
+pub struct Entity {
+    pub entity_name: String,
+    pub entity_type: DescribedEntityType,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct EntityDescription {
+    pub entity: Entity,
+    pub schema: TupleDef,
+}
+
+impl DescribedEntityType {
+    pub fn as_str(&self) -> &str {
+        match self {
+            DescribedEntityType::Table => "table",
+            DescribedEntityType::Reducer => "reducer",
+            DescribedEntityType::RepeatingReducer => "repeater",
+        }
+    }
+}
+impl Display for DescribedEntityType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 impl HostController {
@@ -127,6 +150,18 @@ impl HostController {
         Ok(module_hash)
     }
 
+    fn module_host(&self, instance_id: u64) -> Result<ModuleHost, anyhow::Error> {
+        let key = instance_id;
+        let module_host = {
+            let modules = self.modules.lock().unwrap();
+            modules
+                .get(&key)
+                .ok_or(anyhow::anyhow!("No such module found."))?
+                .clone()
+        };
+        Ok(module_host)
+    }
+
     pub async fn call_reducer(
         &self,
         instance_id: u64,
@@ -134,56 +169,27 @@ impl HostController {
         reducer_name: &str,
         arg_bytes: impl AsRef<[u8]>,
     ) -> Result<(), anyhow::Error> {
-        let key = instance_id;
-        let module_host = {
-            let modules = self.modules.lock().unwrap();
-            modules
-                .get(&key)
-                .ok_or(anyhow::anyhow!("No such module found."))?
-                .clone()
-        };
+        let module_host = self.module_host(instance_id)?;
         module_host
             .call_reducer(caller_identity, reducer_name.into(), arg_bytes.as_ref().to_vec())
             .await?;
         Ok(())
     }
 
-    pub async fn describe_reducer(&self, instance_id: u64, reducer_name: &str) -> Result<Option<ReducerDescription>, anyhow::Error> {
-        let key = instance_id;
-        let module_host = {
-            let modules = self.modules.lock().unwrap();
-            modules
-                .get(&key)
-                .ok_or(anyhow::anyhow!("No such module found."))?
-                .clone()
-        };
-        let arguments = module_host.describe_reducer(reducer_name.into()).await?;
+    /// Describe a specific entity in a module.
+    /// None if not present.
+    pub async fn describe(&self, instance_id: u64, entity: Entity) -> Result<Option<EntityDescription>, anyhow::Error> {
+        let module_host = self.module_host(instance_id)?;
+        let schema = module_host.describe(entity.clone()).await.unwrap();
 
-        Ok(arguments.map(|arguments| {
-            ReducerDescription{
-                reducer: reducer_name.to_string(),
-                arguments
-            }
-        }))
+        Ok(schema.map(|schema| EntityDescription { entity, schema }))
     }
 
-    pub async fn describe_table(&self, instance_id: u64, table_name: &str) -> Result<Option<TableDescription>, anyhow::Error> {
-        let key = instance_id;
-        let module_host = {
-            let modules = self.modules.lock().unwrap();
-            modules
-                .get(&key)
-                .ok_or(anyhow::anyhow!("No such module found."))?
-                .clone()
-        };
-        let domain = module_host.describe_table(table_name.into()).await?;
-
-        Ok(domain.map(|domain| {
-            TableDescription {
-                table: table_name.to_string(),
-                domain
-            }
-        }))
+    /// Request a list of all describable entities in a module.
+    pub async fn catalog(&self, instance_id: u64) -> Result<Vec<EntityDescription>, anyhow::Error> {
+        let module_host = self.module_host(instance_id)?;
+        let catalog = module_host.catalog().await.unwrap();
+        Ok(catalog)
     }
 
     pub fn get_module(&self, instance_id: u64) -> Result<ModuleHost, anyhow::Error> {

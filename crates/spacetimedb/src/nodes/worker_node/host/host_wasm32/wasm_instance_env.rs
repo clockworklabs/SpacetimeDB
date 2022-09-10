@@ -1,4 +1,4 @@
-use wasmer::{Array, LazyInit, Memory, NativeFunc, WasmerEnv, WasmPtr};
+use wasmer::{Array, LazyInit, Memory, NativeFunc, WasmPtr, WasmerEnv};
 
 use crate::nodes::worker_node::host::instance_env::InstanceEnv;
 
