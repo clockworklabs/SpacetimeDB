@@ -42,7 +42,7 @@ pub fn test(sender: Hash, timestamp: u64, arg: TestA, arg2: TestB) {
     }
 
     let mut row_count = 0;
-    for _row in TestA::iter().unwrap() {
+    for _row in TestA::iter() {
         row_count += 1;
     }
 
@@ -51,7 +51,7 @@ pub fn test(sender: Hash, timestamp: u64, arg: TestA, arg2: TestB) {
     delete_range(1, 0, RangeTypeValue::U32(5)..RangeTypeValue::U32(10));
 
     let mut row_count = 0;
-    for _row in TestA::iter().unwrap() {
+    for _row in TestA::iter() {
         row_count += 1;
     }
 

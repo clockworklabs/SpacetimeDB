@@ -560,7 +560,6 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             unique.column_ident.clone(),
             true,
         );
-        let iterator_failure_text = format!("Failed to get iterator for table: {}", original_struct_ident);
 
         let unique_column_def = unique.column_def;
         let unique_column_ident = unique.column_ident;
@@ -571,14 +570,10 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             #[allow(unused_variables)]
             #[allow(non_snake_case)]
             pub fn #filter_func_ident(#unique_column_def) -> Option<#original_struct_ident> {
-                let table_iter = #original_struct_ident::iter();
-                if let Some(table_iter) = table_iter {
-                    for row in table_iter {
-                        let column_data = row.elements[#unique_column_index_usize].clone();
-                        #comparison_block
-                    }
-                } else {
-                    spacetimedb_bindings::println!(#iterator_failure_text);
+                let table_iter = #original_struct_ident::iter_tuples();
+                for row in table_iter {
+                    let column_data = row.elements[#unique_column_index_usize].clone();
+                    #comparison_block
                 }
 
                 return None;
@@ -673,12 +668,10 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             #[allow(unused_variables)]
             pub fn #filter_func_ident(#column_def) -> Vec <#original_struct_ident> {
                 let mut result = Vec::<#original_struct_ident>::new();
-                let table_iter = #original_struct_ident::iter();
-                if let Some(table_iter) = table_iter {
-                    for row in table_iter {
-                        let column_data = row.elements[ # row_index].clone();
-                        #comparison_block
-                    }
+                let table_iter = #original_struct_ident::iter_tuples();
+                for row in table_iter {
+                    let column_data = row.elements[ # row_index].clone();
+                    #comparison_block
                 }
 
                 return result;
@@ -733,11 +726,45 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         }
     }
 
+    let db_iter_tuples: proc_macro2::TokenStream;
+    match parse_generated_func(quote! {
+        #[allow(unused_variables)]
+        pub fn iter_tuples() -> spacetimedb_bindings::TableIter {
+            spacetimedb_bindings::__iter__(unsafe { #table_id_field_name.unwrap() }).expect("Failed to get iterator from table.")
+        }
+    }) {
+        Ok(func) => db_iter_tuples = func,
+        Err(err) => {
+            return proc_macro::TokenStream::from(err);
+        }
+    }
+
+    let db_iter_ident = format_ident!("{}{}", original_struct_ident, "Iter");
+    let db_iter_struct = quote! {
+        pub struct #db_iter_ident {
+            iter: spacetimedb_bindings::TableIter,
+        }
+
+        impl Iterator for #db_iter_ident {
+            type Item = #original_struct_ident;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                if let Some(tuple) = self.iter.next() {
+                    Some(#original_struct_ident::tuple_to_struct(tuple).expect("Failed to convert tuple to struct."))
+                } else {
+                    None
+                }
+            }
+        }
+    };
+
     let db_iter: proc_macro2::TokenStream;
     match parse_generated_func(quote! {
         #[allow(unused_variables)]
-        pub fn iter() -> Option<spacetimedb_bindings::TableIter> {
-            spacetimedb_bindings::__iter__(unsafe { #table_id_field_name.unwrap() })
+        pub fn iter() -> #db_iter_ident {
+            #db_iter_ident {
+                iter: Self::iter_tuples()
+            }
         }
     }) {
         Ok(func) => db_iter = func,
@@ -832,6 +859,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #[derive(serde::Serialize, serde::Deserialize)]
         #original_struct
 
+        #db_iter_struct
         impl #original_struct_ident {
             #db_insert
             #db_delete
@@ -841,6 +869,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             #(#unique_delete_funcs)*
 
             #db_iter
+            #db_iter_tuples
             #(#non_primary_filter_func)*
 
             #tuple_to_struct_func
