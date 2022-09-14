@@ -1,9 +1,14 @@
 use std::{
     fs::{self, read_dir, File, OpenOptions},
     io::{BufReader, BufWriter, Read, Write},
-    os::unix::prelude::{FileExt, MetadataExt},
     path::{Path, PathBuf},
 };
+
+#[cfg(target_family = "unix")]
+use std::os::unix::fs::FileExt;
+
+#[cfg(target_family = "windows")]
+use std::os::windows::fs::FileExt;
 
 const HEADER_SIZE: usize = 4;
 const MAX_SEGMENT_SIZE: u64 = 1_073_741_824;
@@ -44,7 +49,8 @@ impl MessageLog {
                 let file_stem = path.file_stem().unwrap();
                 let offset = file_stem.to_os_string().into_string().unwrap();
                 let offset = offset.parse::<u64>()?;
-                let size = dir_entry.metadata()?.size();
+                let size = dir_entry.metadata()?.len();
+
                 total_size += size;
                 segments.push(Segment {
                     min_offset: offset,
@@ -72,6 +78,9 @@ impl MessageLog {
         let mut cursor: u64 = 0;
         while cursor < last_segment.size {
             let mut buf = [0; HEADER_SIZE];
+            #[cfg(target_family = "windows")]
+            file.seek_read(&mut buf, cursor)?;
+            #[cfg(target_family = "unix")]
             file.read_exact_at(&mut buf, cursor)?;
             let message_len = u32::from_le_bytes(buf);
 

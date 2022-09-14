@@ -1,13 +1,16 @@
 use crate::db::ostorage::ObjectDB;
 use crate::hash::{hash_bytes, Hash};
 use hex;
-use std::os::unix::prelude::MetadataExt;
+
 use std::{
     collections::HashMap,
     fs::{self, read_dir, File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
 };
+
+#[cfg(target_family = "unix")]
+use std::os::unix::prelude::MetadataExt;
 
 pub struct HashMapObjectDB {
     root: PathBuf,
@@ -43,7 +46,10 @@ impl HashMapObjectDB {
             let inner_dir = &PathBuf::from(root).join(path);
             for item in read_dir(inner_dir)? {
                 let dir_entry = item?;
-                let size = dir_entry.metadata()?.size();
+                #[cfg(target_family = "unix")]
+                    let size = dir_entry.metadata()?.size();
+                #[cfg(target_family = "windows")]
+                    let size = dir_entry.metadata()?.len();
                 let path = dir_entry.path();
                 let dir_name = path.file_name().unwrap().to_str().unwrap();
                 let hex_dir_name = hex::decode(dir_name);
