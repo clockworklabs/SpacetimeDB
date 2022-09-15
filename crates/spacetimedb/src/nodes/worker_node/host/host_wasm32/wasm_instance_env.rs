@@ -70,6 +70,11 @@ impl WasmInstanceEnv {
         self.instance_env.create_table(buffer)
     }
 
+    pub fn get_table_id(&self, ptr: u32) -> u32 {
+        let buffer = Self::read_output_bytes(self.memory.get_ref().expect("Initialized memory"), ptr);
+        self.instance_env.get_table_id(buffer)
+    }
+
     pub fn iter(&self, table_id: u32) -> u64 {
         let bytes = self.instance_env.iter(table_id);
         let memory = self.memory.get_ref().expect("Initialized memory");

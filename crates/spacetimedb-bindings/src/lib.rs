@@ -25,6 +25,7 @@ pub use type_value::{EqTypeValue, RangeTypeValue, TupleValue, TypeValue};
 
 extern "C" {
     fn _create_table(ptr: *mut u8) -> u32;
+    fn _get_table_id(ptr: *mut u8) -> u32;
     fn _create_index(table_id: u32, col_id: u32, index_type: u8);
 
     fn _insert(table_id: u32, ptr: *mut u8);
@@ -103,6 +104,15 @@ pub fn create_table(table_name: &str, schema: TupleDef) -> u32 {
     table_info.encode(&mut bytes);
 
     unsafe { _create_table(bytes.as_mut_ptr()) }
+}
+
+pub fn get_table_id(table_name: &str) -> u32 {
+    let mut bytes = row_buf();
+
+    let table_name = TypeValue::String(table_name.to_string());
+    table_name.encode(&mut bytes);
+
+    unsafe { _get_table_id(bytes.as_mut_ptr()) }
 }
 
 pub fn insert(table_id: u32, row: TupleValue) {

@@ -203,6 +203,11 @@ impl WasmModuleHostActor {
                     env.clone(),
                     WasmInstanceEnv::create_table,
                 ),
+                "_get_table_id" => Function::new_native_with_env(
+                    &self.store,
+                    env.clone(),
+                    WasmInstanceEnv::get_table_id,
+                ),
                 "_iter" => Function::new_native_with_env(
                     &self.store,
                     env.clone(),
@@ -493,7 +498,6 @@ impl WasmModuleHostActor {
                 if ret.is_empty() {
                     return Err(anyhow!("Invalid return buffer arguments from {}", describer_func_name));
                 }
-                log::info!("Result {:?}", ret);
 
                 // The return value of the describer is a pointer to a vector.
                 // The upper 32 bits of the 64-bit result is the offset into memory.

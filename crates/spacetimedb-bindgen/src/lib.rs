@@ -389,7 +389,23 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
     let mut insert_vec_construction: Vec<proc_macro2::TokenStream> = Vec::new();
     let mut col_num: u32 = 0;
 
-    let table_id_field_name = format_ident!("__table_id__{}", original_struct.ident);
+    let table_id_static_var_name = format_ident!("__table_id__{}", original_struct.ident);
+    let original_struct_name = &original_struct.ident.to_string();
+    let get_table_id_func = match parse_generated_func(quote! {
+        pub fn table_id() -> u32 {
+            if let Some(t_id)  = unsafe { #table_id_static_var_name } {
+                return t_id;
+            }
+            let t_id = spacetimedb_bindings::get_table_id(#original_struct_name);
+            unsafe { #table_id_static_var_name = Some(t_id) };
+            return t_id;
+        }
+    }) {
+        Ok(func) => func,
+        Err(err) => {
+            return TokenStream::from(err);
+        }
+    };
 
     for field in &original_struct.fields {
         let col_name = &field.ident.clone().unwrap();
@@ -611,7 +627,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                 let equatable = spacetimedb_bindings::EqTypeValue::try_from(data);
                 match equatable {
                     Ok(value) => {
-                        let result = spacetimedb_bindings::delete_eq(unsafe { #table_id_field_name.unwrap() }, #unique_column_index, value);
+                        let result = spacetimedb_bindings::delete_eq(Self::table_id(), #unique_column_index, value);
                         match result {
                             None => {
                                 //TODO: Returning here was supposed to signify an error, but it can also return none when there is nothing to delete.
@@ -689,7 +705,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #[allow(unused_variables)]
         pub fn insert(ins: #original_struct_ident) {
             #(#insert_vec_construction)*
-            spacetimedb_bindings::insert(unsafe { #table_id_field_name.unwrap() }, spacetimedb_bindings::TupleValue {
+            spacetimedb_bindings::insert(Self::table_id(), spacetimedb_bindings::TupleValue {
                 elements: vec![
                     #(#insert_columns),*
                 ]
@@ -730,7 +746,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
     match parse_generated_func(quote! {
         #[allow(unused_variables)]
         pub fn iter_tuples() -> spacetimedb_bindings::TableIter {
-            spacetimedb_bindings::__iter__(unsafe { #table_id_field_name.unwrap() }).expect("Failed to get iterator from table.")
+            spacetimedb_bindings::__iter__(Self::table_id()).expect("Failed to get iterator from table.")
         }
     }) {
         Ok(func) => db_iter_tuples = func,
@@ -798,9 +814,9 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
     let describe_table_func_name = format_ident!("__describe_table__{}", original_struct_ident);
     let table_name = original_struct_ident.to_string();
 
-    let table_id_static = quote! {
+    let table_id_static_var = quote! {
         #[allow(non_upper_case_globals)]
-        static mut #table_id_field_name: Option<u32> = None;
+        static mut #table_id_static_var_name: Option<u32> = None;
     };
 
     let create_table_func = match parse_generated_func(quote! {
@@ -810,7 +826,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             let def = #original_struct_ident::get_struct_schema();
             if let spacetimedb_bindings::TypeDef::Tuple(tuple_def) = def {
                 let table_id = spacetimedb_bindings::create_table(#table_name, tuple_def);
-                unsafe { #table_id_field_name = Some(table_id) }
+                unsafe { #table_id_static_var_name = Some(table_id) }
             } else {
                 // The type is not a tuple for some reason, table not created.
                 std::panic!("This type is not a tuple: {{#original_struct_ident}}");
@@ -849,7 +865,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
     // Output all macro data
     let emission = quote! {
-        #table_id_static
+        #table_id_static_var
 
         #create_table_func
         #describe_table_func
@@ -875,6 +891,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             #tuple_to_struct_func
             #struct_to_tuple_func
             #schema_func
+            #get_table_id_func
         }
     };
 
@@ -910,7 +927,6 @@ fn spacetimedb_index(args: AttributeArgs, item: TokenStream) -> TokenStream {
     }
 
     let original_struct = parse_macro_input!(item as ItemStruct);
-    let table_id_field_name = format_ident!("__table_id__{}", original_struct.ident);
     for field in original_struct.clone().fields {
         all_fields.push(field.ident.unwrap());
     }
@@ -952,7 +968,7 @@ fn spacetimedb_index(args: AttributeArgs, item: TokenStream) -> TokenStream {
         impl #original_struct_name {
             #[allow(non_snake_case)]
             fn #function_name(arg_ptr: u32, arg_size: u32) {
-                spacetimedb_bindings::create_index(unsafe { #table_id_field_name.unwrap() }, #index_type, vec!(#(#index_fields),*));
+                spacetimedb_bindings::create_index(Self::table_id(), #index_type, vec!(#(#index_fields),*));
             }
         }
     };

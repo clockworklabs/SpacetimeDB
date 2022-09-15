@@ -51,6 +51,10 @@ impl STDBBindingsClass {
         self_.instance_env.create_table(bytes::Bytes::from(buffer))
     }
 
+    pub fn get_table_id(self_: PyRef<'_, Self>, buffer: Vec<u8>) -> u32 {
+        self_.instance_env.get_table_id(bytes::Bytes::from(buffer))
+    }
+
     pub fn iter(self_: PyRef<'_, Self>, table_id: u32) -> Vec<u8> {
         self_.instance_env.iter(table_id)
     }

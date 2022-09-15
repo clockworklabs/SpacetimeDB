@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use spacetimedb_bindings::{
-    decode_schema, ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue, TupleDef, TupleValue, TypeDef,
+    decode_schema, ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue, TupleDef, TupleValue, TypeDef, TypeValue,
 };
 
 use crate::db::relational_db::RelationalDB;
@@ -171,6 +171,24 @@ impl InstanceEnv {
         });
 
         stdb.create_table(tx, table_name, schema).unwrap()
+    }
+
+    pub fn get_table_id(&self, buffer: bytes::Bytes) -> u32 {
+        let stdb = self.worker_database_instance.relational_db.lock().unwrap();
+        let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
+        let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
+
+        let schema = TypeDef::String;
+
+        let (table_name, _) = TypeValue::decode(&schema, &mut &buffer[..]);
+        let table_name = table_name.unwrap_or_else(|e| {
+            panic!("get_table_id: Could not decode table_name! Err: {}", e);
+        });
+
+        let table_name = table_name.as_string().unwrap();
+        let table_id = stdb.table_id_from_name(tx, table_name);
+
+        table_id.unwrap()
     }
 
     pub fn iter(&self, table_id: u32) -> Vec<u8> {
