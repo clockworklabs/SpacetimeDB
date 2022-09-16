@@ -126,13 +126,19 @@ pub struct ClientConnection {
 }
 
 impl ClientConnection {
-    pub fn get_database_instance_id(&self) -> u64 {
-        let module_identity = &self.module_identity;
-        let module_name = &self.module_name;
-        let database = worker_db::get_database_by_address(module_identity, module_name).unwrap();
+    pub fn get_database_instance_id(module_identity: &Hash, module_name: &str) -> Result<u64, anyhow::Error> {
+        let database = if let Some(database) = worker_db::get_database_by_address(module_identity, module_name) {
+            database
+        } else {
+            return Err(anyhow::anyhow!(
+                "Cannot find database {}/{}",
+                module_identity.to_hex(),
+                module_name
+            ));
+        };
         let database_instance = worker_db::get_leader_database_instance_by_database(database.id);
         let instance_id = database_instance.unwrap().id;
-        instance_id
+        Ok(instance_id)
     }
 
     pub fn new(
@@ -179,7 +185,7 @@ impl ClientConnection {
     pub fn recv(&mut self) {
         let id = self.id;
         let mut stream = self.stream.take().unwrap();
-        let instance_id = self.get_database_instance_id();
+        let instance_id = Self::get_database_instance_id(&self.module_identity, &self.module_name).unwrap();
         self.read_handle = Some(spawn(async move {
             while let Some(message) = stream.next().await {
                 match message {
@@ -310,7 +316,13 @@ impl ClientConnection {
 impl Drop for ClientConnection {
     fn drop(&mut self) {
         // Schedule removal of the module subscription for the future.
-        let instance_id = self.get_database_instance_id();
+        let instance_id = Self::get_database_instance_id(&self.module_identity, &self.module_name);
+        let instance_id = if let Ok(instance_id) = instance_id {
+            instance_id
+        } else {
+            return;
+        };
+
         let client_id = self.id.clone();
 
         spawn(async move {

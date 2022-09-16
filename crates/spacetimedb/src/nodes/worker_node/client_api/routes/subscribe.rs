@@ -3,6 +3,7 @@ use super::super::client_connection_index::CLIENT_ACTOR_INDEX;
 use crate::auth::get_creds_from_header;
 use crate::auth::invalid_token_res;
 use crate::hash::Hash;
+use crate::nodes::worker_node::client_api::client_connection_index::ClientConnection;
 use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
 use gotham::handler::HandlerError;
 use gotham::prelude::StaticResponseExtender;
@@ -189,6 +190,10 @@ async fn on_upgrade(
             return Ok((state, bad_request_res()));
         }
     };
+
+    if let Err(_) = ClientConnection::get_database_instance_id(&module_identity, &module_name) {
+        return Ok((state, bad_request_res()));
+    }
 
     let req_id = request_id(&state).to_owned();
     let identity_token_clone = identity_token.clone();
