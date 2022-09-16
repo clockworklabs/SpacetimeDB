@@ -350,7 +350,7 @@ pub(crate) fn autogen_module_tuple_to_struct(
         }
     } else {
         match parse_generated_func(quote! {
-                        pub fn tuple_to_struct(value: spacetimedb_bindings::TupleValue) -> Option<#original_struct_ident> {
+            pub fn tuple_to_struct(value: spacetimedb_bindings::TupleValue) -> Option<#original_struct_ident> {
                 let elements_arr = value.elements;
                 return match (#(#match_paren1),*) {
                     (#(#match_paren2),*) => {
@@ -476,14 +476,14 @@ pub(crate) fn autogen_module_struct_to_tuple(
     }
 
     return match parse_generated_func(quote! {
-    pub fn struct_to_tuple(value: #original_struct_ident) -> spacetimedb_bindings::TypeValue {
-        #(#vec_conversion)*
-        return spacetimedb_bindings::TypeValue::Tuple(spacetimedb_bindings::TupleValue {
-            elements: vec![
-                #(#type_values),*
-            ]
-        });
-    }
+        pub fn struct_to_tuple(value: #original_struct_ident) -> spacetimedb_bindings::TypeValue {
+            #(#vec_conversion)*
+            return spacetimedb_bindings::TypeValue::Tuple(spacetimedb_bindings::TupleValue {
+                elements: vec![
+                    #(#type_values),*
+                ]
+            });
+        }
     }) {
         Ok(func) => Ok(quote! {
             #[allow(non_snake_case)]

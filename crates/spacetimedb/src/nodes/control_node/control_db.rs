@@ -229,7 +229,7 @@ pub async fn insert_node(mut node: Node) -> Result<u64, anyhow::Error> {
     Ok(id)
 }
 
-pub async fn _update_node(node: Node) -> Result<(), anyhow::Error> {
+pub async fn update_node(node: Node) -> Result<(), anyhow::Error> {
     let tree = CONTROL_DB.open_tree("node")?;
 
     let mut buf = Vec::new();

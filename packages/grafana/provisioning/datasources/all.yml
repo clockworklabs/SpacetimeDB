@@ -1,0 +1,7 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    isDefault: false
+    type: prometheus
+    url: http://prometheus:9090

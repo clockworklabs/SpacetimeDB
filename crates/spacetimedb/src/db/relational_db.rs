@@ -1,7 +1,6 @@
 use super::{
-    messages::transaction::Transaction,
     relational_operators::Relation,
-    transactional_db::{ScanIter, TransactionalDB, Tx},
+    transactional_db::{CommitResult, ScanIter, TransactionalDB, Tx},
 };
 // use super::relational_operators::Project;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
@@ -252,7 +251,7 @@ impl RelationalDB {
         self.txdb.rollback_tx(tx);
     }
 
-    pub fn commit_tx(&mut self, tx: Tx) -> Option<Transaction> {
+    pub fn commit_tx(&mut self, tx: Tx) -> Option<CommitResult> {
         self.txdb.commit_tx(tx)
     }
 

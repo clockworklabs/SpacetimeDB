@@ -2,7 +2,6 @@ use clap::Parser;
 use clap::Subcommand;
 use futures::future::join_all;
 use futures::FutureExt;
-use spacetimedb::metrics;
 use spacetimedb::nodes::control_node;
 use spacetimedb::nodes::node_config::NodeConfig;
 use spacetimedb::nodes::node_options::NodeOptions;
@@ -23,7 +22,6 @@ use tokio::runtime::Builder;
 async fn init(options: NodeOptions) -> Result<(), Box<dyn Error + Send + Sync>> {
     let config = NodeConfig::from_options(options);
     startup::configure_logging();
-    metrics::register_custom_metrics();
 
     let mut service_handles = Vec::new();
     if config.worker_node.is_some() {

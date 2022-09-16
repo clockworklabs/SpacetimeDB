@@ -21,6 +21,11 @@ struct Read {
     value: DataKey,
 }
 
+pub struct CommitResult {
+    pub tx: Transaction,
+    pub num_bytes_written: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct Tx {
     parent_tx_offset: u64,
@@ -226,7 +231,7 @@ impl TransactionalDB {
         self.vacuum_open_transactions();
     }
 
-    pub fn commit_tx(&mut self, tx: Tx) -> Option<Transaction> {
+    pub fn commit_tx(&mut self, tx: Tx) -> Option<CommitResult> {
         if self.latest_transaction_offset() == tx.parent_tx_offset {
             return Some(self.finalize(tx));
         }
@@ -268,7 +273,7 @@ impl TransactionalDB {
         return Some(self.finalize(tx));
     }
 
-    fn finalize(&mut self, tx: Tx) -> Transaction {
+    fn finalize(&mut self, tx: Tx) -> CommitResult {
         // TODO: This is a gross hack, need a better way to do this.
         // Essentially what this is doing is searching the database to
         // see if any of the inserts in this tx are already in the database
@@ -295,11 +300,12 @@ impl TransactionalDB {
         let new_transaction = Transaction { writes };
 
         const COMMIT_SIZE: usize = 1;
+        let mut num_written = 0;
         // TODO: avoid copy
         // TODO: use an estimated byte size to determine how much to put in here
         self.unwritten_commit.transactions.push(new_transaction.clone());
         if self.unwritten_commit.transactions.len() > COMMIT_SIZE {
-            self.persist_commit();
+            num_written = self.persist_commit();
         }
 
         // TODO: avoid copy
@@ -318,7 +324,10 @@ impl TransactionalDB {
             self.vacuum_open_transactions();
         }
 
-        return new_transaction;
+        return CommitResult {
+            tx: new_transaction,
+            num_bytes_written: num_written,
+        };
     }
 
     fn vacuum_open_transactions(&mut self) {
@@ -354,9 +363,10 @@ impl TransactionalDB {
         }
     }
 
-    fn persist_commit(&mut self) {
+    fn persist_commit(&mut self) -> usize {
         let mut bytes = Vec::new();
         self.unwritten_commit.encode(&mut bytes);
+        let num_written = bytes.len();
 
         let parent_commit_hash = Some(hash_bytes(&bytes));
         self.message_log.append(bytes).unwrap();
@@ -370,7 +380,9 @@ impl TransactionalDB {
             commit_offset,
             min_tx_offset,
             transactions: Vec::new(),
-        }
+        };
+
+        num_written
     }
 
     pub fn from_data_key<T, F: Fn(&[u8]) -> T>(&self, data_key: &DataKey, f: F) -> Option<T> {

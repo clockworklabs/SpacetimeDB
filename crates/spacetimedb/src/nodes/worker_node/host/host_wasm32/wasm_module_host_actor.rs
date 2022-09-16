@@ -1,20 +1,5 @@
-use anyhow::anyhow;
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
-
-use tokio::{spawn, time::sleep};
-use wasmer::{imports, Array, Function, Instance, LazyInit, Module, Store, Value, WasmPtr};
-use wasmer_middlewares::metering::{get_remaining_points, set_remaining_points, MeteringPoints};
-
-use spacetimedb_bindings::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
-use spacetimedb_bindings::buffer::VectorBufWriter;
-use spacetimedb_bindings::{ElementDef, TupleDef, TypeDef};
-
+use crate::db::transactional_db::CommitResult;
 use crate::db::{messages::transaction::Transaction, transactional_db::Tx};
-use crate::hash::Hash;
 use crate::nodes::worker_node::host::host_controller::{DescribedEntityType, Entity, EntityDescription};
 use crate::nodes::worker_node::host::host_wasm32::wasm_instance_env::WasmInstanceEnv;
 use crate::nodes::worker_node::host::instance_env::InstanceEnv;
@@ -25,6 +10,22 @@ use crate::nodes::worker_node::{
     client_api::{client_connection_index::ClientActorId, module_subscription_actor::ModuleSubscription},
     worker_database_instance::WorkerDatabaseInstance,
 };
+use crate::{
+    hash::Hash,
+    nodes::worker_node::prometheus_metrics::{TX_COMPUTE_TIME, TX_COUNT, TX_SIZE},
+};
+use anyhow::anyhow;
+use spacetimedb_bindings::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
+use spacetimedb_bindings::buffer::VectorBufWriter;
+use spacetimedb_bindings::{ElementDef, TupleDef, TypeDef};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+use tokio::{spawn, time::sleep};
+use wasmer::{imports, Array, Function, Instance, LazyInit, Module, Store, Value, WasmPtr};
+use wasmer_middlewares::metering::{get_remaining_points, set_remaining_points, MeteringPoints};
 
 const REDUCE_DUNDER: &str = "__reducer__";
 const DESCRIBE_REDUCER_DUNDER: &str = "__describe_reducer__";
@@ -547,6 +548,13 @@ impl WasmModuleHostActor {
         reducer_symbol: &str,
         arg_bytes: impl AsRef<[u8]>,
     ) -> Result<(Option<Transaction>, Option<u64>), anyhow::Error> {
+        let address = format!(
+            "{}/{}",
+            &self.worker_database_instance.identity.to_abbreviated_hex(),
+            self.worker_database_instance.name
+        );
+        TX_COUNT.with_label_values(&[&address, reducer_symbol]).inc();
+
         let tx = {
             let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
             stdb.begin_tx()
@@ -576,6 +584,8 @@ impl WasmModuleHostActor {
 
         let reduce = instance.exports.get_function(&reducer_symbol)?;
 
+        let guard = pprof::ProfilerGuardBuilder::default().frequency(2500).build().unwrap();
+
         let start = std::time::Instant::now();
         log::trace!("Start reducer \"{}\"...", reducer_symbol);
         let result = reduce.call(&[Value::I32(ptr.offset() as i32), Value::I32(buf_len as i32)]);
@@ -587,6 +597,19 @@ impl WasmModuleHostActor {
             duration.as_micros(),
             points - remaining_points
         );
+        TX_COMPUTE_TIME
+            .with_label_values(&[&address, reducer_symbol])
+            .observe(duration.as_secs_f64());
+
+        // If you can afford to take 500 ms for a transaction
+        // you can afford to generate a flamegraph. Fix your stuff.
+        if duration.as_millis() > 500 {
+            if let Ok(report) = guard.report().build() {
+                let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+                let file = std::fs::File::create(format!("flamegraphs/flamegraph-{}.svg", now.as_millis())).unwrap();
+                report.flamegraph(file).unwrap();
+            };
+        }
 
         match result {
             Err(err) => {
@@ -619,7 +642,10 @@ impl WasmModuleHostActor {
                 let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
                 let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
                 let tx = instance_tx_map.remove(&instance_id).unwrap();
-                if let Some(tx) = stdb.commit_tx(tx) {
+                if let Some(CommitResult { tx, num_bytes_written }) = stdb.commit_tx(tx) {
+                    TX_SIZE
+                        .with_label_values(&[&address, reducer_symbol])
+                        .observe(num_bytes_written as f64);
                     stdb.txdb.message_log.sync_all().unwrap();
                     Ok((Some(tx), repeat_duration))
                 } else {

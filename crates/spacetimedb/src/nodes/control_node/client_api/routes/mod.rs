@@ -1,12 +1,17 @@
 mod database;
 mod identity;
+mod metrics;
 mod node;
+mod prometheus;
+
+use self::prometheus::router as prometheus_router;
 use database::router as database_router;
 use gotham::{
     prelude::*,
     router::{build_simple_router, Router},
 };
 use identity::router as identity_router;
+use metrics::router as metrics_router;
 use node::router as node_router;
 
 pub fn router() -> Router {
@@ -14,6 +19,8 @@ pub fn router() -> Router {
         route.delegate("/database").to_router(database_router());
         route.delegate("/identity").to_router(identity_router());
         route.delegate("/node").to_router(node_router());
+        route.delegate("/prometheus").to_router(prometheus_router());
+        route.delegate("/metrics").to_router(metrics_router());
     })
 }
 

@@ -1,5 +1,5 @@
 use super::super::host::host_controller;
-use crate::metrics::CONNECTED_GAME_CLIENTS;
+use crate::nodes::worker_node::prometheus_metrics::CONNECTED_CLIENTS;
 use crate::{hash::Hash, nodes::worker_node::worker_db};
 use hyper::upgrade::Upgraded;
 use lazy_static::lazy_static;
@@ -86,7 +86,7 @@ impl ClientActorIndex {
     }
 
     pub fn drop_client(&mut self, id: &ClientActorId) {
-        CONNECTED_GAME_CLIENTS.dec();
+        CONNECTED_CLIENTS.dec();
 
         let index = self.id_index.remove(id);
 
@@ -110,7 +110,7 @@ impl ClientActorIndex {
         protocol: Protocol,
         ws: WebSocketStream<Upgraded>,
     ) -> ClientActorId {
-        CONNECTED_GAME_CLIENTS.inc();
+        CONNECTED_CLIENTS.inc();
 
         let client_name = self.client_name_auto_increment_state;
         self.client_name_auto_increment_state += 1;

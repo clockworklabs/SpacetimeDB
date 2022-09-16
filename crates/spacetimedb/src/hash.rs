@@ -6,6 +6,8 @@ pub struct Hash {
 }
 
 impl Hash {
+    const ABBREVIATION_LEN: usize = 16;
+
     pub fn from_arr(arr: &[u8; 32]) -> Self {
         Self { data: arr.clone() }
     }
@@ -20,6 +22,10 @@ impl Hash {
 
     pub fn to_hex(&self) -> String {
         hex::encode(self.data)
+    }
+
+    pub fn to_abbreviated_hex(&self) -> String {
+        self.to_hex()[0..Hash::ABBREVIATION_LEN].to_owned()
     }
 
     pub fn from_slice(slice: impl AsRef<[u8]>) -> Self {

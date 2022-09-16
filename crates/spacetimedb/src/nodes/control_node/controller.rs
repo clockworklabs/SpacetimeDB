@@ -14,12 +14,14 @@ use prost::Message;
 use std::collections::HashMap;
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
 
+use super::prometheus_metrics::WORKER_NODE_COUNT;
 use super::{control_db, worker_api::worker_connection_index::WORKER_CONNECTION_INDEX};
 
-pub async fn create_node() -> Result<u64, anyhow::Error> {
+pub async fn create_node(advertise_addr: String) -> Result<u64, anyhow::Error> {
     let node = Node {
         id: 0,
         unschedulable: false,
+        advertise_addr,
     };
 
     let id = control_db::insert_node(node).await?;
@@ -29,6 +31,7 @@ pub async fn create_node() -> Result<u64, anyhow::Error> {
 pub async fn node_connected(id: u64) -> Result<(), anyhow::Error> {
     // TODO: change the node status or whatever
 
+    WORKER_NODE_COUNT.inc();
     publish_schedule_state(id).await?;
 
     Ok(())
@@ -36,6 +39,8 @@ pub async fn node_connected(id: u64) -> Result<(), anyhow::Error> {
 
 pub async fn node_disconnected(_id: u64) -> Result<(), anyhow::Error> {
     // TODO: change the node status or whatever
+
+    WORKER_NODE_COUNT.dec();
 
     Ok(())
 }

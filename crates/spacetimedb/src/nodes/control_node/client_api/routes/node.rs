@@ -16,6 +16,7 @@ async fn get_nodes(_state: &mut State) -> SimpleHandlerResult {
         json_nodes.push(NodeJson {
             id: node.id,
             unschedulable: node.unschedulable,
+            advertise_addr: node.advertise_addr,
         });
     }
 

@@ -40,6 +40,10 @@ message DatabaseInstanceStatus {
 message Node {
     uint64 id = 1;
     bool unschedulable = 2;
+
+    // TODO: It's unclear if this should be in here since it's arguably status
+    // rather than part of the configuration kind of. I dunno. 
+    string advertise_addr = 3;
 }
 
 message NodeStatus {

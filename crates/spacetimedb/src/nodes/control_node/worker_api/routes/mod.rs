@@ -35,11 +35,15 @@ pub struct JoinParams {}
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct JoinQueryParams {
     node_id: Option<u64>,
+    advertise_addr: String,
 }
 
 async fn join(state: State) -> Result<(State, Response<Body>), (State, HandlerError)> {
     let (mut state, headers, key, on_upgrade, protocol) = websocket::validate_upgrade(state)?;
-    let JoinQueryParams { node_id } = JoinQueryParams::take_from(&mut state);
+    let JoinQueryParams {
+        node_id,
+        advertise_addr,
+    } = JoinQueryParams::take_from(&mut state);
 
     if BIN_PROTOCOL != protocol {
         log::debug!("Unsupported protocol: {}", protocol);
@@ -55,13 +59,15 @@ async fn join(state: State) -> Result<(State, Response<Body>), (State, HandlerEr
     }
 
     let node_id = if let Some(node_id) = node_id {
-        if let Some(node) = control_db::get_node(node_id).await.unwrap() {
-            node.id
+        if let Some(mut node) = control_db::get_node(node_id).await.unwrap() {
+            node.advertise_addr = advertise_addr;
+            control_db::update_node(node).await.unwrap();
+            node_id
         } else {
-            controller::create_node().await.unwrap()
+            controller::create_node(advertise_addr).await.unwrap()
         }
     } else {
-        controller::create_node().await.unwrap()
+        controller::create_node(advertise_addr).await.unwrap()
     };
     let req_id = request_id(&state).to_owned();
 

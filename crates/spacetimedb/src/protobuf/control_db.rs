@@ -47,6 +47,10 @@ pub struct Node {
     pub id: u64,
     #[prost(bool, tag="2")]
     pub unschedulable: bool,
+    /// TODO: It's unclear if this should be in here since it's arguably status
+    /// rather than part of the configuration kind of. I dunno. 
+    #[prost(string, tag="3")]
+    pub advertise_addr: std::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NodeStatus {

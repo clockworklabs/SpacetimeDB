@@ -16,7 +16,7 @@ use spacetimedb_bindings::buffer::VectorBufWriter;
 use spacetimedb_bindings::{ElementDef, TupleDef, TypeDef};
 
 use crate::db::messages::transaction::Transaction;
-use crate::db::transactional_db::Tx;
+use crate::db::transactional_db::{CommitResult, Tx};
 use crate::hash::Hash;
 use crate::nodes::worker_node::client_api::client_connection::ClientActorId;
 use crate::nodes::worker_node::client_api::module_subscription_actor::ModuleSubscription;
@@ -27,6 +27,7 @@ use crate::nodes::worker_node::host::instance_env::InstanceEnv;
 use crate::nodes::worker_node::host::module_host::{
     EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHost, ModuleHostActor, ModuleHostCommand,
 };
+use crate::nodes::worker_node::prometheus_metrics::{TX_COMPUTE_TIME, TX_COUNT, TX_SIZE};
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
 
 const REDUCE_DUNDER: &str = "__reducer__";
@@ -422,6 +423,13 @@ impl CPythonModuleHostActor {
         reducer_symbol: &str,
         arguments: Py<PyTuple>,
     ) -> Result<(Option<Transaction>, Option<u64>), anyhow::Error> {
+        let address = format!(
+            "{}/{}",
+            &self.worker_database_instance.identity.to_abbreviated_hex(),
+            self.worker_database_instance.name
+        );
+        TX_COUNT.with_label_values(&[&address, reducer_symbol]).inc();
+
         let tx = {
             let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
             stdb.begin_tx()
@@ -475,6 +483,9 @@ impl CPythonModuleHostActor {
         let duration = start.elapsed();
 
         log::trace!("Reducer \"{}\" ran: {} us", reducer_symbol, duration.as_micros(),);
+        TX_COMPUTE_TIME
+            .with_label_values(&[&address, reducer_symbol])
+            .observe(duration.as_secs_f64());
 
         match result {
             Err(err) => {
@@ -491,7 +502,10 @@ impl CPythonModuleHostActor {
                 let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
                 let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
                 let tx = instance_tx_map.remove(&instance_id).unwrap();
-                if let Some(tx) = stdb.commit_tx(tx) {
+                if let Some(CommitResult { tx, num_bytes_written }) = stdb.commit_tx(tx) {
+                    TX_SIZE
+                        .with_label_values(&[&address, reducer_symbol])
+                        .observe(num_bytes_written as f64);
                     stdb.txdb.message_log.sync_all().unwrap();
                     Ok((Some(tx), repeat_duration))
                 } else {

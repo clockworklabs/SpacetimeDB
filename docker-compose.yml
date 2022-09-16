@@ -13,6 +13,7 @@ services:
       - ./crates/spacetimedb/log4rs.yaml:/usr/src/app/log4rs.yaml
       - ./crates/spacetimedb/protobuf:/usr/src/app/protobuf
       - ./crates/spacetimedb/src:/usr/src/app/src
+      - ./crates/spacetimedb/flamegraphs:/usr/src/app/flamegraphs
 
       - ./crates/spacetimedb-bindings:/usr/src/spacetimedb-bindings
       - ./crates/spacetimedb-bindgen:/usr/src/spacetimedb-bindgen
@@ -20,7 +21,8 @@ services:
       - /stdb
     ports:
       - "3000:80"
-    entrypoint: bash -c "RUST_LOG='raft=trace', CARGO_INCREMENTAL=0 RUST_BACKTRACE=1 cargo watch --why -x 'run --release -- init --worker-node'"
+    entrypoint: bash -c "RUST_LOG='raft=trace', CARGO_PROFILE_RELEASE_DEBUG=true CARGO_INCREMENTAL=0 RUST_BACKTRACE=1 cargo watch -i flamegraphs --why -x 'run --release -- init --worker-node'"
+    # entrypoint: bash -c "CARGO_PROFILE_RELEASE_DEBUG=true cargo flamegraph -o my_flamegraph.svg --bin spacetimedb -c 'record -c 100 -g' -- init --worker-node"
     privileged: true
     environment:
       ENV: dev
@@ -32,3 +34,10 @@ services:
       - "9090:9090"
     volumes:
       - ./packages/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    build:
+      context: ./packages/grafana
+    ports:
+      - "3001:3000"
+

@@ -28,17 +28,28 @@ use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::handshake::client::generate_key;
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
 
-pub async fn start(worker_api_bootstrap_addr: String, client_api_bootstrap_addr: String) {
+pub async fn start(worker_api_bootstrap_addr: String, client_api_bootstrap_addr: String, advertise_addr: String) {
     ControlNodeClient::set_shared(&worker_api_bootstrap_addr, &client_api_bootstrap_addr);
     let bootstrap_addr = worker_api_bootstrap_addr;
 
     let node_id = worker_db::get_node_id().unwrap();
     let uri = if let Some(node_id) = node_id {
-        format!("ws://{}/join?node_id={}", bootstrap_addr, node_id)
-            .parse::<Uri>()
-            .unwrap()
+        format!(
+            "ws://{}/join?node_id={}&advertise_addr={}",
+            bootstrap_addr,
+            node_id,
+            urlencoding::encode(&advertise_addr)
+        )
+        .parse::<Uri>()
+        .unwrap()
     } else {
-        format!("ws://{}/join", bootstrap_addr).parse::<Uri>().unwrap()
+        format!(
+            "ws://{}/join?advertise_addr={}",
+            bootstrap_addr,
+            urlencoding::encode(&advertise_addr)
+        )
+        .parse::<Uri>()
+        .unwrap()
     };
     let (mut socket, node_id) = loop {
         let authority = uri.authority().unwrap().as_str();

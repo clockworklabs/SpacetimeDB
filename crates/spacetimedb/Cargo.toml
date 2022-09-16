@@ -39,6 +39,7 @@ lazy_static = "1.4.0"
 spacetimedb-bindings = { path = "../spacetimedb-bindings" }
 log = "0.4.16"
 gotham = "0.7.1"
+gotham_derive = "0.7"
 hyper = "0.14.18"
 log4rs = { version = "1.0.0", features = ["background_rotation", "rolling_file_appender", "compound_policy", "size_trigger", "fixed_window_roller"] }
 serde = "1.0.136"
@@ -58,6 +59,9 @@ email_address = "0.2.3"
 int-enum = "0.4.0"
 pyo3 = { version = "0.17.0"}
 sqlparser = "0.21.0"
+pprof = { version = "0.10", features = ["flamegraph"] }
+urlencoding = "2.1.2"
+perf_monitor = "0.2"
 
 # gluesql = "0.10"
 bytes = "1.2.0" # TODO(rdaum): there's also a copy/fork of this inside prost. hmph.

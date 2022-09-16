@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 pub struct NodeJson {
     pub id: u64,
     pub unschedulable: bool,
+    pub advertise_addr: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
