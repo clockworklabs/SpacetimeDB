@@ -611,7 +611,7 @@ impl WasmModuleHostActor {
             };
         }
 
-        match result {
+        let result = match result {
             Err(err) => {
                 let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
                 let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
@@ -652,7 +652,17 @@ impl WasmModuleHostActor {
                     todo!("Write skew, you need to implement retries my man, T-dawg.");
                 }
             }
-        }
+        };
+
+        // Clean up the arguments buffer.
+        let dealloc = instance
+            .exports
+            .get_function("dealloc")?
+            .native::<(WasmPtr<u8, Array>, u32), ()>()?;
+        let dealloc_result = dealloc.call(WasmPtr::new(ptr.offset() as u32), buf_len as u32);
+        dealloc_result.expect("Could not dealloc describer buffer memory");
+
+        result
     }
 }
 
