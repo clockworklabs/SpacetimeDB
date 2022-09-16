@@ -2,7 +2,10 @@ use super::{
     client_connection::{ClientActorId, ClientConnectionSender, Protocol},
     client_connection_index::CLIENT_ACTOR_INDEX,
 };
-use crate::nodes::worker_node::host::module_host::{EventStatus, ModuleEvent};
+use crate::{
+    db::relational_db::RelationalDBWrapper,
+    nodes::worker_node::host::module_host::{EventStatus, ModuleEvent},
+};
 use crate::{
     db::relational_db::{RelationalDB, ST_COLUMNS_ID, ST_TABLES_ID},
     json::client_api::{
@@ -16,10 +19,7 @@ use crate::{
 };
 use prost::Message as ProstMessage;
 use spacetimedb_bindings::{TupleDef, TupleValue};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -42,7 +42,7 @@ pub struct Subscriber {
 }
 
 impl ModuleSubscription {
-    pub fn spawn(relational_db: Arc<Mutex<RelationalDB>>) -> Self {
+    pub fn spawn(relational_db: RelationalDBWrapper) -> Self {
         let (tx, mut rx) = mpsc::unbounded_channel();
         tokio::spawn(async move {
             let mut actor = ModuleSubscriptionActor::new(relational_db);
@@ -73,12 +73,12 @@ impl ModuleSubscription {
 }
 
 struct ModuleSubscriptionActor {
-    relational_db: Arc<Mutex<RelationalDB>>,
+    relational_db: RelationalDBWrapper,
     subscribers: Vec<Subscriber>,
 }
 
 impl ModuleSubscriptionActor {
-    pub fn new(relational_db: Arc<Mutex<RelationalDB>>) -> Self {
+    pub fn new(relational_db: RelationalDBWrapper) -> Self {
         Self {
             relational_db,
             subscribers: Vec::new(),

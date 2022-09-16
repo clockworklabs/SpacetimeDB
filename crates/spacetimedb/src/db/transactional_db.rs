@@ -211,6 +211,12 @@ impl TransactionalDB {
     }
 
     pub fn begin_tx(&mut self) -> Tx {
+        if self.open_transactions.len() > 100 {
+            log::warn!(
+                "Open transactions len is {}. Be sure to commit or rollback transactions.",
+                self.open_transactions.len()
+            );
+        }
         let parent = self.latest_transaction_offset();
         self.branched_transaction_offsets.push(parent);
         Tx {
@@ -636,20 +642,18 @@ impl<'a> Iterator for ScanIter<'a> {
                     }
 
                     // Loop through cur transaction
+                    let transaction = self.txdb.get_open_transaction(transaction_offset);
+                    let mut write_index = if let Some(write_index) = write_index {
+                        write_index
+                    } else {
+                        transaction.writes.len() as i32 - 1
+                    };
                     loop {
-                        let transaction = self.txdb.get_open_transaction(transaction_offset);
-                        let write_index = if let Some(write_index) = write_index {
-                            write_index
-                        } else {
-                            transaction.writes.len() as i32 - 1
-                        };
-
                         if write_index == -1 {
                             break;
                         }
 
-                        let index = write_index as usize;
-                        let write = &transaction.writes[index];
+                        let write = &transaction.writes[write_index as usize];
                         let opt_index = Some(write_index - 1);
                         match write.operation {
                             Operation::Insert => {
@@ -677,6 +681,8 @@ impl<'a> Iterator for ScanIter<'a> {
                                 }
                             }
                         }
+
+                        write_index = write_index - 1;
                     }
 
                     // Move to next transaction

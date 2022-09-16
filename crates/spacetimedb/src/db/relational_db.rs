@@ -7,13 +7,68 @@ use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
 use spacetimedb_bindings::{ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue};
 pub use spacetimedb_bindings::{TupleDef, TupleValue, TypeDef, TypeValue};
-use std::{ops::RangeBounds, path::Path};
+use std::{
+    ops::{DerefMut, RangeBounds},
+    path::Path,
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
+};
 
 pub const ST_TABLES_NAME: &'static str = "st_table";
 pub const ST_COLUMNS_NAME: &'static str = "st_columns";
 
 pub const ST_TABLES_ID: u32 = 0;
 pub const ST_COLUMNS_ID: u32 = 1;
+
+#[derive(Clone)]
+pub struct RelationalDBWrapper {
+    inner: Arc<Mutex<RelationalDB>>,
+}
+
+impl RelationalDBWrapper {
+    pub fn new(relational_db: RelationalDB) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(relational_db)),
+        }
+    }
+
+    pub fn lock(&self) -> Result<RelationalDBGuard, PoisonError<std::sync::MutexGuard<'_, RelationalDB>>> {
+        match self.inner.lock() {
+            Ok(inner) => Ok(RelationalDBGuard::new(inner)),
+            Err(err) => Err(err),
+        }
+    }
+}
+
+pub struct RelationalDBGuard<'a> {
+    inner: MutexGuard<'a, RelationalDB>,
+}
+
+impl<'a> RelationalDBGuard<'a> {
+    fn new(inner: MutexGuard<'a, RelationalDB>) -> Self {
+        log::trace!("LOCKING DB");
+        Self { inner }
+    }
+}
+
+impl<'a> std::ops::Deref for RelationalDBGuard<'a> {
+    type Target = MutexGuard<'a, RelationalDB>;
+
+    fn deref(&self) -> &MutexGuard<'a, RelationalDB> {
+        &self.inner
+    }
+}
+
+impl<'a> DerefMut for RelationalDBGuard<'a> {
+    fn deref_mut(&mut self) -> &mut MutexGuard<'a, RelationalDB> {
+        &mut self.inner
+    }
+}
+
+impl<'a> Drop for RelationalDBGuard<'a> {
+    fn drop(&mut self) {
+        log::trace!("UNLOCKING DB");
+    }
+}
 
 pub struct RelationalDB {
     pub txdb: TransactionalDB,

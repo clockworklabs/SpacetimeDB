@@ -1,5 +1,6 @@
 use super::database_instance_context_controller::DatabaseInstanceContextController;
 use super::{database_logger::DatabaseLogger, host::host_controller, worker_database_instance::WorkerDatabaseInstance};
+use crate::db::relational_db::RelationalDBWrapper;
 use crate::nodes::HostType;
 use crate::{
     db::relational_db::RelationalDB,
@@ -289,7 +290,7 @@ async fn init_module_on_database_instance(database_id: u64, instance_id: u64) {
         identity,
         name: name.clone(),
         logger: Arc::new(Mutex::new(DatabaseLogger::open(&log_path))),
-        relational_db: Arc::new(Mutex::new(RelationalDB::open(db_path))),
+        relational_db: RelationalDBWrapper::new(RelationalDB::open(db_path)),
     };
 
     // TODO: This is getting pretty messy
@@ -325,7 +326,7 @@ async fn start_module_on_database_instance(database_id: u64, instance_id: u64) {
         identity,
         name: name.clone(),
         logger: Arc::new(Mutex::new(DatabaseLogger::open(&log_path))),
-        relational_db: Arc::new(Mutex::new(RelationalDB::open(db_path))),
+        relational_db: RelationalDBWrapper::new(RelationalDB::open(db_path)),
     };
 
     // TODO: This is getting pretty messy

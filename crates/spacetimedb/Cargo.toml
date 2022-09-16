@@ -59,6 +59,7 @@ email_address = "0.2.3"
 int-enum = "0.4.0"
 pyo3 = { version = "0.17.0"}
 sqlparser = "0.21.0"
+backtrace = "0.3.66"
 pprof = { version = "0.10", features = ["flamegraph"] }
 urlencoding = "2.1.2"
 perf_monitor = "0.2"

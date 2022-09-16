@@ -4,21 +4,47 @@ use std::prelude::rust_2021::*;
 #[macro_use]
 extern crate std;
 use spacetimedb_bindgen::spacetimedb;
-pub struct MyStruct {
-    pub my_int0: i32,
-    pub my_int1: u32,
-    pub my_int2: i32,
-}
-impl MyStruct {
-    fn __create_index__my_index_name(arg_ptr: u32, arg_size: u32) {
-        unsafe {
-            spacetimedb_bindings::create_index(
-                __table_id__MyStruct,
-                0u8,
-                <[_]>::into_vec(box [0u32, 1u32]),
-            );
-        }
+use spacetimedb_bindings::println;
+use spacetimedb_bindings::{delete_range, Hash, RangeTypeValue};
+use std::time::Duration;
+#[allow(non_upper_case_globals)]
+static mut __table_id__TestA: Option<u32> = None;
+#[allow(non_snake_case)]
+#[no_mangle]
+pub extern "C" fn __create_table__TestA(arg_ptr: usize, arg_size: usize) {
+    let def = TestA::get_struct_schema();
+    if let spacetimedb_bindings::TypeDef::Tuple(tuple_def) = def {
+        let table_id = spacetimedb_bindings::create_table("TestA", tuple_def);
+        unsafe { __table_id__TestA = Some(table_id) }
+    } else {
+        ::core::panicking::panic_fmt(::core::fmt::Arguments::new_v1(
+            &["This type is not a tuple: {#original_struct_ident}"],
+            &[],
+        ));
     }
+}
+#[allow(non_snake_case)]
+#[no_mangle]
+pub extern "C" fn __describe_table__TestA() -> u64 {
+    let def = TestA::get_struct_schema();
+    if let spacetimedb_bindings::TypeDef::Tuple(tuple_def) = def {
+        let mut bytes = ::alloc::vec::Vec::new();
+        tuple_def.encode(&mut bytes);
+        let offset = bytes.as_ptr() as u64;
+        let length = bytes.len() as u64;
+        std::mem::forget(bytes);
+        return offset << 32 | length;
+    } else {
+        ::core::panicking::panic_fmt(::core::fmt::Arguments::new_v1(
+            &["This type is not a tuple: {#original_struct_ident}"],
+            &[],
+        ));
+    }
+}
+pub struct TestA {
+    pub x: u32,
+    pub y: u32,
+    pub z: String,
 }
 #[doc(hidden)]
 #[allow(non_upper_case_globals, unused_attributes, unused_qualifications)]
@@ -26,49 +52,31 @@ const _: () = {
     #[allow(unused_extern_crates, clippy::useless_attribute)]
     extern crate serde as _serde;
     #[automatically_derived]
-    impl _serde::Serialize for MyStruct {
-        fn serialize<__S>(
-            &self,
-            __serializer: __S,
-        ) -> _serde::__private::Result<__S::Ok, __S::Error>
+    impl _serde::Serialize for TestA {
+        fn serialize<__S>(&self, __serializer: __S) -> _serde::__private::Result<__S::Ok, __S::Error>
         where
             __S: _serde::Serializer,
         {
-            let mut __serde_state = match _serde::Serializer::serialize_struct(
-                __serializer,
-                "MyStruct",
-                false as usize + 1 + 1 + 1,
-            ) {
+            let mut __serde_state =
+                match _serde::Serializer::serialize_struct(__serializer, "TestA", false as usize + 1 + 1 + 1) {
+                    _serde::__private::Ok(__val) => __val,
+                    _serde::__private::Err(__err) => {
+                        return _serde::__private::Err(__err);
+                    }
+                };
+            match _serde::ser::SerializeStruct::serialize_field(&mut __serde_state, "x", &self.x) {
                 _serde::__private::Ok(__val) => __val,
                 _serde::__private::Err(__err) => {
                     return _serde::__private::Err(__err);
                 }
             };
-            match _serde::ser::SerializeStruct::serialize_field(
-                &mut __serde_state,
-                "my_int0",
-                &self.my_int0,
-            ) {
+            match _serde::ser::SerializeStruct::serialize_field(&mut __serde_state, "y", &self.y) {
                 _serde::__private::Ok(__val) => __val,
                 _serde::__private::Err(__err) => {
                     return _serde::__private::Err(__err);
                 }
             };
-            match _serde::ser::SerializeStruct::serialize_field(
-                &mut __serde_state,
-                "my_int1",
-                &self.my_int1,
-            ) {
-                _serde::__private::Ok(__val) => __val,
-                _serde::__private::Err(__err) => {
-                    return _serde::__private::Err(__err);
-                }
-            };
-            match _serde::ser::SerializeStruct::serialize_field(
-                &mut __serde_state,
-                "my_int2",
-                &self.my_int2,
-            ) {
+            match _serde::ser::SerializeStruct::serialize_field(&mut __serde_state, "z", &self.z) {
                 _serde::__private::Ok(__val) => __val,
                 _serde::__private::Err(__err) => {
                     return _serde::__private::Err(__err);
@@ -84,7 +92,7 @@ const _: () = {
     #[allow(unused_extern_crates, clippy::useless_attribute)]
     extern crate serde as _serde;
     #[automatically_derived]
-    impl<'de> _serde::Deserialize<'de> for MyStruct {
+    impl<'de> _serde::Deserialize<'de> for TestA {
         fn deserialize<__D>(__deserializer: __D) -> _serde::__private::Result<Self, __D::Error>
         where
             __D: _serde::Deserializer<'de>,
@@ -99,10 +107,7 @@ const _: () = {
             struct __FieldVisitor;
             impl<'de> _serde::de::Visitor<'de> for __FieldVisitor {
                 type Value = __Field;
-                fn expecting(
-                    &self,
-                    __formatter: &mut _serde::__private::Formatter,
-                ) -> _serde::__private::fmt::Result {
+                fn expecting(&self, __formatter: &mut _serde::__private::Formatter) -> _serde::__private::fmt::Result {
                     _serde::__private::Formatter::write_str(__formatter, "field identifier")
                 }
                 fn visit_u64<__E>(self, __value: u64) -> _serde::__private::Result<Self::Value, __E>
@@ -116,40 +121,32 @@ const _: () = {
                         _ => _serde::__private::Ok(__Field::__ignore),
                     }
                 }
-                fn visit_str<__E>(
-                    self,
-                    __value: &str,
-                ) -> _serde::__private::Result<Self::Value, __E>
+                fn visit_str<__E>(self, __value: &str) -> _serde::__private::Result<Self::Value, __E>
                 where
                     __E: _serde::de::Error,
                 {
                     match __value {
-                        "my_int0" => _serde::__private::Ok(__Field::__field0),
-                        "my_int1" => _serde::__private::Ok(__Field::__field1),
-                        "my_int2" => _serde::__private::Ok(__Field::__field2),
+                        "x" => _serde::__private::Ok(__Field::__field0),
+                        "y" => _serde::__private::Ok(__Field::__field1),
+                        "z" => _serde::__private::Ok(__Field::__field2),
                         _ => _serde::__private::Ok(__Field::__ignore),
                     }
                 }
-                fn visit_bytes<__E>(
-                    self,
-                    __value: &[u8],
-                ) -> _serde::__private::Result<Self::Value, __E>
+                fn visit_bytes<__E>(self, __value: &[u8]) -> _serde::__private::Result<Self::Value, __E>
                 where
                     __E: _serde::de::Error,
                 {
                     match __value {
-                        b"my_int0" => _serde::__private::Ok(__Field::__field0),
-                        b"my_int1" => _serde::__private::Ok(__Field::__field1),
-                        b"my_int2" => _serde::__private::Ok(__Field::__field2),
+                        b"x" => _serde::__private::Ok(__Field::__field0),
+                        b"y" => _serde::__private::Ok(__Field::__field1),
+                        b"z" => _serde::__private::Ok(__Field::__field2),
                         _ => _serde::__private::Ok(__Field::__ignore),
                     }
                 }
             }
             impl<'de> _serde::Deserialize<'de> for __Field {
                 #[inline]
-                fn deserialize<__D>(
-                    __deserializer: __D,
-                ) -> _serde::__private::Result<Self, __D::Error>
+                fn deserialize<__D>(__deserializer: __D) -> _serde::__private::Result<Self, __D::Error>
                 where
                     __D: _serde::Deserializer<'de>,
                 {
@@ -157,87 +154,75 @@ const _: () = {
                 }
             }
             struct __Visitor<'de> {
-                marker: _serde::__private::PhantomData<MyStruct>,
+                marker: _serde::__private::PhantomData<TestA>,
                 lifetime: _serde::__private::PhantomData<&'de ()>,
             }
             impl<'de> _serde::de::Visitor<'de> for __Visitor<'de> {
-                type Value = MyStruct;
-                fn expecting(
-                    &self,
-                    __formatter: &mut _serde::__private::Formatter,
-                ) -> _serde::__private::fmt::Result {
-                    _serde::__private::Formatter::write_str(__formatter, "struct MyStruct")
+                type Value = TestA;
+                fn expecting(&self, __formatter: &mut _serde::__private::Formatter) -> _serde::__private::fmt::Result {
+                    _serde::__private::Formatter::write_str(__formatter, "struct TestA")
                 }
                 #[inline]
-                fn visit_seq<__A>(
-                    self,
-                    mut __seq: __A,
-                ) -> _serde::__private::Result<Self::Value, __A::Error>
+                fn visit_seq<__A>(self, mut __seq: __A) -> _serde::__private::Result<Self::Value, __A::Error>
                 where
                     __A: _serde::de::SeqAccess<'de>,
                 {
-                    let __field0 =
-                        match match _serde::de::SeqAccess::next_element::<i32>(&mut __seq) {
-                            _serde::__private::Ok(__val) => __val,
-                            _serde::__private::Err(__err) => {
-                                return _serde::__private::Err(__err);
-                            }
-                        } {
-                            _serde::__private::Some(__value) => __value,
-                            _serde::__private::None => {
-                                return _serde::__private::Err(_serde::de::Error::invalid_length(
-                                    0usize,
-                                    &"struct MyStruct with 3 elements",
-                                ));
-                            }
-                        };
-                    let __field1 =
-                        match match _serde::de::SeqAccess::next_element::<u32>(&mut __seq) {
-                            _serde::__private::Ok(__val) => __val,
-                            _serde::__private::Err(__err) => {
-                                return _serde::__private::Err(__err);
-                            }
-                        } {
-                            _serde::__private::Some(__value) => __value,
-                            _serde::__private::None => {
-                                return _serde::__private::Err(_serde::de::Error::invalid_length(
-                                    1usize,
-                                    &"struct MyStruct with 3 elements",
-                                ));
-                            }
-                        };
-                    let __field2 =
-                        match match _serde::de::SeqAccess::next_element::<i32>(&mut __seq) {
-                            _serde::__private::Ok(__val) => __val,
-                            _serde::__private::Err(__err) => {
-                                return _serde::__private::Err(__err);
-                            }
-                        } {
-                            _serde::__private::Some(__value) => __value,
-                            _serde::__private::None => {
-                                return _serde::__private::Err(_serde::de::Error::invalid_length(
-                                    2usize,
-                                    &"struct MyStruct with 3 elements",
-                                ));
-                            }
-                        };
-                    _serde::__private::Ok(MyStruct {
-                        my_int0: __field0,
-                        my_int1: __field1,
-                        my_int2: __field2,
+                    let __field0 = match match _serde::de::SeqAccess::next_element::<u32>(&mut __seq) {
+                        _serde::__private::Ok(__val) => __val,
+                        _serde::__private::Err(__err) => {
+                            return _serde::__private::Err(__err);
+                        }
+                    } {
+                        _serde::__private::Some(__value) => __value,
+                        _serde::__private::None => {
+                            return _serde::__private::Err(_serde::de::Error::invalid_length(
+                                0usize,
+                                &"struct TestA with 3 elements",
+                            ));
+                        }
+                    };
+                    let __field1 = match match _serde::de::SeqAccess::next_element::<u32>(&mut __seq) {
+                        _serde::__private::Ok(__val) => __val,
+                        _serde::__private::Err(__err) => {
+                            return _serde::__private::Err(__err);
+                        }
+                    } {
+                        _serde::__private::Some(__value) => __value,
+                        _serde::__private::None => {
+                            return _serde::__private::Err(_serde::de::Error::invalid_length(
+                                1usize,
+                                &"struct TestA with 3 elements",
+                            ));
+                        }
+                    };
+                    let __field2 = match match _serde::de::SeqAccess::next_element::<String>(&mut __seq) {
+                        _serde::__private::Ok(__val) => __val,
+                        _serde::__private::Err(__err) => {
+                            return _serde::__private::Err(__err);
+                        }
+                    } {
+                        _serde::__private::Some(__value) => __value,
+                        _serde::__private::None => {
+                            return _serde::__private::Err(_serde::de::Error::invalid_length(
+                                2usize,
+                                &"struct TestA with 3 elements",
+                            ));
+                        }
+                    };
+                    _serde::__private::Ok(TestA {
+                        x: __field0,
+                        y: __field1,
+                        z: __field2,
                     })
                 }
                 #[inline]
-                fn visit_map<__A>(
-                    self,
-                    mut __map: __A,
-                ) -> _serde::__private::Result<Self::Value, __A::Error>
+                fn visit_map<__A>(self, mut __map: __A) -> _serde::__private::Result<Self::Value, __A::Error>
                 where
                     __A: _serde::de::MapAccess<'de>,
                 {
-                    let mut __field0: _serde::__private::Option<i32> = _serde::__private::None;
+                    let mut __field0: _serde::__private::Option<u32> = _serde::__private::None;
                     let mut __field1: _serde::__private::Option<u32> = _serde::__private::None;
-                    let mut __field2: _serde::__private::Option<i32> = _serde::__private::None;
+                    let mut __field2: _serde::__private::Option<String> = _serde::__private::None;
                     while let _serde::__private::Some(__key) =
                         match _serde::de::MapAccess::next_key::<__Field>(&mut __map) {
                             _serde::__private::Ok(__val) => __val,
@@ -249,14 +234,12 @@ const _: () = {
                         match __key {
                             __Field::__field0 => {
                                 if _serde::__private::Option::is_some(&__field0) {
-                                    return _serde::__private::Err(
-                                        <__A::Error as _serde::de::Error>::duplicate_field(
-                                            "my_int0",
-                                        ),
-                                    );
+                                    return _serde::__private::Err(<__A::Error as _serde::de::Error>::duplicate_field(
+                                        "x",
+                                    ));
                                 }
                                 __field0 = _serde::__private::Some(
-                                    match _serde::de::MapAccess::next_value::<i32>(&mut __map) {
+                                    match _serde::de::MapAccess::next_value::<u32>(&mut __map) {
                                         _serde::__private::Ok(__val) => __val,
                                         _serde::__private::Err(__err) => {
                                             return _serde::__private::Err(__err);
@@ -266,11 +249,9 @@ const _: () = {
                             }
                             __Field::__field1 => {
                                 if _serde::__private::Option::is_some(&__field1) {
-                                    return _serde::__private::Err(
-                                        <__A::Error as _serde::de::Error>::duplicate_field(
-                                            "my_int1",
-                                        ),
-                                    );
+                                    return _serde::__private::Err(<__A::Error as _serde::de::Error>::duplicate_field(
+                                        "y",
+                                    ));
                                 }
                                 __field1 = _serde::__private::Some(
                                     match _serde::de::MapAccess::next_value::<u32>(&mut __map) {
@@ -283,14 +264,12 @@ const _: () = {
                             }
                             __Field::__field2 => {
                                 if _serde::__private::Option::is_some(&__field2) {
-                                    return _serde::__private::Err(
-                                        <__A::Error as _serde::de::Error>::duplicate_field(
-                                            "my_int2",
-                                        ),
-                                    );
+                                    return _serde::__private::Err(<__A::Error as _serde::de::Error>::duplicate_field(
+                                        "z",
+                                    ));
                                 }
                                 __field2 = _serde::__private::Some(
-                                    match _serde::de::MapAccess::next_value::<i32>(&mut __map) {
+                                    match _serde::de::MapAccess::next_value::<String>(&mut __map) {
                                         _serde::__private::Ok(__val) => __val,
                                         _serde::__private::Err(__err) => {
                                             return _serde::__private::Err(__err);
@@ -299,10 +278,7 @@ const _: () = {
                                 );
                             }
                             _ => {
-                                let _ = match _serde::de::MapAccess::next_value::<
-                                    _serde::de::IgnoredAny,
-                                >(&mut __map)
-                                {
+                                let _ = match _serde::de::MapAccess::next_value::<_serde::de::IgnoredAny>(&mut __map) {
                                     _serde::__private::Ok(__val) => __val,
                                     _serde::__private::Err(__err) => {
                                         return _serde::__private::Err(__err);
@@ -313,211 +289,626 @@ const _: () = {
                     }
                     let __field0 = match __field0 {
                         _serde::__private::Some(__field0) => __field0,
-                        _serde::__private::None => {
-                            match _serde::__private::de::missing_field("my_int0") {
-                                _serde::__private::Ok(__val) => __val,
-                                _serde::__private::Err(__err) => {
-                                    return _serde::__private::Err(__err);
-                                }
+                        _serde::__private::None => match _serde::__private::de::missing_field("x") {
+                            _serde::__private::Ok(__val) => __val,
+                            _serde::__private::Err(__err) => {
+                                return _serde::__private::Err(__err);
                             }
-                        }
+                        },
                     };
                     let __field1 = match __field1 {
                         _serde::__private::Some(__field1) => __field1,
-                        _serde::__private::None => {
-                            match _serde::__private::de::missing_field("my_int1") {
-                                _serde::__private::Ok(__val) => __val,
-                                _serde::__private::Err(__err) => {
-                                    return _serde::__private::Err(__err);
-                                }
+                        _serde::__private::None => match _serde::__private::de::missing_field("y") {
+                            _serde::__private::Ok(__val) => __val,
+                            _serde::__private::Err(__err) => {
+                                return _serde::__private::Err(__err);
                             }
-                        }
+                        },
                     };
                     let __field2 = match __field2 {
                         _serde::__private::Some(__field2) => __field2,
-                        _serde::__private::None => {
-                            match _serde::__private::de::missing_field("my_int2") {
-                                _serde::__private::Ok(__val) => __val,
-                                _serde::__private::Err(__err) => {
-                                    return _serde::__private::Err(__err);
-                                }
+                        _serde::__private::None => match _serde::__private::de::missing_field("z") {
+                            _serde::__private::Ok(__val) => __val,
+                            _serde::__private::Err(__err) => {
+                                return _serde::__private::Err(__err);
                             }
-                        }
+                        },
                     };
-                    _serde::__private::Ok(MyStruct {
-                        my_int0: __field0,
-                        my_int1: __field1,
-                        my_int2: __field2,
+                    _serde::__private::Ok(TestA {
+                        x: __field0,
+                        y: __field1,
+                        z: __field2,
                     })
                 }
             }
-            const FIELDS: &'static [&'static str] = &["my_int0", "my_int1", "my_int2"];
+            const FIELDS: &'static [&'static str] = &["x", "y", "z"];
             _serde::Deserializer::deserialize_struct(
                 __deserializer,
-                "MyStruct",
+                "TestA",
                 FIELDS,
                 __Visitor {
-                    marker: _serde::__private::PhantomData::<MyStruct>,
+                    marker: _serde::__private::PhantomData::<TestA>,
                     lifetime: _serde::__private::PhantomData,
                 },
             )
         }
     }
 };
-#[no_mangle]
-pub extern "C" fn __create_table__MyStruct(arg_ptr: u32, arg_size: u32) {
-    unsafe {
-        __table_id__MyStruct = 0;
-    }
-    spacetimedb_bindings::create_table(
-        0,
-        spacetimedb_bindings::TupleDef {
-            elements: <[_]>::into_vec(box [
-                spacetimedb_bindings::ElementDef {
-                    tag: 0u8,
-                    element_type: Box::new(spacetimedb_bindings::TypeDef::I32),
-                },
-                spacetimedb_bindings::ElementDef {
-                    tag: 1u8,
-                    element_type: Box::new(spacetimedb_bindings::TypeDef::U32),
-                },
-                spacetimedb_bindings::ElementDef {
-                    tag: 2u8,
-                    element_type: Box::new(spacetimedb_bindings::TypeDef::I32),
-                },
-            ]),
-        },
-    );
+pub struct TestAIter {
+    iter: spacetimedb_bindings::TableIter,
 }
-static mut __table_id__MyStruct: u32 = 0;
-impl MyStruct {
-    pub fn insert(ins: MyStruct) {
-        unsafe {
-            spacetimedb_bindings::insert(
-                __table_id__MyStruct,
-                spacetimedb_bindings::TupleValue {
-                    elements: <[_]>::into_vec(box [
-                        spacetimedb_bindings::TypeValue::I32(ins.my_int0),
-                        spacetimedb_bindings::TypeValue::U32(ins.my_int1),
-                        spacetimedb_bindings::TypeValue::I32(ins.my_int2),
-                    ]),
-                },
-            );
+impl Iterator for TestAIter {
+    type Item = TestA;
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(tuple) = self.iter.next() {
+            Some(TestA::tuple_to_struct(tuple).expect("Failed to convert tuple to struct."))
+        } else {
+            None
         }
     }
-    pub fn delete(f: fn(MyStruct) -> bool) -> usize {
-        0
+}
+impl TestA {
+    #[allow(unused_variables)]
+    pub fn insert(ins: TestA) {
+        spacetimedb_bindings::insert(
+            Self::table_id(),
+            spacetimedb_bindings::TupleValue {
+                elements: <[_]>::into_vec(
+                    #[rustc_box]
+                    ::alloc::boxed::Box::new([
+                        spacetimedb_bindings::TypeValue::U32(ins.x),
+                        spacetimedb_bindings::TypeValue::U32(ins.y),
+                        spacetimedb_bindings::TypeValue::String(ins.z),
+                    ]),
+                ),
+            },
+        );
     }
-    pub fn update(value: MyStruct) -> bool {
-        false
+    #[allow(unused_variables)]
+    pub fn delete(f: fn(TestA) -> bool) -> usize {
+        ::core::panicking::panic_fmt(::core::fmt::Arguments::new_v1(
+            &["Delete using a function is not supported yet!"],
+            &[],
+        ));
     }
-    fn table_row_to_struct(row: spacetimedb_bindings::TupleValue) -> Option<MyStruct> {
+    #[allow(unused_variables)]
+    pub fn update(value: TestA) -> bool {
+        ::core::panicking::panic_fmt(::core::fmt::Arguments::new_v1(
+            &["Update using a value is not supported yet!"],
+            &[],
+        ));
+    }
+    #[allow(unused_variables)]
+    pub fn iter() -> TestAIter {
+        TestAIter {
+            iter: Self::iter_tuples(),
+        }
+    }
+    #[allow(unused_variables)]
+    pub fn iter_tuples() -> spacetimedb_bindings::TableIter {
+        spacetimedb_bindings::__iter__(Self::table_id()).expect("Failed to get iterator from table.")
+    }
+    #[allow(non_snake_case)]
+    #[allow(unused_variables)]
+    pub fn filter_x_eq(x: u32) -> Vec<TestA> {
+        let mut result = Vec::<TestA>::new();
+        let table_iter = TestA::iter_tuples();
+        for row in table_iter {
+            let column_data = row.elements[0usize].clone();
+            if let spacetimedb_bindings::TypeValue::U32(entry_data) = column_data.clone() {
+                if entry_data == x {
+                    let tuple = Self::tuple_to_struct(row);
+                    if let None = tuple {
+                        ::spacetimedb_bindings::io::_console_log_info(&{
+                            let res = ::alloc::fmt::format(::core::fmt::Arguments::new_v1(
+                                &["Internal stdb error: Can\'t convert from tuple to struct (wrong version?) TestA"],
+                                &[],
+                            ));
+                            res
+                        });
+                        continue;
+                    }
+                    result.push(tuple.unwrap());
+                }
+            }
+        }
+        return result;
+    }
+    #[allow(non_snake_case)]
+    #[allow(unused_variables)]
+    pub fn filter_y_eq(y: u32) -> Vec<TestA> {
+        let mut result = Vec::<TestA>::new();
+        let table_iter = TestA::iter_tuples();
+        for row in table_iter {
+            let column_data = row.elements[1usize].clone();
+            if let spacetimedb_bindings::TypeValue::U32(entry_data) = column_data.clone() {
+                if entry_data == y {
+                    let tuple = Self::tuple_to_struct(row);
+                    if let None = tuple {
+                        ::spacetimedb_bindings::io::_console_log_info(&{
+                            let res = ::alloc::fmt::format(::core::fmt::Arguments::new_v1(
+                                &["Internal stdb error: Can\'t convert from tuple to struct (wrong version?) TestA"],
+                                &[],
+                            ));
+                            res
+                        });
+                        continue;
+                    }
+                    result.push(tuple.unwrap());
+                }
+            }
+        }
+        return result;
+    }
+    #[allow(non_snake_case)]
+    #[allow(unused_variables)]
+    pub fn filter_z_eq(z: String) -> Vec<TestA> {
+        let mut result = Vec::<TestA>::new();
+        let table_iter = TestA::iter_tuples();
+        for row in table_iter {
+            let column_data = row.elements[2usize].clone();
+            if let spacetimedb_bindings::TypeValue::String(entry_data) = column_data.clone() {
+                if entry_data == z {
+                    let tuple = Self::tuple_to_struct(row);
+                    if let None = tuple {
+                        ::spacetimedb_bindings::io::_console_log_info(&{
+                            let res = ::alloc::fmt::format(::core::fmt::Arguments::new_v1(
+                                &["Internal stdb error: Can\'t convert from tuple to struct (wrong version?) TestA"],
+                                &[],
+                            ));
+                            res
+                        });
+                        continue;
+                    }
+                    result.push(tuple.unwrap());
+                }
+            }
+        }
+        return result;
+    }
+    #[allow(non_snake_case)]
+    pub fn tuple_to_struct(value: spacetimedb_bindings::TupleValue) -> Option<TestA> {
+        let elements_arr = value.elements;
         return match (
-            (&row.elements[0usize]).clone(),
-            (&row.elements[1usize]).clone(),
-            (&row.elements[2usize]).clone(),
+            elements_arr[0usize].clone(),
+            elements_arr[1usize].clone(),
+            elements_arr[2usize].clone(),
         ) {
             (
-                spacetimedb_bindings::TypeValue::I32(my_int0),
-                spacetimedb_bindings::TypeValue::U32(my_int1),
-                spacetimedb_bindings::TypeValue::I32(my_int2),
-            ) => Some(MyStruct {
-                my_int0,
-                my_int1,
-                my_int2,
+                spacetimedb_bindings::TypeValue::U32(field_0),
+                spacetimedb_bindings::TypeValue::U32(field_1),
+                spacetimedb_bindings::TypeValue::String(field_2),
+            ) => Some(TestA {
+                x: field_0,
+                y: field_1,
+                z: field_2,
             }),
             _ => None,
         };
     }
-    pub fn filter_my_int0_eq(my_int0: i32) -> Option<MyStruct> {
-        unsafe {
-            let table_iter = spacetimedb_bindings::iter(__table_id__MyStruct);
-            if let Some(table_iter) = table_iter {
-                for row in table_iter {
-                    let data = row.elements[0usize];
-                    if let spacetimedb_bindings::TypeValue::I32(data) = data {
-                        if my_int0 == data {
-                            let value = MyStruct::table_row_to_struct(row);
-                            if let Some(value) = value {
-                                return Some(value);
-                            }
-                        }
+    #[allow(non_snake_case)]
+    pub fn struct_to_tuple(value: TestA) -> spacetimedb_bindings::TypeValue {
+        return spacetimedb_bindings::TypeValue::Tuple(spacetimedb_bindings::TupleValue {
+            elements: <[_]>::into_vec(
+                #[rustc_box]
+                ::alloc::boxed::Box::new([
+                    spacetimedb_bindings::TypeValue::U32(value.x),
+                    spacetimedb_bindings::TypeValue::U32(value.y),
+                    spacetimedb_bindings::TypeValue::String(value.z),
+                ]),
+            ),
+        });
+    }
+    #[allow(non_snake_case)]
+    pub fn get_struct_schema() -> spacetimedb_bindings::TypeDef {
+        return spacetimedb_bindings::TypeDef::Tuple {
+            0: spacetimedb_bindings::TupleDef {
+                elements: <[_]>::into_vec(
+                    #[rustc_box]
+                    ::alloc::boxed::Box::new([
+                        spacetimedb_bindings::ElementDef {
+                            tag: 0u8,
+                            name: Some("x".to_string()),
+                            element_type: spacetimedb_bindings::TypeDef::U32,
+                        },
+                        spacetimedb_bindings::ElementDef {
+                            tag: 1u8,
+                            name: Some("y".to_string()),
+                            element_type: spacetimedb_bindings::TypeDef::U32,
+                        },
+                        spacetimedb_bindings::ElementDef {
+                            tag: 2u8,
+                            name: Some("z".to_string()),
+                            element_type: spacetimedb_bindings::TypeDef::String,
+                        },
+                    ]),
+                ),
+            },
+        };
+    }
+    pub fn table_id() -> u32 {
+        if let Some(t_id) = unsafe { __table_id__TestA } {
+            return t_id;
+        }
+        let t_id = spacetimedb_bindings::get_table_id("TestA");
+        unsafe { __table_id__TestA = Some(t_id) };
+        return t_id;
+    }
+}
+pub struct TestB {
+    foo: String,
+}
+#[doc(hidden)]
+#[allow(non_upper_case_globals, unused_attributes, unused_qualifications)]
+const _: () = {
+    #[allow(unused_extern_crates, clippy::useless_attribute)]
+    extern crate serde as _serde;
+    #[automatically_derived]
+    impl _serde::Serialize for TestB {
+        fn serialize<__S>(&self, __serializer: __S) -> _serde::__private::Result<__S::Ok, __S::Error>
+        where
+            __S: _serde::Serializer,
+        {
+            let mut __serde_state =
+                match _serde::Serializer::serialize_struct(__serializer, "TestB", false as usize + 1) {
+                    _serde::__private::Ok(__val) => __val,
+                    _serde::__private::Err(__err) => {
+                        return _serde::__private::Err(__err);
+                    }
+                };
+            match _serde::ser::SerializeStruct::serialize_field(&mut __serde_state, "foo", &self.foo) {
+                _serde::__private::Ok(__val) => __val,
+                _serde::__private::Err(__err) => {
+                    return _serde::__private::Err(__err);
+                }
+            };
+            _serde::ser::SerializeStruct::end(__serde_state)
+        }
+    }
+};
+#[doc(hidden)]
+#[allow(non_upper_case_globals, unused_attributes, unused_qualifications)]
+const _: () = {
+    #[allow(unused_extern_crates, clippy::useless_attribute)]
+    extern crate serde as _serde;
+    #[automatically_derived]
+    impl<'de> _serde::Deserialize<'de> for TestB {
+        fn deserialize<__D>(__deserializer: __D) -> _serde::__private::Result<Self, __D::Error>
+        where
+            __D: _serde::Deserializer<'de>,
+        {
+            #[allow(non_camel_case_types)]
+            enum __Field {
+                __field0,
+                __ignore,
+            }
+            struct __FieldVisitor;
+            impl<'de> _serde::de::Visitor<'de> for __FieldVisitor {
+                type Value = __Field;
+                fn expecting(&self, __formatter: &mut _serde::__private::Formatter) -> _serde::__private::fmt::Result {
+                    _serde::__private::Formatter::write_str(__formatter, "field identifier")
+                }
+                fn visit_u64<__E>(self, __value: u64) -> _serde::__private::Result<Self::Value, __E>
+                where
+                    __E: _serde::de::Error,
+                {
+                    match __value {
+                        0u64 => _serde::__private::Ok(__Field::__field0),
+                        _ => _serde::__private::Ok(__Field::__ignore),
+                    }
+                }
+                fn visit_str<__E>(self, __value: &str) -> _serde::__private::Result<Self::Value, __E>
+                where
+                    __E: _serde::de::Error,
+                {
+                    match __value {
+                        "foo" => _serde::__private::Ok(__Field::__field0),
+                        _ => _serde::__private::Ok(__Field::__ignore),
+                    }
+                }
+                fn visit_bytes<__E>(self, __value: &[u8]) -> _serde::__private::Result<Self::Value, __E>
+                where
+                    __E: _serde::de::Error,
+                {
+                    match __value {
+                        b"foo" => _serde::__private::Ok(__Field::__field0),
+                        _ => _serde::__private::Ok(__Field::__ignore),
                     }
                 }
             }
-        }
-        return None;
-    }
-    pub fn delete_my_int0_eq(my_int0: i32) -> bool {
-        false
-    }
-    pub fn filter_my_int1_eq(my_int1: u32) -> Vec<MyStruct> {
-        unsafe {
-            let mut result = Vec::<MyStruct>::new();
-            let table_iter = spacetimedb_bindings::iter(__table_id__MyStruct);
-            if let Some(table_iter) = table_iter {
-                for row in table_iter {
-                    let data = row.elements[0usize];
-                    if let spacetimedb_bindings::TypeValue::U32(data) = data {
-                        if my_int1 == data {
-                            let value = MyStruct::table_row_to_struct(row);
-                            if let Some(value) = value {
-                                result.push(value);
+            impl<'de> _serde::Deserialize<'de> for __Field {
+                #[inline]
+                fn deserialize<__D>(__deserializer: __D) -> _serde::__private::Result<Self, __D::Error>
+                where
+                    __D: _serde::Deserializer<'de>,
+                {
+                    _serde::Deserializer::deserialize_identifier(__deserializer, __FieldVisitor)
+                }
+            }
+            struct __Visitor<'de> {
+                marker: _serde::__private::PhantomData<TestB>,
+                lifetime: _serde::__private::PhantomData<&'de ()>,
+            }
+            impl<'de> _serde::de::Visitor<'de> for __Visitor<'de> {
+                type Value = TestB;
+                fn expecting(&self, __formatter: &mut _serde::__private::Formatter) -> _serde::__private::fmt::Result {
+                    _serde::__private::Formatter::write_str(__formatter, "struct TestB")
+                }
+                #[inline]
+                fn visit_seq<__A>(self, mut __seq: __A) -> _serde::__private::Result<Self::Value, __A::Error>
+                where
+                    __A: _serde::de::SeqAccess<'de>,
+                {
+                    let __field0 = match match _serde::de::SeqAccess::next_element::<String>(&mut __seq) {
+                        _serde::__private::Ok(__val) => __val,
+                        _serde::__private::Err(__err) => {
+                            return _serde::__private::Err(__err);
+                        }
+                    } {
+                        _serde::__private::Some(__value) => __value,
+                        _serde::__private::None => {
+                            return _serde::__private::Err(_serde::de::Error::invalid_length(
+                                0usize,
+                                &"struct TestB with 1 element",
+                            ));
+                        }
+                    };
+                    _serde::__private::Ok(TestB { foo: __field0 })
+                }
+                #[inline]
+                fn visit_map<__A>(self, mut __map: __A) -> _serde::__private::Result<Self::Value, __A::Error>
+                where
+                    __A: _serde::de::MapAccess<'de>,
+                {
+                    let mut __field0: _serde::__private::Option<String> = _serde::__private::None;
+                    while let _serde::__private::Some(__key) =
+                        match _serde::de::MapAccess::next_key::<__Field>(&mut __map) {
+                            _serde::__private::Ok(__val) => __val,
+                            _serde::__private::Err(__err) => {
+                                return _serde::__private::Err(__err);
+                            }
+                        }
+                    {
+                        match __key {
+                            __Field::__field0 => {
+                                if _serde::__private::Option::is_some(&__field0) {
+                                    return _serde::__private::Err(<__A::Error as _serde::de::Error>::duplicate_field(
+                                        "foo",
+                                    ));
+                                }
+                                __field0 = _serde::__private::Some(
+                                    match _serde::de::MapAccess::next_value::<String>(&mut __map) {
+                                        _serde::__private::Ok(__val) => __val,
+                                        _serde::__private::Err(__err) => {
+                                            return _serde::__private::Err(__err);
+                                        }
+                                    },
+                                );
+                            }
+                            _ => {
+                                let _ = match _serde::de::MapAccess::next_value::<_serde::de::IgnoredAny>(&mut __map) {
+                                    _serde::__private::Ok(__val) => __val,
+                                    _serde::__private::Err(__err) => {
+                                        return _serde::__private::Err(__err);
+                                    }
+                                };
                             }
                         }
                     }
-                }
-            }
-            return result;
-        }
-    }
-    pub fn delete_my_int1_eq(my_int1: u32) -> usize {
-        0
-    }
-    pub fn filter_my_int2_eq(my_int2: i32) -> Vec<MyStruct> {
-        unsafe {
-            let mut result = Vec::<MyStruct>::new();
-            let table_iter = spacetimedb_bindings::iter(__table_id__MyStruct);
-            if let Some(table_iter) = table_iter {
-                for row in table_iter {
-                    let data = row.elements[1usize];
-                    if let spacetimedb_bindings::TypeValue::I32(data) = data {
-                        if my_int2 == data {
-                            let value = MyStruct::table_row_to_struct(row);
-                            if let Some(value) = value {
-                                result.push(value);
+                    let __field0 = match __field0 {
+                        _serde::__private::Some(__field0) => __field0,
+                        _serde::__private::None => match _serde::__private::de::missing_field("foo") {
+                            _serde::__private::Ok(__val) => __val,
+                            _serde::__private::Err(__err) => {
+                                return _serde::__private::Err(__err);
                             }
-                        }
-                    }
+                        },
+                    };
+                    _serde::__private::Ok(TestB { foo: __field0 })
                 }
             }
-            return result;
+            const FIELDS: &'static [&'static str] = &["foo"];
+            _serde::Deserializer::deserialize_struct(
+                __deserializer,
+                "TestB",
+                FIELDS,
+                __Visitor {
+                    marker: _serde::__private::PhantomData::<TestB>,
+                    lifetime: _serde::__private::PhantomData,
+                },
+            )
         }
     }
-    pub fn delete_my_int2_eq(my_int2: i32) -> usize {
-        0
+};
+impl TestB {
+    #[allow(non_snake_case)]
+    pub fn tuple_to_struct(value: spacetimedb_bindings::TupleValue) -> Option<TestB> {
+        let elements_arr = value.elements;
+        return match (elements_arr[0usize].clone()) {
+            (spacetimedb_bindings::TypeValue::String(field_0)) => Some(TestB { foo: field_0 }),
+            _ => None,
+        };
+    }
+    #[allow(non_snake_case)]
+    pub fn struct_to_tuple(value: TestB) -> spacetimedb_bindings::TypeValue {
+        return spacetimedb_bindings::TypeValue::Tuple(spacetimedb_bindings::TupleValue {
+            elements: <[_]>::into_vec(
+                #[rustc_box]
+                ::alloc::boxed::Box::new([spacetimedb_bindings::TypeValue::String(value.foo)]),
+            ),
+        });
+    }
+    #[allow(non_snake_case)]
+    pub fn get_struct_schema() -> spacetimedb_bindings::TypeDef {
+        return spacetimedb_bindings::TypeDef::Tuple {
+            0: spacetimedb_bindings::TupleDef {
+                elements: <[_]>::into_vec(
+                    #[rustc_box]
+                    ::alloc::boxed::Box::new([spacetimedb_bindings::ElementDef {
+                        tag: 0u8,
+                        name: Some("foo".to_string()),
+                        element_type: spacetimedb_bindings::TypeDef::String,
+                    }]),
+                ),
+            },
+        };
     }
 }
 #[no_mangle]
-pub extern "C" fn __reducer__my_spacetime_func(arg_ptr: u32, arg_size: u32) {
-    let arg_ptr = arg_ptr as *mut u8;
-    let bytes: Vec<u8> =
-        unsafe { Vec::from_raw_parts(arg_ptr, arg_size as usize, arg_size as usize) };
-    let arg_json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    let args = arg_json.as_array().unwrap();
-    let arg_0: i32 = serde_json::from_value(args[0usize].clone()).unwrap();
-    let arg_1: i32 = serde_json::from_value(args[1usize].clone()).unwrap();
-    my_spacetime_func(arg_0, arg_1);
+#[allow(non_snake_case)]
+pub extern "C" fn __create_type__TestB(arg_ptr: usize, arg_size: usize) {
+    let ptr = unsafe { arg_ptr as *mut u8 };
+    let def = TestB::get_struct_schema();
+    let mut bytes = unsafe { Vec::from_raw_parts(ptr, 0, arg_size) };
+    def.encode(&mut bytes);
 }
-fn my_spacetime_func(_a: i32, _b: i32) {
-    {
-        ::std::io::_print(::core::fmt::Arguments::new_v1(
-            &["I am a standard function!\n"],
-            &[],
-        ));
-    };
-}
+#[allow(non_snake_case)]
 pub extern "C" fn __migrate__(arg_ptr: u32, arg_size: u32) {
-    my_migration_fun();
+    migrate();
 }
-fn my_migration_fun() {}
+pub fn migrate() {}
+#[no_mangle]
+#[allow(non_snake_case)]
+pub extern "C" fn __repeating_reducer__repeating_test(arg_ptr: usize, arg_size: usize) -> u64 {
+    let arguments =
+        spacetimedb_bindings::args::RepeatingReducerArguments::decode_mem(unsafe { arg_ptr as *mut u8 }, arg_size)
+            .expect("Unable to decode module arguments");
+    repeating_test(arguments.timestamp, arguments.delta_time);
+    return 1000u64;
+}
+pub fn repeating_test(timestamp: u64, delta_time: u64) {
+    let delta_time = Duration::from_millis(delta_time);
+    let timestamp = Duration::from_millis(timestamp);
+    ::spacetimedb_bindings::io::_console_log_info(&{
+        let res = ::alloc::fmt::format(::core::fmt::Arguments::new_v1(
+            &["Timestamp: ", ", Delta time: "],
+            &[
+                ::core::fmt::ArgumentV1::new_debug(&timestamp),
+                ::core::fmt::ArgumentV1::new_debug(&delta_time),
+            ],
+        ));
+        res
+    });
+}
+#[no_mangle]
+#[allow(non_snake_case)]
+pub extern "C" fn __reducer__test(arg_ptr: usize, arg_size: usize) {
+    let arguments = spacetimedb_bindings::args::ReducerArguments::decode_mem(unsafe { arg_ptr as *mut u8 }, arg_size)
+        .expect("Unable to decode module arguments");
+    let arg_json: serde_json::Value = serde_json::from_slice(arguments.argument_bytes.as_slice()).expect(
+        {
+            let res = ::alloc::fmt::format(::core::fmt::Arguments::new_v1(
+                &["Unable to parse arguments as JSON: ", " bytes/arg_size: ", ": "],
+                &[
+                    ::core::fmt::ArgumentV1::new_display(&arguments.argument_bytes.len()),
+                    ::core::fmt::ArgumentV1::new_display(&arg_size),
+                    ::core::fmt::ArgumentV1::new_debug(&arguments.argument_bytes),
+                ],
+            ));
+            res
+        }
+        .as_str(),
+    );
+    let args = arg_json.as_array().expect("Unable to extract reducer arguments list");
+    let arg_2: TestA = serde_json::from_value(args[0usize].clone()).unwrap();
+    let arg_3: TestB = serde_json::from_value(args[1usize].clone()).unwrap();
+    test(arguments.identity, arguments.timestamp, arg_2, arg_3);
+}
+#[no_mangle]
+#[allow(non_snake_case)]
+pub extern "C" fn __describe_reducer__test() -> u64 {
+    let tupledef = spacetimedb_bindings::TupleDef {
+        elements: <[_]>::into_vec(
+            #[rustc_box]
+            ::alloc::boxed::Box::new([
+                spacetimedb_bindings::ElementDef {
+                    tag: 0u8,
+                    name: Some("sender".to_string()),
+                    element_type: spacetimedb_bindings::TypeDef::Bytes,
+                },
+                spacetimedb_bindings::ElementDef {
+                    tag: 1u8,
+                    name: Some("timestamp".to_string()),
+                    element_type: spacetimedb_bindings::TypeDef::U64,
+                },
+                spacetimedb_bindings::ElementDef {
+                    tag: 2u8,
+                    name: Some("arg".to_string()),
+                    element_type: TestA::get_struct_schema(),
+                },
+                spacetimedb_bindings::ElementDef {
+                    tag: 3u8,
+                    name: Some("arg2".to_string()),
+                    element_type: TestB::get_struct_schema(),
+                },
+            ]),
+        ),
+    };
+    let mut bytes = ::alloc::vec::Vec::new();
+    tupledef.encode(&mut bytes);
+    let offset = bytes.as_ptr() as u64;
+    let length = bytes.len() as u64;
+    std::mem::forget(bytes);
+    return offset << 32 | length;
+}
+pub fn test(sender: Hash, timestamp: u64, arg: TestA, arg2: TestB) {
+    ::spacetimedb_bindings::io::_console_log_info(&{
+        let res = ::alloc::fmt::format(::core::fmt::Arguments::new_v1(&["BEGIN"], &[]));
+        res
+    });
+    ::spacetimedb_bindings::io::_console_log_info(&{
+        let res = ::alloc::fmt::format(::core::fmt::Arguments::new_v1(
+            &["sender: "],
+            &[::core::fmt::ArgumentV1::new_debug(&sender)],
+        ));
+        res
+    });
+    ::spacetimedb_bindings::io::_console_log_info(&{
+        let res = ::alloc::fmt::format(::core::fmt::Arguments::new_v1(
+            &["timestamp: "],
+            &[::core::fmt::ArgumentV1::new_display(&timestamp)],
+        ));
+        res
+    });
+    ::spacetimedb_bindings::io::_console_log_info(&{
+        let res = ::alloc::fmt::format(::core::fmt::Arguments::new_v1(
+            &["bar: "],
+            &[::core::fmt::ArgumentV1::new_debug(&arg2.foo)],
+        ));
+        res
+    });
+    for i in 0..10 {
+        TestA::insert(TestA {
+            x: i + arg.x,
+            y: i + arg.y,
+            z: "Yo".to_owned(),
+        });
+    }
+    let mut row_count = 0;
+    for _row in TestA::iter() {
+        row_count += 1;
+    }
+    ::spacetimedb_bindings::io::_console_log_info(&{
+        let res = ::alloc::fmt::format(::core::fmt::Arguments::new_v1(
+            &["Row count before delete: "],
+            &[::core::fmt::ArgumentV1::new_debug(&row_count)],
+        ));
+        res
+    });
+    delete_range(1, 0, RangeTypeValue::U32(5)..RangeTypeValue::U32(10));
+    let mut row_count = 0;
+    for _row in TestA::iter() {
+        row_count += 1;
+    }
+    ::spacetimedb_bindings::io::_console_log_info(&{
+        let res = ::alloc::fmt::format(::core::fmt::Arguments::new_v1(
+            &["Row count after delete: "],
+            &[::core::fmt::ArgumentV1::new_debug(&row_count)],
+        ));
+        res
+    });
+    ::spacetimedb_bindings::io::_console_log_info(&{
+        let res = ::alloc::fmt::format(::core::fmt::Arguments::new_v1(&["END"], &[]));
+        res
+    });
+}
