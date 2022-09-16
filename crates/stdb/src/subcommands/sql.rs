@@ -36,7 +36,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let client = reqwest::Client::new();
 
-    let mut builder = client.get(format!("http://{}/database/{}/{}/sql", config.host, hex_identity, name));
+    let mut builder = client.post(format!("http://{}/database/{}/{}/sql", config.host, hex_identity, name));
 
     if let Some(identity_token) = config.get_default_identity_config() {
         builder = builder.basic_auth("token", Some(identity_token.token.clone()));

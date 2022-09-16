@@ -454,7 +454,7 @@ pub fn router() -> Router {
             .to_async_borrowing(logs);
 
         route
-            .get("/:identity/:name/sql")
+            .post("/:identity/:name/sql")
             .with_path_extractor::<SqlParams>()
             .with_query_string_extractor::<SqlQueryParams>()
             .to_async_borrowing(sql);
