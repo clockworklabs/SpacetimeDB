@@ -1,5 +1,5 @@
 [package]
-name = "stdb"
+name = "spacetimedb-cli"
 version = "0.1.0"
 edition = "2021"
 
