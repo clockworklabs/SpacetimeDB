@@ -1,7 +1,24 @@
-use super::database_instance_context_controller::DatabaseInstanceContextController;
-use super::{database_logger::DatabaseLogger, host::host_controller, worker_database_instance::WorkerDatabaseInstance};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+
+use futures::StreamExt;
+use hyper::{body, Body, Request, Uri};
+use int_enum::IntEnum;
+use prost::Message;
+use serde::{Deserialize, Serialize};
+use tokio::net::TcpStream;
+use tokio::time::sleep;
+use tokio_tungstenite::tungstenite::handshake::client::generate_key;
+use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
+use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+
 use crate::db::relational_db::RelationalDBWrapper;
+use crate::nodes::worker_node::worker_budget;
+use crate::nodes::worker_node::worker_budget::send_budget_alloc_spend;
 use crate::nodes::HostType;
+use crate::protobuf::control_worker_api::BudgetUpdate;
 use crate::{
     db::relational_db::RelationalDB,
     hash::Hash,
@@ -15,19 +32,9 @@ use crate::{
         worker_db::DatabaseInstanceState,
     },
 };
-use futures::StreamExt;
-use hyper::{body, Body, Request, Uri};
-use int_enum::IntEnum;
-use prost::Message;
-use serde::{Deserialize, Serialize};
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
-use tokio::time::sleep;
-use tokio_tungstenite::connect_async;
-use tokio_tungstenite::tungstenite::handshake::client::generate_key;
-use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
+
+use super::database_instance_context_controller::DatabaseInstanceContextController;
+use super::{database_logger::DatabaseLogger, host::host_controller, worker_database_instance::WorkerDatabaseInstance};
 
 pub async fn start(worker_api_bootstrap_addr: String, client_api_bootstrap_addr: String, advertise_addr: String) {
     ControlNodeClient::set_shared(&worker_api_bootstrap_addr, &client_api_bootstrap_addr);
@@ -103,7 +110,7 @@ pub async fn start(worker_api_bootstrap_addr: String, client_api_bootstrap_addr:
                 break;
             }
             Ok(WebSocketMessage::Binary(message_buf)) => {
-                if let Err(e) = on_binary(node_id, message_buf).await {
+                if let Err(e) = on_binary(node_id, message_buf, &mut socket).await {
                     log::debug!("Worker caused error on binary message: {}", e);
                     break;
                 }
@@ -150,7 +157,11 @@ pub async fn start(worker_api_bootstrap_addr: String, client_api_bootstrap_addr:
     }
 }
 
-async fn on_binary(node_id: u64, message: Vec<u8>) -> Result<(), anyhow::Error> {
+async fn on_binary(
+    node_id: u64,
+    message: Vec<u8>,
+    socket: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+) -> Result<(), anyhow::Error> {
     let message = WorkerBoundMessage::decode(&message[..]);
     let message = match message {
         Ok(message) => message,
@@ -173,8 +184,29 @@ async fn on_binary(node_id: u64, message: Vec<u8>) -> Result<(), anyhow::Error> 
         worker_bound_message::Type::ScheduleState(schedule_state) => {
             on_schedule_state(node_id, schedule_state).await;
         }
+        worker_bound_message::Type::BudgetUpdate(budget_update) => {
+            // Budget update logic.
+            // Control node is sending us an allocation based on the last spend information we
+            // sent them.
+
+            // First we will let them know what we spent, which will be taken into account for the
+            // *next* budget update they send us.
+            send_budget_alloc_spend(socket).await.unwrap();
+
+            // Then adjust our allocation based on what they just sent us, which will also reset
+            // our "spent" value.
+            on_worker_budget_update(budget_update);
+        }
     };
     Ok(())
+}
+
+fn on_worker_budget_update(budget_update: BudgetUpdate) {
+    worker_budget::on_budget_receive_allocation(
+        &Hash::from_slice(budget_update.module_identity),
+        budget_update.allocation_delta,
+        budget_update.default_max_spend,
+    );
 }
 
 async fn on_schedule_state(_node_id: u64, schedule_state: ScheduleState) {

@@ -20,7 +20,7 @@ use crate::db::transactional_db::{CommitResult, Tx};
 use crate::hash::Hash;
 use crate::nodes::worker_node::client_api::client_connection::ClientActorId;
 use crate::nodes::worker_node::client_api::module_subscription_actor::ModuleSubscription;
-use crate::nodes::worker_node::host::host_controller::{DescribedEntityType, EntityDescription};
+use crate::nodes::worker_node::host::host_controller::{DescribedEntityType, EntityDescription, ReducerCallResult};
 use crate::nodes::worker_node::host::host_cpython::cpython_bindings::STDBBindingsClass;
 use crate::nodes::worker_node::host::host_cpython::translate::translate_json_arguments;
 use crate::nodes::worker_node::host::instance_env::InstanceEnv;
@@ -235,6 +235,7 @@ impl CPythonModuleHostActor {
             },
             status,
             caller_identity: *identity,
+            energy_quanta_used: 0 // TODO
         };
         self.subscription.broadcast_event(event).unwrap();
 
@@ -270,13 +271,19 @@ impl CPythonModuleHostActor {
                 arg_bytes: arg_bytes.to_owned(),
             },
             status,
+            energy_quanta_used: 0 // TODO
         };
         self.subscription.broadcast_event(event).unwrap();
 
         Ok((repeat_duration.unwrap(), timestamp))
     }
 
-    fn call_reducer(&self, caller_identity: Hash, reducer_name: &str, arg_bytes: &[u8]) -> Result<(), anyhow::Error> {
+    fn call_reducer(
+        &self,
+        caller_identity: Hash,
+        reducer_name: &str,
+        arg_bytes: &[u8],
+    ) -> Result<ReducerCallResult, anyhow::Error> {
         // TODO: validate arg_bytes
         let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
 
@@ -295,10 +302,10 @@ impl CPythonModuleHostActor {
 
         let (tx, _repeat_duration) = self.execute_reducer(&reducer_symbol, arguments?)?;
 
-        let status = if let Some(tx) = tx {
-            EventStatus::Committed(tx.writes)
+        let (committed, status) = if let Some(tx) = tx {
+            (true, EventStatus::Committed(tx.writes))
         } else {
-            EventStatus::Failed
+            (false, EventStatus::Failed)
         };
 
         let event = ModuleEvent {
@@ -309,10 +316,16 @@ impl CPythonModuleHostActor {
                 arg_bytes: arg_bytes.to_owned(),
             },
             status,
+            energy_quanta_used: 0 // TODO
         };
         self.subscription.broadcast_event(event).unwrap();
 
-        Ok(())
+        // TODO(ryan): energy quotient equivalent for python reducers.
+        Ok(ReducerCallResult {
+            committed,
+            budget_exceeded: false,
+            energy_quanta_used: 0,
+        })
     }
 
     fn describe_type(
@@ -599,6 +612,7 @@ impl ModuleHostActor for CPythonModuleHostActor {
             ModuleHostCommand::CallReducer {
                 caller_identity,
                 reducer_name,
+                budget: _budget,
                 arg_bytes,
                 respond_to,
             } => {

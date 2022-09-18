@@ -3,10 +3,11 @@ mod client_api;
 mod control_node_connection;
 pub(crate) mod database_instance_context_controller;
 mod database_logger;
-mod host;
 mod prometheus_metrics;
+pub(crate) mod worker_budget;
 mod worker_database_instance;
 mod worker_db;
+mod host;
 
 use perf_monitor::cpu::ProcessStat;
 use tokio::spawn;

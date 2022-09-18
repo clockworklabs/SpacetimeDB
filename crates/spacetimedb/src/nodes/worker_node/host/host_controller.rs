@@ -10,6 +10,7 @@ use serde::Serialize;
 use spacetimedb_bindings::TupleDef;
 use std::fmt::{Display, Formatter};
 use std::{collections::HashMap, sync::Mutex};
+use crate::nodes::worker_node::worker_budget;
 
 lazy_static! {
     pub static ref HOST: HostController = HostController::new();
@@ -55,6 +56,16 @@ impl Display for DescribedEntityType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct ReducerBudget(pub i64 /* maximum spend for this call */);
+
+#[derive(Serialize, Clone, Debug)]
+pub struct ReducerCallResult {
+    pub committed: bool,
+    pub budget_exceeded: bool,
+    pub energy_quanta_used: i64,
 }
 
 impl HostController {
@@ -168,12 +179,27 @@ impl HostController {
         caller_identity: Hash,
         reducer_name: &str,
         arg_bytes: impl AsRef<[u8]>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<ReducerCallResult, anyhow::Error> {
+
         let module_host = self.module_host(instance_id)?;
-        module_host
-            .call_reducer(caller_identity, reducer_name.into(), arg_bytes.as_ref().to_vec())
-            .await?;
-        Ok(())
+        let max_spend = worker_budget::max_tx_spend(&module_host.identity);
+        let budget = ReducerBudget(max_spend);
+
+        let result = module_host
+            .call_reducer(
+                caller_identity,
+                reducer_name.into(),
+                budget,
+                arg_bytes.as_ref().to_vec(),
+            )
+            .await;
+        match result {
+            Ok(rcr) => {
+                worker_budget::record_tx_spend(&module_host.identity, rcr.energy_quanta_used);
+                Ok(rcr)
+            }
+            Err(e) => Err(e)
+        }
     }
 
     /// Describe a specific entity in a module.

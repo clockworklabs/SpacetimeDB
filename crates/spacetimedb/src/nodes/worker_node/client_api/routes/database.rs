@@ -1,16 +1,5 @@
-use crate::auth::get_creds_from_header;
-use crate::auth::invalid_token_res;
-use crate::hash::Hash;
-use crate::json::client_api::StmtResultJson;
-use crate::nodes::worker_node::client_api::proxy::proxy_to_control_node_client_api;
-use crate::nodes::worker_node::client_api::routes::database::DBCallErr::NoSuchDatabase;
-use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
-use crate::nodes::worker_node::database_logger::DatabaseLogger;
-use crate::nodes::worker_node::host::host_controller;
-use crate::nodes::worker_node::host::host_controller::{DescribedEntityType, Entity, EntityDescription};
-use crate::nodes::worker_node::worker_db;
-use crate::protobuf::control_db::DatabaseInstance;
-use crate::sql;
+use std::collections::HashMap;
+
 use gotham::anyhow::anyhow;
 use gotham::handler::HandlerError;
 use gotham::handler::SimpleHandlerResult;
@@ -27,7 +16,20 @@ use hyper::HeaderMap;
 use hyper::{Response, StatusCode};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+
+use crate::auth::get_creds_from_header;
+use crate::auth::invalid_token_res;
+use crate::hash::Hash;
+use crate::json::client_api::StmtResultJson;
+use crate::nodes::worker_node::client_api::proxy::proxy_to_control_node_client_api;
+use crate::nodes::worker_node::client_api::routes::database::DBCallErr::NoSuchDatabase;
+use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
+use crate::nodes::worker_node::database_logger::DatabaseLogger;
+use crate::nodes::worker_node::host::host_controller;
+use crate::nodes::worker_node::host::host_controller::{DescribedEntityType, Entity, EntityDescription};
+use crate::nodes::worker_node::worker_db;
+use crate::protobuf::control_db::DatabaseInstance;
+use crate::sql;
 
 use super::subscribe::handle_websocket;
 use super::subscribe::SubscribeParams;
@@ -97,21 +99,33 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     let instance_id = database_instance.id;
     let host = host_controller::get_host();
 
-    match host
+    let result = match host
         .call_reducer(instance_id, caller_identity, &reducer, arg_bytes)
         .await
     {
-        Ok(_) => {}
+        Ok(rcr) => {
+            if rcr.budget_exceeded {
+                log::warn!(
+                    "Node's energy budget exceeded for identity:{} while executing {}",
+                    identity.to_hex(),
+                    reducer
+                );
+                return Err(HandlerError::from(anyhow!("Module energy budget exhausted."))
+                    .with_status(StatusCode::PAYMENT_REQUIRED));
+            }
+            rcr
+        }
         Err(e) => {
             log::debug!("Unable to call {}", e);
             return Err(HandlerError::from(anyhow!("Database instance not ready."))
                 .with_status(StatusCode::SERVICE_UNAVAILABLE));
         }
-    }
+    };
 
     let res = Response::builder()
         .header("Spacetime-Identity", caller_identity.to_hex())
         .header("Spacetime-Identity-Token", caller_identity_token)
+        .header("Spacetime-Energy-Used", result.energy_quanta_used)
         .status(StatusCode::OK)
         .body(Body::empty())
         .unwrap();

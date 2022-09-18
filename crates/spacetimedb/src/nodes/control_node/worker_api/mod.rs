@@ -1,5 +1,5 @@
 pub(crate) mod routes;
-mod worker_connection;
+pub(crate) mod worker_connection;
 pub(crate) mod worker_connection_index;
 use routes::router;
 use std::net::SocketAddr;
@@ -8,6 +8,7 @@ use worker_connection_index::WorkerConnectionIndex;
 
 pub async fn start(config: crate::nodes::node_config::NodeConfig) {
     WorkerConnectionIndex::start_liveliness_check();
+    WorkerConnectionIndex::start_worker_budget_update();
     spawn(async move {
         let listen_addr: SocketAddr = config
             .control_node

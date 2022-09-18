@@ -223,6 +223,7 @@ impl ModuleSubscriptionActor {
         let (status, writes) = match &event.status {
             EventStatus::Committed(writes) => (event::Status::Committed, writes),
             EventStatus::Failed => (event::Status::Failed, &empty_writes),
+            EventStatus::OutOfEnergy => (event::Status::OutOfEnergy, &empty_writes),
         };
 
         let event = Event {
@@ -234,6 +235,7 @@ impl ModuleSubscriptionActor {
                 arg_bytes: event.function_call.arg_bytes.to_owned(),
             }),
             message: "TODO".to_owned(),
+            energy_quanta_used: event.energy_quanta_used
         };
 
         let mut schemas: HashMap<u32, TupleDef> = HashMap::new();
@@ -363,6 +365,7 @@ impl ModuleSubscriptionActor {
         let (status_str, writes) = match &event.status {
             EventStatus::Committed(writes) => ("committed", writes),
             EventStatus::Failed => ("failed", &empty_writes),
+            EventStatus::OutOfEnergy => ("out_of_energy", &empty_writes),
         };
 
         let event = EventJson {
@@ -373,6 +376,7 @@ impl ModuleSubscriptionActor {
                 reducer: event.function_call.reducer.to_owned(),
                 arg_bytes: event.function_call.arg_bytes.to_owned(),
             },
+            energy_quanta_used: event.energy_quanta_used
         };
 
         let mut schemas: HashMap<u32, TupleDef> = HashMap::new();

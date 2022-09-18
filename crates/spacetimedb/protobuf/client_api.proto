@@ -33,6 +33,7 @@ message Event {
     enum Status {
         committed = 0;
         failed = 1;
+        out_of_energy = 2;
     }
     uint64 timestamp = 1;
     bytes callerIdentity = 2;
@@ -42,6 +43,8 @@ message Event {
     // since success doesn't have a message
     Status status = 4;
     string message = 5;
+
+    int64 energy_quanta_used = 6;
 }
 
 // TODO: Maybe call this StateUpdate if it's implied to be a subscription update

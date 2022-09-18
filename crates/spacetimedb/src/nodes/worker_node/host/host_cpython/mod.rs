@@ -28,7 +28,7 @@ pub fn make_cpython_module_host_actor(
         prepare_freethreaded_python();
         *is_inited = true;
     }
-    Ok(ModuleHost::spawn(|module_host| {
+    Ok(ModuleHost::spawn(worker_database_instance.identity, |module_host| {
         Ok(Box::from(CPythonModuleHostActor::new(
             worker_database_instance,
             module_hash,

@@ -1,7 +1,7 @@
 use crate::db::messages::write::Write;
 use crate::hash::Hash;
 use crate::nodes::worker_node::client_api::client_connection::ClientActorId;
-use crate::nodes::worker_node::host::host_controller::{Entity, EntityDescription};
+use crate::nodes::worker_node::host::host_controller::{Entity, EntityDescription, ReducerBudget, ReducerCallResult};
 use spacetimedb_bindings::TupleDef;
 use tokio::sync::{mpsc, oneshot};
 
@@ -9,6 +9,7 @@ use tokio::sync::{mpsc, oneshot};
 pub enum EventStatus {
     Committed(Vec<Write>),
     Failed,
+    OutOfEnergy,
 }
 
 #[derive(Debug, Clone)]
@@ -23,6 +24,7 @@ pub struct ModuleEvent {
     pub caller_identity: Hash,
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
+    pub energy_quanta_used: i64,
 }
 
 #[derive(Debug)]
@@ -35,8 +37,9 @@ pub enum ModuleHostCommand {
     CallReducer {
         caller_identity: Hash,
         reducer_name: String,
+        budget: ReducerBudget,
         arg_bytes: Vec<u8>,
-        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+        respond_to: oneshot::Sender<Result<ReducerCallResult, anyhow::Error>>,
     },
     CallRepeatingReducer {
         reducer_name: String,
@@ -77,17 +80,18 @@ pub trait ModuleHostActor {
 
 #[derive(Debug, Clone)]
 pub struct ModuleHost {
+    pub identity: Hash,
     tx: mpsc::Sender<ModuleHostCommand>,
 }
 
 impl ModuleHost {
-    pub fn spawn<F>(make_actor_fn: F) -> ModuleHost
+    pub fn spawn<F>(identity: Hash, make_actor_fn: F) -> ModuleHost
     where
         F: FnOnce(ModuleHost) -> Result<Box<dyn ModuleHostActor + Send>, anyhow::Error>,
     {
         let (tx, mut rx) = mpsc::channel(8);
         let inner_tx = tx.clone();
-        let module_host = ModuleHost { tx: inner_tx };
+        let module_host = ModuleHost { identity, tx: inner_tx };
         let mut actor = make_actor_fn(module_host).expect("Unable to instantiate ModuleHostActor");
         tokio::spawn(async move {
             while let Some(command) = rx.recv().await {
@@ -96,7 +100,7 @@ impl ModuleHost {
                 }
             }
         });
-        ModuleHost { tx }
+        ModuleHost {identity,  tx }
     }
 
     pub async fn call_identity_connected_disconnected(
@@ -119,13 +123,15 @@ impl ModuleHost {
         &self,
         caller_identity: Hash,
         reducer_name: String,
+        budget: ReducerBudget,
         arg_bytes: Vec<u8>,
-    ) -> Result<(), anyhow::Error> {
-        let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
+    ) -> Result<ReducerCallResult, anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<ReducerCallResult, anyhow::Error>>();
         self.tx
             .send(ModuleHostCommand::CallReducer {
                 caller_identity,
                 reducer_name,
+                budget,
                 arg_bytes,
                 respond_to: tx,
             })

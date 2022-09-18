@@ -53,6 +53,8 @@ pub struct Event {
     pub status: i32,
     #[prost(string, tag="5")]
     pub message: std::string::String,
+    #[prost(int64, tag="6")]
+    pub energy_quanta_used: i64,
 }
 pub mod event {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -60,6 +62,7 @@ pub mod event {
     pub enum Status {
         Committed = 0,
         Failed = 1,
+        OutOfEnergy = 2,
     }
 }
 /// TODO: Maybe call this StateUpdate if it's implied to be a subscription update

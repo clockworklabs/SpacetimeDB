@@ -4,10 +4,15 @@ mod controller;
 mod object_db;
 pub(crate) mod prometheus_metrics;
 pub(crate) mod worker_api;
+mod control_budget;
+
 use futures::{future::join_all, FutureExt};
 
 pub async fn start(config: crate::nodes::node_config::NodeConfig) {
     prometheus_metrics::register_custom_metrics();
+
+    // Load energy balances and set up budget allocations for all nodes.
+    control_budget::refresh_all_budget_allocations().await;
 
     join_all(vec![
         worker_api::start(config).boxed(),

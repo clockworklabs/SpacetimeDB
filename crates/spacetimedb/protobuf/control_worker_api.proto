@@ -4,15 +4,22 @@ import "control_db.proto";
 
 package control_worker_api;
 
-message ControlBoundMessage {
-}
-
+// Messages from control node to worker node.
 message WorkerBoundMessage {
     oneof type {
         ScheduleState schedule_state = 1;
-        ScheduleUpdate schedule_update = 2; 
+        ScheduleUpdate schedule_update = 2;
+        BudgetUpdate budget_update = 3;
     }
 }
+
+// Messages from worker node to control node.
+message ControlBoundMessage {
+    oneof type {
+        WorkerBudgetSpend worker_budget_spend = 1;
+    }
+}
+
 
 message ScheduleState {
     repeated control_db.DatabaseInstance database_instances = 1;
@@ -46,4 +53,21 @@ message DeleteOperation {
         uint64 database_instance_id = 1;
         uint64 database_id = 2;
     }
+}
+
+// Budget allocation update from control node to worker node.
+message BudgetUpdate {
+    bytes module_identity = 1;
+    int64 allocation_delta = 2;
+    int64 default_max_spend = 3;
+}
+
+// Budget spend update from worker up to control node.
+message WorkerBudgetSpend {
+    repeated WorkerModuleBudgetSpend module_identity_spend = 1;
+}
+
+message WorkerModuleBudgetSpend {
+    bytes module_identity = 1;
+    int64 spend = 2;
 }

@@ -1,9 +1,7 @@
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ControlBoundMessage {
-}
+/// Messages from control node to worker node.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkerBoundMessage {
-    #[prost(oneof="worker_bound_message::Type", tags="1, 2")]
+    #[prost(oneof="worker_bound_message::Type", tags="1, 2, 3")]
     pub r#type: ::std::option::Option<worker_bound_message::Type>,
 }
 pub mod worker_bound_message {
@@ -13,6 +11,21 @@ pub mod worker_bound_message {
         ScheduleState(super::ScheduleState),
         #[prost(message, tag="2")]
         ScheduleUpdate(super::ScheduleUpdate),
+        #[prost(message, tag="3")]
+        BudgetUpdate(super::BudgetUpdate),
+    }
+}
+/// Messages from worker node to control node.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ControlBoundMessage {
+    #[prost(oneof="control_bound_message::Type", tags="1")]
+    pub r#type: ::std::option::Option<control_bound_message::Type>,
+}
+pub mod control_bound_message {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Type {
+        #[prost(message, tag="1")]
+        WorkerBudgetSpend(super::WorkerBudgetSpend),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -79,4 +92,27 @@ pub mod delete_operation {
         #[prost(uint64, tag="2")]
         DatabaseId(u64),
     }
+}
+/// Budget allocation update from control node to worker node.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BudgetUpdate {
+    #[prost(bytes, tag="1")]
+    pub module_identity: std::vec::Vec<u8>,
+    #[prost(int64, tag="2")]
+    pub allocation_delta: i64,
+    #[prost(int64, tag="3")]
+    pub default_max_spend: i64,
+}
+/// Budget spend update from worker up to control node.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorkerBudgetSpend {
+    #[prost(message, repeated, tag="1")]
+    pub module_identity_spend: ::std::vec::Vec<WorkerModuleBudgetSpend>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorkerModuleBudgetSpend {
+    #[prost(bytes, tag="1")]
+    pub module_identity: std::vec::Vec<u8>,
+    #[prost(int64, tag="2")]
+    pub spend: i64,
 }

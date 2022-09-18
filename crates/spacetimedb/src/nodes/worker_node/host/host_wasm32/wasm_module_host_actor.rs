@@ -1,6 +1,8 @@
 use crate::db::transactional_db::CommitResult;
 use crate::db::{messages::transaction::Transaction, transactional_db::Tx};
-use crate::nodes::worker_node::host::host_controller::{DescribedEntityType, Entity, EntityDescription};
+use crate::nodes::worker_node::host::host_controller::{
+    DescribedEntityType, Entity, EntityDescription, ReducerBudget, ReducerCallResult,
+};
 use crate::nodes::worker_node::host::host_wasm32::wasm_instance_env::WasmInstanceEnv;
 use crate::nodes::worker_node::host::instance_env::InstanceEnv;
 use crate::nodes::worker_node::host::module_host::{
@@ -18,13 +20,14 @@ use anyhow::anyhow;
 use spacetimedb_bindings::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
 use spacetimedb_bindings::buffer::VectorBufWriter;
 use spacetimedb_bindings::{ElementDef, TupleDef, TypeDef};
+use std::cmp::max;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{spawn, time::sleep};
-use wasmer::{imports, Array, Function, Instance, LazyInit, Module, Store, Value, WasmPtr};
+use wasmer::{imports, Array, Function, Instance, LazyInit, Module, RuntimeError, Store, Value, WasmPtr};
 use wasmer_middlewares::metering::{get_remaining_points, set_remaining_points, MeteringPoints};
 
 const REDUCE_DUNDER: &str = "__reducer__";
@@ -45,13 +48,14 @@ const MIGRATE_DATABASE_DUNDER: &str = "__migrate_database__";
 const IDENTITY_CONNECTED_DUNDER: &str = "__identity_connected__";
 const IDENTITY_DISCONNECTED_DUNDER: &str = "__identity_disconnected__";
 
-fn get_remaining_points_value(instance: &Instance) -> u64 {
+const DEFAULT_EXECUTION_BUDGET: i64 = 1_000_000_000_000;
+
+fn get_remaining_points_value(instance: &Instance) -> i64 {
     let remaining_points = get_remaining_points(instance);
-    let remaining_points = match remaining_points {
-        MeteringPoints::Remaining(x) => x,
+    match remaining_points {
+        MeteringPoints::Remaining(x) => x as i64,
         MeteringPoints::Exhausted => 0,
-    };
-    return remaining_points;
+    }
 }
 
 fn entity_as_prefix_str(entity: &DescribedEntityType) -> &str {
@@ -71,6 +75,21 @@ fn entity_from_function_name(fn_name: &str) -> Option<DescribedEntityType> {
         Some(DescribedEntityType::RepeatingReducer)
     } else {
         None
+    }
+}
+
+fn log_traceback(func_type: &str, func: &str, e: &RuntimeError) {
+    let frames = e.trace();
+    let frames_len = frames.len();
+
+    log::info!("{} \"{}\" runtime error: {}", func_type, func, e.message());
+    for i in 0..frames_len {
+        log::info!(
+            "  Frame #{}: {:?}::{:?}",
+            frames_len - i,
+            frames[i].module_name(),
+            frames[i].function_name().or(Some("<func>")).unwrap()
+        );
     }
 }
 
@@ -223,8 +242,10 @@ impl WasmModuleHostActor {
         };
 
         let instance = Instance::new(&self.module, &import_object)?;
-        let points = 1_000_000_000_000;
-        set_remaining_points(&instance, points);
+
+        // Note: this budget is just for INIT_PANIC_DUNDER.
+        let points = DEFAULT_EXECUTION_BUDGET;
+        set_remaining_points(&instance, points as u64);
 
         // Init panic if available
         let init_panic = instance.exports.get_native_function::<(), ()>(INIT_PANIC_DUNDER);
@@ -317,17 +338,25 @@ impl WasmModuleHostActor {
 
     fn call_create_table(&self, create_table_name: &str) -> Result<(), anyhow::Error> {
         let create_table_symbol = format!("{}{}", CREATE_TABLE_DUNDER, create_table_name);
-        let (_tx, _repeat_duration) = self.execute_reducer(&create_table_symbol, &[])?;
+        let (_tx, _consumed_energy, _remaining_energy, _repeat_duration) =
+            self.execute_reducer(&create_table_symbol, None, &[])?;
         Ok(())
     }
 
     fn call_migrate(&self, migrate_name: &str) -> Result<(), anyhow::Error> {
         let migrate_symbol = format!("{}{}", MIGRATE_DATABASE_DUNDER, migrate_name);
-        let (_tx, _repeat_duration) = self.execute_reducer(&migrate_symbol, &[])?;
+        let (_tx, _consumed_energy, _remaining_energy, _repeat_duration) =
+            self.execute_reducer(&migrate_symbol, None, &[])?;
         Ok(())
     }
 
-    fn call_reducer(&self, caller_identity: Hash, reducer_name: &str, arg_bytes: &[u8]) -> Result<(), anyhow::Error> {
+    fn call_reducer(
+        &self,
+        caller_identity: Hash,
+        reducer_name: &str,
+        budget: ReducerBudget,
+        arg_bytes: &[u8],
+    ) -> Result<ReducerCallResult, anyhow::Error> {
         // TODO: validate arg_bytes
         let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
 
@@ -338,6 +367,8 @@ impl WasmModuleHostActor {
             Vec::from(arg_bytes),
         );
 
+        log::trace!("Calling reducer {} with a budget of {}", reducer_name, budget.0);
+
         // TODO: It's possible to push this down further into execute_reducer, and write directly
         // into the WASM memory, but ModuleEvent.function_call also wants a copy, so it doesn't
         // quite work.
@@ -345,12 +376,16 @@ impl WasmModuleHostActor {
         let mut writer = VectorBufWriter::new(&mut new_arg_bytes);
         arguments.encode(&mut writer);
 
-        let (tx, _repeat_duration) = self.execute_reducer(&reducer_symbol, new_arg_bytes)?;
+        let (tx, energy_quanta_used, energy_remaining, _repeat_duration) =
+            self.execute_reducer(&reducer_symbol, Some(budget), new_arg_bytes)?;
 
-        let status = if let Some(tx) = tx {
-            EventStatus::Committed(tx.writes)
+        let (committed, status, budget_exceeded) = if let Some(tx) = tx {
+            (true, EventStatus::Committed(tx.writes), false)
+        } else if energy_remaining == 0 {
+            log::error!("Ran out of energy while executing reducer {}", reducer_name);
+            (false, EventStatus::OutOfEnergy, true)
         } else {
-            EventStatus::Failed
+            (false, EventStatus::Failed, false)
         };
 
         let event = ModuleEvent {
@@ -361,10 +396,16 @@ impl WasmModuleHostActor {
                 arg_bytes: arg_bytes.to_owned(),
             },
             status,
+            energy_quanta_used
         };
         self.subscription.broadcast_event(event).unwrap();
 
-        Ok(())
+        let result = ReducerCallResult {
+            committed,
+            budget_exceeded,
+            energy_quanta_used,
+        };
+        Ok(result)
     }
 
     fn call_repeating_reducer(&self, reducer_name: &str, prev_call_time: u64) -> Result<(u64, u64), anyhow::Error> {
@@ -377,7 +418,18 @@ impl WasmModuleHostActor {
         let mut writer = VectorBufWriter::new(&mut arg_bytes);
         arguments.encode(&mut writer);
 
-        let (tx, repeat_duration) = self.execute_reducer(&reducer_symbol, &arg_bytes)?;
+        // TODO(ryan): energy consumption from repeating reducers needs to be accounted for, for now
+        // we run with default giant budget. The logistical problem here is that I'd rather not do
+        // budget lookup inside the ModuleHostActor; it should rightfully be up in the HostController
+        // like it is for regular reducers.
+        // But the HostController is currently not involved at all in repeating reducer logic. They
+        // are scheduled entirely within the ModuleHostActor.
+        // Alternatively each module host actor could hold a copy of the budget, replicated all the
+        // way down. But I don't know if I like that approach.
+        // I think the right thing to do is refactor repeaters so that the scheduling is done up
+        // in the host controller.
+        let (tx, _energy_used, _remaining_energy, repeat_duration) =
+            self.execute_reducer(&reducer_symbol, None, &arg_bytes)?;
 
         let status = if let Some(tx) = tx {
             EventStatus::Committed(tx.writes)
@@ -393,6 +445,7 @@ impl WasmModuleHostActor {
                 arg_bytes: arg_bytes.to_owned(),
             },
             status,
+            energy_quanta_used: 0 // TODO
         };
         self.subscription.broadcast_event(event).unwrap();
 
@@ -414,9 +467,9 @@ impl WasmModuleHostActor {
             IDENTITY_DISCONNECTED_DUNDER
         };
 
-        let result = self.execute_reducer(reducer_symbol, new_arg_bytes);
+        let result = self.execute_reducer(reducer_symbol, None, new_arg_bytes);
         let tx = match result {
-            Ok((tx, _repeat_duration)) => tx,
+            Ok((tx, _energy_consumed, _energy_remaining, _repeat_duration)) => tx,
             Err(err) => {
                 log::debug!("Error with connect/disconnect: {}", err);
                 return Ok(());
@@ -441,6 +494,7 @@ impl WasmModuleHostActor {
             },
             status,
             caller_identity: *identity,
+            energy_quanta_used: 0
         };
         self.subscription.broadcast_event(event).unwrap();
 
@@ -480,19 +534,7 @@ impl WasmModuleHostActor {
         log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros(),);
         match result {
             Err(err) => {
-                let e = &err;
-                let frames = e.trace();
-                let frames_len = frames.len();
-
-                log::info!("Describer\"{}\" runtime error: {}", describer_func_name, e.message());
-                for i in 0..frames_len {
-                    log::info!(
-                        "  Frame #{}: {:?}::{:?}",
-                        frames_len - i,
-                        frames[i].module_name(),
-                        frames[i].function_name().or(Some("<func>")).unwrap()
-                    );
-                }
+                log_traceback("describer", describer_func_name.as_str(), &err);
                 Err(anyhow!("Could not invoke describer function {}", describer_func_name))
             }
             Ok(ret) => {
@@ -524,7 +566,7 @@ impl WasmModuleHostActor {
                             "argument tuples has invalid schema: {} Err: {}",
                             describer_func_name,
                             e
-                        ))
+                        ));
                     }
                 };
 
@@ -546,8 +588,17 @@ impl WasmModuleHostActor {
     fn execute_reducer(
         &self,
         reducer_symbol: &str,
+        budget: Option<ReducerBudget>,
         arg_bytes: impl AsRef<[u8]>,
-    ) -> Result<(Option<Transaction>, Option<u64>), anyhow::Error> {
+    ) -> Result<
+        (
+            Option<Transaction>,
+            i64, /* energy used */
+            i64, /* energy remaining */
+            Option<u64>,
+        ),
+        anyhow::Error,
+    > {
         let address = format!(
             "{}/{}",
             &self.worker_database_instance.identity.to_abbreviated_hex(),
@@ -564,8 +615,8 @@ impl WasmModuleHostActor {
         let (instance_id, instance) = &self.instances[0];
         self.instance_tx_map.lock().unwrap().insert(*instance_id, tx);
 
-        let points = 1_000_000_000_000;
-        set_remaining_points(&instance, points);
+        let points = budget.unwrap_or_else(|| ReducerBudget(DEFAULT_EXECUTION_BUDGET));
+        set_remaining_points(&instance, max(points.0, 0) as u64);
 
         // Prepare arguments
         let memory = instance.exports.get_memory("memory").unwrap();
@@ -576,7 +627,15 @@ impl WasmModuleHostActor {
 
         let arg_bytes = arg_bytes.as_ref();
         let buf_len = arg_bytes.len() as u32;
-        let ptr = alloc.call(buf_len).unwrap();
+        let ptr = match alloc.call(buf_len) {
+            Ok(ptr) => ptr,
+            Err(e) => {
+                log_traceback("allocation", "alloc", &e);
+                let remaining_points = get_remaining_points_value(&instance);
+                let used_points = &points.0 - remaining_points;
+                return Ok((None, used_points, remaining_points, None));
+            }
+        };
         let values = ptr.deref(memory, 0, buf_len).unwrap();
         for (i, b) in arg_bytes.iter().enumerate() {
             values[i].set(*b);
@@ -595,8 +654,10 @@ impl WasmModuleHostActor {
             "Reducer \"{}\" ran: {} us, {} eV",
             reducer_symbol,
             duration.as_micros(),
-            points - remaining_points
+            points.0 - remaining_points
         );
+        let used_energy = &points.0 - remaining_points;
+
         TX_COMPUTE_TIME
             .with_label_values(&[&address, reducer_symbol])
             .observe(duration.as_secs_f64());
@@ -618,20 +679,8 @@ impl WasmModuleHostActor {
                 let tx = instance_tx_map.remove(&instance_id).unwrap();
                 stdb.rollback_tx(tx);
 
-                let e = &err;
-                let frames = e.trace();
-                let frames_len = frames.len();
-
-                log::info!("Reducer \"{}\" runtime error: {}", reducer_symbol, e.message());
-                for i in 0..frames_len {
-                    log::info!(
-                        "  Frame #{}: {:?}::{:?}",
-                        frames_len - i,
-                        frames[i].module_name(),
-                        frames[i].function_name().or(Some("<func>")).unwrap()
-                    );
-                }
-                Ok((None, None))
+                log_traceback("reducer", reducer_symbol, &err);
+                Ok((None, used_energy, remaining_points, None))
             }
             Ok(ret) => {
                 let repeat_duration = if ret.len() == 1 {
@@ -647,7 +696,7 @@ impl WasmModuleHostActor {
                         .with_label_values(&[&address, reducer_symbol])
                         .observe(num_bytes_written as f64);
                     stdb.txdb.message_log.sync_all().unwrap();
-                    Ok((Some(tx), repeat_duration))
+                    Ok((Some(tx), used_energy, remaining_points, repeat_duration))
                 } else {
                     todo!("Write skew, you need to implement retries my man, T-dawg.");
                 }
@@ -655,6 +704,11 @@ impl WasmModuleHostActor {
         };
 
         // Clean up the arguments buffer.
+
+        // We need to make sure we don't run out of energy while cleaning up arguments, so this
+        // rather inelegant piece is here to make sure we don't do that.
+        set_remaining_points(&instance, DEFAULT_EXECUTION_BUDGET as u64);
+
         let dealloc = instance
             .exports
             .get_function("dealloc")?
@@ -682,11 +736,12 @@ impl ModuleHostActor for WasmModuleHostActor {
             ModuleHostCommand::CallReducer {
                 caller_identity,
                 reducer_name,
+                budget,
                 arg_bytes,
                 respond_to,
             } => {
                 respond_to
-                    .send(self.call_reducer(caller_identity, &reducer_name, &arg_bytes))
+                    .send(self.call_reducer(caller_identity, &reducer_name, budget, &arg_bytes))
                     .unwrap();
                 false
             }

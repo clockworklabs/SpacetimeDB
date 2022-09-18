@@ -45,7 +45,8 @@ pub fn make_wasm32_module_host_actor(
     module_hash: Hash,
     program_bytes: Vec<u8>,
 ) -> Result<ModuleHost, anyhow::Error> {
-    Ok(ModuleHost::spawn(|module_host| {
+    Ok(ModuleHost::spawn(worker_database_instance.identity,
+                         |module_host| {
         let cost_function = |operator: &Operator| -> u64 {
             match operator {
                 Operator::LocalGet { .. } => 1,

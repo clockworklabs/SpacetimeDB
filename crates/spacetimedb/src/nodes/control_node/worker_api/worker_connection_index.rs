@@ -5,6 +5,10 @@ use std::{collections::HashMap, sync::Mutex, time::Duration};
 use tokio::{task::JoinHandle, time::sleep};
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
 use tokio_tungstenite::WebSocketStream;
+use crate::nodes::control_node::controller::node_publish_budget_state;
+
+const LIVENESS_CHECK_INTERVAL_SECONDS : u64 = 10;
+const WORKER_BUDGET_UPDATE_INTERVAL_SECONDS : u64 = 10;
 
 lazy_static! {
     pub static ref WORKER_CONNECTION_INDEX: Mutex<WorkerConnectionIndex> = {
@@ -12,6 +16,7 @@ lazy_static! {
             id_index: HashMap::new(),
             connections: Vec::new(),
             liveliness_check_handle: None,
+            worker_budget_update: None,
         })
     };
 }
@@ -23,6 +28,7 @@ pub struct WorkerConnectionIndex {
     id_index: HashMap<u64, Pointer>,
     pub connections: Vec<WorkerConnection>,
     liveliness_check_handle: Option<JoinHandle<()>>,
+    worker_budget_update: Option<JoinHandle<()>>,
 }
 
 impl WorkerConnectionIndex {
@@ -43,7 +49,7 @@ impl WorkerConnectionIndex {
                         let id = wci.connections[i].id;
                         if !alive {
                             // Drop it like it's hot.
-                            log::trace!("Dropping dead worker {}", id);
+                            log::info!("Dropping dead worker {}", id);
                             wci.drop_client(&id);
                             continue;
                         }
@@ -57,7 +63,33 @@ impl WorkerConnectionIndex {
                     futures
                 };
                 futures::future::join_all(futures).await;
-                sleep(Duration::from_secs(10)).await;
+                sleep(Duration::from_secs(LIVENESS_CHECK_INTERVAL_SECONDS)).await;
+            }
+        }));
+
+    }
+
+    pub fn start_worker_budget_update() {
+        let mut wci = WORKER_CONNECTION_INDEX.lock().unwrap();
+        if wci.worker_budget_update.is_some() {
+            return;
+        }
+        wci.worker_budget_update = Some(tokio::spawn(async move {
+            loop {
+                let futures = {
+                    let wci = WORKER_CONNECTION_INDEX.lock().unwrap();
+                    let mut futures = Vec::new();
+                    let mut i = 0;
+                    while i < wci.connections.len() {
+                        let node_id = wci.connections[i].id;
+
+                        futures.push(node_publish_budget_state(node_id));
+                        i += 1;
+                    }
+                    futures
+                };
+                futures::future::join_all(futures).await;
+                sleep(Duration::from_secs(WORKER_BUDGET_UPDATE_INTERVAL_SECONDS)).await;
             }
         }));
     }

@@ -1,13 +1,19 @@
-use super::worker_connection_index::WORKER_CONNECTION_INDEX;
-use crate::nodes::control_node::controller;
 use futures::{prelude::*, stream::SplitStream, SinkExt};
 use hyper::upgrade::Upgraded;
+use prost::Message;
 use tokio::spawn;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::protocol::{CloseFrame, Message as WebSocketMessage};
 use tokio_tungstenite::WebSocketStream;
+
+use crate::hash::Hash;
+use crate::nodes::control_node::control_budget::refresh_all_budget_allocations;
+use crate::nodes::control_node::{control_budget, controller};
+use crate::protobuf::control_worker_api::{control_bound_message, ControlBoundMessage, WorkerBudgetSpend};
+
+use super::worker_connection_index::WORKER_CONNECTION_INDEX;
 
 #[derive(Debug)]
 struct SendCommand {
@@ -173,9 +179,33 @@ impl WorkerConnection {
         }));
     }
 
-    async fn on_binary(_worker_id: u64, message_buf: Vec<u8>) -> Result<(), anyhow::Error> {
-        log::error!("Not expecting control bound worker messages! {:?}", message_buf);
-        // let message = ControlBoundMessage::decode(Bytes::from(message_buf))?;
+    async fn on_binary(worker_node_id: u64, message_buf: Vec<u8>) -> Result<(), anyhow::Error> {
+        let message = ControlBoundMessage::decode(&message_buf[..]);
+        let message = match message {
+            Ok(message) => message,
+            Err(error) => {
+                log::warn!("Worker node sent poorly formed message: {}", error);
+                return Err(anyhow::anyhow!("{:?}", error));
+            }
+        };
+        let message = match message.r#type {
+            Some(value) => value,
+            None => {
+                log::warn!("Worker node sent a message with no type");
+                return Err(anyhow::anyhow!("Control node sent a message with no type"));
+            }
+        };
+        match message {
+            control_bound_message::Type::WorkerBudgetSpend(node_budget_update) => {
+                match on_budget_spend_update(worker_node_id, node_budget_update).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::error!("Error while updating budget status from node {}: {}", worker_node_id, e);
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 }
@@ -191,4 +221,18 @@ impl Drop for WorkerConnection {
         });
         log::trace!("Worker connection {} dropped", self.id);
     }
+}
+
+async fn on_budget_spend_update(node_id: u64, node_budget_update: WorkerBudgetSpend) -> Result<(), anyhow::Error> {
+    for spend in node_budget_update.module_identity_spend {
+        control_budget::node_budget_spend_update(
+            node_id,
+            &Hash::from_slice(spend.module_identity.as_slice()),
+            spend.spend,
+        )?;
+    }
+
+    // Now redo all budget allocations
+    refresh_all_budget_allocations().await;
+    Ok(())
 }
