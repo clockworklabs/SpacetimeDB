@@ -1,4 +1,3 @@
-use crate::db::messages::transaction::Transaction;
 use crate::db::relational_db::TxWrapper;
 use crate::db::transactional_db::CommitResult;
 use crate::db::{messages::transaction::Transaction, transactional_db::Tx};
