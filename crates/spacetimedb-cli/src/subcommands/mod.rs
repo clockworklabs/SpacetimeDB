@@ -1,5 +1,6 @@
 pub mod call;
 pub mod describe;
+pub mod dns;
 pub mod energy;
 pub mod identity;
 pub mod init;
