@@ -57,6 +57,11 @@ async fn dns(state: &mut State) -> SimpleHandlerResult {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct InitDatabaseResponse {
+    address: String,
+}
+
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct InitDatabaseParams {}
 
@@ -129,7 +134,14 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
         return Err(HandlerError::from(err));
     }
 
-    let res = Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap();
+    let response = InitDatabaseResponse {
+        address: address.to_hex(),
+    };
+    let json = serde_json::to_string(&response).unwrap();
+    let res = Response::builder()
+        .status(StatusCode::OK)
+        .body(Body::from(json))
+        .unwrap();
     Ok(res)
 }
 

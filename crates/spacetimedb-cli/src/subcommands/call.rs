@@ -14,7 +14,6 @@ pub fn cli() -> clap::Command<'static> {
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let database = args.value_of("database").unwrap();
-
     let address = if let Ok(address) = spacetime_dns(&config, database).await {
         address
     } else {

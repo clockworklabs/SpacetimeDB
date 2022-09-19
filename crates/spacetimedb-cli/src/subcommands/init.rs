@@ -1,5 +1,7 @@
 use clap::Arg;
 use clap::ArgMatches;
+use serde::Deserialize;
+use serde::Serialize;
 use std::fs;
 
 use crate::config::Config;
@@ -33,6 +35,11 @@ pub fn cli() -> clap::Command<'static> {
         .after_help("Run `stdb help init for more detailed information.\n`")
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct InitDatabaseResponse {
+    address: String,
+}
+
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let hex_identity = if let Some(identity) = args.value_of("identity") {
         identity.to_string()
@@ -64,7 +71,11 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let client = reqwest::Client::new();
     let res = client.post(url).body(program_bytes).send().await?;
 
-    res.error_for_status()?;
+    let res = res.error_for_status()?;
+    let bytes = res.bytes().await.unwrap();
+
+    let response: InitDatabaseResponse = serde_json::from_slice(&bytes[..]).unwrap();
+    println!("Created new database with address: {}", response.address);
 
     Ok(())
 }
