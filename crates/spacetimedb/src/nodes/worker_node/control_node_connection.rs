@@ -433,21 +433,12 @@ impl ControlNodeClient {
         bytes.to_vec()
     }
 
-    pub async fn _init_database(
-        &self,
-        identity: &Hash,
-        name: &str,
-        program_bytes: Vec<u8>,
-        host_type: HostType,
-        force: bool,
-    ) {
-        let hex_identity = identity.to_hex();
+    pub async fn _init_database(&self, address: &Address, program_bytes: Vec<u8>, host_type: HostType, force: bool) {
         let force_str = if force { "true" } else { "false" };
         let uri = format!(
-            "http://{}/database/{}/{}/init?force={}&host_type={}",
+            "http://{}/database/init/{}?force={}&host_type={}",
             self.client_api_bootstrap_addr,
-            hex_identity,
-            name,
+            address.to_hex(),
             force_str,
             host_type.as_param_str()
         )
@@ -467,11 +458,11 @@ impl ControlNodeClient {
         }
     }
 
-    pub async fn _update_database(&self, identity: &Hash, name: &str, program_bytes: Vec<u8>) {
-        let hex_identity = identity.to_hex();
+    pub async fn _update_database(&self, address: &Address, program_bytes: Vec<u8>) {
         let uri = format!(
-            "http://{}/database/{}/{}/update",
-            self.client_api_bootstrap_addr, hex_identity, name
+            "http://{}/database/update/{}",
+            self.client_api_bootstrap_addr,
+            address.to_hex()
         )
         .parse::<Uri>()
         .unwrap();
@@ -489,11 +480,11 @@ impl ControlNodeClient {
         }
     }
 
-    pub async fn _delete_database(&self, identity: &Hash, name: &str) {
-        let hex_identity = identity.to_hex();
+    pub async fn _delete_database(&self, address: &Address) {
         let uri = format!(
-            "http://{}/database/{}/{}/delete",
-            self.client_api_bootstrap_addr, hex_identity, name
+            "http://{}/database/delete/{}",
+            self.client_api_bootstrap_addr,
+            address.to_hex()
         )
         .parse::<Uri>()
         .unwrap();

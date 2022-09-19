@@ -419,6 +419,10 @@ async fn sql(state: &mut State) -> SimpleHandlerResult {
 
 pub fn router() -> Router {
     build_simple_router(|route| {
+        route
+            .get("/dns/:domain_name")
+            .to_async(proxy_to_control_node_client_api);
+
         route.post("/init").to_async(proxy_to_control_node_client_api);
 
         route

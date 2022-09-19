@@ -17,6 +17,45 @@ use gotham::state::StateData;
 use hyper::Body;
 use hyper::{Response, StatusCode};
 use serde::Deserialize;
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DNSResponse {
+    address: String,
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct DNSParams {
+    domain_name: String,
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct DNSQueryParams {}
+
+async fn dns(state: &mut State) -> SimpleHandlerResult {
+    let DNSParams { domain_name } = DNSParams::take_from(state);
+    let DNSQueryParams {} = DNSQueryParams::take_from(state);
+    log::debug!("HAP4 {}", domain_name);
+
+    let address = control_db::spacetime_dns(&domain_name).await?;
+    if let Some(address) = address {
+        log::debug!("HAP3 {} {}", address.to_hex(), domain_name);
+        let response = DNSResponse {
+            address: address.to_hex(),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let body = Body::from(json);
+        let res = Response::builder().status(StatusCode::OK).body(body).unwrap();
+        Ok(res)
+    } else {
+        let res = Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .unwrap();
+        Ok(res)
+    }
+}
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct InitDatabaseParams {}
@@ -24,12 +63,40 @@ struct InitDatabaseParams {}
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct InitDatabaseQueryParams {
     host_type: Option<String>,
+    force: Option<bool>,
     identity: Option<String>,
+    name: Option<String>,
 }
 
 async fn init_database(state: &mut State) -> SimpleHandlerResult {
     let InitDatabaseParams {} = InitDatabaseParams::take_from(state);
-    let InitDatabaseQueryParams { identity, host_type } = InitDatabaseQueryParams::take_from(state);
+    let InitDatabaseQueryParams {
+        identity,
+        name,
+        host_type,
+        force,
+    } = InitDatabaseQueryParams::take_from(state);
+    let force = force.unwrap_or(false);
+
+    let address = if let Some(name) = name {
+        if let Some(address_for_name) = control_db::spacetime_dns(&name).await? {
+            if !force {
+                Err(anyhow::anyhow!("Pass force true to overwrite database."))?;
+            }
+            // TODO(cloutiertyler): Validate that the creator has credentials for this database
+            log::debug!("HAP2 {} {}", address_for_name.to_hex(), name);
+            address_for_name
+        } else {
+            // Client specified a name which doesn't yet exist
+            // Create a new DNS record and a new address to assign to it
+            let new_address = control_db::alloc_spacetime_address().await?;
+            control_db::spacetime_insert_dns_record(&new_address, &name).await?;
+            log::debug!("HAP {}", new_address.to_hex());
+            new_address
+        }
+    } else {
+        control_db::alloc_spacetime_address().await?
+    };
 
     let identity = if let Some(identity) = identity {
         // TODO(cloutiertyler): Validate that the creator has credentials for this identity
@@ -37,8 +104,6 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
     } else {
         control_db::alloc_spacetime_identity().await?
     };
-
-    let address = control_db::alloc_spacetime_address().await?;
 
     let host_type = match HostType::parse(host_type) {
         Ok(ht) => ht,
@@ -58,7 +123,7 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
     let num_replicas = 1;
 
     if let Err(err) =
-        controller::insert_database(&address, &identity, &program_bytes_addr, host_type, num_replicas, false).await
+        controller::insert_database(&address, &identity, &program_bytes_addr, host_type, num_replicas, force).await
     {
         log::debug!("{err}");
         return Err(HandlerError::from(err));
@@ -124,6 +189,12 @@ async fn delete_database(state: &mut State) -> SimpleHandlerResult {
 
 pub fn router() -> Router {
     build_simple_router(|route| {
+        route
+            .get("/dns/:domain_name")
+            .with_path_extractor::<DNSParams>()
+            .with_query_string_extractor::<DNSQueryParams>()
+            .to_async_borrowing(dns);
+
         route
             .post("/init")
             .with_path_extractor::<InitDatabaseParams>()

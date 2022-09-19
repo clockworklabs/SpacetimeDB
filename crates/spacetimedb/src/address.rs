@@ -1,3 +1,5 @@
+use std::net::Ipv6Addr;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Address(u128);
 
@@ -33,5 +35,14 @@ impl Address {
 
     pub fn as_slice(&self) -> [u8; 16] {
         self.0.to_be_bytes()
+    }
+
+    pub fn to_ipv6(&self) -> Ipv6Addr {
+        Ipv6Addr::from(self.0)
+    }
+
+    #[allow(dead_code)]
+    pub fn to_ipv6_string(&self) -> String {
+        self.to_ipv6().to_string()
     }
 }

@@ -2,28 +2,28 @@ use clap::Arg;
 use clap::ArgMatches;
 
 use crate::config::Config;
+use crate::util::spacetime_dns;
 
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("schema")
         .about("Describe the entire schema of an stdb module")
-        .override_usage("stdb schema <identity> <name>")
-        .arg(Arg::new("identity").required(true))
-        .arg(Arg::new("module_name").required(true))
+        .arg(Arg::new("database").required(true))
         .arg(Arg::new("expand").long("expand").short('e'))
         .after_help("Run `stdb help schema for more detailed information.\n`")
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let hex_identity = args.value_of("identity").unwrap();
-    let name = args.value_of("module_name").unwrap();
+    let database = args.value_of("database").unwrap();
+    let address = if let Ok(address) = spacetime_dns(&config, database).await {
+        address
+    } else {
+        database.to_string()
+    };
     let expand = args.is_present("expand");
 
     let client = reqwest::Client::new();
     let res = client
-        .get(format!(
-            "http://{}/database/{}/{}/schema",
-            config.host, hex_identity, name
-        ))
+        .get(format!("http://{}/database/schema/{}", config.host, address))
         .query(&[("expand", expand)])
         .send()
         .await?;

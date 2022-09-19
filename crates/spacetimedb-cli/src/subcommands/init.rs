@@ -7,7 +7,6 @@ use crate::config::Config;
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("init")
         .about("Create a new SpacetimeDB account.")
-        .override_usage("stdb init <identity> <name> <path to project>")
         .arg(
             Arg::new("host_type")
                 .takes_value(true)
@@ -16,30 +15,54 @@ pub fn cli() -> clap::Command<'static> {
                 .short('t'),
         )
         .arg(Arg::new("force").long("force").short('f'))
-        .arg(Arg::new("identity").required(true))
-        .arg(Arg::new("name").required(true))
         .arg(Arg::new("path to project").required(true))
+        .arg(
+            Arg::new("identity")
+                .takes_value(true)
+                .long("identity")
+                .short('i')
+                .required(false),
+        )
+        .arg(
+            Arg::new("name")
+                .takes_value(true)
+                .long("name")
+                .short('n')
+                .required(false),
+        )
         .after_help("Run `stdb help init for more detailed information.\n`")
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let hex_identity = args.value_of("identity").unwrap();
-    let name = args.value_of("name").unwrap();
+    let hex_identity = if let Some(identity) = args.value_of("identity") {
+        identity.to_string()
+    } else {
+        let identity_config = config.get_default_identity_config().unwrap();
+        identity_config.identity.to_string()
+    };
+
+    let name = args.value_of("name");
+
     let path_to_project = args.value_of("path to project").unwrap();
     let force = args.is_present("force");
     let host_type = args.value_of("host_type").unwrap_or("wasm32");
     let path = fs::canonicalize(path_to_project).unwrap();
     let program_bytes = fs::read(path)?;
 
+    let url = if let Some(name) = name {
+        format!(
+            "http://{}/database/init?identity={}&name={}&force={}&host_type={}",
+            config.host, hex_identity, name, force, host_type,
+        )
+    } else {
+        format!(
+            "http://{}/database/init?identity={}&force={}&host_type={}",
+            config.host, hex_identity, force, host_type,
+        )
+    };
+
     let client = reqwest::Client::new();
-    let res = client
-        .post(format!(
-            "http://{}/database/{}/{}/init?force={}&host_type={}",
-            config.host, hex_identity, name, force, host_type
-        ))
-        .body(program_bytes)
-        .send()
-        .await?;
+    let res = client.post(url).body(program_bytes).send().await?;
 
     res.error_for_status()?;
 

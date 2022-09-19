@@ -9,6 +9,7 @@ use tabled::builder::Builder;
 use tabled::Style;
 
 use crate::config::Config;
+use crate::util::spacetime_dns;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StmtResultJson {
@@ -19,8 +20,7 @@ pub struct StmtResultJson {
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("sql")
         .about("Runs a SQL query on the database.")
-        .arg(Arg::new("identity").required(true))
-        .arg(Arg::new("name").required(true))
+        .arg(Arg::new("database").required(true))
         .arg(Arg::new("query").conflicts_with("filename").required(true))
         .arg(
             arg!(-f --filename <FILENAME> "filename")
@@ -30,13 +30,17 @@ pub fn cli() -> clap::Command<'static> {
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let hex_identity = args.value_of("identity").unwrap();
-    let name = args.value_of("name").unwrap();
+    let database = args.value_of("database").unwrap();
+    let address = if let Ok(address) = spacetime_dns(&config, database).await {
+        address
+    } else {
+        database.to_string()
+    };
     let query = args.value_of("query").unwrap();
 
     let client = reqwest::Client::new();
 
-    let mut builder = client.post(format!("http://{}/database/{}/{}/sql", config.host, hex_identity, name));
+    let mut builder = client.post(format!("http://{}/database/sql/{}", config.host, address));
 
     if let Some(identity_token) = config.get_default_identity_config() {
         builder = builder.basic_auth("token", Some(identity_token.token.clone()));

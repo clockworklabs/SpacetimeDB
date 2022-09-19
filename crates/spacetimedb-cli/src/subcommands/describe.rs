@@ -1,14 +1,12 @@
+use crate::config::Config;
+use crate::util::spacetime_dns;
 use clap::Arg;
 use clap::ArgMatches;
-
-use crate::config::Config;
 
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("describe")
         .about("Describe arguments of a SpacetimeDB reducer or table.")
-        .override_usage("stdb describe <identity> <name> <reducer|table|repeater> <name>")
-        .arg(Arg::new("identity").required(true))
-        .arg(Arg::new("module_name").required(true))
+        .arg(Arg::new("database").required(true))
         .arg(
             Arg::new("entity_type")
                 .required(true)
@@ -20,8 +18,12 @@ pub fn cli() -> clap::Command<'static> {
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let hex_identity = args.value_of("identity").unwrap();
-    let name = args.value_of("module_name").unwrap();
+    let database = args.value_of("database").unwrap();
+    let address = if let Ok(address) = spacetime_dns(&config, database).await {
+        address
+    } else {
+        database.to_string()
+    };
     let entity_name = args.value_of("entity_name").unwrap();
     let entity_type = format!("{}s", args.value_of("entity_type").unwrap());
     let expand = !args.is_present("brief");
@@ -29,8 +31,8 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let client = reqwest::Client::new();
     let res = client
         .get(format!(
-            "http://{}/database/{}/{}/schema/{}/{}",
-            config.host, hex_identity, name, entity_type, entity_name
+            "http://{}/database/schema/{}/{}/{}",
+            config.host, address, entity_type, entity_name
         ))
         .query(&[("expand", expand)])
         .send()

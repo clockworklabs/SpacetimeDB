@@ -18,6 +18,38 @@ fn init() -> Result<sled::Db, anyhow::Error> {
     Ok(db)
 }
 
+pub async fn spacetime_dns(domain_name: &str) -> Result<Option<Address>, anyhow::Error> {
+    let tree = CONTROL_DB.open_tree("dns")?;
+    let value = tree.get(domain_name.as_bytes())?;
+    if let Some(value) = value {
+        return Ok(Some(Address::from_slice(&value[..])));
+    }
+    return Ok(None);
+}
+
+pub async fn _spacetime_reverse_dns(address: &Address) -> Result<Option<String>, anyhow::Error> {
+    let tree = CONTROL_DB.open_tree("reverse_dns")?;
+    let value = tree.get(address.as_slice())?;
+    if let Some(value) = value {
+        return Ok(Some(String::from_utf8(value[..].to_vec())?));
+    }
+    return Ok(None);
+}
+
+pub async fn spacetime_insert_dns_record(address: &Address, domain_name: &str) -> Result<(), anyhow::Error> {
+    if let Some(_) = spacetime_dns(domain_name).await? {
+        return Err(anyhow::anyhow!("Record for name '{}' already exists. ", domain_name));
+    }
+
+    let tree = CONTROL_DB.open_tree("dns")?;
+    tree.insert(domain_name.as_bytes(), &address.as_slice()[..])?;
+
+    let tree = CONTROL_DB.open_tree("reverse_dns")?;
+    tree.insert(address.as_slice(), domain_name.as_bytes())?;
+
+    Ok(())
+}
+
 pub async fn alloc_spacetime_identity() -> Result<Hash, anyhow::Error> {
     // TODO: this really doesn't need to be a single global count
     let id = CONTROL_DB.generate_id()?;
@@ -63,7 +95,7 @@ pub async fn get_databases() -> Result<Vec<Database>, anyhow::Error> {
     let scan_key: &[u8] = b"";
     for result in tree.range(scan_key..) {
         let (_key, value) = result?;
-        let database = Database::decode(&value.to_vec()[..]).unwrap();
+        let database = Database::decode(&value[..]).unwrap();
         databases.push(database);
     }
     Ok(databases)
@@ -74,7 +106,7 @@ pub async fn get_database_by_address(address: &Address) -> Result<Option<Databas
     let key = address.to_hex();
     let value = tree.get(key.as_bytes())?;
     if let Some(value) = value {
-        let database = Database::decode(&value.to_vec()[..]).unwrap();
+        let database = Database::decode(&value[..]).unwrap();
         return Ok(Some(database));
     }
     return Ok(None);
@@ -109,7 +141,7 @@ pub async fn update_database(database: Database) -> Result<(), anyhow::Error> {
 
     let old_value = tree.get(database.id.to_be_bytes())?;
     if let Some(old_value) = old_value {
-        let old_database = Database::decode(&old_value.to_vec()[..])?;
+        let old_database = Database::decode(&old_value[..])?;
 
         if database.address != old_database.address {
             if tree_by_address.contains_key(key.as_bytes())? {
@@ -134,7 +166,7 @@ pub async fn delete_database(id: u64) -> Result<Option<u64>, anyhow::Error> {
     let tree_by_address = CONTROL_DB.open_tree("database_by_address")?;
 
     if let Some(old_value) = tree.get(id.to_be_bytes())? {
-        let database = Database::decode(&old_value.to_vec()[..])?;
+        let database = Database::decode(&old_value[..])?;
         let key = Address::from_slice(&database.address).to_hex();
 
         tree_by_address.remove(key.as_bytes())?;
@@ -151,7 +183,7 @@ pub async fn get_database_instances() -> Result<Vec<DatabaseInstance>, anyhow::E
     let scan_key: &[u8] = b"";
     for result in tree.range(scan_key..) {
         let (_key, value) = result?;
-        let database_instance = DatabaseInstance::decode(&value.to_vec()[..]).unwrap();
+        let database_instance = DatabaseInstance::decode(&value[..]).unwrap();
         database_instances.push(database_instance);
     }
     Ok(database_instances)
@@ -212,7 +244,7 @@ pub async fn get_nodes() -> Result<Vec<Node>, anyhow::Error> {
     let scan_key: &[u8] = b"";
     for result in tree.range(scan_key..) {
         let (_key, value) = result?;
-        let node = Node::decode(&value.to_vec()[..]).unwrap();
+        let node = Node::decode(&value[..]).unwrap();
         nodes.push(node);
     }
     Ok(nodes)
@@ -294,7 +326,7 @@ pub async fn get_energy_budget(module_identity: &Hash) -> Result<Option<EnergyBu
     let key = module_identity.to_hex();
     let value = tree.get(key.as_bytes())?;
     if let Some(value) = value {
-        let budget = EnergyBudget::decode(&value.to_vec()[..]).unwrap();
+        let budget = EnergyBudget::decode(&value[..]).unwrap();
         Ok(Some(budget))
     } else {
         Ok(None)
