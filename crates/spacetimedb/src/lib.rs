@@ -1,5 +1,6 @@
 extern crate core;
 
+mod address;
 mod auth;
 pub mod db;
 pub mod hash;

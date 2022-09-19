@@ -1,5 +1,6 @@
 use super::super::client_connection::Protocol;
 use super::super::client_connection_index::CLIENT_ACTOR_INDEX;
+use crate::address::Address;
 use crate::auth::get_creds_from_header;
 use crate::auth::invalid_token_res;
 use crate::hash::Hash;
@@ -42,8 +43,7 @@ const BIN_PROTOCOL: &str = "v1.bin.spacetimedb";
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 pub struct SubscribeParams {
-    identity: String,
-    name: String,
+    address: String,
 }
 
 fn accept_ws_res(key: &HeaderValue, protocol: &HeaderValue, identity: Hash, identity_token: String) -> Response<Body> {
@@ -88,8 +88,7 @@ fn invalid_protocol_res() -> Response<Body> {
 async fn on_connected(
     identity: Hash,
     identity_token: String,
-    module_identity: Hash,
-    module_name: String,
+    target_address: Address,
     headers: HeaderMap,
     protocol: Protocol,
     ws: WebSocketStream<Upgraded>,
@@ -109,7 +108,7 @@ async fn on_connected(
 
     let sender = {
         let cai = &mut CLIENT_ACTOR_INDEX.lock().unwrap();
-        let id = cai.new_client(identity, module_identity, module_name.clone(), protocol, ws);
+        let id = cai.new_client(identity, target_address, protocol, ws);
         cai.get_client(&id).unwrap().sender()
     };
 
@@ -179,11 +178,9 @@ async fn on_upgrade(
         (identity, identity_token)
     };
 
-    let SubscribeParams {
-        identity: hex_module_identity,
-        name: module_name,
-    } = SubscribeParams::take_from(&mut state);
-    let module_identity = match Hash::from_hex(hex_module_identity.as_str()) {
+    let SubscribeParams { address } = SubscribeParams::take_from(&mut state);
+
+    let target_address = match Address::from_hex(&address) {
         Ok(h) => h,
         Err(error) => {
             log::info!("Can't decode {}", error);
@@ -191,7 +188,7 @@ async fn on_upgrade(
         }
     };
 
-    if let Err(_) = ClientConnection::get_database_instance_id(&module_identity, &module_name) {
+    if let Err(_) = ClientConnection::get_database_instance_id(&target_address) {
         return Ok((state, bad_request_res()));
     }
 
@@ -209,18 +206,7 @@ async fn on_upgrade(
             Err(err) => Err(err),
         };
         match ws {
-            Ok(ws) => {
-                on_connected(
-                    identity,
-                    identity_token_clone,
-                    module_identity,
-                    module_name,
-                    headers,
-                    protocol,
-                    ws,
-                )
-                .await
-            }
+            Ok(ws) => on_connected(identity, identity_token_clone, target_address, headers, protocol, ws).await,
             Err(err) => log::error!("WebSocket init error for req_id {}: {}", req_id, err),
         }
     });

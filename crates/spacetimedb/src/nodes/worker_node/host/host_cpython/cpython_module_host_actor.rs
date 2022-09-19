@@ -437,11 +437,7 @@ impl CPythonModuleHostActor {
         reducer_symbol: &str,
         arguments: Py<PyTuple>,
     ) -> Result<(Option<Transaction>, Option<u64>), anyhow::Error> {
-        let address = format!(
-            "{}/{}",
-            &self.worker_database_instance.identity.to_abbreviated_hex(),
-            self.worker_database_instance.name
-        );
+        let address = self.worker_database_instance.address.to_abbreviated_hex();
         TX_COUNT.with_label_values(&[&address, reducer_symbol]).inc();
 
         let tx = self.worker_database_instance.relational_db.begin_tx();

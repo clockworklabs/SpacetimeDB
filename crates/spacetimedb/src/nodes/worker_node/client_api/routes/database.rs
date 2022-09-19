@@ -17,6 +17,7 @@ use hyper::{Response, StatusCode};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::address::Address;
 use crate::auth::get_creds_from_header;
 use crate::auth::invalid_token_res;
 use crate::hash::Hash;
@@ -36,17 +37,15 @@ use super::subscribe::SubscribeParams;
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct CallParams {
-    identity: String,
-    name: String,
+    address: String,
     reducer: String,
 }
 
 async fn call(state: &mut State) -> SimpleHandlerResult {
-    let CallParams {
-        identity,
-        name,
-        reducer,
-    } = CallParams::take_from(state);
+    let CallParams { address, reducer } = CallParams::take_from(state);
+
+    let address = Address::from_hex(&address)?;
+
     let headers = state.borrow::<HeaderMap>();
     let auth_header = headers.get(AUTHORIZATION);
     let (caller_identity, caller_identity_token) = if let Some(auth_header) = auth_header {
@@ -69,21 +68,19 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     let data = data.unwrap();
     let arg_bytes = data.unwrap().to_vec();
 
-    let identity = Hash::from_hex(&identity).expect("that the client passed a valid hex identity lol");
-
     for database in worker_db::_get_databases() {
-        let db_identity = Hash::from_slice(database.identity.as_slice());
-        log::debug!("Have database {}/{}", db_identity.to_hex(), database.name);
+        let address = Address::from_slice(database.address.as_slice());
+        log::debug!("Have database {}", address.to_hex());
     }
 
     for instance in worker_db::get_database_instances() {
         log::debug!("Have instance {:?}", instance);
     }
 
-    let database = match worker_db::get_database_by_address(&identity, &name) {
+    let database = match worker_db::get_database_by_address(&address) {
         Some(database) => database,
         None => {
-            log::error!("Could not find: {}/{}", identity.to_hex(), name);
+            log::error!("Could not find database: {}", address.to_hex());
             return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND));
         }
     };
@@ -106,8 +103,8 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
         Ok(rcr) => {
             if rcr.budget_exceeded {
                 log::warn!(
-                    "Node's energy budget exceeded for identity:{} while executing {}",
-                    identity.to_hex(),
+                    "Node's energy budget exceeded for identity: {} while executing {}",
+                    Hash::from_slice(database.identity).to_hex(),
                     reducer
                 );
                 return Err(HandlerError::from(anyhow!("Module energy budget exhausted."))
@@ -144,11 +141,7 @@ struct DatabaseInformation {
 }
 /// Extract some common parameters that most API call invocations to the database will use.
 // TODO(ryan): Use this for call, logs, etc. as well.
-async fn extract_db_call_info(
-    state: &mut State,
-    identity: String,
-    database_name: &str,
-) -> Result<DatabaseInformation, DBCallErr> {
+async fn extract_db_call_info(state: &mut State, address: &Address) -> Result<DatabaseInformation, DBCallErr> {
     let headers = state.borrow::<HeaderMap>();
     let auth_header = headers.get(AUTHORIZATION);
     let (caller_identity, caller_identity_token) = if let Some(auth_header) = auth_header {
@@ -163,9 +156,7 @@ async fn extract_db_call_info(
         (identity, identity_token)
     };
 
-    let identity = Hash::from_hex(&identity).expect("that the client passed a valid hex identity lol");
-
-    let database = match worker_db::get_database_by_address(&identity, &database_name) {
+    let database = match worker_db::get_database_by_address(address) {
         Some(database) => database,
         None => return Err(DBCallErr::NoSuchDatabase),
     };
@@ -182,11 +173,11 @@ async fn extract_db_call_info(
     })
 }
 
-fn handle_db_err(identity: &str, name: &str, err: DBCallErr) -> SimpleHandlerResult {
+fn handle_db_err(address: &Address, err: DBCallErr) -> SimpleHandlerResult {
     match err {
         DBCallErr::InvalidToken => Ok(invalid_token_res()),
         NoSuchDatabase => {
-            log::error!("Could not find: {}/{}", identity, name);
+            log::error!("Could not find database: {}", address.to_hex());
             Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND))
         }
         DBCallErr::InstanceNotScheduled => Err(HandlerError::from(anyhow!(
@@ -213,8 +204,7 @@ fn entity_description_json(description: &EntityDescription, expand: bool) -> Val
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct DescribeParams {
-    identity: String,
-    name: String,
+    address: String,
     entity_type: String,
     entity: String,
 }
@@ -226,17 +216,18 @@ struct DescribeQueryParams {
 
 async fn describe(state: &mut State) -> SimpleHandlerResult {
     let DescribeParams {
-        identity,
-        name,
+        address,
         entity_type,
         entity,
     } = DescribeParams::take_from(state);
 
     let DescribeQueryParams { expand } = DescribeQueryParams::take_from(state);
 
-    let call_info = match extract_db_call_info(state, identity.clone(), name.as_str()).await {
+    let address = Address::from_hex(&address)?;
+
+    let call_info = match extract_db_call_info(state, &address).await {
         Ok(p) => p,
-        Err(e) => return handle_db_err(identity.as_str(), name.as_str(), e),
+        Err(e) => return handle_db_err(&address, e),
     };
 
     let instance_id = call_info.database_instance.id;
@@ -294,16 +285,17 @@ async fn describe(state: &mut State) -> SimpleHandlerResult {
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct CatalogParams {
-    identity: String,
-    name: String,
+    address: String,
 }
 async fn catalog(state: &mut State) -> SimpleHandlerResult {
-    let CatalogParams { identity, name } = CatalogParams::take_from(state);
+    let CatalogParams { address } = CatalogParams::take_from(state);
     let DescribeQueryParams { expand } = DescribeQueryParams::take_from(state);
 
-    let call_info = match extract_db_call_info(state, identity.clone(), name.as_str()).await {
+    let address = Address::from_hex(&address)?;
+
+    let call_info = match extract_db_call_info(state, &address).await {
         Ok(p) => p,
-        Err(e) => return handle_db_err(identity.as_str(), name.as_str(), e),
+        Err(e) => return handle_db_err(&address, e),
     };
 
     let instance_id = call_info.database_instance.id;
@@ -335,8 +327,7 @@ async fn catalog(state: &mut State) -> SimpleHandlerResult {
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct LogsParams {
-    identity: String,
-    name: String,
+    address: String,
 }
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
@@ -345,19 +336,21 @@ struct LogsQuery {
 }
 
 async fn logs(state: &mut State) -> SimpleHandlerResult {
-    let LogsParams { identity, name } = LogsParams::take_from(state);
+    let LogsParams { address } = LogsParams::take_from(state);
     let LogsQuery { num_lines } = LogsQuery::take_from(state);
 
-    let identity = Hash::from_hex(&identity).expect("that the client passed a valid hex identity lol");
+    // TODO(cloutiertyler): Validate that the creator has credentials for the identity of this database
 
-    let database = match worker_db::get_database_by_address(&identity, &name) {
+    let address = Address::from_hex(&address)?;
+
+    let database = match worker_db::get_database_by_address(&address) {
         Some(database) => database,
         None => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
     };
     let database_instance = worker_db::get_leader_database_instance_by_database(database.id);
     let instance_id = database_instance.unwrap().id;
 
-    let filepath = DatabaseLogger::filepath(&identity, &name, instance_id);
+    let filepath = DatabaseLogger::filepath(&address, instance_id);
     let lines = DatabaseLogger::read_latest(&filepath, num_lines).await;
 
     let res = Response::builder()
@@ -370,20 +363,19 @@ async fn logs(state: &mut State) -> SimpleHandlerResult {
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct SqlParams {
-    identity: String,
-    name: String,
+    address: String,
 }
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct SqlQueryParams {}
 
 async fn sql(state: &mut State) -> SimpleHandlerResult {
-    let SqlParams { identity, name } = SqlParams::take_from(state);
+    let SqlParams { address } = SqlParams::take_from(state);
     let SqlQueryParams {} = SqlQueryParams::take_from(state);
 
-    let identity = Hash::from_hex(&identity).expect("that the client passed a valid hex identity lol");
+    let address = Address::from_hex(&address)?;
 
-    let database = match worker_db::get_database_by_address(&identity, &name) {
+    let database = match worker_db::get_database_by_address(&address) {
         Some(database) => database,
         None => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
     };
@@ -427,48 +419,46 @@ async fn sql(state: &mut State) -> SimpleHandlerResult {
 
 pub fn router() -> Router {
     build_simple_router(|route| {
+        route.post("/init").to_async(proxy_to_control_node_client_api);
+
         route
-            .post("/:identity/:name/init")
+            .post("/update/:address")
             .to_async(proxy_to_control_node_client_api);
 
         route
-            .post("/:identity/:name/update")
+            .post("/delete/:address")
             .to_async(proxy_to_control_node_client_api);
 
         route
-            .post("/:identity/:name/delete")
-            .to_async(proxy_to_control_node_client_api);
-
-        route
-            .get("/:identity/:name/subscribe")
+            .get("/subscribe/:address")
             .with_path_extractor::<SubscribeParams>()
             .to_async(handle_websocket);
 
         route
-            .post("/:identity/:name/call/:reducer")
+            .post("/call/:address/:reducer")
             .with_path_extractor::<CallParams>()
             .to_async_borrowing(call);
 
         route
-            .get("/:identity/:name/schema/:entity_type/:entity")
+            .get("/schema/:address/:entity_type/:entity")
             .with_path_extractor::<DescribeParams>()
             .with_query_string_extractor::<DescribeQueryParams>()
             .to_async_borrowing(describe);
 
         route
-            .get("/:identity/:name/schema")
+            .get("/schema/:address")
             .with_path_extractor::<CatalogParams>()
             .with_query_string_extractor::<DescribeQueryParams>()
             .to_async_borrowing(catalog);
 
         route
-            .get("/:identity/:name/logs")
+            .get("/logs/:address")
             .with_path_extractor::<LogsParams>()
             .with_query_string_extractor::<LogsQuery>()
             .to_async_borrowing(logs);
 
         route
-            .post("/:identity/:name/sql")
+            .post("/sql/:address")
             .with_path_extractor::<SqlParams>()
             .with_query_string_extractor::<SqlQueryParams>()
             .to_async_borrowing(sql);

@@ -1,4 +1,5 @@
 use super::super::host::host_controller;
+use crate::address::Address;
 use crate::nodes::worker_node::prometheus_metrics::CONNECTED_CLIENTS;
 use crate::{hash::Hash, nodes::worker_node::worker_db};
 use hyper::upgrade::Upgraded;
@@ -105,8 +106,7 @@ impl ClientActorIndex {
     pub fn new_client(
         &mut self,
         identity: Hash,
-        module_identity: Hash,
-        module_name: String,
+        target_address: Address,
         protocol: Protocol,
         ws: WebSocketStream<Upgraded>,
     ) -> ClientActorId {
@@ -121,7 +121,7 @@ impl ClientActorIndex {
             identity,
             name: client_name,
         };
-        let mut game_client = ClientConnection::new(client_id, ws, module_identity, module_name.clone(), protocol);
+        let mut game_client = ClientConnection::new(client_id, ws, target_address, protocol);
 
         // NOTE: Begin receiving when we create a new client. This only really works
         // because authentication is provided in the headers of the request. That is to say,
@@ -143,7 +143,7 @@ impl ClientActorIndex {
             // TODO: Right now this is connecting clients directly to an instance, but their requests should be
             // logically subscribed to the database, not any particular instance. We should handle failover for
             // them and stuff. Not right now though.
-            let database = worker_db::get_database_by_address(&module_identity, &module_name).unwrap();
+            let database = worker_db::get_database_by_address(&target_address).unwrap();
             let database_instance = worker_db::get_leader_database_instance_by_database(database.id);
             let instance_id = database_instance.unwrap().id;
             let host = host_controller::get_host();

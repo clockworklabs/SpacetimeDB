@@ -1,4 +1,4 @@
-use crate::hash::Hash;
+use crate::address::Address;
 use crate::protobuf::{
     control_db::{Database, DatabaseInstance},
     control_worker_api::ScheduleState,
@@ -78,10 +78,10 @@ pub fn get_database_by_id(id: u64) -> Option<Database> {
     databases.get(&id).map(|d| d.to_owned())
 }
 
-pub fn get_database_by_address(identity: &Hash, name: &str) -> Option<Database> {
+pub fn get_database_by_address(address: &Address) -> Option<Database> {
     let databases = DATABASES.lock().unwrap();
     for database in databases.values() {
-        if Hash::from_slice(&database.identity) == *identity && database.name == name {
+        if Address::from_slice(&database.address) == *address {
             return Some(database.clone());
         }
     }

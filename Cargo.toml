@@ -1,7 +1,7 @@
 [workspace]
 members = ["crates/*"]
 exclude = ["crates/rust-wasm-goal", "crates/rust-wasm-output"]
-default-members = ["crates/stdb"]
+default-members = ["crates/spacetimedb-cli"]
 
 [profile.release]
 opt-level = 's'

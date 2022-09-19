@@ -5,7 +5,6 @@ use wasmer::{CompilerConfig, Module, Store, Universal, ValType};
 use wasmer_middlewares::Metering;
 
 use crate::hash::Hash;
-use crate::hash::ToHexString;
 use crate::nodes::worker_node::host::host_wasm32::wasm_module_host_actor::WasmModuleHostActor;
 use crate::nodes::worker_node::host::module_host::ModuleHost;
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
@@ -67,9 +66,8 @@ pub fn make_wasm32_module_host_actor(
         let store = Store::new(&Universal::new(compiler_config).engine());
         let module = Module::new(&store, program_bytes)?;
 
-        let identity = worker_database_instance.identity;
-        let name = &worker_database_instance.name;
-        log::trace!("Validating module \"{}/{}\":", identity.to_hex_string(), name);
+        let address = worker_database_instance.address;
+        log::trace!("Validating module for database: \"{}\"", address.to_hex());
         validate_module(&module)?;
         Ok(Box::from(WasmModuleHostActor::new(
             worker_database_instance,

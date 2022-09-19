@@ -14,11 +14,11 @@ use tokio_tungstenite::tungstenite::handshake::client::generate_key;
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
-use crate::db::relational_db::RelationalDBWrapper;
 use crate::nodes::worker_node::worker_budget;
 use crate::nodes::worker_node::worker_budget::send_budget_alloc_spend;
 use crate::nodes::HostType;
 use crate::protobuf::control_worker_api::BudgetUpdate;
+use crate::{address::Address, db::relational_db::RelationalDBWrapper};
 use crate::{
     db::relational_db::RelationalDB,
     hash::Hash,
@@ -305,22 +305,22 @@ async fn init_module_on_database_instance(database_id: u64, instance_id: u64) {
         return;
     };
     let identity = Hash::from_slice(database.identity);
-    let name = database.name;
+    let address = Address::from_slice(database.address);
     let program_bytes_address = Hash::from_slice(database.program_bytes_address);
     let program_bytes = ControlNodeClient::get_shared()
         .get_program_bytes(&program_bytes_address)
         .await;
 
-    let log_path = DatabaseLogger::filepath(&identity, &name, instance_id);
+    let log_path = DatabaseLogger::filepath(&address, instance_id);
     let root = format!("/stdb/worker_node/database_instances");
-    let db_path = format!("{}/{}/{}/{}/{}", root, identity.to_hex(), name, instance_id, "database");
+    let db_path = format!("{}/{}/{}/{}", root, address.to_hex(), instance_id, "database");
 
     let worker_database_instance = WorkerDatabaseInstance {
         database_instance_id: instance_id,
         database_id,
         host_type: HostType::from_int(database.host_type).expect("unknown module host type"),
         identity,
-        name: name.clone(),
+        address,
         logger: Arc::new(Mutex::new(DatabaseLogger::open(&log_path))),
         relational_db: RelationalDBWrapper::new(RelationalDB::open(db_path)),
     };
@@ -341,22 +341,22 @@ async fn start_module_on_database_instance(database_id: u64, instance_id: u64) {
         return;
     };
     let identity = Hash::from_slice(database.identity);
-    let name = database.name;
+    let address = Address::from_slice(database.address);
     let program_bytes_address = Hash::from_slice(database.program_bytes_address);
     let program_bytes = ControlNodeClient::get_shared()
         .get_program_bytes(&program_bytes_address)
         .await;
 
-    let log_path = DatabaseLogger::filepath(&identity, &name, instance_id);
+    let log_path = DatabaseLogger::filepath(&address, instance_id);
     let root = format!("/stdb/worker_node/database_instances");
-    let db_path = format!("{}/{}/{}/{}/{}", root, identity.to_hex(), name, instance_id, "database");
+    let db_path = format!("{}/{}/{}/{}", root, address.to_hex(), instance_id, "database");
 
     let worker_database_instance = WorkerDatabaseInstance {
         database_instance_id: instance_id,
         database_id,
         host_type: HostType::from_int(database.host_type).expect("unknown module host type"),
         identity,
-        name: name.clone(),
+        address,
         logger: Arc::new(Mutex::new(DatabaseLogger::open(&log_path))),
         relational_db: RelationalDBWrapper::new(RelationalDB::open(db_path)),
     };

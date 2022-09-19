@@ -1,5 +1,6 @@
 use prost::Message;
 
+use crate::address::Address;
 use crate::hash::{hash_bytes, Hash};
 use crate::protobuf::control_db::{Database, DatabaseInstance, EnergyBudget, IdentityEmail, Node};
 
@@ -25,6 +26,20 @@ pub async fn alloc_spacetime_identity() -> Result<Hash, anyhow::Error> {
     let bytes = [name, bytes].concat();
     let hash = hash_bytes(bytes);
     Ok(hash)
+}
+
+pub async fn alloc_spacetime_address() -> Result<Address, anyhow::Error> {
+    // TODO: this really doesn't need to be a single global count
+    // We could do something more intelligent for addresses...
+    // A. generating them randomly
+    // B. doing ipv6 generation
+    let id = CONTROL_DB.generate_id()?;
+    let bytes: &[u8] = &id.to_le_bytes();
+    let name = b"clockworklabs:";
+    let bytes = [name, bytes].concat();
+    let hash = hash_bytes(bytes);
+    let address = Address::from_slice(&hash.as_slice()[0..16]);
+    Ok(address)
 }
 
 pub async fn associate_email_spacetime_identity(identity: &Hash, email: &str) -> Result<(), anyhow::Error> {
@@ -54,9 +69,9 @@ pub async fn get_databases() -> Result<Vec<Database>, anyhow::Error> {
     Ok(databases)
 }
 
-pub async fn get_database_by_address(identity: &Hash, name: &str) -> Result<Option<Database>, anyhow::Error> {
+pub async fn get_database_by_address(address: &Address) -> Result<Option<Database>, anyhow::Error> {
     let tree = CONTROL_DB.open_tree("database_by_address")?;
-    let key = format!("{}/{}", identity.to_hex(), name);
+    let key = address.to_hex();
     let value = tree.get(key.as_bytes())?;
     if let Some(value) = value {
         let database = Database::decode(&value.to_vec()[..]).unwrap();
@@ -69,7 +84,7 @@ pub async fn insert_database(mut database: Database) -> Result<u64, anyhow::Erro
     let id = CONTROL_DB.generate_id()?;
     let tree = CONTROL_DB.open_tree("database_by_address")?;
 
-    let key = format!("{}/{}", Hash::from_slice(&database.identity).to_hex(), database.name);
+    let key = Address::from_slice(&database.address).to_hex();
     if tree.contains_key(key.as_bytes())? {
         return Err(anyhow::anyhow!("Database with address {} already exists", key));
     }
@@ -90,13 +105,13 @@ pub async fn insert_database(mut database: Database) -> Result<u64, anyhow::Erro
 pub async fn update_database(database: Database) -> Result<(), anyhow::Error> {
     let tree = CONTROL_DB.open_tree("database")?;
     let tree_by_address = CONTROL_DB.open_tree("database_by_address")?;
-    let key = format!("{}/{}", Hash::from_slice(&database.identity).to_hex(), database.name);
+    let key = Address::from_slice(&database.address).to_hex();
 
     let old_value = tree.get(database.id.to_be_bytes())?;
     if let Some(old_value) = old_value {
         let old_database = Database::decode(&old_value.to_vec()[..])?;
 
-        if database.identity != old_database.identity || database.name != old_database.name {
+        if database.address != old_database.address {
             if tree_by_address.contains_key(key.as_bytes())? {
                 return Err(anyhow::anyhow!("Database with address {} already exists", key));
             }
@@ -108,7 +123,7 @@ pub async fn update_database(database: Database) -> Result<(), anyhow::Error> {
 
     tree.insert(database.id.to_be_bytes(), buf.clone())?;
 
-    let key = format!("{}/{}", Hash::from_slice(&database.identity).to_hex(), database.name);
+    let key = Address::from_slice(&database.address).to_hex();
     tree_by_address.insert(key, buf)?;
 
     Ok(())
@@ -120,7 +135,7 @@ pub async fn delete_database(id: u64) -> Result<Option<u64>, anyhow::Error> {
 
     if let Some(old_value) = tree.get(id.to_be_bytes())? {
         let database = Database::decode(&old_value.to_vec()[..])?;
-        let key = format!("{}/{}", Hash::from_slice(&database.identity).to_hex(), database.name);
+        let key = Address::from_slice(&database.address).to_hex();
 
         tree_by_address.remove(key.as_bytes())?;
         tree.remove(id.to_be_bytes())?;

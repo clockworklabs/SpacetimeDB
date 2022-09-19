@@ -24,8 +24,8 @@ enum HostType {
 
 message Database {
     uint64 id = 1;
-    bytes identity = 2;
-    string name = 3;
+    bytes address = 2;
+    bytes identity = 3;
     HostType host_type = 4;
     uint32 num_replicas = 5;
     bytes program_bytes_address = 6;

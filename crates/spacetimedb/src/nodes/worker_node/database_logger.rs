@@ -1,4 +1,4 @@
-use crate::hash::Hash;
+use crate::address::Address;
 use std::fs::OpenOptions;
 use std::fs::{self, File};
 use std::io::{prelude::*, SeekFrom};
@@ -29,16 +29,9 @@ impl DatabaseLogger {
     //     PathBuf::from(path)
     // }
 
-    pub fn filepath(identity: &Hash, name: &str, instance_id: u64) -> String {
+    pub fn filepath(address: &Address, instance_id: u64) -> String {
         let root = format!("/stdb/worker_node/database_instances");
-        format!(
-            "{}/{}/{}/{}/{}",
-            root,
-            identity.to_hex(),
-            name,
-            instance_id,
-            "module_logs"
-        )
+        format!("{}/{}/{}/{}", root, address.to_hex(), instance_id, "module_logs")
     }
 
     pub fn open(root: impl AsRef<Path>) -> Self {

@@ -22,9 +22,9 @@ pub struct Database {
     #[prost(uint64, tag="1")]
     pub id: u64,
     #[prost(bytes, tag="2")]
+    pub address: std::vec::Vec<u8>,
+    #[prost(bytes, tag="3")]
     pub identity: std::vec::Vec<u8>,
-    #[prost(string, tag="3")]
-    pub name: std::string::String,
     #[prost(enumeration="HostType", tag="4")]
     pub host_type: i32,
     #[prost(uint32, tag="5")]

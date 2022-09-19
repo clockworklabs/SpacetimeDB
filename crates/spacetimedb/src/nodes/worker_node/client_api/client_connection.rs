@@ -1,4 +1,5 @@
 use super::client_connection_index::CLIENT_ACTOR_INDEX;
+use crate::address::Address;
 use crate::hash::Hash;
 use crate::json::client_api::IdentityTokenJson;
 use crate::json::client_api::MessageJson;
@@ -117,8 +118,7 @@ impl ClientConnectionSender {
 pub struct ClientConnection {
     pub id: ClientActorId,
     pub alive: bool,
-    pub module_identity: Hash,
-    pub module_name: String,
+    pub target_address: Address,
     pub protocol: Protocol,
     stream: Option<SplitStream<WebSocketStream<Upgraded>>>,
     sendtx: mpsc::Sender<SendCommand>,
@@ -126,15 +126,11 @@ pub struct ClientConnection {
 }
 
 impl ClientConnection {
-    pub fn get_database_instance_id(module_identity: &Hash, module_name: &str) -> Result<u64, anyhow::Error> {
-        let database = if let Some(database) = worker_db::get_database_by_address(module_identity, module_name) {
+    pub fn get_database_instance_id(address: &Address) -> Result<u64, anyhow::Error> {
+        let database = if let Some(database) = worker_db::get_database_by_address(address) {
             database
         } else {
-            return Err(anyhow::anyhow!(
-                "Cannot find database {}/{}",
-                module_identity.to_hex(),
-                module_name
-            ));
+            return Err(anyhow::anyhow!("Cannot find database {}", address.to_hex()));
         };
         let database_instance = worker_db::get_leader_database_instance_by_database(database.id);
         let instance_id = database_instance.unwrap().id;
@@ -144,8 +140,7 @@ impl ClientConnection {
     pub fn new(
         id: ClientActorId,
         ws: WebSocketStream<Upgraded>,
-        module_identity: Hash,
-        module_name: String,
+        target_address: Address,
         protocol: Protocol,
     ) -> ClientConnection {
         let (mut sink, stream) = ws.split();
@@ -165,8 +160,7 @@ impl ClientConnection {
         Self {
             id,
             alive: true,
-            module_identity,
-            module_name,
+            target_address,
             protocol,
             stream: Some(stream),
             sendtx,
@@ -185,7 +179,7 @@ impl ClientConnection {
     pub fn recv(&mut self) {
         let id = self.id;
         let mut stream = self.stream.take().unwrap();
-        let instance_id = Self::get_database_instance_id(&self.module_identity, &self.module_name).unwrap();
+        let instance_id = Self::get_database_instance_id(&self.target_address).unwrap();
         self.read_handle = Some(spawn(async move {
             while let Some(message) = stream.next().await {
                 match message {
@@ -316,7 +310,7 @@ impl ClientConnection {
 impl Drop for ClientConnection {
     fn drop(&mut self) {
         // Schedule removal of the module subscription for the future.
-        let instance_id = Self::get_database_instance_id(&self.module_identity, &self.module_name);
+        let instance_id = Self::get_database_instance_id(&self.target_address);
         let instance_id = if let Ok(instance_id) = instance_id {
             instance_id
         } else {

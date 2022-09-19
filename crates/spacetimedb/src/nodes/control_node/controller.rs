@@ -1,3 +1,4 @@
+use crate::address::Address;
 use crate::nodes::control_node::control_budget;
 use crate::nodes::control_node::control_budget::WorkerBudgetState;
 use crate::nodes::control_node::worker_api::worker_connection::WorkerConnectionSender;
@@ -52,8 +53,8 @@ pub async fn node_disconnected(_id: u64) -> Result<(), anyhow::Error> {
 }
 
 pub async fn insert_database(
+    address: &Address,
     identity: &Hash,
-    name: &str,
     program_bytes_address: &Hash,
     host_type: HostType,
     num_replicas: u32,
@@ -61,15 +62,15 @@ pub async fn insert_database(
 ) -> Result<(), anyhow::Error> {
     let database = Database {
         id: 0,
+        address: address.as_slice().to_vec(),
         identity: identity.as_slice().to_owned(),
-        name: name.to_string(),
         host_type: host_type.int_value(),
         num_replicas,
         program_bytes_address: program_bytes_address.as_slice().to_owned(),
     };
 
     if force {
-        if let Some(database) = control_db::get_database_by_address(identity, name).await? {
+        if let Some(database) = control_db::get_database_by_address(address).await? {
             let database_id = database.id;
             schedule_database(None, Some(database)).await?;
             control_db::delete_database(database_id).await?;
@@ -99,12 +100,11 @@ pub async fn insert_database(
 }
 
 pub async fn update_database(
-    identity: &Hash,
-    name: &str,
+    address: &Address,
     program_bytes_address: &Hash,
     num_replicas: u32,
 ) -> Result<(), anyhow::Error> {
-    let database = control_db::get_database_by_address(identity, name).await?;
+    let database = control_db::get_database_by_address(address).await?;
     let mut database = match database {
         Some(database) => database,
         None => return Ok(()),
@@ -129,8 +129,8 @@ pub async fn update_database(
     Ok(())
 }
 
-pub async fn delete_database(identity: &Hash, name: &str) -> Result<(), anyhow::Error> {
-    let database = control_db::get_database_by_address(identity, name).await?;
+pub async fn delete_database(address: &Address) -> Result<(), anyhow::Error> {
+    let database = control_db::get_database_by_address(address).await?;
     let database = match database {
         Some(database) => database,
         None => return Ok(()),
