@@ -35,11 +35,9 @@ struct DNSQueryParams {}
 async fn dns(state: &mut State) -> SimpleHandlerResult {
     let DNSParams { domain_name } = DNSParams::take_from(state);
     let DNSQueryParams {} = DNSQueryParams::take_from(state);
-    log::debug!("HAP4 {}", domain_name);
 
     let address = control_db::spacetime_dns(&domain_name).await?;
     if let Some(address) = address {
-        log::debug!("HAP3 {} {}", address.to_hex(), domain_name);
         let response = DNSResponse {
             address: address.to_hex(),
         };
@@ -89,14 +87,12 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
                 Err(anyhow::anyhow!("Pass force true to overwrite database."))?;
             }
             // TODO(cloutiertyler): Validate that the creator has credentials for this database
-            log::debug!("HAP2 {} {}", address_for_name.to_hex(), name);
             address_for_name
         } else {
             // Client specified a name which doesn't yet exist
             // Create a new DNS record and a new address to assign to it
             let new_address = control_db::alloc_spacetime_address().await?;
             control_db::spacetime_insert_dns_record(&new_address, &name).await?;
-            log::debug!("HAP {}", new_address.to_hex());
             new_address
         }
     } else {
