@@ -71,7 +71,7 @@ impl<'a> Drop for RelationalDBGuard<'a> {
 }
 
 pub struct RelationalDB {
-    pub txdb: TransactionalDB,
+    pub(crate) txdb: TransactionalDB,
 }
 
 fn make_default_ostorage(path: &Path) -> Box<dyn ObjectDB + Send> {

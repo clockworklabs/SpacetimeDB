@@ -695,7 +695,8 @@ impl WasmModuleHostActor {
                     TX_SIZE
                         .with_label_values(&[&address, reducer_symbol])
                         .observe(num_bytes_written as f64);
-                    stdb.txdb.message_log.sync_all().unwrap();
+
+                    stdb.txdb.sync_all().unwrap();
                     Ok((Some(tx), used_energy, remaining_points, repeat_duration))
                 } else {
                     todo!("Write skew, you need to implement retries my man, T-dawg.");

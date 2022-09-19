@@ -519,7 +519,7 @@ impl CPythonModuleHostActor {
                     TX_SIZE
                         .with_label_values(&[&address, reducer_symbol])
                         .observe(num_bytes_written as f64);
-                    stdb.txdb.message_log.sync_all().unwrap();
+                    stdb.txdb.sync_all().unwrap();
                     Ok((Some(tx), repeat_duration))
                 } else {
                     todo!("Write skew, you need to implement retries my man, T-dawg.");

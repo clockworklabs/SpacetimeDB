@@ -494,6 +494,7 @@ fn plan_select(database_instance_id: u64, select: Select) -> Result<RelationExpr
                     let col_name = ident.to_string();
                     let mut tx = db.begin_tx();
                     let col_id = db.column_id_from_name(&mut tx, table_id, &col_name);
+                    db.rollback_tx(tx);
                     let col_id = if let Some(col_id) = col_id {
                         col_id
                     } else {

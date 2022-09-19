@@ -557,6 +557,10 @@ impl TransactionalDB {
 
         value
     }
+
+    pub fn sync_all(&mut self) -> Result<(), anyhow::Error> {
+        self.message_log.sync_all()
+    }
 }
 
 pub struct ScanIter<'a> {
