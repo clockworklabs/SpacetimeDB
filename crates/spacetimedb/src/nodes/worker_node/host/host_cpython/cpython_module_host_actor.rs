@@ -16,7 +16,8 @@ use spacetimedb_bindings::buffer::VectorBufWriter;
 use spacetimedb_bindings::{ElementDef, TupleDef, TypeDef};
 
 use crate::db::messages::transaction::Transaction;
-use crate::db::transactional_db::{CommitResult, Tx};
+use crate::db::relational_db::TxWrapper;
+use crate::db::transactional_db::CommitResult;
 use crate::hash::Hash;
 use crate::nodes::worker_node::client_api::client_connection::ClientActorId;
 use crate::nodes::worker_node::client_api::module_subscription_actor::ModuleSubscription;
@@ -64,7 +65,7 @@ pub(crate) struct CPythonModuleHostActor {
     worker_database_instance: WorkerDatabaseInstance,
     module_host: ModuleHost,
     instances: Vec<(u32, Py<PyModule>)>,
-    instance_tx_map: Arc<Mutex<HashMap<u32, Tx>>>,
+    instance_tx_map: Arc<Mutex<HashMap<u32, TxWrapper>>>,
     subscription: ModuleSubscription,
 }
 
@@ -443,10 +444,7 @@ impl CPythonModuleHostActor {
         );
         TX_COUNT.with_label_values(&[&address, reducer_symbol]).inc();
 
-        let tx = {
-            let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
-            stdb.begin_tx()
-        };
+        let tx = self.worker_database_instance.relational_db.begin_tx();
 
         // TODO: choose one at random or whatever
         let (instance_id, instance) = &self.instances[0];
@@ -505,7 +503,7 @@ impl CPythonModuleHostActor {
                 let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
                 let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
                 let tx = instance_tx_map.remove(&instance_id).unwrap();
-                stdb.rollback_tx(tx);
+                stdb.rollback_tx(tx.into());
 
                 // TODO(ryan): Make sure proper traceback is fully output here.
                 log::error!("Reducer \"{}\" runtime error: {}", reducer_symbol, err);
@@ -515,7 +513,7 @@ impl CPythonModuleHostActor {
                 let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
                 let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
                 let tx = instance_tx_map.remove(&instance_id).unwrap();
-                if let Some(CommitResult { tx, num_bytes_written }) = stdb.commit_tx(tx) {
+                if let Some(CommitResult { tx, num_bytes_written }) = stdb.commit_tx(tx.into()) {
                     TX_SIZE
                         .with_label_values(&[&address, reducer_symbol])
                         .observe(num_bytes_written as f64);

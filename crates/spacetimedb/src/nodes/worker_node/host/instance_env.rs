@@ -5,15 +5,14 @@ use spacetimedb_bindings::{
     decode_schema, ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue, TupleDef, TupleValue, TypeDef, TypeValue,
 };
 
-use crate::db::relational_db::RelationalDB;
-use crate::db::transactional_db::Tx;
+use crate::db::relational_db::{RelationalDB, TxWrapper};
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
 
 #[derive(Clone)]
 pub struct InstanceEnv {
     pub instance_id: u32,
     pub worker_database_instance: WorkerDatabaseInstance,
-    pub instance_tx_map: Arc<Mutex<HashMap<u32, Tx>>>,
+    pub instance_tx_map: Arc<Mutex<HashMap<u32, TxWrapper>>>,
 }
 
 // Generic 'instance environment' delegated to from various host types.

@@ -19,6 +19,40 @@ pub const ST_COLUMNS_NAME: &'static str = "st_columns";
 pub const ST_TABLES_ID: u32 = 0;
 pub const ST_COLUMNS_ID: u32 = 1;
 
+pub struct TxWrapper {
+    pub tx: Option<Tx>,
+    pub relational_db: RelationalDBWrapper,
+}
+
+impl Drop for TxWrapper {
+    fn drop(&mut self) {
+        if let Some(tx) = self.tx.take() {
+            let mut relational_db = self.relational_db.lock().unwrap();
+            relational_db.rollback_tx(tx)
+        }
+    }
+}
+
+impl std::ops::Deref for TxWrapper {
+    type Target = Tx;
+
+    fn deref(&self) -> &Tx {
+        self.tx.as_ref().unwrap()
+    }
+}
+
+impl std::ops::DerefMut for TxWrapper {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.tx.as_mut().unwrap()
+    }
+}
+
+impl From<TxWrapper> for Tx {
+    fn from(mut txw: TxWrapper) -> Self {
+        txw.tx.take().unwrap()
+    }
+}
+
 #[derive(Clone)]
 pub struct RelationalDBWrapper {
     inner: Arc<Mutex<RelationalDB>>,
@@ -35,6 +69,13 @@ impl RelationalDBWrapper {
         match self.inner.lock() {
             Ok(inner) => Ok(RelationalDBGuard::new(inner)),
             Err(err) => Err(err),
+        }
+    }
+
+    pub fn begin_tx(&self) -> TxWrapper {
+        TxWrapper {
+            tx: Some(self.inner.lock().unwrap().begin_tx()),
+            relational_db: self.clone(),
         }
     }
 }

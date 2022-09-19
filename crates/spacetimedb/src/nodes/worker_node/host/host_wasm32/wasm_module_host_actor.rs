@@ -1,3 +1,5 @@
+use crate::db::messages::transaction::Transaction;
+use crate::db::relational_db::TxWrapper;
 use crate::db::transactional_db::CommitResult;
 use crate::db::{messages::transaction::Transaction, transactional_db::Tx};
 use crate::nodes::worker_node::host::host_controller::{
@@ -100,7 +102,7 @@ pub(crate) struct WasmModuleHostActor {
     module: Module,
     store: Store,
     instances: Vec<(u32, Instance)>,
-    instance_tx_map: Arc<Mutex<HashMap<u32, Tx>>>,
+    instance_tx_map: Arc<Mutex<HashMap<u32, TxWrapper>>>,
     subscription: ModuleSubscription,
 
     // Holds the list of descriptions of each entity.
@@ -606,10 +608,7 @@ impl WasmModuleHostActor {
         );
         TX_COUNT.with_label_values(&[&address, reducer_symbol]).inc();
 
-        let tx = {
-            let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
-            stdb.begin_tx()
-        };
+        let tx = self.worker_database_instance.relational_db.begin_tx();
 
         // TODO: choose one at random or whatever
         let (instance_id, instance) = &self.instances[0];
@@ -677,7 +676,7 @@ impl WasmModuleHostActor {
                 let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
                 let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
                 let tx = instance_tx_map.remove(&instance_id).unwrap();
-                stdb.rollback_tx(tx);
+                stdb.rollback_tx(tx.into());
 
                 log_traceback("reducer", reducer_symbol, &err);
                 Ok((None, used_energy, remaining_points, None))
@@ -691,7 +690,7 @@ impl WasmModuleHostActor {
                 let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
                 let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
                 let tx = instance_tx_map.remove(&instance_id).unwrap();
-                if let Some(CommitResult { tx, num_bytes_written }) = stdb.commit_tx(tx) {
+                if let Some(CommitResult { tx, num_bytes_written }) = stdb.commit_tx(tx.into()) {
                     TX_SIZE
                         .with_label_values(&[&address, reducer_symbol])
                         .observe(num_bytes_written as f64);
