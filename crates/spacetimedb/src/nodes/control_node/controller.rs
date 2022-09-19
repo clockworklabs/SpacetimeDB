@@ -1,4 +1,6 @@
 use crate::nodes::control_node::control_budget;
+use crate::nodes::control_node::control_budget::WorkerBudgetState;
+use crate::nodes::control_node::worker_api::worker_connection::WorkerConnectionSender;
 use crate::nodes::HostType;
 use crate::{
     hash::Hash,
@@ -332,6 +334,54 @@ async fn broadcast_schedule_update(update: ScheduleUpdate) -> Result<(), anyhow:
     Ok(())
 }
 
+async fn send_budget_allocation(
+    node_id: u64,
+    identity: &Hash,
+    sender: &WorkerConnectionSender,
+    budget_allocation: &WorkerBudgetState,
+) {
+    let budget_update = BudgetUpdate {
+        module_identity: identity.as_slice().to_vec(),
+        allocation_delta: budget_allocation.delta_quanta,
+        default_max_spend: budget_allocation.default_max_spend_quanta,
+    };
+    let message = WorkerBoundMessage {
+        r#type: Some(worker_bound_message::Type::BudgetUpdate(budget_update)),
+    };
+    let mut buf = Vec::new();
+    message.encode(&mut buf).unwrap();
+
+    let result = { sender.clone().send(WebSocketMessage::Binary(buf)).await };
+    if let Err(err) = result {
+        log::error!("Unable to send budget allocation to node {node_id} {err}");
+    }
+}
+
+// Broadcast the budget allocations for only a single module to all worker nodes.
+// Called when a specific module budget is updated.
+pub(crate) async fn publish_module_budget_state(module_identity: &Hash) -> Result<(), anyhow::Error> {
+    // To avoid trying to hold the WCI mutex in the .awaits below, we'll pre-collect the node ids
+    // here.
+    let node_ids: Vec<_> = {
+        let wci = WORKER_CONNECTION_INDEX.lock().unwrap();
+        wci.connections.iter().map(|c| c.id).collect()
+    };
+
+    for node_id in node_ids {
+        let allocation = control_budget::module_budget_allocations(node_id, module_identity).await;
+        if let Some(allocation) = allocation {
+            let sender = {
+                let wci = WORKER_CONNECTION_INDEX.lock().unwrap();
+                let connection = wci.get_client(&node_id).unwrap();
+                connection.sender()
+            };
+            send_budget_allocation(node_id, module_identity, &sender, &allocation).await;
+        }
+    }
+
+    Ok(())
+}
+
 /// Broadcast the current budget allocations to all worker nodes.
 /// Called when a node is first connected and also on the budget refresh loop.
 pub(crate) async fn node_publish_budget_state(node_id: u64) -> Result<(), anyhow::Error> {
@@ -349,28 +399,12 @@ pub(crate) async fn node_publish_budget_state(node_id: u64) -> Result<(), anyhow
     // TODO: this is sending one message per module identity. For efficiency we could consider a
     // single batched message containing all budgets.
     for nba in node_budget_allocations {
-        let budget_update = BudgetUpdate {
-            module_identity: nba.0.data.to_vec(),
-            allocation_delta: nba.1.delta_quanta,
-            default_max_spend: nba.1.default_max_spend_quanta,
+        let sender = {
+            let wci = WORKER_CONNECTION_INDEX.lock().unwrap();
+            let connection = wci.get_client(&node_id).unwrap();
+            connection.sender()
         };
-        let message = WorkerBoundMessage {
-            r#type: Some(worker_bound_message::Type::BudgetUpdate(budget_update)),
-        };
-        let mut buf = Vec::new();
-        message.encode(&mut buf).unwrap();
-
-        let result = {
-            let sender = {
-                let wci = WORKER_CONNECTION_INDEX.lock().unwrap();
-                let connection = wci.get_client(&node_id).unwrap();
-                connection.sender()
-            };
-            sender.clone().send(WebSocketMessage::Binary(buf)).await
-        };
-        if let Err(err) = result {
-            log::debug!("{err}");
-        }
+        send_budget_allocation(node_id, &nba.0, &sender, &nba.1).await;
     }
     Ok(())
 }

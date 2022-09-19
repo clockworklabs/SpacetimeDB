@@ -1,6 +1,6 @@
+use crate::db::messages::transaction::Transaction;
 use crate::db::relational_db::TxWrapper;
 use crate::db::transactional_db::CommitResult;
-use crate::db::{messages::transaction::Transaction, transactional_db::Tx};
 use crate::nodes::worker_node::host::host_controller::{
     DescribedEntityType, Entity, EntityDescription, ReducerBudget, ReducerCallResult,
 };

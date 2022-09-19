@@ -7,6 +7,7 @@ use anyhow::anyhow;
 use crate::hash::Hash;
 use crate::nodes::control_node::control_db;
 use crate::nodes::control_node::control_db::set_energy_budget;
+use crate::nodes::control_node::controller::publish_module_budget_state;
 use crate::protobuf::control_db::EnergyBudget;
 
 // TODO: Consider making not static & dependency injected
@@ -97,6 +98,9 @@ pub(crate) async fn update_budget_allocation(module_identity: &Hash, eb: &Energy
         identity_budget.insert(*module_identity, eb.clone());
     }
     update_identity_worker_budget_state(&module_identity, eb).await;
+    publish_module_budget_state(module_identity)
+        .await
+        .expect("Could not publish updated budget");
 }
 
 /// Initial state. Delta quanta is the whole amount.
@@ -149,13 +153,19 @@ async fn update_identity_worker_budget_state(module_identity: &Hash, eb: &Energy
 }
 
 /// Retrieve current budget allocations for a given node for the current interval.
-/// After this is sent, the allocation delta for the next interval is re-adjusted for the next
-/// interval.
 pub(crate) async fn budget_allocations(node_id: u64) -> Option<Vec<(Hash, WorkerBudgetState)>> {
     let node_identity_budget = NODE_MODULE_BUDGET.lock().expect("unlock node/identity budget state");
     let node_entries = node_identity_budget.iter().filter(|entry| entry.0 .0 == node_id);
     let x = node_entries.map(|entry| (entry.0 .1, entry.1.clone()));
     Some(x.collect())
+}
+
+/// Retrieve current budget allocations for a node & specific module for this interval.
+pub(crate) async fn module_budget_allocations(node_id: u64, module_identity: &Hash) -> Option<WorkerBudgetState> {
+    let node_identity_budget = NODE_MODULE_BUDGET.lock().expect("unlock node/identity budget state");
+    node_identity_budget
+        .get(&(node_id, module_identity.clone()))
+        .map(|b| b.clone())
 }
 
 /// Called by the worker_connection when budget spend information is received from a node.
