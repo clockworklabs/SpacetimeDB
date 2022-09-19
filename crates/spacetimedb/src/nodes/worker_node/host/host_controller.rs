@@ -2,6 +2,7 @@ use crate::hash::{hash_bytes, Hash};
 use crate::nodes::worker_node::host::host_cpython::make_cpython_module_host_actor;
 use crate::nodes::worker_node::host::host_wasm32::make_wasm32_module_host_actor;
 use crate::nodes::worker_node::host::module_host::ModuleHost;
+use crate::nodes::worker_node::worker_budget;
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
 use crate::nodes::HostType;
 use anyhow;
@@ -10,7 +11,6 @@ use serde::Serialize;
 use spacetimedb_bindings::TupleDef;
 use std::fmt::{Display, Formatter};
 use std::{collections::HashMap, sync::Mutex};
-use crate::nodes::worker_node::worker_budget;
 
 lazy_static! {
     pub static ref HOST: HostController = HostController::new();
@@ -180,7 +180,6 @@ impl HostController {
         reducer_name: &str,
         arg_bytes: impl AsRef<[u8]>,
     ) -> Result<ReducerCallResult, anyhow::Error> {
-
         let module_host = self.module_host(instance_id)?;
         let max_spend = worker_budget::max_tx_spend(&module_host.identity);
         let budget = ReducerBudget(max_spend);
@@ -198,7 +197,7 @@ impl HostController {
                 worker_budget::record_tx_spend(&module_host.identity, rcr.energy_quanta_used);
                 Ok(rcr)
             }
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 

@@ -1,14 +1,14 @@
 use super::worker_connection::WorkerConnection;
+use crate::nodes::control_node::controller::node_publish_budget_state;
 use hyper::upgrade::Upgraded;
 use lazy_static::lazy_static;
 use std::{collections::HashMap, sync::Mutex, time::Duration};
 use tokio::{task::JoinHandle, time::sleep};
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
 use tokio_tungstenite::WebSocketStream;
-use crate::nodes::control_node::controller::node_publish_budget_state;
 
-const LIVENESS_CHECK_INTERVAL_SECONDS : u64 = 10;
-const WORKER_BUDGET_UPDATE_INTERVAL_SECONDS : u64 = 10;
+const LIVENESS_CHECK_INTERVAL_SECONDS: u64 = 10;
+const WORKER_BUDGET_UPDATE_INTERVAL_SECONDS: u64 = 10;
 
 lazy_static! {
     pub static ref WORKER_CONNECTION_INDEX: Mutex<WorkerConnectionIndex> = {
@@ -66,7 +66,6 @@ impl WorkerConnectionIndex {
                 sleep(Duration::from_secs(LIVENESS_CHECK_INTERVAL_SECONDS)).await;
             }
         }));
-
     }
 
     pub fn start_worker_budget_update() {

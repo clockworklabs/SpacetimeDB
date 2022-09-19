@@ -1,10 +1,10 @@
 pub(crate) mod client_api; // TODO: should be private
+mod control_budget;
 pub(crate) mod control_db;
 mod controller;
 mod object_db;
 pub(crate) mod prometheus_metrics;
 pub(crate) mod worker_api;
-mod control_budget;
 
 use futures::{future::join_all, FutureExt};
 

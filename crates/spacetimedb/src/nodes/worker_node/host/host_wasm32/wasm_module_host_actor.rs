@@ -396,7 +396,7 @@ impl WasmModuleHostActor {
                 arg_bytes: arg_bytes.to_owned(),
             },
             status,
-            energy_quanta_used
+            energy_quanta_used,
         };
         self.subscription.broadcast_event(event).unwrap();
 
@@ -445,7 +445,7 @@ impl WasmModuleHostActor {
                 arg_bytes: arg_bytes.to_owned(),
             },
             status,
-            energy_quanta_used: 0 // TODO
+            energy_quanta_used: 0, // TODO
         };
         self.subscription.broadcast_event(event).unwrap();
 
@@ -494,7 +494,7 @@ impl WasmModuleHostActor {
             },
             status,
             caller_identity: *identity,
-            energy_quanta_used: 0
+            energy_quanta_used: 0,
         };
         self.subscription.broadcast_event(event).unwrap();
 

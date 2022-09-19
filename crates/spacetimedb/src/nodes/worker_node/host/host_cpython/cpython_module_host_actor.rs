@@ -235,7 +235,7 @@ impl CPythonModuleHostActor {
             },
             status,
             caller_identity: *identity,
-            energy_quanta_used: 0 // TODO
+            energy_quanta_used: 0, // TODO
         };
         self.subscription.broadcast_event(event).unwrap();
 
@@ -271,7 +271,7 @@ impl CPythonModuleHostActor {
                 arg_bytes: arg_bytes.to_owned(),
             },
             status,
-            energy_quanta_used: 0 // TODO
+            energy_quanta_used: 0, // TODO
         };
         self.subscription.broadcast_event(event).unwrap();
 
@@ -316,7 +316,7 @@ impl CPythonModuleHostActor {
                 arg_bytes: arg_bytes.to_owned(),
             },
             status,
-            energy_quanta_used: 0 // TODO
+            energy_quanta_used: 0, // TODO
         };
         self.subscription.broadcast_event(event).unwrap();
 

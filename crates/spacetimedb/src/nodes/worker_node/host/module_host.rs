@@ -100,7 +100,7 @@ impl ModuleHost {
                 }
             }
         });
-        ModuleHost {identity,  tx }
+        ModuleHost { identity, tx }
     }
 
     pub async fn call_identity_connected_disconnected(

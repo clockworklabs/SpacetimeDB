@@ -47,9 +47,9 @@ impl HashMapObjectDB {
             for item in read_dir(inner_dir)? {
                 let dir_entry = item?;
                 #[cfg(target_family = "unix")]
-                    let size = dir_entry.metadata()?.size();
+                let size = dir_entry.metadata()?.size();
                 #[cfg(target_family = "windows")]
-                    let size = dir_entry.metadata()?.len();
+                let size = dir_entry.metadata()?.len();
                 let path = dir_entry.path();
                 let dir_name = path.file_name().unwrap().to_str().unwrap();
                 let hex_dir_name = hex::decode(dir_name);
