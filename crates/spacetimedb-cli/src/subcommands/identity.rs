@@ -28,6 +28,13 @@ fn get_subcommands() -> Vec<Command<'static>> {
             .about("Associates an identity with an email address")
             .arg(Arg::new("identity").required(true))
             .arg(Arg::new("email").required(true)),
+        Command::new("init-default")
+            .about("Initialize a new default identity if missing")
+            .arg(
+                arg!(-n --name "Nickname for this identity")
+                    .required(false)
+                    .default_missing_value(""),
+            ),
         Command::new("new")
             .about("Create a new identity")
             .arg(
@@ -69,7 +76,8 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     match cmd {
         "ls" => exec_ls(config, args).await,
-        "set-default" => exec_default(config, args).await,
+        "set-default" => exec_set_default(config, args).await,
+        "init-default" => exec_init_default(config, args).await,
         "new" => exec_new(config, args).await,
         "rm" => exec_rm(config, args).await,
         "add" => exec_add(config, args).await,
@@ -78,7 +86,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
     }
 }
 
-async fn exec_default(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let name = args.get_one::<String>("name");
     if let Some(name) = name {
         if let Some(identity_config) = config.get_identity_config_by_name(name) {
@@ -99,6 +107,58 @@ async fn exec_default(mut config: Config, args: &ArgMatches) -> Result<(), anyho
             std::process::exit(0);
         }
     }
+
+    Ok(())
+}
+
+// TODO(cloutiertyler): Realistically this should just be run before every
+// single command, but I'm separating it out into its own command for now for
+// simplicity.
+async fn exec_init_default(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let nickname = args.get_one::<String>("name").unwrap_or(&"".to_string()).clone();
+    if config.name_exists(&nickname) {
+        println!("An identity with that name already exists.");
+        std::process::exit(0);
+    }
+
+    let client = reqwest::Client::new();
+    let builder = client.post(format!("http://{}/identity", config.host));
+
+    if let Some(identity_config) = config.get_default_identity_config() {
+        println!(" Existing default identity");
+        println!(" IDENTITY  {}", identity_config.identity);
+        println!(
+            " NAME      {}",
+            identity_config.nickname.clone().unwrap_or("".to_string())
+        );
+        return Ok(());
+    }
+
+    let res = builder.send().await?;
+    let res = res.error_for_status()?;
+
+    let body = res.bytes().await?;
+    let body = String::from_utf8(body.to_vec())?;
+
+    let identity_token: IdentityTokenJson = serde_json::from_str(&body)?;
+
+    let identity = identity_token.identity.clone();
+
+    let nickname = args.get_one::<String>("name").map(|s| s.clone());
+
+    config.identity_configs.push(IdentityConfig {
+        identity: identity_token.identity,
+        token: identity_token.token,
+        nickname: nickname.clone(),
+        email: None,
+    });
+    if config.default_identity.is_none() {
+        config.default_identity = Some(identity.clone());
+    }
+    config.save();
+    println!(" Saved new identity");
+    println!(" IDENTITY  {}", identity);
+    println!(" NAME      {}", nickname.unwrap_or("".to_string()));
 
     Ok(())
 }

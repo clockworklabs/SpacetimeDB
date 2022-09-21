@@ -4,7 +4,7 @@ use std::{
 };
 
 use futures::StreamExt;
-use hyper::{body, Body, Request, Uri};
+use hyper::{body, Body, Request, StatusCode, Uri};
 use int_enum::IntEnum;
 use prost::Message;
 use serde::{Deserialize, Serialize};
@@ -381,6 +381,11 @@ pub struct ControlNodeClient {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct DNSResponse {
+    address: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct IdentityResponse {
     identity: String,
     token: String,
@@ -412,6 +417,27 @@ impl ControlNodeClient {
         let res: IdentityResponse = serde_json::from_slice(&bytes[..])?;
 
         Ok((Hash::from_hex(&res.identity).unwrap(), res.token))
+    }
+
+    pub async fn resolve_name(&self, name: &str) -> Result<Option<Address>, anyhow::Error> {
+        let uri = format!("http://{}/database/dns/{}", self.client_api_bootstrap_addr, name)
+            .parse::<Uri>()
+            .unwrap();
+
+        let request = Request::builder().method("POST").uri(&uri).body(Body::empty())?;
+
+        let client = hyper::Client::new();
+        let res = client.request(request).await.unwrap();
+
+        if res.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        let body = res.into_body();
+        let bytes = body::to_bytes(body).await.unwrap();
+        let res: DNSResponse = serde_json::from_slice(&bytes[..])?;
+
+        Ok(Some(Address::from_hex(&res.address).unwrap()))
     }
 
     async fn get_program_bytes(&self, program_bytes_address: &Hash) -> Vec<u8> {

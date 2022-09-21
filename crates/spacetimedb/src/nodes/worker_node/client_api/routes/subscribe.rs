@@ -42,8 +42,13 @@ const TEXT_PROTOCOL: &str = "v1.text.spacetimedb";
 const BIN_PROTOCOL: &str = "v1.bin.spacetimedb";
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
+pub struct SubscribeQueryParams {
+    name: Option<String>,
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
 pub struct SubscribeParams {
-    address: String,
+    address: Option<String>,
 }
 
 fn accept_ws_res(key: &HeaderValue, protocol: &HeaderValue, identity: Hash, identity_token: String) -> Response<Body> {
@@ -179,6 +184,20 @@ async fn on_upgrade(
     };
 
     let SubscribeParams { address } = SubscribeParams::take_from(&mut state);
+    let address = if let Some(address) = address {
+        address
+    } else {
+        let SubscribeQueryParams { name } = SubscribeQueryParams::take_from(&mut state);
+        if let Some(name) = name {
+            if let Some(address) = ControlNodeClient::get_shared().resolve_name(&name).await.unwrap() {
+                address.to_hex()
+            } else {
+                return Ok((state, bad_request_res()));
+            }
+        } else {
+            return Ok((state, bad_request_res()));
+        }
+    };
 
     let target_address = match Address::from_hex(&address) {
         Ok(h) => h,

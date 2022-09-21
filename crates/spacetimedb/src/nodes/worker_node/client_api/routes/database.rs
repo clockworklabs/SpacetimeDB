@@ -34,6 +34,7 @@ use crate::sql;
 
 use super::subscribe::handle_websocket;
 use super::subscribe::SubscribeParams;
+use super::subscribe::SubscribeQueryParams;
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct CallParams {
@@ -420,7 +421,7 @@ async fn sql(state: &mut State) -> SimpleHandlerResult {
 pub fn router() -> Router {
     build_simple_router(|route| {
         route
-            .get("/dns/:domain_name")
+            .get("/dns/:database_name")
             .to_async(proxy_to_control_node_client_api);
 
         route.post("/init").to_async(proxy_to_control_node_client_api);
@@ -436,6 +437,7 @@ pub fn router() -> Router {
         route
             .get("/subscribe/:address")
             .with_path_extractor::<SubscribeParams>()
+            .with_query_string_extractor::<SubscribeQueryParams>()
             .to_async(handle_websocket);
 
         route

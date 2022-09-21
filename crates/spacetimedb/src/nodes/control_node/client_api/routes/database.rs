@@ -26,17 +26,17 @@ struct DNSResponse {
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct DNSParams {
-    domain_name: String,
+    database_name: String,
 }
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct DNSQueryParams {}
 
 async fn dns(state: &mut State) -> SimpleHandlerResult {
-    let DNSParams { domain_name } = DNSParams::take_from(state);
+    let DNSParams { database_name } = DNSParams::take_from(state);
     let DNSQueryParams {} = DNSQueryParams::take_from(state);
 
-    let address = control_db::spacetime_dns(&domain_name).await?;
+    let address = control_db::spacetime_dns(&database_name).await?;
     if let Some(address) = address {
         let response = DNSResponse {
             address: address.to_hex(),
@@ -198,7 +198,7 @@ async fn delete_database(state: &mut State) -> SimpleHandlerResult {
 pub fn router() -> Router {
     build_simple_router(|route| {
         route
-            .get("/dns/:domain_name")
+            .get("/dns/:database_name")
             .with_path_extractor::<DNSParams>()
             .with_query_string_extractor::<DNSQueryParams>()
             .to_async_borrowing(dns);
