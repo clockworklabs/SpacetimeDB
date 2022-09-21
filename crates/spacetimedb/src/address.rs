@@ -1,5 +1,11 @@
 use std::net::Ipv6Addr;
 
+/// This is the address for a SpacetimeDB database. It is a unique identifier
+/// for a particular database and once set for a database, does not change.
+///
+/// TODO: Evaluate other possible names: `DatabaseAddress`, `SPAddress`
+/// TODO: Evaluate replacing this with a literal Ipv6Address which is assigned
+/// permanently to a database.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Address(u128);
 

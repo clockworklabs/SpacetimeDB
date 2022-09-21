@@ -6,7 +6,7 @@ use crate::util::spacetime_dns;
 
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("schema")
-        .about("Describe the entire schema of an stdb module")
+        .about("Describe the entire schema of an SpacetimeDB database")
         .arg(Arg::new("database").required(true))
         .arg(Arg::new("expand").long("expand").short('e'))
         .after_help("Run `stdb help schema for more detailed information.\n`")

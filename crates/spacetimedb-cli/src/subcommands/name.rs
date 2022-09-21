@@ -4,7 +4,7 @@ use clap::Arg;
 use clap::ArgMatches;
 
 pub fn cli() -> clap::Command<'static> {
-    clap::Command::new("dns")
+    clap::Command::new("name")
         .about("Resolves the address of a SpacetimeDB database.")
         .arg(Arg::new("name").required(true))
         .after_help("Run `stdb help call for more detailed information.\n`")

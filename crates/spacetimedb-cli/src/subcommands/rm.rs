@@ -5,7 +5,7 @@ use clap::ArgMatches;
 
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("rm")
-        .about("Create a new SpacetimeDB account.")
+        .about("Deletes a SpacetimeDB database.")
         .arg(Arg::new("database").required(true))
         .after_help("Run `stdb help rm for more detailed information.\n`")
 }
