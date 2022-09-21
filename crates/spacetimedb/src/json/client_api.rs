@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use spacetimedb_bindings::TupleDef;
-use spacetimedb_bindings::TypeValue;
+use spacetimedb_lib::TupleDef;
+use spacetimedb_lib::TypeValue;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MessageJson {

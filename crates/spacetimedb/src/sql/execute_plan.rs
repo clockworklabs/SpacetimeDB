@@ -3,7 +3,7 @@ use super::{
     StmtResult,
 };
 use crate::nodes::worker_node::database_instance_context_controller::DatabaseInstanceContextController;
-use spacetimedb_bindings::{TupleDef, TupleValue};
+use spacetimedb_lib::{TupleDef, TupleValue};
 
 pub fn execute_plan(database_instance_id: u64, plan: Plan) -> Result<StmtResult, anyhow::Error> {
     match plan {

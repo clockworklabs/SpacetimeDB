@@ -3,8 +3,7 @@ use clap::Arg;
 use clap::ArgMatches;
 use serde::Deserialize;
 use serde::Serialize;
-use spacetimedb_bindings::TupleDef;
-use spacetimedb_bindings::TypeValue;
+use spacetimedb_lib::{TupleDef, TypeValue};
 use tabled::builder::Builder;
 use tabled::Style;
 

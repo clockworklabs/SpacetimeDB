@@ -1,23 +1,11 @@
-pub mod args;
-pub mod buffer;
-mod data_key;
-pub mod hash;
-mod primary_key;
-mod type_def;
-mod type_value;
-
 #[macro_use]
 pub mod io;
 
-pub use data_key::DataKey;
-pub use hash::Hash;
-pub use primary_key::PrimaryKey;
+use spacetimedb_lib::{EqTypeValue, PrimaryKey, RangeTypeValue, TupleDef, TupleValue, TypeValue};
 use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
 use std::mem::ManuallyDrop;
 use std::ops::Range;
 use std::panic;
-pub use type_def::{ElementDef, TupleDef, TypeDef};
-pub use type_value::{EqTypeValue, RangeTypeValue, TupleValue, TypeValue};
 
 // #[cfg(target_arch = "wasm32")]
 // #[global_allocator]

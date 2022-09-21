@@ -1,4 +1,4 @@
-pub use spacetimedb_bindings::DataKey;
+pub use spacetimedb_lib::DataKey;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Write {

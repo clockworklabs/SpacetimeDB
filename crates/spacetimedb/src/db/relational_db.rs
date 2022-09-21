@@ -5,8 +5,8 @@ use super::{
 // use super::relational_operators::Project;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
-use spacetimedb_bindings::{ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue};
-pub use spacetimedb_bindings::{TupleDef, TupleValue, TypeDef, TypeValue};
+use spacetimedb_lib::{ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue};
+pub use spacetimedb_lib::{TupleDef, TupleValue, TypeDef, TypeValue};
 use std::{
     ops::{DerefMut, RangeBounds},
     path::Path,
@@ -725,7 +725,7 @@ impl<'a, R: RangeBounds<RangeTypeValue>> Iterator for ScanRangeIter<'a, R> {
 #[cfg(test)]
 mod tests {
     use super::RelationalDB;
-    use spacetimedb_bindings::{ElementDef, RangeTypeValue, TupleDef, TupleValue, TypeDef, TypeValue};
+    use spacetimedb_lib::{ElementDef, RangeTypeValue, TupleDef, TupleValue, TypeDef, TypeValue};
     use tempdir::TempDir;
 
     // let ptr = stdb.from(&mut tx, "health")

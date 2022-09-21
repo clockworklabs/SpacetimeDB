@@ -2,7 +2,8 @@ use spacetimedb_bindings::println;
 use std::time::Duration;
 
 use spacetimedb_bindgen::spacetimedb;
-use spacetimedb_bindings::{delete_range, Hash, RangeTypeValue};
+use spacetimedb_bindings::delete_range;
+use spacetimedb_lib::{Hash, RangeTypeValue};
 
 #[spacetimedb(table)]
 pub struct TestA {

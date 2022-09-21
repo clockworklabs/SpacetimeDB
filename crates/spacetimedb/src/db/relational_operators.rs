@@ -1,4 +1,4 @@
-use spacetimedb_bindings::TupleValue;
+use spacetimedb_lib::TupleValue;
 use std::{collections::HashSet, marker::PhantomData};
 
 // NOTE

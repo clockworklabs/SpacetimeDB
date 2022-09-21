@@ -8,7 +8,7 @@ use crate::nodes::HostType;
 use anyhow;
 use lazy_static::lazy_static;
 use serde::Serialize;
-use spacetimedb_bindings::TupleDef;
+use spacetimedb_lib::TupleDef;
 use std::fmt::{Display, Formatter};
 use std::{collections::HashMap, sync::Mutex};
 

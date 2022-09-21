@@ -5,4 +5,4 @@ pub mod relational_db;
 mod relational_operators;
 pub mod transactional_db;
 
-pub use spacetimedb_bindings::{TupleDef, TupleValue, TypeDef, TypeValue};
+pub use spacetimedb_lib::{TupleDef, TupleValue, TypeDef, TypeValue};

@@ -10,7 +10,7 @@ use syn::{FnArg, ItemFn, ItemStruct};
 
 /// This returns a function which will return the schema (TypeDef) for a struct. The signature
 /// for this function is as follows:
-/// fn __get_struct_schema__<struct_type_ident>() -> spacetimedb_bindings::TypeDef {
+/// fn __get_struct_schema__<struct_type_ident>() -> spacetimedb_lib::TypeDef {
 ///   ...
 /// }
 pub(crate) fn csharp_get_type_def_for_struct(original_struct: ItemStruct) -> String {

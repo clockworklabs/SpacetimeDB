@@ -20,3 +20,4 @@ toml = "0.5"
 dirs = "4.0"
 tabled = "0.8.0"
 spacetimedb-bindings = { path = "../spacetimedb-bindings" }
+spacetimedb-lib = { path = "../spacetimedb-lib" }

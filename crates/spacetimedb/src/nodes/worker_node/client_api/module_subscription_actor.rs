@@ -18,7 +18,7 @@ use crate::{
     },
 };
 use prost::Message as ProstMessage;
-use spacetimedb_bindings::{TupleDef, TupleValue};
+use spacetimedb_lib::{TupleDef, TupleValue};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;

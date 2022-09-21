@@ -2,7 +2,7 @@ use crate::db::messages::write::Write;
 use crate::hash::Hash;
 use crate::nodes::worker_node::client_api::client_connection::ClientActorId;
 use crate::nodes::worker_node::host::host_controller::{Entity, EntityDescription, ReducerBudget, ReducerCallResult};
-use spacetimedb_bindings::TupleDef;
+use spacetimedb_lib::TupleDef;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug, Clone)]

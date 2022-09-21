@@ -134,7 +134,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
                 // First argument must be Hash (sender)
                 if arg_num == 0 {
-                    if arg_type_str != "spacetimedb_bindings :: hash :: Hash" && arg_type_str != "Hash" {
+                    if arg_type_str != "spacetimedb_lib :: hash :: Hash" && arg_type_str != "Hash" {
                         let error_str = format!(
                             "Parameter 1 of reducer {} must be of type \'Hash\'.",
                             func_name.to_string()
@@ -194,7 +194,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #[no_mangle]
         #[allow(non_snake_case)]
         pub extern "C" fn #reducer_func_name(arg_ptr: usize, arg_size: usize) {
-            let arguments = spacetimedb_bindings::args::ReducerArguments::decode_mem(
+            let arguments = spacetimedb_lib::args::ReducerArguments::decode_mem(
                 unsafe { arg_ptr as *mut u8 }, arg_size).expect("Unable to decode module arguments");
 
             // Unwrap extra arguments, conditional on whether or not there are extra args.
@@ -213,7 +213,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #[allow(non_snake_case)]
         // u64 is offset << 32 | length
         pub extern "C" fn #descriptor_func_name() -> u64 {
-            let tupledef = spacetimedb_bindings::TupleDef { elements: vec![
+            let tupledef = spacetimedb_lib::TupleDef { elements: vec![
                     #(#function_call_arg_types),*
                 ] };
             let mut bytes = vec![];
@@ -298,7 +298,7 @@ fn spacetimedb_repeating_reducer(_args: AttributeArgs, item: TokenStream, repeat
         #[allow(non_snake_case)]
         pub extern "C" fn #reducer_func_name(arg_ptr: usize, arg_size: usize) -> u64 {
             // Deserialize the arguments
-            let arguments = spacetimedb_bindings::args::RepeatingReducerArguments::decode_mem(
+            let arguments = spacetimedb_lib::args::RepeatingReducerArguments::decode_mem(
                 unsafe { arg_ptr as *mut u8 }, arg_size).expect("Unable to decode module arguments");
 
             // Invoke the function with the deserialized args
@@ -412,7 +412,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
         // The simple name for the type, e.g. Hash
         let col_type: proc_macro2::TokenStream;
-        // The fully qualified name for this type, e.g. spacetimedb_bindings::Hash
+        // The fully qualified name for this type, e.g. spacetimedb_lib::Hash
         let col_type_full: proc_macro2::TokenStream;
         // The TypeValue representation of this type
         let col_type_value: proc_macro2::TokenStream;
@@ -422,18 +422,18 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             Some(ident) => {
                 col_type = field.ty.clone().to_token_stream().to_string().parse().unwrap();
                 col_type_full = col_type.clone();
-                col_type_value = format!("spacetimedb_bindings::TypeValue::{}", ident).parse().unwrap();
+                col_type_value = format!("spacetimedb_lib::TypeValue::{}", ident).parse().unwrap();
             }
             None => match field.ty.clone().to_token_stream().to_string().as_str() {
                 "Hash" => {
                     col_type = "Hash".parse().unwrap();
-                    col_type_full = "spacetimedb_bindings::Hash".parse().unwrap();
-                    col_type_value = format!("spacetimedb_bindings::TypeValue::Bytes").parse().unwrap();
+                    col_type_full = "spacetimedb_lib::Hash".parse().unwrap();
+                    col_type_value = format!("spacetimedb_lib::TypeValue::Bytes").parse().unwrap();
                 }
                 custom_type => {
                     col_type = custom_type.parse().unwrap();
                     col_type_full = col_type.clone();
-                    col_type_value = "spacetimedb_bindings::TypeValue::Tuple".parse().unwrap();
+                    col_type_value = "spacetimedb_lib::TypeValue::Tuple".parse().unwrap();
                 }
             },
         }
@@ -491,7 +491,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                                 }
 
                                 insert_columns.push(quote! {
-                                    spacetimedb_bindings::TypeValue::Bytes(ins.#col_name.to_vec())
+                                    spacetimedb_lib::TypeValue::Bytes(ins.#col_name.to_vec())
                                 });
                             }
                             "Vec" => {
@@ -501,15 +501,15 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                                         let vec_name: proc_macro2::TokenStream =
                                             format!("type_value_vec_{}", col_name).parse().unwrap();
                                         insert_columns.push(quote! {
-                                            spacetimedb_bindings::TypeValue::Vec(#vec_name)
+                                            spacetimedb_lib::TypeValue::Vec(#vec_name)
                                         });
 
                                         match rust_to_spacetimedb_ident(param.to_string().as_str()) {
                                             Some(spacetimedb_type) => {
                                                 insert_vec_construction.push(quote! {
-                                                    let mut #vec_name: Vec<spacetimedb_bindings::TypeValue> = Vec::<spacetimedb_bindings::TypeValue>::new();
+                                                    let mut #vec_name: Vec<spacetimedb_lib::TypeValue> = Vec::<spacetimedb_lib::TypeValue>::new();
                                                     for value in ins.#col_name {
-                                                        #vec_name.push(spacetimedb_bindings::TypeValue::#spacetimedb_type(value));
+                                                        #vec_name.push(spacetimedb_lib::TypeValue::#spacetimedb_type(value));
                                                     }
                                                 });
                                             }
@@ -523,7 +523,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                                                 other_type => {
                                                     let other_type = format_ident!("{}", other_type);
                                                     insert_vec_construction.push(quote! {
-                                                        let mut #vec_name: Vec<spacetimedb_bindings::TypeValue> = Vec::<spacetimedb_bindings::TypeValue>::new();
+                                                        let mut #vec_name: Vec<spacetimedb_lib::TypeValue> = Vec::<spacetimedb_lib::TypeValue>::new();
                                                         for value in ins.#col_name {
                                                             #vec_name.push(#other_type::struct_to_tuple(value));
                                                         }
@@ -624,7 +624,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             pub fn #delete_func_ident(#unique_column_def) -> bool {
                 let data = #unique_column_ident;
                 #unique_conversion_from_raw_to_stdb_statement
-                let equatable = spacetimedb_bindings::EqTypeValue::try_from(data);
+                let equatable = spacetimedb_lib::EqTypeValue::try_from(data);
                 match equatable {
                     Ok(value) => {
                         let result = spacetimedb_bindings::delete_eq(Self::table_id(), #unique_column_index, value);
@@ -705,7 +705,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #[allow(unused_variables)]
         pub fn insert(ins: #original_struct_ident) {
             #(#insert_vec_construction)*
-            spacetimedb_bindings::insert(Self::table_id(), spacetimedb_bindings::TupleValue {
+            spacetimedb_bindings::insert(Self::table_id(), spacetimedb_lib::TupleValue {
                 elements: vec![
                     #(#insert_columns),*
                 ]
@@ -824,7 +824,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #[no_mangle]
         pub extern "C" fn #create_table_func_name(arg_ptr: usize, arg_size: usize) {
             let def = #original_struct_ident::get_struct_schema();
-            if let spacetimedb_bindings::TypeDef::Tuple(tuple_def) = def {
+            if let spacetimedb_lib::TypeDef::Tuple(tuple_def) = def {
                 let table_id = spacetimedb_bindings::create_table(#table_name, tuple_def);
                 unsafe { #table_id_static_var_name = Some(table_id) }
             } else {
@@ -844,7 +844,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #[no_mangle]
         pub extern "C" fn #describe_table_func_name() -> u64 {
             let def = #original_struct_ident::get_struct_schema();
-            if let spacetimedb_bindings::TypeDef::Tuple(tuple_def) = def {
+            if let spacetimedb_lib::TypeDef::Tuple(tuple_def) = def {
                 let mut bytes = vec![];
                 tuple_def.encode(&mut bytes);
                 let offset = bytes.as_ptr() as u64;
@@ -1118,7 +1118,7 @@ fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connec
 
                 // First argument must be Hash (sender)
                 if arg_num == 0 {
-                    if arg_type_str != "spacetimedb_bindings :: hash :: Hash" && arg_type_str != "Hash" {
+                    if arg_type_str != "spacetimedb_lib :: hash :: Hash" && arg_type_str != "Hash" {
                         let error_str = format!(
                             "Parameter 1 of connect/disconnect {} must be of type \'Hash\'.",
                             func_name.to_string()
@@ -1155,7 +1155,7 @@ fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connec
         #[no_mangle]
         #[allow(non_snake_case)]
         pub extern "C" fn #connect_disconnect_ident(arg_ptr: usize, arg_size: usize) {
-            let arguments = spacetimedb_bindings::args::ConnectDisconnectArguments::decode_mem(
+            let arguments = spacetimedb_lib::args::ConnectDisconnectArguments::decode_mem(
                 unsafe { arg_ptr as *mut u8 }, arg_size).expect("Unable to decode module arguments");
 
             // Invoke the function with the deserialized args
@@ -1189,7 +1189,7 @@ pub fn derive_index(_item: TokenStream) -> TokenStream {
 
 pub(crate) fn rust_to_spacetimedb_ident(input_type: &str) -> Option<Ident> {
     return match input_type {
-        // These are typically prefixed with spacetimedb_bindings::TypeDef::
+        // These are typically prefixed with spacetimedb_lib::TypeDef::
         "bool" => Some(format_ident!("Bool")),
         "i8" => Some(format_ident!("I8")),
         "u8" => Some(format_ident!("U8")),
@@ -1246,7 +1246,7 @@ fn tuple_field_comparison_block(
 
     match rust_to_spacetimedb_ident(filter_field_type_str) {
         Some(ident) => {
-            stdb_type_value = format!("spacetimedb_bindings::TypeValue::{}", ident).parse().unwrap();
+            stdb_type_value = format!("spacetimedb_lib::TypeValue::{}", ident).parse().unwrap();
             comparison_and_result_statement = quote! {
                 if entry_data == #filter_field_name {
                     #result_statement
@@ -1256,9 +1256,9 @@ fn tuple_field_comparison_block(
         None => {
             match filter_field_type_str {
                 "Hash" => {
-                    stdb_type_value = format!("spacetimedb_bindings::TypeValue::Bytes").parse().unwrap();
+                    stdb_type_value = format!("spacetimedb_lib::TypeValue::Bytes").parse().unwrap();
                     comparison_and_result_statement = quote! {
-                        let entry_data = spacetimedb_bindings::hash::Hash::from_slice(&entry_data[0..32]);
+                        let entry_data = spacetimedb_lib::hash::Hash::from_slice(&entry_data[0..32]);
                         if #filter_field_name.eq(&entry_data) {
                             #result_statement
                         }

@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use spacetimedb_bindings::{
-    decode_schema, ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue, TupleDef, TupleValue, TypeDef, TypeValue,
-};
+use spacetimedb_bindings;
+use spacetimedb_lib::{ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue, TupleDef, TupleValue, TypeDef, TypeValue};
 
 use crate::db::relational_db::{RelationalDB, TxWrapper};
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
@@ -164,7 +163,7 @@ impl InstanceEnv {
         let table_name = table_info.elements[0].as_string().unwrap();
         let schema_bytes = table_info.elements[1].as_bytes().unwrap();
 
-        let (schema, _) = decode_schema(&mut &schema_bytes[..]);
+        let (schema, _) = spacetimedb_bindings::decode_schema(&mut &schema_bytes[..]);
         let schema = schema.unwrap_or_else(|e| {
             panic!("create_table: Could not decode schema! Err: {}", e);
         });

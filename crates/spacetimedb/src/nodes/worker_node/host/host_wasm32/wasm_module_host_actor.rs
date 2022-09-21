@@ -18,9 +18,9 @@ use crate::{
     nodes::worker_node::prometheus_metrics::{TX_COMPUTE_TIME, TX_COUNT, TX_SIZE},
 };
 use anyhow::anyhow;
-use spacetimedb_bindings::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
-use spacetimedb_bindings::buffer::VectorBufWriter;
-use spacetimedb_bindings::{ElementDef, TupleDef, TypeDef};
+use spacetimedb_lib::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
+use spacetimedb_lib::buffer::VectorBufWriter;
+use spacetimedb_lib::{ElementDef, TupleDef, TypeDef};
 use std::cmp::max;
 use std::{
     collections::HashMap,
@@ -363,7 +363,7 @@ impl WasmModuleHostActor {
 
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
         let arguments = ReducerArguments::new(
-            spacetimedb_bindings::Hash::from_arr(&caller_identity.data),
+            spacetimedb_lib::Hash::from_arr(&caller_identity.data),
             timestamp,
             Vec::from(arg_bytes),
         );
@@ -455,8 +455,7 @@ impl WasmModuleHostActor {
 
     fn call_identity_connected_disconnected(&self, identity: &Hash, connected: bool) -> Result<(), anyhow::Error> {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
-        let arguments =
-            ConnectDisconnectArguments::new(spacetimedb_bindings::Hash::from_arr(&identity.data), timestamp);
+        let arguments = ConnectDisconnectArguments::new(spacetimedb_lib::Hash::from_arr(&identity.data), timestamp);
 
         let mut new_arg_bytes = Vec::with_capacity(arguments.encoded_size());
         let mut writer = VectorBufWriter::new(&mut new_arg_bytes);

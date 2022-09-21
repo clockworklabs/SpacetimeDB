@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y \
 RUN cargo install flamegraph
 
 COPY ./crates/spacetimedb-bindings ../spacetimedb-bindings
+COPY ./crates/spacetimedb-lib ../spacetimedb-lib
 COPY ./crates/spacetimedb/src ./src
 COPY ./crates/spacetimedb/protobuf ./protobuf
 

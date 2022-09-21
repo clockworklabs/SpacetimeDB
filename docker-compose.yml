@@ -15,6 +15,7 @@ services:
       - ./crates/spacetimedb/src:/usr/src/app/src
       - ./crates/spacetimedb/flamegraphs:/usr/src/app/flamegraphs
 
+      - ./crates/spacetimedb-lib:/usr/src/spacetimedb-lib
       - ./crates/spacetimedb-bindings:/usr/src/spacetimedb-bindings
       - ./crates/spacetimedb-bindgen:/usr/src/spacetimedb-bindgen
       - ./crates/rust-wasm-test:/usr/src/rust-wasm-test

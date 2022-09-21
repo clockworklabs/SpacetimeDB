@@ -2,7 +2,7 @@ mod execute_plan;
 mod plan;
 mod plan_statement;
 
-use spacetimedb_bindings::{TupleDef, TupleValue};
+use spacetimedb_lib::{TupleDef, TupleValue};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 

@@ -512,7 +512,7 @@ impl TransactionalDB {
     pub fn insert(&mut self, tx: &mut Tx, set_id: u32, bytes: Vec<u8>) -> DataKey {
         let value = if bytes.len() > 32 {
             let hash = self.odb.add(bytes);
-            DataKey::Hash(spacetimedb_bindings::Hash::from_arr(&hash.data))
+            DataKey::Hash(spacetimedb_lib::Hash::from_arr(&hash.data))
         } else {
             let mut buf = [0; 32];
             buf[0..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);

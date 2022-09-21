@@ -11,9 +11,9 @@ use pyo3::{ffi, AsPyPointer, PyTypeInfo};
 use tokio::spawn;
 use tokio::time::sleep;
 
-use spacetimedb_bindings::args::{Arguments, RepeatingReducerArguments};
-use spacetimedb_bindings::buffer::VectorBufWriter;
-use spacetimedb_bindings::{ElementDef, TupleDef, TypeDef};
+use spacetimedb_lib::args::{Arguments, RepeatingReducerArguments};
+use spacetimedb_lib::buffer::VectorBufWriter;
+use spacetimedb_lib::{ElementDef, TupleDef, TypeDef};
 
 use crate::db::messages::transaction::Transaction;
 use crate::db::relational_db::TxWrapper;

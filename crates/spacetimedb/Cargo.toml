@@ -36,6 +36,7 @@ protobuf = { version = "2" }
 prost = "0.6"
 lazy_static = "1.4.0"
 # wasmer-compiler-llvm = "2.2.1"
+spacetimedb-lib = { path = "../spacetimedb-lib" }
 spacetimedb-bindings = { path = "../spacetimedb-bindings" }
 log = "0.4.16"
 gotham = "0.7.1"
