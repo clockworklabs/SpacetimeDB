@@ -435,6 +435,12 @@ pub fn router() -> Router {
             .to_async(proxy_to_control_node_client_api);
 
         route
+            .get("/subscribe")
+            .with_path_extractor::<SubscribeParams>()
+            .with_query_string_extractor::<SubscribeQueryParams>()
+            .to_async(handle_websocket);
+
+        route
             .get("/subscribe/:address")
             .with_path_extractor::<SubscribeParams>()
             .with_query_string_extractor::<SubscribeQueryParams>()

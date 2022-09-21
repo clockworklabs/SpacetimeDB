@@ -424,7 +424,7 @@ impl ControlNodeClient {
             .parse::<Uri>()
             .unwrap();
 
-        let request = Request::builder().method("POST").uri(&uri).body(Body::empty())?;
+        let request = Request::builder().method("GET").uri(&uri).body(Body::empty())?;
 
         let client = hyper::Client::new();
         let res = client.request(request).await.unwrap();

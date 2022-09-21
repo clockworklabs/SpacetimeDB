@@ -6,34 +6,53 @@ use crate::config::Config;
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("energy")
         .about("Invokes commands related to energy.")
+        .args_conflicts_with_subcommands(true)
+        .subcommand_required(true)
         .subcommands(get_energy_subcommands())
-        .override_usage("stdb energy [status|set-balance|set-default-maximum] <identity> OPTIONS")
-        .after_help("Run `stdb help energy for more detailed information.\n`")
 }
 
 fn get_energy_subcommands() -> Vec<clap::Command<'static>> {
     vec![
         clap::Command::new("status")
             .about("Show current budget status and information")
-            .arg(Arg::new("identity").required(true)),
+            .arg(Arg::new("identity").required(false)),
         clap::Command::new("set-balance")
             .about("Update current budget balance")
-            .arg(Arg::new("identity").required(true))
-            .arg(Arg::new("balance").required(true).value_parser(value_parser!(usize))),
+            .arg(Arg::new("balance").required(true).value_parser(value_parser!(usize)))
+            .arg(Arg::new("identity").required(false)),
         clap::Command::new("set-default-maximum")
             .about("Update the default maximum spend per reducer invocation")
-            .arg(Arg::new("identity").required(true))
             .arg(
                 Arg::new("default_maximum")
                     .required(true)
                     .value_parser(value_parser!(usize)),
-            ),
+            )
+            .arg(Arg::new("identity").required(false)),
     ]
+}
+
+async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    match cmd {
+        "status" => exec_status(config, args).await,
+        "set-balance" => exec_update_balance(config, args).await,
+        "set-default-maximum" => exec_update_default_maximum(config, args).await,
+        unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
+    }
+}
+
+pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let (cmd, subcommand_args) = args.subcommand().expect("Subcommand required");
+    exec_subcommand(config, cmd, subcommand_args).await
 }
 
 async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
-    let hex_identity: &str = args.value_of("identity").unwrap().clone();
+    let hex_identity = args.value_of("identity");
+    let hex_identity = if let Some(hex_identity) = hex_identity {
+        hex_identity
+    } else {
+        config.get_default_identity_config().unwrap().identity.as_str()
+    };
 
     let balance: usize = *args.get_one("balance").unwrap();
 
@@ -54,7 +73,12 @@ async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), an
 
 async fn exec_update_default_maximum(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
-    let hex_identity: &str = args.value_of("identity").unwrap().clone();
+    let hex_identity = args.value_of("identity");
+    let hex_identity = if let Some(hex_identity) = hex_identity {
+        hex_identity
+    } else {
+        config.get_default_identity_config().unwrap().identity.as_str()
+    };
 
     let default_maximum: usize = *args.get_one("default_maximum").unwrap();
 
@@ -78,7 +102,12 @@ async fn exec_update_default_maximum(config: Config, args: &ArgMatches) -> Resul
 
 async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
-    let hex_identity = args.value_of("identity").unwrap();
+    let hex_identity = args.value_of("identity");
+    let hex_identity = if let Some(hex_identity) = hex_identity {
+        hex_identity
+    } else {
+        config.get_default_identity_config().unwrap().identity.as_str()
+    };
 
     let client = reqwest::Client::new();
     let res = client
@@ -91,18 +120,4 @@ async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
     let str = String::from_utf8(body.to_vec())?;
     println!("{}", str);
     Ok(())
-}
-
-async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    match cmd {
-        "status" => exec_status(config, args).await,
-        "set-balance" => exec_update_balance(config, args).await,
-        "set-default-maximum" => exec_update_default_maximum(config, args).await,
-        unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
-    }
-}
-
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let (cmd, subcommand_args) = args.subcommand().expect("Subcommand required");
-    exec_subcommand(config, cmd, subcommand_args).await
 }
