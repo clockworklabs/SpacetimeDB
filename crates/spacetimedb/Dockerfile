@@ -27,7 +27,7 @@ COPY ./crates/spacetimedb/Cargo.toml ./
 
 RUN echo "fn main() {}" > dummy.rs
 RUN sed -i 's#src/main.rs#dummy.rs#' Cargo.toml
-RUN cargo install --locked --path .
+RUN CARGO_PROFILE_RELEASE_DEBUG=true cargo install --locked --path .
 RUN sed -i 's#dummy.rs#src/main.rs#' Cargo.toml
 
 COPY ./crates/spacetimedb ./
