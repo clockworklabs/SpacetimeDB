@@ -200,7 +200,7 @@ pub(crate) fn autogen_module_tuple_to_struct(
                                     spacetimedb_lib::TypeValue::Bytes(#tmp_name)
                                 });
                                 extra_assignments.push(quote! {
-                                   let #tmp_name : spacetimedb_bindings::hash::Hash = spacetimedb_bindings::hash::Hash::from_slice(#tmp_name.as_slice());
+                                   let #tmp_name : spacetimedb_lib::hash::Hash = spacetimedb_lib::hash::Hash::from_slice(#tmp_name.as_slice());
                                 });
                             }
                             "Vec" => {
@@ -243,7 +243,7 @@ pub(crate) fn autogen_module_tuple_to_struct(
                                                             for tuple_val in #tmp_name {
                                                                 match tuple_val {
                                                                     spacetimedb_lib::TypeValue::Bytes(entry) => {
-                                                                        #tmp_name_vec.push(spacetimedb_bindings::hash::Hash::from_slice(entry.as_slice()));
+                                                                        #tmp_name_vec.push(spacetimedb_lib::hash::Hash::from_slice(entry.as_slice()));
                                                                     }, _ => {
                                                                         spacetimedb_bindings::println!(#err_message);
                                                                     }
