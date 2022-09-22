@@ -5,10 +5,13 @@ use wasmer::{CompilerConfig, Module, Store, Universal, ValType};
 use wasmer_middlewares::Metering;
 
 use crate::hash::Hash;
-use crate::nodes::worker_node::host::host_wasm32::wasm_module_host_actor::WasmModuleHostActor;
+use crate::nodes::worker_node::host::host_wasm32::wasm_module_host_actor::{
+    WasmModuleHostActor, DEFAULT_EXECUTION_BUDGET,
+};
 use crate::nodes::worker_node::host::module_host::ModuleHost;
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
 
+mod opcode_cost;
 mod wasm_instance_env;
 pub mod wasm_module_host_actor;
 
@@ -45,15 +48,9 @@ pub fn make_wasm32_module_host_actor(
     program_bytes: Vec<u8>,
 ) -> Result<ModuleHost, anyhow::Error> {
     Ok(ModuleHost::spawn(worker_database_instance.identity, |module_host| {
-        let cost_function = |operator: &Operator| -> u64 {
-            match operator {
-                Operator::LocalGet { .. } => 1,
-                Operator::I32Const { .. } => 1,
-                Operator::I32Add { .. } => 1,
-                _ => 1,
-            }
-        };
-        let initial_points = 1_000_000_000_000;
+        let cost_function =
+            |operator: &Operator| -> u64 { opcode_cost::OperationType::operation_type_of(operator).quanta_cost() };
+        let initial_points = DEFAULT_EXECUTION_BUDGET as u64;
         let metering = Arc::new(Metering::new(initial_points, cost_function));
 
         // let mut compiler_config = wasmer_compiler_llvm::LLVM::default();

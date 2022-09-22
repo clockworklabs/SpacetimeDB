@@ -50,7 +50,7 @@ const MIGRATE_DATABASE_DUNDER: &str = "__migrate_database__";
 const IDENTITY_CONNECTED_DUNDER: &str = "__identity_connected__";
 const IDENTITY_DISCONNECTED_DUNDER: &str = "__identity_disconnected__";
 
-const DEFAULT_EXECUTION_BUDGET: i64 = 1_000_000_000_000;
+pub const DEFAULT_EXECUTION_BUDGET: i64 = 1_000_000_000_000;
 
 fn get_remaining_points_value(instance: &Instance) -> i64 {
     let remaining_points = get_remaining_points(instance);
