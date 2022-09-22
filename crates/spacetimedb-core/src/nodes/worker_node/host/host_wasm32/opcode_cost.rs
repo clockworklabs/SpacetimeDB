@@ -662,7 +662,7 @@ impl OperationType {
             OperationType::FloatMul => 5000,
             OperationType::FloatDiv => 10000,
             OperationType::FloatOperation => 3000,
-            OperationType::Local => 3000,
+            OperationType::Local => 1500, // Register vs memory lookup, potentially.
             OperationType::Global => 3000,
             OperationType::IntegerComparison => 1000,
             OperationType::FloatComparison => 2000,
@@ -672,11 +672,11 @@ impl OperationType {
             OperationType::Unreachable => 000,
             OperationType::Nop => 100,
 
-            OperationType::Scope => 100,
+            OperationType::Scope => 500,
             OperationType::Branch => 1000,
             OperationType::Call => 4000,
 
-            OperationType::Memory => 1000,
+            OperationType::Memory => 3000,
 
             OperationType::AtomicBit => 1000,
             OperationType::AtomicXchg => 1000,
