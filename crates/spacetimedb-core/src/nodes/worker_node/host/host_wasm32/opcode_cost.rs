@@ -379,7 +379,6 @@ impl OperationType {
             MemoryAtomicWait32 { .. } => OperationType::Memory,
             MemoryAtomicWait64 { .. } => OperationType::Memory,
 
-            // We make the ungodly assumption that the remainder of operations are vector ops.
             V128Load { .. } => OperationType::Vector128Load,
             V128Load8x8S { .. } => OperationType::Vector128Load,
             V128Load8x8U { .. } => OperationType::Vector128Load,
