@@ -2,6 +2,8 @@
 name = "spacetimedb-cli"
 version = "0.1.0"
 edition = "2021"
+license-file = "LICENSE"
+description = "A command line interface for SpacetimeDB"
 
 [[bin]]
 name = "spacetime"
