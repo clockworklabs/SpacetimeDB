@@ -430,6 +430,12 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                     col_type_full = "spacetimedb_lib::Hash".parse().unwrap();
                     col_type_value = format!("spacetimedb_lib::TypeValue::Bytes").parse().unwrap();
                 }
+                "Vec < u8 >" => {
+                    // TODO: We are aliasing Vec<u8> to Bytes for now, we should deconstruct the vec here.
+                    col_type = "Vec<u8>".parse().unwrap();
+                    col_type_full = "std::vec::Vec<u8>".parse().unwrap();
+                    col_type_value = format!("spacetimedb_lib::TypeValue::Bytes").parse().unwrap();
+                }
                 custom_type => {
                     col_type = custom_type.parse().unwrap();
                     col_type_full = col_type.clone();
@@ -500,18 +506,28 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                                     Ok(param) => {
                                         let vec_name: proc_macro2::TokenStream =
                                             format!("type_value_vec_{}", col_name).parse().unwrap();
-                                        insert_columns.push(quote! {
-                                            spacetimedb_lib::TypeValue::Vec(#vec_name)
-                                        });
 
                                         match rust_to_spacetimedb_ident(param.to_string().as_str()) {
                                             Some(spacetimedb_type) => {
-                                                insert_vec_construction.push(quote! {
-                                                    let mut #vec_name: Vec<spacetimedb_lib::TypeValue> = Vec::<spacetimedb_lib::TypeValue>::new();
-                                                    for value in ins.#col_name {
-                                                        #vec_name.push(spacetimedb_lib::TypeValue::#spacetimedb_type(value));
+                                                match spacetimedb_type.to_string().as_str() {
+                                                    "U8" => {
+                                                        // Vec<u8> is aliased to the Bytes type
+                                                        insert_columns.push(quote! {
+                                                            #col_value_insert
+                                                        });
                                                     }
-                                                });
+                                                    _ => {
+                                                        insert_columns.push(quote! {
+                                                            spacetimedb_lib::TypeValue::Vec(#vec_name)
+                                                        });
+                                                        insert_vec_construction.push(quote! {
+                                                            let mut #vec_name: Vec<spacetimedb_lib::TypeValue> = Vec::<spacetimedb_lib::TypeValue>::new();
+                                                            for value in ins.#col_name {
+                                                                #vec_name.push(spacetimedb_lib::TypeValue::#spacetimedb_type(value));
+                                                            }
+                                                        });
+                                                    }
+                                                }
                                             }
                                             None => match param.to_string().as_str() {
                                                 "Hash" => {
@@ -522,6 +538,9 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                                                 }
                                                 other_type => {
                                                     let other_type = format_ident!("{}", other_type);
+                                                    insert_columns.push(quote! {
+                                                        spacetimedb_lib::TypeValue::Vec(#vec_name)
+                                                    });
                                                     insert_vec_construction.push(quote! {
                                                         let mut #vec_name: Vec<spacetimedb_lib::TypeValue> = Vec::<spacetimedb_lib::TypeValue>::new();
                                                         for value in ins.#col_name {
@@ -686,7 +705,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                 let mut result = Vec::<#original_struct_ident>::new();
                 let table_iter = #original_struct_ident::iter_tuples();
                 for row in table_iter {
-                    let column_data = row.elements[ # row_index].clone();
+                    let column_data = row.elements[#row_index].clone();
                     #comparison_block
                 }
 
