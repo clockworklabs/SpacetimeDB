@@ -2,7 +2,7 @@
 name = "spacetimedb-bindgen"
 version = "0.1.0"
 edition = "2021"
-license = "LICENSE"
+license-file = "LICENSE"
 description = "Easy support for interacting between SpacetimeDB and Rust."
 
 [lib]
