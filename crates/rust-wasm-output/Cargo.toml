@@ -6,5 +6,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-spacetimedb-bindings = { path = "../spacetimedb-bindings" }
+spacetimedb = { path = "../spacetimedb-bindings" }
 spacetimedb-bindgen = { path = "../spacetimedb-bindgen" }

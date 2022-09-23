@@ -1,9 +1,13 @@
 [package]
-name = "spacetimedb"
+name = "spacetimedb-core"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "spacetimedb"   # The name of the target.
+path = "src/lib.rs"    # The source file of the target.
 
 [[bin]]
 name = "spacetimedb"   # The name of the target.
@@ -37,7 +41,6 @@ prost = "0.6"
 lazy_static = "1.4.0"
 # wasmer-compiler-llvm = "2.2.1"
 spacetimedb-lib = { path = "../spacetimedb-lib" }
-spacetimedb-bindings = { path = "../spacetimedb-bindings" }
 log = "0.4.16"
 gotham = "0.7.1"
 gotham_derive = "0.7"

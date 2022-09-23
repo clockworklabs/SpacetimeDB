@@ -1,11 +1,21 @@
 #[macro_use]
 pub mod io;
 
-use spacetimedb_lib::{EqTypeValue, PrimaryKey, RangeTypeValue, TupleDef, TupleValue, TypeValue};
+use spacetimedb_lib::{EqTypeValue, PrimaryKey, TupleDef, TupleValue, TypeValue};
 use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
 use std::mem::ManuallyDrop;
 use std::ops::Range;
 use std::panic;
+
+pub use spacetimedb_bindgen;
+pub use spacetimedb_bindgen::spacetimedb;
+pub use spacetimedb_bindgen::Index;
+pub use spacetimedb_bindgen::Unique;
+
+pub use spacetimedb_lib;
+pub use spacetimedb_lib::hash;
+pub use spacetimedb_lib::Hash;
+pub use spacetimedb_lib::RangeTypeValue;
 
 // #[cfg(target_arch = "wasm32")]
 // #[global_allocator]

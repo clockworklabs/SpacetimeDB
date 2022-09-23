@@ -9,14 +9,14 @@ use syn::{FnArg, ItemStruct};
 
 /// Returns a function which returns the schema (TypeDef) for a given Type. The signature
 /// for this function is as follows:
-/// fn get_struct_schema() -> spacetimedb_lib::TypeDef {
+/// fn get_struct_schema() -> spacetimedb::spacetimedb_lib::TypeDef {
 ///   ...
 /// }
 pub(crate) fn module_type_to_schema(path: &syn::Path) -> TokenStream {
     match path.segments[0].ident.to_token_stream().to_string().as_str() {
         "Hash" => {
             quote! {
-               spacetimedb_lib::TypeDef::Bytes
+               spacetimedb::spacetimedb_lib::TypeDef::Bytes
             }
         }
         "Vec" => {
@@ -27,25 +27,25 @@ pub(crate) fn module_type_to_schema(path: &syn::Path) -> TokenStream {
                     Some(spacetimedb_type) => match spacetimedb_type.to_string().as_str() {
                         "U8" => {
                             quote! {
-                               spacetimedb_lib::TypeDef::Bytes
+                               spacetimedb::spacetimedb_lib::TypeDef::Bytes
                             }
                         }
                         _ => {
                             quote! {
-                                spacetimedb_lib::TypeDef::Vec { element_type: spacetimedb_lib::TypeDef::#spacetimedb_type.into() }
+                                spacetimedb::spacetimedb_lib::TypeDef::Vec { element_type: spacetimedb::spacetimedb_lib::TypeDef::#spacetimedb_type.into() }
                             }
                         }
                     },
                     None => match param.to_string().as_str() {
                         "Hash" => {
                             quote! {
-                                 spacetimedb_lib::TypeDef::Vec{ element_type: spacetimedb_lib::TypeDef::Bytes }
+                                 spacetimedb::spacetimedb_lib::TypeDef::Vec{ element_type: spacetimedb::spacetimedb_lib::TypeDef::Bytes }
                             }
                         }
                         other_type => {
                             let other_type = format_ident!("{}", other_type);
                             quote! {
-                                spacetimedb_lib::TypeDef::Vec { element_type: #other_type::get_struct_schema().into() },
+                                spacetimedb::spacetimedb_lib::TypeDef::Vec { element_type: #other_type::get_struct_schema().into() },
                             }
                         }
                     },
@@ -77,10 +77,10 @@ fn type_to_tuple_schema(arg_name: Option<String>, col_num: u8, ty: &syn::Type) -
     match rust_to_spacetimedb_ident(arg_type) {
         Some(spacetimedb_type) => {
             return Some(quote! {
-                spacetimedb_lib::ElementDef {
+                spacetimedb::spacetimedb_lib::ElementDef {
                     tag: #col_num,
                     name: #arg_name_token,
-                    element_type: spacetimedb_lib::TypeDef::#spacetimedb_type,
+                    element_type: spacetimedb::spacetimedb_lib::TypeDef::#spacetimedb_type,
                 }
             });
         }
@@ -89,7 +89,7 @@ fn type_to_tuple_schema(arg_name: Option<String>, col_num: u8, ty: &syn::Type) -
                 if !path.segments.is_empty() {
                     let schema = module_type_to_schema(path);
                     return Some(quote! {
-                            spacetimedb_lib::ElementDef {
+                            spacetimedb::spacetimedb_lib::ElementDef {
                                 tag: #col_num,
                                 name: #arg_name_token,
                                 element_type: #schema
@@ -129,7 +129,7 @@ pub(crate) fn args_to_tuple_schema(args: Iter<'_, FnArg>) -> Vec<TokenStream> {
 
 /// This returns a function which will return the schema (TypeDef) for a struct. The signature
 /// for this function is as follows:
-/// pub fn get_struct_schema() -> spacetimedb_lib::TypeDef {
+/// pub fn get_struct_schema() -> spacetimedb::spacetimedb_lib::TypeDef {
 ///   ...
 /// }
 pub(crate) fn autogen_module_struct_to_schema(
@@ -148,9 +148,9 @@ pub(crate) fn autogen_module_struct_to_schema(
     }
 
     match parse_generated_func(quote! {
-        pub fn get_struct_schema() -> spacetimedb_lib::TypeDef {
-            return spacetimedb_lib::TypeDef::Tuple {
-                0: spacetimedb_lib::TupleDef { elements: vec![
+        pub fn get_struct_schema() -> spacetimedb::spacetimedb_lib::TypeDef {
+            return spacetimedb::spacetimedb_lib::TypeDef::Tuple {
+                0: spacetimedb::spacetimedb_lib::TupleDef { elements: vec![
                     #(#fields),*
                 ] },
             };
@@ -195,7 +195,7 @@ pub(crate) fn autogen_module_tuple_to_struct(
         match rust_to_spacetimedb_ident(field.ty.clone().to_token_stream().to_string().as_str()) {
             Some(spacetimedb_type) => {
                 match_paren2.push(quote! {
-                    spacetimedb_lib::TypeValue::#spacetimedb_type(#tmp_name)
+                    spacetimedb::spacetimedb_lib::TypeValue::#spacetimedb_type(#tmp_name)
                 });
             }
             None => {
@@ -204,10 +204,10 @@ pub(crate) fn autogen_module_tuple_to_struct(
                         match path.segments[0].ident.to_token_stream().to_string().as_str() {
                             "Hash" => {
                                 match_paren2.push(quote! {
-                                    spacetimedb_lib::TypeValue::Bytes(#tmp_name)
+                                    spacetimedb::spacetimedb_lib::TypeValue::Bytes(#tmp_name)
                                 });
                                 extra_assignments.push(quote! {
-                                   let #tmp_name : spacetimedb_lib::hash::Hash = spacetimedb_lib::hash::Hash::from_slice(#tmp_name.as_slice());
+                                   let #tmp_name : spacetimedb::spacetimedb_lib::hash::Hash = spacetimedb::spacetimedb_lib::hash::Hash::from_slice(#tmp_name.as_slice());
                                 });
                             }
                             "Vec" => {
@@ -220,12 +220,12 @@ pub(crate) fn autogen_module_tuple_to_struct(
                                         Some(spacetimedb_type) => match spacetimedb_type.to_string().as_str() {
                                             "U8" => {
                                                 match_paren2.push(quote! {
-                                                    spacetimedb_lib::TypeValue::Bytes(#tmp_name)
+                                                    spacetimedb::spacetimedb_lib::TypeValue::Bytes(#tmp_name)
                                                 });
                                             }
                                             _ => {
                                                 match_paren2.push(quote! {
-                                                    spacetimedb_lib::TypeValue::Vec(#tmp_name)
+                                                    spacetimedb::spacetimedb_lib::TypeValue::Vec(#tmp_name)
                                                 });
                                                 let err_message = format!(
                                                     "Vec contains wrong type, expected TypeValue::{}",
@@ -235,10 +235,10 @@ pub(crate) fn autogen_module_tuple_to_struct(
                                                     let mut #tmp_name_vec: Vec<#param> = Vec::<#param>::new();
                                                     for tuple_val in #tmp_name {
                                                         match tuple_val {
-                                                            spacetimedb_lib::TypeValue::#spacetimedb_type(entry) => {
+                                                            spacetimedb::spacetimedb_lib::TypeValue::#spacetimedb_type(entry) => {
                                                                 #tmp_name_vec.push(entry);
                                                             }, _ => {
-                                                                spacetimedb_bindings::println!(#err_message);
+                                                                spacetimedb::println!(#err_message);
                                                             }
                                                         }
                                                     }
@@ -251,16 +251,16 @@ pub(crate) fn autogen_module_tuple_to_struct(
                                                 let err_message =
                                                     format!("Vec contains wrong type, expected TypeValue::Tuple");
                                                 match_paren2.push(quote! {
-                                                    spacetimedb_lib::TypeValue::Vec(#tmp_name)
+                                                    spacetimedb::spacetimedb_lib::TypeValue::Vec(#tmp_name)
                                                 });
                                                 extra_assignments.push(quote! {
                                                             let mut #tmp_name_vec: Vec<#param> = Vec::<#param>::new();
                                                             for tuple_val in #tmp_name {
                                                                 match tuple_val {
-                                                                    spacetimedb_lib::TypeValue::Bytes(entry) => {
-                                                                        #tmp_name_vec.push(spacetimedb_lib::hash::Hash::from_slice(entry.as_slice()));
+                                                                    spacetimedb::spacetimedb_lib::TypeValue::Bytes(entry) => {
+                                                                        #tmp_name_vec.push(spacetimedb::spacetimedb_lib::hash::Hash::from_slice(entry.as_slice()));
                                                                     }, _ => {
-                                                                        spacetimedb_bindings::println!(#err_message);
+                                                                        spacetimedb::println!(#err_message);
                                                                     }
                                                                 }
                                                             }
@@ -272,22 +272,22 @@ pub(crate) fn autogen_module_tuple_to_struct(
                                                     format!("Vec contains wrong type, expected TypeValue::Tuple");
                                                 let other_type_ident = format_ident!("{}", other_type);
                                                 match_paren2.push(quote! {
-                                                    spacetimedb_lib::TypeValue::Vec(#tmp_name)
+                                                    spacetimedb::spacetimedb_lib::TypeValue::Vec(#tmp_name)
                                                 });
                                                 extra_assignments.push(quote! {
                                                             let mut #tmp_name_vec: Vec<#param> = Vec::<#param>::new();
                                                             for tuple_val in #tmp_name {
                                                                 match tuple_val {
-                                                                    spacetimedb_lib::TypeValue::Tuple(entry) => {
+                                                                    spacetimedb::spacetimedb_lib::TypeValue::Tuple(entry) => {
                                                                         match #other_type_ident::tuple_to_struct(entry) {
                                                                             Some(native_value) => {
                                                                                 #tmp_name_vec.push(native_value);
                                                                             } None => {
-                                                                                spacetimedb_bindings::println!("Failed to convert TypeValue::Tuple to native struct type: {}", #other_type);
+                                                                                spacetimedb::println!("Failed to convert TypeValue::Tuple to native struct type: {}", #other_type);
                                                                             }
                                                                         }
                                                                     }, _ => {
-                                                                        spacetimedb_bindings::println!(#err_message);
+                                                                        spacetimedb::println!(#err_message);
                                                                     }
                                                                 }
                                                             }
@@ -306,7 +306,7 @@ pub(crate) fn autogen_module_tuple_to_struct(
                             other_type => {
                                 let other_type = format_ident!("{}", other_type);
                                 match_paren2.push(quote! {
-                                    spacetimedb_lib::TypeValue::Tuple(#tmp_name)
+                                    spacetimedb::spacetimedb_lib::TypeValue::Tuple(#tmp_name)
                                 });
 
                                 tuple_match1.push(quote! {
@@ -334,7 +334,7 @@ pub(crate) fn autogen_module_tuple_to_struct(
 
     return if tuple_num > 0 {
         match parse_generated_func(quote! {
-            pub fn tuple_to_struct(value: spacetimedb_lib::TupleValue) -> Option<#original_struct_ident> {
+            pub fn tuple_to_struct(value: spacetimedb::spacetimedb_lib::TupleValue) -> Option<#original_struct_ident> {
                 let elements_arr = value.elements;
                 // Here we are enumerating all individual elements in the tuple and matching on the types we're expecting
                 match (#(#match_paren1),*) {
@@ -367,7 +367,7 @@ pub(crate) fn autogen_module_tuple_to_struct(
         }
     } else {
         match parse_generated_func(quote! {
-            pub fn tuple_to_struct(value: spacetimedb_lib::TupleValue) -> Option<#original_struct_ident> {
+            pub fn tuple_to_struct(value: spacetimedb::spacetimedb_lib::TupleValue) -> Option<#original_struct_ident> {
                 let elements_arr = value.elements;
                 return match (#(#match_paren1),*) {
                     (#(#match_paren2),*) => {
@@ -411,7 +411,7 @@ pub(crate) fn autogen_module_struct_to_tuple(
         match rust_to_spacetimedb_ident(field_type_str.as_str()) {
             Some(spacetimedb_type) => {
                 type_values.push(quote! {
-                    spacetimedb_lib::TypeValue::#spacetimedb_type(value.#field_ident)
+                    spacetimedb::spacetimedb_lib::TypeValue::#spacetimedb_type(value.#field_ident)
                 });
             }
             _ => {
@@ -420,7 +420,7 @@ pub(crate) fn autogen_module_struct_to_tuple(
                         match path.segments[0].ident.to_token_stream().to_string().as_str() {
                             "Hash" => {
                                 type_values.push(quote! {
-                                    spacetimedb_lib::TypeValue::Bytes(value.#field_ident.to_vec())
+                                    spacetimedb::spacetimedb_lib::TypeValue::Bytes(value.#field_ident.to_vec())
                                 });
                             }
                             "Vec" => {
@@ -432,46 +432,46 @@ pub(crate) fn autogen_module_struct_to_tuple(
                                             Some(spacetimedb_type) => match spacetimedb_type.to_string().as_str() {
                                                 "U8" => {
                                                     type_values.push(quote! {
-                                                        spacetimedb_lib::TypeValue::Bytes(value.#field_ident)
+                                                        spacetimedb::spacetimedb_lib::TypeValue::Bytes(value.#field_ident)
                                                     });
                                                 }
                                                 _ => {
                                                     vec_conversion.push(quote! {
-                                                            let mut #tuple_vec_name: Vec<spacetimedb_lib::TypeValue> = Vec::<spacetimedb_lib::TypeValue>::new();
+                                                            let mut #tuple_vec_name: Vec<spacetimedb::spacetimedb_lib::TypeValue> = Vec::<spacetimedb::spacetimedb_lib::TypeValue>::new();
                                                             for entry in value.#field_ident {
-                                                                #tuple_vec_name.push(spacetimedb_lib::TypeValue::#spacetimedb_type(entry));
+                                                                #tuple_vec_name.push(spacetimedb::spacetimedb_lib::TypeValue::#spacetimedb_type(entry));
                                                             }
                                                         });
 
                                                     type_values.push(quote! {
-                                                        spacetimedb_lib::TypeValue::Vec(#tuple_vec_name)
+                                                        spacetimedb::spacetimedb_lib::TypeValue::Vec(#tuple_vec_name)
                                                     });
                                                 }
                                             },
                                             None => match arg.to_token_stream().to_string().as_str() {
                                                 "Hash" => {
                                                     vec_conversion.push(quote! {
-                                                            let mut #tuple_vec_name: Vec<spacetimedb_lib::TypeValue> = Vec::<spacetimedb_lib::TypeValue>::new();
+                                                            let mut #tuple_vec_name: Vec<spacetimedb::spacetimedb_lib::TypeValue> = Vec::<spacetimedb::spacetimedb_lib::TypeValue>::new();
                                                             for entry in value.#field_ident {
                                                                 #tuple_vec_name.push(entry.data);
                                                             }
                                                         });
 
                                                     type_values.push(quote! {
-                                                        spacetimedb_lib::TypeValue::Vec(#tuple_vec_name)
+                                                        spacetimedb::spacetimedb_lib::TypeValue::Vec(#tuple_vec_name)
                                                     });
                                                 }
                                                 other_type => {
                                                     let other_type = format_ident!("{}", other_type);
                                                     vec_conversion.push(quote! {
-                                                            let mut #tuple_vec_name: Vec<spacetimedb_lib::TypeValue> = Vec::<spacetimedb_lib::TypeValue>::new();
+                                                            let mut #tuple_vec_name: Vec<spacetimedb::spacetimedb_lib::TypeValue> = Vec::<spacetimedb::spacetimedb_lib::TypeValue>::new();
                                                             for entry in value.#field_ident {
                                                                 #tuple_vec_name.push(#other_type::struct_to_tuple(entry));
                                                             }
                                                         });
 
                                                     type_values.push(quote! {
-                                                        spacetimedb_lib::TypeValue::Vec(#tuple_vec_name)
+                                                        spacetimedb::spacetimedb_lib::TypeValue::Vec(#tuple_vec_name)
                                                     });
                                                 }
                                             },
@@ -500,9 +500,9 @@ pub(crate) fn autogen_module_struct_to_tuple(
     }
 
     return match parse_generated_func(quote! {
-        pub fn struct_to_tuple(value: #original_struct_ident) -> spacetimedb_lib::TypeValue {
+        pub fn struct_to_tuple(value: #original_struct_ident) -> spacetimedb::spacetimedb_lib::TypeValue {
             #(#vec_conversion)*
-            return spacetimedb_lib::TypeValue::Tuple(spacetimedb_lib::TupleValue {
+            return spacetimedb::spacetimedb_lib::TypeValue::Tuple(spacetimedb::spacetimedb_lib::TupleValue {
                 elements: vec![
                     #(#type_values),*
                 ]

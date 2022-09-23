@@ -1,9 +1,12 @@
 [package]
-name = "spacetimedb-bindings"
+name = "spacetimedb"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "spacetimedb"   # The name of the target.
+path = "src/lib.rs"    # The source file of the target.
 
 [dependencies]
 wee_alloc = "0.4.5"
@@ -12,7 +15,8 @@ enum-as-inner = "0.5.0"
 sha3 = "0.10.0"
 serde = { version = "1.0.136", features = ["derive"] }
 hex = "0.4.3"
-spacetimedb-lib = { path = "../spacetimedb-lib" }
+spacetimedb-lib = { path = "../spacetimedb-lib", version = "0.1.0" }
+spacetimedb-bindgen = { path = "../spacetimedb-bindgen", version = "0.1.0" }
 
 [dev-dependencies]
 rand = "0.8.5"
