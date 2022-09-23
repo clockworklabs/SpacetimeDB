@@ -5,15 +5,15 @@ services:
     working_dir: /usr/src/app
     build:
       context: ./
-      dockerfile: ./crates/spacetimedb/Dockerfile
+      dockerfile: ./crates/spacetimedb-core/Dockerfile
     volumes:
-      - ./crates/spacetimedb/Cargo.toml:/usr/src/app/Cargo.toml
-      - ./crates/spacetimedb/benches:/usr/src/app/benches
-      - ./crates/spacetimedb/build.rs:/usr/src/app/build.rs
-      - ./crates/spacetimedb/log4rs.yaml:/usr/src/app/log4rs.yaml
-      - ./crates/spacetimedb/protobuf:/usr/src/app/protobuf
-      - ./crates/spacetimedb/src:/usr/src/app/src
-      - ./crates/spacetimedb/flamegraphs:/usr/src/app/flamegraphs
+      - ./crates/spacetimedb-core/Cargo.toml:/usr/src/app/Cargo.toml
+      - ./crates/spacetimedb-core/benches:/usr/src/app/benches
+      - ./crates/spacetimedb-core/build.rs:/usr/src/app/build.rs
+      - ./crates/spacetimedb-core/log4rs.yaml:/usr/src/app/log4rs.yaml
+      - ./crates/spacetimedb-core/protobuf:/usr/src/app/protobuf
+      - ./crates/spacetimedb-core/src:/usr/src/app/src
+      - ./crates/spacetimedb-core/flamegraphs:/usr/src/app/flamegraphs
 
       - ./crates/spacetimedb-lib:/usr/src/spacetimedb-lib
       - ./crates/spacetimedb-bindings:/usr/src/spacetimedb-bindings
