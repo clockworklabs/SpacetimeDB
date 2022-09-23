@@ -36,7 +36,7 @@ node {
       }
     }
 
-    stage('Build SpacetimeDB Image') j{
+    stage('Build SpacetimeDB Image') {
       def spacetimedb = docker.build("clockwork/spacetimedb", "crates -f crates/spacetimedb/Dockerfile")
       docker.withRegistry('https://registry.digitalocean.com') {
         spacetimedb.push()
