@@ -46,6 +46,25 @@ node {
     }
 
     stage('Deploy') {
+      if (env.BUILD_ENV == "testing") {
+        withCredentials([
+          string(credentialsId: 'TESTING_KUBERNETES_CLUSTER_CERTIFICATE', variable: 'KUBERNETES_CLUSTER_CERTIFICATE'),
+          string(credentialsId: 'TESTING_KUBERNETES_SERVER', variable: 'KUBERNETES_SERVER'),
+          string(credentialsId: 'TESTING_KUBERNETES_TOKEN', variable: 'KUBERNETES_TOKEN')]) {
+          sh "export BUILD_ENV=${env.BUILD_ENV}\
+              WEBSITE_IMAGE_DIGEST=$WEBSITE_IMAGE_DIGEST\
+              && ./kubernetes-deploy.sh"
+          }
+      } else if(env.BUILD_ENV == "live" || env.BUILD_ENV == "staging") {
+        withCredentials([
+          string(credentialsId: 'KUBERNETES_CLUSTER_CERTIFICATE', variable: 'KUBERNETES_CLUSTER_CERTIFICATE'),
+          string(credentialsId: 'KUBERNETES_SERVER', variable: 'KUBERNETES_SERVER'),
+          string(credentialsId: 'KUBERNETES_TOKEN', variable: 'KUBERNETES_TOKEN')]) {
+          sh "export BUILD_ENV=${env.BUILD_ENV}\
+              WEBSITE_IMAGE_DIGEST=$WEBSITE_IMAGE_DIGEST\
+              && ./kubernetes-deploy.sh"
+          }
+      }
     }
   } catch (FlowInterruptedException interruptEx) {
     currentBuild.result = "ABORTED"

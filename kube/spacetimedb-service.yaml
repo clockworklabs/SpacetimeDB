@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: game
+  namespace: $BUILD_ENV
+spec:
+  ports:
+  - port: 3000
+  clusterIP: None
+  selector:
+    app: game

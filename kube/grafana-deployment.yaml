@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: $BUILD_ENV
+  labels:
+    app: grafana
+spec:
+  selector:
+    matchLabels:
+      app: grafana
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: registry.digitalocean.com/clockwork/spacetimedb_grafana:$GRAFANA_IMAGE_DIGEST
+        ports:
+        - containerPort: 3000
+          name: grafana
+        env:
+        - name: GF_SERVER_ROOT_URL
+          value: https://$HOST_URL/grafana
+        - name: GF_SERVER_SERVE_FROM_SUB_PATH
+          value: "true"
+      imagePullSecrets:
+      - name: clockwork

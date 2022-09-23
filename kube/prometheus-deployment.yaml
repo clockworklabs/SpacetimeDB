@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: prometheus
+  namespace: $BUILD_ENV
+  labels:
+    app: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: prometheus
+  serviceName: 'prometheus'
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: registry.digitalocean.com/clockwork/bitcraft_prometheus:$PROMETHEUS_IMAGE_DIGEST
+        ports:
+        - name: inside
+          containerPort: 9090
+        volumeMounts:
+        - name: prometheus-data
+          mountPath: /prometheus
+      initContainers:
+        - name: prometheus-data-permission-fix
+          image: busybox
+          command: ["/bin/chmod","-R","777", "/data"]
+          volumeMounts:
+          - name: prometheus-data
+            mountPath: /data
+      volumes:
+      - name: prometheus-data
+        persistentVolumeClaim:
+          claimName: prometheus-data-$BUILD_ENV
+      imagePullSecrets:
+      - name: clockwork

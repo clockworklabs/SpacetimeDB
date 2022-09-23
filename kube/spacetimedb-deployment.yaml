@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: game
+  namespace: $BUILD_ENV
+  labels:
+    app: game
+spec:
+  selector:
+    matchLabels:
+      app: game
+  serviceName: 'game'
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: game
+    spec:
+      containers:
+      - name: game
+        image: registry.digitalocean.com/clockwork/bitcraft_game:$GAME_IMAGE_DIGEST
+        env:
+        - name: ENV
+          value: $BUILD_ENV
+        ports:
+        - containerPort: 3000
+          name: game
+        volumeMounts:
+        - name: local-json
+          mountPath: /usr/src/app/bitcraft/config/local.json
+          subPath: local.json
+          readOnly: true
+        - name: apn
+          mountPath: /usr/src/app/bitcraft/config/apn.p8
+          subPath: apn.p8
+          readOnly: true
+        - name: logs
+          mountPath: /var/log
+        - name: state-snapshots
+          mountPath: /data/state-snapshots
+      volumes:
+      - name: local-json
+        secret:
+          secretName: game-local-json
+      - name: apn
+        secret:
+          secretName: game-apn
+      - name: logs
+        persistentVolumeClaim:
+          claimName: game-logs-$BUILD_ENV
+      - name: state-snapshots
+        persistentVolumeClaim:
+          claimName: state-snapshots-$BUILD_ENV
+      imagePullSecrets:
+      - name: clockwork

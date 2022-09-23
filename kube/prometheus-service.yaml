@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: $BUILD_ENV
+spec:
+  ports:
+  - port: 9090
+  clusterIP: None
+  selector:
+    app: prometheus

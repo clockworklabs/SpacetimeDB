@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: game-ingress-service
+  namespace: $BUILD_ENV
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-issuer"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "80m"
+    nginx.ingress.kubernetes.io/client-body-buffer-size: "10m"
+spec:
+  tls:
+  - hosts:
+    - $HOST_URL
+    - www.$HOST_URL
+    secretName: bitcraft-$BUILD_ENV-tls
+  rules:
+  - host: $HOST_URL
+    http:
+      paths:
+      - path: /auth|/ws|/admin
+        pathType: Prefix
+        backend:
+          service:
+            name: game
+            port:
+              number: 3000
