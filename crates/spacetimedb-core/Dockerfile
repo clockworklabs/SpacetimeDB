@@ -20,18 +20,18 @@ RUN cargo install flamegraph
 
 COPY ./crates/spacetimedb-bindings ../spacetimedb-bindings
 COPY ./crates/spacetimedb-lib ../spacetimedb-lib
-COPY ./crates/spacetimedb/src ./src
-COPY ./crates/spacetimedb/protobuf ./protobuf
+COPY ./crates/spacetimedb-core/src ./src
+COPY ./crates/spacetimedb-core/protobuf ./protobuf
 
 #COPY ./Cargo.lock ./
-COPY ./crates/spacetimedb/Cargo.toml ./
+COPY ./crates/spacetimedb-core/Cargo.toml ./
 
 RUN echo "fn main() {}" > dummy.rs
 RUN sed -i 's#src/main.rs#dummy.rs#' Cargo.toml
 RUN CARGO_PROFILE_RELEASE_DEBUG=true cargo install --locked --path .
 RUN sed -i 's#dummy.rs#src/main.rs#' Cargo.toml
 
-COPY ./crates/spacetimedb ./
+COPY ./crates/spacetimedb-core ./
 
 RUN cargo install --locked --path .
 
