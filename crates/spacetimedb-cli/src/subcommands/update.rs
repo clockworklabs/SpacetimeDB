@@ -6,10 +6,10 @@ use std::fs;
 
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("update")
-        .about("Update a new SpacetimeDB actor.")
+        .about("Update a SpacetimeDB database.")
         .arg(Arg::new("database").required(true))
         .arg(Arg::new("path to project").required(true))
-        .after_help("Run `stdb help init for more detailed information.\n`")
+        .after_help("Run `spacetime help init for more detailed information.\n`")
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {

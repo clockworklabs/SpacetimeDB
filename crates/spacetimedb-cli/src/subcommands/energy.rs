@@ -5,7 +5,7 @@ use crate::config::Config;
 
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("energy")
-        .about("Invokes commands related to energy.")
+        .about("Invokes commands related to database budgets.")
         .args_conflicts_with_subcommands(true)
         .subcommand_required(true)
         .subcommands(get_energy_subcommands())
@@ -14,10 +14,10 @@ pub fn cli() -> clap::Command<'static> {
 fn get_energy_subcommands() -> Vec<clap::Command<'static>> {
     vec![
         clap::Command::new("status")
-            .about("Show current budget status and information")
+            .about("Show current budget status and information for an identity")
             .arg(Arg::new("identity").required(false)),
         clap::Command::new("set-balance")
-            .about("Update current budget balance")
+            .about("Update the current budget balance for a database")
             .arg(Arg::new("balance").required(true).value_parser(value_parser!(usize)))
             .arg(Arg::new("identity").required(false)),
         clap::Command::new("set-default-maximum")

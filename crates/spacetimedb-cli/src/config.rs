@@ -26,7 +26,7 @@ pub struct Config {
     pub identity_configs: Vec<IdentityConfig>,
 }
 
-const CONFIG_DIR: &str = ".stdb";
+const CONFIG_DIR: &str = ".spacetime";
 const CONFIG_FILENAME: &str = "config.toml";
 
 impl Config {

@@ -8,7 +8,7 @@ use crate::config::Config;
 
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("init")
-        .about("Create a new SpacetimeDB account.")
+        .about("Create a new SpacetimeDB database.")
         .arg(
             Arg::new("host_type")
                 .takes_value(true)
@@ -32,7 +32,7 @@ pub fn cli() -> clap::Command<'static> {
                 .short('n')
                 .required(false),
         )
-        .after_help("Run `stdb help init for more detailed information.\n`")
+        .after_help("Run `spacetime help init for more detailed information.\n`")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

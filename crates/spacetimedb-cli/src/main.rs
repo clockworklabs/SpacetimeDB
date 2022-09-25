@@ -8,14 +8,6 @@ use clap::Command;
 use std::vec;
 use subcommands::*;
 
-// Postgres table output example
-//  id  |         created_at         |              email               | email_is_verified | unsubscribed |         updated_at         | signed_pre_release_nda
-// -----+----------------------------+----------------------------------+-------------------+--------------+----------------------------+------------------------
-//    3 | 2021-09-14 16:15:15.588103 | alessandro@clockworklabs.io      | f                 | f            | 2022-02-02 15:30:19.954958 | t
-//    1 | 2021-09-13 19:25:54.022595 | tyler@clockworklabs.io           | f                 | f            | 2022-02-02 15:27:20.231872 | f
-//    4 | 2021-09-14 17:21:36.542987 | carterminshull@hotmail.com       | f                 | f            | 2022-02-02 15:27:20.231872 | f
-//    5 | 2021-09-16 13:15:32.673589 | yoyeswell@gmail.com              | t                 | f            | 2022-02-02 15:27:20.231872 | f
-
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let config = Config::load();
@@ -29,7 +21,7 @@ async fn main() -> Result<(), anyhow::Error> {
 }
 
 fn get_command() -> Command<'static> {
-    Command::new("stdb")
+    Command::new("spacetime")
         .args_conflicts_with_subcommands(true)
         .subcommand_required(true)
         .subcommands(get_subcommands())
@@ -63,12 +55,9 @@ fn get_subcommands() -> Vec<Command<'static>> {
         logs::cli(),
         call::cli(),
         describe::cli(),
-        schema::cli(),
         identity::cli(),
         energy::cli(),
-        metrics::cli(),
         sql::cli(),
-        revert::cli(),
         name::cli(),
     ]
 }
@@ -79,14 +68,11 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
         "identity" => identity::exec(config, args).await,
         "call" => call::exec(config, args).await,
         "describe" => describe::exec(config, args).await,
-        "schema" => schema::exec(config, args).await,
         "energy" => energy::exec(config, args).await,
         "init" => init::exec(config, args).await,
         "rm" => rm::exec(config, args).await,
         "logs" => logs::exec(config, args).await,
-        "metrics" => metrics::exec(config, args).await,
         "sql" => sql::exec(config, args).await,
-        "revert" => revert::exec(config, args).await,
         "update" => update::exec(config, args).await,
         "name" => name::exec(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),

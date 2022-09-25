@@ -7,7 +7,7 @@ pub fn cli() -> clap::Command<'static> {
     clap::Command::new("rm")
         .about("Deletes a SpacetimeDB database.")
         .arg(Arg::new("database").required(true))
-        .after_help("Run `stdb help rm for more detailed information.\n`")
+        .after_help("Run `spacetime help rm for more detailed information.\n`")
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {

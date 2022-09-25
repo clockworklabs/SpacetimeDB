@@ -5,11 +5,11 @@ use clap::ArgMatches;
 
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("call")
-        .about("Invokes a SpacetimeDB function.")
+        .about("Invokes a reducer function in a database")
         .arg(Arg::new("database").required(true))
         .arg(Arg::new("function_name").required(true))
-        .arg(Arg::new("arg_json").required(true))
-        .after_help("Run `stdb help call for more detailed information.\n`")
+        .arg(Arg::new("arguments").required(true).help("arguments as a JSON array"))
+        .after_help("Run `spacetime help call for more detailed information.\n`")
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
