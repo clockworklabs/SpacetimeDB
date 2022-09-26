@@ -1,6 +1,6 @@
+use spacetimedb_lib::{ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue, TupleDef, TupleValue, TypeDef, TypeValue};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use spacetimedb_lib::{ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue, TupleDef, TupleValue, TypeDef, TypeValue};
 
 use crate::db::relational_db::{RelationalDB, TxWrapper};
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
