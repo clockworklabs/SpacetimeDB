@@ -9,10 +9,10 @@ pub(crate) mod worker_budget;
 mod worker_database_instance;
 mod worker_db;
 
-use perf_monitor::cpu::ProcessStat;
+// use perf_monitor::cpu::ProcessStat;
 use tokio::spawn;
 
-use crate::nodes::worker_node::prometheus_metrics::PROCESS_CPU_USAGE;
+// use crate::nodes::worker_node::prometheus_metrics::PROCESS_CPU_USAGE;
 
 pub async fn start(config: crate::nodes::node_config::NodeConfig) {
     let worker_api_bootstrap_addr = config
@@ -35,14 +35,14 @@ pub async fn start(config: crate::nodes::node_config::NodeConfig) {
 
     prometheus_metrics::register_custom_metrics();
 
-    spawn(async move {
-        let mut stat = ProcessStat::cur().unwrap();
-        loop {
-            let usage = stat.cpu().unwrap();
-            PROCESS_CPU_USAGE.set(usage);
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-        }
-    });
+    // spawn(async move {
+    //     let mut stat = ProcessStat::cur().unwrap();
+    //     loop {
+    //         let usage = stat.cpu().unwrap();
+    //         PROCESS_CPU_USAGE.set(usage);
+    //         tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    //     }
+    // });
 
     spawn(async move {
         control_node_connection::start(worker_api_bootstrap_addr, client_api_bootstrap_addr, advertise_addr).await;

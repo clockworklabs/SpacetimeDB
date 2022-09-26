@@ -64,9 +64,9 @@ int-enum = "0.4.0"
 pyo3 = { version = "0.17.0"}
 sqlparser = "0.21.0"
 backtrace = "0.3.66"
-pprof = { version = "0.10", features = ["flamegraph"] }
+# pprof = { version = "0.10", features = ["flamegraph"] }
+# perf_monitor = "0.2"
 urlencoding = "2.1.2"
-perf_monitor = "0.2"
 
 # gluesql = "0.10"
 bytes = "1.2.0" # TODO(rdaum): there's also a copy/fork of this inside prost. hmph.

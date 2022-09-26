@@ -636,7 +636,7 @@ impl WasmModuleHostActor {
 
         let reduce = instance.exports.get_function(&reducer_symbol)?;
 
-        let guard = pprof::ProfilerGuardBuilder::default().frequency(2500).build().unwrap();
+        // let guard = pprof::ProfilerGuardBuilder::default().frequency(2500).build().unwrap();
 
         let start = std::time::Instant::now();
         log::trace!("Start reducer \"{}\"...", reducer_symbol);
@@ -657,13 +657,13 @@ impl WasmModuleHostActor {
 
         // If you can afford to take 500 ms for a transaction
         // you can afford to generate a flamegraph. Fix your stuff.
-        if duration.as_millis() > 500 {
-            if let Ok(report) = guard.report().build() {
-                let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-                let file = std::fs::File::create(format!("flamegraphs/flamegraph-{}.svg", now.as_millis())).unwrap();
-                report.flamegraph(file).unwrap();
-            };
-        }
+        // if duration.as_millis() > 500 {
+        //     if let Ok(report) = guard.report().build() {
+        //         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+        //         let file = std::fs::File::create(format!("flamegraphs/flamegraph-{}.svg", now.as_millis())).unwrap();
+        //         report.flamegraph(file).unwrap();
+        //     };
+        // }
 
         let result = match result {
             Err(err) => {
