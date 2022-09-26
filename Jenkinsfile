@@ -41,11 +41,11 @@ node {
       docker.withRegistry('https://registry.digitalocean.com') {
         spacetimedb.push()
         SPACETIMEDB_IMAGE_DIGEST = imageDigest("clockwork/spacetimedb")
-        spacetimedb.push("${WEBSITE_IMAGE_DIGEST}")
+        spacetimedb.push("${SPACETIMEDB_IMAGE_DIGEST}")
       }
     }
 
-    stage('Deploy') {
+    /* stage('Deploy') {
       if (env.BUILD_ENV == "testing") {
         withCredentials([
           string(credentialsId: 'TESTING_KUBERNETES_CLUSTER_CERTIFICATE', variable: 'KUBERNETES_CLUSTER_CERTIFICATE'),
@@ -66,6 +66,7 @@ node {
           }
       }
     }
+    */
   } catch (FlowInterruptedException interruptEx) {
     currentBuild.result = "ABORTED"
     throw interruptEx;
