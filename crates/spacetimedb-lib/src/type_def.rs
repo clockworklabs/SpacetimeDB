@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 // (1: u32, 2: u32) -> 2-tuple (* operator)
 // (1: u32 | 2: u32) -> 2-tuple (+ operator)
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct ElementDef {
     // In the case of tuples, this is the id of the column
     // In the case of enums, this is the id of the variant
@@ -78,7 +78,7 @@ impl ElementDef {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct TupleDef {
     pub elements: Vec<ElementDef>,
 }
@@ -120,7 +120,7 @@ impl TupleDef {
 
 // TODO: probably implement this with a tuple but store whether the tuple
 // is a sum tuple or a product tuple, then we have uniformity over types
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct EnumDef {
     pub elements: Vec<ElementDef>,
 }
@@ -160,29 +160,37 @@ impl EnumDef {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Type definitions
+///
+/// WARNING:
+///
+/// Is important the order in this enum so sorting work correctly, and it must match
+/// [TypeWideValue]/[TypeValue]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum TypeDef {
-    Tuple(TupleDef),
-    Enum(EnumDef),
-
-    // base types
-    Vec { element_type: Box<TypeDef> },
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
-    I8,
-    I16,
-    I32,
-    I64,
-    I128,
+    /// The **BOTTOM** type
+    Unit,
+    /// Base types
     Bool,
+    I8,
+    U8,
+    I16,
+    U16,
+    I32,
+    U32,
+    I64,
+    U64,
+    I128,
+    U128,
     F32,
     F64,
     String,
     Bytes,
-    Unit,
+    Enum(EnumDef),
+    Tuple(TupleDef),
+    Vec {
+        element_type: Box<TypeDef>,
+    },
 }
 
 impl TypeDef {

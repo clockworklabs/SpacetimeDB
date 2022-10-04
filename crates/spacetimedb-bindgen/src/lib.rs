@@ -438,7 +438,9 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
                     // TODO: We are aliasing Vec<u8> to Bytes for now, we should deconstruct the vec here.
                     col_type = "Vec<u8>".parse().unwrap();
                     col_type_full = "std::vec::Vec<u8>".parse().unwrap();
-                    col_type_value = format!("spacetimedb::spacetimedb_lib::TypeValue::Bytes").parse().unwrap();
+                    col_type_value = format!("spacetimedb::spacetimedb_lib::TypeValue::Bytes")
+                        .parse()
+                        .unwrap();
                 }
                 custom_type => {
                     col_type = custom_type.parse().unwrap();
@@ -647,7 +649,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             pub fn #delete_func_ident(#unique_column_def) -> bool {
                 let data = #unique_column_ident;
                 #unique_conversion_from_raw_to_stdb_statement
-                let equatable = spacetimedb::spacetimedb_lib::EqTypeValue::try_from(data);
+                let equatable = spacetimedb::spacetimedb_lib::TypeValue::try_from(data);
                 match equatable {
                     Ok(value) => {
                         let result = spacetimedb::delete_eq(Self::table_id(), #unique_column_index, value);
