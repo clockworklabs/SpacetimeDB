@@ -10,6 +10,7 @@ use lazy_static::lazy_static;
 use serde::Serialize;
 use spacetimedb_lib::TupleDef;
 use std::fmt::{Display, Formatter};
+use std::time::Duration;
 use std::{collections::HashMap, sync::Mutex};
 
 lazy_static! {
@@ -66,6 +67,7 @@ pub struct ReducerCallResult {
     pub committed: bool,
     pub budget_exceeded: bool,
     pub energy_quanta_used: i64,
+    pub host_execution_duration: Duration,
 }
 
 impl HostController {

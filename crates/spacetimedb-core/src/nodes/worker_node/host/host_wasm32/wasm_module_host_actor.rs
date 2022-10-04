@@ -22,6 +22,7 @@ use spacetimedb_lib::args::{Arguments, ConnectDisconnectArguments, ReducerArgume
 use spacetimedb_lib::buffer::VectorBufWriter;
 use spacetimedb_lib::{ElementDef, TupleDef, TypeDef};
 use std::cmp::max;
+use std::time::Instant;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -358,6 +359,8 @@ impl WasmModuleHostActor {
         budget: ReducerBudget,
         arg_bytes: &[u8],
     ) -> Result<ReducerCallResult, anyhow::Error> {
+        let start_instant = Instant::now();
+
         // TODO: validate arg_bytes
         let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
 
@@ -389,6 +392,8 @@ impl WasmModuleHostActor {
             (false, EventStatus::Failed, false)
         };
 
+        let host_execution_duration = start_instant.elapsed();
+
         let event = ModuleEvent {
             timestamp,
             caller_identity,
@@ -398,6 +403,7 @@ impl WasmModuleHostActor {
             },
             status,
             energy_quanta_used,
+            host_execution_duration,
         };
         self.subscription.broadcast_event(event).unwrap();
 
@@ -405,11 +411,14 @@ impl WasmModuleHostActor {
             committed,
             budget_exceeded,
             energy_quanta_used,
+            host_execution_duration,
         };
         Ok(result)
     }
 
     fn call_repeating_reducer(&self, reducer_name: &str, prev_call_time: u64) -> Result<(u64, u64), anyhow::Error> {
+        let start_instant = Instant::now();
+
         let reducer_symbol = format!("{}{}", REPEATING_REDUCER_DUNDER, reducer_name);
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
         let delta_time = timestamp - prev_call_time;
@@ -447,6 +456,7 @@ impl WasmModuleHostActor {
             },
             status,
             energy_quanta_used: 0, // TODO
+            host_execution_duration: start_instant.elapsed(),
         };
         self.subscription.broadcast_event(event).unwrap();
 
@@ -454,6 +464,8 @@ impl WasmModuleHostActor {
     }
 
     fn call_identity_connected_disconnected(&self, identity: &Hash, connected: bool) -> Result<(), anyhow::Error> {
+        let start_instant = Instant::now();
+
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
         let arguments = ConnectDisconnectArguments::new(spacetimedb_lib::Hash::from_arr(&identity.data), timestamp);
 
@@ -495,6 +507,7 @@ impl WasmModuleHostActor {
             status,
             caller_identity: *identity,
             energy_quanta_used: 0,
+            host_execution_duration: start_instant.elapsed(),
         };
         self.subscription.broadcast_event(event).unwrap();
 

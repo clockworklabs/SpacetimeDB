@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::format;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::anyhow;
 use ffi::PyObject_Call;
@@ -200,6 +200,8 @@ impl CPythonModuleHostActor {
     }
 
     fn call_identity_connected_disconnected(&self, identity: &Hash, connected: bool) -> Result<(), anyhow::Error> {
+        let start_instant = Instant::now();
+
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
 
         let reducer_symbol = if connected {
@@ -237,6 +239,7 @@ impl CPythonModuleHostActor {
             status,
             caller_identity: *identity,
             energy_quanta_used: 0, // TODO
+            host_execution_duration: start_instant.elapsed(),
         };
         self.subscription.broadcast_event(event).unwrap();
 
@@ -244,6 +247,8 @@ impl CPythonModuleHostActor {
     }
 
     fn call_repeating_reducer(&self, reducer_name: &str, prev_call_time: u64) -> Result<(u64, u64), anyhow::Error> {
+        let start_instant = Instant::now();
+
         let reducer_symbol = format!("{}{}", REPEATING_REDUCER_DUNDER, reducer_name);
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
         let delta_time = timestamp - prev_call_time;
@@ -273,6 +278,7 @@ impl CPythonModuleHostActor {
             },
             status,
             energy_quanta_used: 0, // TODO
+            host_execution_duration: start_instant.elapsed(),
         };
         self.subscription.broadcast_event(event).unwrap();
 
@@ -285,6 +291,8 @@ impl CPythonModuleHostActor {
         reducer_name: &str,
         arg_bytes: &[u8],
     ) -> Result<ReducerCallResult, anyhow::Error> {
+        let start_instant = Instant::now();
+
         // TODO: validate arg_bytes
         let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
 
@@ -308,6 +316,7 @@ impl CPythonModuleHostActor {
         } else {
             (false, EventStatus::Failed)
         };
+        let host_execution_duration = start_instant.elapsed();
 
         let event = ModuleEvent {
             timestamp,
@@ -318,6 +327,7 @@ impl CPythonModuleHostActor {
             },
             status,
             energy_quanta_used: 0, // TODO
+            host_execution_duration,
         };
         self.subscription.broadcast_event(event).unwrap();
 
@@ -326,6 +336,7 @@ impl CPythonModuleHostActor {
             committed,
             budget_exceeded: false,
             energy_quanta_used: 0,
+            host_execution_duration,
         })
     }
 

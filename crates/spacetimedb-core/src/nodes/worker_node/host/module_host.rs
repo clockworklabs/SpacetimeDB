@@ -3,6 +3,7 @@ use crate::hash::Hash;
 use crate::nodes::worker_node::client_api::client_connection::ClientActorId;
 use crate::nodes::worker_node::host::host_controller::{Entity, EntityDescription, ReducerBudget, ReducerCallResult};
 use spacetimedb_lib::TupleDef;
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug, Clone)]
@@ -25,6 +26,7 @@ pub struct ModuleEvent {
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
     pub energy_quanta_used: i64,
+    pub host_execution_duration: Duration,
 }
 
 #[derive(Debug)]

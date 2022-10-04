@@ -45,6 +45,8 @@ message Event {
     string message = 5;
 
     int64 energy_quanta_used = 6;
+
+    uint64 host_execution_duration_micros = 7;
 }
 
 // TODO: Maybe call this StateUpdate if it's implied to be a subscription update

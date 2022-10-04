@@ -124,6 +124,10 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
         .header("Spacetime-Identity", caller_identity.to_hex())
         .header("Spacetime-Identity-Token", caller_identity_token)
         .header("Spacetime-Energy-Used", result.energy_quanta_used)
+        .header(
+            "Spacetime-Execution-Duration-Micros",
+            result.host_execution_duration.as_micros().to_string(),
+        )
         .status(StatusCode::OK)
         .body(Body::empty())
         .unwrap();

@@ -236,6 +236,7 @@ impl ModuleSubscriptionActor {
             }),
             message: "TODO".to_owned(),
             energy_quanta_used: event.energy_quanta_used,
+            host_execution_duration_micros: event.host_execution_duration.as_micros() as u64,
         };
 
         let mut schemas: HashMap<u32, TupleDef> = HashMap::new();
