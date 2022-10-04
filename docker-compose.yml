@@ -27,6 +27,11 @@ services:
     privileged: true
     environment:
       ENV: dev
+    # Turn on core dumps, hopefully.
+    ulimits:
+      core:
+        soft: -1
+        hard: -1
 
   prometheus:
     build:
