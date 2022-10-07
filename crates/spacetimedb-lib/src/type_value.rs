@@ -108,7 +108,7 @@ impl EnumValue {
 
         let mut i = 0;
         let type_def = loop {
-            let item = &enum_def.elements[i];
+            let item = &enum_def.variants[i];
             if item.tag == tag {
                 break &item.element_type;
             }
@@ -473,7 +473,6 @@ impl TypeValue {
                 (TypeValue::Bytes(output.to_owned()), num_read)
             }
             TypeDef::Primitive(PrimitiveType::Unit) => (TypeValue::Unit, 0),
-            TypeDef::Ref(x) => match *x {},
         };
 
         (Ok(result.0), result.1)

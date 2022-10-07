@@ -117,8 +117,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
     let mut json_arg_num: usize = 0;
     let function_arguments = &original_function.sig.inputs;
 
-    // TODO: get_ref_schema for this
-    let function_call_arg_types = args_to_tuple_schema(function_arguments.into_iter(), false);
+    let function_call_arg_types = args_to_tuple_schema(function_arguments.into_iter());
 
     for function_argument in function_arguments {
         match function_argument {
@@ -679,11 +678,6 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             #get_table_id_func
         }
 
-        impl spacetimedb::MaybeRef for #original_struct_ident {
-            fn get_ref() -> Option<spacetimedb::__private::TypeRef> {
-                Some(spacetimedb::__private::TypeRef { name: #table_name.into() })
-            }
-        }
         #schema_impl
         #from_value_impl
         #into_value_impl
@@ -829,15 +823,9 @@ fn spacetimedb_tuple(_: AttributeArgs, item: TokenStream) -> TokenStream {
     let describe_tuple_func_name = format_ident!("__describe_tuple__{}", original_struct_ident);
     let describe_tuple_refs_func_name = format_ident!("__describe_tuple_refs__{}", original_struct_ident);
 
-    let tuple_name = original_struct_ident.to_string();
     let emission = quote! {
         #[derive(serde::Serialize, serde::Deserialize)]
         #original_struct
-        impl spacetimedb::MaybeRef for #original_struct_ident {
-            fn get_ref() -> Option<spacetimedb::__private::TypeRef> {
-                Some(spacetimedb::__private::TypeRef { name: #tuple_name.into() })
-            }
-        }
         #schema_impl
         #from_value_impl
         #into_value_impl

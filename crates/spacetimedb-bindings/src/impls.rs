@@ -3,18 +3,14 @@ use std::mem::ManuallyDrop;
 
 use spacetimedb_lib::{DataKey, Hash};
 
-use super::{PrimaryKey, PrimitiveType, TypeDef, TypeRef, TypeValue};
-use crate::{FilterableValue, FromValue, IntoValue, MaybeRef, SchemaType, UniqueValue};
+use super::{PrimaryKey, PrimitiveType, TypeDef, TypeValue};
+use crate::{FilterableValue, FromValue, IntoValue, SchemaType, UniqueValue};
 
 macro_rules! impl_primitives {
     ($($t:ty => $x:ident,)*) => {
         $(
-            impl MaybeRef for $t {}
             impl SchemaType for $t {
                 fn get_schema() -> TypeDef {
-                    PrimitiveType::$x.into()
-                }
-                fn get_ref_schema() -> TypeDef<TypeRef> {
                     PrimitiveType::$x.into()
                 }
             }
@@ -75,12 +71,8 @@ impl_primitives! {
     f64 => F64,
 }
 
-impl MaybeRef for () {}
 impl SchemaType for () {
     fn get_schema() -> TypeDef {
-        PrimitiveType::Unit.into()
-    }
-    fn get_ref_schema() -> TypeDef<TypeRef> {
         PrimitiveType::Unit.into()
     }
 }
@@ -108,7 +100,6 @@ impl IntoValue for () {
 //     }
 // }
 
-impl<T> MaybeRef for Vec<T> {}
 impl<T: SchemaType> SchemaType for Vec<T> {
     fn get_schema() -> TypeDef {
         if TypeId::of::<T>() == TypeId::of::<u8>() {
@@ -116,14 +107,6 @@ impl<T: SchemaType> SchemaType for Vec<T> {
         }
         TypeDef::Vec {
             element_type: Box::new(T::get_schema()),
-        }
-    }
-    fn get_ref_schema() -> TypeDef<TypeRef> {
-        if TypeId::of::<T>() == TypeId::of::<u8>() {
-            return PrimitiveType::Bytes.into();
-        }
-        TypeDef::Vec {
-            element_type: Box::new(crate::__private::get_ref_or_schema::<T>()),
         }
     }
 }
@@ -159,17 +142,8 @@ impl<T: IntoValue> IntoValue for Vec<T> {
     }
 }
 
-impl MaybeRef for Hash {
-    fn get_ref() -> Option<TypeRef> {
-        Some(TypeRef { name: "Hash".into() })
-    }
-}
 impl SchemaType for Hash {
     fn get_schema() -> TypeDef {
-        PrimitiveType::Bytes.into()
-    }
-
-    fn get_ref_schema() -> TypeDef<TypeRef> {
         PrimitiveType::Bytes.into()
     }
 }

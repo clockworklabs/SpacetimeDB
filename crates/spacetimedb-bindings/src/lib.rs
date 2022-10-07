@@ -2,7 +2,6 @@
 pub mod io;
 mod impls;
 
-use spacetimedb_lib::type_def::resolve_refs::{RefKind, TypeRef};
 use spacetimedb_lib::type_def::PrimitiveType;
 use spacetimedb_lib::{PrimaryKey, TupleDef, TupleValue, TypeDef};
 use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
@@ -28,10 +27,6 @@ pub use spacetimedb_lib::TypeValue;
 pub mod __private {
     use super::*;
     pub use once_cell::sync::OnceCell;
-    pub use spacetimedb_lib::type_def::resolve_refs::TypeRef;
-    pub fn get_ref_or_schema<T: SchemaType>() -> TypeDef<TypeRef> {
-        T::get_ref().map(TypeDef::Ref).unwrap_or_else(|| T::get_ref_schema())
-    }
 }
 
 // #[cfg(target_arch = "wasm32")]
@@ -245,16 +240,8 @@ impl Iterator for TableIter {
     }
 }
 
-pub trait MaybeRef {
-    fn get_ref() -> Option<TypeRef> {
-        None
-    }
-}
-
-pub trait SchemaType: MaybeRef + Sized + 'static {
+pub trait SchemaType: Sized + 'static {
     fn get_schema() -> TypeDef;
-    /// get_ref_schema().resolve() should be the same as get_schema()
-    fn get_ref_schema() -> TypeDef<TypeRef>;
 }
 
 pub trait FromValue: SchemaType {
@@ -265,36 +252,25 @@ pub trait IntoValue: SchemaType {
     fn into_value(self) -> TypeValue;
 }
 
-pub trait TupleType: MaybeRef + Sized + 'static {
+pub trait TupleType: Sized + 'static {
     fn get_tupledef() -> TupleDef;
-    fn get_ref_tupledef() -> TupleDef<TypeRef>;
 
     #[doc(hidden)]
     fn describe_tuple() -> u64 {
-        describe_tuple(Self::get_tupledef())
+        const _: () = assert!(std::mem::size_of::<usize>() == std::mem::size_of::<u32>());
+        let tuple_def = Self::get_tupledef();
+        let mut bytes = vec![];
+        tuple_def.encode(&mut bytes);
+        let offset = bytes.as_ptr() as u64;
+        let length = bytes.len() as u64;
+        std::mem::forget(bytes);
+        offset << 32 | length
     }
-    #[doc(hidden)]
-    fn describe_tuple_ref() -> u64 {
-        describe_tuple(Self::get_ref_tupledef())
-    }
-}
-
-fn describe_tuple<Ref: RefKind>(tuple_def: TupleDef<Ref>) -> u64 {
-    const _: () = assert!(std::mem::size_of::<usize>() == std::mem::size_of::<u32>());
-    let mut bytes = vec![];
-    tuple_def.encode(&mut bytes);
-    let offset = bytes.as_ptr() as u64;
-    let length = bytes.len() as u64;
-    std::mem::forget(bytes);
-    offset << 32 | length
 }
 
 impl<T: TupleType> SchemaType for T {
     fn get_schema() -> TypeDef {
         TypeDef::Tuple(T::get_tupledef())
-    }
-    fn get_ref_schema() -> TypeDef<TypeRef> {
-        TypeDef::Tuple(T::get_ref_tupledef())
     }
 }
 

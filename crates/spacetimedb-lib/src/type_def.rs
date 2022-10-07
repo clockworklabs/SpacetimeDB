@@ -1,9 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-pub mod resolve_refs;
-
-use self::resolve_refs::{RefKind, Void};
-
 // () -> Tuple or enum?
 // (0: 1) -> Tuple or enum?
 // (0: 1, x: (1: 2 | 0: 2))
@@ -22,15 +18,15 @@ use self::resolve_refs::{RefKind, Void};
 // (1: u32 | 2: u32) -> 2-tuple (+ operator)
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-pub struct ElementDef<Ref: RefKind = Void> {
+pub struct ElementDef {
     // In the case of tuples, this is the id of the column
     // In the case of enums, this is the id of the variant
     pub tag: u8,
     pub name: Option<String>,
-    pub element_type: TypeDef<Ref>,
+    pub element_type: TypeDef,
 }
 
-impl<Ref: RefKind> ElementDef<Ref> {
+impl ElementDef {
     pub fn decode(bytes: impl AsRef<[u8]>) -> (Result<Self, String>, usize) {
         let mut num_read = 0;
         let bytes = bytes.as_ref();
@@ -83,11 +79,11 @@ impl<Ref: RefKind> ElementDef<Ref> {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-pub struct TupleDef<Ref: RefKind = Void> {
-    pub elements: Vec<ElementDef<Ref>>,
+pub struct TupleDef {
+    pub elements: Vec<ElementDef>,
 }
 
-impl<Ref: RefKind> TupleDef<Ref> {
+impl TupleDef {
     pub fn decode(bytes: impl AsRef<[u8]>) -> (Result<Self, String>, usize) {
         let mut num_read = 0;
         let bytes = bytes.as_ref();
@@ -125,11 +121,11 @@ impl<Ref: RefKind> TupleDef<Ref> {
 // TODO: probably implement this with a tuple but store whether the tuple
 // is a sum tuple or a product tuple, then we have uniformity over types
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-pub struct EnumDef<Ref: RefKind = Void> {
-    pub elements: Vec<ElementDef<Ref>>,
+pub struct EnumDef {
+    pub variants: Vec<ElementDef>,
 }
 
-impl<Ref: RefKind> EnumDef<Ref> {
+impl EnumDef {
     pub fn decode(bytes: impl AsRef<[u8]>) -> (Result<Self, String>, usize) {
         let mut num_read = 0;
         let bytes = bytes.as_ref();
@@ -153,12 +149,12 @@ impl<Ref: RefKind> EnumDef<Ref> {
                 }
             }
         }
-        (Ok(EnumDef { elements: items }), num_read)
+        (Ok(EnumDef { variants: items }), num_read)
     }
 
     pub fn encode(&self, bytes: &mut Vec<u8>) {
-        bytes.push(self.elements.len() as u8);
-        for item in &self.elements {
+        bytes.push(self.variants.len() as u8);
+        for item in &self.variants {
             item.encode(bytes);
         }
     }
@@ -171,18 +167,16 @@ impl<Ref: RefKind> EnumDef<Ref> {
 /// Is important the order in this enum so sorting work correctly, and it must match
 /// [TypeWideValue]/[TypeValue]
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-pub enum TypeDef<Ref: RefKind = Void> {
+pub enum TypeDef {
     Primitive(PrimitiveType),
 
-    Enum(EnumDef<Ref>),
-    Tuple(TupleDef<Ref>),
+    Enum(EnumDef),
+    Tuple(TupleDef),
 
-    Vec { element_type: Box<TypeDef<Ref>> },
-
-    Ref(Ref),
+    Vec { element_type: Box<TypeDef> },
 }
 
-impl<Ref: RefKind> From<PrimitiveType> for TypeDef<Ref> {
+impl From<PrimitiveType> for TypeDef {
     fn from(prim: PrimitiveType) -> Self {
         TypeDef::Primitive(prim)
     }
@@ -208,7 +202,7 @@ pub enum PrimitiveType {
     Bytes,
 }
 
-impl<Ref: RefKind> TypeDef<Ref> {
+impl TypeDef {
     pub fn decode(bytes: impl AsRef<[u8]>) -> (Result<Self, String>, usize) {
         let bytes = bytes.as_ref();
         if bytes.len() == 0 {
@@ -264,17 +258,6 @@ impl<Ref: RefKind> TypeDef<Ref> {
             16 => (TypeDef::Primitive(PrimitiveType::String), 1),
             17 => (TypeDef::Primitive(PrimitiveType::Bytes), 1),
             18 => (TypeDef::Primitive(PrimitiveType::Bytes), 1),
-            0xff => {
-                let (type_ref, bytes_read) = resolve_refs::TypeRef::decode(&bytes[1..]);
-                match type_ref
-                    .and_then(|type_ref| Ref::from_typeref(type_ref).ok_or_else(|| "Ref not supported here".to_owned()))
-                {
-                    Ok(type_ref) => (TypeDef::Ref(type_ref), bytes_read + 1),
-                    Err(e) => {
-                        return (Err(e), 0);
-                    }
-                }
-            }
             b => panic!("Unknown {}", b),
         };
 
@@ -313,7 +296,6 @@ impl<Ref: RefKind> TypeDef<Ref> {
                 PrimitiveType::Bytes => 17,
                 PrimitiveType::Unit => 18,
             }),
-            TypeDef::Ref(x) => x.as_typeref().encode(bytes),
         }
     }
 }

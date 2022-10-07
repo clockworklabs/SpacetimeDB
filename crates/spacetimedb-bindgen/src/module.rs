@@ -6,7 +6,7 @@ use quote::{format_ident, quote};
 use syn::punctuated::Iter;
 use syn::{FnArg, ItemStruct};
 
-fn type_to_tuple_schema(arg_name: Option<String>, col_num: u8, ty: &syn::Type, ref_schema: bool) -> TokenStream {
+fn type_to_tuple_schema(arg_name: Option<String>, col_num: u8, ty: &syn::Type) -> TokenStream {
     let arg_name_token = match arg_name {
         None => {
             quote! { None }
@@ -15,21 +15,16 @@ fn type_to_tuple_schema(arg_name: Option<String>, col_num: u8, ty: &syn::Type, r
             quote! { Some(#n.to_string())}
         }
     };
-    let element_type = if ref_schema {
-        quote!(spacetimedb::__private::get_ref_or_schema::<#ty>())
-    } else {
-        quote!(<#ty as spacetimedb::SchemaType>::get_schema())
-    };
     quote! {
         spacetimedb::spacetimedb_lib::ElementDef {
             tag: #col_num,
             name: #arg_name_token,
-            element_type: #element_type,
+            element_type: <#ty as spacetimedb::SchemaType>::get_schema(),
         }
     }
 }
 
-pub(crate) fn args_to_tuple_schema(args: Iter<'_, FnArg>, ref_schema: bool) -> Vec<TokenStream> {
+pub(crate) fn args_to_tuple_schema(args: Iter<'_, FnArg>) -> Vec<TokenStream> {
     let mut elements = Vec::new();
     let mut col_num: u8 = 0;
     for arg in args {
@@ -44,7 +39,7 @@ pub(crate) fn args_to_tuple_schema(args: Iter<'_, FnArg>, ref_schema: bool) -> V
                 } else {
                     None
                 };
-                elements.push(type_to_tuple_schema(argument, col_num, &*arg.ty, ref_schema));
+                elements.push(type_to_tuple_schema(argument, col_num, &*arg.ty));
                 col_num += 1;
             }
         }
@@ -60,15 +55,11 @@ pub(crate) fn args_to_tuple_schema(args: Iter<'_, FnArg>, ref_schema: bool) -> V
 pub(crate) fn autogen_module_struct_to_schema(
     original_struct: &ItemStruct,
 ) -> Result<proc_macro2::TokenStream, proc_macro2::TokenStream> {
-    let fields_iter = |ref_schema: bool| {
-        original_struct.fields.iter().enumerate().map(move |(col_num, field)| {
-            let field_name = field.ident.as_ref().map(ToString::to_string);
-            let col_num: u8 = col_num.try_into().expect("too many columns");
-            type_to_tuple_schema(field_name, col_num, &field.ty, ref_schema)
-        })
-    };
-    let fields = fields_iter(false);
-    let ref_fields = fields_iter(true);
+    let fields = original_struct.fields.iter().enumerate().map(move |(col_num, field)| {
+        let field_name = field.ident.as_ref().map(ToString::to_string);
+        let col_num: u8 = col_num.try_into().expect("too many columns");
+        type_to_tuple_schema(field_name, col_num, &field.ty)
+    });
 
     let name = &original_struct.ident;
     let (impl_generics, ty_generics, where_clause) = original_struct.generics.split_for_impl();
@@ -78,13 +69,6 @@ pub(crate) fn autogen_module_struct_to_schema(
                 spacetimedb::spacetimedb_lib::TupleDef {
                     elements: vec![
                         #(#fields),*
-                    ],
-                }
-            }
-            fn get_ref_tupledef() -> spacetimedb::spacetimedb_lib::TupleDef<spacetimedb::__private::TypeRef> {
-                spacetimedb::spacetimedb_lib::TupleDef {
-                    elements: vec![
-                        #(#ref_fields),*
                     ],
                 }
             }
