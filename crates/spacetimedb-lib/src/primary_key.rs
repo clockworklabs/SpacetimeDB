@@ -1,3 +1,4 @@
+use crate::buffer::BufWriter;
 use crate::DataKey;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -15,7 +16,7 @@ impl PrimaryKey {
         (PrimaryKey { data_key }, nr)
     }
 
-    pub fn encode(&self, bytes: &mut Vec<u8>) -> usize {
+    pub fn encode(&self, bytes: &mut impl BufWriter) {
         self.data_key.encode(bytes)
     }
 }

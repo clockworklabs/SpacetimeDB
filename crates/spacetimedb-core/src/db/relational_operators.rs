@@ -19,10 +19,11 @@ use std::{collections::HashSet, marker::PhantomData};
 pub trait Relation: IntoIterator<Item = TupleValue> {
     // TODO: Technically need to dedup again after removing potentially
     // distringuishing columns
-    fn project(self, cols: Vec<u32>) -> Project<Self::IntoIter>
+    fn project(self, mut cols: Vec<u32>) -> Project<Self::IntoIter>
     where
         Self: Sized,
     {
+        cols.sort();
         Project {
             source: self.into_iter(),
             cols,
@@ -106,15 +107,14 @@ impl<S: Iterator<Item = TupleValue>> Iterator for Project<S> {
     type Item = TupleValue;
 
     fn next(&mut self) -> Option<TupleValue> {
-        while let Some(mut row) = self.source.next() {
-            for i in (0..row.elements.len()).rev() {
-                if self.cols.contains(&(i as u32)) {
-                    row.elements.remove(i);
-                }
+        self.source.next().map(|mut row| {
+            let mut elements = row.elements.into_vec();
+            for &i in self.cols.iter().rev() {
+                elements.remove(i as usize);
             }
-            return Some(row);
-        }
-        None
+            row.elements = elements.into_boxed_slice();
+            row
+        })
     }
 }
 

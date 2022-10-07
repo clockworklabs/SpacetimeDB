@@ -269,17 +269,17 @@ impl ModuleSubscriptionActor {
                 let stdb = self.relational_db.lock().unwrap();
                 let tuple = stdb
                     .txdb
-                    .from_data_key(&write.data_key, |data| {
-                        let (tuple, _) = TupleValue::decode(&tuple_def, data);
-                        tuple
-                    })
+                    .from_data_key(&write.data_key, |data| TupleValue::decode(&tuple_def, &mut { data }))
                     .unwrap();
-                if let Err(e) = tuple {
-                    log::error!("render_protobuf_event: Failed to decode row: Err: {}", e);
-                    continue;
-                }
+                let tuple = match tuple {
+                    Ok(tuple) => tuple,
+                    Err(e) => {
+                        log::error!("render_protobuf_event: Failed to decode row: Err: {}", e);
+                        continue;
+                    }
+                };
 
-                (tuple.unwrap(), write.data_key.to_bytes())
+                (tuple, write.data_key.to_bytes())
             };
 
             let mut row_bytes = Vec::new();
@@ -348,7 +348,7 @@ impl ModuleSubscriptionActor {
                 table_row_operations.push(TableRowOperationJson {
                     op: "insert".to_string(),
                     row_pk,
-                    row: row.elements,
+                    row: row.elements.into(),
                 });
             }
             subscription_update.table_updates.push(TableUpdateJson {
@@ -410,23 +410,23 @@ impl ModuleSubscriptionActor {
                 let stdb = self.relational_db.lock().unwrap();
                 let tuple = stdb
                     .txdb
-                    .from_data_key(&write.data_key, |data| {
-                        let (tuple, _) = TupleValue::decode(&tuple_def, data);
-                        tuple
-                    })
+                    .from_data_key(&write.data_key, |data| TupleValue::decode(&tuple_def, &mut { data }))
                     .unwrap();
-                if let Err(e) = tuple {
-                    log::error!("render_json_event: Failed to decode row: {}", e);
-                    continue;
-                }
+                let tuple = match tuple {
+                    Ok(tuple) => tuple,
+                    Err(e) => {
+                        log::error!("render_json_event: Failed to decode row: {}", e);
+                        continue;
+                    }
+                };
 
-                (tuple.unwrap(), base64::encode(write.data_key.to_bytes()))
+                (tuple, base64::encode(write.data_key.to_bytes()))
             };
 
             vec.push(TableRowOperationJson {
                 op: op_string,
                 row_pk,
-                row: row.elements,
+                row: row.elements.into_vec(),
             });
         }
 

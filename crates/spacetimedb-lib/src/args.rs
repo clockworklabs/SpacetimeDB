@@ -1,5 +1,5 @@
 use crate::buffer::DecodeError::BufferLength;
-use crate::buffer::{BufReader, BufWriter, DecodeError, SliceReader};
+use crate::buffer::{BufReader, BufWriter, DecodeError};
 use crate::hash::HASH_SIZE;
 use crate::Hash;
 use std::fmt::Debug;
@@ -28,8 +28,7 @@ impl ReducerArguments {
 }
 
 impl ReducerArguments {
-    pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let mut r = SliceReader::new(bytes);
+    pub fn decode(r: &mut impl BufReader) -> Result<Self, DecodeError> {
         let identity = Hash::from_slice(r.get_slice(HASH_SIZE)?);
         let timestamp = r.get_u64()?;
         let args_length = r.get_u32()?;
@@ -42,14 +41,15 @@ impl ReducerArguments {
         })
     }
 
+    // TODO: should be unsafe
     pub fn decode_mem(arg_ptr: *mut u8, arg_size: usize) -> Result<Self, DecodeError> {
         if arg_size < std::mem::size_of::<u64>() + HASH_SIZE + std::mem::size_of::<usize>() {
             return Err(BufferLength);
         }
 
-        let bytes = unsafe { std::slice::from_raw_parts(arg_ptr, arg_size) };
+        let mut bytes = unsafe { std::slice::from_raw_parts(arg_ptr, arg_size) };
 
-        Self::decode(bytes)
+        Self::decode(&mut bytes)
     }
 }
 
@@ -77,23 +77,22 @@ impl RepeatingReducerArguments {
         Self { timestamp, delta_time }
     }
 
-    pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let mut r = SliceReader::new(bytes);
-
+    pub fn decode(r: &mut impl BufReader) -> Result<Self, DecodeError> {
         let timestamp = r.get_u64()?;
         let delta_time = r.get_u64()?;
 
         Ok(Self { timestamp, delta_time })
     }
 
+    // TODO: should be unsafe
     pub fn decode_mem(arg_ptr: *mut u8, arg_size: usize) -> Result<Self, DecodeError> {
         if arg_size < std::mem::size_of::<u64>() + std::mem::size_of::<u64>() {
             return Err(BufferLength);
         }
 
-        let bytes = unsafe { std::slice::from_raw_parts(arg_ptr, arg_size) };
+        let mut bytes = unsafe { std::slice::from_raw_parts(arg_ptr, arg_size) };
 
-        Self::decode(bytes)
+        Self::decode(&mut bytes)
     }
 }
 
@@ -122,22 +121,22 @@ impl ConnectDisconnectArguments {
 }
 
 impl ConnectDisconnectArguments {
-    pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let mut r = SliceReader::new(bytes);
+    pub fn decode(r: &mut impl BufReader) -> Result<Self, DecodeError> {
         let identity = Hash::from_slice(r.get_slice(HASH_SIZE)?);
         let timestamp = r.get_u64()?;
 
         Ok(Self { identity, timestamp })
     }
 
+    // TODO: should be unsafe
     pub fn decode_mem(arg_ptr: *mut u8, arg_size: usize) -> Result<Self, DecodeError> {
         if arg_size < std::mem::size_of::<u64>() + HASH_SIZE {
             return Err(BufferLength);
         }
 
-        let bytes = unsafe { std::slice::from_raw_parts(arg_ptr, arg_size) };
+        let mut bytes = unsafe { std::slice::from_raw_parts(arg_ptr, arg_size) };
 
-        Self::decode(bytes)
+        Self::decode(&mut bytes)
     }
 }
 
@@ -155,7 +154,6 @@ impl Arguments for ConnectDisconnectArguments {
 #[cfg(test)]
 mod tests {
     use crate::args::{Arguments, ReducerArguments, RepeatingReducerArguments};
-    use crate::buffer::VectorBufWriter;
     use crate::hash::HASH_SIZE;
     use crate::Hash;
     use bytes::BufMut;
@@ -193,11 +191,10 @@ mod tests {
             timestamp: rng.next_u64(),
             argument_bytes,
         };
-        let mut output_vec = Vec::new();
-        let mut writer = VectorBufWriter::new(&mut output_vec);
+        let mut writer = Vec::new();
         ra.encode(&mut writer);
 
-        (ra, output_vec)
+        (ra, writer)
     }
 
     fn make_random_repeating_args() -> (RepeatingReducerArguments, Vec<u8>) {
@@ -207,18 +204,17 @@ mod tests {
             timestamp: rng.next_u64(),
             delta_time: rng.next_u64(),
         };
-        let mut output_vec = Vec::new();
-        let mut writer = VectorBufWriter::new(&mut output_vec);
+        let mut writer = Vec::new();
         ra.encode(&mut writer);
 
-        (ra, output_vec)
+        (ra, writer)
     }
 
     #[test]
     fn test_encode_decode_reducer_args() {
         for _i in 0..NUM_RAND_ITERATIONS {
             let (ra, output_vec) = make_random_args();
-            let ra2 = ReducerArguments::decode(output_vec.as_slice()).unwrap();
+            let ra2 = ReducerArguments::decode(&mut output_vec.as_slice()).unwrap();
             assert_eq!(ra.timestamp, ra2.timestamp);
             assert_eq!(ra.identity.data, ra2.identity.data);
             assert!(!ra2.argument_bytes.is_empty());
@@ -245,7 +241,7 @@ mod tests {
     fn test_encode_decode_repeating_reducer_args() {
         for _i in 0..NUM_RAND_ITERATIONS {
             let (ra, output_vec) = make_random_repeating_args();
-            let ra2 = RepeatingReducerArguments::decode(output_vec.as_slice()).unwrap();
+            let ra2 = RepeatingReducerArguments::decode(&mut output_vec.as_slice()).unwrap();
             assert_eq!(ra.timestamp, ra2.timestamp);
             assert_eq!(ra.delta_time, ra2.delta_time);
         }

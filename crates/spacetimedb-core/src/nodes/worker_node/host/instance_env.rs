@@ -29,7 +29,7 @@ impl InstanceEnv {
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
         let schema = stdb.schema_for_table(tx, table_id).unwrap();
-        let row = RelationalDB::decode_row(&schema, &buffer[..]);
+        let row = RelationalDB::decode_row(&schema, &mut &buffer[..]);
         if let Err(e) = row {
             log::error!("insert: Failed to decode row: table_id: {} Err: {}", table_id, e);
             return;
@@ -57,7 +57,7 @@ impl InstanceEnv {
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
         let schema = stdb.schema_for_table(tx, table_id).unwrap();
-        let row = RelationalDB::decode_row(&schema, &buffer[..]);
+        let row = RelationalDB::decode_row(&schema, &mut &buffer[..]);
         if let Err(e) = row {
             log::error!("delete_value: Failed to decode row! table_id: {} Err: {}", table_id, e);
             return 0;
@@ -79,7 +79,7 @@ impl InstanceEnv {
         let schema = stdb.schema_for_table(tx, table_id).unwrap();
         let type_def = &schema.elements[col_id as usize].element_type;
 
-        let (eq_value, _) = TypeValue::decode(type_def, &buffer[..]);
+        let eq_value = TypeValue::decode(type_def, &mut &buffer[..]);
         let eq_value = eq_value.expect("You can't let modules crash you like this you fool.");
         let seek = stdb.seek(tx, table_id, col_id, eq_value);
         if let Some(seek) = seek {
@@ -113,12 +113,13 @@ impl InstanceEnv {
             ],
         };
 
-        let (tuple, _) = TupleValue::decode(&tuple_def, &buffer[..]);
-        if let Err(e) = tuple {
-            log::error!("delete_range: Failed to decode tuple value: Err: {}", e);
-            return -1;
-        }
-        let tuple = tuple.unwrap();
+        let tuple = match TupleValue::decode(&tuple_def, &mut &buffer[..]) {
+            Ok(tuple) => tuple,
+            Err(e) => {
+                log::error!("delete_range: Failed to decode tuple value: Err: {}", e);
+                return -1;
+            }
+        };
 
         let start = &tuple.elements[0];
         let end = &tuple.elements[1];
@@ -153,7 +154,7 @@ impl InstanceEnv {
             ],
         };
 
-        let (table_info, _) = TupleValue::decode(&table_info_schema, &mut &buffer[..]);
+        let table_info = TupleValue::decode(&table_info_schema, &mut &buffer[..]);
         let table_info = table_info.unwrap_or_else(|e| {
             panic!("create_table: Could not decode table_info! Err: {}", e);
         });
@@ -161,7 +162,7 @@ impl InstanceEnv {
         let table_name = table_info.elements[0].as_string().unwrap();
         let schema_bytes = table_info.elements[1].as_bytes().unwrap();
 
-        let (schema, _) = TupleDef::decode(&mut &schema_bytes[..]);
+        let schema = TupleDef::decode(&mut &schema_bytes[..]);
         let schema = schema.unwrap_or_else(|e| {
             panic!("create_table: Could not decode schema! Err: {}", e);
         });
@@ -176,7 +177,7 @@ impl InstanceEnv {
 
         let schema = TypeDef::String;
 
-        let (table_name, _) = TypeValue::decode(&schema, &mut &buffer[..]);
+        let table_name = TypeValue::decode(&schema, &mut &buffer[..]);
         let table_name = table_name.unwrap_or_else(|e| {
             panic!("get_table_id: Could not decode table_name! Err: {}", e);
         });

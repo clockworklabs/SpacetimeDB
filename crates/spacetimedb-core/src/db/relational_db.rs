@@ -5,7 +5,10 @@ use super::{
 // use super::relational_operators::Project;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
-use spacetimedb_lib::{ElementDef, PrimaryKey};
+use spacetimedb_lib::{
+    buffer::{BufReader, DecodeError},
+    ElementDef, PrimaryKey,
+};
 pub use spacetimedb_lib::{TupleDef, TupleValue, TypeDef, TypeValue};
 use std::{
     ops::{DerefMut, RangeBounds},
@@ -249,10 +252,9 @@ impl RelationalDB {
         row.encode(bytes);
     }
 
-    pub fn decode_row(schema: &TupleDef, bytes: impl AsRef<[u8]>) -> Result<TupleValue, &'static str> {
+    pub fn decode_row(schema: &TupleDef, bytes: &mut impl BufReader) -> Result<TupleValue, DecodeError> {
         // TODO: large file storage the row elements
-        let (tuple_value, _) = TupleValue::decode(schema, bytes);
-        tuple_value
+        TupleValue::decode(schema, bytes)
     }
 
     pub fn schema_for_table(&self, tx: &mut Tx, table_id: u32) -> Option<TupleDef> {
@@ -282,7 +284,7 @@ impl RelationalDB {
                     },
                 ],
             };
-            let row = Self::decode_row(&schema, bytes);
+            let row = Self::decode_row(&schema, &mut &bytes[..]);
             if let Err(e) = row {
                 log::error!("schema_for_table: Table has invalid schema: {} Err: {}", table_id, e);
                 return None;
@@ -300,15 +302,9 @@ impl RelationalDB {
 
             let col = &row.elements[2];
             let bytes: &Vec<u8> = col.as_bytes().unwrap();
-            let (col_type, _) = TypeDef::decode(bytes);
-
-            let col_type = match col_type {
-                Ok(col_type) => col_type,
-                Err(e) => {
-                    log::error!("schema_for_table: Table has invalid schema: {} Err: {}", table_id, e);
-                    return None;
-                }
-            };
+            let col_type = TypeDef::decode(&mut &bytes[..])
+                .map_err(|e| log::error!("schema_for_table: Table has invalid schema: {} Err: {}", table_id, e))
+                .ok()?;
 
             let col = &row.elements[3];
             let col_name: &String = col.as_string().unwrap();

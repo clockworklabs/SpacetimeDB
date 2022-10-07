@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::buffer::{BufReader, BufWriter, DecodeError};
+
 // () -> Tuple or enum?
 // (0: 1) -> Tuple or enum?
 // (0: 1, x: (1: 2 | 0: 2))
@@ -27,52 +29,25 @@ pub struct ElementDef {
 }
 
 impl ElementDef {
-    pub fn decode(bytes: impl AsRef<[u8]>) -> (Result<Self, String>, usize) {
-        let mut num_read = 0;
-        let bytes = bytes.as_ref();
-        if bytes.len() <= 0 {
-            return (Err("ElementDef::decode: Byte array has invalid length.".to_string()), 0);
-        }
+    pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
+        let tag = bytes.get_u8()?;
 
-        let tag = bytes[num_read];
-        num_read += 1;
+        let name = read_str(bytes)?;
+        let name = (!name.is_empty()).then(|| name.to_owned());
 
-        let name_len = bytes[num_read];
-        num_read += 1;
+        let element_type = TypeDef::decode(bytes)?;
 
-        let name = if name_len == 0 {
-            None
-        } else {
-            let name_bytes = &bytes[num_read..num_read + name_len as usize];
-            num_read += name_len as usize;
-            Some(String::from_utf8(name_bytes.to_vec()).expect("Yeah this should really return a result."))
-        };
-
-        let (element_type, nr) = TypeDef::decode(&bytes[num_read..]);
-        num_read += nr;
-
-        return match element_type {
-            Ok(element_type) => (
-                Ok(ElementDef {
-                    tag,
-                    element_type,
-                    name,
-                }),
-                num_read,
-            ),
-            Err(e) => (Err(e), 0),
-        };
+        Ok(ElementDef {
+            tag,
+            element_type,
+            name,
+        })
     }
 
-    pub fn encode(&self, bytes: &mut Vec<u8>) {
-        bytes.push(self.tag);
+    pub fn encode(&self, bytes: &mut impl BufWriter) {
+        bytes.put_u8(self.tag);
 
-        if let Some(name) = &self.name {
-            bytes.push(name.len() as u8);
-            bytes.extend(name.as_bytes())
-        } else {
-            bytes.push(0);
-        }
+        write_str(bytes, self.name.as_deref().unwrap_or(""));
 
         self.element_type.encode(bytes);
     }
@@ -84,34 +59,18 @@ pub struct TupleDef {
 }
 
 impl TupleDef {
-    pub fn decode(bytes: impl AsRef<[u8]>) -> (Result<Self, String>, usize) {
-        let mut num_read = 0;
-        let bytes = bytes.as_ref();
-        if bytes.len() == 0 {
-            return (Err("TupleDef::decode: byte array has invalid length.".to_string()), 0);
-        }
+    pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
+        let len = read_len(bytes)?;
 
-        let len = bytes[num_read];
-        num_read += 1;
-
-        let mut elements = Vec::new();
+        let mut elements = Vec::with_capacity(len.into());
         for _ in 0..len {
-            let (element, nr) = ElementDef::decode(&bytes[num_read..]);
-            match element {
-                Ok(element) => {
-                    elements.push(element);
-                    num_read += nr;
-                }
-                Err(e) => {
-                    return (Err(e), 0);
-                }
-            }
+            elements.push(ElementDef::decode(bytes)?);
         }
-        (Ok(TupleDef { elements }), num_read)
+        Ok(TupleDef { elements })
     }
 
-    pub fn encode(&self, bytes: &mut Vec<u8>) {
-        bytes.push(self.elements.len() as u8);
+    pub fn encode(&self, bytes: &mut impl BufWriter) {
+        write_len(bytes, self.elements.len());
         for item in &self.elements {
             item.encode(bytes);
         }
@@ -126,34 +85,18 @@ pub struct EnumDef {
 }
 
 impl EnumDef {
-    pub fn decode(bytes: impl AsRef<[u8]>) -> (Result<Self, String>, usize) {
-        let mut num_read = 0;
-        let bytes = bytes.as_ref();
-        if bytes.len() <= 0 {
-            return (Err("EnumDef::decode: bytes array length is invalid.".to_string()), 0);
-        }
+    pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
+        let len = read_len(bytes)?;
 
-        let len = bytes[num_read];
-        num_read += 1;
-
-        let mut items = Vec::new();
+        let mut items = Vec::with_capacity(len.into());
         for _ in 0..len {
-            let (item, nr) = ElementDef::decode(&bytes[num_read..]);
-            match item {
-                Ok(item) => {
-                    items.push(item);
-                    num_read += nr;
-                }
-                Err(e) => {
-                    return (Err(e), 0);
-                }
-            }
+            items.push(ElementDef::decode(bytes)?);
         }
-        (Ok(EnumDef { variants: items }), num_read)
+        Ok(EnumDef { variants: items })
     }
 
-    pub fn encode(&self, bytes: &mut Vec<u8>) {
-        bytes.push(self.variants.len() as u8);
+    pub fn encode(&self, bytes: &mut impl BufWriter) {
+        write_len(bytes, self.variants.len());
         for item in &self.variants {
             item.encode(bytes);
         }
@@ -203,99 +146,86 @@ pub enum PrimitiveType {
 }
 
 impl TypeDef {
-    pub fn decode(bytes: impl AsRef<[u8]>) -> (Result<Self, String>, usize) {
-        let bytes = bytes.as_ref();
-        if bytes.len() == 0 {
-            return (Err("TypeDef::decode: byte array length is invalid.".to_string()), 0);
-        }
+    pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
+        let tag = bytes.get_u8()?;
 
-        let res = match bytes[0] {
-            0 => {
-                let (tuple_def, bytes_read) = TupleDef::decode(&bytes[1..]);
-                match tuple_def {
-                    Ok(tuple_def) => (TypeDef::Tuple(tuple_def), bytes_read + 1),
-                    Err(e) => {
-                        return (Err(e), 0);
-                    }
-                }
-            }
-            1 => {
-                let (enum_def, bytes_read) = EnumDef::decode(&bytes[1..]);
-                match enum_def {
-                    Ok(enum_def) => (TypeDef::Enum(enum_def), bytes_read + 1),
-                    Err(e) => {
-                        return (Err(e), 0);
-                    }
-                }
-            }
-            2 => {
-                let (type_def, bytes_read) = TypeDef::decode(&bytes[1..]);
-                match type_def {
-                    Ok(type_def) => (
-                        TypeDef::Vec {
-                            element_type: Box::new(type_def),
-                        },
-                        bytes_read + 1,
-                    ),
-                    Err(e) => {
-                        return (Err(e), 0);
-                    }
-                }
-            }
-            4 => (TypeDef::Primitive(PrimitiveType::U16), 1),
-            3 => (TypeDef::Primitive(PrimitiveType::U8), 1),
-            5 => (TypeDef::Primitive(PrimitiveType::U32), 1),
-            6 => (TypeDef::Primitive(PrimitiveType::U64), 1),
-            7 => (TypeDef::Primitive(PrimitiveType::U128), 1),
-            8 => (TypeDef::Primitive(PrimitiveType::I8), 1),
-            9 => (TypeDef::Primitive(PrimitiveType::I16), 1),
-            10 => (TypeDef::Primitive(PrimitiveType::I32), 1),
-            11 => (TypeDef::Primitive(PrimitiveType::I64), 1),
-            12 => (TypeDef::Primitive(PrimitiveType::I128), 1),
-            13 => (TypeDef::Primitive(PrimitiveType::Bool), 1),
-            14 => (TypeDef::Primitive(PrimitiveType::F32), 1),
-            15 => (TypeDef::Primitive(PrimitiveType::F64), 1),
-            16 => (TypeDef::Primitive(PrimitiveType::String), 1),
-            17 => (TypeDef::Primitive(PrimitiveType::Bytes), 1),
-            18 => (TypeDef::Primitive(PrimitiveType::Bytes), 1),
-            b => panic!("Unknown {}", b),
+        let res = match tag {
+            0x00 => TypeDef::Tuple(TupleDef::decode(bytes)?),
+            0x01 => TypeDef::Enum(EnumDef::decode(bytes)?),
+            0x02 => TypeDef::Vec {
+                element_type: Box::new(TypeDef::decode(bytes)?),
+            },
+            0x04 => TypeDef::Primitive(PrimitiveType::U16),
+            0x03 => TypeDef::Primitive(PrimitiveType::U8),
+            0x05 => TypeDef::Primitive(PrimitiveType::U32),
+            0x06 => TypeDef::Primitive(PrimitiveType::U64),
+            0x07 => TypeDef::Primitive(PrimitiveType::U128),
+            0x08 => TypeDef::Primitive(PrimitiveType::I8),
+            0x09 => TypeDef::Primitive(PrimitiveType::I16),
+            0x0A => TypeDef::Primitive(PrimitiveType::I32),
+            0x0B => TypeDef::Primitive(PrimitiveType::I64),
+            0x0C => TypeDef::Primitive(PrimitiveType::I128),
+            0x0D => TypeDef::Primitive(PrimitiveType::Bool),
+            0x0E => TypeDef::Primitive(PrimitiveType::F32),
+            0x0F => TypeDef::Primitive(PrimitiveType::F64),
+            0x10 => TypeDef::Primitive(PrimitiveType::String),
+            0x11 => TypeDef::Primitive(PrimitiveType::Bytes),
+            0x12 => TypeDef::Primitive(PrimitiveType::Bytes),
+            _ => return Err(DecodeError::InvalidTag),
         };
 
-        (Ok(res.0), res.1)
+        Ok(res)
     }
 
-    pub fn encode(&self, bytes: &mut Vec<u8>) {
+    pub fn encode(&self, bytes: &mut impl BufWriter) {
         match self {
             TypeDef::Tuple(t) => {
-                bytes.push(0);
+                bytes.put_u8(0x00);
                 t.encode(bytes);
             }
             TypeDef::Enum(e) => {
-                bytes.push(1);
+                bytes.put_u8(0x01);
                 e.encode(bytes);
             }
             TypeDef::Vec { element_type } => {
-                bytes.push(2);
+                bytes.put_u8(0x02);
                 element_type.encode(bytes);
             }
-            TypeDef::Primitive(prim) => bytes.push(match prim {
-                PrimitiveType::U8 => 3,
-                PrimitiveType::U16 => 4,
-                PrimitiveType::U32 => 5,
-                PrimitiveType::U64 => 6,
-                PrimitiveType::U128 => 7,
-                PrimitiveType::I8 => 8,
-                PrimitiveType::I16 => 9,
-                PrimitiveType::I32 => 10,
-                PrimitiveType::I64 => 11,
-                PrimitiveType::I128 => 12,
-                PrimitiveType::Bool => 13,
-                PrimitiveType::F32 => 14,
-                PrimitiveType::F64 => 15,
-                PrimitiveType::String => 16,
-                PrimitiveType::Bytes => 17,
-                PrimitiveType::Unit => 18,
+            TypeDef::Primitive(prim) => bytes.put_u8(match prim {
+                PrimitiveType::U8 => 0x03,
+                PrimitiveType::U16 => 0x04,
+                PrimitiveType::U32 => 0x05,
+                PrimitiveType::U64 => 0x06,
+                PrimitiveType::U128 => 0x07,
+                PrimitiveType::I8 => 0x08,
+                PrimitiveType::I16 => 0x09,
+                PrimitiveType::I32 => 0x0A,
+                PrimitiveType::I64 => 0x0B,
+                PrimitiveType::I128 => 0x0C,
+                PrimitiveType::Bool => 0x0D,
+                PrimitiveType::F32 => 0x0E,
+                PrimitiveType::F64 => 0x0F,
+                PrimitiveType::String => 0x10,
+                PrimitiveType::Bytes => 0x11,
+                PrimitiveType::Unit => 0x12,
             }),
         }
     }
+}
+
+fn read_len(bytes: &mut impl BufReader) -> Result<usize, DecodeError> {
+    // eventually should be leb128
+    bytes.get_u8().map(Into::into)
+}
+fn write_len(bytes: &mut impl BufWriter, len: usize) {
+    bytes.put_u8(len.try_into().expect("too big"))
+}
+fn read_str(bytes: &mut impl BufReader) -> Result<&str, DecodeError> {
+    let len = read_len(bytes)?;
+    let slice = bytes.get_slice(len)?;
+    Ok(std::str::from_utf8(slice)?)
+}
+fn write_str(bytes: &mut impl BufWriter, s: &str) {
+    write_len(bytes, s.len());
+    bytes.put_slice(s.as_bytes());
 }

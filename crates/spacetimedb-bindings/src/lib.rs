@@ -2,10 +2,11 @@
 pub mod io;
 mod impls;
 
+use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
 use spacetimedb_lib::type_def::PrimitiveType;
 use spacetimedb_lib::{PrimaryKey, TupleDef, TupleValue, TypeDef};
 use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
-use std::mem::ManuallyDrop;
+use std::cell::RefCell;
 use std::ops::Range;
 use std::panic;
 
@@ -25,7 +26,6 @@ pub use spacetimedb_lib::TypeValue;
 
 #[doc(hidden)]
 pub mod __private {
-    use super::*;
     pub use once_cell::sync::OnceCell;
 }
 
@@ -52,7 +52,10 @@ extern "C" {
 }
 
 const ROW_BUF_LEN: usize = 1024 * 1024;
-static mut ROW_BUF: Option<*mut u8> = None;
+// this gets optimized away to a normal global since wasm32 doesn't have threads by default
+thread_local! {
+    static ROW_BUF: RefCell<Box<[u8; ROW_BUF_LEN]>> = RefCell::new(Box::new([0; ROW_BUF_LEN]));
+}
 
 #[no_mangle]
 extern "C" fn alloc(size: usize) -> *mut u8 {
@@ -72,116 +75,107 @@ extern "C" fn dealloc(ptr: *mut u8, size: usize) {
     }
 }
 
-fn row_buf() -> ManuallyDrop<Vec<u8>> {
-    unsafe {
-        if ROW_BUF.is_none() {
-            let ptr = alloc(ROW_BUF_LEN);
-            ROW_BUF = Some(ptr);
-        }
-        ManuallyDrop::new(Vec::from_raw_parts(ROW_BUF.unwrap(), 0, ROW_BUF_LEN))
-    }
+fn with_row_buf<R>(f: impl FnOnce(&mut [u8]) -> R) -> R {
+    ROW_BUF.with(|r| f(&mut r.borrow_mut()[..]))
 }
 
-pub fn encode_row(row: TupleValue, bytes: &mut Vec<u8>) {
+pub fn encode_row(row: TupleValue, bytes: &mut impl BufWriter) {
     row.encode(bytes);
 }
 
-pub fn decode_row(schema: &TupleDef, bytes: &mut &[u8]) -> (Result<TupleValue, &'static str>, usize) {
+pub fn decode_row(schema: &TupleDef, bytes: &mut impl BufReader) -> Result<TupleValue, DecodeError> {
     TupleValue::decode(schema, bytes)
 }
 
-pub fn encode_schema(schema: TupleDef, bytes: &mut Vec<u8>) {
+pub fn encode_schema(schema: TupleDef, bytes: &mut impl BufWriter) {
     schema.encode(bytes);
 }
 
-pub fn decode_schema(bytes: &mut &[u8]) -> (Result<TupleDef, String>, usize) {
+pub fn decode_schema(bytes: &mut impl BufReader) -> Result<TupleDef, DecodeError> {
     TupleDef::decode(bytes)
 }
 
 pub fn create_table(table_name: &str, schema: TupleDef) -> u32 {
-    let mut bytes = row_buf();
+    with_row_buf(|bytes| {
+        let mut schema_bytes = Vec::new();
+        schema.encode(&mut schema_bytes);
 
-    let mut schema_bytes = Vec::new();
-    schema.encode(&mut schema_bytes);
+        let table_info = TupleValue {
+            elements: vec![
+                TypeValue::String(table_name.to_string()),
+                TypeValue::Bytes(schema_bytes),
+            ]
+            .into(),
+        };
 
-    let table_info = TupleValue {
-        elements: vec![
-            TypeValue::String(table_name.to_string()),
-            TypeValue::Bytes(schema_bytes),
-        ]
-        .into(),
-    };
+        table_info.encode(&mut &mut *bytes);
 
-    table_info.encode(&mut bytes);
-
-    unsafe { _create_table(bytes.as_mut_ptr()) }
+        unsafe { _create_table(bytes.as_mut_ptr()) }
+    })
 }
 
 pub fn get_table_id(table_name: &str) -> u32 {
-    let mut bytes = row_buf();
+    with_row_buf(|bytes| {
+        let table_name = TypeValue::String(table_name.to_string());
+        table_name.encode(&mut &mut *bytes);
 
-    let table_name = TypeValue::String(table_name.to_string());
-    table_name.encode(&mut bytes);
-
-    unsafe { _get_table_id(bytes.as_mut_ptr()) }
+        unsafe { _get_table_id(bytes.as_mut_ptr()) }
+    })
 }
 
 pub fn insert(table_id: u32, row: TupleValue) {
-    let mut bytes = row_buf();
-    row.encode(&mut bytes);
-    unsafe {
-        _insert(table_id, bytes.as_mut_ptr());
-    }
+    with_row_buf(|bytes| {
+        row.encode(&mut &mut *bytes);
+        unsafe { _insert(table_id, bytes.as_mut_ptr()) }
+    })
 }
 
 pub fn delete_pk(table_id: u32, primary_key: PrimaryKey) -> Option<usize> {
-    let mut bytes = row_buf();
-    primary_key.encode(&mut bytes);
-    let result = unsafe { _delete_pk(table_id, bytes.as_mut_ptr()) };
-    if result == 0 {
-        return None;
-    }
-    return Some(1);
+    with_row_buf(|bytes| {
+        primary_key.encode(&mut &mut *bytes);
+        let result = unsafe { _delete_pk(table_id, bytes.as_mut_ptr()) };
+        (result != 0).then_some(1)
+    })
 }
 
 pub fn delete_filter<F: Fn(&TupleValue) -> bool>(table_id: u32, f: F) -> Option<usize> {
-    let mut count = 0;
-    for tuple_value in __iter__(table_id).unwrap() {
-        if f(&tuple_value) {
-            count += 1;
-            let mut bytes = row_buf();
-            tuple_value.encode(&mut bytes);
-            if unsafe { _delete_value(table_id, bytes.as_mut_ptr()) } == 0 {
-                panic!("Something ain't right.");
+    with_row_buf(|bytes| {
+        let mut count = 0;
+        for tuple_value in __iter__(table_id).unwrap() {
+            if f(&tuple_value) {
+                count += 1;
+                tuple_value.encode(&mut &mut *bytes);
+                if unsafe { _delete_value(table_id, bytes.as_mut_ptr()) } == 0 {
+                    panic!("Something ain't right.");
+                }
             }
         }
-    }
-    Some(count)
+        Some(count)
+    })
 }
 
 pub fn delete_eq(table_id: u32, col_id: u8, eq_value: TypeValue) -> Option<usize> {
-    let mut bytes = row_buf();
-    eq_value.encode(&mut bytes);
-    let result = unsafe { _delete_eq(table_id, col_id.into(), bytes.as_mut_ptr()) };
-    if result == -1 {
-        return None;
-    }
-    return Some(result as usize);
+    with_row_buf(|bytes| {
+        eq_value.encode(&mut &mut *bytes);
+        let result = unsafe { _delete_eq(table_id, col_id.into(), bytes.as_mut_ptr()) };
+        (result != -1).then_some(result as usize)
+    })
 }
 
 pub fn delete_range(table_id: u32, col_id: u8, range: Range<TypeValue>) -> Option<usize> {
-    let mut bytes = row_buf();
-    let start = TypeValue::from(range.start);
-    let end = TypeValue::from(range.end);
-    let tuple = TupleValue {
-        elements: vec![start, end].into(),
-    };
-    tuple.encode(&mut bytes);
-    let result = unsafe { _delete_range(table_id, col_id.into(), bytes.as_mut_ptr()) };
-    if result == -1 {
-        return None;
-    }
-    return Some(result as usize);
+    with_row_buf(|bytes| {
+        let start = TypeValue::from(range.start);
+        let end = TypeValue::from(range.end);
+        let tuple = TupleValue {
+            elements: vec![start, end].into(),
+        };
+        tuple.encode(&mut &mut *bytes);
+        let result = unsafe { _delete_range(table_id, col_id.into(), bytes.as_mut_ptr()) };
+        if result == -1 {
+            return None;
+        }
+        return Some(result as usize);
+    })
 }
 
 pub fn create_index(_table_id: u32, _index_type: u8, _col_ids: Vec<u8>) {}
@@ -202,24 +196,17 @@ pub fn __iter__(table_id: u32) -> Option<TableIter> {
     let size = data as u32;
     let bytes: Vec<u8> = unsafe { Vec::from_raw_parts(ptr, size as usize, size as usize) };
 
-    let slice = &mut &bytes[..];
-    let (schema, schema_size) = decode_schema(slice);
-    if let Err(e) = schema {
+    let mut buffer = Cursor::new(bytes);
+    let schema = decode_schema(&mut buffer);
+    let schema = schema.unwrap_or_else(|e| {
         panic!("__iter__: Could not decode schema. Err: {}", e);
-    }
+    });
 
-    let data_index = schema_size as usize;
-
-    Some(TableIter {
-        bytes,
-        data_index,
-        schema: schema.unwrap(),
-    })
+    Some(TableIter { buffer, schema })
 }
 
 pub struct TableIter {
-    bytes: Vec<u8>,
-    data_index: usize,
+    buffer: Cursor<Vec<u8>>,
     schema: TupleDef,
 }
 
@@ -227,16 +214,13 @@ impl Iterator for TableIter {
     type Item = TupleValue;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let slice = &mut &self.bytes[self.data_index..];
-        if slice.len() > 0 {
-            let (row, num_read) = decode_row(&self.schema, slice);
-            if let Err(e) = row {
-                panic!("TableIter::next: Failed to decode row! Err: {}", e);
-            }
-            self.data_index += num_read;
-            return Some(row.unwrap());
+        if self.buffer.remaining() == 0 {
+            return None;
         }
-        return None;
+        let row = decode_row(&self.schema, &mut self.buffer).unwrap_or_else(|e| {
+            panic!("TableIter::next: Failed to decode row! Err: {}", e);
+        });
+        Some(row)
     }
 }
 

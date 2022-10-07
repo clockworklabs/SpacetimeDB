@@ -12,7 +12,6 @@ use tokio::spawn;
 use tokio::time::sleep;
 
 use spacetimedb_lib::args::{Arguments, RepeatingReducerArguments};
-use spacetimedb_lib::buffer::VectorBufWriter;
 use spacetimedb_lib::{ElementDef, TupleDef, TypeDef};
 
 use crate::db::messages::transaction::Transaction;
@@ -266,15 +265,14 @@ impl CPythonModuleHostActor {
         // until ModuleEvent can be refactored to hold something richer
         let arguments = RepeatingReducerArguments::new(timestamp, delta_time);
         let mut arg_bytes = Vec::with_capacity(arguments.encoded_size());
-        let mut writer = VectorBufWriter::new(&mut arg_bytes);
-        arguments.encode(&mut writer);
+        arguments.encode(&mut arg_bytes);
 
         let event = ModuleEvent {
             timestamp,
             caller_identity: self.worker_database_instance.identity,
             function_call: ModuleFunctionCall {
                 reducer: reducer_name.to_string(),
-                arg_bytes: arg_bytes.to_owned(),
+                arg_bytes,
             },
             status,
             energy_quanta_used: 0, // TODO

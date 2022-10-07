@@ -17,9 +17,8 @@ use crate::{
     hash::Hash,
     nodes::worker_node::prometheus_metrics::{TX_COMPUTE_TIME, TX_COUNT, TX_SIZE},
 };
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use spacetimedb_lib::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
-use spacetimedb_lib::buffer::VectorBufWriter;
 use spacetimedb_lib::{ElementDef, TupleDef, TypeDef};
 use std::cmp::max;
 use std::time::Instant;
@@ -377,8 +376,7 @@ impl WasmModuleHostActor {
         // into the WASM memory, but ModuleEvent.function_call also wants a copy, so it doesn't
         // quite work.
         let mut new_arg_bytes = Vec::with_capacity(arguments.encoded_size());
-        let mut writer = VectorBufWriter::new(&mut new_arg_bytes);
-        arguments.encode(&mut writer);
+        arguments.encode(&mut new_arg_bytes);
 
         let (tx, energy_quanta_used, energy_remaining, _repeat_duration) =
             self.execute_reducer(&reducer_symbol, Some(budget), new_arg_bytes)?;
@@ -425,8 +423,7 @@ impl WasmModuleHostActor {
         let arguments = RepeatingReducerArguments::new(timestamp, delta_time);
 
         let mut arg_bytes = Vec::with_capacity(arguments.encoded_size());
-        let mut writer = VectorBufWriter::new(&mut arg_bytes);
-        arguments.encode(&mut writer);
+        arguments.encode(&mut arg_bytes);
 
         // TODO(ryan): energy consumption from repeating reducers needs to be accounted for, for now
         // we run with default giant budget. The logistical problem here is that I'd rather not do
@@ -470,8 +467,7 @@ impl WasmModuleHostActor {
         let arguments = ConnectDisconnectArguments::new(spacetimedb_lib::Hash::from_arr(&identity.data), timestamp);
 
         let mut new_arg_bytes = Vec::with_capacity(arguments.encoded_size());
-        let mut writer = VectorBufWriter::new(&mut new_arg_bytes);
-        arguments.encode(&mut writer);
+        arguments.encode(&mut new_arg_bytes);
 
         let reducer_symbol = if connected {
             IDENTITY_CONNECTED_DUNDER
@@ -571,17 +567,8 @@ impl WasmModuleHostActor {
                 let bytes: Vec<u8> = view[offset..offset + length].iter().map(|c| c.get()).collect();
 
                 // Decode the memory as TupleDef. Do not exit yet, as we have to dealloc the buffer.
-                let (args, _) = TupleDef::decode(bytes);
-                let result = match args {
-                    Ok(args) => args,
-                    Err(e) => {
-                        return Err(anyhow!(
-                            "argument tuples has invalid schema: {} Err: {}",
-                            describer_func_name,
-                            e
-                        ));
-                    }
-                };
+                let result = TupleDef::decode(&mut &bytes[..])
+                    .with_context(|| format!("argument tuples has invalid schema: {}", describer_func_name))?;
 
                 // Clean out the vector buffer memory that the wasm-side "forgot" in order to pass
                 // it to us.
