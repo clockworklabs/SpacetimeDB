@@ -24,8 +24,6 @@ impl Hash {
 }
 
 pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> Hash {
-    let mut hasher = Keccak256::new();
-    hasher.update(bytes);
-    let data: [u8; HASH_SIZE] = hasher.finalize().try_into().unwrap();
+    let data: [u8; HASH_SIZE] = Keccak256::digest(bytes).into();
     Hash { data }
 }

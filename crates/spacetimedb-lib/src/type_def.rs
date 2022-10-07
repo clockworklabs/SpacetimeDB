@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+pub mod resolve_refs;
+
+use self::resolve_refs::{RefKind, Void};
+
 // () -> Tuple or enum?
 // (0: 1) -> Tuple or enum?
 // (0: 1, x: (1: 2 | 0: 2))
@@ -18,15 +22,15 @@ use serde::{Deserialize, Serialize};
 // (1: u32 | 2: u32) -> 2-tuple (+ operator)
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-pub struct ElementDef {
+pub struct ElementDef<Ref: RefKind = Void> {
     // In the case of tuples, this is the id of the column
     // In the case of enums, this is the id of the variant
     pub tag: u8,
     pub name: Option<String>,
-    pub element_type: TypeDef,
+    pub element_type: TypeDef<Ref>,
 }
 
-impl ElementDef {
+impl<Ref: RefKind> ElementDef<Ref> {
     pub fn decode(bytes: impl AsRef<[u8]>) -> (Result<Self, String>, usize) {
         let mut num_read = 0;
         let bytes = bytes.as_ref();
@@ -79,11 +83,11 @@ impl ElementDef {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-pub struct TupleDef {
-    pub elements: Vec<ElementDef>,
+pub struct TupleDef<Ref: RefKind = Void> {
+    pub elements: Vec<ElementDef<Ref>>,
 }
 
-impl TupleDef {
+impl<Ref: RefKind> TupleDef<Ref> {
     pub fn decode(bytes: impl AsRef<[u8]>) -> (Result<Self, String>, usize) {
         let mut num_read = 0;
         let bytes = bytes.as_ref();
@@ -121,11 +125,11 @@ impl TupleDef {
 // TODO: probably implement this with a tuple but store whether the tuple
 // is a sum tuple or a product tuple, then we have uniformity over types
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-pub struct EnumDef {
-    pub elements: Vec<ElementDef>,
+pub struct EnumDef<Ref: RefKind = Void> {
+    pub elements: Vec<ElementDef<Ref>>,
 }
 
-impl EnumDef {
+impl<Ref: RefKind> EnumDef<Ref> {
     pub fn decode(bytes: impl AsRef<[u8]>) -> (Result<Self, String>, usize) {
         let mut num_read = 0;
         let bytes = bytes.as_ref();
@@ -167,10 +171,26 @@ impl EnumDef {
 /// Is important the order in this enum so sorting work correctly, and it must match
 /// [TypeWideValue]/[TypeValue]
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-pub enum TypeDef {
-    /// The **BOTTOM** type
+pub enum TypeDef<Ref: RefKind = Void> {
+    Primitive(PrimitiveType),
+
+    Enum(EnumDef<Ref>),
+    Tuple(TupleDef<Ref>),
+
+    Vec { element_type: Box<TypeDef<Ref>> },
+
+    Ref(Ref),
+}
+
+impl<Ref: RefKind> From<PrimitiveType> for TypeDef<Ref> {
+    fn from(prim: PrimitiveType) -> Self {
+        TypeDef::Primitive(prim)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum PrimitiveType {
     Unit,
-    /// Base types
     Bool,
     I8,
     U8,
@@ -186,14 +206,9 @@ pub enum TypeDef {
     F64,
     String,
     Bytes,
-    Enum(EnumDef),
-    Tuple(TupleDef),
-    Vec {
-        element_type: Box<TypeDef>,
-    },
 }
 
-impl TypeDef {
+impl<Ref: RefKind> TypeDef<Ref> {
     pub fn decode(bytes: impl AsRef<[u8]>) -> (Result<Self, String>, usize) {
         let bytes = bytes.as_ref();
         if bytes.len() == 0 {
@@ -233,22 +248,33 @@ impl TypeDef {
                     }
                 }
             }
-            3 => (TypeDef::U8, 1),
-            4 => (TypeDef::U16, 1),
-            5 => (TypeDef::U32, 1),
-            6 => (TypeDef::U64, 1),
-            7 => (TypeDef::U128, 1),
-            8 => (TypeDef::I8, 1),
-            9 => (TypeDef::I16, 1),
-            10 => (TypeDef::I32, 1),
-            11 => (TypeDef::I64, 1),
-            12 => (TypeDef::I128, 1),
-            13 => (TypeDef::Bool, 1),
-            14 => (TypeDef::F32, 1),
-            15 => (TypeDef::F64, 1),
-            16 => (TypeDef::String, 1),
-            17 => (TypeDef::Bytes, 1),
-            18 => (TypeDef::Bytes, 1),
+            4 => (TypeDef::Primitive(PrimitiveType::U16), 1),
+            3 => (TypeDef::Primitive(PrimitiveType::U8), 1),
+            5 => (TypeDef::Primitive(PrimitiveType::U32), 1),
+            6 => (TypeDef::Primitive(PrimitiveType::U64), 1),
+            7 => (TypeDef::Primitive(PrimitiveType::U128), 1),
+            8 => (TypeDef::Primitive(PrimitiveType::I8), 1),
+            9 => (TypeDef::Primitive(PrimitiveType::I16), 1),
+            10 => (TypeDef::Primitive(PrimitiveType::I32), 1),
+            11 => (TypeDef::Primitive(PrimitiveType::I64), 1),
+            12 => (TypeDef::Primitive(PrimitiveType::I128), 1),
+            13 => (TypeDef::Primitive(PrimitiveType::Bool), 1),
+            14 => (TypeDef::Primitive(PrimitiveType::F32), 1),
+            15 => (TypeDef::Primitive(PrimitiveType::F64), 1),
+            16 => (TypeDef::Primitive(PrimitiveType::String), 1),
+            17 => (TypeDef::Primitive(PrimitiveType::Bytes), 1),
+            18 => (TypeDef::Primitive(PrimitiveType::Bytes), 1),
+            0xff => {
+                let (type_ref, bytes_read) = resolve_refs::TypeRef::decode(&bytes[1..]);
+                match type_ref
+                    .and_then(|type_ref| Ref::from_typeref(type_ref).ok_or_else(|| "Ref not supported here".to_owned()))
+                {
+                    Ok(type_ref) => (TypeDef::Ref(type_ref), bytes_read + 1),
+                    Err(e) => {
+                        return (Err(e), 0);
+                    }
+                }
+            }
             b => panic!("Unknown {}", b),
         };
 
@@ -269,22 +295,25 @@ impl TypeDef {
                 bytes.push(2);
                 element_type.encode(bytes);
             }
-            TypeDef::U8 => bytes.push(3),
-            TypeDef::U16 => bytes.push(4),
-            TypeDef::U32 => bytes.push(5),
-            TypeDef::U64 => bytes.push(6),
-            TypeDef::U128 => bytes.push(7),
-            TypeDef::I8 => bytes.push(8),
-            TypeDef::I16 => bytes.push(9),
-            TypeDef::I32 => bytes.push(10),
-            TypeDef::I64 => bytes.push(11),
-            TypeDef::I128 => bytes.push(12),
-            TypeDef::Bool => bytes.push(13),
-            TypeDef::F32 => bytes.push(14),
-            TypeDef::F64 => bytes.push(15),
-            TypeDef::String => bytes.push(16),
-            TypeDef::Bytes => bytes.push(17),
-            TypeDef::Unit => bytes.push(18),
+            TypeDef::Primitive(prim) => bytes.push(match prim {
+                PrimitiveType::U8 => 3,
+                PrimitiveType::U16 => 4,
+                PrimitiveType::U32 => 5,
+                PrimitiveType::U64 => 6,
+                PrimitiveType::U128 => 7,
+                PrimitiveType::I8 => 8,
+                PrimitiveType::I16 => 9,
+                PrimitiveType::I32 => 10,
+                PrimitiveType::I64 => 11,
+                PrimitiveType::I128 => 12,
+                PrimitiveType::Bool => 13,
+                PrimitiveType::F32 => 14,
+                PrimitiveType::F64 => 15,
+                PrimitiveType::String => 16,
+                PrimitiveType::Bytes => 17,
+                PrimitiveType::Unit => 18,
+            }),
+            TypeDef::Ref(x) => x.as_typeref().encode(bytes),
         }
     }
 }

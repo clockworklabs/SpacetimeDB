@@ -5,7 +5,7 @@ use crate::{parse_generic_arg, rust_to_spacetimedb_ident};
 use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
-use std::fmt::Write;
+use std::fmt::{self, Write};
 use syn::{FnArg, ItemFn, ItemStruct};
 
 /// This returns a function which will return the schema (TypeDef) for a struct. The signature
@@ -87,15 +87,93 @@ pub(crate) fn csharp_get_type_def_for_struct(original_struct: ItemStruct) -> Str
     return result;
 }
 
+struct Reducer {
+    name: String,
+    args: Vec<ReducerArg>,
+}
+struct ReducerArg {
+    name: String,
+    ty: ReducerType,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum RustPrimitive {
+    Bool,
+    I8,
+    U8,
+    I16,
+    U16,
+    I32,
+    U32,
+    I64,
+    U64,
+    // I128, Not a supported type in csharp
+    // U128, Not a supported type in csharp
+    String,
+    Str,
+    F32,
+    F64,
+}
+impl RustPrimitive {
+    fn to_csharp(self) -> &'static str {
+        match self {
+            Self::Bool => "bool",
+            Self::I8 => "sbyte",
+            Self::U8 => "byte",
+            Self::I16 => "short",
+            Self::U16 => "ushort",
+            Self::I32 => "int",
+            Self::U32 => "uint",
+            Self::I64 => "long",
+            Self::U64 => "ulong",
+            // Self::I128 => "int128", Not a supported type in csharp
+            // Self::U128 => "uint128", Not a supported type in csharp
+            Self::String => "string",
+            Self::Str => "string",
+            Self::F32 => "float",
+            Self::F64 => "double",
+        }
+    }
+}
+#[derive(PartialEq, Eq)]
+enum ReducerType {
+    Hash,
+    Primitive(RustPrimitive),
+    Vec(RustPrimitive),
+    Other(String),
+}
+impl ReducerType {
+    fn fmt_csharp(&self) -> impl fmt::Display + '_ {
+        fmt_fn(move |f| {
+            match self {
+                ReducerType::Hash => f.write_str("SpacetimeDB.Hash"),
+                ReducerType::Primitive(prim) => f.write_str(prim.to_csharp()),
+                ReducerType::Vec(prim) => write!(f, "System.Collections.Generic.List<{}>", prim.to_csharp()),
+                // This is hopefully a type understood by C#
+                ReducerType::Other(s) => f.write_str(s),
+            }
+        })
+    }
+}
+fn fmt_fn(f: impl Fn(&mut fmt::Formatter) -> fmt::Result) -> impl fmt::Display {
+    struct FDisplay<F>(F);
+    impl<F: Fn(&mut fmt::Formatter) -> fmt::Result> fmt::Display for FDisplay<F> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            (self.0)(f)
+        }
+    }
+    FDisplay(f)
+}
+
 /// Creates a C# reducer function for the given rust reducer. All reducers are exported as static
 /// functions in a class called Reducer.
-pub(crate) fn autogen_csharp_reducer(original_function: ItemFn) -> TokenStream {
-    let func_name = &original_function.sig.ident;
-    let reducer_pascal_name = func_name.to_token_stream().to_string().to_case(Case::Pascal);
+pub(crate) fn autogen_csharp_reducer(original_function: Reducer) -> String {
+    let func_name = &original_function.name;
+    let reducer_pascal_name = func_name.to_case(Case::Pascal);
     let use_namespace = true;
     let namespace = "SpacetimeDB";
     let namespace_tab = if use_namespace { "\t" } else { "" };
-    let func_name_pascal_case = func_name.to_string().to_case(Case::Pascal);
+    let func_name_pascal_case = func_name.to_case(Case::Pascal);
 
     let mut output_contents: String = String::new();
     let mut func_arguments: String = String::new();
@@ -123,81 +201,27 @@ pub(crate) fn autogen_csharp_reducer(original_function: ItemFn) -> TokenStream {
     )
     .unwrap();
 
-    let mut arg_num: usize = 0;
-    let mut inserted_args: usize = 0;
-    for function_argument in original_function.sig.inputs.iter() {
-        match function_argument {
-            FnArg::Typed(typed) => {
-                let arg_type = &typed.ty;
-                let arg_type = arg_type.to_token_stream().to_string();
-                let arg_name = &typed.pat.to_token_stream().to_string().to_case(Case::Camel);
+    let mut arg_i = 0usize;
+    for arg in original_function.args {
+        let ReducerArg { name, ty } = arg;
+        let arg_name = name.to_case(Case::Camel);
 
-                // Skip any arguments that are supplied by spacetimedb
-                if arg_num == 0 && typed.ty.to_token_stream().to_string() == "Hash"
-                    || arg_num == 1 && typed.ty.to_token_stream().to_string() == "u64"
-                {
-                    arg_num = arg_num + 1;
-                    continue;
-                }
-
-                if inserted_args > 0 {
-                    write!(func_arguments, ", ").unwrap();
-                    write!(arg_names, ", ").unwrap();
-                }
-
-                match rust_type_to_csharp_raw_type(arg_type.as_str()) {
-                    Some(csharp_type) => {
-                        write!(func_arguments, "{} {}", csharp_type, arg_name).unwrap();
-                    }
-                    None => {
-                        if let syn::Type::Path(syn::TypePath { ref path, .. }) = *typed.ty {
-                            if path.segments.len() > 0 {
-                                match path.segments[0].ident.to_token_stream().to_string().as_str() {
-                                    "Hash" => {
-                                        write!(func_arguments, "SpacetimeDB.Hash {}", arg_name).unwrap();
-                                    }
-                                    "Vec" => match parse_generic_arg(path.segments[0].arguments.to_token_stream()) {
-                                        Ok(generic_type) => {
-                                            match rust_type_to_csharp_raw_type(generic_type.to_string().as_str()) {
-                                                Some(csharp_type) => {
-                                                    write!(
-                                                        func_arguments,
-                                                        "System.Collections.Generic.List<{}> {}",
-                                                        csharp_type, arg_name
-                                                    )
-                                                    .unwrap();
-                                                }
-                                                None => {
-                                                    write!(
-                                                        func_arguments,
-                                                        "System.Collections.Generic.List<{}> {}",
-                                                        generic_type, arg_name
-                                                    )
-                                                    .unwrap();
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            panic!("Failed to parse reducer arg (vec with generics): {}", e)
-                                        }
-                                    },
-                                    other_type => {
-                                        // This is hopefully a type understood by C#
-                                        write!(func_arguments, "{} {}", other_type, arg_name).unwrap();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                write!(arg_names, "{}", arg_name.clone()).unwrap();
-                inserted_args += 1;
-            }
-            _ => {}
+        // Skip any arguments that are supplied by spacetimedb
+        if arg_i == 0 && ty == ReducerType::Hash || arg_i == 1 && ty == ReducerType::Primitive(RustPrimitive::U64) {
+            arg_i += 1;
+            continue;
         }
 
-        arg_num = arg_num + 1;
+        if arg_i > 0 {
+            func_arguments.push_str(", ");
+            arg_names.push_str(", ");
+        }
+
+        write!(func_arguments, "{} {}", ty.fmt_csharp(), arg_name).unwrap();
+
+        write!(arg_names, "{}", arg_name.clone()).unwrap();
+
+        arg_i += 1;
     }
 
     write!(
@@ -248,16 +272,18 @@ pub(crate) fn autogen_csharp_reducer(original_function: ItemFn) -> TokenStream {
         write!(output_contents, "}}\n").unwrap();
     }
 
-    // Write the csharp output
-    if !std::path::Path::new("cs-src").is_dir() {
-        std::fs::create_dir(std::path::Path::new("cs-src")).unwrap();
-    }
-    let path = format!("cs-src/{}Reducer.cs", reducer_pascal_name);
-    std::fs::write(path, output_contents).unwrap();
+    output_contents
 
-    proc_macro::TokenStream::from(quote! {
-        // Reducer C# generation
-    })
+    // // Write the csharp output
+    // if !std::path::Path::new("cs-src").is_dir() {
+    //     std::fs::create_dir(std::path::Path::new("cs-src")).unwrap();
+    // }
+    // let path = format!("cs-src/{}Reducer.cs", reducer_pascal_name);
+    // std::fs::write(path, output_contents).unwrap();
+
+    // proc_macro::TokenStream::from(quote! {
+    //     // Reducer C# generation
+    // })
 }
 
 /// Creates a C# class from an ItemStruct, with an optional table number (only for tables).

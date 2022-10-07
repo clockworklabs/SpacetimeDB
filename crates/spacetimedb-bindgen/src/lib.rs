@@ -1,15 +1,15 @@
 #![crate_type = "proc-macro"]
 
-mod csharp;
+// mod csharp;
 mod module;
 
 extern crate core;
 extern crate proc_macro;
 
-use crate::csharp::{autogen_csharp_reducer, autogen_csharp_tuple};
+// use crate::csharp::{autogen_csharp_reducer, autogen_csharp_tuple};
 use crate::module::{
     args_to_tuple_schema, autogen_module_struct_to_schema, autogen_module_struct_to_tuple,
-    autogen_module_tuple_to_struct, parse_generic_arg,
+    autogen_module_tuple_to_struct,
 };
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
@@ -117,7 +117,8 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
     let mut json_arg_num: usize = 0;
     let function_arguments = &original_function.sig.inputs;
 
-    let function_call_arg_types = args_to_tuple_schema(function_arguments.into_iter());
+    // TODO: get_ref_schema for this
+    let function_call_arg_types = args_to_tuple_schema(function_arguments.into_iter(), false);
 
     for function_argument in function_arguments {
         match function_argument {
@@ -225,7 +226,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
         }
     };
 
-    autogen_csharp_reducer(original_function.clone());
+    // autogen_csharp_reducer(original_function.clone());
 
     proc_macro::TokenStream::from(quote! {
         #generated_function
@@ -315,19 +316,10 @@ fn spacetimedb_repeating_reducer(_args: AttributeArgs, item: TokenStream, repeat
 }
 
 // TODO: We actually need to add a constraint that requires this column to be unique!
-struct UniqueColumn {
-    // The raw rust type as a token stream
-    rust_type: proc_macro2::TokenStream,
-    // The TypeValue representation of the unique column's type (e.g. TypeValue::I32, TypeValue::F32, etc.)
-    type_value: proc_macro2::TokenStream,
-    // The column's name as an identity (e.g. player_id)
-    column_ident: Ident,
-    // The statement that converts from a raw type to spacetimedb type, e.g. i32 to TypeValue::I32 or Hash to TypeValue::Bytes.
-    conversion_from_raw_to_stdb_statement: proc_macro2::TokenStream,
-    // The statement for declaring the unique column, e.g. my_value: i32
-    column_def: proc_macro2::TokenStream,
-    // The index of the unique column
-    column_index: u32,
+struct Column {
+    ty: syn::Type,
+    ident: Ident,
+    index: u8,
 }
 
 fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
@@ -367,374 +359,158 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         }
     }
 
-    let mut column_idents: Vec<Ident> = Vec::new();
-    let mut row_to_struct_entries: Vec<proc_macro2::TokenStream> = Vec::new();
-
-    let mut unique_columns = Vec::<UniqueColumn>::new();
-
-    // The identities for each non primary column
-    let mut non_primary_column_idents: Vec<Ident> = Vec::new();
-    // The types for each non-primary key column
-    let mut non_primary_column_types: Vec<proc_macro2::TokenStream> = Vec::new();
-    // The statement that converts from a spacetimedb type to a raw type, e.g. TypeValue::I32 to i32 or TypeValue::Bytes to Hash.
-    let mut non_primary_index_lookup: Vec<u32> = Vec::new();
-    let mut non_primary_column_defs: Vec<proc_macro2::TokenStream> = Vec::new();
-
-    let mut unique_filter_funcs: Vec<proc_macro2::TokenStream> = Vec::<proc_macro2::TokenStream>::new();
-    let mut unique_update_funcs: Vec<proc_macro2::TokenStream> = Vec::<proc_macro2::TokenStream>::new();
-    let mut unique_delete_funcs: Vec<proc_macro2::TokenStream> = Vec::<proc_macro2::TokenStream>::new();
-    let mut non_primary_filter_func: Vec<proc_macro2::TokenStream> = Vec::new();
-
-    let mut insert_columns: Vec<proc_macro2::TokenStream> = Vec::new();
-    let mut insert_vec_construction: Vec<proc_macro2::TokenStream> = Vec::new();
-    let mut col_num: u32 = 0;
+    let mut unique_columns = Vec::<Column>::new();
+    let mut filterable_columns = Vec::<Column>::new();
 
     let table_id_static_var_name = format_ident!("__table_id__{}", original_struct.ident);
-    let original_struct_name = &original_struct.ident.to_string();
-    let get_table_id_func = match parse_generated_func(quote! {
+    let get_table_id_func = quote! {
         pub fn table_id() -> u32 {
-            if let Some(t_id)  = unsafe { #table_id_static_var_name } {
-                return t_id;
-            }
-            let t_id = spacetimedb::get_table_id(#original_struct_name);
-            unsafe { #table_id_static_var_name = Some(t_id) };
-            return t_id;
-        }
-    }) {
-        Ok(func) => func,
-        Err(err) => {
-            return TokenStream::from(err);
+            *#table_id_static_var_name.get_or_init(|| {
+                spacetimedb::get_table_id(<Self as spacetimedb::TableDef>::TABLE_NAME)
+            })
         }
     };
 
-    for field in &original_struct.fields {
+    for (col_num, field) in original_struct.fields.iter().enumerate() {
+        let col_num: u8 = col_num.try_into().expect("too many columns");
         let col_name = &field.ident.clone().unwrap();
 
-        // The simple name for the type, e.g. Hash
-        let col_type: proc_macro2::TokenStream;
-        // The fully qualified name for this type, e.g. spacetimedb::spacetimedb_lib::Hash
-        let col_type_full: proc_macro2::TokenStream;
-        // The TypeValue representation of this type
-        let col_type_value: proc_macro2::TokenStream;
-        let col_value_insert: proc_macro2::TokenStream;
+        // // The simple name for the type, e.g. Hash
+        // let col_type: proc_macro2::TokenStream;
+        // // The fully qualified name for this type, e.g. spacetimedb::spacetimedb_lib::Hash
+        // let col_type_full: proc_macro2::TokenStream;
+        // // The TypeValue representation of this type
+        // let col_type_value: proc_macro2::TokenStream;
+        // let col_value_insert: proc_macro2::TokenStream;
 
-        match rust_to_spacetimedb_ident(field.ty.clone().to_token_stream().to_string().as_str()) {
-            Some(ident) => {
-                col_type = field.ty.clone().to_token_stream().to_string().parse().unwrap();
-                col_type_full = col_type.clone();
-                col_type_value = format!("spacetimedb::spacetimedb_lib::TypeValue::{}", ident)
-                    .parse()
-                    .unwrap();
-            }
-            None => match field.ty.clone().to_token_stream().to_string().as_str() {
-                "Hash" => {
-                    col_type = "Hash".parse().unwrap();
-                    col_type_full = "spacetimedb::spacetimedb_lib::Hash".parse().unwrap();
-                    col_type_value = format!("spacetimedb::spacetimedb_lib::TypeValue::Bytes")
-                        .parse()
-                        .unwrap();
-                }
-                "Vec < u8 >" => {
-                    // TODO: We are aliasing Vec<u8> to Bytes for now, we should deconstruct the vec here.
-                    col_type = "Vec<u8>".parse().unwrap();
-                    col_type_full = "std::vec::Vec<u8>".parse().unwrap();
-                    col_type_value = format!("spacetimedb::spacetimedb_lib::TypeValue::Bytes")
-                        .parse()
-                        .unwrap();
-                }
-                custom_type => {
-                    col_type = custom_type.parse().unwrap();
-                    col_type_full = col_type.clone();
-                    col_type_value = "spacetimedb::spacetimedb_lib::TypeValue::Tuple".parse().unwrap();
-                }
-            },
-        }
+        // col_value_insert = format!("{}({})", col_type_value.clone(), format!("ins.{}", col_name))
+        //     .parse()
+        //     .unwrap();
 
-        col_value_insert = format!("{}({})", col_type_value.clone(), format!("ins.{}.into()", col_name))
-            .parse()
-            .unwrap();
-
-        let mut unique_column: Option<UniqueColumn> = None;
+        let mut is_unique = false;
+        let mut is_filterable = false;
         for attr in &field.attrs {
-            if attr.path.to_token_stream().to_string().eq("unique") {
-                unique_column = Some(UniqueColumn {
-                    rust_type: col_type.clone(),
-                    type_value: col_type_value.clone(),
-                    column_ident: col_name.clone(),
-                    conversion_from_raw_to_stdb_statement: quote!(
-                        let data = #col_type_value(data);
-                    ),
-                    column_def: quote!(
-                        #col_name: #col_type
-                    ),
-                    column_index: col_num,
-                });
-            }
-        }
-
-        if let None = unique_column {
-            non_primary_column_idents.push(col_name.clone());
-            non_primary_column_types.push(col_type.clone());
-            non_primary_column_defs.push(quote!(
-                #col_name: #col_type_full
-            ));
-            non_primary_index_lookup.push(col_num);
-        }
-
-        match rust_to_spacetimedb_ident(field.ty.clone().to_token_stream().to_string().as_str()) {
-            Some(_) => {
-                insert_columns.push(quote! {
-                    #col_value_insert
-                });
-            }
-            None => {
-                if let syn::Type::Path(syn::TypePath { ref path, .. }) = field.ty {
-                    if path.segments.len() > 0 {
-                        match path.segments[0].ident.to_token_stream().to_string().as_str() {
-                            "Hash" => {
-                                match unique_column {
-                                    Some(mut some) => {
-                                        some.conversion_from_raw_to_stdb_statement = quote!(
-                                            let data = #col_type_value(data.to_vec());
-                                        );
-                                        unique_column = Some(some);
-                                    }
-                                    None => {}
-                                }
-
-                                insert_columns.push(quote! {
-                                    spacetimedb::spacetimedb_lib::TypeValue::Bytes(ins.#col_name.to_vec())
-                                });
-                            }
-                            "Vec" => {
-                                let vec_param = parse_generic_arg(path.segments[0].arguments.to_token_stream());
-                                match vec_param {
-                                    Ok(param) => {
-                                        let vec_name: proc_macro2::TokenStream =
-                                            format!("type_value_vec_{}", col_name).parse().unwrap();
-
-                                        match rust_to_spacetimedb_ident(param.to_string().as_str()) {
-                                            Some(spacetimedb_type) => {
-                                                match spacetimedb_type.to_string().as_str() {
-                                                    "U8" => {
-                                                        // Vec<u8> is aliased to the Bytes type
-                                                        insert_columns.push(quote! {
-                                                            #col_value_insert
-                                                        });
-                                                    }
-                                                    _ => {
-                                                        insert_columns.push(quote! {
-                                                            spacetimedb::spacetimedb_lib::TypeValue::Vec(#vec_name)
-                                                        });
-                                                        insert_vec_construction.push(quote! {
-                                                            let mut #vec_name: Vec<spacetimedb::spacetimedb_lib::TypeValue> = Vec::<spacetimedb::spacetimedb_lib::TypeValue>::new();
-                                                            for value in ins.#col_name {
-                                                                #vec_name.push(spactimedb::spacetimedb_lib::TypeValue::#spacetimedb_type(value));
-                                                            }
-                                                        });
-                                                    }
-                                                }
-                                            }
-                                            None => match param.to_string().as_str() {
-                                                "Hash" => {
-                                                    return quote! {
-                                                        compile_error!("TODO: Implement vec support for hashes")
-                                                    }
-                                                    .into();
-                                                }
-                                                other_type => {
-                                                    let other_type = format_ident!("{}", other_type);
-                                                    insert_columns.push(quote! {
-                                                        spacetimedb::spacetimedb_lib::TypeValue::Vec(#vec_name)
-                                                    });
-                                                    insert_vec_construction.push(quote! {
-                                                        let mut #vec_name: Vec<spacetimedb::spacetimedb_lib::TypeValue> = Vec::<spacetimedb::spacetimedb_lib::TypeValue>::new();
-                                                        for value in ins.#col_name {
-                                                            #vec_name.push(#other_type::struct_to_tuple(value));
-                                                        }
-                                                    });
-                                                }
-                                            },
-                                        }
-                                    }
-                                    Err(e) => {
-                                        return quote! {
-                                            compile_error!(#e)
-                                        }
-                                        .into();
-                                    }
-                                }
-                            }
-                            other_type => {
-                                let other_type = format_ident!("{}", other_type);
-                                insert_columns.push(quote! {
-                                    #other_type::struct_to_tuple(ins.#col_name)
-                                });
-                            }
-                        }
-                    }
+            if attr.path.is_ident("unique") {
+                if is_filterable {
+                    panic!("can't be both") // TODO: better error
                 }
+                is_unique = true;
+            } else if attr.path.is_ident("filterable_by") {
+                if is_unique {
+                    panic!("can't be both") // TODO: better error
+                }
+                is_filterable = true;
             }
         }
+        let column = || Column {
+            ty: field.ty.clone(),
+            ident: col_name.clone(),
+            index: col_num,
+        };
 
-        column_idents.push(format_ident!("{}", col_name));
-        row_to_struct_entries.push(quote!(
-            &row.elements[#col_num]
-        ));
-
-        if let Some(col) = unique_column {
-            unique_columns.push(col);
+        if is_unique {
+            unique_columns.push(column());
+        } else if is_filterable {
+            filterable_columns.push(column());
         }
-
-        col_num = col_num + 1;
     }
 
+    let mut unique_filter_funcs = Vec::with_capacity(unique_columns.len());
+    let mut unique_update_funcs = Vec::with_capacity(unique_columns.len());
+    let mut unique_delete_funcs = Vec::with_capacity(unique_columns.len());
+    let mut unique_fields = Vec::with_capacity(unique_columns.len());
     for unique in unique_columns {
-        let filter_func_ident = format_ident!("filter_{}_eq", unique.column_ident);
-        let update_func_ident = format_ident!("update_{}_eq", unique.column_ident);
-        let delete_func_ident = format_ident!("delete_{}_eq", unique.column_ident);
-        let unique_tuple_type_str: String = format!("{}", unique.type_value);
-        let unique_column_index_usize = unique.column_index as usize;
-        let comparison_block = tuple_field_comparison_block(
-            original_struct.ident.clone().to_token_stream().to_string().as_str(),
-            unique.rust_type.to_string().as_str(),
-            unique.column_ident.clone(),
-            true,
-        );
+        let filter_func_ident = format_ident!("filter_{}_eq", unique.ident);
+        let update_func_ident = format_ident!("update_{}_eq", unique.ident);
+        let delete_func_ident = format_ident!("delete_{}_eq", unique.ident);
+        let comparison_block = tuple_field_comparison_block(&original_struct.ident, &unique.ident, true);
 
-        let unique_column_def = unique.column_def;
-        let unique_column_ident = unique.column_ident;
-        let unique_conversion_from_raw_to_stdb_statement = unique.conversion_from_raw_to_stdb_statement;
-        let unique_column_index = unique.column_index;
+        let Column {
+            ty: column_type,
+            ident: column_ident,
+            index: column_index,
+        } = unique;
+        let column_index_usize: usize = column_index.into();
 
-        match parse_generated_func(quote! {
+        unique_fields.push(column_index);
+
+        unique_filter_funcs.push(quote! {
             #[allow(unused_variables)]
             #[allow(non_snake_case)]
-            pub fn #filter_func_ident(#unique_column_def) -> Option<#original_struct_ident> {
+            pub fn #filter_func_ident(#column_ident: #column_type) -> Option<Self> {
                 let table_iter = #original_struct_ident::iter_tuples();
                 for row in table_iter {
-                    let column_data = row.elements[#unique_column_index_usize].clone();
+                    let column_data = row.elements[#column_index_usize].clone();
                     #comparison_block
                 }
 
                 return None;
             }
-        }) {
-            Ok(func) => unique_filter_funcs.push(func),
-            Err(err) => {
-                return proc_macro::TokenStream::from(err);
-            }
-        }
+        });
 
-        match parse_generated_func(quote! {
+        unique_update_funcs.push(quote! {
             #[allow(unused_variables)]
             #[allow(non_snake_case)]
-           pub fn #update_func_ident(#unique_column_def, new_value: #original_struct_ident) -> bool {
-                #original_struct_ident::#delete_func_ident(#unique_column_ident);
+            pub fn #update_func_ident(value: #column_type, new_value: Self) -> bool {
+                #original_struct_ident::#delete_func_ident(value);
                 #original_struct_ident::insert(new_value);
 
                 // For now this is always successful
                 true
             }
-        }) {
-            Ok(func) => unique_update_funcs.push(func),
-            Err(err) => {
-                return proc_macro::TokenStream::from(err);
-            }
-        }
+        });
 
-        match parse_generated_func(quote! {
+        unique_delete_funcs.push(quote! {
             #[allow(unused_variables)]
             #[allow(non_snake_case)]
-            pub fn #delete_func_ident(#unique_column_def) -> bool {
-                let data = #unique_column_ident;
-                #unique_conversion_from_raw_to_stdb_statement
-                let equatable = spacetimedb::spacetimedb_lib::TypeValue::try_from(data);
-                match equatable {
-                    Ok(value) => {
-                        let result = spacetimedb::delete_eq(Self::table_id(), #unique_column_index, value);
-                        match result {
-                            None => {
-                                //TODO: Returning here was supposed to signify an error, but it can also return none when there is nothing to delete.
-                                //spacetimedb::println!("Internal server error on equatable type: {}", #primary_key_tuple_type_str);
-                                false
-                            },
-                            Some(count) => {
-                                count > 0
-                            }
-                        }
-                    }, Err(e) => {
-                        // We cannot complete this call because this type is not equatable
-                        spacetimedb::println!("This type is not equatable: {} Error:{}", #unique_tuple_type_str, e);
+            pub fn #delete_func_ident(value: #column_type) -> bool {
+                let primary = spacetimedb::UniqueValue::into_primarykey(value);
+                let result = spacetimedb::delete_pk(Self::table_id(), primary);
+                match result {
+                    None => {
+                        //TODO: Returning here was supposed to signify an error, but it can also return none when there is nothing to delete.
+                        //spacetimedb::println!("Internal server error on equatable type: {}", #primary_key_tuple_type_str);
                         false
+                    },
+                    Some(count) => {
+                        count > 0
                     }
                 }
             }
-        }) {
-            Ok(func) => unique_delete_funcs.push(func),
-            Err(err) => {
-                return proc_macro::TokenStream::from(err);
-            }
-        }
+        });
     }
 
-    for (x, non_primary_column_ident) in non_primary_column_idents.iter().enumerate() {
-        let filter_func_ident: proc_macro2::TokenStream =
-            format!("filter_{}_eq", non_primary_column_ident).parse().unwrap();
-        let column_type = non_primary_column_types[x].clone();
-        let column_def = non_primary_column_defs[x].clone();
-        let row_index = non_primary_index_lookup[x] as usize;
+    let mut non_primary_filter_func = Vec::with_capacity(filterable_columns.len());
+    for column in filterable_columns {
+        let filter_func_ident: proc_macro2::TokenStream = format!("filter_{}_eq", column.ident).parse().unwrap();
 
-        let comparison_block = tuple_field_comparison_block(
-            original_struct_ident.clone().to_token_stream().to_string().as_str(),
-            column_type.to_string().as_str(),
-            non_primary_column_ident.clone(),
-            false,
-        );
+        let comparison_block = tuple_field_comparison_block(&original_struct_ident, &column.ident, false);
 
-        if let None = rust_to_spacetimedb_ident(column_type.to_string().as_str()) {
-            match column_type.to_string().as_str() {
-                "Hash" => {
-                    // This is fine
-                }
-                _ => {
-                    // Just skip this, its not supported.
-                    continue;
-                }
-            }
-        }
+        let column_ident = column.ident;
+        let column_type = column.ty;
+        let row_index: usize = column.index.into();
 
-        match parse_generated_func(quote! {
+        non_primary_filter_func.push(quote! {
             #[allow(non_snake_case)]
             #[allow(unused_variables)]
-            pub fn #filter_func_ident(#column_def) -> Vec <#original_struct_ident> {
-                let mut result = Vec::<#original_struct_ident>::new();
-                let table_iter = #original_struct_ident::iter_tuples();
+            pub fn #filter_func_ident(#column_ident: #column_type) -> Vec<Self> {
+                let mut result = Vec::<Self>::new();
+                let table_iter = Self::iter_tuples();
                 for row in table_iter {
                     let column_data = row.elements[#row_index].clone();
                     #comparison_block
                 }
 
-                return result;
+                result
             }
-        }) {
-            Ok(func) => non_primary_filter_func.push(func),
-            Err(err) => {
-                return proc_macro::TokenStream::from(err);
-            }
-        }
+        });
     }
 
     let db_insert: proc_macro2::TokenStream;
     match parse_generated_func(quote! {
         #[allow(unused_variables)]
         pub fn insert(ins: #original_struct_ident) {
-            #(#insert_vec_construction)*
-            spacetimedb::insert(Self::table_id(), spacetimedb::spacetimedb_lib::TupleValue {
-                elements: vec![
-                    #(#insert_columns),*
-                ]
-            });
+            spacetimedb::insert(Self::table_id(), spacetimedb::IntoTuple::into_tuple(ins));
         }
     }) {
         Ok(func) => db_insert = func,
@@ -791,7 +567,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
             fn next(&mut self) -> Option<Self::Item> {
                 if let Some(tuple) = self.iter.next() {
-                    Some(#original_struct_ident::tuple_to_struct(tuple).expect("Failed to convert tuple to struct."))
+                    Some(spacetimedb::FromTuple::from_tuple(tuple).expect("Failed to convert tuple to struct."))
                 } else {
                     None
                 }
@@ -814,77 +590,64 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         }
     }
 
-    let tuple_to_struct_func = match autogen_module_tuple_to_struct(original_struct.clone()) {
+    let from_value_impl = match autogen_module_tuple_to_struct(&original_struct) {
         Ok(func) => func,
         Err(err) => {
             return TokenStream::from(err);
         }
     };
-    let struct_to_tuple_func = match autogen_module_struct_to_tuple(original_struct.clone()) {
+    let into_value_impl = match autogen_module_struct_to_tuple(&original_struct) {
         Ok(func) => func,
         Err(err) => {
             return TokenStream::from(err);
         }
     };
-    let schema_func = match autogen_module_struct_to_schema(original_struct.clone()) {
+    let schema_impl = match autogen_module_struct_to_schema(&original_struct) {
         Ok(func) => func,
         Err(err) => {
             return TokenStream::from(err);
+        }
+    };
+    let table_name = original_struct_ident.to_string();
+    let tabledef_impl = quote! {
+        impl spacetimedb::TableDef for #original_struct_ident {
+            const TABLE_NAME: &'static str = #table_name;
         }
     };
 
-    let csharp_output = autogen_csharp_tuple(original_struct.clone(), Some(original_struct_ident.to_string()));
+    // let csharp_output = autogen_csharp_tuple(original_struct.clone(), Some(original_struct_ident.to_string()));
 
     let create_table_func_name = format_ident!("__create_table__{}", original_struct_ident);
     let describe_table_func_name = format_ident!("__describe_table__{}", original_struct_ident);
-    let table_name = original_struct_ident.to_string();
+    let describe_table_refs_func_name = format_ident!("__describe_table_refs__{}", original_struct_ident);
 
     let table_id_static_var = quote! {
         #[allow(non_upper_case_globals)]
-        static mut #table_id_static_var_name: Option<u32> = None;
+        static #table_id_static_var_name: spacetimedb::__private::OnceCell<u32> = spacetimedb::__private::OnceCell::new();
     };
 
-    let create_table_func = match parse_generated_func(quote! {
+    let create_table_func = quote! {
         #[allow(non_snake_case)]
         #[no_mangle]
         pub extern "C" fn #create_table_func_name(arg_ptr: usize, arg_size: usize) {
-            let def = #original_struct_ident::get_struct_schema();
-            if let spacetimedb::spacetimedb_lib::TypeDef::Tuple(tuple_def) = def {
-                let table_id = spacetimedb::create_table(#table_name, tuple_def);
-                unsafe { #table_id_static_var_name = Some(table_id) }
-            } else {
-                // The type is not a tuple for some reason, table not created.
-                std::panic!("This type is not a tuple: {{#original_struct_ident}}");
-            }
-        }
-    }) {
-        Ok(func) => func,
-        Err(err) => {
-            return TokenStream::from(err);
+            let table_id = <#original_struct_ident as spacetimedb::TableDef>::create_table();
+            #table_id_static_var_name.set(table_id).unwrap_or_else(|_| {
+                // TODO: this is okay? or should we panic? can this even happen?
+            });
         }
     };
 
-    let describe_table_func = match parse_generated_func(quote! {
+    let describe_table_func = quote! {
         #[allow(non_snake_case)]
         #[no_mangle]
         pub extern "C" fn #describe_table_func_name() -> u64 {
-            let def = #original_struct_ident::get_struct_schema();
-            if let spacetimedb::spacetimedb_lib::TypeDef::Tuple(tuple_def) = def {
-                let mut bytes = vec![];
-                tuple_def.encode(&mut bytes);
-                let offset = bytes.as_ptr() as u64;
-                let length = bytes.len() as u64;
-                std::mem::forget(bytes);
-                return offset << 32 | length;
-            } else {
-                // The type is not a tuple for some reason, table not created.
-                std::panic!("This type is not a tuple: {{#original_struct_ident}}");
-            }
+            <#original_struct_ident as spacetimedb::TupleType>::describe_tuple()
         }
-    }) {
-        Ok(func) => func,
-        Err(err) => {
-            return TokenStream::from(err);
+
+        #[allow(non_snake_case)]
+        #[no_mangle]
+        pub extern "C" fn #describe_table_refs_func_name() -> u64 {
+            <#original_struct_ident as spacetimedb::TupleType>::describe_tuple_ref()
         }
     };
 
@@ -894,7 +657,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
         #create_table_func
         #describe_table_func
-        #csharp_output
+        // #csharp_output
 
         #[derive(spacetimedb::Unique, spacetimedb::Index)]
         #[derive(serde::Serialize, serde::Deserialize)]
@@ -913,11 +676,18 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             #db_iter_tuples
             #(#non_primary_filter_func)*
 
-            #tuple_to_struct_func
-            #struct_to_tuple_func
-            #schema_func
             #get_table_id_func
         }
+
+        impl spacetimedb::MaybeRef for #original_struct_ident {
+            fn get_ref() -> Option<spacetimedb::__private::TypeRef> {
+                Some(spacetimedb::__private::TypeRef { name: #table_name.into() })
+            }
+        }
+        #schema_impl
+        #from_value_impl
+        #into_value_impl
+        #tabledef_impl
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
@@ -1025,20 +795,20 @@ fn spacetimedb_tuple(_: AttributeArgs, item: TokenStream) -> TokenStream {
         }
     }
 
-    let csharp_output = autogen_csharp_tuple(original_struct.clone(), None);
-    let return_schema = match autogen_module_struct_to_schema(original_struct.clone()) {
+    // let csharp_output = autogen_csharp_tuple(original_struct.clone(), None);
+    let schema_impl = match autogen_module_struct_to_schema(&original_struct) {
         Ok(func) => func,
         Err(err) => {
             return TokenStream::from(err);
         }
     };
-    let tuple_to_struct_func = match autogen_module_tuple_to_struct(original_struct.clone()) {
+    let from_value_impl = match autogen_module_tuple_to_struct(&original_struct) {
         Ok(func) => func,
         Err(err) => {
             return TokenStream::from(err);
         }
     };
-    let struct_to_tuple_func = match autogen_module_struct_to_tuple(original_struct.clone()) {
+    let into_value_impl = match autogen_module_struct_to_tuple(&original_struct) {
         Ok(func) => func,
         Err(err) => {
             return TokenStream::from(err);
@@ -1046,31 +816,44 @@ fn spacetimedb_tuple(_: AttributeArgs, item: TokenStream) -> TokenStream {
     };
 
     let create_tuple_func_name = format_ident!("__create_type__{}", original_struct_ident);
-    let create_tuple_func = match parse_generated_func(quote! {
-    #[no_mangle]
-    #[allow(non_snake_case)]
-    pub extern "C" fn #create_tuple_func_name(arg_ptr: usize, arg_size: usize) {
-        let ptr = unsafe { arg_ptr as *mut u8 };
-        let def = #original_struct_ident::get_struct_schema();
-        let mut bytes = unsafe { Vec::from_raw_parts(ptr, 0, arg_size) };
-        def.encode(&mut bytes);
-    }}) {
-        Ok(func) => func,
-        Err(err) => {
-            return TokenStream::from(err);
+    let create_tuple_func = quote! {
+        #[no_mangle]
+        #[allow(non_snake_case)]
+        pub extern "C" fn #create_tuple_func_name(ptr: *mut u8, arg_size: usize) {
+            let def = <#original_struct_ident as spacetimedb::SchemaType>::get_schema();
+            let mut bytes = unsafe { Vec::from_raw_parts(ptr, 0, arg_size) };
+            def.encode(&mut bytes);
         }
     };
 
+    let describe_tuple_func_name = format_ident!("__describe_tuple__{}", original_struct_ident);
+    let describe_tuple_refs_func_name = format_ident!("__describe_tuple_refs__{}", original_struct_ident);
+
+    let tuple_name = original_struct_ident.to_string();
     let emission = quote! {
         #[derive(serde::Serialize, serde::Deserialize)]
         #original_struct
-        impl #original_struct_ident {
-            #tuple_to_struct_func
-            #struct_to_tuple_func
-            #return_schema
+        impl spacetimedb::MaybeRef for #original_struct_ident {
+            fn get_ref() -> Option<spacetimedb::__private::TypeRef> {
+                Some(spacetimedb::__private::TypeRef { name: #tuple_name.into() })
+            }
         }
+        #schema_impl
+        #from_value_impl
+        #into_value_impl
         #create_tuple_func
-        #csharp_output
+
+        #[allow(non_snake_case)]
+        #[no_mangle]
+        pub extern "C" fn #describe_tuple_func_name() -> u64 {
+            <#original_struct_ident as spacetimedb::TupleType>::describe_tuple()
+        }
+
+        #[allow(non_snake_case)]
+        #[no_mangle]
+        pub extern "C" fn #describe_tuple_refs_func_name() -> u64 {
+            <#original_struct_ident as spacetimedb::TupleType>::describe_tuple_ref()
+        }
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
@@ -1212,103 +995,42 @@ pub fn derive_index(_item: TokenStream) -> TokenStream {
     TokenStream::new()
 }
 
-pub(crate) fn rust_to_spacetimedb_ident(input_type: &str) -> Option<Ident> {
-    return match input_type {
-        // These are typically prefixed with spacetimedb::spacetimedb_lib::TypeDef::
-        "bool" => Some(format_ident!("Bool")),
-        "i8" => Some(format_ident!("I8")),
-        "u8" => Some(format_ident!("U8")),
-        "i16" => Some(format_ident!("I16")),
-        "u16" => Some(format_ident!("U16")),
-        "i32" => Some(format_ident!("I32")),
-        "u32" => Some(format_ident!("U32")),
-        "i64" => Some(format_ident!("I64")),
-        "u64" => Some(format_ident!("U64")),
-        "i128" => Some(format_ident!("I128")),
-        "u128" => Some(format_ident!("U128")),
-        "String" => Some(format_ident!("String")),
-        "&str" => Some(format_ident!("String")),
-        "f32" => Some(format_ident!("F32")),
-        "f64" => Some(format_ident!("F64")),
-        _ => None,
-    };
-}
-
 fn tuple_field_comparison_block(
-    tuple_type_str: &str,
-    filter_field_type_str: &str,
-    filter_field_name: Ident,
+    tuple_type: &Ident,
+    filter_field_name: &Ident,
     is_unique: bool,
 ) -> proc_macro2::TokenStream {
-    let stdb_type_value: proc_macro2::TokenStream;
-    let comparison_and_result_statement: proc_macro2::TokenStream;
-    let result_statement: proc_macro2::TokenStream;
-    let tuple_to_struct_func: proc_macro2::TokenStream = format!("tuple_to_struct").parse().unwrap();
     let err_string = format!(
         "Internal stdb error: Can't convert from tuple to struct (wrong version?) {}",
-        tuple_type_str
+        tuple_type
     );
 
-    if is_unique {
-        result_statement = quote! {
-            let tuple = Self::#tuple_to_struct_func(row);
-            if let None = tuple {
+    let result_statement = if is_unique {
+        quote! {
+            let tuple = <Self as spacetimedb::FromTuple>::from_tuple(row);
+            if tuple.is_none() {
                 spacetimedb::println!(#err_string);
-                return None;
             }
-            return Some(tuple.unwrap());
+            return tuple;
         }
     } else {
-        result_statement = quote! {
-            let tuple = Self::#tuple_to_struct_func(row);
-            if let None = tuple {
-                spacetimedb::println!(#err_string);
-                continue;
-            }
-            result.push(tuple.unwrap());
-        }
-    }
-
-    match rust_to_spacetimedb_ident(filter_field_type_str) {
-        Some(ident) => {
-            stdb_type_value = format!("spacetimedb::spacetimedb_lib::TypeValue::{}", ident)
-                .parse()
-                .unwrap();
-            comparison_and_result_statement = quote! {
-                if entry_data == #filter_field_name {
-                    #result_statement
-                }
-            };
-        }
-        None => {
-            match filter_field_type_str {
-                "Hash" => {
-                    stdb_type_value = format!("spacetimedb::spacetimedb_lib::TypeValue::Bytes")
-                        .parse()
-                        .unwrap();
-                    comparison_and_result_statement = quote! {
-                        let entry_data = spacetimedb::spacetimedb_lib::hash::Hash::from_slice(&entry_data[0..32]);
-                        if #filter_field_name.eq(&entry_data) {
-                            #result_statement
-                        }
-                    };
-                    // Compare hash
-                }
-                custom_type => {
-                    let error_str = format!("Cannot filter on type: {}", custom_type);
-                    return quote! {
-                        compile_error!(#error_str);
-                    };
+        quote! {
+            let tuple = <Self as spacetimedb::FromTuple>::from_tuple(row);
+            match tuple {
+                Some(value) => result.push(value),
+                None => {
+                    spacetimedb::println!(#err_string);
+                    continue;
                 }
             }
-        }
-    }
-
-    return quote! {
-        if let #stdb_type_value(entry_data) = column_data.clone() {
-            #comparison_and_result_statement
         }
     };
+
+    quote! {
+        if spacetimedb::FilterableValue::equals(&#filter_field_name, &column_data) {
+            #result_statement
+        }
+    }
 }
 
 fn parse_generated_func(

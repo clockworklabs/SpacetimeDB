@@ -1,71 +1,12 @@
 extern crate core;
 extern crate proc_macro;
 
-use crate::{parse_generated_func, rust_to_spacetimedb_ident};
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote, ToTokens};
+use quote::{format_ident, quote};
 use syn::punctuated::Iter;
 use syn::{FnArg, ItemStruct};
 
-/// Returns a function which returns the schema (TypeDef) for a given Type. The signature
-/// for this function is as follows:
-/// fn get_struct_schema() -> spacetimedb::spacetimedb_lib::TypeDef {
-///   ...
-/// }
-pub(crate) fn module_type_to_schema(path: &syn::Path) -> TokenStream {
-    match path.segments[0].ident.to_token_stream().to_string().as_str() {
-        "Hash" => {
-            quote! {
-               spacetimedb::spacetimedb_lib::TypeDef::Bytes
-            }
-        }
-        "Vec" => {
-            let vec_param = parse_generic_arg(path.segments[0].arguments.to_token_stream());
-
-            match vec_param {
-                Ok(param) => match rust_to_spacetimedb_ident(param.to_string().as_str()) {
-                    Some(spacetimedb_type) => match spacetimedb_type.to_string().as_str() {
-                        "U8" => {
-                            quote! {
-                               spacetimedb::spacetimedb_lib::TypeDef::Bytes
-                            }
-                        }
-                        _ => {
-                            quote! {
-                                spacetimedb::spacetimedb_lib::TypeDef::Vec { element_type: spacetimedb::spacetimedb_lib::TypeDef::#spacetimedb_type.into() }
-                            }
-                        }
-                    },
-                    None => match param.to_string().as_str() {
-                        "Hash" => {
-                            quote! {
-                                 spacetimedb::spacetimedb_lib::TypeDef::Vec{ element_type: spacetimedb::spacetimedb_lib::TypeDef::Bytes }
-                            }
-                        }
-                        other_type => {
-                            let other_type = format_ident!("{}", other_type);
-                            quote! {
-                                spacetimedb::spacetimedb_lib::TypeDef::Vec { element_type: #other_type::get_struct_schema().into() },
-                            }
-                        }
-                    },
-                },
-                Err(e) => {
-                    quote! {compile_err(#e)}
-                }
-            }
-        }
-        other_type => {
-            let other_type = format_ident!("{}", other_type);
-            quote! { #other_type::get_struct_schema() }
-        }
-    }
-}
-
-fn type_to_tuple_schema(arg_name: Option<String>, col_num: u8, ty: &syn::Type) -> Option<TokenStream> {
-    let arg_type = ty.clone().to_token_stream().to_string();
-    let arg_type = arg_type.as_str();
-
+fn type_to_tuple_schema(arg_name: Option<String>, col_num: u8, ty: &syn::Type, ref_schema: bool) -> TokenStream {
     let arg_name_token = match arg_name {
         None => {
             quote! { None }
@@ -74,40 +15,27 @@ fn type_to_tuple_schema(arg_name: Option<String>, col_num: u8, ty: &syn::Type) -
             quote! { Some(#n.to_string())}
         }
     };
-    match rust_to_spacetimedb_ident(arg_type) {
-        Some(spacetimedb_type) => {
-            return Some(quote! {
-                spacetimedb::spacetimedb_lib::ElementDef {
-                    tag: #col_num,
-                    name: #arg_name_token,
-                    element_type: spacetimedb::spacetimedb_lib::TypeDef::#spacetimedb_type,
-                }
-            });
-        }
-        None => {
-            if let syn::Type::Path(syn::TypePath { ref path, .. }) = ty {
-                if !path.segments.is_empty() {
-                    let schema = module_type_to_schema(path);
-                    return Some(quote! {
-                            spacetimedb::spacetimedb_lib::ElementDef {
-                                tag: #col_num,
-                                name: #arg_name_token,
-                                element_type: #schema
-                            }
-                    });
-                }
-            }
+    let element_type = if ref_schema {
+        quote!(spacetimedb::__private::get_ref_or_schema::<#ty>())
+    } else {
+        quote!(<#ty as spacetimedb::SchemaType>::get_schema())
+    };
+    quote! {
+        spacetimedb::spacetimedb_lib::ElementDef {
+            tag: #col_num,
+            name: #arg_name_token,
+            element_type: #element_type,
         }
     }
-    None
 }
 
-pub(crate) fn args_to_tuple_schema(args: Iter<'_, FnArg>) -> Vec<TokenStream> {
+pub(crate) fn args_to_tuple_schema(args: Iter<'_, FnArg>, ref_schema: bool) -> Vec<TokenStream> {
     let mut elements = Vec::new();
     let mut col_num: u8 = 0;
     for arg in args {
         match arg {
             FnArg::Receiver(_) => {
+                // FIXME: should we error here maybe?
                 continue;
             }
             FnArg::Typed(arg) => {
@@ -116,11 +44,8 @@ pub(crate) fn args_to_tuple_schema(args: Iter<'_, FnArg>) -> Vec<TokenStream> {
                 } else {
                     None
                 };
-                match type_to_tuple_schema(argument, col_num, &*arg.ty) {
-                    None => {}
-                    Some(e) => elements.push(e),
-                }
-                col_num = col_num + 1;
+                elements.push(type_to_tuple_schema(argument, col_num, &*arg.ty, ref_schema));
+                col_num += 1;
             }
         }
     }
@@ -133,35 +58,49 @@ pub(crate) fn args_to_tuple_schema(args: Iter<'_, FnArg>) -> Vec<TokenStream> {
 ///   ...
 /// }
 pub(crate) fn autogen_module_struct_to_schema(
-    original_struct: ItemStruct,
+    original_struct: &ItemStruct,
 ) -> Result<proc_macro2::TokenStream, proc_macro2::TokenStream> {
-    let mut fields: Vec<proc_macro2::TokenStream> = Vec::new();
-    let mut col_num: u8 = 0;
+    let fields_iter = |ref_schema: bool| {
+        original_struct.fields.iter().enumerate().map(move |(col_num, field)| {
+            let field_name = field.ident.as_ref().map(ToString::to_string);
+            let col_num: u8 = col_num.try_into().expect("too many columns");
+            type_to_tuple_schema(field_name, col_num, &field.ty, ref_schema)
+        })
+    };
+    let fields = fields_iter(false);
+    let ref_fields = fields_iter(true);
 
-    for field in &original_struct.fields {
-        let field_name = field.ident.clone().unwrap().to_token_stream().to_string();
-        match type_to_tuple_schema(Some(field_name), col_num, &field.ty) {
-            None => {}
-            Some(e) => fields.push(e),
+    let name = &original_struct.ident;
+    let (impl_generics, ty_generics, where_clause) = original_struct.generics.split_for_impl();
+    Ok(quote! {
+        impl #impl_generics spacetimedb::TupleType for #name #ty_generics #where_clause {
+            fn get_tupledef() -> spacetimedb::spacetimedb_lib::TupleDef {
+                spacetimedb::spacetimedb_lib::TupleDef {
+                    elements: vec![
+                        #(#fields),*
+                    ],
+                }
+            }
+            fn get_ref_tupledef() -> spacetimedb::spacetimedb_lib::TupleDef<spacetimedb::__private::TypeRef> {
+                spacetimedb::spacetimedb_lib::TupleDef {
+                    elements: vec![
+                        #(#ref_fields),*
+                    ],
+                }
+            }
         }
-        col_num = col_num + 1;
-    }
-
-    match parse_generated_func(quote! {
-        pub fn get_struct_schema() -> spacetimedb::spacetimedb_lib::TypeDef {
-            return spacetimedb::spacetimedb_lib::TypeDef::Tuple {
-                0: spacetimedb::spacetimedb_lib::TupleDef { elements: vec![
-                    #(#fields),*
-                ] },
-            };
-        }
-    }) {
-        Ok(func) => Ok(quote! {
-            #[allow(non_snake_case)]
-            #func
-        }),
-        Err(err) => Err(err),
-    }
+    })
+    // if is_table {
+    //     let table_name = name.to_string();
+    // } else {
+    //     Ok(quote! {
+    //         impl #impl_generics spacetimedb::SchemaType for #name #ty_generics #where_clause {
+    //             fn get_schema() -> spacetimedb::spacetimedb_lib::TypeDef {
+    //                 spacetimedb::spacetimedb_lib::TypeDef::Tuple(#tupledef)
+    //             }
+    //         }
+    //     })
+    // }
 }
 
 /// Returns a generated function that will return a struct value from a TupleValue. The signature
@@ -173,220 +112,29 @@ pub(crate) fn autogen_module_struct_to_schema(
 ///
 /// If the TupleValue's structure does not match the expected fields of the struct, we panic.
 pub(crate) fn autogen_module_tuple_to_struct(
-    original_struct: ItemStruct,
+    original_struct: &ItemStruct,
 ) -> Result<proc_macro2::TokenStream, proc_macro2::TokenStream> {
-    let original_struct_ident = &original_struct.clone().ident;
-    let mut match_paren1: Vec<proc_macro2::TokenStream> = Vec::new();
-    let mut match_paren2: Vec<proc_macro2::TokenStream> = Vec::new();
-    let mut match_body: Vec<proc_macro2::TokenStream> = Vec::new();
-    let mut tuple_match1: Vec<proc_macro2::TokenStream> = Vec::new();
-    let mut tuple_match2: Vec<proc_macro2::TokenStream> = Vec::new();
-    let mut extra_assignments: Vec<proc_macro2::TokenStream> = Vec::new();
-    let mut col_num: usize = 0;
-    let mut tuple_num: u8 = 0;
-
-    for field in &original_struct.fields {
-        let field_ident = field.clone().ident;
-        let tmp_name = format_ident!("field_{}", col_num);
-        match_paren1.push(quote! {
-            elements_arr[#col_num].clone()
-        });
-
-        match rust_to_spacetimedb_ident(field.ty.clone().to_token_stream().to_string().as_str()) {
-            Some(spacetimedb_type) => {
-                match_paren2.push(quote! {
-                    spacetimedb::spacetimedb_lib::TypeValue::#spacetimedb_type(#tmp_name)
-                });
-            }
-            None => {
-                if let syn::Type::Path(syn::TypePath { ref path, .. }) = field.ty {
-                    if path.segments.len() > 0 {
-                        match path.segments[0].ident.to_token_stream().to_string().as_str() {
-                            "Hash" => {
-                                match_paren2.push(quote! {
-                                    spacetimedb::spacetimedb_lib::TypeValue::Bytes(#tmp_name)
-                                });
-                                extra_assignments.push(quote! {
-                                   let #tmp_name : spacetimedb::spacetimedb_lib::hash::Hash = spacetimedb::spacetimedb_lib::hash::Hash::from_slice(#tmp_name.as_slice());
-                                });
-                            }
-                            "Vec" => {
-                                let vec_param = parse_generic_arg(path.segments[0].arguments.to_token_stream());
-                                let tmp_name_vec: proc_macro2::TokenStream =
-                                    format!("native_vec_{}", tmp_name).parse().unwrap();
-
-                                match vec_param {
-                                    Ok(param) => match rust_to_spacetimedb_ident(param.to_string().as_str()) {
-                                        Some(spacetimedb_type) => match spacetimedb_type.to_string().as_str() {
-                                            "U8" => {
-                                                match_paren2.push(quote! {
-                                                    spacetimedb::spacetimedb_lib::TypeValue::Bytes(#tmp_name)
-                                                });
-                                            }
-                                            _ => {
-                                                match_paren2.push(quote! {
-                                                    spacetimedb::spacetimedb_lib::TypeValue::Vec(#tmp_name)
-                                                });
-                                                let err_message = format!(
-                                                    "Vec contains wrong type, expected TypeValue::{}",
-                                                    spacetimedb_type
-                                                );
-                                                extra_assignments.push(quote! {
-                                                    let mut #tmp_name_vec: Vec<#param> = Vec::<#param>::new();
-                                                    for tuple_val in #tmp_name {
-                                                        match tuple_val {
-                                                            spacetimedb::spacetimedb_lib::TypeValue::#spacetimedb_type(entry) => {
-                                                                #tmp_name_vec.push(entry);
-                                                            }, _ => {
-                                                                spacetimedb::println!(#err_message);
-                                                            }
-                                                        }
-                                                    }
-                                                    let #tmp_name = #tmp_name_vec;
-                                                });
-                                            }
-                                        },
-                                        None => match param.to_string().as_str() {
-                                            "Hash" => {
-                                                let err_message =
-                                                    format!("Vec contains wrong type, expected TypeValue::Tuple");
-                                                match_paren2.push(quote! {
-                                                    spacetimedb::spacetimedb_lib::TypeValue::Vec(#tmp_name)
-                                                });
-                                                extra_assignments.push(quote! {
-                                                            let mut #tmp_name_vec: Vec<#param> = Vec::<#param>::new();
-                                                            for tuple_val in #tmp_name {
-                                                                match tuple_val {
-                                                                    spacetimedb::spacetimedb_lib::TypeValue::Bytes(entry) => {
-                                                                        #tmp_name_vec.push(spacetimedb::spacetimedb_lib::hash::Hash::from_slice(entry.as_slice()));
-                                                                    }, _ => {
-                                                                        spacetimedb::println!(#err_message);
-                                                                    }
-                                                                }
-                                                            }
-                                                            let #tmp_name = #tmp_name_vec;
-                                                        });
-                                            }
-                                            other_type => {
-                                                let err_message =
-                                                    format!("Vec contains wrong type, expected TypeValue::Tuple");
-                                                let other_type_ident = format_ident!("{}", other_type);
-                                                match_paren2.push(quote! {
-                                                    spacetimedb::spacetimedb_lib::TypeValue::Vec(#tmp_name)
-                                                });
-                                                extra_assignments.push(quote! {
-                                                            let mut #tmp_name_vec: Vec<#param> = Vec::<#param>::new();
-                                                            for tuple_val in #tmp_name {
-                                                                match tuple_val {
-                                                                    spacetimedb::spacetimedb_lib::TypeValue::Tuple(entry) => {
-                                                                        match #other_type_ident::tuple_to_struct(entry) {
-                                                                            Some(native_value) => {
-                                                                                #tmp_name_vec.push(native_value);
-                                                                            } None => {
-                                                                                spacetimedb::println!("Failed to convert TypeValue::Tuple to native struct type: {}", #other_type);
-                                                                            }
-                                                                        }
-                                                                    }, _ => {
-                                                                        spacetimedb::println!(#err_message);
-                                                                    }
-                                                                }
-                                                            }
-                                                            let #tmp_name = #tmp_name_vec;
-                                                        });
-                                            }
-                                        },
-                                    },
-                                    Err(e) => {
-                                        return Err(quote! {
-                                            compile_error!(#e)
-                                        });
-                                    }
-                                }
-                            }
-                            other_type => {
-                                let other_type = format_ident!("{}", other_type);
-                                match_paren2.push(quote! {
-                                    spacetimedb::spacetimedb_lib::TypeValue::Tuple(#tmp_name)
-                                });
-
-                                tuple_match1.push(quote! {
-                                    #other_type::tuple_to_struct(#tmp_name)
-                                });
-
-                                tuple_match2.push(quote! {
-                                    Some(#tmp_name)
-                                });
-
-                                tuple_num += 1;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        match_body.push(quote! {
-            #field_ident: #tmp_name.into()
-        });
-
-        col_num = col_num + 1;
+    let n_fields = original_struct.fields.len();
+    let mut fields = Vec::with_capacity(n_fields);
+    for (i, field) in original_struct.fields.iter().enumerate() {
+        let name = field.ident.as_ref().unwrap();
+        let value_varname = format_ident!("value_{}", i);
+        fields.push(quote!(#name: spacetimedb::FromValue::from_value(#value_varname)?));
     }
-
-    return if tuple_num > 0 {
-        match parse_generated_func(quote! {
-            pub fn tuple_to_struct(value: spacetimedb::spacetimedb_lib::TupleValue) -> Option<#original_struct_ident> {
-                let elements_arr = value.elements;
-                // Here we are enumerating all individual elements in the tuple and matching on the types we're expecting
-                match (#(#match_paren1),*) {
-                    (#(#match_paren2),*) =>
-                    {
-                        // Here we are doing any nested tuple parsing
-                        match(#(#tuple_match1),*) {
-                            ((#(#tuple_match2),*)) => {
-
-                                // Any extra conversion before the final construction happens here
-                                #(#extra_assignments)*
-                                return Some(#original_struct_ident {
-                                    #(#match_body),*
-                                });
-                            },
-                            _ => {}
-                        }
-                    }
-                    _ => {}
-                }
-
-                return None;
+    let name = &original_struct.ident;
+    let (impl_generics, ty_generics, where_clause) = original_struct.generics.split_for_impl();
+    let value_varnames = (0..n_fields).map(|i| format_ident!("value_{}", i));
+    Ok(quote! {
+        impl #impl_generics spacetimedb::FromTuple for #name #ty_generics #where_clause {
+            fn from_tuple(value: spacetimedb::spacetimedb_lib::TupleValue) -> Option<Self> {
+                let value: Box<[_; #n_fields]> = core::convert::TryFrom::try_from(value.elements).ok()?;
+                let [#(#value_varnames),*] = *value;
+                Some(Self {
+                    #(#fields),*
+                })
             }
-        }) {
-            Ok(func) => Ok(quote! {
-                #[allow(non_snake_case)]
-                #func
-            }),
-            Err(err) => Err(err),
         }
-    } else {
-        match parse_generated_func(quote! {
-            pub fn tuple_to_struct(value: spacetimedb::spacetimedb_lib::TupleValue) -> Option<#original_struct_ident> {
-                let elements_arr = value.elements;
-                return match (#(#match_paren1),*) {
-                    (#(#match_paren2),*) => {
-                        #(#extra_assignments)*
-                        Some(#original_struct_ident {
-                            #(#match_body),*
-                        })
-                    },
-                    _ => None
-                }
-            }
-        }) {
-            Ok(func) => Ok(quote! {
-                #[allow(non_snake_case)]
-                #func
-            }),
-            Err(err) => Err(err),
-        }
-    };
+    })
 }
 
 /// Returns a generated function that will return a tuple from a struct. The signature for this
@@ -398,159 +146,21 @@ pub(crate) fn autogen_module_tuple_to_struct(
 ///
 /// If the TupleValue's structure does not match the expected fields of the struct, we panic.
 pub(crate) fn autogen_module_struct_to_tuple(
-    original_struct: ItemStruct,
+    original_struct: &ItemStruct,
 ) -> Result<proc_macro2::TokenStream, proc_macro2::TokenStream> {
-    let original_struct_ident = &original_struct.clone().ident;
-    let mut type_values: Vec<proc_macro2::TokenStream> = Vec::new();
-    let mut vec_conversion: Vec<proc_macro2::TokenStream> = Vec::new();
-    let mut col_num: usize = 0;
-
-    for field in &original_struct.fields {
-        let field_ident = field.clone().ident.unwrap();
-        let field_type_str = field.ty.clone().to_token_stream().to_string();
-        match rust_to_spacetimedb_ident(field_type_str.as_str()) {
-            Some(spacetimedb_type) => {
-                type_values.push(quote! {
-                    spacetimedb::spacetimedb_lib::TypeValue::#spacetimedb_type(value.#field_ident.into())
-                });
-            }
-            _ => {
-                if let syn::Type::Path(syn::TypePath { ref path, .. }) = field.ty {
-                    if path.segments.len() > 0 {
-                        match path.segments[0].ident.to_token_stream().to_string().as_str() {
-                            "Hash" => {
-                                type_values.push(quote! {
-                                    spacetimedb::spacetimedb_lib::TypeValue::Bytes(value.#field_ident.to_vec())
-                                });
-                            }
-                            "Vec" => {
-                                let tuple_vec_name: proc_macro2::TokenStream =
-                                    format!("tuple_vec_{}", field_ident).parse().unwrap();
-                                match parse_generic_arg(path.segments[0].arguments.to_token_stream()) {
-                                    Ok(arg) => {
-                                        match rust_to_spacetimedb_ident(arg.to_token_stream().to_string().as_str()) {
-                                            Some(spacetimedb_type) => match spacetimedb_type.to_string().as_str() {
-                                                "U8" => {
-                                                    type_values.push(quote! {
-                                                        spacetimedb::spacetimedb_lib::TypeValue::Bytes(value.#field_ident)
-                                                    });
-                                                }
-                                                _ => {
-                                                    vec_conversion.push(quote! {
-                                                            let mut #tuple_vec_name: Vec<spacetimedb::spacetimedb_lib::TypeValue> = Vec::<spacetimedb::spacetimedb_lib::TypeValue>::new();
-                                                            for entry in value.#field_ident {
-                                                                #tuple_vec_name.push(spacetimedb::spacetimedb_lib::TypeValue::#spacetimedb_type(entry));
-                                                            }
-                                                        });
-
-                                                    type_values.push(quote! {
-                                                        spacetimedb::spacetimedb_lib::TypeValue::Vec(#tuple_vec_name)
-                                                    });
-                                                }
-                                            },
-                                            None => match arg.to_token_stream().to_string().as_str() {
-                                                "Hash" => {
-                                                    vec_conversion.push(quote! {
-                                                            let mut #tuple_vec_name: Vec<spacetimedb::spacetimedb_lib::TypeValue> = Vec::<spacetimedb::spacetimedb_lib::TypeValue>::new();
-                                                            for entry in value.#field_ident {
-                                                                #tuple_vec_name.push(entry.data);
-                                                            }
-                                                        });
-
-                                                    type_values.push(quote! {
-                                                        spacetimedb::spacetimedb_lib::TypeValue::Vec(#tuple_vec_name)
-                                                    });
-                                                }
-                                                other_type => {
-                                                    let other_type = format_ident!("{}", other_type);
-                                                    vec_conversion.push(quote! {
-                                                            let mut #tuple_vec_name: Vec<spacetimedb::spacetimedb_lib::TypeValue> = Vec::<spacetimedb::spacetimedb_lib::TypeValue>::new();
-                                                            for entry in value.#field_ident {
-                                                                #tuple_vec_name.push(#other_type::struct_to_tuple(entry));
-                                                            }
-                                                        });
-
-                                                    type_values.push(quote! {
-                                                        spacetimedb::spacetimedb_lib::TypeValue::Vec(#tuple_vec_name)
-                                                    });
-                                                }
-                                            },
-                                        }
-                                    }
-                                    Err(e) => {
-                                        return Err(quote! {
-                                            compile_err(#e)
-                                        });
-                                    }
-                                }
-                            }
-                            other_type => {
-                                let other_type = format_ident!("{}", other_type);
-                                type_values.push(quote! {
-                                    #other_type::struct_to_tuple(value.#field_ident)
-                                });
-                            }
-                        }
-                    }
+    let fieldnames = original_struct.fields.iter().map(|field| field.ident.as_ref().unwrap());
+    let name = &original_struct.ident;
+    let (impl_generics, ty_generics, where_clause) = original_struct.generics.split_for_impl();
+    Ok(quote! {
+        impl #impl_generics spacetimedb::IntoTuple for #name #ty_generics #where_clause {
+            fn into_tuple(self) -> spacetimedb::spacetimedb_lib::TupleValue {
+                spacetimedb::spacetimedb_lib::TupleValue {
+                    elements: vec![
+                        #(spacetimedb::IntoValue::into_value(self.#fieldnames)),*
+                    ]
+                    .into(),
                 }
             }
         }
-
-        col_num = col_num + 1;
-    }
-
-    return match parse_generated_func(quote! {
-        pub fn struct_to_tuple(value: #original_struct_ident) -> spacetimedb::spacetimedb_lib::TypeValue {
-            #(#vec_conversion)*
-            return spacetimedb::spacetimedb_lib::TypeValue::Tuple(spacetimedb::spacetimedb_lib::TupleValue {
-                elements: vec![
-                    #(#type_values),*
-                ]
-            });
-        }
-    }) {
-        Ok(func) => Ok(quote! {
-            #[allow(non_snake_case)]
-            #func
-        }),
-        Err(err) => Err(err),
-    };
-}
-
-/// Converts a token stream that is in the form "< MyType >" to just "MyType". This also does
-/// input validation to make sure there are no other generic parameters. An example is this
-/// type: < Vec < MyVecMember > >
-pub(crate) fn parse_generic_arg(stream: proc_macro2::TokenStream) -> Result<proc_macro2::TokenStream, String> {
-    let mut x = 0;
-    let err_string = format!("Generic argument malformed: {}", stream.to_string());
-    let mut tok_stream: Option<proc_macro2::TokenStream> = None;
-    for tok_tree in stream {
-        let tok_str = tok_tree.to_string();
-        match x {
-            0 => {
-                if !tok_str.eq("<") {
-                    return Err(err_string);
-                }
-            }
-            1 => {
-                tok_stream = Some(tok_tree.to_token_stream());
-            }
-            2 => {
-                if !tok_str.eq(">") {
-                    return Err(err_string);
-                }
-            }
-            _ => {
-                // Too many tokens!
-                return Err(err_string);
-            }
-        }
-
-        x += 1;
-    }
-
-    return match tok_stream {
-        Some(a) => Ok(a),
-        None => Err(err_string),
-    };
+    })
 }

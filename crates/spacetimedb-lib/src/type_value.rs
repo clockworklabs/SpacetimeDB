@@ -1,5 +1,5 @@
 use crate::{
-    type_def::{EnumDef, TupleDef, TypeDef},
+    type_def::{EnumDef, PrimitiveType, TupleDef, TypeDef},
     DataKey,
 };
 use enum_as_inner::EnumAsInner;
@@ -21,7 +21,7 @@ pub struct ElementValue {
 
 #[derive(Debug, Clone, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct TupleValue {
-    pub elements: Vec<TypeValue>,
+    pub elements: Box<[TypeValue]>,
 }
 
 impl Display for TupleValue {
@@ -66,7 +66,7 @@ impl TupleValue {
         let bytes = bytes.as_ref();
         let len = tuple_def.elements.len();
 
-        let mut elements = Vec::new();
+        let mut elements = Vec::with_capacity(len);
         for i in 0..len {
             // TODO: sort by tags or use the tags in some way or remove the tags from the def
             let type_def = &tuple_def.elements[i].element_type;
@@ -78,12 +78,14 @@ impl TupleValue {
             elements.push(type_value.unwrap());
         }
 
-        let tuple_value = TupleValue { elements };
+        let tuple_value = TupleValue {
+            elements: elements.into(),
+        };
         (Ok(tuple_value), num_read)
     }
 
     pub fn encode(&self, bytes: &mut Vec<u8>) {
-        for element in &self.elements {
+        for element in &self.elements[..] {
             element.encode(bytes);
         }
     }
@@ -290,7 +292,7 @@ impl TypeValue {
                 }
                 (TypeValue::Vec(vec), num_read)
             }
-            TypeDef::U8 => {
+            TypeDef::Primitive(PrimitiveType::U8) => {
                 if bytes.len() < size_of::<u8>() {
                     return (
                         Err("TypeValue::decode: byte array length not long enough to decode U8."),
@@ -299,7 +301,7 @@ impl TypeValue {
                 }
                 (TypeValue::U8(bytes[0]), 1)
             }
-            TypeDef::U16 => {
+            TypeDef::Primitive(PrimitiveType::U16) => {
                 if bytes.len() < size_of::<u16>() {
                     return (
                         Err("TypeValue::decode: byte array length not long enough to decode U16."),
@@ -310,7 +312,7 @@ impl TypeValue {
                 dst.copy_from_slice(&bytes[0..2]);
                 (TypeValue::U16(u16::from_le_bytes(dst)), 2)
             }
-            TypeDef::U32 => {
+            TypeDef::Primitive(PrimitiveType::U32) => {
                 if bytes.len() < size_of::<u32>() {
                     return (
                         Err("TypeValue::decode: byte array length not long enough to decode U32."),
@@ -321,7 +323,7 @@ impl TypeValue {
                 dst.copy_from_slice(&bytes[0..4]);
                 (TypeValue::U32(u32::from_le_bytes(dst)), 4)
             }
-            TypeDef::U64 => {
+            TypeDef::Primitive(PrimitiveType::U64) => {
                 if bytes.len() < size_of::<u64>() {
                     return (
                         Err("TypeValue::decode: byte array length not long enough to decode U64."),
@@ -332,7 +334,7 @@ impl TypeValue {
                 dst.copy_from_slice(&bytes[0..8]);
                 (TypeValue::U64(u64::from_le_bytes(dst)), 8)
             }
-            TypeDef::U128 => {
+            TypeDef::Primitive(PrimitiveType::U128) => {
                 if bytes.len() < size_of::<u128>() {
                     return (
                         Err("TypeValue::decode: byte array length not long enough to decode U128."),
@@ -343,7 +345,7 @@ impl TypeValue {
                 dst.copy_from_slice(&bytes[0..16]);
                 (TypeValue::U128(u128::from_le_bytes(dst)), 16)
             }
-            TypeDef::I8 => {
+            TypeDef::Primitive(PrimitiveType::I8) => {
                 if bytes.len() < size_of::<i8>() {
                     return (
                         Err("TypeValue::decode: byte array length not long enough to decode I8."),
@@ -352,7 +354,7 @@ impl TypeValue {
                 }
                 (TypeValue::I8(bytes[0] as i8), 1)
             }
-            TypeDef::I16 => {
+            TypeDef::Primitive(PrimitiveType::I16) => {
                 if bytes.len() < size_of::<i16>() {
                     return (
                         Err("TypeValue::decode: byte array length not long enough to decode I16."),
@@ -363,7 +365,7 @@ impl TypeValue {
                 dst.copy_from_slice(&bytes[0..2]);
                 (TypeValue::I16(i16::from_le_bytes(dst)), 2)
             }
-            TypeDef::I32 => {
+            TypeDef::Primitive(PrimitiveType::I32) => {
                 if bytes.len() < size_of::<i32>() {
                     return (
                         Err("TypeValue::decode: byte array length not long enough to decode I32."),
@@ -374,7 +376,7 @@ impl TypeValue {
                 dst.copy_from_slice(&bytes[0..4]);
                 (TypeValue::I32(i32::from_le_bytes(dst)), 4)
             }
-            TypeDef::I64 => {
+            TypeDef::Primitive(PrimitiveType::I64) => {
                 if bytes.len() < size_of::<i64>() {
                     return (
                         Err("TypeValue::decode: byte array length not long enough to decode I64."),
@@ -385,7 +387,7 @@ impl TypeValue {
                 dst.copy_from_slice(&bytes[0..8]);
                 (TypeValue::I64(i64::from_le_bytes(dst)), 8)
             }
-            TypeDef::I128 => {
+            TypeDef::Primitive(PrimitiveType::I128) => {
                 if bytes.len() < size_of::<i128>() {
                     return (
                         Err("TypeValue::decode: byte array length not long enough to decode I128."),
@@ -396,7 +398,7 @@ impl TypeValue {
                 dst.copy_from_slice(&bytes[0..16]);
                 (TypeValue::I128(i128::from_le_bytes(dst)), 16)
             }
-            TypeDef::Bool => {
+            TypeDef::Primitive(PrimitiveType::Bool) => {
                 if bytes.len() < size_of::<bool>() {
                     return (
                         Err("TypeValue::decode: byte array length not long enough to decode Bool."),
@@ -405,7 +407,7 @@ impl TypeValue {
                 }
                 (TypeValue::Bool(if bytes[0] == 0 { false } else { true }), 1)
             }
-            TypeDef::F32 => {
+            TypeDef::Primitive(PrimitiveType::F32) => {
                 if bytes.len() < size_of::<f32>() {
                     return (
                         Err("TypeValue::decode: byte array length not long enough to decode F32."),
@@ -416,7 +418,7 @@ impl TypeValue {
                 dst.copy_from_slice(&bytes[0..4]);
                 (TypeValue::F32(F32::from(f32::from_le_bytes(dst))), 4)
             }
-            TypeDef::F64 => {
+            TypeDef::Primitive(PrimitiveType::F64) => {
                 if bytes.len() < size_of::<f64>() {
                     return (
                         Err("TypeValue::decode: byte array length not long enough to decode F64."),
@@ -427,7 +429,7 @@ impl TypeValue {
                 dst.copy_from_slice(&bytes[0..8]);
                 (TypeValue::F64(F64::from(f64::from_le_bytes(dst))), 8)
             }
-            TypeDef::String => {
+            TypeDef::Primitive(PrimitiveType::String) => {
                 if bytes.len() < 2 {
                     return (
                         Err("TypeValue::decode: byte array length not long enough to get length of string."),
@@ -449,7 +451,7 @@ impl TypeValue {
                 num_read += len as usize;
                 (TypeValue::String(string.to_owned()), num_read)
             }
-            TypeDef::Bytes => {
+            TypeDef::Primitive(PrimitiveType::Bytes) => {
                 if bytes.len() < 2 {
                     return (
                         Err("TypeValue::decode: byte array length not long enough to get length of byte array."),
@@ -470,7 +472,8 @@ impl TypeValue {
                 num_read += len as usize;
                 (TypeValue::Bytes(output.to_owned()), num_read)
             }
-            TypeDef::Unit => (TypeValue::Unit, 0),
+            TypeDef::Primitive(PrimitiveType::Unit) => (TypeValue::Unit, 0),
+            TypeDef::Ref(x) => match *x {},
         };
 
         (Ok(result.0), result.1)

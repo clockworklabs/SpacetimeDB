@@ -1,21 +1,38 @@
 #[macro_use]
 pub mod io;
+mod impls;
 
-use spacetimedb_lib::{PrimaryKey, TupleDef, TupleValue};
+use spacetimedb_lib::type_def::resolve_refs::{RefKind, TypeRef};
+use spacetimedb_lib::type_def::PrimitiveType;
+use spacetimedb_lib::{PrimaryKey, TupleDef, TupleValue, TypeDef};
 use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
 use std::mem::ManuallyDrop;
 use std::ops::Range;
 use std::panic;
 
+#[cfg(feature = "macro")]
 pub use spacetimedb_bindgen;
+#[cfg(feature = "macro")]
 pub use spacetimedb_bindgen::spacetimedb;
+#[cfg(feature = "macro")]
 pub use spacetimedb_bindgen::Index;
+#[cfg(feature = "macro")]
 pub use spacetimedb_bindgen::Unique;
 
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::hash;
 pub use spacetimedb_lib::Hash;
 pub use spacetimedb_lib::TypeValue;
+
+#[doc(hidden)]
+pub mod __private {
+    use super::*;
+    pub use once_cell::sync::OnceCell;
+    pub use spacetimedb_lib::type_def::resolve_refs::TypeRef;
+    pub fn get_ref_or_schema<T: SchemaType>() -> TypeDef<TypeRef> {
+        T::get_ref().map(TypeDef::Ref).unwrap_or_else(|| T::get_ref_schema())
+    }
+}
 
 // #[cfg(target_arch = "wasm32")]
 // #[global_allocator]
@@ -96,7 +113,8 @@ pub fn create_table(table_name: &str, schema: TupleDef) -> u32 {
         elements: vec![
             TypeValue::String(table_name.to_string()),
             TypeValue::Bytes(schema_bytes),
-        ],
+        ]
+        .into(),
     };
 
     table_info.encode(&mut bytes);
@@ -146,35 +164,35 @@ pub fn delete_filter<F: Fn(&TupleValue) -> bool>(table_id: u32, f: F) -> Option<
     Some(count)
 }
 
-pub fn delete_eq(table_id: u32, col_id: u32, eq_value: TypeValue) -> Option<usize> {
+pub fn delete_eq(table_id: u32, col_id: u8, eq_value: TypeValue) -> Option<usize> {
     let mut bytes = row_buf();
     eq_value.encode(&mut bytes);
-    let result = unsafe { _delete_eq(table_id, col_id, bytes.as_mut_ptr()) };
+    let result = unsafe { _delete_eq(table_id, col_id.into(), bytes.as_mut_ptr()) };
     if result == -1 {
         return None;
     }
     return Some(result as usize);
 }
 
-pub fn delete_range(table_id: u32, col_id: u32, range: Range<TypeValue>) -> Option<usize> {
+pub fn delete_range(table_id: u32, col_id: u8, range: Range<TypeValue>) -> Option<usize> {
     let mut bytes = row_buf();
     let start = TypeValue::from(range.start);
     let end = TypeValue::from(range.end);
     let tuple = TupleValue {
-        elements: vec![start, end],
+        elements: vec![start, end].into(),
     };
     tuple.encode(&mut bytes);
-    let result = unsafe { _delete_range(table_id, col_id, bytes.as_mut_ptr()) };
+    let result = unsafe { _delete_range(table_id, col_id.into(), bytes.as_mut_ptr()) };
     if result == -1 {
         return None;
     }
     return Some(result as usize);
 }
 
-pub fn create_index(_table_id: u32, _index_type: u8, _col_ids: Vec<u32>) {}
+pub fn create_index(_table_id: u32, _index_type: u8, _col_ids: Vec<u8>) {}
 
 // TODO: going to have to somehow ensure TypeValue is equatable
-pub fn filter_eq(_table_id: u32, _col_id: u32, _eq_value: TypeValue) -> Option<TupleValue> {
+pub fn filter_eq(_table_id: u32, _col_id: u8, _eq_value: TypeValue) -> Option<TupleValue> {
     return None;
 }
 
@@ -225,4 +243,96 @@ impl Iterator for TableIter {
         }
         return None;
     }
+}
+
+pub trait MaybeRef {
+    fn get_ref() -> Option<TypeRef> {
+        None
+    }
+}
+
+pub trait SchemaType: MaybeRef + Sized + 'static {
+    fn get_schema() -> TypeDef;
+    /// get_ref_schema().resolve() should be the same as get_schema()
+    fn get_ref_schema() -> TypeDef<TypeRef>;
+}
+
+pub trait FromValue: SchemaType {
+    fn from_value(v: TypeValue) -> Option<Self>;
+}
+
+pub trait IntoValue: SchemaType {
+    fn into_value(self) -> TypeValue;
+}
+
+pub trait TupleType: MaybeRef + Sized + 'static {
+    fn get_tupledef() -> TupleDef;
+    fn get_ref_tupledef() -> TupleDef<TypeRef>;
+
+    #[doc(hidden)]
+    fn describe_tuple() -> u64 {
+        describe_tuple(Self::get_tupledef())
+    }
+    #[doc(hidden)]
+    fn describe_tuple_ref() -> u64 {
+        describe_tuple(Self::get_ref_tupledef())
+    }
+}
+
+fn describe_tuple<Ref: RefKind>(tuple_def: TupleDef<Ref>) -> u64 {
+    const _: () = assert!(std::mem::size_of::<usize>() == std::mem::size_of::<u32>());
+    let mut bytes = vec![];
+    tuple_def.encode(&mut bytes);
+    let offset = bytes.as_ptr() as u64;
+    let length = bytes.len() as u64;
+    std::mem::forget(bytes);
+    offset << 32 | length
+}
+
+impl<T: TupleType> SchemaType for T {
+    fn get_schema() -> TypeDef {
+        TypeDef::Tuple(T::get_tupledef())
+    }
+    fn get_ref_schema() -> TypeDef<TypeRef> {
+        TypeDef::Tuple(T::get_ref_tupledef())
+    }
+}
+
+pub trait FromTuple: TupleType {
+    fn from_tuple(v: TupleValue) -> Option<Self>;
+}
+
+pub trait IntoTuple: TupleType {
+    fn into_tuple(self) -> TupleValue;
+}
+
+impl<T: FromTuple> FromValue for T {
+    fn from_value(v: TypeValue) -> Option<Self> {
+        match v {
+            TypeValue::Tuple(v) => Self::from_tuple(v),
+            _ => None,
+        }
+    }
+}
+impl<T: IntoTuple> IntoValue for T {
+    fn into_value(self) -> TypeValue {
+        TypeValue::Tuple(self.into_tuple())
+    }
+}
+
+pub trait TableDef: TupleType + FromTuple + IntoTuple {
+    const TABLE_NAME: &'static str;
+
+    fn create_table() -> u32 {
+        let tuple_def = Self::get_tupledef();
+        create_table(Self::TABLE_NAME, tuple_def)
+    }
+}
+
+pub trait FilterableValue: FromValue + IntoValue {
+    fn equals(&self, other: &TypeValue) -> bool;
+}
+
+pub trait UniqueValue: FilterableValue {
+    fn into_primarykey(self) -> PrimaryKey;
 }
