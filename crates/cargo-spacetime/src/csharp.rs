@@ -1,7 +1,6 @@
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::type_def::resolve_refs::RefKind;
 use spacetimedb_lib::type_def::PrimitiveType;
 use spacetimedb_lib::{ElementDef, TupleDef, TypeDef};
 
@@ -32,19 +31,19 @@ fn primitive_to_csharp(prim: PrimitiveType) -> &'static str {
         PrimitiveType::Unit => todo!(), // does this exist? System.Void can't be used from C# :(
     }
 }
-fn ty_fmt<Ref: RefKind>(ty: &TypeDef<Ref>) -> impl fmt::Display + '_ {
+fn ty_fmt(ty: &TypeDef) -> impl fmt::Display + '_ {
     fmt_fn(move |f| match ty {
-        TypeDef::Tuple(_) | TypeDef::Enum(_) => {
-            unreachable!("tuples and enums should always be behind a ref")
+        TypeDef::Tuple(tup) => f.write_str(csharp_tuplename(tup)),
+        TypeDef::Enum(_) => {
+            unimplemented!()
         }
         TypeDef::Vec { element_type } => write!(f, "System.Collections.Generic.List<{}>", ty_fmt(element_type)),
         TypeDef::Primitive(prim) => f.write_str(primitive_to_csharp(*prim)),
-        TypeDef::Ref(r) => f.write_str(csharp_refname(&r.as_typeref().name)),
     })
 }
 
-fn csharp_refname(s: &str) -> &str {
-    match s {
+fn csharp_tuplename(tup: &TupleDef) -> &str {
+    match tup.name.as_deref().expect("tuples should have names") {
         "Hash" => "SpacetimeDB.Hash",
         other => other,
     }
@@ -66,20 +65,22 @@ macro_rules! indent_scope {
     };
 }
 
-fn convert_typedef<Ref: RefKind>(ty: &TypeDef<Ref>) -> impl fmt::Display + '_ {
+fn convert_typedef(ty: &TypeDef) -> impl fmt::Display + '_ {
     fmt_fn(move |f| match ty {
-        TypeDef::Tuple(_) | TypeDef::Enum(_) => {
+        TypeDef::Tuple(tup) => {
+            write!(f, "{}.GetTypeDef()", csharp_tuplename(tup))
+        }
+        TypeDef::Enum(_) => {
             unreachable!("tuples and enums should always be behind a ref")
         }
         TypeDef::Vec { element_type } => {
             write!(f, "SpacetimeDB.TypeDef.GetVec({})", convert_typedef(element_type))
         }
         TypeDef::Primitive(prim) => write!(f, "SpacetimeDB.TypeDef.BuiltInType(SpacetimeDB.TypeDef.Def.{:?})", prim),
-        TypeDef::Ref(r) => write!(f, "{}.GetTypeDef()", csharp_refname(&r.as_typeref().name)),
     })
 }
 
-fn convert_elementdef<Ref: RefKind>(elem: &ElementDef<Ref>) -> impl fmt::Display + '_ {
+fn convert_elementdef(elem: &ElementDef) -> impl fmt::Display + '_ {
     fmt_fn(move |f| {
         write!(
             f,
@@ -90,7 +91,7 @@ fn convert_elementdef<Ref: RefKind>(elem: &ElementDef<Ref>) -> impl fmt::Display
     })
 }
 
-fn convert_tupledef<Ref: RefKind>(tuple: &TupleDef<Ref>) -> impl fmt::Display + '_ {
+fn convert_tupledef(tuple: &TupleDef) -> impl fmt::Display + '_ {
     fmt_fn(move |f| {
         writeln!(f, "TypeDef.Tuple(new ElementDef[]")?;
         writeln!(f, "{INDENT}{{")?;
@@ -102,12 +103,7 @@ fn convert_tupledef<Ref: RefKind>(tuple: &TupleDef<Ref>) -> impl fmt::Display + 
     })
 }
 
-pub fn autogen_csharp_tuple<Ref: RefKind>(
-    name: &str,
-    tuple: &TupleDef<Ref>,
-    table_name: Option<&str>,
-    unique_fields: &[u8],
-) -> String {
+pub fn autogen_csharp_tuple(name: &str, tuple: &TupleDef, table_name: Option<&str>, unique_fields: &[u8]) -> String {
     let mut output = CodeIndenter::new(String::new());
 
     let struct_name_pascal_case = name.to_case(Case::Pascal);
@@ -176,7 +172,7 @@ pub fn autogen_csharp_tuple<Ref: RefKind>(
     output.into_inner()
 }
 
-fn autogen_csharp_tuple_to_struct<Ref: RefKind>(struct_name_pascal_case: &str, tuple: &TupleDef<Ref>) -> String {
+fn autogen_csharp_tuple_to_struct(struct_name_pascal_case: &str, tuple: &TupleDef) -> String {
     let mut output_contents_header: String = String::new();
     let mut vec_conversion: String = String::new();
     let mut output_contents_return: String = String::new();
@@ -212,7 +208,16 @@ fn autogen_csharp_tuple_to_struct<Ref: RefKind>(struct_name_pascal_case: &str, t
         let csharp_field_name = field_name.to_string().to_case(Case::Camel);
 
         match field_type {
-            TypeDef::Tuple(_) | TypeDef::Enum(_) => {
+            TypeDef::Tuple(tup) => {
+                let name = csharp_tuplename(tup);
+                writeln!(
+                    output_contents_return,
+                    "\t\t{} = ({name})tupleValue[{}],",
+                    csharp_field_name, field.tag,
+                )
+                .unwrap();
+            }
+            TypeDef::Enum(_) => {
                 unreachable!("tuples and enums should always be behind a ref")
             }
             TypeDef::Primitive(prim) => {
@@ -223,17 +228,34 @@ fn autogen_csharp_tuple_to_struct<Ref: RefKind>(struct_name_pascal_case: &str, t
                 )
                 .unwrap();
             }
-            TypeDef::Ref(r) => {
-                let name = csharp_refname(&r.as_typeref().name);
-                writeln!(
-                    output_contents_return,
-                    "\t\t{} = ({name})tupleValue[{}],",
-                    csharp_field_name, field.tag,
-                )
-                .unwrap();
-            }
             TypeDef::Vec { element_type } => match &**element_type {
-                TypeDef::Tuple(_) | TypeDef::Enum(_) => {
+                TypeDef::Tuple(tup) => {
+                    let name = csharp_tuplename(tup);
+
+                    writeln!(
+                        vec_conversion,
+                        "\tvar {}_vec = new System.Collections.Generic.List<{name}>();",
+                        field_name
+                    )
+                    .unwrap();
+                    writeln!(
+                        vec_conversion,
+                        "\tvar {}_vec_source = tupleValue[{}].GetValue(SpacetimeDB.TypeDef.Def.Vec) as System.Collections.Generic.List<SpacetimeDB.TypeValue>;",
+                        field_name, field.tag
+                    ).unwrap();
+
+                    writeln!(vec_conversion, "\tforeach(var entry in {}_vec_source!)", field_name).unwrap();
+                    writeln!(vec_conversion, "\t{{").unwrap();
+                    writeln!(vec_conversion, "\t\t{}_vec.Add(({name})entry);", field_name).unwrap();
+                    writeln!(vec_conversion, "\t}}").unwrap();
+                    writeln!(
+                        output_contents_return,
+                        "\t\t{} = {}_vec,",
+                        csharp_field_name, field_name
+                    )
+                    .unwrap();
+                }
+                TypeDef::Enum(_) => {
                     unreachable!("tuples and enums should always be behind a ref")
                 }
                 TypeDef::Primitive(prim) => {
@@ -274,32 +296,6 @@ fn autogen_csharp_tuple_to_struct<Ref: RefKind>(struct_name_pascal_case: &str, t
                     )
                     .unwrap();
                 }
-                TypeDef::Ref(r) => {
-                    let name = csharp_refname(&r.as_typeref().name);
-
-                    writeln!(
-                        vec_conversion,
-                        "\tvar {}_vec = new System.Collections.Generic.List<{name}>();",
-                        field_name
-                    )
-                    .unwrap();
-                    writeln!(
-                        vec_conversion,
-                        "\tvar {}_vec_source = tupleValue[{}].GetValue(SpacetimeDB.TypeDef.Def.Vec) as System.Collections.Generic.List<SpacetimeDB.TypeValue>;",
-                        field_name, field.tag
-                    ).unwrap();
-
-                    writeln!(vec_conversion, "\tforeach(var entry in {}_vec_source!)", field_name).unwrap();
-                    writeln!(vec_conversion, "\t{{").unwrap();
-                    writeln!(vec_conversion, "\t\t{}_vec.Add(({name})entry);", field_name).unwrap();
-                    writeln!(vec_conversion, "\t}}").unwrap();
-                    writeln!(
-                        output_contents_return,
-                        "\t\t{} = {}_vec,",
-                        csharp_field_name, field_name
-                    )
-                    .unwrap();
-                }
                 TypeDef::Vec { .. } => panic!("nested vecs are disallowed?"),
             },
         }
@@ -313,10 +309,10 @@ fn autogen_csharp_tuple_to_struct<Ref: RefKind>(struct_name_pascal_case: &str, t
     output_contents_header + &vec_conversion + &output_contents_return
 }
 
-fn autogen_csharp_access_funcs_for_struct<Ref: RefKind>(
+fn autogen_csharp_access_funcs_for_struct(
     output: &mut CodeIndenter<String>,
     struct_name_pascal_case: &str,
-    tuple: &TupleDef<Ref>,
+    tuple: &TupleDef,
     table_name: &str,
     unique_fields: &[u8],
 ) {
@@ -330,16 +326,16 @@ fn autogen_csharp_access_funcs_for_struct<Ref: RefKind>(
             Hash,
         }
         let field_type = match field_type {
-            TypeDef::Tuple(_) | TypeDef::Enum(_) => unreachable!("tuples and enums should always be behind a ref"),
-            TypeDef::Primitive(prim) => AccessorType::Primitive(*prim),
-            TypeDef::Ref(r) => {
-                let name = csharp_refname(&r.as_typeref().name);
+            TypeDef::Tuple(tup) => {
+                let name = csharp_tuplename(tup);
                 if name != "SpacetimeDB.Hash" {
                     // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
                     continue;
                 }
                 AccessorType::Hash
             }
+            TypeDef::Enum(_) => unreachable!("tuples and enums should always be behind a ref"),
+            TypeDef::Primitive(prim) => AccessorType::Primitive(*prim),
             TypeDef::Vec { .. } => {
                 // TODO: We don't allow filtering based on a vec type, but we might want other functionality here in the future.
                 // TODO: It would be nice to be able to say, give me all entries where this vec contains this value, which we can do.
@@ -428,7 +424,7 @@ fn autogen_csharp_access_funcs_for_struct<Ref: RefKind>(
     }
 }
 
-// fn convert_enumdef<Ref: RefKind>(tuple: &EnumDef<Ref>) -> impl fmt::Display + '_ {
+// fn convert_enumdef(tuple: &EnumDef) -> impl fmt::Display + '_ {
 //     fmt_fn(move |f| {
 //         writeln!(f, "TypeDef.Tuple(new ElementDef[]")?;
 //         writeln!(f, "{{")?;
@@ -440,16 +436,16 @@ fn autogen_csharp_access_funcs_for_struct<Ref: RefKind>(
 //     })
 // }
 
-pub struct Reducer<Ref: RefKind> {
+pub struct Reducer {
     name: String,
-    args: Vec<ReducerArg<Ref>>,
+    args: Vec<ReducerArg>,
 }
-pub struct ReducerArg<Ref: RefKind> {
+pub struct ReducerArg {
     name: String,
-    ty: TypeDef<Ref>,
+    ty: TypeDef,
 }
 
-pub fn autogen_csharp_reducer<Ref: RefKind>(original_function: Reducer<Ref>) -> String {
+pub fn autogen_csharp_reducer(original_function: Reducer) -> String {
     let func_name = &original_function.name;
     // let reducer_pascal_name = func_name.to_case(Case::Pascal);
     let use_namespace = true;

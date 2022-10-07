@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 
-use spacetimedb_lib::type_def::resolve_refs::TypeRef;
+use clap::Parser;
 use spacetimedb_lib::TupleDef;
 use wasmtime::{ExternType, Trap, TypedFunc};
 
@@ -9,9 +10,59 @@ pub mod csharp;
 
 const INDENT: &str = "\t";
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[derive(Parser)]
+enum Args {
+    GenBindings {
+        wasm_file: PathBuf,
+        #[clap(long, short, value_enum, default_value_t)]
+        lang: Language,
+        #[clap(long, short)]
+        out_dir: PathBuf,
+    },
+}
+#[derive(clap::ValueEnum, Clone, Copy, Default)]
+enum Language {
+    #[value(aliases(["c#", "cs"]))]
+    #[default]
+    Csharp,
+}
+
+fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+    match args {
+        Args::GenBindings {
+            wasm_file,
+            lang,
+            out_dir,
+        } => {
+            let Language::Csharp = lang;
+            let descriptions = extract_descriptions(&wasm_file)?;
+            for (name, desc) in descriptions {
+                let (file, code) = match desc {
+                    Description::Table(tup) => {
+                        let code = csharp::autogen_csharp_tuple(&name, &tup, Some(&name), &[]);
+                        (out_dir.join(name + ".cs"), code)
+                    }
+                    Description::Tuple(tup) => {
+                        let code = csharp::autogen_csharp_tuple(&name, &tup, None, &[]);
+                        (out_dir.join(name + ".cs"), code)
+                    }
+                };
+                fs::write(file, code)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+enum Description {
+    Table(TupleDef),
+    Tuple(TupleDef),
+}
+
+fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<Vec<(String, Description)>> {
     let engine = wasmtime::Engine::default();
-    let module = wasmtime::Module::from_file(&engine, "foo.wasm")?;
+    let module = wasmtime::Module::from_file(&engine, wasm_file)?;
     let mut store = wasmtime::Store::new(&engine, ());
     let mut linker = wasmtime::Linker::new(&engine);
     for imp in module.imports() {
@@ -27,28 +78,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let memory = instance.get_memory(&mut store, "memory").unwrap();
     // let alloc: TypedFunc<(u32,), (u32,)> = instance.get_func(&mut store, "alloc").unwrap().typed(&store).unwrap();
     let dealloc: TypedFunc<(u32, u32), ()> = instance.get_func(&mut store, "dealloc").unwrap().typed(&store).unwrap();
+    enum DescrType {
+        Table,
+        Tuple,
+    }
     let describes = instance
         .exports(&mut store)
         .filter_map(|exp| {
-            let name = exp.name();
-            name.strip_prefix("__describe_table_refs__")
-                .or_else(|| name.strip_prefix("__describe_tuple_refs__"))
-                .map(|table_name| (table_name.to_owned(), exp.into_func().unwrap()))
+            let sym = exp.name();
+            None.or_else(|| sym.strip_prefix("__describe_table__").map(|n| (DescrType::Table, n)))
+                .or_else(|| sym.strip_prefix("__describe_tuple__").map(|n| (DescrType::Tuple, n)))
+                .map(|(ty, name)| (ty, name.to_owned(), exp.into_func().unwrap()))
         })
         .collect::<Vec<_>>();
-    let mut tables = HashMap::new();
-    for (table_name, describe) in describes {
+    let mut descriptions = Vec::with_capacity(describes.len());
+    for (ty, name, describe) in describes {
         let describe: TypedFunc<(), (u64,)> = describe.typed(&store).unwrap();
         let (val,) = describe.call(&mut store, ()).unwrap();
-        let offset = ((val & 0xFFFF_FFFF_0000_0000) >> 32) as u32;
-        let len = (val & 0x0000_0000_FFFF_FFFF) as u32;
+        let offset = (val >> 32) as u32;
+        let len = (val & 0xFFFF_FFFF) as u32;
         let slice = &memory.data(&store)[offset as usize..][..len as usize];
-        let table_def = TupleDef::<TypeRef>::decode(&slice).0.unwrap();
+        let descr = match ty {
+            DescrType::Table => Description::Table(TupleDef::decode(&mut &slice[..])?),
+            DescrType::Tuple => Description::Tuple(TupleDef::decode(&mut &slice[..])?),
+        };
         dealloc.call(&mut store, (offset, len)).unwrap();
-        tables.insert(table_name, table_def);
+        descriptions.push((name, descr));
     }
-    for (k, v) in &tables {
-        println!("{}", csharp::autogen_csharp_tuple(k, v, None, &[]));
-    }
-    Ok(())
+    Ok(descriptions)
 }

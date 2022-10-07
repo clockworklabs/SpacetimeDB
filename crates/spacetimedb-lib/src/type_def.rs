@@ -55,21 +55,26 @@ impl ElementDef {
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct TupleDef {
+    pub name: Option<Box<str>>,
     pub elements: Vec<ElementDef>,
 }
 
 impl TupleDef {
     pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
+        let name = Some(read_str(bytes)?.into());
+
         let len = read_len(bytes)?;
 
         let mut elements = Vec::with_capacity(len.into());
         for _ in 0..len {
             elements.push(ElementDef::decode(bytes)?);
         }
-        Ok(TupleDef { elements })
+        Ok(TupleDef { name, elements })
     }
 
     pub fn encode(&self, bytes: &mut impl BufWriter) {
+        write_str(bytes, self.name.as_deref().unwrap_or(""));
+
         write_len(bytes, self.elements.len());
         for item in &self.elements {
             item.encode(bytes);

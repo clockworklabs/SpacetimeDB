@@ -213,9 +213,12 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #[allow(non_snake_case)]
         // u64 is offset << 32 | length
         pub extern "C" fn #descriptor_func_name() -> u64 {
-            let tupledef = spacetimedb::spacetimedb_lib::TupleDef { elements: vec![
+            let tupledef = spacetimedb::spacetimedb_lib::TupleDef {
+                name: None,
+                elements: vec![
                     #(#function_call_arg_types),*
-                ] };
+                ],
+            };
             let mut bytes = vec![];
             tupledef.encode(&mut bytes);
             let offset = bytes.as_ptr() as u64;
@@ -618,7 +621,6 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
     let create_table_func_name = format_ident!("__create_table__{}", original_struct_ident);
     let describe_table_func_name = format_ident!("__describe_table__{}", original_struct_ident);
-    let describe_table_refs_func_name = format_ident!("__describe_table_refs__{}", original_struct_ident);
 
     let table_id_static_var = quote! {
         #[allow(non_upper_case_globals)]
@@ -641,12 +643,6 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #[no_mangle]
         pub extern "C" fn #describe_table_func_name() -> u64 {
             <#original_struct_ident as spacetimedb::TupleType>::describe_tuple()
-        }
-
-        #[allow(non_snake_case)]
-        #[no_mangle]
-        pub extern "C" fn #describe_table_refs_func_name() -> u64 {
-            <#original_struct_ident as spacetimedb::TupleType>::describe_tuple_ref()
         }
     };
 
@@ -821,7 +817,6 @@ fn spacetimedb_tuple(_: AttributeArgs, item: TokenStream) -> TokenStream {
     };
 
     let describe_tuple_func_name = format_ident!("__describe_tuple__{}", original_struct_ident);
-    let describe_tuple_refs_func_name = format_ident!("__describe_tuple_refs__{}", original_struct_ident);
 
     let emission = quote! {
         #[derive(serde::Serialize, serde::Deserialize)]
@@ -835,12 +830,6 @@ fn spacetimedb_tuple(_: AttributeArgs, item: TokenStream) -> TokenStream {
         #[no_mangle]
         pub extern "C" fn #describe_tuple_func_name() -> u64 {
             <#original_struct_ident as spacetimedb::TupleType>::describe_tuple()
-        }
-
-        #[allow(non_snake_case)]
-        #[no_mangle]
-        pub extern "C" fn #describe_tuple_refs_func_name() -> u64 {
-            <#original_struct_ident as spacetimedb::TupleType>::describe_tuple_ref()
         }
     };
 

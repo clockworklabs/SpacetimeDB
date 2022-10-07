@@ -62,11 +62,13 @@ pub(crate) fn autogen_module_struct_to_schema(
     });
 
     let name = &original_struct.ident;
+    let tuple_name = name.to_string();
     let (impl_generics, ty_generics, where_clause) = original_struct.generics.split_for_impl();
     Ok(quote! {
         impl #impl_generics spacetimedb::TupleType for #name #ty_generics #where_clause {
             fn get_tupledef() -> spacetimedb::spacetimedb_lib::TupleDef {
                 spacetimedb::spacetimedb_lib::TupleDef {
+                    name: Some(#tuple_name.into()),
                     elements: vec![
                         #(#fields),*
                     ],
@@ -74,17 +76,6 @@ pub(crate) fn autogen_module_struct_to_schema(
             }
         }
     })
-    // if is_table {
-    //     let table_name = name.to_string();
-    // } else {
-    //     Ok(quote! {
-    //         impl #impl_generics spacetimedb::SchemaType for #name #ty_generics #where_clause {
-    //             fn get_schema() -> spacetimedb::spacetimedb_lib::TypeDef {
-    //                 spacetimedb::spacetimedb_lib::TypeDef::Tuple(#tupledef)
-    //             }
-    //         }
-    //     })
-    // }
 }
 
 /// Returns a generated function that will return a struct value from a TupleValue. The signature
