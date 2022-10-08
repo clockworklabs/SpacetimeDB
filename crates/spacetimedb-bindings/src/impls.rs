@@ -3,7 +3,7 @@ use std::mem::ManuallyDrop;
 
 use spacetimedb_lib::{DataKey, Hash};
 
-use super::{PrimaryKey, PrimitiveType, TypeDef, TypeValue};
+use super::{PrimaryKey, TypeDef, TypeValue};
 use crate::{FilterableValue, FromValue, IntoValue, SchemaType, UniqueValue};
 
 macro_rules! impl_primitives {
@@ -11,7 +11,7 @@ macro_rules! impl_primitives {
         $(
             impl SchemaType for $t {
                 fn get_schema() -> TypeDef {
-                    PrimitiveType::$x.into()
+                    TypeDef::$x
                 }
             }
             impl FromValue for $t {
@@ -73,7 +73,7 @@ impl_primitives! {
 
 impl SchemaType for () {
     fn get_schema() -> TypeDef {
-        PrimitiveType::Unit.into()
+        TypeDef::Unit
     }
 }
 impl FromValue for () {
@@ -103,7 +103,7 @@ impl IntoValue for () {
 impl<T: SchemaType> SchemaType for Vec<T> {
     fn get_schema() -> TypeDef {
         if TypeId::of::<T>() == TypeId::of::<u8>() {
-            return PrimitiveType::Bytes.into();
+            return TypeDef::Bytes;
         }
         TypeDef::Vec {
             element_type: Box::new(T::get_schema()),
@@ -144,7 +144,7 @@ impl<T: IntoValue> IntoValue for Vec<T> {
 
 impl SchemaType for Hash {
     fn get_schema() -> TypeDef {
-        PrimitiveType::Bytes.into()
+        TypeDef::Bytes
     }
 }
 impl FromValue for Hash {

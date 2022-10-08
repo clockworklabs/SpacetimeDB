@@ -99,6 +99,7 @@ impl InstanceEnv {
         let col_type = &schema.elements[col_id as usize].element_type;
 
         let tuple_def = TupleDef {
+            name: None,
             elements: vec![
                 ElementDef {
                     tag: 0,
@@ -140,6 +141,7 @@ impl InstanceEnv {
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
         let table_info_schema = TupleDef {
+            name: None,
             elements: vec![
                 ElementDef {
                     tag: 0,

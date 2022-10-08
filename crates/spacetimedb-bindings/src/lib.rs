@@ -3,7 +3,6 @@ pub mod io;
 mod impls;
 
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
-use spacetimedb_lib::type_def::PrimitiveType;
 use spacetimedb_lib::{PrimaryKey, TupleDef, TupleValue, TypeDef};
 use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
 use std::cell::RefCell;
@@ -241,7 +240,7 @@ pub trait TupleType: Sized + 'static {
 
     #[doc(hidden)]
     fn describe_tuple() -> u64 {
-        const _: () = assert!(std::mem::size_of::<usize>() == std::mem::size_of::<u32>());
+        // const _: () = assert!(std::mem::size_of::<usize>() == std::mem::size_of::<u32>());
         let tuple_def = Self::get_tupledef();
         let mut bytes = vec![];
         tuple_def.encode(&mut bytes);

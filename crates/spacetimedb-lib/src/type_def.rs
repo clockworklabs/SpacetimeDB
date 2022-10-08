@@ -149,6 +149,25 @@ pub enum PrimitiveType {
     String,
     Bytes,
 }
+#[allow(non_upper_case_globals)]
+impl TypeDef {
+    pub const Unit: Self = TypeDef::Primitive(PrimitiveType::Unit);
+    pub const Bool: Self = TypeDef::Primitive(PrimitiveType::Bool);
+    pub const I8: Self = TypeDef::Primitive(PrimitiveType::I8);
+    pub const U8: Self = TypeDef::Primitive(PrimitiveType::U8);
+    pub const I16: Self = TypeDef::Primitive(PrimitiveType::I16);
+    pub const U16: Self = TypeDef::Primitive(PrimitiveType::U16);
+    pub const I32: Self = TypeDef::Primitive(PrimitiveType::I32);
+    pub const U32: Self = TypeDef::Primitive(PrimitiveType::U32);
+    pub const I64: Self = TypeDef::Primitive(PrimitiveType::I64);
+    pub const U64: Self = TypeDef::Primitive(PrimitiveType::U64);
+    pub const I128: Self = TypeDef::Primitive(PrimitiveType::I128);
+    pub const U128: Self = TypeDef::Primitive(PrimitiveType::U128);
+    pub const F32: Self = TypeDef::Primitive(PrimitiveType::F32);
+    pub const F64: Self = TypeDef::Primitive(PrimitiveType::F64);
+    pub const String: Self = TypeDef::Primitive(PrimitiveType::String);
+    pub const Bytes: Self = TypeDef::Primitive(PrimitiveType::Bytes);
+}
 
 impl TypeDef {
     pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
@@ -160,22 +179,22 @@ impl TypeDef {
             0x02 => TypeDef::Vec {
                 element_type: Box::new(TypeDef::decode(bytes)?),
             },
-            0x04 => TypeDef::Primitive(PrimitiveType::U16),
-            0x03 => TypeDef::Primitive(PrimitiveType::U8),
-            0x05 => TypeDef::Primitive(PrimitiveType::U32),
-            0x06 => TypeDef::Primitive(PrimitiveType::U64),
-            0x07 => TypeDef::Primitive(PrimitiveType::U128),
-            0x08 => TypeDef::Primitive(PrimitiveType::I8),
-            0x09 => TypeDef::Primitive(PrimitiveType::I16),
-            0x0A => TypeDef::Primitive(PrimitiveType::I32),
-            0x0B => TypeDef::Primitive(PrimitiveType::I64),
-            0x0C => TypeDef::Primitive(PrimitiveType::I128),
-            0x0D => TypeDef::Primitive(PrimitiveType::Bool),
-            0x0E => TypeDef::Primitive(PrimitiveType::F32),
-            0x0F => TypeDef::Primitive(PrimitiveType::F64),
-            0x10 => TypeDef::Primitive(PrimitiveType::String),
-            0x11 => TypeDef::Primitive(PrimitiveType::Bytes),
-            0x12 => TypeDef::Primitive(PrimitiveType::Bytes),
+            0x04 => TypeDef::U16,
+            0x03 => TypeDef::U8,
+            0x05 => TypeDef::U32,
+            0x06 => TypeDef::U64,
+            0x07 => TypeDef::U128,
+            0x08 => TypeDef::I8,
+            0x09 => TypeDef::I16,
+            0x0A => TypeDef::I32,
+            0x0B => TypeDef::I64,
+            0x0C => TypeDef::I128,
+            0x0D => TypeDef::Bool,
+            0x0E => TypeDef::F32,
+            0x0F => TypeDef::F64,
+            0x10 => TypeDef::String,
+            0x11 => TypeDef::Bytes,
+            0x12 => TypeDef::Bytes,
             _ => return Err(DecodeError::InvalidTag),
         };
 

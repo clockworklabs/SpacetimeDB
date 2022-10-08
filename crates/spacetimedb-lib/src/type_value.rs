@@ -1,6 +1,6 @@
 use crate::{
     buffer::{BufReader, BufWriter, DecodeError},
-    type_def::{EnumDef, PrimitiveType, TupleDef, TypeDef},
+    type_def::{EnumDef, TupleDef, TypeDef},
     DataKey,
 };
 use enum_as_inner::EnumAsInner;
@@ -222,10 +222,10 @@ impl TypeValue {
                 TypeValue::$v(bytes.$get()?)
             };
         }
-        let result = match type_def {
-            TypeDef::Tuple(tuple_def) => TypeValue::Tuple(TupleValue::decode(tuple_def, bytes)?),
-            TypeDef::Enum(enum_def) => TypeValue::Enum(EnumValue::decode(enum_def, bytes)?),
-            TypeDef::Vec { element_type } => {
+        let result = match *type_def {
+            TypeDef::Tuple(ref tuple_def) => TypeValue::Tuple(TupleValue::decode(tuple_def, bytes)?),
+            TypeDef::Enum(ref enum_def) => TypeValue::Enum(EnumValue::decode(enum_def, bytes)?),
+            TypeDef::Vec { ref element_type } => {
                 let len = bytes.get_u16()?;
                 let mut vec = Vec::with_capacity(len.into());
                 for _ in 0..len {
@@ -233,37 +233,37 @@ impl TypeValue {
                 }
                 TypeValue::Vec(vec)
             }
-            TypeDef::Primitive(PrimitiveType::U8) => {
+            TypeDef::U8 => {
                 prim!(U8, get_u8)
             }
-            TypeDef::Primitive(PrimitiveType::U16) => {
+            TypeDef::U16 => {
                 prim!(U16, get_u16)
             }
-            TypeDef::Primitive(PrimitiveType::U32) => {
+            TypeDef::U32 => {
                 prim!(U32, get_u32)
             }
-            TypeDef::Primitive(PrimitiveType::U64) => {
+            TypeDef::U64 => {
                 prim!(U64, get_u64)
             }
-            TypeDef::Primitive(PrimitiveType::U128) => {
+            TypeDef::U128 => {
                 prim!(U128, get_u128)
             }
-            TypeDef::Primitive(PrimitiveType::I8) => {
+            TypeDef::I8 => {
                 prim!(I8, get_i8)
             }
-            TypeDef::Primitive(PrimitiveType::I16) => {
+            TypeDef::I16 => {
                 prim!(I16, get_i16)
             }
-            TypeDef::Primitive(PrimitiveType::I32) => {
+            TypeDef::I32 => {
                 prim!(I32, get_i32)
             }
-            TypeDef::Primitive(PrimitiveType::I64) => {
+            TypeDef::I64 => {
                 prim!(I64, get_i64)
             }
-            TypeDef::Primitive(PrimitiveType::I128) => {
+            TypeDef::I128 => {
                 prim!(I128, get_i128)
             }
-            TypeDef::Primitive(PrimitiveType::Bool) => TypeValue::Bool(match bytes.get_u8()? {
+            TypeDef::Bool => TypeValue::Bool(match bytes.get_u8()? {
                 0x00 => false,
                 0x01 => true,
                 _ => {
@@ -272,20 +272,20 @@ impl TypeValue {
                     true
                 }
             }),
-            TypeDef::Primitive(PrimitiveType::F32) => TypeValue::F32(f32::from_bits(bytes.get_u32()?).into()),
-            TypeDef::Primitive(PrimitiveType::F64) => TypeValue::F64(f64::from_bits(bytes.get_u64()?).into()),
-            TypeDef::Primitive(PrimitiveType::String) => {
+            TypeDef::F32 => TypeValue::F32(f32::from_bits(bytes.get_u32()?).into()),
+            TypeDef::F64 => TypeValue::F64(f64::from_bits(bytes.get_u64()?).into()),
+            TypeDef::String => {
                 let len = bytes.get_u16()?;
                 let slice = bytes.get_slice(len.into())?;
                 let string = std::str::from_utf8(slice)?;
                 TypeValue::String(string.to_owned())
             }
-            TypeDef::Primitive(PrimitiveType::Bytes) => {
+            TypeDef::Bytes => {
                 let len = bytes.get_u16()?;
                 let slice = bytes.get_slice(len.into())?;
                 TypeValue::Bytes(slice.to_owned())
             }
-            TypeDef::Primitive(PrimitiveType::Unit) => TypeValue::Unit,
+            TypeDef::Unit => TypeValue::Unit,
         };
 
         Ok(result)

@@ -409,7 +409,7 @@ async fn sql(state: &mut State) -> SimpleHandlerResult {
         let stmt_result = result.unwrap();
         let stmt_res_json = StmtResultJson {
             schema: stmt_result.schema,
-            rows: stmt_result.rows.iter().map(|x| x.elements.clone()).collect::<Vec<_>>(),
+            rows: stmt_result.rows.iter().map(|x| x.elements.to_vec()).collect::<Vec<_>>(),
         };
         json.push(stmt_res_json)
     }

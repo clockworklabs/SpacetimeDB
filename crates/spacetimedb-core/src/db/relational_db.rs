@@ -145,7 +145,8 @@ impl RelationalDB {
             elements: vec![
                 TypeValue::U32(ST_TABLES_ID),
                 TypeValue::String(ST_TABLES_NAME.to_string()),
-            ],
+            ]
+            .into(),
         };
         Self::insert_row_raw(txdb, &mut tx, ST_TABLES_ID, row);
 
@@ -155,7 +156,8 @@ impl RelationalDB {
             elements: vec![
                 TypeValue::U32(ST_COLUMNS_ID),
                 TypeValue::String(ST_COLUMNS_NAME.to_string()),
-            ],
+            ]
+            .into(),
         };
         Self::insert_row_raw(txdb, &mut tx, ST_TABLES_ID, row);
 
@@ -168,7 +170,8 @@ impl RelationalDB {
                 TypeValue::U32(0),
                 TypeValue::Bytes(bytes),
                 TypeValue::String("table_id".to_string()),
-            ],
+            ]
+            .into(),
         };
         Self::insert_row_raw(txdb, &mut tx, ST_COLUMNS_ID, row);
 
@@ -180,7 +183,8 @@ impl RelationalDB {
                 TypeValue::U32(1),
                 TypeValue::Bytes(bytes),
                 TypeValue::String("table_name".to_string()),
-            ],
+            ]
+            .into(),
         };
         Self::insert_row_raw(txdb, &mut tx, ST_COLUMNS_ID, row);
 
@@ -193,7 +197,8 @@ impl RelationalDB {
                 TypeValue::U32(0),
                 TypeValue::Bytes(bytes),
                 TypeValue::String("table_id".to_string()),
-            ],
+            ]
+            .into(),
         };
         Self::insert_row_raw(txdb, &mut tx, ST_COLUMNS_ID, row);
 
@@ -205,7 +210,8 @@ impl RelationalDB {
                 TypeValue::U32(1),
                 TypeValue::Bytes(bytes),
                 TypeValue::String("col_id".to_string()),
-            ],
+            ]
+            .into(),
         };
         Self::insert_row_raw(txdb, &mut tx, ST_COLUMNS_ID, row);
 
@@ -217,7 +223,8 @@ impl RelationalDB {
                 TypeValue::U32(2),
                 TypeValue::Bytes(bytes),
                 TypeValue::String("col_type".to_string()),
-            ],
+            ]
+            .into(),
         };
         Self::insert_row_raw(txdb, &mut tx, ST_COLUMNS_ID, row);
 
@@ -229,7 +236,8 @@ impl RelationalDB {
                 TypeValue::U32(3),
                 TypeValue::Bytes(bytes),
                 TypeValue::String("col_name".to_string()),
-            ],
+            ]
+            .into(),
         };
         Self::insert_row_raw(txdb, &mut tx, ST_COLUMNS_ID, row);
 
@@ -261,6 +269,7 @@ impl RelationalDB {
         let mut columns = Vec::new();
         for bytes in self.txdb.scan(tx, ST_COLUMNS_ID) {
             let schema = TupleDef {
+                name: None,
                 elements: vec![
                     ElementDef {
                         tag: 0,
@@ -282,7 +291,8 @@ impl RelationalDB {
                         name: None,
                         element_type: TypeDef::String,
                     },
-                ],
+                ]
+                .into(),
             };
             let row = Self::decode_row(&schema, &mut &bytes[..]);
             if let Err(e) = row {
@@ -319,7 +329,10 @@ impl RelationalDB {
         }
         columns.sort_by(|a, b| a.tag.cmp(&b.tag));
         if columns.len() > 0 {
-            Some(TupleDef { elements: columns })
+            Some(TupleDef {
+                name: None,
+                elements: columns,
+            })
         } else {
             None
         }
@@ -366,7 +379,7 @@ impl RelationalDB {
 
         // Insert the table row into st_tables
         let row = TupleValue {
-            elements: vec![TypeValue::U32(table_id), TypeValue::String(table_name.to_string())],
+            elements: vec![TypeValue::U32(table_id), TypeValue::String(table_name.to_string())].into(),
         };
         Self::insert_row_raw(&mut self.txdb, tx, ST_TABLES_ID, row);
 
@@ -389,7 +402,8 @@ impl RelationalDB {
                     TypeValue::U32(i),
                     TypeValue::Bytes(bytes),
                     TypeValue::String(col_name),
-                ],
+                ]
+                .into(),
             };
             Self::insert_row_raw(&mut self.txdb, tx, ST_COLUMNS_ID, row);
             i += 1;
@@ -738,11 +752,13 @@ mod tests {
             &mut tx,
             "MyTable",
             TupleDef {
+                name: None,
                 elements: vec![ElementDef {
                     tag: 0,
                     name: Some("my_col".into()),
                     element_type: TypeDef::I32,
-                }],
+                }]
+                .into(),
             },
         )
         .unwrap();
@@ -758,11 +774,13 @@ mod tests {
                 &mut tx,
                 "MyTable",
                 TupleDef {
+                    name: None,
                     elements: vec![ElementDef {
                         tag: 0,
                         name: Some("my_col".into()),
                         element_type: TypeDef::I32,
-                    }],
+                    }]
+                    .into(),
                 },
             )
             .unwrap();
@@ -779,11 +797,13 @@ mod tests {
             &mut tx,
             "MyTable",
             TupleDef {
+                name: None,
                 elements: vec![ElementDef {
                     tag: 0,
                     name: Some("my_col".into()),
                     element_type: TypeDef::I32,
-                }],
+                }]
+                .into(),
             },
         )
         .unwrap();
@@ -801,11 +821,13 @@ mod tests {
             &mut tx,
             "MyTable",
             TupleDef {
+                name: None,
                 elements: vec![ElementDef {
                     tag: 0,
                     name: Some("my_col".into()),
                     element_type: TypeDef::I32,
-                }],
+                }]
+                .into(),
             },
         )
         .unwrap();
@@ -813,11 +835,13 @@ mod tests {
             &mut tx,
             "MyTable",
             TupleDef {
+                name: None,
                 elements: vec![ElementDef {
                     tag: 0,
                     name: Some("my_col".into()),
                     element_type: TypeDef::I32,
-                }],
+                }]
+                .into(),
             },
         );
         assert!(matches!(result, Err(_)));
@@ -833,11 +857,13 @@ mod tests {
                 &mut tx,
                 "MyTable",
                 TupleDef {
+                    name: None,
                     elements: vec![ElementDef {
                         tag: 0,
                         name: Some("my_col".into()),
                         element_type: TypeDef::I32,
-                    }],
+                    }]
+                    .into(),
                 },
             )
             .unwrap();
@@ -845,21 +871,21 @@ mod tests {
             &mut tx,
             table_id,
             TupleValue {
-                elements: vec![TypeValue::I32(-1)],
+                elements: vec![TypeValue::I32(-1)].into(),
             },
         );
         stdb.insert(
             &mut tx,
             table_id,
             TupleValue {
-                elements: vec![TypeValue::I32(0)],
+                elements: vec![TypeValue::I32(0)].into(),
             },
         );
         stdb.insert(
             &mut tx,
             table_id,
             TupleValue {
-                elements: vec![TypeValue::I32(1)],
+                elements: vec![TypeValue::I32(1)].into(),
             },
         );
 
@@ -883,11 +909,13 @@ mod tests {
                 &mut tx,
                 "MyTable",
                 TupleDef {
+                    name: None,
                     elements: vec![ElementDef {
                         tag: 0,
                         name: Some("my_col".into()),
                         element_type: TypeDef::I32,
-                    }],
+                    }]
+                    .into(),
                 },
             )
             .unwrap();
@@ -895,21 +923,21 @@ mod tests {
             &mut tx,
             table_id,
             TupleValue {
-                elements: vec![TypeValue::I32(-1)],
+                elements: vec![TypeValue::I32(-1)].into(),
             },
         );
         stdb.insert(
             &mut tx,
             table_id,
             TupleValue {
-                elements: vec![TypeValue::I32(0)],
+                elements: vec![TypeValue::I32(0)].into(),
             },
         );
         stdb.insert(
             &mut tx,
             table_id,
             TupleValue {
-                elements: vec![TypeValue::I32(1)],
+                elements: vec![TypeValue::I32(1)].into(),
             },
         );
         stdb.commit_tx(tx);
@@ -935,11 +963,13 @@ mod tests {
                 &mut tx,
                 "MyTable",
                 TupleDef {
+                    name: None,
                     elements: vec![ElementDef {
                         tag: 0,
                         name: Some("my_col".into()),
                         element_type: TypeDef::I32,
-                    }],
+                    }]
+                    .into(),
                 },
             )
             .unwrap();
@@ -947,21 +977,21 @@ mod tests {
             &mut tx,
             table_id,
             TupleValue {
-                elements: vec![TypeValue::I32(-1)],
+                elements: vec![TypeValue::I32(-1)].into(),
             },
         );
         stdb.insert(
             &mut tx,
             table_id,
             TupleValue {
-                elements: vec![TypeValue::I32(0)],
+                elements: vec![TypeValue::I32(0)].into(),
             },
         );
         stdb.insert(
             &mut tx,
             table_id,
             TupleValue {
-                elements: vec![TypeValue::I32(1)],
+                elements: vec![TypeValue::I32(1)].into(),
             },
         );
 
@@ -987,11 +1017,13 @@ mod tests {
                 &mut tx,
                 "MyTable",
                 TupleDef {
+                    name: None,
                     elements: vec![ElementDef {
                         tag: 0,
                         name: Some("my_col".into()),
                         element_type: TypeDef::I32,
-                    }],
+                    }]
+                    .into(),
                 },
             )
             .unwrap();
@@ -999,21 +1031,21 @@ mod tests {
             &mut tx,
             table_id,
             TupleValue {
-                elements: vec![TypeValue::I32(-1)],
+                elements: vec![TypeValue::I32(-1)].into(),
             },
         );
         stdb.insert(
             &mut tx,
             table_id,
             TupleValue {
-                elements: vec![TypeValue::I32(0)],
+                elements: vec![TypeValue::I32(0)].into(),
             },
         );
         stdb.insert(
             &mut tx,
             table_id,
             TupleValue {
-                elements: vec![TypeValue::I32(1)],
+                elements: vec![TypeValue::I32(1)].into(),
             },
         );
         stdb.commit_tx(tx);
@@ -1039,11 +1071,13 @@ mod tests {
                 &mut tx,
                 "MyTable",
                 TupleDef {
+                    name: None,
                     elements: vec![ElementDef {
                         tag: 0,
                         name: Some("my_col".into()),
                         element_type: TypeDef::I32,
-                    }],
+                    }]
+                    .into(),
                 },
             )
             .unwrap();
@@ -1064,11 +1098,13 @@ mod tests {
                 &mut tx,
                 "MyTable",
                 TupleDef {
+                    name: None,
                     elements: vec![ElementDef {
                         tag: 0,
                         name: Some("my_col".into()),
                         element_type: TypeDef::I32,
-                    }],
+                    }]
+                    .into(),
                 },
             )
             .unwrap();
@@ -1079,21 +1115,21 @@ mod tests {
             &mut tx,
             0,
             TupleValue {
-                elements: vec![TypeValue::I32(-1)],
+                elements: vec![TypeValue::I32(-1)].into(),
             },
         );
         stdb.insert(
             &mut tx,
             0,
             TupleValue {
-                elements: vec![TypeValue::I32(0)],
+                elements: vec![TypeValue::I32(0)].into(),
             },
         );
         stdb.insert(
             &mut tx,
             0,
             TupleValue {
-                elements: vec![TypeValue::I32(1)],
+                elements: vec![TypeValue::I32(1)].into(),
             },
         );
         drop(tx);

@@ -4,7 +4,7 @@ members = [
   "crates/spacetimedb-core",
   "crates/spacetimedb-bindgen",
   "crates/spacetimedb-bindings", 
-  "crates/spacetimedb-macro",
+  # "crates/spacetimedb-macro",
   "crates/spacetimedb-cli",
   "crates/cargo-spacetime"
 ]

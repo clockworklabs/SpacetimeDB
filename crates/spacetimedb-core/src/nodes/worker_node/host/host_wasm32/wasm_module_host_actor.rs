@@ -147,6 +147,7 @@ impl WasmModuleHostActor {
             let (entity_name, description) = if desc_entity_type == DescribedEntityType::RepeatingReducer {
                 let entity_name = f.name().strip_prefix(REPEATING_REDUCER_DUNDER).unwrap();
                 let description = TupleDef {
+                    name: None,
                     elements: vec![
                         ElementDef {
                             tag: 0,

@@ -33,10 +33,11 @@ pub fn execute_project(
                         .enumerate()
                         .filter(|(i, _)| col_ids.contains(&(*i as u32)))
                         .map(|(_, c)| c.clone())
-                        .collect::<Vec<_>>(),
+                        .collect(),
                 })
                 .collect::<Vec<_>>();
             stmt_result.schema = TupleDef {
+                name: None,
                 elements: stmt_result
                     .schema
                     .elements
@@ -44,7 +45,7 @@ pub fn execute_project(
                     .enumerate()
                     .filter(|(i, _)| col_ids.contains(&(*i as u32)))
                     .map(|(_, c)| c.clone())
-                    .collect::<Vec<_>>(),
+                    .collect(),
             };
             Ok(stmt_result)
         }

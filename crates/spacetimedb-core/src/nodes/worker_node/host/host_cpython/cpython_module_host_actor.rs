@@ -434,6 +434,7 @@ impl CPythonModuleHostActor {
                 }
             }
             Ok(Some(TupleDef {
+                name: None,
                 elements: arg_tuple_elements,
             }))
         });
