@@ -49,7 +49,7 @@ pub fn make_wasm32_module_host_actor(
 ) -> Result<ModuleHost, anyhow::Error> {
     Ok(ModuleHost::spawn(worker_database_instance.identity, |module_host| {
         let cost_function =
-            |operator: &Operator| -> u64 { opcode_cost::OperationType::operation_type_of(operator).quanta_cost() };
+            |operator: &Operator| -> u64 { opcode_cost::OperationType::operation_type_of(operator).energy_cost() };
         let initial_points = DEFAULT_EXECUTION_BUDGET as u64;
         let metering = Arc::new(Metering::new(initial_points, cost_function));
 

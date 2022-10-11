@@ -641,7 +641,7 @@ impl OperationType {
 
     /// Attempt to quantify the potential runtime/hardware cost of the operation.
     // TODO: These will need attention over time.
-    pub fn quanta_cost(&self) -> u64 {
+    pub fn energy_cost(&self) -> u64 {
         match self {
             // Note I am assuming scalar operations (for integers and floats) have the same
             // cost for 32-bits vs 64-bits, because I am assuming 64-bit hardware.
