@@ -100,7 +100,7 @@ async fn set_budget(state: &mut State) -> SimpleHandlerResult {
             EnergyBudget {
                 module_identity: Vec::from(module_identity.data),
                 balance_quanta: balance.unwrap_or(0),
-                default_reducer_maximum_quanta: default_maximum.unwrap_or(1000000), /* TODO: this should be a global constant */
+                default_reducer_maximum_quanta: default_maximum.unwrap_or(1_000_000_000), /* TODO: this should be a global constant */
             }
         }
     };
