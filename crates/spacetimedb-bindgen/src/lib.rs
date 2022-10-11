@@ -6,81 +6,85 @@ mod module;
 extern crate core;
 extern crate proc_macro;
 
-// use crate::csharp::{autogen_csharp_reducer, autogen_csharp_tuple};
 use crate::module::{
     args_to_tuple_schema, autogen_module_struct_to_schema, autogen_module_struct_to_tuple,
     autogen_module_tuple_to_struct,
 };
-use proc_macro::TokenStream;
-use proc_macro2::Ident;
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote, ToTokens};
 use std::time::Duration;
 use syn::Fields::{Named, Unit, Unnamed};
-use syn::{parse_macro_input, AttributeArgs, FnArg, ItemFn, ItemStruct};
-
-// When we add support for more than 1 language uncomment this. For now its just cumbersome.
-// enum Lang {
-//     CS
-// }
+use syn::{parse_macro_input, AttributeArgs, FnArg, ItemFn, ItemStruct, Meta, NestedMeta};
 
 #[proc_macro_attribute]
-pub fn spacetimedb(macro_args: TokenStream, item: TokenStream) -> TokenStream {
+pub fn spacetimedb(macro_args: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let item = item.into();
     let attribute_args = parse_macro_input!(macro_args as AttributeArgs);
-    let attribute_str = attribute_args[0].to_token_stream().to_string();
-    let attribute_str = attribute_str.as_str();
+    let (attr_arg_0, other_args) = match attribute_args.split_first() {
+        Some(x) => x,
+        None => {
+            return syn::Error::new(Span::call_site(), "must provide arg to #[spacetimedb]")
+                .into_compile_error()
+                .into()
+        }
+    };
 
-    match attribute_str {
-        "table" => spacetimedb_table(attribute_args, item),
-        "reducer" => spacetimedb_reducer(attribute_args, item),
-        "connect" => spacetimedb_connect_disconnect(attribute_args, item, true),
-        "disconnect" => spacetimedb_connect_disconnect(attribute_args, item, false),
-        "migrate" => spacetimedb_migrate(attribute_args, item),
-        "tuple" => spacetimedb_tuple(attribute_args, item),
-        "index(btree)" => spacetimedb_index(attribute_args, item),
-        "index(hash)" => spacetimedb_index(attribute_args, item),
-        _ => proc_macro::TokenStream::from(quote! {
-            compile_error!("Please pass a valid attribute to the spacetimedb macro: reducer, table, connect, disconnect, migrate, tuple, index, ...");
+    let res = match attr_arg_0 {
+        NestedMeta::Lit(_) => None,
+        NestedMeta::Meta(meta) => meta.path().get_ident().and_then(|id| {
+            let res = match &*id.to_string() {
+                "table" => spacetimedb_table(&meta, other_args, item),
+                "reducer" => spacetimedb_reducer(&meta, other_args, item),
+                "connect" => spacetimedb_connect_disconnect(&meta, other_args, item, true),
+                "disconnect" => spacetimedb_connect_disconnect(&meta, other_args, item, false),
+                "migrate" => spacetimedb_migrate(&meta, other_args, item),
+                "tuple" => spacetimedb_tuple(&meta, other_args, item),
+                "index" => spacetimedb_index(&meta, other_args, item),
+                _ => return None,
+            };
+            Some(res)
         }),
-    }
+    };
+    let res = res.unwrap_or_else(|| {
+        Err(syn::Error::new_spanned(
+            attr_arg_0,
+            "Please pass a valid attribute to the spacetimedb macro: \
+                 reducer, table, connect, disconnect, migrate, tuple, index, ...",
+        ))
+    });
+    res.unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
-fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
-    if *(&args.len()) > 1 {
-        let arg = args[1].to_token_stream();
-        let arg_components = arg.into_iter().collect::<Vec<_>>();
-        let arg_name = &arg_components[0];
-        let repeat = match arg_name {
-            proc_macro2::TokenTree::Group(_) => false,
-            proc_macro2::TokenTree::Ident(ident) => {
-                if ident.to_string() != "repeat" {
-                    false
-                } else {
-                    true
-                }
+fn spacetimedb_reducer(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
+    assert_no_args_meta(meta)?;
+    if let Some((first, args)) = args.split_first() {
+        let value = match first {
+            NestedMeta::Meta(Meta::NameValue(p)) if p.path.is_ident("repeat") => &p.lit,
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    first,
+                    r#"unknown argument. did you mean `repeat = "..."`?"#,
+                ))
             }
-            proc_macro2::TokenTree::Punct(_) => false,
-            proc_macro2::TokenTree::Literal(_) => false,
         };
-        if !repeat {
-            let str = format!("Unexpected macro argument name: {}", arg_name.to_string());
-            return proc_macro::TokenStream::from(quote! {
-                compile_error!(#str);
-            });
-        }
-        let arg_value = &arg_components[2];
-        let res = parse_duration::parse(&arg_value.to_string());
-        if let Err(_) = res {
-            let str = format!("Can't parse repeat time: {}", arg_value.to_string());
-            return proc_macro::TokenStream::from(quote! {
-                compile_error!(#str);
-            });
-        }
-        let repeat_duration = res.unwrap();
+        let s = match value {
+            syn::Lit::Str(s) => s.value(),
+            syn::Lit::Int(i) => i.to_string(),
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    value,
+                    "repeat argument must be a string or an int with a suffix",
+                ))
+            }
+        };
+
+        let repeat_duration = parse_duration::parse(&s)
+            .map_err(|e| syn::Error::new_spanned(s, format!("Can't parse repeat time: {e}")))?;
 
         return spacetimedb_repeating_reducer(args, item, repeat_duration);
     }
 
-    let original_function = parse_macro_input!(item as ItemFn);
+    let original_function = syn::parse2::<ItemFn>(item)?;
     let func_name = &original_function.sig.ident;
     let reducer_func_name = format_ident!("__reducer__{}", &func_name);
     let descriptor_func_name = format_ident!("__describe_reducer__{}", &func_name);
@@ -96,9 +100,10 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
     for function_argument in function_arguments {
         match function_argument {
             FnArg::Receiver(_) => {
-                return proc_macro::TokenStream::from(quote! {
-                    compile_error!("Receiver types in reducer parameters not supported!");
-                });
+                return Err(syn::Error::new_spanned(
+                    function_argument,
+                    "Receiver types in reducer parameters not supported!",
+                ));
             }
             FnArg::Typed(typed) => {
                 let arg_type = &typed.ty;
@@ -113,9 +118,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
                             "Parameter 1 of reducer {} must be of type \'Hash\'.",
                             func_name.to_string()
                         );
-                        return proc_macro::TokenStream::from(quote! {
-                            compile_error!(#error_str);
-                        });
+                        return Err(syn::Error::new_spanned(arg_type, error_str));
                     }
                     arg_num += 1;
                     continue;
@@ -128,9 +131,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
                             "Parameter 2 of reducer {} must be of type \'u64\'.",
                             func_name.to_string()
                         );
-                        return proc_macro::TokenStream::from(quote! {
-                            compile_error!(#error_str);
-                        });
+                        return Err(syn::Error::new_spanned(arg_type, error_str));
                     }
                     arg_num += 1;
                     continue;
@@ -167,9 +168,9 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
     let generated_function = quote! {
         #[no_mangle]
         #[allow(non_snake_case)]
-        pub extern "C" fn #reducer_func_name(arg_ptr: usize, arg_size: usize) {
-            let arguments = spacetimedb::spacetimedb_lib::args::ReducerArguments::decode_mem(
-                unsafe { arg_ptr as *mut u8 }, arg_size).expect("Unable to decode module arguments");
+        pub extern "C" fn #reducer_func_name(arg_ptr: *const u8, arg_size: usize) {
+            let arguments = unsafe { spacetimedb::spacetimedb_lib::args::ReducerArguments::decode_mem(
+                arg_ptr, arg_size).expect("Unable to decode module arguments") };
 
             // Unwrap extra arguments, conditional on whether or not there are extra args.
             #unwrap_args
@@ -205,31 +206,39 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
     // autogen_csharp_reducer(original_function.clone());
 
-    proc_macro::TokenStream::from(quote! {
+    Ok(quote! {
         #generated_function
         #generated_describe_function
         #original_function
     })
 }
 
-fn spacetimedb_repeating_reducer(_args: AttributeArgs, item: TokenStream, repeat_duration: Duration) -> TokenStream {
-    let original_function = parse_macro_input!(item as ItemFn);
+fn spacetimedb_repeating_reducer(
+    args: &[NestedMeta],
+    item: TokenStream,
+    repeat_duration: Duration,
+) -> syn::Result<TokenStream> {
+    assert_no_args(args)?;
+
+    let original_function = syn::parse2::<ItemFn>(item)?;
     let func_name = &original_function.sig.ident;
     let reducer_func_name = format_ident!("__repeating_reducer__{}", &func_name);
 
     let mut arg_num: usize = 0;
     let function_arguments = &original_function.sig.inputs;
     if function_arguments.len() != 2 {
-        return proc_macro::TokenStream::from(quote! {
-            compile_error!("Expected 2 arguments (timestamp: u64, delta_time: u64) for repeating reducer.");
-        });
+        return Err(syn::Error::new_spanned(
+            function_arguments,
+            "Expected 2 arguments (timestamp: u64, delta_time: u64) for repeating reducer.",
+        ));
     }
     for function_argument in function_arguments {
         match function_argument {
             FnArg::Receiver(_) => {
-                return proc_macro::TokenStream::from(quote! {
-                    compile_error!("Receiver types in reducer parameters not supported!");
-                });
+                return Err(syn::Error::new_spanned(
+                    function_argument,
+                    "Receiver types in reducer parameters not supported!",
+                ));
             }
             FnArg::Typed(typed) => {
                 let arg_type = &typed.ty;
@@ -243,9 +252,7 @@ fn spacetimedb_repeating_reducer(_args: AttributeArgs, item: TokenStream, repeat
                             "Parameter 1 of reducer {} must be of type \'u64\'.",
                             func_name.to_string()
                         );
-                        return proc_macro::TokenStream::from(quote! {
-                            compile_error!(#error_str);
-                        });
+                        return Err(syn::Error::new_spanned(arg_type, error_str));
                     }
                     arg_num += 1;
                     continue;
@@ -258,9 +265,7 @@ fn spacetimedb_repeating_reducer(_args: AttributeArgs, item: TokenStream, repeat
                             "Parameter 2 of reducer {} must be of type \'u64\'.",
                             func_name.to_string()
                         );
-                        return proc_macro::TokenStream::from(quote! {
-                            compile_error!(#error_str);
-                        });
+                        return Err(syn::Error::new_spanned(arg_type, error_str));
                     }
                     arg_num += 1;
                     continue;
@@ -274,10 +279,10 @@ fn spacetimedb_repeating_reducer(_args: AttributeArgs, item: TokenStream, repeat
     let generated_function = quote! {
         #[no_mangle]
         #[allow(non_snake_case)]
-        pub extern "C" fn #reducer_func_name(arg_ptr: usize, arg_size: usize) -> u64 {
+        pub extern "C" fn #reducer_func_name(arg_ptr: *const u8, arg_size: usize) -> u64 {
             // Deserialize the arguments
-            let arguments = spacetimedb::spacetimedb_lib::args::RepeatingReducerArguments::decode_mem(
-                unsafe { arg_ptr as *mut u8 }, arg_size).expect("Unable to decode module arguments");
+            let arguments = unsafe { spacetimedb::spacetimedb_lib::args::RepeatingReducerArguments::decode_mem(
+                arg_ptr, arg_size).expect("Unable to decode module arguments") };
 
             // Invoke the function with the deserialized args
             #func_name(arguments.timestamp, arguments.delta_time);
@@ -286,7 +291,7 @@ fn spacetimedb_repeating_reducer(_args: AttributeArgs, item: TokenStream, repeat
         }
     };
 
-    proc_macro::TokenStream::from(quote! {
+    Ok(quote! {
         #generated_function
         #original_function
     })
@@ -300,18 +305,14 @@ struct Column {
     convert_to_typevalue: proc_macro2::TokenStream,
 }
 
-fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
-    if *(&args.len()) > 1 {
-        let str = format!("Unexpected macro argument: {}", args[1].to_token_stream().to_string());
-        return proc_macro::TokenStream::from(quote! {
-            compile_error!(#str);
-        });
-    }
+fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
+    assert_no_args_meta(meta)?;
+    assert_no_args(args)?;
 
-    let original_struct = parse_macro_input!(item as ItemStruct);
-    let original_struct_ident = &original_struct.clone().ident;
+    let mut original_struct = syn::parse2::<ItemStruct>(item)?;
+    let original_struct_ident = &original_struct.ident;
 
-    match original_struct.clone().fields {
+    match &original_struct.fields {
         Named(_) => {
             // let table_id_field: Field = Field {
             //     attrs: Vec::new(),
@@ -325,15 +326,11 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         }
         Unnamed(_) => {
             let str = format!("spacetimedb tables must have named fields.");
-            return proc_macro::TokenStream::from(quote! {
-                compile_error!(#str);
-            });
+            return Err(syn::Error::new_spanned(&original_struct.fields, str));
         }
         Unit => {
             let str = format!("spacetimedb tables must have named fields (unit struct forbidden).");
-            return proc_macro::TokenStream::from(quote! {
-                compile_error!(#str);
-            });
+            return Err(syn::Error::new_spanned(&original_struct.fields, str));
         }
     }
 
@@ -349,8 +346,10 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         }
     };
 
-    for (col_num, field) in original_struct.fields.iter().enumerate() {
-        let col_num: u8 = col_num.try_into().expect("too many columns");
+    for (col_num, field) in original_struct.fields.iter_mut().enumerate() {
+        let col_num: u8 = col_num
+            .try_into()
+            .map_err(|_| syn::Error::new_spanned(&field, "too many columns; the most a table can have is 256"))?;
         let col_name = &field.ident.clone().unwrap();
 
         // The TypeValue representation of this type
@@ -395,18 +394,30 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
 
         let mut is_unique = false;
         let mut is_filterable = false;
-        for attr in &field.attrs {
+        let mut remove_idxs = vec![];
+        for (i, attr) in field.attrs.iter().enumerate() {
             if attr.path.is_ident("unique") {
                 if is_filterable {
-                    panic!("can't be both") // TODO: better error
+                    return Err(syn::Error::new_spanned(
+                        field,
+                        "a field cannot be unique and filterable_by",
+                    ));
                 }
                 is_unique = true;
+                remove_idxs.push(i);
             } else if attr.path.is_ident("filterable_by") {
                 if is_unique {
-                    panic!("can't be both") // TODO: better error
+                    return Err(syn::Error::new_spanned(
+                        field,
+                        "a field cannot be unique and filterable_by",
+                    ));
                 }
                 is_filterable = true;
+                remove_idxs.push(i);
             }
+        }
+        for i in remove_idxs.into_iter().rev() {
+            field.attrs.remove(i);
         }
         let column = || Column {
             ty: field.ty.clone(),
@@ -514,55 +525,33 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         });
     }
 
-    let db_insert: proc_macro2::TokenStream;
-    match parse_generated_func(quote! {
+    let db_insert = quote! {
         #[allow(unused_variables)]
         pub fn insert(ins: #original_struct_ident) {
             spacetimedb::insert(Self::table_id(), spacetimedb::IntoTuple::into_tuple(ins));
         }
-    }) {
-        Ok(func) => db_insert = func,
-        Err(err) => {
-            return proc_macro::TokenStream::from(err);
-        }
-    }
+    };
 
-    let db_delete: proc_macro2::TokenStream;
-    match parse_generated_func(quote! {
-    #[allow(unused_variables)]
-    pub fn delete(f: fn (#original_struct_ident) -> bool) -> usize {
-        panic!("Delete using a function is not supported yet!");
-    }}) {
-        Ok(func) => db_delete = func,
-        Err(err) => {
-            return proc_macro::TokenStream::from(err);
+    let db_delete = quote! {
+        #[allow(unused_variables)]
+        pub fn delete(f: fn (#original_struct_ident) -> bool) -> usize {
+            panic!("Delete using a function is not supported yet!");
         }
-    }
+    };
 
-    let db_update: proc_macro2::TokenStream;
-    match parse_generated_func(quote! {
-    #[allow(unused_variables)]
-    pub fn update(value: #original_struct_ident) -> bool {
-        panic!("Update using a value is not supported yet!");
-    }}) {
-        Ok(func) => db_update = func,
-        Err(err) => {
-            return proc_macro::TokenStream::from(err);
+    let db_update = quote! {
+        #[allow(unused_variables)]
+        pub fn update(value: #original_struct_ident) -> bool {
+            panic!("Update using a value is not supported yet!");
         }
-    }
+    };
 
-    let db_iter_tuples: proc_macro2::TokenStream;
-    match parse_generated_func(quote! {
+    let db_iter_tuples = quote! {
         #[allow(unused_variables)]
         pub fn iter_tuples() -> spacetimedb::TableIter {
             spacetimedb::__iter__(Self::table_id()).expect("Failed to get iterator from table.")
         }
-    }) {
-        Ok(func) => db_iter_tuples = func,
-        Err(err) => {
-            return proc_macro::TokenStream::from(err);
-        }
-    }
+    };
 
     let db_iter_ident = format_ident!("{}{}", original_struct_ident, "Iter");
     let db_iter_struct = quote! {
@@ -583,39 +572,18 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         }
     };
 
-    let db_iter: proc_macro2::TokenStream;
-    match parse_generated_func(quote! {
+    let db_iter = quote! {
         #[allow(unused_variables)]
         pub fn iter() -> #db_iter_ident {
             #db_iter_ident {
                 iter: Self::iter_tuples()
             }
         }
-    }) {
-        Ok(func) => db_iter = func,
-        Err(err) => {
-            return proc_macro::TokenStream::from(err);
-        }
-    }
+    };
 
-    let from_value_impl = match autogen_module_tuple_to_struct(&original_struct) {
-        Ok(func) => func,
-        Err(err) => {
-            return TokenStream::from(err);
-        }
-    };
-    let into_value_impl = match autogen_module_struct_to_tuple(&original_struct) {
-        Ok(func) => func,
-        Err(err) => {
-            return TokenStream::from(err);
-        }
-    };
-    let schema_impl = match autogen_module_struct_to_schema(&original_struct) {
-        Ok(func) => func,
-        Err(err) => {
-            return TokenStream::from(err);
-        }
-    };
+    let from_value_impl = autogen_module_tuple_to_struct(&original_struct)?;
+    let into_value_impl = autogen_module_struct_to_tuple(&original_struct)?;
+    let schema_impl = autogen_module_struct_to_schema(&original_struct)?;
     let table_name = original_struct_ident.to_string();
     let tabletype_impl = quote! {
         impl spacetimedb::TableType for #original_struct_ident {
@@ -661,7 +629,6 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #describe_table_func
         // #csharp_output
 
-        #[derive(spacetimedb::Unique, spacetimedb::Index)]
         #[derive(serde::Serialize, serde::Deserialize)]
         #original_struct
 
@@ -691,34 +658,40 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         println!("{}", emission.to_string());
     }
 
-    proc_macro::TokenStream::from(emission)
+    Ok(emission)
 }
 
-fn spacetimedb_index(args: AttributeArgs, item: TokenStream) -> TokenStream {
+fn spacetimedb_index(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
     let mut index_name: String = "default_index".to_string();
     let mut index_fields = Vec::<u32>::new();
     let mut all_fields = Vec::<Ident>::new();
     let index_type: u8; // default index is a btree
 
-    match args[0].to_token_stream().to_string().as_str() {
-        "index(btree)" => {
-            index_type = 0;
-        }
-        "index(hash)" => {
-            index_type = 1;
-        }
-        _ => {
-            let invalid_index = format!(
-                "Invalid index type: {}\nValid options are: index(btree), index(hash)",
-                args[0].to_token_stream().to_string()
-            );
-            return proc_macro::TokenStream::from(quote! {
-                compile_error!(#invalid_index);
-            });
-        }
+    let generic_err = "index() must have index type passed; try index(btree) or index(hash)";
+    match meta {
+        Meta::List(l) => match l.nested.len() {
+            0 => return Err(syn::Error::new_spanned(meta, generic_err)),
+            1 => {
+                let err = || syn::Error::new_spanned(&l.nested[0], "index() only accepts `btree` or `hash`");
+                match &l.nested[0] {
+                    NestedMeta::Meta(Meta::Path(p)) => {
+                        if p.is_ident("btree") {
+                            index_type = 0;
+                        } else if p.is_ident("hash") {
+                            index_type = 1;
+                        } else {
+                            return Err(err());
+                        }
+                    }
+                    _ => return Err(err()),
+                }
+            }
+            _ => return Err(syn::Error::new_spanned(l, "index() only takes one argument")),
+        },
+        _ => return Err(syn::Error::new_spanned(meta, generic_err)),
     }
 
-    let original_struct = parse_macro_input!(item as ItemStruct);
+    let original_struct = syn::parse2::<ItemStruct>(item)?;
     for field in original_struct.clone().fields {
         all_fields.push(field.ident.unwrap());
     }
@@ -743,9 +716,7 @@ fn spacetimedb_index(args: AttributeArgs, item: TokenStream) -> TokenStream {
                 }
                 None => {
                     let invalid_index = format!("Invalid field for index: {}", arg_str);
-                    return proc_macro::TokenStream::from(quote! {
-                        compile_error!(#invalid_index);
-                    });
+                    return Err(syn::Error::new_spanned(arg, invalid_index));
                 }
             }
         }
@@ -769,48 +740,30 @@ fn spacetimedb_index(args: AttributeArgs, item: TokenStream) -> TokenStream {
         println!("{}", output.to_string());
     }
 
-    proc_macro::TokenStream::from(output)
+    Ok(output)
 }
 
-fn spacetimedb_tuple(_: AttributeArgs, item: TokenStream) -> TokenStream {
-    let original_struct = parse_macro_input!(item as ItemStruct);
+fn spacetimedb_tuple(meta: &Meta, _: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
+    assert_no_args_meta(meta)?;
+    let original_struct = syn::parse2::<ItemStruct>(item)?;
     let original_struct_ident = original_struct.clone().ident;
 
     match original_struct.clone().fields {
         Named(_) => {}
         Unnamed(_) => {
             let str = format!("spacetimedb tables and types must have named fields.");
-            return TokenStream::from(quote! {
-                compile_error!(#str);
-            });
+            return Err(syn::Error::new_spanned(&original_struct.fields, str));
         }
         Unit => {
             let str = format!("Unit structure not supported.");
-            return TokenStream::from(quote! {
-                compile_error!(#str);
-            });
+            return Err(syn::Error::new_spanned(&original_struct.fields, str));
         }
     }
 
     // let csharp_output = autogen_csharp_tuple(original_struct.clone(), None);
-    let schema_impl = match autogen_module_struct_to_schema(&original_struct) {
-        Ok(func) => func,
-        Err(err) => {
-            return TokenStream::from(err);
-        }
-    };
-    let from_value_impl = match autogen_module_tuple_to_struct(&original_struct) {
-        Ok(func) => func,
-        Err(err) => {
-            return TokenStream::from(err);
-        }
-    };
-    let into_value_impl = match autogen_module_struct_to_tuple(&original_struct) {
-        Ok(func) => func,
-        Err(err) => {
-            return TokenStream::from(err);
-        }
-    };
+    let schema_impl = autogen_module_struct_to_schema(&original_struct)?;
+    let from_value_impl = autogen_module_tuple_to_struct(&original_struct)?;
+    let into_value_impl = autogen_module_struct_to_tuple(&original_struct)?;
 
     let create_tuple_func_name = format_ident!("__create_type__{}", original_struct_ident);
     let create_tuple_func = quote! {
@@ -844,43 +797,38 @@ fn spacetimedb_tuple(_: AttributeArgs, item: TokenStream) -> TokenStream {
         println!("{}", emission.to_string());
     }
 
-    return TokenStream::from(emission);
+    Ok(emission)
 }
 
-fn spacetimedb_migrate(_: AttributeArgs, item: TokenStream) -> TokenStream {
-    let original_func = parse_macro_input!(item as ItemFn);
+fn spacetimedb_migrate(meta: &Meta, _: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
+    assert_no_args_meta(meta)?;
+    let original_func = syn::parse2::<ItemFn>(item)?;
     let func_name = &original_func.sig.ident;
 
-    let emission = match parse_generated_func(quote! {
-    #[allow(non_snake_case)]
-    pub extern "C" fn __migrate__(arg_ptr: u32, arg_size: u32) {
-        #func_name();
-    }}) {
-        Ok(func) => {
-            quote! {
-                #func
-                #original_func
-            }
+    let emission = quote! {
+        #[allow(non_snake_case)]
+        pub extern "C" fn __migrate__(arg_ptr: u32, arg_size: u32) {
+            #func_name();
         }
-        Err(err) => err,
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
         println!("{}", emission.to_string());
     }
 
-    proc_macro::TokenStream::from(emission)
+    Ok(emission)
 }
 
-fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connect: bool) -> TokenStream {
-    if *(&args.len()) > 1 {
-        let str = format!("Unexpected macro argument: {}", args[1].to_token_stream().to_string());
-        return proc_macro::TokenStream::from(quote! {
-            compile_error!(#str);
-        });
-    }
+fn spacetimedb_connect_disconnect(
+    meta: &Meta,
+    args: &[NestedMeta],
+    item: TokenStream,
+    connect: bool,
+) -> syn::Result<TokenStream> {
+    assert_no_args_meta(meta)?;
+    assert_no_args(args)?;
 
-    let original_function = parse_macro_input!(item as ItemFn);
+    let original_function = syn::parse2::<ItemFn>(item)?;
     let func_name = &original_function.sig.ident;
     let connect_disconnect_func_name = if connect {
         "__identity_connected__"
@@ -892,16 +840,18 @@ fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connec
     let mut arg_num: usize = 0;
     for function_argument in original_function.sig.inputs.iter() {
         if arg_num > 1 {
-            return proc_macro::TokenStream::from(quote! {
-                compile_error!("Client connect/disconnect can only have one argument (identity: Hash)");
-            });
+            return Err(syn::Error::new_spanned(
+                function_argument,
+                "Client connect/disconnect can only have one argument (identity: Hash)",
+            ));
         }
 
         match function_argument {
             FnArg::Receiver(_) => {
-                return proc_macro::TokenStream::from(quote! {
-                    compile_error!("Receiver types in reducer parameters not supported!");
-                });
+                return Err(syn::Error::new_spanned(
+                    function_argument,
+                    "Receiver types in reducer parameters not supported!",
+                ))
             }
             FnArg::Typed(typed) => {
                 let arg_type = &typed.ty;
@@ -915,9 +865,7 @@ fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connec
                             "Parameter 1 of connect/disconnect {} must be of type \'Hash\'.",
                             func_name.to_string()
                         );
-                        return proc_macro::TokenStream::from(quote! {
-                            compile_error!(#error_str);
-                        });
+                        return Err(syn::Error::new_spanned(arg_type, error_str));
                     }
                     arg_num += 1;
                     continue;
@@ -930,9 +878,7 @@ fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connec
                             "Parameter 1 of connect/disconnect {} must be of type \'Hash\'.",
                             func_name.to_string()
                         );
-                        return proc_macro::TokenStream::from(quote! {
-                            compile_error!(#error_str);
-                        });
+                        return Err(syn::Error::new_spanned(arg_type, error_str));
                     }
                     arg_num += 1;
                     continue;
@@ -943,40 +889,25 @@ fn spacetimedb_connect_disconnect(args: AttributeArgs, item: TokenStream, connec
         arg_num = arg_num + 1;
     }
 
-    let emission = match parse_generated_func(quote! {
+    let emission = quote! {
         #[no_mangle]
         #[allow(non_snake_case)]
-        pub extern "C" fn #connect_disconnect_ident(arg_ptr: usize, arg_size: usize) {
-            let arguments = spacetimedb::spacetimedb_lib::args::ConnectDisconnectArguments::decode_mem(
-                unsafe { arg_ptr as *mut u8 }, arg_size).expect("Unable to decode module arguments");
+        pub extern "C" fn #connect_disconnect_ident(arg_ptr: *const u8, arg_size: usize) {
+            let arguments = unsafe { spacetimedb::spacetimedb_lib::args::ConnectDisconnectArguments::decode_mem(
+                arg_ptr, arg_size).expect("Unable to decode module arguments") };
 
             // Invoke the function with the deserialized args
             #func_name(arguments.identity, arguments.timestamp,);
         }
-    }) {
-        Ok(func) => quote! {
-            #func
-            #original_function
-        },
-        Err(err) => err,
+
+        #original_function
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
         println!("{}", emission.to_string());
     }
 
-    proc_macro::TokenStream::from(emission)
-}
-
-// This derive is actually a no-op, we need the helper attribute for spacetimedb
-#[proc_macro_derive(Unique, attributes(unique))]
-pub fn derive_unique(_: TokenStream) -> TokenStream {
-    TokenStream::new()
-}
-
-#[proc_macro_derive(Index, attributes(index))]
-pub fn derive_index(_item: TokenStream) -> TokenStream {
-    TokenStream::new()
+    Ok(emission)
 }
 
 pub(crate) fn rust_to_spacetimedb_ident(input_type: &str) -> Option<Ident> {
@@ -1039,17 +970,25 @@ fn tuple_field_comparison_block(
     }
 }
 
-fn parse_generated_func(
-    func_stream: proc_macro2::TokenStream,
-) -> Result<proc_macro2::TokenStream, proc_macro2::TokenStream> {
-    if !syn::parse2::<ItemFn>(func_stream.clone()).is_ok() {
-        println!(
-            "This function has an invalid generation:\n{}",
-            func_stream.clone().to_string()
-        );
-        return Err(quote! {
-            compile_error!("Invalid function produced by spacetimedb macro.");
-        });
+fn assert_no_args_meta(meta: &Meta) -> syn::Result<()> {
+    match meta {
+        Meta::Path(_) => Ok(()),
+        _ => Err(syn::Error::new_spanned(
+            meta,
+            format!(
+                "#[spacetimedb({})] doesn't take any args",
+                meta.path().get_ident().unwrap()
+            ),
+        )),
     }
-    Ok(func_stream)
+}
+fn assert_no_args(args: &[NestedMeta]) -> syn::Result<()> {
+    if args.is_empty() {
+        Ok(())
+    } else {
+        Err(syn::Error::new_spanned(
+            quote!(#(#args)*),
+            "unexpected macro argument(s)",
+        ))
+    }
 }

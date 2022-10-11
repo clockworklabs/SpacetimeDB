@@ -41,15 +41,14 @@ impl ReducerArguments {
         })
     }
 
-    // TODO: should be unsafe
-    pub fn decode_mem(arg_ptr: *mut u8, arg_size: usize) -> Result<Self, DecodeError> {
+    pub unsafe fn decode_mem(arg_ptr: *const u8, arg_size: usize) -> Result<Self, DecodeError> {
         if arg_size < std::mem::size_of::<u64>() + HASH_SIZE + std::mem::size_of::<usize>() {
             return Err(BufferLength);
         }
 
-        let mut bytes = unsafe { std::slice::from_raw_parts(arg_ptr, arg_size) };
+        let bytes = std::slice::from_raw_parts(arg_ptr, arg_size);
 
-        Self::decode(&mut bytes)
+        Self::decode(&mut &bytes[..])
     }
 }
 
@@ -84,15 +83,14 @@ impl RepeatingReducerArguments {
         Ok(Self { timestamp, delta_time })
     }
 
-    // TODO: should be unsafe
-    pub fn decode_mem(arg_ptr: *mut u8, arg_size: usize) -> Result<Self, DecodeError> {
+    pub unsafe fn decode_mem(arg_ptr: *const u8, arg_size: usize) -> Result<Self, DecodeError> {
         if arg_size < std::mem::size_of::<u64>() + std::mem::size_of::<u64>() {
             return Err(BufferLength);
         }
 
-        let mut bytes = unsafe { std::slice::from_raw_parts(arg_ptr, arg_size) };
+        let bytes = std::slice::from_raw_parts(arg_ptr, arg_size);
 
-        Self::decode(&mut bytes)
+        Self::decode(&mut &bytes[..])
     }
 }
 
@@ -128,15 +126,14 @@ impl ConnectDisconnectArguments {
         Ok(Self { identity, timestamp })
     }
 
-    // TODO: should be unsafe
-    pub fn decode_mem(arg_ptr: *mut u8, arg_size: usize) -> Result<Self, DecodeError> {
+    pub unsafe fn decode_mem(arg_ptr: *const u8, arg_size: usize) -> Result<Self, DecodeError> {
         if arg_size < std::mem::size_of::<u64>() + HASH_SIZE {
             return Err(BufferLength);
         }
 
-        let mut bytes = unsafe { std::slice::from_raw_parts(arg_ptr, arg_size) };
+        let bytes = std::slice::from_raw_parts(arg_ptr, arg_size);
 
-        Self::decode(&mut bytes)
+        Self::decode(&mut &bytes[..])
     }
 }
 
@@ -226,9 +223,9 @@ mod tests {
     #[test]
     fn test_encode_decode_memory_region_reducer_args() {
         for _i in 0..NUM_RAND_ITERATIONS {
-            let (ra, mut output_vec) = make_random_args();
-            let (ptr, length) = (output_vec.as_mut_ptr(), output_vec.len());
-            let ra2 = ReducerArguments::decode_mem(ptr, length).unwrap();
+            let (ra, output_vec) = make_random_args();
+            let (ptr, length) = (output_vec.as_ptr(), output_vec.len());
+            let ra2 = unsafe { ReducerArguments::decode_mem(ptr, length).unwrap() };
             assert_eq!(ra.timestamp, ra2.timestamp);
             assert_eq!(ra.identity.data, ra2.identity.data);
             assert!(!ra2.argument_bytes.is_empty());
@@ -250,9 +247,9 @@ mod tests {
     #[test]
     fn test_encode_decode_memory_region_repeating_reducer_args() {
         for _i in 0..NUM_RAND_ITERATIONS {
-            let (ra, mut output_vec) = make_random_repeating_args();
-            let (ptr, length) = (output_vec.as_mut_ptr(), output_vec.len());
-            let ra2 = RepeatingReducerArguments::decode_mem(ptr, length).unwrap();
+            let (ra, output_vec) = make_random_repeating_args();
+            let (ptr, length) = (output_vec.as_ptr(), output_vec.len());
+            let ra2 = unsafe { RepeatingReducerArguments::decode_mem(ptr, length).unwrap() };
             assert_eq!(ra.timestamp, ra2.timestamp);
             assert_eq!(ra.delta_time, ra2.delta_time);
         }

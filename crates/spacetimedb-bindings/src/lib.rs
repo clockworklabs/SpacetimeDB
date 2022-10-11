@@ -14,10 +14,6 @@ use std::panic;
 pub use spacetimedb_bindgen;
 #[cfg(feature = "macro")]
 pub use spacetimedb_bindgen::spacetimedb;
-#[cfg(feature = "macro")]
-pub use spacetimedb_bindgen::Index;
-#[cfg(feature = "macro")]
-pub use spacetimedb_bindgen::Unique;
 
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::hash;

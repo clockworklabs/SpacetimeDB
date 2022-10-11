@@ -51,14 +51,15 @@ pub(crate) fn args_to_tuple_schema<'a>(args: impl Iterator<Item = &'a FnArg>) ->
 /// pub fn get_struct_schema() -> spacetimedb::spacetimedb_lib::TypeDef {
 ///   ...
 /// }
-pub(crate) fn autogen_module_struct_to_schema(
-    original_struct: &ItemStruct,
-) -> Result<proc_macro2::TokenStream, proc_macro2::TokenStream> {
+pub(crate) fn autogen_module_struct_to_schema(original_struct: &ItemStruct) -> syn::Result<TokenStream> {
     let fields = original_struct.fields.iter().enumerate().map(move |(col_num, field)| {
         let field_name = field.ident.as_ref().map(ToString::to_string);
-        let col_num: u8 = col_num.try_into().expect("too many columns");
-        type_to_tuple_schema(field_name, col_num, &field.ty)
+        let col_num: u8 = col_num
+            .try_into()
+            .map_err(|_| syn::Error::new_spanned(field, "too many columns; the most a table can have is 256"))?;
+        Ok(type_to_tuple_schema(field_name, col_num, &field.ty))
     });
+    let fields = fields.collect::<syn::Result<Vec<_>>>()?;
 
     let name = &original_struct.ident;
     let tuple_name = name.to_string();
@@ -85,9 +86,7 @@ pub(crate) fn autogen_module_struct_to_schema(
 /// }
 ///
 /// If the TupleValue's structure does not match the expected fields of the struct, we panic.
-pub(crate) fn autogen_module_tuple_to_struct(
-    original_struct: &ItemStruct,
-) -> Result<proc_macro2::TokenStream, proc_macro2::TokenStream> {
+pub(crate) fn autogen_module_tuple_to_struct(original_struct: &ItemStruct) -> syn::Result<TokenStream> {
     let n_fields = original_struct.fields.len();
     let mut fields = Vec::with_capacity(n_fields);
     for (i, field) in original_struct.fields.iter().enumerate() {
@@ -119,9 +118,7 @@ pub(crate) fn autogen_module_tuple_to_struct(
 /// }
 ///
 /// If the TupleValue's structure does not match the expected fields of the struct, we panic.
-pub(crate) fn autogen_module_struct_to_tuple(
-    original_struct: &ItemStruct,
-) -> Result<proc_macro2::TokenStream, proc_macro2::TokenStream> {
+pub(crate) fn autogen_module_struct_to_tuple(original_struct: &ItemStruct) -> syn::Result<TokenStream> {
     let fieldnames = original_struct.fields.iter().map(|field| field.ident.as_ref().unwrap());
     let name = &original_struct.ident;
     let (impl_generics, ty_generics, where_clause) = original_struct.generics.split_for_impl();
