@@ -64,11 +64,11 @@ if [ -n "$exe" ]; then
     for line in $(git status -s); do
         # if added or modified
         if [[ "$line" == 'A'* || "$line" == 'M'* ]]; then
-	    if [[ "${line:3}" == "crates/spacetimedb/src/messages.rs" ]]; then
+	    if [[ "${line:3}" == "crates/spacetimedb-core/src/messages.rs" ]]; then
 	       echo "Skipping format for messages.rs..."
 	       continue
 	    fi
-	    if [[ "${line:3}" == crates/spacetimedb/src/protobuf/*.rs ]]; then
+	    if [[ "${line:3}" == crates/spacetimedb-core/src/protobuf/*.rs ]]; then
 	       echo "Skipping format for protobuf output..."
 	       continue
 	    fi
