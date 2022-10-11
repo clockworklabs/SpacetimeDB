@@ -25,7 +25,7 @@ pub struct HostController {
     modules: Mutex<HashMap<u64, ModuleHost>>,
 }
 
-#[derive(PartialEq, Eq, Hash, Clone, Serialize, Debug)]
+#[derive(PartialEq, Eq, Hash, Copy, Clone, Serialize, Debug)]
 pub enum DescribedEntityType {
     Table,
     Reducer,
