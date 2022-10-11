@@ -1,12 +1,12 @@
 use crate::{
     buffer::{BufReader, BufWriter, DecodeError},
     type_def::{EnumDef, TupleDef, TypeDef},
-    DataKey,
+    DataKey, Hash,
 };
 use enum_as_inner::EnumAsInner;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::{fmt::Display, hash::Hash};
+use std::{fmt, hash};
 
 /// Totally ordered [f32]
 pub type F32 = decorum::Total<f32>;
@@ -24,8 +24,8 @@ pub struct TupleValue {
     pub elements: Box<[TypeValue]>,
 }
 
-impl Display for TupleValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for TupleValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{{")?;
         for (i, e) in self.elements.iter().enumerate() {
             if i < self.elements.len() - 1 {
@@ -39,7 +39,7 @@ impl Display for TupleValue {
     }
 }
 
-impl Hash for TupleValue {
+impl hash::Hash for TupleValue {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         // TODO(cloutiertyler): Oh my heavens, copies galore.
         self.to_data_key().hash(state);
@@ -121,6 +121,7 @@ enum TypeWideValue<'a> {
     F64(F64),
     String(&'a str),
     Bytes(&'a [u8]),
+    Hash(&'a Hash),
     Enum(&'a EnumValue),
     Vec(&'a [TypeValue]),
 }
@@ -170,6 +171,7 @@ pub enum TypeValue {
     F64(F64),
     String(String),
     Bytes(Vec<u8>),
+    Hash(Box<Hash>),
     Enum(EnumValue),
     Tuple(TupleValue),
 
@@ -210,6 +212,7 @@ impl TypeValue {
 
             TypeValue::String(x) => TypeWideValue::String(x),
             TypeValue::Bytes(x) => TypeWideValue::Bytes(x),
+            TypeValue::Hash(x) => TypeWideValue::Hash(x),
             TypeValue::Enum(x) => TypeWideValue::Enum(x),
             TypeValue::Tuple(x) => TypeWideValue::Vec(&x.elements),
             TypeValue::Vec(x) => TypeWideValue::Vec(&x),
@@ -285,6 +288,9 @@ impl TypeValue {
                 let slice = bytes.get_slice(len.into())?;
                 TypeValue::Bytes(slice.to_owned())
             }
+            TypeDef::Hash => TypeValue::Hash(Box::new(Hash {
+                data: bytes.get_array()?,
+            })),
             TypeDef::Unit => TypeValue::Unit,
         };
 
@@ -360,6 +366,7 @@ impl TypeValue {
                 bytes.put_u16(len);
                 bytes.put_slice(v)
             }
+            TypeValue::Hash(v) => bytes.put_slice(&v.data),
             TypeValue::Unit => {
                 // Do nothing.
             }
@@ -379,8 +386,8 @@ impl Ord for TypeValue {
     }
 }
 
-impl Display for TypeValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for TypeValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TypeValue::Tuple(v) => write!(f, "{}", v),
             TypeValue::Enum(_) => write!(f, "<enum>"),
@@ -411,6 +418,7 @@ impl Display for TypeValue {
             TypeValue::F64(n) => write!(f, "{}", n),
             TypeValue::String(n) => write!(f, "{}", n),
             TypeValue::Bytes(bytes) => write!(f, "{}", hex::encode(bytes)),
+            TypeValue::Hash(h) => write!(f, "{}", hex::encode(&h.data)),
             TypeValue::Unit => write!(f, "<unit>"),
         }
     }

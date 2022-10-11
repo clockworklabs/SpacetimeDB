@@ -3,7 +3,6 @@ extern crate proc_macro;
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::punctuated::Iter;
 use syn::{FnArg, ItemStruct};
 
 fn type_to_tuple_schema(arg_name: Option<String>, col_num: u8, ty: &syn::Type) -> TokenStream {
@@ -24,7 +23,7 @@ fn type_to_tuple_schema(arg_name: Option<String>, col_num: u8, ty: &syn::Type) -
     }
 }
 
-pub(crate) fn args_to_tuple_schema(args: Iter<'_, FnArg>) -> Vec<TokenStream> {
+pub(crate) fn args_to_tuple_schema<'a>(args: impl Iterator<Item = &'a FnArg>) -> Vec<TokenStream> {
     let mut elements = Vec::new();
     let mut col_num: u8 = 0;
     for arg in args {

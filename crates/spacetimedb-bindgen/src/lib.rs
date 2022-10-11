@@ -91,7 +91,7 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
     let mut json_arg_num: usize = 0;
     let function_arguments = &original_function.sig.inputs;
 
-    let function_call_arg_types = args_to_tuple_schema(function_arguments.into_iter());
+    let function_call_arg_types = args_to_tuple_schema(function_arguments.iter().skip(2));
 
     for function_argument in function_arguments {
         match function_argument {

@@ -28,6 +28,7 @@ fn primitive_to_csharp(prim: PrimitiveType) -> &'static str {
         PrimitiveType::F32 => "float",
         PrimitiveType::F64 => "double",
         PrimitiveType::Bytes => "byte[]",
+        PrimitiveType::Hash => "SpacetimeDB.Hash",
         PrimitiveType::Unit => todo!(), // does this exist? System.Void can't be used from C# :(
     }
 }
@@ -40,11 +41,9 @@ fn ty_fmt(ty: &TypeDef) -> impl fmt::Display + '_ {
     })
 }
 
+// can maybe do something fancy with this in the future
 fn csharp_tuplename(tup: &TupleDef) -> &str {
-    match tup.name.as_deref().expect("tuples should have names") {
-        "Hash" => "SpacetimeDB.Hash",
-        other => other,
-    }
+    tup.name.as_deref().expect("tuples should have names")
 }
 
 fn fmt_fn(f: impl Fn(&mut fmt::Formatter) -> fmt::Result) -> impl fmt::Display {
@@ -319,31 +318,20 @@ fn autogen_csharp_access_funcs_for_struct(
         let field_type = &field.element_type;
         let csharp_field_name_pascal = field_name.to_case(Case::Pascal);
 
-        enum AccessorType {
-            Primitive(PrimitiveType),
-            Hash,
-        }
         let field_type = match field_type {
-            TypeDef::Tuple(tup) => {
-                let name = csharp_tuplename(tup);
-                if name != "SpacetimeDB.Hash" {
-                    // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
-                    continue;
-                }
-                AccessorType::Hash
+            TypeDef::Tuple(_) => {
+                // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
+                continue;
             }
             TypeDef::Enum(_) => unimplemented!(),
-            TypeDef::Primitive(prim) => AccessorType::Primitive(*prim),
+            TypeDef::Primitive(prim) => *prim,
             TypeDef::Vec { .. } => {
                 // TODO: We don't allow filtering based on a vec type, but we might want other functionality here in the future.
                 // TODO: It would be nice to be able to say, give me all entries where this vec contains this value, which we can do.
                 continue;
             }
         };
-        let csharp_field_type = match field_type {
-            AccessorType::Primitive(prim) => primitive_to_csharp(prim),
-            AccessorType::Hash => "SpacetimeDB.Hash",
-        };
+        let csharp_field_type = primitive_to_csharp(field_type);
 
         let is_unique = unique_columns.binary_search(&field.tag).is_ok();
         let filter_return_type = fmt_fn(|f| {
@@ -364,7 +352,6 @@ fn autogen_csharp_access_funcs_for_struct(
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
-            writeln!(output, "var typeDef = GetTypeDef();").unwrap();
             writeln!(
                 output,
                 "foreach(var entry in StdbNetworkManager.clientDB.GetEntries(\"{}\"))",
@@ -374,40 +361,29 @@ fn autogen_csharp_access_funcs_for_struct(
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
-                write!(
+                writeln!(
                     output,
-                    "varln tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];"
+                    "var tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];"
                 )
                 .unwrap();
                 writeln!(output, "if (tupleArr == null) continue;").unwrap();
 
-                match field_type {
-                    AccessorType::Primitive(prim) => {
-                        writeln!(
-                            output,
-                            "var compareValue = ({})tupleArr[{}].GetValue(TypeDef.Def.{:?});",
-                            csharp_field_type, field.tag, prim
-                        )
-                        .unwrap();
-                        writeln!(output, "if (compareValue == value)").unwrap();
-                    }
-                    AccessorType::Hash => {
-                        writeln!(output, "var compareValue = SpacetimeDB.Hash.From(tupleArr[{}].GetValue(TypeDef.Def.Bytes) as byte[]);", field.tag).unwrap();
-                        writeln!(output, "if (compareValue.Equals(value))").unwrap();
-                    }
-                }
+                writeln!(
+                    output,
+                    "var compareValue = ({})tupleArr[{}].GetValue(TypeDef.Def.{:?});",
+                    csharp_field_type, field.tag, field_type
+                )
+                .unwrap();
+                writeln!(output, "if (compareValue == value)").unwrap();
 
-                writeln!(output, "{{").unwrap();
                 {
-                    writeln!(output, "var tuple = TypeValue.GetTuple(typeDef, tupleArr);").unwrap();
+                    indent_scope!(output);
                     if is_unique {
-                        writeln!(output, "return From(tuple);").unwrap();
+                        writeln!(output, "return ({struct_name_pascal_case})entry;").unwrap();
                     } else {
-                        writeln!(output, "yield return From(tuple);").unwrap();
+                        writeln!(output, "yield return ({struct_name_pascal_case})entry;").unwrap();
                     }
                 }
-                // End if
-                writeln!(output, "}}").unwrap();
             }
             // End foreach
             writeln!(output, "}}").unwrap();

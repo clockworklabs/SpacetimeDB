@@ -144,18 +144,20 @@ impl<T: IntoValue> IntoValue for Vec<T> {
 
 impl SchemaType for Hash {
     fn get_schema() -> TypeDef {
-        TypeDef::Bytes
+        TypeDef::Hash
     }
 }
 impl FromValue for Hash {
     fn from_value(v: TypeValue) -> Option<Self> {
-        let bytes = Vec::<u8>::from_value(v)?;
-        Some(Hash::from_slice(&bytes))
+        match v {
+            TypeValue::Hash(v) => Some(*v),
+            _ => None,
+        }
     }
 }
 impl IntoValue for Hash {
     fn into_value(self) -> TypeValue {
-        self.to_vec().into_value()
+        TypeValue::Hash(Box::new(self))
     }
 }
 impl FilterableValue for Hash {

@@ -3,7 +3,7 @@ use sha3::{Digest, Keccak256};
 
 pub const HASH_SIZE: usize = 32;
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Hash, Serialize, Deserialize)]
+#[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Debug, Hash, Serialize, Deserialize)]
 pub struct Hash {
     pub data: [u8; HASH_SIZE],
 }

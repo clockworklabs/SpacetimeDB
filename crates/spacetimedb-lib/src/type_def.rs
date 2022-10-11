@@ -150,6 +150,7 @@ pub enum PrimitiveType {
     F64,
     String,
     Bytes,
+    Hash,
 }
 #[allow(non_upper_case_globals)]
 impl TypeDef {
@@ -169,6 +170,7 @@ impl TypeDef {
     pub const F64: Self = TypeDef::Primitive(PrimitiveType::F64);
     pub const String: Self = TypeDef::Primitive(PrimitiveType::String);
     pub const Bytes: Self = TypeDef::Primitive(PrimitiveType::Bytes);
+    pub const Hash: Self = TypeDef::Primitive(PrimitiveType::Hash);
 }
 
 impl TypeDef {
@@ -196,7 +198,8 @@ impl TypeDef {
             0x0F => TypeDef::F64,
             0x10 => TypeDef::String,
             0x11 => TypeDef::Bytes,
-            0x12 => TypeDef::Bytes,
+            0x12 => TypeDef::Unit,
+            0x13 => TypeDef::Hash,
             _ => return Err(DecodeError::InvalidTag),
         };
 
@@ -234,6 +237,7 @@ impl TypeDef {
                 PrimitiveType::String => 0x10,
                 PrimitiveType::Bytes => 0x11,
                 PrimitiveType::Unit => 0x12,
+                PrimitiveType::Hash => 0x13,
             }),
         }
     }
