@@ -2,6 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
+use convert_case::{Case, Casing};
+use spacetimedb_lib::type_def::{ReducerDef, TableDef};
 use spacetimedb_lib::TupleDef;
 use wasmtime::{ExternType, Trap, TypedFunc};
 
@@ -39,13 +41,18 @@ fn main() -> anyhow::Result<()> {
             let descriptions = extract_descriptions(&wasm_file)?;
             for (name, desc) in descriptions {
                 let (file, code) = match desc {
-                    Description::Table(tup) => {
-                        let code = csharp::autogen_csharp_tuple(&name, &tup, Some(&name), &[]);
+                    Description::Table(table) => {
+                        let code = csharp::autogen_csharp_table(&name, &table);
                         (out_dir.join(name + ".cs"), code)
                     }
                     Description::Tuple(tup) => {
-                        let code = csharp::autogen_csharp_tuple(&name, &tup, None, &[]);
+                        let code = csharp::autogen_csharp_tuple(&name, &tup);
                         (out_dir.join(name + ".cs"), code)
+                    }
+                    Description::Reducer(reducer) => {
+                        let code = csharp::autogen_csharp_reducer(&reducer);
+                        let pascalcase = name.to_case(Case::Pascal);
+                        (out_dir.join(pascalcase + "Reducer.cs"), code)
                     }
                 };
                 fs::write(file, code)?;
@@ -56,8 +63,9 @@ fn main() -> anyhow::Result<()> {
 }
 
 enum Description {
-    Table(TupleDef),
+    Table(TableDef),
     Tuple(TupleDef),
+    Reducer(ReducerDef),
 }
 
 fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<Vec<(String, Description)>> {
@@ -81,6 +89,7 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<Vec<(String, Descrip
     enum DescrType {
         Table,
         Tuple,
+        Reducer,
     }
     let describes = instance
         .exports(&mut store)
@@ -88,6 +97,10 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<Vec<(String, Descrip
             let sym = exp.name();
             None.or_else(|| sym.strip_prefix("__describe_table__").map(|n| (DescrType::Table, n)))
                 .or_else(|| sym.strip_prefix("__describe_tuple__").map(|n| (DescrType::Tuple, n)))
+                .or_else(|| {
+                    sym.strip_prefix("__describe_reducer__")
+                        .map(|n| (DescrType::Reducer, n))
+                })
                 .map(|(ty, name)| (ty, name.to_owned(), exp.into_func().unwrap()))
         })
         .collect::<Vec<_>>();
@@ -99,8 +112,9 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<Vec<(String, Descrip
         let len = (val & 0xFFFF_FFFF) as u32;
         let slice = &memory.data(&store)[offset as usize..][..len as usize];
         let descr = match ty {
-            DescrType::Table => Description::Table(TupleDef::decode(&mut &slice[..])?),
+            DescrType::Table => Description::Table(TableDef::decode(&mut &slice[..])?),
             DescrType::Tuple => Description::Tuple(TupleDef::decode(&mut &slice[..])?),
+            DescrType::Reducer => Description::Reducer(ReducerDef::decode(&mut &slice[..])?),
         };
         dealloc.call(&mut store, (offset, len)).unwrap();
         descriptions.push((name, descr));

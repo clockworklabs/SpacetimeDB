@@ -25,32 +25,6 @@ use syn::{parse_macro_input, AttributeArgs, FnArg, ItemFn, ItemStruct};
 
 #[proc_macro_attribute]
 pub fn spacetimedb(macro_args: TokenStream, item: TokenStream) -> TokenStream {
-    // When we add support for more than 1 language uncomment this. For now its just cumbersome.
-    // let mut lang: Option<Lang> = None;
-    // for var in std::env::vars() {
-    //     if var.0 == "STDB_LANG" {
-    //         match var.1.to_lowercase().as_str() {
-    //             "cs" | "csharp" | "c#"  => {
-    //                 println!("Language set to csharp.");
-    //                 lang = Some(Lang::CS);
-    //             }
-    //             _ => {
-    //                 let str = format!("Unsupported language: {}\nSupported languages: CS (csharp)", var.1);
-    //                 return proc_macro::TokenStream::from(quote! {
-    //                     compile_error!(#str);
-    //                 });
-    //             }
-    //         }
-    //     }
-    // }
-    //
-    // if let None = lang {
-    //     let str = format!("No client language set. Supported languages: CS (csharp)");
-    //     return proc_macro::TokenStream::from(quote! {
-    //         compile_error!(#str);
-    //     });
-    // }
-
     let attribute_args = parse_macro_input!(macro_args as AttributeArgs);
     let attribute_str = attribute_args[0].to_token_stream().to_string();
     let attribute_str = attribute_str.as_str();
@@ -208,14 +182,15 @@ fn spacetimedb_reducer(args: AttributeArgs, item: TokenStream) -> TokenStream {
         }
     };
 
+    let reducer_name = func_name.to_string();
     let generated_describe_function = quote! {
         #[no_mangle]
         #[allow(non_snake_case)]
         // u64 is offset << 32 | length
         pub extern "C" fn #descriptor_func_name() -> u64 {
-            let tupledef = spacetimedb::spacetimedb_lib::TupleDef {
-                name: None,
-                elements: vec![
+            let tupledef = spacetimedb::spacetimedb_lib::ReducerDef {
+                name: Some(#reducer_name.into()),
+                args: vec![
                     #(#function_call_arg_types),*
                 ],
             };
@@ -368,7 +343,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
     let get_table_id_func = quote! {
         pub fn table_id() -> u32 {
             *#table_id_static_var_name.get_or_init(|| {
-                spacetimedb::get_table_id(<Self as spacetimedb::TableDef>::TABLE_NAME)
+                spacetimedb::get_table_id(<Self as spacetimedb::TableType>::TABLE_NAME)
             })
         }
     };
@@ -611,9 +586,10 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         }
     };
     let table_name = original_struct_ident.to_string();
-    let tabledef_impl = quote! {
-        impl spacetimedb::TableDef for #original_struct_ident {
+    let tabletype_impl = quote! {
+        impl spacetimedb::TableType for #original_struct_ident {
             const TABLE_NAME: &'static str = #table_name;
+            const UNIQUE_COLUMNS: &'static [u8] = &[#(#unique_fields),*];
         }
     };
 
@@ -631,7 +607,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #[allow(non_snake_case)]
         #[no_mangle]
         pub extern "C" fn #create_table_func_name(arg_ptr: usize, arg_size: usize) {
-            let table_id = <#original_struct_ident as spacetimedb::TableDef>::create_table();
+            let table_id = <#original_struct_ident as spacetimedb::TableType>::create_table();
             #table_id_static_var_name.set(table_id).unwrap_or_else(|_| {
                 // TODO: this is okay? or should we panic? can this even happen?
             });
@@ -642,7 +618,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #[allow(non_snake_case)]
         #[no_mangle]
         pub extern "C" fn #describe_table_func_name() -> u64 {
-            <#original_struct_ident as spacetimedb::TupleType>::describe_tuple()
+            <#original_struct_ident as spacetimedb::TableType>::describe_table()
         }
     };
 
@@ -677,7 +653,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
         #schema_impl
         #from_value_impl
         #into_value_impl
-        #tabledef_impl
+        #tabletype_impl
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {

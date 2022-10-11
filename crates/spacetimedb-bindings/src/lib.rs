@@ -3,6 +3,7 @@ pub mod io;
 mod impls;
 
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
+use spacetimedb_lib::type_def::TableDef;
 use spacetimedb_lib::{PrimaryKey, TupleDef, TupleValue, TypeDef};
 use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
 use std::cell::RefCell;
@@ -279,12 +280,30 @@ impl<T: IntoTuple> IntoValue for T {
     }
 }
 
-pub trait TableDef: TupleType + FromTuple + IntoTuple {
+pub trait TableType: TupleType + FromTuple + IntoTuple {
     const TABLE_NAME: &'static str;
+    const UNIQUE_COLUMNS: &'static [u8];
 
     fn create_table() -> u32 {
         let tuple_def = Self::get_tupledef();
         create_table(Self::TABLE_NAME, tuple_def)
+    }
+
+    fn get_tabledef() -> TableDef {
+        TableDef {
+            tuple: Self::get_tupledef(),
+            unique_columns: Self::UNIQUE_COLUMNS.to_owned(),
+        }
+    }
+
+    fn describe_table() -> u64 {
+        let table_def = Self::get_tabledef();
+        let mut bytes = vec![];
+        table_def.encode(&mut bytes);
+        let offset = bytes.as_ptr() as u64;
+        let length = bytes.len() as u64;
+        std::mem::forget(bytes);
+        offset << 32 | length
     }
 }
 

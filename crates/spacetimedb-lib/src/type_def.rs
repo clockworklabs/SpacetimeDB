@@ -51,6 +51,23 @@ impl ElementDef {
 
         self.element_type.encode(bytes);
     }
+
+    pub fn decode_vec(bytes: &mut impl BufReader) -> Result<Vec<Self>, DecodeError> {
+        let len = read_len(bytes)?;
+
+        let mut elements = Vec::with_capacity(len.into());
+        for _ in 0..len {
+            elements.push(ElementDef::decode(bytes)?);
+        }
+        Ok(elements)
+    }
+
+    pub fn encode_vec(v: &[Self], bytes: &mut impl BufWriter) {
+        write_len(bytes, v.len());
+        for item in v {
+            item.encode(bytes);
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -61,24 +78,17 @@ pub struct TupleDef {
 
 impl TupleDef {
     pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
-        let name = Some(read_str(bytes)?.into());
+        let name = read_str(bytes)?;
+        let name = (!name.is_empty()).then(|| name.into());
 
-        let len = read_len(bytes)?;
-
-        let mut elements = Vec::with_capacity(len.into());
-        for _ in 0..len {
-            elements.push(ElementDef::decode(bytes)?);
-        }
+        let elements = ElementDef::decode_vec(bytes)?;
         Ok(TupleDef { name, elements })
     }
 
     pub fn encode(&self, bytes: &mut impl BufWriter) {
         write_str(bytes, self.name.as_deref().unwrap_or(""));
 
-        write_len(bytes, self.elements.len());
-        for item in &self.elements {
-            item.encode(bytes);
-        }
+        ElementDef::encode_vec(&self.elements, bytes);
     }
 }
 
@@ -91,20 +101,12 @@ pub struct EnumDef {
 
 impl EnumDef {
     pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
-        let len = read_len(bytes)?;
-
-        let mut items = Vec::with_capacity(len.into());
-        for _ in 0..len {
-            items.push(ElementDef::decode(bytes)?);
-        }
-        Ok(EnumDef { variants: items })
+        let variants = ElementDef::decode_vec(bytes)?;
+        Ok(EnumDef { variants })
     }
 
     pub fn encode(&self, bytes: &mut impl BufWriter) {
-        write_len(bytes, self.variants.len());
-        for item in &self.variants {
-            item.encode(bytes);
-        }
+        ElementDef::encode_vec(&self.variants, bytes)
     }
 }
 
@@ -234,6 +236,47 @@ impl TypeDef {
                 PrimitiveType::Unit => 0x12,
             }),
         }
+    }
+}
+
+pub struct TableDef {
+    pub tuple: TupleDef,
+    /// must be sorted!
+    pub unique_columns: Vec<u8>,
+}
+
+impl TableDef {
+    pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
+        let tuple = TupleDef::decode(bytes)?;
+        let unique_columns_len = read_len(bytes)?;
+        let mut unique_columns = bytes.get_slice(unique_columns_len)?.to_owned();
+        unique_columns.sort();
+        Ok(Self { tuple, unique_columns })
+    }
+
+    pub fn encode(&self, bytes: &mut impl BufWriter) {
+        self.tuple.encode(bytes);
+        write_len(bytes, self.unique_columns.len());
+        bytes.put_slice(&self.unique_columns);
+    }
+}
+
+pub struct ReducerDef {
+    pub name: Option<Box<str>>,
+    pub args: Vec<ElementDef>,
+}
+
+impl ReducerDef {
+    pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
+        let name = read_str(bytes)?;
+        let name = (!name.is_empty()).then(|| name.into());
+        let args = ElementDef::decode_vec(bytes)?;
+        Ok(Self { name, args })
+    }
+
+    pub fn encode(&self, bytes: &mut impl BufWriter) {
+        write_str(bytes, self.name.as_deref().unwrap_or(""));
+        ElementDef::encode_vec(&self.args, bytes);
     }
 }
 

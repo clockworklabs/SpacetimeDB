@@ -1,7 +1,7 @@
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::type_def::PrimitiveType;
+use spacetimedb_lib::type_def::{PrimitiveType, ReducerDef, TableDef};
 use spacetimedb_lib::{ElementDef, TupleDef, TypeDef};
 
 use crate::code_indenter::CodeIndenter;
@@ -34,9 +34,7 @@ fn primitive_to_csharp(prim: PrimitiveType) -> &'static str {
 fn ty_fmt(ty: &TypeDef) -> impl fmt::Display + '_ {
     fmt_fn(move |f| match ty {
         TypeDef::Tuple(tup) => f.write_str(csharp_tuplename(tup)),
-        TypeDef::Enum(_) => {
-            unimplemented!()
-        }
+        TypeDef::Enum(_) => unimplemented!(),
         TypeDef::Vec { element_type } => write!(f, "System.Collections.Generic.List<{}>", ty_fmt(element_type)),
         TypeDef::Primitive(prim) => f.write_str(primitive_to_csharp(*prim)),
     })
@@ -70,9 +68,7 @@ fn convert_typedef(ty: &TypeDef) -> impl fmt::Display + '_ {
         TypeDef::Tuple(tup) => {
             write!(f, "{}.GetTypeDef()", csharp_tuplename(tup))
         }
-        TypeDef::Enum(_) => {
-            unreachable!("tuples and enums should always be behind a ref")
-        }
+        TypeDef::Enum(_) => unimplemented!(),
         TypeDef::Vec { element_type } => {
             write!(f, "SpacetimeDB.TypeDef.GetVec({})", convert_typedef(element_type))
         }
@@ -103,7 +99,13 @@ fn convert_tupledef(tuple: &TupleDef) -> impl fmt::Display + '_ {
     })
 }
 
-pub fn autogen_csharp_tuple(name: &str, tuple: &TupleDef, table_name: Option<&str>, unique_fields: &[u8]) -> String {
+pub fn autogen_csharp_tuple(name: &str, tuple: &TupleDef) -> String {
+    autogen_csharp_tuple_table_common(name, tuple, None)
+}
+pub fn autogen_csharp_table(name: &str, table: &TableDef) -> String {
+    autogen_csharp_tuple_table_common(name, &table.tuple, Some(&table.unique_columns))
+}
+pub fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_columns: Option<&[u8]>) -> String {
     let mut output = CodeIndenter::new(String::new());
 
     let struct_name_pascal_case = name.to_case(Case::Pascal);
@@ -154,14 +156,14 @@ pub fn autogen_csharp_tuple(name: &str, tuple: &TupleDef, table_name: Option<&st
             .unwrap();
 
             // If this is a table, we want to include functions for accessing the table data
-            if let Some(table_name) = table_name {
+            if let Some(unique_columns) = unique_columns {
                 // Insert the funcs for accessing this struct
                 autogen_csharp_access_funcs_for_struct(
                     &mut output,
                     &struct_name_pascal_case,
                     tuple,
-                    table_name,
-                    unique_fields,
+                    name,
+                    unique_columns,
                 );
             }
         }
@@ -217,9 +219,7 @@ fn autogen_csharp_tuple_to_struct(struct_name_pascal_case: &str, tuple: &TupleDe
                 )
                 .unwrap();
             }
-            TypeDef::Enum(_) => {
-                unreachable!("tuples and enums should always be behind a ref")
-            }
+            TypeDef::Enum(_) => unimplemented!(),
             TypeDef::Primitive(prim) => {
                 writeln!(
                     output_contents_return,
@@ -255,9 +255,7 @@ fn autogen_csharp_tuple_to_struct(struct_name_pascal_case: &str, tuple: &TupleDe
                     )
                     .unwrap();
                 }
-                TypeDef::Enum(_) => {
-                    unreachable!("tuples and enums should always be behind a ref")
-                }
+                TypeDef::Enum(_) => unimplemented!(),
                 TypeDef::Primitive(prim) => {
                     let csharp_type = primitive_to_csharp(*prim);
                     writeln!(
@@ -314,7 +312,7 @@ fn autogen_csharp_access_funcs_for_struct(
     struct_name_pascal_case: &str,
     tuple: &TupleDef,
     table_name: &str,
-    unique_fields: &[u8],
+    unique_columns: &[u8],
 ) {
     for field in &tuple.elements {
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
@@ -334,7 +332,7 @@ fn autogen_csharp_access_funcs_for_struct(
                 }
                 AccessorType::Hash
             }
-            TypeDef::Enum(_) => unreachable!("tuples and enums should always be behind a ref"),
+            TypeDef::Enum(_) => unimplemented!(),
             TypeDef::Primitive(prim) => AccessorType::Primitive(*prim),
             TypeDef::Vec { .. } => {
                 // TODO: We don't allow filtering based on a vec type, but we might want other functionality here in the future.
@@ -347,7 +345,7 @@ fn autogen_csharp_access_funcs_for_struct(
             AccessorType::Hash => "SpacetimeDB.Hash",
         };
 
-        let is_unique = unique_fields.binary_search(&field.tag).is_ok();
+        let is_unique = unique_columns.binary_search(&field.tag).is_ok();
         let filter_return_type = fmt_fn(|f| {
             if is_unique {
                 f.write_str(&struct_name_pascal_case)
@@ -436,20 +434,11 @@ fn autogen_csharp_access_funcs_for_struct(
 //     })
 // }
 
-pub struct Reducer {
-    name: String,
-    args: Vec<ReducerArg>,
-}
-pub struct ReducerArg {
-    name: String,
-    ty: TypeDef,
-}
-
-pub fn autogen_csharp_reducer(original_function: Reducer) -> String {
-    let func_name = &original_function.name;
+pub fn autogen_csharp_reducer(reducer: &ReducerDef) -> String {
+    let func_name = reducer.name.as_ref().expect("reducer should have name");
     // let reducer_pascal_name = func_name.to_case(Case::Pascal);
     let use_namespace = true;
-    let func_name_pascal_case = func_name.to_case(Case::Pascal);
+    let func_name_pascal_case = func_name.as_ref().to_case(Case::Pascal);
 
     let mut output = CodeIndenter::new(String::new());
 
@@ -476,8 +465,8 @@ pub fn autogen_csharp_reducer(original_function: Reducer) -> String {
     {
         indent_scope!(output);
 
-        for (arg_i, arg) in original_function.args.into_iter().enumerate() {
-            let ReducerArg { name, ty } = arg;
+        for (arg_i, arg) in reducer.args.iter().enumerate() {
+            let name = arg.name.as_deref().expect("reducer args should have names");
             let arg_name = name.to_case(Case::Camel);
 
             if arg_i > 0 {
@@ -485,7 +474,7 @@ pub fn autogen_csharp_reducer(original_function: Reducer) -> String {
                 arg_names.push_str(", ");
             }
 
-            write!(func_arguments, "{} {}", ty_fmt(&ty), arg_name).unwrap();
+            write!(func_arguments, "{} {}", ty_fmt(&arg.element_type), arg_name).unwrap();
 
             arg_names.push_str(&arg_name);
         }
@@ -515,10 +504,13 @@ pub fn autogen_csharp_reducer(original_function: Reducer) -> String {
                 "StdbNetworkManager.instance.InternalCallReducer(new StdbNetworkManager.Message",
             )
             .unwrap();
-            writeln!(output, "{{").unwrap();
-            writeln!(output, "fn = \"{func_name}\",").unwrap();
-            writeln!(output, "args = new object[] {{ {arg_names} }},").unwrap();
-            writeln!(output, "}});").unwrap();
+            {
+                writeln!(output, "{{").unwrap();
+                indent_scope!(output);
+                writeln!(output, "fn = \"{func_name}\",").unwrap();
+                writeln!(output, "args = new object[] {{ {arg_names} }},").unwrap();
+                writeln!(output, "}});").unwrap();
+            }
         }
         // Closing brace for reducer
         writeln!(output, "}}").unwrap();
