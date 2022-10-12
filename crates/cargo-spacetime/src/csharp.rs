@@ -89,12 +89,11 @@ fn convert_elementdef(elem: &ElementDef) -> impl fmt::Display + '_ {
 fn convert_tupledef(tuple: &TupleDef) -> impl fmt::Display + '_ {
     fmt_fn(move |f| {
         writeln!(f, "TypeDef.Tuple(new ElementDef[]")?;
-        writeln!(f, "{INDENT}{{")?;
-        for (i, elem) in tuple.elements.iter().enumerate() {
-            let comma = if i == tuple.elements.len() - 1 { "" } else { "," };
-            writeln!(f, "{INDENT}{INDENT}{}{}", convert_elementdef(elem), comma)?;
+        writeln!(f, "{{")?;
+        for elem in &tuple.elements {
+            writeln!(f, "{INDENT}{},", convert_elementdef(elem))?;
         }
-        write!(f, "{INDENT}}})")
+        write!(f, "}})")
     })
 }
 
@@ -102,9 +101,13 @@ pub fn autogen_csharp_tuple(name: &str, tuple: &TupleDef) -> String {
     autogen_csharp_tuple_table_common(name, tuple, None)
 }
 pub fn autogen_csharp_table(name: &str, table: &TableDef) -> String {
-    autogen_csharp_tuple_table_common(name, &table.tuple, Some(&table.unique_columns))
+    autogen_csharp_tuple_table_common(
+        name,
+        &table.tuple,
+        Some((&table.unique_columns, &table.filterable_by_columns)),
+    )
 }
-pub fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_columns: Option<&[u8]>) -> String {
+fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_columns: Option<(&[u8], &[u8])>) -> String {
     let mut output = CodeIndenter::new(String::new());
 
     let struct_name_pascal_case = name.to_case(Case::Pascal);
@@ -155,7 +158,7 @@ pub fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_co
             .unwrap();
 
             // If this is a table, we want to include functions for accessing the table data
-            if let Some(unique_columns) = unique_columns {
+            if let Some((unique_columns, filterable_by_columns)) = unique_columns {
                 // Insert the funcs for accessing this struct
                 autogen_csharp_access_funcs_for_struct(
                     &mut output,
@@ -163,6 +166,7 @@ pub fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_co
                     tuple,
                     name,
                     unique_columns,
+                    filterable_by_columns,
                 );
             }
         }
@@ -312,8 +316,14 @@ fn autogen_csharp_access_funcs_for_struct(
     tuple: &TupleDef,
     table_name: &str,
     unique_columns: &[u8],
+    filterable_by_columns: &[u8],
 ) {
-    for field in &tuple.elements {
+    let it = Iterator::chain(
+        unique_columns.iter().copied().zip(std::iter::repeat(true)),
+        filterable_by_columns.iter().copied().zip(std::iter::repeat(false)),
+    );
+    for (col_i, is_unique) in it {
+        let field = &tuple.elements[col_i as usize];
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
         let field_type = &field.element_type;
         let csharp_field_name_pascal = field_name.to_case(Case::Pascal);
@@ -333,7 +343,6 @@ fn autogen_csharp_access_funcs_for_struct(
         };
         let csharp_field_type = primitive_to_csharp(field_type);
 
-        let is_unique = unique_columns.binary_search(&field.tag).is_ok();
         let filter_return_type = fmt_fn(|f| {
             if is_unique {
                 f.write_str(&struct_name_pascal_case)
@@ -482,9 +491,11 @@ pub fn autogen_csharp_reducer(reducer: &ReducerDef) -> String {
             .unwrap();
             {
                 writeln!(output, "{{").unwrap();
-                indent_scope!(output);
-                writeln!(output, "fn = \"{func_name}\",").unwrap();
-                writeln!(output, "args = new object[] {{ {arg_names} }},").unwrap();
+                {
+                    indent_scope!(output);
+                    writeln!(output, "fn = \"{func_name}\",").unwrap();
+                    writeln!(output, "args = new object[] {{ {arg_names} }},").unwrap();
+                }
                 writeln!(output, "}});").unwrap();
             }
         }

@@ -283,6 +283,7 @@ impl<T: IntoTuple> IntoValue for T {
 pub trait TableType: TupleType + FromTuple + IntoTuple {
     const TABLE_NAME: &'static str;
     const UNIQUE_COLUMNS: &'static [u8];
+    const FILTERABLE_BY_COLUMNS: &'static [u8];
 
     fn create_table() -> u32 {
         let tuple_def = Self::get_tupledef();
@@ -293,6 +294,7 @@ pub trait TableType: TupleType + FromTuple + IntoTuple {
         TableDef {
             tuple: Self::get_tupledef(),
             unique_columns: Self::UNIQUE_COLUMNS.to_owned(),
+            filterable_by_columns: Self::FILTERABLE_BY_COLUMNS.to_owned(),
         }
     }
 

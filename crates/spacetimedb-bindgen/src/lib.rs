@@ -504,7 +504,10 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
     }
 
     let mut non_primary_filter_func = Vec::with_capacity(filterable_columns.len());
+    let mut filterable_fields = Vec::with_capacity(filterable_columns.len());
     for column in filterable_columns {
+        filterable_fields.push(column.index);
+
         let filter_func_ident: proc_macro2::TokenStream = format!("filter_{}_eq", column.ident).parse().unwrap();
 
         let comparison_block = tuple_field_comparison_block(&original_struct_ident, &column.ident, false);
@@ -593,6 +596,7 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
         impl spacetimedb::TableType for #original_struct_ident {
             const TABLE_NAME: &'static str = #table_name;
             const UNIQUE_COLUMNS: &'static [u8] = &[#(#unique_fields),*];
+            const FILTERABLE_BY_COLUMNS: &'static [u8] = &[#(#filterable_fields),*];
         }
     };
 
