@@ -11,4 +11,4 @@ pub use data_key::DataKey;
 pub use hash::Hash;
 pub use primary_key::PrimaryKey;
 pub use type_def::{ElementDef, TupleDef, TypeDef};
-pub use type_value::{TupleValue, TypeValue};
+pub use type_value::{EqTypeValue, RangeTypeValue, TupleValue, TypeValue};

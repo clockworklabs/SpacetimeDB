@@ -1,7 +1,7 @@
 #[macro_use]
 pub mod io;
 
-use spacetimedb_lib::{PrimaryKey, TupleDef, TupleValue};
+use spacetimedb_lib::{EqTypeValue, PrimaryKey, TupleDef, TupleValue, TypeValue};
 use std::alloc::{alloc as _alloc, dealloc as _dealloc, Layout};
 use std::mem::ManuallyDrop;
 use std::ops::Range;
@@ -15,7 +15,7 @@ pub use spacetimedb_bindgen::Unique;
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::hash;
 pub use spacetimedb_lib::Hash;
-pub use spacetimedb_lib::TypeValue;
+pub use spacetimedb_lib::RangeTypeValue;
 
 // #[cfg(target_arch = "wasm32")]
 // #[global_allocator]
@@ -146,7 +146,7 @@ pub fn delete_filter<F: Fn(&TupleValue) -> bool>(table_id: u32, f: F) -> Option<
     Some(count)
 }
 
-pub fn delete_eq(table_id: u32, col_id: u32, eq_value: TypeValue) -> Option<usize> {
+pub fn delete_eq(table_id: u32, col_id: u32, eq_value: EqTypeValue) -> Option<usize> {
     let mut bytes = row_buf();
     eq_value.encode(&mut bytes);
     let result = unsafe { _delete_eq(table_id, col_id, bytes.as_mut_ptr()) };
@@ -156,7 +156,7 @@ pub fn delete_eq(table_id: u32, col_id: u32, eq_value: TypeValue) -> Option<usiz
     return Some(result as usize);
 }
 
-pub fn delete_range(table_id: u32, col_id: u32, range: Range<TypeValue>) -> Option<usize> {
+pub fn delete_range(table_id: u32, col_id: u32, range: Range<RangeTypeValue>) -> Option<usize> {
     let mut bytes = row_buf();
     let start = TypeValue::from(range.start);
     let end = TypeValue::from(range.end);

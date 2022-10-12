@@ -4,22 +4,16 @@ use crate::{
 };
 use enum_as_inner::EnumAsInner;
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
 use std::mem::size_of;
 use std::{fmt::Display, hash::Hash};
 
-/// Totally ordered [f32]
-pub type F32 = decorum::Total<f32>;
-/// Totally ordered [f64]
-pub type F64 = decorum::Total<f64>;
-
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElementValue {
     pub tag: u8,
     pub type_value: Box<TypeValue>,
 }
 
-#[derive(Debug, Clone, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TupleValue {
     pub elements: Vec<TypeValue>,
 }
@@ -89,7 +83,7 @@ impl TupleValue {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnumValue {
     pub element_value: ElementValue,
 }
@@ -136,69 +130,191 @@ impl EnumValue {
     }
 }
 
-/// Helper for implement `Ord`/`Eq` for numerical values
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-enum TypeWideValue<'a> {
-    Unit,
-    Bool(bool),
-    I64(i64),
+// TODO: Clone copies :(
+#[derive(EnumAsInner, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EqTypeValue {
+    U8(u8),
+    U16(u16),
+    U32(u32),
     U64(u64),
-    I128(i128),
     U128(u128),
-    F64(F64),
-    String(&'a str),
-    Bytes(&'a [u8]),
-    Enum(&'a EnumValue),
-    Vec(&'a [TypeValue]),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    I128(i128),
+    Bool(bool),
+    String(String),
+    Unit,
 }
 
-impl<'a> TypeWideValue<'a> {
-    fn from_i64(x: i64) -> Self {
-        if x < 0 {
-            Self::I64(x)
-        } else {
-            Self::U64(x as u64)
+impl EqTypeValue {
+    pub fn decode(type_def: &TypeDef, bytes: impl AsRef<[u8]>) -> (Result<Self, &'static str>, usize) {
+        let (v, nr) = TypeValue::decode(type_def, bytes);
+        if let Err(e) = v {
+            return (Err(e), 0);
         }
+        (Self::try_from(v.unwrap()), nr)
     }
 
-    fn from_i128(x: i128) -> Self {
-        if x < 0 {
-            Self::I128(x)
-        } else {
-            Self::U128(x as u128)
+    pub fn encode(&self, bytes: &mut Vec<u8>) {
+        let v = TypeValue::from(self);
+        v.encode(bytes);
+    }
+}
+
+impl TryFrom<TypeValue> for EqTypeValue {
+    type Error = &'static str;
+
+    fn try_from(value: TypeValue) -> Result<Self, Self::Error> {
+        match value {
+            TypeValue::Tuple(_) => Err("Tuples are not equatable"),
+            TypeValue::Enum(_) => Err("Enums are not equatable"),
+            TypeValue::Vec(_) => Err("Vecs are not equatable"),
+            TypeValue::U8(v) => Ok(Self::U8(v)),
+            TypeValue::U16(v) => Ok(Self::U16(v)),
+            TypeValue::U32(v) => Ok(Self::U32(v)),
+            TypeValue::U64(v) => Ok(Self::U64(v)),
+            TypeValue::U128(v) => Ok(Self::U128(v)),
+            TypeValue::I8(v) => Ok(Self::I8(v)),
+            TypeValue::I16(v) => Ok(Self::I16(v)),
+            TypeValue::I32(v) => Ok(Self::I32(v)),
+            TypeValue::I64(v) => Ok(Self::I64(v)),
+            TypeValue::I128(v) => Ok(Self::I128(v)),
+            TypeValue::Bool(v) => Ok(Self::Bool(v)),
+            TypeValue::F32(_) => Err("Floats are not equatable"),
+            TypeValue::F64(_) => Err("Floats are not equatable"),
+            TypeValue::String(v) => Ok(Self::String(v)),
+            TypeValue::Bytes(_) => Err("Bytes are not equatable"),
+            TypeValue::Unit => Ok(Self::Unit),
         }
     }
 }
 
-/// The `scalars` values.
-///
-/// WARNING:
-///
-/// Is important the order in this enum so sorting work correctly, and it must match
-/// [TypeWideValue]/[TypeDef]
-#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+impl TryFrom<&TypeValue> for EqTypeValue {
+    type Error = &'static str;
+
+    fn try_from(value: &TypeValue) -> Result<Self, Self::Error> {
+        match value {
+            TypeValue::Tuple(_) => Err("Tuples are not equatable"),
+            TypeValue::Enum(_) => Err("Enums are not equatable"),
+            TypeValue::Vec(_) => Err("Vecs are not equatable"),
+            TypeValue::U8(v) => Ok(Self::U8(v.clone())),
+            TypeValue::U16(v) => Ok(Self::U16(v.clone())),
+            TypeValue::U32(v) => Ok(Self::U32(v.clone())),
+            TypeValue::U64(v) => Ok(Self::U64(v.clone())),
+            TypeValue::U128(v) => Ok(Self::U128(v.clone())),
+            TypeValue::I8(v) => Ok(Self::I8(v.clone())),
+            TypeValue::I16(v) => Ok(Self::I16(v.clone())),
+            TypeValue::I32(v) => Ok(Self::I32(v.clone())),
+            TypeValue::I64(v) => Ok(Self::I64(v.clone())),
+            TypeValue::I128(v) => Ok(Self::I128(v.clone())),
+            TypeValue::Bool(v) => Ok(Self::Bool(v.clone())),
+            TypeValue::F32(_) => Err("Floats are not equatable"),
+            TypeValue::F64(_) => Err("Floats are not equatable"),
+            TypeValue::String(v) => Ok(Self::String(v.clone())),
+            TypeValue::Bytes(_) => Err("Bytes are not equatable"),
+            TypeValue::Unit => Ok(Self::Unit),
+        }
+    }
+}
+
+// TODO: Clone copies :(
+#[derive(EnumAsInner, Debug, Clone, PartialEq, PartialOrd)]
+pub enum RangeTypeValue {
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    U128(u128),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    I128(i128),
+    F32(f32),
+    F64(f64),
+    Bool(bool),
+    String(String),
+    Unit,
+}
+
+impl RangeTypeValue {
+    pub fn decode(type_def: &TypeDef, bytes: impl AsRef<[u8]>) -> (Result<Self, &'static str>, usize) {
+        let (v, nr) = TypeValue::decode(type_def, bytes);
+        if let Err(e) = v {
+            return (Err(e), 0);
+        }
+        (Self::try_from(v.unwrap()), nr)
+    }
+
+    pub fn encode(&self, bytes: &mut Vec<u8>) {
+        let v = TypeValue::from(self);
+        v.encode(bytes);
+    }
+}
+
+impl TryFrom<TypeValue> for RangeTypeValue {
+    type Error = &'static str;
+
+    fn try_from(value: TypeValue) -> Result<Self, Self::Error> {
+        match value {
+            TypeValue::Tuple(_) => Err("Tuples are not rangeable"),
+            TypeValue::Enum(_) => Err("Enums are not rangeable"),
+            TypeValue::Vec(_) => Err("Vecs are not rangeable"),
+            TypeValue::U8(v) => Ok(Self::U8(v)),
+            TypeValue::U16(v) => Ok(Self::U16(v)),
+            TypeValue::U32(v) => Ok(Self::U32(v)),
+            TypeValue::U64(v) => Ok(Self::U64(v)),
+            TypeValue::U128(v) => Ok(Self::U128(v)),
+            TypeValue::I8(v) => Ok(Self::I8(v)),
+            TypeValue::I16(v) => Ok(Self::I16(v)),
+            TypeValue::I32(v) => Ok(Self::I32(v)),
+            TypeValue::I64(v) => Ok(Self::I64(v)),
+            TypeValue::I128(v) => Ok(Self::I128(v)),
+            TypeValue::Bool(v) => Ok(Self::Bool(v)),
+            TypeValue::F32(v) => Ok(Self::F32(v)),
+            TypeValue::F64(v) => Ok(Self::F64(v)),
+            TypeValue::String(v) => Ok(Self::String(v)),
+            TypeValue::Bytes(_) => Err("Bytes are not rangeable"),
+            TypeValue::Unit => Ok(Self::Unit),
+        }
+    }
+}
+
+impl TryFrom<&TypeValue> for RangeTypeValue {
+    type Error = &'static str;
+
+    fn try_from(value: &TypeValue) -> Result<Self, Self::Error> {
+        match value {
+            TypeValue::Tuple(_) => Err("Tuples are not rangeable"),
+            TypeValue::Enum(_) => Err("Enums are not rangeable"),
+            TypeValue::Vec(_) => Err("Vecs are not rangeable"),
+            TypeValue::U8(v) => Ok(Self::U8(v.clone())),
+            TypeValue::U16(v) => Ok(Self::U16(v.clone())),
+            TypeValue::U32(v) => Ok(Self::U32(v.clone())),
+            TypeValue::U64(v) => Ok(Self::U64(v.clone())),
+            TypeValue::U128(v) => Ok(Self::U128(v.clone())),
+            TypeValue::I8(v) => Ok(Self::I8(v.clone())),
+            TypeValue::I16(v) => Ok(Self::I16(v.clone())),
+            TypeValue::I32(v) => Ok(Self::I32(v.clone())),
+            TypeValue::I64(v) => Ok(Self::I64(v.clone())),
+            TypeValue::I128(v) => Ok(Self::I128(v.clone())),
+            TypeValue::Bool(v) => Ok(Self::Bool(v.clone())),
+            TypeValue::F32(v) => Ok(Self::F32(v.clone())),
+            TypeValue::F64(v) => Ok(Self::F64(v.clone())),
+            TypeValue::String(v) => Ok(Self::String(v.clone())),
+            TypeValue::Bytes(_) => Err("Bytes are not rangeable"),
+            TypeValue::Unit => Ok(Self::Unit),
+        }
+    }
+}
+
+#[derive(EnumAsInner, Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TypeValue {
-    /// The **BOTTOM** value
-    Unit,
-    /// Base types
-    Bool(bool),
-    I8(i8),
-    U8(u8),
-    I16(i16),
-    U16(u16),
-    I32(i32),
-    U32(u32),
-    I64(i64),
-    U64(u64),
-    I128(i128),
-    U128(u128),
-    F32(F32),
-    F64(F64),
-    String(String),
-    Bytes(Vec<u8>),
-    Enum(EnumValue),
     Tuple(TupleValue),
+    Enum(EnumValue),
 
     // TODO(cloutiertyler): This is very inefficient it turns out
     // we should probably have a packed encoding like protobuf
@@ -208,41 +324,63 @@ pub enum TypeValue {
     // Vec(TypeDef, Vec<u8>)
     // or VecF32(Vec<f32>), ... etc
     Vec(Vec<TypeValue>),
+    // base types
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    U128(u128),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    I128(i128),
+    Bool(bool),
+    F32(f32),
+    F64(f64),
+    String(String),
+    Bytes(Vec<u8>),
+    Unit,
+}
+
+impl Display for TypeValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TypeValue::Tuple(v) => write!(f, "{}", v),
+            TypeValue::Enum(_) => write!(f, "<enum>"),
+            TypeValue::Vec(v) => {
+                write!(f, "[")?;
+                for (i, t) in v.iter().enumerate() {
+                    if i < v.len() - 1 {
+                        write!(f, "{}, ", t)?;
+                    } else {
+                        write!(f, "{}", t)?;
+                    }
+                }
+                write!(f, "]")?;
+                Ok(())
+            }
+            TypeValue::U8(n) => write!(f, "{}", n),
+            TypeValue::U16(n) => write!(f, "{}", n),
+            TypeValue::U32(n) => write!(f, "{}", n),
+            TypeValue::U64(n) => write!(f, "{}", n),
+            TypeValue::U128(n) => write!(f, "{}", n),
+            TypeValue::I8(n) => write!(f, "{}", n),
+            TypeValue::I16(n) => write!(f, "{}", n),
+            TypeValue::I32(n) => write!(f, "{}", n),
+            TypeValue::I64(n) => write!(f, "{}", n),
+            TypeValue::I128(n) => write!(f, "{}", n),
+            TypeValue::Bool(n) => write!(f, "{}", n),
+            TypeValue::F32(n) => write!(f, "{}", n),
+            TypeValue::F64(n) => write!(f, "{}", n),
+            TypeValue::String(n) => write!(f, "{}", n),
+            TypeValue::Bytes(bytes) => write!(f, "{}", hex::encode(bytes)),
+            TypeValue::Unit => write!(f, "<unit>"),
+        }
+    }
 }
 
 impl TypeValue {
-    /// Promote the values to their wider representation to make easier to compare.
-    ///
-    /// It turns the negative values to [i64]/[i128] and positive to [u64]/[u128], ie:
-    ///
-    ///
-    ///  -1i64 -> -1i64
-    ///   1i64 ->  1u64
-    fn to_wide_value(&self) -> TypeWideValue<'_> {
-        match self {
-            TypeValue::Unit => TypeWideValue::Unit,
-            TypeValue::Bool(x) => TypeWideValue::Bool(*x),
-            TypeValue::I8(x) => TypeWideValue::from_i64(*x as i64),
-            TypeValue::U8(x) => TypeWideValue::U64(*x as u64),
-            TypeValue::I16(x) => TypeWideValue::from_i64(*x as i64),
-            TypeValue::U16(x) => TypeWideValue::U64(*x as u64),
-            TypeValue::I32(x) => TypeWideValue::from_i64(*x as i64),
-            TypeValue::U32(x) => TypeWideValue::U64(*x as u64),
-            TypeValue::I64(x) => TypeWideValue::from_i64(*x),
-            TypeValue::U64(x) => TypeWideValue::U64(*x as u64),
-            TypeValue::I128(x) => TypeWideValue::from_i128(*x),
-            TypeValue::U128(x) => TypeWideValue::U128(*x),
-            TypeValue::F32(x) => TypeWideValue::F64(F64::from(x.into_inner() as f64)),
-            TypeValue::F64(x) => TypeWideValue::F64(*x),
-
-            TypeValue::String(x) => TypeWideValue::String(x),
-            TypeValue::Bytes(x) => TypeWideValue::Bytes(x),
-            TypeValue::Enum(x) => TypeWideValue::Enum(x),
-            TypeValue::Tuple(x) => TypeWideValue::Vec(&x.elements),
-            TypeValue::Vec(x) => TypeWideValue::Vec(&x),
-        }
-    }
-
     pub fn decode(type_def: &TypeDef, bytes: impl AsRef<[u8]>) -> (Result<Self, &'static str>, usize) {
         let bytes = bytes.as_ref();
         let result = match type_def {
@@ -414,7 +552,7 @@ impl TypeValue {
                 }
                 let mut dst = [0u8; 4];
                 dst.copy_from_slice(&bytes[0..4]);
-                (TypeValue::F32(F32::from(f32::from_le_bytes(dst))), 4)
+                (TypeValue::F32(f32::from_le_bytes(dst)), 4)
             }
             TypeDef::F64 => {
                 if bytes.len() < size_of::<f64>() {
@@ -425,7 +563,7 @@ impl TypeValue {
                 }
                 let mut dst = [0u8; 8];
                 dst.copy_from_slice(&bytes[0..8]);
-                (TypeValue::F64(F64::from(f64::from_le_bytes(dst))), 8)
+                (TypeValue::F64(f64::from_le_bytes(dst)), 8)
             }
             TypeDef::String => {
                 if bytes.len() < 2 {
@@ -525,10 +663,10 @@ impl TypeValue {
                 bytes.push(if *v { 1 } else { 0 });
             }
             TypeValue::F32(v) => {
-                bytes.extend(v.into_inner().to_le_bytes());
+                bytes.extend(v.to_le_bytes());
             }
             TypeValue::F64(v) => {
-                bytes.extend(v.into_inner().to_le_bytes());
+                bytes.extend(v.to_le_bytes());
             }
             TypeValue::String(v) => {
                 let len = v.len() as u16;
@@ -547,51 +685,86 @@ impl TypeValue {
     }
 }
 
-impl PartialOrd for TypeValue {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.to_wide_value().partial_cmp(&other.to_wide_value())
+impl From<EqTypeValue> for TypeValue {
+    fn from(value: EqTypeValue) -> Self {
+        match value {
+            EqTypeValue::U8(v) => Self::U8(v),
+            EqTypeValue::U16(v) => Self::U16(v),
+            EqTypeValue::U32(v) => Self::U32(v),
+            EqTypeValue::U64(v) => Self::U64(v),
+            EqTypeValue::U128(v) => Self::U128(v),
+            EqTypeValue::I8(v) => Self::I8(v),
+            EqTypeValue::I16(v) => Self::I16(v),
+            EqTypeValue::I32(v) => Self::I32(v),
+            EqTypeValue::I64(v) => Self::I64(v),
+            EqTypeValue::I128(v) => Self::I128(v),
+            EqTypeValue::Bool(v) => Self::Bool(v),
+            EqTypeValue::String(v) => Self::String(v),
+            EqTypeValue::Unit => Self::Unit,
+        }
     }
 }
 
-impl Ord for TypeValue {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.to_wide_value().cmp(&other.to_wide_value())
+impl From<&EqTypeValue> for TypeValue {
+    fn from(value: &EqTypeValue) -> Self {
+        match value {
+            EqTypeValue::U8(v) => Self::U8(v.clone()),
+            EqTypeValue::U16(v) => Self::U16(v.clone()),
+            EqTypeValue::U32(v) => Self::U32(v.clone()),
+            EqTypeValue::U64(v) => Self::U64(v.clone()),
+            EqTypeValue::U128(v) => Self::U128(v.clone()),
+            EqTypeValue::I8(v) => Self::I8(v.clone()),
+            EqTypeValue::I16(v) => Self::I16(v.clone()),
+            EqTypeValue::I32(v) => Self::I32(v.clone()),
+            EqTypeValue::I64(v) => Self::I64(v.clone()),
+            EqTypeValue::I128(v) => Self::I128(v.clone()),
+            EqTypeValue::Bool(v) => Self::Bool(v.clone()),
+            EqTypeValue::String(v) => Self::String(v.clone()),
+            EqTypeValue::Unit => Self::Unit,
+        }
     }
 }
 
-impl Display for TypeValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TypeValue::Tuple(v) => write!(f, "{}", v),
-            TypeValue::Enum(_) => write!(f, "<enum>"),
-            TypeValue::Vec(v) => {
-                write!(f, "[")?;
-                for (i, t) in v.iter().enumerate() {
-                    if i < v.len() - 1 {
-                        write!(f, "{}, ", t)?;
-                    } else {
-                        write!(f, "{}", t)?;
-                    }
-                }
-                write!(f, "]")?;
-                Ok(())
-            }
-            TypeValue::U8(n) => write!(f, "{}", n),
-            TypeValue::U16(n) => write!(f, "{}", n),
-            TypeValue::U32(n) => write!(f, "{}", n),
-            TypeValue::U64(n) => write!(f, "{}", n),
-            TypeValue::U128(n) => write!(f, "{}", n),
-            TypeValue::I8(n) => write!(f, "{}", n),
-            TypeValue::I16(n) => write!(f, "{}", n),
-            TypeValue::I32(n) => write!(f, "{}", n),
-            TypeValue::I64(n) => write!(f, "{}", n),
-            TypeValue::I128(n) => write!(f, "{}", n),
-            TypeValue::Bool(n) => write!(f, "{}", n),
-            TypeValue::F32(n) => write!(f, "{}", n),
-            TypeValue::F64(n) => write!(f, "{}", n),
-            TypeValue::String(n) => write!(f, "{}", n),
-            TypeValue::Bytes(bytes) => write!(f, "{}", hex::encode(bytes)),
-            TypeValue::Unit => write!(f, "<unit>"),
+impl From<RangeTypeValue> for TypeValue {
+    fn from(value: RangeTypeValue) -> Self {
+        match value {
+            RangeTypeValue::U8(v) => Self::U8(v),
+            RangeTypeValue::U16(v) => Self::U16(v),
+            RangeTypeValue::U32(v) => Self::U32(v),
+            RangeTypeValue::U64(v) => Self::U64(v),
+            RangeTypeValue::U128(v) => Self::U128(v),
+            RangeTypeValue::I8(v) => Self::I8(v),
+            RangeTypeValue::I16(v) => Self::I16(v),
+            RangeTypeValue::I32(v) => Self::I32(v),
+            RangeTypeValue::I64(v) => Self::I64(v),
+            RangeTypeValue::I128(v) => Self::I128(v),
+            RangeTypeValue::F32(v) => Self::F32(v),
+            RangeTypeValue::F64(v) => Self::F64(v),
+            RangeTypeValue::Bool(v) => Self::Bool(v),
+            RangeTypeValue::String(v) => Self::String(v),
+            RangeTypeValue::Unit => Self::Unit,
+        }
+    }
+}
+
+impl From<&RangeTypeValue> for TypeValue {
+    fn from(value: &RangeTypeValue) -> Self {
+        match value {
+            RangeTypeValue::U8(v) => Self::U8(v.clone()),
+            RangeTypeValue::U16(v) => Self::U16(v.clone()),
+            RangeTypeValue::U32(v) => Self::U32(v.clone()),
+            RangeTypeValue::U64(v) => Self::U64(v.clone()),
+            RangeTypeValue::U128(v) => Self::U128(v.clone()),
+            RangeTypeValue::I8(v) => Self::I8(v.clone()),
+            RangeTypeValue::I16(v) => Self::I16(v.clone()),
+            RangeTypeValue::I32(v) => Self::I32(v.clone()),
+            RangeTypeValue::I64(v) => Self::I64(v.clone()),
+            RangeTypeValue::I128(v) => Self::I128(v.clone()),
+            RangeTypeValue::F32(v) => Self::F32(v.clone()),
+            RangeTypeValue::F64(v) => Self::F64(v.clone()),
+            RangeTypeValue::Bool(v) => Self::Bool(v.clone()),
+            RangeTypeValue::String(v) => Self::String(v.clone()),
+            RangeTypeValue::Unit => Self::Unit,
         }
     }
 }
@@ -647,44 +820,3 @@ impl Display for TypeValue {
 //         }
 //     }
 // }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Verify the sorting match expectations
-    #[test]
-    fn test_sorting_values() {
-        let values = vec![
-            TypeValue::Unit,
-            TypeValue::Bool(false),
-            TypeValue::Bool(true),
-            TypeValue::I32(-3),
-            TypeValue::I64(-2),
-            TypeValue::I8(-1),
-            TypeValue::I16(0),
-            TypeValue::I8(1),
-            TypeValue::I64(2),
-            TypeValue::I32(3),
-            TypeValue::I8(i8::MAX),
-            TypeValue::U8((i8::MAX as u8) + 1),
-            TypeValue::I16(i16::MAX),
-            TypeValue::U16((i16::MAX as u16) + 1),
-            TypeValue::I32(i32::MAX),
-            TypeValue::U32((i32::MAX as u32) + 1),
-            TypeValue::I64(i64::MAX),
-            TypeValue::U64((i64::MAX as u64) + 1),
-            TypeValue::I128(i128::MAX),
-            TypeValue::U128((i128::MAX as u128) + 1),
-            TypeValue::F32(F32::from(f32::MAX)),
-            TypeValue::F64(F64::from(f32::MAX as f64) + 1.0),
-            TypeValue::String("A".into()),
-            TypeValue::String("a".into()),
-        ];
-
-        let mut scramble = values.clone();
-        scramble.sort();
-
-        assert_eq!(values, scramble)
-    }
-}

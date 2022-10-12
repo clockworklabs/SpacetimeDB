@@ -1,4 +1,4 @@
-use spacetimedb_lib::{ElementDef, PrimaryKey, TupleDef, TupleValue, TypeDef, TypeValue};
+use spacetimedb_lib::{ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue, TupleDef, TupleValue, TypeDef, TypeValue};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -79,7 +79,7 @@ impl InstanceEnv {
         let schema = stdb.schema_for_table(tx, table_id).unwrap();
         let type_def = &schema.elements[col_id as usize].element_type;
 
-        let (eq_value, _) = TypeValue::decode(type_def, &buffer[..]);
+        let (eq_value, _) = EqTypeValue::decode(type_def, &buffer[..]);
         let eq_value = eq_value.expect("You can't let modules crash you like this you fool.");
         let seek = stdb.seek(tx, table_id, col_id, eq_value);
         if let Some(seek) = seek {
@@ -120,8 +120,8 @@ impl InstanceEnv {
         }
         let tuple = tuple.unwrap();
 
-        let start = &tuple.elements[0];
-        let end = &tuple.elements[1];
+        let start = RangeTypeValue::try_from(&tuple.elements[0]).unwrap();
+        let end = RangeTypeValue::try_from(&tuple.elements[1]).unwrap();
 
         let range = stdb.range_scan(tx, table_id, col_id, start..end);
         if let Some(range) = range {

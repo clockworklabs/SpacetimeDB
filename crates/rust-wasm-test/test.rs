@@ -6,7 +6,7 @@ extern crate std;
 use serde::{Deserialize, Serialize};
 use spacetimedb_bindgen::spacetimedb;
 use spacetimedb_bindings::println;
-use spacetimedb_bindings::{delete_range, Hash, TypeValue};
+use spacetimedb_bindings::{delete_range, Hash, RangeTypeValue};
 use std::time::Duration;
 pub struct TestA {
     pub x: u32,
@@ -766,7 +766,7 @@ pub fn test(sender: Hash, timestamp: u64, arg: TestA, arg2: TestB) {
         ));
         res
     });
-    delete_range(1, 0, TypeValue::U32(5)..TypeValue::U32(10));
+    delete_range(1, 0, RangeTypeValue::U32(5)..RangeTypeValue::U32(10));
     let mut row_count = 0;
     for _row in TestA::iter().unwrap() {
         row_count += 1;

@@ -5,7 +5,7 @@ use super::{
 // use super::relational_operators::Project;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
-use spacetimedb_lib::{ElementDef, PrimaryKey};
+use spacetimedb_lib::{ElementDef, EqTypeValue, PrimaryKey, RangeTypeValue};
 pub use spacetimedb_lib::{TupleDef, TupleValue, TypeDef, TypeValue};
 use std::{
     ops::{DerefMut, RangeBounds},
@@ -404,7 +404,12 @@ impl RelationalDB {
 
     pub fn drop_table(&mut self, tx: &mut Tx, table_id: u32) -> Result<(), String> {
         let range = self
-            .range_scan(tx, ST_TABLES_ID, 0, TypeValue::U32(table_id)..TypeValue::U32(table_id))
+            .range_scan(
+                tx,
+                ST_TABLES_ID,
+                0,
+                RangeTypeValue::U32(table_id)..RangeTypeValue::U32(table_id),
+            )
             .expect("ST_TABLES_ID should exist")
             .collect::<Vec<_>>();
         if let None = self.delete_in(tx, table_id, range) {
@@ -412,7 +417,12 @@ impl RelationalDB {
         }
 
         let range = self
-            .range_scan(tx, ST_COLUMNS_ID, 0, TypeValue::U32(table_id)..TypeValue::U32(table_id))
+            .range_scan(
+                tx,
+                ST_COLUMNS_ID,
+                0,
+                RangeTypeValue::U32(table_id)..RangeTypeValue::U32(table_id),
+            )
             .expect("ST_COLUMNS_ID should exist")
             .collect::<Vec<_>>();
         let _count = self.delete_in(tx, table_id, range).expect("ST_COLUMNS_ID should exist");
@@ -530,7 +540,7 @@ impl RelationalDB {
         return None;
     }
 
-    pub fn seek<'a>(&'a self, tx: &'a mut Tx, table_id: u32, col_id: u32, value: TypeValue) -> Option<SeekIter> {
+    pub fn seek<'a>(&'a self, tx: &'a mut Tx, table_id: u32, col_id: u32, value: EqTypeValue) -> Option<SeekIter> {
         if let Some(table_iter) = self.scan(tx, table_id) {
             return Some(SeekIter::Scan(ScanSeekIter {
                 table_iter,
@@ -541,7 +551,7 @@ impl RelationalDB {
         None
     }
 
-    pub fn range_scan<'a, R: RangeBounds<TypeValue> + 'a>(
+    pub fn range_scan<'a, R: RangeBounds<RangeTypeValue> + 'a>(
         &'a self,
         tx: &'a mut Tx,
         table_id: u32,
@@ -658,7 +668,7 @@ impl<'a> Iterator for SeekIter<'a> {
 pub struct ScanSeekIter<'a> {
     table_iter: TableIter<'a>,
     col_index: u32,
-    value: TypeValue,
+    value: EqTypeValue,
 }
 
 impl<'a> Iterator for ScanSeekIter<'a> {
@@ -667,7 +677,9 @@ impl<'a> Iterator for ScanSeekIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(row) = self.table_iter.next() {
             let value = &row.elements[self.col_index as usize];
-            if &self.value == value {
+            // TODO: This should not unwrap
+            let eq_value: EqTypeValue = value.try_into().unwrap();
+            if self.value == eq_value {
                 return Some(row);
             }
         }
@@ -675,11 +687,11 @@ impl<'a> Iterator for ScanSeekIter<'a> {
     }
 }
 
-pub enum RangeIter<'a, R: RangeBounds<TypeValue>> {
+pub enum RangeIter<'a, R: RangeBounds<RangeTypeValue>> {
     Scan(ScanRangeIter<'a, R>),
 }
 
-impl<'a, R: RangeBounds<TypeValue>> Iterator for RangeIter<'a, R> {
+impl<'a, R: RangeBounds<RangeTypeValue>> Iterator for RangeIter<'a, R> {
     type Item = TupleValue;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -688,19 +700,21 @@ impl<'a, R: RangeBounds<TypeValue>> Iterator for RangeIter<'a, R> {
         }
     }
 }
-pub struct ScanRangeIter<'a, R: RangeBounds<TypeValue>> {
+pub struct ScanRangeIter<'a, R: RangeBounds<RangeTypeValue>> {
     table_iter: TableIter<'a>,
     col_index: u32,
     range: R,
 }
 
-impl<'a, R: RangeBounds<TypeValue>> Iterator for ScanRangeIter<'a, R> {
+impl<'a, R: RangeBounds<RangeTypeValue>> Iterator for ScanRangeIter<'a, R> {
     type Item = TupleValue;
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(row) = self.table_iter.next() {
             let value = &row.elements[self.col_index as usize];
-            if self.range.contains(value) {
+            // TODO: This should not unwrap
+            let range_value: RangeTypeValue = value.try_into().unwrap();
+            if self.range.contains(&range_value) {
                 return Some(row);
             }
         }
@@ -711,7 +725,7 @@ impl<'a, R: RangeBounds<TypeValue>> Iterator for ScanRangeIter<'a, R> {
 #[cfg(test)]
 mod tests {
     use super::RelationalDB;
-    use spacetimedb_lib::{ElementDef, TupleDef, TupleValue, TypeDef, TypeValue};
+    use spacetimedb_lib::{ElementDef, RangeTypeValue, TupleDef, TupleValue, TypeDef, TypeValue};
     use tempdir::TempDir;
 
     // let ptr = stdb.from(&mut tx, "health")
@@ -972,7 +986,7 @@ mod tests {
         println!("{}", table_id);
 
         let mut rows = stdb
-            .range_scan(&mut tx, table_id, 0, TypeValue::I32(0)..)
+            .range_scan(&mut tx, table_id, 0, RangeTypeValue::I32(0)..)
             .unwrap()
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
@@ -1024,7 +1038,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let mut rows = stdb
-            .range_scan(&mut tx, table_id, 0, TypeValue::I32(0)..)
+            .range_scan(&mut tx, table_id, 0, RangeTypeValue::I32(0)..)
             .unwrap()
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
