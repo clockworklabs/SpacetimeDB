@@ -203,9 +203,8 @@ async fn on_binary(
 
 fn on_worker_budget_update(budget_update: BudgetUpdate) {
     worker_budget::on_budget_receive_allocation(
-        &Hash::from_slice(budget_update.module_identity),
+        &Hash::from_slice(budget_update.identity),
         budget_update.allocation_delta,
-        budget_update.default_max_spend,
     );
 }
 

@@ -18,7 +18,7 @@ pub fn router() -> Router {
     build_simple_router(|route| {
         route.delegate("/database").to_router(database_router());
         route.delegate("/identity").to_router(proxy_router());
-        route.delegate("/budget").to_router(proxy_router());
+        route.delegate("/energy").to_router(proxy_router());
         route.delegate("/node").to_router(node_router());
         route.delegate("/metrics").to_router(metrics_router());
     })

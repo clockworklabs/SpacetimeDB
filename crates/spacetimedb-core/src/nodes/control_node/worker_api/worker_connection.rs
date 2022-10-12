@@ -224,12 +224,8 @@ impl Drop for WorkerConnection {
 }
 
 async fn on_budget_spend_update(node_id: u64, node_budget_update: WorkerBudgetSpend) -> Result<(), anyhow::Error> {
-    for spend in node_budget_update.module_identity_spend {
-        control_budget::node_budget_spend_update(
-            node_id,
-            &Hash::from_slice(spend.module_identity.as_slice()),
-            spend.spend,
-        )?;
+    for spend in node_budget_update.identity_spend {
+        control_budget::node_energy_spend_update(node_id, &Hash::from_slice(spend.identity.as_slice()), spend.spend)?;
     }
 
     // Now redo all budget allocations

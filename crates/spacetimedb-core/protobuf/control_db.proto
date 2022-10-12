@@ -8,13 +8,11 @@ message IdentityEmail {
     string email = 2;
 }
 
-// An energy budget (per module identity).
-message EnergyBudget {
-    bytes module_identity = 1;
+// An energy balance (per identity).
+message EnergyBalance {
+    bytes identity = 1;
     // How much budget is remaining for this identity.
     int64 balance_quanta = 2;
-    // A default maximum to spend per reducer (unless overridden per API call)
-    uint64 default_reducer_maximum_quanta = 3;
 }
 
 enum HostType {

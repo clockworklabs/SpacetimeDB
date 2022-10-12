@@ -341,9 +341,8 @@ async fn send_budget_allocation(
     budget_allocation: &WorkerBudgetState,
 ) {
     let budget_update = BudgetUpdate {
-        module_identity: identity.as_slice().to_vec(),
+        identity: identity.as_slice().to_vec(),
         allocation_delta: budget_allocation.delta_quanta,
-        default_max_spend: budget_allocation.default_max_spend_quanta,
     };
     let message = WorkerBoundMessage {
         r#type: Some(worker_bound_message::Type::BudgetUpdate(budget_update)),
@@ -359,7 +358,7 @@ async fn send_budget_allocation(
 
 // Broadcast the budget allocations for only a single module to all worker nodes.
 // Called when a specific module budget is updated.
-pub(crate) async fn publish_module_budget_state(module_identity: &Hash) -> Result<(), anyhow::Error> {
+pub(crate) async fn publish_energy_balance_state(identity: &Hash) -> Result<(), anyhow::Error> {
     // To avoid trying to hold the WCI mutex in the .awaits below, we'll pre-collect the node ids
     // here.
     let node_ids: Vec<_> = {
@@ -368,14 +367,14 @@ pub(crate) async fn publish_module_budget_state(module_identity: &Hash) -> Resul
     };
 
     for node_id in node_ids {
-        let allocation = control_budget::module_budget_allocations(node_id, module_identity).await;
+        let allocation = control_budget::identity_budget_allocations(node_id, identity).await;
         if let Some(allocation) = allocation {
             let sender = {
                 let wci = WORKER_CONNECTION_INDEX.lock().unwrap();
                 let connection = wci.get_client(&node_id).unwrap();
                 connection.sender()
             };
-            send_budget_allocation(node_id, module_identity, &sender, &allocation).await;
+            send_budget_allocation(node_id, identity, &sender, &allocation).await;
         }
     }
 
@@ -394,9 +393,9 @@ pub(crate) async fn node_publish_budget_state(node_id: u64) -> Result<(), anyhow
         }
         Some(nba) => nba,
     };
-    // For each budget allocation (per module identity), copy it into a BudgetUpdate proto and
+    // For each budget allocation (per identity), copy it into a BudgetUpdate proto and
     // broadcast it to the node.
-    // TODO: this is sending one message per module identity. For efficiency we could consider a
+    // TODO: this is sending one message per identity. For efficiency we could consider a
     // single batched message containing all budgets.
     for nba in node_budget_allocations {
         let sender = {

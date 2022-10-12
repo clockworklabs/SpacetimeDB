@@ -57,17 +57,16 @@ message DeleteOperation {
 
 // Budget allocation update from control node to worker node.
 message BudgetUpdate {
-    bytes module_identity = 1;
+    bytes identity = 1;
     int64 allocation_delta = 2;
-    int64 default_max_spend = 3;
 }
 
 // Budget spend update from worker up to control node.
 message WorkerBudgetSpend {
-    repeated WorkerModuleBudgetSpend module_identity_spend = 1;
+    repeated WorkerModuleBudgetSpend identity_spend = 1;
 }
 
 message WorkerModuleBudgetSpend {
-    bytes module_identity = 1;
+    bytes identity = 1;
     int64 spend = 2;
 }

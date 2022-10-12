@@ -28,8 +28,12 @@ pub struct CommitResult {
 
 #[derive(Debug, Clone)]
 pub struct Tx {
+    // Parent transaction's offset, that I branched off of.
+    // The snapshot I'm working off.
     parent_tx_offset: u64,
+    // The set of writes performed by this transaction.
     writes: Vec<Write>,
+    // The set of reads performed by this transaction.
     reads: Vec<Read>,
 }
 
@@ -63,6 +67,7 @@ impl ClosedHashSet {
     }
 }
 
+// Last branch point. There are no running transactions snapshotted before this point.
 pub struct ClosedState {
     hash_sets: HashMap<u32, ClosedHashSet>,
 }
@@ -121,6 +126,9 @@ pub struct TransactionalDB {
     pub make_odb_fun: fn(&Path) -> Box<dyn ObjectDB + Send>,
     pub message_log: MessageLog,
     root: PathBuf,
+
+    // Last branch point. There are no running transactions snapshotted before this point.
+    // Squashed states
     closed_state: ClosedState,
     unwritten_commit: Commit,
 
@@ -128,8 +136,12 @@ pub struct TransactionalDB {
     // into the values themselves which might make it easier to
     // index open transaction values
     closed_transaction_offset: u64,
+
+    // Committed but unsquashed transactions. Versions remain in flight that *may* be using these.
     open_transactions: Vec<Transaction>,
     open_transaction_offsets: Vec<u64>,
+
+    // Of the open transactions, which have branches.
     branched_transaction_offsets: Vec<u64>,
 }
 

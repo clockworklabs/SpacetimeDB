@@ -5,17 +5,14 @@ pub struct IdentityEmail {
     #[prost(string, tag="2")]
     pub email: std::string::String,
 }
-/// An energy budget (per module identity).
+/// An energy balance (per identity).
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct EnergyBudget {
+pub struct EnergyBalance {
     #[prost(bytes, tag="1")]
-    pub module_identity: std::vec::Vec<u8>,
+    pub identity: std::vec::Vec<u8>,
     /// How much budget is remaining for this identity.
     #[prost(int64, tag="2")]
     pub balance_quanta: i64,
-    /// A default maximum to spend per reducer (unless overridden per API call)
-    #[prost(uint64, tag="3")]
-    pub default_reducer_maximum_quanta: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Database {

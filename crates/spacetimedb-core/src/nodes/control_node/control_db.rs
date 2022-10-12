@@ -2,7 +2,7 @@ use prost::Message;
 
 use crate::address::Address;
 use crate::hash::{hash_bytes, Hash};
-use crate::protobuf::control_db::{Database, DatabaseInstance, EnergyBudget, IdentityEmail, Node};
+use crate::protobuf::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
 
 // TODO: Consider making not static
 lazy_static::lazy_static! {
@@ -295,7 +295,7 @@ pub async fn _delete_node(id: u64) -> Result<(), anyhow::Error> {
 /// Return the current budget for all module identities as stored in the db.
 /// Note: this function is for the stored budget only and should *only* be called by functions in
 /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-pub async fn get_energy_budgets() -> Result<Vec<EnergyBudget>, anyhow::Error> {
+pub async fn get_energy_budgets() -> Result<Vec<EnergyBalance>, anyhow::Error> {
     let mut budgets = vec![];
     let tree = CONTROL_DB.open_tree("energy_budget")?;
     for budget_entry in tree.iter() {
@@ -306,10 +306,10 @@ pub async fn get_energy_budgets() -> Result<Vec<EnergyBudget>, anyhow::Error> {
                 continue;
             }
         };
-        let energy_budget = match EnergyBudget::decode(&budget_entry.1[..]) {
-            Ok(energy_budget) => energy_budget,
+        let energy_budget = match EnergyBalance::decode(&budget_entry.1[..]) {
+            Ok(balance) => balance,
             Err(e) => {
-                log::error!("Invalid value in energy_budget control_db tree: {}", e);
+                log::error!("Invalid value in energy_balance control_db tree: {}", e);
                 continue;
             }
         };
@@ -318,27 +318,27 @@ pub async fn get_energy_budgets() -> Result<Vec<EnergyBudget>, anyhow::Error> {
     Ok(budgets)
 }
 
-/// Return the current budget for a given module identity as stored in the db.
+/// Return the current budget for a given identity as stored in the db.
 /// Note: this function is for the stored budget only and should *only* be called by functions in
 /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-pub async fn get_energy_budget(module_identity: &Hash) -> Result<Option<EnergyBudget>, anyhow::Error> {
+pub async fn get_energy_balance(identity: &Hash) -> Result<Option<EnergyBalance>, anyhow::Error> {
     let tree = CONTROL_DB.open_tree("energy_budget")?;
-    let key = module_identity.to_hex();
+    let key = identity.to_hex();
     let value = tree.get(key.as_bytes())?;
     if let Some(value) = value {
-        let budget = EnergyBudget::decode(&value[..]).unwrap();
+        let budget = EnergyBalance::decode(&value[..]).unwrap();
         Ok(Some(budget))
     } else {
         Ok(None)
     }
 }
 
-/// Update the stored current budget for a module identity.
+/// Update the stored current budget for a identity.
 /// Note: this function is for the stored budget only and should *only* be called by functions in
 /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-pub fn set_energy_budget(module_identity: &Hash, budget: &EnergyBudget) -> Result<(), anyhow::Error> {
+pub fn set_energy_balance(identity: &Hash, budget: &EnergyBalance) -> Result<(), anyhow::Error> {
     let tree = CONTROL_DB.open_tree("energy_budget")?;
-    let key = module_identity.to_hex();
+    let key = identity.to_hex();
     let mut buf = Vec::new();
     budget.encode(&mut buf).unwrap();
     tree.insert(key, buf.clone())?;

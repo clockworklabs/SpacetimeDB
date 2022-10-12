@@ -97,22 +97,20 @@ pub mod delete_operation {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BudgetUpdate {
     #[prost(bytes, tag="1")]
-    pub module_identity: std::vec::Vec<u8>,
+    pub identity: std::vec::Vec<u8>,
     #[prost(int64, tag="2")]
     pub allocation_delta: i64,
-    #[prost(int64, tag="3")]
-    pub default_max_spend: i64,
 }
 /// Budget spend update from worker up to control node.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkerBudgetSpend {
     #[prost(message, repeated, tag="1")]
-    pub module_identity_spend: ::std::vec::Vec<WorkerModuleBudgetSpend>,
+    pub identity_spend: ::std::vec::Vec<WorkerModuleBudgetSpend>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkerModuleBudgetSpend {
     #[prost(bytes, tag="1")]
-    pub module_identity: std::vec::Vec<u8>,
+    pub identity: std::vec::Vec<u8>,
     #[prost(int64, tag="2")]
     pub spend: i64,
 }
