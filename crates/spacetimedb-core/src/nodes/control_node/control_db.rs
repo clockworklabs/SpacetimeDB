@@ -292,7 +292,7 @@ pub async fn _delete_node(id: u64) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-/// Return the current budget for all module identities as stored in the db.
+/// Return the current budget for all identities as stored in the db.
 /// Note: this function is for the stored budget only and should *only* be called by functions in
 /// `control_budget`, where a cached copy is stored along with business logic for managing it.
 pub async fn get_energy_budgets() -> Result<Vec<EnergyBalance>, anyhow::Error> {

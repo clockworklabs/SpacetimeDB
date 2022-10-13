@@ -118,13 +118,13 @@ fn calculate_per_node_quanta(eb: &EnergyBalance, _worker_node_id: u64, number_of
 }
 
 /// Set per-node budget partitions. Called by both initial setup and on the budget refresh loop.
-async fn update_identity_worker_energy_state(module_identity: &Hash, eb: &EnergyBalance) {
+async fn update_identity_worker_energy_state(identity: &Hash, eb: &EnergyBalance) {
     let nodes = { control_db::get_nodes().await.expect("retrieve all nodes") };
     let num_nodes = nodes.len();
     for node in nodes {
         let per_node_quanta = calculate_per_node_quanta(&eb, node.id, num_nodes);
         let mut node_identity_budget = NODE_IDENTITY_BUDGET.lock().expect("unlock node/identity budget state");
-        let budget_entry = node_identity_budget.entry((node.id, *module_identity));
+        let budget_entry = node_identity_budget.entry((node.id, *identity));
         budget_entry
             .and_modify(|bs| {
                 let node_new_allocation = per_node_quanta;
@@ -156,11 +156,11 @@ pub(crate) async fn budget_allocations(node_id: u64) -> Option<Vec<(Hash, Worker
     Some(x.collect())
 }
 
-/// Retrieve current budget allocations for a node & specific module for this interval.
-pub(crate) async fn identity_budget_allocations(node_id: u64, module_identity: &Hash) -> Option<WorkerBudgetState> {
+/// Retrieve current budget allocations for a node & specific identity for this interval.
+pub(crate) async fn identity_budget_allocations(node_id: u64, identity: &Hash) -> Option<WorkerBudgetState> {
     let node_identity_budget = NODE_IDENTITY_BUDGET.lock().expect("unlock node/identity budget state");
     node_identity_budget
-        .get(&(node_id, module_identity.clone()))
+        .get(&(node_id, identity.clone()))
         .map(|b| b.clone())
 }
 
