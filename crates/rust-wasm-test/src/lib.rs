@@ -1,7 +1,7 @@
 use spacetimedb::delete_range;
 use spacetimedb::println;
 use spacetimedb::spacetimedb;
-use spacetimedb::{Hash, RangeTypeValue};
+use spacetimedb::{Hash, TypeValue};
 use std::time::Duration;
 
 #[spacetimedb(table)]
@@ -48,7 +48,7 @@ pub fn test(sender: Hash, timestamp: u64, arg: TestA, arg2: TestB) {
 
     println!("Row count before delete: {:?}", row_count);
 
-    delete_range(1, 0, RangeTypeValue::U32(5)..RangeTypeValue::U32(10));
+    delete_range(1, 0, TypeValue::U32(5)..TypeValue::U32(10));
 
     let mut row_count = 0;
     for _row in TestA::iter() {

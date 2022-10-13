@@ -5,7 +5,7 @@ use std::prelude::rust_2021::*;
 extern crate std;
 use spacetimedb_bindgen::spacetimedb;
 use spacetimedb_bindings::println;
-use spacetimedb_bindings::{delete_range, Hash, RangeTypeValue};
+use spacetimedb_bindings::{delete_range, Hash, TypeValue};
 use std::time::Duration;
 #[allow(non_upper_case_globals)]
 static mut __table_id__TestA: Option<u32> = None;
@@ -895,7 +895,7 @@ pub fn test(sender: Hash, timestamp: u64, arg: TestA, arg2: TestB) {
         ));
         res
     });
-    delete_range(1, 0, RangeTypeValue::U32(5)..RangeTypeValue::U32(10));
+    delete_range(1, 0, TypeValue::U32(5)..TypeValue::U32(10));
     let mut row_count = 0;
     for _row in TestA::iter() {
         row_count += 1;
