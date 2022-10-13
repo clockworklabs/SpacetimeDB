@@ -450,7 +450,7 @@ fn spacetimedb_table(args: AttributeArgs, item: TokenStream) -> TokenStream {
             },
         }
 
-        col_value_insert = format!("{}({})", col_type_value.clone(), format!("ins.{}", col_name))
+        col_value_insert = format!("{}({})", col_type_value.clone(), format!("ins.{}.into()", col_name))
             .parse()
             .unwrap();
 

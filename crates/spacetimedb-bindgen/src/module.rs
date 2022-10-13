@@ -326,7 +326,7 @@ pub(crate) fn autogen_module_tuple_to_struct(
         }
 
         match_body.push(quote! {
-            #field_ident: #tmp_name
+            #field_ident: #tmp_name.into()
         });
 
         col_num = col_num + 1;
@@ -411,7 +411,7 @@ pub(crate) fn autogen_module_struct_to_tuple(
         match rust_to_spacetimedb_ident(field_type_str.as_str()) {
             Some(spacetimedb_type) => {
                 type_values.push(quote! {
-                    spacetimedb::spacetimedb_lib::TypeValue::#spacetimedb_type(value.#field_ident)
+                    spacetimedb::spacetimedb_lib::TypeValue::#spacetimedb_type(value.#field_ident.into())
                 });
             }
             _ => {
