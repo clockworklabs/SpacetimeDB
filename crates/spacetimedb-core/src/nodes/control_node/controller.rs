@@ -1,6 +1,6 @@
 use crate::address::Address;
-use crate::nodes::control_node::control_budget;
-use crate::nodes::control_node::control_budget::WorkerBudgetState;
+use crate::nodes::control_node::budget_controller;
+use crate::nodes::control_node::budget_controller::WorkerBudgetState;
 use crate::nodes::control_node::worker_api::worker_connection::WorkerConnectionSender;
 use crate::nodes::HostType;
 use crate::{
@@ -367,7 +367,7 @@ pub(crate) async fn publish_energy_balance_state(identity: &Hash) -> Result<(), 
     };
 
     for node_id in node_ids {
-        let allocation = control_budget::identity_budget_allocations(node_id, identity).await;
+        let allocation = budget_controller::identity_budget_allocations(node_id, identity).await;
         if let Some(allocation) = allocation {
             let sender = {
                 let wci = WORKER_CONNECTION_INDEX.lock().unwrap();
@@ -385,7 +385,7 @@ pub(crate) async fn publish_energy_balance_state(identity: &Hash) -> Result<(), 
 /// Called when a node is first connected and also on the budget refresh loop.
 pub(crate) async fn node_publish_budget_state(node_id: u64) -> Result<(), anyhow::Error> {
     log::trace!("Sending budget state for node {}", node_id);
-    let node_budget_allocations = control_budget::budget_allocations(node_id).await;
+    let node_budget_allocations = budget_controller::budget_allocations(node_id).await;
     let node_budget_allocations = match node_budget_allocations {
         None => {
             log::warn!("Missing all budget allocations for node: {}", node_id);

@@ -9,8 +9,8 @@ use tokio_tungstenite::tungstenite::protocol::{CloseFrame, Message as WebSocketM
 use tokio_tungstenite::WebSocketStream;
 
 use crate::hash::Hash;
-use crate::nodes::control_node::control_budget::refresh_all_budget_allocations;
-use crate::nodes::control_node::{control_budget, controller};
+use crate::nodes::control_node::budget_controller::refresh_all_budget_allocations;
+use crate::nodes::control_node::{budget_controller, controller};
 use crate::protobuf::control_worker_api::{control_bound_message, ControlBoundMessage, WorkerBudgetSpend};
 
 use super::worker_connection_index::WORKER_CONNECTION_INDEX;
@@ -225,7 +225,11 @@ impl Drop for WorkerConnection {
 
 async fn on_budget_spend_update(node_id: u64, node_budget_update: WorkerBudgetSpend) -> Result<(), anyhow::Error> {
     for spend in node_budget_update.identity_spend {
-        control_budget::node_energy_spend_update(node_id, &Hash::from_slice(spend.identity.as_slice()), spend.spend)?;
+        budget_controller::node_energy_spend_update(
+            node_id,
+            &Hash::from_slice(spend.identity.as_slice()),
+            spend.spend,
+        )?;
     }
 
     // Now redo all budget allocations
