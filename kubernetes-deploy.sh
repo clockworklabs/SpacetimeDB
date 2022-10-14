@@ -30,7 +30,7 @@ echo "$KUBERNETES_CLUSTER_CERTIFICATE" | base64 --decode > cert.crt
 FLAGS=( "--kubeconfig=/dev/null" "--server=$KUBERNETES_SERVER" "--certificate-authority=cert.crt" "--token=$KUBERNETES_TOKEN" )
 
 # deploy nginx ingress service
-kubectl "${FLAGS[@]}" apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v0.45.0/deploy/static/provider/aws/deploy.yaml
+kubectl "${FLAGS[@]}" apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.1.1/deploy/static/provider/aws/deploy.yaml
 
 # deploy cert-manager
 kubectl "${FLAGS[@]}" apply -f https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
