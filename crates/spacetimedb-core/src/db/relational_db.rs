@@ -1,9 +1,9 @@
 use super::{
+    message_log::MessageLog,
     relational_operators::Relation,
     transactional_db::{CommitResult, ScanIter, TransactionalDB, Tx},
 };
 // use super::relational_operators::Project;
-use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
 use spacetimedb_lib::{
     buffer::{BufReader, DecodeError},
@@ -118,18 +118,21 @@ pub struct RelationalDB {
     pub(crate) txdb: TransactionalDB,
 }
 
-fn make_default_ostorage(path: &Path) -> Box<dyn ObjectDB + Send> {
-    Box::new(HashMapObjectDB::open(path).unwrap())
-}
-
 impl RelationalDB {
-    pub fn open(root: impl AsRef<Path>) -> Self {
+    pub fn open(
+        root: impl AsRef<Path>,
+        message_log: Arc<Mutex<MessageLog>>,
+        odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
+    ) -> Self {
         // Create tables that must always exist
         // i.e. essentially bootstrap the creation of the schema
         // tables by hard coding the schema of the schema tables
-        let root = root.as_ref();
+        // NOTE: This is not used because currently the TransactionalDB doesn't
+        // write anything to disk, however because this may happen in the future
+        // I'm going to leave this.
+        let _root = root.as_ref();
 
-        let mut txdb = TransactionalDB::open(&root.to_path_buf().join("txdb"), make_default_ostorage).unwrap();
+        let mut txdb = TransactionalDB::open(message_log, odb).unwrap();
 
         Self::bootstrap(&mut txdb);
 
@@ -244,8 +247,8 @@ impl RelationalDB {
         txdb.commit_tx(tx);
     }
 
-    pub fn reset_hard(&mut self) -> Result<(), anyhow::Error> {
-        self.txdb.reset_hard()?;
+    pub fn reset_hard(&mut self, message_log: Arc<Mutex<MessageLog>>) -> Result<(), anyhow::Error> {
+        self.txdb.reset_hard(message_log)?;
         Ok(())
     }
 
@@ -720,6 +723,16 @@ impl<'a, R: RangeBounds<TypeValue>> Iterator for ScanRangeIter<'a, R> {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        path::Path,
+        sync::{Arc, Mutex},
+    };
+
+    use crate::db::{
+        message_log::MessageLog,
+        ostorage::{hashmap_object_db::HashMapObjectDB, ObjectDB},
+    };
+
     use super::RelationalDB;
     use spacetimedb_lib::{ElementDef, TupleDef, TupleValue, TypeDef, TypeValue};
     use tempdir::TempDir;
@@ -743,10 +756,16 @@ mod tests {
     // health.set(2332);
     // stdb!(update health where hp = 0 set {health as *});
 
+    fn make_default_ostorage(path: impl AsRef<Path>) -> Box<dyn ObjectDB + Send> {
+        Box::new(HashMapObjectDB::open(path).unwrap())
+    }
+
     #[test]
     fn test() {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
-        let mut stdb = RelationalDB::open(tmp_dir.path());
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb);
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -767,7 +786,9 @@ mod tests {
     #[test]
     fn test_table_name() {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
-        let mut stdb = RelationalDB::open(tmp_dir.path());
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb);
         let mut tx = stdb.begin_tx();
         let table_id = stdb
             .create_table(
@@ -791,7 +812,9 @@ mod tests {
     #[test]
     fn test_column_name() {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
-        let mut stdb = RelationalDB::open(tmp_dir.path());
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb);
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -815,7 +838,9 @@ mod tests {
     #[test]
     fn test_create_table_pre_commit() {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
-        let mut stdb = RelationalDB::open(tmp_dir.path());
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb);
         let mut tx = stdb.begin_tx();
         stdb.create_table(
             &mut tx,
@@ -850,7 +875,9 @@ mod tests {
     #[test]
     fn test_pre_commit() {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
-        let mut stdb = RelationalDB::open(tmp_dir.path());
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb);
         let mut tx = stdb.begin_tx();
         let table_id = stdb
             .create_table(
@@ -902,7 +929,9 @@ mod tests {
     #[test]
     fn test_post_commit() {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
-        let mut stdb = RelationalDB::open(tmp_dir.path());
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb);
         let mut tx = stdb.begin_tx();
         let table_id = stdb
             .create_table(
@@ -956,7 +985,9 @@ mod tests {
     #[test]
     fn test_filter_range_pre_commit() {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
-        let mut stdb = RelationalDB::open(tmp_dir.path());
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb);
         let mut tx = stdb.begin_tx();
         let table_id = stdb
             .create_table(
@@ -1010,7 +1041,9 @@ mod tests {
     #[test]
     fn test_filter_range_post_commit() {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
-        let mut stdb = RelationalDB::open(tmp_dir.path());
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb);
         let mut tx = stdb.begin_tx();
         let table_id = stdb
             .create_table(
@@ -1064,7 +1097,9 @@ mod tests {
     #[test]
     fn test_create_table_rollback() {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
-        let mut stdb = RelationalDB::open(tmp_dir.path());
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb);
         let mut tx = stdb.begin_tx();
         let table_id = stdb
             .create_table(
@@ -1091,7 +1126,9 @@ mod tests {
     #[test]
     fn test_rollback() {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
-        let mut stdb = RelationalDB::open(tmp_dir.path());
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb);
         let mut tx = stdb.begin_tx();
         let table_id = stdb
             .create_table(

@@ -299,7 +299,8 @@ impl WasmModuleHostActor {
 
     fn delete_database(&mut self) -> Result<(), anyhow::Error> {
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
-        stdb.reset_hard()?;
+        let mlog = self.worker_database_instance.message_log.clone();
+        stdb.reset_hard(mlog)?;
         Ok(())
     }
 
@@ -690,12 +691,15 @@ impl WasmModuleHostActor {
                 let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
                 let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
                 let tx = instance_tx_map.remove(&instance_id).unwrap();
-                if let Some(CommitResult { tx, num_bytes_written }) = stdb.commit_tx(tx.into()) {
-                    TX_SIZE
-                        .with_label_values(&[&address, reducer_symbol])
-                        .observe(num_bytes_written as f64);
-
-                    stdb.txdb.sync_all().unwrap();
+                if let Some(CommitResult { tx, commit_bytes }) = stdb.commit_tx(tx.into()) {
+                    if let Some(commit_bytes) = commit_bytes {
+                        let mut mlog = self.worker_database_instance.message_log.lock().unwrap();
+                        TX_SIZE
+                            .with_label_values(&[&address, reducer_symbol])
+                            .observe(commit_bytes.len() as f64);
+                        mlog.append(commit_bytes).unwrap();
+                        mlog.sync_all().unwrap();
+                    }
                     Ok((Some(tx), used_energy, remaining_points, repeat_duration))
                 } else {
                     todo!("Write skew, you need to implement retries my man, T-dawg.");

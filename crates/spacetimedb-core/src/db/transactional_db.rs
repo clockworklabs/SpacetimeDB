@@ -12,7 +12,7 @@ use crate::db::ostorage::ObjectDB;
 use crate::hash::{hash_bytes, Hash};
 use std::{
     collections::{hash_set::Iter, HashMap, HashSet},
-    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -23,7 +23,7 @@ struct Read {
 
 pub struct CommitResult {
     pub tx: Transaction,
-    pub num_bytes_written: usize,
+    pub commit_bytes: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone)]
@@ -117,10 +117,7 @@ impl ClosedState {
 }
 
 pub struct TransactionalDB {
-    pub odb: Box<dyn ObjectDB + Send>,
-    pub make_odb_fun: fn(&Path) -> Box<dyn ObjectDB + Send>,
-    pub message_log: MessageLog,
-    root: PathBuf,
+    pub odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
     closed_state: ClosedState,
     unwritten_commit: Commit,
 
@@ -134,10 +131,11 @@ pub struct TransactionalDB {
 }
 
 impl TransactionalDB {
-    pub fn open(root: &Path, make_odb_fun: fn(&Path) -> Box<dyn ObjectDB + Send>) -> Result<Self, anyhow::Error> {
-        let odb = make_odb_fun(&root.to_path_buf().join("odb"));
-        let message_log = MessageLog::open(root.to_path_buf().join("mlog"))?;
-
+    pub fn open(
+        message_log: Arc<Mutex<MessageLog>>,
+        odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
+    ) -> Result<Self, anyhow::Error> {
+        let message_log = message_log.lock().unwrap();
         let mut closed_state = ClosedState::new();
         let mut closed_transaction_offset = 0;
         let mut last_commit_offset = None;
@@ -172,9 +170,6 @@ impl TransactionalDB {
 
         let txdb = Self {
             odb,
-            make_odb_fun,
-            root: root.to_owned(),
-            message_log,
             closed_state,
             unwritten_commit: Commit {
                 parent_commit_hash: last_hash,
@@ -191,9 +186,8 @@ impl TransactionalDB {
         Ok(txdb)
     }
 
-    pub fn reset_hard(&mut self) -> Result<(), anyhow::Error> {
-        self.message_log.reset_hard()?;
-        *self = Self::open(&self.root, self.make_odb_fun)?;
+    pub fn reset_hard(&mut self, message_log: Arc<Mutex<MessageLog>>) -> Result<(), anyhow::Error> {
+        *self = Self::open(message_log, self.odb.clone())?;
         Ok(())
     }
 
@@ -306,12 +300,12 @@ impl TransactionalDB {
         let new_transaction = Transaction { writes };
 
         const COMMIT_SIZE: usize = 1;
-        let mut num_written = 0;
+        let mut commit_bytes = None;
         // TODO: avoid copy
         // TODO: use an estimated byte size to determine how much to put in here
         self.unwritten_commit.transactions.push(new_transaction.clone());
         if self.unwritten_commit.transactions.len() > COMMIT_SIZE {
-            num_written = self.persist_commit();
+            commit_bytes = Some(self.generate_commit());
         }
 
         // TODO: avoid copy
@@ -332,7 +326,7 @@ impl TransactionalDB {
 
         return CommitResult {
             tx: new_transaction,
-            num_bytes_written: num_written,
+            commit_bytes,
         };
     }
 
@@ -369,13 +363,11 @@ impl TransactionalDB {
         }
     }
 
-    fn persist_commit(&mut self) -> usize {
+    fn generate_commit(&mut self) -> Vec<u8> {
         let mut bytes = Vec::new();
         self.unwritten_commit.encode(&mut bytes);
-        let num_written = bytes.len();
 
         let parent_commit_hash = Some(hash_bytes(&bytes));
-        self.message_log.append(bytes).unwrap();
 
         let commit_offset = self.unwritten_commit.commit_offset + 1;
         let num_tx = self.unwritten_commit.transactions.len();
@@ -388,7 +380,7 @@ impl TransactionalDB {
             transactions: Vec::new(),
         };
 
-        num_written
+        bytes
     }
 
     pub fn from_data_key<T, F: Fn(&[u8]) -> T>(&self, data_key: &DataKey, f: F) -> Option<T> {
@@ -398,7 +390,8 @@ impl TransactionalDB {
                 Some(t)
             }
             DataKey::Hash(hash) => {
-                let t = f(self.odb.get(Hash::from_arr(&hash.data)).unwrap().to_vec().as_slice());
+                let odb = self.odb.lock().unwrap();
+                let t = f(odb.get(Hash::from_arr(&hash.data)).unwrap().to_vec().as_slice());
                 Some(t)
             }
         };
@@ -511,7 +504,8 @@ impl TransactionalDB {
 
     pub fn insert(&mut self, tx: &mut Tx, set_id: u32, bytes: Vec<u8>) -> DataKey {
         let value = if bytes.len() > 32 {
-            let hash = self.odb.add(bytes);
+            let mut odb = self.odb.lock().unwrap();
+            let hash = odb.add(bytes);
             DataKey::Hash(spacetimedb_lib::Hash::from_arr(&hash.data))
         } else {
             let mut buf = [0; 32];
@@ -556,10 +550,6 @@ impl TransactionalDB {
         }
 
         value
-    }
-
-    pub fn sync_all(&mut self) -> Result<(), anyhow::Error> {
-        self.message_log.sync_all()
     }
 }
 
@@ -719,6 +709,11 @@ impl<'a> Iterator for ScanIter<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+    use std::sync::Arc;
+    use std::sync::Mutex;
+
+    use crate::db::message_log::MessageLog;
     use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
     use crate::db::ostorage::ObjectDB;
     use tempdir::TempDir;
@@ -731,7 +726,7 @@ mod tests {
         ::std::slice::from_raw_parts((p as *const T) as *const u8, ::std::mem::size_of::<T>())
     }
 
-    fn make_odb(path: &std::path::Path) -> Box<dyn ObjectDB + Send> {
+    fn make_default_ostorage(path: impl AsRef<Path>) -> Box<dyn ObjectDB + Send> {
         Box::new(HashMapObjectDB::open(path).unwrap())
     }
 
@@ -757,7 +752,9 @@ mod tests {
     #[test]
     fn test_insert_and_seek_bytes() {
         let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mut db = TransactionalDB::open(tmp_dir.path(), make_odb).unwrap();
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut db = TransactionalDB::open(mlog, odb).unwrap();
         let mut tx = db.begin_tx();
         let row_key_1 = db.insert(&mut tx, 0, b"this is a byte string".to_vec());
         db.commit_tx(tx);
@@ -771,7 +768,9 @@ mod tests {
     #[test]
     fn test_insert_and_seek_struct() {
         let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mut db = TransactionalDB::open(tmp_dir.path(), make_odb).unwrap();
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut db = TransactionalDB::open(mlog, odb).unwrap();
         let mut tx = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx,
@@ -796,7 +795,9 @@ mod tests {
     #[test]
     fn test_read_isolation() {
         let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mut db = TransactionalDB::open(tmp_dir.path(), make_odb).unwrap();
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut db = TransactionalDB::open(mlog, odb).unwrap();
         let mut tx_1 = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx_1,
@@ -824,7 +825,9 @@ mod tests {
     #[test]
     fn test_scan() {
         let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mut db = TransactionalDB::open(tmp_dir.path(), make_odb).unwrap();
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut db = TransactionalDB::open(mlog, odb).unwrap();
         let mut tx_1 = db.begin_tx();
         let _row_key_1 = db.insert(
             &mut tx_1,
@@ -872,7 +875,9 @@ mod tests {
     #[test]
     fn test_write_skew_conflict() {
         let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mut db = TransactionalDB::open(tmp_dir.path(), make_odb).unwrap();
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut db = TransactionalDB::open(mlog, odb).unwrap();
         let mut tx_1 = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx_1,
@@ -897,7 +902,9 @@ mod tests {
     #[test]
     fn test_write_skew_no_conflict() {
         let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mut db = TransactionalDB::open(tmp_dir.path(), make_odb).unwrap();
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
+        let mut db = TransactionalDB::open(mlog, odb).unwrap();
         let mut tx_1 = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx_1,

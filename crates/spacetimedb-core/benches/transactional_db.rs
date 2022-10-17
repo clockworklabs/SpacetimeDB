@@ -1,6 +1,7 @@
 use criterion::measurement::WallTime;
 use criterion::{criterion_group, criterion_main, Bencher, BenchmarkGroup, BenchmarkId, Criterion, Throughput};
 use rand::Rng;
+use spacetimedb::db::message_log::MessageLog;
 use spacetimedb::db::ostorage::hashmap_object_db::HashMapObjectDB;
 
 #[cfg(feature = "odb_rocksdb")]
@@ -14,6 +15,7 @@ use spacetimedb::db::transactional_db::TransactionalDB;
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use tempdir::TempDir;
 
 const VALUE_MAX_SIZE: usize = 4096;
@@ -82,7 +84,9 @@ where
     F: Fn() -> (u32 /* set_id */, Vec<u8>),
 {
     let tmp_dir = TempDir::new("txdb_bench").unwrap();
-    let mut db = TransactionalDB::open(tmp_dir.path(), open_db(flavor)).unwrap();
+    let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+    let odb = Arc::new(Mutex::new(open_db(flavor)(tmp_dir.path().join("odb").as_path())));
+    let mut db = TransactionalDB::open(mlog, odb).unwrap();
     bench.iter(move || {
         let mut tx = db.begin_tx();
         let (set_id, bytes) = valgen();
@@ -97,7 +101,9 @@ where
     F: Fn() -> (u32 /* set_id */, Vec<u8>),
 {
     let tmp_dir = TempDir::new("txdb_bench").unwrap();
-    let mut db = TransactionalDB::open(tmp_dir.path(), open_db(flavor)).unwrap();
+    let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+    let odb = Arc::new(Mutex::new(open_db(flavor)(tmp_dir.path().join("odb").as_path())));
+    let mut db = TransactionalDB::open(mlog, odb).unwrap();
     let mut tx = db.begin_tx();
     let (set_id, bytes) = valgen();
     let hash = db.insert(&mut tx, set_id, bytes);
@@ -114,7 +120,9 @@ where
     F: Fn() -> (u32 /* set_id */, Vec<u8>),
 {
     let tmp_dir = TempDir::new("txdb_bench").unwrap();
-    let mut db = TransactionalDB::open(tmp_dir.path(), open_db(flavor)).unwrap();
+    let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+    let odb = Arc::new(Mutex::new(open_db(flavor)(tmp_dir.path().join("odb").as_path())));
+    let mut db = TransactionalDB::open(mlog, odb).unwrap();
     bench.iter(move || {
         let mut tx = db.begin_tx();
         let (set_id, bytes) = valgen();
@@ -131,7 +139,9 @@ where
     F: Fn() -> (u32 /* set_id */, Vec<u8>),
 {
     let tmp_dir = TempDir::new("txdb_bench").unwrap();
-    let mut db = TransactionalDB::open(tmp_dir.path(), open_db(flavor)).unwrap();
+    let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+    let odb = Arc::new(Mutex::new(open_db(flavor)(tmp_dir.path().join("odb").as_path())));
+    let mut db = TransactionalDB::open(mlog, odb).unwrap();
     bench.iter(move || {
         let (set_id, data_key) = {
             let mut tx = db.begin_tx();
@@ -153,7 +163,9 @@ where
     F: Fn() -> (u32 /* set_id */, Vec<u8>),
 {
     let tmp_dir = TempDir::new("txdb_bench").unwrap();
-    let mut db = TransactionalDB::open(tmp_dir.path(), open_db(flavor)).unwrap();
+    let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
+    let odb = Arc::new(Mutex::new(open_db(flavor)(tmp_dir.path().join("odb").as_path())));
+    let mut db = TransactionalDB::open(mlog, odb).unwrap();
 
     // Keep N items in our hash stack, pushing new hashes to the end and popping old ones off
     // the front
