@@ -306,7 +306,6 @@ struct Column {
     ty: syn::Type,
     ident: Ident,
     index: u8,
-    convert_to_typevalue: proc_macro2::TokenStream,
 }
 
 fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
@@ -356,46 +355,6 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
             .map_err(|_| syn::Error::new_spanned(&field, "too many columns; the most a table can have is 256"))?;
         let col_name = &field.ident.clone().unwrap();
 
-        // The TypeValue representation of this type
-        let convert_to_typevalue: proc_macro2::TokenStream;
-
-        match rust_to_spacetimedb_ident(field.ty.clone().to_token_stream().to_string().as_str()) {
-            Some(ident) => {
-                convert_to_typevalue = quote!(
-                    let value = spacetimedb::spacetimedb_lib::TypeValue::#ident(value);
-                );
-            }
-            None => match field.ty.clone().to_token_stream().to_string().as_str() {
-                "Hash" => {
-                    convert_to_typevalue = quote!(
-                        let value = spacetimedb::spacetimedb_lib::TypeValue::Hash(Box::new(value));
-                    );
-                }
-                "Vec < u8 >" => {
-                    // TODO: We are aliasing Vec<u8> to Bytes for now, we should deconstruct the vec here.
-                    convert_to_typevalue = quote!(
-                        let value = spacetimedb::spacetimedb_lib::TypeValue::Bytes(value);
-                    );
-                }
-                _custom_type => {
-                    convert_to_typevalue = quote!(
-                        let value = spacetimedb::spacetimedb_lib::TypeValue::Tuple(value);
-                    );
-                }
-            },
-        }
-        // // The simple name for the type, e.g. Hash
-        // let col_type: proc_macro2::TokenStream;
-        // // The fully qualified name for this type, e.g. spacetimedb::spacetimedb_lib::Hash
-        // let col_type_full: proc_macro2::TokenStream;
-        // // The TypeValue representation of this type
-        // let col_type_value: proc_macro2::TokenStream;
-        // let col_value_insert: proc_macro2::TokenStream;
-
-        // col_value_insert = format!("{}({})", col_type_value.clone(), format!("ins.{}", col_name))
-        //     .parse()
-        //     .unwrap();
-
         let mut is_unique = false;
         let mut is_filterable = false;
         let mut remove_idxs = vec![];
@@ -427,7 +386,6 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
             ty: field.ty.clone(),
             ident: col_name.clone(),
             index: col_num,
-            convert_to_typevalue,
         };
 
         if is_unique {
@@ -451,7 +409,6 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
             ty: column_type,
             ident: column_ident,
             index: column_index,
-            convert_to_typevalue,
         } = unique;
         let column_index_usize: usize = column_index.into();
 
@@ -487,7 +444,7 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
             #[allow(unused_variables)]
             #[allow(non_snake_case)]
             pub fn #delete_func_ident(value: #column_type) -> bool {
-                #convert_to_typevalue
+                let value = spacetimedb::IntoValue::into_value(value);
                 let result = spacetimedb::delete_eq(Self::table_id(), #column_index, value);
                 match result {
                     None => {
@@ -918,28 +875,6 @@ fn spacetimedb_connect_disconnect(
     }
 
     Ok(emission)
-}
-
-pub(crate) fn rust_to_spacetimedb_ident(input_type: &str) -> Option<Ident> {
-    return match input_type {
-        // These are typically prefixed with spacetimedb::spacetimedb_lib::TypeDef::
-        "bool" => Some(format_ident!("Bool")),
-        "i8" => Some(format_ident!("I8")),
-        "u8" => Some(format_ident!("U8")),
-        "i16" => Some(format_ident!("I16")),
-        "u16" => Some(format_ident!("U16")),
-        "i32" => Some(format_ident!("I32")),
-        "u32" => Some(format_ident!("U32")),
-        "i64" => Some(format_ident!("I64")),
-        "u64" => Some(format_ident!("U64")),
-        "i128" => Some(format_ident!("I128")),
-        "u128" => Some(format_ident!("U128")),
-        "String" => Some(format_ident!("String")),
-        "&str" => Some(format_ident!("String")),
-        "f32" => Some(format_ident!("F32")),
-        "f64" => Some(format_ident!("F64")),
-        _ => None,
-    };
 }
 
 fn tuple_field_comparison_block(
