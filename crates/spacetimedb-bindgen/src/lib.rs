@@ -168,9 +168,11 @@ fn spacetimedb_reducer(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> s
     let generated_function = quote! {
         #[no_mangle]
         #[allow(non_snake_case)]
-        pub extern "C" fn #reducer_func_name(arg_ptr: *const u8, arg_size: usize) {
-            let arguments = unsafe { spacetimedb::spacetimedb_lib::args::ReducerArguments::decode_mem(
-                arg_ptr, arg_size).expect("Unable to decode module arguments") };
+        pub extern "C" fn #reducer_func_name(arg_ptr: *mut u8, arg_size: usize) {
+            let bytes = unsafe { std::boxed::Box::from_raw(std::ptr::slice_from_raw_parts_mut(arg_ptr, arg_size)) };
+            let arguments =
+                spacetimedb::spacetimedb_lib::args::ReducerArguments::decode(&mut &bytes[..]).expect("Unable to decode module arguments");
+            drop(bytes);
 
             // Unwrap extra arguments, conditional on whether or not there are extra args.
             #unwrap_args
@@ -279,10 +281,12 @@ fn spacetimedb_repeating_reducer(
     let generated_function = quote! {
         #[no_mangle]
         #[allow(non_snake_case)]
-        pub extern "C" fn #reducer_func_name(arg_ptr: *const u8, arg_size: usize) -> u64 {
+        pub extern "C" fn #reducer_func_name(arg_ptr: *mut u8, arg_size: usize) -> u64 {
+            let bytes = unsafe { std::boxed::Box::from_raw(std::ptr::slice_from_raw_parts_mut(arg_ptr, arg_size)) };
             // Deserialize the arguments
-            let arguments = unsafe { spacetimedb::spacetimedb_lib::args::RepeatingReducerArguments::decode_mem(
-                arg_ptr, arg_size).expect("Unable to decode module arguments") };
+            let arguments =
+                spacetimedb::spacetimedb_lib::args::RepeatingReducerArguments::decode(&mut &bytes[..]).expect("Unable to decode module arguments");
+            drop(bytes);
 
             // Invoke the function with the deserialized args
             #func_name(arguments.timestamp, arguments.delta_time);
@@ -892,9 +896,11 @@ fn spacetimedb_connect_disconnect(
     let emission = quote! {
         #[no_mangle]
         #[allow(non_snake_case)]
-        pub extern "C" fn #connect_disconnect_ident(arg_ptr: *const u8, arg_size: usize) {
-            let arguments = unsafe { spacetimedb::spacetimedb_lib::args::ConnectDisconnectArguments::decode_mem(
-                arg_ptr, arg_size).expect("Unable to decode module arguments") };
+        pub extern "C" fn #connect_disconnect_ident(arg_ptr: *mut u8, arg_size: usize) {
+            let bytes = unsafe { std::boxed::Box::from_raw(std::ptr::slice_from_raw_parts_mut(arg_ptr, arg_size)) };
+            let arguments =
+                spacetimedb::spacetimedb_lib::args::ConnectDisconnectArguments::decode(&mut &bytes[..]).expect("Unable to decode module arguments");
+            drop(bytes);
 
             // Invoke the function with the deserialized args
             #func_name(arguments.identity, arguments.timestamp,);

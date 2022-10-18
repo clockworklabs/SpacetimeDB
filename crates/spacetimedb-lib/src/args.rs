@@ -1,4 +1,3 @@
-use crate::buffer::DecodeError::BufferLength;
 use crate::buffer::{BufReader, BufWriter, DecodeError};
 use crate::hash::HASH_SIZE;
 use crate::Hash;
@@ -40,16 +39,6 @@ impl ReducerArguments {
             argument_bytes,
         })
     }
-
-    pub unsafe fn decode_mem(arg_ptr: *const u8, arg_size: usize) -> Result<Self, DecodeError> {
-        if arg_size < std::mem::size_of::<u64>() + HASH_SIZE + std::mem::size_of::<usize>() {
-            return Err(BufferLength);
-        }
-
-        let bytes = std::slice::from_raw_parts(arg_ptr, arg_size);
-
-        Self::decode(&mut &bytes[..])
-    }
 }
 
 impl Arguments for ReducerArguments {
@@ -81,16 +70,6 @@ impl RepeatingReducerArguments {
         let delta_time = r.get_u64()?;
 
         Ok(Self { timestamp, delta_time })
-    }
-
-    pub unsafe fn decode_mem(arg_ptr: *const u8, arg_size: usize) -> Result<Self, DecodeError> {
-        if arg_size < std::mem::size_of::<u64>() + std::mem::size_of::<u64>() {
-            return Err(BufferLength);
-        }
-
-        let bytes = std::slice::from_raw_parts(arg_ptr, arg_size);
-
-        Self::decode(&mut &bytes[..])
     }
 }
 
@@ -124,16 +103,6 @@ impl ConnectDisconnectArguments {
         let timestamp = r.get_u64()?;
 
         Ok(Self { identity, timestamp })
-    }
-
-    pub unsafe fn decode_mem(arg_ptr: *const u8, arg_size: usize) -> Result<Self, DecodeError> {
-        if arg_size < std::mem::size_of::<u64>() + HASH_SIZE {
-            return Err(BufferLength);
-        }
-
-        let bytes = std::slice::from_raw_parts(arg_ptr, arg_size);
-
-        Self::decode(&mut &bytes[..])
     }
 }
 
@@ -221,35 +190,10 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_decode_memory_region_reducer_args() {
-        for _i in 0..NUM_RAND_ITERATIONS {
-            let (ra, output_vec) = make_random_args();
-            let (ptr, length) = (output_vec.as_ptr(), output_vec.len());
-            let ra2 = unsafe { ReducerArguments::decode_mem(ptr, length).unwrap() };
-            assert_eq!(ra.timestamp, ra2.timestamp);
-            assert_eq!(ra.identity.data, ra2.identity.data);
-            assert!(!ra2.argument_bytes.is_empty());
-            assert_eq!(ra.argument_bytes.len(), ra2.argument_bytes.len());
-            assert_eq!(ra.argument_bytes, ra2.argument_bytes);
-        }
-    }
-
-    #[test]
     fn test_encode_decode_repeating_reducer_args() {
         for _i in 0..NUM_RAND_ITERATIONS {
             let (ra, output_vec) = make_random_repeating_args();
             let ra2 = RepeatingReducerArguments::decode(&mut output_vec.as_slice()).unwrap();
-            assert_eq!(ra.timestamp, ra2.timestamp);
-            assert_eq!(ra.delta_time, ra2.delta_time);
-        }
-    }
-
-    #[test]
-    fn test_encode_decode_memory_region_repeating_reducer_args() {
-        for _i in 0..NUM_RAND_ITERATIONS {
-            let (ra, output_vec) = make_random_repeating_args();
-            let (ptr, length) = (output_vec.as_ptr(), output_vec.len());
-            let ra2 = unsafe { RepeatingReducerArguments::decode_mem(ptr, length).unwrap() };
             assert_eq!(ra.timestamp, ra2.timestamp);
             assert_eq!(ra.delta_time, ra2.delta_time);
         }

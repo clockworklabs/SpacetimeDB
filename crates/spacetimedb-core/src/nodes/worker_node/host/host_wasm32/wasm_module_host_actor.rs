@@ -647,6 +647,7 @@ impl WasmModuleHostActor {
 
         let start = std::time::Instant::now();
         log::trace!("Start reducer \"{}\"...", reducer_symbol);
+        // pass ownership of the `ptr` allocation into the reducer
         let result = reduce.call(&[Value::I32(ptr.offset() as i32), Value::I32(buf_len as i32)]);
         let duration = start.elapsed();
         let remaining_points = get_remaining_points_value(&instance);
@@ -706,19 +707,6 @@ impl WasmModuleHostActor {
                 }
             }
         };
-
-        // Clean up the arguments buffer.
-
-        // We need to make sure we don't run out of energy while cleaning up arguments, so this
-        // rather inelegant piece is here to make sure we don't do that.
-        set_remaining_points(&instance, DEFAULT_EXECUTION_BUDGET as u64);
-
-        let dealloc = instance
-            .exports
-            .get_function("dealloc")?
-            .native::<(WasmPtr<u8, Array>, u32), ()>()?;
-        let dealloc_result = dealloc.call(WasmPtr::new(ptr.offset() as u32), buf_len as u32);
-        dealloc_result.expect("Could not dealloc describer buffer memory");
 
         result
     }
