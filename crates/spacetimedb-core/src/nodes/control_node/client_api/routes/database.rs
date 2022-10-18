@@ -4,7 +4,7 @@ use crate::hash::Hash;
 use crate::nodes::control_node::control_db;
 use crate::nodes::control_node::controller;
 use crate::nodes::control_node::object_db;
-use crate::nodes::HostType;
+use crate::protobuf::control_db::HostType;
 use gotham::anyhow::anyhow;
 use gotham::handler::HandlerError;
 use gotham::handler::SimpleHandlerResult;
@@ -106,9 +106,14 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
         control_db::alloc_spacetime_identity().await?
     };
 
-    let host_type = match HostType::parse(host_type) {
-        Ok(ht) => ht,
-        Err(e) => return Err(HandlerError::from(e).with_status(StatusCode::BAD_REQUEST)),
+    let host_type = match host_type {
+        None => HostType::Wasm32,
+        Some(ht) => match ht.parse() {
+            Ok(ht) => ht,
+            Err(_) => {
+                return Err(HandlerError::from(anyhow!("unknown host type {ht}")).with_status(StatusCode::BAD_REQUEST))
+            }
+        },
     };
 
     let body = state.borrow_mut::<Body>();

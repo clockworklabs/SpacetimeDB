@@ -17,7 +17,6 @@ message EnergyBalance {
 
 enum HostType {
     WASM32 = 0;
-    CPYTHON = 1;
 }
 
 message Database {

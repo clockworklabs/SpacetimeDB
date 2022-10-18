@@ -3,7 +3,6 @@ use std::{sync::Mutex, time::Duration};
 
 use futures::StreamExt;
 use hyper::{body, Body, Request, StatusCode, Uri};
-use int_enum::IntEnum;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
@@ -15,13 +14,12 @@ use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 use crate::address::Address;
 use crate::nodes::worker_node::worker_budget;
 use crate::nodes::worker_node::worker_budget::send_budget_alloc_spend;
-use crate::nodes::HostType;
 use crate::protobuf::control_worker_api::BudgetUpdate;
 use crate::{
     hash::Hash,
     nodes::worker_node::worker_db,
     protobuf::{
-        control_db::DatabaseInstance,
+        control_db::{DatabaseInstance, HostType},
         control_worker_api::{
             delete_operation, insert_operation, schedule_update, update_operation, worker_bound_message, ScheduleState,
             ScheduleUpdate, WorkerBoundMessage,
@@ -331,7 +329,7 @@ async fn init_module_on_database_instance(database_id: u64, instance_id: u64) ->
     let worker_database_instance = WorkerDatabaseInstance::new(
         instance_id,
         database_id,
-        HostType::from_int(database.host_type).expect("unknown module host type"),
+        HostType::from_i32(database.host_type).expect("unknown module host type"),
         identity,
         address,
         &db_path,
@@ -353,6 +351,7 @@ async fn start_module_on_database_instance(database_id: u64, instance_id: u64) -
     } else {
         return Err(anyhow!("Unknown database/instance: {}/{}", database_id, instance_id));
     };
+    let host_type = database.host_type();
     let identity = Hash::from_slice(database.identity);
     let address = Address::from_slice(database.address);
     let program_bytes_address = Hash::from_slice(database.program_bytes_address);
@@ -367,7 +366,7 @@ async fn start_module_on_database_instance(database_id: u64, instance_id: u64) -
     let worker_database_instance = WorkerDatabaseInstance::new(
         instance_id,
         database_id,
-        HostType::from_int(database.host_type).expect("unknown module host type"),
+        host_type,
         identity,
         address,
         db_path,
@@ -477,7 +476,7 @@ impl ControlNodeClient {
             self.client_api_bootstrap_addr,
             address.to_hex(),
             force_str,
-            host_type.as_param_str()
+            host_type.as_ref()
         )
         .parse::<Uri>()
         .unwrap();

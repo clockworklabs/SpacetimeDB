@@ -19,6 +19,10 @@ fn main() {
     prost_build::Config::new()
         .btree_map(&["."])
         .include_file("protobuf.rs")
+        .type_attribute(
+            ".control_db.HostType",
+            r#"#[derive(strum::EnumString, strum::AsRefStr  )] #[strum(serialize_all = "lowercase")]"#,
+        )
         .compile_protos(&protos, includes)
         .unwrap();
 }

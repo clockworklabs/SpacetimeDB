@@ -4,7 +4,7 @@ use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::db::relational_db::RelationalDB;
 use crate::hash::Hash;
-use crate::nodes::HostType;
+use crate::protobuf::control_db::HostType;
 use crate::{address::Address, db::relational_db::RelationalDBWrapper};
 use std::path::Path;
 use std::sync::{Arc, Mutex};

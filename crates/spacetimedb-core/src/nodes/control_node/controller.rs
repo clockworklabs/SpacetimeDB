@@ -2,7 +2,7 @@ use crate::address::Address;
 use crate::nodes::control_node::budget_controller;
 use crate::nodes::control_node::budget_controller::WorkerBudgetState;
 use crate::nodes::control_node::worker_api::worker_connection::WorkerConnectionSender;
-use crate::nodes::HostType;
+use crate::protobuf::control_db::HostType;
 use crate::{
     hash::Hash,
     protobuf::{
@@ -13,7 +13,6 @@ use crate::{
         },
     },
 };
-use int_enum::IntEnum;
 use prost::Message;
 use std::collections::HashMap;
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
@@ -64,7 +63,7 @@ pub async fn insert_database(
         id: 0,
         address: address.as_slice().to_vec(),
         identity: identity.as_slice().to_owned(),
-        host_type: host_type.int_value(),
+        host_type: host_type as i32,
         num_replicas,
         program_bytes_address: program_bytes_address.as_slice().to_owned(),
     };

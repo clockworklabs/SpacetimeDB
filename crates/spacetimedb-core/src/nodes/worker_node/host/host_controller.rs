@@ -1,10 +1,9 @@
 use crate::hash::{hash_bytes, Hash};
-use crate::nodes::worker_node::host::host_cpython::make_cpython_module_host_actor;
 use crate::nodes::worker_node::host::host_wasm32::make_wasm32_module_host_actor;
 use crate::nodes::worker_node::host::module_host::ModuleHost;
 use crate::nodes::worker_node::worker_budget;
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
-use crate::nodes::HostType;
+use crate::protobuf::control_db::HostType;
 use anyhow;
 use lazy_static::lazy_static;
 use serde::Serialize;
@@ -153,8 +152,7 @@ impl HostController {
         }
 
         let module_host = match worker_database_instance.host_type {
-            HostType::WASM32 => make_wasm32_module_host_actor(worker_database_instance, module_hash, program_bytes)?,
-            HostType::CPYTHON => make_cpython_module_host_actor(worker_database_instance, module_hash, program_bytes)?,
+            HostType::Wasm32 => make_wasm32_module_host_actor(worker_database_instance, module_hash, program_bytes)?,
         };
 
         let mut modules = self.modules.lock().unwrap();
