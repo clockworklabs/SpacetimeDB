@@ -30,12 +30,15 @@ impl InstanceEnv {
 
         let schema = stdb.schema_for_table(tx, table_id).unwrap();
         let row = RelationalDB::decode_row(&schema, &mut &buffer[..]);
-        if let Err(e) = row {
-            log::error!("insert: Failed to decode row: table_id: {} Err: {}", table_id, e);
-            return;
-        }
+        let row = match row {
+            Ok(x) => x,
+            Err(e) => {
+                log::error!("insert: Failed to decode row: table_id: {} Err: {}", table_id, e);
+                return;
+            }
+        };
 
-        stdb.insert(tx, table_id, row.unwrap());
+        stdb.insert(tx, table_id, row);
     }
 
     pub fn delete_pk(&self, table_id: u32, buffer: bytes::Bytes) -> u8 {

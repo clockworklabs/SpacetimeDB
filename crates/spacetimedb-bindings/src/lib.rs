@@ -34,27 +34,27 @@ pub mod __private {
 // static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 extern "C" {
-    fn _create_table(ptr: *mut u8) -> u32;
-    fn _get_table_id(ptr: *mut u8) -> u32;
+    fn _create_table(ptr: *mut u8, len: usize) -> u32;
+    fn _get_table_id(ptr: *mut u8, len: usize) -> u32;
     fn _create_index(table_id: u32, col_id: u32, index_type: u8);
 
-    fn _insert(table_id: u32, ptr: *mut u8);
+    fn _insert(table_id: u32, ptr: *mut u8, len: usize);
 
-    fn _delete_pk(table_id: u32, ptr: *mut u8) -> u8;
-    fn _delete_value(table_id: u32, ptr: *mut u8) -> u8;
-    fn _delete_eq(table_id: u32, col_id: u32, ptr: *mut u8) -> i32;
-    fn _delete_range(table_id: u32, col_id: u32, ptr: *mut u8) -> i32;
+    fn _delete_pk(table_id: u32, ptr: *mut u8, len: usize) -> u8;
+    fn _delete_value(table_id: u32, ptr: *mut u8, len: usize) -> u8;
+    fn _delete_eq(table_id: u32, col_id: u32, ptr: *mut u8, len: usize) -> i32;
+    fn _delete_range(table_id: u32, col_id: u32, ptr: *mut u8, len: usize) -> i32;
 
+    // TODO: should have lens associated with ptrs
     fn _filter_eq(table_id: u32, col_id: u32, src_ptr: *mut u8, result_ptr: *mut u8);
 
     fn _iter(table_id: u32) -> u64;
     fn _console_log(level: u8, ptr: *const u8, len: u32);
 }
 
-const ROW_BUF_LEN: usize = 1024 * 1024;
 // this gets optimized away to a normal global since wasm32 doesn't have threads by default
 thread_local! {
-    static ROW_BUF: RefCell<Box<[u8; ROW_BUF_LEN]>> = RefCell::new(Box::new([0; ROW_BUF_LEN]));
+    static ROW_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(8 * 1024));
 }
 
 #[no_mangle]
@@ -75,8 +75,12 @@ extern "C" fn dealloc(ptr: *mut u8, size: usize) {
     }
 }
 
-fn with_row_buf<R>(f: impl FnOnce(&mut [u8]) -> R) -> R {
-    ROW_BUF.with(|r| f(&mut r.borrow_mut()[..]))
+fn with_row_buf<R>(f: impl FnOnce(&mut Vec<u8>) -> R) -> R {
+    ROW_BUF.with(|r| {
+        let mut buf = r.borrow_mut();
+        buf.clear();
+        f(&mut buf)
+    })
 }
 
 pub fn encode_row(row: TupleValue, bytes: &mut impl BufWriter) {
@@ -108,32 +112,32 @@ pub fn create_table(table_name: &str, schema: TupleDef) -> u32 {
             .into(),
         };
 
-        table_info.encode(&mut &mut *bytes);
+        table_info.encode(bytes);
 
-        unsafe { _create_table(bytes.as_mut_ptr()) }
+        unsafe { _create_table(bytes.as_mut_ptr(), bytes.len()) }
     })
 }
 
 pub fn get_table_id(table_name: &str) -> u32 {
     with_row_buf(|bytes| {
         let table_name = TypeValue::String(table_name.to_string());
-        table_name.encode(&mut &mut *bytes);
+        table_name.encode(bytes);
 
-        unsafe { _get_table_id(bytes.as_mut_ptr()) }
+        unsafe { _get_table_id(bytes.as_mut_ptr(), bytes.len()) }
     })
 }
 
 pub fn insert(table_id: u32, row: TupleValue) {
     with_row_buf(|bytes| {
-        row.encode(&mut &mut *bytes);
-        unsafe { _insert(table_id, bytes.as_mut_ptr()) }
+        row.encode(bytes);
+        unsafe { _insert(table_id, bytes.as_mut_ptr(), bytes.len()) }
     })
 }
 
 pub fn delete_pk(table_id: u32, primary_key: PrimaryKey) -> Option<usize> {
     with_row_buf(|bytes| {
-        primary_key.encode(&mut &mut *bytes);
-        let result = unsafe { _delete_pk(table_id, bytes.as_mut_ptr()) };
+        primary_key.encode(bytes);
+        let result = unsafe { _delete_pk(table_id, bytes.as_mut_ptr(), bytes.len()) };
         (result != 0).then_some(1)
     })
 }
@@ -144,8 +148,8 @@ pub fn delete_filter<F: Fn(&TupleValue) -> bool>(table_id: u32, f: F) -> Option<
         for tuple_value in __iter__(table_id).unwrap() {
             if f(&tuple_value) {
                 count += 1;
-                tuple_value.encode(&mut &mut *bytes);
-                if unsafe { _delete_value(table_id, bytes.as_mut_ptr()) } == 0 {
+                tuple_value.encode(bytes);
+                if unsafe { _delete_value(table_id, bytes.as_mut_ptr(), bytes.len()) } == 0 {
                     panic!("Something ain't right.");
                 }
             }
@@ -156,8 +160,8 @@ pub fn delete_filter<F: Fn(&TupleValue) -> bool>(table_id: u32, f: F) -> Option<
 
 pub fn delete_eq(table_id: u32, col_id: u8, eq_value: TypeValue) -> Option<usize> {
     with_row_buf(|bytes| {
-        eq_value.encode(&mut &mut *bytes);
-        let result = unsafe { _delete_eq(table_id, col_id.into(), bytes.as_mut_ptr()) };
+        eq_value.encode(bytes);
+        let result = unsafe { _delete_eq(table_id, col_id.into(), bytes.as_mut_ptr(), bytes.len()) };
         (result != -1).then_some(result as usize)
     })
 }
@@ -169,8 +173,8 @@ pub fn delete_range(table_id: u32, col_id: u8, range: Range<TypeValue>) -> Optio
         let tuple = TupleValue {
             elements: vec![start, end].into(),
         };
-        tuple.encode(&mut &mut *bytes);
-        let result = unsafe { _delete_range(table_id, col_id.into(), bytes.as_mut_ptr()) };
+        tuple.encode(bytes);
+        let result = unsafe { _delete_range(table_id, col_id.into(), bytes.as_mut_ptr(), bytes.len()) };
         if result == -1 {
             return None;
         }
