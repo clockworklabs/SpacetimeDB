@@ -1,3 +1,4 @@
+use crate::error::DBError;
 use bytes;
 
 use crate::hash::Hash;
@@ -15,6 +16,6 @@ pub mod sled_object_db;
 pub trait ObjectDB {
     fn add(&mut self, bytes: Vec<u8>) -> Hash;
     fn get(&self, hash: Hash) -> Option<bytes::Bytes>;
-    fn flush(&mut self) -> Result<(), anyhow::Error>;
-    fn sync_all(&mut self) -> Result<(), anyhow::Error>;
+    fn flush(&mut self) -> Result<(), DBError>;
+    fn sync_all(&mut self) -> Result<(), DBError>;
 }

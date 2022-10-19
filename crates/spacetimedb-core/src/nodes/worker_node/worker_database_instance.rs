@@ -46,7 +46,7 @@ impl WorkerDatabaseInstance {
             logger: Arc::new(Mutex::new(DatabaseLogger::open(&log_path))),
             message_log: message_log.clone(),
             odb: odb.clone(),
-            relational_db: RelationalDBWrapper::new(RelationalDB::open(db_path, message_log, odb)),
+            relational_db: RelationalDBWrapper::new(RelationalDB::open(db_path, message_log, odb).unwrap()),
         }
     }
 

@@ -479,7 +479,7 @@ fn plan_select(database_instance_id: u64, select: Select) -> Result<RelationExpr
     let mut db = database_instance_context.relational_db.lock().unwrap();
     let mut tx = db.begin_tx();
     let table_name = table_name.unwrap();
-    let table_id = db.table_id_from_name(&mut tx, &table_name);
+    let table_id = db.table_id_from_name(&mut tx, &table_name).unwrap();
     let table_id = match table_id {
         Some(t) => t,
         None => return Err(PlanError::UnknownTable { table: table_name }),
@@ -493,7 +493,7 @@ fn plan_select(database_instance_id: u64, select: Select) -> Result<RelationExpr
                 sqlparser::ast::Expr::Identifier(ident) => {
                     let col_name = ident.to_string();
                     let mut tx = db.begin_tx();
-                    let col_id = db.column_id_from_name(&mut tx, table_id, &col_name);
+                    let col_id = db.column_id_from_name(&mut tx, table_id, &col_name).unwrap();
                     db.rollback_tx(tx);
                     let col_id = if let Some(col_id) = col_id {
                         col_id

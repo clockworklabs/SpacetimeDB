@@ -1,6 +1,6 @@
 use crate::db::ostorage::ObjectDB;
+use crate::error::DBError;
 use crate::hash::{hash_bytes, Hash};
-use anyhow::Error;
 use bytes::Bytes;
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::fs;
@@ -13,9 +13,9 @@ pub struct RocksDBObjectDB {
 impl RocksDBObjectDB {
     const OBJECTS_CF: &'static str = "objects";
 
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, anyhow::Error> {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, DBError> {
         let root = path.as_ref();
-        fs::create_dir_all(root).unwrap();
+        fs::create_dir_all(root)?;
 
         // Create the column family for our object data.
         // We need at least one column family or Rocks doesn't seem to actually properly keep files
@@ -56,14 +56,14 @@ impl ObjectDB for RocksDBObjectDB {
         }
     }
 
-    fn flush(&mut self) -> Result<(), Error> {
+    fn flush(&mut self) -> Result<(), DBError> {
         match self.db.flush() {
             Ok(_) => Ok(()),
-            Err(e) => Err(anyhow::Error::new(e)),
+            Err(e) => Err(DBError::RocksDbError(e)),
         }
     }
 
-    fn sync_all(&mut self) -> Result<(), Error> {
+    fn sync_all(&mut self) -> Result<(), DBError> {
         self.flush()
     }
 }
@@ -72,22 +72,23 @@ impl ObjectDB for RocksDBObjectDB {
 mod tests {
     use crate::db::ostorage::rocks_object_db::RocksDBObjectDB;
     use crate::db::ostorage::ObjectDB;
+    use crate::error::DBError;
     use crate::hash::hash_bytes;
-    use anyhow::Error;
+    use spacetimedb_lib::error::ResultTest;
     use tempdir::TempDir;
 
     const TEST_DB_DIR_PREFIX: &str = "rocksdb_test";
     const TEST_DATA1: &[u8; 21] = b"this is a byte string";
     const TEST_DATA2: &[u8; 26] = b"this is also a byte string";
 
-    fn setup() -> Result<RocksDBObjectDB, Error> {
+    fn setup() -> Result<RocksDBObjectDB, DBError> {
         let tmp_dir = TempDir::new(TEST_DB_DIR_PREFIX).unwrap();
         RocksDBObjectDB::open(tmp_dir.path())
     }
 
     #[test]
-    fn test_add_and_get() {
-        let mut db = setup().unwrap();
+    fn test_add_and_get() -> ResultTest<()> {
+        let mut db = setup()?;
 
         let hash1 = db.add(TEST_DATA1.to_vec());
         let hash2 = db.add(TEST_DATA2.to_vec());
@@ -97,31 +98,34 @@ mod tests {
 
         let result = db.get(hash2).unwrap();
         assert_eq!(TEST_DATA2, result.to_vec().as_slice());
+        Ok(())
     }
 
     #[test]
-    fn test_flush() {
-        let mut db = setup().unwrap();
+    fn test_flush() -> ResultTest<()> {
+        let mut db = setup()?;
 
         db.add(TEST_DATA1.to_vec());
         db.add(TEST_DATA2.to_vec());
 
         assert!(db.flush().is_ok());
+        Ok(())
     }
 
     #[test]
-    fn test_flush_sync_all() {
-        let mut db = setup().unwrap();
+    fn test_flush_sync_all() -> ResultTest<()> {
+        let mut db = setup()?;
 
         db.add(TEST_DATA1.to_vec());
         db.add(TEST_DATA2.to_vec());
 
         assert!(db.sync_all().is_ok());
+        Ok(())
     }
 
     #[test]
-    fn test_miss() {
-        let mut db = setup().unwrap();
+    fn test_miss() -> ResultTest<()> {
+        let mut db = setup()?;
 
         let _hash2 = db.add(TEST_DATA2.to_vec());
 
@@ -129,5 +133,6 @@ mod tests {
         let result = db.get(hash);
 
         assert!(result.is_none());
+        Ok(())
     }
 }

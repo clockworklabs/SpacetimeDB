@@ -1,3 +1,4 @@
+use crate::error::DBError;
 use sha3::{Digest, Keccak256};
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Hash, serde::Serialize, serde::Deserialize)]
@@ -12,11 +13,9 @@ impl Hash {
         Self { data: arr.clone() }
     }
 
-    pub fn from_hex(hex: &str) -> Result<Self, anyhow::Error> {
+    pub fn from_hex(hex: &str) -> Result<Self, DBError> {
         let data = hex::decode(hex)?;
-        let data: [u8; 32] = data
-            .try_into()
-            .expect("hex representation of hash decoded to incorrect number of bytes");
+        let data: [u8; 32] = data.try_into().map_err(|e: Vec<_>| DBError::DecodeHexHash(e.len()))?;
         Ok(Self { data })
     }
 

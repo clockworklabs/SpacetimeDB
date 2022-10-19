@@ -1,6 +1,6 @@
 use crate::db::ostorage::ObjectDB;
+use crate::error::DBError;
 use crate::hash::{hash_bytes, Hash};
-use anyhow::Error;
 use bytes::Bytes;
 use sled;
 use sled::Mode::HighThroughput;
@@ -11,7 +11,7 @@ pub struct SledObjectDB {
 }
 
 impl SledObjectDB {
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, anyhow::Error> {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, DBError> {
         let config = sled::Config::default()
             .path(path)
             .flush_every_ms(Some(50))
@@ -41,14 +41,14 @@ impl ObjectDB for SledObjectDB {
         }
     }
 
-    fn flush(&mut self) -> Result<(), Error> {
+    fn flush(&mut self) -> Result<(), DBError> {
         match self.db.flush() {
             Ok(_) => Ok(()),
-            Err(e) => Err(anyhow::Error::new(e)),
+            Err(e) => Err(DBError::SledDbError(e)),
         }
     }
 
-    fn sync_all(&mut self) -> Result<(), Error> {
+    fn sync_all(&mut self) -> Result<(), DBError> {
         self.flush()
     }
 }
@@ -58,15 +58,15 @@ mod tests {
     use crate::db::ostorage::sled_object_db::SledObjectDB;
     use crate::db::ostorage::ObjectDB;
 
+    use crate::error::DBError;
     use crate::hash::hash_bytes;
-    use anyhow::Error;
     use tempdir::TempDir;
 
     const TEST_DB_DIR_PREFIX: &str = "sledb_test";
     const TEST_DATA1: &[u8; 21] = b"this is a byte string";
     const TEST_DATA2: &[u8; 26] = b"this is also a byte string";
 
-    fn setup() -> Result<SledObjectDB, Error> {
+    fn setup() -> Result<SledObjectDB, DBError> {
         let tmp_dir = TempDir::new(TEST_DB_DIR_PREFIX).unwrap();
         SledObjectDB::open(tmp_dir.path())
     }

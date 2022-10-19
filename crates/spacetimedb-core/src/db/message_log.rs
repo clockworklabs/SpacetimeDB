@@ -7,6 +7,7 @@ use std::{
 #[cfg(target_family = "unix")]
 use std::os::unix::fs::FileExt;
 
+use crate::error::DBError;
 #[cfg(target_family = "windows")]
 use std::os::windows::fs::FileExt;
 
@@ -36,7 +37,7 @@ pub struct MessageLog {
 
 // TODO: do we build the concept of batches into the message log?
 impl MessageLog {
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, anyhow::Error> {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, DBError> {
         let root = path.as_ref();
         fs::create_dir_all(root).unwrap();
 
@@ -102,13 +103,13 @@ impl MessageLog {
         })
     }
 
-    pub fn reset_hard(&mut self) -> Result<(), anyhow::Error> {
+    pub fn reset_hard(&mut self) -> Result<(), DBError> {
         fs::remove_dir_all(&self.root)?;
         *self = Self::open(&self.root)?;
         Ok(())
     }
 
-    pub fn append(&mut self, message: impl AsRef<[u8]>) -> Result<(), anyhow::Error> {
+    pub fn append(&mut self, message: impl AsRef<[u8]>) -> Result<(), DBError> {
         let message = message.as_ref();
         let mess_size = message.len() as u32;
         let size: u32 = mess_size + HEADER_SIZE as u32;
@@ -147,7 +148,7 @@ impl MessageLog {
     // https://www.evanjones.ca/durability-filesystem.html
     // https://stackoverflow.com/questions/42442387/is-write-safe-to-be-called-from-multiple-threads-simultaneously/42442926#42442926
     // https://github.com/facebook/rocksdb/wiki/WAL-Performance
-    pub fn flush(&mut self) -> Result<(), anyhow::Error> {
+    pub fn flush(&mut self) -> Result<(), DBError> {
         self.open_segment_file.flush()?;
         Ok(())
     }
@@ -156,7 +157,7 @@ impl MessageLog {
     // been pushed to the OS. You probably don't need to call this function, unless you need it
     // to be for sure durably written.
     // SEE: https://stackoverflow.com/questions/69819990/whats-the-difference-between-flush-and-sync-all
-    pub fn sync_all(&mut self) -> Result<(), anyhow::Error> {
+    pub fn sync_all(&mut self) -> Result<(), DBError> {
         log::trace!("fsync log file");
         self.flush()?;
         let file = self.open_segment_file.get_ref();
@@ -225,7 +226,7 @@ impl<'a> Iterator for MessageLogIter<'a> {
         if let Err(err) = open_segment_file.read_exact(&mut buf) {
             match err.kind() {
                 std::io::ErrorKind::UnexpectedEof => return None,
-                _ => panic!("{:?}", err),
+                _ => panic!("MessageLogIter: {:?}", err),
             }
         };
         let message_len = u32::from_le_bytes(buf);
@@ -234,7 +235,7 @@ impl<'a> Iterator for MessageLogIter<'a> {
         if let Err(err) = open_segment_file.read_exact(&mut buf) {
             match err.kind() {
                 std::io::ErrorKind::UnexpectedEof => return None,
-                _ => panic!("{:?}", err),
+                _ => panic!("MessageLogIter: {:?}", err),
             }
         }
 
@@ -247,21 +248,22 @@ impl<'a> Iterator for MessageLogIter<'a> {
 #[cfg(test)]
 mod tests {
     use super::MessageLog;
+    use spacetimedb_lib::error::ResultTest;
     use tempdir::{self, TempDir};
 
     #[test]
-    fn test_message_log() {
-        let tmp_dir = TempDir::new("message_log_test").unwrap();
+    fn test_message_log() -> ResultTest<()> {
+        let tmp_dir = TempDir::new("message_log_test")?;
         let path = tmp_dir.path();
         //let path = "/Users/tylercloutier/Developer/SpacetimeDB/test";
-        let mut message_log = MessageLog::open(path).unwrap();
+        let mut message_log = MessageLog::open(path)?;
 
         const MESSAGE_COUNT: i32 = 100_000_000;
         let start = std::time::Instant::now();
         for _i in 0..MESSAGE_COUNT {
             let s = b"yo this is tyler";
             //let message = s.as_bytes();
-            message_log.append(s).unwrap();
+            message_log.append(s)?;
         }
         let duration = start.elapsed();
         println!(
@@ -269,7 +271,8 @@ mod tests {
             duration.as_micros(),
             duration.as_nanos() / MESSAGE_COUNT as u128
         );
-        message_log.flush().unwrap();
-        println!("total_size: {}", message_log.size())
+        message_log.flush()?;
+        println!("total_size: {}", message_log.size());
+        Ok(())
     }
 }

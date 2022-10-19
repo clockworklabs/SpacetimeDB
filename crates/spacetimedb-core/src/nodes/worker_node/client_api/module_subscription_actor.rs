@@ -252,7 +252,7 @@ impl ModuleSubscriptionActor {
             } else {
                 let mut stdb = self.relational_db.lock().unwrap();
                 let mut tx = stdb.begin_tx();
-                let tuple_def = stdb.schema_for_table(&mut tx, write.set_id).unwrap();
+                let tuple_def = stdb.schema_for_table(&mut tx, write.set_id).unwrap().unwrap();
                 stdb.rollback_tx(tx);
                 schemas.insert(write.set_id, tuple_def);
                 schemas.get(&write.set_id).unwrap()
@@ -299,7 +299,7 @@ impl ModuleSubscriptionActor {
             } else {
                 let mut stdb = self.relational_db.lock().unwrap();
                 let mut tx = stdb.begin_tx();
-                let table_name = stdb.table_name_from_id(&mut tx, table_id).unwrap();
+                let table_name = stdb.table_name_from_id(&mut tx, table_id).unwrap().unwrap();
                 let table_name = table_name.to_string();
                 stdb.rollback_tx(tx);
                 table_name_map.insert(table_id, table_name.clone());
@@ -393,7 +393,7 @@ impl ModuleSubscriptionActor {
             } else {
                 let mut stdb = self.relational_db.lock().unwrap();
                 let mut tx = stdb.begin_tx();
-                let tuple_def = stdb.schema_for_table(&mut tx, write.set_id).unwrap();
+                let tuple_def = stdb.schema_for_table(&mut tx, write.set_id).unwrap().unwrap();
                 stdb.rollback_tx(tx);
                 schemas.insert(write.set_id, tuple_def);
                 schemas.get(&write.set_id).unwrap()

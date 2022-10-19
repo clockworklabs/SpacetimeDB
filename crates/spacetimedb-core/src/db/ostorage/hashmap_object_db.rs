@@ -9,6 +9,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::error::DBError;
 #[cfg(target_family = "unix")]
 use std::os::unix::prelude::MetadataExt;
 
@@ -20,9 +21,9 @@ pub struct HashMapObjectDB {
 }
 
 impl HashMapObjectDB {
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, anyhow::Error> {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, DBError> {
         let root = path.as_ref();
-        fs::create_dir_all(root).unwrap();
+        fs::create_dir_all(root)?;
 
         let mut cache: HashMap<Hash, Vec<u8>> = HashMap::new();
         let mut obj_size: u64 = 0;
@@ -36,7 +37,7 @@ impl HashMapObjectDB {
                 log::warn!("invalid object dir found: {} {:?}", dir_name, err);
                 continue;
             }
-            let hex_dir_bytes = hex_dir_name.unwrap();
+            let hex_dir_bytes = hex_dir_name?;
             if hex_dir_bytes.len() != 1 {
                 log::warn!("invalid object dir found, name longer than 1");
                 continue;
@@ -57,7 +58,7 @@ impl HashMapObjectDB {
                     log::warn!("invalid object dir found: {:?}", err);
                     continue;
                 }
-                let hex_dir_bytes = hex_dir_name.unwrap();
+                let hex_dir_bytes = hex_dir_name?;
                 if hex_dir_bytes.len() != 31 {
                     log::warn!("invalid object dir found, name longer than 31");
                     continue;
@@ -69,7 +70,7 @@ impl HashMapObjectDB {
                 let mut file = OpenOptions::new().read(true).open(inner_dir.join(path))?;
 
                 let mut contents = Vec::new();
-                file.read_to_end(&mut contents).unwrap();
+                file.read_to_end(&mut contents)?;
 
                 let hash = Hash::from_slice(&bytes);
                 cache.insert(hash, contents);
@@ -136,7 +137,7 @@ impl ObjectDB for HashMapObjectDB {
     // https://www.evanjones.ca/durability-filesystem.html
     // https://stackoverflow.com/questions/42442387/is-write-safe-to-be-called-from-multiple-threads-simultaneously/42442926#42442926
     // https://github.com/facebook/rocksdb/wiki/WAL-Performance
-    fn flush(&mut self) -> Result<(), anyhow::Error> {
+    fn flush(&mut self) -> Result<(), DBError> {
         // TODO if we start buffering
         Ok(())
     }
@@ -145,7 +146,7 @@ impl ObjectDB for HashMapObjectDB {
     // been pushed to the OS. You probably don't need to call this function, unless you need it
     // to be for sure durably written.
     // SEE: https://stackoverflow.com/questions/69819990/whats-the-difference-between-flush-and-sync-all
-    fn sync_all(&mut self) -> Result<(), anyhow::Error> {
+    fn sync_all(&mut self) -> Result<(), DBError> {
         for file in self.unsynced.drain(..) {
             file.sync_all()?;
         }
@@ -156,22 +157,23 @@ impl ObjectDB for HashMapObjectDB {
 #[cfg(test)]
 mod tests {
     use crate::db::ostorage::{hashmap_object_db::HashMapObjectDB, ObjectDB};
+    use crate::error::DBError;
     use crate::hash::hash_bytes;
-    use anyhow::Error;
+    use spacetimedb_lib::error::ResultTest;
     use tempdir::TempDir;
 
     const TEST_DB_DIR_PREFIX: &str = "objdb_test";
     const TEST_DATA1: &[u8; 21] = b"this is a byte string";
     const TEST_DATA2: &[u8; 26] = b"this is also a byte string";
 
-    fn setup() -> Result<HashMapObjectDB, Error> {
+    fn setup() -> Result<HashMapObjectDB, DBError> {
         let tmp_dir = TempDir::new(TEST_DB_DIR_PREFIX).unwrap();
         HashMapObjectDB::open(tmp_dir.path())
     }
 
     #[test]
-    fn test_add_and_get() {
-        let mut db = setup().unwrap();
+    fn test_add_and_get() -> ResultTest<()> {
+        let mut db = setup()?;
 
         let hash1 = db.add(TEST_DATA1.to_vec());
         let hash2 = db.add(TEST_DATA2.to_vec());
@@ -181,31 +183,35 @@ mod tests {
 
         let result = db.get(hash2).unwrap();
         assert_eq!(TEST_DATA2.to_vec(), result);
+
+        Ok(())
     }
 
     #[test]
-    fn test_flush() {
-        let mut db = setup().unwrap();
+    fn test_flush() -> ResultTest<()> {
+        let mut db = setup()?;
 
         db.add(TEST_DATA1.to_vec());
         db.add(TEST_DATA2.to_vec());
 
         assert!(db.flush().is_ok());
+        Ok(())
     }
 
     #[test]
-    fn test_flush_sync_all() {
-        let mut db = setup().unwrap();
+    fn test_flush_sync_all() -> ResultTest<()> {
+        let mut db = setup()?;
 
         db.add(TEST_DATA1.to_vec());
         db.add(TEST_DATA2.to_vec());
 
         assert!(db.sync_all().is_ok());
+        Ok(())
     }
 
     #[test]
-    fn test_miss() {
-        let mut db = setup().unwrap();
+    fn test_miss() -> ResultTest<()> {
+        let mut db = setup()?;
 
         let _hash2 = db.add(TEST_DATA2.to_vec());
 
@@ -213,11 +219,12 @@ mod tests {
         let result = db.get(hash);
 
         assert!(result.is_none());
+        Ok(())
     }
 
     #[test]
-    fn test_size() {
-        let mut db = setup().unwrap();
+    fn test_size() -> ResultTest<()> {
+        let mut db = setup()?;
 
         let hash1 = db.add(TEST_DATA1.to_vec());
         db.add(TEST_DATA1.to_vec());
@@ -233,5 +240,6 @@ mod tests {
             db.total_mem_size_bytes(),
             (TEST_DATA1.len() + TEST_DATA2.len() + hash1.data.len() + hash2.data.len()) as u64
         );
+        Ok(())
     }
 }

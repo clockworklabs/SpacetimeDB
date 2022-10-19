@@ -692,7 +692,7 @@ impl WasmModuleHostActor {
                 let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
                 let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
                 let tx = instance_tx_map.remove(&instance_id).unwrap();
-                if let Some(CommitResult { tx, commit_bytes }) = stdb.commit_tx(tx.into()) {
+                if let Some(CommitResult { tx, commit_bytes }) = stdb.commit_tx(tx.into()).unwrap() {
                     if let Some(commit_bytes) = commit_bytes {
                         let mut mlog = self.worker_database_instance.message_log.lock().unwrap();
                         TX_SIZE

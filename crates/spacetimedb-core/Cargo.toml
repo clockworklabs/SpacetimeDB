@@ -49,6 +49,7 @@ log4rs = { version = "1.0.0", features = ["background_rotation", "rolling_file_a
 serde = "1.0.136"
 serde_json = "1.0"
 anyhow = { version = "1.0.57", features = ["backtrace"] }
+thiserror = "1.0.37"
 jsonwebtoken = { version = "8.1.0" }
 sha1 = "0.10.1"
 base64 = "0.13.0"
@@ -67,6 +68,7 @@ backtrace = "0.3.66"
 # pprof = { version = "0.10", features = ["flamegraph"] }
 # perf_monitor = "0.2"
 urlencoding = "2.1.2"
+fs2 = "0.4.3"
 
 # gluesql = "0.10"
 bytes = "1.2.0" # TODO(rdaum): there's also a copy/fork of this inside prost. hmph.

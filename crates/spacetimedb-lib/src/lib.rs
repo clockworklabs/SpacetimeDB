@@ -6,6 +6,7 @@ pub mod primary_key;
 pub mod type_def;
 pub mod type_value;
 pub mod version;
+pub mod error;
 
 pub use data_key::DataKey;
 pub use hash::Hash;

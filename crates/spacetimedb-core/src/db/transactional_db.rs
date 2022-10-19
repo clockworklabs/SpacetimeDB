@@ -1,5 +1,3 @@
-use anyhow::Ok;
-
 use super::{
     message_log::MessageLog,
     messages::{
@@ -9,6 +7,7 @@ use super::{
     },
 };
 use crate::db::ostorage::ObjectDB;
+use crate::error::DBError;
 use crate::hash::{hash_bytes, Hash};
 use std::{
     collections::{hash_set::Iter, HashMap, HashSet},
@@ -134,7 +133,7 @@ impl TransactionalDB {
     pub fn open(
         message_log: Arc<Mutex<MessageLog>>,
         odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
-    ) -> Result<Self, anyhow::Error> {
+    ) -> Result<Self, DBError> {
         let message_log = message_log.lock().unwrap();
         let mut closed_state = ClosedState::new();
         let mut closed_transaction_offset = 0;
@@ -231,9 +230,9 @@ impl TransactionalDB {
         self.vacuum_open_transactions();
     }
 
-    pub fn commit_tx(&mut self, tx: Tx) -> Option<CommitResult> {
+    pub fn commit_tx(&mut self, tx: Tx) -> Result<Option<CommitResult>, DBError> {
         if self.latest_transaction_offset() == tx.parent_tx_offset {
-            return Some(self.finalize(tx));
+            return Ok(Some(self.finalize(tx)?));
         }
 
         // If not, we need to merge.
@@ -259,7 +258,7 @@ impl TransactionalDB {
                     set_id: write.set_id,
                     value: write.data_key,
                 }) {
-                    return None;
+                    return Ok(None);
                 }
             }
 
@@ -270,10 +269,10 @@ impl TransactionalDB {
             }
         }
 
-        return Some(self.finalize(tx));
+        return Ok(Some(self.finalize(tx)?));
     }
 
-    fn finalize(&mut self, tx: Tx) -> CommitResult {
+    fn finalize(&mut self, tx: Tx) -> Result<CommitResult, DBError> {
         // TODO: This is a gross hack, need a better way to do this.
         // Essentially what this is doing is searching the database to
         // see if any of the inserts in this tx are already in the database
@@ -324,10 +323,10 @@ impl TransactionalDB {
             self.vacuum_open_transactions();
         }
 
-        return CommitResult {
+        return Ok(CommitResult {
             tx: new_transaction,
             commit_bytes,
-        };
+        });
     }
 
     fn vacuum_open_transactions(&mut self) {
@@ -379,7 +378,6 @@ impl TransactionalDB {
             min_tx_offset,
             transactions: Vec::new(),
         };
-
         bytes
     }
 
@@ -709,13 +707,12 @@ impl<'a> Iterator for ScanIter<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use std::sync::Arc;
     use std::sync::Mutex;
 
     use crate::db::message_log::MessageLog;
-    use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
-    use crate::db::ostorage::ObjectDB;
+    use crate::db::relational_db::tests_utils::make_default_ostorage;
+    use spacetimedb_lib::error::ResultTest;
     use tempdir::TempDir;
 
     use super::TransactionalDB;
@@ -724,10 +721,6 @@ mod tests {
 
     unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
         ::std::slice::from_raw_parts((p as *const T) as *const u8, ::std::mem::size_of::<T>())
-    }
-
-    fn make_default_ostorage(path: impl AsRef<Path>) -> Box<dyn ObjectDB + Send> {
-        Box::new(HashMapObjectDB::open(path).unwrap())
     }
 
     #[repr(C, packed)]
@@ -750,27 +743,28 @@ mod tests {
     }
 
     #[test]
-    fn test_insert_and_seek_bytes() {
-        let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
-        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
-        let mut db = TransactionalDB::open(mlog, odb).unwrap();
+    fn test_insert_and_seek_bytes() -> ResultTest<()> {
+        let tmp_dir = TempDir::new("txdb_test")?;
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
+        let mut db = TransactionalDB::open(mlog, odb)?;
         let mut tx = db.begin_tx();
         let row_key_1 = db.insert(&mut tx, 0, b"this is a byte string".to_vec());
-        db.commit_tx(tx);
+        db.commit_tx(tx)?;
 
         let mut tx = db.begin_tx();
         let row = db.seek(&mut tx, 0, row_key_1).unwrap();
 
         assert_eq!(b"this is a byte string", row.as_slice());
+        Ok(())
     }
 
     #[test]
-    fn test_insert_and_seek_struct() {
+    fn test_insert_and_seek_struct() -> ResultTest<()> {
         let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
-        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
-        let mut db = TransactionalDB::open(mlog, odb).unwrap();
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
+        let mut db = TransactionalDB::open(mlog, odb)?;
         let mut tx = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx,
@@ -783,21 +777,23 @@ mod tests {
             }
             .encode(),
         );
-        db.commit_tx(tx);
+        db.commit_tx(tx)?;
 
         let mut tx = db.begin_tx();
         let row = MyStruct::decode(db.seek(&mut tx, 0, row_key_1).unwrap().as_slice());
 
         let i = row.my_i32;
         assert_eq!(i, -1);
+        Ok(())
     }
 
     #[test]
-    fn test_read_isolation() {
-        let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
-        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
-        let mut db = TransactionalDB::open(mlog, odb).unwrap();
+
+    fn test_read_isolation() -> ResultTest<()> {
+        let tmp_dir = TempDir::new("txdb_test")?;
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
+        let mut db = TransactionalDB::open(mlog, odb)?;
         let mut tx_1 = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx_1,
@@ -815,19 +811,20 @@ mod tests {
         let row = db.seek(&mut tx_2, 0, row_key_1);
         assert!(row.is_none());
 
-        db.commit_tx(tx_1);
+        db.commit_tx(tx_1)?;
 
         let mut tx_3 = db.begin_tx();
         let row = db.seek(&mut tx_3, 0, row_key_1);
         assert!(row.is_some());
+        Ok(())
     }
 
     #[test]
-    fn test_scan() {
-        let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
-        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
-        let mut db = TransactionalDB::open(mlog, odb).unwrap();
+    fn test_scan() -> ResultTest<()> {
+        let tmp_dir = TempDir::new("txdb_test")?;
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
+        let mut db = TransactionalDB::open(mlog, odb)?;
         let mut tx_1 = db.begin_tx();
         let _row_key_1 = db.insert(
             &mut tx_1,
@@ -855,7 +852,7 @@ mod tests {
         let mut scan_1 = db.scan(&mut tx_1, 0).map(|b| b.to_owned()).collect::<Vec<Vec<u8>>>();
         scan_1.sort();
 
-        db.commit_tx(tx_1);
+        db.commit_tx(tx_1)?;
 
         let mut tx_2 = db.begin_tx();
         let mut scan_2 = db.scan(&mut tx_2, 0).collect::<Vec<Vec<u8>>>();
@@ -870,14 +867,16 @@ mod tests {
                 assert_eq!(val_1[i], val_2[i]);
             }
         }
+
+        Ok(())
     }
 
     #[test]
-    fn test_write_skew_conflict() {
-        let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
-        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
-        let mut db = TransactionalDB::open(mlog, odb).unwrap();
+    fn test_write_skew_conflict() -> ResultTest<()> {
+        let tmp_dir = TempDir::new("txdb_test")?;
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
+        let mut db = TransactionalDB::open(mlog, odb)?;
         let mut tx_1 = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx_1,
@@ -895,16 +894,17 @@ mod tests {
         let row = db.seek(&mut tx_2, 0, row_key_1);
         assert!(row.is_none());
 
-        assert!(db.commit_tx(tx_1).is_some());
-        assert!(db.commit_tx(tx_2).is_none());
+        assert!(db.commit_tx(tx_1)?.is_some());
+        assert!(db.commit_tx(tx_2)?.is_none());
+        Ok(())
     }
 
     #[test]
-    fn test_write_skew_no_conflict() {
-        let tmp_dir = TempDir::new("txdb_test").unwrap();
-        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
-        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))));
-        let mut db = TransactionalDB::open(mlog, odb).unwrap();
+    fn test_write_skew_no_conflict() -> ResultTest<()> {
+        let tmp_dir = TempDir::new("txdb_test")?;
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
+        let mut db = TransactionalDB::open(mlog, odb)?;
         let mut tx_1 = db.begin_tx();
         let row_key_1 = db.insert(
             &mut tx_1,
@@ -928,7 +928,7 @@ mod tests {
             }
             .encode(),
         );
-        assert!(db.commit_tx(tx_1).is_some());
+        assert!(db.commit_tx(tx_1)?.is_some());
 
         let mut tx_2 = db.begin_tx();
         let row = db.seek(&mut tx_2, 0, row_key_1);
@@ -938,7 +938,8 @@ mod tests {
         let mut tx_3 = db.begin_tx();
         db.delete(&mut tx_3, 0, row_key_1);
 
-        assert!(db.commit_tx(tx_2).is_some());
-        assert!(db.commit_tx(tx_3).is_some());
+        assert!(db.commit_tx(tx_2)?.is_some());
+        assert!(db.commit_tx(tx_3)?.is_some());
+        Ok(())
     }
 }

@@ -1,3 +1,4 @@
+use crate::error::LibError;
 use crate::{
     buffer::{BufReader, BufWriter, DecodeError},
     type_def::{EnumDef, TupleDef, TypeDef},
@@ -77,6 +78,36 @@ impl TupleValue {
         for element in &*self.elements {
             element.encode(bytes);
         }
+    }
+
+    pub fn get_field(&self, index: usize, named: Option<&'static str>) -> Result<&TypeValue, LibError> {
+        self.elements
+            .get(index)
+            .ok_or(LibError::TupleFieldNotFound(index, named))
+    }
+
+    pub fn field_as_bool(&self, index: usize, named: Option<&'static str>) -> Result<bool, LibError> {
+        let f = self.get_field(index, named)?;
+        let r = f.as_bool().ok_or(LibError::TupleFieldTypeInvalid(index, named))?;
+        Ok(*r)
+    }
+
+    pub fn field_as_u32(&self, index: usize, named: Option<&'static str>) -> Result<u32, LibError> {
+        let f = self.get_field(index, named)?;
+        let r = f.as_u32().ok_or(LibError::TupleFieldTypeInvalid(index, named))?;
+        Ok(*r)
+    }
+
+    pub fn field_as_str(&self, index: usize, named: Option<&'static str>) -> Result<&str, LibError> {
+        let f = self.get_field(index, named)?;
+        let r = f.as_string().ok_or(LibError::TupleFieldTypeInvalid(index, named))?;
+        Ok(r)
+    }
+
+    pub fn field_as_bytes(&self, index: usize, named: Option<&'static str>) -> Result<&[u8], LibError> {
+        let f = self.get_field(index, named)?;
+        let r = f.as_bytes().ok_or(LibError::TupleFieldTypeInvalid(index, named))?;
+        Ok(r)
     }
 }
 
@@ -293,7 +324,6 @@ impl TypeValue {
             })),
             TypeDef::Unit => TypeValue::Unit,
         };
-
         Ok(result)
     }
 

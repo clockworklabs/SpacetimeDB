@@ -12,6 +12,7 @@ use spacetimedb::db::ostorage::sled_object_db::SledObjectDB;
 
 use spacetimedb::db::ostorage::ObjectDB;
 use spacetimedb::db::transactional_db::TransactionalDB;
+use spacetimedb::error::DBError;
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::path::Path;
@@ -43,19 +44,22 @@ impl Display for ODBFlavor {
     }
 }
 
-fn open_hm(root: &Path) -> Box<dyn ObjectDB + Send> {
-    Box::new(HashMapObjectDB::open(root.to_path_buf().join("odb")).unwrap())
+fn open_hm(root: &Path) -> Result<Box<dyn ObjectDB + Send>, DBError> {
+    let db = HashMapObjectDB::open(root.to_path_buf().join("odb"))?;
+    Ok(Box::new(db))
 }
 #[cfg(feature = "odb_sled")]
-fn open_sled(root: &Path) -> Box<dyn ObjectDB + Send> {
-    Box::new(SledObjectDB::open(root.to_path_buf().join("odb")).unwrap())
+fn open_sled(root: &Path) -> Result<Box<dyn ObjectDB + Send>, DBError> {
+    let db = SledObjectDB::open(root.to_path_buf().join("odb"))?;
+    Ok(Box::new(db))
 }
 #[cfg(feature = "odb_rocksdb")]
-fn open_rocks(root: &Path) -> Box<dyn ObjectDB + Send> {
-    Box::new(RocksDBObjectDB::open(root.to_path_buf().join("odb")).unwrap())
+fn open_rocks(root: &Path) -> Result<Box<dyn ObjectDB + Send>, DBError> {
+    let db = RocksDBObjectDB::open(root.to_path_buf().join("odb"))?;
+    Ok(Box::new(db))
 }
 
-fn open_db(flavor: ODBFlavor) -> fn(&Path) -> Box<dyn ObjectDB + Send> {
+fn open_db(flavor: ODBFlavor) -> fn(&Path) -> Result<Box<dyn ObjectDB + Send>, DBError> {
     match flavor {
         ODBFlavor::HashMap => open_hm,
         #[cfg(feature = "odb_sled")]
@@ -85,13 +89,15 @@ where
 {
     let tmp_dir = TempDir::new("txdb_bench").unwrap();
     let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
-    let odb = Arc::new(Mutex::new(open_db(flavor)(tmp_dir.path().join("odb").as_path())));
+    let odb = Arc::new(Mutex::new(
+        open_db(flavor)(tmp_dir.path().join("odb").as_path()).unwrap(),
+    ));
     let mut db = TransactionalDB::open(mlog, odb).unwrap();
     bench.iter(move || {
         let mut tx = db.begin_tx();
         let (set_id, bytes) = valgen();
         db.insert(&mut tx, set_id, bytes);
-        assert!(db.commit_tx(tx).is_some());
+        assert!(db.commit_tx(tx).unwrap().is_some());
     });
 }
 
@@ -102,12 +108,14 @@ where
 {
     let tmp_dir = TempDir::new("txdb_bench").unwrap();
     let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
-    let odb = Arc::new(Mutex::new(open_db(flavor)(tmp_dir.path().join("odb").as_path())));
+    let odb = Arc::new(Mutex::new(
+        open_db(flavor)(tmp_dir.path().join("odb").as_path()).unwrap(),
+    ));
     let mut db = TransactionalDB::open(mlog, odb).unwrap();
     let mut tx = db.begin_tx();
     let (set_id, bytes) = valgen();
     let hash = db.insert(&mut tx, set_id, bytes);
-    assert!(db.commit_tx(tx).is_some());
+    assert!(db.commit_tx(tx).unwrap().is_some());
     bench.iter(move || {
         let mut tx = db.begin_tx();
         db.seek(&mut tx, 0, hash);
@@ -121,14 +129,16 @@ where
 {
     let tmp_dir = TempDir::new("txdb_bench").unwrap();
     let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
-    let odb = Arc::new(Mutex::new(open_db(flavor)(tmp_dir.path().join("odb").as_path())));
+    let odb = Arc::new(Mutex::new(
+        open_db(flavor)(tmp_dir.path().join("odb").as_path()).unwrap(),
+    ));
     let mut db = TransactionalDB::open(mlog, odb).unwrap();
     bench.iter(move || {
         let mut tx = db.begin_tx();
         let (set_id, bytes) = valgen();
         let datakey = db.insert(&mut tx, set_id, bytes);
         db.seek(&mut tx, set_id, datakey);
-        db.commit_tx(tx);
+        db.commit_tx(tx).unwrap();
     });
 }
 
@@ -140,14 +150,16 @@ where
 {
     let tmp_dir = TempDir::new("txdb_bench").unwrap();
     let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
-    let odb = Arc::new(Mutex::new(open_db(flavor)(tmp_dir.path().join("odb").as_path())));
+    let odb = Arc::new(Mutex::new(
+        open_db(flavor)(tmp_dir.path().join("odb").as_path()).unwrap(),
+    ));
     let mut db = TransactionalDB::open(mlog, odb).unwrap();
     bench.iter(move || {
         let (set_id, data_key) = {
             let mut tx = db.begin_tx();
             let (set_id, bytes) = valgen();
             let dk = db.insert(&mut tx, set_id, bytes);
-            db.commit_tx(tx);
+            db.commit_tx(tx).unwrap();
             (set_id, dk)
         };
         {
@@ -164,7 +176,9 @@ where
 {
     let tmp_dir = TempDir::new("txdb_bench").unwrap();
     let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog")).unwrap()));
-    let odb = Arc::new(Mutex::new(open_db(flavor)(tmp_dir.path().join("odb").as_path())));
+    let odb = Arc::new(Mutex::new(
+        open_db(flavor)(tmp_dir.path().join("odb").as_path()).unwrap(),
+    ));
     let mut db = TransactionalDB::open(mlog, odb).unwrap();
 
     // Keep N items in our hash stack, pushing new hashes to the end and popping old ones off
@@ -175,7 +189,7 @@ where
         let mut tx = db.begin_tx();
         let (set_id, bytes) = valgen();
         datakey_stack.push_back((set_id, db.insert(&mut tx, set_id, bytes)));
-        db.commit_tx(tx);
+        db.commit_tx(tx).unwrap();
     }
 
     bench.iter(move || {
@@ -186,7 +200,7 @@ where
         datakey_stack.push_back((set_id, new_datakey));
         let (set_id, old_datakey) = datakey_stack.pop_front().unwrap();
         db.seek(&mut tx, set_id, old_datakey);
-        db.commit_tx(tx);
+        db.commit_tx(tx).unwrap();
     });
 }
 

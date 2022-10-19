@@ -28,7 +28,7 @@ impl InstanceEnv {
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
-        let schema = stdb.schema_for_table(tx, table_id).unwrap();
+        let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
         let row = RelationalDB::decode_row(&schema, &mut &buffer[..]);
         let row = match row {
             Ok(x) => x,
@@ -38,7 +38,7 @@ impl InstanceEnv {
             }
         };
 
-        stdb.insert(tx, table_id, row);
+        stdb.insert(tx, table_id, row).unwrap();
     }
 
     pub fn delete_pk(&self, table_id: u32, buffer: bytes::Bytes) -> u8 {
@@ -47,7 +47,7 @@ impl InstanceEnv {
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
         let (primary_key, _) = PrimaryKey::decode(&buffer[..]);
-        if let Some(_) = stdb.delete_pk(tx, table_id, primary_key) {
+        if let Some(_) = stdb.delete_pk(tx, table_id, primary_key).unwrap() {
             return 1;
         } else {
             return 0;
@@ -59,7 +59,7 @@ impl InstanceEnv {
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
-        let schema = stdb.schema_for_table(tx, table_id).unwrap();
+        let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
         let row = RelationalDB::decode_row(&schema, &mut &buffer[..]);
         if let Err(e) = row {
             log::error!("delete_value: Failed to decode row! table_id: {} Err: {}", table_id, e);
@@ -67,7 +67,7 @@ impl InstanceEnv {
         }
 
         let pk = RelationalDB::pk_for_row(&row.unwrap());
-        if let Some(_) = stdb.delete_pk(tx, table_id, pk) {
+        if let Some(_) = stdb.delete_pk(tx, table_id, pk).unwrap() {
             return 1;
         } else {
             return 0;
@@ -79,18 +79,19 @@ impl InstanceEnv {
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
-        let schema = stdb.schema_for_table(tx, table_id).unwrap();
+        let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
         let type_def = &schema.elements[col_id as usize].element_type;
 
         let eq_value = TypeValue::decode(type_def, &mut &buffer[..]);
         let eq_value = eq_value.expect("You can't let modules crash you like this you fool.");
         let seek = stdb.seek(tx, table_id, col_id, eq_value);
-        if let Some(seek) = seek {
+        if let Ok(seek) = seek {
             let seek: Vec<TupleValue> = seek.collect::<Vec<_>>();
             let count = stdb.delete_in(tx, table_id, seek).unwrap();
-            return count as i32;
+            return count.unwrap_or_default() as i32;
+        } else {
+            -1
         }
-        return -1;
     }
 
     pub fn delete_range(&self, table_id: u32, col_id: u32, buffer: bytes::Bytes) -> i32 {
@@ -98,7 +99,7 @@ impl InstanceEnv {
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
-        let schema = stdb.schema_for_table(tx, table_id).unwrap();
+        let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
         let col_type = &schema.elements[col_id as usize].element_type;
 
         let tuple_def = TupleDef {
@@ -128,11 +129,10 @@ impl InstanceEnv {
         let start = &tuple.elements[0];
         let end = &tuple.elements[1];
 
-        let range = stdb.range_scan(tx, table_id, col_id, start..end);
-        if let Some(range) = range {
-            let range = range.collect::<Vec<_>>();
-            let count = stdb.delete_in(tx, table_id, range).unwrap();
-            return count as i32;
+        let range = stdb.range_scan(tx, table_id, col_id, start..end).unwrap();
+        let range = range.collect::<Vec<_>>();
+        if let Some(count) = stdb.delete_in(tx, table_id, range).unwrap() {
+            count as i32
         } else {
             return -1;
         }
@@ -188,7 +188,7 @@ impl InstanceEnv {
         });
 
         let table_name = table_name.as_string().unwrap();
-        let table_id = stdb.table_id_from_name(tx, table_name);
+        let table_id = stdb.table_id_from_name(tx, table_name).unwrap();
 
         table_id.unwrap()
     }
@@ -199,7 +199,7 @@ impl InstanceEnv {
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
         let mut bytes = Vec::new();
-        let schema = stdb.schema_for_table(tx, table_id).unwrap();
+        let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
         schema.encode(&mut bytes);
 
         let mut count = 0;
