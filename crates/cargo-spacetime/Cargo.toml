@@ -10,5 +10,5 @@ publish = false
 anyhow = "1.0.65"
 clap = { version = "4.0.10", features = ["derive"] }
 convert_case = "0.6.0"
-spacetimedb-lib = { version = "0.1.0", path = "../spacetimedb-lib" }
+spacetimedb-lib = { version = "0.2.0", path = "../spacetimedb-lib" }
 wasmtime = { version = "1.0.1", default-features = false, features = ["cranelift"] }
