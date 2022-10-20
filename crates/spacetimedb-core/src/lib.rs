@@ -7,7 +7,9 @@ pub mod error;
 pub mod hash;
 mod json;
 pub mod nodes;
-mod protobuf;
+mod protobuf {
+    include!(concat!(env!("OUT_DIR"), "/protobuf.rs"));
+}
 mod sql;
 pub mod startup;
 mod websocket;

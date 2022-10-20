@@ -21,6 +21,7 @@ RUN cargo install flamegraph
 COPY ./crates/spacetimedb-bindings ../spacetimedb-bindings
 COPY ./crates/spacetimedb-lib ../spacetimedb-lib
 COPY ./crates/spacetimedb-core/src ./src
+COPY ./crates/spacetimedb-core/build.rs ./
 COPY ./crates/spacetimedb-core/protobuf ./protobuf
 
 #COPY ./Cargo.lock ./

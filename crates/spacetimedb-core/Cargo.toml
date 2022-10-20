@@ -36,8 +36,7 @@ wasmer-middlewares = "2.1.1"
 sha3 = "0.10.0"
 hex-literal = "0.3.4"
 hex = "0.4.3"
-protobuf = { version = "2" }
-prost = "0.6"
+prost = "0.10"
 lazy_static = "1.4.0"
 # wasmer-compiler-llvm = "2.2.1"
 spacetimedb-lib = { path = "../spacetimedb-lib" }
@@ -87,10 +86,8 @@ odb_sled = []
 
 [dev-dependencies]
 criterion = { version = "0.3", features = ["async", "async_tokio", "html_reports"] }
-prost-build = { version = "0.6.1" }
 tempdir = "0.3.7"
 rand = "0.8.5"
 
 [build-dependencies]
-glob = "0.3.0"
-prost-build = { version = "0.6.1" }
+prost-build = { version = "0.10" }
