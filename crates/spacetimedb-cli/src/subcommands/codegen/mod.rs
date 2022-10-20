@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches, Parser};
 use convert_case::{Case, Casing};
 use spacetimedb_lib::type_def::{ReducerDef, TableDef};
 use spacetimedb_lib::TupleDef;
@@ -13,26 +13,30 @@ pub mod csharp;
 const INDENT: &str = "\t";
 
 #[derive(Parser)]
-enum Args {
-    GenBindings {
-        wasm_file: PathBuf,
-        #[clap(long, short, value_enum, default_value_t)]
-        lang: Language,
-        #[clap(long, short)]
-        out_dir: PathBuf,
-    },
+#[clap(name = "gen-bindings")]
+/// Generate client bindings to a spacetime database
+struct Args {
+    wasm_file: PathBuf,
+    #[clap(long, short, value_enum, default_value_t)]
+    lang: Language,
+    #[clap(long, short)]
+    out_dir: PathBuf,
 }
 #[derive(clap::ValueEnum, Clone, Copy, Default)]
 enum Language {
-    #[value(aliases(["c#", "cs"]))]
+    #[clap(aliases(["c#", "cs"]))]
     #[default]
     Csharp,
 }
 
-fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
+pub fn cli() -> clap::Command<'static> {
+    Args::command()
+}
+
+pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
+    let args = Args::from_arg_matches(args).unwrap_or_else(|e| e.exit());
     match args {
-        Args::GenBindings {
+        Args {
             wasm_file,
             lang,
             out_dir,

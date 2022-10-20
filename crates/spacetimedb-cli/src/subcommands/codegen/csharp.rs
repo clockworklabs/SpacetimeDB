@@ -4,8 +4,8 @@ use convert_case::{Case, Casing};
 use spacetimedb_lib::type_def::{PrimitiveType, ReducerDef, TableDef};
 use spacetimedb_lib::{ElementDef, TupleDef, TypeDef};
 
-use crate::code_indenter::CodeIndenter;
-use crate::INDENT;
+use super::code_indenter::CodeIndenter;
+use super::INDENT;
 
 const NAMESPACE: &str = "SpacetimeDB";
 

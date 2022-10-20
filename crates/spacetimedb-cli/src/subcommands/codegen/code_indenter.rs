@@ -35,7 +35,7 @@ impl<W: fmt::Write> CodeIndenter<W> {
     }
     fn write_indent(&mut self) -> fmt::Result {
         for _ in 0..self.level {
-            self.writer.write_str(crate::INDENT)?;
+            self.writer.write_str(super::INDENT)?;
         }
         Ok(())
     }

@@ -59,6 +59,7 @@ fn get_subcommands() -> Vec<Command<'static>> {
         energy::cli(),
         sql::cli(),
         name::cli(),
+        codegen::cli(),
     ]
 }
 
@@ -75,6 +76,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
         "sql" => sql::exec(config, args).await,
         "update" => update::exec(config, args).await,
         "name" => name::exec(config, args).await,
+        "gen-bindings" => codegen::exec(args),
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
