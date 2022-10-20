@@ -47,7 +47,7 @@ pub fn make_wasm32_module_host_actor(
     module_hash: Hash,
     program_bytes: Vec<u8>,
 ) -> Result<ModuleHost, anyhow::Error> {
-    Ok(ModuleHost::spawn(worker_database_instance.identity, |module_host| {
+    ModuleHost::spawn(worker_database_instance.identity, |module_host| {
         let cost_function =
             |operator: &Operator| -> u64 { opcode_cost::OperationType::operation_type_of(operator).energy_cost() };
         let initial_points = DEFAULT_EXECUTION_BUDGET as u64;
@@ -66,12 +66,8 @@ pub fn make_wasm32_module_host_actor(
         let address = worker_database_instance.address;
         log::trace!("Validating module for database: \"{}\"", address.to_hex());
         validate_module(&module)?;
-        Ok(Box::from(WasmModuleHostActor::new(
-            worker_database_instance,
-            module_hash,
-            module,
-            store,
-            module_host,
-        )))
-    }))
+
+        let host = WasmModuleHostActor::new(worker_database_instance, module_hash, module, store, module_host)?;
+        Ok(Box::from(host))
+    })
 }

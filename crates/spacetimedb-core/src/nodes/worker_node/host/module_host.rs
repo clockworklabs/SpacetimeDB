@@ -87,14 +87,14 @@ pub struct ModuleHost {
 }
 
 impl ModuleHost {
-    pub fn spawn<F>(identity: Hash, make_actor_fn: F) -> ModuleHost
+    pub fn spawn<F>(identity: Hash, make_actor_fn: F) -> Result<ModuleHost, anyhow::Error>
     where
         F: FnOnce(ModuleHost) -> Result<Box<dyn ModuleHostActor + Send>, anyhow::Error>,
     {
         let (tx, mut rx) = mpsc::channel(8);
         let inner_tx = tx.clone();
         let module_host = ModuleHost { identity, tx: inner_tx };
-        let mut actor = make_actor_fn(module_host).expect("Unable to instantiate ModuleHostActor");
+        let mut actor = make_actor_fn(module_host)?;
         tokio::spawn(async move {
             while let Some(command) = rx.recv().await {
                 if actor.handle_message(command) {
@@ -102,7 +102,7 @@ impl ModuleHost {
                 }
             }
         });
-        ModuleHost { identity, tx }
+        Ok(ModuleHost { identity, tx })
     }
 
     pub async fn call_identity_connected_disconnected(

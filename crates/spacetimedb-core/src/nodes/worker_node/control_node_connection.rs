@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use std::{sync::Mutex, time::Duration};
 
 use futures::StreamExt;
@@ -175,7 +176,12 @@ async fn on_binary(
     };
     match message {
         worker_bound_message::Type::ScheduleUpdate(schedule_update) => {
-            on_schedule_update(node_id, schedule_update).await;
+            match on_schedule_update(node_id, schedule_update).await {
+                Ok(_) => {}
+                Err(e) => {
+                    log::error!("Failure to schedule update (node_id {}): {}", node_id, e);
+                }
+            }
         }
         worker_bound_message::Type::ScheduleState(schedule_state) => {
             on_schedule_state(node_id, schedule_state).await;
@@ -208,16 +214,25 @@ async fn on_schedule_state(_node_id: u64, schedule_state: ScheduleState) {
     worker_db::init_with_schedule_state(schedule_state);
 
     for instance in worker_db::get_database_instances() {
-        on_insert_database_instance(instance).await;
+        match on_insert_database_instance(&instance).await {
+            Ok(_) => {}
+            Err(e) => {
+                log::error!(
+                    "Unable to insert database with database_id ({}): {}",
+                    instance.database_id,
+                    e
+                )
+            }
+        }
     }
 }
 
-async fn on_schedule_update(_node_id: u64, schedule_update: ScheduleUpdate) {
+async fn on_schedule_update(_node_id: u64, schedule_update: ScheduleUpdate) -> Result<(), anyhow::Error> {
     match schedule_update.r#type {
         Some(schedule_update::Type::Insert(insert_operation)) => match insert_operation.r#type {
             Some(insert_operation::Type::DatabaseInstance(database_instance)) => {
                 worker_db::insert_database_instance(database_instance.clone());
-                on_insert_database_instance(database_instance).await;
+                on_insert_database_instance(&database_instance).await?;
             }
             Some(insert_operation::Type::Database(database)) => {
                 worker_db::insert_database(database);
@@ -228,8 +243,8 @@ async fn on_schedule_update(_node_id: u64, schedule_update: ScheduleUpdate) {
         },
         Some(schedule_update::Type::Update(update_operation)) => match update_operation.r#type {
             Some(update_operation::Type::DatabaseInstance(database_instance)) => {
+                on_update_database_instance(&database_instance).await?;
                 worker_db::insert_database_instance(database_instance.clone());
-                on_update_database_instance(database_instance).await;
             }
             Some(update_operation::Type::Database(database)) => {
                 worker_db::insert_database(database);
@@ -250,35 +265,38 @@ async fn on_schedule_update(_node_id: u64, schedule_update: ScheduleUpdate) {
         },
         None => todo!(),
     }
+    Ok(())
 }
 
-async fn on_insert_database_instance(instance: DatabaseInstance) {
+async fn on_insert_database_instance(instance: &DatabaseInstance) -> Result<(), anyhow::Error> {
     let state = worker_db::get_database_instance_state(instance.id).unwrap();
     if let Some(mut state) = state {
         if !state.initialized {
             // Start and init the service
-            init_module_on_database_instance(instance.database_id, instance.id).await;
+            init_module_on_database_instance(instance.database_id, instance.id).await?;
             state.initialized = true;
             worker_db::upsert_database_instance_state(state).unwrap();
         } else {
-            start_module_on_database_instance(instance.database_id, instance.id).await;
+            start_module_on_database_instance(instance.database_id, instance.id).await?;
         }
+        Ok(())
     } else {
         // Start and init the service
         let mut state = DatabaseInstanceState {
             database_instance_id: instance.id,
             initialized: false,
         };
+        init_module_on_database_instance(instance.database_id, instance.id).await?;
         worker_db::upsert_database_instance_state(state.clone()).unwrap();
-        init_module_on_database_instance(instance.database_id, instance.id).await;
         state.initialized = true;
         worker_db::upsert_database_instance_state(state).unwrap();
+        Ok(())
     }
 }
 
-async fn on_update_database_instance(instance: DatabaseInstance) {
+async fn on_update_database_instance(instance: &DatabaseInstance) -> Result<(), anyhow::Error> {
     // This logic is the same right now
-    on_insert_database_instance(instance).await;
+    on_insert_database_instance(instance).await
 }
 
 async fn on_delete_database_instance(instance_id: u64) {
@@ -293,11 +311,11 @@ async fn on_delete_database_instance(instance_id: u64) {
     }
 }
 
-async fn init_module_on_database_instance(database_id: u64, instance_id: u64) {
+async fn init_module_on_database_instance(database_id: u64, instance_id: u64) -> Result<(), anyhow::Error> {
     let database = if let Some(database) = worker_db::get_database_by_id(database_id) {
         database
     } else {
-        return;
+        return Err(anyhow!("Unknown database/instance: {}/{}", database_id, instance_id));
     };
     let identity = Hash::from_slice(database.identity);
     let address = Address::from_slice(database.address);
@@ -325,15 +343,15 @@ async fn init_module_on_database_instance(database_id: u64, instance_id: u64) {
     let host = host_controller::get_host();
     let _address = host
         .init_module(worker_database_instance, program_bytes.clone())
-        .await
-        .unwrap();
+        .await?;
+    Ok(())
 }
 
-async fn start_module_on_database_instance(database_id: u64, instance_id: u64) {
+async fn start_module_on_database_instance(database_id: u64, instance_id: u64) -> Result<(), anyhow::Error> {
     let database = if let Some(database) = worker_db::get_database_by_id(database_id) {
         database
     } else {
-        return;
+        return Err(anyhow!("Unknown database/instance: {}/{}", database_id, instance_id));
     };
     let identity = Hash::from_slice(database.identity);
     let address = Address::from_slice(database.address);
@@ -359,10 +377,8 @@ async fn start_module_on_database_instance(database_id: u64, instance_id: u64) {
     // TODO: This is getting pretty messy
     DatabaseInstanceContextController::get_shared().insert(worker_database_instance.clone());
     let host = host_controller::get_host();
-    let _address = host
-        .add_module(worker_database_instance, program_bytes.clone())
-        .await
-        .unwrap();
+    let _address = host.add_module(worker_database_instance, program_bytes.clone()).await?;
+    Ok(())
 }
 
 lazy_static::lazy_static! {

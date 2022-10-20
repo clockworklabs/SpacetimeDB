@@ -28,12 +28,12 @@ pub fn make_cpython_module_host_actor(
         prepare_freethreaded_python();
         *is_inited = true;
     }
-    Ok(ModuleHost::spawn(worker_database_instance.identity, |module_host| {
+    ModuleHost::spawn(worker_database_instance.identity, |module_host| {
         Ok(Box::from(CPythonModuleHostActor::new(
             worker_database_instance,
             module_hash,
             module_host,
             program_bytes,
         )))
-    }))
+    })
 }

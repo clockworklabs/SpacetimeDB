@@ -110,7 +110,7 @@ impl WasmModuleHostActor {
         module: Module,
         store: Store,
         module_host: ModuleHost,
-    ) -> Self {
+    ) -> Result<Self, anyhow::Error> {
         let relational_db = worker_database_instance.relational_db.clone();
         let subscription = ModuleSubscription::spawn(relational_db);
         let mut host = Self {
@@ -125,9 +125,13 @@ impl WasmModuleHostActor {
             description_cache: HashMap::new(),
         };
         host.create_instance().unwrap();
-        host.populate_description_caches()
-            .expect("Unable to populate description cache");
-        host
+        match host.populate_description_caches() {
+            Ok(_) => Ok(host),
+            Err(e) => Err(anyhow!(
+                "Failed to populate schema description cache; garbage data in schema?: {}",
+                e
+            )),
+        }
     }
 
     fn populate_description_caches(&mut self) -> Result<(), anyhow::Error> {
