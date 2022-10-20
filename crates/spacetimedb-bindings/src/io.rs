@@ -1,4 +1,4 @@
-use crate::_console_log;
+use spacetimedb_sys::console_log;
 use std::panic;
 
 // TODO: probably do something lighter weight here
@@ -14,38 +14,22 @@ fn panic_hook(info: &panic::PanicInfo) {
 
 #[doc(hidden)]
 pub fn _console_log_debug(string: &str) {
-    let s = string.as_bytes();
-    let ptr = s.as_ptr();
-    unsafe {
-        _console_log(3, ptr, s.len() as u32);
-    }
+    console_log(3, string.as_bytes())
 }
 
 #[doc(hidden)]
 pub fn _console_log_info(string: &str) {
-    let s = string.as_bytes();
-    let ptr = s.as_ptr();
-    unsafe {
-        _console_log(2, ptr, s.len() as u32);
-    }
+    console_log(2, string.as_bytes())
 }
 
 #[doc(hidden)]
 pub fn _console_log_warn(string: &str) {
-    let s = string.as_bytes();
-    let ptr = s.as_ptr();
-    unsafe {
-        _console_log(1, ptr, s.len() as u32);
-    }
+    console_log(1, string.as_bytes())
 }
 
 #[doc(hidden)]
 pub fn _console_log_error(string: &str) {
-    let s = string.as_bytes();
-    let ptr = s.as_ptr();
-    unsafe {
-        _console_log(0, ptr, s.len() as u32);
-    }
+    console_log(0, string.as_bytes())
 }
 
 #[macro_export]

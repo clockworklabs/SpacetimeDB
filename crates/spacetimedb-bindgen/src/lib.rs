@@ -199,10 +199,7 @@ fn spacetimedb_reducer(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> s
             };
             let mut bytes = vec![];
             tupledef.encode(&mut bytes);
-            let offset = bytes.as_ptr() as u64;
-            let length = bytes.len() as u64;
-            std::mem::forget(bytes);
-            return offset << 32 | length;
+            spacetimedb::sys::pack_slice(bytes.into())
         }
     };
 

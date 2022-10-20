@@ -3085,6 +3085,7 @@ dependencies = [
  "sha3",
  "spacetimedb-bindgen",
  "spacetimedb-lib",
+ "spacetimedb-sys",
  "wee_alloc",
 ]
 
@@ -3183,6 +3184,13 @@ dependencies = [
  "serde",
  "sha3",
  "thiserror",
+]
+
+[[package]]
+name = "spacetimedb-sys"
+version = "0.2.0"
+dependencies = [
+ "getrandom",
 ]
 
 [[package]]

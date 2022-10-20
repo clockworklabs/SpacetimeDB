@@ -1,0 +1,9 @@
+[package]
+name = "spacetimedb-sys"
+version = "0.2.0"
+edition = "2021"
+license-file = "LICENSE"
+description = "Easy support for interacting between SpacetimeDB and Rust."
+
+[dependencies]
+getrandom = { version = "0.2.7", features = ["custom"], optional = true }
