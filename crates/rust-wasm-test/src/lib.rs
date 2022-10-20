@@ -16,8 +16,8 @@ pub struct TestB {
     foo: String,
 }
 
-#[spacetimedb(migrate)]
-pub fn migrate() {}
+// #[spacetimedb(migrate)]
+// pub fn migrate() {}
 
 #[spacetimedb(reducer, repeat = 1000ms)]
 pub fn repeating_test(timestamp: u64, delta_time: u64) {

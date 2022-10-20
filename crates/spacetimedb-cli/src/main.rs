@@ -1,12 +1,5 @@
-mod config;
-mod subcommands;
-mod util;
-use crate::config::Config;
-use anyhow;
-use clap::ArgMatches;
 use clap::Command;
-use std::vec;
-use subcommands::*;
+use spacetimedb_cli::*;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -44,39 +37,4 @@ Commands:
 {subcommands}
 ",
         )
-}
-
-fn get_subcommands() -> Vec<Command<'static>> {
-    vec![
-        version::cli(),
-        init::cli(),
-        update::cli(),
-        rm::cli(),
-        logs::cli(),
-        call::cli(),
-        describe::cli(),
-        identity::cli(),
-        energy::cli(),
-        sql::cli(),
-        name::cli(),
-        codegen::cli(),
-    ]
-}
-
-async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    match cmd {
-        "version" => version::exec(config, args).await,
-        "identity" => identity::exec(config, args).await,
-        "call" => call::exec(config, args).await,
-        "describe" => describe::exec(config, args).await,
-        "energy" => energy::exec(config, args).await,
-        "init" => init::exec(config, args).await,
-        "rm" => rm::exec(config, args).await,
-        "logs" => logs::exec(config, args).await,
-        "sql" => sql::exec(config, args).await,
-        "update" => update::exec(config, args).await,
-        "name" => name::exec(config, args).await,
-        "gen-bindings" => codegen::exec(args),
-        unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
-    }
 }

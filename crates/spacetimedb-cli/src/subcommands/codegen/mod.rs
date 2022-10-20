@@ -23,7 +23,7 @@ struct Args {
     out_dir: PathBuf,
 }
 #[derive(clap::ValueEnum, Clone, Copy, Default)]
-enum Language {
+pub enum Language {
     #[clap(aliases(["c#", "cs"]))]
     #[default]
     Csharp,
@@ -41,29 +41,32 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
             lang,
             out_dir,
         } => {
-            let Language::Csharp = lang;
-            let descriptions = extract_descriptions(&wasm_file)?;
-            for (name, desc) in descriptions {
-                let (file, code) = match desc {
-                    Description::Table(table) => {
-                        let code = csharp::autogen_csharp_table(&name, &table);
-                        (out_dir.join(name + ".cs"), code)
-                    }
-                    Description::Tuple(tup) => {
-                        let code = csharp::autogen_csharp_tuple(&name, &tup);
-                        (out_dir.join(name + ".cs"), code)
-                    }
-                    Description::Reducer(reducer) => {
-                        let code = csharp::autogen_csharp_reducer(&reducer);
-                        let pascalcase = name.to_case(Case::Pascal);
-                        (out_dir.join(pascalcase + "Reducer.cs"), code)
-                    }
-                };
-                fs::write(file, code)?;
+            for (fname, code) in gen_bindings(&wasm_file, lang)? {
+                fs::write(out_dir.join(fname), code)?;
             }
             Ok(())
         }
     }
+}
+
+pub fn gen_bindings(wasm_file: &Path, lang: Language) -> anyhow::Result<impl Iterator<Item = (String, String)>> {
+    let Language::Csharp = lang;
+    let descriptions = extract_descriptions(&wasm_file)?;
+    Ok(descriptions.into_iter().map(|(name, desc)| match desc {
+        Description::Table(table) => {
+            let code = csharp::autogen_csharp_table(&name, &table);
+            (name + ".cs", code)
+        }
+        Description::Tuple(tup) => {
+            let code = csharp::autogen_csharp_tuple(&name, &tup);
+            (name + ".cs", code)
+        }
+        Description::Reducer(reducer) => {
+            let code = csharp::autogen_csharp_reducer(&reducer);
+            let pascalcase = name.to_case(Case::Pascal);
+            (pascalcase + "Reducer.cs", code)
+        }
+    }))
 }
 
 enum Description {
