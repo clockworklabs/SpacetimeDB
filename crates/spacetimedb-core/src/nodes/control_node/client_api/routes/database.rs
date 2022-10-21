@@ -107,7 +107,7 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
     };
 
     let host_type = match host_type {
-        None => HostType::Wasm32,
+        None => HostType::Wasmer,
         Some(ht) => match ht.parse() {
             Ok(ht) => ht,
             Err(_) => {

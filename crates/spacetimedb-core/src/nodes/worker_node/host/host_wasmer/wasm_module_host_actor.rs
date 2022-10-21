@@ -1,10 +1,10 @@
+use super::wasm_instance_env::WasmInstanceEnv;
 use crate::db::messages::transaction::Transaction;
 use crate::db::relational_db::TxWrapper;
 use crate::db::transactional_db::CommitResult;
 use crate::nodes::worker_node::host::host_controller::{
     DescribedEntityType, Entity, EntityDescription, ReducerBudget, ReducerCallResult,
 };
-use crate::nodes::worker_node::host::host_wasm32::wasm_instance_env::WasmInstanceEnv;
 use crate::nodes::worker_node::host::instance_env::InstanceEnv;
 use crate::nodes::worker_node::host::module_host::{
     EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHost, ModuleHostActor, ModuleHostCommand,

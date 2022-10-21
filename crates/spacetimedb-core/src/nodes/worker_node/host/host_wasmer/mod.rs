@@ -5,15 +5,14 @@ use wasmer::{CompilerConfig, Module, Store, Universal, ValType};
 use wasmer_middlewares::Metering;
 
 use crate::hash::Hash;
-use crate::nodes::worker_node::host::host_wasm32::wasm_module_host_actor::{
-    WasmModuleHostActor, DEFAULT_EXECUTION_BUDGET,
-};
 use crate::nodes::worker_node::host::module_host::ModuleHost;
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
 
 mod opcode_cost;
 mod wasm_instance_env;
 pub mod wasm_module_host_actor;
+
+use wasm_module_host_actor::{WasmModuleHostActor, DEFAULT_EXECUTION_BUDGET};
 
 const REDUCE_DUNDER: &str = "__reducer__";
 
@@ -42,7 +41,7 @@ fn validate_module(module: &Module) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-pub fn make_wasm32_module_host_actor(
+pub fn make_wasmer_module_host_actor(
     worker_database_instance: WorkerDatabaseInstance,
     module_hash: Hash,
     program_bytes: Vec<u8>,

@@ -52,7 +52,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let path_to_project = args.value_of("path to project").unwrap();
     let force = args.is_present("force");
-    let host_type = args.value_of("host_type").unwrap_or("wasm32");
+    let host_type = args.value_of("host_type").unwrap_or("wasmer");
     let path = fs::canonicalize(path_to_project).unwrap();
     let program_bytes = fs::read(path)?;
 

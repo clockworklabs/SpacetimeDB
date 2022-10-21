@@ -16,7 +16,7 @@ message EnergyBalance {
 }
 
 enum HostType {
-    WASM32 = 0;
+    WASMER = 0;
 }
 
 message Database {

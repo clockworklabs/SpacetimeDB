@@ -1,5 +1,5 @@
 use crate::hash::{hash_bytes, Hash};
-use crate::nodes::worker_node::host::host_wasm32::make_wasm32_module_host_actor;
+use crate::nodes::worker_node::host::host_wasmer::make_wasmer_module_host_actor;
 use crate::nodes::worker_node::host::module_host::ModuleHost;
 use crate::nodes::worker_node::worker_budget;
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
@@ -152,7 +152,7 @@ impl HostController {
         }
 
         let module_host = match worker_database_instance.host_type {
-            HostType::Wasm32 => make_wasm32_module_host_actor(worker_database_instance, module_hash, program_bytes)?,
+            HostType::Wasmer => make_wasmer_module_host_actor(worker_database_instance, module_hash, program_bytes)?,
         };
 
         let mut modules = self.modules.lock().unwrap();
