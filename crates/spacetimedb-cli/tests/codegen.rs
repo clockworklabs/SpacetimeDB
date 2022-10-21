@@ -9,6 +9,7 @@ fn test_codegen_output() {
     ));
     if !path.exists() {
         eprintln!("rust_wasm_test isn't built, skipping");
+        return;
     }
     use spacetimedb_cli::codegen;
     let outfiles: HashMap<_, _> = codegen::gen_bindings(path, codegen::Language::Csharp)
