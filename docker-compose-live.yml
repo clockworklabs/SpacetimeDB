@@ -1,0 +1,52 @@
+version: "3.6"
+
+services:
+  node:
+    working_dir: /usr/src/app
+    build:
+      context: ./
+      dockerfile: ./crates/spacetimedb-core/Dockerfile
+    volumes:
+      - ./crates/spacetimedb-core/Cargo.toml:/usr/src/app/Cargo.toml
+      - ./crates/spacetimedb-core/benches:/usr/src/app/benches
+      - ./crates/spacetimedb-core/build.rs:/usr/src/app/build.rs
+      - ./crates/spacetimedb-core/log4rs.yaml:/usr/src/app/log4rs.yaml
+      - ./crates/spacetimedb-core/protobuf:/usr/src/app/protobuf
+      - ./crates/spacetimedb-core/src:/usr/src/app/src
+      - ./crates/spacetimedb-core/flamegraphs:/usr/src/app/flamegraphs
+
+      - ./crates/spacetimedb-lib:/usr/src/spacetimedb-lib
+      - ./crates/spacetimedb-bindings:/usr/src/spacetimedb-bindings
+      - ./crates/spacetimedb-bindgen:/usr/src/spacetimedb-bindgen
+      - ./crates/rust-wasm-test:/usr/src/rust-wasm-test
+      - /stdb
+    ports:
+      - "3000:80"
+    entrypoint: bash -c "RUST_LOG='raft=trace', CARGO_PROFILE_RELEASE_DEBUG=true CARGO_INCREMENTAL=0 RUST_BACKTRACE=1 cargo watch -i flamegraphs --why -x 'run --release -- init --worker-node'"
+    # entrypoint: bash -c "CARGO_PROFILE_RELEASE_DEBUG=true cargo flamegraph -o my_flamegraph.svg --bin spacetimedb -c 'record -c 100 -g' -- init --worker-node"
+    privileged: true
+    environment:
+      ENV: dev
+    # Turn on core dumps, hopefully.
+    ulimits:
+      core:
+        soft: -1
+        hard: -1
+    logging:
+      options:
+        max-size: 1G
+
+  prometheus:
+    build:
+      context: ./packages/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./packages/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    build:
+      context: ./packages/grafana
+    ports:
+      - "3001:3000"
+
