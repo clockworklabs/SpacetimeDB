@@ -87,7 +87,7 @@ pub fn get_table_id(table_name: &str) -> u32 {
     })
 }
 
-pub fn insert(table_id: u32, row: TupleValue) {
+pub fn insert(table_id: u32, row: TupleValue) -> Result<(), ()> {
     with_row_buf(|bytes| {
         row.encode(bytes);
         sys::insert(table_id, &bytes)

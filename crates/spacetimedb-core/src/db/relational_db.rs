@@ -582,12 +582,7 @@ impl RelationalDB {
         Ok(None)
     }
 
-    pub fn delete_in<R: Relation>(
-        &mut self,
-        tx: &mut Tx,
-        table_id: u32,
-        relation: R,
-    ) -> Result<Option<usize>, DBError> {
+    pub fn delete_in<R: Relation>(&mut self, tx: &mut Tx, table_id: u32, relation: R) -> Result<Option<u32>, DBError> {
         if self.schema_for_table(tx, table_id)?.is_none() {
             return Ok(None);
         }

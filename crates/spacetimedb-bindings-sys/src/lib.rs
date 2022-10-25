@@ -13,26 +13,26 @@ pub mod raw {
         pub fn _get_table_id(ptr: *const u8, len: usize) -> u32;
         pub fn _create_index(table_id: u32, col_id: u32, index_type: u8);
 
-        pub fn _insert(table_id: u32, ptr: *const u8, len: usize);
+        pub fn _insert(table_id: u32, ptr: *const u8, len: usize) -> u8;
 
         pub fn _delete_pk(table_id: u32, ptr: *const u8, len: usize) -> u8;
         pub fn _delete_value(table_id: u32, ptr: *const u8, len: usize) -> u8;
-        pub fn _delete_eq(table_id: u32, col_id: u32, ptr: *const u8, len: usize) -> i32;
-        pub fn _delete_range(table_id: u32, col_id: u32, ptr: *const u8, len: usize) -> i32;
+        pub fn _delete_eq(table_id: u32, col_id: u32, ptr: *const u8, len: usize) -> u32;
+        pub fn _delete_range(table_id: u32, col_id: u32, ptr: *const u8, len: usize) -> u32;
 
         // TODO: should have lens associated with ptrs
-        pub fn _filter_eq(table_id: u32, col_id: u32, src_ptr: *const u8, result_ptr: *mut u8);
+        pub fn _filter_eq(table_id: u32, col_id: u32, src_ptr: *const u8, result_ptr: *const u8);
 
         pub fn _iter(table_id: u32) -> u64;
         pub fn _console_log(level: u8, ptr: *const u8, len: usize);
     }
 }
 
-fn cvt_count(x: i32) -> Result<u32, ()> {
-    if x == -1 {
+fn cvt_count(x: u32) -> Result<u32, ()> {
+    if x == u32::MAX {
         Err(())
     } else {
-        Ok(x as u32)
+        Ok(x)
     }
 }
 fn cvt(x: u8) -> Result<(), ()> {
@@ -57,8 +57,8 @@ pub fn create_index(table_id: u32, col_id: u32, index_type: u8) {
 }
 
 #[inline]
-pub fn insert(table_id: u32, data: &[u8]) {
-    unsafe { raw::_insert(table_id, data.as_ptr(), data.len()) }
+pub fn insert(table_id: u32, data: &[u8]) -> Result<(), ()> {
+    cvt(unsafe { raw::_insert(table_id, data.as_ptr(), data.len()) })
 }
 
 #[inline]

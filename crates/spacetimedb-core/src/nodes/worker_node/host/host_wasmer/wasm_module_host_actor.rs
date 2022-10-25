@@ -640,9 +640,12 @@ impl WasmModuleHostActor {
                 return Ok((None, used_points, remaining_points, None));
             }
         };
-        let values = ptr.deref(memory, 0, buf_len).unwrap();
-        for (i, b) in arg_bytes.iter().enumerate() {
-            values[i].set(*b);
+        {
+            let memory = memory.view();
+            let values = super::wasm_instance_env::ptr_get_slice(&memory, ptr, buf_len).unwrap();
+            for (val, b) in values.iter().zip(arg_bytes) {
+                val.set(*b);
+            }
         }
 
         let reduce = instance.exports.get_function(&reducer_symbol)?;

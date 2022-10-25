@@ -23,7 +23,7 @@ impl InstanceEnv {
         log::debug!("MOD: {}", s);
     }
 
-    pub fn insert(&self, table_id: u32, buffer: bytes::Bytes) {
+    pub fn insert(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), ()> {
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
@@ -33,28 +33,32 @@ impl InstanceEnv {
         let row = match row {
             Ok(x) => x,
             Err(e) => {
-                log::error!("insert: Failed to decode row: table_id: {} Err: {}", table_id, e);
-                return;
+                log::error!("insert: Failed to decode row: table_id: {table_id} Err: {e}");
+                return Err(());
             }
         };
 
-        stdb.insert(tx, table_id, row).unwrap();
+        stdb.insert(tx, table_id, row)
+            .map_err(|e| log::error!("insert: Failed to insert row: table_id: {} Err: {}", table_id, e))
     }
 
-    pub fn delete_pk(&self, table_id: u32, buffer: bytes::Bytes) -> u8 {
+    pub fn delete_pk(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), ()> {
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
         let (primary_key, _) = PrimaryKey::decode(&buffer[..]);
-        if let Some(_) = stdb.delete_pk(tx, table_id, primary_key).unwrap() {
-            return 1;
+        let res = stdb
+            .delete_pk(tx, table_id, primary_key)
+            .map_err(|e| log::error!("delete: Failed to delete row: table_id: {table_id} Err: {e}"))?;
+        if let Some(_) = res {
+            Ok(())
         } else {
-            return 0;
+            Err(())
         }
     }
 
-    pub fn delete_value(&self, table_id: u32, buffer: bytes::Bytes) -> u8 {
+    pub fn delete_value(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), ()> {
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
@@ -63,18 +67,21 @@ impl InstanceEnv {
         let row = RelationalDB::decode_row(&schema, &mut &buffer[..]);
         if let Err(e) = row {
             log::error!("delete_value: Failed to decode row! table_id: {} Err: {}", table_id, e);
-            return 0;
+            return Err(());
         }
 
         let pk = RelationalDB::pk_for_row(&row.unwrap());
-        if let Some(_) = stdb.delete_pk(tx, table_id, pk).unwrap() {
-            return 1;
+        let res = stdb
+            .delete_pk(tx, table_id, pk)
+            .map_err(|e| log::error!("delete: Failed to delete row: table_id: {table_id} Err: {e}"))?;
+        if let Some(_) = res {
+            return Ok(());
         } else {
-            return 0;
+            return Err(());
         }
     }
 
-    pub fn delete_eq(&self, table_id: u32, col_id: u32, buffer: bytes::Bytes) -> i32 {
+    pub fn delete_eq(&self, table_id: u32, col_id: u32, buffer: bytes::Bytes) -> Result<u32, ()> {
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
@@ -87,14 +94,15 @@ impl InstanceEnv {
         let seek = stdb.seek(tx, table_id, col_id, eq_value);
         if let Ok(seek) = seek {
             let seek: Vec<TupleValue> = seek.collect::<Vec<_>>();
-            let count = stdb.delete_in(tx, table_id, seek).unwrap();
-            return count.unwrap_or_default() as i32;
+            stdb.delete_in(tx, table_id, seek)
+                .map_err(|e| log::error!("delete: Failed to delete row: table_id: {table_id} Err: {e}"))?
+                .ok_or(())
         } else {
-            -1
+            Err(())
         }
     }
 
-    pub fn delete_range(&self, table_id: u32, col_id: u32, buffer: bytes::Bytes) -> i32 {
+    pub fn delete_range(&self, table_id: u32, col_id: u32, buffer: bytes::Bytes) -> Result<u32, ()> {
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
@@ -122,20 +130,21 @@ impl InstanceEnv {
             Ok(tuple) => tuple,
             Err(e) => {
                 log::error!("delete_range: Failed to decode tuple value: Err: {}", e);
-                return -1;
+                return Err(());
             }
         };
 
         let start = &tuple.elements[0];
         let end = &tuple.elements[1];
 
-        let range = stdb.range_scan(tx, table_id, col_id, start..end).unwrap();
+        let range = stdb
+            .range_scan(tx, table_id, col_id, start..end)
+            .map_err(|e| log::error!("delete_range: Failed to scan range: Err: {}", e))?;
         let range = range.collect::<Vec<_>>();
-        if let Some(count) = stdb.delete_in(tx, table_id, range).unwrap() {
-            count as i32
-        } else {
-            return -1;
-        }
+
+        stdb.delete_in(tx, table_id, range)
+            .map_err(|e| log::error!("delete_range: Failed to delete in range: Err: {}", e))?
+            .ok_or(())
     }
 
     pub fn create_table(&self, buffer: bytes::Bytes) -> u32 {

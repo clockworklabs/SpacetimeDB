@@ -489,7 +489,8 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
     let db_insert = quote! {
         #[allow(unused_variables)]
         pub fn insert(ins: #original_struct_ident) {
-            spacetimedb::insert(Self::table_id(), spacetimedb::IntoTuple::into_tuple(ins));
+            // TODO: how should we handle this kind of error?
+            let _ = spacetimedb::insert(Self::table_id(), spacetimedb::IntoTuple::into_tuple(ins));
         }
     };
 

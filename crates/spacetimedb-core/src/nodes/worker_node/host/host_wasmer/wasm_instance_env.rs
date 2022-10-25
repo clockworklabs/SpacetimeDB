@@ -15,6 +15,19 @@ pub struct WasmInstanceEnv {
     pub alloc: LazyInit<NativeFunc<u32, WasmSlice<u8>>>,
 }
 
+fn cvt_count(x: Result<u32, ()>) -> u32 {
+    match x {
+        Ok(count) => count,
+        Err(()) => u32::MAX,
+    }
+}
+fn cvt(x: Result<(), ()>) -> u8 {
+    match x {
+        Ok(()) => 1,
+        Err(()) => 0,
+    }
+}
+
 /// Wraps an InstanceEnv with the magic necessary to push and pull bytes from webassembly
 /// memory.
 impl WasmInstanceEnv {
@@ -35,29 +48,29 @@ impl WasmInstanceEnv {
         self.instance_env.console_log(level, &s);
     }
 
-    pub fn insert(&self, table_id: u32, ptr: WasmSlice<u8>, len: u32) {
+    pub fn insert(&self, table_id: u32, ptr: WasmSlice<u8>, len: u32) -> u8 {
         let buffer = Self::read_output_bytes(self.memory(), ptr, len);
-        self.instance_env.insert(table_id, buffer);
+        cvt(self.instance_env.insert(table_id, buffer))
     }
 
     pub fn delete_pk(&self, table_id: u32, ptr: WasmSlice<u8>, len: u32) -> u8 {
         let buffer = Self::read_output_bytes(self.memory(), ptr, len);
-        self.instance_env.delete_pk(table_id, buffer)
+        cvt(self.instance_env.delete_pk(table_id, buffer))
     }
 
     pub fn delete_value(&self, table_id: u32, ptr: WasmSlice<u8>, len: u32) -> u8 {
         let buffer = Self::read_output_bytes(self.memory(), ptr, len);
-        self.instance_env.delete_value(table_id, buffer)
+        cvt(self.instance_env.delete_value(table_id, buffer))
     }
 
-    pub fn delete_eq(&self, table_id: u32, col_id: u32, ptr: WasmSlice<u8>, len: u32) -> i32 {
+    pub fn delete_eq(&self, table_id: u32, col_id: u32, ptr: WasmSlice<u8>, len: u32) -> u32 {
         let buffer = Self::read_output_bytes(self.memory(), ptr, len);
-        self.instance_env.delete_eq(table_id, col_id, buffer)
+        cvt_count(self.instance_env.delete_eq(table_id, col_id, buffer))
     }
 
-    pub fn delete_range(&self, table_id: u32, col_id: u32, ptr: WasmSlice<u8>, len: u32) -> i32 {
+    pub fn delete_range(&self, table_id: u32, col_id: u32, ptr: WasmSlice<u8>, len: u32) -> u32 {
         let buffer = Self::read_output_bytes(self.memory(), ptr, len);
-        self.instance_env.delete_range(table_id, col_id, buffer)
+        cvt_count(self.instance_env.delete_range(table_id, col_id, buffer))
     }
 
     pub fn create_table(&self, ptr: WasmSlice<u8>, len: u32) -> u32 {
@@ -90,6 +103,6 @@ impl WasmInstanceEnv {
     }
 }
 
-fn ptr_get_slice<'a>(memory: &'a MemoryView<u8>, ptr: WasmSlice<u8>, len: u32) -> Option<&'a [Cell<u8>]> {
+pub(super) fn ptr_get_slice<'a>(memory: &'a MemoryView<u8>, ptr: WasmSlice<u8>, len: u32) -> Option<&'a [Cell<u8>]> {
     memory.get(ptr.offset() as usize..)?.get(..len as usize)
 }
