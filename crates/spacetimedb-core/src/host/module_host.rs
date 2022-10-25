@@ -2,8 +2,9 @@ use crate::client::ClientActorId;
 use crate::db::messages::write::Write;
 use crate::hash::Hash;
 use crate::host::host_controller::{ReducerBudget, ReducerCallResult};
+use anyhow::Context;
 use spacetimedb_lib::EntityDef;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, oneshot};
 
 use super::ReducerArgs;
@@ -46,11 +47,13 @@ pub enum ModuleHostCommand {
         respond_to: oneshot::Sender<Result<ReducerCallResult, anyhow::Error>>,
     },
     CallRepeatingReducer {
-        reducer_name: String,
+        id: usize,
         prev_call_time: u64,
         respond_to: oneshot::Sender<Result<(u64, u64), anyhow::Error>>,
     },
-    StartRepeatingReducers,
+    GetRepeatingReducers {
+        respond_to: oneshot::Sender<Vec<(String, usize)>>,
+    },
     InitDatabase {
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
     },
@@ -97,14 +100,14 @@ pub struct ModuleHost {
 }
 
 impl ModuleHost {
-    pub fn spawn<F>(identity: Hash, make_actor_fn: F) -> Result<ModuleHost, anyhow::Error>
+    pub fn spawn<F>(identity: Hash, make_actor_fn: F) -> anyhow::Result<ModuleHost>
     where
         F: FnOnce(ModuleHost) -> Result<Box<dyn ModuleHostActor + Send>, anyhow::Error>,
     {
         let (tx, mut rx) = mpsc::channel(8);
         let inner_tx = tx.clone();
         let module_host = ModuleHost { identity, tx: inner_tx };
-        let mut actor = make_actor_fn(module_host)?;
+        let mut actor = make_actor_fn(module_host).context("Unable to instantiate ModuleHostActor")?;
         tokio::spawn(async move {
             while let Some(command) = rx.recv().await {
                 if actor.handle_message(command) {
@@ -113,6 +116,14 @@ impl ModuleHost {
             }
         });
         Ok(ModuleHost { identity, tx })
+    }
+
+    async fn call<T>(&self, f: impl FnOnce(oneshot::Sender<T>) -> ModuleHostCommand) -> anyhow::Result<T> {
+        let (tx, rx) = oneshot::channel();
+        // TODO: is it worth it to bubble up? if send/rx fails it means that the task panicked.
+        //       we should either panic or respawn it
+        self.tx.send(f(tx)).await?;
+        rx.await.context("sender dropped")
     }
 
     pub async fn call_identity_connected_disconnected(
@@ -138,28 +149,26 @@ impl ModuleHost {
         budget: ReducerBudget,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, anyhow::Error> {
-        let (tx, rx) = oneshot::channel::<Result<ReducerCallResult, anyhow::Error>>();
-        self.tx
-            .send(ModuleHostCommand::CallReducer {
-                caller_identity,
-                reducer_name,
-                budget,
-                args,
-                respond_to: tx,
-            })
-            .await?;
-        rx.await.unwrap()
+        self.call(|tx| ModuleHostCommand::CallReducer {
+            caller_identity,
+            reducer_name,
+            budget,
+            args,
+            respond_to: tx,
+        })
+        .await?
     }
 
-    pub async fn call_repeating_reducer(
-        &self,
-        reducer_name: String,
-        prev_call_time: u64,
-    ) -> Result<(u64, u64), anyhow::Error> {
+    async fn get_repeating_reducers(&self) -> anyhow::Result<Vec<(String, usize)>> {
+        self.call(|tx| ModuleHostCommand::GetRepeatingReducers { respond_to: tx })
+            .await
+    }
+
+    async fn call_repeating_reducer(&self, id: usize, prev_call_time: u64) -> Result<(u64, u64), anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<(u64, u64), anyhow::Error>>();
         self.tx
             .send(ModuleHostCommand::CallRepeatingReducer {
-                reducer_name,
+                id,
                 prev_call_time,
                 respond_to: tx,
             })
@@ -168,7 +177,30 @@ impl ModuleHost {
     }
 
     pub async fn start_repeating_reducers(&self) -> Result<(), anyhow::Error> {
-        self.tx.send(ModuleHostCommand::StartRepeatingReducers).await?;
+        let repeaters = self.get_repeating_reducers().await?;
+        for (name, id) in repeaters {
+            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
+            let mut prev_call_time = timestamp - 20;
+
+            let module_host = self.clone();
+            tokio::spawn(async move {
+                loop {
+                    match module_host.call_repeating_reducer(id, prev_call_time).await {
+                        Ok((repeat_duration, call_timestamp)) => {
+                            prev_call_time = call_timestamp;
+                            tokio::time::sleep(Duration::from_millis(repeat_duration)).await;
+                        }
+                        Err(err) => {
+                            // If we get an error trying to call this, then the module host has probably restarted
+                            // just break out of the loop and end this task
+                            // TODO: is the above correct?
+                            log::debug!("Error calling repeating reducer {name}: {}", err);
+                            break;
+                        }
+                    }
+                }
+            });
+        }
         Ok(())
     }
 

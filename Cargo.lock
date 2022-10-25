@@ -3213,6 +3213,7 @@ dependencies = [
  "serde_json",
  "sha1 0.10.5",
  "sha3",
+ "slab",
  "sled",
  "spacetimedb-lib",
  "sqlparser",

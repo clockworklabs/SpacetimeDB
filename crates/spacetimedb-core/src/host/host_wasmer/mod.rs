@@ -3,8 +3,8 @@ use std::sync::Arc;
 use anyhow::Context;
 use wasmer::wasmparser::Operator;
 use wasmer::{
-    AsStoreMut, AsStoreRef, CompilerConfig, EngineBuilder, Memory, MemoryAccessError, Module, Store, Type,
-    TypedFunction, WasmPtr,
+    AsStoreMut, AsStoreRef, CompilerConfig, EngineBuilder, Memory, MemoryAccessError, Module, Store, TypedFunction,
+    WasmPtr,
 };
 use wasmer_middlewares::Metering;
 
@@ -14,55 +14,11 @@ use crate::worker_database_instance::WorkerDatabaseInstance;
 
 mod opcode_cost;
 mod wasm_instance_env;
-pub mod wasm_module_host_actor;
+mod wasm_module_host_actor;
 
-use wasm_module_host_actor::{WasmModuleHostActor, DEFAULT_EXECUTION_BUDGET};
+use wasm_module_host_actor::{WasmerModule, DEFAULT_EXECUTION_BUDGET};
 
-use super::wasm_common::abi;
-
-const REDUCE_DUNDER: &str = "__reducer__";
-const REPEATING_REDUCER_DUNDER: &str = "__repeating_reducer__";
-
-fn validate_module(module: &Module) -> Result<(), anyhow::Error> {
-    let mut found = false;
-    for f in module.exports().functions() {
-        let ty = f.ty();
-        log::trace!("   {:?}", f);
-        if f.name().starts_with(REDUCE_DUNDER) {
-            if ty.params().len() != 2 {
-                return Err(anyhow::anyhow!("Reduce function has wrong number of params."));
-            }
-            if ty.params()[0] != Type::I32 {
-                return Err(anyhow::anyhow!("Incorrect param type {} for reducer.", ty.params()[0]));
-            }
-            if ty.params()[1] != Type::I32 {
-                return Err(anyhow::anyhow!("Incorrect param type {} for reducer.", ty.params()[0]));
-            }
-            found = true;
-        } else if f.name().starts_with(REPEATING_REDUCER_DUNDER) {
-            if ty.params().len() != 2 {
-                return Err(anyhow::anyhow!("Reduce function has wrong number of params."));
-            }
-            if ty.params()[0] != Type::I32 {
-                return Err(anyhow::anyhow!(
-                    "Incorrect param type {} for repeating reducer.",
-                    ty.params()[0]
-                ));
-            }
-            if ty.params()[1] != Type::I32 {
-                return Err(anyhow::anyhow!(
-                    "Incorrect param type {} for repeating reducer.",
-                    ty.params()[0]
-                ));
-            }
-            found = true;
-        }
-    }
-    if !found {
-        return Err(anyhow::anyhow!("Reduce function not found in module."));
-    }
-    Ok(())
-}
+use super::wasm_common::{abi, host_actor::WasmModuleHostActor};
 
 pub fn make_wasmer_module_host_actor(
     worker_database_instance: WorkerDatabaseInstance,
@@ -70,7 +26,7 @@ pub fn make_wasmer_module_host_actor(
     program_bytes: Vec<u8>,
     trace_log: bool,
 ) -> Result<ModuleHost, anyhow::Error> {
-    ModuleHost::spawn(worker_database_instance.identity, |module_host| {
+    ModuleHost::spawn(worker_database_instance.identity, |_| {
         let cost_function =
             |operator: &Operator| -> u64 { opcode_cost::OperationType::operation_type_of(operator).energy_cost() };
         let initial_points = DEFAULT_EXECUTION_BUDGET as u64;
@@ -83,25 +39,21 @@ pub fn make_wasmer_module_host_actor(
         compiler_config.opt_level(wasmer::CraneliftOptLevel::Speed);
         compiler_config.push_middleware(metering);
 
-        let store = Store::new(&EngineBuilder::new(compiler_config).engine());
+        let engine = EngineBuilder::new(compiler_config).engine();
+
+        let store = Store::new(&engine);
         let module = Module::new(&store, &program_bytes)?;
 
         let abi = abi::determine_spacetime_abi(&program_bytes)?;
 
-        let address = worker_database_instance.address;
-        log::trace!("Validating module for database: \"{}\"", address.to_hex());
-        validate_module(&module)?;
+        let module = WasmerModule::new(module, engine, abi);
 
-        let host = WasmModuleHostActor::new(
+        Ok(Box::new(WasmModuleHostActor::new(
             worker_database_instance,
             module_hash,
-            module,
-            store,
-            module_host,
-            abi,
             trace_log,
-        )?;
-        Ok(Box::from(host))
+            module,
+        )?))
     })
 }
 
