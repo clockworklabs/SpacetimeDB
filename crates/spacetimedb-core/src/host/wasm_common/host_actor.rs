@@ -1,21 +1,22 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::ops::DerefMut;
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
+use parking_lot::Mutex;
 use slab::Slab;
 use spacetimedb_lib::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
 use spacetimedb_lib::EntityDef;
 
 use crate::client::client_connection_index::ClientActorId;
 use crate::db::messages::transaction::Transaction;
-use crate::db::relational_db::WrapTxWrapper;
 use crate::db::transactional_db::CommitResult;
 use crate::hash::Hash;
 use crate::host::host_controller::{ReducerBudget, ReducerCallResult, ReducerError};
-use crate::host::instance_env::InstanceEnv;
+use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHostActor, ModuleHostCommand};
 use crate::host::tracelog::instance_trace::TraceLog;
 use crate::host::ReducerArgs;
@@ -37,8 +38,6 @@ pub trait WasmModule {
 }
 
 pub trait WasmInstance {
-    fn id(&self) -> u32;
-
     fn extract_descriptions(&mut self) -> anyhow::Result<HashMap<String, EntityDef>>;
 
     type Trap;
@@ -81,8 +80,7 @@ pub(crate) struct WasmModuleHostActor<T: WasmModule> {
     worker_database_instance: WorkerDatabaseInstance,
     _module_hash: Hash,
     // store: Store,
-    instances: Slab<RefCell<T::Instance>>,
-    instance_tx_map: Arc<Mutex<HashMap<u32, WrapTxWrapper>>>,
+    instances: Slab<(TxSlot, RefCell<T::Instance>)>,
     subscription: ModuleSubscription,
     #[allow(dead_code)] // Don't warn about 'trace_log' below when tracelogging feature isn't enabled.
     trace_log: Option<Arc<Mutex<TraceLog>>>,
@@ -109,15 +107,14 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         let relational_db = worker_database_instance.relational_db.clone();
         let subscription = ModuleSubscription::spawn(relational_db);
-        let instance_tx_map = Arc::new(Mutex::new(HashMap::new()));
 
         let mut instances = Slab::new();
         let instance_slot = instances.vacant_entry();
 
+        let instance_tx = TxSlot::default();
         let mut instance = module.create_instance(InstanceEnv::new(
-            instance_slot.key() as u32,
             worker_database_instance.clone(),
-            instance_tx_map.clone(),
+            instance_tx.clone(),
             trace_log.clone(),
         ))?;
 
@@ -128,12 +125,11 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             .try_for_each(|(name, entity)| func_names.update_from_entity(|s| module.get_export(s), name, entity))?;
         module.fill_general_funcnames(&mut func_names)?;
 
-        instance_slot.insert(RefCell::new(instance));
+        instance_slot.insert((instance_tx, RefCell::new(instance)));
 
         let mut host_actor = Self {
             module,
             worker_database_instance,
-            instance_tx_map,
             _module_hash: module_hash,
             instances,
             subscription,
@@ -152,20 +148,21 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
     fn create_instance(&mut self) -> anyhow::Result<usize> {
         let slot = self.instances.vacant_entry();
         let key = slot.key();
+        let tx = TxSlot::default();
         let env = InstanceEnv::new(
-            key.try_into().ok().context("too many instances")?,
             self.worker_database_instance.clone(),
-            self.instance_tx_map.clone(),
+            tx.clone(),
             self.trace_log.clone(),
         );
-        slot.insert(RefCell::new(self.module.create_instance(env)?));
+        slot.insert((tx, RefCell::new(self.module.create_instance(env)?)));
         Ok(key)
     }
 
-    fn select_instance(&self) -> std::cell::RefMut<T::Instance> {
+    fn select_instance(&self) -> (&TxSlot, impl DerefMut<Target = T::Instance> + '_) {
         // TODO: choose one at random or whatever
         // These should be their own worker threads?
-        self.instances[0].borrow_mut()
+        let (tx_slot, instance) = &self.instances[0];
+        (tx_slot, instance.borrow_mut())
     }
 
     fn init_database(&mut self) -> Result<(), anyhow::Error> {
@@ -223,7 +220,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         match &self.trace_log {
             None => None,
             Some(tl) => {
-                let results = tl.lock().unwrap().retrieve();
+                let results = tl.lock().retrieve();
                 match results {
                     Ok(tl) => Some(tl),
                     Err(e) => {
@@ -453,11 +450,9 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         let tx = self.worker_database_instance.relational_db.begin_tx();
 
-        let mut instance = self.select_instance();
-        let instance_id = instance.id();
-        self.instance_tx_map.lock().unwrap().insert(instance_id, tx);
+        let (tx_slot, mut instance) = self.select_instance();
 
-        let (energy, result) = f(&mut instance)?;
+        let (tx, (energy, result)) = tx_slot.set(tx, || f(&mut instance))?;
 
         drop(instance);
 
@@ -498,8 +493,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         match call_result {
             Err(err) => {
-                let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
-                let tx = instance_tx_map.remove(&instance_id).unwrap();
                 tx.rollback();
 
                 T::Instance::log_traceback("reducer", func_ident, &err);
@@ -511,8 +504,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
                 })
             }
             Ok(repeat_duration) => {
-                let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
-                let tx = instance_tx_map.remove(&instance_id).unwrap();
                 if let Some(CommitResult { tx, commit_bytes }) = tx.commit().unwrap() {
                     if let Some(commit_bytes) = commit_bytes {
                         let mut mlog = self.worker_database_instance.message_log.lock().unwrap();

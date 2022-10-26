@@ -1,8 +1,8 @@
 use log::debug;
+use parking_lot::{Mutex, MutexGuard};
 use spacetimedb_lib::{ElementDef, PrimaryKey, TupleDef, TupleValue, TypeDef, TypeValue};
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::ops::DerefMut;
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use crate::db::relational_db::{RelationalDB, WrapTxWrapper};
@@ -17,31 +17,36 @@ use crate::worker_metrics::{
 
 #[derive(Clone)]
 pub struct InstanceEnv {
-    pub instance_id: u32,
     pub worker_database_instance: WorkerDatabaseInstance,
-    pub instance_tx_map: Arc<Mutex<HashMap<u32, WrapTxWrapper>>>,
+    pub tx: TxSlot,
     pub trace_log: Option<Arc<Mutex<TraceLog>>>,
+}
+
+#[derive(Clone, Default)]
+pub struct TxSlot {
+    inner: Arc<Mutex<Option<WrapTxWrapper>>>,
 }
 
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
     pub fn new(
-        instance_id: u32,
         worker_database_instance: WorkerDatabaseInstance,
-        instance_tx_map: Arc<Mutex<HashMap<u32, WrapTxWrapper>>>,
+        tx: TxSlot,
         trace_log: Option<Arc<Mutex<TraceLog>>>,
     ) -> Self {
         Self {
-            instance_id,
             worker_database_instance,
-            instance_tx_map: instance_tx_map.clone(),
+            tx,
             trace_log,
         }
     }
 
-    pub fn console_log(&self, level: u8, s: Cow<'_, str>) {
-        self.worker_database_instance.logger.lock().unwrap().write(level, &s);
+    fn get_tx(&self) -> Result<impl DerefMut<Target = WrapTxWrapper> + '_, GetTxError> {
+        self.tx.get()
+    }
 
+    pub fn console_log(&self, level: u8, s: &str) {
+        self.worker_database_instance.logger.lock().unwrap().write(level, s);
         log::debug!(
             "MOD({}): {}",
             self.worker_database_instance.address.to_abbreviated_hex(),
@@ -56,8 +61,7 @@ impl InstanceEnv {
         );
         measure.start();
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
-        let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
-        let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
+        let tx = &mut *self.get_tx()?;
 
         let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
         let row = RelationalDB::decode_row(&schema, &mut &buffer[..]);
@@ -73,7 +77,6 @@ impl InstanceEnv {
             if let Some(trace_log) = &self.trace_log {
                 trace_log
                     .lock()
-                    .unwrap()
                     .insert(measure.start_instant.unwrap(), measure.elapsed(), table_id, buffer);
             }
         }
@@ -87,8 +90,7 @@ impl InstanceEnv {
         );
         measure.start();
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
-        let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
-        let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
+        let tx = &mut *self.get_tx()?;
 
         let (primary_key, _) = PrimaryKey::decode(&buffer[..]);
         let result = stdb
@@ -96,7 +98,7 @@ impl InstanceEnv {
             .map_err(|e| log_to_err(NodesError::DeleteRow { table_id, e }))?;
         if result.is_some() {
             if let Some(trace_log) = &self.trace_log {
-                trace_log.lock().unwrap().delete_pk(
+                trace_log.lock().delete_pk(
                     measure.start_instant.unwrap(),
                     measure.elapsed(),
                     table_id,
@@ -121,8 +123,7 @@ impl InstanceEnv {
         );
         measure.start();
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
-        let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
-        let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
+        let tx = &mut *self.get_tx()?;
 
         let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
         let row = RelationalDB::decode_row(&schema, &mut &buffer[..]);
@@ -136,7 +137,7 @@ impl InstanceEnv {
             .map_err(|e| log_to_err(NodesError::DeleteRow { table_id, e }))?;
         if result.is_some() {
             if let Some(trace_log) = &self.trace_log {
-                trace_log.lock().unwrap().delete_value(
+                trace_log.lock().delete_value(
                     measure.start_instant.unwrap(),
                     measure.elapsed(),
                     table_id,
@@ -158,8 +159,7 @@ impl InstanceEnv {
         measure.start();
 
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
-        let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
-        let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
+        let tx = &mut *self.get_tx()?;
 
         let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
         let type_def = &schema.elements[col_id as usize].element_type;
@@ -176,7 +176,7 @@ impl InstanceEnv {
                 .ok_or(NodesError::DeleteValueNotFound { table_id });
             if let Ok(count) = result {
                 if let Some(trace_log) = &self.trace_log {
-                    trace_log.lock().unwrap().delete_eq(
+                    trace_log.lock().delete_eq(
                         measure.start_instant.unwrap(),
                         measure.elapsed(),
                         table_id,
@@ -200,8 +200,7 @@ impl InstanceEnv {
         measure.start();
 
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
-        let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
-        let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
+        let tx = &mut *self.get_tx()?;
 
         let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
         let col_type = &schema.elements[col_id as usize].element_type;
@@ -243,7 +242,7 @@ impl InstanceEnv {
             .ok_or(NodesError::DeleteRangeNotFound { table_id });
         if let Ok(count) = count {
             if let Some(trace_log) = &self.trace_log {
-                trace_log.lock().unwrap().delete_range(
+                trace_log.lock().delete_range(
                     measure.start_instant.unwrap(),
                     measure.elapsed(),
                     table_id,
@@ -260,8 +259,7 @@ impl InstanceEnv {
         let now = SystemTime::now();
 
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
-        let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
-        let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
+        let tx = &mut *self.get_tx().unwrap();
 
         let table_info_schema = TupleDef {
             name: None,
@@ -296,7 +294,6 @@ impl InstanceEnv {
         if let Some(trace_log) = &self.trace_log {
             trace_log
                 .lock()
-                .unwrap()
                 .create_table(now, now.elapsed().unwrap(), buffer, result);
         }
         result
@@ -305,8 +302,7 @@ impl InstanceEnv {
     pub fn get_table_id(&self, buffer: bytes::Bytes) -> Option<u32> {
         let now = SystemTime::now();
         let stdb = self.worker_database_instance.relational_db.lock().unwrap();
-        let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
-        let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
+        let tx = &mut *self.get_tx().unwrap();
 
         let schema = TypeDef::String;
 
@@ -334,7 +330,6 @@ impl InstanceEnv {
         if let Some(trace_log) = &self.trace_log {
             trace_log
                 .lock()
-                .unwrap()
                 .get_table_id(now, now.elapsed().unwrap(), buffer, table_id);
         }
 
@@ -349,8 +344,7 @@ impl InstanceEnv {
         measure.start();
 
         let stdb = self.worker_database_instance.relational_db.lock().unwrap();
-        let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
-        let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
+        let tx = &mut *self.get_tx().unwrap();
 
         let mut bytes = Vec::new();
         let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
@@ -371,9 +365,34 @@ impl InstanceEnv {
         if let Some(trace_log) = &self.trace_log {
             trace_log
                 .lock()
-                .unwrap()
                 .iter(measure.start_instant.unwrap(), measure.elapsed(), table_id, &bytes);
         }
         bytes
+    }
+}
+
+impl TxSlot {
+    pub fn set<T, E>(&self, tx: WrapTxWrapper, f: impl FnOnce() -> Result<T, E>) -> Result<(WrapTxWrapper, T), E> {
+        let prev = self.inner.lock().replace(tx);
+        assert!(prev.is_none(), "reentrant TxSlot::set");
+        let remove_tx = || self.inner.lock().take();
+        let res = {
+            scopeguard::defer_on_unwind! { remove_tx(); }
+            f()
+        };
+        let tx = remove_tx().expect("tx was removed during transaction");
+        res.map(|r| (tx, r))
+    }
+
+    pub fn get(&self) -> Result<impl DerefMut<Target = WrapTxWrapper> + '_, GetTxError> {
+        MutexGuard::try_map(self.inner.lock(), |map| map.as_mut()).map_err(|_| GetTxError)
+    }
+}
+
+#[derive(Debug)]
+pub struct GetTxError;
+impl From<GetTxError> for NodesError {
+    fn from(_: GetTxError) -> Self {
+        NodesError::NotInTransaction
     }
 }

@@ -135,7 +135,6 @@ impl host_actor::WasmModule for WasmerModule {
     }
 
     fn create_instance(&mut self, env: InstanceEnv) -> anyhow::Result<Self::Instance> {
-        let id = env.instance_id;
         let mut store = Store::new(&self.engine);
         let env = WasmInstanceEnv {
             instance_env: env,
@@ -164,17 +163,11 @@ impl host_actor::WasmModule for WasmerModule {
             }
         }
 
-        Ok(WasmerInstance {
-            id,
-            store,
-            env,
-            instance,
-        })
+        Ok(WasmerInstance { store, env, instance })
     }
 }
 
 pub struct WasmerInstance {
-    id: u32,
     store: Store,
     env: FunctionEnv<WasmInstanceEnv>,
     instance: Instance,
@@ -245,10 +238,6 @@ impl WasmerInstance {
 }
 
 impl host_actor::WasmInstance for WasmerInstance {
-    fn id(&self) -> u32 {
-        self.id
-    }
-
     fn extract_descriptions(&mut self) -> anyhow::Result<HashMap<String, EntityDef>> {
         let mut map = HashMap::new();
         let functions = self.instance.exports.iter().functions();

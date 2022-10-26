@@ -63,6 +63,8 @@ slab = "0.4.7"
 # gluesql = "0.10"
 bytes = "1.2.0" # TODO(rdaum): there's also a copy/fork of this inside prost. hmph.
 strum = { version = "0.24.1", features = ["derive"] }
+scopeguard = "1.1.0"
+parking_lot = "0.12.1"
 uuid = { version = "1.2.1", features = ["v4"]}
 
 # Used for tracelog

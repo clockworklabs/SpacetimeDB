@@ -1,8 +1,6 @@
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 
 use tempdir::TempDir;
 
@@ -29,16 +27,13 @@ pub fn main() {
 
     let wdi = WorkerDatabaseInstance::new(0, 0, HostType::Wasmer, false, identity, address, db_path, logger_path);
 
-    let itx = Arc::new(Mutex::new(HashMap::new()));
-    let iv = InstanceEnv::new(0, wdi, itx, None);
+    let iv = InstanceEnv::new(wdi, Default::default(), None);
 
     let tx = iv.worker_database_instance.relational_db.begin_tx();
-    iv.instance_tx_map.lock().unwrap().insert(0, tx);
     let trace_log = File::open(replay_file.to_str().unwrap()).unwrap();
     eprintln!("Replaying trace log: {:?}", trace_log);
     let mut reader = BufReader::new(trace_log);
+    let (_, resp) = iv.tx.set(tx, || replay_report(&iv, &mut reader)).unwrap();
 
-    let resp = replay_report(&iv, &mut reader).unwrap();
-    let resp_body = serde_json::to_string(&resp).unwrap();
-    println!("{}", resp_body);
+    serde_json::to_writer(std::io::stdout().lock(), &resp).unwrap();
 }

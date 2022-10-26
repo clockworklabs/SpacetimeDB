@@ -103,6 +103,8 @@ pub enum NodesError {
     DeleteRange { table_id: u32, e: DBError },
     #[error("delete: Not found Range: table_id: {table_id}")]
     DeleteRangeNotFound { table_id: u32 },
+    #[error("can't do operation; not inside transaction")]
+    NotInTransaction,
 }
 
 pub fn log_to_err(err: NodesError) -> NodesError {
