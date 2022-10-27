@@ -10,16 +10,14 @@ use std::ops::Range;
 use std::panic;
 
 #[cfg(feature = "macro")]
-pub use spacetimedb_bindgen;
-#[cfg(feature = "macro")]
-pub use spacetimedb_bindgen::spacetimedb;
+pub use spacetimedb_bindings_macro::spacetimedb;
 
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::hash;
 pub use spacetimedb_lib::Hash;
 pub use spacetimedb_lib::TypeValue;
 
-pub use spacetimedb_sys as sys;
+pub use spacetimedb_bindings_sys as sys;
 
 #[doc(hidden)]
 pub mod __private {

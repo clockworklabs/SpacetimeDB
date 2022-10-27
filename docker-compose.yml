@@ -17,7 +17,7 @@ services:
 
       - ./crates/spacetimedb-lib:/usr/src/spacetimedb-lib
       - ./crates/spacetimedb-bindings:/usr/src/spacetimedb-bindings
-      - ./crates/spacetimedb-bindgen:/usr/src/spacetimedb-bindgen
+      - ./crates/spacetimedb-bindings-macro:/usr/src/spacetimedb-bindings-macro
       - ./crates/rust-wasm-test:/usr/src/rust-wasm-test
       - /stdb
     ports:

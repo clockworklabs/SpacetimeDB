@@ -1,4 +1,4 @@
-use spacetimedb_sys::console_log;
+use spacetimedb_bindings_sys::console_log;
 use std::panic;
 
 // TODO: probably do something lighter weight here

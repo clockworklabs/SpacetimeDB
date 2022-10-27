@@ -1,5 +1,5 @@
 [package]
-name = "spacetimedb-bindgen"
+name = "spacetimedb-bindings-macro"
 version = "0.2.1"
 edition = "2021"
 license-file = "LICENSE"

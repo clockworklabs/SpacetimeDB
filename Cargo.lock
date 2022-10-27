@@ -2985,14 +2985,14 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "sha3",
- "spacetimedb-bindgen",
+ "spacetimedb-bindings-macro",
+ "spacetimedb-bindings-sys",
  "spacetimedb-lib",
- "spacetimedb-sys",
  "wee_alloc",
 ]
 
 [[package]]
-name = "spacetimedb-bindgen"
+name = "spacetimedb-bindings-macro"
 version = "0.2.1"
 dependencies = [
  "convert_case 0.5.0",
@@ -3004,6 +3004,13 @@ dependencies = [
  "serde_json",
  "substring",
  "syn",
+]
+
+[[package]]
+name = "spacetimedb-bindings-sys"
+version = "0.2.1"
+dependencies = [
+ "getrandom",
 ]
 
 [[package]]
@@ -3085,13 +3092,6 @@ dependencies = [
  "serde",
  "sha3",
  "thiserror",
-]
-
-[[package]]
-name = "spacetimedb-sys"
-version = "0.2.1"
-dependencies = [
- "getrandom",
 ]
 
 [[package]]

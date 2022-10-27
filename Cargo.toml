@@ -2,10 +2,9 @@
 members = [
   "crates/spacetimedb-lib",
   "crates/spacetimedb-core",
-  "crates/spacetimedb-bindgen",
-  "crates/spacetimedb-bindings", 
   "crates/spacetimedb-bindings-sys",
-  # "crates/spacetimedb-macro",
+  "crates/spacetimedb-bindings",
+  "crates/spacetimedb-bindings-macro",
   "crates/spacetimedb-cli",
   "crates/rust-wasm-test",
 ]
