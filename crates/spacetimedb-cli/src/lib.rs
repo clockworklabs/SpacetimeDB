@@ -21,6 +21,7 @@ pub fn get_subcommands() -> Vec<Command<'static>> {
         sql::cli(),
         name::cli(),
         codegen::cli(),
+        project::cli(),
     ]
 }
 
@@ -38,6 +39,7 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "update" => update::exec(config, args).await,
         "name" => name::exec(config, args).await,
         "gen-bindings" => codegen::exec(args),
+        "project" => project::exec(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }

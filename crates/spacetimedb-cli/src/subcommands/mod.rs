@@ -6,6 +6,7 @@ pub mod identity;
 pub mod init;
 pub mod logs;
 pub mod name;
+pub mod project;
 pub mod rm;
 pub mod sql;
 pub mod update;

@@ -3,6 +3,7 @@ use clap::ArgMatches;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fs;
+use std::path::Path;
 
 use crate::config::Config;
 
@@ -50,7 +51,15 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let name = args.value_of("name");
 
-    let path_to_project = args.value_of("path to project").unwrap();
+    let path_to_project_str = args.value_of("path to project").unwrap();
+    if path_to_project_str.trim().is_empty() {
+        return Err(anyhow::anyhow!("Project path is required!"));
+    }
+    let path_to_project = Path::new(path_to_project_str);
+    if !path_to_project.exists() {
+        return Err(anyhow::anyhow!("Project path does not exist: {}", path_to_project_str));
+    }
+
     let force = args.is_present("force");
     let host_type = args.value_of("host_type").unwrap_or("wasmer");
     let path = fs::canonicalize(path_to_project).unwrap();

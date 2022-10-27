@@ -1,0 +1,26 @@
+use spacetimedb::println;
+use spacetimedb::spacetimedb;
+use spacetimedb::Hash;
+
+#[spacetimedb(table)]
+pub struct Person {
+    owner: Hash,
+    name: String,
+    email_address: String,
+}
+
+#[spacetimedb(reducer)]
+pub fn add_person(caller_hash: Hash, _timestamp: u64, name: String, email_address: String) {
+    Person::insert(Person {
+        owner: caller_hash,
+        name,
+        email_address,
+    });
+}
+
+#[spacetimedb(reducer)]
+pub fn list_people(_caller_hash: Hash, _timestamp: u64) {
+    for person in Person::iter() {
+        println!("{}|{}", person.name, person.email_address);
+    }
+}
