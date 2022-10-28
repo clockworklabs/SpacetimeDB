@@ -1,14 +1,26 @@
+use crate::error::DBError;
+use thiserror::Error;
+
 // TODO(cloutiertyler): we could do this the swift parsing way in which
 // we always generate a plan, but it may contain errors
-#[derive(Clone, Debug)]
+#[derive(Error, Debug)]
 pub enum PlanError {
+    #[error("Unsupported feature: `{feature}` issue: `#{issue_no:?}`")]
     Unsupported { feature: String, issue_no: Option<usize> },
+    #[error("Unknown table: `{table}`")]
     UnknownTable { table: String },
+    #[error("Unknown column: `{table:?}.{column}`")]
     UnknownColumn { table: Option<String>, column: String },
+    #[error("Subqueries disallowed: `{context}`")]
     _SubqueriesDisallowed { context: String },
+    #[error("Unknown parameter: `{0}`")]
     _UnknownParameter(usize),
+    #[error("Parsing error: `{0}`")]
     _Parser(String),
-    _Unstructured(String),
+    #[error("Plan error: `{0}`")]
+    Unstructured(String),
+    #[error("Internal DBError: `{0}`")]
+    DatabaseInternal(DBError),
 }
 
 #[derive(Debug)]

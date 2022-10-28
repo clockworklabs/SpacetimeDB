@@ -418,68 +418,79 @@ fn plan_query(database_instance_id: u64, query: Query) -> Result<Plan, PlanError
 }
 
 fn plan_select(database_instance_id: u64, select: Select) -> Result<RelationExpr, PlanError> {
-    let mut table_name = None;
-    for table_with_joins in select.from {
-        match table_with_joins.relation {
-            sqlparser::ast::TableFactor::Table {
-                name,
-                alias: _,
-                args: _,
-                with_hints: _,
-            } => {
-                table_name = match name.0.first() {
-                    Some(ident) => Some(ident.value.clone()),
-                    None => {
-                        return Err(PlanError::_Unstructured("Missing table name.".into()));
-                    }
-                };
-            }
-            sqlparser::ast::TableFactor::Derived {
-                lateral: _,
-                subquery: _,
-                alias: _,
-            } => {
-                return Err(PlanError::Unsupported {
-                    feature: "Derived".into(),
-                    issue_no: None,
-                });
-            }
-            sqlparser::ast::TableFactor::TableFunction { expr: _, alias: _ } => {
-                return Err(PlanError::Unsupported {
-                    feature: "TableFunction".into(),
-                    issue_no: None,
-                });
-            }
-            sqlparser::ast::TableFactor::UNNEST {
-                alias: _,
-                array_expr: _,
-                with_offset: _,
-                with_offset_alias: _,
-            } => {
-                return Err(PlanError::Unsupported {
-                    feature: "UNNEST".into(),
-                    issue_no: None,
-                });
-            }
-            sqlparser::ast::TableFactor::NestedJoin {
-                table_with_joins: _,
-                alias: _,
-            } => {
-                return Err(PlanError::Unsupported {
-                    feature: "NestedJoin".into(),
-                    issue_no: None,
-                });
-            }
-        }
+    if select.from.len() > 1 {
+        return Err(PlanError::Unsupported {
+            feature: "Multiple table from expressions.".into(),
+            issue_no: None,
+        });
     }
+
+    let table_with_joins = match select.from.first() {
+        Some(table_with_joins) => table_with_joins,
+        None => {
+            return Err(PlanError::Unstructured("Missing from expression.".into()));
+        }
+    };
+
+    let table_name = match &table_with_joins.relation {
+        sqlparser::ast::TableFactor::Table {
+            name,
+            alias: _,
+            args: _,
+            with_hints: _,
+        } => match name.0.first() {
+            Some(ident) => ident.value.clone(),
+            None => {
+                return Err(PlanError::Unstructured("Missing table name.".into()));
+            }
+        },
+        sqlparser::ast::TableFactor::Derived {
+            lateral: _,
+            subquery: _,
+            alias: _,
+        } => {
+            return Err(PlanError::Unsupported {
+                feature: "Derived".into(),
+                issue_no: None,
+            });
+        }
+        sqlparser::ast::TableFactor::TableFunction { expr: _, alias: _ } => {
+            return Err(PlanError::Unsupported {
+                feature: "TableFunction".into(),
+                issue_no: None,
+            });
+        }
+        sqlparser::ast::TableFactor::UNNEST {
+            alias: _,
+            array_expr: _,
+            with_offset: _,
+            with_offset_alias: _,
+        } => {
+            return Err(PlanError::Unsupported {
+                feature: "UNNEST".into(),
+                issue_no: None,
+            });
+        }
+        sqlparser::ast::TableFactor::NestedJoin {
+            table_with_joins: _,
+            alias: _,
+        } => {
+            return Err(PlanError::Unsupported {
+                feature: "NestedJoin".into(),
+                issue_no: None,
+            });
+        }
+    };
 
     let database_instance_context = DatabaseInstanceContextController::get_shared()
         .get(database_instance_id)
         .unwrap();
     let mut db = database_instance_context.relational_db.lock().unwrap();
     let mut tx = db.begin_tx();
-    let table_name = table_name.unwrap();
-    let table_id = db.table_id_from_name(&mut tx, &table_name).unwrap();
+    let table_id = match db.table_id_from_name(&mut tx, &table_name) {
+        Ok(table_id) => table_id,
+        Err(err) => return { Err(PlanError::DatabaseInternal(err)) },
+    };
     let table_id = match table_id {
         Some(t) => t,
         None => return Err(PlanError::UnknownTable { table: table_name }),

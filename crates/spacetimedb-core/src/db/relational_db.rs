@@ -439,7 +439,7 @@ impl RelationalDB {
     }
 
     pub fn table_id_from_name(&self, tx: &mut Tx, table_name: &str) -> Result<Option<u32>, DBError> {
-        for row in self.scan(tx, ST_TABLES_ID).unwrap() {
+        for row in self.scan(tx, ST_TABLES_ID)? {
             let t_id = row.field_as_u32(0, Some("id"))?;
             let t_name = row.field_as_str(1, Some("name"))?;
 

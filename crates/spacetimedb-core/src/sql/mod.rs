@@ -11,21 +11,24 @@ pub struct StmtResult {
     pub rows: Vec<TupleValue>,
 }
 
-pub(crate) fn execute(database_instance_id: u64, sql_text: String) -> Vec<Result<StmtResult, anyhow::Error>> {
+pub(crate) fn execute(
+    database_instance_id: u64,
+    sql_text: String,
+) -> Result<Vec<Result<StmtResult, anyhow::Error>>, anyhow::Error> {
     let dialect = GenericDialect {}; // or AnsiDialect
-    let ast = Parser::parse_sql(&dialect, &sql_text).unwrap();
+    let ast = Parser::parse_sql(&dialect, &sql_text)?;
 
-    let mut results: Vec<Result<StmtResult, anyhow::Error>> = Vec::new();
+    let mut results: Vec<Result<StmtResult, _>> = Vec::new();
     for statement in ast {
         let plan_result = plan_statement::plan_statement(database_instance_id, statement);
         let plan = match plan_result {
             Ok(plan) => plan,
             Err(err) => {
-                results.push(Err(anyhow::anyhow!("There was a planning error {:?}", err)));
+                results.push(Err(err.into()));
                 continue;
             }
         };
         results.push(execute_plan::execute_plan(database_instance_id, plan));
     }
-    results
+    Ok(results)
 }

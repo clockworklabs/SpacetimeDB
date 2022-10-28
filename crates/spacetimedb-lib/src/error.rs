@@ -3,7 +3,7 @@ use std::fmt;
 use std::string::FromUtf8Error;
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum DecodeError {
     #[error("Decode UTF8: {0}")]
     Utf8(#[from] FromUtf8Error),
@@ -35,7 +35,7 @@ pub enum DecodeError {
     EnumValue,
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum LibError {
     #[error("DecodeError: {0}")]
     Decode(#[from] DecodeError),

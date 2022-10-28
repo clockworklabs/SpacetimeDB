@@ -402,11 +402,27 @@ async fn sql(state: &mut State) -> SimpleHandlerResult {
         }
     };
 
-    let results = sql::execute(instance_id, sql_text);
+    let results = match sql::execute(instance_id, sql_text) {
+        Ok(results) => results,
+        Err(err) => {
+            log::warn!("{}", err);
+            let res = Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::empty())
+                .unwrap();
+            return Ok(res);
+        }
+    };
     let mut json = Vec::new();
 
     for result in results {
-        let stmt_result = result.unwrap();
+        let stmt_result = match result {
+            Ok(result) => result,
+            Err(err) => {
+                log::warn!("{}", err);
+                continue;
+            }
+        };
         let stmt_res_json = StmtResultJson {
             schema: stmt_result.schema,
             rows: stmt_result.rows.iter().map(|x| x.elements.to_vec()).collect::<Vec<_>>(),
