@@ -124,7 +124,7 @@ fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_column
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
-        writeln!(output, "public partial class {struct_name_pascal_case}").unwrap();
+        writeln!(output, "public partial class {struct_name_pascal_case} : IStdbTable").unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
