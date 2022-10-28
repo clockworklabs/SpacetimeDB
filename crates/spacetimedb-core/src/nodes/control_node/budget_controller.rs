@@ -8,6 +8,7 @@ use crate::hash::Hash;
 use crate::nodes::control_node::control_db;
 use crate::nodes::control_node::control_db::set_energy_balance;
 use crate::nodes::control_node::controller::publish_energy_balance_state;
+use crate::nodes::control_node::prometheus_metrics::IDENTITY_ENERGY_BALANCE_GAUGE;
 use crate::protobuf::control_db::EnergyBalance;
 
 // TODO: Consider making not static & dependency injected
@@ -70,6 +71,9 @@ pub(crate) async fn refresh_all_budget_allocations() {
         // Populate top-level master budget
         {
             let mut identity_budget = GLOBAL_IDENTITY_ENERGY_BALANCE.lock().expect("unlock ctrl budget");
+            IDENTITY_ENERGY_BALANCE_GAUGE
+                .with_label_values(&[identity.to_hex().as_str()])
+                .set(eb.balance_quanta as f64);
             identity_budget.insert(identity, eb.clone());
         }
 
@@ -92,6 +96,9 @@ pub(crate) async fn update_energy_allocation(identity: &Hash, eb: &EnergyBalance
     // Populate top-level master budget for the identity.
     {
         let mut identity_balance = GLOBAL_IDENTITY_ENERGY_BALANCE.lock().expect("unlock ctrl budget");
+        IDENTITY_ENERGY_BALANCE_GAUGE
+            .with_label_values(&[identity.to_hex().as_str()])
+            .set(eb.balance_quanta as f64);
         identity_balance.insert(*identity, eb.clone());
     }
     update_identity_worker_energy_state(&identity, eb).await;

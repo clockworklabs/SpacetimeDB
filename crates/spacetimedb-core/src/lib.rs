@@ -12,4 +12,5 @@ mod protobuf {
 }
 mod sql;
 pub mod startup;
+pub mod util;
 mod websocket;

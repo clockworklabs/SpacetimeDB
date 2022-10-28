@@ -195,14 +195,15 @@ async fn on_binary(
 
             // Then adjust our allocation based on what they just sent us, which will also reset
             // our "spent" value.
-            on_worker_budget_update(budget_update);
+            on_worker_budget_update(node_id, budget_update);
         }
     };
     Ok(())
 }
 
-fn on_worker_budget_update(budget_update: BudgetUpdate) {
+fn on_worker_budget_update(node_id: u64, budget_update: BudgetUpdate) {
     worker_budget::on_budget_receive_allocation(
+        node_id,
         &Hash::from_slice(budget_update.identity),
         budget_update.allocation_delta,
     );

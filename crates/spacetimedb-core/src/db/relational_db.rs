@@ -4,8 +4,13 @@ use super::{
     transactional_db::{CommitResult, ScanIter, TransactionalDB, Tx},
 };
 // use super::relational_operators::Project;
+use crate::db::db_metrics::{
+    RDB_CREATE_TABLE_TIME, RDB_DELETE_IN_TIME, RDB_DELETE_PK_TIME, RDB_DROP_TABLE_TIME, RDB_INSERT_TIME,
+    RDB_SCAN_PK_TIME, RDB_SCAN_RAW_TIME, RDB_SCAN_TIME,
+};
 use crate::db::ostorage::ObjectDB;
 use crate::error::{DBError, TableError};
+use crate::util::prometheus_handle::HistogramVecHandle;
 use fs2::FileExt;
 use spacetimedb_lib::{
     buffer::{BufReader, DecodeError},
@@ -369,6 +374,9 @@ impl RelationalDB {
     }
 
     pub fn create_table(&mut self, tx: &mut Tx, table_name: &str, schema: TupleDef) -> Result<u32, DBError> {
+        let mut measure = HistogramVecHandle::new(&RDB_CREATE_TABLE_TIME, vec![String::from(table_name)]);
+        measure.start();
+
         // Scan st_tables for this id
 
         let mut table_count = 0;
@@ -420,6 +428,9 @@ impl RelationalDB {
     }
 
     pub fn drop_table(&mut self, tx: &mut Tx, table_id: u32) -> Result<(), DBError> {
+        let mut measure = HistogramVecHandle::new(&RDB_DROP_TABLE_TIME, vec![format!("{}", table_id)]);
+        measure.start();
+
         let range = self
             .range_scan(tx, ST_TABLES_ID, 0, TypeValue::U32(table_id)..TypeValue::U32(table_id))
             .map_err(|_err| TableError::NotFound("ST_TABLES_ID".into()))?
@@ -480,6 +491,8 @@ impl RelationalDB {
     }
 
     pub fn scan_pk<'a>(&'a self, tx: &'a mut Tx, table_id: u32) -> Result<PrimaryKeyTableIter<'a>, DBError> {
+        let mut measure = HistogramVecHandle::new(&RDB_SCAN_PK_TIME, vec![format!("{}", table_id)]);
+        measure.start();
         let columns = self.schema_for_table(tx, table_id)?;
         if let Some(columns) = columns {
             Ok(PrimaryKeyTableIter {
@@ -493,6 +506,8 @@ impl RelationalDB {
 
     // AKA: iter
     pub fn scan<'a>(&'a self, tx: &'a mut Tx, table_id: u32) -> Result<TableIter<'a>, DBError> {
+        let mut measure = HistogramVecHandle::new(&RDB_SCAN_TIME, vec![format!("{}", table_id)]);
+        measure.start();
         let columns = self.schema_for_table(tx, table_id)?;
         if let Some(columns) = columns {
             Ok(TableIter {
@@ -505,6 +520,9 @@ impl RelationalDB {
     }
 
     pub fn scan_raw<'a>(&'a self, tx: &'a mut Tx, table_id: u32) -> Result<TableIterRaw<'a>, DBError> {
+        let mut measure = HistogramVecHandle::new(&RDB_SCAN_RAW_TIME, vec![format!("{}", table_id)]);
+        measure.start();
+
         let columns = self.schema_for_table(tx, table_id)?;
         if let Some(_) = columns {
             Ok(TableIterRaw {
@@ -568,12 +586,18 @@ impl RelationalDB {
     }
 
     pub fn insert(&mut self, tx: &mut Tx, table_id: u32, row: TupleValue) -> Result<(), DBError> {
+        let mut measure = HistogramVecHandle::new(&RDB_INSERT_TIME, vec![format!("{}", table_id)]);
+        measure.start();
+
         // TODO: verify schema
         Self::insert_row_raw(&mut self.txdb, tx, table_id, row);
         Ok(())
     }
 
     pub fn delete_pk(&mut self, tx: &mut Tx, table_id: u32, primary_key: PrimaryKey) -> Result<Option<bool>, DBError> {
+        let mut measure = HistogramVecHandle::new(&RDB_DELETE_PK_TIME, vec![format!("{}", table_id)]);
+        measure.start();
+
         // TODO: our use of options here doesn't seem correct, I think we might want to double up on options
         if let Some(_) = self.pk_seek(tx, table_id, primary_key)? {
             self.txdb.delete(tx, table_id, primary_key.data_key);
@@ -583,6 +607,8 @@ impl RelationalDB {
     }
 
     pub fn delete_in<R: Relation>(&mut self, tx: &mut Tx, table_id: u32, relation: R) -> Result<Option<u32>, DBError> {
+        let mut measure = HistogramVecHandle::new(&RDB_DELETE_IN_TIME, vec![format!("{}", table_id)]);
+        measure.start();
         if self.schema_for_table(tx, table_id)?.is_none() {
             return Ok(None);
         }

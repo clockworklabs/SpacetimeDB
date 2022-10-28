@@ -2,6 +2,7 @@ use super::wasm_instance_env::WasmInstanceEnv;
 use crate::db::messages::transaction::Transaction;
 use crate::db::relational_db::TxWrapper;
 use crate::db::transactional_db::CommitResult;
+use crate::hash::Hash;
 use crate::nodes::worker_node::host::host_controller::{
     DescribedEntityType, Entity, EntityDescription, ReducerBudget, ReducerCallResult,
 };
@@ -9,13 +10,10 @@ use crate::nodes::worker_node::host::instance_env::InstanceEnv;
 use crate::nodes::worker_node::host::module_host::{
     EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHost, ModuleHostActor, ModuleHostCommand,
 };
+use crate::nodes::worker_node::worker_metrics::{REDUCER_COMPUTE_TIME, REDUCER_COUNT, REDUCER_WRITE_SIZE};
 use crate::nodes::worker_node::{
     client_api::{client_connection_index::ClientActorId, module_subscription_actor::ModuleSubscription},
     worker_database_instance::WorkerDatabaseInstance,
-};
-use crate::{
-    hash::Hash,
-    nodes::worker_node::prometheus_metrics::{TX_COMPUTE_TIME, TX_COUNT, TX_SIZE},
 };
 use anyhow::{anyhow, Context};
 use spacetimedb_lib::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
@@ -611,7 +609,7 @@ impl WasmModuleHostActor {
         anyhow::Error,
     > {
         let address = &self.worker_database_instance.address.to_abbreviated_hex();
-        TX_COUNT.with_label_values(&[&address, reducer_symbol]).inc();
+        REDUCER_COUNT.with_label_values(&[&address, reducer_symbol]).inc();
 
         let tx = self.worker_database_instance.relational_db.begin_tx();
 
@@ -666,7 +664,7 @@ impl WasmModuleHostActor {
         );
         let used_energy = &points.0 - remaining_points;
 
-        TX_COMPUTE_TIME
+        REDUCER_COMPUTE_TIME
             .with_label_values(&[&address, reducer_symbol])
             .observe(duration.as_secs_f64());
 
@@ -702,7 +700,7 @@ impl WasmModuleHostActor {
                 if let Some(CommitResult { tx, commit_bytes }) = stdb.commit_tx(tx.into()).unwrap() {
                     if let Some(commit_bytes) = commit_bytes {
                         let mut mlog = self.worker_database_instance.message_log.lock().unwrap();
-                        TX_SIZE
+                        REDUCER_WRITE_SIZE
                             .with_label_values(&[&address, reducer_symbol])
                             .observe(commit_bytes.len() as f64);
                         mlog.append(commit_bytes).unwrap();

@@ -1,6 +1,6 @@
 use super::super::host::host_controller;
 use crate::address::Address;
-use crate::nodes::worker_node::prometheus_metrics::CONNECTED_CLIENTS;
+use crate::nodes::worker_node::worker_metrics::CONNECTED_CLIENTS;
 use crate::{hash::Hash, nodes::worker_node::worker_db};
 use hyper::upgrade::Upgraded;
 use lazy_static::lazy_static;

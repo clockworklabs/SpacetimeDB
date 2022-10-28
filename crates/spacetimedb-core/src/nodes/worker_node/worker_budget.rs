@@ -1,5 +1,6 @@
 use crate::hash::Hash;
 
+use crate::nodes::worker_node::worker_metrics::NODE_IDENTITY_ENERGY_BUDGET_GAUGE;
 use crate::protobuf::control_worker_api::{
     control_bound_message, ControlBoundMessage, WorkerBudgetSpend, WorkerModuleBudgetSpend,
 };
@@ -79,7 +80,7 @@ pub(crate) fn record_tx_spend(identity: &Hash, spent_quanta: i64) -> i64 {
 
 /// Called by control node to add to (or remove from) a node's current budget allocation and
 /// default spend.
-pub(crate) fn on_budget_receive_allocation(identity: &Hash, allocation_delta: i64) {
+pub(crate) fn on_budget_receive_allocation(node_id: u64, identity: &Hash, allocation_delta: i64) {
     log::debug!("Received budget allocation with delta: {}", allocation_delta,);
     let mut budgets = BUDGETS.lock().expect("budgets lock");
     budgets
@@ -90,6 +91,10 @@ pub(crate) fn on_budget_receive_allocation(identity: &Hash, allocation_delta: i6
 
             // Reset the used quanta, because we got a new update.
             b.used_quanta = 0;
+
+            NODE_IDENTITY_ENERGY_BUDGET_GAUGE
+                .with_label_values(&[identity.to_hex().as_str(), format!("{}", node_id).as_str()])
+                .set(b.allocation_quanta as f64);
         })
         .unwrap_or_else(|| {
             // Receiving the initial budget allocation.
@@ -100,6 +105,10 @@ pub(crate) fn on_budget_receive_allocation(identity: &Hash, allocation_delta: i6
                     used_quanta: 0,
                 },
             );
+
+            NODE_IDENTITY_ENERGY_BUDGET_GAUGE
+                .with_label_values(&[identity.to_hex().as_str(), format!("{}", node_id).as_str()])
+                .set(allocation_delta as f64);
         })
 }
 

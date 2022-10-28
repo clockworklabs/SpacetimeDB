@@ -6,9 +6,11 @@ use super::{
         write::{DataKey, Operation, Write},
     },
 };
+use crate::db::db_metrics::{TDB_COMMIT_TIME, TDB_DELETE_TIME, TDB_INSERT_TIME, TDB_SCAN_TIME, TDB_SEEK_TIME};
 use crate::db::ostorage::ObjectDB;
 use crate::error::DBError;
 use crate::hash::{hash_bytes, Hash};
+use crate::util::prometheus_handle::HistogramHandle;
 use std::{
     collections::{hash_set::Iter, HashMap, HashSet},
     sync::{Arc, Mutex},
@@ -231,6 +233,11 @@ impl TransactionalDB {
     }
 
     pub fn commit_tx(&mut self, tx: Tx) -> Result<Option<CommitResult>, DBError> {
+        let mut measure = HistogramHandle::new(&TDB_COMMIT_TIME);
+
+        // Start timing this whole function; `Drop` will measure time spent.
+        measure.start();
+
         if self.latest_transaction_offset() == tx.parent_tx_offset {
             return Ok(Some(self.finalize(tx)?));
         }
@@ -397,6 +404,11 @@ impl TransactionalDB {
     }
 
     pub fn seek(&self, tx: &mut Tx, set_id: u32, data_key: DataKey) -> Option<Vec<u8>> {
+        let mut measure = HistogramHandle::new(&TDB_SEEK_TIME);
+
+        // Start timing this whole function; `Drop` will measure time spent.
+        measure.start();
+
         // I'm not sure if this just needs to track reads from the parent transaction
         // or reads from the transaction as well.
         // TODO: Replace this with relation, page, row level SIREAD locks
@@ -467,6 +479,11 @@ impl TransactionalDB {
     }
 
     pub fn delete(&mut self, tx: &mut Tx, set_id: u32, data_key: DataKey) {
+        let mut measure = HistogramHandle::new(&TDB_DELETE_TIME);
+
+        // Start timing this whole function; `Drop` will measure time spent.
+        measure.start();
+
         // Search backwards in the transaction:
         // if not there: add delete
         // if delete there: do nothing
@@ -501,6 +518,11 @@ impl TransactionalDB {
     }
 
     pub fn insert(&mut self, tx: &mut Tx, set_id: u32, bytes: Vec<u8>) -> DataKey {
+        let mut measure = HistogramHandle::new(&TDB_INSERT_TIME);
+
+        // Start timing this whole function; `Drop` will measure time spent.
+        measure.start();
+
         let value = if bytes.len() > 32 {
             let mut odb = self.odb.lock().unwrap();
             let hash = odb.add(bytes);
@@ -574,6 +596,11 @@ impl<'a> Iterator for ScanIter<'a> {
     type Item = Vec<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        let mut measure = HistogramHandle::new(&TDB_SCAN_TIME);
+
+        // Start timing this whole function; `Drop` will measure time spent.
+        measure.start();
+
         let scanned = &mut self.scanned;
         let set_id = self.set_id;
 

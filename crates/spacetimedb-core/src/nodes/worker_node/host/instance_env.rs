@@ -4,6 +4,11 @@ use std::sync::{Arc, Mutex};
 
 use crate::db::relational_db::{RelationalDB, TxWrapper};
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
+use crate::nodes::worker_node::worker_metrics::{
+    INSTANCE_ENV_DELETE_EQ, INSTANCE_ENV_DELETE_PK, INSTANCE_ENV_DELETE_RANGE, INSTANCE_ENV_DELETE_VALUE,
+    INSTANCE_ENV_INSERT, INSTANCE_ENV_ITER,
+};
+use crate::util::prometheus_handle::HistogramVecHandle;
 
 #[derive(Clone)]
 pub struct InstanceEnv {
@@ -24,6 +29,11 @@ impl InstanceEnv {
     }
 
     pub fn insert(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), ()> {
+        let mut measure = HistogramVecHandle::new(
+            &INSTANCE_ENV_INSERT,
+            vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
+        );
+        measure.start();
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
@@ -43,6 +53,11 @@ impl InstanceEnv {
     }
 
     pub fn delete_pk(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), ()> {
+        let mut measure = HistogramVecHandle::new(
+            &INSTANCE_ENV_DELETE_PK,
+            vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
+        );
+        measure.start();
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
@@ -59,6 +74,11 @@ impl InstanceEnv {
     }
 
     pub fn delete_value(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), ()> {
+        let mut measure = HistogramVecHandle::new(
+            &INSTANCE_ENV_DELETE_VALUE,
+            vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
+        );
+        measure.start();
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
@@ -82,6 +102,12 @@ impl InstanceEnv {
     }
 
     pub fn delete_eq(&self, table_id: u32, col_id: u32, buffer: bytes::Bytes) -> Result<u32, ()> {
+        let mut measure = HistogramVecHandle::new(
+            &INSTANCE_ENV_DELETE_EQ,
+            vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
+        );
+        measure.start();
+
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
@@ -103,6 +129,12 @@ impl InstanceEnv {
     }
 
     pub fn delete_range(&self, table_id: u32, col_id: u32, buffer: bytes::Bytes) -> Result<u32, ()> {
+        let mut measure = HistogramVecHandle::new(
+            &INSTANCE_ENV_DELETE_RANGE,
+            vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
+        );
+        measure.start();
+
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
@@ -203,6 +235,12 @@ impl InstanceEnv {
     }
 
     pub fn iter(&self, table_id: u32) -> Vec<u8> {
+        let mut measure = HistogramVecHandle::new(
+            &INSTANCE_ENV_ITER,
+            vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
+        );
+        measure.start();
+
         let stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();

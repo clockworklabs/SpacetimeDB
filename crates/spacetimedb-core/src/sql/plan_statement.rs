@@ -489,7 +489,7 @@ fn plan_select(database_instance_id: u64, select: Select) -> Result<RelationExpr
     let mut tx = db.begin_tx();
     let table_id = match db.table_id_from_name(&mut tx, &table_name) {
         Ok(table_id) => table_id,
-        Err(err) => return { Err(PlanError::DatabaseInternal(err)) },
+        Err(err) => return Err(PlanError::DatabaseInternal(err)),
     };
     let table_id = match table_id {
         Some(t) => t,

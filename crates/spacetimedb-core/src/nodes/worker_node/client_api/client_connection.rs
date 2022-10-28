@@ -5,6 +5,9 @@ use crate::json::client_api::IdentityTokenJson;
 use crate::json::client_api::MessageJson;
 use crate::nodes::worker_node::host::host_controller;
 use crate::nodes::worker_node::worker_db;
+use crate::nodes::worker_node::worker_metrics::{
+    WEBSOCKET_REQUESTS, WEBSOCKET_REQUEST_MSG_SIZE, WEBSOCKET_SENT, WEBSOCKET_SENT_MSG_SIZE,
+};
 use crate::protobuf::client_api::IdentityToken;
 use crate::protobuf::client_api::{message, Message};
 use futures::{prelude::*, stream::SplitStream, SinkExt};
@@ -52,6 +55,8 @@ pub struct ClientConnectionSender {
 
 impl ClientConnectionSender {
     pub async fn send(self, message: WebSocketMessage) -> Result<(), tokio_tungstenite::tungstenite::Error> {
+        let bytes_len = message.len();
+
         // TODO: It's tricky to avoid allocation here because of multithreading,
         // but maybe we can do that in the future with a custom allocator or a
         // buffer pool or something
@@ -63,7 +68,17 @@ impl ClientConnectionSender {
             .send(SendCommand { message, ostx })
             .await
             .expect("Unable to send SendCommand");
-        osrx.await.unwrap()
+        let result = osrx.await.unwrap();
+
+        WEBSOCKET_SENT
+            .with_label_values(&[self.id.identity.to_hex().as_str()])
+            .inc();
+
+        WEBSOCKET_SENT_MSG_SIZE
+            .with_label_values(&[self.id.identity.to_hex().as_str()])
+            .observe(bytes_len as f64);
+
+        result
     }
 
     pub async fn send_identity_token_message(self, identity: Hash, identity_token: String) {
@@ -255,6 +270,14 @@ impl ClientConnection {
     }
 
     async fn on_binary(client_id: ClientActorId, instance_id: u64, message_buf: Vec<u8>) -> Result<(), anyhow::Error> {
+        WEBSOCKET_REQUEST_MSG_SIZE
+            .with_label_values(&[format!("{}", instance_id).as_str(), "binary"])
+            .observe(message_buf.len() as f64);
+
+        WEBSOCKET_REQUESTS
+            .with_label_values(&[format!("{}", instance_id).as_str(), "binary"])
+            .inc();
+
         let message = Message::decode(Bytes::from(message_buf))?;
         match message.r#type {
             Some(message::Type::FunctionCall(f)) => {
@@ -280,6 +303,14 @@ impl ClientConnection {
     }
 
     async fn on_text(client_id: ClientActorId, instance_id: u64, message: String) -> Result<(), anyhow::Error> {
+        WEBSOCKET_REQUEST_MSG_SIZE
+            .with_label_values(&[format!("{}", instance_id).as_str(), "text"])
+            .observe(message.len() as f64);
+
+        WEBSOCKET_REQUESTS
+            .with_label_values(&[format!("{}", instance_id).as_str(), "text"])
+            .inc();
+
         let v: serde_json::Value = serde_json::from_str(&message)?;
         let obj = v.as_object().ok_or(anyhow::anyhow!("not object"))?;
         let reducer = obj

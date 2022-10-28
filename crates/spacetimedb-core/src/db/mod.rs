@@ -1,3 +1,4 @@
+pub mod db_metrics;
 pub mod message_log;
 pub mod messages;
 pub mod ostorage;
