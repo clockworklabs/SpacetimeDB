@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb-cli"
-version = "0.1.2"
+version = "0.2.1"
 edition = "2021"
 license-file = "LICENSE"
 description = "A command line interface for SpacetimeDB"

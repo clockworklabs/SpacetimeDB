@@ -3306,7 +3306,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-cli"
-version = "0.1.2"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "clap 3.2.22",
