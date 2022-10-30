@@ -152,9 +152,26 @@ async fn publish(state: &mut State) -> SimpleHandlerResult {
     match control_db::get_database_by_address(&db_address).await {
         Ok(database) => match database {
             Some(_db) => {
-                if let Err(err) = controller::update_database(&db_address, &program_bytes_addr, num_replicas).await {
-                    log::debug!("{err}");
-                    return Err(HandlerError::from(err));
+                if clear {
+                    if let Err(err) = controller::insert_database(
+                        &db_address,
+                        &identity,
+                        &program_bytes_addr,
+                        host_type,
+                        num_replicas,
+                        clear,
+                    )
+                    .await
+                    {
+                        log::debug!("{err}");
+                        return Err(HandlerError::from(err));
+                    }
+                } else {
+                    if let Err(err) = controller::update_database(&db_address, &program_bytes_addr, num_replicas).await
+                    {
+                        log::debug!("{err}");
+                        return Err(HandlerError::from(err));
+                    }
                 }
             }
             None => {
@@ -171,7 +188,7 @@ async fn publish(state: &mut State) -> SimpleHandlerResult {
                     &program_bytes_addr,
                     host_type,
                     num_replicas,
-                    clear,
+                    false,
                 )
                 .await
                 {
