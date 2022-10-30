@@ -47,7 +47,7 @@ fn get_subcommands() -> Vec<Command<'static>> {
                     .required(false)
                     .default_missing_value(""),
             ),
-        Command::new("rm")
+        Command::new("delete")
             .about("Delete a saved identity")
             .arg(Arg::new("identity").conflicts_with("name").required(true))
             .arg(arg!(-n --name <NAME> "name").conflicts_with("identity").required(true)),

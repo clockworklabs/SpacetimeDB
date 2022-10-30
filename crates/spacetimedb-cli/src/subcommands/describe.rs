@@ -14,7 +14,7 @@ pub fn cli() -> clap::Command<'static> {
         )
         .arg(Arg::new("entity_name").required(false))
         .arg(Arg::new("brief").long("brief").short('b'))
-        .after_help("Run `spacetime help describe for more detailed information.\n`")
+        .after_help("Run `spacetime help describe` for more detailed information.\n")
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {

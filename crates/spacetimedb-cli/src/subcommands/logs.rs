@@ -8,7 +8,7 @@ pub fn cli() -> clap::Command<'static> {
         .about("Prints logs from a SpacetimeDB database.")
         .arg(Arg::new("database").required(true))
         .arg(Arg::new("num_lines").required(true))
-        .after_help("Run `spacetime help logs for more detailed information.\n`")
+        .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {

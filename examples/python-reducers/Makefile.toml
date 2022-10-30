@@ -1,7 +1,7 @@
 [tasks.install]
 command = "stdb"
 args = [
-    "init", "-f", "-t", "python",
+    "publish", "-f", "-t", "python",
     "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
     "stdb-py",
     "example-python.py"

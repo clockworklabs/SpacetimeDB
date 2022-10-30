@@ -27,6 +27,7 @@ wasmtime = { version = "1.0.1", default-features = false, features = ["cranelift
 colored = "2.0.0"
 duckscript = "0.7.5"
 duckscriptsdk = "0.8.16"
+hex = "0.4.3"
 
 [dev-dependencies]
 insta = { version = "1.21.0", features = ["toml"] }

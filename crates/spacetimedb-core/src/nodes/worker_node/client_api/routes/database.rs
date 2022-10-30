@@ -444,7 +444,7 @@ pub fn router() -> Router {
             .get("/dns/:database_name")
             .to_async(proxy_to_control_node_client_api);
 
-        route.post("/init").to_async(proxy_to_control_node_client_api);
+        route.post("/publish").to_async(proxy_to_control_node_client_api);
 
         route
             .post("/update/:address")

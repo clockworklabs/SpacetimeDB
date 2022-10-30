@@ -1,0 +1,7 @@
+#!@duckscript
+
+cd ${PROJECT_PATH}
+
+# Make sure that we have the wasm target installed (ok to run if its already installed)
+exec --fail-on-error rustup target add wasm32-unknown-unknown
+exec --fail-on-error cargo --config net.git-fetch-with-cli=true build --target wasm32-unknown-unknown --release

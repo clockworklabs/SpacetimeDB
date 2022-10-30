@@ -56,47 +56,68 @@ async fn dns(state: &mut State) -> SimpleHandlerResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct InitDatabaseResponse {
+struct PublishDatabaseResponse {
     address: String,
 }
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
-struct InitDatabaseParams {}
+struct PublishDatabaseParams {}
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
-struct InitDatabaseQueryParams {
+struct PublishDatabaseQueryParams {
     host_type: Option<String>,
-    force: Option<bool>,
+    clear: Option<bool>,
     identity: Option<String>,
     name: Option<String>,
+    address: Option<String>,
 }
 
-async fn init_database(state: &mut State) -> SimpleHandlerResult {
-    let InitDatabaseParams {} = InitDatabaseParams::take_from(state);
-    let InitDatabaseQueryParams {
+async fn publish(state: &mut State) -> SimpleHandlerResult {
+    let PublishDatabaseParams {} = PublishDatabaseParams::take_from(state);
+    let PublishDatabaseQueryParams {
         identity,
         name,
+        address,
         host_type,
-        force,
-    } = InitDatabaseQueryParams::take_from(state);
-    let force = force.unwrap_or(false);
+        clear,
+    } = PublishDatabaseQueryParams::take_from(state);
+    let clear = clear.unwrap_or(false);
+    let mut has_name = false;
+    let mut has_address = false;
 
-    let address = if let Some(name) = name {
-        if let Some(address_for_name) = control_db::spacetime_dns(&name).await? {
-            if !force {
-                Err(anyhow::anyhow!("Pass force true to overwrite database."))?;
+    // Parse the address or convert the name to a usable address
+    let db_address: Address = match (address.clone(), name.clone()) {
+        (Some(address), None) => match Address::from_hex(address.as_str()) {
+            Ok(address) => {
+                has_address = true;
+                address
             }
-            // TODO(cloutiertyler): Validate that the creator has credentials for this database
-            address_for_name
-        } else {
-            // Client specified a name which doesn't yet exist
-            // Create a new DNS record and a new address to assign to it
-            let new_address = control_db::alloc_spacetime_address().await?;
-            control_db::spacetime_insert_dns_record(&new_address, &name).await?;
-            new_address
+            Err(_) => {
+                return Err(HandlerError::from(anyhow::anyhow!("Invalid address: {}", address)));
+            }
+        },
+        (None, Some(name)) => {
+            has_name = true;
+            if let Some(address) = control_db::spacetime_dns(&name).await? {
+                // TODO(cloutiertyler): Validate that the creator has credentials for this database
+                address
+            } else {
+                // Client specified a name which doesn't yet exist
+                // Create a new DNS record and a new address to assign to it
+                let address = control_db::alloc_spacetime_address().await?;
+                control_db::spacetime_insert_dns_record(&address, &name).await?;
+                address
+            }
         }
-    } else {
-        control_db::alloc_spacetime_address().await?
+        (None, None) => {
+            // No name or address was specified, create a new one
+            control_db::alloc_spacetime_address().await?
+        }
+        (Some(_), Some(_)) => {
+            return Err(HandlerError::from(anyhow::anyhow!(
+                "Both address and database name were specified. This is not allowed."
+            )));
+        }
     };
 
     let identity = if let Some(identity) = identity {
@@ -111,7 +132,7 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
         Some(ht) => match ht.parse() {
             Ok(ht) => ht,
             Err(_) => {
-                return Err(HandlerError::from(anyhow!("unknown host type {ht}")).with_status(StatusCode::BAD_REQUEST))
+                return Err(HandlerError::from(anyhow!("unknown host type {ht}")).with_status(StatusCode::BAD_REQUEST));
             }
         },
     };
@@ -128,54 +149,50 @@ async fn init_database(state: &mut State) -> SimpleHandlerResult {
 
     let num_replicas = 1;
 
-    if let Err(err) =
-        controller::insert_database(&address, &identity, &program_bytes_addr, host_type, num_replicas, force).await
-    {
-        log::debug!("{err}");
-        return Err(HandlerError::from(err));
+    match control_db::get_database_by_address(&db_address).await {
+        Ok(database) => match database {
+            Some(_db) => {
+                if let Err(err) = controller::update_database(&db_address, &program_bytes_addr, num_replicas).await {
+                    log::debug!("{err}");
+                    return Err(HandlerError::from(err));
+                }
+            }
+            None => {
+                if !has_name && has_address {
+                    return Err(HandlerError::from(anyhow::anyhow!(
+                        "Failed to find database at address: {}",
+                        db_address.to_hex()
+                    )));
+                }
+
+                if let Err(err) = controller::insert_database(
+                    &db_address,
+                    &identity,
+                    &program_bytes_addr,
+                    host_type,
+                    num_replicas,
+                    clear,
+                )
+                .await
+                {
+                    log::debug!("{err}");
+                    return Err(HandlerError::from(err));
+                }
+            }
+        },
+        Err(e) => {
+            return Err(HandlerError::from(e));
+        }
     }
 
-    let response = InitDatabaseResponse {
-        address: address.to_hex(),
+    let response = PublishDatabaseResponse {
+        address: db_address.to_hex(),
     };
     let json = serde_json::to_string(&response).unwrap();
     let res = Response::builder()
         .status(StatusCode::OK)
         .body(Body::from(json))
         .unwrap();
-    Ok(res)
-}
-
-#[derive(Deserialize, StateData, StaticResponseExtender)]
-struct UpdateDatabaseParams {
-    address: String,
-}
-
-async fn update_database(state: &mut State) -> SimpleHandlerResult {
-    let UpdateDatabaseParams { address } = UpdateDatabaseParams::take_from(state);
-
-    // TODO(cloutiertyler): Validate that the creator has credentials for the identity of this database
-
-    let address = Address::from_hex(&address)?;
-
-    let body = state.borrow_mut::<Body>();
-    let data = hyper::body::to_bytes(body).await;
-    let data = match data {
-        Ok(data) => data,
-        Err(_) => return Err(HandlerError::from(anyhow!("Invalid request body")).with_status(StatusCode::BAD_REQUEST)),
-    };
-    let program_bytes = data.to_vec();
-    let program_bytes_address = hash_bytes(&program_bytes);
-    object_db::insert_object(program_bytes).await.unwrap();
-
-    let num_replicas = 1;
-
-    if let Err(err) = controller::update_database(&address, &program_bytes_address, num_replicas).await {
-        log::debug!("{err}");
-        return Err(HandlerError::from(err));
-    }
-
-    let res = Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap();
     Ok(res)
 }
 
@@ -209,15 +226,10 @@ pub fn router() -> Router {
             .to_async_borrowing(dns);
 
         route
-            .post("/init")
-            .with_path_extractor::<InitDatabaseParams>()
-            .with_query_string_extractor::<InitDatabaseQueryParams>()
-            .to_async_borrowing(init_database);
-
-        route
-            .post("/update/:address")
-            .with_path_extractor::<UpdateDatabaseParams>()
-            .to_async_borrowing(update_database);
+            .post("/publish")
+            .with_path_extractor::<PublishDatabaseParams>()
+            .with_query_string_extractor::<PublishDatabaseQueryParams>()
+            .to_async_borrowing(publish);
 
         route
             .post("/delete/:address")

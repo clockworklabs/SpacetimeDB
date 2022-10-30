@@ -9,4 +9,3 @@ exec --fail-on-error cargo --config net.git-fetch-with-cli=true build --target w
 # Update the running module
 exec --fail-on-error spacetime identity init-default
 exec --fail-on-error spacetime energy set-balance 5000000000000
-exec --fail-on-error spacetime init -f -n spacetime-module ./target/wasm32-unknown-unknown/release/spacetime_module.wasm

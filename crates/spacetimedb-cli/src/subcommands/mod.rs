@@ -1,13 +1,13 @@
+pub mod build;
 pub mod call;
 pub mod codegen;
+pub mod delete;
 pub mod describe;
 pub mod energy;
 pub mod identity;
 pub mod init;
 pub mod logs;
 pub mod name;
-pub mod project;
-pub mod rm;
+pub mod publish;
 pub mod sql;
-pub mod update;
 pub mod version;

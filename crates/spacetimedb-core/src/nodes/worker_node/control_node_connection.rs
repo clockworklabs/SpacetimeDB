@@ -473,7 +473,7 @@ impl ControlNodeClient {
     pub async fn _init_database(&self, address: &Address, program_bytes: Vec<u8>, host_type: HostType, force: bool) {
         let force_str = if force { "true" } else { "false" };
         let uri = format!(
-            "http://{}/database/init/{}?force={}&host_type={}",
+            "http://{}/database/publish/{}?force={}&host_type={}",
             self.client_api_bootstrap_addr,
             address.to_hex(),
             force_str,

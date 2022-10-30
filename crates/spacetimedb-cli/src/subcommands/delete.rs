@@ -2,14 +2,12 @@ use crate::config::Config;
 use crate::util::spacetime_dns;
 use clap::Arg;
 use clap::ArgMatches;
-use std::fs;
 
 pub fn cli() -> clap::Command<'static> {
-    clap::Command::new("update")
-        .about("Update a SpacetimeDB database.")
+    clap::Command::new("delete")
+        .about("Deletes a SpacetimeDB database.")
         .arg(Arg::new("database").required(true))
-        .arg(Arg::new("path to project").required(true))
-        .after_help("Run `spacetime help init for more detailed information.\n`")
+        .after_help("Run `spacetime help delete` for more detailed information.\n")
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
@@ -19,15 +17,10 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     } else {
         database.to_string()
     };
-    let path_to_project = args.value_of("path to project").unwrap();
-
-    let path = fs::canonicalize(path_to_project).unwrap();
-    let program_bytes = fs::read(path)?;
 
     let client = reqwest::Client::new();
     let res = client
-        .post(format!("http://{}/database/update/{}", config.host, address))
-        .body(program_bytes)
+        .post(format!("http://{}/database/delete/{}", config.host, address))
         .send()
         .await?;
 

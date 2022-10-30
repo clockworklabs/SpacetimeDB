@@ -7,7 +7,7 @@ pub fn cli() -> clap::Command<'static> {
     clap::Command::new("name")
         .about("Resolves the address of a SpacetimeDB database.")
         .arg(Arg::new("name").required(true))
-        .after_help("Run `spacetime help call for more detailed information.\n`")
+        .after_help("Run `spacetime help call` for more detailed information.\n")
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {

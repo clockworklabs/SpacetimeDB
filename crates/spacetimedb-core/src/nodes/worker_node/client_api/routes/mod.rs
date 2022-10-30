@@ -34,7 +34,7 @@ mod tests {
     #[test]
     fn init_database() {
         let test_server = TestServer::new(router()).unwrap();
-        let uri = "http://localhost/database/init/clockworklabs/bitcraft";
+        let uri = "http://localhost/database/publish/clockworklabs/bitcraft";
         let body = Body::empty();
         let mime = "application/octet-stream".parse().unwrap();
         let response = test_server.client().post(uri, body, mime).perform().unwrap();

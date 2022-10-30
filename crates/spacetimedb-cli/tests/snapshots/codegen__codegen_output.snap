@@ -8,7 +8,7 @@ expression: outfiles
 
 namespace SpacetimeDB
 {
-	public partial class TestA
+	public partial class TestA : IStdbTable
 	{
 		[Newtonsoft.Json.JsonProperty("x")]
 		public uint x;
@@ -50,7 +50,7 @@ namespace SpacetimeDB
 
 namespace SpacetimeDB
 {
-	public partial class TestB
+	public partial class TestB : IStdbTable
 	{
 		[Newtonsoft.Json.JsonProperty("foo")]
 		public string foo;
