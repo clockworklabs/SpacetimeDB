@@ -17,6 +17,8 @@ pub use spacetimedb_lib::hash;
 pub use spacetimedb_lib::Hash;
 pub use spacetimedb_lib::TypeValue;
 
+pub use serde_json;
+
 pub use spacetimedb_bindings_sys as sys;
 
 #[doc(hidden)]

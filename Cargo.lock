@@ -2888,7 +2888,6 @@ name = "rust-wasm-test"
 version = "0.0.0"
 dependencies = [
  "serde",
- "serde_json",
  "spacetimedb",
 ]
 
@@ -3275,6 +3274,7 @@ dependencies = [
  "once_cell",
  "rand 0.8.5",
  "serde",
+ "serde_json",
  "sha3",
  "spacetimedb-bindings-macro",
  "spacetimedb-bindings-sys",

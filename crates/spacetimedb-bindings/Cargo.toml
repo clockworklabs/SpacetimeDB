@@ -21,6 +21,7 @@ custom-print = "0.1.0"
 enum-as-inner = "0.5.0"
 sha3 = "0.10.0"
 serde = { version = "1.0.136", features = ["derive"] }
+serde_json = { version = "1.0.87" }
 hex = "0.4.3"
 spacetimedb-bindings-sys = { path = "../spacetimedb-bindings-sys", version = "0.2.1" }
 spacetimedb-lib = { path = "../spacetimedb-lib", version = "0.2.1" }

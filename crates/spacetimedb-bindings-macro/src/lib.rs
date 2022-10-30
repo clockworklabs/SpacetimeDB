@@ -139,7 +139,7 @@ fn spacetimedb_reducer(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> s
 
                 // Stash the function
                 parse_json_to_args.push(quote! {
-                    let #var_name : #arg_token = serde_json::from_value(args[#json_arg_num].clone()).unwrap();
+                    let #var_name : #arg_token = spacetimedb::serde_json::from_value(args[#json_arg_num].clone()).unwrap();
                 });
 
                 function_call_arg_names.push(var_name);
@@ -153,7 +153,7 @@ fn spacetimedb_reducer(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> s
     let unwrap_args = match arg_num > 2 {
         true => {
             quote! {
-                let arg_json: serde_json::Value = serde_json::from_slice(
+                let arg_json: spacetimedb::serde_json::Value = spacetimedb::serde_json::from_slice(
                     arguments.argument_bytes.as_slice()).
                 expect(format!("Unable to parse arguments as JSON: {} bytes/arg_size: {}: {:?}",
                     arguments.argument_bytes.len(), arg_size, arguments.argument_bytes).as_str());
