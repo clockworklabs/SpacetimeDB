@@ -89,6 +89,18 @@ pub async fn associate_email_spacetime_identity(identity: &Hash, email: &str) ->
     Ok(())
 }
 
+pub fn get_identity_for_email(email: &str) -> Result<Option<IdentityEmail>, anyhow::Error> {
+    let tree = CONTROL_DB.open_tree("email")?;
+    for i in tree.iter() {
+        let i = i?;
+        let iemail = IdentityEmail::decode(&i.1[..])?;
+        if iemail.email == email {
+            return Ok(Some(iemail));
+        }
+    }
+    Ok(None)
+}
+
 pub async fn get_databases() -> Result<Vec<Database>, anyhow::Error> {
     let tree = CONTROL_DB.open_tree("database")?;
     let mut databases = Vec::new();

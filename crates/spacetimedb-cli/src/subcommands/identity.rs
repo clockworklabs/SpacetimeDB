@@ -1,5 +1,6 @@
 use crate::config::{Config, IdentityConfig};
 use clap::{arg, Arg, ArgAction, ArgMatches, Command};
+use reqwest::StatusCode;
 use serde::Deserialize;
 use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
 
@@ -65,6 +66,9 @@ fn get_subcommands() -> Vec<Command<'static>> {
                     .required(false)
                     .default_missing_value(""),
             ),
+        Command::new("find")
+            .about("Find an identity for an email")
+            .arg(Arg::new("email").required(true)),
     ]
 }
 
@@ -82,6 +86,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
         "rm" => exec_rm(config, args).await,
         "add" => exec_add(config, args).await,
         "set-email" => exec_email(config, args).await,
+        "find" => exec_find(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
@@ -302,6 +307,36 @@ async fn exec_ls(config: Config, _args: &ArgMatches) -> Result<(), anyhow::Error
         .with(Style::empty())
         .with(Modify::new(Columns::first()).with(Alignment::right()));
     println!("{}", table.to_string());
+    Ok(())
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct GetIdentityResponse {
+    identity: String,
+    email: String,
+}
+
+async fn exec_find(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let email = args.get_one::<String>("email").unwrap().clone();
+
+    let client = reqwest::Client::new();
+    let builder = client.get(format!("http://{}/identity?email={}", config.host, email));
+
+    // TODO: raise authorization error if this is not an identity we own
+    let res = builder.send().await?;
+
+    if res.status() == StatusCode::OK {
+        let response: GetIdentityResponse = serde_json::from_slice(&res.bytes().await?[..])?;
+
+        println!("Identity");
+        println!(" IDENTITY  {}", response.identity);
+        println!(" EMAIL     {}", response.email);
+    } else if res.status() == StatusCode::NOT_FOUND {
+        println!("Could not find identity for: {}", email)
+    } else {
+        println!("Error occurred in lookup: {}", res.status())
+    }
+
     Ok(())
 }
 

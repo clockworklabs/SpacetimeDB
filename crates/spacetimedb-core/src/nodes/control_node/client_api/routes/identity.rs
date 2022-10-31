@@ -18,16 +18,16 @@ use hyper::{header::AUTHORIZATION, Body, HeaderMap, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct IdentityResponse {
+struct CreateIdentityResponse {
     identity: String,
     token: String,
 }
 
-async fn get_identity(_state: &mut State) -> SimpleHandlerResult {
+async fn create_identity(_state: &mut State) -> SimpleHandlerResult {
     let identity = control_db::alloc_spacetime_identity().await?;
     let token = encode_token(identity)?;
 
-    let identity_response = IdentityResponse {
+    let identity_response = CreateIdentityResponse {
         identity: identity.to_hex(),
         token,
     };
@@ -39,6 +39,53 @@ async fn get_identity(_state: &mut State) -> SimpleHandlerResult {
         .unwrap();
 
     Ok(res)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GetIdentityResponse {
+    identity: String,
+    email: String,
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct GetIdentityQueryParams {
+    email: Option<String>,
+}
+async fn get_identity(state: &mut State) -> SimpleHandlerResult {
+    let GetIdentityQueryParams { email } = GetIdentityQueryParams::take_from(state);
+
+    let lookup = match email {
+        None => None,
+        Some(email) => {
+            let im = control_db::get_identity_for_email(email.as_str());
+            match im {
+                Ok(None) => None,
+                Ok(Some(identity_email)) => Some(GetIdentityResponse {
+                    identity: Hash::from_slice(&identity_email.identity[..]).to_hex(),
+                    email: identity_email.email,
+                }),
+                Err(_e) => {
+                    return Ok(Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::empty())
+                        .unwrap());
+                }
+            }
+        }
+    };
+    match lookup {
+        None => Ok(Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .unwrap()),
+        Some(identity_response) => {
+            let identity_json = serde_json::to_string(&identity_response).unwrap();
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body(Body::from(identity_json))
+                .unwrap())
+        }
+    }
 }
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
@@ -104,7 +151,11 @@ async fn set_email(state: &mut State) -> SimpleHandlerResult {
 
 pub fn router() -> Router {
     build_simple_router(|route| {
-        route.post("/").to_async_borrowing(get_identity);
+        route
+            .get("/")
+            .with_query_string_extractor::<GetIdentityQueryParams>()
+            .to_async_borrowing(get_identity);
+        route.post("/").to_async_borrowing(create_identity);
         route
             .post("/:identity/set-email")
             .with_path_extractor::<SetEmailParams>()
