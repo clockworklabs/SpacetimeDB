@@ -7,6 +7,10 @@ description = "A common library for SpacetimeDB"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+# Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
+bench = false
+
 [dependencies]
 custom-print = "0.1.0"
 decorum = "0.3.1"

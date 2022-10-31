@@ -5,9 +5,14 @@ edition = "2021"
 license-file = "LICENSE"
 description = "A command line interface for SpacetimeDB"
 
+[lib]
+bench = false
+
 [[bin]]
 name = "spacetime"
 path = "src/main.rs"
+# Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
+bench = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

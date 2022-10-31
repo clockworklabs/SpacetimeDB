@@ -7,6 +7,9 @@ edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
+# Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
+bench = false
+
 
 [dependencies]
 serde = { version = "1.0.136", features = ["derive"] }
