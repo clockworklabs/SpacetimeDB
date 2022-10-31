@@ -12,9 +12,8 @@ fn test_codegen_output() {
         return;
     }
     use spacetimedb_cli::codegen;
-    let outfiles: HashMap<_, _> = codegen::gen_bindings(path, codegen::Language::Csharp)
-        .unwrap()
-        .collect();
+    println!("{}", path.to_str().unwrap());
+    let outfiles: HashMap<_, _> = codegen::generate(path, "csharp").unwrap().collect();
     insta::with_settings!({ sort_maps => true }, {
         insta::assert_toml_snapshot!(outfiles);
     });

@@ -7,6 +7,8 @@ use std::fs;
 use std::path::Path;
 
 use crate::config::Config;
+use crate::util;
+use crate::util::init_default;
 
 pub fn cli() -> clap::Command<'static> {
     clap::Command::new("publish")
@@ -55,14 +57,14 @@ fn is_address(input: &str) -> bool {
     };
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let mut url_args = String::new();
 
     // Identity is required
     if let Some(identity) = args.value_of("identity") {
         url_args.push_str(format!("?identity={}", identity).as_str());
     } else {
-        let identity_config = config.get_default_identity_config().unwrap();
+        let identity_config = init_default(&mut config, None).await?.identity_config;
         url_args.push_str(format!("?identity={}", identity_config.identity).as_str());
     }
 
@@ -84,55 +86,11 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         return Err(anyhow::anyhow!("Project path does not exist: {}", path_to_project_str));
     }
 
-    let module_output_directory_path = path_to_project
-        .join("target")
-        .join("wasm32-unknown-unknown")
-        .join("release");
-    if !module_output_directory_path.exists() || !module_output_directory_path.is_dir() {
-        return Err(anyhow::anyhow!(
-            "Module output directory does not exist: {}",
-            module_output_directory_path.to_str().unwrap()
-        ));
-    }
-
-    let mut wasm_file_path = None;
-    for file in fs::read_dir(module_output_directory_path.to_str().unwrap()).unwrap() {
-        match file {
-            Ok(f) => {
-                if f.file_name().to_str().unwrap().ends_with(".wasm") {
-                    wasm_file_path = Some(f.path());
-                    break;
-                }
-            }
-            Err(_) => {}
-        }
-    }
-
-    if let None = wasm_file_path {
-        return Err(anyhow::anyhow!("Unable to find wasm output!"));
-    }
-
-    let path_to_wasm = wasm_file_path.unwrap();
-    if !path_to_wasm.exists() {
-        return Err(anyhow::anyhow!(
-            "Unable to find wasm module: {}",
-            path_to_wasm.to_str().unwrap()
-        ));
-    }
-    if !path_to_wasm.is_file() {
-        return Err(anyhow::anyhow!(
-            "Path to wasm file isn't a file: {}",
-            path_to_wasm.to_str().unwrap()
-        ));
-    }
-    let path_to_wasm = path_to_wasm.to_str().unwrap();
-
     if args.is_present("clear_database") {
         url_args.push_str("&clear=true");
     }
 
     url_args.push_str(format!("&host_type={}", args.value_of("host_type").unwrap_or("wasmer")).as_str());
-    let program_bytes = fs::read(fs::canonicalize(path_to_wasm).unwrap())?;
 
     let mut context = Context::new();
     duckscriptsdk::load(&mut context.commands)?;
@@ -170,6 +128,10 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             println!("Script execution error: {}", e);
         }
     }
+
+    let path_to_wasm = util::find_wasm_file(path_to_project)?;
+    let path_to_wasm = path_to_wasm.to_str().unwrap();
+    let program_bytes = fs::read(fs::canonicalize(path_to_wasm).unwrap())?;
 
     let url = format!("http://{}/database/publish{}", config.host, url_args);
     let client = reqwest::Client::new();

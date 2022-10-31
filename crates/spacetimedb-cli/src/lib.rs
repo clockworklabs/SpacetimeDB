@@ -37,7 +37,7 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "logs" => logs::exec(config, args).await,
         "sql" => sql::exec(config, args).await,
         "name" => name::exec(config, args).await,
-        "gen-bindings" => codegen::exec(args),
+        "generate" => codegen::exec(args),
         "init" => init::exec(config, args).await,
         "build" => build::exec(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),

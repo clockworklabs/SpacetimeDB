@@ -4,7 +4,7 @@ use std::{
     io::{Read, Write},
 };
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct IdentityConfig {
     pub nickname: Option<String>,
     pub identity: String,
@@ -55,7 +55,7 @@ impl Config {
     fn from_raw(raw: RawConfig) -> Self {
         Self {
             identity_configs: raw.identity_configs.unwrap_or(Vec::new()),
-            host: raw.host.unwrap_or("localhost:3000".into()),
+            host: raw.host.unwrap_or("spacetime.spacetimedb.net:3000".into()),
             default_identity: raw.default_identity,
         }
     }

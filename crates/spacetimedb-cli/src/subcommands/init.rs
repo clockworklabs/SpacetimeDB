@@ -32,14 +32,14 @@ pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     if project_path.exists() {
         if !project_path.is_dir() {
             return Err(anyhow::anyhow!(
-                "Fatal Error: path {} exists but is not a directory.",
+                "Path {} exists but is not a directory. A new SpacetimeDB project must be initialized in an empty directory.",
                 project_path_str
             ));
         }
 
         if std::fs::read_dir(project_path_str).unwrap().count() > 0 {
             return Err(anyhow::anyhow!(
-                "Fatal Error: Path {} is a directory, but is not empty",
+                "Cannot create new SpacetimeDB project in non-empty directory: {}",
                 project_path_str
             ));
         }
@@ -144,10 +144,7 @@ pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
 
 fn create_directory(path: &str) -> Result<(), anyhow::Error> {
     if let Err(e) = std::fs::create_dir_all(path) {
-        return Err(anyhow::anyhow!(
-            "Fatal Error: Failed to create directory: {}",
-            e.to_string()
-        ));
+        return Err(anyhow::anyhow!("Failed to create directory: {}", e.to_string()));
     }
     Ok(())
 }

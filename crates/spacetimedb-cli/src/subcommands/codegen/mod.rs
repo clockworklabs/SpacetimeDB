@@ -1,7 +1,8 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use clap::{CommandFactory, FromArgMatches, Parser};
+use crate::util;
+use clap::Arg;
 use convert_case::{Case, Casing};
 use spacetimedb_lib::type_def::{ReducerDef, TableDef};
 use spacetimedb_lib::TupleDef;
@@ -12,61 +13,91 @@ pub mod csharp;
 
 const INDENT: &str = "\t";
 
-#[derive(Parser)]
-#[clap(name = "gen-bindings")]
-/// Generate client bindings to a spacetime database
-struct Args {
-    wasm_file: PathBuf,
-    #[clap(long, short, value_enum, default_value_t)]
-    lang: Language,
-    #[clap(long, short)]
-    out_dir: PathBuf,
-}
-#[derive(clap::ValueEnum, Clone, Copy, Default)]
-pub enum Language {
-    #[clap(aliases(["c#", "cs"]))]
-    #[default]
-    Csharp,
-}
-
 pub fn cli() -> clap::Command<'static> {
-    Args::command()
+    clap::Command::new("generate")
+        .about("Generate client files for a spacetime module.")
+        .arg(
+            Arg::new("wasm_file")
+                .takes_value(true)
+                .required(false)
+                .long("wasm-file")
+                .short('w')
+                .conflicts_with("projec_path"),
+        )
+        .arg(
+            Arg::new("project_path")
+                .takes_value(true)
+                .required(false)
+                .long("project-path")
+                .short('p')
+                .default_value(".")
+                .conflicts_with("wasm_file"),
+        )
+        .arg(
+            Arg::new("out_dir")
+                .takes_value(true)
+                .required(true)
+                .long("out-dir")
+                .short('o'),
+        )
+        .arg(
+            Arg::new("lang")
+                .takes_value(true)
+                .required(true)
+                .long("lang")
+                .short('l')
+                .possible_values(["csharp", "cs", "c#"]),
+        )
+        .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
 pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
-    let args = Args::from_arg_matches(args).unwrap_or_else(|e| e.exit());
-    match args {
-        Args {
-            wasm_file,
-            lang,
-            out_dir,
-        } => {
-            for (fname, code) in gen_bindings(&wasm_file, lang)? {
-                fs::write(out_dir.join(fname), code)?;
-            }
-            Ok(())
-        }
+    let project_path = args.value_of("project_path").unwrap();
+    let wasm_file_path = Path::new(project_path);
+    let wasm_file_path = util::find_wasm_file(wasm_file_path)?;
+    let wasm_file = match args.value_of("wasm_file") {
+        None => Path::new(wasm_file_path.to_str().unwrap()),
+        Some(path) => Path::new(path),
+    };
+
+    let out_dir = Path::new(args.value_of("out_dir").unwrap());
+    let lang = args.value_of("lang").unwrap();
+
+    if !out_dir.exists() {
+        return Err(anyhow::anyhow!(
+            "Output directory '{}' does not exist. Please create the directory and rerun this command.",
+            out_dir.to_str().unwrap()
+        ));
     }
+
+    for (fname, code) in generate(wasm_file, lang)? {
+        fs::write(out_dir.join(fname), code)?;
+    }
+    Ok(())
 }
 
-pub fn gen_bindings(wasm_file: &Path, lang: Language) -> anyhow::Result<impl Iterator<Item = (String, String)>> {
-    let Language::Csharp = lang;
-    let descriptions = extract_descriptions(&wasm_file)?;
-    Ok(descriptions.into_iter().map(|(name, desc)| match desc {
-        Description::Table(table) => {
-            let code = csharp::autogen_csharp_table(&name, &table);
-            (name + ".cs", code)
+pub fn generate(wasm_file: &Path, lang: &str) -> anyhow::Result<impl Iterator<Item = (String, String)>> {
+    match lang {
+        "csharp" | "cs" | "c#" => {
+            let descriptions = extract_descriptions(&wasm_file)?;
+            Ok(descriptions.into_iter().map(|(name, desc)| match desc {
+                Description::Table(table) => {
+                    let code = csharp::autogen_csharp_table(&name, &table);
+                    (name + ".cs", code)
+                }
+                Description::Tuple(tup) => {
+                    let code = csharp::autogen_csharp_tuple(&name, &tup);
+                    (name + ".cs", code)
+                }
+                Description::Reducer(reducer) => {
+                    let code = csharp::autogen_csharp_reducer(&reducer);
+                    let pascalcase = name.to_case(Case::Pascal);
+                    (pascalcase + "Reducer.cs", code)
+                }
+            }))
         }
-        Description::Tuple(tup) => {
-            let code = csharp::autogen_csharp_tuple(&name, &tup);
-            (name + ".cs", code)
-        }
-        Description::Reducer(reducer) => {
-            let code = csharp::autogen_csharp_reducer(&reducer);
-            let pascalcase = name.to_case(Case::Pascal);
-            (pascalcase + "Reducer.cs", code)
-        }
-    }))
+        &_ => Err(anyhow::anyhow!(format!("Unsupported langauge: {}", lang))),
+    }
 }
 
 enum Description {

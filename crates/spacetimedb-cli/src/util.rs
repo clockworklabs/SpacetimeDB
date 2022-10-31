@@ -1,3 +1,5 @@
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use clap::{
@@ -6,7 +8,7 @@ use clap::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::config::Config;
+use crate::config::{Config, IdentityConfig};
 
 pub fn match_subcommand_or_exit(command: Command<'static>) -> (String, ArgMatches) {
     let mut command_clone = command.clone();
@@ -62,4 +64,92 @@ pub async fn spacetime_dns(config: &Config, domain_name: &str) -> Result<String,
 
     let dns: DNSResponse = serde_json::from_slice(&bytes[..]).unwrap();
     Ok(dns.address)
+}
+
+pub fn find_wasm_file(project_path: &Path) -> Result<PathBuf, anyhow::Error> {
+    let module_output_directory_path = project_path
+        .join("target")
+        .join("wasm32-unknown-unknown")
+        .join("release");
+    if !module_output_directory_path.exists() || !module_output_directory_path.is_dir() {
+        return Err(anyhow::anyhow!(
+            "Module output directory does not exist: {}",
+            module_output_directory_path.to_str().unwrap()
+        ));
+    }
+
+    for file in fs::read_dir(module_output_directory_path.to_str().unwrap()).unwrap() {
+        match file {
+            Ok(f) => {
+                if f.file_name().to_str().unwrap().ends_with(".wasm") && f.path().is_file() {
+                    return Ok(f.path());
+                }
+            }
+            Err(_) => {}
+        }
+    }
+
+    Err(anyhow::anyhow!(format!(
+        "Unable to find wasm file in project path: {}",
+        project_path.to_str().unwrap()
+    )))
+}
+
+#[derive(Deserialize)]
+pub struct IdentityTokenJson {
+    pub identity: String,
+    pub token: String,
+}
+
+pub enum InitDefaultResultType {
+    Existing,
+    SavedNew,
+}
+
+pub struct InitDefaultResult {
+    pub identity_config: IdentityConfig,
+    pub result_type: InitDefaultResultType,
+}
+
+pub async fn init_default(config: &mut Config, nickname: Option<String>) -> Result<InitDefaultResult, anyhow::Error> {
+    if config.name_exists(nickname.as_ref().unwrap_or(&"".to_string())) {
+        println!("An identity with that name already exists.");
+        std::process::exit(0);
+    }
+
+    let client = reqwest::Client::new();
+    let builder = client.post(format!("http://{}/identity", config.host));
+
+    if let Some(identity_config) = config.get_default_identity_config() {
+        return Ok(InitDefaultResult {
+            identity_config: identity_config.clone(),
+            result_type: InitDefaultResultType::Existing,
+        });
+    }
+
+    let res = builder.send().await?;
+    let res = res.error_for_status()?;
+
+    let body = res.bytes().await?;
+    let body = String::from_utf8(body.to_vec())?;
+
+    let identity_token: IdentityTokenJson = serde_json::from_str(&body)?;
+
+    let identity = identity_token.identity.clone();
+
+    let identity_config = IdentityConfig {
+        identity: identity_token.identity,
+        token: identity_token.token,
+        nickname: nickname.clone(),
+        email: None,
+    };
+    config.identity_configs.push(identity_config.clone());
+    if config.default_identity.is_none() {
+        config.default_identity = Some(identity.clone());
+    }
+    config.save();
+    Ok(InitDefaultResult {
+        identity_config,
+        result_type: InitDefaultResultType::SavedNew,
+    })
 }
