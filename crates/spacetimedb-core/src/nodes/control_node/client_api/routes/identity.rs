@@ -1,3 +1,4 @@
+use crate::address::Address;
 use crate::{
     auth::{
         get_creds_from_header,
@@ -149,6 +150,61 @@ async fn set_email(state: &mut State) -> SimpleHandlerResult {
     Ok(res)
 }
 
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct GetDatabasesParams {
+    identity: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GetDatabasesResponse {
+    addresses: Vec<String>,
+}
+
+async fn get_databases(state: &mut State) -> SimpleHandlerResult {
+    let GetDatabasesParams { identity } = GetDatabasesParams::take_from(state);
+
+    let res = match identity {
+        None => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .unwrap(),
+        Some(identity) => {
+            let identity = match Hash::from_hex(identity.as_str()) {
+                Ok(identity) => identity,
+                Err(_) => {
+                    return Ok(Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body(Body::empty())
+                        .unwrap())
+                }
+            };
+
+            // Linear scan for all databases that have this identity, and return their addresses
+            let all_dbs = control_db::get_databases().await;
+            match all_dbs {
+                Ok(all_dbs) => {
+                    let matching_dbs = all_dbs.into_iter().filter(|db| db.identity == Vec::from(identity.data));
+                    let addresses = matching_dbs.map(|db| Address::from_slice(&db.address[..]).to_hex());
+                    let response = GetDatabasesResponse {
+                        addresses: addresses.collect(),
+                    };
+                    let json = serde_json::to_string(&response).unwrap();
+                    let body = Body::from(json);
+                    Response::builder().status(StatusCode::OK).body(body).unwrap()
+                }
+                Err(e) => {
+                    log::error!("Failure when retrieving databases for search: {}", e);
+                    Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::empty())
+                        .unwrap()
+                }
+            }
+        }
+    };
+
+    Ok(res)
+}
 pub fn router() -> Router {
     build_simple_router(|route| {
         route
@@ -161,5 +217,9 @@ pub fn router() -> Router {
             .with_path_extractor::<SetEmailParams>()
             .with_query_string_extractor::<SetEmailQueryParams>()
             .to_async_borrowing(set_email);
+        route
+            .get("/:identity/databases")
+            .with_path_extractor::<GetDatabasesParams>()
+            .to_async_borrowing(get_databases);
     })
 }

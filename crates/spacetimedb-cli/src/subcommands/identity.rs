@@ -29,6 +29,9 @@ fn get_subcommands() -> Vec<Command<'static>> {
             .about("Associates an identity with an email address")
             .arg(Arg::new("identity").required(true))
             .arg(Arg::new("email").required(true)),
+        Command::new("databases")
+            .about("Lists the databases attached to an identity")
+            .arg(Arg::new("identity").required(true)),
         Command::new("init-default")
             .about("Initialize a new default identity if missing")
             .arg(
@@ -87,6 +90,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
         "add" => exec_add(config, args).await,
         "set-email" => exec_email(config, args).await,
         "find" => exec_find(config, args).await,
+        "databases" => exec_databases(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
@@ -367,6 +371,32 @@ async fn exec_email(mut config: Config, args: &ArgMatches) -> Result<(), anyhow:
     println!(" Associated email with identity");
     println!(" IDENTITY  {}", identity);
     println!(" EMAIL     {}", email);
+
+    Ok(())
+}
+
+async fn exec_databases(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let identity = args.get_one::<String>("identity").unwrap().clone();
+
+    let client = reqwest::Client::new();
+    let mut builder = client.get(format!("http://{}/identity/{}/databases", config.host, identity));
+
+    if let Some(identity_token) = config.get_identity_config_by_identity(&identity) {
+        builder = builder.basic_auth("token", Some(identity_token.token.clone()));
+    } else {
+        println!("Missing identity credentials for identity.");
+        std::process::exit(0);
+    }
+
+    let res = builder.send().await?;
+
+    if res.status() != StatusCode::OK {
+        println!("Unable to retrieve databases for identity: {}", res.status());
+        return Ok(());
+    }
+
+    println!("Associated database addresses for identity:");
+    println!("{}", res.text().await?);
 
     Ok(())
 }
