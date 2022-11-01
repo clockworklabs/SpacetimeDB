@@ -1,4 +1,4 @@
-/// Benchmarks for evaluating various ODB storage systems for blob storage.
+//! Benchmarks for evaluating various ODB storage systems for blob storage.
 
 use criterion::measurement::WallTime;
 use criterion::{criterion_group, criterion_main, Bencher, BenchmarkGroup, BenchmarkId, Criterion, Throughput};

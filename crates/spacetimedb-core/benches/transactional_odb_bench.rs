@@ -1,4 +1,4 @@
-/// Benchmarks for evaluating impact of various ODB storage backends on TransactionalDB performance.
+//! Benchmarks for evaluating impact of various ODB storage backends on TransactionalDB performance.
 
 use criterion::measurement::WallTime;
 use criterion::{criterion_group, criterion_main, Bencher, BenchmarkGroup, BenchmarkId, Criterion, Throughput};
