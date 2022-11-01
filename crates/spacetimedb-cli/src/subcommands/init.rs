@@ -1,6 +1,6 @@
 use crate::Config;
 use clap::{Arg, ArgMatches};
-use colored::{ColoredString, Colorize};
+use colored::Colorize;
 use std::path::Path;
 
 pub fn cli() -> clap::Command<'static> {
