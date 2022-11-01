@@ -61,7 +61,6 @@ jobs:
 
       - name: Run cargo fmt
         uses: actions-rs/cargo@v1
-        continue-on-error: true  # TODO: temporary until all errors resolved
         with:
           command: fmt
           args: --all -- --check
