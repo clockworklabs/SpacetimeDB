@@ -181,7 +181,12 @@ public class StdbNetworkManager : MonoBehaviour
         webSocket = null;
     }
 
-    public void Connect(string host, string address)
+    /// <summary>
+    /// Connect to a remote spacetime instance.
+    /// </summary>
+    /// <param name="host">The host or IP address and the port to connect to. Example: spacetime.spacetimedb.net:3000</param>
+    /// <param name="addressOrName">The name or address of the database to connect to</param>
+    public void Connect(string host, string addressOrName)
     {
         var token = PlayerPrefs.HasKey(GetTokenKey()) ? PlayerPrefs.GetString(GetTokenKey()) : null;
 
@@ -189,7 +194,7 @@ public class StdbNetworkManager : MonoBehaviour
         {
             try
             {
-                await webSocket.Connect(token, host, address);
+                await webSocket.Connect(token, host, addressOrName);
             }
             catch (Exception e)
             {
