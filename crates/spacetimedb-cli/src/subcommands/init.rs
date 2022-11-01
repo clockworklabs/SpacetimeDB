@@ -23,6 +23,90 @@ pub fn cli() -> clap::Command<'static> {
         )
 }
 
+fn check_for_protobuf() -> bool {
+    match std::env::consts::OS {
+        "linux" | "freebsd" | "netbsd" | "openbsd" | "solaris" => {
+            if let Some(_) = find_executable("protoc") {
+                return true;
+            }
+
+            println!("{}", "Warning: protoc could not be found in your PATH. You should install the protobuf compiler from your package manager. Alternatively, follow the install instructions here:\n\n\thttp://google.github.io/proto-lens/installing-protoc.html".yellow());
+        }
+        "macos" => {
+            if let Some(_) = find_executable("protoc") {
+                return true;
+            }
+            println!("{}", "Warning: protoc could not be found in your PATH. You can install protoc on macos from brew:\n\n\tbrew install protobuf\n\nAlternatively, follow the instructions here: http://google.github.io/proto-lens/installing-protoc.html".yellow());
+        }
+        "windows" => {
+            if let Some(_) = find_executable("protoc.exe") {
+                return true;
+            }
+            println!("{}", "Warning: protoc could not be found in your PATH. To install protoc on Windows, follow the instructions here:\n\n\thttp://google.github.io/proto-lens/installing-protoc.html ".yellow());
+        }
+        unsupported_os => {
+            println!("{}", format!("This OS may be unsupported: {}", unsupported_os).yellow());
+        }
+    }
+
+    return false;
+}
+
+fn check_for_cargo() -> bool {
+    match std::env::consts::OS {
+        "linux" | "freebsd" | "netbsd" | "openbsd" | "solaris" | "macos" => {
+            if let Some(_) = find_executable("cargo") {
+                return true;
+            }
+            println!("{}", "Warning: You have created a rust project, but you are missing cargo. You should install cargo with the following command:\n\n\tcurl https://sh.rustup.rs -sSf | sh\n".yellow());
+        }
+        "windows" => {
+            if let Some(_) = find_executable("cargo.exe") {
+                return true;
+            }
+            println!("{}", "Warning: You have created a rust project, but you are missing cargo. Visit the rust-lang official website for the latest instructions on install cargo on Windows:\n\n\tYou have created a rust project, but you are missing cargo.\n".yellow());
+        }
+        unsupported_os => {
+            println!("{}", format!("This OS may be unsupported: {}", unsupported_os).yellow());
+        }
+    }
+    return false;
+}
+
+fn check_for_git() -> bool {
+    match std::env::consts::OS {
+        "linux" | "freebsd" | "netbsd" | "openbsd" | "solaris" => {
+            if let Some(_) = find_executable("git") {
+                return true;
+            }
+            println!(
+                "{}",
+                "Warning: Git is not installed. You should install git using your package manager.\n".yellow()
+            );
+        }
+        "macos" => {
+            if let Some(_) = find_executable("git") {
+                return true;
+            }
+            println!(
+                "{}",
+                "Warning: Git is not installed. You can install git by invoking:\n\n\tgit --version\n".yellow()
+            );
+        }
+        "windows" => {
+            if let Some(_) = find_executable("git.exe") {
+                return true;
+            }
+
+            println!("{}", "Warning: You are missing git. You should install git from here:\n\n\thttps://git-scm.com/download/win\n".yellow());
+        }
+        unsupported_os => {
+            println!("{}", format!("This OS may be unsupported: {}", unsupported_os).yellow());
+        }
+    }
+    return false;
+}
+
 pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let project_path_str = args.value_of("project-path").unwrap();
     let project_path = Path::new(project_path_str);
@@ -48,6 +132,21 @@ pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
             return Err(e);
         }
     }
+
+    match project_lang.to_lowercase().as_str() {
+        "rust" => {
+            return exec_init_rust(args).await;
+        }
+        _ => {
+            return Err(anyhow::anyhow!(format!("Unknown project language: {}", project_lang)));
+        }
+    }
+}
+
+pub async fn exec_init_rust(args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let project_path_str = args.value_of("project-path").unwrap();
+    let project_path = Path::new(project_path_str);
+    let project_lang = args.value_of("lang").unwrap();
 
     let mut export_files = Vec::<(&str, &str)>::new();
 
@@ -94,50 +193,15 @@ pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
         }
     }
 
-    // Some courtesy checks for the user
-    let mut has_protoc = false;
-    let mut install_instructions: Option<ColoredString> = None;
-    match std::env::consts::OS {
-        "linux" | "freebsd" | "netbsd" | "openbsd" | "solaris" => {
-            has_protoc = match find_executable("protoc") {
-                None => false,
-                Some(_) => true,
-            };
+    // Check all dependencies
+    check_for_protobuf();
+    check_for_cargo();
+    check_for_git();
 
-            install_instructions = Some("You should install protoc from your package manager. Alternatively, follow the install instructions here:\n\n\thttp://google.github.io/proto-lens/installing-protoc.html".yellow());
-        }
-        "macos" => {
-            has_protoc = match find_executable("protoc") {
-                None => false,
-                Some(_) => true,
-            };
-            install_instructions = Some("You can install protoc on macos from brew:\n\n\tbrew install protobuf\n\nAlternatively, follow the instructions here: http://google.github.io/proto-lens/installing-protoc.html".yellow());
-        }
-        "windows" => {
-            has_protoc = match find_executable("protoc.exe") {
-                None => false,
-                Some(_) => true,
-            };
-
-            install_instructions = Some("To install protoc on Windows, follow the instructions here:\n\n\thttp://google.github.io/proto-lens/installing-protoc.html ".yellow());
-        }
-        unsupported_os => {
-            println!("{}", format!("This OS may be unsupported: {}", unsupported_os).yellow());
-        }
-    }
-
-    if !has_protoc {
-        println!(
-            "{}",
-            format!("Warning: protoc not found in your PATH. If protoc is installed make sure it is").yellow()
-        );
-        println!("{}", format!("it is available in your PATH. \n").yellow());
-        if let Some(colored_string) = install_instructions {
-            println!("{}\n", colored_string);
-        }
-    }
-
-    println!("Project successfully created at path: {}", project_path_str);
+    println!(
+        "{}",
+        format!("Project successfully created at path: {}", project_path_str).green()
+    );
 
     Ok(())
 }
