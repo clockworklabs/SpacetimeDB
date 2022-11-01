@@ -24,11 +24,11 @@ harness = true         # Use libtest harness.
 required-features = [] # Features required to build this target (N/A for lib)
 
 [[bench]]
-name = "transactional_db"
+name = "transactional_odb_bench"
 harness = false
 
 [[bench]]
-name = "object_db"
+name = "odb_flavor_bench"
 harness = false
 
 [dependencies] 
@@ -76,7 +76,7 @@ strum = { version = "0.24.1", features = ["derive"] }
 
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
 [dependencies.rocksdb]
-version = "0.18.0"
+version = "0.19.0"
 default-features = false
 optional = true
 features = ["lz4"] # if we link bzip, we get multiple defs
@@ -87,7 +87,7 @@ odb_rocksdb = ["dep:rocksdb"]
 odb_sled = []
 
 [dev-dependencies]
-criterion = { version = "0.3", features = ["async", "async_tokio", "html_reports"] }
+criterion = { version = "0.4.0", features = ["async", "async_tokio", "html_reports"] }
 tempdir = "0.3.7"
 rand = "0.8.5"
 

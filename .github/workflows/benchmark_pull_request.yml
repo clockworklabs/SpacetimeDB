@@ -1,0 +1,15 @@
+on: [pull_request]
+name: Benchmark Pull Requests
+jobs:
+  runBenchmark:
+    name: run benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - uses: boa-dev/criterion-compare-action@v3.2.4
+        with:
+          cwd: "crates/spacetimedb-core"
+          # Needed. The name of the branch to compare with. This default uses the branch which is being pulled against
+          branchName: ${{ github.base_ref }}
+          # Optional. Default is `${{ github.token }}`.
+          token: ${{ secrets.GITHUB_TOKEN }}
