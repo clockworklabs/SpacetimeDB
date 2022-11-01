@@ -19,7 +19,7 @@ pub fn get_subcommands() -> Vec<Command<'static>> {
         energy::cli(),
         sql::cli(),
         name::cli(),
-        codegen::cli(),
+        generate::cli(),
         init::cli(),
         build::cli(),
     ]
@@ -37,7 +37,7 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "logs" => logs::exec(config, args).await,
         "sql" => sql::exec(config, args).await,
         "name" => name::exec(config, args).await,
-        "generate" => codegen::exec(args),
+        "generate" => generate::exec(args),
         "init" => init::exec(config, args).await,
         "build" => build::exec(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),

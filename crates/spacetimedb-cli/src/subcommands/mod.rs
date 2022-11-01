@@ -1,9 +1,9 @@
 pub mod build;
 pub mod call;
-pub mod codegen;
 pub mod delete;
 pub mod describe;
 pub mod energy;
+pub mod generate;
 pub mod identity;
 pub mod init;
 pub mod logs;

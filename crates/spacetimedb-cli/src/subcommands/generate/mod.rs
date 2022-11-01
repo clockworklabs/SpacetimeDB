@@ -4,6 +4,7 @@ use std::path::Path;
 use crate::util;
 use clap::Arg;
 use convert_case::{Case, Casing};
+use duckscript::types::runtime::{Context, StateValue};
 use spacetimedb_lib::type_def::{ReducerDef, TableDef};
 use spacetimedb_lib::TupleDef;
 use wasmtime::{ExternType, Trap, TypedFunc};
@@ -22,7 +23,7 @@ pub fn cli() -> clap::Command<'static> {
                 .required(false)
                 .long("wasm-file")
                 .short('w')
-                .conflicts_with("projec_path"),
+                .conflicts_with("project_path"),
         )
         .arg(
             Arg::new("project_path")
@@ -54,6 +55,43 @@ pub fn cli() -> clap::Command<'static> {
 pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
     let project_path = args.value_of("project_path").unwrap();
     let wasm_file_path = Path::new(project_path);
+    let mut context = Context::new();
+    duckscriptsdk::load(&mut context.commands)?;
+    context
+        .variables
+        .insert("PATH".to_string(), std::env::var("PATH").unwrap());
+    context
+        .variables
+        .insert("PROJECT_PATH".to_string(), project_path.to_string());
+
+    match duckscript::runner::run_script(include_str!("../project/build.duck"), context) {
+        Ok(ok) => {
+            let mut error = false;
+            for entry in ok.state {
+                if let StateValue::SubState(sub_state) = entry.1 {
+                    for entry in sub_state {
+                        match entry.1 {
+                            StateValue::String(a) => {
+                                error = true;
+                                println!("{}|{}", entry.0, a)
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            if !error {
+                println!("Build finished successfully.");
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Build finished with errors, check the console for more information."
+                ));
+            }
+        }
+        Err(e) => return Err(anyhow::anyhow!(format!("Script execution error: {}", e))),
+    }
+
     let wasm_file_path = util::find_wasm_file(wasm_file_path)?;
     let wasm_file = match args.value_of("wasm_file") {
         None => Path::new(wasm_file_path.to_str().unwrap()),
@@ -62,7 +100,6 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
 
     let out_dir = Path::new(args.value_of("out_dir").unwrap());
     let lang = args.value_of("lang").unwrap();
-
     if !out_dir.exists() {
         return Err(anyhow::anyhow!(
             "Output directory '{}' does not exist. Please create the directory and rerun this command.",
