@@ -69,6 +69,7 @@ backtrace = "0.3.66"
 # perf_monitor = "0.2"
 urlencoding = "2.1.2"
 fs2 = "0.4.3"
+once_cell = "1.16"
 
 # gluesql = "0.10"
 bytes = "1.2.0" # TODO(rdaum): there's also a copy/fork of this inside prost. hmph.
