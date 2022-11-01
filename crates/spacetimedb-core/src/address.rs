@@ -18,6 +18,9 @@ impl Address {
 
     pub fn from_hex(hex: &str) -> Result<Self, anyhow::Error> {
         let data = hex::decode(hex)?;
+        if data.len() != 16 {
+            return Err(anyhow::anyhow!("Addresses must be 16 bytes in length."));
+        }
         let data: [u8; 16] = data
             .try_into()
             .expect("hex representation of hash decoded to incorrect number of bytes");

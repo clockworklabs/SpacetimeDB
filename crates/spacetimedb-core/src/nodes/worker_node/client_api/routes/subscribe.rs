@@ -43,13 +43,11 @@ const BIN_PROTOCOL: &str = "v1.bin.spacetimedb";
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 pub struct SubscribeQueryParams {
-    name: Option<String>,
+    name_or_address: String,
 }
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
-pub struct SubscribeParams {
-    address: Option<String>,
-}
+pub struct SubscribeParams {}
 
 fn accept_ws_res(key: &HeaderValue, protocol: &HeaderValue, identity: Hash, identity_token: String) -> Response<Body> {
     fn accept_key(key: &[u8]) -> String {
@@ -183,26 +181,18 @@ async fn on_upgrade(
         (identity, identity_token)
     };
 
-    let SubscribeParams { address } = SubscribeParams::take_from(&mut state);
-    let address = if let Some(address) = address {
+    let SubscribeParams {} = SubscribeParams::take_from(&mut state);
+    let SubscribeQueryParams { name_or_address } = SubscribeQueryParams::take_from(&mut state);
+    let target_address = if let Ok(address) = Address::from_hex(&name_or_address) {
         address
     } else {
-        let SubscribeQueryParams { name } = SubscribeQueryParams::take_from(&mut state);
-        if let Some(name) = name {
-            if let Some(address) = ControlNodeClient::get_shared().resolve_name(&name).await.unwrap() {
-                address.to_hex()
-            } else {
-                return Ok((state, bad_request_res()));
-            }
+        if let Some(address) = ControlNodeClient::get_shared()
+            .resolve_name(&name_or_address)
+            .await
+            .unwrap()
+        {
+            address
         } else {
-            return Ok((state, bad_request_res()));
-        }
-    };
-
-    let target_address = match Address::from_hex(&address) {
-        Ok(h) => h,
-        Err(error) => {
-            log::info!("Can't decode {}", error);
             return Ok((state, bad_request_res()));
         }
     };

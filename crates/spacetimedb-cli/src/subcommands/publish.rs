@@ -41,20 +41,13 @@ pub fn cli() -> clap::Command<'static> {
                 .short('i')
                 .required(false),
         )
-        .arg(Arg::new("name|database").takes_value(true).required(false))
+        .arg(Arg::new("name|address").takes_value(true).required(false))
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct InitDatabaseResponse {
     address: String,
-}
-
-fn is_address(input: &str) -> bool {
-    return match hex::decode(input) {
-        Ok(hex) => hex.len() == 16,
-        Err(_) => false,
-    };
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
@@ -68,13 +61,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         url_args.push_str(format!("?identity={}", identity_config.identity).as_str());
     }
 
-    let name_or_address = args.value_of("name|database");
+    let name_or_address = args.value_of("name|address");
     if let Some(name_or_address) = name_or_address {
-        if is_address(name_or_address) {
-            url_args.push_str(format!("&address={}", name_or_address).as_str());
-        } else {
-            url_args.push_str(format!("&name={}", name_or_address).as_str());
-        }
+        url_args.push_str(format!("&name_or_address={}", name_or_address).as_str());
     }
 
     let path_to_project_str = args.value_of("path_to_project").unwrap();

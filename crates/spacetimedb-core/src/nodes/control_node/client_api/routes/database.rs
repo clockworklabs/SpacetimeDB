@@ -68,56 +68,40 @@ struct PublishDatabaseQueryParams {
     host_type: Option<String>,
     clear: Option<bool>,
     identity: Option<String>,
-    name: Option<String>,
-    address: Option<String>,
+    name_or_address: Option<String>,
 }
 
 async fn publish(state: &mut State) -> SimpleHandlerResult {
     let PublishDatabaseParams {} = PublishDatabaseParams::take_from(state);
     let PublishDatabaseQueryParams {
         identity,
-        name,
-        address,
+        name_or_address,
         host_type,
         clear,
     } = PublishDatabaseQueryParams::take_from(state);
     let clear = clear.unwrap_or(false);
-    let mut has_name = false;
-    let mut has_address = false;
 
     // Parse the address or convert the name to a usable address
-    let db_address: Address = match (address.clone(), name.clone()) {
-        (Some(address), None) => match Address::from_hex(address.as_str()) {
-            Ok(address) => {
-                has_address = true;
-                address
-            }
-            Err(_) => {
-                return Err(HandlerError::from(anyhow::anyhow!("Invalid address: {}", address)));
-            }
-        },
-        (None, Some(name)) => {
-            has_name = true;
-            if let Some(address) = control_db::spacetime_dns(&name).await? {
+    let (db_address, specified_address) = if let Some(name_or_address) = name_or_address {
+        if let Ok(address) = Address::from_hex(&name_or_address) {
+            // All addresses are invalid names
+            (address, true)
+        } else {
+            // If it's not a valid address it must be a name
+            if let Some(address) = control_db::spacetime_dns(&name_or_address).await? {
                 // TODO(cloutiertyler): Validate that the creator has credentials for this database
-                address
+                (address, false)
             } else {
                 // Client specified a name which doesn't yet exist
                 // Create a new DNS record and a new address to assign to it
                 let address = control_db::alloc_spacetime_address().await?;
-                control_db::spacetime_insert_dns_record(&address, &name).await?;
-                address
+                control_db::spacetime_insert_dns_record(&address, &name_or_address).await?;
+                (address, false)
             }
         }
-        (None, None) => {
-            // No name or address was specified, create a new one
-            control_db::alloc_spacetime_address().await?
-        }
-        (Some(_), Some(_)) => {
-            return Err(HandlerError::from(anyhow::anyhow!(
-                "Both address and database name were specified. This is not allowed."
-            )));
-        }
+    } else {
+        // No name or address was specified, create a new one
+        (control_db::alloc_spacetime_address().await?, false)
     };
 
     let identity = if let Some(identity) = identity {
@@ -175,7 +159,7 @@ async fn publish(state: &mut State) -> SimpleHandlerResult {
                 }
             }
             None => {
-                if !has_name && has_address {
+                if specified_address {
                     return Err(HandlerError::from(anyhow::anyhow!(
                         "Failed to find database at address: {}",
                         db_address.to_hex()

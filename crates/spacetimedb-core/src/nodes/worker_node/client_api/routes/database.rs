@@ -438,6 +438,7 @@ async fn sql(state: &mut State) -> SimpleHandlerResult {
     Ok(res)
 }
 
+// TODO(cloutiertyler): all references to address should become name_or_address
 pub fn router() -> Router {
     build_simple_router(|route| {
         route
@@ -447,21 +448,11 @@ pub fn router() -> Router {
         route.post("/publish").to_async(proxy_to_control_node_client_api);
 
         route
-            .post("/update/:address")
-            .to_async(proxy_to_control_node_client_api);
-
-        route
             .post("/delete/:address")
             .to_async(proxy_to_control_node_client_api);
 
         route
-            .get("/subscribe")
-            .with_path_extractor::<SubscribeParams>()
-            .with_query_string_extractor::<SubscribeQueryParams>()
-            .to_async(handle_websocket);
-
-        route
-            .get("/subscribe/:address")
+            .get("/subscribe/:name_or_address*")
             .with_path_extractor::<SubscribeParams>()
             .with_query_string_extractor::<SubscribeQueryParams>()
             .to_async(handle_websocket);
