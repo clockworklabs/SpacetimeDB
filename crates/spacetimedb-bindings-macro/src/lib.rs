@@ -299,9 +299,10 @@ fn spacetimedb_repeating_reducer(
 }
 
 // TODO: We actually need to add a constraint that requires this column to be unique!
-struct Column {
-    ty: syn::Type,
-    ident: Ident,
+struct Column<'a> {
+    vis: &'a syn::Visibility,
+    ty: &'a syn::Type,
+    ident: &'a Ident,
     index: u8,
 }
 
@@ -335,11 +336,11 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
     }
 
     let mut unique_columns = Vec::<Column>::new();
-    let mut filterable_columns = Vec::<Column>::new();
+    let mut nonunique_columns = Vec::<Column>::new();
 
     let table_id_static_var_name = format_ident!("__table_id__{}", original_struct.ident);
     let get_table_id_func = quote! {
-        pub fn table_id() -> u32 {
+        fn table_id() -> u32 {
             *#table_id_static_var_name.get_or_init(|| {
                 spacetimedb::get_table_id(<Self as spacetimedb::TableType>::TABLE_NAME)
             })
@@ -350,45 +351,30 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
         let col_num: u8 = col_num
             .try_into()
             .map_err(|_| syn::Error::new_spanned(&field, "too many columns; the most a table can have is 256"))?;
-        let col_name = &field.ident.clone().unwrap();
+        let col_name = field.ident.as_ref().unwrap();
 
         let mut is_unique = false;
-        let mut is_filterable = false;
         let mut remove_idxs = vec![];
         for (i, attr) in field.attrs.iter().enumerate() {
             if attr.path.is_ident("unique") {
-                if is_filterable {
-                    return Err(syn::Error::new_spanned(
-                        field,
-                        "a field cannot be unique and filterable_by",
-                    ));
-                }
                 is_unique = true;
-                remove_idxs.push(i);
-            } else if attr.path.is_ident("filterable_by") {
-                if is_unique {
-                    return Err(syn::Error::new_spanned(
-                        field,
-                        "a field cannot be unique and filterable_by",
-                    ));
-                }
-                is_filterable = true;
                 remove_idxs.push(i);
             }
         }
         for i in remove_idxs.into_iter().rev() {
             field.attrs.remove(i);
         }
-        let column = || Column {
-            ty: field.ty.clone(),
-            ident: col_name.clone(),
+        let column = Column {
+            vis: &field.vis,
+            ty: &field.ty,
+            ident: &col_name,
             index: col_num,
         };
 
         if is_unique {
-            unique_columns.push(column());
-        } else if is_filterable {
-            filterable_columns.push(column());
+            unique_columns.push(column);
+        } else {
+            nonunique_columns.push(column);
         }
     }
 
@@ -397,100 +383,73 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
     let mut unique_delete_funcs = Vec::with_capacity(unique_columns.len());
     let mut unique_fields = Vec::with_capacity(unique_columns.len());
     for unique in unique_columns {
-        let filter_func_ident = format_ident!("filter_{}_eq", unique.ident);
-        let update_func_ident = format_ident!("update_{}_eq", unique.ident);
-        let delete_func_ident = format_ident!("delete_{}_eq", unique.ident);
-        let comparison_block = tuple_field_comparison_block(&original_struct.ident, &unique.ident, true);
+        let filter_func_ident = format_ident!("filter_by_{}", unique.ident);
+        let update_func_ident = format_ident!("update_by_{}", unique.ident);
+        let delete_func_ident = format_ident!("delete_by_{}", unique.ident);
 
         let Column {
+            vis,
             ty: column_type,
             ident: column_ident,
             index: column_index,
         } = unique;
-        let column_index_usize: usize = column_index.into();
 
         unique_fields.push(column_index);
 
         unique_filter_funcs.push(quote! {
-            #[allow(unused_variables)]
-            #[allow(non_snake_case)]
-            pub fn #filter_func_ident(#column_ident: #column_type) -> Option<Self> {
-                let table_iter = #original_struct_ident::iter_tuples();
-                for row in table_iter {
-                    let column_data = row.elements[#column_index_usize].clone();
-                    #comparison_block
-                }
-
-                return None;
+            #vis fn #filter_func_ident(#column_ident: #column_type) -> Option<Self> {
+                spacetimedb::query::filter_by_unique_field::<Self, #column_type, #column_index>(#column_ident)
             }
         });
 
         unique_update_funcs.push(quote! {
-            #[allow(unused_variables)]
-            #[allow(non_snake_case)]
-            pub fn #update_func_ident(value: #column_type, new_value: Self) -> bool {
-                #original_struct_ident::#delete_func_ident(value);
-                #original_struct_ident::insert(new_value);
-
-                // For now this is always successful
-                true
+            #vis fn #update_func_ident(#column_ident: #column_type, value: Self) -> bool {
+                spacetimedb::query::update_by_field::<Self, #column_type, #column_index>(#column_ident, value)
             }
         });
 
         unique_delete_funcs.push(quote! {
-            #[allow(unused_variables)]
-            #[allow(non_snake_case)]
-            pub fn #delete_func_ident(value: #column_type) -> bool {
-                let value = spacetimedb::IntoValue::into_value(value);
-                let result = spacetimedb::delete_eq(Self::table_id(), #column_index, value);
-                match result {
-                    None => {
-                        //TODO: Returning here was supposed to signify an error, but it can also return none when there is nothing to delete.
-                        //spacetimedb::println!("Internal server error on equatable type: {}", #primary_key_tuple_type_str);
-                        false
-                    },
-                    Some(count) => {
-                        count > 0
-                    }
-                }
+            #vis fn #delete_func_ident(#column_ident: #column_type) -> bool {
+                spacetimedb::query::delete_by_field::<Self, #column_type, #column_index>(#column_ident)
             }
         });
     }
 
-    let mut non_primary_filter_func = Vec::with_capacity(filterable_columns.len());
-    let mut filterable_fields = Vec::with_capacity(filterable_columns.len());
-    for column in filterable_columns {
-        filterable_fields.push(column.index);
+    let non_primary_filter_func = nonunique_columns.into_iter().filter_map(|column| {
+        let filter_func_ident = format_ident!("filter_by_{}", column.ident);
 
-        let filter_func_ident: proc_macro2::TokenStream = format!("filter_{}_eq", column.ident).parse().unwrap();
-
-        let comparison_block = tuple_field_comparison_block(&original_struct_ident, &column.ident, false);
-
+        let vis = column.vis;
         let column_ident = column.ident;
         let column_type = column.ty;
-        let row_index: usize = column.index.into();
+        let column_index = column.index;
 
-        non_primary_filter_func.push(quote! {
-            #[allow(non_snake_case)]
-            #[allow(unused_variables)]
-            pub fn #filter_func_ident(#column_ident: #column_type) -> Vec<Self> {
-                let mut result = Vec::<Self>::new();
-                let table_iter = Self::iter_tuples();
-                for row in table_iter {
-                    let column_data = row.elements[#row_index].clone();
-                    #comparison_block
-                }
+        let skip = if let syn::Type::Path(p) = column_type {
+            // TODO: this is janky as heck
+            !matches!(
+                &*p.path.segments.last().unwrap().ident.to_string(),
+                "u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "u64" | "i64" | "Hash"
+            )
+        } else {
+            true
+        };
 
-                result
+        if skip {
+            return None;
+        }
+
+        Some(quote! {
+            // TODO: should we expose spacetimedb::query::FilterByIter ?
+            #vis fn #filter_func_ident(#column_ident: #column_type) -> impl Iterator<Item = Self> {
+                spacetimedb::query::filter_by_field::<Self, #column_type, #column_index>(#column_ident)
             }
-        });
-    }
+        })
+    });
+    let non_primary_filter_func = non_primary_filter_func.collect::<Vec<_>>();
 
     let db_insert = quote! {
         #[allow(unused_variables)]
         pub fn insert(ins: #original_struct_ident) {
-            // TODO: how should we handle this kind of error?
-            let _ = spacetimedb::insert(Self::table_id(), spacetimedb::IntoTuple::into_tuple(ins));
+            <Self as spacetimedb::TableType>::insert(ins)
         }
     };
 
@@ -509,37 +468,15 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
     };
 
     let db_iter_tuples = quote! {
-        #[allow(unused_variables)]
-        pub fn iter_tuples() -> spacetimedb::TableIter {
-            spacetimedb::__iter__(Self::table_id()).expect("Failed to get iterator from table.")
-        }
-    };
-
-    let db_iter_ident = format_ident!("{}{}", original_struct_ident, "Iter");
-    let db_iter_struct = quote! {
-        pub struct #db_iter_ident {
-            iter: spacetimedb::TableIter,
-        }
-
-        impl Iterator for #db_iter_ident {
-            type Item = #original_struct_ident;
-
-            fn next(&mut self) -> Option<Self::Item> {
-                if let Some(tuple) = self.iter.next() {
-                    Some(spacetimedb::FromTuple::from_tuple(tuple).expect("Failed to convert tuple to struct."))
-                } else {
-                    None
-                }
-            }
+        pub fn iter_tuples() -> spacetimedb::RawTableIter {
+            <Self as spacetimedb::TableType>::iter_tuples()
         }
     };
 
     let db_iter = quote! {
         #[allow(unused_variables)]
-        pub fn iter() -> #db_iter_ident {
-            #db_iter_ident {
-                iter: Self::iter_tuples()
-            }
+        pub fn iter() -> spacetimedb::TableIter<Self> {
+            <Self as spacetimedb::TableType>::iter()
         }
     };
 
@@ -551,7 +488,7 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
         impl spacetimedb::TableType for #original_struct_ident {
             const TABLE_NAME: &'static str = #table_name;
             const UNIQUE_COLUMNS: &'static [u8] = &[#(#unique_fields),*];
-            const FILTERABLE_BY_COLUMNS: &'static [u8] = &[#(#filterable_fields),*];
+            #get_table_id_func
         }
     };
 
@@ -595,7 +532,6 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
         #[derive(serde::Serialize, serde::Deserialize)]
         #original_struct
 
-        #db_iter_struct
         impl #original_struct_ident {
             #db_insert
             #db_delete
@@ -607,8 +543,6 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
             #db_iter
             #db_iter_tuples
             #(#non_primary_filter_func)*
-
-            #get_table_id_func
         }
 
         #schema_impl
@@ -873,44 +807,6 @@ fn spacetimedb_connect_disconnect(
     }
 
     Ok(emission)
-}
-
-fn tuple_field_comparison_block(
-    tuple_type: &Ident,
-    filter_field_name: &Ident,
-    is_unique: bool,
-) -> proc_macro2::TokenStream {
-    let err_string = format!(
-        "Internal stdb error: Can't convert from tuple to struct (wrong version?) {}",
-        tuple_type
-    );
-
-    let result_statement = if is_unique {
-        quote! {
-            let tuple = <Self as spacetimedb::FromTuple>::from_tuple(row);
-            if tuple.is_none() {
-                spacetimedb::println!(#err_string);
-            }
-            return tuple;
-        }
-    } else {
-        quote! {
-            let tuple = <Self as spacetimedb::FromTuple>::from_tuple(row);
-            match tuple {
-                Some(value) => result.push(value),
-                None => {
-                    spacetimedb::println!(#err_string);
-                    continue;
-                }
-            }
-        }
-    };
-
-    quote! {
-        if spacetimedb::FilterableValue::equals(&#filter_field_name, &column_data) {
-            #result_statement
-        }
-    }
 }
 
 fn assert_no_args_meta(meta: &Meta) -> syn::Result<()> {

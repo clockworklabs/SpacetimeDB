@@ -101,13 +101,9 @@ pub fn autogen_csharp_tuple(name: &str, tuple: &TupleDef) -> String {
     autogen_csharp_tuple_table_common(name, tuple, None)
 }
 pub fn autogen_csharp_table(name: &str, table: &TableDef) -> String {
-    autogen_csharp_tuple_table_common(
-        name,
-        &table.tuple,
-        Some((&table.unique_columns, &table.filterable_by_columns)),
-    )
+    autogen_csharp_tuple_table_common(name, &table.tuple, Some(&table.unique_columns))
 }
-fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_columns: Option<(&[u8], &[u8])>) -> String {
+fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_columns: Option<&[u8]>) -> String {
     let mut output = CodeIndenter::new(String::new());
 
     let struct_name_pascal_case = name.to_case(Case::Pascal);
@@ -158,7 +154,7 @@ fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_column
             .unwrap();
 
             // If this is a table, we want to include functions for accessing the table data
-            if let Some((unique_columns, filterable_by_columns)) = unique_columns {
+            if let Some(unique_columns) = unique_columns {
                 // Insert the funcs for accessing this struct
                 autogen_csharp_access_funcs_for_struct(
                     &mut output,
@@ -166,7 +162,6 @@ fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_column
                     tuple,
                     name,
                     unique_columns,
-                    filterable_by_columns,
                 );
             }
         }
@@ -316,11 +311,13 @@ fn autogen_csharp_access_funcs_for_struct(
     tuple: &TupleDef,
     table_name: &str,
     unique_columns: &[u8],
-    filterable_by_columns: &[u8],
 ) {
     let it = Iterator::chain(
         unique_columns.iter().copied().zip(std::iter::repeat(true)),
-        filterable_by_columns.iter().copied().zip(std::iter::repeat(false)),
+        (0..tuple.elements.len())
+            .map(|i| i as u8)
+            .filter(|i| unique_columns.binary_search(i).is_err())
+            .zip(std::iter::repeat(false)),
     );
     for (col_i, is_unique) in it {
         let field = &tuple.elements[col_i as usize];

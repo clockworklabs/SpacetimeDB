@@ -247,8 +247,6 @@ pub struct TableDef {
     pub tuple: TupleDef,
     /// must be sorted!
     pub unique_columns: Vec<u8>,
-    /// must be sorted!
-    pub filterable_by_columns: Vec<u8>,
 }
 
 impl TableDef {
@@ -257,22 +255,13 @@ impl TableDef {
         let unique_columns_len = read_len(bytes)?;
         let mut unique_columns = bytes.get_slice(unique_columns_len)?.to_owned();
         unique_columns.sort();
-        let filterable_len = read_len(bytes)?;
-        let mut filterable_by_columns = bytes.get_slice(filterable_len)?.to_owned();
-        filterable_by_columns.sort();
-        Ok(Self {
-            tuple,
-            unique_columns,
-            filterable_by_columns,
-        })
+        Ok(Self { tuple, unique_columns })
     }
 
     pub fn encode(&self, bytes: &mut impl BufWriter) {
         self.tuple.encode(bytes);
         write_len(bytes, self.unique_columns.len());
         bytes.put_slice(&self.unique_columns);
-        write_len(bytes, self.filterable_by_columns.len());
-        bytes.put_slice(&self.filterable_by_columns);
     }
 }
 

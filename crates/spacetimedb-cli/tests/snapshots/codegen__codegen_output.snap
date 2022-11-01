@@ -41,6 +41,42 @@ namespace SpacetimeDB
 				z = (string)tupleValue[2].GetValue(TypeDef.Def.String),
 			};
 		}
+		public static System.Collections.Generic.IEnumerable<TestA> FilterByX(uint value)
+		{
+			foreach(var entry in StdbNetworkManager.clientDB.GetEntries("TestA"))
+			{
+				var tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];
+				if (tupleArr == null) continue;
+				var compareValue = (uint)tupleArr[0].GetValue(TypeDef.Def.U32);
+				if (compareValue == value)
+					yield return (TestA)entry;
+			}
+		}
+
+		public static System.Collections.Generic.IEnumerable<TestA> FilterByY(uint value)
+		{
+			foreach(var entry in StdbNetworkManager.clientDB.GetEntries("TestA"))
+			{
+				var tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];
+				if (tupleArr == null) continue;
+				var compareValue = (uint)tupleArr[1].GetValue(TypeDef.Def.U32);
+				if (compareValue == value)
+					yield return (TestA)entry;
+			}
+		}
+
+		public static System.Collections.Generic.IEnumerable<TestA> FilterByZ(string value)
+		{
+			foreach(var entry in StdbNetworkManager.clientDB.GetEntries("TestA"))
+			{
+				var tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];
+				if (tupleArr == null) continue;
+				var compareValue = (string)tupleArr[2].GetValue(TypeDef.Def.String);
+				if (compareValue == value)
+					yield return (TestA)entry;
+			}
+		}
+
 	}
 }
 '''

@@ -6,6 +6,7 @@ use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
 use spacetimedb_lib::type_def::TableDef;
 use spacetimedb_lib::{PrimaryKey, TupleDef, TupleValue, TypeDef};
 use std::cell::RefCell;
+use std::marker::PhantomData;
 use std::ops::Range;
 use std::panic;
 
@@ -151,7 +152,7 @@ pub fn create_index(_table_id: u32, _index_type: u8, _col_ids: Vec<u8>) {}
 //
 // }
 
-pub fn __iter__(table_id: u32) -> Option<TableIter> {
+pub fn __iter__(table_id: u32) -> Option<RawTableIter> {
     let bytes = sys::iter(table_id);
 
     let mut buffer = Cursor::new(bytes);
@@ -160,15 +161,15 @@ pub fn __iter__(table_id: u32) -> Option<TableIter> {
         panic!("__iter__: Could not decode schema. Err: {}", e);
     });
 
-    Some(TableIter { buffer, schema })
+    Some(RawTableIter { buffer, schema })
 }
 
-pub struct TableIter {
+pub struct RawTableIter {
     buffer: Cursor<Box<[u8]>>,
     schema: TupleDef,
 }
 
-impl Iterator for TableIter {
+impl Iterator for RawTableIter {
     type Item = TupleValue;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -241,7 +242,6 @@ impl<T: IntoTuple> IntoValue for T {
 pub trait TableType: TupleType + FromTuple + IntoTuple {
     const TABLE_NAME: &'static str;
     const UNIQUE_COLUMNS: &'static [u8];
-    const FILTERABLE_BY_COLUMNS: &'static [u8];
 
     fn create_table() -> u32 {
         let tuple_def = Self::get_tupledef();
@@ -252,7 +252,6 @@ pub trait TableType: TupleType + FromTuple + IntoTuple {
         TableDef {
             tuple: Self::get_tupledef(),
             unique_columns: Self::UNIQUE_COLUMNS.to_owned(),
-            filterable_by_columns: Self::FILTERABLE_BY_COLUMNS.to_owned(),
         }
     }
 
@@ -262,6 +261,38 @@ pub trait TableType: TupleType + FromTuple + IntoTuple {
         table_def.encode(&mut bytes);
         sys::pack_slice(bytes.into())
     }
+
+    fn table_id() -> u32;
+
+    fn insert(ins: Self) {
+        // TODO: how should we handle this kind of error?
+        let _ = insert(Self::table_id(), ins.into_tuple());
+    }
+
+    fn iter() -> TableIter<Self> {
+        TableIter {
+            inner: Self::iter_tuples(),
+            _marker: PhantomData,
+        }
+    }
+
+    fn iter_tuples() -> RawTableIter {
+        __iter__(Self::table_id()).expect("failed to get iterator from table")
+    }
+}
+
+pub struct TableIter<T: TableType> {
+    inner: RawTableIter,
+    _marker: PhantomData<T>,
+}
+impl<T: TableType> Iterator for TableIter<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner
+            .next()
+            .map(|row| T::from_tuple(row).expect("failed to convert tuple to struct"))
+    }
 }
 
 pub trait FilterableValue: FromValue + IntoValue {
@@ -270,4 +301,93 @@ pub trait FilterableValue: FromValue + IntoValue {
 
 pub trait UniqueValue: FilterableValue {
     fn into_primarykey(self) -> PrimaryKey;
+}
+
+#[doc(hidden)]
+pub mod query {
+    use super::*;
+
+    #[doc(hidden)]
+    pub fn filter_by_unique_field<Table: TableType, T: UniqueValue, const COL_IDX: u8>(val: T) -> Option<Table> {
+        for row in Table::iter_tuples() {
+            if let Some(ret) = check_eq(row, COL_IDX, &val) {
+                return ret.ok();
+            }
+        }
+        None
+    }
+
+    #[doc(hidden)]
+    pub fn filter_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u8>(
+        val: T,
+    ) -> FilterByIter<Table, COL_IDX, T> {
+        FilterByIter {
+            inner: Table::iter_tuples(),
+            val,
+            _marker: PhantomData,
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn delete_by_field<Table: TableType, T: UniqueValue, const COL_IDX: u8>(val: T) -> bool {
+        let value = val.into_value();
+        let result = delete_eq(Table::table_id(), COL_IDX, value);
+        match result {
+            None => {
+                //TODO: Returning here was supposed to signify an error, but it can also return none when there is nothing to delete.
+                //spacetimedb::println!("Internal server error on equatable type: {}", #primary_key_tuple_type_str);
+                false
+            }
+            Some(count) => count > 0,
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn update_by_field<Table: TableType, T: UniqueValue, const COL_IDX: u8>(val: T, new_value: Table) -> bool {
+        delete_by_field::<Table, T, COL_IDX>(val);
+        Table::insert(new_value);
+
+        // For now this is always successful
+        true
+    }
+
+    #[inline]
+    fn check_eq<T: TableType>(row: TupleValue, col_idx: u8, val: &impl FilterableValue) -> Option<Result<T, ()>> {
+        let column_data = &row.elements[usize::from(col_idx)];
+        val.equals(column_data).then(|| {
+            let ret = T::from_tuple(row).ok_or(());
+            if ret.is_err() {
+                fromtuple_failed(T::TABLE_NAME)
+            }
+            ret
+        })
+    }
+
+    #[doc(hidden)]
+    pub struct FilterByIter<Table: TableType, const COL_IDX: u8, T: FilterableValue> {
+        inner: RawTableIter,
+        val: T,
+        _marker: PhantomData<Table>,
+    }
+    impl<Table: TableType, const COL_IDX: u8, T: FilterableValue> Iterator for FilterByIter<Table, COL_IDX, T> {
+        type Item = Table;
+        fn next(&mut self) -> Option<Self::Item> {
+            self.inner.find_map(|row| {
+                if let Some(Ok(ret)) = check_eq(row, COL_IDX, &self.val) {
+                    Some(ret)
+                } else {
+                    None
+                }
+            })
+        }
+    }
+
+    #[inline(never)]
+    #[cold]
+    fn fromtuple_failed(tablename: &str) {
+        eprintln!(
+            "Internal stdb error: Can't convert from tuple to struct (wrong version?) {}",
+            tablename
+        )
+    }
 }
