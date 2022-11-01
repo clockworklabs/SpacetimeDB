@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if [ -z "$UNITY_PATH" ]; then
-	export UNITY_PATH="~/Unity/Hub/Editor/2020.3.25f1/Editor/Unity"
+	export UNITY_PATH="$HOME/Unity/Hub/Editor/2020.3.25f1/Editor/Unity"
 fi
 	
 if [ ! -f $UNITY_PATH ]; then
