@@ -6,6 +6,7 @@ fi
 	
 if [ ! -f $UNITY_PATH ]; then
 	echo "Unable to find a version of Unity. Please specify it using UNITY_PATH :)"	
+	exit 1
 fi
 
 $UNITY_PATH -projectPath . -quit -batchmode -nographics -ignorecompilererrors -executeMethod "ExportPackage.Export"
