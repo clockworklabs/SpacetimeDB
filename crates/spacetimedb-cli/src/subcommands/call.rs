@@ -21,7 +21,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     };
 
     let function_name = args.value_of("function_name").unwrap();
-    let arg_json = args.value_of("arg_json").unwrap_or("{}");
+    let arg_json = args.value_of("arguments").unwrap_or("{}");
 
     let client = reqwest::Client::new();
     let res = client
