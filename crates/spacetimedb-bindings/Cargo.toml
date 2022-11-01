@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 license-file = "LICENSE"
 description = "Easy support for interacting between SpacetimeDB and Rust."
