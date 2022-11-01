@@ -10,4 +10,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 serde = { version = "1.0.136", features = ["derive"] }
-spacetimedb = "0.2.1"
+spacetimedb = "0.2.2"
