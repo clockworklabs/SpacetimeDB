@@ -24,8 +24,8 @@ fn get_command() -> Command<'static> {
 │ SpacetimeDB Command Line Tool                            │
 │ Easily interact with a SpacetimeDB cluster               │
 │                                                          │
-│ Please give us feedback at:                              │
-│ https://github.com/clockworklabs/SpacetimeDB/issues      │
+│ Give us feedback in our Discord server:                  │
+│    https://discord.gg/w2DVqNZXdN                         │
 └──────────────────────────────────────────────────────────┘
 Usage:
 {usage}
