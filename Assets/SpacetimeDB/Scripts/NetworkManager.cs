@@ -47,7 +47,7 @@ namespace SpacetimeDB
         /// <summary>
         /// Called when a connection attempt fails.
         /// </summary>
-        public event Action<WebSocketError> onConnectError;
+        public event Action<WebSocketError?> onConnectError;
 
         /// <summary>
         /// Called when a connection that was established has disconnected.
