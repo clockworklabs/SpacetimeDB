@@ -3,6 +3,9 @@ use crate::hash::HASH_SIZE;
 use crate::Hash;
 use std::fmt::Debug;
 
+// NOTICE!! every time you make a breaking change to the wire format, you MUST
+//          bump `SCHEMA_FORMAT_VERSION` in lib.rs!
+
 pub trait Arguments: Debug + Send {
     fn encoded_size(&self) -> usize;
     fn encode<W: BufWriter>(&self, writer: &mut W);

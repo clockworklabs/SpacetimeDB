@@ -27,6 +27,9 @@ pub mod __private {
     pub use once_cell::sync::OnceCell;
 }
 
+#[no_mangle]
+pub static SPACETIME_ABI_VERSION: u32 = (spacetimedb_lib::SCHEMA_FORMAT_VERSION as u32) << 16 | sys::ABI_VERSION as u32;
+
 // #[cfg(target_arch = "wasm32")]
 // #[global_allocator]
 // static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;

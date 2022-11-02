@@ -3067,6 +3067,7 @@ dependencies = [
  "urlencoding",
  "wasmer",
  "wasmer-middlewares",
+ "wasmparser 0.92.0",
 ]
 
 [[package]]
@@ -4021,6 +4022,15 @@ name = "wasmparser"
 version = "0.89.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab5d3e08b13876f96dd55608d03cd4883a0545884932d5adf11925876c96daef"
+dependencies = [
+ "indexmap",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.92.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da34cec2a8c23db906cdf8b26e988d7a7f0d549eb5d51299129647af61a1b37"
 dependencies = [
  "indexmap",
 ]

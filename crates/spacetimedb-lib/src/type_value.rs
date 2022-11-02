@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::{fmt, hash};
 
+// NOTICE!! every time you make a breaking change to the wire format, you MUST
+//          bump `SCHEMA_FORMAT_VERSION` in lib.rs!
+
 /// Totally ordered [f32]
 pub type F32 = decorum::Total<f32>;
 /// Totally ordered [f64]

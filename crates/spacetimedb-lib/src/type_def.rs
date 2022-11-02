@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::buffer::{BufReader, BufWriter, DecodeError};
 
+// NOTICE!! every time you make a breaking change to the wire format, you MUST
+//          bump `SCHEMA_FORMAT_VERSION` in lib.rs!
+
 // () -> Tuple or enum?
 // (0: 1) -> Tuple or enum?
 // (0: 1, x: (1: 2 | 0: 2))

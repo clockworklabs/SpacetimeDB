@@ -13,3 +13,5 @@ pub use hash::Hash;
 pub use primary_key::PrimaryKey;
 pub use type_def::*;
 pub use type_value::{TupleValue, TypeValue};
+
+pub const SCHEMA_FORMAT_VERSION: u16 = 0;

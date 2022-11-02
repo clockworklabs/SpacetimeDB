@@ -6,8 +6,12 @@ use alloc_crate::alloc;
 
 use alloc_crate::boxed::Box;
 
+pub const ABI_VERSION: u16 = 0;
+
 pub mod raw {
-    #[link(wasm_import_module = "env")]
+    // breaking changes to these function signatures should bump the v in the module symbol
+    // as well as in ABI_VERSION above
+    #[link(wasm_import_module = "spacetime_v0")]
     extern "C" {
         pub fn _create_table(ptr: *const u8, len: usize) -> u32;
         pub fn _get_table_id(ptr: *const u8, len: usize) -> u32;
@@ -20,8 +24,7 @@ pub mod raw {
         pub fn _delete_eq(table_id: u32, col_id: u32, ptr: *const u8, len: usize) -> u32;
         pub fn _delete_range(table_id: u32, col_id: u32, ptr: *const u8, len: usize) -> u32;
 
-        // TODO: should have lens associated with ptrs
-        pub fn _filter_eq(table_id: u32, col_id: u32, src_ptr: *const u8, result_ptr: *const u8);
+        // pub fn _filter_eq(table_id: u32, col_id: u32, src_ptr: *const u8, result_ptr: *const u8);
 
         pub fn _iter(table_id: u32) -> u64;
         pub fn _console_log(level: u8, ptr: *const u8, len: usize);

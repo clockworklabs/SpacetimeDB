@@ -14,6 +14,8 @@ pub mod wasm_module_host_actor;
 
 use wasm_module_host_actor::{WasmModuleHostActor, DEFAULT_EXECUTION_BUDGET};
 
+use super::wasm_common::abi;
+
 const REDUCE_DUNDER: &str = "__reducer__";
 
 fn validate_module(module: &Module) -> Result<(), anyhow::Error> {
@@ -60,13 +62,15 @@ pub fn make_wasmer_module_host_actor(
         compiler_config.push_middleware(metering);
 
         let store = Store::new(&Universal::new(compiler_config).engine());
-        let module = Module::new(&store, program_bytes)?;
+        let module = Module::new(&store, &program_bytes)?;
+
+        let abi = abi::determine_spacetime_abi(&program_bytes)?;
 
         let address = worker_database_instance.address;
         log::trace!("Validating module for database: \"{}\"", address.to_hex());
         validate_module(&module)?;
 
-        let host = WasmModuleHostActor::new(worker_database_instance, module_hash, module, store, module_host)?;
+        let host = WasmModuleHostActor::new(worker_database_instance, module_hash, module, store, module_host, abi)?;
         Ok(Box::from(host))
     })
 }

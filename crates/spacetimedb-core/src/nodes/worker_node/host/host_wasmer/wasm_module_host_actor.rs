@@ -1,3 +1,4 @@
+use super::super::wasm_common::abi;
 use super::wasm_instance_env::WasmInstanceEnv;
 use crate::db::messages::transaction::Transaction;
 use crate::db::relational_db::TxWrapper;
@@ -97,6 +98,7 @@ pub(crate) struct WasmModuleHostActor {
     // TODO(ryan): Long run let's replace or augment this with catalog table(s) that hold the
     // schema. Then standard table query tools could be run against it.
     description_cache: HashMap<String, EntityDef>,
+    abi: abi::SpacetimeAbiVersion,
 }
 
 impl WasmModuleHostActor {
@@ -106,6 +108,7 @@ impl WasmModuleHostActor {
         module: Module,
         store: Store,
         module_host: ModuleHost,
+        abi: abi::SpacetimeAbiVersion,
     ) -> Result<Self, anyhow::Error> {
         let relational_db = worker_database_instance.relational_db.clone();
         let subscription = ModuleSubscription::spawn(relational_db);
@@ -119,6 +122,7 @@ impl WasmModuleHostActor {
             instances: Vec::new(),
             subscription,
             description_cache: HashMap::new(),
+            abi,
         };
         host.create_instance().unwrap();
         match host.populate_description_caches() {
@@ -156,8 +160,9 @@ impl WasmModuleHostActor {
             memory: LazyInit::new(),
             alloc: LazyInit::new(),
         };
+        let abi::SpacetimeAbiVersion::V0 = self.abi;
         let import_object = imports! {
-            "env" => {
+            "spacetime_v0" => {
                 "_delete_pk" => Function::new_native_with_env(
                     &self.store,
                     env.clone(),
