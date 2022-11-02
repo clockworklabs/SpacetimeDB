@@ -10,7 +10,7 @@ using ClientApi;
 
 namespace SpacetimeDB
 {
-    public class StdbClientCache
+    public class ClientCache
     {
         public class TableCache
         {
