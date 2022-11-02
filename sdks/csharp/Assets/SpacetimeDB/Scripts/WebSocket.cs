@@ -7,7 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 
-namespace WebSocketDispatch
+namespace SpacetimeDB
 {
     internal abstract class MainThreadDispatch
     {

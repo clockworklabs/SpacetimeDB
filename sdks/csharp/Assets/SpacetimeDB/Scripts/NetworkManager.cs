@@ -47,7 +47,7 @@ namespace SpacetimeDB
         /// <summary>
         /// Called when a connection attempt fails.
         /// </summary>
-        public event Action<WebSocketError> onConnectError;
+        public event Action<WebSocketError?> onConnectError;
 
         /// <summary>
         /// Called when a connection that was established has disconnected.
@@ -74,12 +74,9 @@ namespace SpacetimeDB
         /// </summary>
         public event Action<ClientApi.Event> onEvent;
 
-        private WebSocketDispatch.WebSocket webSocket;
+        private SpacetimeDB.WebSocket webSocket;
         private bool connectionClosed;
         public static ClientCache clientDB;
-
-        private float? lastClientTick;
-        public static float clientTickInterval;
 
         private Thread messageProcessThread;
 
@@ -95,16 +92,17 @@ namespace SpacetimeDB
 
             instance = this;
 
-            var options = new WebSocketDispatch.ConnectOptions
+            var options = new SpacetimeDB.ConnectOptions
             {
                 //v1.bin.spacetimedb
                 //v1.text.spacetimedb
                 Protocol = "v1.bin.spacetimedb",
             };
-            webSocket = new WebSocketDispatch.WebSocket(options);
+            webSocket = new SpacetimeDB.WebSocket(options);
             webSocket.OnMessage += OnMessageReceived;
             webSocket.OnClose += (code, error) => onDisconnect?.Invoke(code, error);
             webSocket.OnConnect += () => onConnect?.Invoke();
+            webSocket.OnConnectError += a => onConnectError?.Invoke(a);
 
             clientDB = new ClientCache();
 
