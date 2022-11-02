@@ -32,17 +32,37 @@ namespace WebSocketDispatch
     class OnDisconnectMessage : MainThreadDispatch
     {
         private WebSocketCloseEventHandler receiver;
+        private WebSocketError? error;
         private WebSocketCloseStatus? status;
 
-        public OnDisconnectMessage(WebSocketCloseEventHandler receiver, WebSocketCloseStatus? status)
+        public OnDisconnectMessage(WebSocketCloseEventHandler receiver, WebSocketCloseStatus? status,
+            WebSocketError? error)
         {
             this.receiver = receiver;
+            this.error = error;
             this.status = status;
         }
 
         public override void Execute()
         {
-            receiver.Invoke(status);
+            receiver.Invoke(status, error);
+        }
+    }
+
+    class OnConnectErrorMessage : MainThreadDispatch
+    {
+        private WebSocketConnectErrorEventHandler receiver;
+        private WebSocketError? error;
+
+        public OnConnectErrorMessage(WebSocketConnectErrorEventHandler receiver, WebSocketError? error)
+        {
+            this.receiver = receiver;
+            this.error = error;
+        }
+
+        public override void Execute()
+        {
+            receiver.Invoke(error);
         }
     }
 
@@ -67,9 +87,9 @@ namespace WebSocketDispatch
 
     public delegate void WebSocketMessageEventHandler(byte[] message);
 
-    public delegate void WebSocketErrorEventHandler(string errorMsg);
+    public delegate void WebSocketCloseEventHandler(WebSocketCloseStatus? code, WebSocketError? error);
 
-    public delegate void WebSocketCloseEventHandler(WebSocketCloseStatus? closeCode);
+    public delegate void WebSocketConnectErrorEventHandler(WebSocketError? error);
 
     public struct ConnectOptions
     {
@@ -80,7 +100,7 @@ namespace WebSocketDispatch
     public class WebSocket
     {
         // WebSocket buffer for incoming messages
-        private static readonly int MAXMessageSize = 0x2000000; // 32MB
+        private static readonly int MAXMessageSize = 0x4000000; // 64MB
 
         // Connection parameters
         private readonly ConnectOptions _options;
@@ -96,6 +116,7 @@ namespace WebSocketDispatch
         }
 
         public event WebSocketOpenEventHandler OnConnect;
+        public event WebSocketConnectErrorEventHandler OnConnectError;
         public event WebSocketMessageEventHandler OnMessage;
         public event WebSocketCloseEventHandler OnClose;
 
@@ -123,18 +144,13 @@ namespace WebSocketDispatch
             }
             catch (WebSocketException ex)
             {
-                if (ex.WebSocketErrorCode == WebSocketError.UnsupportedProtocol)
-                {
-                    Debug.LogError("Unsupported protocol.");
-                    return;
-                }
-
-                Debug.LogError("Error connecting: " + ex);
+                dispatchQueue.Enqueue(new OnConnectErrorMessage(OnConnectError, ex.WebSocketErrorCode));
                 return;
             }
             catch (Exception e)
             {
-                Debug.LogError("Other error: " + e);
+                Debug.LogException(e);
+                dispatchQueue.Enqueue(new OnConnectErrorMessage(OnConnectError, null));
                 return;
             }
 
@@ -148,47 +164,38 @@ namespace WebSocketDispatch
                     {
                         await Ws.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty,
                             CancellationToken.None);
-                        if (receiveResult.CloseStatus != WebSocketCloseStatus.NormalClosure)
-                        {
-                            Debug.LogError("Server closed connection abnormally.");
-                            dispatchQueue.Enqueue(new OnDisconnectMessage(OnClose, receiveResult.CloseStatus));
-                        }
+                        dispatchQueue.Enqueue(new OnDisconnectMessage(OnClose, receiveResult.CloseStatus, null));
+                        return;
                     }
-                    else
+
+                    var count = receiveResult.Count;
+                    while (receiveResult.EndOfMessage == false)
                     {
-                        var count = receiveResult.Count;
-                        while (receiveResult.EndOfMessage == false)
+                        if (count >= MAXMessageSize)
                         {
-                            if (count >= MAXMessageSize)
-                            {
-                                var closeMessage = $"Maximum message size: {MAXMessageSize} bytes.";
-                                await Ws.CloseAsync(WebSocketCloseStatus.MessageTooBig, closeMessage,
-                                    CancellationToken.None);
-                                return;
-                            }
-
-                            receiveResult = await Ws.ReceiveAsync(
-                                new ArraySegment<byte>(_receiveBuffer, count, MAXMessageSize - count),
+                            // TODO: Improve this, we should allow clients to receive messages of whatever size
+                            var closeMessage = $"Maximum message size: {MAXMessageSize} bytes.";
+                            await Ws.CloseAsync(WebSocketCloseStatus.MessageTooBig, closeMessage,
                                 CancellationToken.None);
-                            count += receiveResult.Count;
+                            dispatchQueue.Enqueue(new OnDisconnectMessage(OnClose, WebSocketCloseStatus.MessageTooBig, null));
+                            return;
                         }
 
-                        var buffCopy = new byte[count];
-                        for (var x = 0; x < count; x++)
-                            buffCopy[x] = _receiveBuffer[x];
-                        dispatchQueue.Enqueue(new OnMessage(OnMessage, buffCopy));
+                        receiveResult = await Ws.ReceiveAsync(
+                            new ArraySegment<byte>(_receiveBuffer, count, MAXMessageSize - count),
+                            CancellationToken.None);
+                        count += receiveResult.Count;
                     }
+
+                    var buffCopy = new byte[count];
+                    for (var x = 0; x < count; x++)
+                        buffCopy[x] = _receiveBuffer[x];
+                    dispatchQueue.Enqueue(new OnMessage(OnMessage, buffCopy));
                 }
                 catch (WebSocketException ex)
                 {
-                    if (ex.WebSocketErrorCode == WebSocketError.ConnectionClosedPrematurely)
-                    {
-                        Debug.LogError("Server closed connection prematurely.");
-                        dispatchQueue.Enqueue(new OnDisconnectMessage(OnClose, null));
-                        break;
-                    }
-
-                    Debug.LogError(ex);
+                    dispatchQueue.Enqueue(new OnDisconnectMessage(OnClose, null, ex.WebSocketErrorCode));
+                    return;
                 }
             }
         }
