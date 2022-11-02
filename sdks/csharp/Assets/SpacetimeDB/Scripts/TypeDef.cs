@@ -231,14 +231,14 @@ namespace SpacetimeDB
             }
         }
 
-        public static (TypeValue?, int) Decode(TypeDef def, ByteString bytes)
+        internal static (TypeValue?, int) Decode(TypeDef def, ByteString bytes)
         {
             var b = bytes[1];
             var byteArr = bytes.ToByteArray();
             return Decode(def, byteArr, 0, byteArr.Length);
         }
 
-        public static (TypeValue?, int) Decode(TypeDef def, byte[] arr, int offset, int length)
+        internal static (TypeValue?, int) Decode(TypeDef def, byte[] arr, int offset, int length)
         {
             var value = new TypeValue
             {
@@ -347,7 +347,7 @@ namespace SpacetimeDB
             catch (Exception e)
             {
                 Debug.LogException(e);
-                Debug.LogError("Are your table definitions in BitCraftMiniGameManager correct?");
+                Debug.LogError("Please report this error in the SpacetimeDB discord.");
                 return (null, 0);
             }
 

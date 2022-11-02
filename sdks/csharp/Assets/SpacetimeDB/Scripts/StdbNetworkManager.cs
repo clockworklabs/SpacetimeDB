@@ -333,7 +333,7 @@ public class StdbNetworkManager : MonoBehaviour
 
     private string GetTokenKey()
     {
-        var key = "bitcraftmini.identity_token";
+        var key = "spacetimedb.identity_token";
 #if UNITY_EDITOR
         // Different editors need different keys
         key += $" - {Application.dataPath}";
