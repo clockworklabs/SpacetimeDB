@@ -120,7 +120,11 @@ fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_column
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
-        writeln!(output, "public partial class {struct_name_pascal_case} : IStdbTable").unwrap();
+        writeln!(
+            output,
+            "public partial class {struct_name_pascal_case} : IDatabaseTable"
+        )
+        .unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
@@ -360,7 +364,7 @@ fn autogen_csharp_access_funcs_for_struct(
             indent_scope!(output);
             writeln!(
                 output,
-                "foreach(var entry in StdbNetworkManager.clientDB.GetEntries(\"{}\"))",
+                "foreach(var entry in NetworkManager.clientDB.GetEntries(\"{}\"))",
                 table_name
             )
             .unwrap();
@@ -466,7 +470,7 @@ pub fn autogen_csharp_reducer(reducer: &ReducerDef) -> String {
         {
             indent_scope!(output);
 
-            //            StdbNetworkManager.instance.InternalCallReducer(new StdbNetworkManager.Message
+            //           NetworkManager.instance.InternalCallReducer(new NetworkManager.Message
             // 			{
             // 				fn = "create_new_player",
             // 				args = new object[] { playerId, position },
@@ -474,7 +478,7 @@ pub fn autogen_csharp_reducer(reducer: &ReducerDef) -> String {
 
             // Tell the network manager to send this message
             // UPGRADE FOR LATER
-            // write!(output, "{}\t\tStdbNetworkManager.instance.InternalCallReducer(new Websocket.FunctionCall\n", namespace_tab).unwrap();
+            // write!(output, "{}\t\tNetworkManager.instance.InternalCallReducer(new Websocket.FunctionCall\n", namespace_tab).unwrap();
             // write!(output, "{}\t\t{{\n", namespace_tab).unwrap();
             // write!(output, "{}\t\t\tReducer = \"{}\",\n", namespace_tab, func_name).unwrap();
             // write!(output, "{}\t\t\tArgBytes = Google.Protobuf.ByteString.CopyFrom(Newtonsoft.Json.JsonConvert.SerializeObject(new object[] {{ {} }}), System.Text.Encoding.UTF8),\n", namespace_tab, arg_names).unwrap();
@@ -483,7 +487,7 @@ pub fn autogen_csharp_reducer(reducer: &ReducerDef) -> String {
             // TEMPORARY OLD FUNCTIONALITY
             writeln!(
                 output,
-                "StdbNetworkManager.instance.InternalCallReducer(new StdbNetworkManager.Message",
+                "NetworkManager.instance.InternalCallReducer(new NetworkManager.Message",
             )
             .unwrap();
             {

@@ -8,7 +8,7 @@ expression: outfiles
 
 namespace SpacetimeDB
 {
-	public partial class TestA : IStdbTable
+	public partial class TestA : IDatabaseTable
 	{
 		[Newtonsoft.Json.JsonProperty("x")]
 		public uint x;
@@ -43,7 +43,7 @@ namespace SpacetimeDB
 		}
 		public static System.Collections.Generic.IEnumerable<TestA> FilterByX(uint value)
 		{
-			foreach(var entry in StdbNetworkManager.clientDB.GetEntries("TestA"))
+			foreach(var entry in NetworkManager.clientDB.GetEntries("TestA"))
 			{
 				var tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];
 				if (tupleArr == null) continue;
@@ -55,7 +55,7 @@ namespace SpacetimeDB
 
 		public static System.Collections.Generic.IEnumerable<TestA> FilterByY(uint value)
 		{
-			foreach(var entry in StdbNetworkManager.clientDB.GetEntries("TestA"))
+			foreach(var entry in NetworkManager.clientDB.GetEntries("TestA"))
 			{
 				var tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];
 				if (tupleArr == null) continue;
@@ -67,7 +67,7 @@ namespace SpacetimeDB
 
 		public static System.Collections.Generic.IEnumerable<TestA> FilterByZ(string value)
 		{
-			foreach(var entry in StdbNetworkManager.clientDB.GetEntries("TestA"))
+			foreach(var entry in NetworkManager.clientDB.GetEntries("TestA"))
 			{
 				var tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];
 				if (tupleArr == null) continue;
@@ -86,7 +86,7 @@ namespace SpacetimeDB
 
 namespace SpacetimeDB
 {
-	public partial class TestB : IStdbTable
+	public partial class TestB : IDatabaseTable
 	{
 		[Newtonsoft.Json.JsonProperty("foo")]
 		public string foo;
@@ -124,7 +124,7 @@ namespace SpacetimeDB
 	{
 		public static void Test(TestA arg, TestB arg2)
 		{
-			StdbNetworkManager.instance.InternalCallReducer(new StdbNetworkManager.Message
+			NetworkManager.instance.InternalCallReducer(new NetworkManager.Message
 			{
 				fn = "test",
 				args = new object[] { arg, arg2 },

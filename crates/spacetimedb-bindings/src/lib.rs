@@ -386,7 +386,7 @@ pub mod query {
     #[cold]
     fn fromtuple_failed(tablename: &str) {
         eprintln!(
-            "Internal stdb error: Can't convert from tuple to struct (wrong version?) {}",
+            "Internal SpacetimeDB error: Can't convert from tuple to struct (wrong version?) {}",
             tablename
         )
     }
