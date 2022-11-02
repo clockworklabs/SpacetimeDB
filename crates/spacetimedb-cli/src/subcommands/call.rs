@@ -8,7 +8,12 @@ pub fn cli() -> clap::Command<'static> {
         .about("Invokes a reducer function in a database")
         .arg(Arg::new("database").required(true))
         .arg(Arg::new("function_name").required(true))
-        .arg(Arg::new("arguments").required(true).help("arguments as a JSON array"))
+        .arg(
+            Arg::new("arguments")
+                .required(false)
+                .help("arguments as a JSON array")
+                .default_value("[]"),
+        )
         .after_help("Run `spacetime help call` for more detailed information.\n")
 }
 
