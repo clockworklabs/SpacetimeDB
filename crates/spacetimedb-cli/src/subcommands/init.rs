@@ -23,35 +23,6 @@ pub fn cli() -> clap::Command<'static> {
         )
 }
 
-fn check_for_protobuf() -> bool {
-    match std::env::consts::OS {
-        "linux" | "freebsd" | "netbsd" | "openbsd" | "solaris" => {
-            if let Some(_) = find_executable("protoc") {
-                return true;
-            }
-
-            println!("{}", "Warning: protoc could not be found in your PATH. You should install the protobuf compiler from your package manager. Alternatively, follow the install instructions here:\n\n\thttp://google.github.io/proto-lens/installing-protoc.html".yellow());
-        }
-        "macos" => {
-            if let Some(_) = find_executable("protoc") {
-                return true;
-            }
-            println!("{}", "Warning: protoc could not be found in your PATH. You can install protoc on macos from brew:\n\n\tbrew install protobuf\n\nAlternatively, follow the instructions here: http://google.github.io/proto-lens/installing-protoc.html".yellow());
-        }
-        "windows" => {
-            if let Some(_) = find_executable("protoc.exe") {
-                return true;
-            }
-            println!("{}", "Warning: protoc could not be found in your PATH. To install protoc on Windows, follow the instructions here:\n\n\thttp://google.github.io/proto-lens/installing-protoc.html ".yellow());
-        }
-        unsupported_os => {
-            println!("{}", format!("This OS may be unsupported: {}", unsupported_os).yellow());
-        }
-    }
-
-    return false;
-}
-
 fn check_for_cargo() -> bool {
     match std::env::consts::OS {
         "linux" | "freebsd" | "netbsd" | "openbsd" | "solaris" | "macos" => {
@@ -194,7 +165,6 @@ pub async fn exec_init_rust(args: &ArgMatches) -> Result<(), anyhow::Error> {
     }
 
     // Check all dependencies
-    check_for_protobuf();
     check_for_cargo();
     check_for_git();
 
