@@ -10,7 +10,7 @@ pub struct Hash {
 
 impl Hash {
     pub fn from_arr(arr: &[u8; HASH_SIZE]) -> Self {
-        Self { data: arr.clone() }
+        Self { data: *arr }
     }
 
     pub fn from_slice(slice: &[u8]) -> Self {

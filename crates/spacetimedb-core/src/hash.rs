@@ -10,7 +10,7 @@ impl Hash {
     const ABBREVIATION_LEN: usize = 16;
 
     pub fn from_arr(arr: &[u8; 32]) -> Self {
-        Self { data: arr.clone() }
+        Self { data: *arr }
     }
 
     pub fn from_hex(hex: &str) -> Result<Self, DBError> {

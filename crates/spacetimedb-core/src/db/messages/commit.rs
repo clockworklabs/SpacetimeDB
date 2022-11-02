@@ -15,7 +15,7 @@ pub struct Commit {
 impl Commit {
     pub fn decode(bytes: impl AsRef<[u8]>) -> (Self, usize) {
         let bytes = &mut bytes.as_ref();
-        if bytes.len() == 0 {
+        if bytes.is_empty() {
             return (
                 Commit {
                     parent_commit_hash: None,

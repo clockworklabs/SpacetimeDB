@@ -246,7 +246,7 @@ impl TypeValue {
             TypeValue::Hash(x) => TypeWideValue::Hash(x),
             TypeValue::Enum(x) => TypeWideValue::Enum(x),
             TypeValue::Tuple(x) => TypeWideValue::Vec(&x.elements),
-            TypeValue::Vec(x) => TypeWideValue::Vec(&x),
+            TypeValue::Vec(x) => TypeWideValue::Vec(x),
         }
     }
 

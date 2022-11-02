@@ -55,7 +55,7 @@ impl ElementDef {
     pub fn decode_vec(bytes: &mut impl BufReader) -> Result<Vec<Self>, DecodeError> {
         let len = read_len(bytes)?;
 
-        let mut elements = Vec::with_capacity(len.into());
+        let mut elements = Vec::with_capacity(len);
         for _ in 0..len {
             elements.push(ElementDef::decode(bytes)?);
         }

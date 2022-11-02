@@ -185,16 +185,14 @@ async fn on_upgrade(
     let SubscribeQueryParams { name_or_address } = SubscribeQueryParams::take_from(&mut state);
     let target_address = if let Ok(address) = Address::from_hex(&name_or_address) {
         address
+    } else if let Some(address) = ControlNodeClient::get_shared()
+        .resolve_name(&name_or_address)
+        .await
+        .unwrap()
+    {
+        address
     } else {
-        if let Some(address) = ControlNodeClient::get_shared()
-            .resolve_name(&name_or_address)
-            .await
-            .unwrap()
-        {
-            address
-        } else {
-            return Ok((state, bad_request_res()));
-        }
+        return Ok((state, bad_request_res()));
     };
 
     if let Err(_) = ClientConnection::get_database_instance_id(&target_address) {

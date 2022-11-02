@@ -152,7 +152,7 @@ impl<'a, S: Relation, U: Relation> IntoIterator for Union<'a, S, U> {
             set_u.insert(next);
         }
         std::collections::HashSet::union(&set_s, &set_u)
-            .map(|t| t.clone())
+            .cloned()
             .collect::<Vec<_>>()
             .into_iter()
     }
@@ -178,7 +178,7 @@ impl<'a, S: Relation, U: Relation> IntoIterator for Intersection<'a, S, U> {
             set_u.insert(next);
         }
         std::collections::HashSet::intersection(&set_s, &set_u)
-            .map(|t| t.clone())
+            .cloned()
             .collect::<Vec<_>>()
             .into_iter()
     }
@@ -204,7 +204,7 @@ impl<'a, S: Relation, U: Relation> IntoIterator for Difference<'a, S, U> {
             set_u.insert(next);
         }
         std::collections::HashSet::difference(&set_s, &set_u)
-            .map(|t| t.clone())
+            .cloned()
             .collect::<Vec<_>>()
             .into_iter()
     }

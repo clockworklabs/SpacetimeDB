@@ -24,8 +24,8 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
 
-pub const ST_TABLES_NAME: &'static str = "st_table";
-pub const ST_COLUMNS_NAME: &'static str = "st_columns";
+pub const ST_TABLES_NAME: &str = "st_table";
+pub const ST_COLUMNS_NAME: &str = "st_columns";
 
 pub const ST_TABLES_ID: u32 = 0;
 pub const ST_COLUMNS_ID: u32 = 1;
@@ -308,8 +308,7 @@ impl RelationalDB {
                         name: None,
                         element_type: TypeDef::String,
                     },
-                ]
-                .into(),
+                ],
             };
 
             let row = match Self::decode_row(&schema, &mut &bytes[..]) {
@@ -341,7 +340,7 @@ impl RelationalDB {
         }
         columns.sort_by(|a, b| a.tag.cmp(&b.tag));
 
-        Ok(if columns.len() > 0 {
+        Ok(if !columns.is_empty() {
             Some(TupleDef {
                 name: None,
                 elements: columns,
@@ -399,8 +398,7 @@ impl RelationalDB {
         Self::insert_row_raw(&mut self.txdb, tx, ST_TABLES_ID, row);
 
         // Insert the columns into st_columns
-        let mut i = 0;
-        for col in schema.elements {
+        for (i, col) in schema.elements.into_iter().enumerate() {
             let mut bytes = Vec::new();
             col.element_type.encode(&mut bytes);
             let col_name = if let Some(col_name) = col.name {
@@ -409,19 +407,18 @@ impl RelationalDB {
                 // TODO: Maybe we should support Options as a special type
                 // in TypeValue? Theoretically they could just be enums, but
                 // that is quite a pain to use.
-                return Err(TableError::ColumnWithoutName(table_name.into(), i).into());
+                return Err(TableError::ColumnWithoutName(table_name.into(), i as u32).into());
             };
             let row = TupleValue {
                 elements: vec![
                     TypeValue::U32(table_id),
-                    TypeValue::U32(i),
+                    TypeValue::U32(i as u32),
                     TypeValue::Bytes(bytes),
                     TypeValue::String(col_name),
                 ]
                 .into(),
             };
             Self::insert_row_raw(&mut self.txdb, tx, ST_COLUMNS_ID, row);
-            i += 1;
         }
 
         Ok(table_id)
@@ -435,7 +432,7 @@ impl RelationalDB {
             .range_scan(tx, ST_TABLES_ID, 0, TypeValue::U32(table_id)..TypeValue::U32(table_id))
             .map_err(|_err| TableError::NotFound("ST_TABLES_ID".into()))?
             .collect::<Vec<_>>();
-        if let None = self.delete_in(tx, table_id, range)? {
+        if self.delete_in(tx, table_id, range)?.is_none() {
             return Err(TableError::IdNotFound(table_id).into());
         }
 
@@ -443,7 +440,7 @@ impl RelationalDB {
             .range_scan(tx, ST_COLUMNS_ID, 0, TypeValue::U32(table_id)..TypeValue::U32(table_id))
             .map_err(|_err| TableError::NotFound("ST_COLUMNS_ID".into()))?
             .collect::<Vec<_>>();
-        if let None = self.delete_in(tx, table_id, range)? {
+        if self.delete_in(tx, table_id, range)?.is_none() {
             return Err(TableError::NotFound("ST_COLUMNS_ID".into()).into());
         }
         Ok(())
@@ -524,7 +521,7 @@ impl RelationalDB {
         measure.start();
 
         let columns = self.schema_for_table(tx, table_id)?;
-        if let Some(_) = columns {
+        if columns.is_some() {
             Ok(TableIterRaw {
                 txdb_iter: self.txdb.scan(tx, table_id),
             })
@@ -552,7 +549,7 @@ impl RelationalDB {
                 };
             }
         }
-        return Ok(None);
+        Ok(None)
     }
 
     pub fn seek<'a>(
@@ -599,7 +596,7 @@ impl RelationalDB {
         measure.start();
 
         // TODO: our use of options here doesn't seem correct, I think we might want to double up on options
-        if let Some(_) = self.pk_seek(tx, table_id, primary_key)? {
+        if self.pk_seek(tx, table_id, primary_key)?.is_some() {
             self.txdb.delete(tx, table_id, primary_key.data_key);
             return Ok(Some(true));
         }
@@ -618,7 +615,7 @@ impl RelationalDB {
 
             // TODO: Think about if we need to verify that the key is in
             // the table before deleting
-            if let Some(_) = self.txdb.seek(tx, table_id, data_key) {
+            if self.txdb.seek(tx, table_id, data_key).is_some() {
                 count += 1;
                 self.txdb.delete(tx, table_id, data_key);
             }
@@ -646,7 +643,7 @@ impl<'a> Iterator for PrimaryKeyTableIter<'a> {
                 }
             };
         }
-        return None;
+        None
     }
 }
 
@@ -668,7 +665,7 @@ impl<'a> Iterator for TableIter<'a> {
                 }
             };
         }
-        return None;
+        None
     }
 }
 
@@ -707,7 +704,7 @@ impl<'a> Iterator for ScanSeekIter<'a> {
     type Item = TupleValue;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(row) = self.table_iter.next() {
+        for row in &mut self.table_iter {
             let value = &row.elements[self.col_index as usize];
             if &self.value == value {
                 return Some(row);
@@ -740,7 +737,7 @@ impl<'a, R: RangeBounds<TypeValue>> Iterator for ScanRangeIter<'a, R> {
     type Item = TupleValue;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(row) = self.table_iter.next() {
+        for row in &mut self.table_iter {
             let value = &row.elements[self.col_index as usize];
             if self.range.contains(value) {
                 return Some(row);

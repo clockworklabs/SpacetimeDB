@@ -123,7 +123,7 @@ impl BufWriter for &mut [u8] {
         if self.len() < slice.len() {
             panic!("not enough buffer space")
         }
-        let (buf, rest) = std::mem::replace(self, &mut []).split_at_mut(slice.len());
+        let (buf, rest) = std::mem::take(self).split_at_mut(slice.len());
         buf.copy_from_slice(slice);
         *self = rest;
     }

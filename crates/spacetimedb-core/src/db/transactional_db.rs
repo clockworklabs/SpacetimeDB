@@ -99,7 +99,8 @@ impl ClosedState {
             // Not atomic, but also correct
             set.delete(data_key);
             if set.len() == 0 {
-                drop(set);
+                //TODO: Is this necessary?
+                //drop(set);
                 sets.remove(&set_id);
             }
         } else {
@@ -109,11 +110,7 @@ impl ClosedState {
 
     fn iter(&self, set_id: u32) -> Option<Iter<DataKey>> {
         let sets = &self.hash_sets;
-        if let Some(set) = sets.get(&set_id) {
-            Some(set.set.iter())
-        } else {
-            None
-        }
+        sets.get(&set_id).map(|set| set.set.iter())
     }
 }
 
@@ -195,7 +192,7 @@ impl TransactionalDB {
     fn latest_transaction_offset(&self) -> u64 {
         self.open_transaction_offsets
             .last()
-            .map(|h| *h)
+            .copied()
             .unwrap_or(self.closed_transaction_offset)
     }
 
@@ -276,7 +273,7 @@ impl TransactionalDB {
             }
         }
 
-        return Ok(Some(self.finalize(tx)?));
+        Ok(Some(self.finalize(tx)?))
     }
 
     fn finalize(&mut self, tx: Tx) -> Result<CommitResult, DBError> {
@@ -330,10 +327,10 @@ impl TransactionalDB {
             self.vacuum_open_transactions();
         }
 
-        return Ok(CommitResult {
+        Ok(CommitResult {
             tx: new_transaction,
             commit_bytes,
-        });
+        })
     }
 
     fn vacuum_open_transactions(&mut self) {
@@ -348,7 +345,7 @@ impl TransactionalDB {
 
             // No one is branched off of the closed transaction so close the first open
             // transaction and make it the new closed transaction
-            let first_open_offset = self.open_transaction_offsets.first().map(|h| *h);
+            let first_open_offset = self.open_transaction_offsets.first().copied();
             if let Some(first_open_offset) = first_open_offset {
                 // Assumes open transactions are deleted from the beginning
                 let first_open = self.open_transactions.remove(0);
@@ -429,10 +426,8 @@ impl TransactionalDB {
                 if set_id == write.set_id && write.data_key == data_key {
                     return None;
                 }
-            } else {
-                if set_id == write.set_id && write.data_key == data_key {
-                    return Some(data.unwrap());
-                }
+            } else if set_id == write.set_id && write.data_key == data_key {
+                return Some(data.unwrap());
             }
         }
 
@@ -451,10 +446,8 @@ impl TransactionalDB {
                     if set_id == write.set_id && write.data_key == data_key {
                         return None;
                     }
-                } else {
-                    if set_id == write.set_id && write.data_key == data_key {
-                        return Some(data.unwrap());
-                    }
+                } else if set_id == write.set_id && write.data_key == data_key {
+                    return Some(data.unwrap());
                 }
             }
             next_open_offset -= 1;
@@ -496,16 +489,14 @@ impl TransactionalDB {
                     found = true;
                     break;
                 }
-            } else {
-                if set_id == write.set_id && write.data_key == data_key {
-                    found = true;
-                    tx.writes[i] = Write {
-                        operation: Operation::Delete,
-                        set_id,
-                        data_key,
-                    };
-                    break;
-                }
+            } else if set_id == write.set_id && write.data_key == data_key {
+                found = true;
+                tx.writes[i] = Write {
+                    operation: Operation::Delete,
+                    set_id,
+                    data_key,
+                };
+                break;
             }
         }
         if !found {
@@ -553,11 +544,9 @@ impl TransactionalDB {
                     };
                     break;
                 }
-            } else {
-                if set_id == write.set_id && write.data_key == value {
-                    found = true;
-                    break;
-                }
+            } else if set_id == write.set_id && write.data_key == value {
+                found = true;
+                break;
             }
         }
 
@@ -701,7 +690,7 @@ impl<'a> Iterator for ScanIter<'a> {
                             }
                         }
 
-                        write_index = write_index - 1;
+                        write_index -= 1;
                     }
 
                     // Move to next transaction

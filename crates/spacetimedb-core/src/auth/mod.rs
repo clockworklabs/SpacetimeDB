@@ -20,18 +20,18 @@ pub fn get_creds_from_header(auth_header: &HeaderValue) -> Result<(Hash, String)
     // https://github.com/sta/websocket-sharp/pull/22
 
     let auth_header = auth_header.to_str().unwrap_or_default().to_string();
-    let encoded_token = auth_header.split("Basic ").collect::<Vec<&str>>().get(1).map(|s| *s);
+    let encoded_token = auth_header.split("Basic ").collect::<Vec<&str>>().get(1).copied();
     let token_string = encoded_token
         .and_then(|encoded_token| base64::decode(encoded_token).ok())
         .and_then(|token_buf| String::from_utf8(token_buf).ok());
     let token_string = token_string.as_deref();
     let token = match token_string {
         Some(token_str) => {
-            let split = token_str.split(":").collect::<Vec<&str>>();
-            if split.get(0).map(|s| *s) != Some("token") {
+            let split = token_str.split(':').collect::<Vec<&str>>();
+            if split.first().copied() != Some("token") {
                 None
             } else {
-                split.get(1).map(|s| *s)
+                split.get(1).copied()
             }
         }
         None => None,
@@ -43,7 +43,7 @@ pub fn get_creds_from_header(auth_header: &HeaderValue) -> Result<(Hash, String)
         return Err(());
     };
 
-    let token = decode_token(&token_str);
+    let token = decode_token(token_str);
     let token = match token {
         Ok(token) => token,
         Err(error) => {

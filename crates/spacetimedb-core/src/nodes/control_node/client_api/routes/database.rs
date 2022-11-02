@@ -150,12 +150,11 @@ async fn publish(state: &mut State) -> SimpleHandlerResult {
                         log::debug!("{err}");
                         return Err(HandlerError::from(err));
                     }
-                } else {
-                    if let Err(err) = controller::update_database(&db_address, &program_bytes_addr, num_replicas).await
-                    {
-                        log::debug!("{err}");
-                        return Err(HandlerError::from(err));
-                    }
+                } else if let Err(err) =
+                    controller::update_database(&db_address, &program_bytes_addr, num_replicas).await
+                {
+                    log::debug!("{err}");
+                    return Err(HandlerError::from(err));
                 }
             }
             None => {

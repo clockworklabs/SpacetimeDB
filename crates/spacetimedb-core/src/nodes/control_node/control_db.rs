@@ -155,10 +155,8 @@ pub async fn update_database(database: Database) -> Result<(), anyhow::Error> {
     if let Some(old_value) = old_value {
         let old_database = Database::decode(&old_value[..])?;
 
-        if database.address != old_database.address {
-            if tree_by_address.contains_key(key.as_bytes())? {
-                return Err(anyhow::anyhow!("Database with address {} already exists", key));
-            }
+        if database.address != old_database.address && tree_by_address.contains_key(key.as_bytes())? {
+            return Err(anyhow::anyhow!("Database with address {} already exists", key));
         }
     }
 

@@ -62,11 +62,11 @@ impl MessageLog {
 
         segments.sort_unstable_by_key(|s| s.min_offset);
 
-        if segments.len() == 0 {
+        if segments.is_empty() {
             segments.push(Segment { min_offset: 0, size: 0 });
         }
 
-        let last_segment = segments.get(segments.len() - 1).unwrap();
+        let last_segment = segments.last().unwrap();
         let last_segment_path = root.join(last_segment.name() + ".log");
         let last_segment_size = last_segment.size;
         let file = OpenOptions::new()
@@ -122,7 +122,7 @@ impl MessageLog {
                 size: 0,
             });
 
-            let last_segment = self.segments.get(self.segments.len() - 1).unwrap();
+            let last_segment = self.segments.last().unwrap();
             let last_segment_path = self.root.join(last_segment.name() + ".log");
 
             let file = OpenOptions::new().append(true).create(true).open(&last_segment_path)?;
@@ -191,7 +191,7 @@ impl MessageLog {
         if offset <= self.open_segment_max_offset {
             return Some(*self.segments.last().unwrap());
         }
-        return None;
+        None
     }
 }
 
