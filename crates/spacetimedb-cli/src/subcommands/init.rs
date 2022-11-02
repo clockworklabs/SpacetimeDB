@@ -124,10 +124,6 @@ pub async fn exec_init_rust(args: &ArgMatches) -> Result<(), anyhow::Error> {
     match project_lang {
         "rust" => {
             export_files.push((include_str!("project/Cargo._toml"), "Cargo.toml"));
-            export_files.push((
-                include_str!("../../../spacetimedb-core/protobuf/client_api.proto"),
-                ".spacetime/client_api.proto",
-            ));
             export_files.push((include_str!("project/lib._rs"), "src/lib.rs"));
             export_files.push((include_str!("project/rust_gitignore"), ".gitignore"));
         }

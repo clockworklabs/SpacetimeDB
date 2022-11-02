@@ -3240,7 +3240,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "bytes",
  "custom-print",
@@ -3259,7 +3259,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "convert_case 0.5.0",
  "parse_duration",
@@ -3274,14 +3274,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "getrandom",
 ]
 
 [[package]]
 name = "spacetimedb-cli"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -3352,7 +3352,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-lib"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "bytes",
  "custom-print",
