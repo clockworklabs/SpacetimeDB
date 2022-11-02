@@ -6,6 +6,8 @@ use clap::{
     error::{ContextKind, ContextValue},
     ArgMatches, Command,
 };
+use duckscript::types::error::ScriptError;
+use duckscript::types::runtime::Context;
 use serde::{Deserialize, Serialize};
 
 use crate::config::{Config, IdentityConfig};
@@ -152,4 +154,11 @@ pub async fn init_default(config: &mut Config, nickname: Option<String>) -> Resu
         identity_config,
         result_type: InitDefaultResultType::SavedNew,
     })
+}
+
+pub fn invoke_duckscript(text: &str, context: Context) -> Result<Context, ScriptError> {
+    let current_working_directory = std::env::current_dir();
+    let result = duckscript::runner::run_script(text, context);
+    std::env::set_current_dir(current_working_directory.unwrap()).unwrap();
+    return result;
 }

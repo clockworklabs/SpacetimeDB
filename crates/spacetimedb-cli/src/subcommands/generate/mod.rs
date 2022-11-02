@@ -64,7 +64,7 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
         .variables
         .insert("PROJECT_PATH".to_string(), project_path.to_string());
 
-    match duckscript::runner::run_script(include_str!("../project/build.duck"), context) {
+    match util::invoke_duckscript(include_str!("../project/build.duck"), context) {
         Ok(ok) => {
             let mut error = false;
             for entry in ok.state {

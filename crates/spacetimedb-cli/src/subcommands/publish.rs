@@ -31,7 +31,7 @@ pub fn cli() -> clap::Command<'static> {
             Arg::new("path_to_project")
                 .required(false)
                 .default_value(".")
-                .long("project")
+                .long("project-path")
                 .short('p'),
         )
         .arg(
@@ -90,7 +90,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         .variables
         .insert("PROJECT_PATH".to_string(), path_to_project_str.to_string());
 
-    match duckscript::runner::run_script(include_str!("project/pre-publish.duck"), context) {
+    match util::invoke_duckscript(include_str!("project/pre-publish.duck"), context) {
         Ok(ok) => {
             let mut error = false;
             for entry in ok.state {

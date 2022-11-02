@@ -1,4 +1,4 @@
-use crate::Config;
+use crate::{util, Config};
 use clap::{Arg, ArgMatches};
 use duckscript::types::runtime::{Context, StateValue};
 use std::path::Path;
@@ -40,7 +40,7 @@ pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
         .variables
         .insert("PROJECT_PATH".to_string(), project_path_str.to_string());
 
-    match duckscript::runner::run_script(include_str!("project/build.duck"), context) {
+    match util::invoke_duckscript(include_str!("project/build.duck"), context) {
         Ok(ok) => {
             let mut error = false;
             for entry in ok.state {
