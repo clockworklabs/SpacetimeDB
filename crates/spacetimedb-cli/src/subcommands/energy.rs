@@ -19,7 +19,15 @@ fn get_energy_subcommands() -> Vec<clap::Command<'static>> {
         clap::Command::new("set-balance")
             .about("Update the current budget balance for a database")
             .arg(Arg::new("balance").required(true).value_parser(value_parser!(usize)))
-            .arg(Arg::new("identity").required(false)),
+            .arg(Arg::new("identity").required(false))
+            .arg(
+                Arg::new("quiet")
+                    .long("quiet")
+                    .short('q')
+                    .required(false)
+                    .takes_value(false)
+                    .help("Runs command in silent mode."),
+            ),
     ]
 }
 
@@ -46,6 +54,7 @@ async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), an
     };
 
     let balance: usize = *args.get_one("balance").unwrap();
+    let quiet = args.is_present("quiet");
 
     let client = reqwest::Client::new();
 
@@ -55,10 +64,13 @@ async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), an
     let url = format!("http://{}/energy/{}?balance={}", config.host, hex_identity, balance);
     let res = client.post(url).send().await?;
 
-    let res = res.error_for_status()?;
-    let body = res.bytes().await?;
-    let str = String::from_utf8(body.to_vec())?;
-    println!("{}", str);
+    if !quiet {
+        let res = res.error_for_status()?;
+        let body = res.bytes().await?;
+        let str = String::from_utf8(body.to_vec())?;
+        println!("{}", str);
+    }
+
     Ok(())
 }
 

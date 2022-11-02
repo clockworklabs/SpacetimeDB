@@ -35,6 +35,14 @@ fn get_subcommands() -> Vec<Command<'static>> {
                 arg!(-n --name "Nickname for this identity")
                     .required(false)
                     .default_missing_value(""),
+            )
+            .arg(
+                Arg::new("quiet")
+                    .long("quiet")
+                    .short('q')
+                    .required(false)
+                    .takes_value(false)
+                    .help("Runs command in silent mode."),
             ),
         Command::new("new")
             .about("Create a new identity")
@@ -122,27 +130,31 @@ async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), a
 // simplicity.
 async fn exec_init_default(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let nickname = args.get_one::<String>("name").map(|s| s.to_owned());
+    let quiet = args.is_present("quiet");
 
     let init_default_result = init_default(&mut config, nickname).await?;
     let identity_config = init_default_result.identity_config;
     let result_type = init_default_result.result_type;
 
-    match result_type {
-        InitDefaultResultType::Existing => {
-            println!(" Existing default identity");
-            println!(" IDENTITY  {}", identity_config.identity);
-            println!(
-                " NAME      {}",
-                identity_config.nickname.clone().unwrap_or("".to_string())
-            );
-            return Ok(());
-        }
-        InitDefaultResultType::SavedNew => {
-            println!(" Saved new identity");
-            println!(" IDENTITY  {}", identity_config.identity);
-            println!(" NAME      {}", identity_config.nickname.unwrap_or("".to_string()));
+    if !quiet {
+        match result_type {
+            InitDefaultResultType::Existing => {
+                println!(" Existing default identity");
+                println!(" IDENTITY  {}", identity_config.identity);
+                println!(
+                    " NAME      {}",
+                    identity_config.nickname.clone().unwrap_or("".to_string())
+                );
+                return Ok(());
+            }
+            InitDefaultResultType::SavedNew => {
+                println!(" Saved new identity");
+                println!(" IDENTITY  {}", identity_config.identity);
+                println!(" NAME      {}", identity_config.nickname.unwrap_or("".to_string()));
+            }
         }
     }
+
     Ok(())
 }
 

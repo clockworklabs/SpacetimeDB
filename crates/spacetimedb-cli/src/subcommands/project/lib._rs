@@ -6,12 +6,12 @@ pub struct Person {
 }
 
 #[spacetimedb(reducer)]
-pub fn add(sender: Hash, timestamp: u64, name: String) {
+pub fn add(_sender: Hash, _timestamp: u64, name: String) {
     Person::insert(Person { name })
 }
 
 #[spacetimedb(reducer)]
-pub fn say_hello(sender: Hash, timestamp: u64) {
+pub fn say_hello(_sender: Hash, _timestamp: u64) {
     for person in Person::iter() {
         println!("Hello, {}!", person.name);
     }
