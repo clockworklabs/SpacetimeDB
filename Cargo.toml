@@ -13,3 +13,7 @@ default-members = ["crates/spacetimedb-cli"]
 [profile.release]
 opt-level = 's'
 lto = true
+debug = true
+
+[profile.dev]
+opt-level = 2

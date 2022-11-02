@@ -1,41 +1,54 @@
-FROM rust:1.60.0 AS rust
+ARG CARGO_PROFILE=release
+
+FROM rust:1.64.0 AS chef
+RUN curl https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-gnu.tgz -fL | tar xz -C $CARGO_HOME/bin
+RUN cargo binstall --no-confirm --no-symlinks cargo-chef@0.1.46
 WORKDIR /usr/src/app
 
-RUN cargo install cargo-watch
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
 
-RUN apt update
-RUN apt install -y lsb-release wget software-properties-common
-RUN wget https://apt.llvm.org/llvm.sh
-RUN chmod +x llvm.sh
-RUN ./llvm.sh 12
+FROM chef AS builder
+
+RUN apt-get update && \
+  apt-get install -y lsb-release wget software-properties-common
+RUN wget https://apt.llvm.org/llvm.sh && \
+  chmod +x llvm.sh && \
+  ./llvm.sh 12
 
 RUN apt-get update && apt-get install -y \
   cmake \
   less \
   linux-perf
 
-RUN cargo install flamegraph
+RUN cargo binstall --no-confirm --no-symlinks \
+  cargo-watch@8.1.2 \
+  flamegraph@0.6.2
 
-COPY ./crates/spacetimedb-bindings ../spacetimedb-bindings
-COPY ./crates/spacetimedb-lib ../spacetimedb-lib
-COPY ./crates/spacetimedb-core/src ./src
-COPY ./crates/spacetimedb-core/build.rs ./
-COPY ./crates/spacetimedb-core/protobuf ./protobuf
+COPY --from=planner /usr/src/app/recipe.json .
 
-#COPY ./Cargo.lock ./
-COPY ./crates/spacetimedb-core/Cargo.toml ./
+ENV CARGO_INCREMENTAL=0
 
-RUN echo "fn main() {}" > dummy.rs
-RUN sed -i 's#src/main.rs#dummy.rs#' Cargo.toml
-RUN CARGO_PROFILE_RELEASE_DEBUG=true cargo install --locked --path .
-RUN sed -i 's#dummy.rs#src/main.rs#' Cargo.toml
+ARG CARGO_PROFILE=release
 
-COPY ./crates/spacetimedb-core ./
+RUN cargo chef cook -p spacetimedb-core --profile=${CARGO_PROFILE}
 
-RUN cargo install --locked --path .
+COPY . .
+RUN cargo build -p spacetimedb-core --profile=${CARGO_PROFILE} --locked
+
+FROM builder as env-dev
+ENV SPACETIMEDB_LOG_CONFIG=/usr/src/app/crates/spacetimedb-core/log4rs.yaml
+ENV PATH="/usr/src/app/target/debug:${PATH}"
+
+FROM debian as env-release
+RUN apt-get update && apt-get install -y libpython3.9 linux-perf
+COPY --from=builder /usr/src/app/target/release/spacetimedb /usr/local/bin/
+COPY --from=builder /usr/src/app/crates/spacetimedb-core/log4rs.yaml /etc/spacetimedb/
+
+FROM env-${CARGO_PROFILE}
 
 EXPOSE 3000
 
-WORKDIR /usr/src/app
 ENV RUST_BACKTRACE=1
-CMD ["../target/release/spacetimedb"]
+ENTRYPOINT ["spacetimedb"]

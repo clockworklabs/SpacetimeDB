@@ -8,8 +8,7 @@ services:
       - /stdb
     ports:
       - "3000:80"
-    entrypoint: bash -c "RUST_LOG='raft=trace', CARGO_PROFILE_RELEASE_DEBUG=true CARGO_INCREMENTAL=0 RUST_BACKTRACE=1 cargo watch -i flamegraphs --why -x 'run --release -- init --worker-node'"
-    # entrypoint: bash -c "CARGO_PROFILE_RELEASE_DEBUG=true cargo flamegraph -o my_flamegraph.svg --bin spacetimedb -c 'record -c 100 -g' -- init --worker-node"
+    command: init --worker-node
     privileged: true
     environment:
       ENV: live

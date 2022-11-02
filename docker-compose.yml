@@ -2,27 +2,31 @@ version: "3.6"
 
 services:
   node:
-    working_dir: /usr/src/app
     build:
       context: ./
       dockerfile: ./crates/spacetimedb-core/Dockerfile
+      args:
+        CARGO_PROFILE: dev
     volumes:
-      - ./crates/spacetimedb-core/Cargo.toml:/usr/src/app/Cargo.toml
-      - ./crates/spacetimedb-core/benches:/usr/src/app/benches
-      - ./crates/spacetimedb-core/build.rs:/usr/src/app/build.rs
-      - ./crates/spacetimedb-core/log4rs.yaml:/usr/src/app/log4rs.yaml
-      - ./crates/spacetimedb-core/protobuf:/usr/src/app/protobuf
-      - ./crates/spacetimedb-core/src:/usr/src/app/src
-      - ./crates/spacetimedb-core/flamegraphs:/usr/src/app/flamegraphs
+      - ./crates/spacetimedb-core/Cargo.toml:/usr/src/app/crates/spacetimedb-core/Cargo.toml
+      - ./crates/spacetimedb-core/benches:/usr/src/app/crates/spacetimedb-core/benches
+      - ./crates/spacetimedb-core/build.rs:/usr/src/app/crates/spacetimedb-core/build.rs
+      - ./crates/spacetimedb-core/log4rs.yaml:/usr/src/app/crates/spacetimedb-core/log4rs.yaml
+      - ./crates/spacetimedb-core/protobuf:/usr/src/app/crates/spacetimedb-core/protobuf
+      - ./crates/spacetimedb-core/src:/usr/src/app/crates/spacetimedb-core/src
+      - ./crates/spacetimedb-core/flamegraphs:/usr/src/app/crates/spacetimedb-core/flamegraphs
 
-      - ./crates/spacetimedb-lib:/usr/src/spacetimedb-lib
-      - ./crates/spacetimedb-bindings:/usr/src/spacetimedb-bindings
-      - ./crates/spacetimedb-bindings-macro:/usr/src/spacetimedb-bindings-macro
-      - ./crates/rust-wasm-test:/usr/src/rust-wasm-test
+      - ./crates/spacetimedb-lib:/usr/src/app/crates/spacetimedb-lib
+      - ./crates/spacetimedb-bindings:/usr/src/app/crates/spacetimedb-bindings
+      - ./crates/spacetimedb-bindings-macro:/usr/src/app/crates/spacetimedb-bindings-macro
+      - ./crates/rust-wasm-test:/usr/src/app/crates/rust-wasm-test
       - /stdb
     ports:
       - "3000:80"
-    entrypoint: bash -c "RUST_LOG='raft=trace', CARGO_PROFILE_RELEASE_DEBUG=true CARGO_INCREMENTAL=0 RUST_BACKTRACE=1 cargo watch -i flamegraphs --why -x 'run --release -- init --worker-node'"
+    # for release/non-watch mode
+    # command: init --worker-node
+    # for rebuilding on changes
+    entrypoint: bash -c "RUST_LOG='raft=trace', RUST_BACKTRACE=1 cargo watch -i flamegraphs --why -w crates/spacetimedb-core -x 'run -p spacetimedb-core -- init --worker-node'"
     # entrypoint: bash -c "CARGO_PROFILE_RELEASE_DEBUG=true cargo flamegraph -o my_flamegraph.svg --bin spacetimedb -c 'record -c 100 -g' -- init --worker-node"
     privileged: true
     environment:
