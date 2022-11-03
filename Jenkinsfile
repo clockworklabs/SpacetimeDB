@@ -49,9 +49,15 @@ node {
       if (env.BUILD_ENV == "testing") {
         withCredentials([usernamePassword(credentialsId: 'DIGITAL_OCEAN_DOCKER_REGISTRY_CREDENTIALS', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD'),]) {
           withCredentials([sshUserPrivateKey(credentialsId: "AWS_EC2_INSTANCE_JENKINS_SSH_KEY", keyFileVariable: 'keyfile')]) {
-            sh "ssh -o StrictHostKeyChecking=accept-new -p 9001 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net 'ls'"
             sh "scp -o StrictHostKeyChecking=accept-new -P 9001 -i '${keyfile}' docker-compose-live.yml jenkins@vpn.partner.spacetimedb.net:/home/jenkins/docker-compose-live.yml"
             sh "ssh -o StrictHostKeyChecking=accept-new -p 9001 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net 'docker login -u ${USERNAME} -p ${PASSWORD} https://registry.digitalocean.com; docker-compose -f docker-compose-live.yml stop; docker-compose -f docker-compose-live.yml pull; docker-compose -f docker-compose-live.yml up -d'"
+          }
+        }
+      } else if (env.BUILD_ENV == "live") {
+        withCredentials([usernamePassword(credentialsId: 'DIGITAL_OCEAN_DOCKER_REGISTRY_CREDENTIALS', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD'),]) {
+          withCredentials([sshUserPrivateKey(credentialsId: "AWS_EC2_INSTANCE_JENKINS_SSH_KEY", keyFileVariable: 'keyfile')]) {
+            sh "scp -o StrictHostKeyChecking=accept-new -P 9000 -i '${keyfile}' docker-compose-live.yml jenkins@vpn.partner.spacetimedb.net:/home/jenkins/docker-compose-live.yml"
+            sh "ssh -o StrictHostKeyChecking=accept-new -p 9000 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net 'docker login -u ${USERNAME} -p ${PASSWORD} https://registry.digitalocean.com; docker-compose -f docker-compose-live.yml stop; docker-compose -f docker-compose-live.yml pull; docker-compose -f docker-compose-live.yml up -d'"
           }
         }
       }
