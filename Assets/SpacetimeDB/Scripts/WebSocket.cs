@@ -65,6 +65,23 @@ namespace SpacetimeDB
             receiver.Invoke(error);
         }
     }
+    
+    class OnSendErrorMessage : MainThreadDispatch
+    {
+        private WebSocketSendErrorEventHandler receiver;
+        private Exception e;
+
+        public OnSendErrorMessage(WebSocketSendErrorEventHandler receiver, Exception e)
+        {
+            this.receiver = receiver;
+            this.e = e;
+        }
+
+        public override void Execute()
+        {
+            receiver.Invoke(e);
+        }
+    }
 
     class OnMessage : MainThreadDispatch
     {
@@ -90,6 +107,7 @@ namespace SpacetimeDB
     public delegate void WebSocketCloseEventHandler(WebSocketCloseStatus? code, WebSocketError? error);
 
     public delegate void WebSocketConnectErrorEventHandler(WebSocketError? error);
+    public delegate void WebSocketSendErrorEventHandler(Exception e);
 
     public struct ConnectOptions
     {
@@ -117,6 +135,7 @@ namespace SpacetimeDB
 
         public event WebSocketOpenEventHandler OnConnect;
         public event WebSocketConnectErrorEventHandler OnConnectError;
+        public event WebSocketSendErrorEventHandler OnSendError;
         public event WebSocketMessageEventHandler OnMessage;
         public event WebSocketCloseEventHandler OnClose;
 
@@ -233,21 +252,29 @@ namespace SpacetimeDB
 
         private async Task ProcessSendQueue()
         {
-            while (true)
+            try
             {
-                byte[] message;
-                lock (messageSendQueue)
+                while (true)
                 {
-                    if (!messageSendQueue.TryDequeue(out message))
+                    byte[] message;
+                    lock (messageSendQueue)
                     {
-                        // We are out of messages to send
-                        senderTask = null;
-                        return;
+                        if (!messageSendQueue.TryDequeue(out message))
+                        {
+                            // We are out of messages to send
+                            senderTask = null;
+                            return;
+                        }
                     }
-                }
 
-                await Ws!.SendAsync(new ArraySegment<byte>(message), WebSocketMessageType.Text, true,
-                    CancellationToken.None);
+                    await Ws!.SendAsync(new ArraySegment<byte>(message), WebSocketMessageType.Text, true,
+                        CancellationToken.None);
+                }
+            }
+            catch(Exception e)
+            {
+                senderTask = null;
+                dispatchQueue.Enqueue(new OnSendErrorMessage(OnSendError, e));
             }
         }
 

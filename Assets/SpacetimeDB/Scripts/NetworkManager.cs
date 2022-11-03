@@ -48,6 +48,11 @@ namespace SpacetimeDB
         /// Called when a connection attempt fails.
         /// </summary>
         public event Action<WebSocketError?> onConnectError;
+        
+        /// <summary>
+        /// Called when an exception occurs when sending a message.
+        /// </summary>
+        public event Action<Exception> onSendError;
 
         /// <summary>
         /// Called when a connection that was established has disconnected.
@@ -103,7 +108,8 @@ namespace SpacetimeDB
             webSocket.OnClose += (code, error) => onDisconnect?.Invoke(code, error);
             webSocket.OnConnect += () => onConnect?.Invoke();
             webSocket.OnConnectError += a => onConnectError?.Invoke(a);
-
+            webSocket.OnSendError += a => onSendError?.Invoke(a);
+            
             clientDB = new ClientCache();
 
             var type = typeof(IDatabaseTable);
