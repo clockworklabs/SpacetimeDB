@@ -57,12 +57,12 @@ namespace SpacetimeDB
         /// <summary>
         /// Invoked on each row update to each table.
         /// </summary>
-        public event RowUpdate tableUpdate;
+        public event RowUpdate onRowUpdate;
 
         /// <summary>
         /// Callback is invoked after a transaction or subscription update is received and all updates have been applied.
         /// </summary>
-        public event Action onRowUpdateComplete;
+        public event Action onTransactionComplete;
 
         /// <summary>
         /// Called when we receive an identity from the server
@@ -304,13 +304,13 @@ namespace SpacetimeDB
                         if (isUpdate)
                         {
                             // Merge delete and insert in one update
-                            tableUpdate?.Invoke(_dbEvents[i].tableName, TableOp.Update, _dbEvents[i].oldValue,
+                            onRowUpdate?.Invoke(_dbEvents[i].tableName, TableOp.Update, _dbEvents[i].oldValue,
                                 _dbEvents[i + 1].newValue);
                             i++;
                         }
                         else
                         {
-                            tableUpdate?.Invoke(_dbEvents[i].tableName, _dbEvents[i].op, _dbEvents[i].oldValue,
+                            onRowUpdate?.Invoke(_dbEvents[i].tableName, _dbEvents[i].op, _dbEvents[i].oldValue,
                                 _dbEvents[i].newValue);
                         }
                     }
@@ -318,10 +318,10 @@ namespace SpacetimeDB
                     switch (message.TypeCase)
                     {
                         case ClientApi.Message.TypeOneofCase.SubscriptionUpdate:
-                            onRowUpdateComplete?.Invoke();
+                            onTransactionComplete?.Invoke();
                             break;
                         case ClientApi.Message.TypeOneofCase.TransactionUpdate:
-                            onRowUpdateComplete?.Invoke();
+                            onTransactionComplete?.Invoke();
                             onEvent?.Invoke(message.TransactionUpdate.Event);
                             break;
                     }
