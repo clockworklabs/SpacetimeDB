@@ -222,6 +222,7 @@ fn spacetimedb_repeating_reducer(
     let original_function = syn::parse2::<ItemFn>(item)?;
     let func_name = &original_function.sig.ident;
     let reducer_func_name = format_ident!("__repeating_reducer__{}", &func_name);
+    let descriptor_func_name = format_ident!("__describe_repeating_reducer__{}", &func_name);
 
     let mut arg_num: usize = 0;
     let function_arguments = &original_function.sig.inputs;
@@ -274,8 +275,20 @@ fn spacetimedb_repeating_reducer(
         arg_num = arg_num + 1;
     }
 
+    let reducer_name = func_name.to_string();
     let duration_as_millis = repeat_duration.as_millis() as u64;
     let generated_function = quote! {
+        #[no_mangle]
+        #[allow(non_snake_case)]
+        pub extern "C" fn #descriptor_func_name() -> u64 {
+            let tupledef = spacetimedb::spacetimedb_lib::RepeaterDef {
+                name: Some(#reducer_name.into()),
+            };
+            let mut bytes = vec![];
+            tupledef.encode(&mut bytes);
+            spacetimedb::sys::pack_slice(bytes.into())
+        }
+
         #[no_mangle]
         #[allow(non_snake_case)]
         pub extern "C" fn #reducer_func_name(arg_ptr: *mut u8, arg_size: usize) -> u64 {

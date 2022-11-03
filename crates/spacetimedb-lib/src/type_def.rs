@@ -51,23 +51,6 @@ impl ElementDef {
 
         self.element_type.encode(bytes);
     }
-
-    pub fn decode_vec(bytes: &mut impl BufReader) -> Result<Vec<Self>, DecodeError> {
-        let len = read_len(bytes)?;
-
-        let mut elements = Vec::with_capacity(len);
-        for _ in 0..len {
-            elements.push(ElementDef::decode(bytes)?);
-        }
-        Ok(elements)
-    }
-
-    pub fn encode_vec(v: &[Self], bytes: &mut impl BufWriter) {
-        write_len(bytes, v.len());
-        for item in v {
-            item.encode(bytes);
-        }
-    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -81,14 +64,14 @@ impl TupleDef {
         let name = read_str(bytes)?;
         let name = (!name.is_empty()).then(|| name.into());
 
-        let elements = ElementDef::decode_vec(bytes)?;
+        let elements = decode_vec_fn(bytes, ElementDef::decode)?;
         Ok(TupleDef { name, elements })
     }
 
     pub fn encode(&self, bytes: &mut impl BufWriter) {
         write_str(bytes, self.name.as_deref().unwrap_or(""));
 
-        ElementDef::encode_vec(&self.elements, bytes);
+        encode_vec_fn(bytes, &self.elements, ElementDef::encode);
     }
 }
 
@@ -101,12 +84,12 @@ pub struct EnumDef {
 
 impl EnumDef {
     pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
-        let variants = ElementDef::decode_vec(bytes)?;
+        let variants = decode_vec_fn(bytes, ElementDef::decode)?;
         Ok(EnumDef { variants })
     }
 
     pub fn encode(&self, bytes: &mut impl BufWriter) {
-        ElementDef::encode_vec(&self.variants, bytes)
+        encode_vec_fn(bytes, &self.variants, ElementDef::encode)
     }
 }
 
@@ -243,6 +226,7 @@ impl TypeDef {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct TableDef {
     pub tuple: TupleDef,
     /// must be sorted!
@@ -265,6 +249,7 @@ impl TableDef {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ReducerDef {
     pub name: Option<Box<str>>,
     pub args: Vec<ElementDef>,
@@ -274,13 +259,103 @@ impl ReducerDef {
     pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
         let name = read_str(bytes)?;
         let name = (!name.is_empty()).then(|| name.into());
-        let args = ElementDef::decode_vec(bytes)?;
+        let args = decode_vec_fn(bytes, ElementDef::decode)?;
         Ok(Self { name, args })
     }
 
     pub fn encode(&self, bytes: &mut impl BufWriter) {
         write_str(bytes, self.name.as_deref().unwrap_or(""));
-        ElementDef::encode_vec(&self.args, bytes);
+        encode_vec_fn(bytes, &self.args, ElementDef::encode);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RepeaterDef {
+    pub name: Option<Box<str>>,
+}
+
+impl RepeaterDef {
+    pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
+        let name = read_str(bytes)?;
+        let name = (!name.is_empty()).then(|| name.into());
+        Ok(Self { name })
+    }
+
+    pub fn encode(&self, bytes: &mut impl BufWriter) {
+        write_str(bytes, self.name.as_deref().unwrap_or(""));
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum EntityDef {
+    Table(TableDef),
+    Reducer(ReducerDef),
+    Repeater(RepeaterDef),
+}
+
+impl EntityDef {
+    pub fn decode<R: BufReader>(bytes: &mut R) -> Result<Self, DecodeError> {
+        let tag = bytes.get_u8()?;
+        Self::decode_with_tag(bytes, tag)
+    }
+    fn decode_with_tag(bytes: &mut impl BufReader, tag: u8) -> Result<Self, DecodeError> {
+        match tag {
+            0x00 => TableDef::decode(bytes).map(Self::Table),
+            0x01 => ReducerDef::decode(bytes).map(Self::Reducer),
+            0x02 => RepeaterDef::decode(bytes).map(Self::Repeater),
+            _ => Err(DecodeError::InvalidTag),
+        }
+    }
+    pub fn encode<W: BufWriter>(&self, bytes: &mut W) {
+        match self {
+            EntityDef::Table(t) => {
+                bytes.put_u8(0x00);
+                t.encode(bytes);
+            }
+            EntityDef::Reducer(r) => {
+                bytes.put_u8(0x01);
+                r.encode(bytes);
+            }
+            EntityDef::Repeater(r) => {
+                bytes.put_u8(0x02);
+                r.encode(bytes);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ModuleItemDef {
+    Entity(EntityDef),
+    Tuple(TupleDef),
+}
+
+impl ModuleItemDef {
+    pub fn decode<R: BufReader>(bytes: &mut R) -> Result<Self, DecodeError> {
+        let tag = bytes.get_u8()?;
+        match tag {
+            0x10 => TupleDef::decode(bytes).map(Self::Tuple),
+            _ => EntityDef::decode_with_tag(bytes, tag).map(Self::Entity),
+        }
+    }
+    pub fn encode<W: BufWriter>(&self, bytes: &mut W) {
+        match self {
+            ModuleItemDef::Entity(e) => e.encode(bytes),
+            ModuleItemDef::Tuple(t) => t.encode(bytes),
+        }
+    }
+}
+
+pub struct ModuleDef {
+    pub items: Vec<(String, ModuleItemDef)>,
+}
+
+impl ModuleDef {
+    pub fn decode<R: BufReader>(bytes: &mut R) -> Result<Self, DecodeError> {
+        let items = decode_vec_fn(bytes, |bytes| {
+            Ok((read_str(bytes)?.to_owned(), ModuleItemDef::decode(bytes)?))
+        })?;
+        Ok(ModuleDef { items })
     }
 }
 
@@ -300,3 +375,26 @@ fn write_str(bytes: &mut impl BufWriter, s: &str) {
     write_len(bytes, s.len());
     bytes.put_slice(s.as_bytes());
 }
+fn decode_vec_fn<T, R: BufReader>(
+    bytes: &mut R,
+    f: impl Fn(&mut R) -> Result<T, DecodeError>,
+) -> Result<Vec<T>, DecodeError> {
+    let len = read_len(bytes)?;
+    let mut v = Vec::with_capacity(len);
+    for _ in 0..len {
+        v.push(f(bytes)?)
+    }
+    Ok(v)
+}
+// fn decode_vec<T: Decode>(bytes: &mut impl BufReader) -> Result<Vec<T>, DecodeError> {
+//     decode_vec_fn(bytes, T::decode)
+// }
+fn encode_vec_fn<T, W: BufWriter>(bytes: &mut W, v: &[T], f: impl Fn(&T, &mut W)) {
+    write_len(bytes, v.len());
+    for t in v {
+        f(t, bytes)
+    }
+}
+// fn encode_vec<T: Encode>(bytes: &mut impl BufWriter, v: &[T]) {
+//     encode_vec_fn(bytes, v, T::encode)
+// }

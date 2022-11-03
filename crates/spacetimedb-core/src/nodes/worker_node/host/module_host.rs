@@ -1,8 +1,8 @@
 use crate::db::messages::write::Write;
 use crate::hash::Hash;
 use crate::nodes::worker_node::client_api::client_connection::ClientActorId;
-use crate::nodes::worker_node::host::host_controller::{Entity, EntityDescription, ReducerBudget, ReducerCallResult};
-use spacetimedb_lib::TupleDef;
+use crate::nodes::worker_node::host::host_controller::{ReducerBudget, ReducerCallResult};
+use spacetimedb_lib::EntityDef;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
@@ -67,11 +67,11 @@ pub enum ModuleHostCommand {
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
     },
     Describe {
-        entity: Entity,
-        respond_to: oneshot::Sender<Option<TupleDef>>,
+        entity_name: String,
+        respond_to: oneshot::Sender<Option<EntityDef>>,
     },
     Catalog {
-        respond_to: oneshot::Sender<Vec<EntityDescription>>,
+        respond_to: oneshot::Sender<Vec<(String, EntityDef)>>,
     },
     Exit {},
 }
@@ -162,16 +162,19 @@ impl ModuleHost {
         Ok(())
     }
 
-    pub async fn describe(&self, entity: Entity) -> Result<Option<TupleDef>, anyhow::Error> {
-        let (tx, rx) = oneshot::channel::<Option<TupleDef>>();
+    pub async fn describe(&self, entity_name: String) -> Result<Option<EntityDef>, anyhow::Error> {
+        let (tx, rx) = oneshot::channel();
         self.tx
-            .send(ModuleHostCommand::Describe { entity, respond_to: tx })
+            .send(ModuleHostCommand::Describe {
+                entity_name,
+                respond_to: tx,
+            })
             .await?;
         rx.await.map_err(|e| anyhow::Error::new(e))
     }
 
-    pub async fn catalog(&self) -> Result<Vec<EntityDescription>, anyhow::Error> {
-        let (tx, rx) = oneshot::channel::<Vec<EntityDescription>>();
+    pub async fn catalog(&self) -> Result<Vec<(String, EntityDef)>, anyhow::Error> {
+        let (tx, rx) = oneshot::channel();
         self.tx.send(ModuleHostCommand::Catalog { respond_to: tx }).await?;
         rx.await.map_err(|e| anyhow::Error::new(e))
     }

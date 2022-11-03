@@ -13,7 +13,7 @@ fn test_codegen_output() {
     }
     use spacetimedb_cli::generate;
     println!("{}", path.to_str().unwrap());
-    let outfiles: HashMap<_, _> = generate::generate(path, "csharp").unwrap().collect();
+    let outfiles: HashMap<_, _> = generate::generate(path, generate::Language::Csharp).unwrap().collect();
     insta::with_settings!({ sort_maps => true }, {
         insta::assert_toml_snapshot!(outfiles);
     });

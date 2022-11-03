@@ -3,9 +3,7 @@ use crate::db::messages::transaction::Transaction;
 use crate::db::relational_db::TxWrapper;
 use crate::db::transactional_db::CommitResult;
 use crate::hash::Hash;
-use crate::nodes::worker_node::host::host_controller::{
-    DescribedEntityType, Entity, EntityDescription, ReducerBudget, ReducerCallResult,
-};
+use crate::nodes::worker_node::host::host_controller::{DescribedEntityType, ReducerBudget, ReducerCallResult};
 use crate::nodes::worker_node::host::instance_env::InstanceEnv;
 use crate::nodes::worker_node::host::module_host::{
     EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHost, ModuleHostActor, ModuleHostCommand,
@@ -17,7 +15,7 @@ use crate::nodes::worker_node::{
 };
 use anyhow::{anyhow, Context};
 use spacetimedb_lib::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
-use spacetimedb_lib::{ElementDef, ReducerDef, TableDef, TupleDef, TypeDef};
+use spacetimedb_lib::{EntityDef, ReducerDef, RepeaterDef, TableDef};
 use std::cmp::max;
 use std::time::Instant;
 use std::{
@@ -98,7 +96,7 @@ pub(crate) struct WasmModuleHostActor {
     // Holds the list of descriptions of each entity.
     // TODO(ryan): Long run let's replace or augment this with catalog table(s) that hold the
     // schema. Then standard table query tools could be run against it.
-    description_cache: HashMap<Entity, TupleDef>,
+    description_cache: HashMap<String, EntityDef>,
 }
 
 impl WasmModuleHostActor {
@@ -136,35 +134,13 @@ impl WasmModuleHostActor {
         for f in self.module.exports().functions() {
             let (desc_entity_type, entity_name) = match entity_from_function_name(f.name()) {
                 None => continue,
-                Some(desc_entity_type) => desc_entity_type,
+                Some(x) => x,
             };
-            // Special case for repeaters.
-            let description = if desc_entity_type == DescribedEntityType::RepeatingReducer {
-                TupleDef {
-                    name: None,
-                    elements: vec![
-                        ElementDef {
-                            tag: 0,
-                            name: Some(String::from("timestamp")),
-                            element_type: TypeDef::U64,
-                        },
-                        ElementDef {
-                            tag: 1,
-                            name: Some(String::from("delta_time")),
-                            element_type: TypeDef::U64,
-                        },
-                    ],
-                }
-            } else {
-                self.call_describer(f.name(), desc_entity_type)?
-                    .ok_or_else(|| anyhow!("Bad describe function returned None; {}", f.name()))?
-            };
+            let description = self
+                .call_describer(f.name(), desc_entity_type)?
+                .ok_or_else(|| anyhow!("Bad describe function returned None; {}", f.name()))?;
 
-            let entity = Entity {
-                entity_name: String::from(entity_name),
-                entity_type: desc_entity_type,
-            };
-            self.description_cache.insert(entity, description);
+            self.description_cache.insert(entity_name.into(), description);
         }
         Ok(())
     }
@@ -499,25 +475,22 @@ impl WasmModuleHostActor {
         Ok(())
     }
 
-    fn catalog(&self) -> Vec<EntityDescription> {
+    fn catalog(&self) -> Vec<(String, EntityDef)> {
         self.description_cache
             .iter()
-            .map(|k| EntityDescription {
-                entity: k.0.clone(),
-                schema: k.1.clone(),
-            })
+            .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
     }
 
-    fn describe(&self, entity: &Entity) -> Option<TupleDef> {
-        self.description_cache.get(entity).map(|t| t.clone())
+    fn describe(&self, entity_name: &str) -> Option<EntityDef> {
+        self.description_cache.get(entity_name).map(|t| t.clone())
     }
 
     fn call_describer(
         &self,
         describer_func_name: &str,
         descr_type: DescribedEntityType,
-    ) -> Result<Option<TupleDef>, anyhow::Error> {
+    ) -> Result<Option<EntityDef>, anyhow::Error> {
         // TODO: choose one at random or whatever
         let (_instance_id, instance) = &self.instances[0];
         let describer = match instance.exports.get_function(&describer_func_name) {
@@ -559,35 +532,32 @@ impl WasmModuleHostActor {
                 let view = memory.view::<u8>();
                 let bytes: Vec<u8> = view[offset..offset + length].iter().map(|c| c.get()).collect();
 
-                // Decode the memory as TupleDef. Do not exit yet, as we have to dealloc the buffer.
-                // TODO(noa): this shouldn't have to stuff it all into a tupledef; fixing involves reworking Entity and
-                //            EntityDescription and is a whole big thing
-                let result = match descr_type {
-                    DescribedEntityType::Table => {
-                        let table = TableDef::decode(&mut &bytes[..])
-                            .with_context(|| format!("argument tuples has invalid schema: {}", describer_func_name))?;
-                        table.tuple
-                    }
-                    DescribedEntityType::Reducer => {
-                        let reducer = ReducerDef::decode(&mut &bytes[..])
-                            .with_context(|| format!("argument tuples has invalid schema: {}", describer_func_name))?;
-                        TupleDef {
-                            name: reducer.name,
-                            elements: reducer.args,
-                        }
-                    }
-                    DescribedEntityType::RepeatingReducer => unreachable!(),
-                };
-
-                // Clean out the vector buffer memory that the wasm-side "forgot" in order to pass
-                // it to us.
-                // TODO(ryan): way to generalize this to some RAII thing?
+                // Clean out the vector buffer memory that the wasm-side passed us ownership of
                 let dealloc = instance
                     .exports
                     .get_function("dealloc")?
                     .native::<(WasmPtr<u8, Array>, u32), ()>()?;
                 let dealloc_result = dealloc.call(WasmPtr::new(offset as u32), length as u32);
                 dealloc_result.context("Could not dealloc describer buffer memory")?;
+
+                // Decode the memory as EntityDef.
+                let result = match descr_type {
+                    DescribedEntityType::Table => {
+                        let table = TableDef::decode(&mut &bytes[..])
+                            .with_context(|| format!("argument tuples has invalid schema: {}", describer_func_name))?;
+                        EntityDef::Table(table)
+                    }
+                    DescribedEntityType::Reducer => {
+                        let reducer = ReducerDef::decode(&mut &bytes[..])
+                            .with_context(|| format!("argument tuples has invalid schema: {}", describer_func_name))?;
+                        EntityDef::Reducer(reducer)
+                    }
+                    DescribedEntityType::RepeatingReducer => {
+                        let repeater = RepeaterDef::decode(&mut &bytes[..])
+                            .with_context(|| format!("argument tuples has invalid schema: {}", describer_func_name))?;
+                        EntityDef::Repeater(repeater)
+                    }
+                };
 
                 Ok(Some(result))
             }
@@ -781,8 +751,11 @@ impl ModuleHostActor for WasmModuleHostActor {
                 respond_to.send(self.catalog()).unwrap();
                 false
             }
-            ModuleHostCommand::Describe { entity, respond_to } => {
-                respond_to.send(self.describe(&entity)).unwrap();
+            ModuleHostCommand::Describe {
+                entity_name,
+                respond_to,
+            } => {
+                respond_to.send(self.describe(&entity_name)).unwrap();
                 false
             }
         }

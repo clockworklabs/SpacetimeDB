@@ -16,6 +16,7 @@ use hyper::HeaderMap;
 use hyper::{Response, StatusCode};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use spacetimedb_lib::{ElementDef, EntityDef, TupleDef, TypeDef};
 
 use crate::address::Address;
 use crate::auth::get_creds_from_header;
@@ -27,7 +28,7 @@ use crate::nodes::worker_node::client_api::routes::database::DBCallErr::NoSuchDa
 use crate::nodes::worker_node::control_node_connection::ControlNodeClient;
 use crate::nodes::worker_node::database_logger::DatabaseLogger;
 use crate::nodes::worker_node::host::host_controller;
-use crate::nodes::worker_node::host::host_controller::{DescribedEntityType, Entity, EntityDescription};
+use crate::nodes::worker_node::host::host_controller::DescribedEntityType;
 use crate::nodes::worker_node::worker_db;
 use crate::protobuf::control_db::DatabaseInstance;
 use crate::sql;
@@ -192,17 +193,46 @@ fn handle_db_err(address: &Address, err: DBCallErr) -> SimpleHandlerResult {
     }
 }
 
-fn entity_description_json(description: &EntityDescription, expand: bool) -> Value {
+fn entity_description_json(description: EntityDef, expand: bool) -> Value {
+    let typ = DescribedEntityType::from_entitydef(&description).as_str();
+    let len = match &description {
+        EntityDef::Table(t) => t.tuple.elements.len(),
+        EntityDef::Reducer(r) => r.args.len(),
+        EntityDef::Repeater(_) => 2,
+    };
     if expand {
+        // TODO(noa): make this less hacky; needs coordination w/ spacetime-web
+        let schema = match description {
+            EntityDef::Table(table) => table.tuple,
+            EntityDef::Reducer(r) => TupleDef {
+                name: r.name,
+                elements: r.args,
+            },
+            EntityDef::Repeater(r) => TupleDef {
+                name: r.name,
+                elements: vec![
+                    ElementDef {
+                        tag: 0,
+                        name: Some(String::from("timestamp")),
+                        element_type: TypeDef::U64,
+                    },
+                    ElementDef {
+                        tag: 1,
+                        name: Some(String::from("delta_time")),
+                        element_type: TypeDef::U64,
+                    },
+                ],
+            },
+        };
         json!({
-            "type": description.entity.entity_type.as_str(),
-            "arity": description.schema.elements.len(),
-            "schema": description.schema
+            "type": typ,
+            "arity": len,
+            "schema": schema
         })
     } else {
         json!({
-            "type": description.entity.entity_type.as_str(),
-            "arity": description.schema.elements.len(),
+            "type": typ,
+            "arity": len,
         })
     }
 }
@@ -238,32 +268,16 @@ async fn describe(state: &mut State) -> SimpleHandlerResult {
     let instance_id = call_info.database_instance.id;
     let host = host_controller::get_host();
 
-    let entity_type = match entity_type.as_str() {
-        "tables" => DescribedEntityType::Table,
-        "reducers" => DescribedEntityType::Reducer,
-        "repeaters" => DescribedEntityType::RepeatingReducer,
-        _ => {
-            log::debug!("Request to describe unhandled entity type: {}", entity_type);
+    let entity_type = entity_type.as_str().parse().map_err(|()| {
+        log::debug!("Request to describe unhandled entity type: {}", entity_type);
+        HandlerError::from(anyhow!("Invalid entity type for description: {}", entity_type))
+            .with_status(StatusCode::NOT_FOUND)
+    })?;
+    let description = match host.describe(instance_id, entity.clone()).await {
+        Ok(Some(description)) if DescribedEntityType::from_entitydef(&description) == entity_type => description,
+        Ok(_) => {
             return Err(
-                HandlerError::from(anyhow!("Invalid entity type for description: {}", entity_type))
-                    .with_status(StatusCode::NOT_FOUND),
-            );
-        }
-    };
-    let description = match host
-        .describe(
-            instance_id,
-            Entity {
-                entity_name: entity.clone(),
-                entity_type: entity_type.clone(),
-            },
-        )
-        .await
-    {
-        Ok(Some(description)) => description,
-        Ok(None) => {
-            return Err(
-                HandlerError::from(anyhow!("{} not found {}", entity_type.as_str(), entity.clone()))
+                HandlerError::from(anyhow!("{} not found {}", entity_type.as_str(), entity))
                     .with_status(StatusCode::NOT_FOUND),
             )
         }
@@ -275,8 +289,7 @@ async fn describe(state: &mut State) -> SimpleHandlerResult {
     };
 
     let expand = expand.unwrap_or(true);
-    let response_json =
-        json!({ description.entity.entity_name.clone(): entity_description_json(&description, expand) });
+    let response_json = json!({ entity: entity_description_json(description, expand) });
 
     let response = Response::builder()
         .header("Spacetime-Identity", call_info.caller_identity.to_hex())
@@ -315,8 +328,8 @@ async fn catalog(state: &mut State) -> SimpleHandlerResult {
     };
     let expand = expand.unwrap_or(false);
     let response_catalog: HashMap<_, _> = catalog
-        .iter()
-        .map(|ed| (ed.entity.entity_name.clone(), entity_description_json(&ed, expand)))
+        .into_iter()
+        .map(|(name, entity)| (name, entity_description_json(entity, expand)))
         .collect();
     let response_json = json!(response_catalog);
 

@@ -7,7 +7,7 @@ use crate::protobuf::control_db::HostType;
 use anyhow;
 use lazy_static::lazy_static;
 use serde::Serialize;
-use spacetimedb_lib::TupleDef;
+use spacetimedb_lib::EntityDef;
 use std::fmt::{Display, Formatter};
 use std::time::Duration;
 use std::{collections::HashMap, sync::Mutex};
@@ -31,24 +31,31 @@ pub enum DescribedEntityType {
     RepeatingReducer,
 }
 
-#[derive(Serialize, PartialEq, Eq, Hash, Clone, Debug)]
-pub struct Entity {
-    pub entity_name: String,
-    pub entity_type: DescribedEntityType,
-}
-
-#[derive(Serialize, Clone, Debug)]
-pub struct EntityDescription {
-    pub entity: Entity,
-    pub schema: TupleDef,
-}
-
 impl DescribedEntityType {
-    pub fn as_str(&self) -> &str {
+    pub fn as_str(self) -> &'static str {
         match self {
             DescribedEntityType::Table => "table",
             DescribedEntityType::Reducer => "reducer",
             DescribedEntityType::RepeatingReducer => "repeater",
+        }
+    }
+    pub fn from_entitydef(def: &EntityDef) -> Self {
+        match def {
+            EntityDef::Table(_) => Self::Table,
+            EntityDef::Reducer(_) => Self::Reducer,
+            EntityDef::Repeater(_) => Self::RepeatingReducer,
+        }
+    }
+}
+impl std::str::FromStr for DescribedEntityType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "table" => Ok(DescribedEntityType::Table),
+            "reducer" => Ok(DescribedEntityType::Reducer),
+            "repeater" => Ok(DescribedEntityType::RepeatingReducer),
+            _ => Err(()),
         }
     }
 }
@@ -203,15 +210,15 @@ impl HostController {
 
     /// Describe a specific entity in a module.
     /// None if not present.
-    pub async fn describe(&self, instance_id: u64, entity: Entity) -> Result<Option<EntityDescription>, anyhow::Error> {
+    pub async fn describe(&self, instance_id: u64, entity_name: String) -> Result<Option<EntityDef>, anyhow::Error> {
         let module_host = self.module_host(instance_id)?;
-        let schema = module_host.describe(entity.clone()).await.unwrap();
+        let schema = module_host.describe(entity_name).await.unwrap();
 
-        Ok(schema.map(|schema| EntityDescription { entity, schema }))
+        Ok(schema)
     }
 
     /// Request a list of all describable entities in a module.
-    pub async fn catalog(&self, instance_id: u64) -> Result<Vec<EntityDescription>, anyhow::Error> {
+    pub async fn catalog(&self, instance_id: u64) -> Result<Vec<(String, EntityDef)>, anyhow::Error> {
         let module_host = self.module_host(instance_id)?;
         let catalog = module_host.catalog().await.unwrap();
         Ok(catalog)

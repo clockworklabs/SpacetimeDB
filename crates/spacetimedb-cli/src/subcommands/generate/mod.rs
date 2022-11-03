@@ -2,12 +2,12 @@ use std::fs;
 use std::path::Path;
 
 use crate::util;
+use anyhow::Context as _;
 use clap::Arg;
 use convert_case::{Case, Casing};
 use duckscript::types::runtime::{Context, StateValue};
-use spacetimedb_lib::type_def::{ReducerDef, TableDef};
-use spacetimedb_lib::TupleDef;
-use wasmtime::{ExternType, Trap, TypedFunc};
+use spacetimedb_lib::{EntityDef, ModuleItemDef, ReducerDef, RepeaterDef, TableDef, TupleDef};
+use wasmtime::{AsContext, AsContextMut, Caller, ExternType, Trap, TypedFunc};
 
 mod code_indenter;
 pub mod csharp;
@@ -47,7 +47,7 @@ pub fn cli() -> clap::Command<'static> {
                 .required(true)
                 .long("lang")
                 .short('l')
-                .possible_values(["csharp", "cs", "c#"]),
+                .value_parser(clap::value_parser!(Language)),
         )
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
@@ -99,7 +99,7 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
     };
 
     let out_dir = Path::new(args.value_of("out_dir").unwrap());
-    let lang = args.value_of("lang").unwrap();
+    let lang = *args.get_one::<Language>("lang").unwrap();
     if !out_dir.exists() {
         return Err(anyhow::anyhow!(
             "Output directory '{}' does not exist. Please create the directory and rerun this command.",
@@ -113,41 +113,53 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn generate(wasm_file: &Path, lang: &str) -> anyhow::Result<impl Iterator<Item = (String, String)>> {
-    match lang {
-        "csharp" | "cs" | "c#" => {
-            let descriptions = extract_descriptions(&wasm_file)?;
-            Ok(descriptions.into_iter().map(|(name, desc)| match desc {
-                Description::Table(table) => {
-                    let code = csharp::autogen_csharp_table(&name, &table);
-                    (name + ".cs", code)
-                }
-                Description::Tuple(tup) => {
-                    let code = csharp::autogen_csharp_tuple(&name, &tup);
-                    (name + ".cs", code)
-                }
-                Description::Reducer(reducer) => {
-                    let code = csharp::autogen_csharp_reducer(&reducer);
-                    let pascalcase = name.to_case(Case::Pascal);
-                    (pascalcase + "Reducer.cs", code)
-                }
-            }))
+#[derive(Clone, Copy)]
+pub enum Language {
+    Csharp,
+}
+impl clap::ValueEnum for Language {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Csharp]
+    }
+    fn to_possible_value<'a>(&self) -> Option<clap::PossibleValue<'a>> {
+        match self {
+            Self::Csharp => Some(clap::PossibleValue::new("csharp").aliases(["c#", "cs"])),
         }
-        &_ => Err(anyhow::anyhow!(format!("Unsupported langauge: {}", lang))),
     }
 }
 
-enum Description {
-    Table(TableDef),
-    Tuple(TupleDef),
-    Reducer(ReducerDef),
+pub fn generate(wasm_file: &Path, lang: Language) -> anyhow::Result<impl Iterator<Item = (String, String)>> {
+    let Language::Csharp = lang;
+    let descriptions = extract_descriptions(&wasm_file)?;
+    Ok(descriptions.into_iter().filter_map(|(name, desc)| match desc {
+        ModuleItemDef::Entity(EntityDef::Table(table)) => {
+            let code = csharp::autogen_csharp_table(&name, &table);
+            Some((name + ".cs", code))
+        }
+        ModuleItemDef::Tuple(tup) => {
+            let code = csharp::autogen_csharp_tuple(&name, &tup);
+            Some((name + ".cs", code))
+        }
+        ModuleItemDef::Entity(EntityDef::Reducer(reducer)) => {
+            let code = csharp::autogen_csharp_reducer(&reducer);
+            let pascalcase = name.to_case(Case::Pascal);
+            Some((pascalcase + "Reducer.cs", code))
+        }
+        ModuleItemDef::Entity(EntityDef::Repeater(_)) => {
+            // Nothing to codegen for this (yet?)
+            None
+        }
+    }))
 }
 
-fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<Vec<(String, Description)>> {
+fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<Vec<(String, ModuleItemDef)>> {
     let engine = wasmtime::Engine::default();
+    let t = std::time::Instant::now();
     let module = wasmtime::Module::from_file(&engine, wasm_file)?;
-    let mut store = wasmtime::Store::new(&engine, ());
+    println!("compilation took {:?}", t.elapsed());
+    let mut store = wasmtime::Store::new(&engine, WasmCtx { mem: None });
     let mut linker = wasmtime::Linker::new(&engine);
+    linker.allow_shadowing(true);
     for imp in module.imports() {
         if let ExternType::Func(func_type) = imp.ty() {
             linker
@@ -157,42 +169,100 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<Vec<(String, Descrip
                 .unwrap();
         }
     }
+    linker.func_wrap(
+        "env",
+        "_console_log",
+        |caller: Caller<'_, WasmCtx>, _level: u32, ptr: u32, len: u32| {
+            let mem = caller.data().mem.unwrap();
+            let slice = mem.deref_slice(&caller, ptr, len);
+            if let Some(slice) = slice {
+                println!("from wasm: {}", String::from_utf8_lossy(slice));
+            } else {
+                println!("tried to print from wasm but out of bounds")
+            }
+        },
+    )?;
     let instance = linker.instantiate(&mut store, &module)?;
-    let memory = instance.get_memory(&mut store, "memory").unwrap();
+    let memory = Memory {
+        mem: instance.get_memory(&mut store, "memory").unwrap(),
+        dealloc: instance.get_func(&mut store, "dealloc").unwrap().typed(&store).unwrap(),
+    };
+    store.data_mut().mem = Some(memory);
     // let alloc: TypedFunc<(u32,), (u32,)> = instance.get_func(&mut store, "alloc").unwrap().typed(&store).unwrap();
-    let dealloc: TypedFunc<(u32, u32), ()> = instance.get_func(&mut store, "dealloc").unwrap().typed(&store).unwrap();
     enum DescrType {
         Table,
         Tuple,
         Reducer,
+        Repeater,
     }
     let describes = instance
         .exports(&mut store)
         .filter_map(|exp| {
             let sym = exp.name();
-            None.or_else(|| sym.strip_prefix("__describe_table__").map(|n| (DescrType::Table, n)))
-                .or_else(|| sym.strip_prefix("__describe_tuple__").map(|n| (DescrType::Tuple, n)))
-                .or_else(|| {
-                    sym.strip_prefix("__describe_reducer__")
-                        .map(|n| (DescrType::Reducer, n))
-                })
-                .map(|(ty, name)| (ty, name.to_owned(), exp.into_func().unwrap()))
+            let func = exp.into_func()?;
+            let prefixes = [
+                ("__describe_table__", DescrType::Table),
+                ("__describe_tuple__", DescrType::Tuple),
+                ("__describe_reducer__", DescrType::Reducer),
+                ("__describe_repeating_reducer__", DescrType::Repeater),
+            ];
+            prefixes
+                .into_iter()
+                .find_map(|(prefix, ty)| sym.strip_prefix(prefix).map(|name| (ty, name.to_owned(), func)))
         })
         .collect::<Vec<_>>();
     let mut descriptions = Vec::with_capacity(describes.len());
     for (ty, name, describe) in describes {
-        let describe: TypedFunc<(), (u64,)> = describe.typed(&store).unwrap();
-        let (val,) = describe.call(&mut store, ()).unwrap();
-        let offset = (val >> 32) as u32;
-        let len = (val & 0xFFFF_FFFF) as u32;
-        let slice = &memory.data(&store)[offset as usize..][..len as usize];
-        let descr = match ty {
-            DescrType::Table => Description::Table(TableDef::decode(&mut &slice[..])?),
-            DescrType::Tuple => Description::Tuple(TupleDef::decode(&mut &slice[..])?),
-            DescrType::Reducer => Description::Reducer(ReducerDef::decode(&mut &slice[..])?),
-        };
-        dealloc.call(&mut store, (offset, len)).unwrap();
+        let (packed,) = describe.typed(&store)?.call(&mut store, ()).unwrap();
+        let descr = memory.with_unpacked_slice(&mut store, packed, |slice| {
+            Ok(match ty {
+                DescrType::Table => ModuleItemDef::Entity(EntityDef::Table(TableDef::decode(&mut &slice[..])?)),
+                DescrType::Tuple => ModuleItemDef::Tuple(TupleDef::decode(&mut &slice[..])?),
+                DescrType::Reducer => ModuleItemDef::Entity(EntityDef::Reducer(ReducerDef::decode(&mut &slice[..])?)),
+                DescrType::Repeater => {
+                    ModuleItemDef::Entity(EntityDef::Repeater(RepeaterDef::decode(&mut &slice[..])?))
+                }
+            })
+        })?;
         descriptions.push((name, descr));
     }
     Ok(descriptions)
+}
+
+struct WasmCtx {
+    mem: Option<Memory>,
+}
+
+#[derive(Copy, Clone)]
+struct Memory {
+    mem: wasmtime::Memory,
+    dealloc: TypedFunc<(u32, u32), ()>,
+}
+impl Memory {
+    fn deref_slice<'a>(&self, store: &'a impl AsContext, offset: u32, len: u32) -> Option<&'a [u8]> {
+        self.mem
+            .data(store.as_context())
+            .get(offset as usize..)?
+            .get(..len as usize)
+    }
+    fn with_unpacked_slice<R>(
+        &self,
+        mut store: impl AsContextMut,
+        packed: u64,
+        f: impl FnOnce(&[u8]) -> anyhow::Result<R>,
+    ) -> anyhow::Result<R> {
+        let offset = (packed >> 32) as u32;
+        let len = (packed & 0xFFFF_FFFF) as u32;
+        let slice = self.deref_slice(&store, offset, len).context("invalid ptr")?;
+        let res = f(slice);
+        let dealloc_res = self
+            .dealloc
+            .call(store.as_context_mut(), (offset, len))
+            .context("error while deallocating");
+        if res.is_err() {
+            res
+        } else {
+            dealloc_res.and(res)
+        }
+    }
 }
