@@ -8,4 +8,4 @@ exec --fail-on-error cargo --config net.git-fetch-with-cli=true build --target w
 
 # Update the running module
 exec --fail-on-error spacetime identity init-default --quiet
-exec --fail-on-error spacetime energy set-balance 5000000000000 --quiet
+exec --fail-on-error spacetime energy set-balance 5000000000000000 --quiet
