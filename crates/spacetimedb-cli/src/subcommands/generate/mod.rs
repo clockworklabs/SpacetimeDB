@@ -81,9 +81,7 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
                 }
             }
 
-            if !error {
-                println!("Build finished successfully.");
-            } else {
+            if error {
                 return Err(anyhow::anyhow!(
                     "Build finished with errors, check the console for more information."
                 ));
@@ -110,6 +108,8 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
     for (fname, code) in generate(wasm_file, lang)? {
         fs::write(out_dir.join(fname), code)?;
     }
+
+    println!("Generate finished successfully.");
     Ok(())
 }
 
