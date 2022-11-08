@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use clap::arg;
 use clap::Arg;
 use clap::ArgMatches;
@@ -58,7 +59,11 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let stmt_result_json: Vec<StmtResultJson> = serde_json::from_str(&json).unwrap();
 
-    let stmt_result = stmt_result_json.first().unwrap();
+    let stmt_result = stmt_result_json.first();
+    if let None = stmt_result {
+        return Err(anyhow!("Invalid sql query."));
+    }
+    let stmt_result = stmt_result.unwrap();
     let rows = &stmt_result.rows;
     let schema = &stmt_result.schema;
 
