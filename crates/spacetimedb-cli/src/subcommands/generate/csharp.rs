@@ -309,6 +309,13 @@ fn autogen_csharp_tuple_to_struct(struct_name_pascal_case: &str, tuple: &TupleDe
     output_contents_header + &vec_conversion + &output_contents_return
 }
 
+fn indented_block<R>(output: &mut CodeIndenter<String>, f: impl FnOnce(&mut CodeIndenter<String>) -> R) -> R {
+    writeln!(output, "{{").unwrap();
+    let res = f(&mut output.indented(1));
+    writeln!(output, "}}").unwrap();
+    res
+}
+
 fn autogen_csharp_access_funcs_for_struct(
     output: &mut CodeIndenter<String>,
     struct_name_pascal_case: &str,
@@ -323,6 +330,28 @@ fn autogen_csharp_access_funcs_for_struct(
             .filter(|i| unique_columns.binary_search(i).is_err())
             .zip(std::iter::repeat(false)),
     );
+    writeln!(
+        output,
+        "public static System.Collections.Generic.IEnumerable<{struct_name_pascal_case}> Iter()"
+    )
+    .unwrap();
+    indented_block(output, |output| {
+        writeln!(
+            output,
+            "foreach(var entry in NetworkManager.clientDB.GetEntries(\"{table_name}\"))",
+        )
+        .unwrap();
+        indented_block(output, |output| {
+            writeln!(
+                output,
+                "var tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];"
+            )
+            .unwrap();
+            // TODO: best way to handle this?
+            writeln!(output, "if (tupleArr == null) continue;").unwrap();
+            writeln!(output, "yield return ({struct_name_pascal_case})entry;").unwrap();
+        });
+    });
     for (col_i, is_unique) in it {
         let field = &tuple.elements[col_i as usize];
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");

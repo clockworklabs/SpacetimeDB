@@ -41,6 +41,15 @@ namespace SpacetimeDB
 				z = (string)tupleValue[2].GetValue(TypeDef.Def.String),
 			};
 		}
+		public static System.Collections.Generic.IEnumerable<TestA> Iter()
+		{
+			foreach(var entry in NetworkManager.clientDB.GetEntries("TestA"))
+			{
+				var tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];
+				if (tupleArr == null) continue;
+				yield return (TestA)entry;
+			}
+		}
 		public static System.Collections.Generic.IEnumerable<TestA> FilterByX(uint value)
 		{
 			foreach(var entry in NetworkManager.clientDB.GetEntries("TestA"))
