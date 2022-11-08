@@ -46,7 +46,7 @@ fn get_subcommands() -> Vec<Command> {
         Command::new("new")
             .about("Create a new identity")
             .arg(
-                arg!(-s --save "Save to config")
+                arg!(--no-save "Don't save save to local config, just create a new identity")
                     .action(ArgAction::SetTrue)
                     .required(false),
             )
@@ -90,7 +90,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
         "set-default" => exec_set_default(config, args).await,
         "init-default" => exec_init_default(config, args).await,
         "new" => exec_new(config, args).await,
-        "rm" => exec_rm(config, args).await,
+        "delete" => exec_delete(config, args).await,
         "add" => exec_add(config, args).await,
         "set-email" => exec_email(config, args).await,
         "find" => exec_find(config, args).await,
@@ -157,7 +157,7 @@ async fn exec_init_default(mut config: Config, args: &ArgMatches) -> Result<(), 
     Ok(())
 }
 
-async fn exec_rm(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_delete(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let name = args.get_one::<String>("name");
     if let Some(name) = name {
         let index = config
@@ -195,7 +195,7 @@ async fn exec_rm(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
 }
 
 async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let save = *args.get_one::<bool>("save").unwrap_or(&false);
+    let save = !*args.get_one::<bool>("no-save").unwrap_or(&false);
     if save {
         let nickname = args.get_one::<String>("name").unwrap_or(&"".to_string()).clone();
         if config.name_exists(&nickname) {
