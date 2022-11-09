@@ -163,7 +163,7 @@ impl IntoValue for Hash {
 impl FilterableValue for Hash {
     fn equals(&self, other: &TypeValue) -> bool {
         match other {
-            TypeValue::Bytes(b) => self.data[..] == b[..],
+            TypeValue::Hash(b) => self.data[..] == b.data[..],
             _ => false,
         }
     }
