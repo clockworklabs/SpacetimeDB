@@ -1,6 +1,6 @@
 ARG CARGO_PROFILE=release
 
-FROM rust:1.64.0 AS chef
+FROM rust:1.65 AS chef
 RUN curl https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-gnu.tgz -fL | tar xz -C $CARGO_HOME/bin
 RUN cargo binstall --no-confirm --no-symlinks cargo-chef@0.1.46
 WORKDIR /usr/src/app
