@@ -21,6 +21,7 @@ pub fn get_subcommands() -> Vec<Command> {
         sql::cli(),
         name::cli(),
         generate::cli(),
+        list::cli(),
         init::cli(),
         build::cli(),
     ]
@@ -39,6 +40,7 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "sql" => sql::exec(config, args).await,
         "name" => name::exec(config, args).await,
         "generate" => generate::exec(args),
+        "list" => list::exec(config, args).await,
         "init" => init::exec(config, args).await,
         "build" => build::exec(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),

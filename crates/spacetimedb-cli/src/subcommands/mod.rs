@@ -6,6 +6,7 @@ pub mod energy;
 pub mod generate;
 pub mod identity;
 pub mod init;
+pub mod list;
 pub mod logs;
 pub mod name;
 pub mod publish;
