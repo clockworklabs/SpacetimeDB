@@ -1,47 +1,40 @@
 use clap::Arg;
+use clap::ArgAction::SetTrue;
 use clap::ArgMatches;
-use duckscript::types::runtime::{Context, StateValue};
 use serde::Deserialize;
 use serde::Serialize;
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 
 use crate::config::Config;
 use crate::util;
 use crate::util::init_default;
 
-pub fn cli() -> clap::Command<'static> {
+pub fn cli() -> clap::Command {
     clap::Command::new("publish")
         .about("Create and update a SpacetimeDB database.")
         .arg(
             Arg::new("host_type")
-                .takes_value(true)
-                .required(false)
-                .long("host_type")
+                .long("host-type")
                 .short('t')
-                .possible_values(["wasmer"]),
+                .value_parser(["wasmer"])
+                .default_value("wasmer"),
         )
         .arg(
             Arg::new("clear_database")
                 .long("clear-database")
                 .short('c')
-                .takes_value(false),
+                .action(SetTrue),
         )
         .arg(
             Arg::new("path_to_project")
-                .required(false)
+                .value_parser(clap::value_parser!(PathBuf))
                 .default_value(".")
                 .long("project-path")
                 .short('p'),
         )
-        .arg(
-            Arg::new("identity")
-                .takes_value(true)
-                .long("identity")
-                .short('i')
-                .required(false),
-        )
-        .arg(Arg::new("name|address").takes_value(true).required(false))
+        .arg(Arg::new("identity").long("identity").short('i').required(false))
+        .arg(Arg::new("name|address").required(false))
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
@@ -51,75 +44,42 @@ struct InitDatabaseResponse {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let identity = args.get_one::<String>("identity");
+    let name_or_address = args.get_one::<String>("name|address");
+    let path_to_project = args.get_one::<PathBuf>("path_to_project").unwrap();
+    let host_type = args.get_one::<String>("host_type").unwrap();
+    let clear_database = args.get_flag("clear_database");
+
     let mut url_args = String::new();
 
     // Identity is required
-    if let Some(identity) = args.value_of("identity") {
+    if let Some(identity) = identity {
         url_args.push_str(format!("?identity={}", identity).as_str());
     } else {
         let identity_config = init_default(&mut config, None).await?.identity_config;
         url_args.push_str(format!("?identity={}", identity_config.identity).as_str());
     }
 
-    let name_or_address = args.value_of("name|address");
     if let Some(name_or_address) = name_or_address {
         url_args.push_str(format!("&name_or_address={}", name_or_address).as_str());
     }
 
-    let path_to_project_str = args.value_of("path_to_project").unwrap();
-    if path_to_project_str.trim().is_empty() {
-        return Err(anyhow::anyhow!("Project path is required!"));
-    }
-    let path_to_project = Path::new(path_to_project_str);
     if !path_to_project.exists() {
-        return Err(anyhow::anyhow!("Project path does not exist: {}", path_to_project_str));
+        return Err(anyhow::anyhow!(
+            "Project path does not exist: {}",
+            path_to_project.display()
+        ));
     }
 
-    if args.is_present("clear_database") {
+    if clear_database {
         url_args.push_str("&clear=true");
     }
 
-    url_args.push_str(format!("&host_type={}", args.value_of("host_type").unwrap_or("wasmer")).as_str());
+    url_args.push_str(format!("&host_type={}", host_type).as_str());
 
-    let mut context = Context::new();
-    duckscriptsdk::load(&mut context.commands)?;
-    context
-        .variables
-        .insert("PATH".to_string(), std::env::var("PATH").unwrap());
-    context
-        .variables
-        .insert("PROJECT_PATH".to_string(), path_to_project_str.to_string());
-
-    match util::invoke_duckscript(include_str!("project/pre-publish.duck"), context) {
-        Ok(ok) => {
-            let mut error = false;
-            for entry in ok.state {
-                if let StateValue::SubState(sub_state) = entry.1 {
-                    for entry in sub_state {
-                        match entry.1 {
-                            StateValue::String(a) => {
-                                error = true;
-                                println!("{}|{}", entry.0, a)
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-
-            if !error {
-                println!("Publish finished successfully.");
-            } else {
-                println!("Publish finished with errors, check the console for more information.");
-            }
-        }
-        Err(e) => {
-            println!("Script execution error: {}", e);
-        }
-    }
+    crate::tasks::pre_publish(path_to_project)?;
 
     let path_to_wasm = util::find_wasm_file(path_to_project)?;
-    let path_to_wasm = path_to_wasm.to_str().unwrap();
     let program_bytes = fs::read(fs::canonicalize(path_to_wasm).unwrap())?;
 
     let url = format!("http://{}/database/publish{}", config.host, url_args);

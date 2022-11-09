@@ -1,25 +1,24 @@
-use clap::{Arg, ArgMatches};
+use clap::{Arg, ArgAction::SetTrue, ArgMatches};
 
 const CLI_VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 use crate::config::Config;
 
-pub fn cli() -> clap::Command<'static> {
+pub fn cli() -> clap::Command {
     clap::Command::new("version")
         .about("Print the version of the command line tool.")
         .after_help("Run `spacetime help version for more detailed information.\n`")
         .arg(
             Arg::new("cli")
-                .required(false)
-                .takes_value(false)
                 .short('c')
                 .long("--cli")
+                .action(SetTrue)
                 .help("Prints only the CLI version"),
         )
 }
 
 pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    if args.is_present("cli") {
+    if args.get_flag("cli") {
         println!("{}", CLI_VERSION);
         return Ok(());
     }

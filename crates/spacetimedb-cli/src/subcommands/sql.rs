@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::anyhow;
 use clap::arg;
 use clap::Arg;
@@ -17,26 +19,29 @@ pub struct StmtResultJson {
     pub rows: Vec<Vec<TypeValue>>,
 }
 
-pub fn cli() -> clap::Command<'static> {
+pub fn cli() -> clap::Command {
     clap::Command::new("sql")
         .about("Runs a SQL query on the database.")
         .arg(Arg::new("database").required(true))
         .arg(Arg::new("query").conflicts_with("filename").required(true))
         .arg(
             arg!(-f --filename <FILENAME> "filename")
+                .value_parser(clap::value_parser!(PathBuf))
                 .conflicts_with("query")
                 .required(true),
         )
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let database = args.value_of("database").unwrap();
+    let database = args.get_one::<String>("database").unwrap();
+    let query = args.get_one::<String>("query").unwrap();
+    // let filename = args.get_one::<PathBuf>("filename");
+
     let address = if let Ok(address) = spacetime_dns(&config, database).await {
         address
     } else {
         database.to_string()
     };
-    let query = args.value_of("query").unwrap();
 
     let client = reqwest::Client::new();
 
@@ -76,7 +81,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     );
 
     for row in rows {
-        builder.add_record(row);
+        builder.add_record(row.iter().map(ToString::to_string));
     }
 
     let table = builder.build().with(Style::psql());

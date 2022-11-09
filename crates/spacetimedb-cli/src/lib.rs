@@ -1,5 +1,6 @@
 mod config;
 mod subcommands;
+mod tasks;
 pub mod util;
 
 use clap::{ArgMatches, Command};
@@ -7,7 +8,7 @@ use clap::{ArgMatches, Command};
 pub use config::Config;
 pub use subcommands::*;
 
-pub fn get_subcommands() -> Vec<Command<'static>> {
+pub fn get_subcommands() -> Vec<Command> {
     vec![
         version::cli(),
         publish::cli(),

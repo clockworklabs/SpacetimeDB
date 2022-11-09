@@ -6,28 +6,17 @@ use clap::{
     error::{ContextKind, ContextValue},
     ArgMatches, Command,
 };
-use duckscript::types::error::ScriptError;
-use duckscript::types::runtime::Context;
 use serde::{Deserialize, Serialize};
 
 use crate::config::{Config, IdentityConfig};
 
-pub fn match_subcommand_or_exit(command: Command<'static>) -> (String, ArgMatches) {
+pub fn match_subcommand_or_exit(command: Command) -> (String, ArgMatches) {
     let mut command_clone = command.clone();
     let result = command.try_get_matches();
     let args = match result {
         Ok(args) => args,
         Err(e) => match e.kind() {
-            clap::ErrorKind::UnknownArgument => {
-                e.exit();
-            }
-            clap::ErrorKind::UnrecognizedSubcommand => {
-                e.exit();
-            }
-            clap::ErrorKind::InvalidSubcommand => {
-                e.exit();
-            }
-            clap::ErrorKind::MissingSubcommand => {
+            clap::error::ErrorKind::MissingSubcommand => {
                 let cmd = e
                     .context()
                     .find_map(|c| match c {
@@ -154,11 +143,4 @@ pub async fn init_default(config: &mut Config, nickname: Option<String>) -> Resu
         identity_config,
         result_type: InitDefaultResultType::SavedNew,
     })
-}
-
-pub fn invoke_duckscript(text: &str, context: Context) -> Result<Context, ScriptError> {
-    let current_working_directory = std::env::current_dir();
-    let result = duckscript::runner::run_script(text, context);
-    std::env::set_current_dir(current_working_directory.unwrap()).unwrap();
-    return result;
 }

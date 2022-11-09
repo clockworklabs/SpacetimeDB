@@ -3,7 +3,7 @@ use clap::{value_parser, Arg, ArgMatches};
 
 use crate::config::Config;
 
-pub fn cli() -> clap::Command<'static> {
+pub fn cli() -> clap::Command {
     clap::Command::new("energy")
         .about("Invokes commands related to database budgets.")
         .args_conflicts_with_subcommands(true)
@@ -11,7 +11,7 @@ pub fn cli() -> clap::Command<'static> {
         .subcommands(get_energy_subcommands())
 }
 
-fn get_energy_subcommands() -> Vec<clap::Command<'static>> {
+fn get_energy_subcommands() -> Vec<clap::Command> {
     vec![
         clap::Command::new("status")
             .about("Show current energy balance for an identity")
@@ -24,8 +24,7 @@ fn get_energy_subcommands() -> Vec<clap::Command<'static>> {
                 Arg::new("quiet")
                     .long("quiet")
                     .short('q')
-                    .required(false)
-                    .takes_value(false)
+                    .action(clap::ArgAction::SetTrue)
                     .help("Runs command in silent mode."),
             ),
     ]
@@ -46,15 +45,15 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
 async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
-    let hex_identity = args.value_of("identity");
+    let hex_identity = args.get_one::<String>("identity");
+    let balance = *args.get_one::<usize>("balance").unwrap();
+    let quiet = args.get_flag("quiet");
+
     let hex_identity = if let Some(hex_identity) = hex_identity {
         hex_identity
     } else {
         config.get_default_identity_config().unwrap().identity.as_str()
     };
-
-    let balance: usize = *args.get_one("balance").unwrap();
-    let quiet = args.is_present("quiet");
 
     let client = reqwest::Client::new();
 
@@ -76,7 +75,8 @@ async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), an
 
 async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
-    let hex_identity = args.value_of("identity");
+    let hex_identity = args.get_one::<String>("identity");
+
     let hex_identity = if let Some(hex_identity) = hex_identity {
         hex_identity
     } else {

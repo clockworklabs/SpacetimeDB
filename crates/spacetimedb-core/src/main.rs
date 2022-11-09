@@ -114,33 +114,33 @@ enum Subcommands {
     /// Run this command in order to set up the SpacetimeDB control plane
     Init {
         /// <node-host>:<node-port>
-        #[clap(short, long, value_parser)]
+        #[arg(short, long)]
         advertise_addr: Option<String>,
 
-        #[clap(short, long, value_parser)]
+        #[arg(short, long)]
         listen_addr: Option<String>,
 
-        #[clap(short, long, value_parser, default_value = "false")]
+        #[arg(short, long, default_value_t = false)]
         worker_node: bool,
     },
     /// Run this on any machine you wish to join an existing SpacetimeDB cluster
     Join {
         /// <node-host>:<node-port>
-        #[clap(short, long, value_parser)]
+        #[arg(short, long)]
         advertise_addr: Option<String>,
 
         /// <node-host>:<node-port>
-        #[clap(short, long, value_parser)]
+        #[arg(short, long)]
         listen_addr: Option<String>,
 
         /// <node-host-1>:<node-port>,<node-host-2>:<node-port>,...
-        #[clap(short, long, value_parser)]
+        #[arg(short, long)]
         bootstrap_addrs: Option<String>,
 
-        #[clap(short, long, value_parser, default_value = "false")]
+        #[arg(short, long, default_value_t = false)]
         control_node: bool,
 
-        #[clap(short, long, value_parser, default_value = "true")]
+        #[arg(short, long, default_value_t = true)]
         worker_node: bool,
     },
     /// Print the version of spacetime
@@ -148,7 +148,7 @@ enum Subcommands {
 }
 
 #[derive(Parser, Debug)]
-#[clap(author, version, long_about=None, about=r#"
+#[command(author, version, long_about=None, about=r#"
 ┌──────────────────────────────────────────────────────────┐
 │ spacetime                                                │
 │ Easily bootstrap a secure SpacetimeDB cluster            │

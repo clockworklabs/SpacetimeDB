@@ -1,11 +1,10 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::util;
 use anyhow::Context as _;
 use clap::Arg;
 use convert_case::{Case, Casing};
-use duckscript::types::runtime::{Context, StateValue};
 use spacetimedb_lib::{EntityDef, ModuleItemDef, ReducerDef, RepeaterDef, TableDef, TupleDef};
 use wasmtime::{AsContext, AsContextMut, Caller, ExternType, Trap, TypedFunc};
 
@@ -14,21 +13,19 @@ pub mod csharp;
 
 const INDENT: &str = "\t";
 
-pub fn cli() -> clap::Command<'static> {
+pub fn cli() -> clap::Command {
     clap::Command::new("generate")
         .about("Generate client files for a spacetime module.")
         .arg(
             Arg::new("wasm_file")
-                .takes_value(true)
-                .required(false)
+                .value_parser(clap::value_parser!(PathBuf))
                 .long("wasm-file")
                 .short('w')
                 .conflicts_with("project_path"),
         )
         .arg(
             Arg::new("project_path")
-                .takes_value(true)
-                .required(false)
+                .value_parser(clap::value_parser!(PathBuf))
                 .long("project-path")
                 .short('p')
                 .default_value(".")
@@ -36,14 +33,13 @@ pub fn cli() -> clap::Command<'static> {
         )
         .arg(
             Arg::new("out_dir")
-                .takes_value(true)
+                .value_parser(clap::value_parser!(PathBuf))
                 .required(true)
                 .long("out-dir")
                 .short('o'),
         )
         .arg(
             Arg::new("lang")
-                .takes_value(true)
                 .required(true)
                 .long("lang")
                 .short('l')
@@ -53,51 +49,22 @@ pub fn cli() -> clap::Command<'static> {
 }
 
 pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
-    let project_path = args.value_of("project_path").unwrap();
-    let wasm_file_path = Path::new(project_path);
-    let mut context = Context::new();
-    duckscriptsdk::load(&mut context.commands)?;
-    context
-        .variables
-        .insert("PATH".to_string(), std::env::var("PATH").unwrap());
-    context
-        .variables
-        .insert("PROJECT_PATH".to_string(), project_path.to_string());
+    let project_path = args.get_one::<PathBuf>("project_path").unwrap();
+    let wasm_file = args.get_one::<PathBuf>("wasm_file");
+    let out_dir = args.get_one::<PathBuf>("out_dir").unwrap();
+    let lang = *args.get_one::<Language>("lang").unwrap();
 
-    match util::invoke_duckscript(include_str!("../project/build.duck"), context) {
-        Ok(ok) => {
-            let mut error = false;
-            for entry in ok.state {
-                if let StateValue::SubState(sub_state) = entry.1 {
-                    for entry in sub_state {
-                        match entry.1 {
-                            StateValue::String(a) => {
-                                error = true;
-                                println!("{}|{}", entry.0, a)
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
+    crate::tasks::build(project_path)?;
 
-            if error {
-                return Err(anyhow::anyhow!(
-                    "Build finished with errors, check the console for more information."
-                ));
-            }
+    let found_wasm_file;
+    let wasm_file = match wasm_file {
+        None => {
+            found_wasm_file = util::find_wasm_file(project_path)?;
+            &found_wasm_file
         }
-        Err(e) => return Err(anyhow::anyhow!(format!("Script execution error: {}", e))),
-    }
-
-    let wasm_file_path = util::find_wasm_file(wasm_file_path)?;
-    let wasm_file = match args.value_of("wasm_file") {
-        None => Path::new(wasm_file_path.to_str().unwrap()),
-        Some(path) => Path::new(path),
+        Some(path) => path,
     };
 
-    let out_dir = Path::new(args.value_of("out_dir").unwrap());
-    let lang = *args.get_one::<Language>("lang").unwrap();
     if !out_dir.exists() {
         return Err(anyhow::anyhow!(
             "Output directory '{}' does not exist. Please create the directory and rerun this command.",
@@ -121,9 +88,9 @@ impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
         &[Self::Csharp]
     }
-    fn to_possible_value<'a>(&self) -> Option<clap::PossibleValue<'a>> {
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self {
-            Self::Csharp => Some(clap::PossibleValue::new("csharp").aliases(["c#", "cs"])),
+            Self::Csharp => Some(clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"])),
         }
     }
 }

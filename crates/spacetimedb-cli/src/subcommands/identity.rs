@@ -7,7 +7,7 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
 
-pub fn cli() -> Command<'static> {
+pub fn cli() -> Command {
     Command::new("identity")
         .args_conflicts_with_subcommands(true)
         .subcommand_required(true)
@@ -15,7 +15,7 @@ pub fn cli() -> Command<'static> {
         .about("Manage identities stored by the command line tool")
 }
 
-fn get_subcommands() -> Vec<Command<'static>> {
+fn get_subcommands() -> Vec<Command> {
     vec![
         Command::new("ls").about("List saved identities"),
         Command::new("set-default")
@@ -32,7 +32,7 @@ fn get_subcommands() -> Vec<Command<'static>> {
         Command::new("init-default")
             .about("Initialize a new default identity if missing")
             .arg(
-                arg!(-n --name "Nickname for this identity")
+                arg!(-n --name [NAME] "Nickname for this identity")
                     .required(false)
                     .default_missing_value(""),
             )
@@ -40,8 +40,7 @@ fn get_subcommands() -> Vec<Command<'static>> {
                 Arg::new("quiet")
                     .long("quiet")
                     .short('q')
-                    .required(false)
-                    .takes_value(false)
+                    .action(ArgAction::SetTrue)
                     .help("Runs command in silent mode."),
             ),
         Command::new("new")
@@ -52,7 +51,7 @@ fn get_subcommands() -> Vec<Command<'static>> {
                     .required(false),
             )
             .arg(
-                arg!(-n --name "Nickname for this identity")
+                arg!(-n --name [NAME] "Nickname for this identity")
                     .required(false)
                     .default_missing_value(""),
             ),
@@ -65,12 +64,12 @@ fn get_subcommands() -> Vec<Command<'static>> {
             .arg(Arg::new("identity").required(true))
             .arg(Arg::new("token").required(true))
             .arg(
-                arg!(-n --name "Nickname for identity")
+                arg!(-n --name [NAME] "Nickname for identity")
                     .required(false)
                     .default_missing_value(""),
             )
             .arg(
-                arg!(-e --email "Nickname for identity")
+                arg!(-e --email [EMAIL] "Nickname for identity")
                     .required(false)
                     .default_missing_value(""),
             ),
@@ -130,7 +129,7 @@ async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), a
 // simplicity.
 async fn exec_init_default(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let nickname = args.get_one::<String>("name").map(|s| s.to_owned());
-    let quiet = args.is_present("quiet");
+    let quiet = args.get_flag("quiet");
 
     let init_default_result = init_default(&mut config, nickname).await?;
     let identity_config = init_default_result.identity_config;
@@ -252,13 +251,13 @@ async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     //optional
     let nickname = args.get_one::<String>("name").map(|s| s.clone());
-    let email: String = args.get_one::<String>("email").unwrap_or(&"".to_string()).clone();
+    let email = args.get_one::<String>("email").map(|s| s.clone());
 
     config.identity_configs.push(IdentityConfig {
         identity,
         token,
         nickname: nickname.clone(),
-        email: Some(email.clone()),
+        email: email.clone(),
     });
 
     config.save();

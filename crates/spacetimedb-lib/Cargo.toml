@@ -10,7 +10,6 @@ description = "A common library for SpacetimeDB"
 bench = false
 
 [dependencies]
-custom-print = "0.1.0"
 decorum = "0.3.1"
 enum-as-inner = "0.5.0"
 sha3 = "0.10.0"

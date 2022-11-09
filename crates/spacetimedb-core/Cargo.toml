@@ -34,10 +34,8 @@ harness = false
 [dependencies] 
 tokio = { version = "1.2", features = ["full"] }
 wasmer = "2.1.1"
-wasm-bindgen = "0.2.79"
 wasmer-middlewares = "2.1.1"
 sha3 = "0.10.0"
-hex-literal = "0.3.4"
 hex = "0.4.3"
 prost = "0.10"
 lazy_static = "1.4.0"
@@ -60,7 +58,7 @@ regex = "1"
 futures = "0.3"
 prometheus = "0.13.0"
 hostname = "^0.3"
-clap = { version = "3.2.8", features = ["derive"] }
+clap = { version = "4.0.18", features = ["derive"] }
 sled = "0.34.7"
 email_address = "0.2.3"
 sqlparser = "0.21.0"

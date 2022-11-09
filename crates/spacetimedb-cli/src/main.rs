@@ -13,7 +13,7 @@ async fn main() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-fn get_command() -> Command<'static> {
+fn get_command() -> Command {
     Command::new("spacetime")
         .args_conflicts_with_subcommands(true)
         .subcommand_required(true)

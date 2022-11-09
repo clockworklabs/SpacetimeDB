@@ -1,13 +1,15 @@
 use crate::Config;
+use anyhow::Context;
 use clap::{Arg, ArgMatches};
 use colored::Colorize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-pub fn cli() -> clap::Command<'static> {
+pub fn cli() -> clap::Command {
     clap::Command::new("init")
         .about("Initializes a new spacetime project")
         .arg(
             Arg::new("project-path")
+                .value_parser(clap::value_parser!(PathBuf))
                 .required(false)
                 .default_value(".")
                 .help("The path where we will create the spacetime project"),
@@ -17,10 +19,14 @@ pub fn cli() -> clap::Command<'static> {
                 .required(true)
                 .short('l')
                 .long("lang")
-                .takes_value(true)
                 .help("The spacetime module language.")
-                .possible_values(["rust"]),
+                .value_parser(clap::value_parser!(ProjectLang)),
         )
+}
+
+#[derive(clap::ValueEnum, Clone, Copy)]
+enum ProjectLang {
+    Rust,
 }
 
 fn check_for_cargo() -> bool {
@@ -79,85 +85,48 @@ fn check_for_git() -> bool {
 }
 
 pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let project_path_str = args.value_of("project-path").unwrap();
-    let project_path = Path::new(project_path_str);
-    let project_lang = args.value_of("lang").unwrap();
+    let project_path = args.get_one::<PathBuf>("project-path").unwrap();
+    let project_lang = *args.get_one::<ProjectLang>("lang").unwrap();
 
     // Create the project path, or make sure the target project path is empty.
     if project_path.exists() {
         if !project_path.is_dir() {
             return Err(anyhow::anyhow!(
                 "Path {} exists but is not a directory. A new SpacetimeDB project must be initialized in an empty directory.",
-                project_path_str
+                project_path.display()
             ));
         }
 
-        if std::fs::read_dir(project_path_str).unwrap().count() > 0 {
+        if std::fs::read_dir(project_path).unwrap().count() > 0 {
             return Err(anyhow::anyhow!(
                 "Cannot create new SpacetimeDB project in non-empty directory: {}",
-                project_path_str
+                project_path.display()
             ));
         }
     } else {
-        if let Err(e) = create_directory(project_path_str) {
-            return Err(e);
-        }
+        create_directory(project_path)?;
     }
 
-    match project_lang.to_lowercase().as_str() {
-        "rust" => {
-            return exec_init_rust(args).await;
-        }
-        _ => {
-            return Err(anyhow::anyhow!(format!("Unknown project language: {}", project_lang)));
-        }
+    match project_lang {
+        ProjectLang::Rust => exec_init_rust(args).await,
     }
 }
 
 pub async fn exec_init_rust(args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let project_path_str = args.value_of("project-path").unwrap();
-    let project_path = Path::new(project_path_str);
-    let project_lang = args.value_of("lang").unwrap();
+    let project_path = args.get_one::<PathBuf>("project-path").unwrap();
 
     let mut export_files = Vec::<(&str, &str)>::new();
 
-    match project_lang {
-        "rust" => {
-            export_files.push((include_str!("project/Cargo._toml"), "Cargo.toml"));
-            export_files.push((include_str!("project/lib._rs"), "src/lib.rs"));
-            export_files.push((include_str!("project/rust_gitignore"), ".gitignore"));
-        }
-        _ => {
-            panic!("Unsupported language!");
-        }
-    }
+    export_files.push((include_str!("project/Cargo._toml"), "Cargo.toml"));
+    export_files.push((include_str!("project/lib._rs"), "src/lib.rs"));
+    export_files.push((include_str!("project/rust_gitignore"), ".gitignore"));
 
     for data_file in export_files {
-        let value = project_path.join(data_file.1);
-        let path_str = match value.to_str() {
-            Some(s) => s,
-            None => {
-                // The developer created an invalid path
-                panic!("Invalid path supplied: {}", data_file.1);
-            }
-        };
+        let path = project_path.join(data_file.1);
 
-        let path = Path::new(path_str);
-        if let Some(parent_path) = path.parent() {
-            if let Some(parent_path) = parent_path.to_str() {
-                if let Err(e) = create_directory(parent_path) {
-                    return Err(e);
-                }
-            } else {
-                return Err(anyhow::anyhow!("Failed to parse path: {}", path_str));
-            }
-        } else {
-            return Err(anyhow::anyhow!("Failed to parse path: {}", path_str));
-        }
+        create_directory(path.parent().unwrap())?;
 
-        if let Err(e) = std::fs::write(path_str, data_file.0) {
-            return Err(anyhow::anyhow!("{}", e));
-        }
+        std::fs::write(path, data_file.0)?;
     }
 
     // Check all dependencies
@@ -166,17 +135,14 @@ pub async fn exec_init_rust(args: &ArgMatches) -> Result<(), anyhow::Error> {
 
     println!(
         "{}",
-        format!("Project successfully created at path: {}", project_path_str).green()
+        format!("Project successfully created at path: {}", project_path.display()).green()
     );
 
     Ok(())
 }
 
-fn create_directory(path: &str) -> Result<(), anyhow::Error> {
-    if let Err(e) = std::fs::create_dir_all(path) {
-        return Err(anyhow::anyhow!("Failed to create directory: {}", e.to_string()));
-    }
-    Ok(())
+fn create_directory(path: &Path) -> Result<(), anyhow::Error> {
+    std::fs::create_dir_all(path).context("Failed to create directory")
 }
 
 fn find_executable<P>(exe_name: P) -> Option<std::path::PathBuf>

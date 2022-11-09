@@ -1,9 +1,10 @@
 use crate::config::Config;
 use crate::util::spacetime_dns;
 use clap::Arg;
+use clap::ArgAction::SetTrue;
 use clap::ArgMatches;
 
-pub fn cli() -> clap::Command<'static> {
+pub fn cli() -> clap::Command {
     clap::Command::new("describe")
         .about("Describe the structure of a database or entities within it")
         .arg(Arg::new("database").required(true))
@@ -12,21 +13,24 @@ pub fn cli() -> clap::Command<'static> {
                 .required(false)
                 .value_parser(["reducer", "table", "repeater"]),
         )
-        .arg(Arg::new("entity_name").required(false))
-        .arg(Arg::new("brief").long("brief").short('b'))
+        .arg(Arg::new("entity_name").required(false).requires("entity_type"))
+        .arg(Arg::new("brief").long("brief").short('b').action(SetTrue))
         .after_help("Run `spacetime help describe` for more detailed information.\n")
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let database = args.value_of("database").unwrap();
+    let database = args.get_one::<String>("database").unwrap();
+    let expand = !args.get_flag("brief");
+    let entity_name = args.get_one::<String>("entity_name");
+    let entity_type = args.get_one::<String>("entity_type");
+
     let address = if let Ok(address) = spacetime_dns(&config, database).await {
         address
     } else {
         database.to_string()
     };
-    let expand = !args.is_present("brief");
 
-    let res = match args.value_of("entity_name") {
+    let res = match entity_name {
         None => {
             let client = reqwest::Client::new();
             client
@@ -36,7 +40,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
                 .await?
         }
         Some(entity_name) => {
-            let entity_type = format!("{}s", args.value_of("entity_type").unwrap());
+            let entity_type = format!("{}s", entity_type.unwrap());
 
             let client = reqwest::Client::new();
             client

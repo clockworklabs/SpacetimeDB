@@ -3,7 +3,7 @@ use crate::util::spacetime_dns;
 use clap::Arg;
 use clap::ArgMatches;
 
-pub fn cli() -> clap::Command<'static> {
+pub fn cli() -> clap::Command {
     clap::Command::new("name")
         .about("Resolves the address of a SpacetimeDB database.")
         .arg(Arg::new("name").required(true))
@@ -11,7 +11,8 @@ pub fn cli() -> clap::Command<'static> {
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let name = args.value_of("name").unwrap();
+    let name = args.get_one::<String>("name").unwrap();
+
     if let Ok(address) = spacetime_dns(&config, name).await {
         println!("{}", address);
     } else {
