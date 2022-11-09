@@ -46,14 +46,21 @@ fn get_subcommands() -> Vec<Command> {
         Command::new("new")
             .about("Create a new identity")
             .arg(
-                arg!(--no-save "Don't save save to local config, just create a new identity")
+                Arg::new("no-save")
+                    .help("Don't save save to local config, just create a new identity")
+                    .long("no-save")
                     .action(ArgAction::SetTrue)
                     .required(false),
             )
             .arg(
                 arg!(-n --name [NAME] "Nickname for this identity")
                     .required(false)
-                    .default_missing_value(""),
+                    .conflicts_with("no-save"),
+            )
+            .arg(
+                arg!(-e --email [EMAIL] "Recovery email for this identity")
+                    .required(false)
+                    .conflicts_with("no-save"),
             ),
         Command::new("delete")
             .about("Delete a saved identity")
@@ -223,12 +230,13 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     if save {
         let nickname = args.get_one::<String>("name").map(|s| s.clone());
+        let email = args.get_one::<String>("email").map(|s| s.clone());
 
         config.identity_configs.push(IdentityConfig {
             identity: identity_token.identity,
             token: identity_token.token,
             nickname: nickname.clone(),
-            email: None,
+            email: email.clone(),
         });
         if config.default_identity.is_none() {
             config.default_identity = Some(identity.clone());
@@ -237,6 +245,7 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         println!(" Saved new identity");
         println!(" IDENTITY  {}", identity);
         println!(" NAME      {}", nickname.unwrap_or("".to_string()));
+        println!(" EMAIL     {}", email.unwrap_or("".to_string()));
     } else {
         println!(" IDENTITY  {}", identity);
         println!(" TOKEN     {}", identity_token.token);
