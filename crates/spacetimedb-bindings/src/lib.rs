@@ -29,6 +29,8 @@ pub mod __private {
 
 #[no_mangle]
 pub static SPACETIME_ABI_VERSION: u32 = (spacetimedb_lib::SCHEMA_FORMAT_VERSION as u32) << 16 | sys::ABI_VERSION as u32;
+#[no_mangle]
+pub static SPACETIME_ABI_VERSION_IS_ADDR: () = ();
 
 // #[cfg(target_arch = "wasm32")]
 // #[global_allocator]
