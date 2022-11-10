@@ -47,7 +47,7 @@ impl ModuleSubscription {
         tokio::spawn(async move {
             let mut actor = ModuleSubscriptionActor::new(relational_db);
             while let Some(command) = rx.recv().await {
-                if actor.handle_message(command) {
+                if actor.handle_message(command).await {
                     break;
                 }
             }
@@ -85,10 +85,10 @@ impl ModuleSubscriptionActor {
         }
     }
 
-    pub fn handle_message(&mut self, command: ModuleSubscriptionCommand) -> bool {
+    pub async fn handle_message(&mut self, command: ModuleSubscriptionCommand) -> bool {
         match command {
             ModuleSubscriptionCommand::AddSubscriber { client_id } => {
-                let should_exit = self.add_subscriber(client_id);
+                let should_exit = self.add_subscriber(client_id).await;
                 should_exit
             }
             ModuleSubscriptionCommand::RemoveSubscriber { client_id } => {
@@ -96,23 +96,24 @@ impl ModuleSubscriptionActor {
                 should_exit
             }
             ModuleSubscriptionCommand::BroadcastEvent { event } => {
-                self.broadcast_event(event);
+                self.broadcast_event(event).await;
                 false
             }
         }
     }
 
-    pub fn add_subscriber(&mut self, client_id: ClientActorId) -> bool {
-        let cai = CLIENT_ACTOR_INDEX.lock().unwrap();
-        let client = cai.get_client(&client_id).unwrap();
-        let sender = client.sender();
-        let protocol = client.protocol;
+    pub async fn add_subscriber(&mut self, client_id: ClientActorId) -> bool {
+        let (sender, protocol) = {
+            let cai = CLIENT_ACTOR_INDEX.lock().unwrap();
+            let client = cai.get_client(&client_id).unwrap();
+            (client.sender(), client.protocol)
+        };
         self.subscribers.push(Subscriber {
             sender: sender.clone(),
             protocol,
         });
 
-        self.send_state(protocol, sender);
+        self.send_state(protocol, sender).await;
         false
     }
 
@@ -132,7 +133,7 @@ impl ModuleSubscriptionActor {
         false
     }
 
-    fn broadcast_event(&mut self, event: ModuleEvent) {
+    async fn broadcast_event(&mut self, event: ModuleEvent) {
         // TODO: this is going to have to be rendered per client based on subscriptions
         let protobuf_event = self.render_protobuf_event(&event);
         let mut protobuf_buf = Vec::new();
@@ -147,28 +148,32 @@ impl ModuleSubscriptionActor {
             match protocol {
                 Protocol::Text => {
                     let sender = subscriber.sender.clone();
-                    Self::send_async_text(sender, json_string.clone());
+                    Self::send_sync_text(sender, json_string.clone()).await;
                 }
                 Protocol::Binary => {
                     let sender = subscriber.sender.clone();
-                    Self::send_async_binary(sender, protobuf_buf.clone());
+                    Self::send_sync_binary(sender, protobuf_buf.clone()).await;
                 }
             }
         }
     }
 
-    fn send_state(&mut self, protocol: Protocol, sender: ClientConnectionSender) {
+    /// NOTE: It is important to send the state in this thread because if you spawn a new
+    /// thread it's possible for messages to get sent to the client out of order. If you do
+    /// spawn in another thread messages will need to be buffered until the state is sent out
+    /// on the wire
+    async fn send_state(&mut self, protocol: Protocol, sender: ClientConnectionSender) {
         match protocol {
             Protocol::Text => {
                 let json_state = self.render_json_state();
                 let json_string = serde_json::to_string(&json_state).unwrap();
-                Self::send_async_text(sender, json_string.clone());
+                Self::send_sync_text(sender, json_string.clone()).await;
             }
             Protocol::Binary => {
                 let protobuf_state = self.render_protobuf_state();
                 let mut protobuf_buf = Vec::new();
                 protobuf_state.encode(&mut protobuf_buf).unwrap();
-                Self::send_async_binary(sender, protobuf_buf.clone());
+                Self::send_sync_binary(sender, protobuf_buf.clone()).await;
             }
         }
     }
@@ -448,18 +453,14 @@ impl ModuleSubscriptionActor {
         tx_update
     }
 
-    fn send_async_text(subscriber: ClientConnectionSender, message: String) {
-        tokio::spawn(async move {
-            let message = Message::Text(message);
-            let _ = subscriber.send(message).await;
-        });
+    async fn send_sync_text(subscriber: ClientConnectionSender, message: String) {
+        let message = Message::Text(message);
+        let _ = subscriber.send(message).await;
     }
 
-    fn send_async_binary(subscriber: ClientConnectionSender, message: impl AsRef<[u8]>) {
+    async fn send_sync_binary(subscriber: ClientConnectionSender, message: impl AsRef<[u8]>) {
         let message = message.as_ref().to_owned();
-        tokio::spawn(async move {
-            let message = Message::Binary(message);
-            let _ = subscriber.send(message).await;
-        });
+        let message = Message::Binary(message);
+        let _ = subscriber.send(message).await;
     }
 }
