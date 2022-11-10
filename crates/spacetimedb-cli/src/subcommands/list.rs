@@ -6,10 +6,10 @@ use serde_json;
 use tabled::object::Columns;
 use tabled::{Alignment, Modify, Style, Table, Tabled};
 
-pub fn cli() -> Command<'static> {
+pub fn cli() -> clap::Command {
     Command::new("list")
         .about("Lists the databases attached to an identity")
-        .arg(Arg::new("identity").required(false))
+        .arg(Arg::new("identity").required(true))
 }
 
 #[derive(Deserialize)]
@@ -23,7 +23,7 @@ struct AddressRow {
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let identity = match args.value_of("identity") {
+    let identity = match args.get_one::<String>("identity") {
         Some(value) => value.to_string(),
         None => match &config.default_identity {
             Some(default_ident) => default_ident.clone(),
