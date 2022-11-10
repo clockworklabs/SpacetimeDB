@@ -80,7 +80,10 @@ impl WasmInstanceEnv {
 
     pub fn get_table_id(&self, ptr: WasmSlice<u8>, len: u32) -> u32 {
         let buffer = Self::read_output_bytes(self.memory(), ptr, len);
-        self.instance_env.get_table_id(buffer)
+        match self.instance_env.get_table_id(buffer) {
+            Some(value) => value,
+            None => u32::MAX,
+        }
     }
 
     fn alloc_return_ptr(&self, data: &[u8]) -> u64 {

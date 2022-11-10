@@ -89,7 +89,11 @@ pub fn get_table_id(table_name: &str) -> u32 {
         let table_name = TypeValue::String(table_name.to_string());
         table_name.encode(bytes);
 
-        sys::get_table_id(&bytes)
+        let result = sys::get_table_id(&bytes);
+        if result == u32::MAX {
+            panic!("Failed to get table with name: {}", table_name);
+        }
+        return result;
     })
 }
 

@@ -1,3 +1,4 @@
+use log::debug;
 use spacetimedb_lib::{ElementDef, PrimaryKey, TupleDef, TupleValue, TypeDef, TypeValue};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -216,7 +217,7 @@ impl InstanceEnv {
         stdb.create_table(tx, table_name, schema).unwrap()
     }
 
-    pub fn get_table_id(&self, buffer: bytes::Bytes) -> u32 {
+    pub fn get_table_id(&self, buffer: bytes::Bytes) -> Option<u32> {
         let stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
@@ -224,14 +225,25 @@ impl InstanceEnv {
         let schema = TypeDef::String;
 
         let table_name = TypeValue::decode(&schema, &mut &buffer[..]);
-        let table_name = table_name.unwrap_or_else(|e| {
-            panic!("get_table_id: Could not decode table_name! Err: {}", e);
-        });
+        if let Err(e) = table_name {
+            debug!("get_table_id: Could not decode table_name! Err: {}", e);
+            return None;
+        }
 
+        let table_name = table_name.unwrap();
         let table_name = table_name.as_string().unwrap();
-        let table_id = stdb.table_id_from_name(tx, table_name).unwrap();
+        let table_id = stdb.table_id_from_name(tx, table_name);
+        if let Err(e) = table_id {
+            debug!("get_table_id: Table name {} has no table ID. Err={}", table_name, e);
+            return None;
+        }
+        let table_id = table_id.unwrap();
+        if let None = table_id {
+            debug!("get_table_id: Table name {} has no table ID.", table_name);
+            return None;
+        }
 
-        table_id.unwrap()
+        Some(table_id.unwrap())
     }
 
     pub fn iter(&self, table_id: u32) -> Vec<u8> {
