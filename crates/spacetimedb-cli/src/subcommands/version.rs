@@ -11,7 +11,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("cli")
                 .short('c')
-                .long("--cli")
+                .long("cli")
                 .action(SetTrue)
                 .help("Prints only the CLI version"),
         )
