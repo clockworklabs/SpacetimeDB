@@ -32,13 +32,13 @@ enum ProjectLang {
 fn check_for_cargo() -> bool {
     match std::env::consts::OS {
         "linux" | "freebsd" | "netbsd" | "openbsd" | "solaris" | "macos" => {
-            if let Some(_) = find_executable("cargo") {
+            if find_executable("cargo").is_some() {
                 return true;
             }
             println!("{}", "Warning: You have created a rust project, but you are missing cargo. You should install cargo with the following command:\n\n\tcurl https://sh.rustup.rs -sSf | sh\n".yellow());
         }
         "windows" => {
-            if let Some(_) = find_executable("cargo.exe") {
+            if find_executable("cargo.exe").is_some() {
                 return true;
             }
             println!("{}", "Warning: You have created a rust project, but you are missing cargo. Visit the rust-lang official website for the latest instructions on install cargo on Windows:\n\n\tYou have created a rust project, but you are missing cargo.\n".yellow());
@@ -47,13 +47,13 @@ fn check_for_cargo() -> bool {
             println!("{}", format!("This OS may be unsupported: {}", unsupported_os).yellow());
         }
     }
-    return false;
+    false
 }
 
 fn check_for_git() -> bool {
     match std::env::consts::OS {
         "linux" | "freebsd" | "netbsd" | "openbsd" | "solaris" => {
-            if let Some(_) = find_executable("git") {
+            if find_executable("git").is_some() {
                 return true;
             }
             println!(
@@ -62,7 +62,7 @@ fn check_for_git() -> bool {
             );
         }
         "macos" => {
-            if let Some(_) = find_executable("git") {
+            if find_executable("git").is_some() {
                 return true;
             }
             println!(
@@ -71,7 +71,7 @@ fn check_for_git() -> bool {
             );
         }
         "windows" => {
-            if let Some(_) = find_executable("git.exe") {
+            if find_executable("git.exe").is_some() {
                 return true;
             }
 
@@ -81,7 +81,7 @@ fn check_for_git() -> bool {
             println!("{}", format!("This OS may be unsupported: {}", unsupported_os).yellow());
         }
     }
-    return false;
+    false
 }
 
 pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
@@ -115,11 +115,11 @@ pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
 pub async fn exec_init_rust(args: &ArgMatches) -> Result<(), anyhow::Error> {
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
 
-    let mut export_files = Vec::<(&str, &str)>::new();
-
-    export_files.push((include_str!("project/Cargo._toml"), "Cargo.toml"));
-    export_files.push((include_str!("project/lib._rs"), "src/lib.rs"));
-    export_files.push((include_str!("project/rust_gitignore"), ".gitignore"));
+    let export_files = vec![
+        (include_str!("project/Cargo._toml"), "Cargo.toml"),
+        (include_str!("project/lib._rs"), "src/lib.rs"),
+        (include_str!("project/rust_gitignore"), ".gitignore"),
+    ];
 
     for data_file in export_files {
         let path = project_path.join(data_file.1);

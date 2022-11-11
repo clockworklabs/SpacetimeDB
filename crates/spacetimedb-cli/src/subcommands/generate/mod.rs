@@ -97,7 +97,7 @@ impl clap::ValueEnum for Language {
 
 pub fn generate(wasm_file: &Path, lang: Language) -> anyhow::Result<impl Iterator<Item = (String, String)>> {
     let Language::Csharp = lang;
-    let descriptions = extract_descriptions(&wasm_file)?;
+    let descriptions = extract_descriptions(wasm_file)?;
     Ok(descriptions.into_iter().filter_map(|(name, desc)| match desc {
         ModuleItemDef::Entity(EntityDef::Table(table)) => {
             let code = csharp::autogen_csharp_table(&name, &table);

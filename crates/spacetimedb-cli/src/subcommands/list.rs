@@ -57,12 +57,12 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         result_list.push(AddressRow { db_address: entry });
     }
 
-    if result_list.len() > 0 {
+    if !result_list.is_empty() {
         let table = Table::new(result_list)
             .with(Style::psql())
             .with(Modify::new(Columns::first()).with(Alignment::left()));
         println!("Associated database addresses for {}:\n", identity);
-        println!("{}", table.to_string());
+        println!("{}", table);
     } else {
         println!("No databases found for {}.", identity);
     }

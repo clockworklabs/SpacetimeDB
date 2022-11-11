@@ -145,7 +145,7 @@ fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_column
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
-                writeln!(output, "return {};", convert_tupledef(&tuple)).unwrap();
+                writeln!(output, "return {};", convert_tupledef(tuple)).unwrap();
             }
             writeln!(output, "}}").unwrap();
             writeln!(output).unwrap();
@@ -375,7 +375,7 @@ fn autogen_csharp_access_funcs_for_struct(
 
         let filter_return_type = fmt_fn(|f| {
             if is_unique {
-                f.write_str(&struct_name_pascal_case)
+                f.write_str(struct_name_pascal_case)
             } else {
                 write!(f, "System.Collections.Generic.IEnumerable<{}>", struct_name_pascal_case)
             }

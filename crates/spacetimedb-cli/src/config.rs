@@ -54,8 +54,8 @@ impl Config {
 
     fn from_raw(raw: RawConfig) -> Self {
         Self {
-            identity_configs: raw.identity_configs.unwrap_or(Vec::new()),
-            host: raw.host.unwrap_or("spacetime.spacetimedb.net:3000".into()),
+            identity_configs: raw.identity_configs.unwrap_or_default(),
+            host: raw.host.unwrap_or_else(|| "spacetime.spacetimedb.net:3000".into()),
             default_identity: raw.default_identity,
         }
     }
@@ -96,7 +96,7 @@ impl Config {
                 return true;
             }
         }
-        return false;
+        false
     }
 
     pub fn get_identity_config_by_name(&self, name: &str) -> Option<&IdentityConfig> {
@@ -106,11 +106,11 @@ impl Config {
     }
 
     pub fn get_identity_config_by_identity(&self, identity: &str) -> Option<&IdentityConfig> {
-        self.identity_configs.iter().find(|c| &c.identity == identity)
+        self.identity_configs.iter().find(|c| c.identity == identity)
     }
 
     pub fn get_identity_config_by_identity_mut(&mut self, identity: &str) -> Option<&mut IdentityConfig> {
-        self.identity_configs.iter_mut().find(|c| &c.identity == identity)
+        self.identity_configs.iter_mut().find(|c| c.identity == identity)
     }
 
     pub fn update_default_identity(&mut self) {

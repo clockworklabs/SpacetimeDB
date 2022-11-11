@@ -65,7 +65,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let stmt_result_json: Vec<StmtResultJson> = serde_json::from_str(&json).unwrap();
 
     let stmt_result = stmt_result_json.first();
-    if let None = stmt_result {
+    if stmt_result.is_none() {
         return Err(anyhow!("Invalid sql query."));
     }
     let stmt_result = stmt_result.unwrap();
@@ -77,7 +77,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         schema
             .elements
             .iter()
-            .map(|e| e.name.as_ref().map(|s| s.clone()).unwrap_or(format!("{}", e.tag))),
+            .map(|e| e.name.as_ref().cloned().unwrap_or(format!("{}", e.tag))),
     );
 
     for row in rows {

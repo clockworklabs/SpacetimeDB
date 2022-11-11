@@ -69,14 +69,12 @@ pub fn find_wasm_file(project_path: &Path) -> Result<PathBuf, anyhow::Error> {
         ));
     }
 
-    for file in fs::read_dir(module_output_directory_path.to_str().unwrap()).unwrap() {
-        match file {
-            Ok(f) => {
-                if f.file_name().to_str().unwrap().ends_with(".wasm") && f.path().is_file() {
-                    return Ok(f.path());
-                }
-            }
-            Err(_) => {}
+    for file in fs::read_dir(module_output_directory_path.to_str().unwrap())
+        .unwrap()
+        .flatten()
+    {
+        if file.file_name().to_str().unwrap().ends_with(".wasm") && file.path().is_file() {
+            return Ok(file.path());
         }
     }
 
@@ -136,7 +134,7 @@ pub async fn init_default(config: &mut Config, nickname: Option<String>) -> Resu
     };
     config.identity_configs.push(identity_config.clone());
     if config.default_identity.is_none() {
-        config.default_identity = Some(identity.clone());
+        config.default_identity = Some(identity);
     }
     config.save();
     Ok(InitDefaultResult {

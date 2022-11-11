@@ -143,16 +143,13 @@ async fn exec_init_default(mut config: Config, args: &ArgMatches) -> Result<(), 
             InitDefaultResultType::Existing => {
                 println!(" Existing default identity");
                 println!(" IDENTITY  {}", identity_config.identity);
-                println!(
-                    " NAME      {}",
-                    identity_config.nickname.clone().unwrap_or("".to_string())
-                );
+                println!(" NAME      {}", identity_config.nickname.unwrap_or_default());
                 return Ok(());
             }
             InitDefaultResultType::SavedNew => {
                 println!(" Saved new identity");
                 println!(" IDENTITY  {}", identity_config.identity);
-                println!(" NAME      {}", identity_config.nickname.unwrap_or("".to_string()));
+                println!(" NAME      {}", identity_config.nickname.unwrap_or_default());
             }
         }
     }
@@ -173,7 +170,7 @@ async fn exec_delete(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
             config.save();
             println!(" Removed identity");
             println!(" IDENTITY  {}", ic.identity);
-            println!(" NAME  {}", ic.nickname.unwrap_or("".to_string()));
+            println!(" NAME  {}", ic.nickname.unwrap_or_default());
         } else {
             println!("No such identity by that name.");
         }
@@ -188,7 +185,7 @@ async fn exec_delete(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
             config.save();
             println!(" Removed identity");
             println!(" IDENTITY  {}", ic.identity);
-            println!(" NAME  {}", ic.nickname.unwrap_or("".to_string()));
+            println!(" NAME  {}", ic.nickname.unwrap_or_default());
         } else {
             println!("No such identity.");
         }
@@ -225,8 +222,8 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let identity = identity_token.identity.clone();
 
     if save {
-        let nickname = args.get_one::<String>("name").map(|s| s.clone());
-        let email = args.get_one::<String>("email").map(|s| s.clone());
+        let nickname = args.get_one::<String>("name").cloned();
+        let email = args.get_one::<String>("email").cloned();
 
         config.identity_configs.push(IdentityConfig {
             identity: identity_token.identity,
@@ -240,8 +237,8 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         config.save();
         println!(" Saved new identity");
         println!(" IDENTITY  {}", identity);
-        println!(" NAME      {}", nickname.unwrap_or("".to_string()));
-        println!(" EMAIL     {}", email.unwrap_or("".to_string()));
+        println!(" NAME      {}", nickname.unwrap_or_default());
+        println!(" EMAIL     {}", email.unwrap_or_default());
     } else {
         println!(" IDENTITY  {}", identity);
         println!(" TOKEN     {}", identity_token.token);
@@ -255,20 +252,20 @@ async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let token: String = args.get_one::<String>("token").unwrap().clone();
 
     //optional
-    let nickname = args.get_one::<String>("name").map(|s| s.clone());
-    let email = args.get_one::<String>("email").map(|s| s.clone());
+    let nickname = args.get_one::<String>("name").cloned();
+    let email = args.get_one::<String>("email").cloned();
 
     config.identity_configs.push(IdentityConfig {
         identity,
         token,
         nickname: nickname.clone(),
-        email: email.clone(),
+        email,
     });
 
     config.save();
 
     println!(" New Identity Added");
-    println!(" NAME      {}", nickname.unwrap_or("".to_string()));
+    println!(" NAME      {}", nickname.unwrap_or_default());
 
     Ok(())
 }
@@ -293,14 +290,14 @@ async fn exec_ls(config: Config, _args: &ArgMatches) -> Result<(), anyhow::Error
         rows.push(LsRow {
             default: default_str.to_string(),
             identity: identity_token.identity,
-            name: identity_token.nickname.unwrap_or("".to_string()),
-            email: identity_token.email.unwrap_or("".to_string()),
+            name: identity_token.nickname.unwrap_or_default(),
+            email: identity_token.email.unwrap_or_default(),
         });
     }
     let table = Table::new(&rows)
         .with(Style::empty())
         .with(Modify::new(Columns::first()).with(Alignment::right()));
-    println!("{}", table.to_string());
+    println!("{}", table);
     Ok(())
 }
 
