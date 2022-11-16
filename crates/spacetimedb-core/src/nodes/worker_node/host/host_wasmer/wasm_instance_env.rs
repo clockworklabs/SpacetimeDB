@@ -1,5 +1,6 @@
 use std::cell::Cell;
 
+use crate::nodes::error::NodesError;
 use wasmer::{LazyInit, Memory, MemoryView, NativeFunc, WasmerEnv};
 
 use crate::nodes::worker_node::host::instance_env::InstanceEnv;
@@ -15,16 +16,16 @@ pub struct WasmInstanceEnv {
     pub alloc: LazyInit<NativeFunc<u32, WasmSlice<u8>>>,
 }
 
-fn cvt_count(x: Result<u32, ()>) -> u32 {
+fn cvt_count(x: Result<u32, NodesError>) -> u32 {
     match x {
         Ok(count) => count,
-        Err(()) => u32::MAX,
+        Err(_) => u32::MAX,
     }
 }
-fn cvt(x: Result<(), ()>) -> u8 {
+fn cvt(x: Result<(), NodesError>) -> u8 {
     match x {
         Ok(()) => 1,
-        Err(()) => 0,
+        Err(_) => 0,
     }
 }
 

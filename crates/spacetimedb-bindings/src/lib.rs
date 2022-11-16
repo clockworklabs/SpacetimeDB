@@ -21,6 +21,7 @@ pub use spacetimedb_lib::TypeValue;
 pub use serde_json;
 
 pub use spacetimedb_bindings_sys as sys;
+use spacetimedb_bindings_sys::BindingError;
 
 #[doc(hidden)]
 pub mod __private {
@@ -80,7 +81,7 @@ pub fn create_table(table_name: &str, schema: TupleDef) -> u32 {
 
         table_info.encode(bytes);
 
-        sys::create_table(&bytes)
+        sys::create_table(bytes)
     })
 }
 
@@ -89,18 +90,18 @@ pub fn get_table_id(table_name: &str) -> u32 {
         let table_name = TypeValue::String(table_name.to_string());
         table_name.encode(bytes);
 
-        let result = sys::get_table_id(&bytes);
+        let result = sys::get_table_id(bytes);
         if result == u32::MAX {
             panic!("Failed to get table with name: {}", table_name);
         }
-        return result;
+        result
     })
 }
 
-pub fn insert(table_id: u32, row: TupleValue) -> Result<(), ()> {
+pub fn insert(table_id: u32, row: TupleValue) -> Result<(), BindingError> {
     with_row_buf(|bytes| {
         row.encode(bytes);
-        sys::insert(table_id, &bytes)
+        sys::insert(table_id, bytes)
     })
 }
 
@@ -109,7 +110,7 @@ pub fn insert(table_id: u32, row: TupleValue) -> Result<(), ()> {
 pub fn delete_pk(table_id: u32, primary_key: PrimaryKey) -> Option<usize> {
     with_row_buf(|bytes| {
         primary_key.encode(bytes);
-        sys::delete_pk(table_id, &bytes).ok().map(|()| 1)
+        sys::delete_pk(table_id, bytes).ok().map(|()| 1)
     })
 }
 
@@ -121,7 +122,7 @@ pub fn delete_filter<F: Fn(&TupleValue) -> bool>(table_id: u32, f: F) -> Option<
                 count += 1;
                 bytes.clear();
                 tuple_value.encode(bytes);
-                if let Err(_) = sys::delete_value(table_id, &bytes) {
+                if sys::delete_value(table_id, bytes).is_err() {
                     panic!("Something ain't right.");
                 }
             }
@@ -133,19 +134,17 @@ pub fn delete_filter<F: Fn(&TupleValue) -> bool>(table_id: u32, f: F) -> Option<
 pub fn delete_eq(table_id: u32, col_id: u8, eq_value: TypeValue) -> Option<u32> {
     with_row_buf(|bytes| {
         eq_value.encode(bytes);
-        sys::delete_eq(table_id, col_id.into(), &bytes).ok()
+        sys::delete_eq(table_id, col_id.into(), bytes).ok()
     })
 }
 
 pub fn delete_range(table_id: u32, col_id: u8, range: Range<TypeValue>) -> Option<u32> {
     with_row_buf(|bytes| {
-        let start = TypeValue::from(range.start);
-        let end = TypeValue::from(range.end);
         let tuple = TupleValue {
-            elements: vec![start, end].into(),
+            elements: vec![range.start, range.end].into(),
         };
         tuple.encode(bytes);
-        sys::delete_range(table_id, col_id.into(), &bytes).ok()
+        sys::delete_range(table_id, col_id.into(), bytes).ok()
     })
 }
 

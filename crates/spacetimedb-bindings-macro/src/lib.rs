@@ -33,13 +33,13 @@ pub fn spacetimedb(macro_args: proc_macro::TokenStream, item: proc_macro::TokenS
         NestedMeta::Lit(_) => None,
         NestedMeta::Meta(meta) => meta.path().get_ident().and_then(|id| {
             let res = match &*id.to_string() {
-                "table" => spacetimedb_table(&meta, other_args, item),
-                "reducer" => spacetimedb_reducer(&meta, other_args, item),
-                "connect" => spacetimedb_connect_disconnect(&meta, other_args, item, true),
-                "disconnect" => spacetimedb_connect_disconnect(&meta, other_args, item, false),
-                "migrate" => spacetimedb_migrate(&meta, other_args, item),
-                "tuple" => spacetimedb_tuple(&meta, other_args, item),
-                "index" => spacetimedb_index(&meta, other_args, item),
+                "table" => spacetimedb_table(meta, other_args, item),
+                "reducer" => spacetimedb_reducer(meta, other_args, item),
+                "connect" => spacetimedb_connect_disconnect(meta, other_args, item, true),
+                "disconnect" => spacetimedb_connect_disconnect(meta, other_args, item, false),
+                "migrate" => spacetimedb_migrate(meta, other_args, item),
+                "tuple" => spacetimedb_tuple(meta, other_args, item),
+                "index" => spacetimedb_index(meta, other_args, item),
                 _ => return None,
             };
             Some(res)
@@ -114,10 +114,7 @@ fn spacetimedb_reducer(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> s
                 // First argument must be Hash (sender)
                 if arg_num == 0 {
                     if arg_type_str != "spacetimedb::spacetimedb_lib::hash::Hash" && arg_type_str != "Hash" {
-                        let error_str = format!(
-                            "Parameter 1 of reducer {} must be of type \'Hash\'.",
-                            func_name.to_string()
-                        );
+                        let error_str = format!("Parameter 1 of reducer {} must be of type \'Hash\'.", func_name);
                         return Err(syn::Error::new_spanned(arg_type, error_str));
                     }
                     arg_num += 1;
@@ -127,10 +124,7 @@ fn spacetimedb_reducer(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> s
                 // Second argument must be a u64 (timestamp)
                 if arg_num == 1 {
                     if arg_type_str != "u64" {
-                        let error_str = format!(
-                            "Parameter 2 of reducer {} must be of type \'u64\'.",
-                            func_name.to_string()
-                        );
+                        let error_str = format!("Parameter 2 of reducer {} must be of type \'u64\'.", func_name);
                         return Err(syn::Error::new_spanned(arg_type, error_str));
                     }
                     arg_num += 1;
@@ -147,7 +141,7 @@ fn spacetimedb_reducer(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> s
             }
         }
 
-        arg_num = arg_num + 1;
+        arg_num += 1;
     }
 
     let unwrap_args = match arg_num > 2 {
@@ -248,10 +242,7 @@ fn spacetimedb_repeating_reducer(
                 // First argument must be a u64 (timestamp)
                 if arg_num == 0 {
                     if arg_type_str != "u64" {
-                        let error_str = format!(
-                            "Parameter 1 of reducer {} must be of type \'u64\'.",
-                            func_name.to_string()
-                        );
+                        let error_str = format!("Parameter 1 of reducer {} must be of type \'u64\'.", func_name);
                         return Err(syn::Error::new_spanned(arg_type, error_str));
                     }
                     arg_num += 1;
@@ -261,10 +252,7 @@ fn spacetimedb_repeating_reducer(
                 // Second argument must be an u64 (delta_time)
                 if arg_num == 1 {
                     if arg_type_str != "u64" {
-                        let error_str = format!(
-                            "Parameter 2 of reducer {} must be of type \'u64\'.",
-                            func_name.to_string()
-                        );
+                        let error_str = format!("Parameter 2 of reducer {} must be of type \'u64\'.", func_name);
                         return Err(syn::Error::new_spanned(arg_type, error_str));
                     }
                     arg_num += 1;
@@ -272,7 +260,7 @@ fn spacetimedb_repeating_reducer(
                 }
             }
         }
-        arg_num = arg_num + 1;
+        arg_num += 1;
     }
 
     let reducer_name = func_name.to_string();
@@ -339,12 +327,16 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
             // fields.named.push(table_id_field);
         }
         Unnamed(_) => {
-            let str = format!("spacetimedb tables must have named fields.");
-            return Err(syn::Error::new_spanned(&original_struct.fields, str));
+            return Err(syn::Error::new_spanned(
+                &original_struct.fields,
+                "spacetimedb tables must have named fields.",
+            ));
         }
         Unit => {
-            let str = format!("spacetimedb tables must have named fields (unit struct forbidden).");
-            return Err(syn::Error::new_spanned(&original_struct.fields, str));
+            return Err(syn::Error::new_spanned(
+                &original_struct.fields,
+                "spacetimedb tables must have named fields (unit struct forbidden).",
+            ));
         }
     }
 
@@ -380,7 +372,7 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
         let column = Column {
             vis: &field.vis,
             ty: &field.ty,
-            ident: &col_name,
+            ident: col_name,
             index: col_num,
         };
 
@@ -565,7 +557,7 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-        println!("{}", emission.to_string());
+        println!("{}", emission);
     }
 
     Ok(emission)
@@ -606,8 +598,7 @@ fn spacetimedb_index(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
         all_fields.push(field.ident.unwrap());
     }
 
-    for x in 1..args.len() {
-        let arg = &args[x];
+    for arg in args.iter().skip(1) {
         let arg_str = arg.to_token_stream().to_string();
         let name_prefix = "name = ";
         if arg_str.starts_with(name_prefix) {
@@ -647,7 +638,7 @@ fn spacetimedb_index(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-        println!("{}", output.to_string());
+        println!("{}", output);
     }
 
     Ok(output)
@@ -658,15 +649,19 @@ fn spacetimedb_tuple(meta: &Meta, _: &[NestedMeta], item: TokenStream) -> syn::R
     let original_struct = syn::parse2::<ItemStruct>(item)?;
     let original_struct_ident = original_struct.clone().ident;
 
-    match original_struct.clone().fields {
+    match original_struct.fields {
         Named(_) => {}
         Unnamed(_) => {
-            let str = format!("spacetimedb tables and types must have named fields.");
-            return Err(syn::Error::new_spanned(&original_struct.fields, str));
+            return Err(syn::Error::new_spanned(
+                &original_struct.fields,
+                "spacetimedb tables and types must have named fields.",
+            ));
         }
         Unit => {
-            let str = format!("Unit structure not supported.");
-            return Err(syn::Error::new_spanned(&original_struct.fields, str));
+            return Err(syn::Error::new_spanned(
+                &original_struct.fields,
+                "Unit structure not supported.",
+            ));
         }
     }
 
@@ -704,7 +699,7 @@ fn spacetimedb_tuple(meta: &Meta, _: &[NestedMeta], item: TokenStream) -> syn::R
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-        println!("{}", emission.to_string());
+        println!("{}", emission);
     }
 
     Ok(emission)
@@ -723,7 +718,7 @@ fn spacetimedb_migrate(meta: &Meta, _: &[NestedMeta], item: TokenStream) -> syn:
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-        println!("{}", emission.to_string());
+        println!("{}", emission);
     }
 
     Ok(emission)
@@ -773,7 +768,7 @@ fn spacetimedb_connect_disconnect(
                     if arg_type_str != "spacetimedb::spacetimedb_lib::hash::Hash" && arg_type_str != "Hash" {
                         let error_str = format!(
                             "Parameter 1 of connect/disconnect {} must be of type \'Hash\'.",
-                            func_name.to_string()
+                            func_name
                         );
                         return Err(syn::Error::new_spanned(arg_type, error_str));
                     }
@@ -786,7 +781,7 @@ fn spacetimedb_connect_disconnect(
                     if arg_type_str != "u64" {
                         let error_str = format!(
                             "Parameter 1 of connect/disconnect {} must be of type \'Hash\'.",
-                            func_name.to_string()
+                            func_name
                         );
                         return Err(syn::Error::new_spanned(arg_type, error_str));
                     }
@@ -796,7 +791,7 @@ fn spacetimedb_connect_disconnect(
             }
         }
 
-        arg_num = arg_num + 1;
+        arg_num += 1;
     }
 
     let emission = quote! {
@@ -816,7 +811,7 @@ fn spacetimedb_connect_disconnect(
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-        println!("{}", emission.to_string());
+        println!("{}", emission);
     }
 
     Ok(emission)

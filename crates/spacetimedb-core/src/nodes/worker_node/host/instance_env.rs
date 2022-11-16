@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::db::relational_db::{RelationalDB, TxWrapper};
+use crate::nodes::error::{log_to_err, NodesError};
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
 use crate::nodes::worker_node::worker_metrics::{
     INSTANCE_ENV_DELETE_EQ, INSTANCE_ENV_DELETE_PK, INSTANCE_ENV_DELETE_RANGE, INSTANCE_ENV_DELETE_VALUE,
@@ -29,7 +30,7 @@ impl InstanceEnv {
         log::debug!("MOD: {}", s);
     }
 
-    pub fn insert(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), ()> {
+    pub fn insert(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), NodesError> {
         let mut measure = HistogramVecHandle::new(
             &INSTANCE_ENV_INSERT,
             vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
@@ -43,17 +44,14 @@ impl InstanceEnv {
         let row = RelationalDB::decode_row(&schema, &mut &buffer[..]);
         let row = match row {
             Ok(x) => x,
-            Err(e) => {
-                log::error!("insert: Failed to decode row: table_id: {table_id} Err: {e}");
-                return Err(());
-            }
+            Err(e) => return Err(log_to_err(NodesError::InsertDecode { table_id, e })),
         };
 
         stdb.insert(tx, table_id, row)
-            .map_err(|e| log::error!("insert: Failed to insert row: table_id: {} Err: {}", table_id, e))
+            .map_err(|e| log_to_err(NodesError::InsertRow { table_id, e }))
     }
 
-    pub fn delete_pk(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), ()> {
+    pub fn delete_pk(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), NodesError> {
         let mut measure = HistogramVecHandle::new(
             &INSTANCE_ENV_DELETE_PK,
             vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
@@ -66,15 +64,18 @@ impl InstanceEnv {
         let (primary_key, _) = PrimaryKey::decode(&buffer[..]);
         let res = stdb
             .delete_pk(tx, table_id, primary_key)
-            .map_err(|e| log::error!("delete: Failed to delete row: table_id: {table_id} Err: {e}"))?;
-        if let Some(_) = res {
+            .map_err(|e| log_to_err(NodesError::DeleteRow { table_id, e }))?;
+        if res.is_some() {
             Ok(())
         } else {
-            Err(())
+            Err(NodesError::DeleteNotFound {
+                table_id,
+                pk: primary_key,
+            })
         }
     }
 
-    pub fn delete_value(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), ()> {
+    pub fn delete_value(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), NodesError> {
         let mut measure = HistogramVecHandle::new(
             &INSTANCE_ENV_DELETE_VALUE,
             vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
@@ -87,22 +88,21 @@ impl InstanceEnv {
         let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
         let row = RelationalDB::decode_row(&schema, &mut &buffer[..]);
         if let Err(e) = row {
-            log::error!("delete_value: Failed to decode row! table_id: {} Err: {}", table_id, e);
-            return Err(());
+            return Err(log_to_err(NodesError::DeleteDecode { table_id, e }));
         }
 
         let pk = RelationalDB::pk_for_row(&row.unwrap());
         let res = stdb
             .delete_pk(tx, table_id, pk)
-            .map_err(|e| log::error!("delete: Failed to delete row: table_id: {table_id} Err: {e}"))?;
-        if let Some(_) = res {
+            .map_err(|e| log_to_err(NodesError::DeleteRow { table_id, e }))?;
+        if res.is_some() {
             return Ok(());
         } else {
-            return Err(());
+            return Err(NodesError::DeleteNotFound { table_id, pk });
         }
     }
 
-    pub fn delete_eq(&self, table_id: u32, col_id: u32, buffer: bytes::Bytes) -> Result<u32, ()> {
+    pub fn delete_eq(&self, table_id: u32, col_id: u32, buffer: bytes::Bytes) -> Result<u32, NodesError> {
         let mut measure = HistogramVecHandle::new(
             &INSTANCE_ENV_DELETE_EQ,
             vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
@@ -122,14 +122,14 @@ impl InstanceEnv {
         if let Ok(seek) = seek {
             let seek: Vec<TupleValue> = seek.collect::<Vec<_>>();
             stdb.delete_in(tx, table_id, seek)
-                .map_err(|e| log::error!("delete: Failed to delete row: table_id: {table_id} Err: {e}"))?
-                .ok_or(())
+                .map_err(|e| log_to_err(NodesError::DeleteRow { table_id, e }))?
+                .ok_or(NodesError::DeleteValueNotFound { table_id })
         } else {
-            Err(())
+            Err(NodesError::DeleteValueNotFound { table_id })
         }
     }
 
-    pub fn delete_range(&self, table_id: u32, col_id: u32, buffer: bytes::Bytes) -> Result<u32, ()> {
+    pub fn delete_range(&self, table_id: u32, col_id: u32, buffer: bytes::Bytes) -> Result<u32, NodesError> {
         let mut measure = HistogramVecHandle::new(
             &INSTANCE_ENV_DELETE_RANGE,
             vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
@@ -162,8 +162,7 @@ impl InstanceEnv {
         let tuple = match TupleValue::decode(&tuple_def, &mut &buffer[..]) {
             Ok(tuple) => tuple,
             Err(e) => {
-                log::error!("delete_range: Failed to decode tuple value: Err: {}", e);
-                return Err(());
+                return Err(log_to_err(NodesError::DeleteDecode { table_id, e }));
             }
         };
 
@@ -172,12 +171,12 @@ impl InstanceEnv {
 
         let range = stdb
             .range_scan(tx, table_id, col_id, start..end)
-            .map_err(|e| log::error!("delete_range: Failed to scan range: Err: {}", e))?;
+            .map_err(|e| log_to_err(NodesError::DeleteScanRange { table_id, e }))?;
         let range = range.collect::<Vec<_>>();
 
         stdb.delete_in(tx, table_id, range)
-            .map_err(|e| log::error!("delete_range: Failed to delete in range: Err: {}", e))?
-            .ok_or(())
+            .map_err(|e| log_to_err(NodesError::DeleteRange { table_id, e }))?
+            .ok_or(NodesError::DeleteRangeNotFound { table_id })
     }
 
     pub fn create_table(&self, buffer: bytes::Bytes) -> u32 {

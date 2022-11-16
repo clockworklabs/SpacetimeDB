@@ -31,16 +31,18 @@ pub mod raw {
     }
 }
 
-fn cvt_count(x: u32) -> Result<u32, ()> {
+pub struct BindingError {}
+
+fn cvt_count(x: u32) -> Result<u32, BindingError> {
     if x == u32::MAX {
-        Err(())
+        Err(BindingError {})
     } else {
         Ok(x)
     }
 }
-fn cvt(x: u8) -> Result<(), ()> {
+fn cvt(x: u8) -> Result<(), BindingError> {
     if x == 0 {
-        Err(())
+        Err(BindingError {})
     } else {
         Ok(())
     }
@@ -60,24 +62,24 @@ pub fn create_index(table_id: u32, col_id: u32, index_type: u8) {
 }
 
 #[inline]
-pub fn insert(table_id: u32, data: &[u8]) -> Result<(), ()> {
+pub fn insert(table_id: u32, data: &[u8]) -> Result<(), BindingError> {
     cvt(unsafe { raw::_insert(table_id, data.as_ptr(), data.len()) })
 }
 
 #[inline]
-pub fn delete_pk(table_id: u32, data: &[u8]) -> Result<(), ()> {
+pub fn delete_pk(table_id: u32, data: &[u8]) -> Result<(), BindingError> {
     cvt(unsafe { raw::_delete_pk(table_id, data.as_ptr(), data.len()) })
 }
 #[inline]
-pub fn delete_value(table_id: u32, data: &[u8]) -> Result<(), ()> {
+pub fn delete_value(table_id: u32, data: &[u8]) -> Result<(), BindingError> {
     cvt(unsafe { raw::_delete_value(table_id, data.as_ptr(), data.len()) })
 }
 #[inline]
-pub fn delete_eq(table_id: u32, col_id: u32, data: &[u8]) -> Result<u32, ()> {
+pub fn delete_eq(table_id: u32, col_id: u32, data: &[u8]) -> Result<u32, BindingError> {
     cvt_count(unsafe { raw::_delete_eq(table_id, col_id, data.as_ptr(), data.len()) })
 }
 #[inline]
-pub fn delete_range(table_id: u32, col_id: u32, data: &[u8]) -> Result<u32, ()> {
+pub fn delete_range(table_id: u32, col_id: u32, data: &[u8]) -> Result<u32, BindingError> {
     cvt_count(unsafe { raw::_delete_eq(table_id, col_id, data.as_ptr(), data.len()) })
 }
 
