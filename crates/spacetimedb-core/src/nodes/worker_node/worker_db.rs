@@ -114,12 +114,9 @@ pub fn get_database_instances() -> Vec<DatabaseInstance> {
 }
 
 pub fn get_leader_database_instance_by_database(database_id: u64) -> Option<DatabaseInstance> {
-    for instance in get_database_instances() {
-        if instance.database_id == database_id && instance.leader {
-            return Some(instance);
-        }
-    }
-    None
+    get_database_instances()
+        .into_iter()
+        .find(|instance| instance.database_id == database_id && instance.leader)
 }
 
 pub fn insert_database_instance(database_instance: DatabaseInstance) {

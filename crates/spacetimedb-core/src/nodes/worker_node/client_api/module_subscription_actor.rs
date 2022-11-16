@@ -86,15 +86,10 @@ impl ModuleSubscriptionActor {
     }
 
     pub async fn handle_message(&mut self, command: ModuleSubscriptionCommand) -> bool {
+        // should_exit if true
         match command {
-            ModuleSubscriptionCommand::AddSubscriber { client_id } => {
-                let should_exit = self.add_subscriber(client_id).await;
-                should_exit
-            }
-            ModuleSubscriptionCommand::RemoveSubscriber { client_id } => {
-                let should_exit = self.remove_subscriber(client_id);
-                should_exit
-            }
+            ModuleSubscriptionCommand::AddSubscriber { client_id } => self.add_subscriber(client_id).await,
+            ModuleSubscriptionCommand::RemoveSubscriber { client_id } => self.remove_subscriber(client_id),
             ModuleSubscriptionCommand::BroadcastEvent { event } => {
                 self.broadcast_event(event).await;
                 false
@@ -167,7 +162,7 @@ impl ModuleSubscriptionActor {
             Protocol::Text => {
                 let json_state = self.render_json_state();
                 let json_string = serde_json::to_string(&json_state).unwrap();
-                Self::send_sync_text(sender, json_string.clone()).await;
+                Self::send_sync_text(sender, json_string).await;
             }
             Protocol::Binary => {
                 let protobuf_state = self.render_protobuf_state();
@@ -274,7 +269,7 @@ impl ModuleSubscriptionActor {
                 let stdb = self.relational_db.lock().unwrap();
                 let tuple = stdb
                     .txdb
-                    .from_data_key(&write.data_key, |data| TupleValue::decode(&tuple_def, &mut { data }))
+                    .from_data_key(&write.data_key, |data| TupleValue::decode(tuple_def, &mut { data }))
                     .unwrap();
                 let tuple = match tuple {
                     Ok(tuple) => tuple,
@@ -415,7 +410,7 @@ impl ModuleSubscriptionActor {
                 let stdb = self.relational_db.lock().unwrap();
                 let tuple = stdb
                     .txdb
-                    .from_data_key(&write.data_key, |data| TupleValue::decode(&tuple_def, &mut { data }))
+                    .from_data_key(&write.data_key, |data| TupleValue::decode(tuple_def, &mut { data }))
                     .unwrap();
                 let tuple = match tuple {
                     Ok(tuple) => tuple,
@@ -445,12 +440,10 @@ impl ModuleSubscriptionActor {
 
         let subscription_update = SubscriptionUpdateJson { table_updates };
 
-        let tx_update = TransactionUpdateJson {
+        TransactionUpdateJson {
             event,
             subscription_update,
-        };
-
-        tx_update
+        }
     }
 
     async fn send_sync_text(subscriber: ClientConnectionSender, message: String) {

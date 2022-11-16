@@ -78,7 +78,7 @@ async fn join(state: State) -> Result<(State, Response<Body>), (State, HandlerEr
             value.to_str().ok().and_then(|str| {
                 let split = SEPARATOR.split(str);
                 let splits: Vec<_> = split.into_iter().collect();
-                splits.first().map(|x| *x)
+                splits.first().copied()
             })
         });
 

@@ -98,10 +98,10 @@ impl WorkerConnection {
     }
 
     pub fn sender(&self) -> WorkerConnectionSender {
-        return WorkerConnectionSender {
+        WorkerConnectionSender {
             _id: self.id,
             sendtx: self.sendtx.clone(),
-        };
+        }
     }
 
     pub fn recv(&mut self) {

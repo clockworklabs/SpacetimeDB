@@ -23,7 +23,7 @@ impl DatabaseInstanceContextController {
 
     pub fn get(&self, database_instance_id: u64) -> Option<WorkerDatabaseInstance> {
         let contexts = self.contexts.lock().unwrap();
-        contexts.get(&database_instance_id).map(|c| c.clone())
+        contexts.get(&database_instance_id).cloned()
     }
 
     pub fn insert(&self, worker_database_instance: WorkerDatabaseInstance) {

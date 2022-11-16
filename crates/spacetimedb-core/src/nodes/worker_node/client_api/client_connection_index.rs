@@ -75,7 +75,7 @@ impl ClientActorIndex {
         if let Some(i) = index {
             return Some(self.clients.get(i.0).unwrap());
         }
-        return None;
+        None
     }
 
     pub fn get_client_mut(&mut self, id: &ClientActorId) -> Option<&mut ClientConnection> {
@@ -83,7 +83,7 @@ impl ClientActorIndex {
         if let Some(i) = index {
             return Some(self.clients.get_mut(i.0).unwrap());
         }
-        return None;
+        None
     }
 
     pub fn drop_client(&mut self, id: &ClientActorId) {

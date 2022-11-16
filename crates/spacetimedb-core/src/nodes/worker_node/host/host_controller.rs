@@ -102,7 +102,7 @@ impl HostController {
         let key = worker_database_instance_id;
         let module_host = {
             let modules = self.modules.lock().unwrap();
-            modules.get(&key).map(|x| x.clone())
+            modules.get(&key).cloned()
         };
         if let Some(module_host) = module_host {
             module_host.delete_database().await?;
@@ -152,7 +152,7 @@ impl HostController {
         let key = worker_database_instance.database_instance_id;
         let module_host = {
             let modules = self.modules.lock().unwrap();
-            modules.get(&key).map(|x| x.clone())
+            modules.get(&key).cloned()
         };
         if let Some(module_host) = module_host {
             module_host.exit().await?;
@@ -174,7 +174,7 @@ impl HostController {
             let modules = self.modules.lock().unwrap();
             modules
                 .get(&key)
-                .ok_or(anyhow::anyhow!("No such module found."))?
+                .ok_or_else(|| anyhow::anyhow!("No such module found."))?
                 .clone()
         };
         Ok(module_host)
@@ -230,7 +230,7 @@ impl HostController {
             let modules = self.modules.lock().unwrap();
             modules
                 .get(&key)
-                .ok_or(anyhow::anyhow!("No such module found."))?
+                .ok_or_else(|| anyhow::anyhow!("No such module found."))?
                 .clone()
         };
         Ok(module_host)

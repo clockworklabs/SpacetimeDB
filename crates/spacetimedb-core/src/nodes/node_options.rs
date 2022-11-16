@@ -33,9 +33,9 @@ impl NodeOptions {
     pub fn normalize(&mut self) {
         // So workers can connect to the Control node worker API
         let mut worker_api_bootstrap_addrs_defaults = Vec::new();
-        if self.worker_api_bootstrap_addrs.len() > 0 {
+        if self.worker_api_bootstrap_addrs.is_empty() {
             for addr in &self.worker_api_bootstrap_addrs {
-                if addr.contains(":") {
+                if addr.contains(':') {
                     worker_api_bootstrap_addrs_defaults.push(addr.clone());
                 } else {
                     worker_api_bootstrap_addrs_defaults.push(format!("{}:{}", addr, Self::WORKER_API_DEFAULT_PORT))
@@ -46,9 +46,9 @@ impl NodeOptions {
 
         // So workers can connect to the Control node client API
         let mut client_api_bootstrap_addrs_defaults = Vec::new();
-        if self.client_api_bootstrap_addrs.len() > 0 {
+        if self.client_api_bootstrap_addrs.is_empty() {
             for addr in &self.client_api_bootstrap_addrs {
-                if addr.contains(":") {
+                if addr.contains(':') {
                     client_api_bootstrap_addrs_defaults.push(addr.clone());
                 } else {
                     client_api_bootstrap_addrs_defaults.push(format!("{}:{}", addr, Self::CLIENT_API_DEFAULT_PORT))
@@ -89,9 +89,9 @@ impl NodeOptions {
         }
 
         let mut peer_api_bootstrap_addrs_defaults = Vec::new();
-        if self.peer_api_bootstrap_addrs.len() > 0 {
+        if self.peer_api_bootstrap_addrs.is_empty() {
             for addr in &self.peer_api_bootstrap_addrs {
-                if addr.contains(":") {
+                if addr.contains(':') {
                     peer_api_bootstrap_addrs_defaults.push(addr.clone());
                 } else {
                     peer_api_bootstrap_addrs_defaults.push(format!("{}:{}", addr, Self::PEER_API_DEFAULT_PORT))

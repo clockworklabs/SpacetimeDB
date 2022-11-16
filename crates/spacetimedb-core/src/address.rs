@@ -27,11 +27,11 @@ impl Address {
         Ok(Self::from_arr(&data))
     }
 
-    pub fn to_hex(&self) -> String {
+    pub fn to_hex(self) -> String {
         hex::encode(self.as_slice())
     }
 
-    pub fn to_abbreviated_hex(&self) -> String {
+    pub fn to_abbreviated_hex(self) -> String {
         self.to_hex()[0..Self::ABBREVIATION_LEN].to_owned()
     }
 
@@ -46,12 +46,12 @@ impl Address {
         self.0.to_be_bytes()
     }
 
-    pub fn to_ipv6(&self) -> Ipv6Addr {
+    pub fn to_ipv6(self) -> Ipv6Addr {
         Ipv6Addr::from(self.0)
     }
 
     #[allow(dead_code)]
-    pub fn to_ipv6_string(&self) -> String {
+    pub fn to_ipv6_string(self) -> String {
         self.to_ipv6().to_string()
     }
 }

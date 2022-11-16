@@ -17,7 +17,7 @@ fn main() {
     let includes = &[proto_dir];
 
     prost_build::Config::new()
-        .btree_map(&["."])
+        .btree_map(["."])
         .include_file("protobuf.rs")
         .type_attribute(
             ".control_db.HostType",

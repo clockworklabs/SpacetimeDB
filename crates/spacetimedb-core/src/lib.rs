@@ -7,6 +7,7 @@ pub mod error;
 pub mod hash;
 mod json;
 pub mod nodes;
+#[allow(clippy::derive_partial_eq_without_eq)]
 mod protobuf {
     include!(concat!(env!("OUT_DIR"), "/protobuf.rs"));
 }

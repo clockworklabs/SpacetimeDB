@@ -162,14 +162,13 @@ impl ClientConnection {
 
         // Buffer up to 64 client messages
         let (sendtx, mut sendrx) = mpsc::channel::<SendCommand>(64);
-        let inner_id = id.clone();
         spawn(async move {
             // NOTE: This recv returns None if the channel is closed
             while let Some(command) = sendrx.recv().await {
                 command.ostx.send(sink.send(command.message).await).unwrap();
             }
 
-            log::debug!("Dropped all senders to client websocket: {}", inner_id);
+            log::debug!("Dropped all senders to client websocket: {}", id);
         });
 
         Self {
@@ -184,11 +183,11 @@ impl ClientConnection {
     }
 
     pub fn sender(&self) -> ClientConnectionSender {
-        return ClientConnectionSender {
+        ClientConnectionSender {
             id: self.id,
             sendtx: self.sendtx.clone(),
             protocol: self.protocol,
-        };
+        }
     }
 
     pub fn recv(&mut self) {
@@ -312,20 +311,20 @@ impl ClientConnection {
             .inc();
 
         let v: serde_json::Value = serde_json::from_str(&message)?;
-        let obj = v.as_object().ok_or(anyhow::anyhow!("not object"))?;
+        let obj = v.as_object().ok_or_else(|| anyhow::anyhow!("not object"))?;
         let reducer = obj
             .get("fn")
-            .ok_or(anyhow::anyhow!("no fn"))?
+            .ok_or_else(|| anyhow::anyhow!("no fn"))?
             .as_str()
-            .ok_or(anyhow::anyhow!("can't convert fn to str"))?;
-        let args = obj.get("args").ok_or(anyhow::anyhow!("no args"))?;
+            .ok_or_else(|| anyhow::anyhow!("can't convert fn to str"))?;
+        let args = obj.get("args").ok_or_else(|| anyhow::anyhow!("no args"))?;
         let arg_bytes = args.to_string().as_bytes().to_vec();
 
         // TODO(cloutiertyler): should be checking message type as in the above case
 
         let host = host_controller::get_host();
         match host
-            .call_reducer(instance_id, client_id.identity, &reducer, arg_bytes)
+            .call_reducer(instance_id, client_id.identity, reducer, arg_bytes)
             .await
         {
             Ok(_) => {}
@@ -348,7 +347,7 @@ impl Drop for ClientConnection {
             return;
         };
 
-        let client_id = self.id.clone();
+        let client_id = self.id;
 
         spawn(async move {
             let host = host_controller::get_host();

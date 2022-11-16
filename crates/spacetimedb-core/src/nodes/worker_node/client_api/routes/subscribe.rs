@@ -100,7 +100,7 @@ async fn on_connected(
         value.to_str().ok().and_then(|str| {
             let split = SEPARATOR.split(str);
             let splits: Vec<_> = split.into_iter().collect();
-            splits.first().map(|x| *x)
+            splits.first().copied()
         })
     });
 
@@ -195,7 +195,7 @@ async fn on_upgrade(
         return Ok((state, bad_request_res()));
     };
 
-    if let Err(_) = ClientConnection::get_database_instance_id(&target_address) {
+    if ClientConnection::get_database_instance_id(&target_address).is_err() {
         return Ok((state, bad_request_res()));
     }
 

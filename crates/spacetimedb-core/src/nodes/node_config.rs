@@ -30,11 +30,11 @@ pub struct NodeConfig {
 
 impl NodeConfig {
     pub fn from_options(mut options: NodeOptions) -> Self {
-        if options.control_node && options.worker_node && options.worker_api_bootstrap_addrs.len() == 0 {
+        if options.control_node && options.worker_node && options.worker_api_bootstrap_addrs.is_empty() {
             options.worker_api_bootstrap_addrs = vec!["localhost".to_owned()];
         }
 
-        if options.control_node && options.worker_node && options.client_api_bootstrap_addrs.len() == 0 {
+        if options.control_node && options.worker_node && options.client_api_bootstrap_addrs.is_empty() {
             options.client_api_bootstrap_addrs = vec!["localhost".to_owned()];
         }
 

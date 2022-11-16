@@ -37,9 +37,7 @@ async fn get_budget(state: &mut State) -> SimpleHandlerResult {
     // Note: Consult the write-through cache on control_budget, not the control_db directly.
     let budget = budget_controller::get_identity_energy_balance(&identity);
     match budget {
-        None => {
-            return Err(HandlerError::from(anyhow!("No budget for identity")).with_status(StatusCode::NOT_FOUND));
-        }
+        None => Err(HandlerError::from(anyhow!("No budget for identity")).with_status(StatusCode::NOT_FOUND)),
         Some(budget) => {
             let response_json = json!({
                 "balance": budget.balance_quanta

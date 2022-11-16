@@ -47,7 +47,7 @@ pub(crate) fn max_tx_spend(identity: &Hash) -> i64 {
     let budgets = BUDGETS.lock().expect("budgets lock");
     budgets
         .identity_budget
-        .get(&identity)
+        .get(identity)
         .map(|b| b.allocation_quanta - b.used_quanta)
         .unwrap_or_else(|| 0)
 }

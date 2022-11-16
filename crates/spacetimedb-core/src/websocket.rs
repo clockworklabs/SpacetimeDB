@@ -40,6 +40,7 @@ pub fn accept_ws_res(key: &HeaderValue, protocol: &str, custom_headers: HashMap<
         .unwrap()
 }
 
+#[allow(clippy::type_complexity)]
 pub fn validate_upgrade(
     mut state: State,
 ) -> Result<(State, HeaderMap, HeaderValue, OnUpgrade, String), (State, HandlerError)> {

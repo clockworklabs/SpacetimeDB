@@ -74,12 +74,12 @@ fn log_traceback(func_type: &str, func: &str, e: &RuntimeError) {
     let frames_len = frames.len();
 
     log::info!("{} \"{}\" runtime error: {}", func_type, func, e.message());
-    for i in 0..frames_len {
+    for (i, frame) in frames.iter().enumerate().take(frames_len) {
         log::info!(
             "  Frame #{}: {:?}::{:?}",
             frames_len - i,
-            frames[i].module_name(),
-            frames[i].function_name().or(Some("<func>")).unwrap()
+            frame.module_name(),
+            frame.function_name().unwrap_or("<func>")
         );
     }
 }
@@ -205,7 +205,7 @@ impl WasmModuleHostActor {
                 ),
                 "_console_log" => Function::new_native_with_env(
                     &self.store,
-                    env.clone(),
+                    env,
                     WasmInstanceEnv::console_log
                 ),
             }
@@ -219,7 +219,7 @@ impl WasmModuleHostActor {
 
         // Init panic if available
         let init_panic = instance.exports.get_native_function::<(), ()>(INIT_PANIC_DUNDER);
-        if let Some(init_panic) = init_panic.ok() {
+        if let Ok(init_panic) = init_panic {
             let _ = init_panic.call();
         }
 
@@ -488,7 +488,7 @@ impl WasmModuleHostActor {
     }
 
     fn describe(&self, entity_name: &str) -> Option<EntityDef> {
-        self.description_cache.get(entity_name).map(|t| t.clone())
+        self.description_cache.get(entity_name).cloned()
     }
 
     fn call_describer(
@@ -498,7 +498,7 @@ impl WasmModuleHostActor {
     ) -> Result<Option<EntityDef>, anyhow::Error> {
         // TODO: choose one at random or whatever
         let (_instance_id, instance) = &self.instances[0];
-        let describer = match instance.exports.get_function(&describer_func_name) {
+        let describer = match instance.exports.get_function(describer_func_name) {
             Ok(describer) => describer,
             Err(_) => {
                 // Making the bold assumption here that an error here means this entity doesn't exist.
@@ -584,7 +584,7 @@ impl WasmModuleHostActor {
         anyhow::Error,
     > {
         let address = &self.worker_database_instance.address.to_abbreviated_hex();
-        REDUCER_COUNT.with_label_values(&[&address, reducer_symbol]).inc();
+        REDUCER_COUNT.with_label_values(&[address, reducer_symbol]).inc();
 
         let tx = self.worker_database_instance.relational_db.begin_tx();
 
@@ -592,8 +592,8 @@ impl WasmModuleHostActor {
         let (instance_id, instance) = &self.instances[0];
         self.instance_tx_map.lock().unwrap().insert(*instance_id, tx);
 
-        let points = budget.unwrap_or_else(|| ReducerBudget(DEFAULT_EXECUTION_BUDGET));
-        set_remaining_points(&instance, max(points.0, 0) as u64);
+        let points = budget.unwrap_or(ReducerBudget(DEFAULT_EXECUTION_BUDGET));
+        set_remaining_points(instance, max(points.0, 0) as u64);
 
         // Prepare arguments
         let memory = instance.exports.get_memory("memory").unwrap();
@@ -608,8 +608,8 @@ impl WasmModuleHostActor {
             Ok(ptr) => ptr,
             Err(e) => {
                 log_traceback("allocation", "alloc", &e);
-                let remaining_points = get_remaining_points_value(&instance);
-                let used_points = &points.0 - remaining_points;
+                let remaining_points = get_remaining_points_value(instance);
+                let used_points = points.0 - remaining_points;
                 return Ok((None, used_points, remaining_points, None));
             }
         };
@@ -621,7 +621,7 @@ impl WasmModuleHostActor {
             }
         }
 
-        let reduce = instance.exports.get_function(&reducer_symbol)?;
+        let reduce = instance.exports.get_function(reducer_symbol)?;
 
         // let guard = pprof::ProfilerGuardBuilder::default().frequency(2500).build().unwrap();
 
@@ -630,17 +630,17 @@ impl WasmModuleHostActor {
         // pass ownership of the `ptr` allocation into the reducer
         let result = reduce.call(&[Value::I32(ptr.offset() as i32), Value::I32(buf_len as i32)]);
         let duration = start.elapsed();
-        let remaining_points = get_remaining_points_value(&instance);
+        let remaining_points = get_remaining_points_value(instance);
         log::trace!(
             "Reducer \"{}\" ran: {} us, {} eV",
             reducer_symbol,
             duration.as_micros(),
             points.0 - remaining_points
         );
-        let used_energy = &points.0 - remaining_points;
+        let used_energy = points.0 - remaining_points;
 
         REDUCER_COMPUTE_TIME
-            .with_label_values(&[&address, reducer_symbol])
+            .with_label_values(&[address, reducer_symbol])
             .observe(duration.as_secs_f64());
 
         // If you can afford to take 500 ms for a transaction
@@ -657,7 +657,7 @@ impl WasmModuleHostActor {
             Err(err) => {
                 let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
                 let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
-                let tx = instance_tx_map.remove(&instance_id).unwrap();
+                let tx = instance_tx_map.remove(instance_id).unwrap();
                 stdb.rollback_tx(tx.into());
 
                 log_traceback("reducer", reducer_symbol, &err);
@@ -671,12 +671,12 @@ impl WasmModuleHostActor {
                 };
                 let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
                 let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
-                let tx = instance_tx_map.remove(&instance_id).unwrap();
+                let tx = instance_tx_map.remove(instance_id).unwrap();
                 if let Some(CommitResult { tx, commit_bytes }) = stdb.commit_tx(tx.into()).unwrap() {
                     if let Some(commit_bytes) = commit_bytes {
                         let mut mlog = self.worker_database_instance.message_log.lock().unwrap();
                         REDUCER_WRITE_SIZE
-                            .with_label_values(&[&address, reducer_symbol])
+                            .with_label_values(&[address, reducer_symbol])
                             .observe(commit_bytes.len() as f64);
                         mlog.append(commit_bytes).unwrap();
                         mlog.sync_all().unwrap();

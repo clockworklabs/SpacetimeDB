@@ -30,7 +30,7 @@ impl DatabaseLogger {
     // }
 
     pub fn filepath(address: &Address, instance_id: u64) -> String {
-        let root = format!("/stdb/worker_node/database_instances");
+        let root = "/stdb/worker_node/database_instances";
         format!("{}/{}/{}/{}", root, address.to_hex(), instance_id, "module_logs")
     }
 
@@ -66,8 +66,8 @@ impl DatabaseLogger {
         filepath.push(&PathBuf::from_str("0.log").unwrap());
 
         use tokio::fs;
-        let contents = String::from_utf8(fs::read(filepath).await.unwrap()).unwrap();
-        contents
+        //contents
+        String::from_utf8(fs::read(filepath).await.unwrap()).unwrap()
     }
 
     pub async fn read_latest(root: &str, num_lines: u32) -> String {

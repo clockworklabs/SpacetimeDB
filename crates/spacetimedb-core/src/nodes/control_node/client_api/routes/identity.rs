@@ -183,7 +183,7 @@ async fn get_databases(state: &mut State) -> SimpleHandlerResult {
             let all_dbs = control_db::get_databases().await;
             match all_dbs {
                 Ok(all_dbs) => {
-                    let matching_dbs = all_dbs.into_iter().filter(|db| db.identity == Vec::from(identity.data));
+                    let matching_dbs = all_dbs.into_iter().filter(|db| db.identity == identity.data);
                     let addresses = matching_dbs.map(|db| Address::from_slice(&db.address[..]).to_hex());
                     let response = GetDatabasesResponse {
                         addresses: addresses.collect(),

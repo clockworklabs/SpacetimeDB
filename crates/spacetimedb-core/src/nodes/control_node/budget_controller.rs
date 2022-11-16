@@ -37,7 +37,7 @@ pub(crate) async fn set_identity_energy_balance(identity: &Hash, budget: &Energy
     // Fill the write-through global budget cache first.
     {
         let mut identity_budget = GLOBAL_IDENTITY_ENERGY_BALANCE.lock().expect("unlock ctrl budget");
-        identity_budget.insert(identity.clone(), budget.clone());
+        identity_budget.insert(*identity, budget.clone());
     }
 
     // Now persist it.
@@ -45,13 +45,13 @@ pub(crate) async fn set_identity_energy_balance(identity: &Hash, budget: &Energy
     control_db::set_energy_balance(identity, budget).expect("Unable to write-through updated budget to control_db");
 
     // Refresh this identity's budget allocations for all nodes based on the new balance information
-    update_energy_allocation(identity, &budget).await;
+    update_energy_allocation(identity, budget).await;
 }
 
 /// Retrieve the global budget for a given identity.
 pub(crate) fn get_identity_energy_balance(identity: &Hash) -> Option<EnergyBalance> {
     let identity_budget = GLOBAL_IDENTITY_ENERGY_BALANCE.lock().expect("unlock ctrl budget");
-    identity_budget.get(identity).map(|b| b.clone())
+    identity_budget.get(identity).cloned()
 }
 
 /// Refresh the budget state for all known identities and nodes.
@@ -61,10 +61,7 @@ pub(crate) fn get_identity_energy_balance(identity: &Hash) -> Option<EnergyBalan
 // state and readjust allocations accordingly.
 pub(crate) async fn refresh_all_budget_allocations() {
     // Fill identity -> global budget cache
-    let budgets = {
-        let budgets = control_db::get_energy_budgets().await.expect("retrieve all budgets");
-        budgets
-    };
+    let budgets = { control_db::get_energy_budgets().await.expect("retrieve all budgets") };
     for eb in budgets.iter() {
         let identity = Hash::from_slice(eb.identity.as_slice());
 
@@ -78,7 +75,7 @@ pub(crate) async fn refresh_all_budget_allocations() {
         }
 
         // Update the per-worker state
-        update_identity_worker_energy_state(&identity, &eb).await;
+        update_identity_worker_energy_state(&identity, eb).await;
     }
 }
 
@@ -101,7 +98,7 @@ pub(crate) async fn update_energy_allocation(identity: &Hash, eb: &EnergyBalance
             .set(eb.balance_quanta as f64);
         identity_balance.insert(*identity, eb.clone());
     }
-    update_identity_worker_energy_state(&identity, eb).await;
+    update_identity_worker_energy_state(identity, eb).await;
     publish_energy_balance_state(identity)
         .await
         .expect("Could not publish updated budget");
@@ -129,7 +126,7 @@ async fn update_identity_worker_energy_state(identity: &Hash, eb: &EnergyBalance
     let nodes = { control_db::get_nodes().await.expect("retrieve all nodes") };
     let num_nodes = nodes.len();
     for node in nodes {
-        let per_node_quanta = calculate_per_node_quanta(&eb, node.id, num_nodes);
+        let per_node_quanta = calculate_per_node_quanta(eb, node.id, num_nodes);
         let mut node_identity_budget = NODE_IDENTITY_BUDGET.lock().expect("unlock node/identity budget state");
         let budget_entry = node_identity_budget.entry((node.id, *identity));
         budget_entry
@@ -151,7 +148,7 @@ async fn update_identity_worker_energy_state(identity: &Hash, eb: &EnergyBalance
                 bs.allocation_quanta = node_new_allocation;
                 bs.interval_used_quanta = 0;
             })
-            .or_insert(initial_budget_state(per_node_quanta));
+            .or_insert_with(||initial_budget_state(per_node_quanta));
     }
 }
 
@@ -159,16 +156,14 @@ async fn update_identity_worker_energy_state(identity: &Hash, eb: &EnergyBalance
 pub(crate) async fn budget_allocations(node_id: u64) -> Option<Vec<(Hash, WorkerBudgetState)>> {
     let node_identity_budget = NODE_IDENTITY_BUDGET.lock().expect("unlock node/identity budget state");
     let node_entries = node_identity_budget.iter().filter(|entry| entry.0 .0 == node_id);
-    let x = node_entries.map(|entry| (entry.0 .1, entry.1.clone()));
+    let x = node_entries.map(|entry| (entry.0 .1, *entry.1));
     Some(x.collect())
 }
 
 /// Retrieve current budget allocations for a node & specific identity for this interval.
 pub(crate) async fn identity_budget_allocations(node_id: u64, identity: &Hash) -> Option<WorkerBudgetState> {
     let node_identity_budget = NODE_IDENTITY_BUDGET.lock().expect("unlock node/identity budget state");
-    node_identity_budget
-        .get(&(node_id, identity.clone()))
-        .map(|b| b.clone())
+    node_identity_budget.get(&(node_id, *identity)).copied()
 }
 
 /// Called by the worker_connection when budget spend information is received from a node.

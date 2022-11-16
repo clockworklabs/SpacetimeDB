@@ -305,7 +305,7 @@ async fn on_delete_database_instance(instance_id: u64) {
 
         // TODO: This is getting pretty messy
         DatabaseInstanceContextController::get_shared().remove(instance_id);
-        let _address = host.delete_module(instance_id).await.unwrap();
+        host.delete_module(instance_id).await.unwrap();
         worker_db::delete_database_instance(instance_id);
     }
 }
@@ -324,7 +324,7 @@ async fn init_module_on_database_instance(database_id: u64, instance_id: u64) ->
         .await;
 
     let log_path = DatabaseLogger::filepath(&address, instance_id);
-    let root = format!("/stdb/worker_node/database_instances");
+    let root = "/stdb/worker_node/database_instances";
     let db_path = format!("{}/{}/{}/{}", root, address.to_hex(), instance_id, "database");
 
     let worker_database_instance = WorkerDatabaseInstance::new(
@@ -361,7 +361,7 @@ async fn start_module_on_database_instance(database_id: u64, instance_id: u64) -
         .await;
 
     let log_path = DatabaseLogger::filepath(&address, instance_id);
-    let root = format!("/stdb/worker_node/database_instances");
+    let root = "/stdb/worker_node/database_instances";
     let db_path = format!("{}/{}/{}/{}", root, address.to_hex(), instance_id, "database");
 
     let worker_database_instance = WorkerDatabaseInstance::new(

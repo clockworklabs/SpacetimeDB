@@ -170,13 +170,13 @@ impl ModuleHost {
                 respond_to: tx,
             })
             .await?;
-        rx.await.map_err(|e| anyhow::Error::new(e))
+        rx.await.map_err(anyhow::Error::new)
     }
 
     pub async fn catalog(&self) -> Result<Vec<(String, EntityDef)>, anyhow::Error> {
         let (tx, rx) = oneshot::channel();
         self.tx.send(ModuleHostCommand::Catalog { respond_to: tx }).await?;
-        rx.await.map_err(|e| anyhow::Error::new(e))
+        rx.await.map_err(anyhow::Error::new)
     }
 
     pub async fn init_database(&self) -> Result<(), anyhow::Error> {

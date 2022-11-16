@@ -24,7 +24,7 @@ pub async fn spacetime_dns(domain_name: &str) -> Result<Option<Address>, anyhow:
     if let Some(value) = value {
         return Ok(Some(Address::from_slice(&value[..])));
     }
-    return Ok(None);
+    Ok(None)
 }
 
 pub async fn _spacetime_reverse_dns(address: &Address) -> Result<Option<String>, anyhow::Error> {
@@ -33,11 +33,11 @@ pub async fn _spacetime_reverse_dns(address: &Address) -> Result<Option<String>,
     if let Some(value) = value {
         return Ok(Some(String::from_utf8(value[..].to_vec())?));
     }
-    return Ok(None);
+    Ok(None)
 }
 
 pub async fn spacetime_insert_dns_record(address: &Address, domain_name: &str) -> Result<(), anyhow::Error> {
-    if let Some(_) = spacetime_dns(domain_name).await? {
+    if spacetime_dns(domain_name).await?.is_some() {
         return Err(anyhow::anyhow!("Record for name '{}' already exists. ", domain_name));
     }
 
@@ -81,7 +81,7 @@ pub async fn associate_email_spacetime_identity(identity: &Hash, email: &str) ->
     let tree = CONTROL_DB.open_tree("email")?;
     let identity_email = IdentityEmail {
         identity: identity.as_slice().to_vec(),
-        email: email.to_string(),
+        email,
     };
     let mut buf = Vec::new();
     identity_email.encode(&mut buf).unwrap();
@@ -121,7 +121,7 @@ pub async fn get_database_by_address(address: &Address) -> Result<Option<Databas
         let database = Database::decode(&value[..]).unwrap();
         return Ok(Some(database));
     }
-    return Ok(None);
+    Ok(None)
 }
 
 pub async fn insert_database(mut database: Database) -> Result<u64, anyhow::Error> {
@@ -213,7 +213,7 @@ pub async fn get_database_instances_by_database(database_id: u64) -> Result<Vec<
         .await?
         .iter()
         .filter(|instance| instance.database_id == database_id)
-        .map(|i| i.clone())
+        .cloned()
         .collect::<Vec<_>>();
     Ok(database_instances)
 }

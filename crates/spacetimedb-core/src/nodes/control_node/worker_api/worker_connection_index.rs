@@ -98,7 +98,7 @@ impl WorkerConnectionIndex {
         if let Some(i) = index {
             return Some(self.connections.get(i.0).unwrap());
         }
-        return None;
+        None
     }
 
     pub fn get_client_mut(&mut self, id: &u64) -> Option<&mut WorkerConnection> {
@@ -106,7 +106,7 @@ impl WorkerConnectionIndex {
         if let Some(i) = index {
             return Some(self.connections.get_mut(i.0).unwrap());
         }
-        return None;
+        None
     }
 
     pub fn drop_client(&mut self, id: &u64) {

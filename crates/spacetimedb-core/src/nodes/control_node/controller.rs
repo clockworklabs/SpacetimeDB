@@ -191,6 +191,7 @@ async fn delete_database_instance(database_instance_id: u64) -> Result<(), anyho
 }
 
 // Internal
+#[allow(clippy::comparison_chain)]
 async fn schedule_database(database: Option<Database>, old_database: Option<Database>) -> Result<(), anyhow::Error> {
     let new_replicas = database.as_ref().map(|db| db.num_replicas).unwrap_or(0) as i32;
     let old_replicas = old_database.as_ref().map(|db| db.num_replicas).unwrap_or(0) as i32;
@@ -205,7 +206,7 @@ async fn schedule_database(database: Option<Database>, old_database: Option<Data
     if replica_diff > 0 {
         schedule_replicas(database_id, replica_diff as u32).await?;
     } else if replica_diff < 0 {
-        deschedule_replicas(database_id, replica_diff.abs() as u32).await?;
+        deschedule_replicas(database_id, replica_diff.unsigned_abs()).await?;
     }
 
     Ok(())
@@ -246,7 +247,7 @@ async fn schedule_replicas(database_id: u64, num_replicas: u32) -> Result<(), an
             id: 0,
             database_id,
             node_id: min_node,
-            leader: if i == 0 { true } else { false },
+            leader: i == 0,
         };
         insert_database_instance(database_instance).await?;
     }
