@@ -13,7 +13,7 @@ pub enum SpacetimeAbiVersion {
 }
 impl SpacetimeAbiVersion {
     pub fn from_u32(v: u32) -> Option<Self> {
-        let function_abi_ver = v & 0xFFFF_FFFF;
+        let function_abi_ver = v & 0xFFFF;
         let schema_abi_ver = v >> 16;
         const _: () = assert!(spacetimedb_lib::SCHEMA_FORMAT_VERSION == 0);
         let ver = match (function_abi_ver, schema_abi_ver) {
