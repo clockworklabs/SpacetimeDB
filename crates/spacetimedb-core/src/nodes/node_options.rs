@@ -33,7 +33,7 @@ impl NodeOptions {
     pub fn normalize(&mut self) {
         // So workers can connect to the Control node worker API
         let mut worker_api_bootstrap_addrs_defaults = Vec::new();
-        if self.worker_api_bootstrap_addrs.is_empty() {
+        if !self.worker_api_bootstrap_addrs.is_empty() {
             for addr in &self.worker_api_bootstrap_addrs {
                 if addr.contains(':') {
                     worker_api_bootstrap_addrs_defaults.push(addr.clone());
@@ -46,7 +46,7 @@ impl NodeOptions {
 
         // So workers can connect to the Control node client API
         let mut client_api_bootstrap_addrs_defaults = Vec::new();
-        if self.client_api_bootstrap_addrs.is_empty() {
+        if !self.client_api_bootstrap_addrs.is_empty() {
             for addr in &self.client_api_bootstrap_addrs {
                 if addr.contains(':') {
                     client_api_bootstrap_addrs_defaults.push(addr.clone());
