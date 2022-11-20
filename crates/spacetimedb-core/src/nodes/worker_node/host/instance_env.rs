@@ -3,7 +3,7 @@ use spacetimedb_lib::{ElementDef, PrimaryKey, TupleDef, TupleValue, TypeDef, Typ
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::db::relational_db::{RelationalDB, TxWrapper};
+use crate::db::relational_db::{RelationalDB, WrapTxWrapper};
 use crate::nodes::error::{log_to_err, NodesError};
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
 use crate::nodes::worker_node::worker_metrics::{
@@ -16,7 +16,7 @@ use crate::util::prometheus_handle::HistogramVecHandle;
 pub struct InstanceEnv {
     pub instance_id: u32,
     pub worker_database_instance: WorkerDatabaseInstance,
-    pub instance_tx_map: Arc<Mutex<HashMap<u32, TxWrapper>>>,
+    pub instance_tx_map: Arc<Mutex<HashMap<u32, WrapTxWrapper>>>,
 }
 
 // Generic 'instance environment' delegated to from various host types.
@@ -213,7 +213,7 @@ impl InstanceEnv {
             panic!("create_table: Could not decode schema! Err: {}", e);
         });
 
-        stdb.create_table(tx, table_name, schema).unwrap()
+        stdb.create_table(tx, table_name, &schema).unwrap()
     }
 
     pub fn get_table_id(&self, buffer: bytes::Bytes) -> Option<u32> {

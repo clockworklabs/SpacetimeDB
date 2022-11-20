@@ -59,12 +59,13 @@ pub fn execute_get_table(database_instance_id: u64, table_id: u32) -> Result<Stm
         .get(database_instance_id)
         .unwrap();
     let mut db = database_instance_context.relational_db.lock().unwrap();
-    let mut tx = db.begin_tx();
-    for row in db.scan(&mut tx, table_id).unwrap() {
+    let mut tx_ = db.begin_tx();
+    let (tx, db) = tx_.get();
+    for row in db.scan(tx, table_id).unwrap() {
         rows.push(row);
     }
-    let schema = db.schema_for_table(&mut tx, table_id).unwrap().unwrap();
-    db.rollback_tx(tx);
+    let schema = db.schema_for_table(tx, table_id).unwrap().unwrap();
+    tx_.rollback();
     let stmt_result = StmtResult { rows, schema };
     Ok(stmt_result)
 }

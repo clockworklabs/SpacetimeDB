@@ -1,7 +1,7 @@
 use super::{
     message_log::MessageLog,
     relational_operators::Relation,
-    transactional_db::{CommitResult, ScanIter, TransactionalDB, Tx},
+    transactional_db::{CommitResult, ScanIter, TransactionalDB, Tx, TxCtx, TxWrapper},
 };
 // use super::relational_operators::Project;
 use crate::db::db_metrics::{
@@ -19,7 +19,7 @@ use spacetimedb_lib::{
 use spacetimedb_lib::{TupleDef, TupleValue, TypeDef, TypeValue};
 use std::fs::File;
 use std::{
-    ops::{DerefMut, RangeBounds},
+    ops::{Deref, DerefMut, RangeBounds},
     path::Path,
     sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
@@ -29,40 +29,6 @@ pub const ST_COLUMNS_NAME: &str = "st_columns";
 
 pub const ST_TABLES_ID: u32 = 0;
 pub const ST_COLUMNS_ID: u32 = 1;
-
-pub struct TxWrapper {
-    pub tx: Option<Tx>,
-    pub relational_db: RelationalDBWrapper,
-}
-
-impl Drop for TxWrapper {
-    fn drop(&mut self) {
-        if let Some(tx) = self.tx.take() {
-            let mut relational_db = self.relational_db.lock().unwrap();
-            relational_db.rollback_tx(tx)
-        }
-    }
-}
-
-impl std::ops::Deref for TxWrapper {
-    type Target = Tx;
-
-    fn deref(&self) -> &Tx {
-        self.tx.as_ref().unwrap()
-    }
-}
-
-impl std::ops::DerefMut for TxWrapper {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.tx.as_mut().unwrap()
-    }
-}
-
-impl From<TxWrapper> for Tx {
-    fn from(mut txw: TxWrapper) -> Self {
-        txw.tx.take().unwrap()
-    }
-}
 
 #[derive(Clone)]
 pub struct RelationalDBWrapper {
@@ -83,13 +49,26 @@ impl RelationalDBWrapper {
         }
     }
 
-    pub fn begin_tx(&self) -> TxWrapper {
-        TxWrapper {
-            tx: Some(self.inner.lock().unwrap().begin_tx()),
-            relational_db: self.clone(),
-        }
+    pub fn begin_tx(&self) -> TxWrapper<Self> {
+        TxWrapper::begin(self.clone())
     }
 }
+
+impl TxCtx for RelationalDBWrapper {
+    fn begin_tx_raw(&mut self) -> Tx {
+        self.lock().unwrap().begin_tx_raw()
+    }
+
+    fn rollback_tx(&mut self, tx: Tx) {
+        self.lock().unwrap().rollback_tx(tx)
+    }
+
+    fn commit_tx(&mut self, tx: Tx) -> Result<Option<CommitResult>, DBError> {
+        self.lock().unwrap().commit_tx(tx)
+    }
+}
+
+pub type WrapTxWrapper = TxWrapper<RelationalDBWrapper>;
 
 pub struct RelationalDBGuard<'a> {
     inner: MutexGuard<'a, RelationalDB>,
@@ -102,7 +81,7 @@ impl<'a> RelationalDBGuard<'a> {
     }
 }
 
-impl<'a> std::ops::Deref for RelationalDBGuard<'a> {
+impl<'a> Deref for RelationalDBGuard<'a> {
     type Target = MutexGuard<'a, RelationalDB>;
 
     fn deref(&self) -> &MutexGuard<'a, RelationalDB> {
@@ -153,7 +132,8 @@ impl RelationalDB {
     }
 
     fn bootstrap(txdb: &mut TransactionalDB) -> Result<(), DBError> {
-        let mut tx = txdb.begin_tx();
+        let mut tx_ = TxWrapper::begin(txdb);
+        let (tx, txdb) = tx_.get();
 
         // Create the st_tables table and insert the information about itself into itself
         // schema: (table_id: u32, table_name: String)
@@ -164,7 +144,7 @@ impl RelationalDB {
             ]
             .into(),
         };
-        Self::insert_row_raw(txdb, &mut tx, ST_TABLES_ID, row);
+        Self::insert_row_raw(txdb, tx, ST_TABLES_ID, row);
 
         // Insert the st_columns table into st_tables
         // schema: (table_id: u32, col_id: u32, col_type: Bytes, col_name: String)
@@ -175,7 +155,7 @@ impl RelationalDB {
             ]
             .into(),
         };
-        Self::insert_row_raw(txdb, &mut tx, ST_TABLES_ID, row);
+        Self::insert_row_raw(txdb, tx, ST_TABLES_ID, row);
 
         // Insert information about st_tables into st_columns
         let mut bytes = Vec::new();
@@ -189,7 +169,7 @@ impl RelationalDB {
             ]
             .into(),
         };
-        Self::insert_row_raw(txdb, &mut tx, ST_COLUMNS_ID, row);
+        Self::insert_row_raw(txdb, tx, ST_COLUMNS_ID, row);
 
         let mut bytes = Vec::new();
         TypeDef::String.encode(&mut bytes);
@@ -202,7 +182,7 @@ impl RelationalDB {
             ]
             .into(),
         };
-        Self::insert_row_raw(txdb, &mut tx, ST_COLUMNS_ID, row);
+        Self::insert_row_raw(txdb, tx, ST_COLUMNS_ID, row);
 
         // Insert information about st_columns into st_columns
         let mut bytes = Vec::new();
@@ -216,7 +196,7 @@ impl RelationalDB {
             ]
             .into(),
         };
-        Self::insert_row_raw(txdb, &mut tx, ST_COLUMNS_ID, row);
+        Self::insert_row_raw(txdb, tx, ST_COLUMNS_ID, row);
 
         let mut bytes = Vec::new();
         TypeDef::U32.encode(&mut bytes);
@@ -229,7 +209,7 @@ impl RelationalDB {
             ]
             .into(),
         };
-        Self::insert_row_raw(txdb, &mut tx, ST_COLUMNS_ID, row);
+        Self::insert_row_raw(txdb, tx, ST_COLUMNS_ID, row);
 
         let mut bytes = Vec::new();
         TypeDef::Bytes.encode(&mut bytes);
@@ -242,7 +222,7 @@ impl RelationalDB {
             ]
             .into(),
         };
-        Self::insert_row_raw(txdb, &mut tx, ST_COLUMNS_ID, row);
+        Self::insert_row_raw(txdb, tx, ST_COLUMNS_ID, row);
 
         let mut bytes = Vec::new();
         TypeDef::String.encode(&mut bytes);
@@ -255,9 +235,9 @@ impl RelationalDB {
             ]
             .into(),
         };
-        Self::insert_row_raw(txdb, &mut tx, ST_COLUMNS_ID, row);
+        Self::insert_row_raw(txdb, tx, ST_COLUMNS_ID, row);
 
-        txdb.commit_tx(tx)?;
+        tx_.commit()?;
         Ok(())
     }
 
@@ -360,22 +340,29 @@ impl RelationalDB {
         // https://stackoverflow.com/questions/65053753/how-does-postgres-atomically-updates-secondary-indices
     }
 
-    pub fn begin_tx(&mut self) -> Tx {
-        self.txdb.begin_tx()
+    pub fn begin_tx(&mut self) -> TxWrapper<&mut Self> {
+        TxWrapper::begin(self)
+    }
+}
+
+impl TxCtx for RelationalDB {
+    fn begin_tx_raw(&mut self) -> Tx {
+        self.txdb.begin_tx_raw()
     }
 
-    pub fn rollback_tx(&mut self, tx: Tx) {
-        self.txdb.rollback_tx(tx);
+    fn rollback_tx(&mut self, tx: Tx) {
+        self.txdb.rollback_tx(tx)
     }
 
-    pub fn commit_tx(&mut self, tx: Tx) -> Result<Option<CommitResult>, DBError> {
+    fn commit_tx(&mut self, tx: Tx) -> Result<Option<CommitResult>, DBError> {
         self.txdb.commit_tx(tx)
     }
+}
 
-    pub fn create_table(&mut self, tx: &mut Tx, table_name: &str, schema: TupleDef) -> Result<u32, DBError> {
+impl RelationalDB {
+    pub fn create_table(&mut self, tx: &mut Tx, table_name: &str, schema: &TupleDef) -> Result<u32, DBError> {
         let mut measure = HistogramVecHandle::new(&RDB_CREATE_TABLE_TIME, vec![String::from(table_name)]);
         measure.start();
-
         // Scan st_tables for this id
 
         let mut table_count = 0;
@@ -398,17 +385,15 @@ impl RelationalDB {
         Self::insert_row_raw(&mut self.txdb, tx, ST_TABLES_ID, row);
 
         // Insert the columns into st_columns
-        for (i, col) in schema.elements.into_iter().enumerate() {
+        for (i, col) in schema.elements.iter().enumerate() {
             let mut bytes = Vec::new();
             col.element_type.encode(&mut bytes);
-            let col_name = if let Some(col_name) = col.name {
-                col_name
-            } else {
+            let col_name = col.name.clone().ok_or_else(|| {
                 // TODO: Maybe we should support Options as a special type
                 // in TypeValue? Theoretically they could just be enums, but
                 // that is quite a pain to use.
-                return Err(TableError::ColumnWithoutName(table_name.into(), i as u32).into());
-            };
+                TableError::ColumnWithoutName(table_name.into(), i as u32)
+            })?;
             let row = TupleValue {
                 elements: vec![
                     TypeValue::U32(table_id),
@@ -797,10 +782,11 @@ mod tests {
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
         let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
         let mut tx = stdb.begin_tx();
+        let (tx, stdb) = tx.get();
         stdb.create_table(
-            &mut tx,
+            tx,
             "MyTable",
-            TupleDef {
+            &TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -819,7 +805,8 @@ mod tests {
         let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
         let mut stdb = RelationalDB::open(tmp_dir.path(), mlog.clone(), odb.clone())?;
-        let mut tx = stdb.begin_tx();
+        let mut tx_ = stdb.begin_tx();
+        let (tx, stdb) = tx_.get();
 
         let schema = TupleDef {
             name: None,
@@ -830,9 +817,9 @@ mod tests {
             }],
         };
 
-        stdb.create_table(&mut tx, "MyTable", schema.clone())?;
+        stdb.create_table(tx, "MyTable", &schema)?;
 
-        stdb.commit_tx(tx)?;
+        tx_.commit()?;
         //drop(stdb);
         let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
@@ -860,10 +847,11 @@ mod tests {
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
         let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
         let mut tx = stdb.begin_tx();
+        let (tx, stdb) = tx.get();
         let table_id = stdb.create_table(
-            &mut tx,
+            tx,
             "MyTable",
-            TupleDef {
+            &TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -873,7 +861,7 @@ mod tests {
                 .into(),
             },
         )?;
-        let t_id = stdb.table_id_from_name(&mut tx, "MyTable")?;
+        let t_id = stdb.table_id_from_name(tx, "MyTable")?;
         assert_eq!(t_id, Some(table_id));
         Ok(())
     }
@@ -885,10 +873,11 @@ mod tests {
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
         let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
         let mut tx = stdb.begin_tx();
+        let (tx, stdb) = tx.get();
         stdb.create_table(
-            &mut tx,
+            tx,
             "MyTable",
-            TupleDef {
+            &TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -898,8 +887,8 @@ mod tests {
                 .into(),
             },
         )?;
-        let table_id = stdb.table_id_from_name(&mut tx, "MyTable")?.unwrap();
-        let col_id = stdb.column_id_from_name(&mut tx, table_id, "my_col")?;
+        let table_id = stdb.table_id_from_name(tx, "MyTable")?.unwrap();
+        let col_id = stdb.column_id_from_name(tx, table_id, "my_col")?;
         assert_eq!(col_id, Some(0));
         Ok(())
     }
@@ -911,10 +900,11 @@ mod tests {
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
         let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
         let mut tx = stdb.begin_tx();
+        let (tx, stdb) = tx.get();
         stdb.create_table(
-            &mut tx,
+            tx,
             "MyTable",
-            TupleDef {
+            &TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -925,9 +915,9 @@ mod tests {
             },
         )?;
         let result = stdb.create_table(
-            &mut tx,
+            tx,
             "MyTable",
-            TupleDef {
+            &TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -948,11 +938,12 @@ mod tests {
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
         let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
         let mut tx = stdb.begin_tx();
+        let (tx, stdb) = tx.get();
 
         let table_id = stdb.create_table(
-            &mut tx,
+            tx,
             "MyTable",
-            TupleDef {
+            &TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -964,21 +955,21 @@ mod tests {
         )?;
 
         stdb.insert(
-            &mut tx,
+            tx,
             table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(-1)].into(),
             },
         )?;
         stdb.insert(
-            &mut tx,
+            tx,
             table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(0)].into(),
             },
         )?;
         stdb.insert(
-            &mut tx,
+            tx,
             table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(1)].into(),
@@ -986,7 +977,7 @@ mod tests {
         )?;
 
         let mut rows = stdb
-            .scan(&mut tx, table_id)?
+            .scan(tx, table_id)?
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
@@ -1000,13 +991,14 @@ mod tests {
         let tmp_dir = TempDir::new("stdb_test")?;
         let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
-        let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
-        let mut tx = stdb.begin_tx();
+        let mut stdb_ = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
+        let mut tx_ = stdb_.begin_tx();
+        let (tx, stdb) = tx_.get();
 
         let table_id = stdb.create_table(
-            &mut tx,
+            tx,
             "MyTable",
-            TupleDef {
+            &TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -1018,31 +1010,32 @@ mod tests {
         )?;
 
         stdb.insert(
-            &mut tx,
+            tx,
             table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(-1)].into(),
             },
         )?;
         stdb.insert(
-            &mut tx,
+            tx,
             table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(0)].into(),
             },
         )?;
         stdb.insert(
-            &mut tx,
+            tx,
             table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(1)].into(),
             },
         )?;
-        stdb.commit_tx(tx)?;
+        tx_.commit()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb_.begin_tx();
+        let (tx, stdb) = tx.get();
         let mut rows = stdb
-            .scan(&mut tx, table_id)?
+            .scan(tx, table_id)?
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
@@ -1058,11 +1051,12 @@ mod tests {
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
         let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
         let mut tx = stdb.begin_tx();
+        let (tx, stdb) = tx.get();
 
         let table_id = stdb.create_table(
-            &mut tx,
+            tx,
             "MyTable",
-            TupleDef {
+            &TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -1074,21 +1068,21 @@ mod tests {
         )?;
 
         stdb.insert(
-            &mut tx,
+            tx,
             table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(-1)].into(),
             },
         )?;
         stdb.insert(
-            &mut tx,
+            tx,
             table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(0)].into(),
             },
         )?;
         stdb.insert(
-            &mut tx,
+            tx,
             table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(1)].into(),
@@ -1098,7 +1092,7 @@ mod tests {
         println!("{}", table_id);
 
         let mut rows = stdb
-            .range_scan(&mut tx, table_id, 0, TypeValue::I32(0)..)?
+            .range_scan(tx, table_id, 0, TypeValue::I32(0)..)?
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
@@ -1112,13 +1106,14 @@ mod tests {
         let tmp_dir = TempDir::new("stdb_test").unwrap();
         let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
-        let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
-        let mut tx = stdb.begin_tx();
+        let mut stdb_ = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
+        let mut tx_ = stdb_.begin_tx();
+        let (tx, stdb) = tx_.get();
 
         let table_id = stdb.create_table(
-            &mut tx,
+            tx,
             "MyTable",
-            TupleDef {
+            &TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -1130,31 +1125,32 @@ mod tests {
         )?;
 
         stdb.insert(
-            &mut tx,
+            tx,
             table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(-1)].into(),
             },
         )?;
         stdb.insert(
-            &mut tx,
+            tx,
             table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(0)].into(),
             },
         )?;
         stdb.insert(
-            &mut tx,
+            tx,
             table_id,
             TupleValue {
                 elements: vec![TypeValue::I32(1)].into(),
             },
         )?;
-        stdb.commit_tx(tx)?;
+        tx_.commit()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb_.begin_tx();
+        let (tx, stdb) = tx.get();
         let mut rows = stdb
-            .range_scan(&mut tx, table_id, 0, TypeValue::I32(0)..)?
+            .range_scan(tx, table_id, 0, TypeValue::I32(0)..)?
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
@@ -1170,11 +1166,12 @@ mod tests {
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
         let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
         let mut tx = stdb.begin_tx();
+        let (tx, stdb) = tx.get();
 
         let table_id = stdb.create_table(
-            &mut tx,
+            tx,
             "MyTable",
-            TupleDef {
+            &TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -1188,7 +1185,8 @@ mod tests {
         drop(tx);
 
         let mut tx = stdb.begin_tx();
-        let result = stdb.drop_table(&mut tx, table_id);
+        let (tx, stdb) = tx.get();
+        let result = stdb.drop_table(tx, table_id);
         assert!(matches!(result, Err(_)));
         Ok(())
     }
@@ -1199,13 +1197,14 @@ mod tests {
         let tmp_dir = TempDir::new("stdb_test")?;
         let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
-        let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
-        let mut tx = stdb.begin_tx();
+        let mut stdb_ = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
+        let mut tx_ = stdb_.begin_tx();
+        let (tx, stdb) = tx_.get();
 
         let table_id = stdb.create_table(
-            &mut tx,
+            tx,
             "MyTable",
-            TupleDef {
+            &TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -1215,35 +1214,37 @@ mod tests {
                 .into(),
             },
         )?;
-        stdb.commit_tx(tx)?;
+        tx_.commit()?;
 
-        let mut tx = stdb.begin_tx();
+        let mut tx_ = stdb_.begin_tx();
+        let (tx, stdb) = tx_.get();
         stdb.insert(
-            &mut tx,
+            tx,
             0,
             TupleValue {
                 elements: vec![TypeValue::I32(-1)].into(),
             },
         )?;
         stdb.insert(
-            &mut tx,
+            tx,
             0,
             TupleValue {
                 elements: vec![TypeValue::I32(0)].into(),
             },
         )?;
         stdb.insert(
-            &mut tx,
+            tx,
             0,
             TupleValue {
                 elements: vec![TypeValue::I32(1)].into(),
             },
         )?;
-        drop(tx);
+        drop(tx_);
 
-        let mut tx = stdb.begin_tx();
+        let mut tx = stdb_.begin_tx();
+        let (tx, stdb) = tx.get();
         let mut rows = stdb
-            .scan(&mut tx, table_id)?
+            .scan(tx, table_id)?
             .map(|r| *r.elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();

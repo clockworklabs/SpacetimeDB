@@ -487,7 +487,7 @@ fn plan_select(database_instance_id: u64, select: Select) -> Result<RelationExpr
         .unwrap();
     let mut db = database_instance_context.relational_db.lock().unwrap();
     let mut tx = db.begin_tx();
-    let table_id = match db.table_id_from_name(&mut tx, &table_name) {
+    let table_id = match tx.with(|tx, db| db.table_id_from_name(tx, &table_name)) {
         Ok(table_id) => table_id,
         Err(err) => return Err(PlanError::DatabaseInternal(err)),
     };
@@ -495,7 +495,7 @@ fn plan_select(database_instance_id: u64, select: Select) -> Result<RelationExpr
         Some(t) => t,
         None => return Err(PlanError::UnknownTable { table: table_name }),
     };
-    db.rollback_tx(tx);
+    tx.rollback();
 
     let mut col_ids = Vec::new();
     for select_item in select.projection {
@@ -504,8 +504,8 @@ fn plan_select(database_instance_id: u64, select: Select) -> Result<RelationExpr
                 sqlparser::ast::Expr::Identifier(ident) => {
                     let col_name = ident.to_string();
                     let mut tx = db.begin_tx();
-                    let col_id = db.column_id_from_name(&mut tx, table_id, &col_name).unwrap();
-                    db.rollback_tx(tx);
+                    let col_id = tx.with(|tx, db| db.column_id_from_name(tx, table_id, &col_name).unwrap());
+                    tx.rollback();
                     let col_id = if let Some(col_id) = col_id {
                         col_id
                     } else {

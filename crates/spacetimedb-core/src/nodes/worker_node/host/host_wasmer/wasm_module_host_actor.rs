@@ -1,7 +1,7 @@
 use super::super::wasm_common::abi;
 use super::wasm_instance_env::WasmInstanceEnv;
 use crate::db::messages::transaction::Transaction;
-use crate::db::relational_db::TxWrapper;
+use crate::db::relational_db::WrapTxWrapper;
 use crate::db::transactional_db::CommitResult;
 use crate::hash::Hash;
 use crate::nodes::worker_node::host::host_controller::{DescribedEntityType, ReducerBudget, ReducerCallResult};
@@ -91,7 +91,7 @@ pub(crate) struct WasmModuleHostActor {
     module: Module,
     store: Store,
     instances: Vec<(u32, Instance)>,
-    instance_tx_map: Arc<Mutex<HashMap<u32, TxWrapper>>>,
+    instance_tx_map: Arc<Mutex<HashMap<u32, WrapTxWrapper>>>,
     subscription: ModuleSubscription,
 
     // Holds the list of descriptions of each entity.
@@ -655,10 +655,9 @@ impl WasmModuleHostActor {
 
         let result = match result {
             Err(err) => {
-                let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
                 let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
                 let tx = instance_tx_map.remove(instance_id).unwrap();
-                stdb.rollback_tx(tx.into());
+                tx.rollback();
 
                 log_traceback("reducer", reducer_symbol, &err);
                 Ok((None, used_energy, remaining_points, None))
@@ -669,10 +668,9 @@ impl WasmModuleHostActor {
                 } else {
                     None
                 };
-                let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
                 let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
                 let tx = instance_tx_map.remove(instance_id).unwrap();
-                if let Some(CommitResult { tx, commit_bytes }) = stdb.commit_tx(tx.into()).unwrap() {
+                if let Some(CommitResult { tx, commit_bytes }) = tx.commit().unwrap() {
                     if let Some(commit_bytes) = commit_bytes {
                         let mut mlog = self.worker_database_instance.message_log.lock().unwrap();
                         REDUCER_WRITE_SIZE

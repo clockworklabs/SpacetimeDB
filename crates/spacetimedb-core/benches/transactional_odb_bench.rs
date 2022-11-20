@@ -97,9 +97,11 @@ where
     let mut db = TransactionalDB::open(mlog, odb).unwrap();
     bench.iter(move || {
         let mut tx = db.begin_tx();
-        let (set_id, bytes) = valgen();
-        db.insert(&mut tx, set_id, bytes);
-        assert!(db.commit_tx(tx).unwrap().is_some());
+        tx.with(|tx, db| {
+            let (set_id, bytes) = valgen();
+            db.insert(tx, set_id, bytes);
+        });
+        assert!(tx.commit().unwrap().is_some());
     });
 }
 
@@ -115,12 +117,15 @@ where
     ));
     let mut db = TransactionalDB::open(mlog, odb).unwrap();
     let mut tx = db.begin_tx();
-    let (set_id, bytes) = valgen();
-    let hash = db.insert(&mut tx, set_id, bytes);
-    assert!(db.commit_tx(tx).unwrap().is_some());
+    let hash = tx.with(|tx, db| {
+        let (set_id, bytes) = valgen();
+        db.insert(tx, set_id, bytes)
+    });
+    assert!(tx.commit().unwrap().is_some());
     bench.iter(move || {
         let mut tx = db.begin_tx();
-        db.seek(&mut tx, 0, hash);
+        let (tx, db) = tx.get();
+        db.seek(tx, 0, hash);
     });
 }
 
@@ -138,9 +143,11 @@ where
     bench.iter(move || {
         let mut tx = db.begin_tx();
         let (set_id, bytes) = valgen();
-        let datakey = db.insert(&mut tx, set_id, bytes);
-        db.seek(&mut tx, set_id, datakey);
-        db.commit_tx(tx).unwrap();
+        tx.with(|tx, db| {
+            let datakey = db.insert(tx, set_id, bytes);
+            db.seek(tx, set_id, datakey);
+        });
+        tx.commit().unwrap();
     });
 }
 
@@ -160,13 +167,14 @@ where
         let (set_id, data_key) = {
             let mut tx = db.begin_tx();
             let (set_id, bytes) = valgen();
-            let dk = db.insert(&mut tx, set_id, bytes);
-            db.commit_tx(tx).unwrap();
+            let dk = tx.with(|tx, db| db.insert(tx, set_id, bytes));
+            tx.commit().unwrap();
             (set_id, dk)
         };
         {
             let mut tx = db.begin_tx();
-            db.seek(&mut tx, set_id, data_key);
+            let (tx, db) = tx.get();
+            db.seek(tx, set_id, data_key);
         }
     });
 }
@@ -190,19 +198,20 @@ where
     for _i in 0..delay_count {
         let mut tx = db.begin_tx();
         let (set_id, bytes) = valgen();
-        datakey_stack.push_back((set_id, db.insert(&mut tx, set_id, bytes)));
-        db.commit_tx(tx).unwrap();
+        datakey_stack.push_back((set_id, tx.with(|tx, db| db.insert(tx, set_id, bytes))));
+        tx.commit().unwrap();
     }
 
     bench.iter(move || {
-        let mut tx = db.begin_tx();
+        let mut tx_ = db.begin_tx();
+        let (tx, db) = tx_.get();
 
         let (set_id, bytes) = valgen();
-        let new_datakey = db.insert(&mut tx, set_id, bytes);
+        let new_datakey = db.insert(tx, set_id, bytes);
         datakey_stack.push_back((set_id, new_datakey));
         let (set_id, old_datakey) = datakey_stack.pop_front().unwrap();
-        db.seek(&mut tx, set_id, old_datakey);
-        db.commit_tx(tx).unwrap();
+        db.seek(tx, set_id, old_datakey);
+        tx_.commit().unwrap();
     });
 }
 

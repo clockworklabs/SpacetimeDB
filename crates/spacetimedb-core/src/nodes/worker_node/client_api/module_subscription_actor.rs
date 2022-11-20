@@ -178,9 +178,10 @@ impl ModuleSubscriptionActor {
             table_updates: Vec::new(),
         };
         let mut stdb = self.relational_db.lock().unwrap();
-        let mut tx = stdb.begin_tx();
+        let mut tx_ = stdb.begin_tx();
+        let (tx, stdb) = tx_.get();
         let tables = stdb
-            .scan(&mut tx, ST_TABLES_ID)
+            .scan(tx, ST_TABLES_ID)
             .unwrap()
             .map(|row| {
                 (
@@ -194,7 +195,7 @@ impl ModuleSubscriptionActor {
                 continue;
             }
             let mut table_row_operations = Vec::new();
-            for row in stdb.scan(&mut tx, table_id).unwrap() {
+            for row in stdb.scan(tx, table_id).unwrap() {
                 let row_pk = RelationalDB::pk_for_row(&row);
                 let row_pk = row_pk.to_bytes();
                 let mut row_bytes = Vec::new();
@@ -211,7 +212,7 @@ impl ModuleSubscriptionActor {
                 table_row_operations,
             })
         }
-        stdb.rollback_tx(tx);
+        tx_.rollback();
 
         MessageProtobuf {
             r#type: Some(message::Type::SubscriptionUpdate(subscription_update)),
@@ -251,9 +252,10 @@ impl ModuleSubscriptionActor {
                 tuple_def
             } else {
                 let mut stdb = self.relational_db.lock().unwrap();
-                let mut tx = stdb.begin_tx();
-                let tuple_def = stdb.schema_for_table(&mut tx, write.set_id).unwrap().unwrap();
-                stdb.rollback_tx(tx);
+                let mut tx_ = stdb.begin_tx();
+                let (tx, stdb) = tx_.get();
+                let tuple_def = stdb.schema_for_table(tx, write.set_id).unwrap().unwrap();
+                tx_.rollback();
                 schemas.insert(write.set_id, tuple_def);
                 schemas.get(&write.set_id).unwrap()
             };
@@ -298,10 +300,11 @@ impl ModuleSubscriptionActor {
                 name.clone()
             } else {
                 let mut stdb = self.relational_db.lock().unwrap();
-                let mut tx = stdb.begin_tx();
-                let table_name = stdb.table_name_from_id(&mut tx, table_id).unwrap().unwrap();
+                let mut tx_ = stdb.begin_tx();
+                let (tx, stdb) = tx_.get();
+                let table_name = stdb.table_name_from_id(tx, table_id).unwrap().unwrap();
                 let table_name = table_name.to_string();
-                stdb.rollback_tx(tx);
+                tx_.rollback();
                 table_name_map.insert(table_id, table_name.clone());
                 table_name
             };
@@ -331,9 +334,10 @@ impl ModuleSubscriptionActor {
             table_updates: Vec::new(),
         };
         let mut stdb = self.relational_db.lock().unwrap();
-        let mut tx = stdb.begin_tx();
+        let mut tx_ = stdb.begin_tx();
+        let (tx, stdb) = tx_.get();
         let tables = stdb
-            .scan(&mut tx, ST_TABLES_ID)
+            .scan(tx, ST_TABLES_ID)
             .unwrap()
             .map(|row| *row.elements[0].as_u32().unwrap())
             .collect::<Vec<u32>>();
@@ -342,7 +346,7 @@ impl ModuleSubscriptionActor {
                 continue;
             }
             let mut table_row_operations = Vec::new();
-            for row in stdb.scan(&mut tx, table_id).unwrap() {
+            for row in stdb.scan(tx, table_id).unwrap() {
                 let row_pk = RelationalDB::pk_for_row(&row);
                 let row_pk = base64::encode(row_pk.to_bytes());
                 table_row_operations.push(TableRowOperationJson {
@@ -356,7 +360,7 @@ impl ModuleSubscriptionActor {
                 table_row_operations,
             })
         }
-        stdb.rollback_tx(tx);
+        tx_.rollback();
 
         MessageJson::SubscriptionUpdate(subscription_update)
     }
@@ -392,9 +396,10 @@ impl ModuleSubscriptionActor {
                 tuple_def
             } else {
                 let mut stdb = self.relational_db.lock().unwrap();
-                let mut tx = stdb.begin_tx();
-                let tuple_def = stdb.schema_for_table(&mut tx, write.set_id).unwrap().unwrap();
-                stdb.rollback_tx(tx);
+                let mut tx_ = stdb.begin_tx();
+                let (tx, stdb) = tx_.get();
+                let tuple_def = stdb.schema_for_table(tx, write.set_id).unwrap().unwrap();
+                tx_.rollback();
                 schemas.insert(write.set_id, tuple_def);
                 schemas.get(&write.set_id).unwrap()
             };

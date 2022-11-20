@@ -12,7 +12,10 @@ use crate::error::DBError;
 use crate::hash::{hash_bytes, Hash};
 use crate::util::prometheus_handle::HistogramHandle;
 use std::{
+    cell::RefCell,
     collections::{hash_set::Iter, HashMap, HashSet},
+    mem::ManuallyDrop,
+    ops::{Deref, DerefMut},
     sync::{Arc, Mutex},
 };
 
@@ -32,6 +35,94 @@ pub struct Tx {
     parent_tx_offset: u64,
     writes: Vec<Write>,
     reads: Vec<Read>,
+}
+
+pub struct TxWrapper<Db: TxCtx> {
+    tx: ManuallyDrop<Tx>,
+    db: Db,
+}
+
+impl<Db: TxCtx> TxWrapper<Db> {
+    pub fn begin(mut db: Db) -> Self {
+        let tx = ManuallyDrop::new(db.begin_tx_raw());
+        Self { tx, db }
+    }
+    pub fn get(&mut self) -> (&mut Tx, &mut Db) {
+        (&mut self.tx, &mut self.db)
+    }
+    pub fn with<R>(&mut self, f: impl FnOnce(&mut Tx, &mut Db) -> R) -> R {
+        f(&mut self.tx, &mut self.db)
+    }
+    #[inline]
+    pub fn rollback(self) {}
+    #[inline]
+    pub fn commit(self) -> Result<Option<CommitResult>, DBError> {
+        let (_, res) = self.commit_into_db()?;
+        Ok(res)
+    }
+    #[inline]
+    pub fn commit_into_db(self) -> Result<(Db, Option<CommitResult>), DBError> {
+        let mut me = ManuallyDrop::new(self);
+        // SAFETY: we're not calling Self::drop(), so it's okay to ManuallyDrop::take tx
+        let tx = unsafe { ManuallyDrop::take(&mut me.tx) };
+        let mut db = unsafe { std::ptr::read(&me.db) };
+        let res = db.commit_tx(tx)?;
+        Ok((db, res))
+    }
+}
+impl<Db: TxCtx> Drop for TxWrapper<Db> {
+    fn drop(&mut self) {
+        // SAFETY: we're inside drop(), it's always safe to ManuallyDrop::take
+        let tx = unsafe { ManuallyDrop::take(&mut self.tx) };
+        self.db.rollback_tx(tx)
+    }
+}
+
+impl<Db: TxCtx> Deref for TxWrapper<Db> {
+    type Target = Tx;
+    fn deref(&self) -> &Tx {
+        &self.tx
+    }
+}
+
+impl<Db: TxCtx> DerefMut for TxWrapper<Db> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.tx
+    }
+}
+
+pub trait TxCtx {
+    fn begin_tx_raw(&mut self) -> Tx;
+    fn rollback_tx(&mut self, tx: Tx);
+    fn commit_tx(&mut self, tx: Tx) -> Result<Option<CommitResult>, DBError>;
+}
+
+impl<T: TxCtx> TxCtx for &mut T {
+    fn begin_tx_raw(&mut self) -> Tx {
+        T::begin_tx_raw(self)
+    }
+
+    fn rollback_tx(&mut self, tx: Tx) {
+        T::rollback_tx(self, tx)
+    }
+
+    fn commit_tx(&mut self, tx: Tx) -> Result<Option<CommitResult>, DBError> {
+        T::commit_tx(self, tx)
+    }
+}
+
+impl<T: TxCtx> TxCtx for &RefCell<T> {
+    fn begin_tx_raw(&mut self) -> Tx {
+        self.borrow_mut().begin_tx_raw()
+    }
+
+    fn rollback_tx(&mut self, tx: Tx) {
+        self.borrow_mut().rollback_tx(tx)
+    }
+
+    fn commit_tx(&mut self, tx: Tx) -> Result<Option<CommitResult>, DBError> {
+        self.borrow_mut().commit_tx(tx)
+    }
 }
 
 // TODO: implement some kind of tag/dataset/namespace system
@@ -201,8 +292,13 @@ impl TransactionalDB {
         // Assumes open transactions are deleted from the beginning
         &self.open_transactions[index as usize]
     }
+    pub fn begin_tx(&mut self) -> TxWrapper<&mut Self> {
+        TxWrapper::begin(self)
+    }
+}
 
-    pub fn begin_tx(&mut self) -> Tx {
+impl TxCtx for TransactionalDB {
+    fn begin_tx_raw(&mut self) -> Tx {
         if self.open_transactions.len() > 100 {
             log::warn!(
                 "Open transactions len is {}. Be sure to commit or rollback transactions.",
@@ -218,7 +314,7 @@ impl TransactionalDB {
         }
     }
 
-    pub fn rollback_tx(&mut self, tx: Tx) {
+    fn rollback_tx(&mut self, tx: Tx) {
         // Remove my branch
         let index = self
             .branched_transaction_offsets
@@ -229,7 +325,7 @@ impl TransactionalDB {
         self.vacuum_open_transactions();
     }
 
-    pub fn commit_tx(&mut self, tx: Tx) -> Result<Option<CommitResult>, DBError> {
+    fn commit_tx(&mut self, tx: Tx) -> Result<Option<CommitResult>, DBError> {
         let mut measure = HistogramHandle::new(&TDB_COMMIT_TIME);
 
         // Start timing this whole function; `Drop` will measure time spent.
@@ -275,7 +371,9 @@ impl TransactionalDB {
 
         Ok(Some(self.finalize(tx)?))
     }
+}
 
+impl TransactionalDB {
     fn finalize(&mut self, tx: Tx) -> Result<CommitResult, DBError> {
         // TODO: This is a gross hack, need a better way to do this.
         // Essentially what this is doing is searching the database to
@@ -723,6 +821,7 @@ impl<'a> Iterator for ScanIter<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use std::sync::Arc;
     use std::sync::Mutex;
 
@@ -731,7 +830,7 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use tempdir::TempDir;
 
-    use super::TransactionalDB;
+    use super::{TransactionalDB, TxWrapper};
     use crate::hash::hash_bytes;
     use crate::hash::Hash;
 
@@ -764,12 +863,14 @@ mod tests {
         let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
         let mut db = TransactionalDB::open(mlog, odb)?;
-        let mut tx = db.begin_tx();
-        let row_key_1 = db.insert(&mut tx, 0, b"this is a byte string".to_vec());
-        db.commit_tx(tx)?;
+        let mut tx_ = db.begin_tx();
+        let (tx, db) = tx_.get();
+        let row_key_1 = db.insert(tx, 0, b"this is a byte string".to_vec());
+        let (db, _) = tx_.commit_into_db()?;
 
-        let mut tx = db.begin_tx();
-        let row = db.seek(&mut tx, 0, row_key_1).unwrap();
+        let mut tx_ = db.begin_tx();
+        let (tx, db) = tx_.get();
+        let row = db.seek(tx, 0, row_key_1).unwrap();
 
         assert_eq!(b"this is a byte string", row.as_slice());
         Ok(())
@@ -781,9 +882,10 @@ mod tests {
         let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
         let mut db = TransactionalDB::open(mlog, odb)?;
-        let mut tx = db.begin_tx();
+        let mut tx_ = db.begin_tx();
+        let (tx, db) = tx_.get();
         let row_key_1 = db.insert(
-            &mut tx,
+            tx,
             0,
             MyStruct {
                 my_name: hash_bytes(b"This is a byte string."),
@@ -793,10 +895,11 @@ mod tests {
             }
             .encode(),
         );
-        db.commit_tx(tx)?;
+        let (db, _) = tx_.commit_into_db()?;
 
-        let mut tx = db.begin_tx();
-        let row = MyStruct::decode(db.seek(&mut tx, 0, row_key_1).unwrap().as_slice());
+        let mut tx_ = db.begin_tx();
+        let (tx, db) = tx_.get();
+        let row = MyStruct::decode(db.seek(tx, 0, row_key_1).unwrap().as_slice());
 
         let i = row.my_i32;
         assert_eq!(i, -1);
@@ -811,26 +914,32 @@ mod tests {
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
         let mut db = TransactionalDB::open(mlog, odb)?;
         let mut tx_1 = db.begin_tx();
-        let row_key_1 = db.insert(
-            &mut tx_1,
-            0,
-            MyStruct {
-                my_name: hash_bytes(b"This is a byte string."),
-                my_i32: -1,
-                my_u64: 1,
-                my_hash: hash_bytes(b"This will be turned into a hash."),
-            }
-            .encode(),
-        );
+        let row_key_1 = tx_1.with(|tx_1, db| {
+            let row_key_1 = db.insert(
+                tx_1,
+                0,
+                MyStruct {
+                    my_name: hash_bytes(b"This is a byte string."),
+                    my_i32: -1,
+                    my_u64: 1,
+                    my_hash: hash_bytes(b"This will be turned into a hash."),
+                }
+                .encode(),
+            );
 
-        let mut tx_2 = db.begin_tx();
-        let row = db.seek(&mut tx_2, 0, row_key_1);
-        assert!(row.is_none());
+            let mut tx_2 = db.begin_tx();
+            tx_2.with(|tx_2, db| {
+                let row = db.seek(tx_2, 0, row_key_1);
+                assert!(row.is_none());
+            });
+            row_key_1
+        });
 
-        db.commit_tx(tx_1)?;
+        tx_1.commit()?;
 
         let mut tx_3 = db.begin_tx();
-        let row = db.seek(&mut tx_3, 0, row_key_1);
+        let (tx_3, db) = tx_3.get();
+        let row = db.seek(tx_3, 0, row_key_1);
         assert!(row.is_some());
         Ok(())
     }
@@ -841,9 +950,10 @@ mod tests {
         let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
         let mut db = TransactionalDB::open(mlog, odb)?;
-        let mut tx_1 = db.begin_tx();
+        let mut tx_1_ = db.begin_tx();
+        let (tx_1, db) = tx_1_.get();
         let _row_key_1 = db.insert(
-            &mut tx_1,
+            tx_1,
             0,
             MyStruct {
                 my_name: hash_bytes(b"This is a byte string."),
@@ -854,7 +964,7 @@ mod tests {
             .encode(),
         );
         let _row_key_2 = db.insert(
-            &mut tx_1,
+            tx_1,
             0,
             MyStruct {
                 my_name: hash_bytes(b"This is a byte string."),
@@ -865,13 +975,14 @@ mod tests {
             .encode(),
         );
 
-        let mut scan_1 = db.scan(&mut tx_1, 0).map(|b| b.to_owned()).collect::<Vec<Vec<u8>>>();
+        let mut scan_1 = db.scan(tx_1, 0).map(|b| b.to_owned()).collect::<Vec<Vec<u8>>>();
         scan_1.sort();
 
-        db.commit_tx(tx_1)?;
+        let (db, _) = tx_1_.commit_into_db()?;
 
         let mut tx_2 = db.begin_tx();
-        let mut scan_2 = db.scan(&mut tx_2, 0).collect::<Vec<Vec<u8>>>();
+        let (tx_2, db) = tx_2.get();
+        let mut scan_2 = db.scan(tx_2, 0).collect::<Vec<Vec<u8>>>();
         scan_2.sort();
 
         assert_eq!(scan_1.len(), scan_2.len());
@@ -892,9 +1003,10 @@ mod tests {
         let tmp_dir = TempDir::new("txdb_test")?;
         let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
-        let mut db = TransactionalDB::open(mlog, odb)?;
-        let mut tx_1 = db.begin_tx();
-        let row_key_1 = db.insert(
+        let db = TransactionalDB::open(mlog, odb)?;
+        let db = RefCell::new(db);
+        let mut tx_1 = TxWrapper::begin(&db);
+        let row_key_1 = db.borrow_mut().insert(
             &mut tx_1,
             0,
             MyStruct {
@@ -906,12 +1018,12 @@ mod tests {
             .encode(),
         );
 
-        let mut tx_2 = db.begin_tx();
-        let row = db.seek(&mut tx_2, 0, row_key_1);
+        let mut tx_2 = TxWrapper::begin(&db);
+        let row = db.borrow_mut().seek(&mut tx_2, 0, row_key_1);
         assert!(row.is_none());
 
-        assert!(db.commit_tx(tx_1)?.is_some());
-        assert!(db.commit_tx(tx_2)?.is_none());
+        assert!(tx_1.commit()?.is_some());
+        assert!(tx_2.commit()?.is_none());
         Ok(())
     }
 
@@ -920,9 +1032,10 @@ mod tests {
         let tmp_dir = TempDir::new("txdb_test")?;
         let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
-        let mut db = TransactionalDB::open(mlog, odb)?;
-        let mut tx_1 = db.begin_tx();
-        let row_key_1 = db.insert(
+        let db = TransactionalDB::open(mlog, odb)?;
+        let db = RefCell::new(db);
+        let mut tx_1 = TxWrapper::begin(&db);
+        let row_key_1 = db.borrow_mut().insert(
             &mut tx_1,
             0,
             MyStruct {
@@ -933,7 +1046,7 @@ mod tests {
             }
             .encode(),
         );
-        let row_key_2 = db.insert(
+        let row_key_2 = db.borrow_mut().insert(
             &mut tx_1,
             0,
             MyStruct {
@@ -944,18 +1057,18 @@ mod tests {
             }
             .encode(),
         );
-        assert!(db.commit_tx(tx_1)?.is_some());
+        assert!(tx_1.commit()?.is_some());
 
-        let mut tx_2 = db.begin_tx();
-        let row = db.seek(&mut tx_2, 0, row_key_1);
+        let mut tx_2 = TxWrapper::begin(&db);
+        let row = db.borrow_mut().seek(&mut tx_2, 0, row_key_1);
         assert!(row.is_some());
-        db.delete(&mut tx_2, 0, row_key_2);
+        db.borrow_mut().delete(&mut tx_2, 0, row_key_2);
 
-        let mut tx_3 = db.begin_tx();
-        db.delete(&mut tx_3, 0, row_key_1);
+        let mut tx_3 = TxWrapper::begin(&db);
+        db.borrow_mut().delete(&mut tx_3, 0, row_key_1);
 
-        assert!(db.commit_tx(tx_2)?.is_some());
-        assert!(db.commit_tx(tx_3)?.is_some());
+        assert!(tx_2.commit()?.is_some());
+        assert!(tx_3.commit()?.is_some());
         Ok(())
     }
 }
