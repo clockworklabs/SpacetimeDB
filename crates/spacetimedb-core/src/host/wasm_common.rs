@@ -18,7 +18,6 @@ pub const REPEATING_REDUCER_DUNDER: &str = "__repeating_reducer__";
 // repeaters.
 pub const DESCRIBE_REPEATING_REDUCER_DUNDER: &str = "__describe_repeating_reducer__";
 
-pub const CREATE_TABLE_DUNDER: &str = "__create_table__";
 pub const DESCRIBE_TABLE_DUNDER: &str = "__describe_table__";
 
 pub const INIT_PANIC_DUNDER: &str = "__init_panic__";
@@ -96,7 +95,6 @@ const REPEATER_SIG: FuncSig = FuncSig::new(&[WasmType::I32, WasmType::I32], &[Wa
 pub struct FuncNames {
     // pub reducers: IndexMap<String, String>,
     pub repeaters: Vec<String>,
-    pub create_tables: Vec<String>,
     pub migrates: Vec<String>,
 }
 impl FuncNames {
@@ -129,11 +127,7 @@ impl FuncNames {
             EntityDef::Reducer(_) => {
                 check_signature("repeater", REDUCE_DUNDER, REDUCER_SIG)?;
             }
-            EntityDef::Table(_) => {
-                // TODO: this... doesn't seem necessary? can't we just call instance_env.create_table ourselves?
-                let func_name = check_signature("create_table", CREATE_TABLE_DUNDER, REDUCER_SIG)?;
-                self.create_tables.push(func_name);
-            }
+            EntityDef::Table(_) => {}
         }
         Ok(())
     }
@@ -147,11 +141,7 @@ impl FuncNames {
         }
         Ok(())
     }
-    pub fn get_repeaters(&self) -> Vec<(String, usize)> {
-        self.repeaters
-            .iter()
-            .enumerate()
-            .map(|(i, func_name)| (func_name[REPEATING_REDUCER_DUNDER.len()..].to_owned(), i))
-            .collect()
+    pub fn get_repeaters(&self) -> Vec<String> {
+        self.repeaters.clone()
     }
 }

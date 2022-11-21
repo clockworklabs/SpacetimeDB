@@ -1,7 +1,3 @@
-use std::collections::HashMap;
-use std::io::BufReader;
-use std::sync::{Arc, Mutex};
-
 use anyhow::anyhow;
 use gotham::handler::{HandlerError, SimpleHandlerResult};
 use gotham::prelude::FromState;
@@ -103,29 +99,22 @@ async fn perform_tracelog_replay(state: &mut State) -> SimpleHandlerResult {
     let identity = hash_bytes(b"This is a fake identity.");
     let address = Address::from_slice(&identity.as_slice()[0..16]);
     let wdi = WorkerDatabaseInstance::new(0, 0, HostType::Wasmer, false, identity, address, db_path, logger_path);
-    let itx = Arc::new(Mutex::new(HashMap::new()));
-    let iv = InstanceEnv::new(0, wdi, itx, None);
+    let iv = InstanceEnv::new(wdi, Default::default(), None);
 
     let tx = iv.worker_database_instance.relational_db.begin_tx();
-    iv.instance_tx_map.lock().unwrap().insert(0, tx);
-    let mut reader = BufReader::new(&trace_log_bytes[..]);
+    let (_, report) = iv.tx.set(tx, || replay_report(&iv, &mut &trace_log_bytes[..]))?;
 
-    match replay_report(&iv, &mut reader) {
-        Ok(resp_body) => {
-            let res = match serde_json::to_string(&resp_body) {
-                Ok(j) => Response::builder().status(StatusCode::OK).body(Body::from(j)).unwrap(),
-                Err(e) => {
-                    log::error!("Unable to serialize tracelog response: {}", e);
-                    Response::builder()
-                        .status(StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(Body::empty())
-                        .unwrap()
-                }
-            };
-            Ok(res)
+    let res = match serde_json::to_string(&report) {
+        Ok(j) => Response::builder().status(StatusCode::OK).body(Body::from(j)).unwrap(),
+        Err(e) => {
+            log::error!("Unable to serialize tracelog response: {}", e);
+            Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap()
         }
-        Err(e) => return Err(HandlerError::from(e).with_status(StatusCode::INTERNAL_SERVER_ERROR)),
-    }
+    };
+    Ok(res)
 }
 
 pub fn router() -> Router {

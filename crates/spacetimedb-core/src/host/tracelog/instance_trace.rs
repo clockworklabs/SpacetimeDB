@@ -6,7 +6,7 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use prost::Message;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
@@ -40,7 +40,7 @@ impl TraceLog {
     /// Retrieve the current contents of the trace log.
     pub fn retrieve(&mut self) -> Result<bytes::Bytes, anyhow::Error> {
         self.flush()?;
-        let mut reader = BufReader::new(self.trace_writer.get_ref());
+        let mut reader = self.trace_writer.get_ref();
         reader.seek(SeekFrom::Start(0))?;
         let mut buf_vec = vec![];
         let _read_bytes = reader.read_to_end(&mut buf_vec)?;
@@ -205,11 +205,5 @@ impl TraceLog {
             result_bytes: bytes.clone(),
         });
         self.write_event(start_time, duration, event)
-    }
-}
-
-impl Drop for TraceLog {
-    fn drop(&mut self) {
-        self.flush().unwrap();
     }
 }

@@ -1,17 +1,16 @@
 use std::collections::HashMap;
 
-use bytes::BufMut;
-use bytes::BytesMut;
+use anyhow::Context;
 use gotham::anyhow::anyhow;
 use gotham::handler::HandlerError;
 use gotham::handler::SimpleHandlerResult;
 use gotham::prelude::FromState;
+use gotham::prelude::MapHandlerError;
 use gotham::prelude::StaticResponseExtender;
 use gotham::router::builder::*;
 use gotham::router::Router;
 use gotham::state::State;
 use gotham::state::StateData;
-use hyper::body::HttpBody;
 use hyper::header::AUTHORIZATION;
 use hyper::Body;
 use hyper::HeaderMap;
@@ -21,9 +20,10 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use spacetimedb::control_db;
 use spacetimedb::hash::hash_bytes;
+use spacetimedb::host::host_controller::ReducerError;
 use spacetimedb::object_db;
 use spacetimedb::protobuf::control_db::HostType;
-use spacetimedb_lib::{ElementDef, EntityDef, TupleDef, TypeDef};
+use spacetimedb_lib::{ElementDef, EntityDef, TypeDef};
 
 use crate::client_api::auth::get_or_create_creds_from_header;
 use crate::controller;
@@ -31,7 +31,7 @@ use spacetimedb::address::Address;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::hash::Hash;
 use spacetimedb::host::host_controller;
-use spacetimedb::host::host_controller::{DescribedEntityType, ReducerError};
+use spacetimedb::host::host_controller::DescribedEntityType;
 use spacetimedb::host::ReducerArgs;
 use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::protobuf::control_db::DatabaseInstance;
@@ -195,9 +195,9 @@ fn handle_db_err(address: &Address, err: DBCallErr) -> SimpleHandlerResult {
     }
 }
 
-fn entity_description_json(description: EntityDef, expand: bool) -> Value {
-    let typ = DescribedEntityType::from_entitydef(&description).as_str();
-    let len = match &description {
+fn entity_description_json(description: &EntityDef, expand: bool) -> Value {
+    let typ = DescribedEntityType::from_entitydef(description).as_str();
+    let len = match description {
         EntityDef::Table(t) => t.tuple.elements.len(),
         EntityDef::Reducer(r) => r.args.len(),
         EntityDef::Repeater(_) => 2,
@@ -205,14 +205,14 @@ fn entity_description_json(description: EntityDef, expand: bool) -> Value {
     if expand {
         // TODO(noa): make this less hacky; needs coordination w/ spacetime-web
         let schema = match description {
-            EntityDef::Table(table) => table.tuple,
-            EntityDef::Reducer(r) => TupleDef {
-                name: r.name,
-                elements: r.args,
-            },
-            EntityDef::Repeater(r) => TupleDef {
-                name: r.name,
-                elements: vec![
+            EntityDef::Table(table) => json!(table.tuple),
+            EntityDef::Reducer(r) => json!({
+                "name": r.name,
+                "elements": r.args,
+            }),
+            EntityDef::Repeater(r) => json!({
+                "name": r.name,
+                "elements": [
                     ElementDef {
                         tag: 0,
                         name: Some(String::from("timestamp")),
@@ -224,7 +224,7 @@ fn entity_description_json(description: EntityDef, expand: bool) -> Value {
                         element_type: TypeDef::U64,
                     },
                 ],
-            },
+            }),
         };
         json!({
             "type": typ,
@@ -275,20 +275,12 @@ async fn describe(state: &mut State) -> SimpleHandlerResult {
         HandlerError::from(anyhow!("Invalid entity type for description: {}", entity_type))
             .with_status(StatusCode::NOT_FOUND)
     })?;
-    let description = match host.describe(instance_id, entity.clone()).await {
-        Ok(Some(description)) if DescribedEntityType::from_entitydef(&description) == entity_type => description,
-        Ok(_) => {
-            return Err(
-                HandlerError::from(anyhow!("{} not found {}", entity_type.as_str(), entity))
-                    .with_status(StatusCode::NOT_FOUND),
-            )
-        }
-        Err(e) => {
-            log::error!("{}", e);
-            return Err(HandlerError::from(anyhow!("Database instance not ready."))
-                .with_status(StatusCode::SERVICE_UNAVAILABLE));
-        }
-    };
+    let catalog = host.catalog(instance_id).map_err_with_status(StatusCode::NOT_FOUND)?;
+    let description = catalog
+        .get(&entity)
+        .filter(|desc| DescribedEntityType::from_entitydef(desc) == entity_type)
+        .with_context(|| format!("{entity_type} {entity:?} not found"))
+        .map_err_with_status(StatusCode::NOT_FOUND)?;
 
     let expand = expand.unwrap_or(true);
     let response_json = json!({ entity: entity_description_json(description, expand) });
@@ -320,17 +312,10 @@ async fn catalog(state: &mut State) -> SimpleHandlerResult {
 
     let instance_id = call_info.database_instance.id;
     let host = host_controller::get_host();
-    let catalog = match host.catalog(instance_id).await {
-        Ok(catalog) => catalog,
-        Err(e) => {
-            log::error!("{}", e);
-            return Err(HandlerError::from(anyhow!("Database instance not ready."))
-                .with_status(StatusCode::SERVICE_UNAVAILABLE));
-        }
-    };
+    let catalog = host.catalog(instance_id).map_err_with_status(StatusCode::NOT_FOUND)?;
     let expand = expand.unwrap_or(false);
     let response_catalog: HashMap<_, _> = catalog
-        .into_iter()
+        .iter()
         .map(|(name, entity)| (name, entity_description_json(entity, expand)))
         .collect();
     let response_json = json!(response_catalog);
@@ -437,18 +422,7 @@ async fn sql(state: &mut State) -> SimpleHandlerResult {
     let instance_id = database_instance.unwrap().id;
 
     let body = state.borrow_mut::<Body>();
-    let mut data = BytesMut::new();
-    while let Some(d) = body.data().await {
-        match d {
-            Ok(d) => data.put(d),
-            Err(err) => {
-                log::debug!("{}", err);
-                return Err(
-                    HandlerError::from(anyhow!("Error with request body.")).with_status(StatusCode::BAD_REQUEST)
-                );
-            }
-        };
-    }
+    let data = hyper::body::to_bytes(body).await?;
     if data.len() == 0 {
         return Err(HandlerError::from(anyhow!("Missing request body.")).with_status(StatusCode::BAD_REQUEST));
     }

@@ -11,13 +11,12 @@ use slab::Slab;
 use spacetimedb_lib::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
 use spacetimedb_lib::EntityDef;
 
-use crate::client::client_connection_index::ClientActorId;
 use crate::db::messages::transaction::Transaction;
 use crate::db::transactional_db::CommitResult;
 use crate::hash::Hash;
 use crate::host::host_controller::{ReducerBudget, ReducerCallResult, ReducerError};
 use crate::host::instance_env::{InstanceEnv, TxSlot};
-use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHostActor, ModuleHostCommand};
+use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHostActor, ModuleInfo};
 use crate::host::tracelog::instance_trace::TraceLog;
 use crate::host::ReducerArgs;
 use crate::module_subscription_actor::ModuleSubscription;
@@ -26,7 +25,7 @@ use crate::worker_metrics::{REDUCER_COMPUTE_TIME, REDUCER_COUNT, REDUCER_WRITE_S
 
 use super::*;
 
-pub trait WasmModule {
+pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
 
     type ExternType: for<'a> PartialEq<FuncSig<'a>> + fmt::Debug;
@@ -37,7 +36,7 @@ pub trait WasmModule {
     fn create_instance(&mut self, env: InstanceEnv) -> anyhow::Result<Self::Instance>;
 }
 
-pub trait WasmInstance {
+pub trait WasmInstance: Send + 'static {
     fn extract_descriptions(&mut self) -> anyhow::Result<HashMap<String, EntityDef>>;
 
     type Trap;
@@ -78,7 +77,6 @@ pub struct ReducerResult {
 pub(crate) struct WasmModuleHostActor<T: WasmModule> {
     module: T,
     worker_database_instance: WorkerDatabaseInstance,
-    _module_hash: Hash,
     // store: Store,
     instances: Slab<(TxSlot, RefCell<T::Instance>)>,
     subscription: ModuleSubscription,
@@ -86,20 +84,16 @@ pub(crate) struct WasmModuleHostActor<T: WasmModule> {
     trace_log: Option<Arc<Mutex<TraceLog>>>,
     func_names: FuncNames,
 
-    // Holds the list of descriptions of each entity.
-    // TODO(ryan): Long run let's replace or augment this with catalog table(s) that hold the
-    // schema. Then standard table query tools could be run against it.
-    description_cache: HashMap<String, EntityDef>,
+    info: Arc<ModuleInfo>,
 }
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
     pub fn new(
         worker_database_instance: WorkerDatabaseInstance,
         module_hash: Hash,
-        trace_log: bool,
         mut module: T,
-    ) -> anyhow::Result<Self> {
-        let trace_log = if trace_log {
+    ) -> anyhow::Result<Box<Self>> {
+        let trace_log = if worker_database_instance.trace_log {
             Some(Arc::new(Mutex::new(TraceLog::new().unwrap())))
         } else {
             None
@@ -125,18 +119,23 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             .try_for_each(|(name, entity)| func_names.update_from_entity(|s| module.get_export(s), name, entity))?;
         module.fill_general_funcnames(&mut func_names)?;
 
+        let info = Arc::new(ModuleInfo {
+            identity: worker_database_instance.identity,
+            module_hash,
+            catalog: description_cache,
+        });
+
         instance_slot.insert((instance_tx, RefCell::new(instance)));
 
-        let mut host_actor = Self {
+        let mut host_actor = Box::new(Self {
             module,
             worker_database_instance,
-            _module_hash: module_hash,
             instances,
             subscription,
-            description_cache,
             trace_log,
             func_names,
-        };
+            info,
+        });
         if false {
             // silence warning
             // TODO: actually utilize this
@@ -164,12 +163,23 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let (tx_slot, instance) = &self.instances[0];
         (tx_slot, instance.borrow_mut())
     }
+}
+
+impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
+    fn info(&self) -> Arc<ModuleInfo> {
+        self.info.clone()
+    }
+
+    fn subscription(&self) -> &ModuleSubscription {
+        &self.subscription
+    }
 
     fn init_database(&mut self) -> Result<(), anyhow::Error> {
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut tx_ = stdb.begin_tx();
         let (tx, stdb) = tx_.get();
-        self.description_cache
+        self.info
+            .catalog
             .iter()
             .filter_map(|(name, entity)| match entity {
                 EntityDef::Table(t) => Some((name, t)),
@@ -194,7 +204,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         Ok(())
     }
 
-    fn migrate_database(&mut self) -> Result<(), anyhow::Error> {
+    fn _migrate_database(&mut self) -> Result<(), anyhow::Error> {
         // TODO: figure out a better way to do this? all in one transaction? have to make sure not
         // to forget about EnergyStats if one returns an error
         for (i, name) in self.func_names.migrates.iter().enumerate() {
@@ -205,14 +215,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         // TODO: call __create_index__IndexName
         Ok(())
-    }
-
-    fn add_subscriber(&self, client_id: ClientActorId) -> Result<(), anyhow::Error> {
-        self.subscription.add_subscriber(client_id)
-    }
-
-    fn remove_subscriber(&self, client_id: ClientActorId) -> Result<(), anyhow::Error> {
-        self.subscription.remove_subscriber(client_id)
     }
 
     #[cfg(feature = "tracelogging")]
@@ -239,19 +241,19 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
     }
 
     fn call_reducer(
-        &self,
+        &mut self,
         caller_identity: Hash,
-        reducer_name: &str,
+        reducer_name: String,
         budget: ReducerBudget,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, anyhow::Error> {
         let start_instant = Instant::now();
 
-        let reducer_descr = match self.description_cache.get(reducer_name) {
+        let reducer_descr = match self.info.catalog.get(&reducer_name) {
             // Note if it's not a reducer, we pretend it does not exist.
             Some(EntityDef::Reducer(desc)) => desc,
             _ => {
-                return Err(anyhow!(ReducerError::NotFound(String::from(reducer_name))));
+                return Err(anyhow!(ReducerError::NotFound(reducer_name)));
             }
         };
 
@@ -299,7 +301,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             timestamp,
             caller_identity,
             function_call: ModuleFunctionCall {
-                reducer: reducer_name.to_string(),
+                reducer: reducer_name,
                 arg_bytes,
             },
             status,
@@ -317,7 +319,11 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         Ok(result)
     }
 
-    fn call_repeating_reducer(&self, reducer_id: usize, prev_call_time: u64) -> Result<(u64, u64), anyhow::Error> {
+    fn get_repeating_reducers(&self) -> Vec<String> {
+        self.func_names.get_repeaters()
+    }
+
+    fn call_repeating_reducer(&mut self, reducer_id: usize, prev_call_time: u64) -> Result<(u64, u64), anyhow::Error> {
         let start_instant = Instant::now();
 
         let reducer_symbol = self
@@ -374,7 +380,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         Ok((repeat_duration.unwrap_or(delta_time), timestamp))
     }
 
-    fn call_identity_connected_disconnected(&self, identity: &Hash, connected: bool) -> Result<(), anyhow::Error> {
+    fn call_connect_disconnect(&mut self, identity: Hash, connected: bool) -> Result<(), anyhow::Error> {
         let start_instant = Instant::now();
 
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
@@ -418,7 +424,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
                 arg_bytes: Vec::new(),
             },
             status,
-            caller_identity: *identity,
+            caller_identity: identity,
             energy_quanta_used: 0,
             host_execution_duration: start_instant.elapsed(),
         };
@@ -426,18 +432,9 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         Ok(())
     }
+}
 
-    fn catalog(&self) -> Vec<(String, EntityDef)> {
-        self.description_cache
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect()
-    }
-
-    fn describe(&self, entity_name: &str) -> Option<EntityDef> {
-        self.description_cache.get(entity_name).map(|t| t.clone())
-    }
-
+impl<T: WasmModule> WasmModuleHostActor<T> {
     fn with_tx(
         &self,
         func_ident: &str,
@@ -521,91 +518,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
                 } else {
                     todo!("Write skew, you need to implement retries my man, T-dawg.");
                 }
-            }
-        }
-    }
-}
-
-impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
-    fn handle_message(&mut self, message: ModuleHostCommand) -> bool {
-        match message {
-            ModuleHostCommand::CallConnectDisconnect {
-                caller_identity,
-                connected,
-                respond_to,
-            } => {
-                respond_to
-                    .send(self.call_identity_connected_disconnected(&caller_identity, connected))
-                    .unwrap();
-                false
-            }
-            ModuleHostCommand::CallReducer {
-                caller_identity,
-                reducer_name,
-                budget,
-                args,
-                respond_to,
-            } => {
-                respond_to
-                    .send(self.call_reducer(caller_identity, &reducer_name, budget, args))
-                    .unwrap();
-                false
-            }
-            ModuleHostCommand::CallRepeatingReducer {
-                id,
-                prev_call_time,
-                respond_to,
-            } => {
-                respond_to
-                    .send(self.call_repeating_reducer(id, prev_call_time))
-                    .unwrap();
-                false
-            }
-            ModuleHostCommand::GetRepeatingReducers { respond_to } => {
-                respond_to.send(self.func_names.get_repeaters()).unwrap();
-                false
-            }
-            ModuleHostCommand::InitDatabase { respond_to } => {
-                respond_to.send(self.init_database()).unwrap();
-                false
-            }
-            ModuleHostCommand::DeleteDatabase { respond_to } => {
-                respond_to.send(self.delete_database()).unwrap();
-                true
-            }
-            ModuleHostCommand::_MigrateDatabase { respond_to } => {
-                respond_to.send(self.migrate_database()).unwrap();
-                false
-            }
-            ModuleHostCommand::Exit {} => true,
-            ModuleHostCommand::AddSubscriber { client_id, respond_to } => {
-                respond_to.send(self.add_subscriber(client_id)).unwrap();
-                false
-            }
-            ModuleHostCommand::RemoveSubscriber { client_id, respond_to } => {
-                respond_to.send(self.remove_subscriber(client_id)).unwrap();
-                false
-            }
-            ModuleHostCommand::Catalog { respond_to } => {
-                respond_to.send(self.catalog()).unwrap();
-                false
-            }
-            ModuleHostCommand::Describe {
-                entity_name,
-                respond_to,
-            } => {
-                respond_to.send(self.describe(&entity_name)).unwrap();
-                false
-            }
-            #[cfg(feature = "tracelogging")]
-            ModuleHostCommand::GetTrace { respond_to } => {
-                respond_to.send(self.get_trace()).unwrap();
-                false
-            }
-            #[cfg(feature = "tracelogging")]
-            ModuleHostCommand::StopTrace { respond_to } => {
-                respond_to.send(self.stop_trace()).unwrap();
-                false
             }
         }
     }

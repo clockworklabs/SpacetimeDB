@@ -1,5 +1,5 @@
 use crate::hash::{hash_bytes, Hash};
-use crate::host::host_wasmer::make_wasmer_module_host_actor;
+use crate::host::host_wasmer;
 use crate::host::module_host::ModuleHost;
 use crate::protobuf::control_db::HostType;
 use crate::worker_database_instance::WorkerDatabaseInstance;
@@ -12,6 +12,8 @@ use std::fmt::{Display, Formatter};
 use std::time::Duration;
 use std::{collections::HashMap, sync::Mutex};
 use thiserror::Error;
+
+use super::module_host::{Catalog, SpawnResult};
 
 lazy_static! {
     pub static ref HOST: HostController = HostController::new();
@@ -115,29 +117,18 @@ impl HostController {
         &self,
         worker_database_instance: WorkerDatabaseInstance,
         program_bytes: Vec<u8>,
-    ) -> Result<Hash, anyhow::Error> {
-        let key = worker_database_instance.database_instance_id;
-        let module_hash = self.spawn_module(worker_database_instance, program_bytes).await?;
-        let module_host = {
-            let modules = self.modules.lock().unwrap();
-            modules.get(&key).unwrap().clone()
-        };
-        module_host.init_database().await?;
-        module_host.start_repeating_reducers().await?;
-        Ok(module_hash)
+    ) -> Result<ModuleHost, anyhow::Error> {
+        let mut res = self.spawn_module(worker_database_instance, program_bytes).await?;
+        res.module_host.init_database().await?;
+        res.start_repeating_reducers();
+        Ok(res.module_host)
     }
 
     pub async fn delete_module(&self, worker_database_instance_id: u64) -> Result<(), anyhow::Error> {
-        let key = worker_database_instance_id;
-        let module_host = {
-            let modules = self.modules.lock().unwrap();
-            modules.get(&key).cloned()
-        };
+        let module_host = self.take_module(worker_database_instance_id);
         if let Some(module_host) = module_host {
             module_host.delete_database().await?;
         }
-        let mut modules = self.modules.lock().unwrap();
-        modules.remove(&key);
         Ok(())
     }
 
@@ -145,71 +136,47 @@ impl HostController {
         &self,
         worker_database_instance: WorkerDatabaseInstance,
         program_bytes: Vec<u8>,
-    ) -> Result<Hash, anyhow::Error> {
-        let key = worker_database_instance.database_instance_id;
-        let module_hash = self.spawn_module(worker_database_instance, program_bytes).await?;
-        let module_host = {
-            let modules = self.modules.lock().unwrap();
-            modules.get(&key).unwrap().clone()
-        };
-        module_host._migrate_database().await?;
-        module_host.start_repeating_reducers().await?;
-        Ok(module_hash)
+    ) -> Result<ModuleHost, anyhow::Error> {
+        let mut res = self.spawn_module(worker_database_instance, program_bytes).await?;
+        res.module_host._migrate_database().await?;
+        res.start_repeating_reducers();
+        Ok(res.module_host)
     }
 
     pub async fn add_module(
         &self,
         worker_database_instance: WorkerDatabaseInstance,
         program_bytes: Vec<u8>,
-    ) -> Result<Hash, anyhow::Error> {
-        let key = worker_database_instance.database_instance_id;
-        let module_hash = self.spawn_module(worker_database_instance, program_bytes).await?;
-        let module_host = {
-            let modules = self.modules.lock().unwrap();
-            modules.get(&key).unwrap().clone()
-        };
-        module_host.start_repeating_reducers().await?;
-        Ok(module_hash)
+    ) -> Result<ModuleHost, anyhow::Error> {
+        let mut res = self.spawn_module(worker_database_instance, program_bytes).await?;
+        res.start_repeating_reducers();
+        Ok(res.module_host)
     }
 
     pub async fn spawn_module(
         &self,
         worker_database_instance: WorkerDatabaseInstance,
         program_bytes: Vec<u8>,
-    ) -> Result<Hash, anyhow::Error> {
+    ) -> Result<SpawnResult, anyhow::Error> {
         let module_hash = hash_bytes(&program_bytes);
         let key = worker_database_instance.database_instance_id;
-        let module_host = {
-            let modules = self.modules.lock().unwrap();
-            modules.get(&key).cloned()
-        };
+        let module_host = self.take_module(key);
         if let Some(module_host) = module_host {
             module_host.exit().await?;
         }
 
-        let trace_log = worker_database_instance.trace_log;
-        let module_host = match worker_database_instance.host_type {
-            HostType::Wasmer => {
-                make_wasmer_module_host_actor(worker_database_instance, module_hash, program_bytes, trace_log)?
-            }
+        let res = match worker_database_instance.host_type {
+            HostType::Wasmer => ModuleHost::spawn(host_wasmer::make_actor(
+                worker_database_instance,
+                module_hash,
+                program_bytes,
+            )?),
         };
 
         let mut modules = self.modules.lock().unwrap();
-        modules.insert(key, module_host);
+        modules.insert(key, res.module_host.clone());
 
-        Ok(module_hash)
-    }
-
-    fn module_host(&self, instance_id: u64) -> Result<ModuleHost, anyhow::Error> {
-        let key = instance_id;
-        let module_host = {
-            let modules = self.modules.lock().unwrap();
-            modules
-                .get(&key)
-                .ok_or_else(|| anyhow::anyhow!("No such module found."))?
-                .clone()
-        };
-        Ok(module_host)
+        Ok(res)
     }
 
     pub async fn call_reducer(
@@ -219,7 +186,7 @@ impl HostController {
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, anyhow::Error> {
-        let module_host = self.module_host(instance_id)?;
+        let module_host = self.get_module(instance_id)?;
         // TODO(cloutiertyler): Move this outside of the host controller
         // let max_spend = worker_budget::max_tx_spend(&module_host.identity);
         // let budget = ReducerBudget(max_spend);
@@ -238,26 +205,16 @@ impl HostController {
         }
     }
 
-    /// Describe a specific entity in a module.
-    /// None if not present.
-    pub async fn describe(&self, instance_id: u64, entity_name: String) -> Result<Option<EntityDef>, anyhow::Error> {
-        let module_host = self.module_host(instance_id)?;
-        let schema = module_host.describe(entity_name).await.unwrap();
-
-        Ok(schema)
-    }
-
     /// Request a list of all describable entities in a module.
-    pub async fn catalog(&self, instance_id: u64) -> Result<Vec<(String, EntityDef)>, anyhow::Error> {
-        let module_host = self.module_host(instance_id)?;
-        let catalog = module_host.catalog().await.unwrap();
-        Ok(catalog)
+    pub fn catalog(&self, instance_id: u64) -> Result<Catalog, anyhow::Error> {
+        let module_host = self.get_module(instance_id)?;
+        Ok(module_host.catalog())
     }
 
     /// If a module's DB activity is being traced (for diagnostics etc.), retrieves the current contents of its trace stream.
     #[cfg(feature = "tracelogging")]
     pub async fn get_trace(&self, instance_id: u64) -> Result<Option<bytes::Bytes>, anyhow::Error> {
-        let module_host = self.module_host(instance_id)?;
+        let module_host = self.get_module(instance_id)?;
         let trace = module_host.get_trace().await.unwrap();
         Ok(trace)
     }
@@ -265,20 +222,17 @@ impl HostController {
     /// If a module's DB activity is being traced (for diagnostics etc.), stop tracing it.
     #[cfg(feature = "tracelogging")]
     pub async fn stop_trace(&self, instance_id: u64) -> Result<(), anyhow::Error> {
-        let module_host = self.module_host(instance_id)?;
+        let module_host = self.get_module(instance_id)?;
         module_host.stop_trace().await.unwrap();
         Ok(())
     }
 
     pub fn get_module(&self, instance_id: u64) -> Result<ModuleHost, anyhow::Error> {
-        let key = instance_id;
-        let module_host = {
-            let modules = self.modules.lock().unwrap();
-            modules
-                .get(&key)
-                .ok_or_else(|| anyhow::anyhow!("No such module found."))?
-                .clone()
-        };
-        Ok(module_host)
+        let modules = self.modules.lock().unwrap();
+        modules.get(&instance_id).cloned().context("No such module found.")
+    }
+
+    fn take_module(&self, instance_id: u64) -> Option<ModuleHost> {
+        self.modules.lock().unwrap().remove(&instance_id)
     }
 }
