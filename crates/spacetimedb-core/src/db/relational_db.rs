@@ -4,11 +4,19 @@ use super::{
     transactional_db::{CommitResult, ScanIter, TransactionalDB, Tx, TxCtx, TxWrapper},
 };
 // use super::relational_operators::Project;
+use crate::db::catalog::Catalog;
 use crate::db::db_metrics::{
     RDB_CREATE_TABLE_TIME, RDB_DELETE_IN_TIME, RDB_DELETE_PK_TIME, RDB_DROP_TABLE_TIME, RDB_INSERT_TIME,
     RDB_SCAN_PK_TIME, RDB_SCAN_RAW_TIME, RDB_SCAN_TIME,
 };
 use crate::db::ostorage::ObjectDB;
+use crate::db::sequence;
+use crate::db::sequence::{
+    read_sled_i64, write_sled_i64, Sequence, SequenceDef, SequenceError, SequenceId, SequenceIter,
+};
+use crate::db::table::{
+    columns_schema, decode_columns_schema, decode_table_schema, table_schema, ColumnFields, TableDef, TableFields,
+};
 use crate::error::{DBError, TableError};
 use crate::util::prometheus_handle::HistogramVecHandle;
 use fs2::FileExt;
@@ -26,9 +34,14 @@ use std::{
 
 pub const ST_TABLES_NAME: &str = "st_table";
 pub const ST_COLUMNS_NAME: &str = "st_columns";
+pub const ST_SEQUENCES_NAME: &str = "st_sequence";
 
+/// The static ID of the table that defines tables
 pub const ST_TABLES_ID: u32 = 0;
+/// The static ID of the table that defines columns
 pub const ST_COLUMNS_ID: u32 = 1;
+/// The ID that we can start use to generate user tables that will not conflict with the bootstrapped ones.
+pub const ST_TABLE_ID_START: u32 = 2;
 
 #[derive(Clone)]
 pub struct RelationalDBWrapper {
@@ -103,6 +116,8 @@ impl<'a> Drop for RelationalDBGuard<'a> {
 
 pub struct RelationalDB {
     pub(crate) txdb: TransactionalDB,
+    pub(crate) seqdb: sled::Db,
+    pub(crate) catalog: Catalog,
     #[allow(dead_code)]
     lock: File,
 }
@@ -122,13 +137,30 @@ impl RelationalDB {
         let root = root.as_ref().to_path_buf();
         let lock = File::create(root.join("db.lock"))?;
         lock.try_lock_exclusive()
-            .map_err(|err| DBError::DatabasedOpened(root, err.into()))?;
+            .map_err(|err| DBError::DatabasedOpened(root.clone(), err.into()))?;
+
+        let seqdb = sled::open(root.join("seq"))?;
 
         let mut txdb = TransactionalDB::open(message_log, odb).unwrap();
 
         Self::bootstrap(&mut txdb)?;
 
-        Ok(RelationalDB { txdb, lock })
+        let mut db = RelationalDB {
+            txdb,
+            seqdb,
+            catalog: Catalog::new()?,
+            lock,
+        };
+        //Add the system tables to the catalog
+        db.catalog
+            .tables
+            .insert(TableDef::new(ST_TABLES_ID, ST_TABLES_NAME, table_schema(), true));
+        db.catalog
+            .tables
+            .insert(TableDef::new(ST_COLUMNS_ID, ST_COLUMNS_NAME, columns_schema(), true));
+        //Re-load the database objects
+        db.bootstrap_sequences()?;
+        Ok(db)
     }
 
     fn bootstrap(txdb: &mut TransactionalDB) -> Result<(), DBError> {
@@ -190,9 +222,9 @@ impl RelationalDB {
         let row = TupleValue {
             elements: vec![
                 TypeValue::U32(ST_COLUMNS_ID),
-                TypeValue::U32(0),
+                TypeValue::U32(ColumnFields::TableId as u32),
                 TypeValue::Bytes(bytes),
-                TypeValue::String("table_id".to_string()),
+                TypeValue::String(ColumnFields::TableId.into()),
             ]
             .into(),
         };
@@ -203,9 +235,9 @@ impl RelationalDB {
         let row = TupleValue {
             elements: vec![
                 TypeValue::U32(ST_COLUMNS_ID),
-                TypeValue::U32(1),
+                TypeValue::U32(ColumnFields::ColId as u32),
                 TypeValue::Bytes(bytes),
-                TypeValue::String("col_id".to_string()),
+                TypeValue::String(ColumnFields::ColId.into()),
             ]
             .into(),
         };
@@ -216,9 +248,9 @@ impl RelationalDB {
         let row = TupleValue {
             elements: vec![
                 TypeValue::U32(ST_COLUMNS_ID),
-                TypeValue::U32(2),
+                TypeValue::U32(ColumnFields::ColType as u32),
                 TypeValue::Bytes(bytes),
-                TypeValue::String("col_type".to_string()),
+                TypeValue::String(ColumnFields::ColType.into()),
             ]
             .into(),
         };
@@ -229,15 +261,39 @@ impl RelationalDB {
         let row = TupleValue {
             elements: vec![
                 TypeValue::U32(ST_COLUMNS_ID),
-                TypeValue::U32(3),
+                TypeValue::U32(ColumnFields::ColName as u32),
                 TypeValue::Bytes(bytes),
-                TypeValue::String("col_name".to_string()),
+                TypeValue::String(ColumnFields::ColName.into()),
             ]
             .into(),
         };
         Self::insert_row_raw(txdb, tx, ST_COLUMNS_ID, row);
 
         tx_.commit()?;
+        Ok(())
+    }
+
+    fn bootstrap_sequences(&mut self) -> Result<(), DBError> {
+        // Already exists?
+        let mut tx_ = self.begin_tx();
+        let (tx, stdb) = tx_.get();
+        if stdb.table_id_from_name(tx, ST_SEQUENCES_NAME)?.is_none() {
+            stdb.create_system_table(tx, ST_SEQUENCES_NAME, sequence::internal_schema())?;
+        };
+        tx_.commit()?;
+
+        let mut tx_ = self.begin_tx();
+        let (tx, stdb) = tx_.get();
+        // Re-fill
+        let mut sequences = Vec::from_iter(stdb.catalog.sequences_iter().cloned());
+        for seq in stdb.scan_sequences(tx)? {
+            sequences.push(seq);
+        }
+
+        for seq in sequences {
+            stdb.load_sequence(seq)?;
+        }
+
         Ok(())
     }
 
@@ -253,43 +309,19 @@ impl RelationalDB {
     }
 
     pub fn encode_row(row: &TupleValue, bytes: &mut Vec<u8>) {
-        // TODO: large file storage the row elements
+        // TODO: large file storage of the row elements
         row.encode(bytes);
     }
 
     pub fn decode_row(schema: &TupleDef, bytes: &mut impl BufReader) -> Result<TupleValue, DecodeError> {
-        // TODO: large file storage the row elements
+        // TODO: large file storage of the row elements
         TupleValue::decode(schema, bytes)
     }
 
     pub fn schema_for_table(&self, tx: &mut Tx, table_id: u32) -> Result<Option<TupleDef>, DBError> {
         let mut columns = Vec::new();
         for bytes in self.txdb.scan(tx, ST_COLUMNS_ID) {
-            let schema = TupleDef {
-                name: None,
-                elements: vec![
-                    ElementDef {
-                        tag: 0,
-                        name: None,
-                        element_type: TypeDef::U32,
-                    },
-                    ElementDef {
-                        tag: 1,
-                        name: None,
-                        element_type: TypeDef::U32,
-                    },
-                    ElementDef {
-                        tag: 2,
-                        name: None,
-                        element_type: TypeDef::Bytes,
-                    },
-                    ElementDef {
-                        tag: 3,
-                        name: None,
-                        element_type: TypeDef::String,
-                    },
-                ],
-            };
+            let schema = columns_schema();
 
             let row = match Self::decode_row(&schema, &mut &bytes[..]) {
                 Ok(row) => row,
@@ -298,23 +330,16 @@ impl RelationalDB {
                     return Ok(None);
                 }
             };
-            let t_id = row.field_as_u32(0, Some("t_id"))?;
-            if t_id != table_id {
+            let col = decode_columns_schema(&row)?;
+            if col.table_id != table_id {
                 continue;
             }
-            let col_id = row.field_as_u32(1, Some("col_id"))?;
-
-            let bytes = row.field_as_bytes(2, Some("col_type"))?;
-            let col_type =
-                TypeDef::decode(&mut &bytes[..]).map_err(|e| TableError::InvalidSchema(table_id, e.into()))?;
-
-            let col_name = row.field_as_str(3, Some("col_name"))?;
 
             let element = ElementDef {
-                // TODO: do we keep col_id's, do we keep tags for tuples?
-                tag: col_id as u8,
-                name: Some(col_name.into()),
-                element_type: col_type,
+                // TODO: do we keep col_id's or do we keep tags for tuples?
+                tag: col.col_id as u8,
+                name: Some(col.col_name.into()),
+                element_type: col.col_type,
             };
             columns.push(element)
         }
@@ -354,29 +379,53 @@ impl TxCtx for RelationalDB {
         self.txdb.rollback_tx(tx)
     }
 
+    /// NOTE! This does not store any actual data to disk. It only verifies the
+    /// transaction can be committed and returns a commit result if it can
+    /// or a None if you should retry the transaction again.
     fn commit_tx(&mut self, tx: Tx) -> Result<Option<CommitResult>, DBError> {
         self.txdb.commit_tx(tx)
     }
 }
 
 impl RelationalDB {
-    pub fn create_table(&mut self, tx: &mut Tx, table_name: &str, schema: &TupleDef) -> Result<u32, DBError> {
-        let mut measure = HistogramVecHandle::new(&RDB_CREATE_TABLE_TIME, vec![String::from(table_name)]);
-        measure.start();
-        // Scan st_tables for this id
-
-        let mut table_count = 0;
-        for row in self.scan(tx, ST_TABLES_ID)? {
-            table_count += 1;
-            let t_name = row.field_as_str(1, Some("name"))?;
-
-            if t_name == table_name {
-                return Err(TableError::Exist(t_name.into()).into());
+    /// Persist to disk the [Tx] result into the [MessageLog].
+    ///
+    /// Returns `true` if `commit_result` was persisted, `false` if it not has `bytes` to write or was `None`.
+    pub fn persist_tx(mlog: &Mutex<MessageLog>, commit_result: Option<CommitResult>) -> Result<bool, DBError> {
+        if let Some(commit_result) = commit_result {
+            if let Some(bytes) = commit_result.commit_bytes {
+                let mut mlog = mlog.lock()?;
+                mlog.append(bytes)?;
+                mlog.sync_all()?;
+                return Ok(true);
             }
         }
 
-        // TODO: we probably want to replace this with autoincrementing
-        let table_id = table_count;
+        Ok(false)
+    }
+
+    fn internal_create_table(
+        &mut self,
+        tx: &mut Tx,
+        table_name: &str,
+        schema: TupleDef,
+        is_system_table: bool,
+    ) -> Result<u32, DBError> {
+        let mut measure = HistogramVecHandle::new(&RDB_CREATE_TABLE_TIME, vec![String::from(table_name)]);
+        measure.start();
+        // Scan st_tables for this id
+        for row in self.scan(tx, ST_TABLES_ID)? {
+            let table = decode_table_schema(&row)?;
+            if table.table_name == table_name {
+                return Err(TableError::Exist(table_name.into()).into());
+            }
+        }
+
+        let table_id = self.next_sequence(self.catalog.seq_table_id())? as u32;
+        assert!(
+            table_id > ST_TABLE_ID_START,
+            "Attempted to create a table that overrides the ID of a system catalog!"
+        );
 
         // Insert the table row into st_tables
         let row = TupleValue {
@@ -399,14 +448,29 @@ impl RelationalDB {
                     TypeValue::U32(table_id),
                     TypeValue::U32(i as u32),
                     TypeValue::Bytes(bytes),
-                    TypeValue::String(col_name),
+                    TypeValue::String(col_name.clone()),
                 ]
                 .into(),
             };
             Self::insert_row_raw(&mut self.txdb, tx, ST_COLUMNS_ID, row);
         }
+        self.catalog
+            .tables
+            .insert(TableDef::new(table_id, table_name, schema, is_system_table));
 
         Ok(table_id)
+    }
+
+    pub fn create_system_table(&mut self, tx: &mut Tx, table_name: &str, schema: TupleDef) -> Result<u32, DBError> {
+        assert!(table_name.starts_with("st_"), "Is not a system table");
+        self.internal_create_table(tx, table_name, schema, true)
+    }
+
+    pub fn create_table(&mut self, tx: &mut Tx, table_name: &str, schema: TupleDef) -> Result<u32, DBError> {
+        if table_name.starts_with("st_") {
+            return Err(TableError::System(table_name.into()).into());
+        }
+        self.internal_create_table(tx, table_name, schema, false)
     }
 
     pub fn drop_table(&mut self, tx: &mut Tx, table_id: u32) -> Result<(), DBError> {
@@ -414,7 +478,12 @@ impl RelationalDB {
         measure.start();
 
         let range = self
-            .range_scan(tx, ST_TABLES_ID, 0, TypeValue::U32(table_id)..TypeValue::U32(table_id))
+            .range_scan(
+                tx,
+                ST_TABLES_ID,
+                TableFields::TableId as u32,
+                TypeValue::U32(table_id)..TypeValue::U32(table_id),
+            )
             .map_err(|_err| TableError::NotFound("ST_TABLES_ID".into()))?
             .collect::<Vec<_>>();
         if self.delete_in(tx, table_id, range)?.is_none() {
@@ -422,22 +491,27 @@ impl RelationalDB {
         }
 
         let range = self
-            .range_scan(tx, ST_COLUMNS_ID, 0, TypeValue::U32(table_id)..TypeValue::U32(table_id))
+            .range_scan(
+                tx,
+                ST_COLUMNS_ID,
+                ColumnFields::TableId as u32,
+                TypeValue::U32(table_id)..TypeValue::U32(table_id),
+            )
             .map_err(|_err| TableError::NotFound("ST_COLUMNS_ID".into()))?
             .collect::<Vec<_>>();
         if self.delete_in(tx, table_id, range)?.is_none() {
             return Err(TableError::NotFound("ST_COLUMNS_ID".into()).into());
         }
+        self.catalog.tables.remove(table_id);
         Ok(())
     }
 
     pub fn table_id_from_name(&self, tx: &mut Tx, table_name: &str) -> Result<Option<u32>, DBError> {
         for row in self.scan(tx, ST_TABLES_ID)? {
-            let t_id = row.field_as_u32(0, Some("id"))?;
-            let t_name = row.field_as_str(1, Some("name"))?;
+            let table = decode_table_schema(&row)?;
 
-            if t_name == table_name {
-                return Ok(Some(t_id));
+            if table.table_name == table_name {
+                return Ok(Some(table.table_id));
             }
         }
         Ok(None)
@@ -445,28 +519,24 @@ impl RelationalDB {
 
     pub fn table_name_from_id(&self, tx: &mut Tx, table_id: u32) -> Result<Option<String>, DBError> {
         for row in self.scan(tx, ST_TABLES_ID)? {
-            let t_id = row.field_as_u32(0, Some("id"))?;
-            let t_name = row.field_as_str(1, Some("name"))?;
+            let table = decode_table_schema(&row)?;
 
-            if t_id == table_id {
-                return Ok(Some(t_name.into()));
+            if table.table_id == table_id {
+                return Ok(Some(table.table_name.into()));
             }
         }
         Ok(None)
     }
 
     pub fn column_id_from_name(&self, tx: &mut Tx, table_id: u32, col_name: &str) -> Result<Option<u32>, DBError> {
-        // schema: (table_id: u32, col_id: u32, col_type: Bytes, col_name: String)
         for row in self.scan(tx, ST_COLUMNS_ID)? {
-            let t_id = row.field_as_u32(0, Some("table_id"))?;
-            if t_id != table_id {
+            let col = decode_columns_schema(&row)?;
+            if col.table_id != table_id {
                 continue;
             }
-            let col_id = row.field_as_u32(1, Some("col_id"))?;
 
-            let c_name = row.field_as_str(3, Some("c_name"))?;
-            if c_name == col_name {
-                return Ok(Some(col_id));
+            if col.col_name == col_name {
+                return Ok(Some(col.col_id));
             }
         }
         Ok(None)
@@ -499,6 +569,30 @@ impl RelationalDB {
         } else {
             Err(TableError::ScanTableIdNotFound(table_id).into())
         }
+    }
+
+    /// Return the tables from [ST_TABLES_NAME], filtering out the system tables.
+    pub fn scan_table_names<'a>(&'a self, tx: &'a mut Tx) -> Result<impl Iterator<Item = (u32, String)> + 'a, DBError> {
+        let iter = self.scan(tx, ST_TABLES_ID)?;
+
+        let ids_system = self
+            .catalog
+            .tables
+            .iter_system_tables()
+            .map(|(table_id, _)| table_id)
+            .collect::<Vec<_>>();
+
+        Ok(iter.filter_map(move |x| {
+            let table_id = x.field_as_u32(0, None).unwrap();
+
+            if ids_system.contains(&table_id) {
+                None
+            } else {
+                let name = x.field_as_str(1, None).unwrap().to_string();
+
+                Some((table_id, name))
+            }
+        }))
     }
 
     pub fn scan_raw<'a>(&'a self, tx: &'a mut Tx, table_id: u32) -> Result<TableIterRaw<'a>, DBError> {
@@ -606,6 +700,85 @@ impl RelationalDB {
             }
         }
         Ok(Some(count))
+    }
+
+    pub fn scan_sequences<'a>(&'a mut self, tx: &'a mut Tx) -> Result<SequenceIter<'a>, DBError> {
+        let table_id = self
+            .table_id_from_name(tx, ST_SEQUENCES_NAME)?
+            .ok_or_else(|| TableError::NotFound("ST_SEQUENCES_NAME".into()))?;
+
+        let iter = self.scan(tx, table_id)?;
+        Ok(SequenceIter { iter, table_id })
+    }
+
+    /// Restores the [Sequence] from disk if it already exists,
+    /// and insert it into the [Catalog]
+    pub fn load_sequence(&mut self, seq: Sequence) -> Result<SequenceId, DBError> {
+        let mut seq = seq;
+
+        if let Some(value) = read_sled_i64(&mut self.seqdb, &seq.sequence_name)? {
+            seq.set_val(value)?;
+        } else {
+            write_sled_i64(&mut self.seqdb, &seq.sequence_name, seq.start)?;
+        };
+
+        let idx = seq.sequence_id;
+        self.catalog.add_sequence(seq);
+
+        Ok(idx)
+    }
+
+    /// Generated the next value for the [SequenceId]
+    pub fn next_sequence(&mut self, seq_id: SequenceId) -> Result<i64, DBError> {
+        if let Some(seq) = self.catalog.get_sequence_mut(seq_id) {
+            let next = seq.next_val();
+            if seq.need_store() {
+                write_sled_i64(&mut self.seqdb, &seq.sequence_name, Sequence::next_prefetch(next))?;
+            }
+            Ok(next)
+        } else {
+            Err(SequenceError::NotFound(seq_id).into())
+        }
+    }
+
+    /// Add a [Sequence] into the database instance, generates a stable [SequenceId] for it that will persist on restart.
+    pub fn create_sequence(&mut self, seq: SequenceDef, tx: &mut Tx) -> Result<SequenceId, DBError> {
+        let iter = self.scan_sequences(tx)?;
+        let table_id = iter.table_id;
+
+        for x in iter {
+            if x.sequence_name == seq.sequence_name {
+                return Err(SequenceError::Exist(seq.sequence_name).into());
+            }
+        }
+
+        let sequence_id: SequenceId = self.next_sequence(self.catalog.seq_id())?.into();
+        let seq = Sequence::from_def(sequence_id, seq)?;
+
+        self.insert(tx, table_id, (&seq).into())?;
+        self.load_sequence(seq)?;
+        Ok(sequence_id)
+    }
+
+    ///Removes the [Sequence] from database instance
+    pub fn drop_sequence(&mut self, seq_id: SequenceId, tx: &mut Tx) -> Result<(), DBError> {
+        let table_id = self
+            .table_id_from_name(tx, ST_SEQUENCES_NAME)?
+            .ok_or_else(|| TableError::NotFound("ST_SEQUENCES_NAME".into()))?;
+        if let Some(seq) = self.catalog.get_sequence(seq_id) {
+            let row = TupleValue::from(seq);
+            match self.delete_in(tx, table_id, [row])? {
+                None => {
+                    return Err(SequenceError::NotFound(seq_id).into());
+                }
+                Some(x) => {
+                    if x == 0 {
+                        return Err(SequenceError::NotFound(seq_id).into());
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -736,9 +909,34 @@ impl<'a, R: RangeBounds<TypeValue>> Iterator for ScanRangeIter<'a, R> {
 pub(crate) mod tests_utils {
     use super::*;
     use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
+    use tempdir::TempDir;
 
     pub(crate) fn make_default_ostorage(path: impl AsRef<Path>) -> Result<Box<dyn ObjectDB + Send>, DBError> {
         Ok(Box::new(HashMapObjectDB::open(path)?))
+    }
+
+    pub(crate) fn open_log(path: impl AsRef<Path>) -> Result<Arc<Mutex<MessageLog>>, DBError> {
+        let path = path.as_ref().to_path_buf();
+        Ok(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
+    }
+
+    //Utility for creating a database on a TempDir
+    pub(crate) fn make_test_db() -> Result<(RelationalDB, TempDir), DBError> {
+        let tmp_dir = TempDir::new("stdb_test")?;
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
+        let stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
+
+        Ok((stdb, tmp_dir))
+    }
+
+    //Utility for creating a database on the same TempDir, for checking behaviours after shutdown
+    pub(crate) fn make_test_db_reopen(tmp_dir: &TempDir) -> Result<RelationalDB, DBError> {
+        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
+        let stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
+
+        Ok(stdb)
     }
 }
 
@@ -750,7 +948,7 @@ mod tests {
     use crate::db::message_log::MessageLog;
 
     use super::RelationalDB;
-    use crate::db::relational_db::tests_utils::make_default_ostorage;
+    use crate::db::relational_db::tests_utils::{make_default_ostorage, open_log};
     use crate::error::DBError;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::{ElementDef, TupleDef, TupleValue, TypeDef, TypeValue};
@@ -781,12 +979,12 @@ mod tests {
         let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
         let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
-        let mut tx = stdb.begin_tx();
-        let (tx, stdb) = tx.get();
+        let mut tx_ = stdb.begin_tx();
+        let (tx, stdb) = tx_.get();
         stdb.create_table(
             tx,
             "MyTable",
-            &TupleDef {
+            TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -796,6 +994,11 @@ mod tests {
                 .into(),
             },
         )?;
+        tx_.commit_into_db()?;
+        let log = open_log(&tmp_dir)?;
+
+        log.lock().unwrap().sync_all()?;
+
         Ok(())
     }
 
@@ -817,7 +1020,7 @@ mod tests {
             }],
         };
 
-        stdb.create_table(tx, "MyTable", &schema)?;
+        stdb.create_table(tx, "MyTable", schema)?;
 
         tx_.commit()?;
         //drop(stdb);
@@ -851,7 +1054,7 @@ mod tests {
         let table_id = stdb.create_table(
             tx,
             "MyTable",
-            &TupleDef {
+            TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -877,7 +1080,7 @@ mod tests {
         stdb.create_table(
             tx,
             "MyTable",
-            &TupleDef {
+            TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -904,7 +1107,7 @@ mod tests {
         stdb.create_table(
             tx,
             "MyTable",
-            &TupleDef {
+            TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -917,7 +1120,7 @@ mod tests {
         let result = stdb.create_table(
             tx,
             "MyTable",
-            &TupleDef {
+            TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -943,7 +1146,7 @@ mod tests {
         let table_id = stdb.create_table(
             tx,
             "MyTable",
-            &TupleDef {
+            TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -998,7 +1201,7 @@ mod tests {
         let table_id = stdb.create_table(
             tx,
             "MyTable",
-            &TupleDef {
+            TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -1056,7 +1259,7 @@ mod tests {
         let table_id = stdb.create_table(
             tx,
             "MyTable",
-            &TupleDef {
+            TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -1113,7 +1316,7 @@ mod tests {
         let table_id = stdb.create_table(
             tx,
             "MyTable",
-            &TupleDef {
+            TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -1171,7 +1374,7 @@ mod tests {
         let table_id = stdb.create_table(
             tx,
             "MyTable",
-            &TupleDef {
+            TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,
@@ -1192,7 +1395,6 @@ mod tests {
     }
 
     #[test]
-
     fn test_rollback() -> ResultTest<()> {
         let tmp_dir = TempDir::new("stdb_test")?;
         let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
@@ -1204,7 +1406,7 @@ mod tests {
         let table_id = stdb.create_table(
             tx,
             "MyTable",
-            &TupleDef {
+            TupleDef {
                 name: None,
                 elements: vec![ElementDef {
                     tag: 0,

@@ -14,7 +14,7 @@ impl DataKey {
     pub fn from_data(bytes: impl AsRef<[u8]>) -> Self {
         let bytes = bytes.as_ref();
         if bytes.len() > 32 {
-            DataKey::Hash(hash_bytes(&bytes))
+            DataKey::Hash(hash_bytes(bytes))
         } else {
             let mut buf = [0; 32];
             buf[0..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);

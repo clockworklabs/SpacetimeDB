@@ -316,12 +316,13 @@ impl TxCtx for TransactionalDB {
 
     fn rollback_tx(&mut self, tx: Tx) {
         // Remove my branch
-        let index = self
+        if let Some(index) = self
             .branched_transaction_offsets
             .iter()
             .position(|offset| *offset == tx.parent_tx_offset)
-            .unwrap();
-        self.branched_transaction_offsets.swap_remove(index);
+        {
+            self.branched_transaction_offsets.swap_remove(index);
+        }
         self.vacuum_open_transactions();
     }
 
@@ -405,7 +406,7 @@ impl TransactionalDB {
         // TODO: avoid copy
         // TODO: use an estimated byte size to determine how much to put in here
         self.unwritten_commit.transactions.push(new_transaction.clone());
-        if self.unwritten_commit.transactions.len() > COMMIT_SIZE {
+        if self.unwritten_commit.transactions.len() >= COMMIT_SIZE {
             commit_bytes = Some(self.generate_commit());
         }
 

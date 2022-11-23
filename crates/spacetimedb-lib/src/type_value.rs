@@ -101,6 +101,12 @@ impl TupleValue {
         Ok(*r)
     }
 
+    pub fn field_as_i64(&self, index: usize, named: Option<&'static str>) -> Result<i64, LibError> {
+        let f = self.get_field(index, named)?;
+        let r = f.as_i64().ok_or(LibError::TupleFieldTypeInvalid(index, named))?;
+        Ok(*r)
+    }
+
     pub fn field_as_str(&self, index: usize, named: Option<&'static str>) -> Result<&str, LibError> {
         let f = self.get_field(index, named)?;
         let r = f.as_string().ok_or(LibError::TupleFieldTypeInvalid(index, named))?;
@@ -381,7 +387,7 @@ impl TypeValue {
                 prim!(put_i128, v)
             }
             TypeValue::Bool(v) => {
-                bytes.put_u8(if *v { 1 } else { 0 });
+                bytes.put_u8(u8::from(*v));
             }
             TypeValue::F32(v) => {
                 bytes.put_u32(v.into_inner().to_bits());
@@ -451,7 +457,7 @@ impl fmt::Display for TypeValue {
             TypeValue::F64(n) => write!(f, "{}", n),
             TypeValue::String(n) => write!(f, "{}", n),
             TypeValue::Bytes(bytes) => write!(f, "{}", hex::encode(bytes)),
-            TypeValue::Hash(h) => write!(f, "{}", hex::encode(&h.data)),
+            TypeValue::Hash(h) => write!(f, "{}", hex::encode(h.data)),
             TypeValue::Unit => write!(f, "<unit>"),
         }
     }

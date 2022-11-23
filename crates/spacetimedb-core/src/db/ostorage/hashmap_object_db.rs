@@ -72,7 +72,7 @@ impl HashMapObjectDB {
                 let mut contents = Vec::new();
                 file.read_to_end(&mut contents)?;
 
-                let hash = Hash::from_slice(&bytes);
+                let hash = Hash::from_slice(bytes);
                 cache.insert(hash, contents);
                 obj_size += size;
             }

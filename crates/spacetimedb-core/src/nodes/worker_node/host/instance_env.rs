@@ -96,9 +96,9 @@ impl InstanceEnv {
             .delete_pk(tx, table_id, pk)
             .map_err(|e| log_to_err(NodesError::DeleteRow { table_id, e }))?;
         if res.is_some() {
-            return Ok(());
+            Ok(())
         } else {
-            return Err(NodesError::DeleteNotFound { table_id, pk });
+            Err(NodesError::DeleteNotFound { table_id, pk })
         }
     }
 
@@ -213,7 +213,7 @@ impl InstanceEnv {
             panic!("create_table: Could not decode schema! Err: {}", e);
         });
 
-        stdb.create_table(tx, table_name, &schema).unwrap()
+        stdb.create_table(tx, table_name, schema).unwrap()
     }
 
     pub fn get_table_id(&self, buffer: bytes::Bytes) -> Option<u32> {
@@ -237,7 +237,7 @@ impl InstanceEnv {
             return None;
         }
         let table_id = table_id.unwrap();
-        if let None = table_id {
+        if table_id.is_none() {
             debug!("get_table_id: Table name {} has no table ID.", table_name);
             return None;
         }

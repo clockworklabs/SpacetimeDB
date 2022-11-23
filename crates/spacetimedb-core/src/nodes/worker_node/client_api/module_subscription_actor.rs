@@ -3,11 +3,7 @@ use super::{
     client_connection_index::CLIENT_ACTOR_INDEX,
 };
 use crate::{
-    db::relational_db::RelationalDBWrapper,
-    nodes::worker_node::host::module_host::{EventStatus, ModuleEvent},
-};
-use crate::{
-    db::relational_db::{RelationalDB, ST_COLUMNS_ID, ST_TABLES_ID},
+    db::relational_db::RelationalDB,
     json::client_api::{
         EventJson, FunctionCallJson, MessageJson, SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson,
         TransactionUpdateJson,
@@ -16,6 +12,10 @@ use crate::{
         event, message, table_row_operation, Event, FunctionCall, Message as MessageProtobuf, SubscriptionUpdate,
         TableRowOperation, TableUpdate, TransactionUpdate,
     },
+};
+use crate::{
+    db::relational_db::RelationalDBWrapper,
+    nodes::worker_node::host::module_host::{EventStatus, ModuleEvent},
 };
 use prost::Message as ProstMessage;
 use spacetimedb_lib::{TupleDef, TupleValue};
@@ -180,20 +180,8 @@ impl ModuleSubscriptionActor {
         let mut stdb = self.relational_db.lock().unwrap();
         let mut tx_ = stdb.begin_tx();
         let (tx, stdb) = tx_.get();
-        let tables = stdb
-            .scan(tx, ST_TABLES_ID)
-            .unwrap()
-            .map(|row| {
-                (
-                    *row.elements[0].as_u32().unwrap(),
-                    row.elements[1].as_string().unwrap().clone(),
-                )
-            })
-            .collect::<Vec<_>>();
+        let tables = stdb.scan_table_names(tx).unwrap().collect::<Vec<_>>();
         for (table_id, table_name) in tables {
-            if table_id == ST_TABLES_ID || table_id == ST_COLUMNS_ID {
-                continue;
-            }
             let mut table_row_operations = Vec::new();
             for row in stdb.scan(tx, table_id).unwrap() {
                 let row_pk = RelationalDB::pk_for_row(&row);
@@ -337,14 +325,11 @@ impl ModuleSubscriptionActor {
         let mut tx_ = stdb.begin_tx();
         let (tx, stdb) = tx_.get();
         let tables = stdb
-            .scan(tx, ST_TABLES_ID)
+            .scan_table_names(tx)
             .unwrap()
-            .map(|row| *row.elements[0].as_u32().unwrap())
+            .map(|(table_id, _)| table_id)
             .collect::<Vec<u32>>();
         for table_id in tables {
-            if table_id == ST_TABLES_ID || table_id == ST_COLUMNS_ID {
-                continue;
-            }
             let mut table_row_operations = Vec::new();
             for row in stdb.scan(tx, table_id).unwrap() {
                 let row_pk = RelationalDB::pk_for_row(&row);

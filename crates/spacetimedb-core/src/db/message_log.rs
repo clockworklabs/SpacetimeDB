@@ -275,4 +275,34 @@ mod tests {
         println!("total_size: {}", message_log.size());
         Ok(())
     }
+
+    #[test]
+    fn test_message_log_reopen() -> ResultTest<()> {
+        let tmp_dir = TempDir::new("message_log_test")?;
+        let path = tmp_dir.path();
+        //let path = "/Users/tylercloutier/Developer/SpacetimeDB/test";
+        let mut message_log = MessageLog::open(path)?;
+
+        const MESSAGE_COUNT: i32 = 100_000_000;
+        let start = std::time::Instant::now();
+        for _i in 0..MESSAGE_COUNT {
+            let s = b"yo this is tyler";
+            //let message = s.as_bytes();
+            message_log.append(s)?;
+        }
+        let duration = start.elapsed();
+        println!(
+            "{} us ({} ns / message)",
+            duration.as_micros(),
+            duration.as_nanos() / MESSAGE_COUNT as u128
+        );
+        message_log.sync_all()?;
+        println!("total_size: {}", message_log.size());
+        drop(message_log);
+
+        let message_log = MessageLog::open(path)?;
+        assert!(message_log.size() == 2_000_000_000);
+
+        Ok(())
+    }
 }

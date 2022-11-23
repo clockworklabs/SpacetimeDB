@@ -1,12 +1,17 @@
+use crate::db::message_log::MessageLog;
+use crate::db::sequence::SequenceError;
 use hex::FromHexError;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::error::LibError;
 use std::num::ParseIntError;
 use std::path::PathBuf;
+use std::sync::{MutexGuard, PoisonError};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum TableError {
+    #[error("Table with name `{0}` start with 'st_' and that is reserved for internal system tables.")]
+    System(String),
     #[error("Table with name `{0}` already exists.")]
     Exist(String),
     #[error("Table with name `{0}` not found.")]
@@ -33,6 +38,8 @@ pub enum DBError {
     Buffer(#[from] DecodeError),
     #[error("TableError: {0}")]
     Table(#[from] TableError),
+    #[error("SequenceError: {0}")]
+    Sequence(#[from] SequenceError),
     #[error("IOError: {0}.")]
     IoError(#[from] std::io::Error),
     #[error("ParseIntError: {0}.")]
@@ -46,9 +53,16 @@ pub enum DBError {
     #[cfg(feature = "odb_rocksdb")]
     #[error("RocksDbError: {0}.")]
     RocksDbError(#[from] rocksdb::Error),
-    #[cfg(feature = "odb_sled")]
     #[error("SledError: {0}.")]
     SledDbError(#[from] sled::Error),
+    #[error("Mutex was poisoned acquiring lock on MessageLog: {0}")]
+    MessageLogPoisoned(String),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl From<PoisonError<std::sync::MutexGuard<'_, MessageLog>>> for DBError {
+    fn from(err: PoisonError<MutexGuard<'_, MessageLog>>) -> Self {
+        DBError::MessageLogPoisoned(err.to_string())
+    }
 }

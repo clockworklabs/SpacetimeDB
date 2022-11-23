@@ -310,14 +310,14 @@ impl WasmModuleHostActor {
     fn call_create_table(&self, create_table_name: &str) -> Result<(), anyhow::Error> {
         let create_table_symbol = format!("{}{}", CREATE_TABLE_DUNDER, create_table_name);
         let (_tx, _consumed_energy, _remaining_energy, _repeat_duration) =
-            self.execute_reducer(&create_table_symbol, None, &[])?;
+            self.execute_reducer(&create_table_symbol, None, [])?;
         Ok(())
     }
 
     fn call_migrate(&self, migrate_name: &str) -> Result<(), anyhow::Error> {
         let migrate_symbol = format!("{}{}", MIGRATE_DATABASE_DUNDER, migrate_name);
         let (_tx, _consumed_energy, _remaining_energy, _repeat_duration) =
-            self.execute_reducer(&migrate_symbol, None, &[])?;
+            self.execute_reducer(&migrate_symbol, None, [])?;
         Ok(())
     }
 

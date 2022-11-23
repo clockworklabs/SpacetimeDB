@@ -38,7 +38,7 @@ pub(crate) fn args_to_tuple_schema<'a>(args: impl Iterator<Item = &'a FnArg>) ->
                 } else {
                     None
                 };
-                elements.push(type_to_tuple_schema(argument, col_num, &*arg.ty));
+                elements.push(type_to_tuple_schema(argument, col_num, &arg.ty));
                 col_num += 1;
             }
         }
