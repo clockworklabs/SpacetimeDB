@@ -264,7 +264,7 @@ impl host_actor::WasmInstance for WasmerInstance {
         func_names: &FuncNames,
         id: usize,
         budget: ReducerBudget,
-    ) -> anyhow::Result<(host_actor::EnergyStats, Option<host_actor::ExecuteResult<Self::Trap>>)> {
+    ) -> (host_actor::EnergyStats, Option<host_actor::ExecuteResult<Self::Trap>>) {
         self.call_reducer(&func_names.migrates[id], budget, b"")
     }
 
@@ -273,7 +273,7 @@ impl host_actor::WasmInstance for WasmerInstance {
         reducer_symbol: &str,
         points: ReducerBudget,
         arg_bytes: &[u8],
-    ) -> anyhow::Result<(host_actor::EnergyStats, Option<host_actor::ExecuteResult<Self::Trap>>)> {
+    ) -> (host_actor::EnergyStats, Option<host_actor::ExecuteResult<Self::Trap>>) {
         let store = &mut self.store;
         let instance = &self.instance;
         set_remaining_points(store, instance, max(points.0, 0) as u64);
@@ -288,17 +288,17 @@ impl host_actor::WasmInstance for WasmerInstance {
                 }
                 let remaining_points = get_remaining_points_value(store, instance);
                 let used_points = points.0 - remaining_points;
-                return Ok((
+                return (
                     host_actor::EnergyStats {
                         used: used_points,
                         remaining: remaining_points,
                     },
                     None,
-                ));
+                );
             }
         };
 
-        let reduce = instance.exports.get_function(reducer_symbol)?;
+        let reduce = instance.exports.get_function(reducer_symbol).expect("invalid reducer");
 
         // let guard = pprof::ProfilerGuardBuilder::default().frequency(2500).build().unwrap();
 
@@ -316,7 +316,7 @@ impl host_actor::WasmInstance for WasmerInstance {
             points.0 - remaining_points
         );
         let used_energy = points.0 - remaining_points;
-        Ok((
+        (
             host_actor::EnergyStats {
                 used: used_energy,
                 remaining: remaining_points,
@@ -325,7 +325,7 @@ impl host_actor::WasmInstance for WasmerInstance {
                 execution_time: duration,
                 call_result: result,
             }),
-        ))
+        )
     }
 
     fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap) {

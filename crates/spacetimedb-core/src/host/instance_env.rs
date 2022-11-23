@@ -372,7 +372,7 @@ impl InstanceEnv {
 }
 
 impl TxSlot {
-    pub fn set<T, E>(&self, tx: WrapTxWrapper, f: impl FnOnce() -> Result<T, E>) -> Result<(WrapTxWrapper, T), E> {
+    pub fn set<T>(&self, tx: WrapTxWrapper, f: impl FnOnce() -> T) -> (WrapTxWrapper, T) {
         let prev = self.inner.lock().replace(tx);
         assert!(prev.is_none(), "reentrant TxSlot::set");
         let remove_tx = || self.inner.lock().take();
@@ -381,7 +381,7 @@ impl TxSlot {
             f()
         };
         let tx = remove_tx().expect("tx was removed during transaction");
-        res.map(|r| (tx, r))
+        (tx, res)
     }
 
     pub fn get(&self) -> Result<impl DerefMut<Target = WrapTxWrapper> + '_, GetTxError> {

@@ -9,16 +9,15 @@ use anyhow::Context;
 use parking_lot::Mutex;
 use slab::Slab;
 use spacetimedb_lib::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
-use spacetimedb_lib::EntityDef;
+use spacetimedb_lib::{EntityDef, TupleValue};
 
 use crate::db::messages::transaction::Transaction;
 use crate::db::transactional_db::CommitResult;
 use crate::hash::Hash;
-use crate::host::host_controller::{ReducerBudget, ReducerCallResult, ReducerError};
+use crate::host::host_controller::{ReducerBudget, ReducerCallResult};
 use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHostActor, ModuleInfo};
 use crate::host::tracelog::instance_trace::TraceLog;
-use crate::host::ReducerArgs;
 use crate::module_subscription_actor::ModuleSubscription;
 use crate::worker_database_instance::WorkerDatabaseInstance;
 use crate::worker_metrics::{REDUCER_COMPUTE_TIME, REDUCER_COUNT, REDUCER_WRITE_SIZE};
@@ -46,14 +45,14 @@ pub trait WasmInstance: Send + 'static {
         func_names: &FuncNames,
         id: usize,
         budget: ReducerBudget,
-    ) -> anyhow::Result<(EnergyStats, Option<ExecuteResult<Self::Trap>>)>;
+    ) -> (EnergyStats, Option<ExecuteResult<Self::Trap>>);
 
     fn call_reducer(
         &mut self,
         reducer_symbol: &str,
         budget: ReducerBudget,
         arg_bytes: &[u8],
-    ) -> anyhow::Result<(EnergyStats, Option<ExecuteResult<Self::Trap>>)>;
+    ) -> (EnergyStats, Option<ExecuteResult<Self::Trap>>);
 
     fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap);
 }
@@ -245,29 +244,16 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
         caller_identity: Hash,
         reducer_name: String,
         budget: ReducerBudget,
-        args: ReducerArgs,
+        args: TupleValue,
     ) -> Result<ReducerCallResult, anyhow::Error> {
         let start_instant = Instant::now();
 
-        let reducer_descr = match self.info.catalog.get(&reducer_name) {
-            // Note if it's not a reducer, we pretend it does not exist.
-            Some(EntityDef::Reducer(desc)) => desc,
-            _ => {
-                return Err(anyhow!(ReducerError::NotFound(reducer_name)));
-            }
+        let EntityDef::Reducer(reducer_descr) = &self.info.catalog[&reducer_name] else {
+            unreachable!() // ModuleHost::call_reducer should've already ensured this is ok
         };
 
-        // Decode the JSON using the defs of each of the reducer args.
-        // TODO: this should eventually be done a level up, at the call entry site (websocket or
-        // Rest service), and potentially be based on the Content-Type of the inbound request.
-        let args_as_tuple = args.into_tuple(reducer_descr)?;
-
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
-        let arguments = ReducerArguments::new(
-            spacetimedb_lib::Hash::from_arr(&caller_identity.data),
-            timestamp,
-            args_as_tuple,
-        );
+        let arguments = ReducerArguments::new(spacetimedb_lib::Hash::from_arr(&caller_identity.data), timestamp, args);
 
         log::trace!("Calling reducer {} with a budget of {}", reducer_name, budget.0);
 
@@ -438,9 +424,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
     fn with_tx(
         &self,
         func_ident: &str,
-        f: impl FnOnce(
-            &mut T::Instance,
-        ) -> anyhow::Result<(EnergyStats, Option<ExecuteResult<<T::Instance as WasmInstance>::Trap>>)>,
+        f: impl FnOnce(&mut T::Instance) -> (EnergyStats, Option<ExecuteResult<<T::Instance as WasmInstance>::Trap>>),
     ) -> Result<ReducerResult, anyhow::Error> {
         let address = &self.worker_database_instance.address.to_abbreviated_hex();
         REDUCER_COUNT.with_label_values(&[address, func_ident]).inc();
@@ -449,7 +433,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         let (tx_slot, mut instance) = self.select_instance();
 
-        let (tx, (energy, result)) = tx_slot.set(tx, || f(&mut instance))?;
+        let (tx, (energy, result)) = tx_slot.set(tx, || f(&mut instance));
 
         drop(instance);
 

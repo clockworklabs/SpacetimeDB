@@ -20,7 +20,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use spacetimedb::control_db;
 use spacetimedb::hash::hash_bytes;
-use spacetimedb::host::host_controller::ReducerError;
+use spacetimedb::host::InvalidReducerArguments;
 use spacetimedb::object_db;
 use spacetimedb::protobuf::control_db::HostType;
 use spacetimedb_lib::{ElementDef, EntityDef, TypeDef};
@@ -84,7 +84,7 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     let host = host_controller::get_host();
 
     let result = match host.call_reducer(instance_id, caller_identity, &reducer, args).await {
-        Ok(rcr) => {
+        Ok(Some(rcr)) => {
             if rcr.budget_exceeded {
                 log::warn!(
                     "Node's energy budget exceeded for identity: {} while executing {}",
@@ -96,23 +96,20 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
             }
             rcr
         }
+        Ok(None) => {
+            log::debug!("Attempt to call non-existent reducer {}", reducer);
+            return Err(HandlerError::from(anyhow!("reducer not found")).with_status(StatusCode::NOT_FOUND));
+        }
         Err(e) => {
-            if e.is::<ReducerError>() {
-                let re = e.downcast::<ReducerError>()?;
-                return match &re {
-                    ReducerError::NotFound(reducer_name) => {
-                        log::debug!("Attempt to call non-existent reducer {}", reducer_name);
-                        Err(HandlerError::from(re).with_status(StatusCode::NOT_FOUND))
-                    }
-                    ReducerError::InvalidArgs => {
-                        log::debug!("Attempt to call reducer with invalid arguments");
-                        Err(HandlerError::from(re).with_status(StatusCode::BAD_REQUEST))
-                    }
-                };
-            }
+            let status_code = if e.is::<InvalidReducerArguments>() {
+                log::debug!("Attempt to call reducer with invalid arguments");
+                StatusCode::BAD_REQUEST
+            } else {
+                StatusCode::SERVICE_UNAVAILABLE
+            };
+
             log::debug!("Error while invoking reducer {}", e);
-            return Err(HandlerError::from(anyhow!("Database instance not ready."))
-                .with_status(StatusCode::SERVICE_UNAVAILABLE));
+            return Err(HandlerError::from(e).with_status(status_code));
         }
     };
 

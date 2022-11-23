@@ -4,7 +4,7 @@ use crate::hash::Hash;
 use crate::host::host_controller::{ReducerBudget, ReducerCallResult};
 use crate::module_subscription_actor::ModuleSubscription;
 use anyhow::Context;
-use spacetimedb_lib::EntityDef;
+use spacetimedb_lib::{EntityDef, TupleValue};
 use std::collections::HashMap;
 use std::mem;
 use std::ops::Deref;
@@ -49,7 +49,7 @@ enum ModuleHostCommand {
         caller_identity: Hash,
         reducer_name: String,
         budget: ReducerBudget,
-        args: ReducerArgs,
+        args: TupleValue,
         respond_to: oneshot::Sender<Result<ReducerCallResult, anyhow::Error>>,
     },
     CallRepeatingReducer {
@@ -159,7 +159,7 @@ pub trait ModuleHostActor: Send + 'static {
         caller_identity: Hash,
         reducer_name: String,
         budget: ReducerBudget,
-        args: ReducerArgs,
+        args: TupleValue,
     ) -> Result<ReducerCallResult, anyhow::Error>;
     fn call_repeating_reducer(&mut self, id: usize, prev_call_time: u64) -> Result<(u64, u64), anyhow::Error>;
     fn get_repeating_reducers(&self) -> Vec<String>;
@@ -244,7 +244,9 @@ impl ModuleHost {
         reducer_name: String,
         budget: ReducerBudget,
         args: ReducerArgs,
-    ) -> Result<ReducerCallResult, anyhow::Error> {
+    ) -> Result<Option<ReducerCallResult>, anyhow::Error> {
+        let Some(EntityDef::Reducer(schema)) = self.info().catalog.get(&reducer_name) else { return Ok(None) };
+        let args = args.into_tuple(schema)?;
         self.call(|respond_to| ModuleHostCommand::CallReducer {
             caller_identity,
             reducer_name,
@@ -253,6 +255,7 @@ impl ModuleHost {
             respond_to,
         })
         .await?
+        .map(Some)
     }
 
     async fn call_repeating_reducer(&self, id: usize, prev_call_time: u64) -> Result<(u64, u64), anyhow::Error> {

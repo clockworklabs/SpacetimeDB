@@ -102,19 +102,24 @@ async fn perform_tracelog_replay(state: &mut State) -> SimpleHandlerResult {
     let iv = InstanceEnv::new(wdi, Default::default(), None);
 
     let tx = iv.worker_database_instance.relational_db.begin_tx();
-    let (_, report) = iv.tx.set(tx, || replay_report(&iv, &mut &trace_log_bytes[..]))?;
+    let (_, report) = iv.tx.set(tx, || replay_report(&iv, &mut &trace_log_bytes[..]));
 
-    let res = match serde_json::to_string(&report) {
-        Ok(j) => Response::builder().status(StatusCode::OK).body(Body::from(j)).unwrap(),
-        Err(e) => {
-            log::error!("Unable to serialize tracelog response: {}", e);
-            Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap()
+    match report {
+        Ok(resp_body) => {
+            let res = match serde_json::to_string(&resp_body) {
+                Ok(j) => Response::builder().status(StatusCode::OK).body(Body::from(j)).unwrap(),
+                Err(e) => {
+                    log::error!("Unable to serialize tracelog response: {}", e);
+                    Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::empty())
+                        .unwrap()
+                }
+            };
+            Ok(res)
         }
-    };
-    Ok(res)
+        Err(e) => return Err(HandlerError::from(e).with_status(StatusCode::INTERNAL_SERVER_ERROR)),
+    }
 }
 
 pub fn router() -> Router {

@@ -260,7 +260,8 @@ impl ClientConnection {
 
                 let host = host_controller::get_host();
                 match host.call_reducer(instance_id, client_id.identity, &reducer, args).await {
-                    Ok(_) => {}
+                    Ok(Some(_)) => {}
+                    Ok(None) => log::error!("reducer {reducer} not found"),
                     Err(e) => {
                         log::error!("{}", e)
                     }
@@ -294,7 +295,10 @@ impl ClientConnection {
 
         let host = host_controller::get_host();
         match host.call_reducer(instance_id, client_id.identity, &func, args).await {
-            Ok(_) => {}
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                log::error!("reducer {func} not found")
+            }
             Err(e) => {
                 log::error!("{}", e)
             }

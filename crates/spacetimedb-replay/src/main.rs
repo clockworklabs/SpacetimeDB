@@ -33,7 +33,7 @@ pub fn main() {
     let trace_log = File::open(replay_file.to_str().unwrap()).unwrap();
     eprintln!("Replaying trace log: {:?}", trace_log);
     let mut reader = BufReader::new(trace_log);
-    let (_, resp) = iv.tx.set(tx, || replay_report(&iv, &mut reader)).unwrap();
+    let (_, resp) = iv.tx.set(tx, || replay_report(&iv, &mut reader).unwrap());
 
     serde_json::to_writer(std::io::stdout().lock(), &resp).unwrap();
 }
