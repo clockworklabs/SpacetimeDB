@@ -1,4 +1,5 @@
 use crate::address::Address;
+use std::cmp::min;
 use std::fs::OpenOptions;
 use std::fs::{self, File};
 use std::io::{prelude::*, SeekFrom};
@@ -70,7 +71,7 @@ impl DatabaseLogger {
         String::from_utf8(fs::read(filepath).await.unwrap()).unwrap()
     }
 
-    pub async fn read_latest(root: &str, num_lines: u32) -> String {
+    pub async fn read_latest(root: &str, num_lines: Option<u32>) -> String {
         let mut filepath = PathBuf::from(root);
         filepath.push(&PathBuf::from_str("0.log").unwrap());
 
@@ -85,12 +86,12 @@ impl DatabaseLogger {
         file.read_to_string(&mut text).await.expect("reading file");
 
         let lines: Vec<&str> = text.lines().collect();
-
-        let start = if lines.len() <= num_lines as usize {
-            0_usize
-        } else {
-            lines.len() - num_lines as usize
+        let num_lines: usize = match num_lines {
+            None => lines.len(),
+            Some(val) => min(val as usize, lines.len()),
         };
+
+        let start = lines.len() - num_lines;
         let end = lines.len();
         let latest = &lines[start..end];
 

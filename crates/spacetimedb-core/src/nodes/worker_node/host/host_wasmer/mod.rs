@@ -17,24 +17,41 @@ use wasm_module_host_actor::{WasmModuleHostActor, DEFAULT_EXECUTION_BUDGET};
 use super::wasm_common::abi;
 
 const REDUCE_DUNDER: &str = "__reducer__";
+const REPEATING_REDUCER_DUNDER: &str = "__repeating_reducer__";
 
 fn validate_module(module: &Module) -> Result<(), anyhow::Error> {
     let mut found = false;
     for f in module.exports().functions() {
-        log::trace!("   {:?}", f);
-        if !f.name().starts_with(REDUCE_DUNDER) {
-            continue;
-        }
-        found = true;
         let ty = f.ty();
-        if ty.params().len() != 2 {
-            return Err(anyhow::anyhow!("Reduce function has wrong number of params."));
-        }
-        if ty.params()[0] != ValType::I32 {
-            return Err(anyhow::anyhow!("Incorrect param type {} for reducer.", ty.params()[0]));
-        }
-        if ty.params()[1] != ValType::I32 {
-            return Err(anyhow::anyhow!("Incorrect param type {} for reducer.", ty.params()[0]));
+        log::trace!("   {:?}", f);
+        if f.name().starts_with(REDUCE_DUNDER) {
+            if ty.params().len() != 2 {
+                return Err(anyhow::anyhow!("Reduce function has wrong number of params."));
+            }
+            if ty.params()[0] != ValType::I32 {
+                return Err(anyhow::anyhow!("Incorrect param type {} for reducer.", ty.params()[0]));
+            }
+            if ty.params()[1] != ValType::I32 {
+                return Err(anyhow::anyhow!("Incorrect param type {} for reducer.", ty.params()[0]));
+            }
+            found = true;
+        } else if f.name().starts_with(REPEATING_REDUCER_DUNDER) {
+            if ty.params().len() != 2 {
+                return Err(anyhow::anyhow!("Reduce function has wrong number of params."));
+            }
+            if ty.params()[0] != ValType::I32 {
+                return Err(anyhow::anyhow!(
+                    "Incorrect param type {} for repeating reducer.",
+                    ty.params()[0]
+                ));
+            }
+            if ty.params()[1] != ValType::I32 {
+                return Err(anyhow::anyhow!(
+                    "Incorrect param type {} for repeating reducer.",
+                    ty.params()[0]
+                ));
+            }
+            found = true;
         }
     }
     if !found {

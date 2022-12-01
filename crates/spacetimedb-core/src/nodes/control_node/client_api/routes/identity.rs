@@ -42,8 +42,13 @@ async fn create_identity(_state: &mut State) -> SimpleHandlerResult {
     Ok(res)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 struct GetIdentityResponse {
+    identities: Vec<GetIdentityResponseEntry>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct GetIdentityResponseEntry {
     identity: String,
     email: String,
 }
@@ -58,13 +63,25 @@ async fn get_identity(state: &mut State) -> SimpleHandlerResult {
     let lookup = match email {
         None => None,
         Some(email) => {
-            let im = control_db::get_identity_for_email(email.as_str());
+            let im = control_db::get_identities_for_email(email.as_str());
             match im {
-                Ok(None) => None,
-                Ok(Some(identity_email)) => Some(GetIdentityResponse {
-                    identity: Hash::from_slice(&identity_email.identity[..]).to_hex(),
-                    email: identity_email.email,
-                }),
+                Ok(identities) => {
+                    if identities.is_empty() {
+                        None
+                    } else {
+                        let mut response = GetIdentityResponse {
+                            identities: Vec::<GetIdentityResponseEntry>::new(),
+                        };
+
+                        for identity_email in identities {
+                            response.identities.push(GetIdentityResponseEntry {
+                                identity: Hash::from_slice(&identity_email.identity[..]).to_hex(),
+                                email: identity_email.email,
+                            })
+                        }
+                        Some(response)
+                    }
+                }
                 Err(_e) => {
                     return Ok(Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)

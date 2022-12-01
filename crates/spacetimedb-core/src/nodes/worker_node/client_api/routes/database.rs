@@ -350,7 +350,7 @@ struct LogsParams {
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct LogsQuery {
-    num_lines: u32,
+    num_lines: Option<u32>,
 }
 
 async fn logs(state: &mut State) -> SimpleHandlerResult {

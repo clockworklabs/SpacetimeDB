@@ -108,9 +108,9 @@ async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), a
         if let Some(identity_config) = config.get_identity_config_by_name(name) {
             config.default_identity = Some(identity_config.identity.clone());
             config.save();
+            return Ok(());
         } else {
-            println!("No such identity by that name.");
-            std::process::exit(0);
+            return Err(anyhow::anyhow!("No such identity by that name."));
         }
     }
 
@@ -118,13 +118,13 @@ async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), a
         if let Some(identity_config) = config.get_identity_config_by_identity(identity) {
             config.default_identity = Some(identity_config.identity.clone());
             config.save();
+            return Ok(());
         } else {
-            println!("No such identity.");
-            std::process::exit(0);
+            return Err(anyhow::anyhow!("No such identity."));
         }
     }
 
-    Ok(())
+    Err(anyhow::anyhow!("Either a name or an identity must be provided."))
 }
 
 // TODO(cloutiertyler): Realistically this should just be run before every
@@ -282,7 +282,9 @@ struct LsRow {
 async fn exec_ls(config: Config, _args: &ArgMatches) -> Result<(), anyhow::Error> {
     let mut rows: Vec<LsRow> = Vec::new();
     for identity_token in config.identity_configs {
-        let default_str = if config.default_identity.as_ref().unwrap() == &identity_token.identity {
+        let default_str = if config.default_identity.is_some()
+            && config.default_identity.as_ref().unwrap() == &identity_token.identity
+        {
             "***"
         } else {
             ""
@@ -303,6 +305,11 @@ async fn exec_ls(config: Config, _args: &ArgMatches) -> Result<(), anyhow::Error
 
 #[derive(Debug, Clone, Deserialize)]
 struct GetIdentityResponse {
+    identities: Vec<GetIdentityResponseEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct GetIdentityResponseEntry {
     identity: String,
     email: String,
 }
@@ -313,22 +320,25 @@ async fn exec_find(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     let client = reqwest::Client::new();
     let builder = client.get(format!("http://{}/identity?email={}", config.host, email));
 
-    // TODO: raise authorization error if this is not an identity we own
     let res = builder.send().await?;
 
     if res.status() == StatusCode::OK {
         let response: GetIdentityResponse = serde_json::from_slice(&res.bytes().await?[..])?;
+        if response.identities.len() == 0 {
+            return Err(anyhow::anyhow!("Could not find identity for: {}", email));
+        }
 
-        println!("Identity");
-        println!(" IDENTITY  {}", response.identity);
-        println!(" EMAIL     {}", response.email);
+        for identity in response.identities {
+            println!("Identity");
+            println!(" IDENTITY  {}", identity.identity);
+            println!(" EMAIL     {}", identity.email);
+        }
+        Ok(())
     } else if res.status() == StatusCode::NOT_FOUND {
-        println!("Could not find identity for: {}", email)
+        Err(anyhow::anyhow!("Could not find identity for: {}", email))
     } else {
-        println!("Error occurred in lookup: {}", res.status())
+        Err(anyhow::anyhow!("Error occurred in lookup: {}", res.status()))
     }
-
-    Ok(())
 }
 
 async fn exec_email(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {

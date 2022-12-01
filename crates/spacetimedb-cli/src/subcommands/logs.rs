@@ -9,14 +9,14 @@ pub fn cli() -> clap::Command {
         .arg(Arg::new("database").required(true))
         .arg(
             Arg::new("num_lines")
-                .required(true)
+                .required(false)
                 .value_parser(clap::value_parser!(u32)),
         )
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let num_lines = args.get_one::<u32>("num_lines").unwrap();
+    let num_lines = args.get_one::<u32>("num_lines");
     let database = args.get_one::<String>("database").unwrap();
 
     let address = if let Ok(address) = spacetime_dns(&config, database).await {
@@ -25,10 +25,15 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         database.to_string()
     };
 
+    let mut query_parms = Vec::new();
+    if num_lines.is_some() {
+        query_parms.push(("num_lines", num_lines.unwrap()));
+    }
+
     let client = reqwest::Client::new();
     let res = client
         .get(format!("http://{}/database/logs/{}", config.host, address))
-        .query(&[("num_lines", num_lines)])
+        .query(&query_parms)
         .send()
         .await?;
 
