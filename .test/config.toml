@@ -1,0 +1,2 @@
+host = 'localhost:3000'
+identity_configs = []

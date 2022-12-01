@@ -1,0 +1,39 @@
+#!/bin/bash
+
+run_test() {
+	set +e
+	"$@" > "$TEST_OUT" 2>&1
+	RESULT=$?
+	cat "$TEST_OUT"
+	set -e
+	return "$RESULT"
+}
+
+run_fail_test() {
+	if "$@" > "$TEST_OUT" 2>&1 ; then
+		cat "$TEST_OUT"
+		return 1
+	fi
+	cat "$TEST_OUT"
+	return 0
+}
+
+reset_config() {
+	RETURN_DIR=$PWD
+	cd "$SPACETIME_HOME" || exit 1
+	cp "./.test/config.toml" "$HOME/.spacetime/config.toml"
+	cd "$RETURN_DIR" || exit 1
+}
+
+reset_project() {
+	RETURN_DIR=$PWD
+	if [ -d "$PROJECT_PATH" ] && [ "$(dirname "$PROJECT_PATH")" == "/tmp" ] ; then
+		rm -rf "$PROJECT_PATH"
+	fi
+
+	cd "$RETURN_DIR" || exit 1
+}
+
+random_string() {
+	echo $RANDOM | md5sum | head -c 20
+}
