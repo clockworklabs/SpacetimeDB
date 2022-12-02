@@ -21,12 +21,8 @@ pub struct InstanceEnv {
 
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
-    pub fn console_log(&self, level: u8, s: &String) {
-        self.worker_database_instance
-            .logger
-            .lock()
-            .unwrap()
-            .write(level, s.clone());
+    pub fn console_log(&self, level: u8, s: &str) {
+        self.worker_database_instance.logger.lock().unwrap().write(level, s);
         log::debug!("MOD: {}", s);
     }
 

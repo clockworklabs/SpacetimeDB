@@ -33,8 +33,8 @@ harness = false
 
 [dependencies] 
 tokio = { version = "1.2", features = ["full"] }
-wasmer = "2.1.1"
-wasmer-middlewares = "2.1.1"
+wasmer = "3.0.1"
+wasmer-middlewares = "3.0.1"
 sha3 = "0.10.0"
 hex = "0.4.3"
 prost = "0.10"

@@ -1,5 +1,6 @@
 use super::super::wasm_common::abi;
 use super::wasm_instance_env::WasmInstanceEnv;
+use super::Mem;
 use crate::db::messages::transaction::Transaction;
 use crate::db::relational_db::WrapTxWrapper;
 use crate::db::transactional_db::CommitResult;
@@ -17,6 +18,7 @@ use crate::nodes::worker_node::{
 use anyhow::{anyhow, Context};
 use spacetimedb_lib::args::{Arguments, ConnectDisconnectArguments, ReducerArguments, RepeatingReducerArguments};
 use spacetimedb_lib::{EntityDef, ReducerDef, RepeaterDef, TableDef};
+use std::cell::RefCell;
 use std::cmp::max;
 use std::time::Instant;
 use std::{
@@ -25,7 +27,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{spawn, time::sleep};
-use wasmer::{imports, Array, Function, Instance, LazyInit, Module, RuntimeError, Store, Value, WasmPtr};
+use wasmer::{imports, AsStoreMut, Function, FunctionEnv, Instance, Module, RuntimeError, Store, WasmPtr};
 use wasmer_middlewares::metering::{get_remaining_points, set_remaining_points, MeteringPoints};
 
 const REDUCE_DUNDER: &str = "__reducer__";
@@ -48,8 +50,8 @@ const IDENTITY_DISCONNECTED_DUNDER: &str = "__identity_disconnected__";
 
 pub const DEFAULT_EXECUTION_BUDGET: i64 = 1_000_000_000_000_000;
 
-fn get_remaining_points_value(instance: &Instance) -> i64 {
-    let remaining_points = get_remaining_points(instance);
+fn get_remaining_points_value(ctx: &mut impl AsStoreMut, instance: &Instance) -> i64 {
+    let remaining_points = get_remaining_points(ctx, instance);
     match remaining_points {
         MeteringPoints::Remaining(x) => x as i64,
         MeteringPoints::Exhausted => 0,
@@ -89,8 +91,8 @@ pub(crate) struct WasmModuleHostActor {
     module_host: ModuleHost,
     _module_hash: Hash,
     module: Module,
-    store: Store,
-    instances: Vec<(u32, Instance)>,
+    store: RefCell<Store>,
+    instances: Vec<(u32, Instance, FunctionEnv<WasmInstanceEnv>)>,
     instance_tx_map: Arc<Mutex<HashMap<u32, WrapTxWrapper>>>,
     subscription: ModuleSubscription,
 
@@ -118,7 +120,7 @@ impl WasmModuleHostActor {
             module,
             instance_tx_map: Arc::new(Mutex::new(HashMap::new())),
             _module_hash: module_hash,
-            store,
+            store: RefCell::new(store),
             instances: Vec::new(),
             subscription,
             description_cache: HashMap::new(),
@@ -150,6 +152,7 @@ impl WasmModuleHostActor {
     }
 
     fn create_instance(&mut self) -> Result<u32, anyhow::Error> {
+        let store = self.store.get_mut();
         let instance_id = self.instances.len() as u32;
         let env = WasmInstanceEnv {
             instance_env: InstanceEnv {
@@ -157,73 +160,76 @@ impl WasmModuleHostActor {
                 instance_id,
                 instance_tx_map: self.instance_tx_map.clone(),
             },
-            memory: LazyInit::new(),
-            alloc: LazyInit::new(),
+            mem: None,
         };
+        let env = FunctionEnv::new(store, env);
         let abi::SpacetimeAbiVersion::V0 = self.abi;
         let import_object = imports! {
             "spacetime_v0" => {
-                "_delete_pk" => Function::new_native_with_env(
-                    &self.store,
-                    env.clone(),
+                "_delete_pk" => Function::new_typed_with_env(
+                    store,
+                    &env,
                     WasmInstanceEnv::delete_pk,
                 ),
-                "_delete_value" => Function::new_native_with_env(
-                    &self.store,
-                    env.clone(),
+                "_delete_value" => Function::new_typed_with_env(
+                    store,
+                    &env,
                     WasmInstanceEnv::delete_value,
                 ),
-                "_delete_eq" => Function::new_native_with_env(
-                    &self.store,
-                    env.clone(),
+                "_delete_eq" => Function::new_typed_with_env(
+                    store,
+                    &env,
                     WasmInstanceEnv::delete_eq,
                 ),
-                "_delete_range" => Function::new_native_with_env(
-                    &self.store,
-                    env.clone(),
+                "_delete_range" => Function::new_typed_with_env(
+                    store,
+                    &env,
                     WasmInstanceEnv::delete_range,
                 ),
-                "_insert" => Function::new_native_with_env(
-                    &self.store,
-                    env.clone(),
+                "_insert" => Function::new_typed_with_env(
+                    store,
+                    &env,
                     WasmInstanceEnv::insert,
                 ),
-                "_create_table" => Function::new_native_with_env(
-                    &self.store,
-                    env.clone(),
+                "_create_table" => Function::new_typed_with_env(
+                    store,
+                    &env,
                     WasmInstanceEnv::create_table,
                 ),
-                "_get_table_id" => Function::new_native_with_env(
-                    &self.store,
-                    env.clone(),
+                "_get_table_id" => Function::new_typed_with_env(
+                    store,
+                    &env,
                     WasmInstanceEnv::get_table_id,
                 ),
-                "_iter" => Function::new_native_with_env(
-                    &self.store,
-                    env.clone(),
+                "_iter" => Function::new_typed_with_env(
+                    store,
+                    &env,
                     WasmInstanceEnv::iter
                 ),
-                "_console_log" => Function::new_native_with_env(
-                    &self.store,
-                    env,
+                "_console_log" => Function::new_typed_with_env(
+                    store,
+                    &env,
                     WasmInstanceEnv::console_log
                 ),
             }
         };
 
-        let instance = Instance::new(&self.module, &import_object)?;
+        let instance = Instance::new(store, &self.module, &import_object)?;
+
+        let mem = Mem::extract(store, &instance.exports).context("couldn't access memory exports")?;
+        env.as_mut(store).mem = Some(mem);
 
         // Note: this budget is just for INIT_PANIC_DUNDER.
         let points = DEFAULT_EXECUTION_BUDGET;
-        set_remaining_points(&instance, points as u64);
+        set_remaining_points(store, &instance, points as u64);
 
         // Init panic if available
-        let init_panic = instance.exports.get_native_function::<(), ()>(INIT_PANIC_DUNDER);
+        let init_panic = instance.exports.get_typed_function::<(), ()>(store, INIT_PANIC_DUNDER);
         if let Ok(init_panic) = init_panic {
-            let _ = init_panic.call();
+            let _ = init_panic.call(store);
         }
 
-        self.instances.push((instance_id, instance));
+        self.instances.push((instance_id, instance, env));
         Ok(instance_id)
     }
 
@@ -497,7 +503,7 @@ impl WasmModuleHostActor {
         descr_type: DescribedEntityType,
     ) -> Result<Option<EntityDef>, anyhow::Error> {
         // TODO: choose one at random or whatever
-        let (_instance_id, instance) = &self.instances[0];
+        let (_instance_id, instance, env) = &self.instances[0];
         let describer = match instance.exports.get_function(describer_func_name) {
             Ok(describer) => describer,
             Err(_) => {
@@ -509,7 +515,8 @@ impl WasmModuleHostActor {
         let start = std::time::Instant::now();
         log::trace!("Start describer \"{}\"...", describer_func_name);
 
-        let result = describer.call(&[]);
+        let mut store = &mut *self.store.borrow_mut();
+        let result = describer.call(&mut store, &[]);
         let duration = start.elapsed();
         log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros(),);
         match result {
@@ -525,25 +532,17 @@ impl WasmModuleHostActor {
                 // The return value of the describer is a pointer to a vector.
                 // The upper 32 bits of the 64-bit result is the offset into memory.
                 // The lower 32 bits is its length
-                let return_value = ret.first().unwrap().i64().unwrap() as usize;
-                let offset = return_value >> 32;
-                let length = return_value & 0xffffffff;
+                let return_value = ret.first().unwrap().i64().unwrap() as u64;
+                let offset = WasmPtr::new((return_value >> 32) as u32);
+                let length = (return_value & 0xffffffff) as u32;
 
                 // We have to copy all the memory out in order to use this.
                 // This would be nice to avoid... and just somehow pass the memory contents directly
                 // through to the TupleDef decode, but Wasmer's use of Cell prevents us from getting
                 // a nice contiguous block of bytes?
-                let memory = instance.exports.get_memory("memory").unwrap();
-                let view = memory.view::<u8>();
-                let bytes: Vec<u8> = view[offset..offset + length].iter().map(|c| c.get()).collect();
-
-                // Clean out the vector buffer memory that the wasm-side passed us ownership of
-                let dealloc = instance
-                    .exports
-                    .get_function("dealloc")?
-                    .native::<(WasmPtr<u8, Array>, u32), ()>()?;
-                let dealloc_result = dealloc.call(WasmPtr::new(offset as u32), length as u32);
-                dealloc_result.context("Could not dealloc describer buffer memory")?;
+                let mem = env.as_ref(store).mem().clone();
+                let bytes = mem.read_output_bytes(store, offset, length).context("invalid ptr")?;
+                mem.dealloc(store, offset, length).context("failed to dealloc")?;
 
                 // Decode the memory as EntityDef.
                 let result = match descr_type {
@@ -589,37 +588,27 @@ impl WasmModuleHostActor {
         let tx = self.worker_database_instance.relational_db.begin_tx();
 
         // TODO: choose one at random or whatever
-        let (instance_id, instance) = &self.instances[0];
+        let (instance_id, instance, env) = &self.instances[0];
         self.instance_tx_map.lock().unwrap().insert(*instance_id, tx);
 
+        let store = &mut *self.store.borrow_mut();
+
         let points = budget.unwrap_or(ReducerBudget(DEFAULT_EXECUTION_BUDGET));
-        set_remaining_points(instance, max(points.0, 0) as u64);
+        set_remaining_points(store, instance, max(points.0, 0) as u64);
 
-        // Prepare arguments
-        let memory = instance.exports.get_memory("memory").unwrap();
-        let alloc = instance
-            .exports
-            .get_function("alloc")?
-            .native::<u32, WasmPtr<u8, Array>>()?;
+        let mem = env.as_ref(store).mem().clone();
 
-        let arg_bytes = arg_bytes.as_ref();
-        let buf_len = arg_bytes.len() as u32;
-        let ptr = match alloc.call(buf_len) {
+        let (ptr, len) = match mem.alloc_slice(store, arg_bytes.as_ref()) {
             Ok(ptr) => ptr,
             Err(e) => {
-                log_traceback("allocation", "alloc", &e);
-                let remaining_points = get_remaining_points_value(instance);
+                if let Some(e) = e.downcast_ref() {
+                    log_traceback("allocation", "alloc", e);
+                }
+                let remaining_points = get_remaining_points_value(store, instance);
                 let used_points = points.0 - remaining_points;
                 return Ok((None, used_points, remaining_points, None));
             }
         };
-        {
-            let memory = memory.view();
-            let values = super::wasm_instance_env::ptr_get_slice(&memory, ptr, buf_len).unwrap();
-            for (val, b) in values.iter().zip(arg_bytes) {
-                val.set(*b);
-            }
-        }
 
         let reduce = instance.exports.get_function(reducer_symbol)?;
 
@@ -628,9 +617,9 @@ impl WasmModuleHostActor {
         let start = std::time::Instant::now();
         log::trace!("Start reducer \"{}\"...", reducer_symbol);
         // pass ownership of the `ptr` allocation into the reducer
-        let result = reduce.call(&[Value::I32(ptr.offset() as i32), Value::I32(buf_len as i32)]);
+        let result = reduce.call(store, &[ptr.into(), len.into()]);
         let duration = start.elapsed();
-        let remaining_points = get_remaining_points_value(instance);
+        let remaining_points = get_remaining_points_value(store, instance);
         log::trace!(
             "Reducer \"{}\" ran: {} us, {} eV",
             reducer_symbol,

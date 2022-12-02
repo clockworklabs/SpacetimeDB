@@ -51,7 +51,7 @@ impl DatabaseLogger {
         self.file.seek(SeekFrom::End(0)).unwrap();
     }
 
-    pub fn write(&mut self, level: u8, value: String) {
+    pub fn write(&mut self, level: u8, value: &str) {
         let file = &mut self.file;
         match level {
             0 => writeln!(file, "error: {}", value).unwrap(),
