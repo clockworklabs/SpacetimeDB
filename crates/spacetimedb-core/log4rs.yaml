@@ -3,12 +3,12 @@ appenders:
   stdout:
     kind: console
     encoder:
-      pattern: "[{d(%Y-%m-%d %H:%M:%S%.3f)(utc)}] {({l}):4.4} {f}:{L} - {m}\n"
+      pattern: "[{d(%Y-%m-%d %H:%M:%S%.3f)(utc)}] {({h({l})}):4.4} {f}:{L} - {m}\n"
   file:
     kind: rolling_file
     path: /var/log/spacetimedb.log
     encoder:
-      pattern: "[{d(%Y-%m-%d %H:%M:%S%.3f)(utc)}] {({l}):4.4} {f}:{L} - {m}\n"
+      pattern: "[{d(%Y-%m-%d %H:%M:%S%.3f)(utc)}] {({h({l})}):4.4} {f}:{L} - {m}\n"
     policy:
       kind: compound
       trigger:

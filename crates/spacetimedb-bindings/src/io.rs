@@ -1,37 +1,6 @@
 use spacetimedb_bindings_sys::console_log;
 use std::panic;
 
-// TODO: probably do something lighter weight here
-#[no_mangle]
-extern "C" fn __init_panic__() {
-    panic::set_hook(Box::new(panic_hook));
-}
-
-fn panic_hook(info: &panic::PanicInfo) {
-    let msg = info.to_string();
-    eprintln!("{}", msg);
-}
-
-#[doc(hidden)]
-pub fn _console_log_debug(string: &str) {
-    console_log(3, string.as_bytes())
-}
-
-#[doc(hidden)]
-pub fn _console_log_info(string: &str) {
-    console_log(2, string.as_bytes())
-}
-
-#[doc(hidden)]
-pub fn _console_log_warn(string: &str) {
-    console_log(1, string.as_bytes())
-}
-
-#[doc(hidden)]
-pub fn _console_log_error(string: &str) {
-    console_log(0, string.as_bytes())
-}
-
 #[macro_export]
 macro_rules! println {
     ($($arg:tt)*) => ($crate::io::_console_log_info(&format!($($arg)*)))
@@ -75,4 +44,35 @@ macro_rules! dbg {
     ($($val:expr),+ $(,)?) => {
         ($($crate::io::dbg!($val)),+,)
     };
+}
+
+// TODO: probably do something lighter weight here
+#[no_mangle]
+extern "C" fn __init_panic__() {
+    panic::set_hook(Box::new(panic_hook));
+}
+
+fn panic_hook(info: &panic::PanicInfo) {
+    let msg = info.to_string();
+    _console_log_error(&msg);
+}
+
+#[doc(hidden)]
+pub fn _console_log_debug(string: &str) {
+    console_log(3, string.as_bytes())
+}
+
+#[doc(hidden)]
+pub fn _console_log_info(string: &str) {
+    console_log(2, string.as_bytes())
+}
+
+#[doc(hidden)]
+pub fn _console_log_warn(string: &str) {
+    console_log(1, string.as_bytes())
+}
+
+#[doc(hidden)]
+pub fn _console_log_error(string: &str) {
+    console_log(0, string.as_bytes())
 }

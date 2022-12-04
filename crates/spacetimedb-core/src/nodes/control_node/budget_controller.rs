@@ -133,7 +133,7 @@ async fn update_identity_worker_energy_state(identity: &Hash, eb: &EnergyBalance
             .and_modify(|bs| {
                 let node_new_allocation = per_node_quanta;
                 let new_delta = node_new_allocation - bs.allocation_quanta;
-                log::debug!(
+                log::trace!(
                     "Delta for node {} is {} (interval spend {} / {} total, previously allocated {}, and new allocation {})",
                     node.id,
                     new_delta,
@@ -169,7 +169,7 @@ pub(crate) async fn identity_budget_allocations(node_id: u64, identity: &Hash) -
 /// Called by the worker_connection when budget spend information is received from a node.
 // TODO: what happens when we lose contact with a worker? Budget re-allocation necessary?
 pub(crate) fn node_energy_spend_update(node_id: u64, identity: &Hash, spend: i64) -> Result<(), anyhow::Error> {
-    log::debug!("Worker {} identity: {} spent: {}", node_id, identity.to_hex(), spend);
+    log::trace!("Worker {} identity: {} spent: {}", node_id, identity.to_hex(), spend);
 
     let mut node_budgets = NODE_IDENTITY_BUDGET.lock().expect("unlock node identity budget");
     let node_budget = node_budgets.get_mut(&(node_id, *identity));

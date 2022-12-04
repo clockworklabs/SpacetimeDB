@@ -81,7 +81,7 @@ pub(crate) fn record_tx_spend(identity: &Hash, spent_quanta: i64) -> i64 {
 /// Called by control node to add to (or remove from) a node's current budget allocation and
 /// default spend.
 pub(crate) fn on_budget_receive_allocation(node_id: u64, identity: &Hash, allocation_delta: i64) {
-    log::debug!("Received budget allocation with delta: {}", allocation_delta,);
+    log::trace!("Received budget allocation with delta: {}", allocation_delta,);
     let mut budgets = BUDGETS.lock().expect("budgets lock");
     budgets
         .identity_budget

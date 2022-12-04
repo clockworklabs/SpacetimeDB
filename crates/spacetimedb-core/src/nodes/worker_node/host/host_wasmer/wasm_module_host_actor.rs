@@ -226,7 +226,12 @@ impl WasmModuleHostActor {
         // Init panic if available
         let init_panic = instance.exports.get_typed_function::<(), ()>(store, INIT_PANIC_DUNDER);
         if let Ok(init_panic) = init_panic {
-            let _ = init_panic.call(store);
+            match init_panic.call(store) {
+                Ok(_) => {}
+                Err(err) => {
+                    log::warn!("Error initializing panic: {}", err);
+                }
+            }
         }
 
         self.instances.push((instance_id, instance, env));

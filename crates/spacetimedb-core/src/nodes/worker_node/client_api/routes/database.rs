@@ -70,15 +70,6 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     let data = data.unwrap();
     let arg_bytes = data.unwrap().to_vec();
 
-    for database in worker_db::_get_databases() {
-        let address = Address::from_slice(database.address.as_slice());
-        log::debug!("Have database {}", address.to_hex());
-    }
-
-    for instance in worker_db::get_database_instances() {
-        log::debug!("Have instance {:?}", instance);
-    }
-
     let database = match worker_db::get_database_by_address(&address) {
         Some(database) => database,
         None => {

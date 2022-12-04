@@ -23,7 +23,11 @@ pub struct InstanceEnv {
 impl InstanceEnv {
     pub fn console_log(&self, level: u8, s: &str) {
         self.worker_database_instance.logger.lock().unwrap().write(level, s);
-        log::debug!("MOD: {}", s);
+        log::debug!(
+            "MOD({}): {}",
+            self.worker_database_instance.address.to_abbreviated_hex(),
+            s
+        );
     }
 
     pub fn insert(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), NodesError> {

@@ -21,6 +21,10 @@ impl Hash {
     pub fn to_vec(&self) -> Vec<u8> {
         self.data.to_vec()
     }
+
+    pub fn to_hex(&self) -> String {
+        hex::encode(self.data)
+    }
 }
 
 pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> Hash {
