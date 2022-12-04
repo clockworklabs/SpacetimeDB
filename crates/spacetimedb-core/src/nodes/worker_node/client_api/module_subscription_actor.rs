@@ -324,12 +324,8 @@ impl ModuleSubscriptionActor {
         let mut stdb = self.relational_db.lock().unwrap();
         let mut tx_ = stdb.begin_tx();
         let (tx, stdb) = tx_.get();
-        let tables = stdb
-            .scan_table_names(tx)
-            .unwrap()
-            .map(|(table_id, _)| table_id)
-            .collect::<Vec<u32>>();
-        for table_id in tables {
+        let tables = stdb.scan_table_names(tx).unwrap().collect::<Vec<_>>();
+        for (table_id, table_name) in tables {
             let mut table_row_operations = Vec::new();
             for row in stdb.scan(tx, table_id).unwrap() {
                 let row_pk = RelationalDB::pk_for_row(&row);
@@ -342,6 +338,7 @@ impl ModuleSubscriptionActor {
             }
             subscription_update.table_updates.push(TableUpdateJson {
                 table_id,
+                table_name,
                 table_row_operations,
             })
         }
@@ -350,7 +347,7 @@ impl ModuleSubscriptionActor {
         MessageJson::SubscriptionUpdate(subscription_update)
     }
 
-    pub fn render_json_event(&self, event: &ModuleEvent) -> TransactionUpdateJson {
+    pub fn render_json_event(&self, event: &ModuleEvent) -> MessageJson {
         let empty_writes = Vec::new();
         let (status_str, writes) = match &event.status {
             EventStatus::Committed(writes) => ("committed", writes),
@@ -420,20 +417,34 @@ impl ModuleSubscriptionActor {
             });
         }
 
+        let mut table_name_map: HashMap<u32, String> = HashMap::new();
         let mut table_updates = Vec::new();
         for (table_id, table_row_operations) in map.drain() {
+            let table_name = if let Some(name) = table_name_map.get(&table_id) {
+                name.clone()
+            } else {
+                let mut stdb = self.relational_db.lock().unwrap();
+                let mut tx_ = stdb.begin_tx();
+                let (tx, stdb) = tx_.get();
+                let table_name = stdb.table_name_from_id(tx, table_id).unwrap().unwrap();
+                let table_name = table_name.to_string();
+                tx_.rollback();
+                table_name_map.insert(table_id, table_name.clone());
+                table_name
+            };
             table_updates.push(TableUpdateJson {
                 table_id,
+                table_name,
                 table_row_operations,
             });
         }
 
         let subscription_update = SubscriptionUpdateJson { table_updates };
 
-        TransactionUpdateJson {
+        MessageJson::TransactionUpdate(TransactionUpdateJson {
             event,
             subscription_update,
-        }
+        })
     }
 
     async fn send_sync_text(subscriber: ClientConnectionSender, message: String) {
