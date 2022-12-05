@@ -404,13 +404,23 @@ async fn sql(state: &mut State) -> SimpleHandlerResult {
     let instance_id = database_instance.unwrap().id;
 
     let body = state.borrow_mut::<Body>();
-    let data = body.data().await;
-    if data.is_none() {
+    let mut data = BytesMut::new();
+    while let Some(d) = body.data().await {
+        match d {
+            Ok(d) => data.put(d),
+            Err(err) => {
+                log::debug!("{}", err);
+                return Err(
+                    HandlerError::from(anyhow!("Error with request body.")).with_status(StatusCode::BAD_REQUEST)
+                );
+            }
+        };
+    }
+    if data.len() == 0 {
         return Err(HandlerError::from(anyhow!("Missing request body.")).with_status(StatusCode::BAD_REQUEST));
     }
-    let data = data.unwrap();
 
-    let sql_text = match String::from_utf8(data.unwrap().to_vec()) {
+    let sql_text = match String::from_utf8(data.to_vec()) {
         Ok(s) => s,
         Err(err) => {
             log::debug!("{:?}", err);
