@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use bytes::BufMut;
+use bytes::BytesMut;
 use gotham::anyhow::anyhow;
 use gotham::handler::HandlerError;
 use gotham::handler::SimpleHandlerResult;
@@ -63,12 +65,22 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     };
 
     let body = state.borrow_mut::<Body>();
-    let data = body.data().await;
-    if data.is_none() {
+    let mut data = BytesMut::new();
+    while let Some(d) = body.data().await {
+        match d {
+            Ok(d) => data.put(d),
+            Err(err) => {
+                log::debug!("{}", err);
+                return Err(
+                    HandlerError::from(anyhow!("Error with request body.")).with_status(StatusCode::BAD_REQUEST)
+                );
+            }
+        };
+    }
+    if data.len() == 0 {
         return Err(HandlerError::from(anyhow!("Missing request body.")).with_status(StatusCode::BAD_REQUEST));
     }
-    let data = data.unwrap();
-    let arg_bytes = data.unwrap().to_vec();
+    let arg_bytes = data.to_vec();
 
     let database = match worker_db::get_database_by_address(&address) {
         Some(database) => database,
