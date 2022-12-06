@@ -58,4 +58,4 @@ run_test cargo run logs "$ADDRESS"
 run_test cargo run sql "$ADDRESS" "SELECT * FROM Person"
 [ ' name  
 -------
- Tyler ' == "$(tail "$TEST_OUT" -n 3)" ]
+ Tyler ' == "$(tail -n 3 "$TEST_OUT")" ]

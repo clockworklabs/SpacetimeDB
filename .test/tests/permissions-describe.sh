@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if [ "$DESCRIBE_TEST" = 1 ] ; then
-	echo "This test makes sure that anyone has the permission to call any standard reducer"
+	echo "This test makes sure that anyone can describe any database."
         exit
 fi
 
@@ -19,10 +19,7 @@ DATABASE="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 reset_config
 run_test cargo run identity new
-run_test cargo run call "$DATABASE" "say_hello"
 
-reset_config
-run_test cargo run identity add "$IDENT" "$TOKEN"
-run_test cargo run identity set-default "$IDENT"
-run_test cargo run logs "$DATABASE" 10000
-if [ "1" != "$(grep -c "World" "$TEST_OUT")" ]; then exit 1; fi
+# It is expected that you should be able to describe any database even if you
+# do not own it.
+if ! run_test cargo run describe "$DATABASE" ; then exit 1; fi

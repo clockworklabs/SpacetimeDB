@@ -27,7 +27,7 @@ reset_config() {
 
 reset_project() {
 	RETURN_DIR=$PWD
-	if [ -d "$PROJECT_PATH" ] && [ "$(dirname "$PROJECT_PATH")" == "/tmp" ] ; then
+	if [ -d "$PROJECT_PATH" ] ; then
 		rm -rf "$PROJECT_PATH"
 	fi
 
@@ -35,5 +35,9 @@ reset_project() {
 }
 
 random_string() {
-	echo $RANDOM | md5sum | head -c 20
+	if [[ "$OSTYPE" == "darwin"* ]]; then
+		echo $RANDOM | md5 -q | head -c 20
+	else
+		echo $RANDOM | md5sum | head -c 20
+	fi
 }

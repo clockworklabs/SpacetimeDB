@@ -36,7 +36,7 @@ pub fn cli() -> clap::Command {
                 .short('p'),
         )
         // TODO(tyler): We should clean up setting an identity for a database in the future
-        .arg(Arg::new("identity").long("identity").short('i').required(false))
+        .arg(Arg::new("identity").long("identity").short('I').required(false))
         .arg(
             Arg::new("as_identity")
                 .long("as-identity")

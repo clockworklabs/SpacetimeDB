@@ -21,5 +21,7 @@ run_test cargo run call "$DATABASE" "say_hello"
 
 reset_config
 run_test cargo run identity new
+IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
+run_test cargo run identity set-default "$IDENT"
 run_test cargo run logs "$DATABASE" 10000
 if [ "0" != "$(grep -c "World" "$TEST_OUT")" ]; then exit 1; fi
