@@ -32,6 +32,7 @@ wasmtime = { version = "1.0.1", default-features = false, features = ["cranelift
 colored = "2.0.0"
 duct = "0.13.5"
 hex = "0.4.3"
+base64 = "0.13.1"
 
 [dev-dependencies]
 insta = { version = "1.21.0", features = ["toml"] }

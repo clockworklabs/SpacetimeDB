@@ -142,3 +142,51 @@ pub async fn init_default(config: &mut Config, nickname: Option<String>) -> Resu
         result_type: InitDefaultResultType::SavedNew,
     })
 }
+
+/// Selects an `identity_config` from the config file. If you specify the
+/// identity it will either return the `identity_config` for the specified
+/// identity, or return an error if it cannot be found.  If you do not specify
+/// an identity this function will either get the default identity if one exists
+/// or create and save a new default identity.
+pub async fn select_identity_config(
+    config: &mut Config,
+    identity: Option<&str>,
+) -> Result<IdentityConfig, anyhow::Error> {
+    if let Some(identity) = identity {
+        if let Some(identity_config) = config.get_identity_config_by_identity(&identity) {
+            return Ok(identity_config.clone());
+        } else {
+            return Err(anyhow::anyhow!(format!(
+                "Missing identity credentials for identity: {}",
+                identity
+            )));
+        }
+    } else {
+        return Ok(init_default(config, None).await?.identity_config);
+    }
+}
+
+/// Gets the `auth_header` for a request to the server depending on how you want
+/// to identify yourself.  If you specify `anon_identity = true` then no
+/// `auth_header` is returned. If you specify an identity this function will try
+/// to find the identity in the config file. If no identity can be found, the
+/// program will `exit(1)`. If you do not specify an identity this function will
+/// either get the default identity if one exists or create and save a new
+/// default identity returning the one that was just created.
+pub async fn get_auth_header(config: &mut Config, anon_identity: bool, identity: Option<&str>) -> Option<String> {
+    if !anon_identity {
+        let identity_config = match select_identity_config(config, identity).await {
+            Ok(ic) => ic,
+            Err(err) => {
+                println!("{}", err.to_string());
+                std::process::exit(1);
+            }
+        };
+        // The current form is: Authorization: Basic base64("token:<token>")
+        let mut auth_header = String::new();
+        auth_header.push_str(format!("Basic {}", base64::encode(format!("token:{}", identity_config.token))).as_str());
+        Some(auth_header)
+    } else {
+        None
+    }
+}

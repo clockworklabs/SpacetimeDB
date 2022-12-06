@@ -1,4 +1,5 @@
 use clap::Arg;
+use clap::ArgAction;
 use clap::ArgAction::SetTrue;
 use clap::ArgMatches;
 use serde::Deserialize;
@@ -8,6 +9,7 @@ use std::path::PathBuf;
 
 use crate::config::Config;
 use crate::util;
+use crate::util::get_auth_header;
 use crate::util::init_default;
 
 pub fn cli() -> clap::Command {
@@ -33,7 +35,23 @@ pub fn cli() -> clap::Command {
                 .long("project-path")
                 .short('p'),
         )
+        // TODO(tyler): We should clean up setting an identity for a database in the future
         .arg(Arg::new("identity").long("identity").short('i').required(false))
+        .arg(
+            Arg::new("as_identity")
+                .long("as-identity")
+                .short('i')
+                .required(false)
+                .conflicts_with("anon_identity"),
+        )
+        .arg(
+            Arg::new("anon_identity")
+                .long("anon-identity")
+                .short('a')
+                .required(false)
+                .conflicts_with("as_identity")
+                .action(ArgAction::SetTrue),
+        )
         .arg(Arg::new("name|address").required(false))
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
@@ -49,6 +67,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let path_to_project = args.get_one::<PathBuf>("path_to_project").unwrap();
     let host_type = args.get_one::<String>("host_type").unwrap();
     let clear_database = args.get_flag("clear_database");
+
+    let as_identity = args.get_one::<String>("as_identity");
+    let anon_identity = args.get_flag("anon_identity");
+
+    let auth_header = get_auth_header(&mut config, anon_identity, as_identity.map(|x| x.as_str())).await;
 
     let mut url_args = String::new();
 
@@ -84,7 +107,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let url = format!("http://{}/database/publish{}", config.host, url_args);
     let client = reqwest::Client::new();
-    let res = client.post(url).body(program_bytes).send().await?;
+    let mut builder = client.post(url);
+    if let Some(auth_header) = auth_header {
+        builder = builder.header("Authorization", auth_header);
+    }
+    let res = builder.body(program_bytes).send().await?;
     let res = res.error_for_status()?;
     let bytes = res.bytes().await.unwrap();
 
