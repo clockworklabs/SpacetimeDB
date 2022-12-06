@@ -1,4 +1,5 @@
 use crate::address::Address;
+use crate::auth::get_or_create_creds_from_header;
 use crate::hash::hash_bytes;
 use crate::hash::Hash;
 use crate::nodes::control_node::control_db;
@@ -14,7 +15,9 @@ use gotham::router::builder::*;
 use gotham::router::Router;
 use gotham::state::State;
 use gotham::state::StateData;
+use hyper::header::AUTHORIZATION;
 use hyper::Body;
+use hyper::HeaderMap;
 use hyper::{Response, StatusCode};
 use serde::Deserialize;
 use serde::Serialize;
@@ -81,6 +84,17 @@ async fn publish(state: &mut State) -> SimpleHandlerResult {
     } = PublishDatabaseQueryParams::take_from(state);
     let clear = clear.unwrap_or(false);
 
+    let headers = state.borrow::<HeaderMap>();
+    let auth_header = headers.get(AUTHORIZATION);
+
+    // You should not be able to publish to a database that you do not own
+    // so, unless you are the owner, this will fail, hence `create = false`.
+    let creds = get_or_create_creds_from_header(auth_header, true).await?;
+    if let None = creds {
+        return Err(HandlerError::from(anyhow!("Invalid credentials.")).with_status(StatusCode::BAD_REQUEST));
+    }
+    let (caller_identity, caller_identity_token) = creds.unwrap();
+
     // Parse the address or convert the name to a usable address
     let (db_address, specified_address) = if let Some(name_or_address) = name_or_address {
         if let Ok(address) = Address::from_hex(&name_or_address) {
@@ -135,7 +149,12 @@ async fn publish(state: &mut State) -> SimpleHandlerResult {
 
     match control_db::get_database_by_address(&db_address).await {
         Ok(database) => match database {
-            Some(_db) => {
+            Some(db) => {
+                if Hash::from_slice(db.identity.as_slice()) != caller_identity {
+                    return Err(HandlerError::from(anyhow!("Identity does not own this database."))
+                        .with_status(StatusCode::BAD_REQUEST));
+                }
+
                 if clear {
                     if let Err(err) = controller::insert_database(
                         &db_address,
@@ -189,7 +208,13 @@ async fn publish(state: &mut State) -> SimpleHandlerResult {
         address: db_address.to_hex(),
     };
     let json = serde_json::to_string(&response).unwrap();
+
+    // TODO(tyler): Eventually we want it to be possible to publish a database
+    // which no one has the credentials to. In that case we wouldn't want to
+    // return a token.
     let res = Response::builder()
+        .header("Spacetime-Identity", caller_identity.to_hex())
+        .header("Spacetime-Identity-Token", caller_identity_token)
         .status(StatusCode::OK)
         .body(Body::from(json))
         .unwrap();

@@ -13,11 +13,8 @@ run_test cargo run init "$PROJECT_PATH" --lang rust
 run_test cargo run identity new
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
 run_test cargo run identity set-default "$IDENT"
-cd "$PROJECT_PATH"
-run_test spacetime publish
+run_test cargo run publish --project-path="$PROJECT_PATH"
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 reset_config
-run_test spacetime publish
-ADDRESS="$(grep -c "reated new database" "$TEST_OUT")"
-[ "$ADDRESS" == 1 ] && exit 1
+if run_test cargo run publish "$ADDRESS" --project-path="$PROJECT_PATH" ; then exit 1; fi
