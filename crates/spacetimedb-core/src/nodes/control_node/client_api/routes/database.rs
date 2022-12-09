@@ -27,9 +27,19 @@ struct DNSResponse {
     address: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ReverseDNSResponse {
+    name: String,
+}
+
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct DNSParams {
     database_name: String,
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct ReverseDNSParams {
+    database_address: String,
 }
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
@@ -45,6 +55,28 @@ async fn dns(state: &mut State) -> SimpleHandlerResult {
             address: address.to_hex(),
         };
 
+        let json = serde_json::to_string(&response).unwrap();
+        let body = Body::from(json);
+        let res = Response::builder().status(StatusCode::OK).body(body).unwrap();
+        Ok(res)
+    } else {
+        let res = Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .unwrap();
+        Ok(res)
+    }
+}
+
+async fn reverse_dns(state: &mut State) -> SimpleHandlerResult {
+    let ReverseDNSParams { database_address } = ReverseDNSParams::take_from(state);
+
+    let addr = Address::from_hex(&database_address);
+
+    let name = control_db::spacetime_reverse_dns(&addr.unwrap()).await?;
+
+    if let Some(name) = name {
+        let response = ReverseDNSResponse { name: name };
         let json = serde_json::to_string(&response).unwrap();
         let body = Body::from(json);
         let res = Response::builder().status(StatusCode::OK).body(body).unwrap();
@@ -249,7 +281,10 @@ pub fn router() -> Router {
             .with_path_extractor::<DNSParams>()
             .with_query_string_extractor::<DNSQueryParams>()
             .to_async_borrowing(dns);
-
+        route
+            .get("/reverse_dns/:database_address")
+            .with_path_extractor::<ReverseDNSParams>()
+            .to_async_borrowing(reverse_dns);
         route
             .post("/publish")
             .with_path_extractor::<PublishDatabaseParams>()

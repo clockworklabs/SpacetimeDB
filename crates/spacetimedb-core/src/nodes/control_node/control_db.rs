@@ -27,7 +27,7 @@ pub async fn spacetime_dns(domain_name: &str) -> Result<Option<Address>, anyhow:
     Ok(None)
 }
 
-pub async fn _spacetime_reverse_dns(address: &Address) -> Result<Option<String>, anyhow::Error> {
+pub async fn spacetime_reverse_dns(address: &Address) -> Result<Option<String>, anyhow::Error> {
     let tree = CONTROL_DB.open_tree("reverse_dns")?;
     let value = tree.get(address.as_slice())?;
     if let Some(value) = value {

@@ -500,7 +500,9 @@ pub fn router() -> Router {
         route
             .get("/dns/:database_name")
             .to_async(proxy_to_control_node_client_api);
-
+        route
+            .get("/reverse_dns/:address")
+            .to_async(proxy_to_control_node_client_api);
         route.post("/publish").to_async(proxy_to_control_node_client_api);
 
         route
