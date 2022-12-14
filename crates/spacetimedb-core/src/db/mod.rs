@@ -1,5 +1,6 @@
 pub mod catalog;
 pub mod db_metrics;
+pub mod index;
 pub mod message_log;
 pub mod messages;
 pub mod ostorage;

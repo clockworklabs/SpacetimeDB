@@ -11,8 +11,6 @@ use spacetimedb_lib::{ElementDef, TupleDef, TupleValue, TypeDef};
 use std::collections::hash_map::Iter;
 use std::collections::HashMap;
 
-pub const ST_TABLE_SEQ: &str = "st_seq_tables";
-
 // WARNING: In order to keep a stable schema, don't change the discriminant of the fields
 #[derive(Debug)]
 pub enum TableFields {

@@ -1,7 +1,7 @@
 use crate::buffer::BufWriter;
 use crate::hash::hash_bytes;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Ord, PartialOrd, Eq, Hash)]
 pub enum DataKey {
     Data { len: u8, buf: [u8; 32] },
     Hash(super::Hash),

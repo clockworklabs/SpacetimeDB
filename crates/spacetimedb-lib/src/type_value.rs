@@ -226,6 +226,11 @@ pub enum TypeValue {
 }
 
 impl TypeValue {
+    pub fn to_data_key(&self) -> DataKey {
+        let mut bytes = Vec::new();
+        self.encode(&mut bytes);
+        DataKey::from_data(&bytes.iter())
+    }
     /// Promote the values to their wider representation to make easier to compare.
     ///
     /// It turns the negative values to [i64]/[i128] and positive to [u64]/[u128], ie:

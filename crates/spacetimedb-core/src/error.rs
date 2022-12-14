@@ -1,8 +1,10 @@
+use crate::db::index::{IndexDef, IndexId};
 use crate::db::message_log::MessageLog;
 use crate::db::sequence::SequenceError;
 use hex::FromHexError;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::error::LibError;
+use spacetimedb_lib::{TupleValue, TypeValue};
 use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::sync::{MutexGuard, PoisonError};
@@ -30,6 +32,18 @@ pub enum TableError {
     InvalidSchema(u32, LibError),
 }
 
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum IndexError {
+    #[error("Index not found: {0}")]
+    NotFound(IndexId),
+    #[error("Index already exist: {0}: {1}")]
+    IndexAlreadyExists(IndexDef, String),
+    #[error("Column not found: {0}")]
+    ColumnNotFound(IndexDef),
+    #[error("Index is duplicated: {0}:{1}")]
+    Duplicated(IndexDef, TypeValue, TupleValue),
+}
+
 #[derive(Error, Debug)]
 pub enum DBError {
     #[error("LibError: {0}")]
@@ -40,6 +54,8 @@ pub enum DBError {
     Table(#[from] TableError),
     #[error("SequenceError: {0}")]
     Sequence(#[from] SequenceError),
+    #[error("IndexError: {0}")]
+    Index(#[from] IndexError),
     #[error("IOError: {0}.")]
     IoError(#[from] std::io::Error),
     #[error("ParseIntError: {0}.")]

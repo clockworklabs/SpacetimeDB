@@ -9,15 +9,16 @@ use crate::db::db_metrics::{
     RDB_CREATE_TABLE_TIME, RDB_DELETE_IN_TIME, RDB_DELETE_PK_TIME, RDB_DROP_TABLE_TIME, RDB_INSERT_TIME,
     RDB_SCAN_PK_TIME, RDB_SCAN_RAW_TIME, RDB_SCAN_TIME,
 };
+use crate::db::index::{IndexId, IndexIter};
 use crate::db::ostorage::ObjectDB;
-use crate::db::sequence;
 use crate::db::sequence::{
     read_sled_i64, write_sled_i64, Sequence, SequenceDef, SequenceError, SequenceId, SequenceIter,
 };
 use crate::db::table::{
     columns_schema, decode_columns_schema, decode_table_schema, table_schema, ColumnFields, TableDef, TableFields,
 };
-use crate::error::{DBError, TableError};
+use crate::db::{index, sequence};
+use crate::error::{DBError, IndexError, TableError};
 use crate::util::prometheus_handle::HistogramVecHandle;
 use fs2::FileExt;
 use spacetimedb_lib::{
@@ -35,6 +36,7 @@ use std::{
 pub const ST_TABLES_NAME: &str = "st_table";
 pub const ST_COLUMNS_NAME: &str = "st_columns";
 pub const ST_SEQUENCES_NAME: &str = "st_sequence";
+pub const ST_INDEXES_NAME: &str = "st_indexes";
 
 /// The static ID of the table that defines tables
 pub const ST_TABLES_ID: u32 = 0;
@@ -160,6 +162,7 @@ impl RelationalDB {
             .insert(TableDef::new(ST_COLUMNS_ID, ST_COLUMNS_NAME, columns_schema(), true));
         //Re-load the database objects
         db.bootstrap_sequences()?;
+        db.bootstrap_indexes()?;
         Ok(db)
     }
 
@@ -274,9 +277,9 @@ impl RelationalDB {
     }
 
     fn bootstrap_sequences(&mut self) -> Result<(), DBError> {
-        // Already exists?
         let mut tx_ = self.begin_tx();
         let (tx, stdb) = tx_.get();
+
         if stdb.table_id_from_name(tx, ST_SEQUENCES_NAME)?.is_none() {
             stdb.create_system_table(tx, ST_SEQUENCES_NAME, sequence::internal_schema())?;
         };
@@ -293,6 +296,29 @@ impl RelationalDB {
         for seq in sequences {
             stdb.load_sequence(seq)?;
         }
+
+        Ok(())
+    }
+
+    /// Loads the indexes into the [Catalog], reloading all the indexes
+    fn bootstrap_indexes(&mut self) -> Result<(), DBError> {
+        let mut tx_ = self.begin_tx();
+        let (tx, stdb) = tx_.get();
+
+        let table_id = if let Some(table_id) = stdb.table_id_from_name(tx, ST_INDEXES_NAME)? {
+            table_id
+        } else {
+            stdb.create_system_table(tx, ST_INDEXES_NAME, index::internal_schema())?
+        };
+        tx_.commit()?;
+
+        let mut tx_ = self.begin_tx();
+        let (tx, stdb) = tx_.get();
+
+        let mut indexes = index::IndexCatalog::new(table_id);
+        indexes.index_all(stdb, tx)?;
+
+        stdb.catalog.indexes = indexes;
 
         Ok(())
     }
@@ -542,6 +568,116 @@ impl RelationalDB {
         Ok(None)
     }
 
+    /// Adds the [index::BTreeIndex] into the [ST_INDEXES_NAME] table
+    ///
+    /// Returns the `index_id`
+    ///
+    /// NOTE: It loads the data from the table into it before returning
+    pub fn create_index(&mut self, tx: &mut Tx, index: index::IndexDef) -> Result<IndexId, DBError> {
+        for row in self.scan_indexes_schema(tx)? {
+            if row.name == index.name {
+                return Err(IndexError::IndexAlreadyExists(index, row.name).into());
+            }
+        }
+
+        let index_id = self.next_sequence(self.catalog.seq_index())? as u32;
+
+        // Insert the index row into st_indexes
+        let row = TupleValue {
+            elements: Box::new([
+                TypeValue::U32(index_id),
+                TypeValue::U32(index.table_id),
+                TypeValue::U32(index.col_id),
+                TypeValue::String(index.name.clone()),
+                TypeValue::Bool(index.is_unique),
+            ]),
+        };
+        Self::insert_row_raw(&mut self.txdb, tx, self.catalog.indexes.table_idx_id, row);
+
+        let mut index = index::BTreeIndex::from_def(index_id.into(), index);
+
+        index.index_full_column(self, tx)?;
+        self.catalog.indexes.insert(index);
+
+        Ok(index_id.into())
+    }
+
+    /// Removes the [index::BTreeIndex] from the database by their `index_id`
+    pub fn drop_index(&mut self, tx: &mut Tx, index_id: IndexId) -> Result<(), DBError> {
+        let index_table_id = self.catalog.indexes.table_idx_id;
+        let iter = self.seek(
+            tx,
+            index_table_id,
+            index::IndexFields::IndexId as u32,
+            TypeValue::U32(index_id.0),
+        )?;
+
+        let row = iter.collect::<Vec<_>>();
+        if (self.delete_in(tx, index_table_id, row)?).is_none() {
+            return Err(IndexError::NotFound(index_id).into());
+        }
+
+        self.catalog.indexes.remove_by_id(index_id);
+
+        Ok(())
+    }
+
+    /// Returns an [Iterator] of the indexes stored in the database
+    ///
+    /// WARNING: The index data is not loaded
+    /// NOTE(tyler): This only iterates over the data in the index, not in the table.
+    pub fn scan_indexes_schema<'a>(&'a self, tx: &'a mut Tx) -> Result<IndexIter<'a>, DBError> {
+        let columns = self
+            .schema_for_table(tx, self.catalog.indexes.table_idx_id)?
+            .ok_or_else(|| TableError::NotFound("ST_INDEX_NAME".into()))?;
+
+        let table_iter = TableIter {
+            txdb_iter: self.txdb.scan(tx, self.catalog.indexes.table_idx_id),
+            schema: columns,
+        };
+
+        Ok(index::IndexIter { table_iter })
+    }
+
+    /// Returns a [index::btree::TuplesIter] over *all the tuples* in the [index::BTreeIndex]
+    /// NOTE(tyler): This only iterates over the data in the index, not in the table.
+    pub fn scan_index<'a>(&'a self, tx: &'a mut Tx, table_id: u32) -> Option<index::TuplesIter<'a>> {
+        if let Some(idx) = self.catalog.indexes.get_table_id(table_id) {
+            return Some(idx.iter(self, tx));
+        }
+        None
+    }
+
+    /// Returns a [index::btree::ValuesIter] over the tuples that match `value`
+    /// NOTE(tyler): This only iterates over the data in the index, not in the table.
+    pub fn seek_index_value<'a>(
+        &'a self,
+        tx: &'a mut Tx,
+        table_id: u32,
+        col_id: u32,
+        value: &'a TypeValue,
+    ) -> Option<index::btree::ValuesIter> {
+        if let Some(idx) = self.catalog.indexes.get_table_column_id(table_id, col_id) {
+            return Some(idx.get(self, tx, value));
+        }
+        None
+    }
+
+    /// Returns a [index::btree::TuplesRangeIter] over the tuples that match the [std::ops::Range] of `values`
+    /// NOTE(tyler): This only iterates over the data in the index, not in the table.
+    pub fn range_scan_index<'a, R: RangeBounds<TypeValue> + 'a>(
+        &'a self,
+        tx: &'a mut Tx,
+        table_id: u32,
+        col_id: u32,
+        range: R,
+    ) -> Option<index::TuplesRangeIter> {
+        if let Some(idx) = self.catalog.indexes.get_table_column_id(table_id, col_id) {
+            return Some(idx.iter_range(self, tx, range));
+        }
+        None
+    }
+
     pub fn scan_pk<'a>(&'a self, tx: &'a mut Tx, table_id: u32) -> Result<PrimaryKeyTableIter<'a>, DBError> {
         let mut measure = HistogramVecHandle::new(&RDB_SCAN_PK_TIME, vec![format!("{}", table_id)]);
         measure.start();
@@ -661,11 +797,28 @@ impl RelationalDB {
         }))
     }
 
+    /// Execute all the triggers and check before inserting a row into the database
+    ///
+    /// 1- Update the indexes
+    ///
+    /// Check if we need to update the indexes for the `table_id`.
+    ///
+    /// Because the index is in-memory is ok to insert here and crash before insert into the DB.
+    ///
+    /// It also checks for violations to UNIQUE constrain
+    fn before_insert(&mut self, table_id: u32, tx: &mut Tx, row: &TupleValue) -> Result<(), DBError> {
+        //NOTE: This logic is split to avoid conflicts with mutable/immutable references...
+        self.catalog.indexes.check_unique_keys(self, tx, table_id, row)?;
+        self.catalog.indexes.update_row(table_id, row)?;
+        Ok(())
+    }
+
     pub fn insert(&mut self, tx: &mut Tx, table_id: u32, row: TupleValue) -> Result<(), DBError> {
         let mut measure = HistogramVecHandle::new(&RDB_INSERT_TIME, vec![format!("{}", table_id)]);
         measure.start();
 
         // TODO: verify schema
+        self.before_insert(table_id, tx, &row)?;
         Self::insert_row_raw(&mut self.txdb, tx, table_id, row);
         Ok(())
     }
