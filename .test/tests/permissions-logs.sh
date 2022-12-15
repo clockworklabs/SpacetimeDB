@@ -10,8 +10,8 @@ set -euox pipefail
 source "./.test/lib.include"
 
 run_test cargo run identity new
-run_test cargo run init --lang rust "$PROJECT_PATH"
-run_test cargo run publish --project-path "$PROJECT_PATH"
+create_project
+spacetime_publish --project-path "$PROJECT_PATH"
 sleep 2
 DATABASE="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 

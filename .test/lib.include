@@ -25,6 +25,7 @@ reset_config() {
 	cd "$RETURN_DIR" || exit 1
 }
 
+# This deletes the project from the previous test run
 reset_project() {
 	RETURN_DIR=$PWD
 	if [ -d "$PROJECT_PATH" ] ; then
@@ -34,10 +35,35 @@ reset_project() {
 	cd "$RETURN_DIR" || exit 1
 }
 
+# This creates a new spacetime project that is completely dependent on the local repository.
+create_project() {
+	reset_project
+	run_test cargo run init --lang=rust "$PROJECT_PATH"
+	# We have to force using the local spacetimedb_bindings otherwise we will download them from crates.io
+	if [[ "$OSTYPE" == "darwin"* ]]; then
+		sed -i '' "s@.*spacetimedb.*=.*@spacetimedb = { version = \"0.3.1\", path = \"${SPACETIME_DIR}/crates/spacetimedb-bindings\" }@g" "${PROJECT_PATH}/Cargo.toml" 
+	else
+		sed -i "s@.*spacetimedb.*=.*@spacetimedb = { version = \"0.3.1\", path = \"${SPACETIME_DIR}/crates/spacetimedb-bindings\" }@g" "${PROJECT_PATH}/Cargo.toml"
+	fi
+
+
+}
+
 random_string() {
 	if [[ "$OSTYPE" == "darwin"* ]]; then
 		echo $RANDOM | md5 -q | head -c 20
 	else
 		echo $RANDOM | md5sum | head -c 20
 	fi
+}
+
+spacetime_publish() {
+	RETURN_DIR=$PWD
+	cd "$SPACETIME_DIR"
+	set +e
+	run_test cargo run publish --use-cargo "$@"
+	RESULT_CODE=$?
+	cd "$RETURN_DIR" || exit 1
+	set -e
+	return "$RESULT_CODE"
 }

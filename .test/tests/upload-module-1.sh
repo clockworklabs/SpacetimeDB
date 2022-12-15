@@ -9,7 +9,7 @@ set -euox pipefail
 
 source "./.test/lib.include"
 
-run_test cargo run init "$PROJECT_PATH" --lang rust
+create_project
 
 cat > "${PROJECT_PATH}/src/lib.rs" << EOF
 use spacetimedb::{println, spacetimedb, Hash};
@@ -33,7 +33,7 @@ pub fn say_hello(_sender: Hash, _timestamp: u64) {
 }
 EOF
 
-run_test cargo run publish --project-path "$PROJECT_PATH"
+spacetime_publish --project-path "$PROJECT_PATH"
 [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
 IDENT="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 

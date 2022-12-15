@@ -1,5 +1,5 @@
 use clap::Arg;
-use clap::ArgAction;
+
 use clap::ArgAction::SetTrue;
 use clap::ArgMatches;
 use serde::Deserialize;
@@ -50,7 +50,15 @@ pub fn cli() -> clap::Command {
                 .short('a')
                 .required(false)
                 .conflicts_with("as_identity")
-                .action(ArgAction::SetTrue),
+                .action(SetTrue),
+        )
+        .arg(
+            Arg::new("use_cargo") // This flag is only used by the testsuite
+                .long("use-cargo")
+                .hide_long_help(true)
+                .hide_short_help(true)
+                .required(false)
+                .action(SetTrue),
         )
         .arg(Arg::new("name|address").required(false))
         .after_help("Run `spacetime help publish` for more detailed information.")
@@ -67,6 +75,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let path_to_project = args.get_one::<PathBuf>("path_to_project").unwrap();
     let host_type = args.get_one::<String>("host_type").unwrap();
     let clear_database = args.get_flag("clear_database");
+    let use_cargo = args.get_flag("use_cargo");
 
     let as_identity = args.get_one::<String>("as_identity");
     let anon_identity = args.get_flag("anon_identity");
@@ -100,7 +109,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     url_args.push_str(format!("&host_type={}", host_type).as_str());
 
-    crate::tasks::pre_publish(path_to_project)?;
+    crate::tasks::pre_publish(path_to_project, use_cargo)?;
 
     let path_to_wasm = util::find_wasm_file(path_to_project)?;
     let program_bytes = fs::read(fs::canonicalize(path_to_wasm).unwrap())?;

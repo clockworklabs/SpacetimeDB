@@ -12,8 +12,8 @@ source "./.test/lib.include"
 run_test cargo run identity new
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
 TOKEN=$(grep token "$HOME/.spacetime/config.toml" | awk '{print $3}' | tr -d \')
-run_test cargo run init --lang rust "$PROJECT_PATH"
-run_test cargo run publish --project-path "$PROJECT_PATH"
+create_project
+spacetime_publish --project-path "$PROJECT_PATH"
 sleep 2
 DATABASE="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 

@@ -9,7 +9,7 @@ set -euox pipefail
 
 source "./.test/lib.include"
 
-run_test cargo run init "$PROJECT_PATH" --lang rust
+create_project
 
 cat > "${PROJECT_PATH}/src/lib.rs" << EOF
 use spacetimedb::{println, spacetimedb};
@@ -20,7 +20,7 @@ pub fn my_repeating_reducer(timestamp: u64, delta_time: u64) {
 }
 EOF
 
-run_test cargo run publish --project-path "$PROJECT_PATH"
+spacetime_publish --project-path "$PROJECT_PATH"
 [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 sleep 2

@@ -17,17 +17,18 @@ pub(crate) fn build(project_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(crate) fn pre_publish(project_path: &Path) -> anyhow::Result<()> {
+pub(crate) fn pre_publish(project_path: &Path, use_cargo: bool) -> anyhow::Result<()> {
     build(project_path)?;
 
     // Update the running module
     // TODO: just call into crate::subcommands::{identity, energy}
-    cmd!("spacetime", "identity", "init-default", "--quiet")
-        .dir(project_path)
-        .run()?;
-    cmd!("spacetime", "energy", "set-balance", "5000000000000000", "--quiet")
-        .dir(project_path)
-        .run()?;
+    if use_cargo {
+        cmd!("cargo", "run", "identity", "init-default", "--quiet").run()?;
+        cmd!("cargo", "run", "energy", "set-balance", "5000000000000000", "--quiet").run()?;
+    } else {
+        cmd!("spacetime", "identity", "init-default", "--quiet").run()?;
+        cmd!("spacetime", "energy", "set-balance", "5000000000000000", "--quiet").run()?;
+    }
 
     Ok(())
 }

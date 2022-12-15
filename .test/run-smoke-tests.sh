@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -euo pipefail
+cd "$(dirname "$0")"
 
 CRST='\033[0m'       # Text Reset
 GRN='\033[0;32m'     # Green
@@ -12,10 +13,14 @@ TEST_OUT=$(mktemp)
 export TEST_OUT
 PROJECT_PATH=$(mktemp -d)
 export PROJECT_PATH
+SPACETIME_DIR="$PWD/.."
+export SPACETIME_DIR
 
-cd "$(dirname "$0")"
 source "lib.include"
-cp ~/.spacetime/config.toml ~/.spacetime/.config.toml
+mkdir -p ~/.spacetime
+if [ -f ~/.spacetime/config.toml ] ; then
+	cp ~/.spacetime/config.toml ~/.spacetime/.config.toml
+fi
 cp ./config.toml ~/.spacetime/config.toml
 
 cd ..
@@ -31,7 +36,7 @@ execute_test() {
 		printf "${RED}FAIL${CRST}\n"
 		cat "$OUT_TMP"
 		echo "Config file:"
-		cat $HOME/.spacetime/config.toml
+		cat "$HOME/.spacetime/config.toml"
 		failed_tests+=("$1")
 	else 
 		printf "${GRN}PASS${CRST}\n"
@@ -49,14 +54,16 @@ if [ $# == 1 ] ; then
 	fi
 elif [ $# == 0 ] ; then
 	for smoke_test in $TESTS ; do
-		execute_test "$(basename $smoke_test .sh)"
+		execute_test "$(basename "$smoke_test" .sh)"
 	done
 else
 	echo "Unknown parameters."
 	exit 1
 fi
 
-cp ~/.spacetime/.config.toml ~/.spacetime/config.toml 
+if [ -f ~/.spacetime/.config.toml ] ; then
+	cp ~/.spacetime/.config.toml ~/.spacetime/config.toml 
+fi
 
 printf "\n\n*************************\n"
 printf "** Smoke Tests Summary **\n"
@@ -77,7 +84,7 @@ else
 
 	printf "\nDescriptions for failed tests:\n"
 	for t in "${failed_tests[@]}" ; do 
-		printf "\n$t\n\t"
+		printf "\n%s\n\t" "$t"
 		DESCRIBE_TEST=1 bash ".test/tests/${t}.sh"
 	done
 fi
