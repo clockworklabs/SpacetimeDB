@@ -86,6 +86,22 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     // Identity is required
     if let Some(identity) = identity {
+        let mut found = false;
+        for identity_config in config.identity_configs.clone() {
+            if identity_config.identity == identity.clone()
+                || &identity_config.nickname.unwrap().to_string() == identity
+            {
+                found = true;
+                break;
+            }
+        }
+
+        if !found {
+            return Err(anyhow::anyhow!(
+                "Identity provided does not match any identity stored in your config file."
+            ));
+        }
+
         url_args.push_str(format!("?identity={}", identity).as_str());
     } else {
         let identity_config = init_default(&mut config, None).await?.identity_config;
