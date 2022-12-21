@@ -4,10 +4,10 @@ use clap::Arg;
 use clap::ArgMatches;
 
 pub fn cli() -> clap::Command {
-    clap::Command::new("name")
+    clap::Command::new("dns")
         .about("Resolves the address of a SpacetimeDB database.")
         .arg(Arg::new("name").required(true))
-        .after_help("Run `spacetime help call` for more detailed information.\n")
+        .after_help("Run `spacetime help dns` for more detailed information")
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {

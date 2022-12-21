@@ -46,6 +46,11 @@ struct DNSResponse {
     address: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ReverseDNSResponse {
+    name: String,
+}
+
 pub async fn spacetime_dns(config: &Config, domain_name: &str) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
     let url = format!("http://{}/database/dns/{}", config.host, domain_name);
@@ -55,6 +60,17 @@ pub async fn spacetime_dns(config: &Config, domain_name: &str) -> Result<String,
 
     let dns: DNSResponse = serde_json::from_slice(&bytes[..]).unwrap();
     Ok(dns.address)
+}
+
+pub async fn spacetime_reverse_dns(config: &Config, addr: &str) -> Result<String, anyhow::Error> {
+    let client = reqwest::Client::new();
+    let url = format!("http://{}/database/reverse_dns/{}", config.host, addr);
+    let res = client.get(url).send().await?;
+    let res = res.error_for_status()?;
+    let bytes = res.bytes().await.unwrap();
+
+    let dns: ReverseDNSResponse = serde_json::from_slice(&bytes[..]).unwrap();
+    Ok(dns.name)
 }
 
 pub fn find_wasm_file(project_path: &Path) -> Result<PathBuf, anyhow::Error> {
