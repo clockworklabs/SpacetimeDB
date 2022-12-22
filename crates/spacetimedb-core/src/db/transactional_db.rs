@@ -827,7 +827,7 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::db::message_log::MessageLog;
-    use crate::db::relational_db::tests_utils::make_default_ostorage;
+    use crate::db::relational_db::make_default_ostorage;
     use spacetimedb_lib::error::ResultTest;
     use tempdir::TempDir;
 

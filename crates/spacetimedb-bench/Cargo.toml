@@ -1,0 +1,20 @@
+[package]
+name = "spacetimedb-bench"
+version = "0.1.0"
+edition = "2021"
+license-file = "LICENSE"
+description = "Bench library/utility for SpacetimeDB"
+
+[[bench]]
+name = "db"
+harness = false
+
+[dependencies]
+spacetimedb-lib = { path = "../spacetimedb-lib", version = "0.3.1" }
+spacetimedb-core = { path = "../spacetimedb-core", version = "0.1.0" }
+
+clap = { version = "4.0.18", features = ["derive"] }
+rusqlite = {version = "0.28.0", features = ["bundled"]}
+criterion = { version = "0.4.0", features = ["async", "async_tokio", "html_reports"] }
+tempdir = "0.3.7"
+rand = "0.8.5"

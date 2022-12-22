@@ -87,6 +87,7 @@ odb_rocksdb = ["dep:rocksdb"]
 odb_sled = []
 
 [dev-dependencies]
+rusqlite = {version = "0.28.0", features = ["bundled"]}
 criterion = { version = "0.4.0", features = ["async", "async_tokio", "html_reports"] }
 tempdir = "0.3.7"
 rand = "0.8.5"

@@ -1,15 +1,61 @@
 on: [pull_request]
 name: Benchmark Pull Requests
+
 jobs:
+#  check:
+#    runs-on: ubuntu-latest
+#    outputs:
+#      status: ${{ steps.check_files.outputs.files_exists }}
+#    steps:
+#      - name: Checkout sources
+#        uses: actions/checkout@v3
+#
+#      - name: Check file existence
+#        id: check_files
+#        uses: andstor/file-existence-action@v1
+#        working-directory: crates/spacetimedb-bench/
+#        with:
+#          files: "Cargo.toml"
+
   runBenchmark:
+#    needs: check
+#    if: needs.check.outputs.status == 'true'
     name: run benchmarks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@master
-      - uses: boa-dev/criterion-compare-action@v3.2.4
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Install deps
+        run: |
+          wget https://github.com/sharkdp/hyperfine/releases/download/v1.15.0/hyperfine_1.15.0_amd64.deb
+          sudo dpkg -i hyperfine_1.15.0_amd64.deb
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
         with:
-          cwd: "crates/spacetimedb-core"
-          # Needed. The name of the branch to compare with. This default uses the branch which is being pulled against
-          branchName: ${{ github.base_ref }}
-          # Optional. Default is `${{ github.token }}`.
-          token: ${{ secrets.GITHUB_TOKEN }}
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: ⚡ Cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build
+        working-directory: crates/spacetimedb-bench/
+        run: |
+          cargo build --release
+
+      - name: Benchmark Vs Sqlite
+        working-directory: crates/spacetimedb-bench/
+        run: |
+          python3 hyper_cmp.py versus > out.report
+          cat out.report >> $GITHUB_STEP_SUMMARY

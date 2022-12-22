@@ -473,13 +473,11 @@ impl<'a> Iterator for SequenceIter<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::relational_db::make_default_ostorage;
     use crate::db::transactional_db::TxCtx;
     use crate::db::{
         message_log::MessageLog,
-        relational_db::{
-            tests_utils::{make_default_ostorage, make_test_db_reopen},
-            RelationalDB,
-        },
+        relational_db::{tests_utils::make_test_db_reopen, RelationalDB},
     };
     use spacetimedb_lib::error::ResultTest;
     use std::sync::{Arc, Mutex};

@@ -4,6 +4,7 @@ members = [
   "crates/spacetimedb-core",
   "crates/spacetimedb-bindings-sys",
   "crates/spacetimedb-bindings",
+  "crates/spacetimedb-bench",
   "crates/spacetimedb-bindings-macro",
   "crates/spacetimedb-cli",
   "crates/rust-wasm-test",
@@ -17,3 +18,6 @@ debug = true
 
 [profile.dev]
 opt-level = 2
+
+[profile.bench]
+debug = true

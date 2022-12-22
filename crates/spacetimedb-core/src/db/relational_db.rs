@@ -10,6 +10,7 @@ use crate::db::db_metrics::{
     RDB_SCAN_PK_TIME, RDB_SCAN_RAW_TIME, RDB_SCAN_TIME,
 };
 use crate::db::index::{IndexId, IndexIter};
+use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::db::sequence::{
     read_sled_i64, write_sled_i64, Sequence, SequenceDef, SequenceError, SequenceId, SequenceIter,
@@ -1058,38 +1059,39 @@ impl<'a, R: RangeBounds<TypeValue>> Iterator for ScanRangeIter<'a, R> {
     }
 }
 
+pub fn make_default_ostorage(path: impl AsRef<Path>) -> Result<Box<dyn ObjectDB + Send>, DBError> {
+    Ok(Box::new(HashMapObjectDB::open(path)?))
+}
+
+pub fn open_db(path: impl AsRef<Path>) -> Result<RelationalDB, DBError> {
+    let path = path.as_ref();
+    let mlog = Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?));
+    let odb = Arc::new(Mutex::new(make_default_ostorage(path.join("odb"))?));
+    let stdb = RelationalDB::open(path, mlog, odb)?;
+
+    Ok(stdb)
+}
+
+pub fn open_log(path: impl AsRef<Path>) -> Result<Arc<Mutex<MessageLog>>, DBError> {
+    let path = path.as_ref().to_path_buf();
+    Ok(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
+}
+
 #[cfg(test)]
 pub(crate) mod tests_utils {
     use super::*;
-    use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
     use tempdir::TempDir;
-
-    pub(crate) fn make_default_ostorage(path: impl AsRef<Path>) -> Result<Box<dyn ObjectDB + Send>, DBError> {
-        Ok(Box::new(HashMapObjectDB::open(path)?))
-    }
-
-    pub(crate) fn open_log(path: impl AsRef<Path>) -> Result<Arc<Mutex<MessageLog>>, DBError> {
-        let path = path.as_ref().to_path_buf();
-        Ok(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
-    }
 
     //Utility for creating a database on a TempDir
     pub(crate) fn make_test_db() -> Result<(RelationalDB, TempDir), DBError> {
         let tmp_dir = TempDir::new("stdb_test")?;
-        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
-        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
-        let stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
-
+        let stdb = open_db(&tmp_dir)?;
         Ok((stdb, tmp_dir))
     }
 
     //Utility for creating a database on the same TempDir, for checking behaviours after shutdown
     pub(crate) fn make_test_db_reopen(tmp_dir: &TempDir) -> Result<RelationalDB, DBError> {
-        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
-        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
-        let stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
-
-        Ok(stdb)
+        open_db(&tmp_dir)
     }
 }
 
@@ -1101,7 +1103,8 @@ mod tests {
     use crate::db::message_log::MessageLog;
 
     use super::RelationalDB;
-    use crate::db::relational_db::tests_utils::{make_default_ostorage, open_log};
+    use crate::db::relational_db::make_default_ostorage;
+    use crate::db::relational_db::open_log;
     use crate::error::DBError;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::{ElementDef, TupleDef, TupleValue, TypeDef, TypeValue};
