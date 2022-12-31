@@ -13,3 +13,6 @@ pub mod publish;
 pub mod reversedns;
 pub mod sql;
 pub mod version;
+
+#[cfg(feature = "tracelogging")]
+pub mod tracelog;

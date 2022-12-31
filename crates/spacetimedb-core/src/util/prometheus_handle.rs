@@ -1,28 +1,32 @@
 use prometheus::{Histogram, HistogramVec};
-use std::time::Instant;
+use std::time::{Duration, SystemTime};
 
 /// An RAII-style handle for doing quick measurements of a single vertex Histogram value.
 /// Time spent is measured at Drop, meaning the sample occurs regardless of how the owning scope
 /// exits.
 pub struct HistogramHandle {
     hist: &'static Histogram,
-    start: Option<Instant>,
+    pub start_instant: Option<SystemTime>,
 }
+
 impl HistogramHandle {
     pub fn new(hist: &'static Histogram) -> Self {
-        HistogramHandle { hist, start: None }
+        HistogramHandle {
+            hist,
+            start_instant: None,
+        }
     }
 
     pub fn start(&mut self) {
-        self.start = Some(Instant::now());
+        self.start_instant = Some(SystemTime::now());
     }
 
     pub fn stop(&mut self) {
-        if self.start.is_none() {
+        if self.start_instant.is_none() {
             return;
         };
-        let duration = self.start.unwrap().elapsed();
-        self.hist.observe(duration.as_micros() as f64);
+        let duration = self.start_instant.unwrap().elapsed();
+        self.hist.observe(duration.unwrap().as_micros() as f64);
     }
 }
 impl Drop for HistogramHandle {
@@ -35,30 +39,37 @@ impl Drop for HistogramHandle {
 pub struct HistogramVecHandle {
     hist: &'static HistogramVec,
     label_values: Vec<String>,
-    start: Option<Instant>,
+    pub start_instant: Option<SystemTime>,
 }
 impl HistogramVecHandle {
     pub fn new(hist: &'static HistogramVec, label_values: Vec<String>) -> Self {
         HistogramVecHandle {
             hist,
             label_values,
-            start: None,
+            start_instant: None,
         }
     }
 
     pub fn start(&mut self) {
-        self.start = Some(Instant::now());
+        self.start_instant = Some(SystemTime::now());
     }
 
     pub fn stop(&mut self) {
-        if self.start.is_none() {
+        if self.start_instant.is_none() {
             return;
         };
-        let duration = self.start.unwrap().elapsed();
+        let duration = self.start_instant.unwrap().elapsed();
         let labels: Vec<&str> = self.label_values.as_slice().iter().map(|s| s.as_str()).collect();
         self.hist
             .with_label_values(labels.as_slice())
-            .observe(duration.as_micros() as f64);
+            .observe(duration.unwrap().as_micros() as f64);
+    }
+
+    pub fn elapsed(&self) -> Duration {
+        match self.start_instant {
+            None => Duration::new(0, 0),
+            Some(i) => i.elapsed().unwrap(),
+        }
     }
 }
 impl Drop for HistogramVecHandle {

@@ -8,6 +8,7 @@ members = [
   "crates/spacetimedb-bindings-macro",
   "crates/spacetimedb-cli",
   "crates/rust-wasm-test",
+  "crates/spacetimedb-replay",
 ]
 default-members = ["crates/spacetimedb-cli"]
 

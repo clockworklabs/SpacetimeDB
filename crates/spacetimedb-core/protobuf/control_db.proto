@@ -26,6 +26,8 @@ message Database {
     HostType host_type = 4;
     uint32 num_replicas = 5;
     bytes program_bytes_address = 6;
+    // Whether to create a full event log of all database events, for diagnostic / replay purposes.
+    bool trace_log = 7;
 }
 
 message DatabaseStatus {

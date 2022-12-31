@@ -12,6 +12,7 @@ use crate::nodes::worker_node::host::instance_env::InstanceEnv;
 use crate::nodes::worker_node::host::module_host::{
     EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHost, ModuleHostActor, ModuleHostCommand,
 };
+use crate::nodes::worker_node::host::tracelog::instance_trace::TraceLog;
 use crate::nodes::worker_node::host::ReducerArgs;
 use crate::nodes::worker_node::worker_metrics::{REDUCER_COMPUTE_TIME, REDUCER_COUNT, REDUCER_WRITE_SIZE};
 use crate::nodes::worker_node::{
@@ -97,6 +98,8 @@ pub(crate) struct WasmModuleHostActor {
     instances: Vec<(u32, Instance, FunctionEnv<WasmInstanceEnv>)>,
     instance_tx_map: Arc<Mutex<HashMap<u32, WrapTxWrapper>>>,
     subscription: ModuleSubscription,
+    #[allow(dead_code)] // Don't warn about 'trace_log' below when tracelogging feature isn't enabled.
+    trace_log: Option<Arc<Mutex<TraceLog>>>,
 
     // Holds the list of descriptions of each entity.
     // TODO(ryan): Long run let's replace or augment this with catalog table(s) that hold the
@@ -113,7 +116,14 @@ impl WasmModuleHostActor {
         store: Store,
         module_host: ModuleHost,
         abi: abi::SpacetimeAbiVersion,
+        trace_log: bool,
     ) -> Result<Self, anyhow::Error> {
+        let trace_log = if trace_log {
+            Some(Arc::new(Mutex::new(TraceLog::new().unwrap())))
+        } else {
+            None
+        };
+
         let relational_db = worker_database_instance.relational_db.clone();
         let subscription = ModuleSubscription::spawn(relational_db);
         let mut host = Self {
@@ -125,10 +135,11 @@ impl WasmModuleHostActor {
             store: RefCell::new(store),
             instances: Vec::new(),
             subscription,
+            trace_log: trace_log.clone(),
             description_cache: HashMap::new(),
             abi,
         };
-        host.create_instance().unwrap();
+        host.create_instance(trace_log).unwrap();
         match host.populate_description_caches() {
             Ok(_) => Ok(host),
             Err(e) => Err(anyhow!(
@@ -153,15 +164,16 @@ impl WasmModuleHostActor {
         Ok(())
     }
 
-    fn create_instance(&mut self) -> Result<u32, anyhow::Error> {
+    fn create_instance(&mut self, trace_log: Option<Arc<Mutex<TraceLog>>>) -> Result<u32, anyhow::Error> {
         let store = self.store.get_mut();
         let instance_id = self.instances.len() as u32;
         let env = WasmInstanceEnv {
-            instance_env: InstanceEnv {
-                worker_database_instance: self.worker_database_instance.clone(),
+            instance_env: InstanceEnv::new(
                 instance_id,
-                instance_tx_map: self.instance_tx_map.clone(),
-            },
+                self.worker_database_instance.clone(),
+                self.instance_tx_map.clone(),
+                trace_log,
+            ),
             mem: None,
         };
         let env = FunctionEnv::new(store, env);
@@ -516,6 +528,29 @@ impl WasmModuleHostActor {
         self.description_cache.get(entity_name).cloned()
     }
 
+    #[cfg(feature = "tracelogging")]
+    fn get_trace(&self) -> Option<bytes::Bytes> {
+        match &self.trace_log {
+            None => None,
+            Some(tl) => {
+                let results = tl.lock().unwrap().retrieve();
+                match results {
+                    Ok(tl) => Some(tl),
+                    Err(e) => {
+                        log::error!("Unable to retrieve trace log: {}", e);
+                        None
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "tracelogging")]
+    fn stop_trace(&mut self) -> Result<(), anyhow::Error> {
+        self.trace_log = None;
+        Ok(())
+    }
+
     fn call_describer(
         &self,
         describer_func_name: &str,
@@ -767,6 +802,16 @@ impl ModuleHostActor for WasmModuleHostActor {
                 respond_to,
             } => {
                 respond_to.send(self.describe(&entity_name)).unwrap();
+                false
+            }
+            #[cfg(feature = "tracelogging")]
+            ModuleHostCommand::GetTrace { respond_to } => {
+                respond_to.send(self.get_trace()).unwrap();
+                false
+            }
+            #[cfg(feature = "tracelogging")]
+            ModuleHostCommand::StopTrace { respond_to } => {
+                respond_to.send(self.stop_trace()).unwrap();
                 false
             }
         }

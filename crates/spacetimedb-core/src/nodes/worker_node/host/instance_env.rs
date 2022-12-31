@@ -1,10 +1,13 @@
 use log::debug;
 use spacetimedb_lib::{ElementDef, PrimaryKey, TupleDef, TupleValue, TypeDef, TypeValue};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use crate::db::relational_db::{RelationalDB, WrapTxWrapper};
 use crate::nodes::error::{log_to_err, NodesError};
+use crate::nodes::worker_node::host::tracelog::instance_trace::TraceLog;
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
 use crate::nodes::worker_node::worker_metrics::{
     INSTANCE_ENV_DELETE_EQ, INSTANCE_ENV_DELETE_PK, INSTANCE_ENV_DELETE_RANGE, INSTANCE_ENV_DELETE_VALUE,
@@ -17,15 +20,33 @@ pub struct InstanceEnv {
     pub instance_id: u32,
     pub worker_database_instance: WorkerDatabaseInstance,
     pub instance_tx_map: Arc<Mutex<HashMap<u32, WrapTxWrapper>>>,
+    pub trace_log: Option<Arc<Mutex<TraceLog>>>,
 }
 
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
-    pub fn console_log(&self, level: u8, s: &str) {
-        self.worker_database_instance.logger.lock().unwrap().write(level, s);
+    pub fn new(
+        instance_id: u32,
+        worker_database_instance: WorkerDatabaseInstance,
+        instance_tx_map: Arc<Mutex<HashMap<u32, WrapTxWrapper>>>,
+        trace_log: Option<Arc<Mutex<TraceLog>>>,
+    ) -> Self {
+        Self {
+            instance_id,
+            worker_database_instance,
+            instance_tx_map: instance_tx_map.clone(),
+            trace_log,
+        }
+    }
+
+    pub fn console_log(&self, level: u8, s: Cow<'_, str>) {
+        self.worker_database_instance.logger.lock().unwrap().write(level, &s);
+
         log::debug!(
-            "MOD({}): {}",
-            self.worker_database_instance.address.to_abbreviated_hex(),
+            "MODULE {}/{}: {} {}",
+            self.worker_database_instance.identity.to_hex(),
+            self.worker_database_instance.address.to_hex(),
+            level,
             s
         );
     }
@@ -47,8 +68,18 @@ impl InstanceEnv {
             Err(e) => return Err(log_to_err(NodesError::InsertDecode { table_id, e })),
         };
 
-        stdb.insert(tx, table_id, row)
-            .map_err(|e| log_to_err(NodesError::InsertRow { table_id, e }))
+        let results = stdb
+            .insert(tx, table_id, row)
+            .map_err(|e| log_to_err(NodesError::InsertRow { table_id, e }));
+        if results.is_ok() {
+            if let Some(trace_log) = &self.trace_log {
+                trace_log
+                    .lock()
+                    .unwrap()
+                    .insert(measure.start_instant.unwrap(), measure.elapsed(), table_id, buffer);
+            }
+        }
+        results
     }
 
     pub fn delete_pk(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), NodesError> {
@@ -62,10 +93,20 @@ impl InstanceEnv {
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
 
         let (primary_key, _) = PrimaryKey::decode(&buffer[..]);
-        let res = stdb
+        let result = stdb
             .delete_pk(tx, table_id, primary_key)
             .map_err(|e| log_to_err(NodesError::DeleteRow { table_id, e }))?;
-        if res.is_some() {
+        if result.is_some() {
+            if let Some(trace_log) = &self.trace_log {
+                trace_log.lock().unwrap().delete_pk(
+                    measure.start_instant.unwrap(),
+                    measure.elapsed(),
+                    table_id,
+                    buffer,
+                    result.is_some(),
+                );
+            }
+
             Ok(())
         } else {
             Err(NodesError::DeleteNotFound {
@@ -92,10 +133,19 @@ impl InstanceEnv {
         }
 
         let pk = RelationalDB::pk_for_row(&row.unwrap());
-        let res = stdb
+        let result = stdb
             .delete_pk(tx, table_id, pk)
             .map_err(|e| log_to_err(NodesError::DeleteRow { table_id, e }))?;
-        if res.is_some() {
+        if result.is_some() {
+            if let Some(trace_log) = &self.trace_log {
+                trace_log.lock().unwrap().delete_value(
+                    measure.start_instant.unwrap(),
+                    measure.elapsed(),
+                    table_id,
+                    buffer,
+                    result.is_some(),
+                );
+            }
             Ok(())
         } else {
             Err(NodesError::DeleteNotFound { table_id, pk })
@@ -121,9 +171,24 @@ impl InstanceEnv {
         let seek = stdb.seek(tx, table_id, col_id, eq_value);
         if let Ok(seek) = seek {
             let seek: Vec<TupleValue> = seek.collect::<Vec<_>>();
-            stdb.delete_in(tx, table_id, seek)
+
+            let result = stdb
+                .delete_in(tx, table_id, seek)
                 .map_err(|e| log_to_err(NodesError::DeleteRow { table_id, e }))?
-                .ok_or(NodesError::DeleteValueNotFound { table_id })
+                .ok_or(NodesError::DeleteValueNotFound { table_id });
+            if let Ok(count) = result {
+                if let Some(trace_log) = &self.trace_log {
+                    trace_log.lock().unwrap().delete_eq(
+                        measure.start_instant.unwrap(),
+                        measure.elapsed(),
+                        table_id,
+                        col_id,
+                        buffer,
+                        count,
+                    );
+                }
+            }
+            result
         } else {
             Err(NodesError::DeleteValueNotFound { table_id })
         }
@@ -174,12 +239,28 @@ impl InstanceEnv {
             .map_err(|e| log_to_err(NodesError::DeleteScanRange { table_id, e }))?;
         let range = range.collect::<Vec<_>>();
 
-        stdb.delete_in(tx, table_id, range)
+        let count = stdb
+            .delete_in(tx, table_id, range)
             .map_err(|e| log_to_err(NodesError::DeleteRange { table_id, e }))?
-            .ok_or(NodesError::DeleteRangeNotFound { table_id })
+            .ok_or(NodesError::DeleteRangeNotFound { table_id });
+        if let Ok(count) = count {
+            if let Some(trace_log) = &self.trace_log {
+                trace_log.lock().unwrap().delete_range(
+                    measure.start_instant.unwrap(),
+                    measure.elapsed(),
+                    table_id,
+                    col_id,
+                    buffer,
+                    count,
+                );
+            }
+        }
+        count
     }
 
     pub fn create_table(&self, buffer: bytes::Bytes) -> u32 {
+        let now = SystemTime::now();
+
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
@@ -212,11 +293,19 @@ impl InstanceEnv {
         let schema = schema.unwrap_or_else(|e| {
             panic!("create_table: Could not decode schema! Err: {}", e);
         });
+        let result = stdb.create_table(tx, table_name, schema).unwrap();
 
-        stdb.create_table(tx, table_name, schema).unwrap()
+        if let Some(trace_log) = &self.trace_log {
+            trace_log
+                .lock()
+                .unwrap()
+                .create_table(now, now.elapsed().unwrap(), buffer, result);
+        }
+        result
     }
 
     pub fn get_table_id(&self, buffer: bytes::Bytes) -> Option<u32> {
+        let now = SystemTime::now();
         let stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let mut instance_tx_map = self.instance_tx_map.lock().unwrap();
         let tx = instance_tx_map.get_mut(&self.instance_id).unwrap();
@@ -236,13 +325,22 @@ impl InstanceEnv {
             debug!("get_table_id: Table name {} has no table ID. Err={}", table_name, e);
             return None;
         }
-        let table_id = table_id.unwrap();
-        if table_id.is_none() {
-            debug!("get_table_id: Table name {} has no table ID.", table_name);
-            return None;
+        let table_id = match table_id.unwrap() {
+            None => {
+                debug!("get_table_id: Table name {} has no table ID.", table_name);
+                return None;
+            }
+            Some(x) => x,
+        };
+
+        if let Some(trace_log) = &self.trace_log {
+            trace_log
+                .lock()
+                .unwrap()
+                .get_table_id(now, now.elapsed().unwrap(), buffer, table_id);
         }
 
-        Some(table_id.unwrap())
+        Some(table_id)
     }
 
     pub fn iter(&self, table_id: u32) -> Vec<u8> {
@@ -272,6 +370,12 @@ impl InstanceEnv {
             count
         );
 
+        if let Some(trace_log) = &self.trace_log {
+            trace_log
+                .lock()
+                .unwrap()
+                .iter(measure.start_instant.unwrap(), measure.elapsed(), table_id, &bytes);
+        }
         bytes
     }
 }

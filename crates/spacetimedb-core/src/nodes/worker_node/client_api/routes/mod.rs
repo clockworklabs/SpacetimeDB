@@ -4,6 +4,9 @@ mod metrics;
 mod node;
 pub mod subscribe;
 
+#[cfg(feature = "tracelogging")]
+mod tracelog;
+
 use database::router as database_router;
 use gotham::{
     prelude::*,
@@ -14,6 +17,9 @@ use identity::router as proxy_router;
 use metrics::router as metrics_router;
 use node::router as node_router;
 
+#[cfg(feature = "tracelogging")]
+use tracelog::router as tracelog_router;
+
 pub fn router() -> Router {
     build_simple_router(|route| {
         route.delegate("/database").to_router(database_router());
@@ -21,6 +27,8 @@ pub fn router() -> Router {
         route.delegate("/energy").to_router(proxy_router());
         route.delegate("/node").to_router(node_router());
         route.delegate("/metrics").to_router(metrics_router());
+        #[cfg(feature = "tracelogging")]
+        route.delegate("/tracelog").to_router(tracelog_router());
     })
 }
 

@@ -324,7 +324,7 @@ async fn exec_find(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
 
     if res.status() == StatusCode::OK {
         let response: GetIdentityResponse = serde_json::from_slice(&res.bytes().await?[..])?;
-        if response.identities.len() == 0 {
+        if response.identities.is_empty() {
             return Err(anyhow::anyhow!("Could not find identity for: {}", email));
         }
 

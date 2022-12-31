@@ -104,6 +104,17 @@ struct PublishDatabaseQueryParams {
     clear: Option<bool>,
     identity: Option<String>,
     name_or_address: Option<String>,
+    trace_log: Option<bool>,
+}
+
+#[cfg(not(feature = "tracelogging"))]
+fn should_trace(_trace_log: Option<bool>) -> bool {
+    false
+}
+
+#[cfg(feature = "tracelogging")]
+fn should_trace(trace_log: Option<bool>) -> bool {
+    trace_log.unwrap_or(false)
 }
 
 async fn publish(state: &mut State) -> SimpleHandlerResult {
@@ -113,6 +124,7 @@ async fn publish(state: &mut State) -> SimpleHandlerResult {
         name_or_address,
         host_type,
         clear,
+        trace_log,
     } = PublishDatabaseQueryParams::take_from(state);
     let clear = clear.unwrap_or(false);
 
@@ -179,6 +191,8 @@ async fn publish(state: &mut State) -> SimpleHandlerResult {
 
     let num_replicas = 1;
 
+    let trace_log = should_trace(trace_log);
+
     match control_db::get_database_by_address(&db_address).await {
         Ok(database) => match database {
             Some(db) => {
@@ -195,6 +209,7 @@ async fn publish(state: &mut State) -> SimpleHandlerResult {
                         host_type,
                         num_replicas,
                         clear,
+                        trace_log,
                     )
                     .await
                     {
@@ -223,6 +238,7 @@ async fn publish(state: &mut State) -> SimpleHandlerResult {
                     host_type,
                     num_replicas,
                     false,
+                    trace_log,
                 )
                 .await
                 {

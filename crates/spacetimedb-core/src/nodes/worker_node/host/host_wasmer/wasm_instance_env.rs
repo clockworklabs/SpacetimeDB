@@ -38,7 +38,7 @@ impl WasmInstanceEnv {
     pub fn console_log(caller: FunctionEnvMut<'_, Self>, level: u8, ptr: WasmPtr<u8>, len: u32) {
         let buffer = Self::read_output_bytes(&caller, ptr, len);
         let s = String::from_utf8_lossy(&buffer);
-        caller.data().instance_env.console_log(level, &s);
+        caller.data().instance_env.console_log(level, s);
     }
 
     pub fn insert(caller: FunctionEnvMut<'_, Self>, table_id: u32, ptr: WasmPtr<u8>, len: u32) -> u8 {

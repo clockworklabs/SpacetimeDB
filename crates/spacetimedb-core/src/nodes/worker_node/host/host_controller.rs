@@ -188,8 +188,11 @@ impl HostController {
             module_host.exit().await?;
         }
 
+        let trace_log = worker_database_instance.trace_log;
         let module_host = match worker_database_instance.host_type {
-            HostType::Wasmer => make_wasmer_module_host_actor(worker_database_instance, module_hash, program_bytes)?,
+            HostType::Wasmer => {
+                make_wasmer_module_host_actor(worker_database_instance, module_hash, program_bytes, trace_log)?
+            }
         };
 
         let mut modules = self.modules.lock().unwrap();
@@ -247,6 +250,22 @@ impl HostController {
         let module_host = self.module_host(instance_id)?;
         let catalog = module_host.catalog().await.unwrap();
         Ok(catalog)
+    }
+
+    /// If a module's DB activity is being traced (for diagnostics etc.), retrieves the current contents of its trace stream.
+    #[cfg(feature = "tracelogging")]
+    pub async fn get_trace(&self, instance_id: u64) -> Result<Option<bytes::Bytes>, anyhow::Error> {
+        let module_host = self.module_host(instance_id)?;
+        let trace = module_host.get_trace().await.unwrap();
+        Ok(trace)
+    }
+
+    /// If a module's DB activity is being traced (for diagnostics etc.), stop tracing it.
+    #[cfg(feature = "tracelogging")]
+    pub async fn stop_trace(&self, instance_id: u64) -> Result<(), anyhow::Error> {
+        let module_host = self.module_host(instance_id)?;
+        module_host.stop_trace().await.unwrap();
+        Ok(())
     }
 
     pub fn get_module(&self, instance_id: u64) -> Result<ModuleHost, anyhow::Error> {

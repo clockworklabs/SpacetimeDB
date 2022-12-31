@@ -72,6 +72,12 @@ once_cell = "1.16"
 # gluesql = "0.10"
 bytes = "1.2.0" # TODO(rdaum): there's also a copy/fork of this inside prost. hmph.
 strum = { version = "0.24.1", features = ["derive"] }
+uuid = { version = "1.2.1", features = ["v4"]}
+
+# Used for tracelog
+imara-diff = "0.1.3"
+tempdir = "0.3.7"
+flate2 = "1.0.24"
 wasmparser = "0.92.0"
 
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
@@ -85,11 +91,11 @@ features = ["lz4"] # if we link bzip, we get multiple defs
 # Optional storage engines.
 odb_rocksdb = ["dep:rocksdb"]
 odb_sled = []
+tracelogging = []
 
 [dev-dependencies]
 rusqlite = {version = "0.28.0", features = ["bundled"]}
 criterion = { version = "0.4.0", features = ["async", "async_tokio", "html_reports"] }
-tempdir = "0.3.7"
 rand = "0.8.5"
 
 [build-dependencies]

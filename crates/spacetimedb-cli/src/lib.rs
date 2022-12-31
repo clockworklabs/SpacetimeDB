@@ -24,6 +24,8 @@ pub fn get_subcommands() -> Vec<Command> {
         list::cli(),
         init::cli(),
         build::cli(),
+        #[cfg(feature = "tracelogging")]
+        tracelog::cli(),
         reversedns::cli(),
     ]
 }
@@ -44,6 +46,8 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "list" => list::exec(config, args).await,
         "init" => init::exec(config, args).await,
         "build" => build::exec(config, args).await,
+        #[cfg(feature = "tracelogging")]
+        "tracelog" => tracelog::exec(config, args).await,
         "reversedns" => reversedns::exec(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }

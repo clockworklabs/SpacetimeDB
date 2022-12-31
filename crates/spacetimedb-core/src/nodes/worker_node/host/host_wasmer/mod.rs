@@ -68,6 +68,7 @@ pub fn make_wasmer_module_host_actor(
     worker_database_instance: WorkerDatabaseInstance,
     module_hash: Hash,
     program_bytes: Vec<u8>,
+    trace_log: bool,
 ) -> Result<ModuleHost, anyhow::Error> {
     ModuleHost::spawn(worker_database_instance.identity, |module_host| {
         let cost_function =
@@ -91,7 +92,15 @@ pub fn make_wasmer_module_host_actor(
         log::trace!("Validating module for database: \"{}\"", address.to_hex());
         validate_module(&module)?;
 
-        let host = WasmModuleHostActor::new(worker_database_instance, module_hash, module, store, module_host, abi)?;
+        let host = WasmModuleHostActor::new(
+            worker_database_instance,
+            module_hash,
+            module,
+            store,
+            module_host,
+            abi,
+            trace_log,
+        )?;
         Ok(Box::from(host))
     })
 }

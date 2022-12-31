@@ -36,3 +36,6 @@ base64 = "0.13.1"
 
 [dev-dependencies]
 insta = { version = "1.21.0", features = ["toml"] }
+
+[features]
+tracelogging = []

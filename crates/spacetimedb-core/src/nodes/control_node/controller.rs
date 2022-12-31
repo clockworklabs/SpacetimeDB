@@ -58,6 +58,7 @@ pub async fn insert_database(
     host_type: HostType,
     num_replicas: u32,
     force: bool,
+    trace_log: bool,
 ) -> Result<(), anyhow::Error> {
     let database = Database {
         id: 0,
@@ -66,6 +67,7 @@ pub async fn insert_database(
         host_type: host_type as i32,
         num_replicas,
         program_bytes_address: program_bytes_address.as_slice().to_owned(),
+        trace_log,
     };
 
     if force {

@@ -2,16 +2,18 @@
 mod client_api;
 pub(crate) mod control_node_connection;
 pub(crate) mod database_instance_context_controller;
-mod database_logger;
-mod host;
 pub(crate) mod worker_budget;
-mod worker_database_instance;
 mod worker_db;
 mod worker_metrics;
 
 // use perf_monitor::cpu::ProcessStat;
 use crate::db::db_metrics;
 use tokio::spawn;
+
+// Visible for integration testing.
+pub mod database_logger;
+pub mod host;
+pub mod worker_database_instance;
 
 // use crate::nodes::worker_node::db_metrics::PROCESS_CPU_USAGE;
 

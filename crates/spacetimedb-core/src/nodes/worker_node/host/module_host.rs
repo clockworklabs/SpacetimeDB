@@ -75,6 +75,14 @@ pub enum ModuleHostCommand {
     Catalog {
         respond_to: oneshot::Sender<Vec<(String, EntityDef)>>,
     },
+    #[cfg(feature = "tracelogging")]
+    GetTrace {
+        respond_to: oneshot::Sender<Option<bytes::Bytes>>,
+    },
+    #[cfg(feature = "tracelogging")]
+    StopTrace {
+        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+    },
     Exit {},
 }
 
@@ -227,6 +235,20 @@ impl ModuleHost {
                 respond_to: tx,
             })
             .await?;
+        rx.await.unwrap()
+    }
+
+    #[cfg(feature = "tracelogging")]
+    pub async fn get_trace(&self) -> Result<Option<bytes::Bytes>, anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Option<bytes::Bytes>>();
+        self.tx.send(ModuleHostCommand::GetTrace { respond_to: tx }).await?;
+        rx.await.map_err(|e| anyhow::Error::new(e))
+    }
+
+    #[cfg(feature = "tracelogging")]
+    pub async fn stop_trace(&self) -> Result<(), anyhow::Error> {
+        let (tx, rx) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.tx.send(ModuleHostCommand::StopTrace { respond_to: tx }).await?;
         rx.await.unwrap()
     }
 }

@@ -1,0 +1,68 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+
+package instance_db_trace_log;
+
+// Messages containing a dump of a sequence of invocations into an InstanceEnv, for recording events for later playback
+// in benchmarks or regression tests.
+
+message Insert {
+  uint32 table_id = 1;
+  bytes buffer = 2;
+}
+
+message DeletePk {
+  uint32 table_id = 1;
+  bytes buffer = 2;
+  bool result_success = 3;
+}
+
+message DeleteValue {
+  uint32 table_id = 1;
+  bytes buffer = 2;
+  bool result_success = 3;
+}
+
+message DeleteEq {
+  uint32 table_id = 1;
+  uint32 col_id = 2;
+  bytes buffer = 3;
+  uint32 result_deleted_count = 4;
+}
+
+message DeleteRange {
+  uint32 table_id = 1;
+  uint32 col_id = 2;
+  bytes buffer = 3;
+  uint32 result_deleted_count = 4;
+}
+
+message CreateTable {
+  bytes schema_buffer = 1;
+  uint32 result_table_id = 2;
+}
+
+message GetTableId {
+  bytes buffer = 1;
+  uint32 result_table_id = 2;
+}
+
+message Iter {
+  uint32 table_id = 1;
+  bytes result_bytes = 2;
+}
+
+message InstanceEvent {
+  oneof type {
+    Insert insert = 1;
+    DeletePk delete_pk = 2;
+    DeleteValue delete_value = 3;
+    DeleteEq delete_eq = 4;
+    DeleteRange delete_range = 5;
+    CreateTable create_table = 6;
+    GetTableId get_table_id = 7;
+    Iter iter = 8;
+  }
+  uint64 event_start_epoch_micros = 9;
+  uint64 duration_micros = 10;
+}

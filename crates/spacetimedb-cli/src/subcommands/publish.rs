@@ -35,6 +35,13 @@ pub fn cli() -> clap::Command {
                 .long("project-path")
                 .short('p'),
         )
+        .arg(
+            Arg::new("trace_log")
+                .long("trace_log")
+                .help("Turn on diagnostic/performance tracing for this project")
+                .required(false)
+                .action(SetTrue),
+        )
         // TODO(tyler): We should clean up setting an identity for a database in the future
         .arg(Arg::new("identity").long("identity").short('I').required(false))
         .arg(
@@ -75,6 +82,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let path_to_project = args.get_one::<PathBuf>("path_to_project").unwrap();
     let host_type = args.get_one::<String>("host_type").unwrap();
     let clear_database = args.get_flag("clear_database");
+    let trace_log = args.get_flag("trace_log");
     let use_cargo = args.get_flag("use_cargo");
 
     let as_identity = args.get_one::<String>("as_identity");
@@ -124,6 +132,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     url_args.push_str(format!("&host_type={}", host_type).as_str());
+
+    if trace_log {
+        url_args.push_str("&trace_log=true");
+    }
 
     crate::tasks::pre_publish(path_to_project, use_cargo)?;
 
