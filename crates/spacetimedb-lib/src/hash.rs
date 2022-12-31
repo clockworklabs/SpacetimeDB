@@ -1,9 +1,11 @@
+use core::fmt;
+
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 
 pub const HASH_SIZE: usize = 32;
 
-#[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Debug, Hash, Serialize, Deserialize)]
+#[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Serialize, Deserialize)]
 pub struct Hash {
     pub data: [u8; HASH_SIZE],
 }
@@ -30,4 +32,16 @@ impl Hash {
 pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> Hash {
     let data: [u8; HASH_SIZE] = Keccak256::digest(bytes).into();
     Hash { data }
+}
+
+impl fmt::Display for Hash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&hex::encode(&self.data))
+    }
+}
+
+impl fmt::Debug for Hash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Hash").field(&format_args!("{self}")).finish()
+    }
 }

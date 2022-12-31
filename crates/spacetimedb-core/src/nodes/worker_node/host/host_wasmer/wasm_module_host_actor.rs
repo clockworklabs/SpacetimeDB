@@ -5,11 +5,14 @@ use crate::db::messages::transaction::Transaction;
 use crate::db::relational_db::WrapTxWrapper;
 use crate::db::transactional_db::CommitResult;
 use crate::hash::Hash;
-use crate::nodes::worker_node::host::host_controller::{DescribedEntityType, ReducerBudget, ReducerCallResult};
+use crate::nodes::worker_node::host::host_controller::{
+    DescribedEntityType, ReducerBudget, ReducerCallResult, ReducerError,
+};
 use crate::nodes::worker_node::host::instance_env::InstanceEnv;
 use crate::nodes::worker_node::host::module_host::{
     EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHost, ModuleHostActor, ModuleHostCommand,
 };
+use crate::nodes::worker_node::host::ReducerArgs;
 use crate::nodes::worker_node::worker_metrics::{REDUCER_COMPUTE_TIME, REDUCER_COUNT, REDUCER_WRITE_SIZE};
 use crate::nodes::worker_node::{
     client_api::{client_connection_index::ClientActorId, module_subscription_actor::ModuleSubscription},
@@ -40,7 +43,6 @@ const REPEATING_REDUCER_DUNDER: &str = "__repeating_reducer__";
 // repeaters.
 const DESCRIBE_REPEATING_REDUCER_DUNDER: &str = "__describe_repeating_reducer__";
 
-const CREATE_TABLE_DUNDER: &str = "__create_table__";
 const DESCRIBE_TABLE_DUNDER: &str = "__describe_table__";
 
 const INIT_PANIC_DUNDER: &str = "__init_panic__";
@@ -280,11 +282,21 @@ impl WasmModuleHostActor {
     }
 
     fn init_database(&mut self) -> Result<(), anyhow::Error> {
-        for f in self.module.exports().functions() {
-            if f.name().starts_with(CREATE_TABLE_DUNDER) {
-                self.call_create_table(&f.name()[CREATE_TABLE_DUNDER.len()..])?;
-            }
-        }
+        let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
+        let mut tx_ = stdb.begin_tx();
+        let (tx, stdb) = tx_.get();
+        self.description_cache
+            .iter()
+            .filter_map(|(name, entity)| match entity {
+                EntityDef::Table(t) => Some((name, t)),
+                _ => None,
+            })
+            .try_for_each(|(name, table)| {
+                stdb.create_table(tx, name, table.tuple.clone())
+                    .map(drop)
+                    .with_context(|| format!("failed to create table {name}"))
+            })?;
+        tx_.commit()?.expect("TODO: retry?");
 
         // TODO: call __create_index__IndexName
 
@@ -318,13 +330,6 @@ impl WasmModuleHostActor {
         self.subscription.remove_subscriber(client_id)
     }
 
-    fn call_create_table(&self, create_table_name: &str) -> Result<(), anyhow::Error> {
-        let create_table_symbol = format!("{}{}", CREATE_TABLE_DUNDER, create_table_name);
-        let (_tx, _consumed_energy, _remaining_energy, _repeat_duration) =
-            self.execute_reducer(&create_table_symbol, None, [])?;
-        Ok(())
-    }
-
     fn call_migrate(&self, migrate_name: &str) -> Result<(), anyhow::Error> {
         let migrate_symbol = format!("{}{}", MIGRATE_DATABASE_DUNDER, migrate_name);
         let (_tx, _consumed_energy, _remaining_energy, _repeat_duration) =
@@ -337,18 +342,28 @@ impl WasmModuleHostActor {
         caller_identity: Hash,
         reducer_name: &str,
         budget: ReducerBudget,
-        arg_bytes: &[u8],
+        args: ReducerArgs,
     ) -> Result<ReducerCallResult, anyhow::Error> {
         let start_instant = Instant::now();
 
-        // TODO: validate arg_bytes
-        let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
+        let reducer_descr = match self.description_cache.get(reducer_name) {
+            // Note if it's not a reducer, we pretend it does not exist.
+            Some(EntityDef::Reducer(desc)) => desc,
+            _ => {
+                return Err(anyhow!(ReducerError::NotFound(String::from(reducer_name))));
+            }
+        };
+
+        // Decode the JSON using the defs of each of the reducer args.
+        // TODO: this should eventually be done a level up, at the call entry site (websocket or
+        // Rest service), and potentially be based on the Content-Type of the inbound request.
+        let args_as_tuple = args.into_tuple(reducer_descr)?;
 
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
         let arguments = ReducerArguments::new(
             spacetimedb_lib::Hash::from_arr(&caller_identity.data),
             timestamp,
-            Vec::from(arg_bytes),
+            args_as_tuple,
         );
 
         log::trace!("Calling reducer {} with a budget of {}", reducer_name, budget.0);
@@ -356,11 +371,11 @@ impl WasmModuleHostActor {
         // TODO: It's possible to push this down further into execute_reducer, and write directly
         // into the WASM memory, but ModuleEvent.function_call also wants a copy, so it doesn't
         // quite work.
-        let mut new_arg_bytes = Vec::with_capacity(arguments.encoded_size());
-        arguments.encode(&mut new_arg_bytes);
+        let arg_bytes = arguments.encode_to_vec();
 
+        let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
         let (tx, energy_quanta_used, energy_remaining, _repeat_duration) =
-            self.execute_reducer(&reducer_symbol, Some(budget), new_arg_bytes)?;
+            self.execute_reducer(&reducer_symbol, Some(budget), &arg_bytes)?;
 
         let (committed, status, budget_exceeded) = if let Some(tx) = tx {
             (true, EventStatus::Committed(tx.writes), false)
@@ -373,12 +388,13 @@ impl WasmModuleHostActor {
 
         let host_execution_duration = start_instant.elapsed();
 
+        let arg_bytes = serde_json::to_vec(&arguments.arguments.serialize_args_with_schema(reducer_descr)).unwrap();
         let event = ModuleEvent {
             timestamp,
             caller_identity,
             function_call: ModuleFunctionCall {
                 reducer: reducer_name.to_string(),
-                arg_bytes: arg_bytes.to_owned(),
+                arg_bytes,
             },
             status,
             energy_quanta_used,
@@ -403,8 +419,7 @@ impl WasmModuleHostActor {
         let delta_time = timestamp - prev_call_time;
         let arguments = RepeatingReducerArguments::new(timestamp, delta_time);
 
-        let mut arg_bytes = Vec::with_capacity(arguments.encoded_size());
-        arguments.encode(&mut arg_bytes);
+        let arg_bytes = arguments.encode_to_vec();
 
         // TODO(ryan): energy consumption from repeating reducers needs to be accounted for, for now
         // we run with default giant budget. The logistical problem here is that I'd rather not do
@@ -447,8 +462,7 @@ impl WasmModuleHostActor {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
         let arguments = ConnectDisconnectArguments::new(spacetimedb_lib::Hash::from_arr(&identity.data), timestamp);
 
-        let mut new_arg_bytes = Vec::with_capacity(arguments.encoded_size());
-        arguments.encode(&mut new_arg_bytes);
+        let new_arg_bytes = arguments.encode_to_vec();
 
         let reducer_symbol = if connected {
             IDENTITY_CONNECTED_DUNDER
@@ -701,11 +715,11 @@ impl ModuleHostActor for WasmModuleHostActor {
                 caller_identity,
                 reducer_name,
                 budget,
-                arg_bytes,
+                args,
                 respond_to,
             } => {
                 respond_to
-                    .send(self.call_reducer(caller_identity, &reducer_name, budget, &arg_bytes))
+                    .send(self.call_reducer(caller_identity, &reducer_name, budget, args))
                     .unwrap();
                 false
             }

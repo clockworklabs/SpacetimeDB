@@ -1,6 +1,9 @@
+use core::fmt;
+
 use serde::{Deserialize, Serialize};
 
 use crate::buffer::{BufReader, BufWriter, DecodeError};
+use crate::fmt_fn;
 
 // NOTICE!! every time you make a breaking change to the wire format, you MUST
 //          bump `SCHEMA_FORMAT_VERSION` in lib.rs!
@@ -78,6 +81,27 @@ impl TupleDef {
     }
 }
 
+impl fmt::Display for TupleDef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("tuple ")?;
+        if let Some(name) = &self.name {
+            write!(f, "{name} ")?;
+        }
+        f.debug_map()
+            .entries(self.elements.iter().enumerate().map(|(i, el)| {
+                let key = fmt_fn(move |f| {
+                    write!(f, "{i}")?;
+                    if let Some(name) = &el.name {
+                        write!(f, " ({name})")?;
+                    }
+                    Ok(())
+                });
+                (key, fmt_fn(|f| el.element_type.fmt(f)))
+            }))
+            .finish()
+    }
+}
+
 // TODO: probably implement this with a tuple but store whether the tuple
 // is a sum tuple or a product tuple, then we have uniformity over types
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -93,6 +117,24 @@ impl EnumDef {
 
     pub fn encode(&self, bytes: &mut impl BufWriter) {
         encode_vec_fn(bytes, &self.variants, ElementDef::encode)
+    }
+}
+
+impl fmt::Display for EnumDef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("enum ")?;
+        f.debug_map()
+            .entries(self.variants.iter().enumerate().map(|(i, el)| {
+                let key = fmt_fn(move |f| {
+                    write!(f, "{i}")?;
+                    if let Some(name) = &el.name {
+                        write!(f, " ({name})")?;
+                    }
+                    Ok(())
+                });
+                (key, fmt_fn(|f| el.element_type.fmt(f)))
+            }))
+            .finish()
     }
 }
 
@@ -137,6 +179,29 @@ pub enum PrimitiveType {
     String,
     Bytes,
     Hash,
+}
+impl fmt::Display for PrimitiveType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(match self {
+            PrimitiveType::Unit => "unit",
+            PrimitiveType::Bool => "bool",
+            PrimitiveType::I8 => "i8",
+            PrimitiveType::U8 => "u8",
+            PrimitiveType::I16 => "i16",
+            PrimitiveType::U16 => "u16",
+            PrimitiveType::I32 => "i32",
+            PrimitiveType::U32 => "u32",
+            PrimitiveType::I64 => "i64",
+            PrimitiveType::U64 => "u64",
+            PrimitiveType::I128 => "i128",
+            PrimitiveType::U128 => "u128",
+            PrimitiveType::F32 => "f32",
+            PrimitiveType::F64 => "f64",
+            PrimitiveType::String => "string",
+            PrimitiveType::Bytes => "bytes",
+            PrimitiveType::Hash => "hash",
+        })
+    }
 }
 #[allow(non_upper_case_globals)]
 impl TypeDef {
@@ -225,6 +290,17 @@ impl TypeDef {
                 PrimitiveType::Unit => 0x12,
                 PrimitiveType::Hash => 0x13,
             }),
+        }
+    }
+}
+
+impl fmt::Display for TypeDef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TypeDef::Primitive(p) => p.fmt(f),
+            TypeDef::Enum(enu) => enu.fmt(f),
+            TypeDef::Tuple(tup) => tup.fmt(f),
+            TypeDef::Vec { element_type } => write!(f, "vec<{element_type}>"),
         }
     }
 }

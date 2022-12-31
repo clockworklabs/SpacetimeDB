@@ -28,7 +28,8 @@ use crate::nodes::worker_node::client_api::proxy::proxy_to_control_node_client_a
 use crate::nodes::worker_node::client_api::routes::database::DBCallErr::NoSuchDatabase;
 use crate::nodes::worker_node::database_logger::DatabaseLogger;
 use crate::nodes::worker_node::host::host_controller;
-use crate::nodes::worker_node::host::host_controller::DescribedEntityType;
+use crate::nodes::worker_node::host::host_controller::{DescribedEntityType, ReducerError};
+use crate::nodes::worker_node::host::ReducerArgs;
 use crate::nodes::worker_node::worker_db;
 use crate::protobuf::control_db::DatabaseInstance;
 use crate::sql;
@@ -54,22 +55,20 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     let (caller_identity, caller_identity_token) = get_or_create_creds_from_header(auth_header, true).await?.unwrap();
 
     let body = state.borrow_mut::<Body>();
-    let mut data = BytesMut::new();
-    while let Some(d) = body.data().await {
-        match d {
-            Ok(d) => data.put(d),
-            Err(err) => {
-                log::debug!("{}", err);
-                return Err(
-                    HandlerError::from(anyhow!("Error with request body.")).with_status(StatusCode::BAD_REQUEST)
-                );
-            }
-        };
-    }
-    if data.len() == 0 {
+    let data = hyper::body::to_bytes(body).await?;
+    if data.is_empty() {
         return Err(HandlerError::from(anyhow!("Missing request body.")).with_status(StatusCode::BAD_REQUEST));
     }
-    let arg_bytes = data.to_vec();
+    let args = ReducerArgs::Json(data);
+
+    for database in worker_db::_get_databases() {
+        let address = Address::from_slice(database.address.as_slice());
+        log::debug!("Have database {}", address.to_hex());
+    }
+
+    for instance in worker_db::get_database_instances() {
+        log::debug!("Have instance {:?}", instance);
+    }
 
     let database = match worker_db::get_database_by_address(&address) {
         Some(database) => database,
@@ -90,10 +89,7 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     let instance_id = database_instance.id;
     let host = host_controller::get_host();
 
-    let result = match host
-        .call_reducer(instance_id, caller_identity, &reducer, arg_bytes)
-        .await
-    {
+    let result = match host.call_reducer(instance_id, caller_identity, &reducer, args).await {
         Ok(rcr) => {
             if rcr.budget_exceeded {
                 log::warn!(
@@ -107,7 +103,20 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
             rcr
         }
         Err(e) => {
-            log::debug!("Unable to call {}", e);
+            if e.is::<ReducerError>() {
+                let re = e.downcast::<ReducerError>()?;
+                return match &re {
+                    ReducerError::NotFound(reducer_name) => {
+                        log::debug!("Attempt to call non-existent reducer {}", reducer_name);
+                        Err(HandlerError::from(re).with_status(StatusCode::NOT_FOUND))
+                    }
+                    ReducerError::InvalidArgs => {
+                        log::debug!("Attempt to call reducer with invalid arguments");
+                        Err(HandlerError::from(re).with_status(StatusCode::BAD_REQUEST))
+                    }
+                };
+            }
+            log::debug!("Error while invoking reducer {}", e);
             return Err(HandlerError::from(anyhow!("Database instance not ready."))
                 .with_status(StatusCode::SERVICE_UNAVAILABLE));
         }

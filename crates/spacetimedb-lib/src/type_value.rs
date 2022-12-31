@@ -1,7 +1,8 @@
 use crate::error::LibError;
+use crate::fmt_fn;
 use crate::{
     buffer::{BufReader, BufWriter, DecodeError},
-    type_def::{EnumDef, TupleDef, TypeDef},
+    type_def::{ElementDef, EnumDef, TupleDef, TypeDef},
     DataKey, Hash,
 };
 use enum_as_inner::EnumAsInner;
@@ -28,18 +29,25 @@ pub struct TupleValue {
     pub elements: Box<[TypeValue]>,
 }
 
+impl TupleValue {
+    fn fmt_inner(&self, show_tag: bool, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if show_tag {
+            f.write_str("<tuple> ")?
+        }
+        f.debug_map()
+            .entries(
+                self.elements
+                    .iter()
+                    .enumerate()
+                    .map(|(i, e)| (i, fmt_fn(|f| e.fmt_inner(show_tag, f)))),
+            )
+            .finish()
+    }
+}
+
 impl fmt::Display for TupleValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{{")?;
-        for (i, e) in self.elements.iter().enumerate() {
-            if i < self.elements.len() - 1 {
-                write!(f, "{}: {}, ", i, e)?;
-            } else {
-                write!(f, "{}: {}", i, e)?;
-            }
-        }
-        write!(f, "}}")?;
-        Ok(())
+        self.fmt_inner(true, f)
     }
 }
 
@@ -66,8 +74,12 @@ impl TupleValue {
     }
 
     pub fn decode(tuple_def: &TupleDef, bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
-        let mut elements = Vec::with_capacity(tuple_def.elements.len());
-        for elem in &tuple_def.elements {
+        Self::decode_from_elements(&tuple_def.elements, bytes)
+    }
+
+    pub fn decode_from_elements(defs: &[ElementDef], bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
+        let mut elements = Vec::with_capacity(defs.len());
+        for elem in defs {
             // TODO: sort by tags or use the tags in some way or remove the tags from the def
             elements.push(TypeValue::decode(&elem.element_type, bytes)?);
         }
@@ -81,6 +93,10 @@ impl TupleValue {
         for element in &*self.elements {
             element.encode(bytes);
         }
+    }
+
+    pub fn serialize_args_with_schema<'a>(&'a self, schema: &'a crate::ReducerDef) -> impl serde::Serialize + 'a {
+        crate::serde_mapping::ReducerArgsWithSchema { value: self, schema }
     }
 
     pub fn get_field(&self, index: usize, named: Option<&'static str>) -> Result<&TypeValue, LibError> {
@@ -123,6 +139,26 @@ impl TupleValue {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct EnumValue {
     pub element_value: ElementValue,
+}
+
+impl EnumValue {
+    fn fmt_inner(&self, show_tag: bool, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if show_tag {
+            f.write_str("<enum>")?;
+        }
+        write!(f, ".{}: ", self.element_value.tag)?;
+        self.element_value.type_value.fmt_inner(show_tag, f)
+    }
+}
+
+impl fmt::Display for EnumValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "<enum>.{}: {}",
+            self.element_value.tag, self.element_value.type_value
+        )
+    }
 }
 
 impl EnumValue {
@@ -430,41 +466,55 @@ impl Ord for TypeValue {
     }
 }
 
-impl fmt::Display for TypeValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TypeValue::Tuple(v) => write!(f, "{}", v),
-            TypeValue::Enum(_) => write!(f, "<enum>"),
-            TypeValue::Vec(v) => {
-                write!(f, "[")?;
-                for (i, t) in v.iter().enumerate() {
-                    if i < v.len() - 1 {
-                        write!(f, "{}, ", t)?;
-                    } else {
-                        write!(f, "{}", t)?;
-                    }
+impl TypeValue {
+    fn fmt_inner(&self, show_tag: bool, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        macro_rules! w {
+            ($tag:literal, $($fmt:tt)*) => {{
+                if show_tag {
+                    f.write_str(concat!("<", $tag, "> "))?
                 }
-                write!(f, "]")?;
-                Ok(())
+                write!(f, $($fmt)*)
+            }};
+        }
+        match self {
+            TypeValue::Tuple(v) => v.fmt_inner(show_tag, f),
+            TypeValue::Enum(v) => v.fmt_inner(show_tag, f),
+            TypeValue::Vec(v) => {
+                if show_tag {
+                    f.write_str("<list> ")?;
+                }
+                f.debug_list()
+                    .entries(v.iter().map(|t| fmt_fn(|f| t.fmt_inner(show_tag, f))))
+                    .finish()
             }
-            TypeValue::U8(n) => write!(f, "{}", n),
-            TypeValue::U16(n) => write!(f, "{}", n),
-            TypeValue::U32(n) => write!(f, "{}", n),
-            TypeValue::U64(n) => write!(f, "{}", n),
-            TypeValue::U128(n) => write!(f, "{}", n),
-            TypeValue::I8(n) => write!(f, "{}", n),
-            TypeValue::I16(n) => write!(f, "{}", n),
-            TypeValue::I32(n) => write!(f, "{}", n),
-            TypeValue::I64(n) => write!(f, "{}", n),
-            TypeValue::I128(n) => write!(f, "{}", n),
-            TypeValue::Bool(n) => write!(f, "{}", n),
-            TypeValue::F32(n) => write!(f, "{}", n),
-            TypeValue::F64(n) => write!(f, "{}", n),
-            TypeValue::String(n) => write!(f, "{}", n),
-            TypeValue::Bytes(bytes) => write!(f, "{}", hex::encode(bytes)),
-            TypeValue::Hash(h) => write!(f, "{}", hex::encode(h.data)),
+            TypeValue::U8(n) => w!("u8", "{n}"),
+            TypeValue::U16(n) => w!("u16", "{n}"),
+            TypeValue::U32(n) => w!("u32", "{n}"),
+            TypeValue::U64(n) => w!("u64", "{n}"),
+            TypeValue::U128(n) => w!("u128", "{n}"),
+            TypeValue::I8(n) => w!("i8", "{n}"),
+            TypeValue::I16(n) => w!("i16", "{n}"),
+            TypeValue::I32(n) => w!("i32", "{n}"),
+            TypeValue::I64(n) => w!("i64", "{n}"),
+            TypeValue::I128(n) => w!("i128", "{n}"),
+            TypeValue::Bool(n) => w!("bool", "{n}"),
+            TypeValue::F32(n) => w!("f32", "{n}"),
+            TypeValue::F64(n) => w!("f64", "{n}"),
+            TypeValue::String(n) => w!("string", "{n:?}"),
+            TypeValue::Bytes(bytes) => w!("bytes", "\"{}\"", bytes.escape_ascii()),
+            TypeValue::Hash(h) => w!("hash", "{h}"),
             TypeValue::Unit => write!(f, "<unit>"),
         }
+    }
+
+    pub fn fmt_raw(&self) -> impl fmt::Display + '_ {
+        fmt_fn(|f| self.fmt_inner(false, f))
+    }
+}
+
+impl fmt::Display for TypeValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.fmt_inner(true, f)
     }
 }
 

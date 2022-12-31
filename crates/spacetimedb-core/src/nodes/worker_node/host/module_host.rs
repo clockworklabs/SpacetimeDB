@@ -6,6 +6,8 @@ use spacetimedb_lib::EntityDef;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
+use super::ReducerArgs;
+
 #[derive(Debug, Clone)]
 pub enum EventStatus {
     Committed(Vec<Write>),
@@ -40,7 +42,7 @@ pub enum ModuleHostCommand {
         caller_identity: Hash,
         reducer_name: String,
         budget: ReducerBudget,
-        arg_bytes: Vec<u8>,
+        args: ReducerArgs,
         respond_to: oneshot::Sender<Result<ReducerCallResult, anyhow::Error>>,
     },
     CallRepeatingReducer {
@@ -126,7 +128,7 @@ impl ModuleHost {
         caller_identity: Hash,
         reducer_name: String,
         budget: ReducerBudget,
-        arg_bytes: Vec<u8>,
+        args: ReducerArgs,
     ) -> Result<ReducerCallResult, anyhow::Error> {
         let (tx, rx) = oneshot::channel::<Result<ReducerCallResult, anyhow::Error>>();
         self.tx
@@ -134,7 +136,7 @@ impl ModuleHost {
                 caller_identity,
                 reducer_name,
                 budget,
-                arg_bytes,
+                args,
                 respond_to: tx,
             })
             .await?;

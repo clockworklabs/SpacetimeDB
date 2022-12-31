@@ -2,6 +2,7 @@
 pub mod io;
 mod impls;
 
+use once_cell::sync::OnceCell;
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
 use spacetimedb_lib::type_def::TableDef;
 use spacetimedb_lib::{PrimaryKey, TupleDef, TupleValue, TypeDef};
@@ -25,7 +26,7 @@ use spacetimedb_bindings_sys::BindingError;
 
 #[doc(hidden)]
 pub mod __private {
-    pub use once_cell::sync::OnceCell;
+    pub use once_cell::sync::{Lazy, OnceCell};
 }
 
 #[no_mangle]
@@ -207,15 +208,12 @@ pub trait TupleType: Sized + 'static {
     fn get_tupledef() -> TupleDef;
 
     #[doc(hidden)]
-    fn describe_tuple() -> u64 {
+    fn describe_tuple() -> Box<[u8]> {
         // const _: () = assert!(std::mem::size_of::<usize>() == std::mem::size_of::<u32>());
         let tuple_def = Self::get_tupledef();
         let mut bytes = vec![];
         tuple_def.encode(&mut bytes);
-        let offset = bytes.as_ptr() as u64;
-        let length = bytes.len() as u64;
-        std::mem::forget(bytes);
-        offset << 32 | length
+        bytes.into()
     }
 }
 
@@ -256,18 +254,19 @@ pub trait TableType: TupleType + FromTuple + IntoTuple {
         create_table(Self::TABLE_NAME, tuple_def)
     }
 
-    fn get_tabledef() -> TableDef {
-        TableDef {
+    fn __tabledef_cell() -> &'static OnceCell<TableDef>;
+    fn get_tabledef() -> &'static TableDef {
+        Self::__tabledef_cell().get_or_init(|| TableDef {
             tuple: Self::get_tupledef(),
             unique_columns: Self::UNIQUE_COLUMNS.to_owned(),
-        }
+        })
     }
 
-    fn describe_table() -> u64 {
+    fn describe_table() -> Box<[u8]> {
         let table_def = Self::get_tabledef();
         let mut bytes = vec![];
         table_def.encode(&mut bytes);
-        sys::pack_slice(bytes.into())
+        bytes.into()
     }
 
     fn table_id() -> u32;

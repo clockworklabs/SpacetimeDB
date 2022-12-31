@@ -4,6 +4,7 @@ use crate::hash::Hash;
 use crate::json::client_api::IdentityTokenJson;
 use crate::json::client_api::MessageJson;
 use crate::nodes::worker_node::host::host_controller;
+use crate::nodes::worker_node::host::ReducerArgs;
 use crate::nodes::worker_node::worker_db;
 use crate::nodes::worker_node::worker_metrics::{
     WEBSOCKET_REQUESTS, WEBSOCKET_REQUEST_MSG_SIZE, WEBSOCKET_SENT, WEBSOCKET_SENT_MSG_SIZE,
@@ -281,13 +282,10 @@ impl ClientConnection {
         match message.r#type {
             Some(message::Type::FunctionCall(f)) => {
                 let reducer = f.reducer;
-                let arg_bytes = f.arg_bytes;
+                let args = ReducerArgs::Json(f.arg_bytes.into());
 
                 let host = host_controller::get_host();
-                match host
-                    .call_reducer(instance_id, client_id.identity, &reducer, arg_bytes)
-                    .await
-                {
+                match host.call_reducer(instance_id, client_id.identity, &reducer, args).await {
                     Ok(_) => {}
                     Err(e) => {
                         log::error!("{}", e)
@@ -310,23 +308,18 @@ impl ClientConnection {
             .with_label_values(&[format!("{}", instance_id).as_str(), "text"])
             .inc();
 
-        let v: serde_json::Value = serde_json::from_str(&message)?;
-        let obj = v.as_object().ok_or_else(|| anyhow::anyhow!("not object"))?;
-        let reducer = obj
-            .get("fn")
-            .ok_or_else(|| anyhow::anyhow!("no fn"))?
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("can't convert fn to str"))?;
-        let args = obj.get("args").ok_or_else(|| anyhow::anyhow!("no args"))?;
-        let arg_bytes = args.to_string().as_bytes().to_vec();
-
-        // TODO(cloutiertyler): should be checking message type as in the above case
+        #[derive(serde::Deserialize)]
+        struct Call<'a> {
+            #[serde(borrow, rename = "fn")]
+            func: std::borrow::Cow<'a, str>,
+            args: &'a serde_json::value::RawValue,
+        }
+        let bytes = Bytes::from(message);
+        let Call { func, args } = serde_json::from_slice(&bytes)?;
+        let args = ReducerArgs::Json(bytes.slice_ref(args.get().as_bytes()));
 
         let host = host_controller::get_host();
-        match host
-            .call_reducer(instance_id, client_id.identity, reducer, arg_bytes)
-            .await
-        {
+        match host.call_reducer(instance_id, client_id.identity, &func, args).await {
             Ok(_) => {}
             Err(e) => {
                 log::error!("{}", e)

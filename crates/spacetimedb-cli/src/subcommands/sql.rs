@@ -103,11 +103,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         schema
             .elements
             .iter()
-            .map(|e| e.name.as_ref().cloned().unwrap_or(format!("{}", e.tag))),
+            .map(|e| e.name.clone().unwrap_or_else(|| format!("column {}", e.tag))),
     );
 
     for row in rows {
-        builder.add_record(row.iter().map(ToString::to_string));
+        builder.add_record(row.iter().map(|v| v.fmt_raw()));
     }
 
     let table = builder.build().with(Style::psql());

@@ -3,3 +3,5 @@ mod host_wasmer;
 mod instance_env;
 pub(crate) mod module_host;
 mod wasm_common;
+
+pub(super) use host_controller::ReducerArgs;

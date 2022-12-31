@@ -1,0 +1,14 @@
+---
+source: crates/spacetimedb-lib/tests/serde.rs
+expression: "de_json({\n    \"foo\": 42,\n    \"bar\": \"404040FFFF0A48656C6C6F\",\n    \"baz\": [\"heyyyyyy\", \"hooo\"],\n    \"quux\": { \"Hash\": \"54a3e6d2b0959deaacf102292b1cbd6fcbb8cf237f73306e27ed82c3153878aa\" },\n    \"and_peggy\": 3.141592653589793238426\n})"
+---
+<tuple> {
+    0: <u32> 42,
+    1: <bytes> "@@@\xff\xff\nHello",
+    2: <list> [
+        <string> "heyyyyyy",
+        <string> "hooo",
+    ],
+    3: <enum>.0: <hash> 54a3e6d2b0959deaacf102292b1cbd6fcbb8cf237f73306e27ed82c3153878aa,
+    4: <f64> 3.141592653589793,
+}

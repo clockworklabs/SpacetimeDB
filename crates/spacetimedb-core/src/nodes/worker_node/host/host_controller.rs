@@ -4,13 +4,15 @@ use crate::nodes::worker_node::host::module_host::ModuleHost;
 use crate::nodes::worker_node::worker_budget;
 use crate::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
 use crate::protobuf::control_db::HostType;
-use anyhow;
+use anyhow::{self, Context};
+use bytes::Bytes;
 use lazy_static::lazy_static;
 use serde::Serialize;
-use spacetimedb_lib::EntityDef;
+use spacetimedb_lib::{EntityDef, ReducerDef, TupleValue};
 use std::fmt::{Display, Formatter};
 use std::time::Duration;
 use std::{collections::HashMap, sync::Mutex};
+use thiserror::Error;
 
 lazy_static! {
     pub static ref HOST: HostController = HostController::new();
@@ -74,6 +76,34 @@ pub struct ReducerCallResult {
     pub budget_exceeded: bool,
     pub energy_quanta_used: i64,
     pub host_execution_duration: Duration,
+}
+
+/// Returned from call_reducer if the reducer does not exist.
+#[derive(Error, Debug, Clone)]
+pub enum ReducerError {
+    #[error("Reducer not found: {0}")]
+    NotFound(String),
+    #[error("Invalid arguments for reducer")]
+    InvalidArgs,
+}
+
+#[derive(Debug)]
+pub enum ReducerArgs {
+    Json(Bytes),
+}
+
+impl ReducerArgs {
+    pub(super) fn into_tuple(self, schema: &ReducerDef) -> anyhow::Result<TupleValue> {
+        match self {
+            ReducerArgs::Json(json) => {
+                use serde::de::DeserializeSeed;
+                let mut de = serde_json::Deserializer::from_slice(&json);
+                let args = schema.deserialize(&mut de).context(ReducerError::InvalidArgs)?;
+                de.end()?;
+                Ok(args)
+            }
+        }
+    }
 }
 
 impl HostController {
@@ -185,19 +215,14 @@ impl HostController {
         instance_id: u64,
         caller_identity: Hash,
         reducer_name: &str,
-        arg_bytes: impl AsRef<[u8]>,
+        args: ReducerArgs,
     ) -> Result<ReducerCallResult, anyhow::Error> {
         let module_host = self.module_host(instance_id)?;
         let max_spend = worker_budget::max_tx_spend(&module_host.identity);
         let budget = ReducerBudget(max_spend);
 
         let result = module_host
-            .call_reducer(
-                caller_identity,
-                reducer_name.into(),
-                budget,
-                arg_bytes.as_ref().to_vec(),
-            )
+            .call_reducer(caller_identity, reducer_name.into(), budget, args)
             .await;
         match result {
             Ok(rcr) => {

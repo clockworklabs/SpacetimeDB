@@ -47,7 +47,7 @@ gotham_derive = "0.7"
 hyper = "0.14.18"
 log4rs = { version = "1.0.0", features = ["background_rotation", "rolling_file_appender", "compound_policy", "size_trigger", "fixed_window_roller"] }
 serde = "1.0.136"
-serde_json = "1.0"
+serde_json = { version = "1.0", features = ["raw_value"] }
 anyhow = { version = "1.0.57", features = ["backtrace"] }
 thiserror = "1.0.37"
 jsonwebtoken = { version = "8.1.0" }

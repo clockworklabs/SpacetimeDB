@@ -3,9 +3,9 @@ extern crate proc_macro;
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{FnArg, ItemStruct};
+use syn::ItemStruct;
 
-fn type_to_tuple_schema(arg_name: Option<String>, col_num: u8, ty: &syn::Type) -> TokenStream {
+pub(crate) fn type_to_tuple_schema(arg_name: Option<String>, col_num: u8, ty: &syn::Type) -> TokenStream {
     let arg_name_token = match arg_name {
         None => {
             quote! { None }
@@ -23,35 +23,15 @@ fn type_to_tuple_schema(arg_name: Option<String>, col_num: u8, ty: &syn::Type) -
     }
 }
 
-pub(crate) fn args_to_tuple_schema<'a>(args: impl Iterator<Item = &'a FnArg>) -> Vec<TokenStream> {
-    let mut elements = Vec::new();
-    let mut col_num: u8 = 0;
-    for arg in args {
-        match arg {
-            FnArg::Receiver(_) => {
-                // FIXME: should we error here maybe?
-                continue;
-            }
-            FnArg::Typed(arg) => {
-                let argument = if let syn::Pat::Ident(pat_ident) = *arg.pat.clone() {
-                    Some(pat_ident.ident.to_string())
-                } else {
-                    None
-                };
-                elements.push(type_to_tuple_schema(argument, col_num, &arg.ty));
-                col_num += 1;
-            }
-        }
-    }
-    elements
-}
-
 /// This returns a function which will return the schema (TypeDef) for a struct. The signature
 /// for this function is as follows:
 /// pub fn get_struct_schema() -> spacetimedb::spacetimedb_lib::TypeDef {
 ///   ...
 /// }
-pub(crate) fn autogen_module_struct_to_schema(original_struct: &ItemStruct) -> syn::Result<TokenStream> {
+pub(crate) fn autogen_module_struct_to_schema(
+    original_struct: &ItemStruct,
+    tuple_name: &str,
+) -> syn::Result<TokenStream> {
     let fields = original_struct.fields.iter().enumerate().map(move |(col_num, field)| {
         let field_name = field.ident.as_ref().map(ToString::to_string);
         let col_num: u8 = col_num
@@ -62,7 +42,6 @@ pub(crate) fn autogen_module_struct_to_schema(original_struct: &ItemStruct) -> s
     let fields = fields.collect::<syn::Result<Vec<_>>>()?;
 
     let name = &original_struct.ident;
-    let tuple_name = name.to_string();
     let (impl_generics, ty_generics, where_clause) = original_struct.generics.split_for_impl();
     Ok(quote! {
         impl #impl_generics spacetimedb::TupleType for #name #ty_generics #where_clause {
