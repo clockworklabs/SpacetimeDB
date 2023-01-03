@@ -1,4 +1,4 @@
-use crate::{nodes::worker_node::database_instance_context_controller::DatabaseInstanceContextController, sql::plan};
+use crate::{database_instance_context_controller::DatabaseInstanceContextController, sql::plan};
 use sqlparser::ast::{Query, Select, SelectItem, SetExpr, Statement};
 
 use super::plan::{Plan, PlanError, RelationExpr};

@@ -3086,6 +3086,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-cloud"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "bytes",
+ "clap 4.0.18",
+ "email_address",
+ "futures",
+ "gotham",
+ "gotham_derive",
+ "hostname",
+ "hyper",
+ "lazy_static",
+ "log",
+ "prometheus",
+ "prost",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha1 0.10.5",
+ "sled",
+ "spacetimedb-core",
+ "spacetimedb-lib",
+ "tempdir",
+ "tokio",
+ "tokio-tungstenite",
+ "urlencoding",
+]
+
+[[package]]
 name = "spacetimedb-core"
 version = "0.1.0"
 dependencies = [
@@ -3151,6 +3182,35 @@ dependencies = [
  "serde_json",
  "sha3",
  "thiserror",
+]
+
+[[package]]
+name = "spacetimedb-standalone"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "bytes",
+ "clap 4.0.18",
+ "email_address",
+ "gotham",
+ "gotham_derive",
+ "hostname",
+ "hyper",
+ "lazy_static",
+ "log",
+ "prometheus",
+ "prost",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha1 0.10.5",
+ "sled",
+ "spacetimedb-core",
+ "spacetimedb-lib",
+ "tempdir",
+ "tokio",
+ "tokio-tungstenite",
 ]
 
 [[package]]

@@ -1,5 +1,7 @@
 [workspace]
 members = [
+  "crates/spacetimedb-standalone",
+  "crates/spacetimedb-cloud",
   "crates/spacetimedb-lib",
   "crates/spacetimedb-core",
   "crates/spacetimedb-bindings-sys",

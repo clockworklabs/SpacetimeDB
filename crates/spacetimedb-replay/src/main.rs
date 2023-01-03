@@ -8,10 +8,10 @@ use tempdir::TempDir;
 
 use spacetimedb::address::Address;
 use spacetimedb::hash::hash_bytes;
-use spacetimedb::nodes::worker_node::host::instance_env::InstanceEnv;
-use spacetimedb::nodes::worker_node::host::tracelog::replay::replay_report;
-use spacetimedb::nodes::worker_node::worker_database_instance::WorkerDatabaseInstance;
+use spacetimedb::host::instance_env::InstanceEnv;
+use spacetimedb::host::tracelog::replay::replay_report;
 use spacetimedb::protobuf::control_db::HostType;
+use spacetimedb::worker_database_instance::WorkerDatabaseInstance;
 
 pub fn main() {
     let args: Vec<_> = std::env::args().collect(); // get all arguments passed to app

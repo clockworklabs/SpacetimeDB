@@ -11,7 +11,7 @@ pub struct StmtResult {
     pub rows: Vec<TupleValue>,
 }
 
-pub(crate) fn execute(
+pub fn execute(
     database_instance_id: u64,
     sql_text: String,
 ) -> Result<Vec<Result<StmtResult, anyhow::Error>>, anyhow::Error> {

@@ -2,7 +2,7 @@ use super::{
     plan::{Plan, RelationExpr},
     StmtResult,
 };
-use crate::nodes::worker_node::database_instance_context_controller::DatabaseInstanceContextController;
+use crate::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb_lib::{TupleDef, TupleValue};
 
 pub fn execute_plan(database_instance_id: u64, plan: Plan) -> Result<StmtResult, anyhow::Error> {

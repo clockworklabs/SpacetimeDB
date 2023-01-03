@@ -10,7 +10,10 @@ use hyper::{
     Body, HeaderMap, Response, StatusCode,
 };
 use sha1::{Digest, Sha1};
-use tokio_tungstenite::{tungstenite::protocol::Role, WebSocketStream};
+use tokio_tungstenite::{
+    tungstenite::protocol::{Role, WebSocketConfig},
+    WebSocketStream,
+};
 
 const PROTO_WEBSOCKET: &str = "websocket";
 
@@ -103,9 +106,13 @@ pub fn validate_upgrade(
     Ok((state, headers, key, on_upgrade_value, protocol.to_string()))
 }
 
-pub async fn execute_upgrade(req_id: &str, on_upgrade: OnUpgrade) -> Result<WebSocketStream<Upgraded>, anyhow::Error> {
+pub async fn execute_upgrade(
+    req_id: &str,
+    on_upgrade: OnUpgrade,
+    config: Option<WebSocketConfig>,
+) -> Result<WebSocketStream<Upgraded>, anyhow::Error> {
     let ws = match on_upgrade.await {
-        Ok(upgraded) => WebSocketStream::from_raw_socket(upgraded, Role::Server, None).await,
+        Ok(upgraded) => WebSocketStream::from_raw_socket(upgraded, Role::Server, config).await,
         Err(err) => {
             log::error!("WebSocket init error for req_id {}: {}", req_id, err);
             return Err(anyhow::anyhow!("Upgrade failed."));
