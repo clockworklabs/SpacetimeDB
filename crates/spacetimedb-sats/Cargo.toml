@@ -1,0 +1,20 @@
+[package]
+name = "spacetimedb-sats"
+version = "0.1.0"
+edition = "2021"
+license-file = "LICENSE"
+description = "Spacetime Algebraic Type Notation"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+custom-print = "0.1.0"
+decorum = "0.3.1"
+enum-as-inner = "0.5.0"
+sha3 = "0.10.0"
+serde = { version = "1.0.136", features = ["derive"] }
+hex = "0.4.3"
+
+[dev-dependencies]
+rand = "0.8.5"
+bytes = "1.2.1"

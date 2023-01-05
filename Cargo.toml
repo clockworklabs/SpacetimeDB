@@ -9,6 +9,7 @@ members = [
   "crates/spacetimedb-bench",
   "crates/spacetimedb-bindings-macro",
   "crates/spacetimedb-cli",
+  "crates/spacetimedb-sats",
   "crates/rust-wasm-test",
   "crates/spacetimedb-replay",
 ]
