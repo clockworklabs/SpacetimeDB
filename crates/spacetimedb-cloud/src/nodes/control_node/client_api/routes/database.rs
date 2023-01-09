@@ -45,6 +45,12 @@ struct ReverseDNSParams {
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct DNSQueryParams {}
 
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct SetNameQueryParams {
+    name: String,
+    address: String,
+}
+
 async fn dns(state: &mut State) -> SimpleHandlerResult {
     let DNSParams { database_name } = DNSParams::take_from(state);
     let DNSQueryParams {} = DNSQueryParams::take_from(state);
@@ -290,6 +296,37 @@ async fn delete_database(state: &mut State) -> SimpleHandlerResult {
     Ok(res)
 }
 
+async fn set_name(state: &mut State) -> SimpleHandlerResult {
+    let SetNameQueryParams { address, name } = SetNameQueryParams::take_from(state);
+
+    let headers = state.borrow::<HeaderMap>();
+    let auth_header = headers.get(AUTHORIZATION);
+
+    let creds = get_or_create_creds_from_header(auth_header, false).await?;
+
+    if let None = creds {
+        return Err(HandlerError::from(anyhow!("Invalid credentials.")).with_status(StatusCode::BAD_REQUEST));
+    }
+    let (caller_identity, _) = creds.unwrap();
+
+    let address = Address::from_hex(&address)?;
+
+    let database = match control_db::get_database_by_address(&address).await {
+        Ok(database) => database.unwrap(),
+        Err(_) => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
+    };
+
+    let database_identity = Hash::from_slice(database.identity);
+
+    if database_identity != caller_identity {
+        return Err(HandlerError::from(anyhow!("Identity does not own database.")).with_status(StatusCode::BAD_REQUEST));
+    }
+
+    control_db::spacetime_insert_dns_record(&address, &name).await?;
+
+    Ok(Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap())
+}
+
 pub fn router() -> Router {
     build_simple_router(|route| {
         route
@@ -298,6 +335,10 @@ pub fn router() -> Router {
             .with_query_string_extractor::<DNSQueryParams>()
             .to_async_borrowing(dns);
 
+        route
+            .post("/set_name")
+            .with_query_string_extractor::<SetNameQueryParams>()
+            .to_async_borrowing(set_name);
         route
             .get("/reverse_dns/:database_address")
             .with_path_extractor::<ReverseDNSParams>()
@@ -308,7 +349,6 @@ pub fn router() -> Router {
             .with_path_extractor::<PublishDatabaseParams>()
             .with_query_string_extractor::<PublishDatabaseQueryParams>()
             .to_async_borrowing(publish);
-
         route
             .post("/delete/:address")
             .with_path_extractor::<DeleteDatabaseParams>()

@@ -11,6 +11,7 @@ pub mod list;
 pub mod logs;
 pub mod publish;
 pub mod reversedns;
+pub mod set_name;
 pub mod sql;
 pub mod version;
 

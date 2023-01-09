@@ -248,6 +248,12 @@ struct DescribeQueryParams {
     expand: Option<bool>,
 }
 
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct SetNameQueryParams {
+    name: String,
+    address: String,
+}
+
 async fn describe(state: &mut State) -> SimpleHandlerResult {
     let DescribeParams {
         address,
@@ -736,6 +742,37 @@ async fn delete_database(state: &mut State) -> SimpleHandlerResult {
     Ok(res)
 }
 
+async fn set_name(state: &mut State) -> SimpleHandlerResult {
+    let SetNameQueryParams { address, name } = SetNameQueryParams::take_from(state);
+
+    let headers = state.borrow::<HeaderMap>();
+    let auth_header = headers.get(AUTHORIZATION);
+
+    let creds = get_or_create_creds_from_header(auth_header, false).await?;
+
+    if let None = creds {
+        return Err(HandlerError::from(anyhow!("Invalid credentials.")).with_status(StatusCode::BAD_REQUEST));
+    }
+    let (caller_identity, _) = creds.unwrap();
+
+    let address = Address::from_hex(&address)?;
+
+    let database = match control_db::get_database_by_address(&address).await {
+        Ok(database) => database.unwrap(),
+        Err(_) => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
+    };
+
+    let database_identity = Hash::from_slice(database.identity);
+
+    if database_identity != caller_identity {
+        return Err(HandlerError::from(anyhow!("Identity does not own database.")).with_status(StatusCode::BAD_REQUEST));
+    }
+
+    control_db::spacetime_insert_dns_record(&address, &name).await?;
+
+    Ok(Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap())
+}
+
 // TODO(cloutiertyler): all references to address should become name_or_address
 pub fn router() -> Router {
     build_simple_router(|route| {
@@ -749,6 +786,11 @@ pub fn router() -> Router {
             .get("/reverse_dns/:database_address")
             .with_path_extractor::<ReverseDNSParams>()
             .to_async_borrowing(reverse_dns);
+
+        route
+            .post("/set_name")
+            .with_query_string_extractor::<SetNameQueryParams>()
+            .to_async_borrowing(set_name);
 
         route
             .post("/publish")

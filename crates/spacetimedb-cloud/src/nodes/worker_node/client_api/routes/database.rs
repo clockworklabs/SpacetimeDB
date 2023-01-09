@@ -479,7 +479,7 @@ pub fn router() -> Router {
         route
             .post("/delete/:address")
             .to_async(proxy_to_control_node_client_api);
-
+        route.post("/set_name").to_async(proxy_to_control_node_client_api);
         route
             .get("/subscribe")
             .with_path_extractor::<SubscribeParams>()
