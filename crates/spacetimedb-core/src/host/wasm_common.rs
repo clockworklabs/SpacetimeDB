@@ -96,6 +96,7 @@ pub struct FuncNames {
     // pub reducers: IndexMap<String, String>,
     pub repeaters: Vec<String>,
     pub migrates: Vec<String>,
+    pub conn_disconn: bool,
 }
 impl FuncNames {
     fn validate_signature<T>(kind: &str, ty: &T, name: &str, expected: FuncSig<'_>) -> anyhow::Result<()>
@@ -138,6 +139,8 @@ impl FuncNames {
         if let Some(name) = sym.strip_prefix(MIGRATE_DATABASE_DUNDER) {
             Self::validate_signature("migrate", ty, name, REDUCER_SIG)?;
             self.migrates.push(sym.to_owned());
+        } else if sym == IDENTITY_CONNECTED_DUNDER {
+            self.conn_disconn = true;
         }
         Ok(())
     }

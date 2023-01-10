@@ -367,6 +367,10 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
     }
 
     fn call_connect_disconnect(&mut self, identity: Hash, connected: bool) -> Result<(), anyhow::Error> {
+        if !self.func_names.conn_disconn {
+            return Ok(());
+        }
+
         let start_instant = Instant::now();
 
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
