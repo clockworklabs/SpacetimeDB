@@ -367,7 +367,12 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
     }
 
     fn call_connect_disconnect(&mut self, identity: Hash, connected: bool) -> Result<(), anyhow::Error> {
-        if !self.func_names.conn_disconn {
+        let has_function = if connected {
+            self.func_names.conn
+        } else {
+            self.func_names.disconn
+        };
+        if !has_function {
             return Ok(());
         }
 
