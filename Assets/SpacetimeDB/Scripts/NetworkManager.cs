@@ -87,6 +87,8 @@ namespace SpacetimeDB
 
         public static NetworkManager instance;
 
+        public string TokenKey { get { return GetTokenKey(); } }
+
         protected void Awake()
         {
             if (instance != null)
