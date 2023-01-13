@@ -35,8 +35,9 @@ namespace SpacetimeDB
             }
 
             private readonly string name;
+            private readonly Type clientTableType;
             private readonly TypeDef rowSchema;
-            
+
             // The function to use for decoding a type value
             private Func<TypeValue, object> decoderFunc;
 
@@ -45,9 +46,15 @@ namespace SpacetimeDB
             // Maps from primary key to decoded value
             public readonly ConcurrentDictionary<byte[], (TypeValue, object)> decodedValues;
 
-            public TableCache(string name, TypeDef rowSchema, Func<TypeValue, object> decoderFunc)
+            public Type ClientTableType { get => clientTableType; }
+            public string Name { get => name; }
+            public TypeDef RowSchema { get => rowSchema; }
+
+            public TableCache(Type clientTableType, TypeDef rowSchema, Func<TypeValue, object> decoderFunc)
             {
-                this.name = name;
+                name = clientTableType.Name;
+                this.clientTableType = clientTableType;
+
                 this.rowSchema = rowSchema;
                 this.decoderFunc = decoderFunc;
                 entries = new Dictionary<byte[], (TypeValue, object)>(new ByteArrayComparer());
@@ -68,9 +75,7 @@ namespace SpacetimeDB
                 decoded = (value.Value, decoderFunc(value.Value));
                 decodedValues[pk] = decoded;
                 return decoded;
-            }
-
-            public TypeDef GetSchema() => rowSchema;
+            }            
 
             /// <summary>
             /// Inserts the value into the table. There can be no existing value with the provided pk.
@@ -127,8 +132,10 @@ namespace SpacetimeDB
 
         private readonly ConcurrentDictionary<string, TableCache> tables = new ConcurrentDictionary<string, TableCache>();
 
-        public void AddTable(string name, TypeDef tableRowDef, Func<TypeValue, object> decodeFunc)
+        public void AddTable(Type clientTableType, TypeDef tableRowDef, Func<TypeValue, object> decodeFunc)
         {
+            string name = clientTableType.Name;
+
             if (tables.TryGetValue(name, out _))
             {
                 Debug.LogError($"Table with name already exists: {name}");
@@ -136,7 +143,7 @@ namespace SpacetimeDB
             }
 
             // Initialize this table
-            tables[name] = new TableCache(name, tableRowDef, decodeFunc);
+            tables[name] = new TableCache(clientTableType, tableRowDef, decodeFunc);
         }
         public IEnumerable<object> GetObjects(string name)
         {
