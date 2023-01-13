@@ -52,8 +52,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let client = reqwest::Client::new();
     let mut builder = client.post(format!(
-        "http://{}/database/call/{}/{}",
-        config.host, address, function_name
+        "{}/database/call/{}/{}",
+        config.get_host_url(),
+        address,
+        function_name
     ));
     if let Some(auth_header) = auth_header {
         builder = builder.header("Authorization", auth_header);

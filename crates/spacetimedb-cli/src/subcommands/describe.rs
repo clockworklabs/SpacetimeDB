@@ -53,7 +53,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let res = match entity_name {
         None => {
             let client = reqwest::Client::new();
-            let mut builder = client.get(format!("http://{}/database/schema/{}", config.host, address));
+            let mut builder = client.get(format!("{}/database/schema/{}", config.get_host_url(), address));
             if let Some(auth_header) = auth_header {
                 builder = builder.header("Authorization", auth_header);
             }
@@ -64,8 +64,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
             let client = reqwest::Client::new();
             let mut builder = client.get(format!(
-                "http://{}/database/schema/{}/{}/{}",
-                config.host, address, entity_type, entity_name
+                "{}/database/schema/{}/{}/{}",
+                config.get_host_url(),
+                address,
+                entity_type,
+                entity_name
             ));
             if let Some(auth_header) = auth_header {
                 builder = builder.header("Authorization", auth_header);

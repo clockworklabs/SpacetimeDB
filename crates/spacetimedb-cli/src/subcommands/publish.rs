@@ -142,7 +142,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let path_to_wasm = util::find_wasm_file(path_to_project)?;
     let program_bytes = fs::read(fs::canonicalize(path_to_wasm).unwrap())?;
 
-    let url = format!("http://{}/database/publish{}", config.host, url_args);
+    let url = format!("{}/database/publish{}", config.get_host_url(), url_args);
     let client = reqwest::Client::new();
     let mut builder = client.post(url);
     if let Some(auth_header) = auth_header {

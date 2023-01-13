@@ -50,7 +50,7 @@ pub async fn exec_replay(config: Config, args: &ArgMatches) -> Result<(), anyhow
         Ok(o) => {
             let client = reqwest::Client::new();
             let res = client
-                .post(format!("http://{}/tracelog/replay", config.host))
+                .post(format!("{}/tracelog/replay", config.get_host_url()))
                 .body(o)
                 .send()
                 .await?;
@@ -78,7 +78,7 @@ pub async fn exec_stop(config: Config, args: &ArgMatches) -> Result<(), anyhow::
     };
     let client = reqwest::Client::new();
     let res = client
-        .post(format!("http://{}/tracelog/database/{}/stop", config.host, address))
+        .post(format!("{}/tracelog/database/{}/stop", config.get_host_url(), address))
         .send()
         .await?;
 
@@ -105,7 +105,7 @@ pub async fn exec_get(config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     };
     let client = reqwest::Client::new();
     let res = client
-        .get(format!("http://{}/tracelog/database/{}", config.host, address))
+        .get(format!("{}/tracelog/database/{}", config.get_host_url(), address))
         .send()
         .await?;
 

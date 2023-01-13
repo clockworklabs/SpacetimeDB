@@ -53,7 +53,7 @@ struct ReverseDNSResponse {
 
 pub async fn spacetime_dns(config: &Config, domain_name: &str) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
-    let url = format!("http://{}/database/dns/{}", config.host, domain_name);
+    let url = format!("{}/database/dns/{}", config.get_host_url(), domain_name);
     let res = client.get(url).send().await?;
     let res = res.error_for_status()?;
     let bytes = res.bytes().await.unwrap();
@@ -64,7 +64,7 @@ pub async fn spacetime_dns(config: &Config, domain_name: &str) -> Result<String,
 
 pub async fn spacetime_reverse_dns(config: &Config, addr: &str) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
-    let url = format!("http://{}/database/reverse_dns/{}", config.host, addr);
+    let url = format!("{}/database/reverse_dns/{}", config.get_host_url(), addr);
     let res = client.get(url).send().await?;
     let res = res.error_for_status()?;
     let bytes = res.bytes().await.unwrap();
@@ -123,7 +123,7 @@ pub async fn init_default(config: &mut Config, nickname: Option<String>) -> Resu
     }
 
     let client = reqwest::Client::new();
-    let builder = client.post(format!("http://{}/identity", config.host));
+    let builder = client.post(format!("{}/identity", config.get_host_url()));
 
     if let Some(identity_config) = config.get_default_identity_config() {
         return Ok(InitDefaultResult {

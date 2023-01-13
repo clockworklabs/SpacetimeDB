@@ -205,7 +205,7 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     let client = reqwest::Client::new();
-    let mut builder = client.post(format!("http://{}/identity", config.host));
+    let mut builder = client.post(format!("{}/identity", config.get_host_url()));
 
     if let Some(identity_token) = config.get_default_identity_config() {
         builder = builder.basic_auth("token", Some(identity_token.token.clone()));
@@ -318,7 +318,7 @@ async fn exec_find(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     let email = args.get_one::<String>("email").unwrap().clone();
 
     let client = reqwest::Client::new();
-    let builder = client.get(format!("http://{}/identity?email={}", config.host, email));
+    let builder = client.get(format!("{}/identity?email={}", config.get_host_url(), email));
 
     let res = builder.send().await?;
 
@@ -347,8 +347,10 @@ async fn exec_email(mut config: Config, args: &ArgMatches) -> Result<(), anyhow:
 
     let client = reqwest::Client::new();
     let mut builder = client.post(format!(
-        "http://{}/identity/{}/set-email?email={}",
-        config.host, identity, email
+        "{}/identity/{}/set-email?email={}",
+        config.get_host_url(),
+        identity,
+        email
     ));
 
     if let Some(identity_token) = config.get_identity_config_by_identity(&identity) {

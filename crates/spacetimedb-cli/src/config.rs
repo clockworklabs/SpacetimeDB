@@ -15,6 +15,7 @@ pub struct IdentityConfig {
 #[derive(Deserialize)]
 pub struct RawConfig {
     host: Option<String>,
+    protocol: Option<String>,
     default_identity: Option<String>,
     identity_configs: Option<Vec<IdentityConfig>>,
 }
@@ -22,6 +23,7 @@ pub struct RawConfig {
 #[derive(Serialize)]
 pub struct Config {
     pub host: String,
+    pub protocol: String,
     pub default_identity: Option<String>,
     pub identity_configs: Vec<IdentityConfig>,
 }
@@ -56,6 +58,7 @@ impl Config {
         Self {
             identity_configs: raw.identity_configs.unwrap_or_default(),
             host: raw.host.unwrap_or_else(|| "partner.spacetimedb.net:3000".into()),
+            protocol: raw.protocol.unwrap_or_else(|| "https".into()),
             default_identity: raw.default_identity,
         }
     }
@@ -125,5 +128,9 @@ impl Config {
             }
         }
         self.default_identity = self.identity_configs.first().map(|c| c.identity.clone())
+    }
+
+    pub fn get_host_url(&self) -> String {
+        format!("{}://{}", self.protocol, self.host)
     }
 }

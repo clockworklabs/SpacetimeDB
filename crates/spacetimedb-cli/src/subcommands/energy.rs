@@ -60,7 +60,7 @@ async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), an
     // TODO: this really should be form data in POST body, not query string parameter, but gotham
     // does not support that on the server side without an extension.
     // see https://github.com/gotham-rs/gotham/issues/11
-    let url = format!("http://{}/energy/{}?balance={}", config.host, hex_identity, balance);
+    let url = format!("{}/energy/{}?balance={}", config.get_host_url(), hex_identity, balance);
     let res = client.post(url).send().await?;
 
     if !quiet {
@@ -85,7 +85,7 @@ async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
 
     let client = reqwest::Client::new();
     let res = client
-        .get(format!("http://{}/energy/{}", config.host, hex_identity))
+        .get(format!("{}/energy/{}", config.get_host_url(), hex_identity))
         .send()
         .await?;
 
