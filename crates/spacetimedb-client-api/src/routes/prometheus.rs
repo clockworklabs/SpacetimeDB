@@ -6,7 +6,7 @@ use gotham::{
 };
 use hyper::{Body, Response, StatusCode};
 use serde::{Deserialize, Serialize};
-use spacetimedb::control_db;
+use spacetimedb::control_db::CONTROL_DB;
 use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize)]
@@ -17,7 +17,7 @@ struct SDConfig {
 
 async fn get_sd_config(_state: &mut State) -> SimpleHandlerResult {
     // TODO(cloutiertyler): security
-    let nodes = control_db::get_nodes().await?;
+    let nodes = CONTROL_DB.get_nodes().await?;
 
     let mut targets = Vec::new();
     let labels = HashMap::new();

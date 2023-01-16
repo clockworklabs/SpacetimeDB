@@ -12,6 +12,7 @@ members = [
   "crates/spacetimedb-sats",
   "crates/rust-wasm-test",
   "crates/spacetimedb-replay",
+  "crates/spacetimedb-client-api",
 ]
 default-members = ["crates/spacetimedb-cli"]
 

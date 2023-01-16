@@ -4,7 +4,7 @@ use hyper::http::HeaderValue;
 use hyper::StatusCode;
 use spacetimedb::auth::get_creds_from_header;
 use spacetimedb::auth::identity::encode_token;
-use spacetimedb::control_db;
+use spacetimedb::control_db::CONTROL_DB;
 use spacetimedb::hash::Hash;
 
 /// Given an authorization header we will try to get the identity and token from the auth header (as JWT).
@@ -27,7 +27,7 @@ pub async fn get_or_create_creds_from_header(
         }
     } else {
         if create {
-            let identity = control_db::alloc_spacetime_identity().await?;
+            let identity = CONTROL_DB.alloc_spacetime_identity().await?;
             let token = encode_token(identity)?;
 
             Ok(Some((identity, token)))

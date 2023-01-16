@@ -8,13 +8,13 @@ use gotham::{
 use hyper::{header::AUTHORIZATION, Body, HeaderMap, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use spacetimedb::address::Address;
+use spacetimedb::control_db::CONTROL_DB;
 use spacetimedb::{
     auth::{
         get_creds_from_header,
         identity::{decode_token, encode_token},
         invalid_token_res,
     },
-    control_db,
     hash::Hash,
 };
 
@@ -25,7 +25,7 @@ struct CreateIdentityResponse {
 }
 
 async fn create_identity(_state: &mut State) -> SimpleHandlerResult {
-    let identity = control_db::alloc_spacetime_identity().await?;
+    let identity = CONTROL_DB.alloc_spacetime_identity().await?;
     let token = encode_token(identity)?;
 
     let identity_response = CreateIdentityResponse {
@@ -63,7 +63,7 @@ async fn get_identity(state: &mut State) -> SimpleHandlerResult {
     let lookup = match email {
         None => None,
         Some(email) => {
-            let im = control_db::get_identities_for_email(email.as_str());
+            let im = CONTROL_DB.get_identities_for_email(email.as_str());
             match im {
                 Ok(identities) => {
                     if identities.is_empty() {
@@ -158,7 +158,8 @@ async fn set_email(state: &mut State) -> SimpleHandlerResult {
         }
     };
 
-    control_db::associate_email_spacetime_identity(&identity, &email)
+    CONTROL_DB
+        .associate_email_spacetime_identity(&identity, &email)
         .await
         .unwrap();
 
@@ -197,7 +198,7 @@ async fn get_databases(state: &mut State) -> SimpleHandlerResult {
             };
 
             // Linear scan for all databases that have this identity, and return their addresses
-            let all_dbs = control_db::get_databases().await;
+            let all_dbs = CONTROL_DB.get_databases().await;
             match all_dbs {
                 Ok(all_dbs) => {
                     let matching_dbs = all_dbs.into_iter().filter(|db| db.identity == identity.data);
@@ -222,18 +223,22 @@ async fn get_databases(state: &mut State) -> SimpleHandlerResult {
 
     Ok(res)
 }
+
 pub fn router() -> Router {
     build_simple_router(|route| {
         route
             .get("/")
             .with_query_string_extractor::<GetIdentityQueryParams>()
             .to_async_borrowing(get_identity);
+
         route.post("/").to_async_borrowing(create_identity);
+
         route
             .post("/:identity/set-email")
             .with_path_extractor::<SetEmailParams>()
             .with_query_string_extractor::<SetEmailQueryParams>()
             .to_async_borrowing(set_email);
+
         route
             .get("/:identity/databases")
             .with_path_extractor::<GetDatabasesParams>()

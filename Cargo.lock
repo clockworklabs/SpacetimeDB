@@ -104,6 +104,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8da52d66c7071e2e3fa2a1e5c6d088fec47b593032b254f5e980de8ea54454d6"
 
 [[package]]
+name = "async-trait"
+version = "0.1.60"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "677d1d8ab452a3936018a687b20e6f7cf5363d713b732b8884001317b0e48aa3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3147,15 +3158,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "spacetimedb-cloud"
-version = "0.1.0"
+name = "spacetimedb-client-api"
+version = "0.0.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64",
  "bytes",
  "clap 4.0.32",
  "email_address",
- "futures",
  "gotham",
  "gotham_derive",
  "hostname",
@@ -3169,6 +3180,39 @@ dependencies = [
  "serde_json",
  "sha1 0.10.5",
  "sled",
+ "spacetimedb-core",
+ "spacetimedb-lib",
+ "tempdir",
+ "tokio",
+ "tokio-tungstenite",
+]
+
+[[package]]
+name = "spacetimedb-cloud"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64",
+ "bytes",
+ "clap 4.0.32",
+ "email_address",
+ "futures",
+ "gotham",
+ "gotham_derive",
+ "hostname",
+ "hyper",
+ "itertools",
+ "lazy_static",
+ "log",
+ "prometheus",
+ "prost",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha1 0.10.5",
+ "sled",
+ "spacetimedb-client-api",
  "spacetimedb-core",
  "spacetimedb-lib",
  "tempdir",
@@ -3267,6 +3311,7 @@ name = "spacetimedb-standalone"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64",
  "bytes",
  "clap 4.0.32",
@@ -3284,6 +3329,7 @@ dependencies = [
  "serde_json",
  "sha1 0.10.5",
  "sled",
+ "spacetimedb-client-api",
  "spacetimedb-core",
  "spacetimedb-lib",
  "tempdir",

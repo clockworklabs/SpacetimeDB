@@ -24,4 +24,4 @@ jobs:
           RUSTFLAGS: "-D warnings"
         with:
           command: check
-          args: --all --features odb_rocksdb,odb_sled --all-targets
+          args: --workspace --exclude spacetimedb-cloud --features odb_rocksdb,odb_sled --all-targets

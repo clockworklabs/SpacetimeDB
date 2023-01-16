@@ -1,7 +1,8 @@
 use super::worker_connection::WorkerConnection;
-use crate::nodes::control_node::controller::node_publish_budget_state;
+use crate::nodes::control_node::controller::Controller;
 use hyper::upgrade::Upgraded;
 use lazy_static::lazy_static;
+use spacetimedb::control_db::CONTROL_DB;
 use std::{collections::HashMap, sync::Mutex, time::Duration};
 use tokio::{task::JoinHandle, time::sleep};
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
@@ -75,19 +76,17 @@ impl WorkerConnectionIndex {
         }
         wci.worker_budget_update = Some(tokio::spawn(async move {
             loop {
-                let futures = {
+                let controller = Controller::new(&*CONTROL_DB);
+                let node_ids = {
                     let wci = WORKER_CONNECTION_INDEX.lock().unwrap();
-                    let mut futures = Vec::new();
-                    let mut i = 0;
-                    while i < wci.connections.len() {
-                        let node_id = wci.connections[i].id;
-
-                        futures.push(node_publish_budget_state(node_id));
-                        i += 1;
-                    }
-                    futures
+                    wci.connections.iter().map(|conn| conn.id).collect::<Vec<_>>()
                 };
-                futures::future::join_all(futures).await;
+                futures::future::join_all(
+                    node_ids
+                        .into_iter()
+                        .map(|node_id| controller.node_publish_budget_state(node_id)),
+                )
+                .await;
                 sleep(Duration::from_secs(WORKER_BUDGET_UPDATE_INTERVAL_SECONDS)).await;
             }
         }));

@@ -1,4 +1,3 @@
-use crate::nodes::control_node::prometheus_metrics;
 use gotham::handler::{HandlerFuture, SimpleHandlerResult};
 use gotham::middleware::Middleware;
 use gotham::pipeline::new_pipeline;
@@ -9,6 +8,9 @@ use gotham::state::State;
 use gotham_derive::NewMiddleware;
 use hyper::{Body, Response, StatusCode};
 use std::pin::Pin;
+use std::sync::Arc;
+
+use crate::ApiCtx;
 
 #[derive(Clone, NewMiddleware)]
 pub struct MetricsAuthMiddleware;
@@ -22,18 +24,19 @@ impl Middleware for MetricsAuthMiddleware {
     }
 }
 
-async fn metrics(_state: &mut State) -> SimpleHandlerResult {
+async fn metrics(ctx: &dyn ApiCtx, _state: &mut State) -> SimpleHandlerResult {
     use prometheus::Encoder;
     let encoder = prometheus::TextEncoder::new();
 
     let mut buffer = Vec::new();
-    if let Err(e) = encoder.encode(&prometheus_metrics::REGISTRY.gather(), &mut buffer) {
-        eprintln!("could not encode custom metrics: {}", e);
+
+    if let Err(e) = encoder.encode(&ctx.gather_metrics(), &mut buffer) {
+        log::error!("could not encode custom metrics: {}", e);
     };
     let mut res = match String::from_utf8(buffer.clone()) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("custom metrics could not be from_utf8'd: {}", e);
+            log::error!("custom metrics could not be from_utf8'd: {}", e);
             String::default()
         }
     };
@@ -41,12 +44,12 @@ async fn metrics(_state: &mut State) -> SimpleHandlerResult {
 
     let mut buffer = Vec::new();
     if let Err(e) = encoder.encode(&prometheus::gather(), &mut buffer) {
-        eprintln!("could not encode prometheus metrics: {}", e);
+        log::error!("could not encode prometheus metrics: {}", e);
     };
     let res_custom = match String::from_utf8(buffer.clone()) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("prometheus metrics could not be from_utf8'd: {}", e);
+            log::error!("prometheus metrics could not be from_utf8'd: {}", e);
             String::default()
         }
     };
@@ -58,9 +61,9 @@ async fn metrics(_state: &mut State) -> SimpleHandlerResult {
     Ok(ok)
 }
 
-pub fn router() -> Router {
+pub fn router(ctx: &Arc<dyn ApiCtx>) -> Router {
     let (admin_chain, admin) = single_pipeline(new_pipeline().add(MetricsAuthMiddleware).build());
     build_router(admin_chain, admin, |route| {
-        route.get("/").to_async_borrowing(metrics);
+        route.get("/").to_new_handler(with_ctx!(ctx, metrics));
     })
 }

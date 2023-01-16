@@ -24,7 +24,7 @@ use spacetimedb::auth::identity::encode_token;
 use spacetimedb::auth::invalid_token_res;
 use spacetimedb::client::client_connection::Protocol;
 use spacetimedb::client::client_connection_index::CLIENT_ACTOR_INDEX;
-use spacetimedb::control_db;
+use spacetimedb::control_db::CONTROL_DB;
 use spacetimedb::hash::Hash;
 use spacetimedb::websocket;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
@@ -119,7 +119,7 @@ pub async fn handle_websocket(state: State) -> Result<(State, Response<Body>), (
         }
     } else {
         // Generate a new identity if this connection doesn't have one already
-        let identity = control_db::alloc_spacetime_identity().await.unwrap();
+        let identity = CONTROL_DB.alloc_spacetime_identity().await.unwrap();
         let identity_token = encode_token(identity).unwrap();
         (identity, identity_token)
     };
@@ -128,7 +128,7 @@ pub async fn handle_websocket(state: State) -> Result<(State, Response<Body>), (
     let SubscribeQueryParams { name_or_address } = SubscribeQueryParams::take_from(&mut state);
     let target_address = if let Ok(address) = Address::from_hex(&name_or_address) {
         address
-    } else if let Some(address) = control_db::spacetime_dns(&name_or_address).await.unwrap() {
+    } else if let Some(address) = CONTROL_DB.spacetime_dns(&name_or_address).await.unwrap() {
         address
     } else {
         return Ok((state, bad_request_res()));
@@ -136,11 +136,11 @@ pub async fn handle_websocket(state: State) -> Result<(State, Response<Body>), (
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
     // to connect to multiple modules
-    let database = control_db::get_database_by_address(&target_address).await.unwrap();
+    let database = CONTROL_DB.get_database_by_address(&target_address).await.unwrap();
     let Some(database) = database else {
         return Ok((state, bad_request_res()));
     };
-    let database_instance = control_db::get_leader_database_instance_by_database(database.id).await;
+    let database_instance = CONTROL_DB.get_leader_database_instance_by_database(database.id).await;
     let Some(database_instance) = database_instance else {
         return Ok((state, bad_request_res()));
     };

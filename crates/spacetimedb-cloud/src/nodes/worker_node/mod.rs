@@ -7,28 +7,12 @@ mod worker_metrics;
 
 // use perf_monitor::cpu::ProcessStat;
 use spacetimedb::db::db_metrics;
-use tokio::spawn;
+use tokio::task::JoinHandle;
 
 // use crate::nodes::worker_node::db_metrics::PROCESS_CPU_USAGE;
 
-pub async fn start(config: crate::nodes::node_config::NodeConfig) {
-    let worker_api_bootstrap_addr = config
-        .worker_node
-        .as_ref()
-        .unwrap()
-        .worker_api_bootstrap_addrs
-        .first()
-        .unwrap()
-        .clone();
-    let client_api_bootstrap_addr = config
-        .worker_node
-        .as_ref()
-        .unwrap()
-        .client_api_bootstrap_addrs
-        .first()
-        .unwrap()
-        .clone();
-    let advertise_addr = config.worker_node.as_ref().unwrap().advertise_addr.clone();
+pub async fn start(config: crate::nodes::node_config::WorkerNodeConfig) -> [JoinHandle<()>; 2] {
+    let client_listen_addr = config.listen_addr.clone();
 
     // Metrics for pieces under worker_node/ related to reducer hosting, etc.
     worker_metrics::register_custom_metrics();
@@ -45,14 +29,8 @@ pub async fn start(config: crate::nodes::node_config::NodeConfig) {
     //     }
     // });
 
-    spawn(async move {
-        control_node_connection::start(worker_api_bootstrap_addr, client_api_bootstrap_addr, advertise_addr).await;
-    });
-
-    let client_listen_addr = config.worker_node.as_ref().unwrap().listen_addr.clone();
-    spawn(async move {
-        client_api::start(client_listen_addr).await;
-    })
-    .await
-    .unwrap();
+    [
+        tokio::spawn(control_node_connection::start(config)),
+        tokio::spawn(async move { client_api::start(client_listen_addr).await }),
+    ]
 }

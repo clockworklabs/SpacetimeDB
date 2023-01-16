@@ -1,0 +1,32 @@
+[package]
+name = "spacetimedb-client-api"
+version = "0.0.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+spacetimedb-core = { version = "0.1.0", path = "../spacetimedb-core" }
+tokio = { version = "1.2", features = ["full"] }
+prost = "0.10"
+lazy_static = "1.4.0"
+spacetimedb-lib = { path = "../spacetimedb-lib" }
+log = "0.4.4"
+gotham = "0.7.1"
+gotham_derive = "0.7"
+hyper = "0.14.18"
+serde = "1.0.136"
+serde_json = { version = "1.0", features = ["raw_value"] }
+anyhow = { version = "1.0.57", features = ["backtrace"] }
+sha1 = "0.10.1"
+base64 = "0.13.0"
+tokio-tungstenite = "*"
+regex = "1"
+prometheus = "0.13.0"
+hostname = "^0.3"
+clap = { version = "4.0.18", features = ["derive"] }
+sled = "0.34.7"
+email_address = "0.2.3"
+bytes = "1.2.0" # TODO(rdaum): there's also a copy/fork of this inside prost. hmph.
+tempdir = "0.3.7"
+async-trait = "0.1.60"

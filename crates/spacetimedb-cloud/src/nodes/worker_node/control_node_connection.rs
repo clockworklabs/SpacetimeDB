@@ -13,7 +13,7 @@ use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
 use crate::nodes::worker_node::worker_budget;
 use crate::nodes::worker_node::worker_budget::send_budget_alloc_spend;
-use crate::nodes::worker_node::worker_db;
+use crate::nodes::worker_node::worker_db::WORKER_DB;
 use spacetimedb::address::Address;
 use spacetimedb::protobuf::control_worker_api::BudgetUpdate;
 use spacetimedb::{
@@ -33,11 +33,14 @@ use spacetimedb::{
     database_logger::DatabaseLogger, host::host_controller, worker_database_instance::WorkerDatabaseInstance,
 };
 
-pub async fn start(worker_api_bootstrap_addr: String, client_api_bootstrap_addr: String, advertise_addr: String) {
+pub async fn start(config: crate::nodes::node_config::WorkerNodeConfig) {
+    let worker_api_bootstrap_addr = &config.worker_api_bootstrap_addrs[0];
+    let client_api_bootstrap_addr = &config.client_api_bootstrap_addrs[0];
+    let advertise_addr = config.advertise_addr;
     ControlNodeClient::set_shared(&worker_api_bootstrap_addr, &client_api_bootstrap_addr);
     let bootstrap_addr = worker_api_bootstrap_addr;
 
-    let node_id = worker_db::get_node_id().unwrap();
+    let node_id = WORKER_DB.get_node_id().unwrap();
     let uri = if let Some(node_id) = node_id {
         format!(
             "ws://{}/join?node_id={}&advertise_addr={}",
@@ -99,7 +102,7 @@ pub async fn start(worker_api_bootstrap_addr: String, client_api_bootstrap_addr:
         }
     };
 
-    worker_db::set_node_id(node_id).unwrap();
+    WORKER_DB.set_node_id(node_id).unwrap();
 
     while let Some(message) = socket.next().await {
         match message {
@@ -212,9 +215,9 @@ fn on_worker_budget_update(node_id: u64, budget_update: BudgetUpdate) {
 }
 
 async fn on_schedule_state(_node_id: u64, schedule_state: ScheduleState) {
-    worker_db::init_with_schedule_state(schedule_state);
+    WORKER_DB.init_with_schedule_state(schedule_state);
 
-    for instance in worker_db::get_database_instances() {
+    for instance in WORKER_DB.get_database_instances() {
         match on_insert_database_instance(&instance).await {
             Ok(_) => {}
             Err(e) => {
@@ -232,11 +235,11 @@ async fn on_schedule_update(_node_id: u64, schedule_update: ScheduleUpdate) -> R
     match schedule_update.r#type {
         Some(schedule_update::Type::Insert(insert_operation)) => match insert_operation.r#type {
             Some(insert_operation::Type::DatabaseInstance(database_instance)) => {
-                worker_db::insert_database_instance(database_instance.clone());
+                WORKER_DB.insert_database_instance(database_instance.clone());
                 on_insert_database_instance(&database_instance).await?;
             }
             Some(insert_operation::Type::Database(database)) => {
-                worker_db::insert_database(database);
+                WORKER_DB.insert_database(database);
             }
             None => {
                 log::debug!("Not supposed to happen.");
@@ -245,10 +248,10 @@ async fn on_schedule_update(_node_id: u64, schedule_update: ScheduleUpdate) -> R
         Some(schedule_update::Type::Update(update_operation)) => match update_operation.r#type {
             Some(update_operation::Type::DatabaseInstance(database_instance)) => {
                 on_update_database_instance(&database_instance).await?;
-                worker_db::insert_database_instance(database_instance.clone());
+                WORKER_DB.insert_database_instance(database_instance.clone());
             }
             Some(update_operation::Type::Database(database)) => {
-                worker_db::insert_database(database);
+                WORKER_DB.insert_database(database);
             }
             None => {
                 log::debug!("Not supposed to happen.");
@@ -256,11 +259,11 @@ async fn on_schedule_update(_node_id: u64, schedule_update: ScheduleUpdate) -> R
         },
         Some(schedule_update::Type::Delete(delete_operation)) => match delete_operation.r#type {
             Some(delete_operation::Type::DatabaseInstanceId(database_instance_id)) => {
-                worker_db::delete_database_instance(database_instance_id);
+                WORKER_DB.delete_database_instance(database_instance_id);
                 on_delete_database_instance(database_instance_id).await;
             }
             Some(delete_operation::Type::DatabaseId(database_id)) => {
-                worker_db::delete_database(database_id);
+                WORKER_DB.delete_database(database_id);
             }
             None => {}
         },
@@ -270,13 +273,13 @@ async fn on_schedule_update(_node_id: u64, schedule_update: ScheduleUpdate) -> R
 }
 
 async fn on_insert_database_instance(instance: &DatabaseInstance) -> Result<(), anyhow::Error> {
-    let state = worker_db::get_database_instance_state(instance.id).unwrap();
+    let state = WORKER_DB.get_database_instance_state(instance.id).unwrap();
     if let Some(mut state) = state {
         if !state.initialized {
             // Start and init the service
             init_module_on_database_instance(instance.database_id, instance.id).await?;
             state.initialized = true;
-            worker_db::upsert_database_instance_state(state).unwrap();
+            WORKER_DB.upsert_database_instance_state(state).unwrap();
         } else {
             start_module_on_database_instance(instance.database_id, instance.id).await?;
         }
@@ -288,9 +291,9 @@ async fn on_insert_database_instance(instance: &DatabaseInstance) -> Result<(), 
             initialized: false,
         };
         init_module_on_database_instance(instance.database_id, instance.id).await?;
-        worker_db::upsert_database_instance_state(state.clone()).unwrap();
+        WORKER_DB.upsert_database_instance_state(state.clone()).unwrap();
         state.initialized = true;
-        worker_db::upsert_database_instance_state(state).unwrap();
+        WORKER_DB.upsert_database_instance_state(state).unwrap();
         Ok(())
     }
 }
@@ -301,19 +304,19 @@ async fn on_update_database_instance(instance: &DatabaseInstance) -> Result<(), 
 }
 
 async fn on_delete_database_instance(instance_id: u64) {
-    let state = worker_db::get_database_instance_state(instance_id).unwrap();
+    let state = WORKER_DB.get_database_instance_state(instance_id).unwrap();
     if let Some(_state) = state {
         let host = host_controller::get_host();
 
         // TODO: This is getting pretty messy
         DatabaseInstanceContextController::get_shared().remove(instance_id);
         host.delete_module(instance_id).await.unwrap();
-        worker_db::delete_database_instance(instance_id);
+        WORKER_DB.delete_database_instance(instance_id);
     }
 }
 
 async fn init_module_on_database_instance(database_id: u64, instance_id: u64) -> Result<(), anyhow::Error> {
-    let database = if let Some(database) = worker_db::get_database_by_id(database_id) {
+    let database = if let Some(database) = WORKER_DB.get_database_by_id(database_id) {
         database
     } else {
         return Err(anyhow!("Unknown database/instance: {}/{}", database_id, instance_id));
@@ -350,7 +353,7 @@ async fn init_module_on_database_instance(database_id: u64, instance_id: u64) ->
 }
 
 async fn start_module_on_database_instance(database_id: u64, instance_id: u64) -> Result<(), anyhow::Error> {
-    let database = if let Some(database) = worker_db::get_database_by_id(database_id) {
+    let database = if let Some(database) = WORKER_DB.get_database_by_id(database_id) {
         database
     } else {
         return Err(anyhow!("Unknown database/instance: {}/{}", database_id, instance_id));

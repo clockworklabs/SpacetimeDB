@@ -1,5 +1,5 @@
 use super::worker_connection_index::WORKER_CONNECTION_INDEX;
-use crate::control_node::controller;
+use crate::control_node::controller::Controller;
 use gotham::handler::HandlerError;
 use gotham::prelude::StaticResponseExtender;
 use gotham::state::State;
@@ -13,16 +13,10 @@ use hyper::header::AUTHORIZATION;
 use hyper::Body;
 use hyper::Response;
 use hyper::StatusCode;
-use lazy_static::lazy_static;
-use regex::Regex;
 use serde::Deserialize;
-use spacetimedb::{control_db, hash::Hash, object_db, websocket};
+use spacetimedb::{control_db::CONTROL_DB, hash::Hash, object_db, websocket};
 use std::collections::HashMap;
 use tokio::spawn;
-
-lazy_static! {
-    static ref SEPARATOR: Regex = Regex::new(r"\s*,\s*").unwrap();
-}
 
 pub const BIN_PROTOCOL: &str = "v1.bin.spacetimedb-worker-api";
 
@@ -55,29 +49,31 @@ async fn join(state: State) -> Result<(State, Response<Body>), (State, HandlerEr
         // TODO(cloutiertyler): Validate the credentials of this connection
     }
 
+    let controller = Controller::new(&*CONTROL_DB);
+
     let node_id = if let Some(node_id) = node_id {
-        if let Some(mut node) = control_db::get_node(node_id).await.unwrap() {
+        if let Some(mut node) = CONTROL_DB.get_node(node_id).await.unwrap() {
             node.advertise_addr = advertise_addr;
-            control_db::update_node(node).await.unwrap();
+            CONTROL_DB.update_node(node).await.unwrap();
             node_id
         } else {
-            controller::create_node(advertise_addr).await.unwrap()
+            controller.create_node(advertise_addr).await.unwrap()
         }
     } else {
-        controller::create_node(advertise_addr).await.unwrap()
+        controller.create_node(advertise_addr).await.unwrap()
     };
     let req_id = request_id(&state).to_owned();
 
     spawn(async move {
         let ws = websocket::execute_upgrade(&req_id, on_upgrade, None).await.unwrap();
 
-        let ip_address = headers.get("x-forwarded-for").and_then(|value| {
-            value.to_str().ok().and_then(|str| {
-                let split = SEPARATOR.split(str);
-                let splits: Vec<_> = split.into_iter().collect();
-                splits.first().copied()
-            })
-        });
+        let ip_address = headers
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| {
+                let (first, _) = value.split_once(',')?;
+                Some(first.trim())
+            });
 
         match ip_address {
             Some(ip) => log::debug!("New worker connected from ip {}", ip),
@@ -89,7 +85,7 @@ async fn join(state: State) -> Result<(State, Response<Body>), (State, HandlerEr
             wci.new_client(node_id, ws);
         }
 
-        controller::node_connected(node_id).await.unwrap();
+        controller.node_connected(node_id).await.unwrap();
     });
 
     let mut custom_headers = HashMap::new();

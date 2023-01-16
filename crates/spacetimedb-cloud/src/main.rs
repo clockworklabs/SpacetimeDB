@@ -1,10 +1,9 @@
-mod auth;
 mod nodes;
 
 use clap::Parser;
 use clap::Subcommand;
 use futures::future::join_all;
-use futures::FutureExt;
+use futures::future::OptionFuture;
 use nodes::control_node;
 use nodes::node_config::NodeConfig;
 use nodes::node_options::NodeOptions;
@@ -26,13 +25,12 @@ async fn init(options: NodeOptions) -> Result<(), Box<dyn Error + Send + Sync>> 
     let config = NodeConfig::from_options(options);
     startup::configure_logging();
 
-    let mut service_handles = Vec::new();
-    if config.worker_node.is_some() {
-        service_handles.push(worker_node::start(config.clone()).boxed());
-    }
-    if config.control_node.is_some() {
-        service_handles.push(control_node::start(config).boxed());
-    }
+    let (worker_tasks, control_tasks) = tokio::join!(
+        OptionFuture::from(config.worker_node.map(worker_node::start)),
+        OptionFuture::from(config.control_node.map(control_node::start)),
+    );
+
+    let service_handles = itertools::chain(worker_tasks, control_tasks).flatten();
 
     join_all(service_handles).await;
     Ok(())

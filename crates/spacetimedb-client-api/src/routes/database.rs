@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use anyhow::Context;
 use gotham::anyhow::anyhow;
@@ -16,14 +17,17 @@ use hyper::Body;
 use hyper::HeaderMap;
 use hyper::{Response, StatusCode};
 use serde::Deserialize;
+use serde::Serialize;
 use serde_json::{json, Value};
+use spacetimedb::control_db::CONTROL_DB;
+use spacetimedb::hash::hash_bytes;
 use spacetimedb::host::InvalidReducerArguments;
+use spacetimedb::object_db;
+use spacetimedb::protobuf::control_db::HostType;
 use spacetimedb_lib::{ElementDef, EntityDef, TypeDef};
 
 use crate::auth::get_or_create_creds_from_header;
-use crate::nodes::worker_node::client_api::proxy::proxy_to_control_node_client_api;
-use crate::nodes::worker_node::client_api::routes::database::DBCallErr::NoSuchDatabase;
-use crate::nodes::worker_node::worker_db;
+use crate::{ApiCtx, Controller, ControllerCtx};
 use spacetimedb::address::Address;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::hash::Hash;
@@ -44,7 +48,7 @@ struct CallParams {
     reducer: String,
 }
 
-async fn call(state: &mut State) -> SimpleHandlerResult {
+async fn call(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     let CallParams { address, reducer } = CallParams::take_from(state);
 
     let address = Address::from_hex(&address)?;
@@ -61,14 +65,14 @@ async fn call(state: &mut State) -> SimpleHandlerResult {
     }
     let args = ReducerArgs::Json(data);
 
-    let database = match worker_db::get_database_by_address(&address) {
+    let database = match ctx.get_database_by_address(&address).await? {
         Some(database) => database,
         None => {
             log::error!("Could not find database: {}", address.to_hex());
             return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND));
         }
     };
-    let database_instance = match worker_db::get_leader_database_instance_by_database(database.id) {
+    let database_instance = match ctx.get_leader_database_instance_by_database(database.id).await {
         Some(database) => database,
         None => {
             return Err(
@@ -149,7 +153,11 @@ struct DatabaseInformation {
 /// don't provide any credentials at all. The problem is that this function doesn't make sense in all places
 /// where credentials are required (e.g. publish), so for now we're just going to keep this as is, but we're
 /// going to generate a new set of credentials if you don't provide them.
-async fn extract_db_call_info(state: &mut State, address: &Address) -> Result<DatabaseInformation, DBCallErr> {
+async fn extract_db_call_info(
+    ctx: &dyn ApiCtx,
+    state: &mut State,
+    address: &Address,
+) -> Result<DatabaseInformation, DBCallErr> {
     let headers = state.borrow::<HeaderMap>();
 
     let auth_header = headers.get(AUTHORIZATION);
@@ -157,12 +165,12 @@ async fn extract_db_call_info(state: &mut State, address: &Address) -> Result<Da
     let creds = get_or_create_creds_from_header(auth_header, true).await?.unwrap();
     let (caller_identity, caller_identity_token) = creds;
 
-    let database = match worker_db::get_database_by_address(address) {
+    let database = match ctx.get_database_by_address(address).await.unwrap() {
         Some(database) => database,
         None => return Err(DBCallErr::NoSuchDatabase),
     };
 
-    let database_instance = match worker_db::get_leader_database_instance_by_database(database.id) {
+    let database_instance = match ctx.get_leader_database_instance_by_database(database.id).await {
         Some(database) => database,
         None => {
             return Err(DBCallErr::InstanceNotScheduled);
@@ -177,7 +185,7 @@ async fn extract_db_call_info(state: &mut State, address: &Address) -> Result<Da
 
 fn handle_db_err(address: &Address, err: DBCallErr) -> SimpleHandlerResult {
     match err {
-        NoSuchDatabase => {
+        DBCallErr::NoSuchDatabase => {
             log::error!("Could not find database: {}", address.to_hex());
             Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND))
         }
@@ -245,7 +253,13 @@ struct DescribeQueryParams {
     expand: Option<bool>,
 }
 
-async fn describe(state: &mut State) -> SimpleHandlerResult {
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct SetNameQueryParams {
+    name: String,
+    address: String,
+}
+
+async fn describe(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     let DescribeParams {
         address,
         entity_type,
@@ -256,7 +270,7 @@ async fn describe(state: &mut State) -> SimpleHandlerResult {
 
     let address = Address::from_hex(&address)?;
 
-    let call_info = match extract_db_call_info(state, &address).await {
+    let call_info = match extract_db_call_info(ctx, state, &address).await {
         Ok(p) => p,
         Err(e) => return handle_db_err(&address, e),
     };
@@ -293,13 +307,13 @@ async fn describe(state: &mut State) -> SimpleHandlerResult {
 struct CatalogParams {
     address: String,
 }
-async fn catalog(state: &mut State) -> SimpleHandlerResult {
+async fn catalog(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     let CatalogParams { address } = CatalogParams::take_from(state);
     let DescribeQueryParams { expand } = DescribeQueryParams::take_from(state);
 
     let address = Address::from_hex(&address)?;
 
-    let call_info = match extract_db_call_info(state, &address).await {
+    let call_info = match extract_db_call_info(ctx, state, &address).await {
         Ok(p) => p,
         Err(e) => return handle_db_err(&address, e),
     };
@@ -334,7 +348,7 @@ struct LogsQuery {
     num_lines: Option<u32>,
 }
 
-async fn logs(state: &mut State) -> SimpleHandlerResult {
+async fn logs(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     let LogsParams { address } = LogsParams::take_from(state);
     let LogsQuery { num_lines } = LogsQuery::take_from(state);
 
@@ -351,7 +365,7 @@ async fn logs(state: &mut State) -> SimpleHandlerResult {
 
     let address = Address::from_hex(&address)?;
 
-    let database = match worker_db::get_database_by_address(&address) {
+    let database = match ctx.get_database_by_address(&address).await? {
         Some(database) => database,
         None => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
     };
@@ -362,7 +376,7 @@ async fn logs(state: &mut State) -> SimpleHandlerResult {
         return Err(HandlerError::from(anyhow!("Identity does not own database.")).with_status(StatusCode::BAD_REQUEST));
     }
 
-    let database_instance = worker_db::get_leader_database_instance_by_database(database.id);
+    let database_instance = ctx.get_leader_database_instance_by_database(database.id).await;
     let instance_id = database_instance.unwrap().id;
 
     let filepath = DatabaseLogger::filepath(&address, instance_id);
@@ -384,7 +398,7 @@ struct SqlParams {
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct SqlQueryParams {}
 
-async fn sql(state: &mut State) -> SimpleHandlerResult {
+async fn sql(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     let SqlParams { address } = SqlParams::take_from(state);
     let SqlQueryParams {} = SqlQueryParams::take_from(state);
 
@@ -401,7 +415,7 @@ async fn sql(state: &mut State) -> SimpleHandlerResult {
 
     let address = Address::from_hex(&address)?;
 
-    let database = match worker_db::get_database_by_address(&address) {
+    let database = match ctx.get_database_by_address(&address).await.unwrap() {
         Some(database) => database,
         None => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
     };
@@ -412,7 +426,7 @@ async fn sql(state: &mut State) -> SimpleHandlerResult {
         return Err(HandlerError::from(anyhow!("Identity does not own database.")).with_status(StatusCode::BAD_REQUEST));
     }
 
-    let database_instance = worker_db::get_leader_database_instance_by_database(database.id);
+    let database_instance = ctx.get_leader_database_instance_by_database(database.id).await;
     let instance_id = database_instance.unwrap().id;
 
     let body = state.borrow_mut::<Body>();
@@ -465,21 +479,347 @@ async fn sql(state: &mut State) -> SimpleHandlerResult {
     Ok(res)
 }
 
-// TODO(cloutiertyler): all references to address should become name_or_address
-pub fn router() -> Router {
-    build_simple_router(|route| {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DNSResponse {
+    address: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ReverseDNSResponse {
+    name: String,
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct DNSParams {
+    database_name: String,
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct ReverseDNSParams {
+    database_address: String,
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct DNSQueryParams {}
+
+async fn dns(state: &mut State) -> SimpleHandlerResult {
+    let DNSParams { database_name } = DNSParams::take_from(state);
+    let DNSQueryParams {} = DNSQueryParams::take_from(state);
+
+    let address = CONTROL_DB.spacetime_dns(&database_name).await?;
+    if let Some(address) = address {
+        let response = DNSResponse {
+            address: address.to_hex(),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let body = Body::from(json);
+        let res = Response::builder().status(StatusCode::OK).body(body).unwrap();
+        Ok(res)
+    } else {
+        let res = Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .unwrap();
+        Ok(res)
+    }
+}
+
+async fn reverse_dns(state: &mut State) -> SimpleHandlerResult {
+    let ReverseDNSParams { database_address } = ReverseDNSParams::take_from(state);
+
+    let addr = Address::from_hex(&database_address);
+
+    let name = CONTROL_DB.spacetime_reverse_dns(&addr.unwrap()).await?;
+
+    if let Some(name) = name {
+        let response = ReverseDNSResponse { name: name };
+        let json = serde_json::to_string(&response).unwrap();
+        let body = Body::from(json);
+        let res = Response::builder().status(StatusCode::OK).body(body).unwrap();
+        Ok(res)
+    } else {
+        let res = Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .unwrap();
+        Ok(res)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PublishDatabaseResponse {
+    address: String,
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct PublishDatabaseParams {}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct PublishDatabaseQueryParams {
+    host_type: Option<String>,
+    clear: Option<bool>,
+    identity: Option<String>,
+    name_or_address: Option<String>,
+    trace_log: Option<bool>,
+}
+
+#[cfg(not(feature = "tracelogging"))]
+fn should_trace(_trace_log: Option<bool>) -> bool {
+    false
+}
+
+#[cfg(feature = "tracelogging")]
+fn should_trace(trace_log: Option<bool>) -> bool {
+    trace_log.unwrap_or(false)
+}
+
+async fn publish(ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHandlerResult {
+    let PublishDatabaseParams {} = PublishDatabaseParams::take_from(state);
+    let PublishDatabaseQueryParams {
+        identity,
+        name_or_address,
+        host_type,
+        clear,
+        trace_log,
+    } = PublishDatabaseQueryParams::take_from(state);
+    let clear = clear.unwrap_or(false);
+
+    let headers = state.borrow::<HeaderMap>();
+    let auth_header = headers.get(AUTHORIZATION);
+
+    // You should not be able to publish to a database that you do not own
+    // so, unless you are the owner, this will fail, hence `create = false`.
+    let creds = get_or_create_creds_from_header(auth_header, true).await?;
+    if let None = creds {
+        return Err(HandlerError::from(anyhow!("Invalid credentials.")).with_status(StatusCode::BAD_REQUEST));
+    }
+    let (caller_identity, caller_identity_token) = creds.unwrap();
+
+    // Parse the address or convert the name to a usable address
+    let (db_address, specified_address) = if let Some(name_or_address) = name_or_address {
+        if let Ok(address) = Address::from_hex(&name_or_address) {
+            // All addresses are invalid names
+            (address, true)
+        } else {
+            // If it's not a valid address it must be a name
+            if let Some(address) = CONTROL_DB.spacetime_dns(&name_or_address).await? {
+                // TODO(cloutiertyler): Validate that the creator has credentials for this database
+                (address, false)
+            } else {
+                // Client specified a name which doesn't yet exist
+                // Create a new DNS record and a new address to assign to it
+                let address = CONTROL_DB.alloc_spacetime_address().await?;
+                CONTROL_DB
+                    .spacetime_insert_dns_record(&address, &name_or_address)
+                    .await?;
+                (address, false)
+            }
+        }
+    } else {
+        // No name or address was specified, create a new one
+        (CONTROL_DB.alloc_spacetime_address().await?, false)
+    };
+
+    let identity = if let Some(identity) = identity {
+        // TODO(cloutiertyler): Validate that the creator has credentials for this identity
+        Hash::from_hex(&identity)?
+    } else {
+        CONTROL_DB.alloc_spacetime_identity().await?
+    };
+
+    let host_type = match host_type {
+        None => HostType::Wasmer,
+        Some(ht) => match ht.parse() {
+            Ok(ht) => ht,
+            Err(_) => {
+                return Err(HandlerError::from(anyhow!("unknown host type {ht}")).with_status(StatusCode::BAD_REQUEST));
+            }
+        },
+    };
+
+    let body = state.borrow_mut::<Body>();
+    let data = hyper::body::to_bytes(body).await;
+    let data = match data {
+        Ok(data) => data,
+        Err(_) => return Err(HandlerError::from(anyhow!("Invalid request body")).with_status(StatusCode::BAD_REQUEST)),
+    };
+    let program_bytes = data.to_vec();
+    let program_bytes_addr = hash_bytes(&program_bytes);
+    object_db::insert_object(program_bytes).await.unwrap();
+
+    let num_replicas = 1;
+
+    let trace_log = should_trace(trace_log);
+
+    match ctx.get_database_by_address(&db_address).await {
+        Ok(database) => match database {
+            Some(db) => {
+                if Hash::from_slice(db.identity.as_slice()) != caller_identity {
+                    return Err(HandlerError::from(anyhow!("Identity does not own this database."))
+                        .with_status(StatusCode::BAD_REQUEST));
+                }
+
+                if clear {
+                    if let Err(err) = Controller::insert_database(
+                        ctx,
+                        &db_address,
+                        &identity,
+                        &program_bytes_addr,
+                        host_type,
+                        num_replicas,
+                        clear,
+                        trace_log,
+                    )
+                    .await
+                    {
+                        log::debug!("{err}");
+                        return Err(HandlerError::from(err));
+                    }
+                } else if let Err(err) =
+                    Controller::update_database(ctx, &db_address, &program_bytes_addr, num_replicas).await
+                {
+                    log::debug!("{err}");
+                    return Err(HandlerError::from(err));
+                }
+            }
+            None => {
+                if specified_address {
+                    return Err(HandlerError::from(anyhow::anyhow!(
+                        "Failed to find database at address: {}",
+                        db_address.to_hex()
+                    )));
+                }
+
+                if let Err(err) = Controller::insert_database(
+                    ctx,
+                    &db_address,
+                    &identity,
+                    &program_bytes_addr,
+                    host_type,
+                    num_replicas,
+                    false,
+                    trace_log,
+                )
+                .await
+                {
+                    log::debug!("{err}");
+                    return Err(HandlerError::from(err));
+                }
+            }
+        },
+        Err(e) => {
+            return Err(HandlerError::from(e));
+        }
+    }
+
+    let response = PublishDatabaseResponse {
+        address: db_address.to_hex(),
+    };
+    let json = serde_json::to_string(&response).unwrap();
+
+    // TODO(tyler): Eventually we want it to be possible to publish a database
+    // which no one has the credentials to. In that case we wouldn't want to
+    // return a token.
+    let res = Response::builder()
+        .header("Spacetime-Identity", caller_identity.to_hex())
+        .header("Spacetime-Identity-Token", caller_identity_token)
+        .status(StatusCode::OK)
+        .body(Body::from(json))
+        .unwrap();
+    Ok(res)
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct DeleteDatabaseParams {
+    address: String,
+}
+
+async fn delete_database(ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHandlerResult {
+    let DeleteDatabaseParams { address } = DeleteDatabaseParams::take_from(state);
+
+    // TODO(cloutiertyler): Validate that the creator has credentials for the identity of this database
+
+    let address = Address::from_hex(&address)?;
+
+    if let Err(err) = Controller::delete_database(ctx, &address).await {
+        log::debug!("{err}");
+        return Err(HandlerError::from(err));
+    }
+
+    let res = Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap();
+    Ok(res)
+}
+
+async fn set_name(ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHandlerResult {
+    let SetNameQueryParams { address, name } = SetNameQueryParams::take_from(state);
+
+    let headers = state.borrow::<HeaderMap>();
+    let auth_header = headers.get(AUTHORIZATION);
+
+    let creds = get_or_create_creds_from_header(auth_header, false).await?;
+
+    if let None = creds {
+        return Err(HandlerError::from(anyhow!("Invalid credentials.")).with_status(StatusCode::BAD_REQUEST));
+    }
+    let (caller_identity, _) = creds.unwrap();
+
+    let address = Address::from_hex(&address)?;
+
+    let database = match ctx.get_database_by_address(&address).await {
+        Ok(database) => database.unwrap(),
+        Err(_) => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
+    };
+
+    let database_identity = Hash::from_slice(database.identity);
+
+    if database_identity != caller_identity {
+        return Err(HandlerError::from(anyhow!("Identity does not own database.")).with_status(StatusCode::BAD_REQUEST));
+    }
+
+    CONTROL_DB.spacetime_insert_dns_record(&address, &name).await?;
+
+    Ok(Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap())
+}
+
+pub fn control_router(route: &mut gotham::router::builder::RouterBuilder<'_, (), ()>, ctx: &Arc<dyn ControllerCtx>) {
+    {
         route
             .get("/dns/:database_name")
-            .to_async(proxy_to_control_node_client_api);
+            .with_path_extractor::<DNSParams>()
+            .with_query_string_extractor::<DNSQueryParams>()
+            .to_async_borrowing(dns);
+
         route
-            .get("/reverse_dns/:address")
-            .to_async(proxy_to_control_node_client_api);
-        route.post("/publish").to_async(proxy_to_control_node_client_api);
+            .get("/reverse_dns/:database_address")
+            .with_path_extractor::<ReverseDNSParams>()
+            .to_async_borrowing(reverse_dns);
+
+        route
+            .post("/set_name")
+            .with_query_string_extractor::<SetNameQueryParams>()
+            .to_new_handler(with_ctx!(ctx, set_name));
+
+        route
+            .post("/publish")
+            .with_path_extractor::<PublishDatabaseParams>()
+            .with_query_string_extractor::<PublishDatabaseQueryParams>()
+            .to_new_handler(with_ctx!(ctx, publish));
 
         route
             .post("/delete/:address")
-            .to_async(proxy_to_control_node_client_api);
-        route.post("/set_name").to_async(proxy_to_control_node_client_api);
+            .with_path_extractor::<DeleteDatabaseParams>()
+            .to_new_handler(with_ctx!(ctx, delete_database));
+    }
+}
+
+// TODO(cloutiertyler): all references to address should become name_or_address
+pub fn router(ctx: &Arc<dyn ApiCtx>, control_ctx: Option<&Arc<dyn ControllerCtx>>) -> Router {
+    build_simple_router(|route| {
+        if let Some(control_ctx) = control_ctx {
+            control_router(route, control_ctx);
+        }
+
         route
             .get("/subscribe")
             .with_path_extractor::<SubscribeParams>()
@@ -489,30 +829,30 @@ pub fn router() -> Router {
         route
             .post("/call/:address/:reducer")
             .with_path_extractor::<CallParams>()
-            .to_async_borrowing(call);
+            .to_new_handler(with_ctx!(ctx, call));
 
         route
             .get("/schema/:address/:entity_type/:entity")
             .with_path_extractor::<DescribeParams>()
             .with_query_string_extractor::<DescribeQueryParams>()
-            .to_async_borrowing(describe);
+            .to_new_handler(with_ctx!(ctx, describe));
 
         route
             .get("/schema/:address")
             .with_path_extractor::<CatalogParams>()
             .with_query_string_extractor::<DescribeQueryParams>()
-            .to_async_borrowing(catalog);
+            .to_new_handler(with_ctx!(ctx, catalog));
 
         route
             .get("/logs/:address")
             .with_path_extractor::<LogsParams>()
             .with_query_string_extractor::<LogsQuery>()
-            .to_async_borrowing(logs);
+            .to_new_handler(with_ctx!(ctx, logs));
 
         route
             .post("/sql/:address")
             .with_path_extractor::<SqlParams>()
             .with_query_string_extractor::<SqlQueryParams>()
-            .to_async_borrowing(sql);
+            .to_new_handler(with_ctx!(ctx, sql));
     })
 }

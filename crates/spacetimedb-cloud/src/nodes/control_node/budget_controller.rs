@@ -4,10 +4,9 @@ use std::{collections::HashMap, sync::Mutex};
 
 use anyhow::anyhow;
 
-use crate::nodes::control_node::controller::publish_energy_balance_state;
+use crate::nodes::control_node::controller::Controller;
 use crate::nodes::control_node::prometheus_metrics::IDENTITY_ENERGY_BALANCE_GAUGE;
-use spacetimedb::control_db;
-use spacetimedb::control_db::set_energy_balance;
+use spacetimedb::control_db::CONTROL_DB;
 use spacetimedb::hash::Hash;
 use spacetimedb::protobuf::control_db::EnergyBalance;
 
@@ -33,7 +32,7 @@ pub(crate) struct WorkerBudgetState {
 }
 
 /// Set the global balance for a given identity.
-pub(crate) async fn set_identity_energy_balance(identity: &Hash, budget: &EnergyBalance) {
+pub(crate) async fn _set_identity_energy_balance(identity: &Hash, budget: &EnergyBalance) {
     // Fill the write-through global budget cache first.
     {
         let mut identity_budget = GLOBAL_IDENTITY_ENERGY_BALANCE.lock().expect("unlock ctrl budget");
@@ -42,14 +41,16 @@ pub(crate) async fn set_identity_energy_balance(identity: &Hash, budget: &Energy
 
     // Now persist it.
     // TODO(ryan): Is failure here a legit case for panic? It seems it, but we might want to revisit later.
-    control_db::set_energy_balance(identity, budget).expect("Unable to write-through updated budget to control_db");
+    CONTROL_DB
+        .set_energy_balance(identity, budget)
+        .expect("Unable to write-through updated budget to control_db");
 
     // Refresh this identity's budget allocations for all nodes based on the new balance information
-    update_energy_allocation(identity, budget).await;
+    _update_energy_allocation(identity, budget).await;
 }
 
 /// Retrieve the global budget for a given identity.
-pub(crate) fn get_identity_energy_balance(identity: &Hash) -> Option<EnergyBalance> {
+pub(crate) fn _get_identity_energy_balance(identity: &Hash) -> Option<EnergyBalance> {
     let identity_budget = GLOBAL_IDENTITY_ENERGY_BALANCE.lock().expect("unlock ctrl budget");
     identity_budget.get(identity).cloned()
 }
@@ -61,7 +62,7 @@ pub(crate) fn get_identity_energy_balance(identity: &Hash) -> Option<EnergyBalan
 // state and readjust allocations accordingly.
 pub(crate) async fn refresh_all_budget_allocations() {
     // Fill identity -> global budget cache
-    let budgets = { control_db::get_energy_balances().await.expect("retrieve all budgets") };
+    let budgets = CONTROL_DB.get_energy_balances().await.expect("retrieve all budgets");
     for eb in budgets.iter() {
         let identity = Hash::from_slice(eb.identity.as_slice());
 
@@ -80,9 +81,10 @@ pub(crate) async fn refresh_all_budget_allocations() {
 }
 
 // Refresh budget allocation for a single identity.
-pub(crate) async fn update_energy_allocation(identity: &Hash, eb: &EnergyBalance) {
+pub(crate) async fn _update_energy_allocation(identity: &Hash, eb: &EnergyBalance) {
     // Fill identity -> global budget cache
-    let balance = control_db::get_energy_balance(identity)
+    let balance = CONTROL_DB
+        .get_energy_balance(identity)
         .await
         .expect("retrieve identity balance");
     if balance.is_none() {
@@ -99,7 +101,8 @@ pub(crate) async fn update_energy_allocation(identity: &Hash, eb: &EnergyBalance
         identity_balance.insert(*identity, eb.clone());
     }
     update_identity_worker_energy_state(identity, eb).await;
-    publish_energy_balance_state(identity)
+    Controller::new(&*CONTROL_DB)
+        ._publish_energy_balance_state(identity)
         .await
         .expect("Could not publish updated budget");
 }
@@ -123,7 +126,7 @@ fn calculate_per_node_quanta(eb: &EnergyBalance, _worker_node_id: u64, number_of
 
 /// Set per-node budget partitions. Called by both initial setup and on the budget refresh loop.
 async fn update_identity_worker_energy_state(identity: &Hash, eb: &EnergyBalance) {
-    let nodes = { control_db::get_nodes().await.expect("retrieve all nodes") };
+    let nodes = CONTROL_DB.get_nodes().await.expect("retrieve all nodes");
     let num_nodes = nodes.len();
     for node in nodes {
         let per_node_quanta = calculate_per_node_quanta(eb, node.id, num_nodes);
@@ -161,7 +164,7 @@ pub(crate) async fn budget_allocations(node_id: u64) -> Option<Vec<(Hash, Worker
 }
 
 /// Retrieve current budget allocations for a node & specific identity for this interval.
-pub(crate) async fn identity_budget_allocations(node_id: u64, identity: &Hash) -> Option<WorkerBudgetState> {
+pub(crate) async fn _identity_budget_allocations(node_id: u64, identity: &Hash) -> Option<WorkerBudgetState> {
     let node_identity_budget = NODE_IDENTITY_BUDGET.lock().expect("unlock node/identity budget state");
     node_identity_budget.get(&(node_id, *identity)).copied()
 }
@@ -191,7 +194,7 @@ pub(crate) fn node_energy_spend_update(node_id: u64, identity: &Hash, spend: i64
                 }
                 Some(total_budget) => {
                     total_budget.balance_quanta -= spend;
-                    set_energy_balance(identity, total_budget).unwrap();
+                    CONTROL_DB.set_energy_balance(identity, total_budget).unwrap();
                 }
             };
 

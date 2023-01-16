@@ -17,6 +17,7 @@ required-features = [] # Features required to build this target (N/A for lib)
 
 [dependencies] 
 spacetimedb-core = { path = "../spacetimedb-core" }
+spacetimedb-client-api = { path = "../spacetimedb-client-api" }
 tokio = { version = "1.2", features = ["full"] }
 prost = "0.10"
 lazy_static = "1.4.0"
@@ -39,3 +40,4 @@ sled = "0.34.7"
 email_address = "0.2.3"
 bytes = "1.2.0" # TODO(rdaum): there's also a copy/fork of this inside prost. hmph.
 tempdir = "0.3.7"
+async-trait = "0.1.60"

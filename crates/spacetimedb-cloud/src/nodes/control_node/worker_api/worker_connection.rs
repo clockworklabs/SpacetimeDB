@@ -1,6 +1,7 @@
 use futures::{prelude::*, stream::SplitStream, SinkExt};
 use hyper::upgrade::Upgraded;
 use prost::Message;
+use spacetimedb::control_db::CONTROL_DB;
 use tokio::spawn;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -8,8 +9,8 @@ use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::protocol::{CloseFrame, Message as WebSocketMessage};
 use tokio_tungstenite::WebSocketStream;
 
-use crate::nodes::control_node::budget_controller::refresh_all_budget_allocations;
-use crate::nodes::control_node::{budget_controller, controller};
+use crate::nodes::control_node::budget_controller::{self, refresh_all_budget_allocations};
+use crate::nodes::control_node::controller::Controller;
 use spacetimedb::hash::Hash;
 use spacetimedb::protobuf::control_worker_api::{control_bound_message, ControlBoundMessage, WorkerBudgetSpend};
 
@@ -217,7 +218,7 @@ impl Drop for WorkerConnection {
         }
         let id = self.id;
         spawn(async move {
-            controller::node_disconnected(id).await.unwrap();
+            Controller::new(&*CONTROL_DB).node_disconnected(id).await.unwrap();
         });
         log::trace!("Worker connection {} dropped", self.id);
     }

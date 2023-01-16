@@ -10,7 +10,7 @@ use hyper::{Body, Response, StatusCode};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::nodes::control_node::budget_controller;
+use spacetimedb::control_db::CONTROL_DB;
 use spacetimedb::hash::Hash;
 use spacetimedb::protobuf::control_db::EnergyBalance;
 
@@ -35,7 +35,7 @@ async fn get_budget(state: &mut State) -> SimpleHandlerResult {
     };
 
     // Note: Consult the write-through cache on control_budget, not the control_db directly.
-    let budget = budget_controller::get_identity_energy_balance(&identity);
+    let budget = CONTROL_DB.get_energy_balance(&identity).await?;
     match budget {
         None => Err(HandlerError::from(anyhow!("No budget for identity")).with_status(StatusCode::NOT_FOUND)),
         Some(budget) => {
@@ -78,7 +78,7 @@ async fn set_energy_balance(state: &mut State) -> SimpleHandlerResult {
     // We're only updating part of the budget, so we need to retrieve first and alter only the
     // parts we're updating
     // If there's no existing budget, create new with sensible defaults.
-    let budget = budget_controller::get_identity_energy_balance(&identity);
+    let budget = CONTROL_DB.get_energy_balance(&identity).await?;
     let budget = match budget {
         Some(mut budget) => {
             if balance.is_some() {
@@ -92,7 +92,7 @@ async fn set_energy_balance(state: &mut State) -> SimpleHandlerResult {
         },
     };
 
-    budget_controller::set_identity_energy_balance(&identity, &budget).await;
+    CONTROL_DB.set_energy_balance(&identity, &budget)?;
 
     // Return the modified budget.
     let response_json = json!({
