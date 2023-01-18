@@ -31,7 +31,7 @@ namespace SpacetimeDB
 
         private struct DbEvent
         {
-            public string tableName;
+            public Type clientTableType;
             public TableOp op;
             public object oldValue;
             public object newValue;
@@ -82,10 +82,13 @@ namespace SpacetimeDB
         private SpacetimeDB.WebSocket webSocket;
         private bool connectionClosed;
         public static ClientCache clientDB;
+        public static Dictionary<string, MethodInfo> reducerEventCache = new Dictionary<string, MethodInfo>();
 
         private Thread messageProcessThread;
 
         public static NetworkManager instance;
+
+        public string TokenKey { get { return GetTokenKey(); } }
 
         protected void Awake()
         {
@@ -129,8 +132,19 @@ namespace SpacetimeDB
                 var conversionFunc = @class.GetMethods().FirstOrDefault(a =>
                     a.Name == "op_Explicit" && a.GetParameters().Length > 0 &&
                     a.GetParameters()[0].ParameterType == typeof(TypeValue));
-                clientDB.AddTable(@class.Name, typeDef,
+                clientDB.AddTable(@class, typeDef,
                     a => { return conversionFunc!.Invoke(null, new object[] { a }); });
+            }
+
+            // cache all our reducer events by their function name 
+            foreach (var methodInfo in (typeof(Reducer)).GetMethods())
+            {
+                var ca = methodInfo.GetCustomAttribute<ReducerEvent>();
+                if (ca != null)
+                {
+                    ReducerEvent reducerEvent = (ReducerEvent)ca;
+                    reducerEventCache.Add(reducerEvent.FunctionName, methodInfo);
+                }
             }
 
             messageProcessThread = new Thread(ProcessMessages);
@@ -170,7 +184,7 @@ namespace SpacetimeDB
                             foreach (var row in update.TableRowOperations)
                             {
                                 var table = clientDB.GetTable(update.TableName);
-                                var typeDef = table.GetSchema();
+                                var typeDef = table.RowSchema;
                                 var (typeValue, _) = TypeValue.Decode(typeDef, row.Row);
                                 if (typeValue.HasValue)
                                 {
@@ -267,7 +281,7 @@ namespace SpacetimeDB
                                     {
                                         _dbEvents.Add(new DbEvent
                                         {
-                                            tableName = tableName,
+                                            clientTableType = table.ClientTableType,
                                             op = TableOp.Delete,
                                             newValue = null,
                                             oldValue = deletedValue,
@@ -281,7 +295,7 @@ namespace SpacetimeDB
                                     {
                                         _dbEvents.Add(new DbEvent
                                         {
-                                            tableName = tableName,
+                                            clientTableType = table.ClientTableType,
                                             op = TableOp.Insert,
                                             newValue = insertedValue,
                                             oldValue = null
@@ -297,28 +311,60 @@ namespace SpacetimeDB
                     var eventCount = _dbEvents.Count;
                     for (int i = 0; i < eventCount; i++)
                     {
+                        string tableName = _dbEvents[i].clientTableType.Name;
+
                         bool isUpdate = false;
                         if (i < eventCount - 1)
                         {
                             if (_dbEvents[i].op == TableOp.Delete && _dbEvents[i + 1].op == TableOp.Insert)
                             {
                                 // somewhat hacky: Delete followed by an insert on the same table is considered an update.
-                                isUpdate = _dbEvents[i].tableName.Equals(_dbEvents[i + 1].tableName);
+                                isUpdate = tableName.Equals(_dbEvents[i + 1].clientTableType.Name);
                             }
                         }
+
+                        TableOp tableOp = _dbEvents[i].op;
+
+                        object oldValue = _dbEvents[i].oldValue, newValue = _dbEvents[i].newValue;
 
                         if (isUpdate)
                         {
                             // Merge delete and insert in one update
-                            onRowUpdate?.Invoke(_dbEvents[i].tableName, TableOp.Update, _dbEvents[i].oldValue,
-                                _dbEvents[i + 1].newValue);
+                            tableOp = TableOp.Update;
+                            newValue = _dbEvents[i + 1].newValue;
+
                             i++;
+
+                            var clientEvent = _dbEvents[i].clientTableType.GetMethod("OnUpdateEvent");
+                            if(clientEvent != null)
+                            {
+                                clientEvent.Invoke(null, new object[] { oldValue, newValue });
+                            }                            
                         }
-                        else
+                        else if(tableOp == TableOp.Insert)
                         {
-                            onRowUpdate?.Invoke(_dbEvents[i].tableName, _dbEvents[i].op, _dbEvents[i].oldValue,
-                                _dbEvents[i].newValue);
+                            var clientEvent = _dbEvents[i].clientTableType.GetMethod("OnInsertEvent");
+                            if (clientEvent != null)
+                            {
+                                clientEvent.Invoke(null, new object[] { newValue });
+                            }
                         }
+                        else if(tableOp == TableOp.Delete)
+                        {
+                            var clientEvent = _dbEvents[i].clientTableType.GetMethod("OnDeleteEvent");
+                            if (clientEvent != null)
+                            {
+                                clientEvent.Invoke(null, new object[] { oldValue });
+                            }
+                        }
+
+                        var clientRowUpdate = _dbEvents[i].clientTableType.GetMethod("OnRowUpdateEvent");
+                        if (clientRowUpdate != null)
+                        {
+                            clientRowUpdate.Invoke(null, new object[] { tableOp, oldValue, newValue });
+                        }
+
+                        onRowUpdate?.Invoke(tableName, tableOp, oldValue, newValue);
                     }
 
                     switch (message.TypeCase)
@@ -329,6 +375,12 @@ namespace SpacetimeDB
                         case ClientApi.Message.TypeOneofCase.TransactionUpdate:
                             onTransactionComplete?.Invoke();
                             onEvent?.Invoke(message.TransactionUpdate.Event);
+
+                            string functionName = message.TransactionUpdate.Event.FunctionCall.Reducer;
+                            if (reducerEventCache.ContainsKey(functionName))
+                            {
+                                reducerEventCache[functionName].Invoke(null, new object[] { message.TransactionUpdate.Event });
+                            }
                             break;
                     }
 
