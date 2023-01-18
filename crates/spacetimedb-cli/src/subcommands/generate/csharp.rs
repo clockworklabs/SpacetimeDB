@@ -116,6 +116,9 @@ fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_column
     writeln!(output, "// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.").unwrap();
     writeln!(output).unwrap();
 
+    writeln!(output, "using System;").unwrap();
+    writeln!(output).unwrap();
+
     writeln!(output, "namespace {NAMESPACE}").unwrap();
     writeln!(output, "{{").unwrap();
     {
@@ -140,6 +143,32 @@ fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_column
                 )
                 .unwrap();
             }
+
+            writeln!(output).unwrap();
+
+            writeln!(
+                output,
+                "public static event Action<{struct_name_pascal_case}> OnInsert;"
+            )
+            .unwrap();
+            writeln!(
+                output,
+                "public static event Action<{struct_name_pascal_case}, {struct_name_pascal_case}> OnUpdate;"
+            )
+            .unwrap();
+            writeln!(
+                output,
+                "public static event Action<{struct_name_pascal_case}> OnDelete;"
+            )
+            .unwrap();
+
+            writeln!(
+                output,
+                "public static event Action<NetworkManager.TableOp, {struct_name_pascal_case}, {struct_name_pascal_case}> OnRowUpdate;"
+            )
+            .unwrap();
+
+            writeln!(output).unwrap();
 
             writeln!(output, "public static TypeDef GetTypeDef()").unwrap();
             writeln!(output, "{{").unwrap();
@@ -168,6 +197,81 @@ fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_column
                     unique_columns,
                 );
             }
+
+            writeln!(output, "public static void OnInsertEvent(object newValue)").unwrap();
+            writeln!(output, "{{").unwrap();
+            {
+                indent_scope!(output);
+                writeln!(output, "if(OnInsert != null)").unwrap();
+                writeln!(output, "{{").unwrap();
+                {
+                    indent_scope!(output);
+                    writeln!(output, "OnInsert?.Invoke(({struct_name_pascal_case})newValue);").unwrap();
+                }
+                writeln!(output, "}}").unwrap();
+            }
+            writeln!(output, "}}").unwrap();
+            writeln!(output).unwrap();
+
+            writeln!(
+                output,
+                "public static void OnUpdateEvent(object oldValue, object newValue)"
+            )
+            .unwrap();
+            writeln!(output, "{{").unwrap();
+            {
+                indent_scope!(output);
+                writeln!(output, "if(OnUpdate != null)").unwrap();
+                writeln!(output, "{{").unwrap();
+                {
+                    indent_scope!(output);
+                    writeln!(
+                        output,
+                        "OnUpdate?.Invoke(({struct_name_pascal_case})oldValue,({struct_name_pascal_case})newValue);"
+                    )
+                    .unwrap();
+                }
+                writeln!(output, "}}").unwrap();
+            }
+            writeln!(output, "}}").unwrap();
+            writeln!(output).unwrap();
+
+            writeln!(output, "public static void OnDeleteEvent(object oldValue)").unwrap();
+            writeln!(output, "{{").unwrap();
+            {
+                indent_scope!(output);
+                writeln!(output, "if(OnDelete != null)").unwrap();
+                writeln!(output, "{{").unwrap();
+                {
+                    indent_scope!(output);
+                    writeln!(output, "OnDelete?.Invoke(({struct_name_pascal_case})oldValue);").unwrap();
+                }
+                writeln!(output, "}}").unwrap();
+            }
+            writeln!(output, "}}").unwrap();
+            writeln!(output).unwrap();
+
+            writeln!(
+                output,
+                "public static void OnRowUpdateEvent(NetworkManager.TableOp op, object oldValue, object newValue)"
+            )
+            .unwrap();
+            writeln!(output, "{{").unwrap();
+            {
+                indent_scope!(output);
+                writeln!(output, "if(OnRowUpdate != null)").unwrap();
+                writeln!(output, "{{").unwrap();
+                {
+                    indent_scope!(output);
+                    writeln!(
+                        output,
+                        "OnRowUpdate?.Invoke(op, ({struct_name_pascal_case})oldValue,({struct_name_pascal_case})newValue);"
+                    )
+                    .unwrap();
+                }
+                writeln!(output, "}}").unwrap();
+            }
+            writeln!(output, "}}").unwrap();
         }
         writeln!(output, "}}").unwrap();
     }
@@ -458,7 +562,10 @@ pub fn autogen_csharp_reducer(reducer: &ReducerDef) -> String {
     let mut output = CodeIndenter::new(String::new());
 
     let mut func_arguments: String = String::new();
+    let mut arg_types: String = String::new();
     let mut arg_names: String = String::new();
+    let mut arg_event_parse: String = String::new();
+    let arg_count = reducer.args.len();
 
     writeln!(
         output,
@@ -466,6 +573,12 @@ pub fn autogen_csharp_reducer(reducer: &ReducerDef) -> String {
     )
     .unwrap();
     writeln!(output, "// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(output, "using System;").unwrap();
+    writeln!(output, "using ClientApi;").unwrap();
+    writeln!(output, "using Newtonsoft.Json.Linq;").unwrap();
+
     writeln!(output).unwrap();
 
     if use_namespace {
@@ -483,16 +596,30 @@ pub fn autogen_csharp_reducer(reducer: &ReducerDef) -> String {
         for (arg_i, arg) in reducer.args.iter().enumerate() {
             let name = arg.name.as_deref().expect("reducer args should have names");
             let arg_name = name.to_case(Case::Camel);
+            let arg_type_str = ty_fmt(&arg.element_type);
 
             if arg_i > 0 {
                 func_arguments.push_str(", ");
                 arg_names.push_str(", ");
             }
+            arg_event_parse.push_str(", ");
+            arg_types.push_str(", ");
 
-            write!(func_arguments, "{} {}", ty_fmt(&arg.element_type), arg_name).unwrap();
+            write!(func_arguments, "{} {}", arg_type_str, arg_name).unwrap();
 
             arg_names.push_str(&arg_name);
+            write!(arg_event_parse, "args[{}].ToObject<{}>()", arg_i, arg_type_str).unwrap();
+
+            write!(arg_types, "{}", arg_type_str).unwrap();
         }
+
+        writeln!(
+            output,
+            "public static event Action<Event.Types.Status, Hash{arg_types}> On{func_name_pascal_case}Event;"
+        )
+        .unwrap();
+
+        writeln!(output).unwrap();
 
         writeln!(output, "public static void {func_name_pascal_case}({func_arguments})").unwrap();
         writeln!(output, "{{").unwrap();
@@ -530,6 +657,44 @@ pub fn autogen_csharp_reducer(reducer: &ReducerDef) -> String {
             }
         }
         // Closing brace for reducer
+        writeln!(output, "}}").unwrap();
+        writeln!(output).unwrap();
+
+        writeln!(output, "[ReducerEvent(FunctionName = \"{func_name}\")]").unwrap();
+        writeln!(output, "public static void On{func_name_pascal_case}(Event dbEvent)").unwrap();
+        writeln!(output, "{{").unwrap();
+        {
+            indent_scope!(output);
+
+            writeln!(output, "if(On{func_name_pascal_case}Event != null)").unwrap();
+            writeln!(output, "{{").unwrap();
+            {
+                indent_scope!(output);
+                writeln!(output, "var jsonString = dbEvent.FunctionCall.ArgBytes.ToStringUtf8();").unwrap();
+                writeln!(
+                    output,
+                    "var args = Newtonsoft.Json.JsonConvert.DeserializeObject<JArray>(jsonString);"
+                )
+                .unwrap();
+
+                writeln!(output, "if(args.Count >= {arg_count})").unwrap();
+                writeln!(output, "{{").unwrap();
+                {
+                    indent_scope!(output);
+                    writeln!(
+                        output,
+                        "On{func_name_pascal_case}Event(dbEvent.Status, Hash.From(dbEvent.CallerIdentity.ToByteArray()){arg_event_parse});"
+                    )
+                    .unwrap();
+                }
+                // Closing brace for if count is valid
+                writeln!(output, "}}").unwrap();
+            }
+            // Closing brace for if event is registered
+            writeln!(output, "}}").unwrap();
+        }
+
+        // Closing brace for Event parsing function
         writeln!(output, "}}").unwrap();
     }
     // Closing brace for class
