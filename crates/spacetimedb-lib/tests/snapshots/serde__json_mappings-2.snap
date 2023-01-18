@@ -6,7 +6,7 @@ expression: "de_json({\n    \"foo\": 5654,\n    \"bar\": \"010F2C\",\n    \"baz\
     0: <u32> 5654,
     1: <bytes> "\x01\x0f,",
     2: <list> [
-        <string> "it's 🥶°C",
+        <string> it's 🥶°C,
     ],
     3: <enum>.1: <unit>,
     4: <f64> 9.8,

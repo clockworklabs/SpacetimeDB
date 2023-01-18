@@ -500,7 +500,7 @@ impl TypeValue {
             TypeValue::Bool(n) => w!("bool", "{n}"),
             TypeValue::F32(n) => w!("f32", "{n}"),
             TypeValue::F64(n) => w!("f64", "{n}"),
-            TypeValue::String(n) => w!("string", "{n:?}"),
+            TypeValue::String(n) => w!("string", "{n}"),
             TypeValue::Bytes(bytes) => w!("bytes", "\"{}\"", bytes.escape_ascii()),
             TypeValue::Hash(h) => w!("hash", "{h}"),
             TypeValue::Unit => write!(f, "<unit>"),
