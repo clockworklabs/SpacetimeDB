@@ -57,7 +57,7 @@ impl Config {
     fn from_raw(raw: RawConfig) -> Self {
         Self {
             identity_configs: raw.identity_configs.unwrap_or_default(),
-            host: raw.host.unwrap_or_else(|| "partner.spacetimedb.net:3000".into()),
+            host: raw.host.unwrap_or_else(|| "spacetimedb.com/spacetimedb".into()),
             protocol: raw.protocol.unwrap_or_else(|| "https".into()),
             default_identity: raw.default_identity,
         }

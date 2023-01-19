@@ -1,0 +1,20 @@
+version: "3.6"
+
+services:
+  node:
+    working_dir: /usr/src/app
+    build:
+      context: ./
+      dockerfile: ./crates/spacetimedb-standalone/Dockerfile
+    volumes:
+      - /stdb
+    command: start
+    privileged: true
+    environment:
+      ENV: live
+    networks:
+      - jenkins_default
+
+networks:
+  jenkins_default:
+    external: true

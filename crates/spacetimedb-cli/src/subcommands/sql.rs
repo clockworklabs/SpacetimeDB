@@ -67,16 +67,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let client = reqwest::Client::new();
 
-    let mut builder = client.post(format!("{}/database/sql/{}", config.get_host_url(), address));
-
-    if let Some(identity_token) = config.get_default_identity_config() {
-        builder = builder.basic_auth("token", Some(identity_token.token.clone()));
-    } else {
-        println!("Missing identity credentials for identity.");
-        std::process::exit(0);
-    }
-
-    let mut builder = builder.body(query.to_owned());
+    let mut builder = client
+        .post(format!("{}/database/sql/{}", config.get_host_url(), address))
+        .body(query.to_owned());
 
     if let Some(auth_header) = auth_header {
         builder = builder.header("Authorization", auth_header);

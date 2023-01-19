@@ -6,9 +6,7 @@ services:
     image: registry.digitalocean.com/clockwork/spacetimedb:latest
     volumes:
       - /stdb
-    ports:
-      - "3000:80"
-    command: init --worker-node
+    command: start
     privileged: true
     environment:
       ENV: live
@@ -23,11 +21,6 @@ services:
 
   prometheus:
     image: registry.digitalocean.com/clockwork/spacetimedb_prometheus:latest
-    ports:
-      - "9090:9090"
-
   grafana:
     image: registry.digitalocean.com/clockwork/spacetimedb_grafana:latest
-    ports:
-      - "3001:3000"
 

@@ -37,7 +37,7 @@ node {
     }
 
     stage('Build SpacetimeDB Image') {
-      def spacetimedb = docker.build("clockwork/spacetimedb", ". -f crates/spacetimedb-core/Dockerfile")
+      def spacetimedb = docker.build("clockwork/spacetimedb", ". -f crates/spacetimedb-standalone/Dockerfile")
       docker.withRegistry('https://registry.digitalocean.com', 'DIGITAL_OCEAN_DOCKER_REGISTRY_CREDENTIALS') {
         spacetimedb.push()
         SPACETIMEDB_IMAGE_DIGEST = imageDigest("clockwork/spacetimedb")
@@ -45,22 +45,59 @@ node {
       }
     }
 
+    stage('CLI Prebuild') {
+      sh "rm -rf cli-bin"
+      sh "mkdir cli-bin"
+    }
+
+    stage('All CLI Builds') {
+      parallel (
+        linux: {
+          withCredentials([sshUserPrivateKey(credentialsId: "AWS_EC2_INSTANCE_JENKINS_SSH_KEY", keyFileVariable: 'keyfile')]) {
+            sh "scp -o StrictHostKeyChecking=accept-new -P 9001 -i '${keyfile}' .jenkins/linux-build.sh jenkins@vpn.partner.spacetimedb.net:linux-build.sh"
+            sh "ssh -o StrictHostKeyChecking=accept-new -p 9001 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net bash linux-build.sh"
+            sh "scp -o StrictHostKeyChecking=accept-new -P 9001 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net:/home/jenkins/SpacetimeDB/target/release/spacetime ./cli-bin/spacetime.linux"
+          }
+        },
+        macos: {
+          withCredentials([sshUserPrivateKey(credentialsId: "AWS_EC2_INSTANCE_JENKINS_SSH_KEY", keyFileVariable: 'keyfile')]) {
+            sh "scp -o StrictHostKeyChecking=accept-new -P 9002 -i '${keyfile}' .jenkins/macos-build.sh jenkins@vpn.partner.spacetimedb.net:/Users/jenkins/macos-build.sh"
+            sh "ssh -o StrictHostKeyChecking=accept-new -p 9002 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net bash macos-build.sh"
+            sh "scp -o StrictHostKeyChecking=accept-new -P 9002 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net:/Users/jenkins/SpacetimeDB/target/spacetime-universal-apple-darwin-release ./cli-bin/spacetime.macos"
+          }
+        },
+        windows: {
+          withCredentials([sshUserPrivateKey(credentialsId: "AWS_EC2_INSTANCE_JENKINS_SSH_KEY", keyFileVariable: 'keyfile')]) {
+            sh "scp -o StrictHostKeyChecking=accept-new -P 9003 -i '${keyfile}' .jenkins/windows_build.bat jenkins@vpn.partner.spacetimedb.net:windows_build.bat"
+            sh "ssh -o StrictHostKeyChecking=accept-new -p 9003 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net windows_build"
+            sh "scp -o StrictHostKeyChecking=accept-new -P 9003 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net:C:/Users/jenkins/SpacetimeDB/target/release/spacetime.exe ./cli-bin/spacetime.exe"
+          }
+        }
+      )
+    }
+
     stage('Deploy') {
-      if (env.BUILD_ENV == "testing") {
-        withCredentials([usernamePassword(credentialsId: 'DIGITAL_OCEAN_DOCKER_REGISTRY_CREDENTIALS', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD'),]) {
-          withCredentials([sshUserPrivateKey(credentialsId: "AWS_EC2_INSTANCE_JENKINS_SSH_KEY", keyFileVariable: 'keyfile')]) {
-            sh "scp -o StrictHostKeyChecking=accept-new -P 9001 -i '${keyfile}' docker-compose-live.yml jenkins@vpn.partner.spacetimedb.net:/home/jenkins/docker-compose-live.yml"
-            sh "ssh -o StrictHostKeyChecking=accept-new -p 9001 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net 'docker login -u ${USERNAME} -p ${PASSWORD} https://registry.digitalocean.com; docker-compose -f docker-compose-live.yml stop; docker-compose -f docker-compose-live.yml pull; docker-compose -f docker-compose-live.yml up -d'"
+      parallel (
+        spacetimedb: {
+          withCredentials([usernamePassword(credentialsId: 'DIGITAL_OCEAN_DOCKER_REGISTRY_CREDENTIALS', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD'),]) {
+            withCredentials([sshUserPrivateKey(credentialsId: "AWS_EC2_INSTANCE_JENKINS_SSH_KEY", keyFileVariable: 'keyfile')]) {
+              sh "scp -o StrictHostKeyChecking=accept-new -i '${keyfile}' docker-compose-live.yml jenkins@${env.PARTNER_HOST}:/home/jenkins/docker-compose-live.yml"
+              sh "ssh -o StrictHostKeyChecking=accept-new -i '${keyfile}' jenkins@${env.PARTNER_HOST} 'docker login -u ${USERNAME} -p ${PASSWORD} https://registry.digitalocean.com; docker-compose -f docker-compose-live.yml stop; docker-compose -f docker-compose-live.yml pull; docker-compose -f docker-compose-live.yml up -d'"
+            }
           }
-        }
-      } else if (env.BUILD_ENV == "live") {
-        withCredentials([usernamePassword(credentialsId: 'DIGITAL_OCEAN_DOCKER_REGISTRY_CREDENTIALS', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD'),]) {
+	}, 
+	cli_deploy: {
           withCredentials([sshUserPrivateKey(credentialsId: "AWS_EC2_INSTANCE_JENKINS_SSH_KEY", keyFileVariable: 'keyfile')]) {
-            sh "scp -o StrictHostKeyChecking=accept-new -P 9000 -i '${keyfile}' docker-compose-live.yml jenkins@vpn.partner.spacetimedb.net:/home/jenkins/docker-compose-live.yml"
-            sh "ssh -o StrictHostKeyChecking=accept-new -p 9000 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net 'docker login -u ${USERNAME} -p ${PASSWORD} https://registry.digitalocean.com; docker-compose -f docker-compose-live.yml stop; docker-compose -f docker-compose-live.yml pull; docker-compose -f docker-compose-live.yml up -d'"
+            // Upload linux, macos and windows executables
+            sh "ssh -o StrictHostKeyChecking=accept-new -i '${keyfile}' jenkins@${env.PARTNER_HOST} 'rm -rf cli-bin; mkdir -p cli-bin'"
+            sh "scp -o StrictHostKeyChecking=accept-new -i '${keyfile}' cli-bin/* jenkins@${env.PARTNER_HOST}:cli-bin/"
+
+	    // Copy and deploy cli script
+            sh "scp -o StrictHostKeyChecking=accept-new -i '${keyfile}' .jenkins/deploy-cli.sh jenkins@${env.PARTNER_HOST}:deploy-cli.sh"
+            sh "ssh -o StrictHostKeyChecking=accept-new -i '${keyfile}' jenkins@${env.PARTNER_HOST} bash deploy-cli.sh"
           }
-        }
-      }
+	}
+      )
     }
   } catch (FlowInterruptedException interruptEx) {
     currentBuild.result = "ABORTED"
