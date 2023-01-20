@@ -2,6 +2,7 @@ mod controller;
 mod worker_db;
 
 use controller::Controller;
+use tokio::runtime::Builder;
 use worker_db::WorkerDb;
 
 use anyhow::Context;
@@ -91,8 +92,7 @@ async fn version() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn async_main() -> anyhow::Result<()> {
     let args = Args::parse();
     match args.command {
         Subcommands::Start {
