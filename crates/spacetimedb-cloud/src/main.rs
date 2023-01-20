@@ -10,6 +10,8 @@ use nodes::node_options::NodeOptions;
 use nodes::worker_node;
 use spacetimedb::startup;
 use std::error::Error;
+use std::panic;
+use std::process;
 use tokio::runtime::Builder;
 
 /// Module API (worker nodes, port 80/443): The API for manipulating Wasm SpacetimeDB modules
@@ -189,6 +191,14 @@ struct Args {
 /// TODO: spacetime pubsub node - a node that manages the communication between workers and clients
 ///
 fn main() {
+    // take_hook() returns the default hook in case when a custom one is not set
+    let orig_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        // invoke the default handler and exit the process
+        orig_hook(panic_info);
+        process::exit(1);
+    }));
+
     // Create a multi-threaded run loop
     Builder::new_multi_thread()
         .enable_all()

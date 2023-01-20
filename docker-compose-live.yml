@@ -18,9 +18,9 @@ services:
     logging:
       options:
         max-size: 1G
+    restart: always
 
   prometheus:
     image: registry.digitalocean.com/clockwork/spacetimedb_prometheus:latest
   grafana:
     image: registry.digitalocean.com/clockwork/spacetimedb_grafana:latest
-
