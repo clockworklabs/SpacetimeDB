@@ -10,8 +10,8 @@ name = "db"
 harness = false
 
 [dependencies]
-spacetimedb-lib = { path = "../spacetimedb-lib", version = "0.3.1" }
-spacetimedb-core = { path = "../spacetimedb-core", version = "0.1.0" }
+spacetimedb-lib = { path = "../spacetimedb-lib", version = "0.3.2" }
+spacetimedb-core = { path = "../spacetimedb-core", version = "0.3.2" }
 
 clap = { version = "4.0.18", features = ["derive"] }
 rusqlite = {version = "0.28.0", features = ["bundled"]}
