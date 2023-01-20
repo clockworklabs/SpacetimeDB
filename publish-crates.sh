@@ -24,13 +24,13 @@ cd crates/spacetimedb-bindings-macro
 cargo publish $DRY_RUN
 cd ../..
 
-sleep 5
+sleep 10
 
 cd crates/spacetimedb-bindings
 cargo publish $DRY_RUN
 cd ../..
 
-sleep 5
+sleep 10
 
 cd crates/spacetimedb-cli
 cargo publish $DRY_RUN
