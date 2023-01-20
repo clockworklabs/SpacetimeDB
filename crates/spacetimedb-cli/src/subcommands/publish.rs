@@ -25,6 +25,7 @@ pub fn cli() -> clap::Command {
             Arg::new("clear_database")
                 .long("clear-database")
                 .short('c')
+                .required(true)
                 .action(SetTrue),
         )
         .arg(
