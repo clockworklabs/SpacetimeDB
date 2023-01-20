@@ -8,7 +8,6 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::util;
 use crate::util::get_auth_header;
 use crate::util::init_default;
 
@@ -137,10 +136,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         url_args.push_str("&trace_log=true");
     }
 
-    crate::tasks::pre_publish(path_to_project, use_cargo)?;
+    let path_to_wasm = crate::tasks::pre_publish(path_to_project, use_cargo)?;
 
-    let path_to_wasm = util::find_wasm_file(path_to_project)?;
-    let program_bytes = fs::read(fs::canonicalize(path_to_wasm).unwrap())?;
+    let program_bytes = fs::read(path_to_wasm)?;
 
     let url = format!("{}/database/publish{}", config.get_host_url(), url_args);
     let client = reqwest::Client::new();

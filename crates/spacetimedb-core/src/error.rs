@@ -20,16 +20,12 @@ pub enum TableError {
     NotFound(String),
     #[error("Table with ID `{0}` not found.")]
     IdNotFound(u32),
-    #[error("Scan Table with ID `{0}` not found.")]
-    ScanTableIdNotFound(u32),
-    #[error("Scan PK with Table ID `{0}` not found.")]
-    ScanPkTableIdNotFound(u32),
-    #[error("Decode Row Seek Table with ID `{0}` failed with {1}.")]
-    DecodeSeekTableIdNotFound(u32, LibError),
     #[error("Column `{0}.{1}` is missing a name")]
     ColumnWithoutName(String, u32),
     #[error("schema_for_table: Table has invalid schema: {0} Err: {1}")]
     InvalidSchema(u32, LibError),
+    #[error("failed to decode row in table")]
+    RowDecodeError(DecodeError),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -85,29 +81,41 @@ impl From<PoisonError<std::sync::MutexGuard<'_, MessageLog>>> for DBError {
 
 #[derive(Error, Debug)]
 pub enum NodesError {
-    #[error("insert: Failed to decode row: table_id: {table_id} Err: {e}")]
-    InsertDecode { table_id: u32, e: DecodeError },
-    #[error("insert: Failed to insert row: table_id: {table_id} Err: {e}")]
-    InsertRow { table_id: u32, e: DBError },
-    #[error("delete: Failed to decode row: table_id: {table_id} Err: {e}")]
-    DeleteDecode { table_id: u32, e: DecodeError },
-    #[error("delete: Failed to delete row: table_id: {table_id} Err: {e}")]
-    DeleteRow { table_id: u32, e: DBError },
-    #[error("delete: Not found Pk: table_id: {table_id} Pk: {pk:?}")]
-    DeleteNotFound { table_id: u32, pk: PrimaryKey },
-    #[error("delete: Not found value: table_id: {table_id}")]
-    DeleteValueNotFound { table_id: u32 },
-    #[error("delete_range: Failed to scan range: {table_id} Err: {e}")]
-    DeleteScanRange { table_id: u32, e: DBError },
-    #[error("delete_range: Failed to delete in range: {table_id} Err: {e}")]
-    DeleteRange { table_id: u32, e: DBError },
-    #[error("delete: Not found Range: table_id: {table_id}")]
-    DeleteRangeNotFound { table_id: u32 },
-    #[error("can't do operation; not inside transaction")]
+    #[error("Failed to decode row: {0}")]
+    DecodeRow(#[source] DecodeError),
+    #[error("Failed to decode value: {0}")]
+    DecodeValue(#[source] DecodeError),
+    #[error("Failed to decode primary key: {0}")]
+    DecodePrimaryKey(#[source] DecodeError),
+    #[error("Failed to decode schema: {0}")]
+    DecodeSchema(#[source] DecodeError),
+    #[error("table with provided name or id doesn't exist")]
+    TableNotFound,
+    #[error("Primary key {0:?} not found")]
+    PrimaryKeyNotFound(PrimaryKey),
+    #[error("row with column of given value not found")]
+    ColumnValueNotFound,
+    #[error("range of rows not found")]
+    RangeNotFound,
+    #[error("column is out of bounds")]
+    BadColumn,
+    #[error("can't perform operation; not inside transaction")]
     NotInTransaction,
+    #[error("table with name {0:?} already exists")]
+    AlreadyExists(String),
+    #[error("table with name `{0}` start with 'st_' and that is reserved for internal system tables.")]
+    SystemName(String),
+    #[error("internal db error: {0}")]
+    Internal(#[source] Box<DBError>),
 }
 
-pub fn log_to_err(err: NodesError) -> NodesError {
-    log::error!("{err}");
-    err
+impl From<DBError> for NodesError {
+    fn from(e: DBError) -> Self {
+        match e {
+            DBError::Table(TableError::Exist(name)) => Self::AlreadyExists(name),
+            DBError::Table(TableError::System(name)) => Self::SystemName(name),
+            DBError::Table(TableError::IdNotFound(_) | TableError::NotFound(_)) => Self::TableNotFound,
+            _ => Self::Internal(Box::new(e)),
+        }
+    }
 }

@@ -28,27 +28,27 @@ macro_rules! dbg {
     // `$val` expression could be a block (`{ .. }`), in which case the `eprintln!`
     // will be malformed.
     () => {
-        $crate::io::eprintln!("[{}:{}]", file!(), line!())
+        $crate::eprintln!("[{}:{}]", file!(), line!())
     };
     ($val:expr $(,)?) => {
         // Use of `match` here is intentional because it affects the lifetimes
         // of temporaries - https://stackoverflow.com/a/48732525/1063961
         match $val {
             tmp => {
-                $crate::io::eprintln!("[{}:{}] {} = {:#?}",
+                $crate::eprintln!("[{}:{}] {} = {:#?}",
                     file!(), line!(), stringify!($val), &tmp);
                 tmp
             }
         }
     };
     ($($val:expr),+ $(,)?) => {
-        ($($crate::io::dbg!($val)),+,)
+        ($($crate::dbg!($val)),+,)
     };
 }
 
 // TODO: probably do something lighter weight here
 #[no_mangle]
-extern "C" fn __init_panic__() {
+extern "C" fn __preinit__00_panic_hook() {
     panic::set_hook(Box::new(panic_hook));
 }
 

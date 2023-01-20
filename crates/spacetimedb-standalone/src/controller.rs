@@ -239,9 +239,9 @@ impl Controller {
                 instance_id
             ));
         };
-        let identity = Hash::from_slice(database.identity);
+        let identity = Hash::from_slice(&database.identity);
         let address = Address::from_slice(database.address);
-        let program_bytes_address = Hash::from_slice(database.program_bytes_address);
+        let program_bytes_address = Hash::from_slice(&database.program_bytes_address);
         let program_bytes = object_db::get_object(&program_bytes_address).await?.unwrap();
 
         let log_path = DatabaseLogger::filepath(&address, instance_id);
@@ -279,9 +279,9 @@ impl Controller {
             ));
         };
         let host_type = database.host_type();
-        let identity = Hash::from_slice(database.identity);
+        let identity = Hash::from_slice(&database.identity);
         let address = Address::from_slice(database.address);
-        let program_bytes_address = Hash::from_slice(database.program_bytes_address);
+        let program_bytes_address = Hash::from_slice(&database.program_bytes_address);
         let program_bytes = object_db::get_object(&program_bytes_address).await?.unwrap();
 
         let log_path = DatabaseLogger::filepath(&address, instance_id);

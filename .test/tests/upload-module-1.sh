@@ -12,7 +12,7 @@ source "./.test/lib.include"
 create_project
 
 cat > "${PROJECT_PATH}/src/lib.rs" << EOF
-use spacetimedb::{println, spacetimedb, Hash};
+use spacetimedb::{println, spacetimedb};
 
 #[spacetimedb(table)]
 pub struct Person {
@@ -20,12 +20,12 @@ pub struct Person {
 }
 
 #[spacetimedb(reducer)]
-pub fn add(_sender: Hash, _timestamp: u64, name: String) {
+pub fn add(name: String) {
     Person::insert(Person { name })
 }
 
 #[spacetimedb(reducer)]
-pub fn say_hello(_sender: Hash, _timestamp: u64) {
+pub fn say_hello() {
     for person in Person::iter() {
         println!("Hello, {}!", person.name);
     }

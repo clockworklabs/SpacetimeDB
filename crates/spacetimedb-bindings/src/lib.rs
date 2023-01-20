@@ -1,6 +1,9 @@
 #[macro_use]
 pub mod io;
 mod impls;
+#[doc(hidden)]
+pub mod rt;
+mod types;
 
 use once_cell::sync::OnceCell;
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
@@ -12,27 +15,41 @@ use std::ops::Range;
 use std::panic;
 
 #[cfg(feature = "macro")]
-pub use spacetimedb_bindings_macro::spacetimedb;
+pub use spacetimedb_bindings_macro::{duration, spacetimedb};
 
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::hash;
 pub use spacetimedb_lib::Hash;
 pub use spacetimedb_lib::TypeValue;
+pub use types::Timestamp;
 
 pub use serde_json;
 
 pub use spacetimedb_bindings_sys as sys;
-use spacetimedb_bindings_sys::BindingError;
+pub use sys::Errno;
 
-#[doc(hidden)]
-pub mod __private {
-    pub use once_cell::sync::{Lazy, OnceCell};
+pub type Result<T = (), E = Errno> = core::result::Result<T, E>;
+
+#[no_mangle]
+static SPACETIME_ABI_VERSION: u32 = (spacetimedb_lib::SCHEMA_FORMAT_VERSION as u32) << 16 | sys::ABI_VERSION as u32;
+#[no_mangle]
+static SPACETIME_ABI_VERSION_IS_ADDR: () = ();
+
+#[non_exhaustive]
+pub struct ReducerContext {
+    pub sender: Hash,
+    pub timestamp: Timestamp,
 }
 
-#[no_mangle]
-pub static SPACETIME_ABI_VERSION: u32 = (spacetimedb_lib::SCHEMA_FORMAT_VERSION as u32) << 16 | sys::ABI_VERSION as u32;
-#[no_mangle]
-pub static SPACETIME_ABI_VERSION_IS_ADDR: () = ();
+impl ReducerContext {
+    #[doc(hidden)]
+    pub fn __dummy() -> Self {
+        Self {
+            sender: Hash { data: [0; 32] },
+            timestamp: Timestamp::UNIX_EPOCH,
+        }
+    }
+}
 
 // #[cfg(target_arch = "wasm32")]
 // #[global_allocator]
@@ -67,39 +84,20 @@ pub fn decode_schema(bytes: &mut impl BufReader) -> Result<TupleDef, DecodeError
     TupleDef::decode(bytes)
 }
 
-pub fn create_table(table_name: &str, schema: TupleDef) -> u32 {
+pub fn create_table(table_name: &str, schema: TupleDef) -> Result<u32> {
     with_row_buf(|bytes| {
-        let mut schema_bytes = Vec::new();
-        schema.encode(&mut schema_bytes);
-
-        let table_info = TupleValue {
-            elements: vec![
-                TypeValue::String(table_name.to_string()),
-                TypeValue::Bytes(schema_bytes),
-            ]
-            .into(),
-        };
-
-        table_info.encode(bytes);
-
-        sys::create_table(bytes)
+        schema.encode(bytes);
+        sys::create_table(table_name, bytes)
     })
 }
 
 pub fn get_table_id(table_name: &str) -> u32 {
-    with_row_buf(|bytes| {
-        let table_name = TypeValue::String(table_name.to_string());
-        table_name.encode(bytes);
-
-        let result = sys::get_table_id(bytes);
-        if result == u32::MAX {
-            panic!("Failed to get table with name: {}", table_name);
-        }
-        result
+    sys::get_table_id(table_name).unwrap_or_else(|_| {
+        panic!("Failed to get table with name: {}", table_name);
     })
 }
 
-pub fn insert(table_id: u32, row: TupleValue) -> Result<(), BindingError> {
+pub fn insert(table_id: u32, row: TupleValue) -> Result<()> {
     with_row_buf(|bytes| {
         row.encode(bytes);
         sys::insert(table_id, bytes)
@@ -108,27 +106,25 @@ pub fn insert(table_id: u32, row: TupleValue) -> Result<(), BindingError> {
 
 // TODO: these return types should be fixed up, turned into Results
 
-pub fn delete_pk(table_id: u32, primary_key: PrimaryKey) -> Option<usize> {
+pub fn delete_pk(table_id: u32, primary_key: PrimaryKey) -> Result<()> {
     with_row_buf(|bytes| {
         primary_key.encode(bytes);
-        sys::delete_pk(table_id, bytes).ok().map(|()| 1)
+        sys::delete_pk(table_id, bytes)
     })
 }
 
-pub fn delete_filter<F: Fn(&TupleValue) -> bool>(table_id: u32, f: F) -> Option<usize> {
+pub fn delete_filter<F: Fn(&TupleValue) -> bool>(table_id: u32, f: F) -> Result<usize> {
     with_row_buf(|bytes| {
         let mut count = 0;
-        for tuple_value in __iter__(table_id).unwrap() {
+        for tuple_value in __iter__(table_id)? {
             if f(&tuple_value) {
                 count += 1;
                 bytes.clear();
                 tuple_value.encode(bytes);
-                if sys::delete_value(table_id, bytes).is_err() {
-                    panic!("Something ain't right.");
-                }
+                sys::delete_value(table_id, bytes)?;
             }
         }
-        Some(count)
+        Ok(count)
     })
 }
 
@@ -139,17 +135,17 @@ pub fn delete_eq(table_id: u32, col_id: u8, eq_value: TypeValue) -> Option<u32> 
     })
 }
 
-pub fn delete_range(table_id: u32, col_id: u8, range: Range<TypeValue>) -> Option<u32> {
+pub fn delete_range(table_id: u32, col_id: u8, range: Range<TypeValue>) -> Result<u32> {
     with_row_buf(|bytes| {
-        let tuple = TupleValue {
-            elements: vec![range.start, range.end].into(),
-        };
-        tuple.encode(bytes);
-        sys::delete_range(table_id, col_id.into(), bytes).ok()
+        range.start.encode(bytes);
+        let mid = bytes.len();
+        range.end.encode(bytes);
+        let (range_start, range_end) = bytes.split_at(mid);
+        sys::delete_range(table_id, col_id.into(), range_start, range_end)
     })
 }
 
-pub fn create_index(_table_id: u32, _index_type: u8, _col_ids: Vec<u8>) {}
+// pub fn create_index(_table_id: u32, _index_type: u8, _col_ids: Vec<u8>) {}
 
 // TODO: going to have to somehow ensure TypeValue is equatable
 // pub fn filter_eq(_table_id: u32, _col_id: u8, _eq_value: TypeValue) -> Option<TupleValue> {
@@ -161,16 +157,16 @@ pub fn create_index(_table_id: u32, _index_type: u8, _col_ids: Vec<u8>) {}
 //
 // }
 
-pub fn __iter__(table_id: u32) -> Option<RawTableIter> {
-    let bytes = sys::iter(table_id);
+pub fn __iter__(table_id: u32) -> Result<RawTableIter> {
+    let bytes = sys::iter(table_id)?;
 
     let mut buffer = Cursor::new(bytes);
-    let schema = decode_schema(&mut buffer);
+    let schema = buffer.get_u16().and_then(|_schema_len| decode_schema(&mut buffer));
     let schema = schema.unwrap_or_else(|e| {
         panic!("__iter__: Could not decode schema. Err: {}", e);
     });
 
-    Some(RawTableIter { buffer, schema })
+    Ok(RawTableIter { buffer, schema })
 }
 
 pub struct RawTableIter {
@@ -208,12 +204,12 @@ pub trait TupleType: Sized + 'static {
     fn get_tupledef() -> TupleDef;
 
     #[doc(hidden)]
-    fn describe_tuple() -> Box<[u8]> {
+    fn describe_tuple() -> Vec<u8> {
         // const _: () = assert!(std::mem::size_of::<usize>() == std::mem::size_of::<u32>());
         let tuple_def = Self::get_tupledef();
         let mut bytes = vec![];
         tuple_def.encode(&mut bytes);
-        bytes.into()
+        bytes
     }
 }
 
@@ -251,7 +247,7 @@ pub trait TableType: TupleType + FromTuple + IntoTuple {
 
     fn create_table() -> u32 {
         let tuple_def = Self::get_tupledef();
-        create_table(Self::TABLE_NAME, tuple_def)
+        create_table(Self::TABLE_NAME, tuple_def).unwrap()
     }
 
     fn __tabledef_cell() -> &'static OnceCell<TableDef>;
@@ -262,11 +258,11 @@ pub trait TableType: TupleType + FromTuple + IntoTuple {
         })
     }
 
-    fn describe_table() -> Box<[u8]> {
+    fn describe_table() -> Vec<u8> {
         let table_def = Self::get_tabledef();
         let mut bytes = vec![];
         table_def.encode(&mut bytes);
-        bytes.into()
+        bytes
     }
 
     fn table_id() -> u32;
@@ -397,4 +393,42 @@ pub mod query {
             tablename
         )
     }
+}
+
+#[macro_export]
+macro_rules! schedule {
+    // this errors on literals with time unit suffixes, e.g. 100ms
+    // I swear I saw a rustc tracking issue to allow :literal to match even an invalid suffix but I can't seem to find it
+    ($dur:literal, $($args:tt)*) => {
+        $crate::schedule!($crate::duration!($dur), $($args)*)
+    };
+    ($dur:expr, $($args:tt)*) => {
+        $crate::__schedule_impl!($crate::rt::schedule_in($dur), [] [$($args)*])
+    };
+}
+#[macro_export]
+macro_rules! schedule_at {
+    ($time:expr, $($args:tt)*) => {
+        $crate::__schedule_impl!($time, [] [$($args)*])
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __schedule_impl {
+    ($time:expr, [$repeater:path] [($($args:tt)*)]) => {
+        $crate::__schedule_impl!(@process_args $time, $repeater, ($($args)*))
+    };
+    ($time:expr, [$($cur:tt)*] [$next:tt $($rest:tt)*]) => {
+        $crate::__schedule_impl!($time, [$($cur)* $next] [$($rest)*])
+    };
+    (@process_args $time:expr, $repeater:path, (_$(, $args:expr)* $(,)?)) => {
+        $crate::__schedule_impl!(@call $time, $repeater, $crate::ReducerContext::__dummy(), ($($args),*))
+    };
+    (@process_args $time:expr, $repeater:path, ($($args:expr),* $(,)?)) => {
+        $crate::__schedule_impl!(@call $time, $repeater, , ($($args),*))
+    };
+    (@call $time:expr, $repeater:path, $($ctx:expr)?, ($($args:expr),*)) => {
+        <$repeater>::schedule($time, $($ctx,)? $($args),*);
+    };
 }

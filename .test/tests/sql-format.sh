@@ -53,7 +53,7 @@ pub struct BuiltIn {
 }
 
 #[spacetimedb(reducer)]
-pub fn test(_sender: Hash, _timestamp: u64) {
+pub fn test() {
     BuiltIn::insert(BuiltIn {
         a_b: true,
         a_i8: -25,

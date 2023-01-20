@@ -60,9 +60,7 @@ where
         if let Some(etype) = event.r#type {
             match etype {
                 Type::Insert(insert) => {
-                    instance_env
-                        .insert(insert.table_id, bytes::Bytes::from(insert.buffer))
-                        .unwrap();
+                    instance_env.insert(insert.table_id, &insert.buffer).unwrap();
                     sink(
                         ReplayEvent::Insert,
                         ReplayEvent::Insert,
@@ -71,9 +69,7 @@ where
                     );
                 }
                 Type::DeletePk(delete) => {
-                    let result_success = instance_env
-                        .delete_pk(delete.table_id, bytes::Bytes::from(delete.buffer))
-                        .is_ok();
+                    let result_success = instance_env.delete_pk(delete.table_id, &delete.buffer).is_ok();
                     sink(
                         ReplayEvent::DeletePk(delete.result_success),
                         ReplayEvent::DeletePk(result_success),
@@ -82,9 +78,7 @@ where
                     );
                 }
                 Type::DeleteValue(delete) => {
-                    let result_success = instance_env
-                        .delete_value(delete.table_id, bytes::Bytes::from(delete.buffer))
-                        .is_ok();
+                    let result_success = instance_env.delete_value(delete.table_id, &delete.buffer).is_ok();
                     sink(
                         ReplayEvent::DeleteValue(delete.result_success),
                         ReplayEvent::DeleteValue(result_success),
@@ -94,7 +88,7 @@ where
                 }
                 Type::DeleteEq(delete) => {
                     let result_count = instance_env
-                        .delete_eq(delete.table_id, delete.col_id, bytes::Bytes::from(delete.buffer))
+                        .delete_eq(delete.table_id, delete.col_id, &delete.buffer)
                         .unwrap();
                     sink(
                         ReplayEvent::DeleteEq(delete.result_deleted_count),
@@ -105,7 +99,7 @@ where
                 }
                 Type::DeleteRange(delete) => {
                     let result_count = instance_env
-                        .delete_range(delete.table_id, delete.col_id, bytes::Bytes::from(delete.buffer))
+                        .delete_range(delete.table_id, delete.col_id, &delete.start_buffer, &delete.end_buffer)
                         .unwrap();
                     sink(
                         ReplayEvent::DeleteRange(delete.result_deleted_count),
@@ -115,7 +109,9 @@ where
                     );
                 }
                 Type::CreateTable(create) => {
-                    let result_table_id = instance_env.create_table(bytes::Bytes::from(create.schema_buffer));
+                    let result_table_id = instance_env
+                        .create_table(&create.table_name, &create.schema_buffer)
+                        .unwrap();
                     sink(
                         ReplayEvent::CreateTable(create.result_table_id),
                         ReplayEvent::CreateTable(result_table_id),
@@ -124,7 +120,7 @@ where
                     );
                 }
                 Type::Iter(iter) => {
-                    let result_bytes = instance_env.iter(iter.table_id);
+                    let result_bytes = instance_env.iter(iter.table_id).unwrap();
                     sink(
                         ReplayEvent::Iter(iter.result_bytes),
                         ReplayEvent::Iter(result_bytes),
@@ -133,7 +129,7 @@ where
                     );
                 }
                 Type::GetTableId(gti) => {
-                    let table_id = instance_env.get_table_id(bytes::Bytes::from(gti.buffer)).unwrap();
+                    let table_id = instance_env.get_table_id(&gti.table_name).unwrap();
                     sink(
                         ReplayEvent::GetTableId(gti.result_table_id),
                         ReplayEvent::GetTableId(table_id),

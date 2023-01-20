@@ -12,7 +12,7 @@ source "./.test/lib.include"
 create_project
 
 RAND=$(random_string)
-run_test cargo run publish "$RAND" --project-path "$PROJECT_PATH"
+spacetime_publish "$RAND" --project-path "$PROJECT_PATH"
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 if [ "$ADDRESS" == "" ] ; then
 	exit 1

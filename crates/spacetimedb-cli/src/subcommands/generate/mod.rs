@@ -1,12 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::util;
-use anyhow::Context as _;
 use clap::Arg;
 use convert_case::{Case, Casing};
-use spacetimedb_lib::{EntityDef, ModuleItemDef, ReducerDef, RepeaterDef, TableDef, TupleDef};
-use wasmtime::{AsContext, AsContextMut, Caller, ExternType, Trap, TypedFunc};
+use spacetimedb_lib::{EntityDef, ModuleItemDef, ReducerDef, TableDef, TupleDef};
+use wasmtime::{AsContext, Caller, ExternType, Trap};
 
 mod code_indenter;
 pub mod csharp;
@@ -50,19 +48,13 @@ pub fn cli() -> clap::Command {
 
 pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
-    let wasm_file = args.get_one::<PathBuf>("wasm_file");
+    let wasm_file = args.get_one::<PathBuf>("wasm_file").cloned();
     let out_dir = args.get_one::<PathBuf>("out_dir").unwrap();
     let lang = *args.get_one::<Language>("lang").unwrap();
 
-    crate::tasks::build(project_path)?;
-
-    let found_wasm_file;
     let wasm_file = match wasm_file {
-        None => {
-            found_wasm_file = util::find_wasm_file(project_path)?;
-            &found_wasm_file
-        }
-        Some(path) => path,
+        Some(x) => x,
+        None => crate::tasks::build(project_path)?,
     };
 
     if !out_dir.exists() {
@@ -72,7 +64,7 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
         ));
     }
 
-    for (fname, code) in generate(wasm_file, lang)? {
+    for (fname, code) in generate(&wasm_file, lang)? {
         fs::write(out_dir.join(fname), code)?;
     }
 
@@ -107,14 +99,12 @@ pub fn generate(wasm_file: &Path, lang: Language) -> anyhow::Result<impl Iterato
             let code = csharp::autogen_csharp_tuple(&name, &tup);
             Some((name + ".cs", code))
         }
+        // I'm not sure exactly how this should work; when does init_database get called with csharp?
+        ModuleItemDef::Entity(EntityDef::Reducer(reducer)) if reducer.name.as_deref() == Some("__init__") => None,
         ModuleItemDef::Entity(EntityDef::Reducer(reducer)) => {
             let code = csharp::autogen_csharp_reducer(&reducer);
             let pascalcase = name.to_case(Case::Pascal);
             Some((pascalcase + "Reducer.cs", code))
-        }
-        ModuleItemDef::Entity(EntityDef::Repeater(_)) => {
-            // Nothing to codegen for this (yet?)
-            None
         }
     }))
 }
@@ -124,7 +114,11 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<Vec<(String, ModuleI
     let t = std::time::Instant::now();
     let module = wasmtime::Module::from_file(&engine, wasm_file)?;
     println!("compilation took {:?}", t.elapsed());
-    let mut store = wasmtime::Store::new(&engine, WasmCtx { mem: None });
+    let ctx = WasmCtx {
+        mem: None,
+        buffers: slab::Slab::new(),
+    };
+    let mut store = wasmtime::Store::new(&engine, ctx);
     let mut linker = wasmtime::Linker::new(&engine);
     linker.allow_shadowing(true);
     for imp in module.imports() {
@@ -149,10 +143,10 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<Vec<(String, ModuleI
             }
         },
     )?;
+    linker.func_wrap("spacetime_v0", "_buffer_alloc", WasmCtx::buffer_alloc)?;
     let instance = linker.instantiate(&mut store, &module)?;
     let memory = Memory {
         mem: instance.get_memory(&mut store, "memory").unwrap(),
-        dealloc: instance.get_func(&mut store, "dealloc").unwrap().typed(&store).unwrap(),
     };
     store.data_mut().mem = Some(memory);
     // let alloc: TypedFunc<(u32,), (u32,)> = instance.get_func(&mut store, "alloc").unwrap().typed(&store).unwrap();
@@ -160,7 +154,6 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<Vec<(String, ModuleI
         Table,
         Tuple,
         Reducer,
-        Repeater,
     }
     let describes = instance
         .exports(&mut store)
@@ -171,7 +164,6 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<Vec<(String, ModuleI
                 ("__describe_table__", DescrType::Table),
                 ("__describe_tuple__", DescrType::Tuple),
                 ("__describe_reducer__", DescrType::Reducer),
-                ("__describe_repeating_reducer__", DescrType::Repeater),
             ];
             prefixes
                 .into_iter()
@@ -180,17 +172,13 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<Vec<(String, ModuleI
         .collect::<Vec<_>>();
     let mut descriptions = Vec::with_capacity(describes.len());
     for (ty, name, describe) in describes {
-        let (packed,) = describe.typed(&store)?.call(&mut store, ()).unwrap();
-        let descr = memory.with_unpacked_slice(&mut store, packed, |slice| {
-            Ok(match ty {
-                DescrType::Table => ModuleItemDef::Entity(EntityDef::Table(TableDef::decode(&mut &slice[..])?)),
-                DescrType::Tuple => ModuleItemDef::Tuple(TupleDef::decode(&mut &slice[..])?),
-                DescrType::Reducer => ModuleItemDef::Entity(EntityDef::Reducer(ReducerDef::decode(&mut &slice[..])?)),
-                DescrType::Repeater => {
-                    ModuleItemDef::Entity(EntityDef::Repeater(RepeaterDef::decode(&mut &slice[..])?))
-                }
-            })
-        })?;
+        let (buf,): (u32,) = describe.typed(&store)?.call(&mut store, ()).unwrap();
+        let slice = store.data_mut().buffers.remove(buf as usize);
+        let descr = match ty {
+            DescrType::Table => ModuleItemDef::Entity(EntityDef::Table(TableDef::decode(&mut &slice[..])?)),
+            DescrType::Tuple => ModuleItemDef::Tuple(TupleDef::decode(&mut &slice[..])?),
+            DescrType::Reducer => ModuleItemDef::Entity(EntityDef::Reducer(ReducerDef::decode(&mut &slice[..])?)),
+        };
         descriptions.push((name, descr));
     }
     Ok(descriptions)
@@ -198,12 +186,26 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<Vec<(String, ModuleI
 
 struct WasmCtx {
     mem: Option<Memory>,
+    buffers: slab::Slab<Vec<u8>>,
+}
+impl WasmCtx {
+    fn mem(&self) -> Memory {
+        self.mem.unwrap()
+    }
+    fn buffer_alloc(mut caller: Caller<'_, Self>, data: u32, data_len: u32) -> u32 {
+        let buf = caller
+            .data()
+            .mem()
+            .deref_slice(&caller, data, data_len)
+            .unwrap()
+            .to_vec();
+        caller.data_mut().buffers.insert(buf) as u32
+    }
 }
 
 #[derive(Copy, Clone)]
 struct Memory {
     mem: wasmtime::Memory,
-    dealloc: TypedFunc<(u32, u32), ()>,
 }
 impl Memory {
     fn deref_slice<'a>(&self, store: &'a impl AsContext, offset: u32, len: u32) -> Option<&'a [u8]> {
@@ -211,25 +213,5 @@ impl Memory {
             .data(store.as_context())
             .get(offset as usize..)?
             .get(..len as usize)
-    }
-    fn with_unpacked_slice<R>(
-        &self,
-        mut store: impl AsContextMut,
-        packed: u64,
-        f: impl FnOnce(&[u8]) -> anyhow::Result<R>,
-    ) -> anyhow::Result<R> {
-        let offset = (packed >> 32) as u32;
-        let len = (packed & 0xFFFF_FFFF) as u32;
-        let slice = self.deref_slice(&store, offset, len).context("invalid ptr")?;
-        let res = f(slice);
-        let dealloc_res = self
-            .dealloc
-            .call(store.as_context_mut(), (offset, len))
-            .context("error while deallocating");
-        if res.is_err() {
-            res
-        } else {
-            dealloc_res.and(res)
-        }
     }
 }

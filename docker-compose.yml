@@ -14,6 +14,7 @@ services:
       - ./crates/spacetimedb-lib:/usr/src/app/crates/spacetimedb-lib
       - ./crates/spacetimedb-bindings:/usr/src/app/crates/spacetimedb-bindings
       - ./crates/spacetimedb-bindings-macro:/usr/src/app/crates/spacetimedb-bindings-macro
+      - ./crates/spacetimedb-bindings-sys:/usr/src/app/crates/spacetimedb-bindings-sys
       - ./crates/rust-wasm-test:/usr/src/app/crates/rust-wasm-test
       - /stdb
     ports:
@@ -21,7 +22,7 @@ services:
     # for release/non-watch mode
     # command: init --worker-node
     # for rebuilding on changes
-    entrypoint: bash -c "RUST_BACKTRACE=1 cargo watch -i flamegraphs --why -w crates/spacetimedb-standalone -x 'run -p spacetimedb-standalone -- start'"
+    entrypoint: bash -c "RUST_BACKTRACE=1 cargo watch -i flamegraphs --why -w crates/spacetimedb-standalone -w crates/spacetimedb-core -x 'run -p spacetimedb-standalone -- start'"
     # entrypoint: bash -c "CARGO_PROFILE_RELEASE_DEBUG=true cargo flamegraph -o my_flamegraph.svg --bin spacetimedb -c 'record -c 100 -g' -- init --worker-node"
     privileged: true
     environment:

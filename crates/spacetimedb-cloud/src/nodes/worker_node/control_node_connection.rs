@@ -209,7 +209,7 @@ async fn on_binary(
 fn on_worker_budget_update(node_id: u64, budget_update: BudgetUpdate) {
     worker_budget::on_budget_receive_allocation(
         node_id,
-        &Hash::from_slice(budget_update.identity),
+        &Hash::from_slice(&budget_update.identity),
         budget_update.allocation_delta,
     );
 }
@@ -321,9 +321,9 @@ async fn init_module_on_database_instance(database_id: u64, instance_id: u64) ->
     } else {
         return Err(anyhow!("Unknown database/instance: {}/{}", database_id, instance_id));
     };
-    let identity = Hash::from_slice(database.identity);
+    let identity = Hash::from_slice(&database.identity);
     let address = Address::from_slice(database.address);
-    let program_bytes_address = Hash::from_slice(database.program_bytes_address);
+    let program_bytes_address = Hash::from_slice(&database.program_bytes_address);
     let program_bytes = ControlNodeClient::get_shared()
         .get_program_bytes(&program_bytes_address)
         .await;
@@ -359,9 +359,9 @@ async fn start_module_on_database_instance(database_id: u64, instance_id: u64) -
         return Err(anyhow!("Unknown database/instance: {}/{}", database_id, instance_id));
     };
     let host_type = database.host_type();
-    let identity = Hash::from_slice(database.identity);
+    let identity = Hash::from_slice(&database.identity);
     let address = Address::from_slice(database.address);
-    let program_bytes_address = Hash::from_slice(database.program_bytes_address);
+    let program_bytes_address = Hash::from_slice(&database.program_bytes_address);
     let program_bytes = ControlNodeClient::get_shared()
         .get_program_bytes(&program_bytes_address)
         .await;

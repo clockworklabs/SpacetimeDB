@@ -14,7 +14,7 @@ create_project
 
 ## Write a spacetimedb rust module
 cat > "${PROJECT_PATH}/src/lib.rs" <<EOF
-use spacetimedb::{spacetimedb, println, Hash};
+use spacetimedb::{spacetimedb, println};
 
 #[spacetimedb(table)]
 pub struct Person {
@@ -22,12 +22,12 @@ pub struct Person {
 }
 
 #[spacetimedb(reducer)]
-pub fn add(sender: Hash, timestamp: u64, name: String) {
+pub fn add(name: String) {
     Person::insert(Person { name })
 }
 
 #[spacetimedb(reducer)]
-pub fn say_hello(sender: Hash, timestamp: u64) {
+pub fn say_hello() {
     for person in Person::iter() {
         println!("Hello, {}!", person.name);
     }

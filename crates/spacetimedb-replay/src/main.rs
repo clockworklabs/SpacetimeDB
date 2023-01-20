@@ -6,6 +6,7 @@ use tempdir::TempDir;
 
 use spacetimedb::address::Address;
 use spacetimedb::hash::hash_bytes;
+use spacetimedb::host::host_controller::Scheduler;
 use spacetimedb::host::instance_env::InstanceEnv;
 use spacetimedb::host::tracelog::replay::replay_report;
 use spacetimedb::protobuf::control_db::HostType;
@@ -27,7 +28,7 @@ pub fn main() {
 
     let wdi = WorkerDatabaseInstance::new(0, 0, HostType::Wasmer, false, identity, address, db_path, logger_path);
 
-    let iv = InstanceEnv::new(wdi, Default::default(), None);
+    let iv = InstanceEnv::new(wdi, Scheduler::dummy(), Default::default(), None);
 
     let tx = iv.worker_database_instance.relational_db.begin_tx();
     let trace_log = File::open(replay_file.to_str().unwrap()).unwrap();

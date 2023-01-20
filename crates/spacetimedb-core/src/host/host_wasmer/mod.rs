@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
-use anyhow::Context;
 use wasmer::wasmparser::Operator;
 use wasmer::{
-    AsStoreMut, AsStoreRef, CompilerConfig, EngineBuilder, Memory, MemoryAccessError, Module, Store, TypedFunction,
-    WasmPtr,
+    AsStoreRef, CompilerConfig, EngineBuilder, Memory, MemoryAccessError, Module, RuntimeError, Store, WasmPtr,
 };
 use wasmer_middlewares::Metering;
 
+use crate::error::NodesError;
 use crate::hash::Hash;
 use crate::worker_database_instance::WorkerDatabaseInstance;
 
@@ -17,6 +16,7 @@ mod wasm_module_host_actor;
 
 use wasm_module_host_actor::{WasmerModule, DEFAULT_EXECUTION_BUDGET};
 
+use super::host_controller::Scheduler;
 use super::module_host::ModuleHostActor;
 use super::wasm_common::{abi, host_actor::WasmModuleHostActor};
 
@@ -24,7 +24,8 @@ pub fn make_actor(
     worker_database_instance: WorkerDatabaseInstance,
     module_hash: Hash,
     program_bytes: Vec<u8>,
-) -> Result<Box<impl ModuleHostActor>, anyhow::Error> {
+    scheduler: Scheduler,
+) -> anyhow::Result<Box<impl ModuleHostActor>> {
     let cost_function =
         |operator: &Operator| -> u64 { opcode_cost::OperationType::operation_type_of(operator).energy_cost() };
     let initial_points = DEFAULT_EXECUTION_BUDGET as u64;
@@ -46,43 +47,44 @@ pub fn make_actor(
 
     let module = WasmerModule::new(module, engine, abi);
 
-    WasmModuleHostActor::new(worker_database_instance, module_hash, module)
+    WasmModuleHostActor::new(worker_database_instance, module_hash, module, scheduler)
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+enum WasmError {
+    Db(#[from] NodesError),
+    Mem(#[from] MemoryAccessError),
+    Wasm(#[from] RuntimeError),
 }
 
 #[derive(Clone)]
-pub struct Mem {
+struct Mem {
     pub memory: Memory,
-    pub alloc: TypedFunction<u32, WasmPtr<u8>>,
-    pub dealloc: TypedFunction<(WasmPtr<u8>, u32), ()>,
 }
 
 impl Mem {
-    pub fn extract(store: &impl AsStoreRef, exports: &wasmer::Exports) -> anyhow::Result<Self> {
+    fn extract(exports: &wasmer::Exports) -> anyhow::Result<Self> {
         Ok(Self {
             memory: exports.get_memory("memory")?.clone(),
-            alloc: exports.get_typed_function(store, "alloc")?,
-            dealloc: exports.get_typed_function(store, "dealloc")?,
         })
     }
-    pub fn read_output_bytes(
-        &self,
-        store: &impl AsStoreRef,
-        ptr: WasmPtr<u8>,
-        len: u32,
-    ) -> Result<Vec<u8>, MemoryAccessError> {
-        ptr.slice(&self.memory.view(store), len)?.read_to_vec()
+    fn view(&self, store: &impl AsStoreRef) -> wasmer::MemoryView<'_> {
+        self.memory.view(store)
     }
-    pub fn dealloc(&self, store: &mut impl AsStoreMut, ptr: WasmPtr<u8>, len: u32) -> Result<(), wasmer::RuntimeError> {
-        self.dealloc.call(store, ptr, len)
+    fn read_bytes(&self, store: &impl AsStoreRef, ptr: WasmPtr<u8>, len: u32) -> Result<Vec<u8>, MemoryAccessError> {
+        ptr.slice(&self.view(store), len)?.read_to_vec()
     }
-    pub fn alloc_slice(&self, store: &mut impl AsStoreMut, data: &[u8]) -> anyhow::Result<(u32, u32)> {
-        let data_len = data.len().try_into().context("data too big to alloc to wasm")?;
-        let ptr = self.alloc.call(store, data_len).context("alloc failed")?;
+}
 
-        ptr.slice(&self.memory.view(store), data_len)
-            .context("alloc out of bounds")?
-            .write_slice(data)?;
+#[derive(Copy, Clone, wasmer::ValueType)]
+#[repr(transparent)]
+struct Buffer {
+    raw: u32,
+}
 
-        Ok((ptr.offset(), data_len))
+impl Buffer {
+    fn is_invalid(&self) -> bool {
+        self.raw == u32::MAX
     }
 }

@@ -1,5 +1,3 @@
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use clap::{
@@ -71,33 +69,6 @@ pub async fn spacetime_reverse_dns(config: &Config, addr: &str) -> Result<String
 
     let dns: ReverseDNSResponse = serde_json::from_slice(&bytes[..]).unwrap();
     Ok(dns.name)
-}
-
-pub fn find_wasm_file(project_path: &Path) -> Result<PathBuf, anyhow::Error> {
-    let module_output_directory_path = project_path
-        .join("target")
-        .join("wasm32-unknown-unknown")
-        .join("release");
-    if !module_output_directory_path.exists() || !module_output_directory_path.is_dir() {
-        return Err(anyhow::anyhow!(
-            "Module output directory does not exist: {}",
-            module_output_directory_path.to_str().unwrap()
-        ));
-    }
-
-    for file in fs::read_dir(module_output_directory_path.to_str().unwrap())
-        .unwrap()
-        .flatten()
-    {
-        if file.file_name().to_str().unwrap().ends_with(".wasm") && file.path().is_file() {
-            return Ok(file.path());
-        }
-    }
-
-    Err(anyhow::anyhow!(format!(
-        "Unable to find wasm file in project path: {}",
-        project_path.to_str().unwrap()
-    )))
 }
 
 #[derive(Deserialize)]

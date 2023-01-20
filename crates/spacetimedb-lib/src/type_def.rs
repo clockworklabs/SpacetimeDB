@@ -349,27 +349,9 @@ impl ReducerDef {
 }
 
 #[derive(Debug, Clone)]
-pub struct RepeaterDef {
-    pub name: Option<Box<str>>,
-}
-
-impl RepeaterDef {
-    pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
-        let name = read_str(bytes)?;
-        let name = (!name.is_empty()).then(|| name.into());
-        Ok(Self { name })
-    }
-
-    pub fn encode(&self, bytes: &mut impl BufWriter) {
-        write_str(bytes, self.name.as_deref().unwrap_or(""));
-    }
-}
-
-#[derive(Debug, Clone)]
 pub enum EntityDef {
     Table(TableDef),
     Reducer(ReducerDef),
-    Repeater(RepeaterDef),
 }
 
 impl EntityDef {
@@ -381,7 +363,6 @@ impl EntityDef {
         match tag {
             0x00 => TableDef::decode(bytes).map(Self::Table),
             0x01 => ReducerDef::decode(bytes).map(Self::Reducer),
-            0x02 => RepeaterDef::decode(bytes).map(Self::Repeater),
             _ => Err(DecodeError::InvalidTag),
         }
     }
@@ -393,10 +374,6 @@ impl EntityDef {
             }
             EntityDef::Reducer(r) => {
                 bytes.put_u8(0x01);
-                r.encode(bytes);
-            }
-            EntityDef::Repeater(r) => {
-                bytes.put_u8(0x02);
                 r.encode(bytes);
             }
         }

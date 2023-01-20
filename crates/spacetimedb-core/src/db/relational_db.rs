@@ -4,7 +4,6 @@ use super::{
     transactional_db::{CommitResult, ScanIter, TransactionalDB, Tx, TxCtx, TxWrapper},
 };
 // use super::relational_operators::Project;
-use crate::db::catalog::Catalog;
 use crate::db::db_metrics::{
     RDB_CREATE_TABLE_TIME, RDB_DELETE_IN_TIME, RDB_DELETE_PK_TIME, RDB_DROP_TABLE_TIME, RDB_INSERT_TIME,
     RDB_SCAN_PK_TIME, RDB_SCAN_RAW_TIME, RDB_SCAN_TIME,
@@ -21,6 +20,7 @@ use crate::db::table::{
 use crate::db::{index, sequence};
 use crate::error::{DBError, IndexError, TableError};
 use crate::util::prometheus_handle::HistogramVecHandle;
+use crate::{db::catalog::Catalog, util::ResultInspectExt};
 use fs2::FileExt;
 use spacetimedb_lib::{
     buffer::{BufReader, DecodeError},
@@ -689,7 +689,7 @@ impl RelationalDB {
                 schema: columns,
             })
         } else {
-            Err(TableError::ScanPkTableIdNotFound(table_id).into())
+            Err(TableError::IdNotFound(table_id).into())
         }
     }
 
@@ -704,7 +704,7 @@ impl RelationalDB {
                 schema: columns,
             })
         } else {
-            Err(TableError::ScanTableIdNotFound(table_id).into())
+            Err(TableError::IdNotFound(table_id).into())
         }
     }
 
@@ -742,7 +742,7 @@ impl RelationalDB {
                 txdb_iter: self.txdb.scan(tx, table_id),
             })
         } else {
-            Err(TableError::ScanTableIdNotFound(table_id).into())
+            Err(TableError::IdNotFound(table_id).into())
         }
     }
 
@@ -752,20 +752,14 @@ impl RelationalDB {
         table_id: u32,
         primary_key: PrimaryKey,
     ) -> Result<Option<TupleValue>, DBError> {
-        let schema = self.schema_for_table(tx, table_id)?;
-        if let Some(schema) = schema {
-            let bytes = self.txdb.seek(tx, table_id, primary_key.data_key);
-            if let Some(bytes) = bytes {
-                return match RelationalDB::decode_row(&schema, &mut &bytes[..]) {
-                    Ok(row) => Ok(Some(row)),
-                    Err(e) => {
-                        log::error!("filter_pk: Row decode failure: {e}");
-                        Err(TableError::DecodeSeekTableIdNotFound(table_id, e.into()).into())
-                    }
-                };
-            }
-        }
-        Ok(None)
+        let schema = self
+            .schema_for_table(tx, table_id)?
+            .ok_or(TableError::IdNotFound(table_id))?;
+        let Some(bytes) = self.txdb.seek(tx, table_id, primary_key.data_key) else { return Ok(None) };
+        let row = RelationalDB::decode_row(&schema, &mut &bytes[..])
+            .map_err(TableError::RowDecodeError)
+            .inspect_err_(|e| log::error!("filter_pk: {e}"))?;
+        Ok(Some(row))
     }
 
     pub fn seek<'a>(
@@ -821,6 +815,7 @@ impl RelationalDB {
         // TODO: verify schema
         self.before_insert(table_id, tx, &row)?;
         Self::insert_row_raw(&mut self.txdb, tx, table_id, row);
+
         Ok(())
     }
 

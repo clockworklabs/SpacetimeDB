@@ -23,6 +23,7 @@ harness = false
 [dependencies] 
 tokio = { version = "1.2", features = ["full"] }
 wasmer = "3.0.1"
+wasmer-vm = "3.0.1"
 wasmer-middlewares = "3.0.1"
 sha3 = "0.10.0"
 hex = "0.4.3"
@@ -72,6 +73,8 @@ imara-diff = "0.1.3"
 tempdir = "0.3.7"
 flate2 = "1.0.24"
 wasmparser = "0.92.0"
+tokio-util = { version = "0.7.4", features = ["time"] }
+rustc-demangle = "0.1.21"
 
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
 [dependencies.rocksdb]

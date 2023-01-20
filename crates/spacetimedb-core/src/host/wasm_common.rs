@@ -11,16 +11,14 @@ use super::host_controller::ReducerBudget;
 pub const REDUCE_DUNDER: &str = "__reducer__";
 pub const DESCRIBE_REDUCER_DUNDER: &str = "__describe_reducer__";
 
-pub const REPEATING_REDUCER_DUNDER: &str = "__repeating_reducer__";
-// TODO(ryan): not actually used, since we don't really need to call a describe for repeating
-// reducers as the arguments are always the same. However I'm leaving it here for consistency in
-// the DescribedEntity interface below, and also in case we ever need user arguments on
-// repeaters.
-pub const DESCRIBE_REPEATING_REDUCER_DUNDER: &str = "__describe_repeating_reducer__";
-
 pub const DESCRIBE_TABLE_DUNDER: &str = "__describe_table__";
 
-pub const INIT_PANIC_DUNDER: &str = "__init_panic__";
+/// functions with this prefix run prior to __setup__, initializing global variables and the like
+pub const PREINIT_DUNDER: &str = "__preinit__";
+/// initializes the user code in the module. fallible
+pub const SETUP_DUNDER: &str = "__setup__";
+/// the reducer with this name initializes the database
+pub const INIT_DUNDER: &str = "__init__";
 pub const MIGRATE_DATABASE_DUNDER: &str = "__migrate_database__";
 pub const IDENTITY_CONNECTED_DUNDER: &str = "__identity_connected__";
 pub const IDENTITY_DISCONNECTED_DUNDER: &str = "__identity_disconnected__";
@@ -88,16 +86,17 @@ impl PartialEq<FuncSig<'_>> for wasmer::ExternType {
     }
 }
 
-const REDUCER_SIG: FuncSig = FuncSig::new(&[WasmType::I32, WasmType::I32], &[]);
-const REPEATER_SIG: FuncSig = FuncSig::new(&[WasmType::I32, WasmType::I32], &[WasmType::I64]);
+const PREINIT_SIG: FuncSig = FuncSig::new(&[], &[]);
+const INIT_SIG: FuncSig = FuncSig::new(&[], &[WasmType::I32]);
+const REDUCER_SIG: FuncSig = FuncSig::new(&[WasmType::I32, WasmType::I64, WasmType::I32], &[WasmType::I32]);
 
 #[derive(Default)]
 pub struct FuncNames {
     // pub reducers: IndexMap<String, String>,
-    pub repeaters: Vec<String>,
     pub migrates: Vec<String>,
     pub conn: bool,
     pub disconn: bool,
+    pub preinits: Vec<String>,
 }
 impl FuncNames {
     fn validate_signature<T>(kind: &str, ty: &T, name: &str, expected: FuncSig<'_>) -> anyhow::Result<()>
@@ -115,19 +114,14 @@ impl FuncNames {
         F: Fn(&str) -> Option<T>,
         for<'a> T: PartialEq<FuncSig<'a>> + fmt::Debug,
     {
-        let check_signature = |kind, prefix, expected| {
-            let func_name: String = [prefix, name].concat();
-            let ty = get_export(&func_name)
-                .ok_or_else(|| anyhow!("a descriptor exists for {kind} {name:?} but not a {prefix:?}* function"))?;
-            Self::validate_signature(kind, &ty, name, expected).and(Ok(func_name))
+        let check_signature = |kind, func_name, expected| {
+            let ty = get_export(func_name)
+                .ok_or_else(|| anyhow!("a descriptor exists for {kind} {name:?} but not a {func_name:?} function"))?;
+            Self::validate_signature(kind, &ty, name, expected)
         };
         match &entity {
-            EntityDef::Repeater(_) => {
-                let func_name = check_signature("repeater", REPEATING_REDUCER_DUNDER, REPEATER_SIG)?;
-                self.repeaters.push(func_name);
-            }
             EntityDef::Reducer(_) => {
-                check_signature("repeater", REDUCE_DUNDER, REDUCER_SIG)?;
+                check_signature("reducer", &[REDUCE_DUNDER, name].concat(), REDUCER_SIG)?;
             }
             EntityDef::Table(_) => {}
         }
@@ -144,10 +138,12 @@ impl FuncNames {
             self.conn = true;
         } else if sym == IDENTITY_DISCONNECTED_DUNDER {
             self.disconn = true;
+        } else if sym == SETUP_DUNDER {
+            Self::validate_signature("setup", ty, sym, INIT_SIG)?;
+        } else if let Some(name) = sym.strip_prefix(PREINIT_DUNDER) {
+            Self::validate_signature("preinit", ty, name, PREINIT_SIG)?;
+            self.preinits.push(sym.to_owned());
         }
         Ok(())
-    }
-    pub fn get_repeaters(&self) -> Vec<String> {
-        self.repeaters.clone()
     }
 }

@@ -44,7 +44,7 @@ impl TraceLog {
         reader.seek(SeekFrom::Start(0))?;
         let mut buf_vec = vec![];
         let _read_bytes = reader.read_to_end(&mut buf_vec)?;
-        Ok(bytes::Bytes::from(buf_vec))
+        Ok(buf_vec.into())
     }
 
     fn write_event(&mut self, start_time: SystemTime, duration: Duration, event: Type) {
@@ -107,11 +107,8 @@ impl TraceLog {
         }
     }
 
-    pub fn insert(&mut self, start_time: SystemTime, duration: Duration, table_id: u32, buffer: bytes::Bytes) {
-        let event = Type::Insert(Insert {
-            table_id,
-            buffer: buffer.to_vec(),
-        });
+    pub fn insert(&mut self, start_time: SystemTime, duration: Duration, table_id: u32, buffer: Vec<u8>) {
+        let event = Type::Insert(Insert { table_id, buffer });
         self.write_event(start_time, duration, event)
     }
 
@@ -120,12 +117,12 @@ impl TraceLog {
         start_time: SystemTime,
         duration: Duration,
         table_id: u32,
-        buffer: bytes::Bytes,
+        buffer: Vec<u8>,
         success: bool,
     ) {
         let event = Type::DeletePk(DeletePk {
             table_id,
-            buffer: buffer.to_vec(),
+            buffer,
             result_success: success,
         });
         self.write_event(start_time, duration, event)
@@ -136,12 +133,12 @@ impl TraceLog {
         start_time: SystemTime,
         duration: Duration,
         table_id: u32,
-        buffer: bytes::Bytes,
+        buffer: Vec<u8>,
         success: bool,
     ) {
         let event = Type::DeleteValue(DeleteValue {
             table_id,
-            buffer: buffer.to_vec(),
+            buffer,
             result_success: success,
         });
         self.write_event(start_time, duration, event)
@@ -153,13 +150,13 @@ impl TraceLog {
         duration: Duration,
         table_id: u32,
         col_id: u32,
-        buffer: bytes::Bytes,
+        buffer: Vec<u8>,
         deleted_count: u32,
     ) {
         let event = Type::DeleteEq(DeleteEq {
             table_id,
             col_id,
-            buffer: buffer.to_vec(),
+            buffer,
             result_deleted_count: deleted_count,
         });
         self.write_event(start_time, duration, event)
@@ -171,29 +168,39 @@ impl TraceLog {
         duration: Duration,
         table_id: u32,
         col_id: u32,
-        buffer: bytes::Bytes,
+        start_buffer: Vec<u8>,
+        end_buffer: Vec<u8>,
         deleted_count: u32,
     ) {
         let event = Type::DeleteRange(DeleteRange {
             table_id,
             col_id,
-            buffer: buffer.to_vec(),
+            start_buffer,
+            end_buffer,
             result_deleted_count: deleted_count,
         });
         self.write_event(start_time, duration, event)
     }
 
-    pub fn create_table(&mut self, start_time: SystemTime, duration: Duration, buffer: bytes::Bytes, table_id: u32) {
+    pub fn create_table(
+        &mut self,
+        start_time: SystemTime,
+        duration: Duration,
+        table_name: String,
+        schema_buffer: Vec<u8>,
+        table_id: u32,
+    ) {
         let event = Type::CreateTable(CreateTable {
-            schema_buffer: buffer.to_vec(),
+            table_name,
+            schema_buffer,
             result_table_id: table_id,
         });
         self.write_event(start_time, duration, event)
     }
 
-    pub fn get_table_id(&mut self, start_time: SystemTime, duration: Duration, buffer: bytes::Bytes, table_id: u32) {
+    pub fn get_table_id(&mut self, start_time: SystemTime, duration: Duration, table_name: String, table_id: u32) {
         let event = Type::GetTableId(GetTableId {
-            buffer: buffer.to_vec(),
+            table_name,
             result_table_id: table_id,
         });
         self.write_event(start_time, duration, event)

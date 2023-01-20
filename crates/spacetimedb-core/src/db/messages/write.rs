@@ -51,8 +51,10 @@ impl Write {
         let set_id = u32::from_le_bytes(dst);
         read_count += 4;
 
-        let (value, rc) = DataKey::decode(&bytes[read_count..]);
-        read_count += rc;
+        let mut reader = &bytes[read_count..];
+        let orig_len = reader.len();
+        let value = DataKey::decode(&mut reader).unwrap();
+        read_count += orig_len - reader.len();
 
         (
             Write {

@@ -11,7 +11,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("entity_type")
                 .required(false)
-                .value_parser(["reducer", "table", "repeater"]),
+                .value_parser(["reducer", "table"]),
         )
         .arg(Arg::new("entity_name").required(false).requires("entity_type"))
         .arg(Arg::new("brief").long("brief").short('b').action(SetTrue))

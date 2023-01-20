@@ -1,27 +1,82 @@
-use crate::buffer::BufWriter;
+use std::fmt::{self, Write};
+use std::ops::Deref;
+
+use crate::buffer::{BufReader, BufWriter, DecodeError};
 use crate::hash::hash_bytes;
 
 #[derive(Debug, Copy, Clone, PartialEq, Ord, PartialOrd, Eq, Hash)]
 pub enum DataKey {
-    Data { len: u8, buf: [u8; 32] },
+    Data(InlineData),
     Hash(super::Hash),
 }
+
+const MAX_INLINE: usize = 31;
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InlineData {
+    len: u8,
+    buf: [u8; MAX_INLINE],
+}
+impl InlineData {
+    #[inline]
+    pub fn from_bytes(b: &[u8]) -> Option<Self> {
+        let mut buf = [0; MAX_INLINE];
+        let sub_buf = buf.get_mut(..b.len())?;
+        sub_buf.copy_from_slice(b);
+        Some(Self {
+            len: b.len() as u8,
+            buf,
+        })
+    }
+}
+impl Deref for InlineData {
+    type Target = [u8];
+    fn deref(&self) -> &Self::Target {
+        &self.buf[..self.len as usize]
+    }
+}
+// TODO: figure out why these impls break things
+// impl PartialEq for InlineData {
+//     fn eq(&self, other: &Self) -> bool {
+//         **self == **other
+//     }
+// }
+// impl Eq for InlineData {}
+// impl PartialOrd for InlineData {
+//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+//         Some(self.cmp(other))
+//     }
+// }
+// impl Ord for InlineData {
+//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+//         Ord::cmp(&**self, &**other)
+//     }
+// }
+// impl std::hash::Hash for InlineData {
+//     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+//         // should this be hash_bytes(&**self).hash() instead?
+//         (**self).hash(state);
+//     }
+// }
+impl fmt::Debug for InlineData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_char('"')?;
+        fmt::Display::fmt(&(**self).escape_ascii(), f)?;
+        f.write_char('"')
+    }
+}
+
+const IS_HASH_BIT: u8 = 0b1000_0000;
 
 // <flags(1)><value(0-32)>
 impl DataKey {
     // Convert a bunch of data to the value that represents it.
     // Throws away the data.
-    pub fn from_data(bytes: impl AsRef<[u8]>) -> Self {
-        let bytes = bytes.as_ref();
-        if bytes.len() > 32 {
-            DataKey::Hash(hash_bytes(bytes))
-        } else {
-            let mut buf = [0; 32];
-            buf[0..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
-            DataKey::Data {
-                len: bytes.len() as u8,
-                buf,
-            }
+    pub fn from_data(data: impl AsRef<[u8]>) -> Self {
+        let data = data.as_ref();
+        match InlineData::from_bytes(data) {
+            Some(data) => DataKey::Data(data),
+            None => DataKey::Hash(hash_bytes(data)),
         }
     }
 
@@ -31,41 +86,38 @@ impl DataKey {
         data_key_summary
     }
 
-    pub fn decode(bytes: impl AsRef<[u8]>) -> (Self, usize) {
-        let bytes = &mut bytes.as_ref();
-        let mut read_count = 0;
+    pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
+        let header = bytes.get_u8()?;
 
-        let flags = bytes[read_count];
-        read_count += 1;
+        let is_hash = (header & IS_HASH_BIT) != 0;
 
-        let is_data = ((flags & 0b1000_0000) >> 7) == 0;
-
-        if is_data {
-            let len = flags & 0b0111_1111;
-            let mut buf = [0; 32];
-            buf[0..len as usize].copy_from_slice(&bytes[read_count..(read_count + len as usize)]);
-            read_count += len as usize;
-            (Self::Data { len, buf }, read_count)
+        if is_hash {
+            // future-proof it, ish
+            if header != IS_HASH_BIT {
+                return Err(DecodeError::InvalidTag);
+            }
+            let hash = super::hash::Hash {
+                data: bytes.get_array()?,
+            };
+            Ok(Self::Hash(hash))
         } else {
-            let hash = super::hash::Hash::from_slice(&bytes[read_count..read_count + 32]);
-            read_count += 32;
-            (Self::Hash(hash), read_count)
+            let len = header;
+            if len as usize > MAX_INLINE {
+                return Err(DecodeError::BufferLength);
+            }
+            let mut buf = [0; MAX_INLINE];
+            let data = bytes.get_slice(len as usize)?;
+            buf[..len as usize].copy_from_slice(data);
+            Ok(Self::Data(InlineData { len, buf }))
         }
     }
 
     pub fn encode(&self, bytes: &mut impl BufWriter) {
-        match self {
-            DataKey::Data { len, buf } => {
-                let flags: u8 = 0b0000_0000;
-                let flags = flags | (len & 0b0111_1111);
-                bytes.put_u8(flags);
-                bytes.put_slice(&buf[0..(*len as usize)]);
-            }
-            DataKey::Hash(hash) => {
-                let flags: u8 = 0b1000_0000;
-                bytes.put_u8(flags);
-                bytes.put_slice(&hash.data[..]);
-            }
-        }
+        let (header, data) = match self {
+            DataKey::Data(data) => (data.len, &**data),
+            DataKey::Hash(hash) => (IS_HASH_BIT, &hash.data[..]),
+        };
+        bytes.put_u8(header);
+        bytes.put_slice(data);
     }
 }

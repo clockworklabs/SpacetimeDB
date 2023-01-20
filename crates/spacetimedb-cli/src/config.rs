@@ -4,7 +4,7 @@ use std::{
     io::{Read, Write},
 };
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IdentityConfig {
     pub nickname: Option<String>,
     pub identity: String,
@@ -12,7 +12,7 @@ pub struct IdentityConfig {
     pub token: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct RawConfig {
     host: Option<String>,
     protocol: Option<String>,

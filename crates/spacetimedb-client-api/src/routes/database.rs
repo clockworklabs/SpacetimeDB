@@ -24,7 +24,7 @@ use spacetimedb::hash::hash_bytes;
 use spacetimedb::host::InvalidReducerArguments;
 use spacetimedb::object_db;
 use spacetimedb::protobuf::control_db::HostType;
-use spacetimedb_lib::{ElementDef, EntityDef, TypeDef};
+use spacetimedb_lib::EntityDef;
 
 use crate::auth::get_or_create_creds_from_header;
 use crate::{ApiCtx, Controller, ControllerCtx};
@@ -89,7 +89,7 @@ async fn call(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
             if rcr.budget_exceeded {
                 log::warn!(
                     "Node's energy budget exceeded for identity: {} while executing {}",
-                    Hash::from_slice(database.identity).to_hex(),
+                    Hash::from_slice(&database.identity),
                     reducer
                 );
                 return Err(HandlerError::from(anyhow!("Module energy budget exhausted."))
@@ -202,7 +202,6 @@ fn entity_description_json(description: &EntityDef, expand: bool) -> Value {
     let len = match description {
         EntityDef::Table(t) => t.tuple.elements.len(),
         EntityDef::Reducer(r) => r.args.len(),
-        EntityDef::Repeater(_) => 2,
     };
     if expand {
         // TODO(noa): make this less hacky; needs coordination w/ spacetime-web
@@ -211,21 +210,6 @@ fn entity_description_json(description: &EntityDef, expand: bool) -> Value {
             EntityDef::Reducer(r) => json!({
                 "name": r.name,
                 "elements": r.args,
-            }),
-            EntityDef::Repeater(r) => json!({
-                "name": r.name,
-                "elements": [
-                    ElementDef {
-                        tag: 0,
-                        name: Some(String::from("timestamp")),
-                        element_type: TypeDef::U64,
-                    },
-                    ElementDef {
-                        tag: 1,
-                        name: Some(String::from("delta_time")),
-                        element_type: TypeDef::U64,
-                    },
-                ],
             }),
         };
         json!({
@@ -370,7 +354,7 @@ async fn logs(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
         None => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
     };
 
-    let database_identity = Hash::from_slice(database.identity);
+    let database_identity = Hash::from_slice(&database.identity);
 
     if database_identity != caller_identity {
         return Err(HandlerError::from(anyhow!("Identity does not own database.")).with_status(StatusCode::BAD_REQUEST));
@@ -420,7 +404,7 @@ async fn sql(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
         None => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
     };
 
-    let database_identity = Hash::from_slice(database.identity);
+    let database_identity = Hash::from_slice(&database.identity);
 
     if database_identity != caller_identity {
         return Err(HandlerError::from(anyhow!("Identity does not own database.")).with_status(StatusCode::BAD_REQUEST));
@@ -771,7 +755,7 @@ async fn set_name(ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHandlerRe
         Err(_) => return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)),
     };
 
-    let database_identity = Hash::from_slice(database.identity);
+    let database_identity = Hash::from_slice(&database.identity);
 
     if database_identity != caller_identity {
         return Err(HandlerError::from(anyhow!("Identity does not own database.")).with_status(StatusCode::BAD_REQUEST));

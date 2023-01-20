@@ -12,5 +12,5 @@ bench = false
 
 
 [dependencies]
-serde = { version = "1.0.136", features = ["derive"] }
+anyhow = "1.0.0"
 spacetimedb = { path = "../spacetimedb-bindings" }

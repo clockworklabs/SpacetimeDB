@@ -1,15 +1,16 @@
 use super::wasm_instance_env::WasmInstanceEnv;
-use super::Mem;
+use super::{Buffer, Mem};
 use crate::host::host_controller::{DescribedEntityType, ReducerBudget};
 use crate::host::instance_env::InstanceEnv;
+use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::*;
 use anyhow::{anyhow, Context};
-use spacetimedb_lib::{EntityDef, ReducerDef, RepeaterDef, TableDef};
+use spacetimedb_lib::{EntityDef, ReducerDef, TableDef};
 use std::cmp::max;
 use std::collections::HashMap;
 use wasmer::{
     imports, AsStoreMut, Engine, ExternType, Function, FunctionEnv, Imports, Instance, Module, RuntimeError, Store,
-    WasmPtr,
+    TypedFunction,
 };
 use wasmer_middlewares::metering::{get_remaining_points, set_remaining_points, MeteringPoints};
 
@@ -27,7 +28,6 @@ fn entity_from_function_name(fn_name: &str) -> Option<(DescribedEntityType, &str
     for (prefix, ty) in [
         (DESCRIBE_TABLE_DUNDER, DescribedEntityType::Table),
         (DESCRIBE_REDUCER_DUNDER, DescribedEntityType::Reducer),
-        (DESCRIBE_REPEATING_REDUCER_DUNDER, DescribedEntityType::RepeatingReducer),
     ] {
         if let Some(name) = fn_name.strip_prefix(prefix) {
             return Some((ty, name));
@@ -43,10 +43,10 @@ fn log_traceback(func_type: &str, func: &str, e: &RuntimeError) {
     log::info!("{} \"{}\" runtime error: {}", func_type, func, e.message());
     for (i, frame) in frames.iter().enumerate().take(frames_len) {
         log::info!(
-            "  Frame #{}: {:?}::{:?}",
+            "  Frame #{}: {:?}::{}",
             frames_len - i,
             frame.module_name(),
-            frame.function_name().unwrap_or("<func>")
+            rustc_demangle::demangle(frame.function_name().unwrap_or("<func>"))
         );
     }
 }
@@ -66,6 +66,7 @@ impl WasmerModule {
         let abi::SpacetimeAbiVersion::V0 = self.abi;
         imports! {
             "spacetime_v0" => {
+                "_schedule_reducer" => Function::new_typed_with_env(store, env, WasmInstanceEnv::schedule_reducer),
                 "_delete_pk" => Function::new_typed_with_env(
                     store,
                     env,
@@ -111,6 +112,9 @@ impl WasmerModule {
                     env,
                     WasmInstanceEnv::console_log
                 ),
+                "_buffer_len" => Function::new_typed_with_env(store, env, WasmInstanceEnv::buffer_len),
+                "_buffer_consume" => Function::new_typed_with_env(store, env, WasmInstanceEnv::buffer_consume),
+                "_buffer_alloc" => Function::new_typed_with_env(store, env, WasmInstanceEnv::buffer_alloc),
             }
         }
     }
@@ -134,31 +138,48 @@ impl host_actor::WasmModule for WasmerModule {
             .try_for_each(|exp| func_names.update_from_general(exp.name(), exp.ty()))
     }
 
-    fn create_instance(&mut self, env: InstanceEnv) -> anyhow::Result<Self::Instance> {
+    fn create_instance(&mut self, func_names: &FuncNames, env: InstanceEnv) -> anyhow::Result<Self::Instance> {
         let mut store = Store::new(&self.engine);
         let env = WasmInstanceEnv {
             instance_env: env,
             mem: None,
+            buffers: Default::default(),
         };
         let env = FunctionEnv::new(&mut store, env);
         let import_object = self.imports(&mut store, &env);
 
         let instance = Instance::new(&mut store, &self.module, &import_object)?;
 
-        let mem = Mem::extract(&store, &instance.exports).context("couldn't access memory exports")?;
+        let mem = Mem::extract(&instance.exports).context("couldn't access memory exports")?;
         env.as_mut(&mut store).mem = Some(mem);
 
-        // Note: this budget is just for INIT_PANIC_DUNDER.
+        // Note: this budget is just for initializers
         let points = DEFAULT_EXECUTION_BUDGET;
         set_remaining_points(&mut store, &instance, points as u64);
 
-        // Init panic if available
-        let init_panic = instance.exports.get_typed_function::<(), ()>(&store, INIT_PANIC_DUNDER);
-        if let Ok(init_panic) = init_panic {
-            match init_panic.call(&mut store) {
-                Ok(_) => {}
+        for preinit in &func_names.preinits {
+            let func = instance.exports.get_typed_function::<(), ()>(&store, preinit).unwrap();
+            func.call(&mut store)
+                .with_context(|| format!("preinit {preinit:?} trapped"))?;
+        }
+
+        let init = instance.exports.get_typed_function::<(), u32>(&store, SETUP_DUNDER);
+        if let Ok(init) = init {
+            match init.call(&mut store) {
+                Ok(errbuf) => {
+                    let errbuf = Buffer { raw: errbuf };
+                    if !errbuf.is_invalid() {
+                        let errbuf = env
+                            .as_mut(&mut store)
+                            .take_buf(errbuf)
+                            .unwrap_or_else(|| "unknown error".as_bytes().into());
+                        let errbuf = String::from_utf8_lossy(&errbuf);
+                        // TODO: catch this and return the error message to the http client
+                        anyhow::bail!("Error returned from __setup__: {}", errbuf)
+                    }
+                }
                 Err(err) => {
-                    log::warn!("Error initializing panic: {}", err);
+                    anyhow::bail!("Trap while running __setup__: {}", err)
                 }
             }
         }
@@ -184,7 +205,8 @@ impl WasmerInstance {
         log::trace!("Start describer \"{}\"...", describer_func_name);
 
         let store = &mut self.store;
-        let result = describer.call(store, &[]);
+        let describer = describer.typed::<(), u32>(store)?;
+        let result = describer.call(store);
         let duration = start.elapsed();
         log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros(),);
         match result {
@@ -192,25 +214,13 @@ impl WasmerInstance {
                 log_traceback("describer", describer_func_name, &err);
                 Err(anyhow!("Could not invoke describer function {}", describer_func_name))
             }
-            Ok(ret) => {
-                if ret.is_empty() {
-                    return Err(anyhow!("Invalid return buffer arguments from {}", describer_func_name));
-                }
-
-                // The return value of the describer is a pointer to a vector.
-                // The upper 32 bits of the 64-bit result is the offset into memory.
-                // The lower 32 bits is its length
-                let return_value = ret.first().unwrap().i64().unwrap() as u64;
-                let offset = WasmPtr::new((return_value >> 32) as u32);
-                let length = (return_value & 0xffffffff) as u32;
-
-                // We have to copy all the memory out in order to use this.
-                // This would be nice to avoid... and just somehow pass the memory contents directly
-                // through to the TupleDef decode, but Wasmer's use of Cell prevents us from getting
-                // a nice contiguous block of bytes?
-                let mem = self.env.as_ref(store).mem().clone();
-                let bytes = mem.read_output_bytes(store, offset, length).context("invalid ptr")?;
-                mem.dealloc(store, offset, length).context("failed to dealloc")?;
+            Ok(buf) => {
+                let bytes = self
+                    .env
+                    .as_mut(store)
+                    .take_buf(Buffer { raw: buf })
+                    .context("invalid buffer")?;
+                self.env.as_mut(store).clear_bufs();
 
                 // Decode the memory as EntityDef.
                 let result = match descr_type {
@@ -223,11 +233,6 @@ impl WasmerInstance {
                         let reducer = ReducerDef::decode(&mut &bytes[..])
                             .with_context(|| format!("argument tuples has invalid schema: {}", describer_func_name))?;
                         EntityDef::Reducer(reducer)
-                    }
-                    DescribedEntityType::RepeatingReducer => {
-                        let repeater = RepeaterDef::decode(&mut &bytes[..])
-                            .with_context(|| format!("argument tuples has invalid schema: {}", describer_func_name))?;
-                        EntityDef::Repeater(repeater)
                     }
                 };
 
@@ -264,50 +269,92 @@ impl host_actor::WasmInstance for WasmerInstance {
         func_names: &FuncNames,
         id: usize,
         budget: ReducerBudget,
-    ) -> (host_actor::EnergyStats, Option<host_actor::ExecuteResult<Self::Trap>>) {
-        self.call_reducer(&func_names.migrates[id], budget, b"")
+    ) -> (host_actor::EnergyStats, host_actor::ExecuteResult<Self::Trap>) {
+        self.call_tx_function::<(), 0>(&func_names.migrates[id], budget, [], |func, store, []| func.call(store))
     }
 
     fn call_reducer(
         &mut self,
         reducer_symbol: &str,
         points: ReducerBudget,
-        arg_bytes: &[u8],
-    ) -> (host_actor::EnergyStats, Option<host_actor::ExecuteResult<Self::Trap>>) {
+        sender: &[u8; 32],
+        timestamp: Timestamp,
+        arg_bytes: Vec<u8>,
+    ) -> (host_actor::EnergyStats, host_actor::ExecuteResult<Self::Trap>) {
+        self.call_tx_function::<(u32, u64, u32), 2>(
+            reducer_symbol,
+            points,
+            [sender.to_vec(), arg_bytes],
+            |func, store, [sender, args]| func.call(store, sender.raw, timestamp.0, args.raw),
+        )
+    }
+
+    fn call_connect_disconnect(
+        &mut self,
+        connect: bool,
+        budget: ReducerBudget,
+        sender: &[u8; 32],
+        timestamp: Timestamp,
+    ) -> (host_actor::EnergyStats, host_actor::ExecuteResult<Self::Trap>) {
+        self.call_tx_function::<(u32, u64), 1>(
+            if connect {
+                IDENTITY_CONNECTED_DUNDER
+            } else {
+                IDENTITY_DISCONNECTED_DUNDER
+            },
+            budget,
+            [sender.to_vec()],
+            |func, store, [sender]| func.call(store, sender.raw, timestamp.0),
+        )
+    }
+
+    fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap) {
+        log_traceback(func_type, func, trap)
+    }
+}
+
+impl WasmerInstance {
+    fn call_tx_function<Args: wasmer::WasmTypeList, const N_BUFS: usize>(
+        &mut self,
+        reducer_symbol: &str,
+        points: ReducerBudget,
+        bufs: [Vec<u8>; N_BUFS],
+        // would be nicer if there was a TypedFunction::call_tuple(&self, store, ArgsTuple)
+        call: impl FnOnce(TypedFunction<Args, u32>, &mut Store, [Buffer; N_BUFS]) -> Result<u32, RuntimeError>,
+    ) -> (host_actor::EnergyStats, host_actor::ExecuteResult<RuntimeError>) {
         let store = &mut self.store;
         let instance = &self.instance;
         set_remaining_points(store, instance, max(points.0, 0) as u64);
 
-        let mem = self.env.as_ref(store).mem().clone();
+        let reduce = instance
+            .exports
+            .get_typed_function::<Args, u32>(store, reducer_symbol)
+            .expect("invalid reducer");
 
-        let (ptr, len) = match mem.alloc_slice(store, arg_bytes) {
-            Ok(ptr) => ptr,
-            Err(e) => {
-                if let Some(e) = e.downcast_ref() {
-                    log_traceback("allocation", "alloc", e);
-                }
-                let remaining_points = get_remaining_points_value(store, instance);
-                let used_points = points.0 - remaining_points;
-                return (
-                    host_actor::EnergyStats {
-                        used: used_points,
-                        remaining: remaining_points,
-                    },
-                    None,
-                );
-            }
-        };
-
-        let reduce = instance.exports.get_function(reducer_symbol).expect("invalid reducer");
+        let bufs = bufs.map(|data| self.env.as_mut(store).alloc_buf(data));
 
         // let guard = pprof::ProfilerGuardBuilder::default().frequency(2500).build().unwrap();
 
         let start = std::time::Instant::now();
         log::trace!("Start reducer \"{}\"...", reducer_symbol);
         // pass ownership of the `ptr` allocation into the reducer
-        let result = reduce.call(store, &[ptr.into(), len.into()]);
+        let result = call(reduce, store, bufs).and_then(|errbuf| {
+            let errbuf = Buffer { raw: errbuf };
+            Ok(if errbuf.is_invalid() {
+                Ok(())
+            } else {
+                let errmsg = self
+                    .env
+                    .as_mut(store)
+                    .take_buf(errbuf)
+                    .ok_or_else(|| RuntimeError::new("invalid buffer handle"))?;
+                Err(string_from_utf8_lossy_owned(errmsg))
+            })
+        });
+        self.env.as_mut(store).clear_bufs();
+        // .call(store, sender_buf.ptr.cast(), timestamp, args_buf.ptr, args_buf.len)
+        // .and_then(|_| {});
         let duration = start.elapsed();
-        let result = result.map(|ret| ret.get(0).map(|x| x.clone().try_into().unwrap()));
         let remaining_points = get_remaining_points_value(store, instance);
         log::trace!(
             "Reducer \"{}\" ran: {} us, {} eV",
@@ -321,14 +368,18 @@ impl host_actor::WasmInstance for WasmerInstance {
                 used: used_energy,
                 remaining: remaining_points,
             },
-            Some(host_actor::ExecuteResult {
+            host_actor::ExecuteResult {
                 execution_time: duration,
                 call_result: result,
-            }),
+            },
         )
     }
+}
 
-    fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap) {
-        log_traceback(func_type, func, trap)
+fn string_from_utf8_lossy_owned(v: Box<[u8]>) -> Box<str> {
+    match String::from_utf8_lossy(&v) {
+        // SAFETY: from_utf8_lossy() returned Borrowed, which means the original buffer is valid utf8
+        std::borrow::Cow::Borrowed(_) => unsafe { Box::<str>::from_raw(Box::into_raw(v) as *mut str) },
+        std::borrow::Cow::Owned(s) => s.into_boxed_str(),
     }
 }

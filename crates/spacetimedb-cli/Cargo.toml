@@ -33,6 +33,8 @@ colored = "2.0.0"
 duct = "0.13.5"
 hex = "0.4.3"
 base64 = "0.13.1"
+slab = "0.4.7"
+cargo_metadata = "0.15.2"
 
 [dev-dependencies]
 insta = { version = "1.21.0", features = ["toml"] }

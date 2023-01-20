@@ -6,13 +6,12 @@ use crate::module_subscription_actor::ModuleSubscription;
 use anyhow::Context;
 use spacetimedb_lib::{EntityDef, TupleValue};
 use std::collections::HashMap;
-use std::mem;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
-use tokio::time;
 
+use super::timestamp::Timestamp;
 use super::ReducerArgs;
 
 #[derive(Debug, Clone)]
@@ -30,7 +29,7 @@ pub struct ModuleFunctionCall {
 
 #[derive(Debug, Clone)]
 pub struct ModuleEvent {
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
     pub caller_identity: Hash,
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
@@ -43,22 +42,19 @@ enum ModuleHostCommand {
     CallConnectDisconnect {
         caller_identity: Hash,
         connected: bool,
-        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+        respond_to: oneshot::Sender<()>,
     },
     CallReducer {
         caller_identity: Hash,
         reducer_name: String,
         budget: ReducerBudget,
         args: TupleValue,
-        respond_to: oneshot::Sender<Result<ReducerCallResult, anyhow::Error>>,
-    },
-    CallRepeatingReducer {
-        id: usize,
-        prev_call_time: u64,
-        respond_to: oneshot::Sender<Result<(u64, u64), anyhow::Error>>,
+        respond_to: oneshot::Sender<ReducerCallResult>,
     },
     InitDatabase {
-        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+        budget: ReducerBudget,
+        args: TupleValue,
+        respond_to: oneshot::Sender<Result<Option<ReducerCallResult>, anyhow::Error>>,
     },
     DeleteDatabase {
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
@@ -103,15 +99,12 @@ impl ModuleHostCommand {
             } => {
                 let _ = respond_to.send(actor.call_reducer(caller_identity, reducer_name, budget, args));
             }
-            ModuleHostCommand::CallRepeatingReducer {
-                id,
-                prev_call_time,
+            ModuleHostCommand::InitDatabase {
+                budget,
+                args,
                 respond_to,
             } => {
-                let _ = respond_to.send(actor.call_repeating_reducer(id, prev_call_time));
-            }
-            ModuleHostCommand::InitDatabase { respond_to } => {
-                let _ = respond_to.send(actor.init_database());
+                let _ = respond_to.send(actor.init_database(budget, args));
             }
             ModuleHostCommand::DeleteDatabase { respond_to } => {
                 let _ = respond_to.send(actor.delete_database());
@@ -153,17 +146,19 @@ pub struct ModuleInfo {
 pub trait ModuleHostActor: Send + 'static {
     fn info(&self) -> Arc<ModuleInfo>;
     fn subscription(&self) -> &ModuleSubscription;
-    fn call_connect_disconnect(&mut self, caller_identity: Hash, connected: bool) -> Result<(), anyhow::Error>;
+    fn call_connect_disconnect(&mut self, caller_identity: Hash, connected: bool);
     fn call_reducer(
         &mut self,
         caller_identity: Hash,
         reducer_name: String,
         budget: ReducerBudget,
         args: TupleValue,
-    ) -> Result<ReducerCallResult, anyhow::Error>;
-    fn call_repeating_reducer(&mut self, id: usize, prev_call_time: u64) -> Result<(u64, u64), anyhow::Error>;
-    fn get_repeating_reducers(&self) -> Vec<String>;
-    fn init_database(&mut self) -> Result<(), anyhow::Error>;
+    ) -> ReducerCallResult;
+    fn init_database(
+        &mut self,
+        budget: ReducerBudget,
+        args: TupleValue,
+    ) -> Result<Option<ReducerCallResult>, anyhow::Error>;
     fn delete_database(&mut self) -> Result<(), anyhow::Error>;
     fn _migrate_database(&mut self) -> Result<(), anyhow::Error>;
     #[cfg(feature = "tracelogging")]
@@ -178,27 +173,12 @@ pub struct ModuleHost {
     tx: mpsc::Sender<CmdOrExit>,
 }
 
-pub struct SpawnResult {
-    pub module_host: ModuleHost,
-    repeaters: Vec<String>,
-}
-
-impl SpawnResult {
-    #[inline]
-    pub fn start_repeating_reducers(&mut self) {
-        self.module_host
-            .start_repeating_reducers(mem::take(&mut self.repeaters))
-    }
-}
-
 impl ModuleHost {
-    pub fn spawn(actor: Box<impl ModuleHostActor>) -> SpawnResult {
-        let info = actor.info();
+    pub fn spawn(actor: Box<impl ModuleHostActor>) -> Self {
         let (tx, rx) = mpsc::channel(8);
-        let repeaters = actor.get_repeating_reducers();
+        let info = actor.info();
         tokio::spawn(Self::run_actor(rx, actor));
-        let module_host = ModuleHost { info, tx };
-        SpawnResult { module_host, repeaters }
+        ModuleHost { info, tx }
     }
 
     async fn run_actor(mut rx: mpsc::Receiver<CmdOrExit>, mut actor: Box<impl ModuleHostActor>) {
@@ -235,7 +215,7 @@ impl ModuleHost {
             connected,
             respond_to,
         })
-        .await?
+        .await
     }
 
     pub async fn call_reducer(
@@ -254,57 +234,29 @@ impl ModuleHost {
             args,
             respond_to,
         })
-        .await?
+        .await
         .map(Some)
-    }
-
-    async fn call_repeating_reducer(&self, id: usize, prev_call_time: u64) -> Result<(u64, u64), anyhow::Error> {
-        self.call(|respond_to| ModuleHostCommand::CallRepeatingReducer {
-            id,
-            prev_call_time,
-            respond_to,
-        })
-        .await?
-    }
-
-    fn start_repeating_reducers(&self, repeaters: Vec<String>) {
-        for (id, name) in repeaters.into_iter().enumerate() {
-            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
-            let mut prev_call_time = timestamp - 20;
-
-            let module_host = self.clone();
-            tokio::spawn(async move {
-                loop {
-                    match module_host.call_repeating_reducer(id, prev_call_time).await {
-                        Ok((repeat_duration, call_timestamp)) => {
-                            prev_call_time = call_timestamp;
-                            let sleep_dur = Duration::from_millis(repeat_duration);
-                            tokio::select! {
-                                biased;
-                                () = module_host.tx.closed() => break,
-                                () = time::sleep(sleep_dur) => {}
-                            }
-                        }
-                        Err(err) => {
-                            // If we get an error trying to call this, then the module host has probably restarted
-                            // just break out of the loop and end this task
-                            // TODO: is the above correct?
-                            log::debug!("Error calling repeating reducer {name}: {}", err);
-                            break;
-                        }
-                    }
-                }
-            });
-        }
     }
 
     pub fn catalog(&self) -> Catalog {
         Catalog(self.info.clone())
     }
 
-    pub async fn init_database(&self) -> Result<(), anyhow::Error> {
-        self.call(|respond_to| ModuleHostCommand::InitDatabase { respond_to })
-            .await?
+    pub async fn init_database(
+        &self,
+        budget: ReducerBudget,
+        args: ReducerArgs,
+    ) -> Result<Option<ReducerCallResult>, anyhow::Error> {
+        let args = match self.info().catalog.get("__init__") {
+            Some(EntityDef::Reducer(schema)) => args.into_tuple(schema)?,
+            _ => TupleValue { elements: Box::new([]) },
+        };
+        self.call(|respond_to| ModuleHostCommand::InitDatabase {
+            budget,
+            args,
+            respond_to,
+        })
+        .await?
     }
 
     pub async fn delete_database(&self) -> Result<(), anyhow::Error> {

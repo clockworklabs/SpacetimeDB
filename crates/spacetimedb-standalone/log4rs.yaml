@@ -29,3 +29,5 @@ root:
 loggers:
   spacetimedb:
     level: debug
+  gotham:
+    level: debug

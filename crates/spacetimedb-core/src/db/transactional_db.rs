@@ -1,3 +1,5 @@
+use spacetimedb_lib::data_key;
+
 use super::{
     message_log::MessageLog,
     messages::{
@@ -486,10 +488,7 @@ impl TransactionalDB {
 
     pub fn from_data_key<T, F: Fn(&[u8]) -> T>(&self, data_key: &DataKey, f: F) -> Option<T> {
         let data = match data_key {
-            DataKey::Data { len, buf } => {
-                let t = f(&buf[0..(*len as usize)]);
-                Some(t)
-            }
+            DataKey::Data(data) => Some(f(&data)),
             DataKey::Hash(hash) => {
                 let odb = self.odb.lock().unwrap();
                 let t = f(odb.get(Hash::from_arr(&hash.data)).unwrap().to_vec().as_slice());
@@ -613,16 +612,12 @@ impl TransactionalDB {
         // Start timing this whole function; `Drop` will measure time spent.
         measure.start();
 
-        let value = if bytes.len() > 32 {
-            let mut odb = self.odb.lock().unwrap();
-            let hash = odb.add(bytes);
-            DataKey::Hash(spacetimedb_lib::Hash::from_arr(&hash.data))
-        } else {
-            let mut buf = [0; 32];
-            buf[0..bytes.len()].copy_from_slice(&bytes[0..bytes.len()]);
-            DataKey::Data {
-                len: bytes.len() as u8,
-                buf,
+        let value = match data_key::InlineData::from_bytes(&bytes) {
+            Some(inline) => DataKey::Data(inline),
+            None => {
+                let mut odb = self.odb.lock().unwrap();
+                let hash = odb.add(bytes);
+                DataKey::Hash(spacetimedb_lib::Hash::from_arr(&hash.data))
             }
         };
 

@@ -8,7 +8,7 @@ use crate::{
 use enum_as_inner::EnumAsInner;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::{fmt, hash};
+use std::{fmt, hash, iter};
 
 // NOTICE!! every time you make a breaking change to the wire format, you MUST
 //          bump `SCHEMA_FORMAT_VERSION` in lib.rs!
@@ -70,7 +70,16 @@ impl TupleValue {
     pub fn to_data_key(&self) -> DataKey {
         let mut bytes = Vec::new();
         self.encode(&mut bytes);
-        DataKey::from_data(&bytes.iter())
+        DataKey::from_data(&bytes)
+    }
+
+    pub fn typecheck(&self, schema: &TupleDef) -> bool {
+        self.typecheck_elements(&schema.elements)
+    }
+
+    pub fn typecheck_elements(&self, element_schemas: &[ElementDef]) -> bool {
+        self.elements.len() == element_schemas.len()
+            && iter::zip(&*self.elements, element_schemas).all(|(val, schema)| val.typecheck(&schema.element_type))
     }
 
     pub fn decode(tuple_def: &TupleDef, bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
@@ -162,6 +171,11 @@ impl fmt::Display for EnumValue {
 }
 
 impl EnumValue {
+    pub fn typecheck(&self, schema: &EnumDef) -> bool {
+        let variant_schema = &schema.variants[usize::from(self.element_value.tag)];
+        self.element_value.type_value.typecheck(&variant_schema.element_type)
+    }
+
     pub fn decode(enum_def: &EnumDef, bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
         let tag = bytes.get_u8()?;
 
@@ -297,6 +311,36 @@ impl TypeValue {
             TypeValue::Enum(x) => TypeWideValue::Enum(x),
             TypeValue::Tuple(x) => TypeWideValue::Vec(&x.elements),
             TypeValue::Vec(x) => TypeWideValue::Vec(x),
+        }
+    }
+
+    pub fn typecheck(&self, schema: &TypeDef) -> bool {
+        use crate::PrimitiveType::*;
+        match (self, schema) {
+            (TypeValue::Unit, TypeDef::Primitive(Unit)) => true,
+            (TypeValue::Bool(_), TypeDef::Primitive(Bool)) => true,
+            (TypeValue::I8(_), TypeDef::Primitive(I8)) => true,
+            (TypeValue::U8(_), TypeDef::Primitive(U8)) => true,
+            (TypeValue::I16(_), TypeDef::Primitive(I16)) => true,
+            (TypeValue::U16(_), TypeDef::Primitive(U16)) => true,
+            (TypeValue::I32(_), TypeDef::Primitive(I32)) => true,
+            (TypeValue::U32(_), TypeDef::Primitive(U32)) => true,
+            (TypeValue::I64(_), TypeDef::Primitive(I64)) => true,
+            (TypeValue::U64(_), TypeDef::Primitive(U64)) => true,
+            (TypeValue::I128(_), TypeDef::Primitive(I128)) => true,
+            (TypeValue::U128(_), TypeDef::Primitive(U128)) => true,
+            (TypeValue::F32(_), TypeDef::Primitive(F32)) => true,
+            (TypeValue::F64(_), TypeDef::Primitive(F64)) => true,
+            (TypeValue::String(_), TypeDef::Primitive(String)) => true,
+            (TypeValue::Bytes(_), TypeDef::Primitive(Bytes)) => true,
+            (TypeValue::Hash(_), TypeDef::Primitive(Hash)) => true,
+            (TypeValue::Enum(val), TypeDef::Enum(schema)) => val.typecheck(schema),
+            (TypeValue::Tuple(val), TypeDef::Tuple(schema)) => val.typecheck(schema),
+            (TypeValue::Vec(val), TypeDef::Vec { element_type: schema }) => {
+                // if the Vec is heterogenous we've got a bigger problem, so just check the first element
+                val.first().map_or(true, |first| first.typecheck(schema))
+            }
+            _ => false,
         }
     }
 

@@ -5,11 +5,11 @@ mod module;
 extern crate core;
 extern crate proc_macro;
 
-use crate::module::{autogen_module_struct_to_schema, autogen_module_struct_to_tuple, autogen_module_tuple_to_struct};
-use module::type_to_tuple_schema;
-use proc_macro2::{Ident, Span, TokenStream};
-use quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use std::time::Duration;
+
+use crate::module::{autogen_module_struct_to_schema, autogen_module_struct_to_tuple, autogen_module_tuple_to_struct};
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::{format_ident, quote};
 use syn::Fields::{Named, Unit, Unnamed};
 use syn::{parse_macro_input, AttributeArgs, FnArg, ItemFn, ItemStruct, Meta, NestedMeta};
 
@@ -31,6 +31,7 @@ pub fn spacetimedb(macro_args: proc_macro::TokenStream, item: proc_macro::TokenS
         NestedMeta::Meta(meta) => meta.path().get_ident().and_then(|id| {
             let res = match &*id.to_string() {
                 "table" => spacetimedb_table(meta, other_args, item),
+                "init" => spacetimedb_init(meta, other_args, item),
                 "reducer" => spacetimedb_reducer(meta, other_args, item),
                 "connect" => spacetimedb_connect_disconnect(meta, other_args, item, true),
                 "disconnect" => spacetimedb_connect_disconnect(meta, other_args, item, false),
@@ -52,42 +53,17 @@ pub fn spacetimedb(macro_args: proc_macro::TokenStream, item: proc_macro::TokenS
     res.unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
-fn validate_reducer_args<'a>(
-    sig: &'a syn::Signature,
-    noctxargs: &str,
-) -> syn::Result<(
-    [&'a syn::Type; 2],
-    impl ExactSizeIterator<Item = &'a syn::PatType> + Clone,
-)> {
-    let func_inputs = &sig.inputs;
-    let (mut ctx_args, args) = (func_inputs.iter().take(2), func_inputs.iter().skip(2));
-
-    let mut ctx_arg = || {
-        let arg = ctx_args
-            .next()
-            .ok_or_else(|| syn::Error::new_spanned(func_inputs, noctxargs))?;
-        match arg {
-            FnArg::Receiver(_) => Err(syn::Error::new_spanned(
-                arg,
-                "self in reducer parameters is not supported!",
-            )),
-            FnArg::Typed(x) => Ok(&*x.ty),
-        }
-    };
-
-    let ctx_args = [ctx_arg()?, ctx_arg()?];
-
-    let args = args.map(|x| match x {
-        // self can only be the first arg of a function anyway
-        FnArg::Receiver(_) => unreachable!(),
-        FnArg::Typed(x) => x,
-    });
-    Ok((ctx_args, args))
+fn duration_totokens(dur: Duration) -> TokenStream {
+    let (secs, nanos) = (dur.as_secs(), dur.subsec_nanos());
+    quote!({
+        const DUR: ::core::time::Duration = ::core::time::Duration::new(#secs, #nanos);
+        DUR
+    })
 }
 
 fn spacetimedb_reducer(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
     assert_no_args_meta(meta)?;
-    if let Some((first, args)) = args.split_first() {
+    let repeat_dur = if let Some((first, args)) = args.split_first() {
         let value = match first {
             NestedMeta::Meta(Meta::NameValue(p)) if p.path.is_ident("repeat") => &p.lit,
             _ => {
@@ -97,111 +73,157 @@ fn spacetimedb_reducer(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> s
                 ))
             }
         };
-        let s = match value {
-            syn::Lit::Str(s) => s.value(),
-            syn::Lit::Int(i) => i.to_string(),
-            _ => {
-                return Err(syn::Error::new_spanned(
-                    value,
-                    "repeat argument must be a string or an int with a suffix",
-                ))
-            }
-        };
+        let dur = parse_duration(value, "repeat argument")?;
 
-        let repeat_duration = parse_duration::parse(&s)
-            .map_err(|e| syn::Error::new_spanned(s, format!("Can't parse repeat time: {e}")))?;
+        assert_no_args(args)?;
 
-        return spacetimedb_repeating_reducer(args, item, repeat_duration);
-    }
-
-    let original_function = syn::parse2::<ItemFn>(item)?;
-    let func_name = &original_function.sig.ident;
-
-    let reducer_name = func_name.to_string();
-
-    let errmsg = "reducer should have at least 2 arguments: (identity: Hash, timestamp: u64, ...)";
-    let ([arg1, arg2], args) = validate_reducer_args(&original_function.sig, errmsg)?;
-
-    // TODO: better (non-string-based) validation for these
-    if !matches!(
-        &*arg1.to_token_stream().to_string(),
-        "spacetimedb::spacetimedb_lib::hash::Hash" | "Hash"
-    ) {
-        return Err(syn::Error::new_spanned(
-            &arg1,
-            "1st parameter of a reducer must be of type \'u64\'.",
-        ));
-    }
-    if arg2.to_token_stream().to_string() != "u64" {
-        return Err(syn::Error::new_spanned(
-            &arg2,
-            "2nd parameter of a reducer must be of type \'u64\'.",
-        ));
-    }
-
-    let num_args = args.len();
-
-    let args_schemas = args.clone().enumerate().map(|(col_num, arg)| {
-        let arg_name = if let syn::Pat::Ident(i) = &*arg.pat {
-            Some(i.ident.to_string())
-        } else {
-            None
-        };
-        type_to_tuple_schema(arg_name, col_num.try_into().unwrap(), &arg.ty)
-    });
-
-    let value_varnames = (0..num_args).map(|i| format_ident!("value_{}", i));
-    let value_varnames2 = value_varnames.clone();
-    let arg_tys = args.map(|arg| &arg.ty);
-    let get_args = quote! {
-        core::convert::TryFrom::try_from(arguments.arguments.elements).ok().and_then(|args: Box<[_; #num_args]>| {
-            let [#(#value_varnames),*] = *args;
-            Some((#(<#arg_tys as spacetimedb::FromValue>::from_value(#value_varnames2)?,)*))
-        })
-        .unwrap_or_else(|| panic!("bad reducer arguments for {}", #reducer_name))
+        ReducerExtra::Repeat(dur)
+    } else {
+        ReducerExtra::None
     };
 
-    let arg_indices = (0..num_args).map(syn::Index::from);
+    let original_function = syn::parse2::<ItemFn>(item)?;
+
+    let reducer_name = original_function.sig.ident.to_string();
+    if reducer_name == "__init__" {
+        return Err(syn::Error::new_spanned(
+            &original_function.sig.ident,
+            "reserved reducer name",
+        ));
+    }
+
+    gen_reducer(original_function, &reducer_name, repeat_dur)
+}
+
+fn spacetimedb_init(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
+    assert_no_args_meta(meta)?;
+    assert_no_args(args)?;
+
+    let original_function = syn::parse2::<ItemFn>(item)?;
+
+    gen_reducer(original_function, "__init__", ReducerExtra::Init)
+}
+
+enum ReducerExtra {
+    None,
+    Repeat(Duration),
+    Init,
+}
+
+fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtra) -> syn::Result<TokenStream> {
+    let func_name = &original_function.sig.ident;
+    let vis = &original_function.vis;
+
+    // let errmsg = "reducer should have at least 2 arguments: (identity: Hash, timestamp: u64, ...)";
+    // let ([arg1, arg2], args) = validate_reducer_args(&original_function.sig, errmsg)?;
+
+    // // TODO: better (non-string-based) validation for these
+    // if !matches!(
+    //     &*arg1.to_token_stream().to_string(),
+    //     "spacetimedb::spacetimedb_lib::hash::Hash" | "Hash"
+    // ) {
+    //     return Err(syn::Error::new_spanned(
+    //         &arg1,
+    //         "1st parameter of a reducer must be of type \'u64\'.",
+    //     ));
+    // }
+    // if arg2.to_token_stream().to_string() != "u64" {
+    //     return Err(syn::Error::new_spanned(
+    //         &arg2,
+    //         "2nd parameter of a reducer must be of type \'u64\'.",
+    //     ));
+    // }
+
+    let args = original_function.sig.inputs.iter().map(|x| match x {
+        FnArg::Receiver(_) => panic!(),
+        FnArg::Typed(x) => x,
+    });
+
+    let arg_names = args.clone().map(|arg| {
+        if let syn::Pat::Ident(i) = &*arg.pat {
+            let name = i.ident.to_string();
+            quote!(Some(#name))
+        } else {
+            quote!(None)
+        }
+    });
+
+    let arg_tys = args.map(|arg| &arg.ty);
+
+    let ret_ty = match &original_function.sig.output {
+        syn::ReturnType::Default => None,
+        syn::ReturnType::Type(_, t) => Some(&**t),
+    }
+    .into_iter();
 
     let reducer_symbol = format!("__reducer__{reducer_name}");
     let descriptor_symbol = format!("__describe_reducer__{reducer_name}");
 
+    let epilogue = match &extra {
+        ReducerExtra::None => quote!(),
+        ReducerExtra::Repeat(repeat_dur) => {
+            let repeat_dur = duration_totokens(*repeat_dur);
+            quote! {
+                if _res.is_ok() {
+                    spacetimedb::rt::schedule_repeater(#func_name, #reducer_name, #repeat_dur)
+                }
+            }
+        }
+        ReducerExtra::Init => quote!(),
+    };
+
     let generated_function = quote! {
         #[export_name = #reducer_symbol]
-        extern "C" fn __reducer(__arg_ptr: *mut u8, __arg_size: usize) {
-            let (__identity, __timestamp, __args) = {
-                let bytes = unsafe { std::boxed::Box::from_raw(std::ptr::slice_from_raw_parts_mut(__arg_ptr, __arg_size)) };
-                let mut rdr = &bytes[..];
-                let arguments =
-                    spacetimedb::spacetimedb_lib::args::ReducerArguments::decode(&mut rdr, &__REDUCERDEF).expect("Unable to decode module arguments");
-
-                (arguments.identity, arguments.timestamp, #get_args)
-            };
-
-            // Invoke the function with the deserialized args
-            #func_name(__identity, __timestamp, #(__args.#arg_indices),*);
+        extern "C" fn __reducer(__sender: spacetimedb::sys::Buffer, __timestamp: u64, __args: spacetimedb::sys::Buffer) -> spacetimedb::sys::Buffer {
+            #(spacetimedb::rt::assert_reducerarg::<#arg_tys>();)*
+            #(spacetimedb::rt::assert_reducerret::<#ret_ty>();)*
+            unsafe { spacetimedb::rt::invoke_reducer(#func_name, &__REDUCERDEF, __sender, __timestamp, __args, |_res| { #epilogue }) }
         }
     };
 
     let reducerdef_static = quote! {
-        static __REDUCERDEF: spacetimedb::__private::Lazy<spacetimedb::spacetimedb_lib::ReducerDef> =
-            spacetimedb::__private::Lazy::new(|| {
-                spacetimedb::spacetimedb_lib::ReducerDef {
-                    name: Some(#reducer_name.into()),
-                    args: vec![
-                        #(#args_schemas),*
-                    ],
-                }
+        static __REDUCERDEF: spacetimedb::rt::Lazy<spacetimedb::spacetimedb_lib::ReducerDef> =
+            spacetimedb::rt::Lazy::new(|| {
+                spacetimedb::rt::schema_of_func(#func_name, #reducer_name, &[#(#arg_names),*])
             });
     };
 
     let generated_describe_function = quote! {
         #[export_name = #descriptor_symbol]
-        pub extern "C" fn __descriptor() -> u64 {
+        pub extern "C" fn __descriptor() -> spacetimedb::sys::Buffer {
             let reducerdef = &*__REDUCERDEF;
             let mut bytes = vec![];
             reducerdef.encode(&mut bytes);
-            spacetimedb::sys::pack_slice(bytes.into())
+            spacetimedb::sys::Buffer::alloc(&bytes)
+        }
+    };
+
+    let mut schedule_func_sig = original_function.sig.clone();
+    let schedule_func_body = {
+        schedule_func_sig.ident = format_ident!("schedule");
+        schedule_func_sig.output = syn::ReturnType::Default;
+        let arg_names = schedule_func_sig.inputs.iter_mut().enumerate().map(|(i, arg)| {
+            let syn::FnArg::Typed(arg) = arg else { panic!() };
+            match &mut *arg.pat {
+                syn::Pat::Ident(id) => {
+                    id.by_ref = None;
+                    id.mutability = None;
+                    id.ident.clone()
+                }
+                _ => {
+                    let ident = format_ident!("__arg{}", i);
+                    arg.pat = Box::new(syn::parse_quote!(#ident));
+                    ident
+                }
+            }
+        });
+        let schedule_args = quote!((#(#arg_names,)*));
+        let time_arg = format_ident!("__time");
+        schedule_func_sig
+            .inputs
+            .insert(0, syn::parse_quote!(#time_arg: spacetimedb::Timestamp));
+        quote! {
+            spacetimedb::rt::schedule(#reducer_name, #time_arg, #schedule_args)
         }
     };
 
@@ -211,77 +233,11 @@ fn spacetimedb_reducer(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> s
             #generated_function
             #generated_describe_function
         };
-        #original_function
-    })
-}
-
-fn spacetimedb_repeating_reducer(
-    args: &[NestedMeta],
-    item: TokenStream,
-    repeat_duration: Duration,
-) -> syn::Result<TokenStream> {
-    assert_no_args(args)?;
-
-    let original_function = syn::parse2::<ItemFn>(item)?;
-    let func_name = &original_function.sig.ident;
-    let reducer_name = func_name.to_string();
-
-    let errmsg = "repeating reducers should have exactly 2 arguments: (timestamp: u64, delta_time: u64)";
-    let ([arg1, arg2], others) = validate_reducer_args(&original_function.sig, errmsg)?;
-    if others.len() != 0 {
-        let mut tokens = TokenStream::new();
-        tokens.append_all(others);
-        let errmsg = "repeating reducers should have exactly 2 arguments";
-        return Err(syn::Error::new_spanned(tokens, errmsg));
-    }
-
-    // TODO: better (non-string-based) validation for these
-    if arg1.to_token_stream().to_string() != "u64" {
-        let error_str = "1st parameter of a repeating reducer must be of type \'u64\'.";
-        return Err(syn::Error::new_spanned(arg1, error_str));
-    }
-
-    // Second argument must be an u64 (delta_time)
-    if arg2.to_token_stream().to_string() != "u64" {
-        let error_str = "2nd parameter of a repeating reducer must be of type \'u64\'.";
-        return Err(syn::Error::new_spanned(arg2, error_str));
-    }
-
-    let duration_as_millis = repeat_duration.as_millis() as u64;
-
-    let reducer_symbol = format!("__repeating_reducer__{reducer_name}");
-    let descriptor_symbol = format!("__describe_repeating_reducer__{reducer_name}");
-
-    let generated_function = quote! {
-        #[export_name = #descriptor_symbol]
-        pub extern "C" fn __descriptor() -> u64 {
-            let tupledef = spacetimedb::spacetimedb_lib::RepeaterDef {
-                name: Some(#reducer_name.into()),
-            };
-            let mut bytes = vec![];
-            tupledef.encode(&mut bytes);
-            spacetimedb::sys::pack_slice(bytes.into())
+        #[allow(non_camel_case_types)]
+        #vis struct #func_name { _never: ::core::convert::Infallible }
+        impl #func_name {
+            #vis #schedule_func_sig { #schedule_func_body }
         }
-
-        #[export_name = #reducer_symbol]
-        extern "C" fn __reducer(__arg_ptr: *mut u8, __arg_size: usize) -> u64 {
-            let __args = {
-                let bytes = unsafe { std::boxed::Box::from_raw(std::ptr::slice_from_raw_parts_mut(__arg_ptr, __arg_size)) };
-                // Deserialize the arguments
-                spacetimedb::spacetimedb_lib::args::RepeatingReducerArguments::decode(&mut &bytes[..]).expect("Unable to decode module arguments")
-            };
-
-            // Invoke the function with the deserialized args
-            #func_name(__args.timestamp, __args.delta_time);
-
-            #duration_as_millis
-        }
-    };
-
-    Ok(quote! {
-        const _: () = {
-            #generated_function
-        };
         #original_function
     })
 }
@@ -328,7 +284,7 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
 
     let get_table_id_func = quote! {
         fn table_id() -> u32 {
-            static TABLE_ID: spacetimedb::__private::OnceCell<u32> = spacetimedb::__private::OnceCell::new();
+            static TABLE_ID: spacetimedb::rt::OnceCell<u32> = spacetimedb::rt::OnceCell::new();
             *TABLE_ID.get_or_init(|| {
                 spacetimedb::get_table_id(<Self as spacetimedb::TableType>::TABLE_NAME)
             })
@@ -476,8 +432,8 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
             const TABLE_NAME: &'static str = #table_name;
             const UNIQUE_COLUMNS: &'static [u8] = &[#(#unique_fields),*];
             #[inline]
-            fn __tabledef_cell() -> &'static spacetimedb::__private::OnceCell<spacetimedb::spacetimedb_lib::TableDef> {
-                static TABLEDEF: spacetimedb::__private::OnceCell<spacetimedb::spacetimedb_lib::TableDef> = spacetimedb::__private::OnceCell::new();
+            fn __tabledef_cell() -> &'static spacetimedb::rt::OnceCell<spacetimedb::spacetimedb_lib::TableDef> {
+                static TABLEDEF: spacetimedb::rt::OnceCell<spacetimedb::spacetimedb_lib::TableDef> = spacetimedb::rt::OnceCell::new();
                 &TABLEDEF
             }
             #get_table_id_func
@@ -488,9 +444,9 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
 
     let describe_table_func = quote! {
         #[export_name = #describe_table_symbol]
-        extern "C" fn __describe_table() -> u64 {
-            spacetimedb::sys::pack_slice(
-                <#original_struct_ident as spacetimedb::TableType>::describe_table()
+        extern "C" fn __describe_table() -> spacetimedb::sys::Buffer {
+            spacetimedb::sys::Buffer::alloc(
+                &<#original_struct_ident as spacetimedb::TableType>::describe_table()
             )
         }
     };
@@ -657,9 +613,9 @@ fn spacetimedb_tuple(meta: &Meta, _: &[NestedMeta], item: TokenStream) -> syn::R
 
         const _: () = {
             #[export_name = #describe_tuple_symbol]
-            extern "C" fn __describe_symbol() -> u64 {
-                spacetimedb::sys::pack_slice(
-                    <#original_struct_ident as spacetimedb::TupleType>::describe_tuple()
+            extern "C" fn __describe_symbol() -> spacetimedb::sys::Buffer {
+                spacetimedb::sys::Buffer::alloc(
+                    &<#original_struct_ident as spacetimedb::TupleType>::describe_tuple()
                 )
             }
         };
@@ -708,69 +664,11 @@ fn spacetimedb_connect_disconnect(
         "__identity_disconnected__"
     };
 
-    let mut arg_num: usize = 0;
-    for function_argument in original_function.sig.inputs.iter() {
-        if arg_num > 1 {
-            return Err(syn::Error::new_spanned(
-                function_argument,
-                "Client connect/disconnect can only have one argument (identity: Hash)",
-            ));
-        }
-
-        match function_argument {
-            FnArg::Receiver(_) => {
-                return Err(syn::Error::new_spanned(
-                    function_argument,
-                    "Receiver types in reducer parameters not supported!",
-                ))
-            }
-            FnArg::Typed(typed) => {
-                let arg_type = &typed.ty;
-                let arg_token = arg_type.to_token_stream();
-                let arg_type_str = arg_token.to_string();
-
-                // First argument must be Hash (sender)
-                if arg_num == 0 {
-                    if arg_type_str != "spacetimedb::spacetimedb_lib::hash::Hash" && arg_type_str != "Hash" {
-                        let error_str = format!(
-                            "Parameter 1 of connect/disconnect {} must be of type \'Hash\'.",
-                            func_name
-                        );
-                        return Err(syn::Error::new_spanned(arg_type, error_str));
-                    }
-                    arg_num += 1;
-                    continue;
-                }
-
-                // Second argument must be a u64 (timestamp)
-                if arg_num == 1 {
-                    if arg_type_str != "u64" {
-                        let error_str = format!(
-                            "Parameter 1 of connect/disconnect {} must be of type \'Hash\'.",
-                            func_name
-                        );
-                        return Err(syn::Error::new_spanned(arg_type, error_str));
-                    }
-                    arg_num += 1;
-                    continue;
-                }
-            }
-        }
-
-        arg_num += 1;
-    }
-
     let emission = quote! {
         const _: () = {
             #[export_name = #connect_disconnect_symbol]
-            extern "C" fn __connect_disconnect(__arg_ptr: *mut u8, __arg_size: usize) {
-                let __args = {
-                    let bytes = unsafe { std::boxed::Box::from_raw(std::ptr::slice_from_raw_parts_mut(__arg_ptr, __arg_size)) };
-                    spacetimedb::spacetimedb_lib::args::ConnectDisconnectArguments::decode(&mut &bytes[..]).expect("Unable to decode module arguments")
-                };
-
-                // Invoke the function with the deserialized args
-                #func_name(__args.identity, __args.timestamp,);
+            extern "C" fn __connect_disconnect(__sender: spacetimedb::sys::Buffer, __timestamp: u64) -> spacetimedb::sys::Buffer {
+                unsafe { spacetimedb::rt::invoke_connection_func(#func_name, __sender, __timestamp) }
             }
         };
 
@@ -805,4 +703,34 @@ fn assert_no_args(args: &[NestedMeta]) -> syn::Result<()> {
             "unexpected macro argument(s)",
         ))
     }
+}
+
+#[proc_macro]
+pub fn duration(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = TokenStream::from(input);
+    duration_impl(input.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+fn duration_impl(input: TokenStream) -> syn::Result<TokenStream> {
+    let lit = syn::parse2::<syn::Lit>(input)?;
+    let dur = parse_duration(&lit, "duration!() argument")?;
+    Ok(duration_totokens(dur))
+}
+
+fn parse_duration(lit: &syn::Lit, ctx: &str) -> syn::Result<Duration> {
+    let s = match lit {
+        syn::Lit::Str(s) => s.value(),
+        syn::Lit::Int(i) => i.to_string(),
+        _ => {
+            return Err(syn::Error::new_spanned(
+                lit,
+                format_args!("{ctx} must be a string or an int with a suffix"),
+            ))
+        }
+    };
+
+    parse_duration::parse(&s)
+        .map_err(|e| syn::Error::new_spanned(lit, format_args!("Can't parse {ctx} as duration: {e}")))
 }

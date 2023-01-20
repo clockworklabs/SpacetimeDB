@@ -1,9 +1,17 @@
-use crate::buffer::BufWriter;
+use std::fmt;
+
+use crate::buffer::{BufReader, BufWriter, DecodeError};
 use crate::DataKey;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct PrimaryKey {
     pub data_key: DataKey,
+}
+
+impl fmt::Debug for PrimaryKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("PrimaryKey").field(&self.data_key).finish()
+    }
 }
 
 impl PrimaryKey {
@@ -11,9 +19,9 @@ impl PrimaryKey {
         self.data_key.to_bytes()
     }
 
-    pub fn decode(bytes: impl AsRef<[u8]>) -> (Self, usize) {
-        let (data_key, nr) = DataKey::decode(bytes);
-        (PrimaryKey { data_key }, nr)
+    pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
+        let data_key = DataKey::decode(bytes)?;
+        Ok(PrimaryKey { data_key })
     }
 
     pub fn encode(&self, bytes: &mut impl BufWriter) {

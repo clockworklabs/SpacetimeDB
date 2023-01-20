@@ -8,12 +8,15 @@ pub(crate) mod module_host;
 
 // Visible for integration testing.
 pub mod instance_env;
+mod timestamp;
 pub mod tracelog;
 mod wasm_common;
 
 #[derive(Debug)]
 pub enum ReducerArgs {
     Json(Bytes),
+    Wire(Bytes),
+    Nullary,
 }
 
 impl ReducerArgs {
@@ -30,6 +33,11 @@ impl ReducerArgs {
                 let args = schema.deserialize(&mut de)?;
                 de.end()?;
                 Ok(args)
+            }
+            ReducerArgs::Wire(bytes) => Ok(TupleValue::decode_from_elements(&schema.args, &mut &bytes[..])?),
+            ReducerArgs::Nullary => {
+                anyhow::ensure!(schema.args.is_empty(), "failed to typecheck args");
+                Ok(TupleValue { elements: Box::new([]) })
             }
         }
     }

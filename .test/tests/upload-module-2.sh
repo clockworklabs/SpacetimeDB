@@ -12,11 +12,16 @@ source "./.test/lib.include"
 create_project
 
 cat > "${PROJECT_PATH}/src/lib.rs" << EOF
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::{println, spacetimedb, Timestamp};
+
+#[spacetimedb(init)]
+fn init() {
+    spacetimedb::schedule!("100ms", my_repeating_reducer(Timestamp::now()));
+}
 
 #[spacetimedb(reducer, repeat = 100ms)]
-pub fn my_repeating_reducer(timestamp: u64, delta_time: u64) {
-    println!("Invoked: ts={}, delta={}", timestamp, delta_time);
+pub fn my_repeating_reducer(prev: Timestamp) {
+    println!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), prev.elapsed());
 }
 EOF
 

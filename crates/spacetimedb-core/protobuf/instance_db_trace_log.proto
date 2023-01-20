@@ -33,17 +33,19 @@ message DeleteEq {
 message DeleteRange {
   uint32 table_id = 1;
   uint32 col_id = 2;
-  bytes buffer = 3;
-  uint32 result_deleted_count = 4;
+  bytes start_buffer = 3;
+  bytes end_buffer = 4;
+  uint32 result_deleted_count = 5;
 }
 
 message CreateTable {
-  bytes schema_buffer = 1;
-  uint32 result_table_id = 2;
+  string table_name = 1;
+  bytes schema_buffer = 2;
+  uint32 result_table_id = 3;
 }
 
 message GetTableId {
-  bytes buffer = 1;
+  string table_name = 1;
   uint32 result_table_id = 2;
 }
 

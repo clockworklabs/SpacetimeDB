@@ -1,23 +1,29 @@
-use log::debug;
+use bytes::Bytes;
 use parking_lot::{Mutex, MutexGuard};
-use spacetimedb_lib::{ElementDef, PrimaryKey, TupleDef, TupleValue, TypeDef, TypeValue};
+use spacetimedb_lib::{PrimaryKey, TupleDef, TupleValue, TypeValue};
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use crate::db::relational_db::{RelationalDB, WrapTxWrapper};
-use crate::error::{log_to_err, NodesError};
-use crate::host::tracelog::instance_trace::TraceLog;
+use crate::error::NodesError;
 use crate::util::prometheus_handle::HistogramVecHandle;
+use crate::util::ResultInspectExt;
 use crate::worker_database_instance::WorkerDatabaseInstance;
 use crate::worker_metrics::{
     INSTANCE_ENV_DELETE_EQ, INSTANCE_ENV_DELETE_PK, INSTANCE_ENV_DELETE_RANGE, INSTANCE_ENV_DELETE_VALUE,
     INSTANCE_ENV_INSERT, INSTANCE_ENV_ITER,
 };
 
+use super::host_controller::Scheduler;
+use super::timestamp::Timestamp;
+use super::tracelog::instance_trace::TraceLog;
+use super::ReducerArgs;
+
 #[derive(Clone)]
 pub struct InstanceEnv {
     pub worker_database_instance: WorkerDatabaseInstance,
+    pub scheduler: Scheduler,
     pub tx: TxSlot,
     pub trace_log: Option<Arc<Mutex<TraceLog>>>,
 }
@@ -27,18 +33,31 @@ pub struct TxSlot {
     inner: Arc<Mutex<Option<WrapTxWrapper>>>,
 }
 
+// pub enum
+
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
     pub fn new(
         worker_database_instance: WorkerDatabaseInstance,
+        scheduler: Scheduler,
         tx: TxSlot,
         trace_log: Option<Arc<Mutex<TraceLog>>>,
     ) -> Self {
         Self {
             worker_database_instance,
+            scheduler,
             tx,
             trace_log,
         }
+    }
+
+    pub fn schedule(&self, reducer: String, args: Bytes, time: Timestamp) {
+        self.scheduler.schedule(
+            self.worker_database_instance.database_instance_id,
+            reducer,
+            ReducerArgs::Wire(args),
+            time,
+        )
     }
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = WrapTxWrapper> + '_, GetTxError> {
@@ -54,7 +73,7 @@ impl InstanceEnv {
         );
     }
 
-    pub fn insert(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), NodesError> {
+    pub fn insert(&self, table_id: u32, buffer: &[u8]) -> Result<(), NodesError> {
         let mut measure = HistogramVecHandle::new(
             &INSTANCE_ENV_INSERT,
             vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
@@ -63,27 +82,26 @@ impl InstanceEnv {
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let tx = &mut *self.get_tx()?;
 
-        let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
-        let row = RelationalDB::decode_row(&schema, &mut &buffer[..]);
-        let row = match row {
-            Ok(x) => x,
-            Err(e) => return Err(log_to_err(NodesError::InsertDecode { table_id, e })),
-        };
+        let schema = stdb
+            .schema_for_table(tx, table_id)
+            .unwrap()
+            .ok_or(NodesError::TableNotFound)?;
+        let row = RelationalDB::decode_row(&schema, &mut &buffer[..]).map_err(NodesError::DecodeRow)?;
 
-        let results = stdb
-            .insert(tx, table_id, row)
-            .map_err(|e| log_to_err(NodesError::InsertRow { table_id, e }));
-        if results.is_ok() {
-            if let Some(trace_log) = &self.trace_log {
-                trace_log
-                    .lock()
-                    .insert(measure.start_instant.unwrap(), measure.elapsed(), table_id, buffer);
-            }
+        stdb.insert(tx, table_id, row)
+            .inspect_err_(|e| log::error!("insert(table_id: {table_id}): {e}"))?;
+        if let Some(trace_log) = &self.trace_log {
+            trace_log.lock().insert(
+                measure.start_instant.unwrap(),
+                measure.elapsed(),
+                table_id,
+                buffer.into(),
+            );
         }
-        results
+        Ok(())
     }
 
-    pub fn delete_pk(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), NodesError> {
+    pub fn delete_pk(&self, table_id: u32, buffer: &[u8]) -> Result<(), NodesError> {
         let mut measure = HistogramVecHandle::new(
             &INSTANCE_ENV_DELETE_PK,
             vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
@@ -92,31 +110,27 @@ impl InstanceEnv {
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let tx = &mut *self.get_tx()?;
 
-        let (primary_key, _) = PrimaryKey::decode(&buffer[..]);
-        let result = stdb
+        let primary_key = PrimaryKey::decode(&mut &buffer[..]).map_err(NodesError::DecodePrimaryKey)?;
+        // todo: check that res is true, but for now it always is
+        let _res = stdb
             .delete_pk(tx, table_id, primary_key)
-            .map_err(|e| log_to_err(NodesError::DeleteRow { table_id, e }))?;
-        if result.is_some() {
-            if let Some(trace_log) = &self.trace_log {
-                trace_log.lock().delete_pk(
-                    measure.start_instant.unwrap(),
-                    measure.elapsed(),
-                    table_id,
-                    buffer,
-                    result.is_some(),
-                );
-            }
+            .inspect_err_(|e| log::error!("delete_pk(table_id: {table_id}): {e}"))?
+            .ok_or(NodesError::PrimaryKeyNotFound(primary_key))?;
 
-            Ok(())
-        } else {
-            Err(NodesError::DeleteNotFound {
+        if let Some(trace_log) = &self.trace_log {
+            trace_log.lock().delete_pk(
+                measure.start_instant.unwrap(),
+                measure.elapsed(),
                 table_id,
-                pk: primary_key,
-            })
+                buffer.into(),
+                _res,
+            );
         }
+
+        Ok(())
     }
 
-    pub fn delete_value(&self, table_id: u32, buffer: bytes::Bytes) -> Result<(), NodesError> {
+    pub fn delete_value(&self, table_id: u32, buffer: &[u8]) -> Result<(), NodesError> {
         let mut measure = HistogramVecHandle::new(
             &INSTANCE_ENV_DELETE_VALUE,
             vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
@@ -125,33 +139,31 @@ impl InstanceEnv {
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let tx = &mut *self.get_tx()?;
 
-        let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
-        let row = RelationalDB::decode_row(&schema, &mut &buffer[..]);
-        if let Err(e) = row {
-            return Err(log_to_err(NodesError::DeleteDecode { table_id, e }));
-        }
+        let schema = stdb
+            .schema_for_table(tx, table_id)
+            .unwrap()
+            .ok_or(NodesError::TableNotFound)?;
+        let row = RelationalDB::decode_row(&schema, &mut &buffer[..]).map_err(NodesError::DecodeRow)?;
 
-        let pk = RelationalDB::pk_for_row(&row.unwrap());
-        let result = stdb
+        let pk = RelationalDB::pk_for_row(&row);
+        // todo: check that res is true, but for now it always is
+        let _res = stdb
             .delete_pk(tx, table_id, pk)
-            .map_err(|e| log_to_err(NodesError::DeleteRow { table_id, e }))?;
-        if result.is_some() {
-            if let Some(trace_log) = &self.trace_log {
-                trace_log.lock().delete_value(
-                    measure.start_instant.unwrap(),
-                    measure.elapsed(),
-                    table_id,
-                    buffer,
-                    result.is_some(),
-                );
-            }
-            Ok(())
-        } else {
-            Err(NodesError::DeleteNotFound { table_id, pk })
+            .inspect_err_(|e| log::error!("delete_value(table_id: {table_id}): {e}"))?
+            .ok_or(NodesError::PrimaryKeyNotFound(pk))?;
+        if let Some(trace_log) = &self.trace_log {
+            trace_log.lock().delete_value(
+                measure.start_instant.unwrap(),
+                measure.elapsed(),
+                table_id,
+                buffer.into(),
+                _res,
+            );
         }
+        Ok(())
     }
 
-    pub fn delete_eq(&self, table_id: u32, col_id: u32, buffer: bytes::Bytes) -> Result<u32, NodesError> {
+    pub fn delete_eq(&self, table_id: u32, col_id: u32, buffer: &[u8]) -> Result<u32, NodesError> {
         let mut measure = HistogramVecHandle::new(
             &INSTANCE_ENV_DELETE_EQ,
             vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
@@ -161,38 +173,45 @@ impl InstanceEnv {
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
         let tx = &mut *self.get_tx()?;
 
-        let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
-        let type_def = &schema.elements[col_id as usize].element_type;
+        let schema = stdb
+            .schema_for_table(tx, table_id)
+            .unwrap()
+            .ok_or(NodesError::TableNotFound)?;
+        let type_def = &schema
+            .elements
+            .get(col_id as usize)
+            .ok_or(NodesError::BadColumn)?
+            .element_type;
 
-        let eq_value = TypeValue::decode(type_def, &mut &buffer[..]);
-        let eq_value = eq_value.expect("You can't let modules crash you like this you fool.");
-        let seek = stdb.seek(tx, table_id, col_id, eq_value);
-        if let Ok(seek) = seek {
-            let seek: Vec<TupleValue> = seek.collect::<Vec<_>>();
+        let eq_value = TypeValue::decode(type_def, &mut &buffer[..]).map_err(NodesError::DecodeValue)?;
+        let seek = stdb.seek(tx, table_id, col_id, eq_value)?;
+        let seek: Vec<TupleValue> = seek.collect::<Vec<_>>();
+        let count = stdb
+            .delete_in(tx, table_id, seek)
+            .inspect_err_(|e| log::error!("delete_eq(table_id: {table_id}): {e}"))?
+            .ok_or(NodesError::ColumnValueNotFound)?;
 
-            let result = stdb
-                .delete_in(tx, table_id, seek)
-                .map_err(|e| log_to_err(NodesError::DeleteRow { table_id, e }))?
-                .ok_or(NodesError::DeleteValueNotFound { table_id });
-            if let Ok(count) = result {
-                if let Some(trace_log) = &self.trace_log {
-                    trace_log.lock().delete_eq(
-                        measure.start_instant.unwrap(),
-                        measure.elapsed(),
-                        table_id,
-                        col_id,
-                        buffer,
-                        count,
-                    );
-                }
-            }
-            result
-        } else {
-            Err(NodesError::DeleteValueNotFound { table_id })
+        if let Some(trace_log) = &self.trace_log {
+            trace_log.lock().delete_eq(
+                measure.start_instant.unwrap(),
+                measure.elapsed(),
+                table_id,
+                col_id,
+                buffer.into(),
+                count,
+            );
         }
+
+        Ok(count)
     }
 
-    pub fn delete_range(&self, table_id: u32, col_id: u32, buffer: bytes::Bytes) -> Result<u32, NodesError> {
+    pub fn delete_range(
+        &self,
+        table_id: u32,
+        col_id: u32,
+        start_buffer: &[u8],
+        end_buffer: &[u8],
+    ) -> Result<u32, NodesError> {
         let mut measure = HistogramVecHandle::new(
             &INSTANCE_ENV_DELETE_RANGE,
             vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
@@ -203,140 +222,75 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
-        let col_type = &schema.elements[col_id as usize].element_type;
+        let col_type = &schema
+            .elements
+            .get(col_id as usize)
+            .ok_or(NodesError::BadColumn)?
+            .element_type;
 
-        let tuple_def = TupleDef {
-            name: None,
-            elements: vec![
-                ElementDef {
-                    tag: 0,
-                    name: None,
-                    element_type: col_type.clone(),
-                },
-                ElementDef {
-                    tag: 1,
-                    name: None,
-                    element_type: col_type.clone(),
-                },
-            ],
-        };
+        let decode = |b: &[u8]| TypeValue::decode(col_type, &mut &b[..]).map_err(NodesError::DecodeValue);
+        let start = decode(start_buffer)?;
+        let end = decode(end_buffer)?;
 
-        let tuple = match TupleValue::decode(&tuple_def, &mut &buffer[..]) {
-            Ok(tuple) => tuple,
-            Err(e) => {
-                return Err(log_to_err(NodesError::DeleteDecode { table_id, e }));
-            }
-        };
-
-        let start = &tuple.elements[0];
-        let end = &tuple.elements[1];
-
-        let range = stdb
-            .range_scan(tx, table_id, col_id, start..end)
-            .map_err(|e| log_to_err(NodesError::DeleteScanRange { table_id, e }))?;
+        let range = stdb.range_scan(tx, table_id, col_id, start..end)?;
         let range = range.collect::<Vec<_>>();
 
-        let count = stdb
-            .delete_in(tx, table_id, range)
-            .map_err(|e| log_to_err(NodesError::DeleteRange { table_id, e }))?
-            .ok_or(NodesError::DeleteRangeNotFound { table_id });
-        if let Ok(count) = count {
-            if let Some(trace_log) = &self.trace_log {
-                trace_log.lock().delete_range(
-                    measure.start_instant.unwrap(),
-                    measure.elapsed(),
-                    table_id,
-                    col_id,
-                    buffer,
-                    count,
-                );
-            }
+        let count = stdb.delete_in(tx, table_id, range)?.ok_or(NodesError::RangeNotFound)?;
+        if let Some(trace_log) = &self.trace_log {
+            trace_log.lock().delete_range(
+                measure.start_instant.unwrap(),
+                measure.elapsed(),
+                table_id,
+                col_id,
+                start_buffer.into(),
+                end_buffer.into(),
+                count,
+            );
         }
-        count
+        Ok(count)
     }
 
-    pub fn create_table(&self, buffer: bytes::Bytes) -> u32 {
+    pub fn create_table(&self, table_name: &str, schema_bytes: &[u8]) -> Result<u32, NodesError> {
         let now = SystemTime::now();
 
         let mut stdb = self.worker_database_instance.relational_db.lock().unwrap();
-        let tx = &mut *self.get_tx().unwrap();
+        let tx = &mut *self.get_tx()?;
 
-        let table_info_schema = TupleDef {
-            name: None,
-            elements: vec![
-                ElementDef {
-                    tag: 0,
-                    name: None,
-                    element_type: TypeDef::String,
-                },
-                ElementDef {
-                    tag: 1,
-                    name: None,
-                    element_type: TypeDef::Bytes,
-                },
-            ],
-        };
+        let schema = TupleDef::decode(&mut &schema_bytes[..]).map_err(NodesError::DecodeSchema)?;
 
-        let table_info = TupleValue::decode(&table_info_schema, &mut &buffer[..]);
-        let table_info = table_info.unwrap_or_else(|e| {
-            panic!("create_table: Could not decode table_info! Err: {}", e);
-        });
-
-        let table_name = table_info.elements[0].as_string().unwrap();
-        let schema_bytes = table_info.elements[1].as_bytes().unwrap();
-
-        let schema = TupleDef::decode(&mut &schema_bytes[..]);
-        let schema = schema.unwrap_or_else(|e| {
-            panic!("create_table: Could not decode schema! Err: {}", e);
-        });
-        let result = stdb.create_table(tx, table_name, schema).unwrap();
+        let table_id = stdb.create_table(tx, table_name, schema)?;
 
         if let Some(trace_log) = &self.trace_log {
-            trace_log
-                .lock()
-                .create_table(now, now.elapsed().unwrap(), buffer, result);
+            trace_log.lock().create_table(
+                now,
+                now.elapsed().unwrap(),
+                table_name.into(),
+                schema_bytes.into(),
+                table_id,
+            );
         }
-        result
+
+        Ok(table_id)
     }
 
-    pub fn get_table_id(&self, buffer: bytes::Bytes) -> Option<u32> {
+    pub fn get_table_id(&self, table_name: &str) -> Result<u32, NodesError> {
         let now = SystemTime::now();
+
         let stdb = self.worker_database_instance.relational_db.lock().unwrap();
-        let tx = &mut *self.get_tx().unwrap();
+        let tx = &mut *self.get_tx()?;
 
-        let schema = TypeDef::String;
-
-        let table_name = TypeValue::decode(&schema, &mut &buffer[..]);
-        if let Err(e) = table_name {
-            debug!("get_table_id: Could not decode table_name! Err: {}", e);
-            return None;
-        }
-
-        let table_name = table_name.unwrap();
-        let table_name = table_name.as_string().unwrap();
-        let table_id = stdb.table_id_from_name(tx, table_name);
-        if let Err(e) = table_id {
-            debug!("get_table_id: Table name {} has no table ID. Err={}", table_name, e);
-            return None;
-        }
-        let table_id = match table_id.unwrap() {
-            None => {
-                debug!("get_table_id: Table name {} has no table ID.", table_name);
-                return None;
-            }
-            Some(x) => x,
-        };
-
+        let table_id = stdb
+            .table_id_from_name(tx, table_name)?
+            .ok_or(NodesError::TableNotFound)?;
         if let Some(trace_log) = &self.trace_log {
             trace_log
                 .lock()
-                .get_table_id(now, now.elapsed().unwrap(), buffer, table_id);
+                .get_table_id(now, now.elapsed().unwrap(), table_name.into(), table_id);
         }
-
-        Some(table_id)
+        Ok(table_id)
     }
 
-    pub fn iter(&self, table_id: u32) -> Vec<u8> {
+    pub fn iter(&self, table_id: u32) -> Result<Vec<u8>, NodesError> {
         let mut measure = HistogramVecHandle::new(
             &INSTANCE_ENV_ITER,
             vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
@@ -344,14 +298,16 @@ impl InstanceEnv {
         measure.start();
 
         let stdb = self.worker_database_instance.relational_db.lock().unwrap();
-        let tx = &mut *self.get_tx().unwrap();
+        let tx = &mut *self.get_tx()?;
 
         let mut bytes = Vec::new();
-        let schema = stdb.schema_for_table(tx, table_id).unwrap().unwrap();
+        let schema = stdb.schema_for_table(tx, table_id)?.ok_or(NodesError::TableNotFound)?;
         schema.encode(&mut bytes);
+        let encoded_schema_len = bytes.len() as u16;
+        bytes.splice(0..0, encoded_schema_len.to_le_bytes());
 
         let mut count = 0;
-        for row_bytes in stdb.scan_raw(tx, table_id).unwrap() {
+        for row_bytes in stdb.scan_raw(tx, table_id)? {
             count += 1;
             bytes.extend(row_bytes);
         }
@@ -367,7 +323,7 @@ impl InstanceEnv {
                 .lock()
                 .iter(measure.start_instant.unwrap(), measure.elapsed(), table_id, &bytes);
         }
-        bytes
+        Ok(bytes)
     }
 }
 
