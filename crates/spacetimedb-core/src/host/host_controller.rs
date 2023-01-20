@@ -16,6 +16,7 @@ use tokio_util::time::DelayQueue;
 
 use super::module_host::Catalog;
 use super::timestamp::Timestamp;
+use super::wasm_common::DEFAULT_EXECUTION_BUDGET;
 use super::ReducerArgs;
 
 pub static HOST: Lazy<HostController> = Lazy::new(HostController::new);
@@ -93,10 +94,10 @@ impl HostController {
         program_bytes: Vec<u8>,
     ) -> Result<ModuleHost, anyhow::Error> {
         let module_host = self.spawn_module(worker_database_instance, program_bytes).await?;
+        // TODO(cloutiertyler): Hook this up again
         // let identity = &module_host.info().identity;
         // let max_spend = worker_budget::max_tx_spend(identity);
-        let max_spend = 1_000_000_000_000;
-        let budget = ReducerBudget(max_spend);
+        let budget = ReducerBudget(DEFAULT_EXECUTION_BUDGET);
 
         let rcr = module_host.init_database(budget, ReducerArgs::Nullary).await?;
         // worker_budget::record_tx_spend(identity, rcr.energy_quanta_used);
@@ -180,7 +181,7 @@ impl HostController {
         // TODO(cloutiertyler): Move this outside of the host controller
         // let max_spend = worker_budget::max_tx_spend(&module_host.identity);
         // let budget = ReducerBudget(max_spend);
-        let budget = ReducerBudget(1_000_000_000_000);
+        let budget = ReducerBudget(DEFAULT_EXECUTION_BUDGET);
 
         let res = module_host
             .call_reducer(caller_identity, reducer_name.into(), budget, args)
