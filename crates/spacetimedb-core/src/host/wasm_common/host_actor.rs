@@ -242,7 +242,7 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
         // to forget about EnergyStats if one returns an error
         for (i, name) in self.func_names.migrates.iter().enumerate() {
             self.with_tx(name, |inst| {
-                inst.call_migrate(&self.func_names, i, DEFAULT_EXECUTION_BUDGET)
+                inst.call_migrate(&self.func_names, i, ReducerBudget(DEFAULT_EXECUTION_BUDGET))
             });
         }
 
@@ -351,7 +351,7 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
             IDENTITY_DISCONNECTED_DUNDER
         };
 
-        let budget = DEFAULT_EXECUTION_BUDGET;
+        let budget = ReducerBudget(DEFAULT_EXECUTION_BUDGET);
         let result = self.with_tx(reducer_symbol, |inst| {
             inst.call_connect_disconnect(connected, budget, &identity.data, timestamp)
         });

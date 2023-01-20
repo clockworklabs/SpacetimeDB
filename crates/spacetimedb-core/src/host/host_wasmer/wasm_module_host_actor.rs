@@ -14,8 +14,6 @@ use wasmer::{
 };
 use wasmer_middlewares::metering::{get_remaining_points, set_remaining_points, MeteringPoints};
 
-pub const DEFAULT_EXECUTION_BUDGET: i64 = 1_000_000_000_000_000;
-
 fn get_remaining_points_value(ctx: &mut impl AsStoreMut, instance: &Instance) -> i64 {
     let remaining_points = get_remaining_points(ctx, instance);
     match remaining_points {

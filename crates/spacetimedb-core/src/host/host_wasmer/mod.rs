@@ -14,10 +14,11 @@ mod opcode_cost;
 mod wasm_instance_env;
 mod wasm_module_host_actor;
 
-use wasm_module_host_actor::{WasmerModule, DEFAULT_EXECUTION_BUDGET};
+use wasm_module_host_actor::WasmerModule;
 
 use super::host_controller::Scheduler;
 use super::module_host::ModuleHostActor;
+use super::wasm_common::DEFAULT_EXECUTION_BUDGET;
 use super::wasm_common::{abi, host_actor::WasmModuleHostActor};
 
 pub fn make_actor(
@@ -28,6 +29,12 @@ pub fn make_actor(
 ) -> anyhow::Result<Box<impl ModuleHostActor>> {
     let cost_function =
         |operator: &Operator| -> u64 { opcode_cost::OperationType::operation_type_of(operator).energy_cost() };
+
+    // TODO(cloutiertyler): Why are we setting the initial points here? This
+    // seems like giving away free energy. Presumably this should always be set
+    // before calling reducer?
+    // I believe we can just set this to be zero and it's already being set by reducers
+    // but I don't want to break things, so I'm going to leave it.
     let initial_points = DEFAULT_EXECUTION_BUDGET as u64;
     let metering = Arc::new(Metering::new(initial_points, cost_function));
 

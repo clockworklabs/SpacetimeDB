@@ -6,8 +6,6 @@ use std::fmt;
 use anyhow::anyhow;
 use spacetimedb_lib::EntityDef;
 
-use super::host_controller::ReducerBudget;
-
 pub const REDUCE_DUNDER: &str = "__reducer__";
 pub const DESCRIBE_REDUCER_DUNDER: &str = "__describe_reducer__";
 
@@ -26,7 +24,7 @@ pub const IDENTITY_DISCONNECTED_DUNDER: &str = "__identity_disconnected__";
 pub const STDB_ABI_SYM: &str = "SPACETIME_ABI_VERSION";
 pub const STDB_ABI_IS_ADDR_SYM: &str = "SPACETIME_ABI_VERSION_IS_ADDR";
 
-pub const DEFAULT_EXECUTION_BUDGET: ReducerBudget = ReducerBudget(1_000_000_000_000_000);
+pub const DEFAULT_EXECUTION_BUDGET: i64 = 1_000_000_000_000_000_000;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[allow(unused)]
