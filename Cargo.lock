@@ -3139,7 +3139,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "bytes",
  "once_cell",
@@ -3167,7 +3167,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "parse_duration",
  "proc-macro2",
@@ -3177,14 +3177,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "getrandom",
 ]
 
 [[package]]
 name = "spacetimedb-cli"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "base64",
@@ -3209,7 +3209,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api"
-version = "0.0.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3239,7 +3239,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-cloud"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3273,7 +3273,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-core"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -3330,7 +3330,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-lib"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "bytes",
  "decorum",
@@ -3361,7 +3361,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-standalone"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "async-trait",
