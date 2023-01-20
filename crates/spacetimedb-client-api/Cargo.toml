@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-spacetimedb-core = { version = "0.1.0", path = "../spacetimedb-core" }
+spacetimedb-core = { version = "0.3.2", path = "../spacetimedb-core" }
 tokio = { version = "1.2", features = ["full"] }
 prost = "0.10"
 lazy_static = "1.4.0"
