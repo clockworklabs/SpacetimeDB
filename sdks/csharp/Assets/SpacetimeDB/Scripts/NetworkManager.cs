@@ -214,7 +214,8 @@ namespace SpacetimeDB
         /// </summary>
         /// <param name="host">The host or IP address and the port to connect to. Example: spacetime.spacetimedb.net:3000</param>
         /// <param name="addressOrName">The name or address of the database to connect to</param>
-        public void Connect(string host, string addressOrName)
+        /// <param name="sslEnabled">Should websocket use SSL</param>
+        public void Connect(string host, string addressOrName, bool sslEnabled = true)
         {
             var token = PlayerPrefs.HasKey(GetTokenKey()) ? PlayerPrefs.GetString(GetTokenKey()) : null;
 
@@ -222,7 +223,7 @@ namespace SpacetimeDB
             {
                 try
                 {
-                    await webSocket.Connect(token, host, addressOrName);
+                    await webSocket.Connect(token, host, addressOrName, sslEnabled);
                 }
                 catch (Exception e)
                 {
