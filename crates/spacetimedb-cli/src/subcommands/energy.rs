@@ -18,7 +18,7 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
             .arg(Arg::new("identity").required(false)),
         clap::Command::new("set-balance")
             .about("Update the current budget balance for a database")
-            .arg(Arg::new("balance").required(true).value_parser(value_parser!(usize)))
+            .arg(Arg::new("balance").required(true).value_parser(value_parser!(u64)))
             .arg(Arg::new("identity").required(false))
             .arg(
                 Arg::new("quiet")
@@ -46,7 +46,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
     let hex_identity = args.get_one::<String>("identity");
-    let balance = *args.get_one::<usize>("balance").unwrap();
+    let balance = *args.get_one::<u64>("balance").unwrap();
     let quiet = args.get_flag("quiet");
 
     let hex_identity = if let Some(hex_identity) = hex_identity {
@@ -57,14 +57,9 @@ async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), an
 
     let client = reqwest::Client::new();
 
-    // TODO: this really should be form data in POST body, not query string parameter, but gotham
-    // does not support that on the server side without an extension.
-    // see https://github.com/gotham-rs/gotham/issues/11
-    let url = format!("{}/energy/{}?balance={}", config.get_host_url(), hex_identity, balance);
-    let res = client.post(url).send().await?;
+    let res = set_balance(&client, &config, hex_identity, balance).await?;
 
     if !quiet {
-        let res = res.error_for_status()?;
         let body = res.bytes().await?;
         let str = String::from_utf8(body.to_vec())?;
         println!("{}", str);
@@ -94,4 +89,19 @@ async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
     let str = String::from_utf8(body.to_vec())?;
     println!("{}", str);
     Ok(())
+}
+
+pub(super) async fn set_balance(
+    client: &reqwest::Client,
+    config: &Config,
+    hex_identity: &str,
+    balance: u64,
+) -> anyhow::Result<reqwest::Response> {
+    // TODO: this really should be form data in POST body, not query string parameter, but gotham
+    // does not support that on the server side without an extension.
+    // see https://github.com/gotham-rs/gotham/issues/11
+    let url = format!("{}/energy/{}", config.get_host_url(), hex_identity);
+    let res = client.post(url).query(&[("balance", balance)]).send().await?;
+    let res = res.error_for_status()?;
+    Ok(res)
 }

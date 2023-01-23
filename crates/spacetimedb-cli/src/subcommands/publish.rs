@@ -58,14 +58,6 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("as_identity")
                 .action(SetTrue),
         )
-        .arg(
-            Arg::new("use_cargo") // This flag is only used by the testsuite
-                .long("use-cargo")
-                .hide_long_help(true)
-                .hide_short_help(true)
-                .required(false)
-                .action(SetTrue),
-        )
         .arg(Arg::new("name|address").required(false))
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
@@ -82,7 +74,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let host_type = args.get_one::<String>("host_type").unwrap();
     let clear_database = args.get_flag("clear_database");
     let trace_log = args.get_flag("trace_log");
-    let use_cargo = args.get_flag("use_cargo");
 
     let as_identity = args.get_one::<String>("as_identity");
     let anon_identity = args.get_flag("anon_identity");
@@ -92,7 +83,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let mut url_args = String::new();
 
     // Identity is required
-    if let Some(identity) = identity {
+    let identity = if let Some(identity) = identity {
         let mut found = false;
         for identity_config in config.identity_configs.clone() {
             if identity_config.identity == identity.clone()
@@ -110,10 +101,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         }
 
         url_args.push_str(format!("?identity={}", identity).as_str());
+        identity.clone()
     } else {
         let identity_config = init_default(&mut config, None).await?.identity_config;
         url_args.push_str(format!("?identity={}", identity_config.identity).as_str());
-    }
+        identity_config.identity
+    };
 
     if let Some(name_or_address) = name_or_address {
         url_args.push_str(format!("&name_or_address={}", name_or_address).as_str());
@@ -136,12 +129,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         url_args.push_str("&trace_log=true");
     }
 
-    let path_to_wasm = crate::tasks::pre_publish(path_to_project, use_cargo)?;
+    let client = reqwest::Client::new();
+
+    let path_to_wasm = crate::tasks::build(path_to_project)?;
+    super::energy::set_balance(&client, &config, &identity, DEFAULT_BALANCE).await?;
 
     let program_bytes = fs::read(path_to_wasm)?;
 
     let url = format!("{}/database/publish{}", config.get_host_url(), url_args);
-    let client = reqwest::Client::new();
     let mut builder = client.post(url);
     if let Some(auth_header) = auth_header {
         builder = builder.header("Authorization", auth_header);
@@ -155,3 +150,5 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     Ok(())
 }
+
+const DEFAULT_BALANCE: u64 = 5000000000000000;

@@ -29,19 +29,3 @@ pub(crate) fn build(project_path: &Path) -> anyhow::Result<PathBuf> {
     let artifact = artifact.context("no artifact found?")?;
     Ok(artifact.filenames.into_iter().next().context("no wasm?")?.into())
 }
-
-pub(crate) fn pre_publish(project_path: &Path, use_cargo: bool) -> anyhow::Result<PathBuf> {
-    let path = build(project_path)?;
-
-    // Update the running module
-    // TODO: just call into crate::subcommands::{identity, energy}
-    if use_cargo {
-        cmd!("cargo", "run", "identity", "init-default", "--quiet").run()?;
-        cmd!("cargo", "run", "energy", "set-balance", "5000000000000000", "--quiet").run()?;
-    } else {
-        cmd!("spacetime", "identity", "init-default", "--quiet").run()?;
-        cmd!("spacetime", "energy", "set-balance", "5000000000000000", "--quiet").run()?;
-    }
-
-    Ok(path)
-}

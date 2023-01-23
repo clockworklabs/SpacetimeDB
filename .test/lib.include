@@ -61,7 +61,7 @@ spacetime_publish() {
 	RETURN_DIR=$PWD
 	cd "$SPACETIME_DIR"
 	set +e
-	run_test cargo run publish --use-cargo "$@"
+	run_test cargo run publish "$@"
 	RESULT_CODE=$?
 	cd "$RETURN_DIR" || exit 1
 	set -e
