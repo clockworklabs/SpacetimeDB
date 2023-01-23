@@ -33,7 +33,7 @@ pub fn say_hello() {
 }
 EOF
 
-spacetime_publish --project-path "$PROJECT_PATH"
+run_test cargo run publish --project-path "$PROJECT_PATH"
 [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
 IDENT="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 

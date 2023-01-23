@@ -13,8 +13,8 @@ create_project
 run_test cargo run identity new
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
 run_test cargo run identity set-default "$IDENT"
-spacetime_publish --project-path="$PROJECT_PATH"
+run_test cargo run publish --project-path="$PROJECT_PATH"
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 reset_config
-if spacetime_publish "$ADDRESS" --project-path="$PROJECT_PATH" ; then exit 1; fi
+if cargo run publish "$ADDRESS" --project-path="$PROJECT_PATH" ; then exit 1; fi

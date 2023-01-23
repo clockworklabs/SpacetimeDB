@@ -12,7 +12,7 @@ source "./.test/lib.include"
 reset_config
 run_test cargo run identity init-default
 create_project
-spacetime_publish --project-path "$PROJECT_PATH"
+run_test cargo run publish --project-path "$PROJECT_PATH"
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 RAND_NAME="$(random_string)"

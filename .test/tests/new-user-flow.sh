@@ -36,7 +36,7 @@ pub fn say_hello() {
 EOF
 
 ## Publish your module
-spacetime_publish --project-path "$PROJECT_PATH"
+run_test cargo run publish --project-path "$PROJECT_PATH"
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 # We have to give the database some time to setup our instance
