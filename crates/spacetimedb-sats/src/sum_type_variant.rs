@@ -4,12 +4,12 @@ use serde::{Deserialize, Serialize};
 /// NOTE: Each element has an implicit element tag based on its order.
 /// Uniquely identifies an element similarly to protobuf tags.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-pub struct ProductTypeElement {
+pub struct SumTypeVariant {
     pub algebraic_type: AlgebraicType,
     pub name: Option<String>,
 }
 
-impl ProductTypeElement {
+impl SumTypeVariant {
     pub fn new(algebraic_type: AlgebraicType, name: Option<String>) -> Self {
         Self { algebraic_type, name }
     }

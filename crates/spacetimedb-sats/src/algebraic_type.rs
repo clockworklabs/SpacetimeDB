@@ -1,54 +1,35 @@
-use std::fmt::Display;
-
+pub mod map_notation;
+pub mod satn;
 use crate::{
-    builtin_type::{self, BuiltinType},
-    product_type::{self, ProductType},
-    sum_type::{self, SumType},
+    algebraic_type_ref::AlgebraicTypeRef, algebraic_value::AlgebraicValue, builtin_type::BuiltinType,
+    builtin_value::BuiltinValue, product_type::ProductType, sum_type::SumType, sum_type_variant::SumTypeVariant,
+    sum_value::SumValue,
 };
 use enum_as_inner::EnumAsInner;
 use serde::{Deserialize, Serialize};
 
-pub const TAG_PRODUCT: u8 = 0x0;
-pub const TAG_SUM: u8 = 0x1;
-pub const TAG_BOOL: u8 = 0x02;
-pub const TAG_I8: u8 = 0x03;
-pub const TAG_U8: u8 = 0x04;
-pub const TAG_I16: u8 = 0x05;
-pub const TAG_U16: u8 = 0x06;
-pub const TAG_I32: u8 = 0x07;
-pub const TAG_U32: u8 = 0x08;
-pub const TAG_I64: u8 = 0x09;
-pub const TAG_U64: u8 = 0x0a;
-pub const TAG_I128: u8 = 0x0b;
-pub const TAG_U128: u8 = 0x0c;
-pub const TAG_F32: u8 = 0x0d;
-pub const TAG_F64: u8 = 0x0e;
-pub const TAG_STRING: u8 = 0x0f;
-pub const TAG_ARRAY: u8 = 0x10;
-
 /// The SpacetimeDB Algebraic Type System (SATS) is a structural type system in
 /// which a nominal type system can be constructed.
 ///
-/// The type system unifies the concepts sum types, product types, sets, and relations
-/// into a single type system.
+/// The type system unifies the concepts sum types, product types, and built-in
+/// primitive types into a single type system.
 ///
-/// Below are some common types implemented in this type system.
+/// Below are some common types you might implement in this type system.
 ///
-/// Unit = (,) or () or , // Product with zero elements
-/// Never = (|) or | // Sum with zero elements
-/// U8 = U8 // Builtin
-/// Foo = (foo: I8) != I8
-/// Bar = (bar: I8)
-/// Color = ((a: I8) | (b: I8)) // Sum with one element
-/// Age = (age: U8) // Product with one element
-/// Option<T> = (some: (|) | none: ())
-/// SetType<T> = {T}
-/// Tag = ??
-/// ElementType = (tag: Tag, type: AlgebraicType)
-/// ProductType = {ElementType}
-/// AlgebraicType = (sum: {AlgebraicType} | product: ProductType | builtin: BuiltinType | set: AlgebraicType)
-/// Catalog<T> = (name: String, indices: Set<Set<Tag>>, relation: Set<>)
-/// define CatalogEntry = { name: string, indexes: {some type}, relation: Relation }
+/// ```ignore
+/// type Unit = () // or (,) or , Product with zero elements
+/// type Never = (|) // or | Sum with zero elements
+/// type U8 = U8 // Builtin
+/// type Foo = (foo: I8) != I8
+/// type Bar = (bar: I8)
+/// type Color = (a: I8 | b: I8) // Sum with one element
+/// type Age = (age: U8) // Product with one element
+/// type Option<T> = (some: T | none: ())
+/// type Ref = &0
+///
+/// type AlgebraicType = (sum: SumType | product: ProductType | builtin: BuiltinType | set: AlgebraicType)
+/// type Catalog<T> = (name: String, indices: Set<Set<Tag>>, relation: Set<>)
+/// type CatalogEntry = { name: string, indexes: {some type}, relation: Relation }
 /// type ElementValue = (tag: Tag, value: AlgebraicValue)
 /// type AlgebraicValue = (sum: ElementValue | product: {ElementValue} | builtin: BuiltinValue | set: {AlgebraicValue})
 /// type Any = (value: Bytes, type: AlgebraicType)
@@ -69,142 +50,82 @@ pub const TAG_ARRAY: u8 = 0x10;
 ///     relation: Table<Row>,
 ///     indexes: Array<(index_type: String)>,
 /// )
+/// ```
 #[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum AlgebraicType {
     Sum(SumType),
     Product(ProductType),
     Builtin(BuiltinType),
-}
-
-pub struct SATNFormatter<'a> {
-    ty: &'a AlgebraicType,
-}
-
-impl<'a> SATNFormatter<'a> {
-    pub fn new(ty: &'a AlgebraicType) -> Self {
-        Self { ty }
-    }
-}
-
-impl<'a> Display for SATNFormatter<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.ty {
-            AlgebraicType::Sum(ty) => {
-                write!(f, "{}", sum_type::SATNFormatter::new(ty))
-            }
-            AlgebraicType::Product(ty) => {
-                write!(f, "{}", product_type::SATNFormatter::new(ty))
-            }
-            AlgebraicType::Builtin(p) => {
-                write!(f, "{}", builtin_type::SATNFormatter::new(p))
-            }
-        }
-    }
-}
-
-pub struct MapFormatter<'a> {
-    ty: &'a AlgebraicType,
-}
-
-impl<'a> MapFormatter<'a> {
-    pub fn new(ty: &'a AlgebraicType) -> Self {
-        Self { ty }
-    }
-}
-
-impl<'a> Display for MapFormatter<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.ty {
-            AlgebraicType::Sum(ty) => {
-                write!(f, "{{ ty_: Sum",)?;
-                if ty.types.len() != 0 {
-                    write!(f, ", ")?;
-                }
-                for (i, e_ty) in ty.types.iter().enumerate() {
-                    write!(f, "{}: {}", i, MapFormatter::new(e_ty))?;
-                    if i < ty.types.len() - 1 {
-                        write!(f, ", ")?;
-                    }
-                }
-                write!(f, " }}",)
-            }
-            AlgebraicType::Product(ty) => {
-                write!(f, "{{ ty_: Product",)?;
-                if ty.elements.len() != 0 {
-                    write!(f, ", ")?;
-                }
-                for (i, e_ty) in ty.elements.iter().enumerate() {
-                    if let Some(name) = &e_ty.name {
-                        write!(f, "{}: {}", name, MapFormatter::new(&e_ty.algebraic_type))?;
-                    } else {
-                        write!(f, "{}: {}", i, MapFormatter::new(&e_ty.algebraic_type))?;
-                    }
-                    if i < ty.elements.len() - 1 {
-                        write!(f, ", ")?;
-                    }
-                }
-                write!(f, " }}",)
-            }
-            AlgebraicType::Builtin(ty) => {
-                write!(f, "{{ ty_: Builtin")?;
-                match &ty {
-                    BuiltinType::Bool => write!(f, ", 0: Bool")?,
-                    BuiltinType::I8 => write!(f, ", 0: I8")?,
-                    BuiltinType::U8 => write!(f, ", 0: U8")?,
-                    BuiltinType::I16 => write!(f, ", 0: I16")?,
-                    BuiltinType::U16 => write!(f, ", 0: U16")?,
-                    BuiltinType::I32 => write!(f, ", 0: I32")?,
-                    BuiltinType::U32 => write!(f, ", 0: U32")?,
-                    BuiltinType::I64 => write!(f, ", 0: I64")?,
-                    BuiltinType::U64 => write!(f, ", 0: U64")?,
-                    BuiltinType::I128 => write!(f, ", 0: I128")?,
-                    BuiltinType::U128 => write!(f, ", 0: U128")?,
-                    BuiltinType::F32 => write!(f, ", 0: F32")?,
-                    BuiltinType::F64 => write!(f, ", 0: F64")?,
-                    BuiltinType::String => write!(f, ", 0: String")?,
-                    BuiltinType::Array { ty } => write!(f, ", 0: Array, 1: {}", MapFormatter::new(ty))?,
-                }
-                write!(f, " }}",)
-            }
-        }
-    }
+    Ref(AlgebraicTypeRef),
 }
 
 impl AlgebraicType {
-    pub fn decode(bytes: impl AsRef<[u8]>) -> Result<(Self, usize), String> {
-        let bytes = bytes.as_ref();
-        if bytes.len() == 0 {
-            return Err("Byte array length is invalid.".to_string());
-        }
-        match bytes[0] {
-            TAG_PRODUCT => {
-                let (ty, bytes_read) = ProductType::decode(&bytes[1..])?;
-                Ok((AlgebraicType::Product(ty), bytes_read + 1))
-            }
-            TAG_SUM => {
-                let (ty, bytes_read) = SumType::decode(&bytes[1..])?;
-                Ok((AlgebraicType::Sum(ty), bytes_read + 1))
-            }
-            _ => {
-                let (ty, bytes_read) = BuiltinType::decode(&bytes[0..])?;
-                Ok((AlgebraicType::Builtin(ty), bytes_read))
-            }
+    /// This is a static function that constructs the type of AlgebraicType and
+    /// returns it as an AlgebraicType. This could alternatively be implemented
+    /// as a regular AlgebraicValue or as a static variable.
+    pub fn make_meta_type() -> AlgebraicType {
+        AlgebraicType::Sum(SumType::new(vec![
+            SumTypeVariant::new_named(SumType::make_meta_type(), "sum"),
+            SumTypeVariant::new_named(ProductType::make_meta_type(), "product"),
+            SumTypeVariant::new_named(BuiltinType::make_meta_type(), "builtin"),
+            SumTypeVariant::new_named(AlgebraicTypeRef::make_meta_type(), "ref"),
+        ]))
+    }
+
+    pub fn make_never_type() -> AlgebraicType {
+        AlgebraicType::Sum(SumType { variants: vec![] })
+    }
+
+    pub fn make_option_type(some_type: AlgebraicType) -> AlgebraicType {
+        let unit = AlgebraicType::Product(ProductType::new(vec![]));
+        AlgebraicType::Sum(SumType {
+            variants: vec![
+                SumTypeVariant::new_named(some_type, "some"),
+                SumTypeVariant::new_named(unit, "none"),
+            ],
+        })
+    }
+
+    pub fn as_value(&self) -> AlgebraicValue {
+        match self {
+            AlgebraicType::Sum(e_ty) => AlgebraicValue::Sum(SumValue {
+                tag: 0,
+                value: Box::new(e_ty.as_value()),
+            }),
+            AlgebraicType::Product(e_ty) => AlgebraicValue::Sum(SumValue {
+                tag: 1,
+                value: Box::new(e_ty.as_value()),
+            }),
+            AlgebraicType::Builtin(e_ty) => AlgebraicValue::Sum(SumValue {
+                tag: 2,
+                value: Box::new(e_ty.as_value()),
+            }),
+            AlgebraicType::Ref(r) => AlgebraicValue::Sum(SumValue {
+                tag: 3,
+                value: Box::new(AlgebraicValue::Builtin(BuiltinValue::U32(r.0))),
+            }),
         }
     }
 
-    pub fn encode(&self, bytes: &mut Vec<u8>) {
-        match self {
-            AlgebraicType::Product(ty) => {
-                bytes.push(TAG_PRODUCT);
-                ty.encode(bytes);
-            }
-            AlgebraicType::Sum(ty) => {
-                bytes.push(TAG_SUM);
-                ty.encode(bytes);
-            }
-            AlgebraicType::Builtin(ty) => {
-                ty.encode(bytes);
-            }
+    pub fn from_value(value: &AlgebraicValue) -> Result<AlgebraicType, ()> {
+        match value {
+            AlgebraicValue::Sum(value) => match value.tag {
+                0 => Ok(AlgebraicType::Sum(SumType::from_value(&value.value)?)),
+                1 => Ok(AlgebraicType::Product(ProductType::from_value(&value.value)?)),
+                2 => Ok(AlgebraicType::Builtin(BuiltinType::from_value(&value.value)?)),
+                3 => {
+                    let Some(value) = value.value.as_builtin() else {
+                            return Err(());
+                        };
+                    let Some(r) = value.as_u32() else {
+                            return Err(());
+                        };
+                    Ok(AlgebraicType::Ref(AlgebraicTypeRef(*r)))
+                }
+                _ => Err(()),
+            },
+            AlgebraicValue::Product(_) => Err(()),
+            AlgebraicValue::Builtin(_) => Err(()),
         }
     }
 }
@@ -212,165 +133,87 @@ impl AlgebraicType {
 #[cfg(test)]
 mod tests {
     use super::AlgebraicType;
+    use crate::algebraic_type::map_notation;
     use crate::{
-        algebraic_type::{MapFormatter, SATNFormatter},
-        builtin_type::BuiltinType,
-        product_type::ProductType,
-        product_type_element::ProductTypeElement,
-        sum_type::SumType,
+        algebraic_type::satn::Formatter, algebraic_type_ref::AlgebraicTypeRef, algebraic_value,
+        builtin_type::BuiltinType, product_type::ProductType, product_type_element::ProductTypeElement,
+        sum_type::SumType, typespace::Typespace,
     };
 
     #[test]
     fn never() {
-        let never = AlgebraicType::Sum(SumType { types: vec![] });
-        assert_eq!("|", SATNFormatter::new(&never).to_string());
+        let never = AlgebraicType::Sum(SumType { variants: vec![] });
+        assert_eq!("(|)", Formatter::new(&never).to_string());
     }
 
     #[test]
     fn never_map() {
-        let never = AlgebraicType::Sum(SumType { types: vec![] });
-        assert_eq!("{ ty_: Sum }", MapFormatter::new(&never).to_string());
+        let never = AlgebraicType::Sum(SumType { variants: vec![] });
+        assert_eq!("{ ty_: Sum }", map_notation::Formatter::new(&never).to_string());
     }
 
     #[test]
     fn unit() {
         let unit = AlgebraicType::Product(ProductType { elements: vec![] });
-        assert_eq!("()", SATNFormatter::new(&unit).to_string());
+        assert_eq!("()", Formatter::new(&unit).to_string());
     }
 
     #[test]
     fn unit_map() {
         let unit = AlgebraicType::Product(ProductType { elements: vec![] });
-        assert_eq!("{ ty_: Product }", MapFormatter::new(&unit).to_string());
+        assert_eq!("{ ty_: Product }", map_notation::Formatter::new(&unit).to_string());
     }
 
     #[test]
     fn primitive() {
         let u8 = AlgebraicType::Builtin(BuiltinType::U8);
-        assert_eq!("U8", SATNFormatter::new(&u8).to_string());
+        assert_eq!("U8", Formatter::new(&u8).to_string());
     }
 
     #[test]
     fn primitive_map() {
         let u8 = AlgebraicType::Builtin(BuiltinType::U8);
-        assert_eq!("{ ty_: Builtin, 0: U8 }", MapFormatter::new(&u8).to_string());
-    }
-
-    fn make_option_type() -> AlgebraicType {
-        let never = AlgebraicType::Sum(SumType { types: vec![] });
-        let unit = AlgebraicType::Product(ProductType::new(vec![]));
-        let some_type = AlgebraicType::Product(ProductType::new(vec![ProductTypeElement {
-            algebraic_type: never.clone(),
-            name: Some("some".into()),
-        }]));
-        let none_type = AlgebraicType::Product(ProductType::new(vec![ProductTypeElement {
-            algebraic_type: unit.clone(),
-            name: Some("none".into()),
-        }]));
-        AlgebraicType::Sum(SumType {
-            types: vec![some_type, none_type],
-        })
+        assert_eq!("{ ty_: Builtin, 0: U8 }", map_notation::Formatter::new(&u8).to_string());
     }
 
     #[test]
     fn option() {
-        let option = make_option_type();
-        assert_eq!("((some: |) | (none: ()))", SATNFormatter::new(&option).to_string());
+        let never = AlgebraicType::Sum(SumType { variants: vec![] });
+        let option = AlgebraicType::make_option_type(never);
+        assert_eq!("(some: (|) | none: ())", Formatter::new(&option).to_string());
     }
 
     #[test]
     fn option_map() {
-        let option = make_option_type();
+        let never = AlgebraicType::Sum(SumType { variants: vec![] });
+        let option = AlgebraicType::make_option_type(never);
         assert_eq!(
-            "{ ty_: Sum, 0: { ty_: Product, some: { ty_: Sum } }, 1: { ty_: Product, none: { ty_: Product } } }",
-            MapFormatter::new(&option).to_string()
+            "{ ty_: Sum, some: { ty_: Sum }, none: { ty_: Product } }",
+            map_notation::Formatter::new(&option).to_string()
         );
-    }
-
-    // TODO: recursive types
-    // TODO: parameterized types
-    fn make_algebraic_type_type() -> AlgebraicType {
-        let never = AlgebraicType::Sum(SumType { types: vec![] });
-        let string = AlgebraicType::Builtin(BuiltinType::String);
-        let array = AlgebraicType::Builtin(BuiltinType::Array {
-            ty: Box::new(never.clone()),
-        });
-        let never = AlgebraicType::Sum(SumType { types: vec![] });
-        let unit = AlgebraicType::Product(ProductType::new(vec![]));
-        let some_type = AlgebraicType::Product(ProductType::new(vec![ProductTypeElement {
-            algebraic_type: string.clone(),
-            name: Some("some".into()),
-        }]));
-        let none_type = AlgebraicType::Product(ProductType::new(vec![ProductTypeElement {
-            algebraic_type: unit.clone(),
-            name: Some("none".into()),
-        }]));
-        let option = AlgebraicType::Sum(SumType {
-            types: vec![some_type, none_type],
-        });
-        let sum_type = AlgebraicType::Product(ProductType::new(vec![ProductTypeElement {
-            algebraic_type: array.clone(),
-            name: Some("types".into()),
-        }]));
-        let element_type = AlgebraicType::Product(ProductType::new(vec![
-            ProductTypeElement {
-                algebraic_type: option,
-                name: Some("name".into()),
-            },
-            ProductTypeElement {
-                algebraic_type: never.clone(),
-                name: Some("algebraic_type".into()),
-            },
-        ]));
-        let product_type = AlgebraicType::Product(ProductType::new(vec![ProductTypeElement {
-            algebraic_type: AlgebraicType::Builtin(BuiltinType::Array {
-                ty: Box::new(element_type),
-            }),
-            name: Some("elements".into()),
-        }]));
-        let builtin_type = AlgebraicType::Sum(SumType::new(vec![
-            AlgebraicType::Builtin(BuiltinType::Bool),
-            AlgebraicType::Builtin(BuiltinType::I8),
-            AlgebraicType::Builtin(BuiltinType::U8),
-            AlgebraicType::Builtin(BuiltinType::I16),
-            AlgebraicType::Builtin(BuiltinType::U16),
-            AlgebraicType::Builtin(BuiltinType::I32),
-            AlgebraicType::Builtin(BuiltinType::U32),
-            AlgebraicType::Builtin(BuiltinType::I64),
-            AlgebraicType::Builtin(BuiltinType::U64),
-            AlgebraicType::Builtin(BuiltinType::I128),
-            AlgebraicType::Builtin(BuiltinType::U128),
-            AlgebraicType::Builtin(BuiltinType::F32),
-            AlgebraicType::Builtin(BuiltinType::F64),
-            AlgebraicType::Builtin(BuiltinType::String),
-            AlgebraicType::Builtin(BuiltinType::Array {
-                ty: Box::new(never.clone()),
-            }),
-        ]));
-        AlgebraicType::Sum(SumType::new(vec![sum_type, product_type, builtin_type]))
     }
 
     #[test]
     fn algebraic_type() {
-        let algebraic_type = make_algebraic_type_type();
-        assert_eq!("((types: Array<|>) | (elements: Array<(name: ((some: String) | (none: ())), algebraic_type: |)>) | (Bool | I8 | U8 | I16 | U16 | I32 | U32 | I64 | U64 | I128 | U128 | F32 | F64 | String | Array<|>))", SATNFormatter::new(&algebraic_type).to_string());
+        let algebraic_type = AlgebraicType::make_meta_type();
+        assert_eq!("(sum: (variants: Array<(name: (some: String | none: ()), algebraic_type: &0)>) | product: (elements: Array<(name: (some: String | none: ()), algebraic_type: &0)>) | builtin: (bool: () | i8: () | u8: () | i16: () | u16: () | i32: () | u32: () | i64: () | u64: () | i128: () | u128: () | f32: () | f64: () | string: () | array: &0 | map: (key_ty: &0, ty: &0)) | ref: U32)", Formatter::new(&algebraic_type).to_string());
     }
 
     #[test]
     fn algebraic_type_map() {
-        let algebraic_type = make_algebraic_type_type();
-        assert_eq!("{ ty_: Sum, 0: { ty_: Product, types: { ty_: Builtin, 0: Array, 1: { ty_: Sum } } }, 1: { ty_: Product, elements: { ty_: Builtin, 0: Array, 1: { ty_: Product, name: { ty_: Sum, 0: { ty_: Product, some: { ty_: Builtin, 0: String } }, 1: { ty_: Product, none: { ty_: Product } } }, algebraic_type: { ty_: Sum } } } }, 2: { ty_: Sum, 0: { ty_: Builtin, 0: Bool }, 1: { ty_: Builtin, 0: I8 }, 2: { ty_: Builtin, 0: U8 }, 3: { ty_: Builtin, 0: I16 }, 4: { ty_: Builtin, 0: U16 }, 5: { ty_: Builtin, 0: I32 }, 6: { ty_: Builtin, 0: U32 }, 7: { ty_: Builtin, 0: I64 }, 8: { ty_: Builtin, 0: U64 }, 9: { ty_: Builtin, 0: I128 }, 10: { ty_: Builtin, 0: U128 }, 11: { ty_: Builtin, 0: F32 }, 12: { ty_: Builtin, 0: F64 }, 13: { ty_: Builtin, 0: String }, 14: { ty_: Builtin, 0: Array, 1: { ty_: Sum } } } }", MapFormatter::new(&algebraic_type).to_string());
+        let algebraic_type = AlgebraicType::make_meta_type();
+        assert_eq!("{ ty_: Sum, sum: { ty_: Product, variants: { ty_: Builtin, 0: Array, 1: { ty_: Product, name: { ty_: Sum, some: { ty_: Builtin, 0: String }, none: { ty_: Product } }, algebraic_type: { ty_: Ref, 0: 0 } } } }, product: { ty_: Product, elements: { ty_: Builtin, 0: Array, 1: { ty_: Product, name: { ty_: Sum, some: { ty_: Builtin, 0: String }, none: { ty_: Product } }, algebraic_type: { ty_: Ref, 0: 0 } } } }, builtin: { ty_: Sum, bool: { ty_: Product }, i8: { ty_: Product }, u8: { ty_: Product }, i16: { ty_: Product }, u16: { ty_: Product }, i32: { ty_: Product }, u32: { ty_: Product }, i64: { ty_: Product }, u64: { ty_: Product }, i128: { ty_: Product }, u128: { ty_: Product }, f32: { ty_: Product }, f64: { ty_: Product }, string: { ty_: Product }, array: { ty_: Ref, 0: 0 }, map: { ty_: Product, key_ty: { ty_: Ref, 0: 0 }, ty: { ty_: Ref, 0: 0 } } }, ref: { ty_: Builtin, 0: U32 } }", map_notation::Formatter::new(&algebraic_type).to_string());
     }
 
     #[test]
-    fn it_works() {
-        let never = AlgebraicType::Sum(SumType { types: vec![] });
+    fn nested_products_and_sums() {
+        let never = AlgebraicType::Sum(SumType { variants: vec![] });
         let builtin = AlgebraicType::Builtin(BuiltinType::U8);
         let product = AlgebraicType::Product(ProductType::new(vec![ProductTypeElement {
             name: Some("thing".into()),
             algebraic_type: AlgebraicType::Builtin(BuiltinType::U8),
         }]));
-        let next = AlgebraicType::Sum(SumType::new(vec![builtin.clone(), builtin.clone(), product]));
+        let next = AlgebraicType::Sum(SumType::new_unnamed(vec![builtin.clone(), builtin.clone(), product]));
         let next = AlgebraicType::Product(ProductType::new(vec![
             ProductTypeElement {
                 algebraic_type: builtin.clone(),
@@ -390,8 +233,75 @@ mod tests {
             },
         ]));
         assert_eq!(
-            "(test: U8, 1: (U8 | U8 | (thing: U8)), 2: U8, never: |)",
-            SATNFormatter::new(&next).to_string()
+            "(test: U8, 1: (U8 | U8 | (thing: U8)), 2: U8, never: (|))",
+            Formatter::new(&next).to_string()
         );
+    }
+
+    #[test]
+    fn option_as_value() {
+        let never = AlgebraicType::Sum(SumType::new(Vec::new()));
+        let option = AlgebraicType::make_option_type(never);
+        let algebraic_type = AlgebraicType::make_meta_type();
+        let typespace = Typespace::new(vec![algebraic_type]);
+        let at_ref = AlgebraicType::Ref(AlgebraicTypeRef(0));
+        assert_eq!(
+            r#"(sum = (variants = [(name = (some = "some"), algebraic_type = (sum = (variants = []))), (name = (some = "none"), algebraic_type = (product = (elements = [])))]))"#,
+            algebraic_value::satn::Formatter::new(&typespace, &at_ref, &option.as_value()).to_string()
+        );
+    }
+
+    #[test]
+    fn builtin_as_value() {
+        let array = AlgebraicType::Builtin(BuiltinType::U8);
+        let algebraic_type = AlgebraicType::make_meta_type();
+        let typespace = Typespace::new(vec![algebraic_type]);
+        let at_ref = AlgebraicType::Ref(AlgebraicTypeRef(0));
+        assert_eq!(
+            "(builtin = (u8 = ()))",
+            algebraic_value::satn::Formatter::new(&typespace, &at_ref, &array.as_value()).to_string()
+        );
+    }
+
+    #[test]
+    fn algebraic_type_as_value() {
+        let algebraic_type = AlgebraicType::make_meta_type();
+        let typespace = Typespace::new(vec![algebraic_type.clone()]);
+        let at_ref = AlgebraicType::Ref(AlgebraicTypeRef(0));
+        assert_eq!(
+            r#"(sum = (variants = [(name = (some = "sum"), algebraic_type = (product = (elements = [(name = (some = "variants"), algebraic_type = (builtin = (array = (product = (elements = [(name = (some = "name"), algebraic_type = (sum = (variants = [(name = (some = "some"), algebraic_type = (builtin = (string = ()))), (name = (some = "none"), algebraic_type = (product = (elements = [])))]))), (name = (some = "algebraic_type"), algebraic_type = (ref = 0))])))))]))), (name = (some = "product"), algebraic_type = (product = (elements = [(name = (some = "elements"), algebraic_type = (builtin = (array = (product = (elements = [(name = (some = "name"), algebraic_type = (sum = (variants = [(name = (some = "some"), algebraic_type = (builtin = (string = ()))), (name = (some = "none"), algebraic_type = (product = (elements = [])))]))), (name = (some = "algebraic_type"), algebraic_type = (ref = 0))])))))]))), (name = (some = "builtin"), algebraic_type = (sum = (variants = [(name = (some = "bool"), algebraic_type = (product = (elements = []))), (name = (some = "i8"), algebraic_type = (product = (elements = []))), (name = (some = "u8"), algebraic_type = (product = (elements = []))), (name = (some = "i16"), algebraic_type = (product = (elements = []))), (name = (some = "u16"), algebraic_type = (product = (elements = []))), (name = (some = "i32"), algebraic_type = (product = (elements = []))), (name = (some = "u32"), algebraic_type = (product = (elements = []))), (name = (some = "i64"), algebraic_type = (product = (elements = []))), (name = (some = "u64"), algebraic_type = (product = (elements = []))), (name = (some = "i128"), algebraic_type = (product = (elements = []))), (name = (some = "u128"), algebraic_type = (product = (elements = []))), (name = (some = "f32"), algebraic_type = (product = (elements = []))), (name = (some = "f64"), algebraic_type = (product = (elements = []))), (name = (some = "string"), algebraic_type = (product = (elements = []))), (name = (some = "array"), algebraic_type = (ref = 0)), (name = (some = "map"), algebraic_type = (product = (elements = [(name = (some = "key_ty"), algebraic_type = (ref = 0)), (name = (some = "ty"), algebraic_type = (ref = 0))])))]))), (name = (some = "ref"), algebraic_type = (builtin = (u32 = ())))]))"#,
+            algebraic_value::satn::Formatter::new(&typespace, &at_ref, &algebraic_type.as_value()).to_string()
+        );
+    }
+
+    #[test]
+    fn option_from_value() {
+        let never = AlgebraicType::Sum(SumType::new(Vec::new()));
+        let option = AlgebraicType::make_option_type(never);
+        AlgebraicType::from_value(&option.as_value()).expect("No errors.");
+    }
+
+    #[test]
+    fn builtin_from_value() {
+        let u8 = AlgebraicType::Builtin(BuiltinType::U8);
+        AlgebraicType::from_value(&u8.as_value()).expect("No errors.");
+    }
+
+    #[test]
+    fn algebraic_type_from_value() {
+        let algebraic_type = AlgebraicType::make_meta_type();
+        AlgebraicType::from_value(&algebraic_type.as_value()).expect("No errors.");
+    }
+
+    fn _legacy_encoding_comparison() {
+        let algebraic_type = AlgebraicType::make_meta_type();
+
+        let mut buf = Vec::new();
+        algebraic_type.as_value().encode(&mut buf);
+        println!("buf: {:?}", buf);
+
+        let mut buf = Vec::new();
+        algebraic_type.encode(&mut buf);
+        println!("buf: {:?}", buf);
     }
 }

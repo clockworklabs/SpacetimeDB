@@ -1,70 +1,132 @@
-use crate::algebraic_type::{self, AlgebraicType};
+pub mod satn;
+use crate::{
+    algebraic_type::AlgebraicType, algebraic_type_ref::AlgebraicTypeRef, algebraic_value::AlgebraicValue,
+    builtin_type::BuiltinType, builtin_value::BuiltinValue, product_type::ProductType,
+    product_type_element::ProductTypeElement, product_value::ProductValue, sum_type_variant::SumTypeVariant,
+    sum_value::SumValue,
+};
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
 
-// TODO: probably implement this with a tuple but store whether the tuple
-// is a sum tuple or a product tuple, then we have uniformity over types
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct SumType {
-    pub types: Vec<AlgebraicType>,
+    pub variants: Vec<SumTypeVariant>,
 }
 
-pub struct SATNFormatter<'a> {
-    ty: &'a SumType,
-}
+impl SumType {
+    pub fn new(variants: Vec<SumTypeVariant>) -> Self {
+        Self { variants }
+    }
 
-impl<'a> SATNFormatter<'a> {
-    pub fn new(ty: &'a SumType) -> Self {
-        Self { ty }
+    pub fn new_unnamed(types: Vec<AlgebraicType>) -> Self {
+        let variants = types
+            .iter()
+            .map(|ty| SumTypeVariant::new(ty.clone(), None))
+            .collect::<Vec<_>>();
+        Self { variants }
     }
 }
 
-impl<'a> Display for SATNFormatter<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.ty.types.len() == 0 {
-            return write!(f, "|");
+impl SumType {
+    pub fn make_meta_type() -> AlgebraicType {
+        let string = AlgebraicType::Builtin(BuiltinType::String);
+        let option = AlgebraicType::make_option_type(string);
+        let variant_type = AlgebraicType::Product(ProductType::new(vec![
+            ProductTypeElement {
+                algebraic_type: option,
+                name: Some("name".into()),
+            },
+            ProductTypeElement {
+                algebraic_type: AlgebraicType::Ref(AlgebraicTypeRef(0)),
+                name: Some("algebraic_type".into()),
+            },
+        ]));
+        let array = AlgebraicType::Builtin(BuiltinType::Array {
+            ty: Box::new(variant_type),
+        });
+        AlgebraicType::Product(ProductType::new(vec![ProductTypeElement {
+            algebraic_type: array,
+            name: Some("variants".into()),
+        }]))
+    }
+
+    pub fn as_value(&self) -> AlgebraicValue {
+        let mut variants = Vec::new();
+        for variant in &self.variants {
+            let variant_value = if let Some(name) = variant.name.clone() {
+                AlgebraicValue::Product(ProductValue {
+                    elements: vec![
+                        AlgebraicValue::Sum(SumValue {
+                            tag: 0,
+                            value: Box::new(AlgebraicValue::Builtin(BuiltinValue::String(name))),
+                        }),
+                        variant.algebraic_type.as_value(),
+                    ],
+                })
+            } else {
+                AlgebraicValue::Product(ProductValue {
+                    elements: vec![
+                        AlgebraicValue::Sum(SumValue {
+                            tag: 1,
+                            value: Box::new(AlgebraicValue::Product(ProductValue { elements: Vec::new() })),
+                        }),
+                        variant.algebraic_type.as_value(),
+                    ],
+                })
+            };
+            variants.push(variant_value);
         }
-        write!(f, "(")?;
-        for (i, e) in self.ty.types.iter().enumerate() {
-            write!(f, "{}", algebraic_type::SATNFormatter::new(e))?;
-            if i < self.ty.types.len() - 1 {
-                write!(f, " | ")?;
+        AlgebraicValue::Product(ProductValue {
+            elements: vec![AlgebraicValue::Builtin(BuiltinValue::Array { val: variants })],
+        })
+    }
+
+    pub fn from_value(value: &AlgebraicValue) -> Result<SumType, ()> {
+        match value {
+            AlgebraicValue::Sum(_) => Err(()),
+            AlgebraicValue::Product(value) => {
+                if value.elements.len() != 1 {
+                    return Err(());
+                }
+                let variants = &value.elements[0];
+                let Some(variants) = variants.as_builtin() else {
+                    return Err(());
+                };
+                let Some(variants) = variants.as_array() else {
+                    return Err(());
+                };
+
+                let mut v = Vec::new();
+                for variant in variants {
+                    let Some(variant) = variant.as_product() else {
+                        return Err(())
+                    };
+                    if variant.elements.len() != 2 {
+                        return Err(());
+                    }
+                    let name = &variant.elements[0];
+                    let Some(name) = name.as_sum() else {
+                        return Err(())
+                    };
+                    let name = if name.tag == 0 {
+                        let Some(name) = name.value.as_builtin() else {
+                            return Err(())
+                        };
+                        let Some(name) = name.as_string() else {
+                            return Err(())
+                        };
+                        Some(name.clone())
+                    } else if name.tag == 1 {
+                        None
+                    } else {
+                        return Err(());
+                    };
+                    let algebraic_type = &variant.elements[1];
+                    let algebraic_type = AlgebraicType::from_value(&algebraic_type)?;
+                    v.push(SumTypeVariant { algebraic_type, name });
+                }
+                Ok(SumType { variants: v })
             }
-        }
-        write!(f, ")")
-    }
-}
-
-impl SumType {
-    pub fn new(types: Vec<AlgebraicType>) -> Self {
-        Self { types }
-    }
-}
-
-impl SumType {
-    pub fn decode(bytes: impl AsRef<[u8]>) -> Result<(Self, usize), String> {
-        let mut num_read = 0;
-        let bytes = bytes.as_ref();
-        if bytes.len() <= 0 {
-            return Err("Bytes array length is invalid.".to_string());
-        }
-
-        let len = bytes[num_read];
-        num_read += 1;
-
-        let mut items = Vec::new();
-        for _ in 0..len {
-            let (item, nr) = AlgebraicType::decode(&bytes[num_read..])?;
-            items.push(item);
-            num_read += nr;
-        }
-        Ok((SumType { types: items }, num_read))
-    }
-
-    pub fn encode(&self, bytes: &mut Vec<u8>) {
-        bytes.push(self.types.len() as u8);
-        for item in &self.types {
-            item.encode(bytes);
+            AlgebraicValue::Builtin(_) => Err(()),
         }
     }
 }
