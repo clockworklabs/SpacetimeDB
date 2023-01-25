@@ -1,8 +1,8 @@
-use crate::nodes::control_node::budget_controller;
-use crate::nodes::control_node::budget_controller::WorkerBudgetState;
+use crate::nodes::control_node::budget_controller::{WorkerBudgetState, BUDGET_CONTROLLER};
 use crate::nodes::control_node::worker_api::worker_connection::WorkerConnectionSender;
 use prost::Message;
 use spacetimedb::address::Address;
+use spacetimedb::object_db::ObjectDb;
 use spacetimedb::protobuf::control_db::HostType;
 use spacetimedb::{
     hash::Hash,
@@ -15,19 +15,26 @@ use spacetimedb::{
     },
 };
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
 
 use super::prometheus_metrics::WORKER_NODE_COUNT;
 use super::worker_api::worker_connection_index::WORKER_CONNECTION_INDEX;
 use spacetimedb::control_db::{ControlDb, CONTROL_DB};
 
+#[derive(Clone)]
 pub struct Controller {
-    control_db: &'static ControlDb,
+    pub control_db: &'static ControlDb,
+    pub(crate) object_db: Arc<ObjectDb>,
 }
 
 impl Controller {
-    pub fn new(control_db: &'static ControlDb) -> Self {
-        Self { control_db }
+    pub fn new(control_db: &'static ControlDb, object_db: Arc<ObjectDb>) -> Self {
+        Self { control_db, object_db }
+    }
+
+    pub fn object_db(&self) -> &ObjectDb {
+        &self.object_db
     }
 }
 
@@ -389,7 +396,7 @@ impl Controller {
         };
 
         for node_id in node_ids {
-            let allocation = budget_controller::_identity_budget_allocations(node_id, identity).await;
+            let allocation = BUDGET_CONTROLLER._identity_budget_allocations(node_id, identity).await;
             if let Some(allocation) = allocation {
                 let sender = {
                     let wci = WORKER_CONNECTION_INDEX.lock().unwrap();
@@ -408,7 +415,7 @@ impl Controller {
     /// Called when a node is first connected and also on the budget refresh loop.
     pub(crate) async fn node_publish_budget_state(&self, node_id: u64) -> Result<(), anyhow::Error> {
         log::trace!("Sending budget state for node {}", node_id);
-        let node_budget_allocations = budget_controller::budget_allocations(node_id).await;
+        let node_budget_allocations = BUDGET_CONTROLLER.budget_allocations(node_id).await;
         let node_budget_allocations = match node_budget_allocations {
             None => {
                 log::warn!("Missing all budget allocations for node: {}", node_id);

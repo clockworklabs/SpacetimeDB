@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use std::sync::Arc;
 use std::{sync::Mutex, time::Duration};
 
 use futures::StreamExt;
@@ -33,7 +34,7 @@ use spacetimedb::{
     database_logger::DatabaseLogger, host::host_controller, worker_database_instance::WorkerDatabaseInstance,
 };
 
-pub async fn start(config: crate::nodes::node_config::WorkerNodeConfig) {
+pub async fn start(dicc: Arc<DatabaseInstanceContextController>, config: crate::nodes::node_config::WorkerNodeConfig) {
     let worker_api_bootstrap_addr = &config.worker_api_bootstrap_addrs[0];
     let client_api_bootstrap_addr = &config.client_api_bootstrap_addrs[0];
     let advertise_addr = config.advertise_addr;
@@ -110,7 +111,7 @@ pub async fn start(config: crate::nodes::node_config::WorkerNodeConfig) {
                 break;
             }
             Ok(WebSocketMessage::Binary(message_buf)) => {
-                if let Err(e) = on_binary(node_id, message_buf, &mut socket).await {
+                if let Err(e) = on_binary(&dicc, node_id, message_buf, &mut socket).await {
                     log::debug!("Worker caused error on binary message: {}", e);
                     break;
                 }
@@ -158,6 +159,7 @@ pub async fn start(config: crate::nodes::node_config::WorkerNodeConfig) {
 }
 
 async fn on_binary(
+    dicc: &DatabaseInstanceContextController,
     node_id: u64,
     message: Vec<u8>,
     socket: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
@@ -179,7 +181,7 @@ async fn on_binary(
     };
     match message {
         worker_bound_message::Type::ScheduleUpdate(schedule_update) => {
-            match on_schedule_update(node_id, schedule_update).await {
+            match on_schedule_update(dicc, node_id, schedule_update).await {
                 Ok(_) => {}
                 Err(e) => {
                     log::error!("Failure to schedule update (node_id {}): {}", node_id, e);
@@ -187,7 +189,7 @@ async fn on_binary(
             }
         }
         worker_bound_message::Type::ScheduleState(schedule_state) => {
-            on_schedule_state(node_id, schedule_state).await;
+            on_schedule_state(dicc, node_id, schedule_state).await;
         }
         worker_bound_message::Type::BudgetUpdate(budget_update) => {
             // Budget update logic.
@@ -214,11 +216,11 @@ fn on_worker_budget_update(node_id: u64, budget_update: BudgetUpdate) {
     );
 }
 
-async fn on_schedule_state(_node_id: u64, schedule_state: ScheduleState) {
+async fn on_schedule_state(dicc: &DatabaseInstanceContextController, _node_id: u64, schedule_state: ScheduleState) {
     WORKER_DB.init_with_schedule_state(schedule_state);
 
     for instance in WORKER_DB.get_database_instances() {
-        match on_insert_database_instance(&instance).await {
+        match on_insert_database_instance(dicc, &instance).await {
             Ok(_) => {}
             Err(e) => {
                 log::error!(
@@ -231,12 +233,16 @@ async fn on_schedule_state(_node_id: u64, schedule_state: ScheduleState) {
     }
 }
 
-async fn on_schedule_update(_node_id: u64, schedule_update: ScheduleUpdate) -> Result<(), anyhow::Error> {
+async fn on_schedule_update(
+    dicc: &DatabaseInstanceContextController,
+    _node_id: u64,
+    schedule_update: ScheduleUpdate,
+) -> Result<(), anyhow::Error> {
     match schedule_update.r#type {
         Some(schedule_update::Type::Insert(insert_operation)) => match insert_operation.r#type {
             Some(insert_operation::Type::DatabaseInstance(database_instance)) => {
                 WORKER_DB.insert_database_instance(database_instance.clone());
-                on_insert_database_instance(&database_instance).await?;
+                on_insert_database_instance(dicc, &database_instance).await?;
             }
             Some(insert_operation::Type::Database(database)) => {
                 WORKER_DB.insert_database(database);
@@ -247,7 +253,7 @@ async fn on_schedule_update(_node_id: u64, schedule_update: ScheduleUpdate) -> R
         },
         Some(schedule_update::Type::Update(update_operation)) => match update_operation.r#type {
             Some(update_operation::Type::DatabaseInstance(database_instance)) => {
-                on_update_database_instance(&database_instance).await?;
+                on_update_database_instance(dicc, &database_instance).await?;
                 WORKER_DB.insert_database_instance(database_instance.clone());
             }
             Some(update_operation::Type::Database(database)) => {
@@ -260,7 +266,7 @@ async fn on_schedule_update(_node_id: u64, schedule_update: ScheduleUpdate) -> R
         Some(schedule_update::Type::Delete(delete_operation)) => match delete_operation.r#type {
             Some(delete_operation::Type::DatabaseInstanceId(database_instance_id)) => {
                 WORKER_DB.delete_database_instance(database_instance_id);
-                on_delete_database_instance(database_instance_id).await;
+                on_delete_database_instance(dicc, database_instance_id).await;
             }
             Some(delete_operation::Type::DatabaseId(database_id)) => {
                 WORKER_DB.delete_database(database_id);
@@ -272,16 +278,19 @@ async fn on_schedule_update(_node_id: u64, schedule_update: ScheduleUpdate) -> R
     Ok(())
 }
 
-async fn on_insert_database_instance(instance: &DatabaseInstance) -> Result<(), anyhow::Error> {
+async fn on_insert_database_instance(
+    dicc: &DatabaseInstanceContextController,
+    instance: &DatabaseInstance,
+) -> Result<(), anyhow::Error> {
     let state = WORKER_DB.get_database_instance_state(instance.id).unwrap();
     if let Some(mut state) = state {
         if !state.initialized {
             // Start and init the service
-            init_module_on_database_instance(instance.database_id, instance.id).await?;
+            init_module_on_database_instance(dicc, instance.database_id, instance.id).await?;
             state.initialized = true;
             WORKER_DB.upsert_database_instance_state(state).unwrap();
         } else {
-            start_module_on_database_instance(instance.database_id, instance.id).await?;
+            start_module_on_database_instance(dicc, instance.database_id, instance.id).await?;
         }
         Ok(())
     } else {
@@ -290,7 +299,7 @@ async fn on_insert_database_instance(instance: &DatabaseInstance) -> Result<(), 
             database_instance_id: instance.id,
             initialized: false,
         };
-        init_module_on_database_instance(instance.database_id, instance.id).await?;
+        init_module_on_database_instance(dicc, instance.database_id, instance.id).await?;
         WORKER_DB.upsert_database_instance_state(state.clone()).unwrap();
         state.initialized = true;
         WORKER_DB.upsert_database_instance_state(state).unwrap();
@@ -298,24 +307,31 @@ async fn on_insert_database_instance(instance: &DatabaseInstance) -> Result<(), 
     }
 }
 
-async fn on_update_database_instance(instance: &DatabaseInstance) -> Result<(), anyhow::Error> {
+async fn on_update_database_instance(
+    dicc: &DatabaseInstanceContextController,
+    instance: &DatabaseInstance,
+) -> Result<(), anyhow::Error> {
     // This logic is the same right now
-    on_insert_database_instance(instance).await
+    on_insert_database_instance(dicc, instance).await
 }
 
-async fn on_delete_database_instance(instance_id: u64) {
+async fn on_delete_database_instance(dicc: &DatabaseInstanceContextController, instance_id: u64) {
     let state = WORKER_DB.get_database_instance_state(instance_id).unwrap();
     if let Some(_state) = state {
         let host = host_controller::get_host();
 
         // TODO: This is getting pretty messy
-        DatabaseInstanceContextController::get_shared().remove(instance_id);
+        dicc.remove(instance_id);
         host.delete_module(instance_id).await.unwrap();
         WORKER_DB.delete_database_instance(instance_id);
     }
 }
 
-async fn init_module_on_database_instance(database_id: u64, instance_id: u64) -> Result<(), anyhow::Error> {
+async fn init_module_on_database_instance(
+    dicc: &DatabaseInstanceContextController,
+    database_id: u64,
+    instance_id: u64,
+) -> Result<(), anyhow::Error> {
     let database = if let Some(database) = WORKER_DB.get_database_by_id(database_id) {
         database
     } else {
@@ -344,7 +360,7 @@ async fn init_module_on_database_instance(database_id: u64, instance_id: u64) ->
     );
 
     // TODO: This is getting pretty messy
-    DatabaseInstanceContextController::get_shared().insert(worker_database_instance.clone());
+    dicc.insert(worker_database_instance.clone());
     let host = host_controller::get_host();
     let _address = host
         .init_module(worker_database_instance, program_bytes.clone())
@@ -352,7 +368,11 @@ async fn init_module_on_database_instance(database_id: u64, instance_id: u64) ->
     Ok(())
 }
 
-async fn start_module_on_database_instance(database_id: u64, instance_id: u64) -> Result<(), anyhow::Error> {
+async fn start_module_on_database_instance(
+    dicc: &DatabaseInstanceContextController,
+    database_id: u64,
+    instance_id: u64,
+) -> Result<(), anyhow::Error> {
     let database = if let Some(database) = WORKER_DB.get_database_by_id(database_id) {
         database
     } else {
@@ -382,7 +402,7 @@ async fn start_module_on_database_instance(database_id: u64, instance_id: u64) -
     );
 
     // TODO: This is getting pretty messy
-    DatabaseInstanceContextController::get_shared().insert(worker_database_instance.clone());
+    dicc.insert(worker_database_instance.clone());
     let host = host_controller::get_host();
     let _address = host.add_module(worker_database_instance, program_bytes.clone()).await?;
     Ok(())

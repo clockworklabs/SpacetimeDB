@@ -44,11 +44,9 @@ pub fn accept_ws_res(key: &HeaderValue, protocol: &str, custom_headers: HashMap<
 }
 
 #[allow(clippy::type_complexity)]
-pub fn validate_upgrade(
-    mut state: State,
-) -> Result<(State, HeaderMap, HeaderValue, OnUpgrade, String), (State, HandlerError)> {
-    let headers = HeaderMap::take_from(&mut state);
-    let on_upgrade_value = OnUpgrade::try_take_from(&mut state);
+pub fn validate_upgrade(state: &mut State) -> Result<(HeaderMap, HeaderValue, OnUpgrade, String), HandlerError> {
+    let headers = HeaderMap::take_from(state);
+    let on_upgrade_value = OnUpgrade::try_take_from(state);
 
     /// Check if a WebSocket upgrade was requested.
     fn requested(headers: &HeaderMap) -> bool {
@@ -58,10 +56,9 @@ pub fn validate_upgrade(
     let on_upgrade_value = match on_upgrade_value {
         Some(on_upgrade_value) if requested(&headers) => on_upgrade_value,
         _ => {
-            return Err((
-                state,
-                HandlerError::from(anyhow::anyhow!("Missing upgrade header.")).with_status(StatusCode::BAD_REQUEST),
-            ))
+            return Err(
+                HandlerError::from(anyhow::anyhow!("Missing upgrade header.")).with_status(StatusCode::BAD_REQUEST)
+            )
         }
     };
 
@@ -69,10 +66,9 @@ pub fn validate_upgrade(
         Ok(value) => value,
         Err(_) => {
             log::debug!("Client did not provide a sec-websocket-key.");
-            return Err((
-                state,
-                HandlerError::from(anyhow::anyhow!("Missing sec-websocket-key.")).with_status(StatusCode::BAD_REQUEST),
-            ));
+            return Err(
+                HandlerError::from(anyhow::anyhow!("Missing sec-websocket-key.")).with_status(StatusCode::BAD_REQUEST)
+            );
         }
     }
     .clone();
@@ -86,24 +82,18 @@ pub fn validate_upgrade(
     }
     if count != 1 {
         log::debug!("Client tried to connect without protocol version (or provided mulitple).");
-        return Err((
-            state,
-            HandlerError::from(anyhow::anyhow!("Invalid protocol.")).with_status(StatusCode::UPGRADE_REQUIRED),
-        ));
+        return Err(HandlerError::from(anyhow::anyhow!("Invalid protocol.")).with_status(StatusCode::UPGRADE_REQUIRED));
     }
     let protocol_header = protocol_header.unwrap().clone();
     let protocol = match protocol_header.to_str() {
         Ok(value) => value,
         Err(_) => {
             log::debug!("Could not convert protocol version to string.");
-            return Err((
-                state,
-                HandlerError::from(anyhow::anyhow!("Malformed protocol.")).with_status(StatusCode::BAD_REQUEST),
-            ));
+            return Err(HandlerError::from(anyhow::anyhow!("Malformed protocol.")).with_status(StatusCode::BAD_REQUEST));
         }
     };
 
-    Ok((state, headers, key, on_upgrade_value, protocol.to_string()))
+    Ok((headers, key, on_upgrade_value, protocol.to_string()))
 }
 
 pub async fn execute_upgrade(

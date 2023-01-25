@@ -1,3 +1,4 @@
+#[macro_export]
 macro_rules! with_ctx {
     ($ctx:expr, $f:expr) => {{
         let x = std::panic::AssertUnwindSafe(($ctx.clone(), $f));
@@ -5,7 +6,7 @@ macro_rules! with_ctx {
             let (ctx, f) = x.clone();
             Ok(move |mut state| -> std::pin::Pin<Box<gotham::handler::HandlerFuture>> {
                 Box::pin(async move {
-                    match f(&*ctx, &mut state).await {
+                    match f(std::borrow::Borrow::borrow(&ctx), &mut state).await {
                         Ok(x) => Ok((state, x)),
                         Err(e) => Err((state, e)),
                     }

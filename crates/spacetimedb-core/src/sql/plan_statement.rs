@@ -3,7 +3,11 @@ use sqlparser::ast::{Query, Select, SelectItem, SetExpr, Statement};
 
 use super::plan::{Plan, PlanError, RelationExpr};
 
-pub fn plan_statement(database_instance_id: u64, statement: Statement) -> Result<Plan, PlanError> {
+pub fn plan_statement(
+    db_inst_ctx_controller: &DatabaseInstanceContextController,
+    database_instance_id: u64,
+    statement: Statement,
+) -> Result<Plan, PlanError> {
     match statement {
         Statement::Analyze {
             table_name: _,
@@ -32,7 +36,7 @@ pub fn plan_statement(database_instance_id: u64, statement: Statement) -> Result
             feature: "Msck".into(),
             issue_no: None,
         }),
-        Statement::Query(query) => plan_query(database_instance_id, *query),
+        Statement::Query(query) => plan_query(db_inst_ctx_controller, database_instance_id, *query),
         Statement::Insert {
             or: _,
             into: _,
@@ -388,10 +392,14 @@ pub fn plan_statement(database_instance_id: u64, statement: Statement) -> Result
     }
 }
 
-fn plan_query(database_instance_id: u64, query: Query) -> Result<Plan, PlanError> {
+fn plan_query(
+    db_inst_ctx_controller: &DatabaseInstanceContextController,
+    database_instance_id: u64,
+    query: Query,
+) -> Result<Plan, PlanError> {
     match *query.body {
         SetExpr::Select(select) => Ok(Plan::Query(plan::QueryPlan {
-            source: plan_select(database_instance_id, *select)?,
+            source: plan_select(db_inst_ctx_controller, database_instance_id, *select)?,
         })),
         SetExpr::Query(_) => Err(PlanError::Unsupported {
             feature: "Query".into(),
@@ -417,7 +425,11 @@ fn plan_query(database_instance_id: u64, query: Query) -> Result<Plan, PlanError
     }
 }
 
-fn plan_select(database_instance_id: u64, select: Select) -> Result<RelationExpr, PlanError> {
+fn plan_select(
+    db_inst_ctx_controller: &DatabaseInstanceContextController,
+    database_instance_id: u64,
+    select: Select,
+) -> Result<RelationExpr, PlanError> {
     if select.from.len() > 1 {
         return Err(PlanError::Unsupported {
             feature: "Multiple table from expressions.".into(),
@@ -482,9 +494,7 @@ fn plan_select(database_instance_id: u64, select: Select) -> Result<RelationExpr
         }
     };
 
-    let database_instance_context = DatabaseInstanceContextController::get_shared()
-        .get(database_instance_id)
-        .unwrap();
+    let database_instance_context = db_inst_ctx_controller.get(database_instance_id).unwrap();
     let mut db = database_instance_context.relational_db.lock().unwrap();
     let mut tx = db.begin_tx();
     let table_id = match tx.with(|tx, db| db.table_id_from_name(tx, &table_name)) {

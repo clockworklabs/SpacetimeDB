@@ -1,7 +1,6 @@
 use futures::{prelude::*, stream::SplitStream, SinkExt};
 use hyper::upgrade::Upgraded;
 use prost::Message;
-use spacetimedb::control_db::CONTROL_DB;
 use tokio::spawn;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -9,7 +8,7 @@ use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::protocol::{CloseFrame, Message as WebSocketMessage};
 use tokio_tungstenite::WebSocketStream;
 
-use crate::nodes::control_node::budget_controller::{self, refresh_all_budget_allocations};
+use crate::nodes::control_node::budget_controller::BUDGET_CONTROLLER;
 use crate::nodes::control_node::controller::Controller;
 use spacetimedb::hash::Hash;
 use spacetimedb::protobuf::control_worker_api::{control_bound_message, ControlBoundMessage, WorkerBudgetSpend};
@@ -74,10 +73,11 @@ pub struct WorkerConnection {
     stream: Option<SplitStream<WebSocketStream<Upgraded>>>,
     sendtx: mpsc::Sender<SendCommand>,
     read_handle: Option<JoinHandle<()>>,
+    controller: Controller,
 }
 
 impl WorkerConnection {
-    pub fn new(id: u64, ws: WebSocketStream<Upgraded>) -> WorkerConnection {
+    pub fn new(id: u64, ws: WebSocketStream<Upgraded>, controller: Controller) -> WorkerConnection {
         let (mut sink, stream) = ws.split();
 
         // Buffer up to 64 client messages
@@ -95,6 +95,7 @@ impl WorkerConnection {
             stream: Some(stream),
             sendtx,
             read_handle: None,
+            controller,
         }
     }
 
@@ -217,16 +218,18 @@ impl Drop for WorkerConnection {
             read_handle.abort();
         }
         let id = self.id;
+        let controller = self.controller.clone();
         spawn(async move {
-            Controller::new(&*CONTROL_DB).node_disconnected(id).await.unwrap();
+            controller.node_disconnected(id).await.unwrap();
         });
         log::trace!("Worker connection {} dropped", self.id);
     }
 }
 
 async fn on_budget_spend_update(node_id: u64, node_budget_update: WorkerBudgetSpend) -> Result<(), anyhow::Error> {
+    let budget_controller = &*BUDGET_CONTROLLER;
     for spend in node_budget_update.identity_spend {
-        budget_controller::node_energy_spend_update(
+        budget_controller.node_energy_spend_update(
             node_id,
             &Hash::from_slice(spend.identity.as_slice()),
             spend.spend,
@@ -234,6 +237,6 @@ async fn on_budget_spend_update(node_id: u64, node_budget_update: WorkerBudgetSp
     }
 
     // Now redo all budget allocations
-    refresh_all_budget_allocations().await;
+    budget_controller.refresh_all_budget_allocations().await;
     Ok(())
 }

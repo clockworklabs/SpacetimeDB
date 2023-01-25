@@ -1,22 +1,13 @@
-use lazy_static::lazy_static;
 use std::{collections::HashMap, sync::Mutex};
 
 use super::worker_database_instance::WorkerDatabaseInstance;
-
-lazy_static! {
-    static ref CONTEXT_CONTROLLER: DatabaseInstanceContextController = DatabaseInstanceContextController::new();
-}
 
 pub struct DatabaseInstanceContextController {
     contexts: Mutex<HashMap<u64, WorkerDatabaseInstance>>,
 }
 
 impl DatabaseInstanceContextController {
-    pub fn get_shared() -> &'static DatabaseInstanceContextController {
-        &CONTEXT_CONTROLLER
-    }
-
-    fn new() -> Self {
+    pub fn new() -> Self {
         let contexts = Mutex::new(HashMap::new());
         Self { contexts }
     }

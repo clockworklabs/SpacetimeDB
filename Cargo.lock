@@ -3255,6 +3255,7 @@ dependencies = [
  "itertools",
  "lazy_static",
  "log",
+ "once_cell",
  "prometheus",
  "prost",
  "regex",

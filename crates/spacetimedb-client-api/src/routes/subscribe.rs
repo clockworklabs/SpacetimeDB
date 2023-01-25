@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use gotham::handler::HandlerError;
+use gotham::handler::SimpleHandlerResult;
 use gotham::prelude::StaticResponseExtender;
 use gotham::state::request_id;
 use gotham::state::FromState;
@@ -99,14 +99,14 @@ async fn on_connected(
     sender.send_identity_token_message(identity, identity_token).await;
 }
 
-pub async fn handle_websocket(state: State) -> Result<(State, Response<Body>), (State, HandlerError)> {
-    let (mut state, headers, key, on_upgrade, protocol_string) = websocket::validate_upgrade(state)?;
+pub async fn handle_websocket(state: &mut State) -> SimpleHandlerResult {
+    let (headers, key, on_upgrade, protocol_string) = websocket::validate_upgrade(state)?;
     let protocol = match protocol_string.as_str() {
         TEXT_PROTOCOL => Protocol::Text,
         BIN_PROTOCOL => Protocol::Binary,
         _ => {
             log::debug!("Unsupported protocol: {}", protocol_string);
-            return Ok((state, invalid_protocol_res()));
+            return Ok(invalid_protocol_res());
         }
     };
 
@@ -115,7 +115,7 @@ pub async fn handle_websocket(state: State) -> Result<(State, Response<Body>), (
         // Validate the credentials of this connection
         match get_creds_from_header(auth_header) {
             Ok(v) => v,
-            Err(_) => return Ok((state, invalid_token_res())),
+            Err(_) => return Ok(invalid_token_res()),
         }
     } else {
         // Generate a new identity if this connection doesn't have one already
@@ -124,25 +124,25 @@ pub async fn handle_websocket(state: State) -> Result<(State, Response<Body>), (
         (identity, identity_token)
     };
 
-    let SubscribeParams {} = SubscribeParams::take_from(&mut state);
-    let SubscribeQueryParams { name_or_address } = SubscribeQueryParams::take_from(&mut state);
+    let SubscribeParams {} = SubscribeParams::take_from(state);
+    let SubscribeQueryParams { name_or_address } = SubscribeQueryParams::take_from(state);
     let target_address = if let Ok(address) = Address::from_hex(&name_or_address) {
         address
     } else if let Some(address) = CONTROL_DB.spacetime_dns(&name_or_address).await.unwrap() {
         address
     } else {
-        return Ok((state, bad_request_res()));
+        return Ok(bad_request_res());
     };
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
     // to connect to multiple modules
     let database = CONTROL_DB.get_database_by_address(&target_address).await.unwrap();
     let Some(database) = database else {
-        return Ok((state, bad_request_res()));
+        return Ok(bad_request_res());
     };
     let database_instance = CONTROL_DB.get_leader_database_instance_by_database(database.id).await;
     let Some(database_instance) = database_instance else {
-        return Ok((state, bad_request_res()));
+        return Ok(bad_request_res());
     };
     let instance_id = database_instance.id;
 
@@ -173,5 +173,5 @@ pub async fn handle_websocket(state: State) -> Result<(State, Response<Body>), (
     let mut custom_headers = HashMap::new();
     custom_headers.insert("Spacetime-Identity".to_string(), identity.to_hex());
     custom_headers.insert("Spacetime-Identity-Token".to_string(), identity_token);
-    Ok((state, websocket::accept_ws_res(&key, &protocol_string, custom_headers)))
+    Ok(websocket::accept_ws_res(&key, &protocol_string, custom_headers))
 }

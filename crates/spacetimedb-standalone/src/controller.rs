@@ -3,7 +3,7 @@ use spacetimedb::control_db::ControlDb;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::host_controller;
-use spacetimedb::object_db;
+use spacetimedb::object_db::ObjectDb;
 use spacetimedb::protobuf::control_db::HostType;
 use spacetimedb::protobuf::worker_db::DatabaseInstanceState;
 use spacetimedb::worker_database_instance::WorkerDatabaseInstance;
@@ -17,13 +17,27 @@ use crate::worker_db::WorkerDb;
 pub struct Controller {
     worker_db: WorkerDb,
     control_db: &'static ControlDb,
+    pub(super) db_inst_ctx_controller: DatabaseInstanceContextController,
+    object_db: ObjectDb,
 }
 
 impl Controller {
-    pub fn new(worker_db: WorkerDb, control_db: &'static ControlDb) -> Self {
-        Self { worker_db, control_db }
+    pub fn new(
+        worker_db: WorkerDb,
+        control_db: &'static ControlDb,
+        db_inst_ctx_controller: DatabaseInstanceContextController,
+        object_db: ObjectDb,
+    ) -> Self {
+        Self {
+            worker_db,
+            control_db,
+            db_inst_ctx_controller,
+            object_db,
+        }
     }
 }
+
+spacetimedb_client_api::delegate_databasedb!(for Controller, self to self.control_db, |x| x.await);
 
 #[async_trait::async_trait]
 impl spacetimedb_client_api::Controller for Controller {
@@ -99,6 +113,10 @@ impl spacetimedb_client_api::Controller for Controller {
         self.schedule_database(None, Some(database)).await?;
 
         Ok(())
+    }
+
+    fn object_db(&self) -> &ObjectDb {
+        &self.object_db
     }
 }
 
@@ -224,7 +242,7 @@ impl Controller {
             let host = host_controller::get_host();
 
             // TODO: This is getting pretty messy
-            DatabaseInstanceContextController::get_shared().remove(instance_id);
+            self.db_inst_ctx_controller.remove(instance_id);
             host.delete_module(instance_id).await.unwrap();
         }
     }
@@ -242,7 +260,7 @@ impl Controller {
         let identity = Hash::from_slice(&database.identity);
         let address = Address::from_slice(database.address);
         let program_bytes_address = Hash::from_slice(&database.program_bytes_address);
-        let program_bytes = object_db::get_object(&program_bytes_address).await?.unwrap();
+        let program_bytes = self.object_db.get_object(&program_bytes_address)?.unwrap();
 
         let log_path = DatabaseLogger::filepath(&address, instance_id);
         let root = "/stdb/worker_node/database_instances";
@@ -260,7 +278,7 @@ impl Controller {
         );
 
         // TODO: This is getting pretty messy
-        DatabaseInstanceContextController::get_shared().insert(worker_database_instance.clone());
+        self.db_inst_ctx_controller.insert(worker_database_instance.clone());
         let host = host_controller::get_host();
         let _address = host
             .init_module(worker_database_instance, program_bytes.clone())
@@ -282,7 +300,7 @@ impl Controller {
         let identity = Hash::from_slice(&database.identity);
         let address = Address::from_slice(database.address);
         let program_bytes_address = Hash::from_slice(&database.program_bytes_address);
-        let program_bytes = object_db::get_object(&program_bytes_address).await?.unwrap();
+        let program_bytes = self.object_db.get_object(&program_bytes_address)?.unwrap();
 
         let log_path = DatabaseLogger::filepath(&address, instance_id);
         let root = "/stdb/worker_node/database_instances";
@@ -300,7 +318,7 @@ impl Controller {
         );
 
         // TODO: This is getting pretty messy
-        DatabaseInstanceContextController::get_shared().insert(worker_database_instance.clone());
+        self.db_inst_ctx_controller.insert(worker_database_instance.clone());
         let host = host_controller::get_host();
         let _address = host.add_module(worker_database_instance, program_bytes.clone()).await?;
         Ok(())

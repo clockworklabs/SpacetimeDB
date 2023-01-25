@@ -22,7 +22,6 @@ use serde_json::{json, Value};
 use spacetimedb::control_db::CONTROL_DB;
 use spacetimedb::hash::hash_bytes;
 use spacetimedb::host::InvalidReducerArguments;
-use spacetimedb::object_db;
 use spacetimedb::protobuf::control_db::HostType;
 use spacetimedb_lib::EntityDef;
 
@@ -427,7 +426,7 @@ async fn sql(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
         }
     };
 
-    let results = match sql::execute(instance_id, sql_text) {
+    let results = match sql::execute(ctx.database_instance_context_controller(), instance_id, sql_text) {
         Ok(results) => results,
         Err(err) => {
             log::warn!("{}", err);
@@ -630,7 +629,7 @@ async fn publish(ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHandlerRes
     };
     let program_bytes = data.to_vec();
     let program_bytes_addr = hash_bytes(&program_bytes);
-    object_db::insert_object(program_bytes).await.unwrap();
+    ctx.object_db().insert_object(program_bytes).unwrap();
 
     let num_replicas = 1;
 
@@ -808,7 +807,7 @@ pub fn router(ctx: &Arc<dyn ApiCtx>, control_ctx: Option<&Arc<dyn ControllerCtx>
             .get("/subscribe")
             .with_path_extractor::<SubscribeParams>()
             .with_query_string_extractor::<SubscribeQueryParams>()
-            .to_async(handle_websocket);
+            .to_async_borrowing(handle_websocket);
 
         route
             .post("/call/:address/:reducer")

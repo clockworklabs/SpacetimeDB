@@ -1,7 +1,9 @@
 use async_trait::async_trait;
 use spacetimedb::address::Address;
 use spacetimedb::client::client_connection_index;
+use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::hash::Hash;
+use spacetimedb::object_db::ObjectDb;
 use spacetimedb::protobuf::control_db::{Database, DatabaseInstance, HostType};
 use spacetimedb::protobuf::control_worker_api::ScheduleState;
 use spacetimedb::protobuf::worker_db::DatabaseInstanceState;
@@ -66,10 +68,13 @@ pub trait Controller: Send + Sync {
     ) -> Result<(), anyhow::Error>;
 
     async fn delete_database(&self, address: &Address) -> Result<(), anyhow::Error>;
+
+    fn object_db(&self) -> &ObjectDb;
 }
 
 pub trait ApiCtx: DatabaseDb {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily>;
+    fn database_instance_context_controller(&self) -> &DatabaseInstanceContextController;
 }
 
 #[async_trait]
@@ -151,6 +156,10 @@ macro_rules! delegate_controller {
 
             async fn delete_database(&$self, address: &spacetimedb::address::Address) -> Result<(), anyhow::Error> {
                 $target.delete_database(address).await
+            }
+
+            fn object_db(&$self) -> &spacetimedb::object_db::ObjectDb {
+                $target.object_db()
             }
         }
     };

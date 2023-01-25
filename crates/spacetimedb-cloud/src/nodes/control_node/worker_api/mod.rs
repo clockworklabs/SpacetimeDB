@@ -1,13 +1,16 @@
 pub(crate) mod routes;
 pub(crate) mod worker_connection;
 pub(crate) mod worker_connection_index;
+
 use routes::router;
 use tokio::net::TcpListener;
 use worker_connection_index::WorkerConnectionIndex;
 
-pub async fn start(config: crate::nodes::node_config::ControlNodeConfig) -> ! {
+use crate::nodes::control_node::controller::Controller;
+
+pub async fn start(controller: Controller, config: crate::nodes::node_config::ControlNodeConfig) -> ! {
     WorkerConnectionIndex::start_liveliness_check();
-    WorkerConnectionIndex::start_worker_budget_update();
+    WorkerConnectionIndex::start_worker_budget_update(&controller);
 
     let listener = TcpListener::bind(config.worker_api_listen_addr).await.unwrap();
 
@@ -15,5 +18,5 @@ pub async fn start(config: crate::nodes::node_config::ControlNodeConfig) -> ! {
         "Control node worker API listening for http requests at http://{}",
         listener.local_addr().unwrap()
     );
-    gotham::bind_server(listener, router(), futures::future::ok).await
+    gotham::bind_server(listener, router(&controller), futures::future::ok).await
 }

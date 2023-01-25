@@ -2,7 +2,6 @@ use super::worker_connection::WorkerConnection;
 use crate::nodes::control_node::controller::Controller;
 use hyper::upgrade::Upgraded;
 use lazy_static::lazy_static;
-use spacetimedb::control_db::CONTROL_DB;
 use std::{collections::HashMap, sync::Mutex, time::Duration};
 use tokio::{task::JoinHandle, time::sleep};
 use tokio_tungstenite::tungstenite::protocol::Message as WebSocketMessage;
@@ -69,14 +68,14 @@ impl WorkerConnectionIndex {
         }));
     }
 
-    pub fn start_worker_budget_update() {
+    pub fn start_worker_budget_update(controller: &Controller) {
         let mut wci = WORKER_CONNECTION_INDEX.lock().unwrap();
         if wci.worker_budget_update.is_some() {
             return;
         }
+        let controller = controller.clone();
         wci.worker_budget_update = Some(tokio::spawn(async move {
             loop {
-                let controller = Controller::new(&*CONTROL_DB);
                 let node_ids = {
                     let wci = WORKER_CONNECTION_INDEX.lock().unwrap();
                     wci.connections.iter().map(|conn| conn.id).collect::<Vec<_>>()
@@ -121,10 +120,10 @@ impl WorkerConnectionIndex {
         }
     }
 
-    pub fn new_client(&mut self, worker_id: u64, ws: WebSocketStream<Upgraded>) -> u64 {
+    pub fn new_client(&mut self, worker_id: u64, ws: WebSocketStream<Upgraded>, controller: Controller) -> u64 {
         let pointer = Pointer(self.connections.len());
 
-        let mut worker = WorkerConnection::new(worker_id, ws);
+        let mut worker = WorkerConnection::new(worker_id, ws, controller);
 
         // NOTE: Begin receiving when we create a new client. This only really works
         // because authentication is provided in the headers of the request. That is to say,

@@ -1,5 +1,6 @@
 use gotham::prelude::{DefineSingleRoute, DrawRoutes};
 use gotham::router::route::matcher::AnyRouteMatcher;
+use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::db::db_metrics;
 use std::sync::Arc;
 
@@ -10,6 +11,7 @@ mod proxy;
 
 struct WorkerEnv {
     worker_db: &'static WorkerDb,
+    db_inst_ctx_controller: Arc<DatabaseInstanceContextController>,
 }
 
 trait IntoResult<T> {
@@ -34,11 +36,18 @@ impl spacetimedb_client_api::ApiCtx for WorkerEnv {
         metric_families.extend(db_metrics::REGISTRY.gather());
         metric_families
     }
+
+    fn database_instance_context_controller(&self) -> &DatabaseInstanceContextController {
+        &self.db_inst_ctx_controller
+    }
 }
 
-pub async fn start(listen_addr: String) -> ! {
+pub async fn start(db_inst_ctx_controller: Arc<DatabaseInstanceContextController>, listen_addr: String) -> ! {
     let worker_db = &*WORKER_DB;
-    let ctx = WorkerEnv { worker_db };
+    let ctx = WorkerEnv {
+        worker_db,
+        db_inst_ctx_controller,
+    };
     spacetimedb_client_api::start_customized(Arc::new(ctx), listen_addr, |route| {
         let proxied_routes = [
             "/database/dns/:database_name",

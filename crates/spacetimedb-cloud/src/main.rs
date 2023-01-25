@@ -8,10 +8,12 @@ use nodes::control_node;
 use nodes::node_config::NodeConfig;
 use nodes::node_options::NodeOptions;
 use nodes::worker_node;
+use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::startup;
 use std::error::Error;
 use std::panic;
 use std::process;
+use std::sync::Arc;
 use tokio::runtime::Builder;
 
 /// Module API (worker nodes, port 80/443): The API for manipulating Wasm SpacetimeDB modules
@@ -27,9 +29,11 @@ async fn init(options: NodeOptions) -> Result<(), Box<dyn Error + Send + Sync>> 
     let config = NodeConfig::from_options(options);
     startup::configure_logging();
 
+    let dicc = Arc::new(DatabaseInstanceContextController::new());
+
     let (worker_tasks, control_tasks) = tokio::join!(
-        OptionFuture::from(config.worker_node.map(worker_node::start)),
-        OptionFuture::from(config.control_node.map(control_node::start)),
+        OptionFuture::from(config.worker_node.map(|x| worker_node::start(dicc.clone(), x))),
+        OptionFuture::from(config.control_node.map(|x| control_node::start(dicc, x))),
     );
 
     let service_handles = itertools::chain(worker_tasks, control_tasks).flatten();
