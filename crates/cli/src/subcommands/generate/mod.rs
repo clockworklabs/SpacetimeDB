@@ -212,7 +212,7 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<(Typespace, Vec<(Str
         Some(f) => {
             let buf: u32 = f.typed(&store)?.call(&mut store, ()).unwrap();
             let slice = store.data_mut().buffers.remove(buf as usize);
-            bsatn::from_reader(&mut &slice[..])?
+            bsatn::from_slice(&slice)?
         }
         None => Typespace::default(),
     };
@@ -236,9 +236,9 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<(Typespace, Vec<(Str
         let (val,): (u32,) = describe.typed(&store)?.call(&mut store, ()).unwrap();
         let mut slice = || store.data_mut().buffers.remove(val as usize);
         let descr = match ty {
-            DescrType::Table => ModuleItemDef::Entity(EntityDef::Table(bsatn::from_reader(&mut &slice()[..])?)),
+            DescrType::Table => ModuleItemDef::Entity(EntityDef::Table(bsatn::from_slice(&slice())?)),
             DescrType::TypeAlias => ModuleItemDef::TypeAlias(AlgebraicTypeRef(val)),
-            DescrType::Reducer => ModuleItemDef::Entity(EntityDef::Reducer(bsatn::from_reader(&mut &slice()[..])?)),
+            DescrType::Reducer => ModuleItemDef::Entity(EntityDef::Reducer(bsatn::from_slice(&slice())?)),
         };
         descriptions.push((name, descr));
     }

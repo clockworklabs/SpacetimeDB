@@ -1,50 +1,20 @@
-#![allow(dead_code, unused_variables)]
 #![allow(clippy::too_many_arguments)]
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::error::NodesError;
 use crate::host::timestamp::Timestamp;
+use crate::host::wasm_common::{err_to_errno, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers};
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
 
 use crate::host::instance_env::InstanceEnv;
 
-use super::{Buffer, BufferIter, Mem, WasmError};
+use super::{Mem, WasmError};
 
 pub(super) struct WasmInstanceEnv {
     pub instance_env: InstanceEnv,
     pub mem: Option<Mem>,
-    pub buffers: slab::Slab<Vec<u8>>,
-    pub iters: slab::Slab<Box<dyn Iterator<Item = Result<Vec<u8>, NodesError>> + Send>>,
-}
-
-fn cvt_count(x: Result<u32, NodesError>) -> u32 {
-    match x {
-        Ok(count) => count,
-        Err(_) => u32::MAX,
-    }
-}
-fn cvt(x: Result<(), NodesError>) -> u8 {
-    match x {
-        Ok(()) => 1,
-        Err(_) => 0,
-    }
-}
-
-mod errnos {
-    include!("../../../../bindings-sys/src/errno.rs");
-
-    macro_rules! nothing {
-        ($($tt:tt)*) => {};
-    }
-    errnos!(nothing);
-}
-
-#[derive(Debug, thiserror::Error)]
-#[error("runtime error calling {func}: {err}")]
-struct AbiRuntimeError {
-    func: &'static str,
-    #[source]
-    err: NodesError,
+    pub buffers: Buffers,
+    pub iters: BufferIters,
 }
 
 type WasmResult = Result<u16, RuntimeError>;
@@ -65,19 +35,6 @@ impl WasmInstanceEnv {
         self.mem.clone().expect("Initialized memory")
     }
 
-    pub fn alloc_buf(&mut self, data: Vec<u8>) -> Buffer {
-        let raw = self.buffers.insert(data) as u32;
-        Buffer { raw }
-    }
-
-    pub fn take_buf(&mut self, handle: Buffer) -> Option<Box<[u8]>> {
-        self.buffers.try_remove(handle.raw as usize).map(Into::into)
-    }
-
-    pub fn clear_bufs(&mut self) {
-        self.buffers.clear()
-    }
-
     fn cvt(
         mut caller: FunctionEnvMut<'_, Self>,
         func: &'static str,
@@ -88,17 +45,11 @@ impl WasmInstanceEnv {
             Ok(()) => return Ok(0),
             Err(e) => e,
         };
-        let errno = match err {
-            WasmError::Db(NodesError::TableNotFound) => Some(errnos::NOTAB),
-            WasmError::Db(NodesError::PrimaryKeyNotFound(_)) => Some(errnos::LOOKUP),
-            WasmError::Db(NodesError::ColumnValueNotFound) => Some(errnos::LOOKUP),
-            WasmError::Db(NodesError::RangeNotFound) => Some(errnos::LOOKUP),
-            WasmError::Db(NodesError::AlreadyExists(_)) => Some(errnos::EXISTS),
-            _ => None,
-        };
-        if let Some(errno) = errno {
-            log::info!("abi call to {func} returned a normal error: {err:#}");
-            return Ok(errno);
+        if let WasmError::Db(err) = &err {
+            if let Some(errno) = err_to_errno(err) {
+                log::info!("abi call to {func} returned a normal error: {err:#}");
+                return Ok(errno);
+            }
         }
 
         Err(match err {
@@ -184,7 +135,7 @@ impl WasmInstanceEnv {
     }
 
     pub fn delete_pk(caller: FunctionEnvMut<'_, Self>, table_id: u32, pk: WasmPtr<u8>, pk_len: u32) -> WasmResult {
-        Self::cvt(caller, "delete_value", |caller, mem| {
+        Self::cvt(caller, "delete_pk", |caller, mem| {
             let pk = mem.read_bytes(&caller, pk, pk_len)?;
             caller.data().instance_env.delete_pk(table_id, &pk)?;
             Ok(())
@@ -266,20 +217,18 @@ impl WasmInstanceEnv {
         })
     }
 
-    pub fn iter_start(caller: FunctionEnvMut<'_, Self>, table_id: u32, out: WasmPtr<BufferIter>) -> WasmResult {
-        Self::cvt_ret(caller, "iter_start", out, |mut caller, mem| {
-            let iter = Box::new(caller.data().instance_env.iter(table_id));
+    pub fn iter_start(caller: FunctionEnvMut<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> WasmResult {
+        Self::cvt_ret(caller, "iter_start", out, |mut caller, _mem| {
+            let iter = caller.data().instance_env.iter(table_id);
 
-            Ok(BufferIter {
-                raw: caller.data_mut().iters.insert(iter) as u32,
-            })
+            Ok(caller.data_mut().iters.insert(Box::new(iter)))
         })
     }
 
-    pub fn iter_next(caller: FunctionEnvMut<'_, Self>, iter_key: u32, out: WasmPtr<Buffer>) -> WasmResult {
-        Self::cvt_ret(caller, "iter_next", out, |mut caller, mem| {
+    pub fn iter_next(caller: FunctionEnvMut<'_, Self>, iter_key: u32, out: WasmPtr<BufferIdx>) -> WasmResult {
+        Self::cvt_ret(caller, "iter_next", out, |mut caller, _mem| {
             let data_mut = caller.data_mut();
-            let iter_key = iter_key as usize;
+            let iter_key = BufferIterIdx(iter_key);
 
             let iter = data_mut
                 .iters
@@ -287,20 +236,21 @@ impl WasmInstanceEnv {
                 .ok_or_else(|| RuntimeError::new("no such iterator"))?;
 
             match iter.next() {
-                Some(Ok(buf)) => Ok(data_mut.alloc_buf(buf)),
+                Some(Ok(buf)) => Ok(data_mut.buffers.insert(buf)),
                 Some(Err(err)) => Err(err.into()),
-                None => Ok(Buffer::INVALID),
+                None => Ok(BufferIdx::INVALID),
             }
         })
     }
 
     pub fn iter_drop(caller: FunctionEnvMut<'_, Self>, iter_key: u32) -> WasmResult {
-        Self::cvt(caller, "iter_drop", |mut caller, mem| {
+        Self::cvt(caller, "iter_drop", |mut caller, _mem| {
+            let iter_key = BufferIterIdx(iter_key);
             drop(
                 caller
                     .data_mut()
                     .iters
-                    .try_remove(iter_key as usize)
+                    .take(iter_key)
                     .ok_or_else(|| RuntimeError::new("no such iterator"))?,
             );
 
@@ -312,7 +262,7 @@ impl WasmInstanceEnv {
         caller
             .data()
             .buffers
-            .get(buffer as usize)
+            .get(BufferIdx(buffer))
             .map(|b| b.len() as u32)
             .ok_or_else(|| RuntimeError::new("no such buffer"))
     }
@@ -325,7 +275,8 @@ impl WasmInstanceEnv {
     ) -> Result<(), RuntimeError> {
         let buf = caller
             .data_mut()
-            .take_buf(Buffer { raw: buffer })
+            .buffers
+            .take(BufferIdx(buffer))
             .ok_or_else(|| RuntimeError::new("no such buffer"))?;
         ptr.slice(&caller.data().mem().view(&caller), len)
             .and_then(|slice| slice.write_slice(&buf))
@@ -342,7 +293,7 @@ impl WasmInstanceEnv {
             .mem()
             .read_bytes(&caller, data, data_len)
             .map_err(mem_err)?;
-        Ok(caller.data_mut().alloc_buf(buf).raw)
+        Ok(caller.data_mut().buffers.insert(buf).0)
     }
 }
 

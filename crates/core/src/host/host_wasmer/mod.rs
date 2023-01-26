@@ -87,23 +87,3 @@ impl Mem {
         ptr.slice(&self.view(store), len)?.read_to_vec()
     }
 }
-
-#[derive(Copy, Clone, wasmer::ValueType)]
-#[repr(transparent)]
-struct Buffer {
-    raw: u32,
-}
-
-impl Buffer {
-    const INVALID: Self = Self { raw: u32::MAX };
-
-    const fn is_invalid(&self) -> bool {
-        self.raw == Self::INVALID.raw
-    }
-}
-
-#[derive(Copy, Clone, wasmer::ValueType)]
-#[repr(transparent)]
-struct BufferIter {
-    raw: u32,
-}

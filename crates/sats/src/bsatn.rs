@@ -23,6 +23,10 @@ pub fn from_reader<'de, R: BufReader<'de>, T: Deserialize<'de>>(r: &mut R) -> Re
     T::deserialize(Deserializer::new(r))
 }
 
+pub fn from_slice<'de, T: Deserialize<'de>>(b: &'de [u8]) -> Result<T, DecodeError> {
+    from_reader(&mut &b[..])
+}
+
 static EMPTY_TYPESPACE: Typespace = Typespace::new(Vec::new());
 
 macro_rules! codec_funcs {

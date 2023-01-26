@@ -28,7 +28,7 @@ pub unsafe fn invoke_reducer<'a, A: Args<'a>, T>(
 ) -> Buffer {
     let ctx = assemble_context(sender, timestamp);
 
-    let SerDeArgs(args) = bsatn::from_reader(&mut &args[..]).expect("unable to decode args");
+    let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
     let res = CURRENT_TIMESTAMP.set(&{ ctx.timestamp }, || {
         let res: Result<(), Box<str>> = reducer.invoke(ctx, args);

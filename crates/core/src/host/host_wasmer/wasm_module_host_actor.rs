@@ -1,5 +1,5 @@
 use super::wasm_instance_env::WasmInstanceEnv;
-use super::{Buffer, Mem};
+use super::Mem;
 use crate::host::host_controller::{DescribedEntityType, ReducerBudget};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::timestamp::Timestamp;
@@ -201,18 +201,17 @@ impl host_actor::UninitWasmInstance for UninitWasmerInstance {
 
         let init = instance.exports.get_typed_function::<(), u32>(&store, SETUP_DUNDER);
         if let Ok(init) = init {
-            match init.call(&mut store) {
+            match init.call(&mut store).map(BufferIdx) {
+                Ok(errbuf) if errbuf.is_invalid() => {}
                 Ok(errbuf) => {
-                    let errbuf = Buffer { raw: errbuf };
-                    if !errbuf.is_invalid() {
-                        let errbuf = env
-                            .as_mut(&mut store)
-                            .take_buf(errbuf)
-                            .unwrap_or_else(|| "unknown error".as_bytes().into());
-                        let errbuf = crate::util::string_from_utf8_lossy_owned(errbuf.into()).into();
-                        // TODO: catch this and return the error message to the http client
-                        return Err(InitializationError::Setup(errbuf));
-                    }
+                    let errbuf = env
+                        .as_mut(&mut store)
+                        .buffers
+                        .take(errbuf)
+                        .unwrap_or_else(|| "unknown error".as_bytes().into());
+                    let errbuf = crate::util::string_from_utf8_lossy_owned(errbuf).into();
+                    // TODO: catch this and return the error message to the http client
+                    return Err(InitializationError::Setup(errbuf));
                 }
                 Err(err) => {
                     return Err(InitializationError::RuntimeError {
@@ -244,11 +243,11 @@ impl WasmerInstance {
         // Decode the memory as EntityDef.
         let result = match descr_type {
             DescribedEntityType::Table => {
-                let table: TableDef = bsatn::from_reader(&mut &bytes[..]).map_err(DescribeErrorKind::BadTable)?;
+                let table: TableDef = bsatn::from_slice(&bytes).map_err(DescribeErrorKind::BadTable)?;
                 EntityDef::Table(table)
             }
             DescribedEntityType::Reducer => {
-                let reducer: ReducerDef = bsatn::from_reader(&mut &bytes[..]).map_err(DescribeErrorKind::BadReducer)?;
+                let reducer: ReducerDef = bsatn::from_slice(&bytes).map_err(DescribeErrorKind::BadReducer)?;
                 EntityDef::Reducer(reducer)
             }
         };
@@ -260,7 +259,7 @@ impl WasmerInstance {
         &mut self,
         describer: &Function,
         describer_func_name: &str,
-    ) -> Result<Box<[u8]>, DescribeErrorKind> {
+    ) -> Result<Vec<u8>, DescribeErrorKind> {
         let start = std::time::Instant::now();
         log::trace!("Start describer \"{}\"...", describer_func_name);
 
@@ -268,7 +267,7 @@ impl WasmerInstance {
         let describer = describer
             .typed::<(), u32>(store)
             .map_err(|_| DescribeErrorKind::Signature)?;
-        let result = describer.call(store);
+        let result = describer.call(store).map(BufferIdx);
         let duration = start.elapsed();
         log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros(),);
         let buf = result.map_err(|err| {
@@ -278,9 +277,10 @@ impl WasmerInstance {
         let bytes = self
             .env
             .as_mut(store)
-            .take_buf(Buffer { raw: buf })
+            .buffers
+            .take(buf)
             .ok_or(DescribeErrorKind::BadBuffer)?;
-        self.env.as_mut(store).clear_bufs();
+        self.env.as_mut(store).buffers.clear();
         Ok(bytes)
     }
 }
@@ -290,7 +290,7 @@ impl host_actor::WasmInstance for WasmerInstance {
         let typespace = match self.instance.exports.get_function(DESCRIBE_TYPESPACE).cloned() {
             Ok(describer) => self
                 ._call_describer(&describer, DESCRIBE_TYPESPACE)
-                .and_then(|bytes| bsatn::from_reader(&mut &bytes[..]).map_err(DescribeErrorKind::BadTypespace))
+                .and_then(|bytes| bsatn::from_slice(&bytes).map_err(DescribeErrorKind::BadTypespace))
                 .map_err(|err| DescribeError {
                     err,
                     describer: DESCRIBE_TYPESPACE.to_owned(),
@@ -345,7 +345,7 @@ impl host_actor::WasmInstance for WasmerInstance {
             reducer_symbol,
             points,
             [sender.to_vec(), arg_bytes],
-            |func, store, [sender, args]| func.call(store, sender.raw, timestamp.0, args.raw),
+            |func, store, [sender, args]| func.call(store, sender.0, timestamp.0, args.0),
         )
     }
 
@@ -364,7 +364,7 @@ impl host_actor::WasmInstance for WasmerInstance {
             },
             budget,
             [sender.to_vec()],
-            |func, store, [sender]| func.call(store, sender.raw, timestamp.0),
+            |func, store, [sender]| func.call(store, sender.0, timestamp.0),
         )
     }
 
@@ -380,7 +380,7 @@ impl WasmerInstance {
         points: ReducerBudget,
         bufs: [Vec<u8>; N_BUFS],
         // would be nicer if there was a TypedFunction::call_tuple(&self, store, ArgsTuple)
-        call: impl FnOnce(TypedFunction<Args, u32>, &mut Store, [Buffer; N_BUFS]) -> Result<u32, RuntimeError>,
+        call: impl FnOnce(TypedFunction<Args, u32>, &mut Store, [BufferIdx; N_BUFS]) -> Result<u32, RuntimeError>,
     ) -> (host_actor::EnergyStats, host_actor::ExecuteResult<RuntimeError>) {
         let store = &mut self.store;
         let instance = &self.instance;
@@ -391,7 +391,7 @@ impl WasmerInstance {
             .get_typed_function::<Args, u32>(store, reducer_symbol)
             .expect("invalid reducer");
 
-        let bufs = bufs.map(|data| self.env.as_mut(store).alloc_buf(data));
+        let bufs = bufs.map(|data| self.env.as_mut(store).buffers.insert(data));
 
         // let guard = pprof::ProfilerGuardBuilder::default().frequency(2500).build().unwrap();
 
@@ -399,19 +399,20 @@ impl WasmerInstance {
         log::trace!("Start reducer \"{}\"...", reducer_symbol);
         // pass ownership of the `ptr` allocation into the reducer
         let result = call(reduce, store, bufs).and_then(|errbuf| {
-            let errbuf = Buffer { raw: errbuf };
+            let errbuf = BufferIdx(errbuf);
             Ok(if errbuf.is_invalid() {
                 Ok(())
             } else {
                 let errmsg = self
                     .env
                     .as_mut(store)
-                    .take_buf(errbuf)
+                    .buffers
+                    .take(errbuf)
                     .ok_or_else(|| RuntimeError::new("invalid buffer handle"))?;
-                Err(crate::util::string_from_utf8_lossy_owned(errmsg.into()).into())
+                Err(crate::util::string_from_utf8_lossy_owned(errmsg).into())
             })
         });
-        self.env.as_mut(store).clear_bufs();
+        self.env.as_mut(store).buffers.clear();
         // .call(store, sender_buf.ptr.cast(), timestamp, args_buf.ptr, args_buf.len)
         // .and_then(|_| {});
         let duration = start.elapsed();

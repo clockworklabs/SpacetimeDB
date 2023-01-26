@@ -3,6 +3,8 @@ pub mod host_actor;
 
 use spacetimedb_lib::EntityDef;
 
+use crate::error::NodesError;
+
 pub const REDUCE_DUNDER: &str = "__reducer__";
 pub const DESCRIBE_REDUCER_DUNDER: &str = "__describe_reducer__";
 
@@ -225,4 +227,105 @@ pub enum ModuleCreationError {
     WasmCompileError(anyhow::Error),
     Abi(#[from] abi::AbiVersionError),
     Init(#[from] host_actor::InitializationError),
+}
+
+pub trait ResourceIndex {
+    type Resource;
+    fn from_u32(i: u32) -> Self;
+    fn to_u32(&self) -> u32;
+}
+
+macro_rules! decl_index {
+    ($name:ident => $resource:ty) => {
+        #[derive(Copy, Clone, wasmer::ValueType)]
+        #[repr(transparent)]
+        pub struct $name(pub u32);
+
+        impl ResourceIndex for $name {
+            type Resource = $resource;
+            fn from_u32(i: u32) -> Self {
+                Self(i)
+            }
+            fn to_u32(&self) -> u32 {
+                self.0
+            }
+        }
+    };
+}
+
+pub struct ResourceSlab<I: ResourceIndex> {
+    slab: slab::Slab<I::Resource>,
+}
+
+impl<I: ResourceIndex> Default for ResourceSlab<I> {
+    fn default() -> Self {
+        Self {
+            slab: slab::Slab::default(),
+        }
+    }
+}
+
+impl<I: ResourceIndex> ResourceSlab<I> {
+    pub fn insert(&mut self, data: I::Resource) -> I {
+        let idx = self.slab.insert(data) as u32;
+        I::from_u32(idx)
+    }
+
+    pub fn get(&self, handle: I) -> Option<&I::Resource> {
+        self.slab.get(handle.to_u32() as usize)
+    }
+
+    pub fn get_mut(&mut self, handle: I) -> Option<&mut I::Resource> {
+        self.slab.get_mut(handle.to_u32() as usize)
+    }
+
+    pub fn take(&mut self, handle: I) -> Option<I::Resource> {
+        self.slab.try_remove(handle.to_u32() as usize)
+    }
+
+    pub fn clear(&mut self) {
+        self.slab.clear()
+    }
+}
+
+decl_index!(BufferIdx => Vec<u8>);
+pub type Buffers = ResourceSlab<BufferIdx>;
+
+impl BufferIdx {
+    pub const INVALID: Self = Self(u32::MAX);
+
+    pub const fn is_invalid(&self) -> bool {
+        self.0 == Self::INVALID.0
+    }
+}
+
+decl_index!(BufferIterIdx => Box<dyn Iterator<Item = Result<Vec<u8>, NodesError>> + Send>);
+pub type BufferIters = ResourceSlab<BufferIterIdx>;
+
+pub mod errnos {
+    include!("../../../bindings-sys/src/errno.rs");
+
+    macro_rules! nothing {
+        ($($tt:tt)*) => {};
+    }
+    errnos!(nothing);
+}
+
+pub fn err_to_errno(err: &NodesError) -> Option<u16> {
+    match err {
+        NodesError::TableNotFound => Some(errnos::NOTAB),
+        NodesError::PrimaryKeyNotFound(_) => Some(errnos::LOOKUP),
+        NodesError::ColumnValueNotFound => Some(errnos::LOOKUP),
+        NodesError::RangeNotFound => Some(errnos::LOOKUP),
+        NodesError::AlreadyExists(_) => Some(errnos::EXISTS),
+        _ => None,
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("runtime error calling {func}: {err}")]
+pub struct AbiRuntimeError {
+    pub func: &'static str,
+    #[source]
+    pub err: NodesError,
 }
