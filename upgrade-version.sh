@@ -8,10 +8,14 @@ if [ $# != 1 ] ; then
 fi
 
 version="$1"
-declare -a crates=("spacetimedb-bindings" "spacetimedb-bindings-macro" "spacetimedb-bindings-sys" "spacetimedb-cli" "spacetimedb-lib")
+declare -a crates=("spacetimedb-bindings" "spacetimedb-bindings-macro" "spacetimedb-bindings-sys" "spacetimedb-cli" "spacetimedb-lib" "spacetimedb-client-api" "spacetimedb-core" "spacetimedb-standalone" "spacetimedb-cloud")
 
 upgrade_version() {
 	toml=crates/$1/Cargo.toml
+	if [ ! -f "$toml" ] ; then
+		echo "Invalid crate: $1"
+		exit 1
+	fi
 
 	# Upgrade the crate version
 	sed -i '3s/.*version.*/version = "'"${version}"'"/' "${toml}"
