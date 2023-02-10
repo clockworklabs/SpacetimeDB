@@ -3,7 +3,12 @@
 set -euo pipefail
 
 if [ "$USER" != "jenkins" ] ; then
-	echo "Error: This script is destructive and should only be executed from jenkins."
+	echo "Error: This script could be destructive and should only be executed from jenkins."
+	exit 1
+fi
+
+if [ $# != 1 ] ; then
+	echo "A branch name is required as an argument."
 	exit 1
 fi
 
@@ -14,7 +19,7 @@ CROSSBUILD_MACOS_SDK="macosx12.3"
 targets="aarch64-apple-darwin x86_64-apple-darwin"
 
 git fetch -a origin
-git checkout -f origin/live-cli
+git checkout -f "origin/$1"
 
 cd ./crates/spacetimedb-cli
 # Build macOS binaries

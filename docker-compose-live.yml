@@ -3,7 +3,7 @@ version: "3.6"
 services:
   node:
     working_dir: /usr/src/app
-    image: registry.digitalocean.com/clockwork/spacetimedb:latest
+    image: registry.digitalocean.com/clockwork/spacetimedb${REGISTRY_SUFFIX}:latest
     volumes:
       - /stdb
     command: start
@@ -21,6 +21,6 @@ services:
     restart: always
 
   prometheus:
-    image: registry.digitalocean.com/clockwork/spacetimedb_prometheus:latest
+    image: registry.digitalocean.com/clockwork/spacetimedb_prometheus${REGISTRY_SUFFIX}:latest
   grafana:
-    image: registry.digitalocean.com/clockwork/spacetimedb_grafana:latest
+    image: registry.digitalocean.com/clockwork/spacetimedb_grafana${REGISTRY_SUFFIX}:latest

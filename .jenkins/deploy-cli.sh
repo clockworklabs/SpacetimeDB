@@ -28,6 +28,12 @@ if [ ! -d "cli-bin" ] ; then
 	exit 1
 fi
 
+if [ ! -d "/var/www" ] ; then
+	echo "Creating www for the first time"
+	sudo mkdir /var/www
+	sudo chown -R jenkins:jenkins /var/www
+fi
+
 echo "Deploying files..."
 deploy spacetime.linux /var/www/install/spacetime.linux
 deploy spacetime.macos /var/www/install/spacetime.macos
