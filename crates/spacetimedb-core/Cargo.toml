@@ -67,6 +67,7 @@ strum = { version = "0.24.1", features = ["derive"] }
 scopeguard = "1.1.0"
 parking_lot = "0.12.1"
 uuid = { version = "1.2.1", features = ["v4"]}
+crossbeam-channel = "0.5"
 
 # Used for tracelog
 imara-diff = "0.1.3"

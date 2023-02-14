@@ -120,6 +120,7 @@ impl WasmerModule {
 
 impl host_actor::WasmModule for WasmerModule {
     type Instance = WasmerInstance;
+    type UninitInstance = UninitWasmerInstance;
 
     type ExternType = ExternType;
 
@@ -136,7 +137,7 @@ impl host_actor::WasmModule for WasmerModule {
             .try_for_each(|exp| func_names.update_from_general(exp.name(), exp.ty()))
     }
 
-    fn create_instance(&mut self, func_names: &FuncNames, env: InstanceEnv) -> anyhow::Result<Self::Instance> {
+    fn create_instance(&mut self, env: InstanceEnv) -> Self::UninitInstance {
         let mut store = Store::new(&self.engine);
         let env = WasmInstanceEnv {
             instance_env: env,
@@ -144,9 +145,29 @@ impl host_actor::WasmModule for WasmerModule {
             buffers: Default::default(),
         };
         let env = FunctionEnv::new(&mut store, env);
-        let import_object = self.imports(&mut store, &env);
+        let imports = self.imports(&mut store, &env);
+        UninitWasmerInstance {
+            store,
+            env,
+            imports,
+            module: self.module.clone(),
+        }
+    }
+}
 
-        let instance = Instance::new(&mut store, &self.module, &import_object)?;
+pub struct UninitWasmerInstance {
+    store: Store,
+    env: FunctionEnv<WasmInstanceEnv>,
+    imports: Imports,
+    module: Module,
+}
+
+impl host_actor::UninitWasmInstance for UninitWasmerInstance {
+    type Instance = WasmerInstance;
+
+    fn initialize(self, func_names: &FuncNames) -> anyhow::Result<Self::Instance> {
+        let Self { mut store, env, .. } = self;
+        let instance = Instance::new(&mut store, &self.module, &self.imports)?;
 
         let mem = Mem::extract(&instance.exports).context("couldn't access memory exports")?;
         env.as_mut(&mut store).mem = Some(mem);
@@ -258,6 +279,10 @@ impl host_actor::WasmInstance for WasmerInstance {
             map.insert(entity_name, description);
         }
         Ok(map)
+    }
+
+    fn instance_env(&self) -> &InstanceEnv {
+        &self.env.as_ref(&self.store).instance_env
     }
 
     type Trap = wasmer::RuntimeError;

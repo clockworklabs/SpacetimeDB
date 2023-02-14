@@ -40,13 +40,12 @@ impl InstanceEnv {
     pub fn new(
         worker_database_instance: WorkerDatabaseInstance,
         scheduler: Scheduler,
-        tx: TxSlot,
         trace_log: Option<Arc<Mutex<TraceLog>>>,
     ) -> Self {
         Self {
             worker_database_instance,
             scheduler,
-            tx,
+            tx: TxSlot::default(),
             trace_log,
         }
     }

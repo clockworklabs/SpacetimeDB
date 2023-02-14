@@ -147,14 +147,19 @@ impl HostController {
             module_host.exit().await?;
         }
 
-        let module_host = match worker_database_instance.host_type {
-            HostType::Wasmer => ModuleHost::spawn(host_wasmer::make_actor(
-                worker_database_instance,
-                module_hash,
-                program_bytes,
-                self.scheduler.clone(),
-            )?),
-        };
+        let scheduler = self.scheduler.clone();
+        let module_host = tokio::task::spawn_blocking(move || {
+            anyhow::Ok(match worker_database_instance.host_type {
+                HostType::Wasmer => ModuleHost::spawn(host_wasmer::make_actor(
+                    worker_database_instance,
+                    module_hash,
+                    program_bytes,
+                    scheduler,
+                )?),
+            })
+        })
+        .await
+        .unwrap()?;
 
         let mut modules = self.modules.lock().unwrap();
         modules.insert(key, module_host.clone());

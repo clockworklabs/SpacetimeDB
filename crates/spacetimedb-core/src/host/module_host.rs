@@ -87,31 +87,23 @@ impl ModuleHostCommand {
                 caller_identity,
                 connected,
                 respond_to,
-            } => {
-                let _ = respond_to.send(actor.call_connect_disconnect(caller_identity, connected));
-            }
+            } => actor.call_connect_disconnect(caller_identity, connected, respond_to),
             ModuleHostCommand::CallReducer {
                 caller_identity,
                 reducer_name,
                 budget,
                 args,
                 respond_to,
-            } => {
-                let _ = respond_to.send(actor.call_reducer(caller_identity, reducer_name, budget, args));
-            }
+            } => actor.call_reducer(caller_identity, reducer_name, budget, args, respond_to),
             ModuleHostCommand::InitDatabase {
                 budget,
                 args,
                 respond_to,
-            } => {
-                let _ = respond_to.send(actor.init_database(budget, args));
-            }
+            } => actor.init_database(budget, args, respond_to),
             ModuleHostCommand::DeleteDatabase { respond_to } => {
                 let _ = respond_to.send(actor.delete_database());
             }
-            ModuleHostCommand::_MigrateDatabase { respond_to } => {
-                let _ = respond_to.send(actor._migrate_database());
-            }
+            ModuleHostCommand::_MigrateDatabase { respond_to } => actor._migrate_database(respond_to),
             ModuleHostCommand::AddSubscriber { client_id, respond_to } => {
                 let _ = respond_to.send(actor.subscription().add_subscriber(client_id));
             }
@@ -146,21 +138,23 @@ pub struct ModuleInfo {
 pub trait ModuleHostActor: Send + 'static {
     fn info(&self) -> Arc<ModuleInfo>;
     fn subscription(&self) -> &ModuleSubscription;
-    fn call_connect_disconnect(&mut self, caller_identity: Hash, connected: bool);
+    fn call_connect_disconnect(&mut self, caller_identity: Hash, connected: bool, respond_to: oneshot::Sender<()>);
     fn call_reducer(
         &mut self,
         caller_identity: Hash,
         reducer_name: String,
         budget: ReducerBudget,
         args: TupleValue,
-    ) -> ReducerCallResult;
+        respond_to: oneshot::Sender<ReducerCallResult>,
+    );
     fn init_database(
         &mut self,
         budget: ReducerBudget,
         args: TupleValue,
-    ) -> Result<Option<ReducerCallResult>, anyhow::Error>;
+        respond_to: oneshot::Sender<Result<Option<ReducerCallResult>, anyhow::Error>>,
+    );
     fn delete_database(&mut self) -> Result<(), anyhow::Error>;
-    fn _migrate_database(&mut self) -> Result<(), anyhow::Error>;
+    fn _migrate_database(&mut self, respond_to: oneshot::Sender<Result<(), anyhow::Error>>);
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
     #[cfg(feature = "tracelogging")]
@@ -177,13 +171,13 @@ impl ModuleHost {
     pub fn spawn(actor: Box<impl ModuleHostActor>) -> Self {
         let (tx, rx) = mpsc::channel(8);
         let info = actor.info();
-        tokio::spawn(Self::run_actor(rx, actor));
+        tokio::task::spawn_blocking(|| Self::run_actor(rx, actor));
         ModuleHost { info, tx }
     }
 
-    async fn run_actor(mut rx: mpsc::Receiver<CmdOrExit>, mut actor: Box<impl ModuleHostActor>) {
+    fn run_actor(mut rx: mpsc::Receiver<CmdOrExit>, mut actor: Box<impl ModuleHostActor>) {
         let actor = &mut *actor;
-        while let Some(command) = rx.recv().await {
+        while let Some(command) = rx.blocking_recv() {
             match command {
                 CmdOrExit::Cmd(command) => command.dispatch(actor),
                 CmdOrExit::Exit => rx.close(),

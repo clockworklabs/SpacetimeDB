@@ -28,7 +28,7 @@ pub fn main() {
 
     let wdi = WorkerDatabaseInstance::new(0, 0, HostType::Wasmer, false, identity, address, db_path, logger_path);
 
-    let iv = InstanceEnv::new(wdi, Scheduler::dummy(), Default::default(), None);
+    let iv = InstanceEnv::new(wdi, Scheduler::dummy(), None);
 
     let tx = iv.worker_database_instance.relational_db.begin_tx();
     let trace_log = File::open(replay_file.to_str().unwrap()).unwrap();

@@ -1,20 +1,18 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
-use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use parking_lot::Mutex;
-use slab::Slab;
 use spacetimedb_lib::{EntityDef, TupleValue};
+use tokio::sync::oneshot;
 
 use crate::db::messages::transaction::Transaction;
 use crate::db::transactional_db::CommitResult;
 use crate::hash::Hash;
 use crate::host::host_controller::{ReducerBudget, ReducerCallResult, Scheduler};
-use crate::host::instance_env::{InstanceEnv, TxSlot};
+use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHostActor, ModuleInfo};
 use crate::host::timestamp::Timestamp;
 use crate::host::tracelog::instance_trace::TraceLog;
@@ -24,19 +22,30 @@ use crate::worker_metrics::{REDUCER_COMPUTE_TIME, REDUCER_COUNT, REDUCER_WRITE_S
 
 use super::*;
 
+const MSG_CHANNEL_CAP: usize = 8;
+const MSG_CHANNEL_TIMEOUT: Duration = Duration::from_millis(500);
+
 pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
+    type UninitInstance: UninitWasmInstance<Instance = Self::Instance>;
 
     type ExternType: for<'a> PartialEq<FuncSig<'a>> + fmt::Debug;
     fn get_export(&self, s: &str) -> Option<Self::ExternType>;
 
     fn fill_general_funcnames(&self, func_names: &mut FuncNames) -> anyhow::Result<()>;
 
-    fn create_instance(&mut self, func_names: &FuncNames, env: InstanceEnv) -> anyhow::Result<Self::Instance>;
+    fn create_instance(&mut self, env: InstanceEnv) -> Self::UninitInstance;
+}
+
+pub trait UninitWasmInstance: Send + 'static {
+    type Instance: WasmInstance;
+    fn initialize(self, func_names: &FuncNames) -> anyhow::Result<Self::Instance>;
 }
 
 pub trait WasmInstance: Send + 'static {
     fn extract_descriptions(&mut self) -> anyhow::Result<HashMap<String, EntityDef>>;
+
+    fn instance_env(&self) -> &InstanceEnv;
 
     type Trap;
 
@@ -86,15 +95,32 @@ pub(crate) struct WasmModuleHostActor<T: WasmModule> {
     module: T,
     worker_database_instance: WorkerDatabaseInstance,
     // store: Store,
-    instances: Slab<(TxSlot, RefCell<T::Instance>)>,
     subscription: ModuleSubscription,
     #[allow(dead_code)]
     // Don't warn about 'trace_log' below when tracelogging feature isn't enabled.
     trace_log: Option<Arc<Mutex<TraceLog>>>,
     scheduler: Scheduler,
-    func_names: FuncNames,
+    func_names: Arc<FuncNames>,
+
+    msg_tx: crossbeam_channel::Sender<InstanceMessage>,
+    msg_rx: crossbeam_channel::Receiver<InstanceMessage>,
 
     info: Arc<ModuleInfo>,
+
+    instance_count: Arc<()>,
+}
+
+enum InitOrUninit<T: UninitWasmInstance> {
+    Init(T::Instance),
+    Uninit(T),
+}
+impl<T: UninitWasmInstance> InitOrUninit<T> {
+    fn initialize(self, func_names: &FuncNames) -> anyhow::Result<T::Instance> {
+        match self {
+            InitOrUninit::Init(inst) => Ok(inst),
+            InitOrUninit::Uninit(uninit) => uninit.initialize(func_names),
+        }
+    }
 }
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
@@ -117,19 +143,13 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let relational_db = worker_database_instance.relational_db.clone();
         let subscription = ModuleSubscription::spawn(relational_db);
 
-        let mut instances = Slab::new();
-        let instance_slot = instances.vacant_entry();
-
-        let instance_tx = TxSlot::default();
-        let mut instance = module.create_instance(
-            &func_names,
-            InstanceEnv::new(
+        let mut instance = module
+            .create_instance(InstanceEnv::new(
                 worker_database_instance.clone(),
                 scheduler.clone(),
-                instance_tx.clone(),
                 trace_log.clone(),
-            ),
-        )?;
+            ))
+            .initialize(&func_names)?;
 
         let description_cache = instance.extract_descriptions()?;
         description_cache
@@ -142,45 +162,79 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             catalog: description_cache,
         });
 
-        instance_slot.insert((instance_tx, RefCell::new(instance)));
+        let func_names = Arc::new(func_names);
+        let (msg_tx, msg_rx) = crossbeam_channel::bounded(MSG_CHANNEL_CAP);
 
-        let mut host_actor = Box::new(Self {
+        let this = Box::new(Self {
             module,
             worker_database_instance,
-            instances,
+            msg_tx,
+            msg_rx,
             subscription,
             trace_log,
             scheduler,
             func_names,
             info,
+            instance_count: Arc::new(()),
         });
-        if false {
-            // silence warning
-            // TODO: actually utilize this
-            let _ = host_actor.create_instance();
-        }
-        Ok(host_actor)
+
+        this._spawn_instance(InitOrUninit::Init(instance));
+
+        Ok(this)
     }
 
-    fn create_instance(&mut self) -> anyhow::Result<usize> {
-        let slot = self.instances.vacant_entry();
-        let key = slot.key();
-        let tx = TxSlot::default();
+    fn spawn_instance(&mut self) {
         let env = InstanceEnv::new(
             self.worker_database_instance.clone(),
             self.scheduler.clone(),
-            tx.clone(),
             self.trace_log.clone(),
         );
-        slot.insert((tx, RefCell::new(self.module.create_instance(&self.func_names, env)?)));
-        Ok(key)
+        let instance = self.module.create_instance(env);
+        self._spawn_instance(InitOrUninit::Uninit(instance))
+    }
+    fn _spawn_instance(&self, instance: InitOrUninit<T::UninitInstance>) {
+        let instance_count = self.instance_count.clone();
+        let (func_names, info) = (self.func_names.clone(), self.info.clone());
+        let (msg_rx, subscription) = (self.msg_rx.clone(), self.subscription.clone());
+        tokio::task::spawn_blocking(|| {
+            // this shouldn't fail, since we already called module.create_instance()
+            // before and it didn't error, and ideally they should be deterministic
+            let instance = instance.initialize(&func_names).expect("failed to initialize instance");
+            WasmInstanceActor {
+                instance,
+                func_names,
+                info,
+                msg_rx,
+                subscription,
+            }
+            .run();
+            drop(instance_count);
+        });
     }
 
-    fn select_instance(&self) -> (&TxSlot, impl DerefMut<Target = T::Instance> + '_) {
-        // TODO: choose one at random or whatever
-        // These should be their own worker threads?
-        let (tx_slot, instance) = &self.instances[0];
-        (tx_slot, instance.borrow_mut())
+    fn send(&mut self, mut msg: InstanceMessage) {
+        if true {
+            // this can never actually be a SendError, since we're holding
+            // onto a msg_rx ourselves, so the channel won't close
+            let _ = self.msg_tx.send(msg);
+        } else {
+            // TODO: implement reducer retries and have multiple instance threads
+            loop {
+                match self.msg_tx.send_timeout(msg, MSG_CHANNEL_TIMEOUT) {
+                    Ok(()) => break,
+                    // this can never actually be a SendTimeoutError::Disconnected, since we're holding
+                    // onto a msg_rx ourselves, so the channel won't close
+                    Err(err) => {
+                        msg = err.into_inner();
+                        let instance_count = Arc::strong_count(&self.instance_count) - 1;
+                        // TODO: better heuristics
+                        if instance_count < 8 {
+                            self.spawn_instance()
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -197,37 +251,13 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
         &mut self,
         budget: ReducerBudget,
         args: TupleValue,
-    ) -> Result<Option<ReducerCallResult>, anyhow::Error> {
-        let mut stdb_ = self.worker_database_instance.relational_db.lock().unwrap();
-        let mut tx_ = stdb_.begin_tx();
-        let (tx, stdb) = tx_.get();
-        self.info
-            .catalog
-            .iter()
-            .filter_map(|(name, entity)| match entity {
-                EntityDef::Table(t) => Some((name, t)),
-                _ => None,
-            })
-            .try_for_each(|(name, table)| {
-                stdb.create_table(tx, name, table.tuple.clone())
-                    .map(drop)
-                    .with_context(|| format!("failed to create table {name}"))
-            })?;
-        tx_.commit()?.expect("TODO: retry?");
-        drop(stdb_);
-
-        let rcr = self.info.catalog.contains_key(INIT_DUNDER).then(|| {
-            self.call_reducer(
-                self.worker_database_instance.identity,
-                INIT_DUNDER.to_owned(),
-                budget,
-                args,
-            )
-        });
-
-        // TODO: call __create_index__IndexName
-
-        Ok(rcr)
+        respond_to: oneshot::Sender<Result<Option<ReducerCallResult>, anyhow::Error>>,
+    ) {
+        self.send(InstanceMessage::InitDatabase {
+            budget,
+            args,
+            respond_to,
+        })
     }
 
     fn delete_database(&mut self) -> Result<(), anyhow::Error> {
@@ -237,17 +267,8 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
         Ok(())
     }
 
-    fn _migrate_database(&mut self) -> Result<(), anyhow::Error> {
-        // TODO: figure out a better way to do this? all in one transaction? have to make sure not
-        // to forget about EnergyStats if one returns an error
-        for (i, name) in self.func_names.migrates.iter().enumerate() {
-            self.with_tx(name, |inst| {
-                inst.call_migrate(&self.func_names, i, ReducerBudget(DEFAULT_EXECUTION_BUDGET))
-            });
-        }
-
-        // TODO: call __create_index__IndexName
-        Ok(())
+    fn _migrate_database(&mut self, respond_to: oneshot::Sender<Result<(), anyhow::Error>>) {
+        self.send(InstanceMessage::MigrateDatabase { respond_to })
     }
 
     #[cfg(feature = "tracelogging")]
@@ -269,7 +290,125 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
 
     #[cfg(feature = "tracelogging")]
     fn stop_trace(&mut self) -> Result<(), anyhow::Error> {
+        // TODO: figure out if we need to communicate this to all of our instances too
         self.trace_log = None;
+        Ok(())
+    }
+
+    fn call_connect_disconnect(&mut self, caller_identity: Hash, connected: bool, respond_to: oneshot::Sender<()>) {
+        self.send(InstanceMessage::CallConnectDisconnect {
+            caller_identity,
+            connected,
+            respond_to,
+        });
+    }
+
+    fn call_reducer(
+        &mut self,
+        caller_identity: Hash,
+        reducer_name: String,
+        budget: ReducerBudget,
+        args: TupleValue,
+        respond_to: oneshot::Sender<ReducerCallResult>,
+    ) {
+        self.send(InstanceMessage::CallReducer {
+            caller_identity,
+            reducer_name,
+            budget,
+            args,
+            respond_to,
+        })
+    }
+}
+
+struct WasmInstanceActor<T: WasmInstance> {
+    instance: T,
+    func_names: Arc<FuncNames>,
+    info: Arc<ModuleInfo>,
+    msg_rx: crossbeam_channel::Receiver<InstanceMessage>,
+    subscription: ModuleSubscription,
+}
+
+impl<T: WasmInstance> WasmInstanceActor<T> {
+    fn worker_database_instance(&self) -> &WorkerDatabaseInstance {
+        &self.instance.instance_env().worker_database_instance
+    }
+
+    fn run(mut self) {
+        while let Ok(msg) = self.msg_rx.recv() {
+            match msg {
+                InstanceMessage::InitDatabase {
+                    budget,
+                    args,
+                    respond_to,
+                } => {
+                    let _ = respond_to.send(self.init_database(budget, args));
+                }
+                InstanceMessage::CallConnectDisconnect {
+                    caller_identity,
+                    connected,
+                    respond_to,
+                } => {
+                    let _ = respond_to.send(self.call_connect_disconnect(caller_identity, connected));
+                }
+                InstanceMessage::CallReducer {
+                    caller_identity,
+                    reducer_name,
+                    budget,
+                    args,
+                    respond_to,
+                } => {
+                    let _ = respond_to.send(self.call_reducer(caller_identity, reducer_name, budget, args));
+                }
+                InstanceMessage::MigrateDatabase { respond_to } => {
+                    let _ = respond_to.send(self.migrate_database());
+                }
+                InstanceMessage::Exit => break,
+            }
+        }
+    }
+
+    fn init_database(&mut self, budget: ReducerBudget, args: TupleValue) -> anyhow::Result<Option<ReducerCallResult>> {
+        let mut stdb_ = self.worker_database_instance().relational_db.lock().unwrap();
+        let mut tx_ = stdb_.begin_tx();
+        let (tx, stdb) = tx_.get();
+        self.info
+            .catalog
+            .iter()
+            .filter_map(|(name, entity)| match entity {
+                EntityDef::Table(t) => Some((name, t)),
+                _ => None,
+            })
+            .try_for_each(|(name, table)| {
+                stdb.create_table(tx, name, table.tuple.clone())
+                    .map(drop)
+                    .with_context(|| format!("failed to create table {name}"))
+            })?;
+        tx_.commit()?.expect("TODO: retry?");
+        drop(stdb_);
+
+        let rcr = self.info.catalog.contains_key(INIT_DUNDER).then(|| {
+            self.call_reducer(
+                self.worker_database_instance().identity,
+                INIT_DUNDER.to_owned(),
+                budget,
+                args,
+            )
+        });
+
+        // TODO: call __create_index__IndexName
+
+        Ok(rcr)
+    }
+
+    fn migrate_database(&mut self) -> Result<(), anyhow::Error> {
+        // TODO: figure out a better way to do this? all in one transaction? have to make sure not
+        // to forget about EnergyStats if one returns an error
+        for idx in 0..self.func_names.migrates.len() {
+            self.execute(ReducerBudget(DEFAULT_EXECUTION_BUDGET), InstanceOp::Migrate { idx });
+        }
+
+        // TODO: call __create_index__IndexName
         Ok(())
     }
 
@@ -282,10 +421,6 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
     ) -> ReducerCallResult {
         let start_instant = Instant::now();
 
-        let EntityDef::Reducer(reducer_descr) = &self.info.catalog[&reducer_name] else {
-            unreachable!() // ModuleHost::call_reducer should've already ensured this is ok
-        };
-
         let timestamp = Timestamp::now();
 
         log::trace!("Calling reducer {} with a budget of {}", reducer_name, budget.0);
@@ -293,10 +428,16 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
         let mut arg_bytes = Vec::new();
         args.encode(&mut arg_bytes);
 
-        let reducer_symbol = format!("{}{}", REDUCE_DUNDER, reducer_name);
-        let ReducerResult { tx, energy } = self.with_tx(&reducer_symbol, |inst| {
-            inst.call_reducer(&reducer_symbol, budget, &caller_identity.data, timestamp, arg_bytes)
-        });
+        let reducer_symbol = [REDUCE_DUNDER, &reducer_name].concat();
+        let ReducerResult { tx, energy } = self.execute(
+            budget,
+            InstanceOp::Reducer {
+                sym: &reducer_symbol,
+                sender: &caller_identity,
+                timestamp,
+                arg_bytes,
+            },
+        );
 
         let (committed, status, budget_exceeded) = if let Some(tx) = tx {
             (true, EventStatus::Committed(tx.writes), false)
@@ -309,6 +450,9 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
 
         let host_execution_duration = start_instant.elapsed();
 
+        let EntityDef::Reducer(reducer_descr) = &self.info.catalog[&reducer_name] else {
+            unreachable!() // ModuleHost::call_reducer should've already ensured this is ok
+        };
         let arg_bytes = serde_json::to_vec(&args.serialize_args_with_schema(reducer_descr)).unwrap();
         let event = ModuleEvent {
             timestamp,
@@ -345,22 +489,25 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
 
         let timestamp = Timestamp::now();
 
+        let result = self.execute(
+            ReducerBudget(DEFAULT_EXECUTION_BUDGET),
+            InstanceOp::ConnDisconn {
+                conn: connected,
+                sender: &identity,
+                timestamp,
+            },
+        );
+
+        let status = if let Some(tx) = result.tx {
+            EventStatus::Committed(tx.writes)
+        } else {
+            EventStatus::Failed
+        };
+
         let reducer_symbol = if connected {
             IDENTITY_CONNECTED_DUNDER
         } else {
             IDENTITY_DISCONNECTED_DUNDER
-        };
-
-        let budget = ReducerBudget(DEFAULT_EXECUTION_BUDGET);
-        let result = self.with_tx(reducer_symbol, |inst| {
-            inst.call_connect_disconnect(connected, budget, &identity.data, timestamp)
-        });
-        let tx = result.tx;
-
-        let status = if let Some(tx) = tx {
-            EventStatus::Committed(tx.writes)
-        } else {
-            EventStatus::Failed
         };
 
         // TODO(cloutiertyler): We need to think about how to handle this special
@@ -380,24 +527,43 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
         };
         self.subscription.broadcast_event(event).unwrap();
     }
-}
 
-impl<T: WasmModule> WasmModuleHostActor<T> {
-    fn with_tx(
-        &self,
-        func_ident: &str,
-        f: impl FnOnce(&mut T::Instance) -> (EnergyStats, ExecuteResult<<T::Instance as WasmInstance>::Trap>),
-    ) -> ReducerResult {
-        let address = &self.worker_database_instance.address.to_abbreviated_hex();
+    fn execute(&mut self, budget: ReducerBudget, op: InstanceOp<'_>) -> ReducerResult {
+        let address = &self.worker_database_instance().address.to_abbreviated_hex();
+        let func_ident = match op {
+            InstanceOp::Reducer { sym, .. } => sym,
+            InstanceOp::Migrate { idx, .. } => &self.func_names.migrates[idx],
+            InstanceOp::ConnDisconn { conn, .. } => {
+                if conn {
+                    IDENTITY_CONNECTED_DUNDER
+                } else {
+                    IDENTITY_DISCONNECTED_DUNDER
+                }
+            }
+        };
         REDUCER_COUNT.with_label_values(&[address, func_ident]).inc();
 
-        let tx = self.worker_database_instance.relational_db.begin_tx();
+        let tx = self.worker_database_instance().relational_db.begin_tx();
 
-        let (tx_slot, mut instance) = self.select_instance();
-
-        let (tx, (energy, result)) = tx_slot.set(tx, || f(&mut instance));
-
-        drop(instance);
+        let tx_slot = self.instance.instance_env().tx.clone();
+        let (tx, (energy, result)) = tx_slot.set(tx, || match op {
+            InstanceOp::Reducer {
+                sym,
+                sender,
+                timestamp,
+                arg_bytes,
+            } => self
+                .instance
+                .call_reducer(sym, budget, &sender.data, timestamp, arg_bytes),
+            InstanceOp::Migrate { idx } => self.instance.call_migrate(&self.func_names, idx, budget),
+            InstanceOp::ConnDisconn {
+                conn,
+                sender,
+                timestamp,
+            } => self
+                .instance
+                .call_connect_disconnect(conn, budget, &sender.data, timestamp),
+        });
 
         let ExecuteResult {
             execution_time,
@@ -429,7 +595,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             Err(err) => {
                 tx.rollback();
 
-                T::Instance::log_traceback("reducer", func_ident, &err);
+                T::log_traceback("reducer", func_ident, &err);
                 // TODO: discard instance on trap? there are likely memory leaks
                 ReducerResult { tx: None, energy }
             }
@@ -443,7 +609,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             Ok(Ok(())) => {
                 if let Some(CommitResult { tx, commit_bytes }) = tx.commit().unwrap() {
                     if let Some(commit_bytes) = commit_bytes {
-                        let mut mlog = self.worker_database_instance.message_log.lock().unwrap();
+                        let mut mlog = self.worker_database_instance().message_log.lock().unwrap();
                         REDUCER_WRITE_SIZE
                             .with_label_values(&[address, func_ident])
                             .observe(commit_bytes.len() as f64);
@@ -457,4 +623,47 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             }
         }
     }
+}
+
+enum InstanceOp<'a> {
+    Reducer {
+        sym: &'a str,
+        sender: &'a Hash,
+        timestamp: Timestamp,
+        arg_bytes: Vec<u8>,
+    },
+    Migrate {
+        idx: usize,
+    },
+    ConnDisconn {
+        conn: bool,
+        sender: &'a Hash,
+        timestamp: Timestamp,
+    },
+}
+
+enum InstanceMessage {
+    InitDatabase {
+        budget: ReducerBudget,
+        args: TupleValue,
+        respond_to: oneshot::Sender<Result<Option<ReducerCallResult>, anyhow::Error>>,
+    },
+    CallConnectDisconnect {
+        caller_identity: Hash,
+        connected: bool,
+        respond_to: oneshot::Sender<()>,
+    },
+    CallReducer {
+        caller_identity: Hash,
+        reducer_name: String,
+        budget: ReducerBudget,
+        args: TupleValue,
+        respond_to: oneshot::Sender<ReducerCallResult>,
+    },
+    MigrateDatabase {
+        respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+    },
+    // TODO: some heuristic to figure out when we should cull instances due to lack of use
+    #[allow(unused)]
+    Exit,
 }

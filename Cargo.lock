@@ -3284,6 +3284,7 @@ dependencies = [
  "bytes",
  "clap 4.0.32",
  "criterion",
+ "crossbeam-channel",
  "email_address",
  "flate2",
  "fs2",
