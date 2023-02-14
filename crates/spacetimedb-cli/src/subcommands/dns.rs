@@ -117,7 +117,11 @@ pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), 
         .await
         .unwrap();
 
-    let query_params = vec![("domain", domain), ("address", address)];
+    let query_params = vec![
+        ("domain", domain.clone()),
+        ("address", address.clone()),
+        ("register_tld", "true".to_string()),
+    ];
     let builder = reqwest::Client::new()
         .get(Url::parse_with_params(
             format!("{}/database/set_name", config.get_host_url()).as_str(),

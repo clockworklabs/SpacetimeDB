@@ -64,6 +64,7 @@ impl ControlDb {
         address: &Address,
         domain: &str,
         owner_identity: Hash,
+        try_register_tld: bool,
     ) -> Result<InsertDomainResult, anyhow::Error> {
         if self.spacetime_dns(domain).await?.is_some() {
             return Err(anyhow::anyhow!("Record for name '{}' already exists. ", domain));
@@ -78,9 +79,23 @@ impl ControlDb {
                 }
             }
             None => {
-                return Ok(InsertDomainResult::TldNotRegistered {
-                    domain: domain.to_string(),
-                });
+                if try_register_tld {
+                    let parsed = parse_domain_name(domain)?;
+                    // Let's try to automatically register this TLD for the identity
+                    let result = CONTROL_DB
+                        .spacetime_register_tld(parsed.tld.as_str(), owner_identity)
+                        .await?;
+                    if let RegisterTldResult::Success { .. } = result {
+                        // This identity now owns this TLD
+                    } else {
+                        // This is technically possibly due to race conditions
+                        return Err(anyhow::anyhow!("Failed to register domain."));
+                    }
+                } else {
+                    return Ok(InsertDomainResult::TldNotRegistered {
+                        domain: domain.to_string(),
+                    });
+                }
             }
         }
 

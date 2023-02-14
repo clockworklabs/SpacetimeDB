@@ -85,6 +85,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let mut query_params = Vec::<(&str, &str)>::new();
     query_params.push(("host_type", host_type.as_str()));
+    query_params.push(("register_tld", "true"));
 
     // If a domain or address was provided, we should locally make sure it looks correct and
     // append it as a query parameter
@@ -174,26 +175,18 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                     if let Some(sub_domain) = parsed_domain.sub_domain {
                         Err(anyhow::anyhow!(
                             "The top level domain {} is not registered to the identity you provided.\n\
-                        We suggest you register a new tld:\n\
-                        \tspacetime dns register-tld {}\n\
-                        \n\
-                        And then push to the domain that uses that tld:\n\
+                        We suggest you publish to a domain that starts with a TLD owned by you, or publish to a new domain like:\n\
                         \tspacetime publish {}/{}\n",
                             parsed_domain.tld,
-                            suggested_tld,
                             suggested_tld,
                             sub_domain
                         ))
                     } else {
                         Err(anyhow::anyhow!(
                             "The top level domain {} is not registered to the identity you provided.\n\
-                        We suggest you register a new tld:\n\
-                        \tspacetime dns register-tld {}\n\
-                        \n\
-                        And then push to the domain that uses that tld:\n\
+                        We suggest you push to either a domain owned by you, or a new domain like:\n\
                         \tspacetime publish {}\n",
                             parsed_domain.tld,
-                            suggested_tld,
                             suggested_tld
                         ))
                     }

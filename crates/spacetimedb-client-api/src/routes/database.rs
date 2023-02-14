@@ -546,6 +546,7 @@ struct PublishDatabaseQueryParams {
     clear: Option<bool>,
     name_or_address: Option<String>,
     trace_log: Option<bool>,
+    register_tld: Option<bool>,
 }
 
 #[cfg(not(feature = "tracelogging"))]
@@ -565,6 +566,7 @@ async fn publish(ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHandlerRes
         host_type,
         clear,
         trace_log,
+        register_tld,
     } = PublishDatabaseQueryParams::take_from(state);
     let clear = clear.unwrap_or(false);
 
@@ -594,7 +596,12 @@ async fn publish(ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHandlerRes
                 // Create a new DNS record and a new address to assign to it
                 let address = CONTROL_DB.alloc_spacetime_address().await?;
                 let result = CONTROL_DB
-                    .spacetime_insert_domain(&address, &name_or_address, caller_identity)
+                    .spacetime_insert_domain(
+                        &address,
+                        &name_or_address,
+                        caller_identity,
+                        register_tld.unwrap_or_default(),
+                    )
                     .await?;
                 match result {
                     InsertDomainResult::Success { .. } => {}
@@ -750,10 +757,15 @@ async fn delete_database(ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHa
 struct SetNameQueryParams {
     domain: String,
     address: String,
+    register_tld: Option<bool>,
 }
 
 async fn set_name(ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHandlerResult {
-    let SetNameQueryParams { address, domain } = SetNameQueryParams::take_from(state);
+    let SetNameQueryParams {
+        address,
+        domain,
+        register_tld,
+    } = SetNameQueryParams::take_from(state);
 
     let headers = state.borrow::<HeaderMap>();
     let auth_header = headers.get(AUTHORIZATION);
@@ -776,7 +788,7 @@ async fn set_name(ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHandlerRe
     }
 
     let response = CONTROL_DB
-        .spacetime_insert_domain(&address, &domain, caller_identity)
+        .spacetime_insert_domain(&address, &domain, caller_identity, register_tld.unwrap_or_default())
         .await?;
 
     let json = serde_json::to_string(&response)?;
