@@ -9,13 +9,13 @@ set -euox pipefail
 
 source "./.test/lib.include"
 
-run_test cargo run identity new
+run_test cargo run identity new --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
 TOKEN=$(grep token "$HOME/.spacetime/config.toml" | awk '{print $3}' | tr -d \')
 
 reset_config
 
-run_test cargo run identity add "$IDENT" "$TOKEN"
-run_test cargo run identity ls
+run_test cargo run identity import "$IDENT" "$TOKEN"
+run_test cargo run identity list
 exit 0
 [ "$(grep "$IDENT" "$TEST_OUT" | awk '{print $1}')" == '***' ]

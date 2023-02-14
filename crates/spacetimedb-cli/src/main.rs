@@ -18,6 +18,7 @@ fn get_command() -> Command {
         .args_conflicts_with_subcommands(true)
         .subcommand_required(true)
         .subcommands(get_subcommands())
+        .help_expected(true)
         .help_template(
             "\
 ┌──────────────────────────────────────────────────────────┐

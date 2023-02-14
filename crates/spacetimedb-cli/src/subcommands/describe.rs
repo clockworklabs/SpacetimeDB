@@ -1,34 +1,45 @@
 use crate::config::Config;
 use crate::util::{get_auth_header, spacetime_dns};
+use clap::Arg;
 use clap::ArgAction::SetTrue;
 use clap::ArgMatches;
-use clap::{Arg, ArgAction};
+use spacetimedb_lib::name::{is_address, DnsLookupResponse};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("describe")
         .about("Describe the structure of a database or entities within it")
-        .arg(Arg::new("database").required(true))
+        .arg(
+            Arg::new("database")
+                .required(true)
+                .help("The domain or address of the database to describe"),
+        )
         .arg(
             Arg::new("entity_type")
-                .required(false)
-                .value_parser(["reducer", "table"]),
+                .value_parser(["reducer", "table"])
+                .help("Whether to describe a reducer or table"),
         )
-        .arg(Arg::new("entity_name").required(false).requires("entity_type"))
-        .arg(Arg::new("brief").long("brief").short('b').action(SetTrue))
+        .arg(
+            Arg::new("entity_name")
+                .requires("entity_type")
+                .help("The name of the entity to describe"),
+        )
+        .arg(Arg::new("brief").long("brief").short('b').action(SetTrue)
+            .help("If this flag is present, a brief description shall be returned"))
         .arg(
             Arg::new("as_identity")
                 .long("as-identity")
                 .short('i')
-                .required(false)
-                .conflicts_with("anon_identity"),
+                .conflicts_with("anon_identity")
+                .help("The identity to use to describe the entity")
+                .long_help("The identity to use to describe the entity. If no identity is provided, the default one will be used."),
         )
         .arg(
             Arg::new("anon_identity")
                 .long("anon-identity")
                 .short('a')
-                .required(false)
                 .conflicts_with("as_identity")
-                .action(ArgAction::SetTrue),
+                .action(SetTrue)
+                .help("If this flag is present, no identity will be provided when describing the database"),
         )
         .after_help("Run `spacetime help describe` for more detailed information.\n")
 }
@@ -42,12 +53,19 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let as_identity = args.get_one::<String>("as_identity");
     let anon_identity = args.get_flag("anon_identity");
 
-    let auth_header = get_auth_header(&mut config, anon_identity, as_identity.map(|x| x.as_str())).await;
+    let auth_header = get_auth_header(&mut config, anon_identity, as_identity.map(|x| x.as_str()))
+        .await
+        .map(|x| x.0);
 
-    let address = if let Ok(address) = spacetime_dns(&config, database).await {
-        address
+    let address = if is_address(database.as_str()) {
+        database.clone()
     } else {
-        database.to_string()
+        match spacetime_dns(&config, database).await? {
+            DnsLookupResponse::Success { domain: _, address } => address,
+            DnsLookupResponse::Failure { domain } => {
+                return Err(anyhow::anyhow!("The dns resolution of {} failed.", domain));
+            }
+        }
     };
 
     let res = match entity_name {

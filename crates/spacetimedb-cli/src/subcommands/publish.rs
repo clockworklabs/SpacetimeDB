@@ -2,8 +2,8 @@ use clap::Arg;
 
 use clap::ArgAction::SetTrue;
 use clap::ArgMatches;
-use serde::Deserialize;
-use serde::Serialize;
+use reqwest::Url;
+use spacetimedb_lib::name::{is_address, parse_domain_name, PublishResult};
 use std::fs;
 use std::path::PathBuf;
 
@@ -13,58 +13,65 @@ use crate::util::init_default;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("publish")
-        .about("Create and update a SpacetimeDB database.")
+        .about("Create and update a SpacetimeDB database")
         .arg(
             Arg::new("host_type")
                 .long("host-type")
                 .short('t')
                 .value_parser(["wasmer"])
-                .default_value("wasmer"),
+                .default_value("wasmer")
+                .help("The type of host that should be for hosting this module"),
         )
         .arg(
+            // TODO(jdetter): Rename this to --delete-tables (clear doesn't really implies the tables are being dropped)
             Arg::new("clear_database")
                 .long("clear-database")
                 .short('c')
-                .action(SetTrue),
+                .action(SetTrue)
+                .help("When publishing a new module to an existing address, also delete all tables associated with the database"),
         )
         .arg(
             Arg::new("path_to_project")
                 .value_parser(clap::value_parser!(PathBuf))
                 .default_value(".")
                 .long("project-path")
-                .short('p'),
+                .short('p')
+                .help("The system path (absolute or relative) to the module project")
         )
         .arg(
             Arg::new("trace_log")
                 .long("trace_log")
                 .help("Turn on diagnostic/performance tracing for this project")
-                .required(false)
                 .action(SetTrue),
         )
-        // TODO(tyler): We should clean up setting an identity for a database in the future
-        .arg(Arg::new("identity").long("identity").short('I').required(false))
+        // TODO(tyler): We should be able to pass in either an identity or an alias here
+        // TODO(jdetter): Unify identity + identity alias
         .arg(
-            Arg::new("as_identity")
-                .long("as-identity")
-                .short('i')
-                .required(false)
-                .conflicts_with("anon_identity"),
-        )
+            Arg::new("identity")
+                .long("identity")
+                .short('I')
+                .help("The identity that should own the database")
+                .long_help("The identity that should own the database. If no identity is provided, your default identity will be used."))
+        // TODO(jdetter): add this back in when we actually support this
+        // .arg(
+        //     Arg::new("as_identity")
+        //         .long("as-identity")
+        //         .short('i')
+        //         .required(false)
+        //         .conflicts_with("anon_identity"),
+        // )
         .arg(
             Arg::new("anon_identity")
                 .long("anon-identity")
                 .short('a')
-                .required(false)
-                .conflicts_with("as_identity")
-                .action(SetTrue),
+                .action(SetTrue)
+                .help("Instruct SpacetimeDB to allocate a new identity to own this database"),
         )
-        .arg(Arg::new("name|address").required(false))
+        .arg(
+            Arg::new("name|address")
+                .help("A valid domain or address for this database"),
+        )
         .after_help("Run `spacetime help publish` for more detailed information.")
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct InitDatabaseResponse {
-    address: String,
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
@@ -74,42 +81,18 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let host_type = args.get_one::<String>("host_type").unwrap();
     let clear_database = args.get_flag("clear_database");
     let trace_log = args.get_flag("trace_log");
-
-    let as_identity = args.get_one::<String>("as_identity");
     let anon_identity = args.get_flag("anon_identity");
 
-    let auth_header = get_auth_header(&mut config, anon_identity, as_identity.map(|x| x.as_str())).await;
+    let mut query_params = Vec::<(&str, &str)>::new();
+    query_params.push(("host_type", host_type.as_str()));
 
-    let mut url_args = String::new();
-
-    // Identity is required
-    let identity = if let Some(identity) = identity {
-        let mut found = false;
-        for identity_config in config.identity_configs.clone() {
-            if identity_config.identity == identity.clone()
-                || &identity_config.nickname.unwrap().to_string() == identity
-            {
-                found = true;
-                break;
-            }
-        }
-
-        if !found {
-            return Err(anyhow::anyhow!(
-                "Identity provided does not match any identity stored in your config file."
-            ));
-        }
-
-        url_args.push_str(format!("?identity={}", identity).as_str());
-        identity.clone()
-    } else {
-        let identity_config = init_default(&mut config, None).await?.identity_config;
-        url_args.push_str(format!("?identity={}", identity_config.identity).as_str());
-        identity_config.identity
-    };
-
+    // If a domain or address was provided, we should locally make sure it looks correct and
+    // append it as a query parameter
     if let Some(name_or_address) = name_or_address {
-        url_args.push_str(format!("&name_or_address={}", name_or_address).as_str());
+        if !is_address(name_or_address) {
+            parse_domain_name(name_or_address)?;
+        }
+        query_params.push(("name_or_address", name_or_address.as_str()));
     }
 
     if !path_to_project.exists() {
@@ -120,35 +103,108 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     if clear_database {
-        url_args.push_str("&clear=true");
+        query_params.push(("clear", "true"));
     }
 
-    url_args.push_str(format!("&host_type={}", host_type).as_str());
-
     if trace_log {
-        url_args.push_str("&trace_log=true");
+        query_params.push(("trace_log", "true"));
     }
 
     let client = reqwest::Client::new();
 
     let path_to_wasm = crate::tasks::build(path_to_project)?;
-    super::energy::set_balance(&client, &config, &identity, DEFAULT_BALANCE).await?;
-
     let program_bytes = fs::read(path_to_wasm)?;
 
-    let url = format!("{}/database/publish{}", config.get_host_url(), url_args);
-    let mut builder = client.post(url);
-    if let Some(auth_header) = auth_header {
-        builder = builder.header("Authorization", auth_header);
-    }
+    let mut builder = client.post(Url::parse_with_params(
+        format!("{}/database/publish", config.get_host_url()).as_str(),
+        query_params,
+    )?);
+
+    // If the user didn't specify an identity and we didn't specify an anonymous identity, then
+    // we want to use the default identity
+    // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
+    //  easily create a new identity with an email
+    let identity = if !anon_identity {
+        if identity.is_none() && config.default_identity.is_none() {
+            init_default(&mut config, None).await?;
+        }
+
+        if let Some((auth_header, chosen_identity)) =
+            get_auth_header(&mut config, anon_identity, identity.map(|x| x.as_str())).await
+        {
+            builder = builder.header("Authorization", auth_header);
+            Some(chosen_identity)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     let res = builder.body(program_bytes).send().await?;
     let res = res.error_for_status()?;
     let bytes = res.bytes().await.unwrap();
 
-    let response: InitDatabaseResponse = serde_json::from_slice(&bytes[..]).unwrap();
-    println!("Created new database with address: {}", response.address);
+    let response: PublishResult = serde_json::from_slice(&bytes[..]).unwrap();
+    match response {
+        PublishResult::Success { domain, address } => {
+            if let Some(domain) = domain {
+                println!("Created new database with domain: {} address: {}", domain, address);
+            } else {
+                println!("Created new database with address: {}", address);
+            }
+        }
+        PublishResult::TldNotRegistered { domain } => {
+            let parsed = parse_domain_name(domain.as_str())?;
+            return Err(anyhow::anyhow!(
+                "The top level domain that you provided is not registered.\n\
+            This tld is not yet registered to any identity. You can register this domain with the following command:\n\
+            \n\
+            \tspacetime dns register-tld {}\n",
+                parsed.tld
+            ));
+        }
+        PublishResult::PermissionDenied { domain } => {
+            return match identity {
+                Some(identity) => {
+                    //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
+                    // we should perhaps generate fun names like 'green-fire-dragon' instead
+                    let suggested_tld: String = identity.to_hex().chars().take(12).collect();
+                    let parsed_domain = parse_domain_name(domain.as_str())?;
+                    if let Some(sub_domain) = parsed_domain.sub_domain {
+                        Err(anyhow::anyhow!(
+                            "The top level domain {} is not registered to the identity you provided.\n\
+                        We suggest you register a new tld:\n\
+                        \tspacetime dns register-tld {}\n\
+                        \n\
+                        And then push to the domain that uses that tld:\n\
+                        \tspacetime publish {}/{}\n",
+                            parsed_domain.tld,
+                            suggested_tld,
+                            suggested_tld,
+                            sub_domain
+                        ))
+                    } else {
+                        Err(anyhow::anyhow!(
+                            "The top level domain {} is not registered to the identity you provided.\n\
+                        We suggest you register a new tld:\n\
+                        \tspacetime dns register-tld {}\n\
+                        \n\
+                        And then push to the domain that uses that tld:\n\
+                        \tspacetime publish {}\n",
+                            parsed_domain.tld,
+                            suggested_tld,
+                            suggested_tld
+                        ))
+                    }
+                }
+                None => Err(anyhow::anyhow!(
+                    "The domain {} is not registered to the identity you provided.",
+                    domain
+                )),
+            };
+        }
+    }
 
     Ok(())
 }
-
-const DEFAULT_BALANCE: u64 = 5000000000000000;

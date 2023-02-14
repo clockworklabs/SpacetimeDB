@@ -2,6 +2,7 @@ pub mod buffer;
 pub mod data_key;
 pub mod error;
 pub mod hash;
+pub mod name;
 pub mod primary_key;
 mod serde_mapping;
 pub mod type_def;

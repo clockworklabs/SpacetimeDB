@@ -22,7 +22,15 @@ lto = true
 debug = true
 
 [profile.dev]
-opt-level = 2
+opt-level = 0
+debug = true
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = 'unwind'
+incremental = true
+codegen-units = 256
+rpath = false
 
 [profile.bench]
 debug = true

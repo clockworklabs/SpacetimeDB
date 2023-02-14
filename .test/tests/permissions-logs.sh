@@ -9,19 +9,19 @@ set -euox pipefail
 
 source "./.test/lib.include"
 
-run_test cargo run identity new
+run_test cargo run identity new --no-email
 create_project
 run_test cargo run publish --project-path "$PROJECT_PATH"
 sleep 2
 DATABASE="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 reset_config
-run_test cargo run identity new
+run_test cargo run identity new --no-email
 run_test cargo run call "$DATABASE" "say_hello"
 
 reset_config
-run_test cargo run identity new
+run_test cargo run identity new --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
-run_test cargo run identity set-default "$IDENT"
+run_test cargo run identity set-default --identity "$IDENT"
 if run_test cargo run logs "$DATABASE" 10000 ; then exit 1; fi
 if [ "0" != "$(grep -c "World" "$TEST_OUT")" ]; then exit 1; fi

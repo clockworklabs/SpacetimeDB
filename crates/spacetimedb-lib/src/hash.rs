@@ -50,7 +50,7 @@ pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> Hash {
 
 impl fmt::Display for Hash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&hex::encode(&self.data))
+        f.write_str(&hex::encode(self.data))
     }
 }
 

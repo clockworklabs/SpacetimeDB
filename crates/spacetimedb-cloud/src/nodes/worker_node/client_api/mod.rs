@@ -52,6 +52,7 @@ pub async fn start(db_inst_ctx_controller: Arc<DatabaseInstanceContextController
         let proxied_routes = [
             "/database/dns/:database_name",
             "/database/reverse_dns/:address",
+            "/database/register_tld",
             "/database/set_name",
             "/database/publish",
             "/database/delete",

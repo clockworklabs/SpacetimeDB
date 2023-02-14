@@ -279,7 +279,7 @@ impl TypeValue {
     pub fn to_data_key(&self) -> DataKey {
         let mut bytes = Vec::new();
         self.encode(&mut bytes);
-        DataKey::from_data(&bytes.iter())
+        DataKey::from_data(bytes.iter())
     }
     /// Promote the values to their wider representation to make easier to compare.
     ///
@@ -299,7 +299,7 @@ impl TypeValue {
             TypeValue::I32(x) => TypeWideValue::from_i64(*x as i64),
             TypeValue::U32(x) => TypeWideValue::U64(*x as u64),
             TypeValue::I64(x) => TypeWideValue::from_i64(*x),
-            TypeValue::U64(x) => TypeWideValue::U64(*x as u64),
+            TypeValue::U64(x) => TypeWideValue::U64(*x),
             TypeValue::I128(x) => TypeWideValue::from_i128(*x),
             TypeValue::U128(x) => TypeWideValue::U128(*x),
             TypeValue::F32(x) => TypeWideValue::F64(F64::from(x.into_inner() as f64)),

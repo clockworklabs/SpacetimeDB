@@ -6,10 +6,14 @@ use serde_json;
 use tabled::object::Columns;
 use tabled::{Alignment, Modify, Style, Table, Tabled};
 
-pub fn cli() -> clap::Command {
+pub fn cli() -> Command {
     Command::new("list")
         .about("Lists the databases attached to an identity")
-        .arg(Arg::new("identity").required(true))
+        .arg(
+            Arg::new("identity")
+                .required(true)
+                .help("The identity to list databases for"),
+        )
 }
 
 #[derive(Deserialize)]

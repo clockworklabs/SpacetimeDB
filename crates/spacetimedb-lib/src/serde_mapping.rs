@@ -46,7 +46,7 @@ impl<'de> DeserializeSeed<'de> for PrimitiveType {
         }
         match self {
             PrimitiveType::Unit => {
-                let () = de::Deserialize::deserialize(deserializer)?;
+                de::Deserialize::deserialize(deserializer)?;
                 Ok(TypeValue::Unit)
             }
             PrimitiveType::Bool => de_prim!(Bool),
@@ -265,7 +265,7 @@ impl<'de> de::Visitor<'de> for ProductTypeVisitor<'_> {
                 ProductTypeKind::Tuple => IdentiferKind::Field,
                 ProductTypeKind::Reducer => IdentiferKind::Arg,
             },
-            elements: &self.elements,
+            elements: self.elements,
         };
         let mut elements = vec![None; self.elements.len()];
         let mut n = 0;
@@ -396,7 +396,7 @@ impl<'a, 'de> de::Visitor<'de> for IdentifierVisitor<'a> {
         if self.elements.is_empty() {
             write!(f, "{ty} {el_ty} name, but there are no {el_ty}s")
         } else {
-            write!(f, "{ty} {el_ty} name ({})", one_of(&self.elements))
+            write!(f, "{ty} {el_ty} name ({})", one_of(self.elements))
         }
     }
 
@@ -414,7 +414,7 @@ impl<'a, 'de> de::Visitor<'de> for IdentifierVisitor<'a> {
                 } else {
                     de::Error::custom(format_args!(
                         "unknown {el_ty} `{v}`, expected {}",
-                        one_of(&self.elements)
+                        one_of(self.elements)
                     ))
                 }
             })
@@ -482,7 +482,7 @@ impl Serialize for ValueWithSchema<'_> {
                 serializer.serialize_str(&s)
             }
             (TypeValue::Hash(h), &TypeDef::Hash) => {
-                let s = hex::encode(&h.data);
+                let s = hex::encode(h.data);
                 serializer.serialize_str(&s)
             }
             (TypeValue::Enum(value), TypeDef::Enum(schema)) => EnumWithSchema { value, schema }.serialize(serializer),

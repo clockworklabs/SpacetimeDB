@@ -3194,6 +3194,7 @@ dependencies = [
  "convert_case",
  "dirs",
  "duct",
+ "email_address",
  "hex",
  "insta",
  "reqwest",
@@ -3204,6 +3205,7 @@ dependencies = [
  "tabled",
  "tokio",
  "toml",
+ "urlencoding",
  "wasmtime",
 ]
 
@@ -3333,6 +3335,7 @@ dependencies = [
 name = "spacetimedb-lib"
 version = "0.3.2"
 dependencies = [
+ "anyhow",
  "bytes",
  "decorum",
  "enum-as-inner",

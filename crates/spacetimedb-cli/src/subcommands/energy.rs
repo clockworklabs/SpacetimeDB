@@ -5,7 +5,7 @@ use crate::config::Config;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("energy")
-        .about("Invokes commands related to database budgets.")
+        .about("Invokes commands related to database budgets")
         .args_conflicts_with_subcommands(true)
         .subcommand_required(true)
         .subcommands(get_energy_subcommands())
@@ -15,17 +15,34 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
     vec![
         clap::Command::new("status")
             .about("Show current energy balance for an identity")
-            .arg(Arg::new("identity").required(false)),
+            .arg(
+                Arg::new("identity")
+                    .help("The identity to check the balance for")
+                    .long_help(
+                    "The identity to check the balance for. If no identity is provided, the default one will be used.",
+                ),
+            ),
         clap::Command::new("set-balance")
             .about("Update the current budget balance for a database")
-            .arg(Arg::new("balance").required(true).value_parser(value_parser!(u64)))
-            .arg(Arg::new("identity").required(false))
+            .arg(
+                Arg::new("balance")
+                    .required(true)
+                    .value_parser(value_parser!(u64))
+                    .help("The balance value to set"),
+            )
+            .arg(
+                Arg::new("identity")
+                    .help("The identity to set a balance for")
+                    .long_help(
+                        "The identity to set a balance for. If no identity is provided, the default one will be used.",
+                    ),
+            )
             .arg(
                 Arg::new("quiet")
                     .long("quiet")
                     .short('q')
                     .action(clap::ArgAction::SetTrue)
-                    .help("Runs command in silent mode."),
+                    .help("Runs command in silent mode"),
             ),
     ]
 }

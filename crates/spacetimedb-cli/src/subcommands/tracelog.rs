@@ -3,6 +3,7 @@ use crate::util::spacetime_dns;
 use clap::Arg;
 use clap::ArgMatches;
 use reqwest::StatusCode;
+use spacetimedb_lib::name::{is_address, DnsLookupResponse};
 use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -71,11 +72,17 @@ pub async fn exec_replay(config: Config, args: &ArgMatches) -> Result<(), anyhow
 
 pub async fn exec_stop(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
-    let address = if let Ok(address) = spacetime_dns(&config, database).await {
-        address
+    let address = if is_address(database.as_str()) {
+        database.clone()
     } else {
-        database.to_string()
+        match spacetime_dns(&config, database).await? {
+            DnsLookupResponse::Success { domain: _, address } => address,
+            DnsLookupResponse::Failure { domain } => {
+                return Err(anyhow::anyhow!("The dns resolution of {} failed.", domain));
+            }
+        }
     };
+
     let client = reqwest::Client::new();
     let res = client
         .post(format!("{}/tracelog/database/{}/stop", config.get_host_url(), address))
@@ -98,11 +105,17 @@ pub async fn exec_stop(config: Config, args: &ArgMatches) -> Result<(), anyhow::
 
 pub async fn exec_get(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
-    let address = if let Ok(address) = spacetime_dns(&config, database).await {
-        address
+    let address = if is_address(database.as_str()) {
+        database.clone()
     } else {
-        database.to_string()
+        match spacetime_dns(&config, database).await? {
+            DnsLookupResponse::Success { domain: _, address } => address,
+            DnsLookupResponse::Failure { domain } => {
+                return Err(anyhow::anyhow!("The dns resolution of {} failed.", domain));
+            }
+        }
     };
+
     let client = reqwest::Client::new();
     let res = client
         .get(format!("{}/tracelog/database/{}", config.get_host_url(), address))

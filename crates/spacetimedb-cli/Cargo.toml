@@ -35,6 +35,8 @@ hex = "0.4.3"
 base64 = "0.13.1"
 slab = "0.4.7"
 cargo_metadata = "0.15.2"
+urlencoding = "2.1.2"
+email_address = "0.2.4"
 
 [dev-dependencies]
 insta = { version = "1.21.0", features = ["toml"] }

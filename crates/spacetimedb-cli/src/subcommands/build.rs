@@ -5,7 +5,6 @@ use std::path::PathBuf;
 pub fn cli() -> clap::Command {
     clap::Command::new("build").about("Builds a spacetime module.").arg(
         Arg::new("project-path")
-            .required(false)
             .default_value(".")
             .value_parser(clap::value_parser!(PathBuf))
             .help("The path of the project that you would like to build."),

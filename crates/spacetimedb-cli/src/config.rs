@@ -8,7 +8,6 @@ use std::{
 pub struct IdentityConfig {
     pub nickname: Option<String>,
     pub identity: String,
-    pub email: Option<String>,
     pub token: String,
 }
 

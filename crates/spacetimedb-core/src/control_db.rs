@@ -1,7 +1,10 @@
 use crate::address::Address;
+
 use crate::hash::{hash_bytes, Hash};
 use crate::protobuf::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
 use prost::Message;
+
+use spacetimedb_lib::name::{parse_domain_name, InsertDomainResult, RegisterTldResult};
 
 // TODO: Consider making not static
 lazy_static::lazy_static! {
@@ -24,36 +27,131 @@ impl ControlDb {
 }
 
 impl ControlDb {
-    pub async fn spacetime_dns(&self, domain_name: &str) -> Result<Option<Address>, anyhow::Error> {
+    pub async fn spacetime_dns(&self, domain: &str) -> Result<Option<Address>, anyhow::Error> {
         let tree = self.db.open_tree("dns")?;
-        let value = tree.get(domain_name.as_bytes())?;
+        let value = tree.get(domain.as_bytes())?;
         if let Some(value) = value {
             return Ok(Some(Address::from_slice(&value[..])));
         }
         Ok(None)
     }
 
-    pub async fn spacetime_reverse_dns(&self, address: &Address) -> Result<Option<String>, anyhow::Error> {
+    pub async fn spacetime_reverse_dns(&self, address: &Address) -> Result<Vec<String>, anyhow::Error> {
         let tree = self.db.open_tree("reverse_dns")?;
         let value = tree.get(address.as_slice())?;
         if let Some(value) = value {
-            return Ok(Some(String::from_utf8(value[..].to_vec())?));
+            let vec: Vec<String> = serde_json::from_slice(&value[..])?;
+            return Ok(vec);
         }
-        Ok(None)
+        Ok(vec![])
     }
 
-    pub async fn spacetime_insert_dns_record(&self, address: &Address, domain_name: &str) -> Result<(), anyhow::Error> {
-        if self.spacetime_dns(domain_name).await?.is_some() {
-            return Err(anyhow::anyhow!("Record for name '{}' already exists. ", domain_name));
+    /// Creates a new domain which points to address. For example:
+    ///  * `my_domain/my_database`
+    ///  * `my_company/my_team/my_product`
+    ///
+    /// A TLD itself is also a fully qualified database name:
+    ///  * `clockworklabs`
+    ///  * `bitcraft`
+    ///  * `...`
+    ///
+    /// # Arguments
+    ///  * `address` - The address the database name should point to
+    ///  * `database_name` - The database name to register
+    ///  * `owner_identity` - The identity that is publishing the database name
+    pub async fn spacetime_insert_domain(
+        &self,
+        address: &Address,
+        domain: &str,
+        owner_identity: Hash,
+    ) -> Result<InsertDomainResult, anyhow::Error> {
+        if self.spacetime_dns(domain).await?.is_some() {
+            return Err(anyhow::anyhow!("Record for name '{}' already exists. ", domain));
+        }
+        let result = parse_domain_name(domain)?;
+        match self.spacetime_lookup_tld(result.tld.as_str()).await? {
+            Some(owner) => {
+                if owner != owner_identity {
+                    return Ok(InsertDomainResult::PermissionDenied {
+                        domain: domain.to_string(),
+                    });
+                }
+            }
+            None => {
+                return Ok(InsertDomainResult::TldNotRegistered {
+                    domain: domain.to_string(),
+                });
+            }
         }
 
         let tree = self.db.open_tree("dns")?;
-        tree.insert(domain_name.as_bytes(), &address.as_slice()[..])?;
+        tree.insert(domain.as_bytes(), &address.as_slice()[..])?;
 
         let tree = self.db.open_tree("reverse_dns")?;
-        tree.insert(address.as_slice(), domain_name.as_bytes())?;
+        match tree.get(address.as_slice())? {
+            Some(value) => {
+                let mut vec: Vec<String> = serde_json::from_slice(&value[..])?;
+                vec.push(domain.to_string());
+                tree.insert(address.as_slice(), serde_json::to_string(&vec)?.as_bytes())?;
+            }
+            None => {
+                tree.insert(address.as_slice(), serde_json::to_string(&vec![domain])?.as_bytes())?;
+            }
+        }
 
-        Ok(())
+        Ok(InsertDomainResult::Success {
+            domain: domain.to_string(),
+            address: address.to_hex(),
+        })
+    }
+
+    /// Inserts a top level domain that will be owned by `owner_identity`.
+    ///
+    /// # Arguments
+    ///
+    /// * `domain` - The domain name to register
+    /// * `owner_identity` - The identity that should own this domain name.
+    pub async fn spacetime_register_tld(
+        &self,
+        tld: &str,
+        owner_identity: Hash,
+    ) -> Result<RegisterTldResult, anyhow::Error> {
+        let tree = self.db.open_tree("top_level_domains")?;
+        let current_owner = tree.get(tld.as_bytes())?;
+        match current_owner {
+            Some(owner) => {
+                if Hash::from_slice(&owner[..]) == owner_identity {
+                    Ok(RegisterTldResult::AlreadyRegistered {
+                        domain: tld.to_string(),
+                    })
+                } else {
+                    Ok(RegisterTldResult::Unauthorized {
+                        domain: tld.to_string(),
+                    })
+                }
+            }
+            None => {
+                tree.insert(tld.as_bytes(), owner_identity.as_slice())?;
+                Ok(RegisterTldResult::Success {
+                    domain: tld.to_string(),
+                })
+            }
+        }
+    }
+
+    /// Returns the owner (or `None` if there is no owner) of the domain.
+    ///
+    /// # Arguments
+    ///  * `domain` - The domain to lookup
+    pub async fn spacetime_lookup_tld(&self, domain: &str) -> Result<Option<Hash>, anyhow::Error> {
+        // Make sure the domain is valid first
+        parse_domain_name(domain)?;
+
+        let tree = self.db.open_tree("top_level_domains")?;
+        return match tree.get(domain.as_bytes())? {
+            Some(owner) => Ok(Some(Hash::from_slice(&owner[..]))),
+            None => Ok(None),
+        };
     }
 
     pub async fn alloc_spacetime_identity(&self) -> Result<Hash, anyhow::Error> {

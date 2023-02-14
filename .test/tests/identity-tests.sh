@@ -10,7 +10,7 @@ set -euox pipefail
 source "./.test/lib.include"
 
 # Create a new identity
-run_test cargo run identity new
+run_test cargo run identity new --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
 EMAIL="$(random_string)@clockworklabs.io"
 TOKEN=$(grep token "$HOME/.spacetime/config.toml" | awk '{print $3}' | tr -d \')
@@ -19,11 +19,11 @@ TOKEN=$(grep token "$HOME/.spacetime/config.toml" | awk '{print $3}' | tr -d \')
 reset_config
 
 # Import this identity, and set it as the default identity
-run_test cargo run identity add "$IDENT" "$TOKEN"
-run_test cargo run identity set-default "$IDENT"
+run_test cargo run identity import "$IDENT" "$TOKEN"
+run_test cargo run identity set-default --identity "$IDENT"
 
 # Configure our email
-run_test cargo run identity set-email "$IDENT" "$EMAIL"
+run_test cargo run identity set-email --identity "$IDENT" "$EMAIL"
 [ "$IDENT" == "$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')" ]
 [ "$EMAIL" == "$(grep EMAIL "$TEST_OUT" | awk '{print $2}')" ]
 
@@ -34,8 +34,3 @@ reset_config
 run_test cargo run identity find "$EMAIL"
 [ "$IDENT" == "$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')" ]
 [ "$EMAIL" == "$(grep EMAIL "$TEST_OUT" | awk '{print $2}')" ]
-
-# Create a new identity and give it the same email, we should now be able to find both identities.
-run_test cargo run identity new --email "$EMAIL"
-run_test cargo run identity find "$EMAIL"
-[ "2" == "$(grep -c EMAIL "$TEST_OUT")" ]

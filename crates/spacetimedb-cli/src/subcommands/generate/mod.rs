@@ -19,7 +19,8 @@ pub fn cli() -> clap::Command {
                 .value_parser(clap::value_parser!(PathBuf))
                 .long("wasm-file")
                 .short('w')
-                .conflicts_with("project_path"),
+                .conflicts_with("project_path")
+                .help("The system path (absolute or relative) to the wasm file we should inspect"),
         )
         .arg(
             Arg::new("project_path")
@@ -27,21 +28,24 @@ pub fn cli() -> clap::Command {
                 .long("project-path")
                 .short('p')
                 .default_value(".")
-                .conflicts_with("wasm_file"),
+                .conflicts_with("wasm_file")
+                .help("The path to the wasm project"),
         )
         .arg(
             Arg::new("out_dir")
                 .value_parser(clap::value_parser!(PathBuf))
                 .required(true)
                 .long("out-dir")
-                .short('o'),
+                .short('o')
+                .help("The system path (absolute or relative) to the generate output directory"),
         )
         .arg(
             Arg::new("lang")
                 .required(true)
                 .long("lang")
                 .short('l')
-                .value_parser(clap::value_parser!(Language)),
+                .value_parser(clap::value_parser!(Language))
+                .help("The language to generate"),
         )
         .after_help("Run `spacetime help publish` for more detailed information.")
 }

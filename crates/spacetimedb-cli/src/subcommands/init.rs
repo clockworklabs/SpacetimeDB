@@ -10,7 +10,6 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("project-path")
                 .value_parser(clap::value_parser!(PathBuf))
-                .required(false)
                 .default_value(".")
                 .help("The path where we will create the spacetime project"),
         )

@@ -2,32 +2,29 @@ use crate::config::Config;
 use crate::util::get_auth_header;
 use crate::util::spacetime_dns;
 use clap::Arg;
-use clap::ArgAction;
 use clap::ArgMatches;
+use spacetimedb_lib::name::{is_address, DnsLookupResponse};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("logs")
-        .about("Prints logs from a SpacetimeDB database.")
-        .arg(Arg::new("database").required(true))
+        .about("Prints logs from a SpacetimeDB database")
         .arg(
-            Arg::new("as_identity")
-                .long("as-identity")
-                .short('i')
-                .required(false)
-                .conflicts_with("anon_identity"),
+            Arg::new("database")
+                .required(true)
+                .help("The domain or address of the database to print logs from"),
         )
         .arg(
-            Arg::new("anon_identity")
-                .long("anon-identity")
-                .short('a')
-                .required(false)
-                .conflicts_with("as_identity")
-                .action(ArgAction::SetTrue),
+            // TODO(jdetter): unify this with identity + name
+            Arg::new("identity")
+                .long("identity")
+                .short('i')
+                .help("The identity to use for printing logs from this database"),
         )
         .arg(
             Arg::new("num_lines")
-                .required(false)
-                .value_parser(clap::value_parser!(u32)),
+                .value_parser(clap::value_parser!(u32))
+                .help("The number of lines to print from the start of the log of this database")
+                .long_help("The number of lines to print from the start of the log of this database. If no num lines is provided, all lines will be returned."),
         )
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
@@ -36,15 +33,21 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let num_lines = args.get_one::<u32>("num_lines");
     let database = args.get_one::<String>("database").unwrap();
 
-    let as_identity = args.get_one::<String>("as_identity");
-    let anon_identity = args.get_flag("anon_identity");
+    let identity = args.get_one::<String>("identity");
 
-    let auth_header = get_auth_header(&mut config, anon_identity, as_identity.map(|x| x.as_str())).await;
+    let auth_header = get_auth_header(&mut config, false, identity.map(|x| x.as_str()))
+        .await
+        .map(|x| x.0);
 
-    let address = if let Ok(address) = spacetime_dns(&config, database).await {
-        address
+    let address = if is_address(database.as_str()) {
+        database.clone()
     } else {
-        database.to_string()
+        match spacetime_dns(&config, database).await? {
+            DnsLookupResponse::Success { domain: _, address } => address,
+            DnsLookupResponse::Failure { domain } => {
+                return Err(anyhow::anyhow!("The dns resolution of {} failed.", domain));
+            }
+        }
     };
 
     let mut query_parms = Vec::new();

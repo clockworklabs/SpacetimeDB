@@ -9,14 +9,14 @@ set -euox pipefail
 
 source "./.test/lib.include"
 
-run_test cargo run identity new
+run_test cargo run identity new --no-email
 create_project
 run_test cargo run publish --project-path "$PROJECT_PATH"
 sleep 2
 DATABASE="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 reset_config
-run_test cargo run identity new
+run_test cargo run identity new --no-email
 
 # It is expected that you should be able to describe any database even if you
 # do not own it.
