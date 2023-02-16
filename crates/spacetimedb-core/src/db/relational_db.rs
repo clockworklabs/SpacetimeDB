@@ -24,9 +24,11 @@ use crate::{db::catalog::Catalog, util::ResultInspectExt};
 use fs2::FileExt;
 use spacetimedb_lib::{
     buffer::{BufReader, DecodeError},
+    data_key::ToDataKey,
     ElementDef, PrimaryKey,
 };
 use spacetimedb_lib::{TupleDef, TupleValue, TypeDef, TypeValue};
+use spacetimedb_sats::product;
 use std::fs::File;
 use std::{
     ops::{Deref, DerefMut, RangeBounds},
@@ -173,104 +175,80 @@ impl RelationalDB {
 
         // Create the st_tables table and insert the information about itself into itself
         // schema: (table_id: u32, table_name: String)
-        let row = TupleValue {
-            elements: vec![
-                TypeValue::U32(ST_TABLES_ID),
-                TypeValue::String(ST_TABLES_NAME.to_string()),
-            ]
-            .into(),
-        };
+        let row = product![
+            TypeValue::U32(ST_TABLES_ID),
+            TypeValue::String(ST_TABLES_NAME.to_string()),
+        ];
         Self::insert_row_raw(txdb, tx, ST_TABLES_ID, row);
 
         // Insert the st_columns table into st_tables
         // schema: (table_id: u32, col_id: u32, col_type: Bytes, col_name: String)
-        let row = TupleValue {
-            elements: vec![
-                TypeValue::U32(ST_COLUMNS_ID),
-                TypeValue::String(ST_COLUMNS_NAME.to_string()),
-            ]
-            .into(),
-        };
+        let row = product![
+            TypeValue::U32(ST_COLUMNS_ID),
+            TypeValue::String(ST_COLUMNS_NAME.to_string()),
+        ];
         Self::insert_row_raw(txdb, tx, ST_TABLES_ID, row);
 
         // Insert information about st_tables into st_columns
         let mut bytes = Vec::new();
         TypeDef::U32.encode(&mut bytes);
-        let row = TupleValue {
-            elements: vec![
-                TypeValue::U32(ST_TABLES_ID),
-                TypeValue::U32(0),
-                TypeValue::Bytes(bytes),
-                TypeValue::String("table_id".to_string()),
-            ]
-            .into(),
-        };
+        let row = product![
+            TypeValue::U32(ST_TABLES_ID),
+            TypeValue::U32(0),
+            TypeValue::Bytes(bytes),
+            TypeValue::String("table_id".to_string()),
+        ];
         Self::insert_row_raw(txdb, tx, ST_COLUMNS_ID, row);
 
         let mut bytes = Vec::new();
         TypeDef::String.encode(&mut bytes);
-        let row = TupleValue {
-            elements: vec![
-                TypeValue::U32(ST_TABLES_ID),
-                TypeValue::U32(1),
-                TypeValue::Bytes(bytes),
-                TypeValue::String("table_name".to_string()),
-            ]
-            .into(),
-        };
+        let row = product![
+            TypeValue::U32(ST_TABLES_ID),
+            TypeValue::U32(1),
+            TypeValue::Bytes(bytes),
+            TypeValue::String("table_name".to_string()),
+        ];
         Self::insert_row_raw(txdb, tx, ST_COLUMNS_ID, row);
 
         // Insert information about st_columns into st_columns
         let mut bytes = Vec::new();
         TypeDef::U32.encode(&mut bytes);
-        let row = TupleValue {
-            elements: vec![
-                TypeValue::U32(ST_COLUMNS_ID),
-                TypeValue::U32(ColumnFields::TableId as u32),
-                TypeValue::Bytes(bytes),
-                TypeValue::String(ColumnFields::TableId.into()),
-            ]
-            .into(),
-        };
+        let row = product![
+            TypeValue::U32(ST_COLUMNS_ID),
+            TypeValue::U32(ColumnFields::TableId as u32),
+            TypeValue::Bytes(bytes),
+            TypeValue::String(ColumnFields::TableId.into()),
+        ];
         Self::insert_row_raw(txdb, tx, ST_COLUMNS_ID, row);
 
         let mut bytes = Vec::new();
         TypeDef::U32.encode(&mut bytes);
-        let row = TupleValue {
-            elements: vec![
-                TypeValue::U32(ST_COLUMNS_ID),
-                TypeValue::U32(ColumnFields::ColId as u32),
-                TypeValue::Bytes(bytes),
-                TypeValue::String(ColumnFields::ColId.into()),
-            ]
-            .into(),
-        };
+        let row = product![
+            TypeValue::U32(ST_COLUMNS_ID),
+            TypeValue::U32(ColumnFields::ColId as u32),
+            TypeValue::Bytes(bytes),
+            TypeValue::String(ColumnFields::ColId.into()),
+        ];
         Self::insert_row_raw(txdb, tx, ST_COLUMNS_ID, row);
 
         let mut bytes = Vec::new();
-        TypeDef::Bytes.encode(&mut bytes);
-        let row = TupleValue {
-            elements: vec![
-                TypeValue::U32(ST_COLUMNS_ID),
-                TypeValue::U32(ColumnFields::ColType as u32),
-                TypeValue::Bytes(bytes),
-                TypeValue::String(ColumnFields::ColType.into()),
-            ]
-            .into(),
-        };
+        TypeDef::bytes().encode(&mut bytes);
+        let row = product![
+            TypeValue::U32(ST_COLUMNS_ID),
+            TypeValue::U32(ColumnFields::ColType as u32),
+            TypeValue::Bytes(bytes),
+            TypeValue::String(ColumnFields::ColType.into()),
+        ];
         Self::insert_row_raw(txdb, tx, ST_COLUMNS_ID, row);
 
         let mut bytes = Vec::new();
         TypeDef::String.encode(&mut bytes);
-        let row = TupleValue {
-            elements: vec![
-                TypeValue::U32(ST_COLUMNS_ID),
-                TypeValue::U32(ColumnFields::ColName as u32),
-                TypeValue::Bytes(bytes),
-                TypeValue::String(ColumnFields::ColName.into()),
-            ]
-            .into(),
-        };
+        let row = product![
+            TypeValue::U32(ST_COLUMNS_ID),
+            TypeValue::U32(ColumnFields::ColName as u32),
+            TypeValue::Bytes(bytes),
+            TypeValue::String(ColumnFields::ColName.into()),
+        ];
         Self::insert_row_raw(txdb, tx, ST_COLUMNS_ID, row);
 
         tx_.commit()?;
@@ -340,16 +318,15 @@ impl RelationalDB {
         row.encode(bytes);
     }
 
-    pub fn decode_row(schema: &TupleDef, bytes: &mut impl BufReader) -> Result<TupleValue, DecodeError> {
+    pub fn decode_row<'a>(schema: &TupleDef, bytes: &mut impl BufReader<'a>) -> Result<TupleValue, DecodeError> {
         // TODO: large file storage of the row elements
         TupleValue::decode(schema, bytes)
     }
 
     pub fn schema_for_table(&self, tx: &mut Tx, table_id: u32) -> Result<Option<TupleDef>, DBError> {
         let mut columns = Vec::new();
+        let schema = columns_schema();
         for bytes in self.txdb.scan(tx, ST_COLUMNS_ID) {
-            let schema = columns_schema();
-
             let row = match Self::decode_row(&schema, &mut &bytes[..]) {
                 Ok(row) => row,
                 Err(e) => {
@@ -363,20 +340,17 @@ impl RelationalDB {
             }
 
             let element = ElementDef {
-                // TODO: do we keep col_id's or do we keep tags for tuples?
-                tag: col.col_id as u8,
                 name: Some(col.col_name.into()),
-                element_type: col.col_type,
+                algebraic_type: col.col_type,
             };
-            columns.push(element)
+            columns.push((col.col_id, element))
         }
-        columns.sort_by(|a, b| a.tag.cmp(&b.tag));
+        // TODO: better way to do this?
+        columns.sort_by_key(|(col_id, _)| *col_id);
+        let elements: Vec<_> = columns.into_iter().map(|(_, el)| el).collect();
 
-        Ok(if !columns.is_empty() {
-            Some(TupleDef {
-                name: None,
-                elements: columns,
-            })
+        Ok(if !elements.is_empty() {
+            Some(TupleDef { elements })
         } else {
             None
         })
@@ -455,30 +429,25 @@ impl RelationalDB {
         );
 
         // Insert the table row into st_tables
-        let row = TupleValue {
-            elements: vec![TypeValue::U32(table_id), TypeValue::String(table_name.to_string())].into(),
-        };
+        let row = product![TypeValue::U32(table_id), TypeValue::String(table_name.to_string())];
         Self::insert_row_raw(&mut self.txdb, tx, ST_TABLES_ID, row);
 
         // Insert the columns into st_columns
         for (i, col) in schema.elements.iter().enumerate() {
             let mut bytes = Vec::new();
-            col.element_type.encode(&mut bytes);
+            col.algebraic_type.encode(&mut bytes);
             let col_name = col.name.clone().ok_or_else(|| {
                 // TODO: Maybe we should support Options as a special type
                 // in TypeValue? Theoretically they could just be enums, but
                 // that is quite a pain to use.
                 TableError::ColumnWithoutName(table_name.into(), i as u32)
             })?;
-            let row = TupleValue {
-                elements: vec![
-                    TypeValue::U32(table_id),
-                    TypeValue::U32(i as u32),
-                    TypeValue::Bytes(bytes),
-                    TypeValue::String(col_name.clone()),
-                ]
-                .into(),
-            };
+            let row = product![
+                TypeValue::U32(table_id),
+                TypeValue::U32(i as u32),
+                TypeValue::Bytes(bytes),
+                TypeValue::String(col_name.clone()),
+            ];
             Self::insert_row_raw(&mut self.txdb, tx, ST_COLUMNS_ID, row);
         }
         self.catalog
@@ -584,15 +553,13 @@ impl RelationalDB {
         let index_id = self.next_sequence(self.catalog.seq_index())? as u32;
 
         // Insert the index row into st_indexes
-        let row = TupleValue {
-            elements: Box::new([
-                TypeValue::U32(index_id),
-                TypeValue::U32(index.table_id),
-                TypeValue::U32(index.col_id),
-                TypeValue::String(index.name.clone()),
-                TypeValue::Bool(index.is_unique),
-            ]),
-        };
+        let row = product![
+            TypeValue::U32(index_id),
+            TypeValue::U32(index.table_id),
+            TypeValue::U32(index.col_id),
+            TypeValue::String(index.name.clone()),
+            TypeValue::Bool(index.is_unique),
+        ];
         Self::insert_row_raw(&mut self.txdb, tx, self.catalog.indexes.table_idx_id, row);
 
         let mut index = index::BTreeIndex::from_def(index_id.into(), index);
@@ -610,7 +577,7 @@ impl RelationalDB {
             tx,
             index_table_id,
             index::IndexFields::IndexId as u32,
-            TypeValue::U32(index_id.0),
+            TypeValue::U32(index_id.0).into(),
         )?;
 
         let row = iter.collect::<Vec<_>>();
@@ -1102,7 +1069,8 @@ mod tests {
     use crate::db::relational_db::open_log;
     use crate::error::DBError;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::{ElementDef, TupleDef, TupleValue, TypeDef, TypeValue};
+    use spacetimedb_lib::{TupleDef, TypeDef, TypeValue};
+    use spacetimedb_sats::product;
     use tempdir::TempDir;
 
     // let ptr = stdb.from(&mut tx, "health")
@@ -1132,19 +1100,7 @@ mod tests {
         let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
         let mut tx_ = stdb.begin_tx();
         let (tx, stdb) = tx_.get();
-        stdb.create_table(
-            tx,
-            "MyTable",
-            TupleDef {
-                name: None,
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }]
-                .into(),
-            },
-        )?;
+        stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_col", TypeDef::I32)]))?;
         tx_.commit_into_db()?;
         let log = open_log(&tmp_dir)?;
 
@@ -1162,14 +1118,7 @@ mod tests {
         let mut tx_ = stdb.begin_tx();
         let (tx, stdb) = tx_.get();
 
-        let schema = TupleDef {
-            name: None,
-            elements: vec![ElementDef {
-                tag: 0,
-                name: Some("my_col".into()),
-                element_type: TypeDef::I32,
-            }],
-        };
+        let schema = TupleDef::from_iter([("my_col", TypeDef::I32)]);
 
         stdb.create_table(tx, "MyTable", schema)?;
 
@@ -1202,19 +1151,7 @@ mod tests {
         let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
         let mut tx = stdb.begin_tx();
         let (tx, stdb) = tx.get();
-        let table_id = stdb.create_table(
-            tx,
-            "MyTable",
-            TupleDef {
-                name: None,
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }]
-                .into(),
-            },
-        )?;
+        let table_id = stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_col", TypeDef::I32)]))?;
         let t_id = stdb.table_id_from_name(tx, "MyTable")?;
         assert_eq!(t_id, Some(table_id));
         Ok(())
@@ -1228,19 +1165,7 @@ mod tests {
         let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
         let mut tx = stdb.begin_tx();
         let (tx, stdb) = tx.get();
-        stdb.create_table(
-            tx,
-            "MyTable",
-            TupleDef {
-                name: None,
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }]
-                .into(),
-            },
-        )?;
+        stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_col", TypeDef::I32)]))?;
         let table_id = stdb.table_id_from_name(tx, "MyTable")?.unwrap();
         let col_id = stdb.column_id_from_name(tx, table_id, "my_col")?;
         assert_eq!(col_id, Some(0));
@@ -1255,32 +1180,8 @@ mod tests {
         let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb)?;
         let mut tx = stdb.begin_tx();
         let (tx, stdb) = tx.get();
-        stdb.create_table(
-            tx,
-            "MyTable",
-            TupleDef {
-                name: None,
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }]
-                .into(),
-            },
-        )?;
-        let result = stdb.create_table(
-            tx,
-            "MyTable",
-            TupleDef {
-                name: None,
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }]
-                .into(),
-            },
-        );
+        stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_col", TypeDef::I32)]))?;
+        let result = stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_col", TypeDef::I32)]));
         assert!(matches!(result, Err(_)));
         Ok(())
     }
@@ -1294,41 +1195,11 @@ mod tests {
         let mut tx = stdb.begin_tx();
         let (tx, stdb) = tx.get();
 
-        let table_id = stdb.create_table(
-            tx,
-            "MyTable",
-            TupleDef {
-                name: None,
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }]
-                .into(),
-            },
-        )?;
+        let table_id = stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_col", TypeDef::I32)]))?;
 
-        stdb.insert(
-            tx,
-            table_id,
-            TupleValue {
-                elements: vec![TypeValue::I32(-1)].into(),
-            },
-        )?;
-        stdb.insert(
-            tx,
-            table_id,
-            TupleValue {
-                elements: vec![TypeValue::I32(0)].into(),
-            },
-        )?;
-        stdb.insert(
-            tx,
-            table_id,
-            TupleValue {
-                elements: vec![TypeValue::I32(1)].into(),
-            },
-        )?;
+        stdb.insert(tx, table_id, product![TypeValue::I32(-1)])?;
+        stdb.insert(tx, table_id, product![TypeValue::I32(0)])?;
+        stdb.insert(tx, table_id, product![TypeValue::I32(1)])?;
 
         let mut rows = stdb
             .scan(tx, table_id)?
@@ -1349,41 +1220,11 @@ mod tests {
         let mut tx_ = stdb_.begin_tx();
         let (tx, stdb) = tx_.get();
 
-        let table_id = stdb.create_table(
-            tx,
-            "MyTable",
-            TupleDef {
-                name: None,
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }]
-                .into(),
-            },
-        )?;
+        let table_id = stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_col", TypeDef::I32)]))?;
 
-        stdb.insert(
-            tx,
-            table_id,
-            TupleValue {
-                elements: vec![TypeValue::I32(-1)].into(),
-            },
-        )?;
-        stdb.insert(
-            tx,
-            table_id,
-            TupleValue {
-                elements: vec![TypeValue::I32(0)].into(),
-            },
-        )?;
-        stdb.insert(
-            tx,
-            table_id,
-            TupleValue {
-                elements: vec![TypeValue::I32(1)].into(),
-            },
-        )?;
+        stdb.insert(tx, table_id, product![TypeValue::I32(-1)])?;
+        stdb.insert(tx, table_id, product![TypeValue::I32(0)])?;
+        stdb.insert(tx, table_id, product![TypeValue::I32(1)])?;
         tx_.commit()?;
 
         let mut tx = stdb_.begin_tx();
@@ -1407,41 +1248,11 @@ mod tests {
         let mut tx = stdb.begin_tx();
         let (tx, stdb) = tx.get();
 
-        let table_id = stdb.create_table(
-            tx,
-            "MyTable",
-            TupleDef {
-                name: None,
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }]
-                .into(),
-            },
-        )?;
+        let table_id = stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_col", TypeDef::I32)]))?;
 
-        stdb.insert(
-            tx,
-            table_id,
-            TupleValue {
-                elements: vec![TypeValue::I32(-1)].into(),
-            },
-        )?;
-        stdb.insert(
-            tx,
-            table_id,
-            TupleValue {
-                elements: vec![TypeValue::I32(0)].into(),
-            },
-        )?;
-        stdb.insert(
-            tx,
-            table_id,
-            TupleValue {
-                elements: vec![TypeValue::I32(1)].into(),
-            },
-        )?;
+        stdb.insert(tx, table_id, product![TypeValue::I32(-1)])?;
+        stdb.insert(tx, table_id, product![TypeValue::I32(0)])?;
+        stdb.insert(tx, table_id, product![TypeValue::I32(1)])?;
 
         println!("{}", table_id);
 
@@ -1464,41 +1275,11 @@ mod tests {
         let mut tx_ = stdb_.begin_tx();
         let (tx, stdb) = tx_.get();
 
-        let table_id = stdb.create_table(
-            tx,
-            "MyTable",
-            TupleDef {
-                name: None,
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }]
-                .into(),
-            },
-        )?;
+        let table_id = stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_col", TypeDef::I32)]))?;
 
-        stdb.insert(
-            tx,
-            table_id,
-            TupleValue {
-                elements: vec![TypeValue::I32(-1)].into(),
-            },
-        )?;
-        stdb.insert(
-            tx,
-            table_id,
-            TupleValue {
-                elements: vec![TypeValue::I32(0)].into(),
-            },
-        )?;
-        stdb.insert(
-            tx,
-            table_id,
-            TupleValue {
-                elements: vec![TypeValue::I32(1)].into(),
-            },
-        )?;
+        stdb.insert(tx, table_id, product![TypeValue::I32(-1)])?;
+        stdb.insert(tx, table_id, product![TypeValue::I32(0)])?;
+        stdb.insert(tx, table_id, product![TypeValue::I32(1)])?;
         tx_.commit()?;
 
         let mut tx = stdb_.begin_tx();
@@ -1522,19 +1303,7 @@ mod tests {
         let mut tx = stdb.begin_tx();
         let (tx, stdb) = tx.get();
 
-        let table_id = stdb.create_table(
-            tx,
-            "MyTable",
-            TupleDef {
-                name: None,
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }]
-                .into(),
-            },
-        )?;
+        let table_id = stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_col", TypeDef::I32)]))?;
 
         drop(tx);
 
@@ -1554,44 +1323,14 @@ mod tests {
         let mut tx_ = stdb_.begin_tx();
         let (tx, stdb) = tx_.get();
 
-        let table_id = stdb.create_table(
-            tx,
-            "MyTable",
-            TupleDef {
-                name: None,
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }]
-                .into(),
-            },
-        )?;
+        let table_id = stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_col", TypeDef::I32)]))?;
         tx_.commit()?;
 
         let mut tx_ = stdb_.begin_tx();
         let (tx, stdb) = tx_.get();
-        stdb.insert(
-            tx,
-            0,
-            TupleValue {
-                elements: vec![TypeValue::I32(-1)].into(),
-            },
-        )?;
-        stdb.insert(
-            tx,
-            0,
-            TupleValue {
-                elements: vec![TypeValue::I32(0)].into(),
-            },
-        )?;
-        stdb.insert(
-            tx,
-            0,
-            TupleValue {
-                elements: vec![TypeValue::I32(1)].into(),
-            },
-        )?;
+        stdb.insert(tx, 0, product![TypeValue::I32(-1)])?;
+        stdb.insert(tx, 0, product![TypeValue::I32(0)])?;
+        stdb.insert(tx, 0, product![TypeValue::I32(1)])?;
         drop(tx_);
 
         let mut tx = stdb_.begin_tx();

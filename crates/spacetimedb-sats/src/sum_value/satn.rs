@@ -1,49 +1,32 @@
-use super::SumValue;
-use crate::{algebraic_value, sum_type::SumType, typespace::Typespace};
-use std::fmt::Display;
+use crate::satn::EntryWrapper;
+use crate::{SumValue, ValueWithType};
+use std::fmt;
 
-pub struct Formatter<'a> {
-    typespace: &'a Typespace,
-    ty: &'a SumType,
-    val: &'a SumValue,
-}
-
-impl<'a> Formatter<'a> {
-    pub fn new(typespace: &'a Typespace, ty: &'a SumType, val: &'a SumValue) -> Self {
-        Self { typespace, ty, val }
-    }
-}
-
-impl<'a> Display for Formatter<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.ty.variants.len() == 0 {
+impl<'a> crate::satn::Satn for ValueWithType<'a, SumValue> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.ty().variants.is_empty() {
             panic!("This should not be possible.");
         }
         write!(f, "(")?;
-        for (i, e) in self.ty.variants.iter().enumerate() {
+        EntryWrapper::<','>::new(f).entry(|f| {
+            let (ty, val) = (self.ty(), self.value());
+            let e = &ty.variants[val.tag as usize];
             // if let Some(name) = &e.name {
             //     write!(f, "{}", name)?;
             //     write!(f, ": ")?;
             // }
             // write!(f, "{}", algebraic_type::SATNFormatter::new(&e.algebraic_type))?;
 
-            if i == self.val.tag as usize {
-                if let Some(name) = &e.name {
-                    write!(f, "{}", name)?;
-                }
-                write!(f, " = ")?;
-                let e_ty = &self.ty.variants[i];
-                write!(
-                    f,
-                    "{}",
-                    algebraic_value::satn::Formatter::new(self.typespace, &e_ty.algebraic_type, &self.val.value)
-                )?;
+            if let Some(name) = &e.name {
+                write!(f, "{}", name)?;
             }
+            write!(f, " = ")?;
+            self.with(&e.algebraic_type, &*val.value).fmt(f)
+        })?;
 
-            // if i < self.ty.variants.len() - 1 {
-            //     write!(f, " | ")?;
-            // }
-        }
+        // if i < self.ty.variants.len() - 1 {
+        //     write!(f, " | ")?;
+        // }
         write!(f, ")")
     }
 }

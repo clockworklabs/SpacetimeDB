@@ -7,7 +7,8 @@ extern crate proc_macro;
 
 use std::time::Duration;
 
-use crate::module::{autogen_module_struct_to_schema, autogen_module_struct_to_tuple, autogen_module_tuple_to_struct};
+use crate::module::{autogen_module_struct_to_schema, derive_deserialize_struct, derive_serialize_struct};
+use module::{derive_deserialize, derive_serialize};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::Fields::{Named, Unit, Unnamed};
@@ -177,21 +178,14 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
         extern "C" fn __reducer(__sender: spacetimedb::sys::Buffer, __timestamp: u64, __args: spacetimedb::sys::Buffer) -> spacetimedb::sys::Buffer {
             #(spacetimedb::rt::assert_reducerarg::<#arg_tys>();)*
             #(spacetimedb::rt::assert_reducerret::<#ret_ty>();)*
-            unsafe { spacetimedb::rt::invoke_reducer(#func_name, &__REDUCERDEF, __sender, __timestamp, __args, |_res| { #epilogue }) }
+            unsafe { spacetimedb::rt::invoke_reducer(#func_name, __sender, __timestamp, &spacetimedb::sys::Buffer::read(__args), |_res| { #epilogue }) }
         }
-    };
-
-    let reducerdef_static = quote! {
-        static __REDUCERDEF: spacetimedb::rt::Lazy<spacetimedb::spacetimedb_lib::ReducerDef> =
-            spacetimedb::rt::Lazy::new(|| {
-                spacetimedb::rt::schema_of_func(#func_name, #reducer_name, &[#(#arg_names),*])
-            });
     };
 
     let generated_describe_function = quote! {
         #[export_name = #descriptor_symbol]
         pub extern "C" fn __descriptor() -> spacetimedb::sys::Buffer {
-            let reducerdef = &*__REDUCERDEF;
+            let reducerdef = spacetimedb::rt::schema_of_func(#func_name, #reducer_name, &[#(#arg_names),*]);
             let mut bytes = vec![];
             reducerdef.encode(&mut bytes);
             spacetimedb::sys::Buffer::alloc(&bytes)
@@ -229,7 +223,6 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
 
     Ok(quote! {
         const _: () = {
-            #reducerdef_static
             #generated_function
             #generated_describe_function
         };
@@ -411,12 +404,6 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
         }
     };
 
-    let db_iter_tuples = quote! {
-        pub fn iter_tuples() -> spacetimedb::RawTableIter {
-            <Self as spacetimedb::TableType>::iter_tuples()
-        }
-    };
-
     let db_iter = quote! {
         #[allow(unused_variables)]
         pub fn iter() -> spacetimedb::TableIter<Self> {
@@ -424,18 +411,14 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
         }
     };
 
-    let from_value_impl = autogen_module_tuple_to_struct(&original_struct)?;
-    let into_value_impl = autogen_module_struct_to_tuple(&original_struct)?;
+    let spacetimedb_lib = quote!(spacetimedb::spacetimedb_lib);
+    let deserialize_impl = derive_deserialize_struct(&original_struct, &spacetimedb_lib)?;
+    let serialize_impl = derive_serialize_struct(&original_struct, &spacetimedb_lib)?;
     let schema_impl = autogen_module_struct_to_schema(&original_struct, &table_name)?;
     let tabletype_impl = quote! {
         impl spacetimedb::TableType for #original_struct_ident {
             const TABLE_NAME: &'static str = #table_name;
             const UNIQUE_COLUMNS: &'static [u8] = &[#(#unique_fields),*];
-            #[inline]
-            fn __tabledef_cell() -> &'static spacetimedb::rt::OnceCell<spacetimedb::spacetimedb_lib::TableDef> {
-                static TABLEDEF: spacetimedb::rt::OnceCell<spacetimedb::spacetimedb_lib::TableDef> = spacetimedb::rt::OnceCell::new();
-                &TABLEDEF
-            }
             #get_table_id_func
         }
     };
@@ -445,10 +428,20 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
     let describe_table_func = quote! {
         #[export_name = #describe_table_symbol]
         extern "C" fn __describe_table() -> spacetimedb::sys::Buffer {
-            spacetimedb::sys::Buffer::alloc(
-                &<#original_struct_ident as spacetimedb::TableType>::describe_table()
-            )
+            spacetimedb::rt::describe_table::<#original_struct_ident>()
         }
+    };
+
+    let field_names = original_struct.fields.iter().map(|f| f.ident.as_ref().unwrap());
+    let field_types = original_struct.fields.iter().map(|f| &f.ty);
+    let col_num = 0u8..;
+    let field_access_impls = quote! {
+        #(impl spacetimedb::query::FieldAccess<#col_num> for #original_struct_ident {
+            type Field = #field_types;
+            fn get_field(&self) -> &Self::Field {
+                &self.#field_names
+            }
+        })*
     };
 
     // Output all macro data
@@ -468,14 +461,15 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
             #(#unique_delete_funcs)*
 
             #db_iter
-            #db_iter_tuples
             #(#non_primary_filter_func)*
         }
 
         #schema_impl
-        #from_value_impl
-        #into_value_impl
+        #deserialize_impl
+        #serialize_impl
         #tabletype_impl
+
+        #field_access_impls
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
@@ -600,23 +594,22 @@ fn spacetimedb_tuple(meta: &Meta, _: &[NestedMeta], item: TokenStream) -> syn::R
     }
 
     let schema_impl = autogen_module_struct_to_schema(&original_struct, &tuple_name)?;
-    let from_value_impl = autogen_module_tuple_to_struct(&original_struct)?;
-    let into_value_impl = autogen_module_struct_to_tuple(&original_struct)?;
+    let spacetimedb_lib = quote!(spacetimedb::spacetimedb_lib);
+    let deserialize_impl = derive_deserialize_struct(&original_struct, &spacetimedb_lib)?;
+    let serialize_impl = derive_serialize_struct(&original_struct, &spacetimedb_lib)?;
 
-    let describe_tuple_symbol = format!("__describe_tuple__{tuple_name}");
+    let describe_typealias_symbol = format!("__describe_type_alias__{tuple_name}");
 
     let emission = quote! {
         #original_struct
         #schema_impl
-        #from_value_impl
-        #into_value_impl
+        #deserialize_impl
+        #serialize_impl
 
         const _: () = {
-            #[export_name = #describe_tuple_symbol]
-            extern "C" fn __describe_symbol() -> spacetimedb::sys::Buffer {
-                spacetimedb::sys::Buffer::alloc(
-                    &<#original_struct_ident as spacetimedb::TupleType>::describe_tuple()
-                )
+            #[export_name = #describe_typealias_symbol]
+            extern "C" fn __describe_symbol() -> u32 {
+                spacetimedb::rt::describe_reftype::<#original_struct_ident>()
             }
         };
     };
@@ -733,4 +726,41 @@ fn parse_duration(lit: &syn::Lit, ctx: &str) -> syn::Result<Duration> {
 
     parse_duration::parse(&s)
         .map_err(|e| syn::Error::new_spanned(lit, format_args!("Can't parse {ctx} as duration: {e}")))
+}
+
+fn find_crate(attrs: &[syn::Attribute]) -> TokenStream {
+    for attr in attrs {
+        if !attr.path.is_ident("sats") {
+            continue;
+        }
+        let Ok(Meta::List(l)) = attr.parse_meta() else { continue };
+        for meta in l.nested {
+            match meta {
+                NestedMeta::Meta(Meta::NameValue(nv)) if nv.path.is_ident("crate") => {
+                    let syn::Lit::Str(s) = nv.lit else { continue };
+                    return s.parse().unwrap();
+                }
+                _ => {}
+            }
+        }
+    }
+    quote!(spacetimedb_lib)
+}
+
+#[proc_macro_derive(Deserialize, attributes(sats))]
+pub fn deserialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    let krate = find_crate(&input.attrs);
+    derive_deserialize(&input, &krate)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+#[proc_macro_derive(Serialize, attributes(sats))]
+pub fn serialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    let krate = find_crate(&input.attrs);
+    derive_serialize(&input, &krate)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
 }

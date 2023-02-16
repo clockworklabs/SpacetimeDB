@@ -7,21 +7,58 @@ const ABIVER_GLOBAL_TY: wasmparser::GlobalType = wasmparser::GlobalType {
     mutable: false,
 };
 
-#[derive(Copy, Clone)]
-pub enum SpacetimeAbiVersion {
-    V0,
+macro_rules! def_abiversion {
+    ($($v:ident => $tup:tt,)*) => {
+        #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+        pub enum SpacetimeAbiVersion {
+            $($v,)*
+        }
+
+        impl SpacetimeAbiVersion {
+            pub const fn from_tuple(tup: VersionTuple) -> Option<Self> {
+                match tup {
+                    $(VersionTuple::$v => Some(Self::$v),)*
+                    _ => None,
+                }
+            }
+            pub const fn as_tuple(self) -> VersionTuple {
+                match self {
+                    $(Self::$v => VersionTuple::$v,)*
+                }
+            }
+        }
+
+        impl VersionTuple {
+            $(const $v: Self = VersionTuple::new $tup;)*
+        }
+    };
 }
-impl SpacetimeAbiVersion {
-    pub fn from_u32(v: u32) -> Option<Self> {
-        let function_abi_ver = v & 0xFFFF;
-        let schema_abi_ver = v >> 16;
-        #[allow(clippy::assertions_on_constants)] // stupid lint
-        const _: () = assert!(spacetimedb_lib::SCHEMA_FORMAT_VERSION == 0);
-        let ver = match (function_abi_ver, schema_abi_ver) {
-            (0, 0) => Self::V0,
-            _ => return None,
-        };
-        Some(ver)
+spacetimedb_lib::abi_versions!(def_abiversion);
+
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
+pub struct VersionTuple {
+    pub schema_ver: u16,
+    pub function_ver: u16,
+}
+impl VersionTuple {
+    const fn new(schema_ver: u16, function_ver: u16) -> Self {
+        Self {
+            schema_ver,
+            function_ver,
+        }
+    }
+}
+impl From<u32> for VersionTuple {
+    fn from(v: u32) -> Self {
+        Self {
+            schema_ver: (v >> 16) as u16,
+            function_ver: (v & 0xFFFF) as u16,
+        }
+    }
+}
+impl From<VersionTuple> for u32 {
+    fn from(v: VersionTuple) -> Self {
+        (v.schema_ver as u32) << 16 | v.function_ver as u32
     }
 }
 
@@ -99,6 +136,8 @@ pub fn determine_spacetime_abi(wasm_module: &[u8]) -> anyhow::Result<SpacetimeAb
     } else {
         value as u32
     };
-    let ver = SpacetimeAbiVersion::from_u32(ver).ok_or_else(|| anyhow::anyhow!("invalid ABI version: {value:x}"))?;
+    let ver = VersionTuple::from(ver);
+    let ver = SpacetimeAbiVersion::from_tuple(ver)
+        .ok_or_else(|| anyhow::anyhow!("unknown ABI version (too new?): {ver:x?}"))?;
     Ok(ver)
 }

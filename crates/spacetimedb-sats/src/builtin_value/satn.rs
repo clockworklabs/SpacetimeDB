@@ -1,22 +1,10 @@
-use super::BuiltinValue;
-use crate::{algebraic_value, builtin_type::BuiltinType, typespace::Typespace};
-use std::fmt::Display;
+use crate::satn::EntryWrapper;
+use crate::{BuiltinValue, MapType, ValueWithType};
+use std::fmt;
 
-pub struct Formatter<'a> {
-    typespace: &'a Typespace,
-    ty: &'a BuiltinType,
-    val: &'a BuiltinValue,
-}
-
-impl<'a> Formatter<'a> {
-    pub fn new(typespace: &'a Typespace, ty: &'a BuiltinType, val: &'a BuiltinValue) -> Self {
-        Self { typespace, ty, val }
-    }
-}
-
-impl<'a> Display for Formatter<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.val {
+impl<'a> crate::satn::Satn for ValueWithType<'a, BuiltinValue> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.value() {
             BuiltinValue::Bool(val) => write!(f, "{}", val),
             BuiltinValue::I8(val) => write!(f, "{}", val),
             BuiltinValue::U8(val) => write!(f, "{}", val),
@@ -34,35 +22,25 @@ impl<'a> Display for Formatter<'a> {
             BuiltinValue::Bytes(val) => write!(f, "{:?}", val),
             BuiltinValue::Array { val } => {
                 write!(f, "[")?;
-                for (i, e) in val.iter().enumerate() {
-                    write!(
-                        f,
-                        "{}",
-                        algebraic_value::satn::Formatter::new(self.typespace, self.ty.as_array().unwrap(), e)
-                    )?;
-                    if i != val.len() - 1 {
-                        write!(f, ", ")?;
-                    }
-                }
+                EntryWrapper::<','>::new(f).entries(
+                    val.iter()
+                        .map(|e| |f: &mut fmt::Formatter| self.with(&**self.ty().as_array().unwrap(), e).fmt(f)),
+                )?;
                 write!(f, "]")
             }
             BuiltinValue::Map { val } => {
                 if val.len() == 0 {
                     return write!(f, "[:]");
                 }
-                let (key_ty, ty) = self.ty.as_map().unwrap();
+                let MapType { key_ty, ty } = self.ty().as_map().unwrap();
                 write!(f, "[")?;
-                for (i, (key, e)) in val.iter().enumerate() {
-                    write!(
-                        f,
-                        "{}: {}",
-                        algebraic_value::satn::Formatter::new(self.typespace, key_ty, key),
-                        algebraic_value::satn::Formatter::new(self.typespace, ty, e)
-                    )?;
-                    if i != val.len() - 1 {
-                        write!(f, ", ")?;
+                EntryWrapper::<','>::new(f).entries(val.iter().map(|(key, e)| {
+                    |f: &mut fmt::Formatter| {
+                        self.with(&**key_ty, key).fmt(f)?;
+                        f.write_str(": ")?;
+                        self.with(&**ty, e).fmt(f)
                     }
-                }
+                }))?;
                 write!(f, "]")
             }
         }

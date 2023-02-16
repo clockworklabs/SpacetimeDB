@@ -412,7 +412,7 @@ impl ModuleSubscriptionActor {
             vec.push(TableRowOperationJson {
                 op: op_string,
                 row_pk,
-                row: row.elements.into_vec(),
+                row: row.elements,
             });
         }
 

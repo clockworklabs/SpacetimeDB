@@ -19,7 +19,7 @@ impl PrimaryKey {
         self.data_key.to_bytes()
     }
 
-    pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
+    pub fn decode<'a>(bytes: &mut impl BufReader<'a>) -> Result<Self, DecodeError> {
         let data_key = DataKey::decode(bytes)?;
         Ok(PrimaryKey { data_key })
     }

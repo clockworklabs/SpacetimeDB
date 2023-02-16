@@ -1,49 +1,118 @@
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::type_def::{PrimitiveType, ReducerDef, TableDef};
-use spacetimedb_lib::{ElementDef, TupleDef, TypeDef};
+use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, BuiltinType, MapType};
+use spacetimedb_lib::{ReducerDef, TableDef, TupleDef, TypeDef};
 
 use super::code_indenter::CodeIndenter;
-use super::INDENT;
+use super::{GenCtx, INDENT};
 
 const NAMESPACE: &str = "SpacetimeDB";
 
-fn primitive_to_csharp(prim: PrimitiveType) -> &'static str {
-    match prim {
-        PrimitiveType::Bool => "bool",
-        PrimitiveType::I8 => "sbyte",
-        PrimitiveType::U8 => "byte",
-        PrimitiveType::I16 => "short",
-        PrimitiveType::U16 => "ushort",
-        PrimitiveType::I32 => "int",
-        PrimitiveType::U32 => "uint",
-        PrimitiveType::I64 => "long",
-        PrimitiveType::U64 => "ulong",
-        // PrimitiveType::I128 => "int128", Not a supported type in csharp
-        // PrimitiveType::U128 => "uint128", Not a supported type in csharp
-        PrimitiveType::I128 => panic!("i128 not supported for csharp"),
-        PrimitiveType::U128 => panic!("i128 not supported for csharp"),
-        PrimitiveType::String => "string",
-        PrimitiveType::F32 => "float",
-        PrimitiveType::F64 => "double",
-        PrimitiveType::Bytes => "byte[]",
-        PrimitiveType::Hash => "SpacetimeDB.Hash",
-        PrimitiveType::Unit => todo!(), // does this exist? System.Void can't be used from C# :(
-    }
+enum MaybePrimitive<'a> {
+    Primitive(&'static str),
+    Array { ty: &'a AlgebraicType },
+    Map(&'a MapType),
 }
-fn ty_fmt(ty: &TypeDef) -> impl fmt::Display + '_ {
+
+fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
+    MaybePrimitive::Primitive(match b {
+        BuiltinType::Bool => "bool",
+        BuiltinType::I8 => "sbyte",
+        BuiltinType::U8 => "byte",
+        BuiltinType::I16 => "short",
+        BuiltinType::U16 => "ushort",
+        BuiltinType::I32 => "int",
+        BuiltinType::U32 => "uint",
+        BuiltinType::I64 => "long",
+        BuiltinType::U64 => "ulong",
+        // BuiltinType::I128 => "int128", Not a supported type in csharp
+        // BuiltinType::U128 => "uint128", Not a supported type in csharp
+        BuiltinType::I128 => panic!("i128 not supported for csharp"),
+        BuiltinType::U128 => panic!("i128 not supported for csharp"),
+        BuiltinType::String => "string",
+        BuiltinType::F32 => "float",
+        BuiltinType::F64 => "double",
+        BuiltinType::Array { ty } => return MaybePrimitive::Array { ty },
+        BuiltinType::Map(m) => return MaybePrimitive::Map(m),
+    })
+}
+
+fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        TypeDef::Tuple(tup) => f.write_str(csharp_tuplename(tup)),
-        TypeDef::Enum(_) => unimplemented!(),
-        TypeDef::Vec { element_type } => write!(f, "System.Collections.Generic.List<{}>", ty_fmt(element_type)),
-        TypeDef::Primitive(prim) => f.write_str(primitive_to_csharp(*prim)),
+        TypeDef::Sum(_) => unimplemented!(),
+        TypeDef::Product(_) => unimplemented!(),
+        TypeDef::Builtin(b) => match maybe_primitive(b) {
+            MaybePrimitive::Primitive(p) => f.write_str(p),
+            MaybePrimitive::Array { ty } if *ty == AlgebraicType::U8 => f.write_str("byte[]"),
+            MaybePrimitive::Array { ty } => return write!(f, "System.Collections.Generic.List<{}>", ty_fmt(ctx, ty)),
+            MaybePrimitive::Map(_) => todo!(),
+        },
+        TypeDef::Ref(r) => f.write_str(csharp_typename(ctx, *r)),
+    })
+}
+fn convert_builtintype<'a>(
+    ctx: &'a GenCtx,
+    vecnest: usize,
+    b: &'a BuiltinType,
+    value: impl fmt::Display + 'a,
+) -> impl fmt::Display + 'a {
+    fmt_fn(move |f| match maybe_primitive(b) {
+        MaybePrimitive::Primitive(csharp_type) => {
+            write!(f, "({csharp_type}){value}.GetValue(TypeDef.Def.{b:?})")
+        }
+        MaybePrimitive::Array { ty } if *ty == AlgebraicType::U8 => {
+            write!(f, "(byte[]){value}.GetValue(TypeDef.Def.Bytes)")
+        }
+        MaybePrimitive::Array { ty } => {
+            let csharp_type = ty_fmt(ctx, ty);
+            writeln!(
+                f,
+                "((System.Func<System.Collections.Generic.List<{csharp_type}>>)(() => {{"
+            )?;
+            writeln!(
+                f,
+                "\tvar vec{vecnest} = new System.Collections.Generic.List<{}>();",
+                csharp_type
+            )?;
+            writeln!(
+                f,
+                "\tvar vec{vecnest}_source = {value}.GetValue(TypeDef.Def.Vec) as System.Collections.Generic.List<SpacetimeDB.TypeValue>;",
+            )?;
+            writeln!(f, "\tforeach(var entry in vec{vecnest}_source!)")?;
+            writeln!(f, "\t{{")?;
+            writeln!(
+                f,
+                "\t\tvec{vecnest}.Add({});",
+                convert_type(ctx, vecnest + 1, ty, "entry")
+            )?;
+            writeln!(f, "\treturn vec{vecnest};")?;
+            write!(f, "}}))()")
+        }
+        MaybePrimitive::Map(_) => todo!(),
+    })
+}
+
+fn convert_type<'a>(
+    ctx: &'a GenCtx,
+    vecnest: usize,
+    ty: &'a AlgebraicType,
+    value: impl fmt::Display + 'a,
+) -> impl fmt::Display + 'a {
+    fmt_fn(move |f| match ty {
+        TypeDef::Product(_) => unimplemented!(),
+        TypeDef::Sum(_) => unimplemented!(),
+        TypeDef::Builtin(b) => fmt::Display::fmt(&convert_builtintype(ctx, vecnest, b, &value), f),
+        TypeDef::Ref(r) => {
+            let name = csharp_typename(ctx, *r);
+            write!(f, "({name}){value}",)
+        }
     })
 }
 
 // can maybe do something fancy with this in the future
-fn csharp_tuplename(tup: &TupleDef) -> &str {
-    tup.name.as_deref().expect("tuples should have names")
+fn csharp_typename(ctx: &GenCtx, typeref: AlgebraicTypeRef) -> &str {
+    ctx.names[typeref.idx()].as_deref().expect("tuples should have names")
 }
 
 fn fmt_fn(f: impl Fn(&mut fmt::Formatter) -> fmt::Result) -> impl fmt::Display {
@@ -62,48 +131,49 @@ macro_rules! indent_scope {
     };
 }
 
-fn convert_typedef(ty: &TypeDef) -> impl fmt::Display + '_ {
+fn convert_typedef<'a>(ctx: &'a GenCtx, ty: &'a TypeDef) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        TypeDef::Tuple(tup) => {
-            write!(f, "{}.GetTypeDef()", csharp_tuplename(tup))
-        }
-        TypeDef::Enum(_) => unimplemented!(),
-        TypeDef::Vec { element_type } => {
-            write!(f, "SpacetimeDB.TypeDef.GetVec({})", convert_typedef(element_type))
-        }
-        TypeDef::Primitive(prim) => write!(f, "SpacetimeDB.TypeDef.BuiltInType(SpacetimeDB.TypeDef.Def.{:?})", prim),
+        TypeDef::Product(_) => unimplemented!(),
+        TypeDef::Sum(_) => unimplemented!(),
+        TypeDef::Builtin(b) => match maybe_primitive(b) {
+            MaybePrimitive::Primitive(_) => {
+                write!(f, "SpacetimeDB.TypeDef.BuiltInType(SpacetimeDB.TypeDef.Def.{:?})", b)
+            }
+            MaybePrimitive::Array { ty } => write!(f, "SpacetimeDB.TypeDef.GetVec({})", convert_typedef(ctx, ty)),
+            MaybePrimitive::Map(_) => todo!(),
+        },
+        TypeDef::Ref(r) => write!(f, "{}.GetTypeDef()", csharp_typename(ctx, *r)),
     })
 }
 
-fn convert_elementdef(elem: &ElementDef) -> impl fmt::Display + '_ {
-    fmt_fn(move |f| {
-        write!(
-            f,
-            "new SpacetimeDB.ElementDef({}, {})",
-            elem.tag,
-            convert_typedef(&elem.element_type)
-        )
-    })
-}
-
-fn convert_tupledef(tuple: &TupleDef) -> impl fmt::Display + '_ {
+fn convert_tupledef<'a>(ctx: &'a GenCtx, tuple: &'a TupleDef) -> impl fmt::Display + 'a {
     fmt_fn(move |f| {
         writeln!(f, "TypeDef.Tuple(new ElementDef[]")?;
         writeln!(f, "{{")?;
-        for elem in &tuple.elements {
-            writeln!(f, "{INDENT}{},", convert_elementdef(elem))?;
+        for (i, elem) in tuple.elements.iter().enumerate() {
+            writeln!(
+                f,
+                "{INDENT}new SpacetimeDB.ElementDef({i}, {}),",
+                convert_typedef(ctx, &elem.algebraic_type)
+            )?;
         }
         write!(f, "}})")
     })
 }
 
-pub fn autogen_csharp_tuple(name: &str, tuple: &TupleDef) -> String {
-    autogen_csharp_tuple_table_common(name, tuple, None)
+pub fn autogen_csharp_tuple(ctx: &GenCtx, name: &str, tuple: &TupleDef) -> String {
+    autogen_csharp_tuple_table_common(ctx, name, tuple, None)
 }
-pub fn autogen_csharp_table(name: &str, table: &TableDef) -> String {
-    autogen_csharp_tuple_table_common(name, &table.tuple, Some(&table.unique_columns))
+pub fn autogen_csharp_table(ctx: &GenCtx, name: &str, table: &TableDef) -> String {
+    let tuple = ctx.typespace[table.data].as_product().unwrap();
+    autogen_csharp_tuple_table_common(ctx, name, tuple, Some(&table.unique_columns))
 }
-fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_columns: Option<&[u8]>) -> String {
+fn autogen_csharp_tuple_table_common(
+    ctx: &GenCtx,
+    name: &str,
+    tuple: &TupleDef,
+    unique_columns: Option<&[u8]>,
+) -> String {
     let mut output = CodeIndenter::new(String::new());
 
     let struct_name_pascal_case = name.to_case(Case::Pascal);
@@ -138,7 +208,7 @@ fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_column
                 writeln!(
                     output,
                     "public {} {};",
-                    ty_fmt(&field.element_type),
+                    ty_fmt(ctx, &field.algebraic_type),
                     field_name.to_case(Case::Camel)
                 )
                 .unwrap();
@@ -174,7 +244,7 @@ fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_column
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
-                writeln!(output, "return {};", convert_tupledef(tuple)).unwrap();
+                writeln!(output, "return {};", convert_tupledef(ctx, tuple)).unwrap();
             }
             writeln!(output, "}}").unwrap();
             writeln!(output).unwrap();
@@ -182,7 +252,7 @@ fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_column
             write!(
                 output,
                 "{}",
-                autogen_csharp_tuple_to_struct(&struct_name_pascal_case, tuple)
+                autogen_csharp_tuple_to_struct(ctx, &struct_name_pascal_case, tuple)
             )
             .unwrap();
 
@@ -280,9 +350,8 @@ fn autogen_csharp_tuple_table_common(name: &str, tuple: &TupleDef, unique_column
     output.into_inner()
 }
 
-fn autogen_csharp_tuple_to_struct(struct_name_pascal_case: &str, tuple: &TupleDef) -> String {
+fn autogen_csharp_tuple_to_struct(ctx: &GenCtx, struct_name_pascal_case: &str, tuple: &TupleDef) -> String {
     let mut output_contents_header: String = String::new();
-    let mut vec_conversion: String = String::new();
     let mut output_contents_return: String = String::new();
 
     writeln!(
@@ -309,100 +378,17 @@ fn autogen_csharp_tuple_to_struct(struct_name_pascal_case: &str, tuple: &TupleDe
     writeln!(output_contents_return, "\treturn new {}", struct_name_pascal_case).unwrap();
     writeln!(output_contents_return, "\t{{").unwrap();
 
-    for field in &tuple.elements {
+    for (idx, field) in tuple.elements.iter().enumerate() {
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
-        let field_type = &field.element_type;
-        let csharp_type = ty_fmt(field_type);
+        let field_type = &field.algebraic_type;
         let csharp_field_name = field_name.to_string().to_case(Case::Camel);
 
-        match field_type {
-            TypeDef::Tuple(tup) => {
-                let name = csharp_tuplename(tup);
-                writeln!(
-                    output_contents_return,
-                    "\t\t{} = ({name})tupleValue[{}],",
-                    csharp_field_name, field.tag,
-                )
-                .unwrap();
-            }
-            TypeDef::Enum(_) => unimplemented!(),
-            TypeDef::Primitive(prim) => {
-                writeln!(
-                    output_contents_return,
-                    "\t\t{} = ({})tupleValue[{}].GetValue(TypeDef.Def.{:?}),",
-                    csharp_field_name, csharp_type, field.tag, prim
-                )
-                .unwrap();
-            }
-            TypeDef::Vec { element_type } => match &**element_type {
-                TypeDef::Tuple(tup) => {
-                    let name = csharp_tuplename(tup);
-
-                    writeln!(
-                        vec_conversion,
-                        "\tvar {}_vec = new System.Collections.Generic.List<{name}>();",
-                        field_name
-                    )
-                    .unwrap();
-                    writeln!(
-                        vec_conversion,
-                        "\tvar {}_vec_source = tupleValue[{}].GetValue(SpacetimeDB.TypeDef.Def.Vec) as System.Collections.Generic.List<SpacetimeDB.TypeValue>;",
-                        field_name, field.tag
-                    ).unwrap();
-
-                    writeln!(vec_conversion, "\tforeach(var entry in {}_vec_source!)", field_name).unwrap();
-                    writeln!(vec_conversion, "\t{{").unwrap();
-                    writeln!(vec_conversion, "\t\t{}_vec.Add(({name})entry);", field_name).unwrap();
-                    writeln!(vec_conversion, "\t}}").unwrap();
-                    writeln!(
-                        output_contents_return,
-                        "\t\t{} = {}_vec,",
-                        csharp_field_name, field_name
-                    )
-                    .unwrap();
-                }
-                TypeDef::Enum(_) => unimplemented!(),
-                TypeDef::Primitive(prim) => {
-                    let csharp_type = primitive_to_csharp(*prim);
-                    writeln!(
-                        vec_conversion,
-                        "\tvar {}_vec = new System.Collections.Generic.List<{}>();",
-                        field_name, csharp_type
-                    )
-                    .unwrap();
-                    writeln!(
-                        vec_conversion,
-                        "\tvar {}_vec_source = tupleValue[{}].GetValue(TypeDef.Def.Vec) as System.Collections.Generic.List<SpacetimeDB.TypeValue>;",
-                        field_name, field.tag
-                    ).unwrap();
-                    writeln!(vec_conversion, "\tforeach(var entry in {}_vec_source!)", field_name).unwrap();
-                    writeln!(vec_conversion, "\t{{").unwrap();
-                    if let PrimitiveType::String = prim {
-                        writeln!(
-                            vec_conversion,
-                            "\t\t{}_vec.Add(entry.GetValue(TypeDef.Def.{:?}) as string);",
-                            field_name, prim,
-                        )
-                        .unwrap();
-                    } else {
-                        writeln!(
-                            vec_conversion,
-                            "\t\t{}_vec.Add(({})entry.GetValue(TypeDef.Def.{:?}));",
-                            field_name, csharp_type, prim,
-                        )
-                        .unwrap();
-                    }
-                    writeln!(vec_conversion, "\t}}").unwrap();
-                    writeln!(
-                        output_contents_return,
-                        "\t\t{} = {}_vec,",
-                        csharp_field_name, field_name
-                    )
-                    .unwrap();
-                }
-                TypeDef::Vec { .. } => panic!("nested vecs are disallowed?"),
-            },
-        }
+        writeln!(
+            output_contents_return,
+            "\t\t{csharp_field_name} = {},",
+            convert_type(ctx, 0, field_type, format_args!("tupleValue[{idx}]"))
+        )
+        .unwrap();
     }
 
     // End Struct
@@ -410,7 +396,7 @@ fn autogen_csharp_tuple_to_struct(struct_name_pascal_case: &str, tuple: &TupleDe
     // End Func
     writeln!(output_contents_return, "}}").unwrap();
 
-    output_contents_header + &vec_conversion + &output_contents_return
+    output_contents_header + &output_contents_return
 }
 
 fn indented_block<R>(output: &mut CodeIndenter<String>, f: impl FnOnce(&mut CodeIndenter<String>) -> R) -> R {
@@ -459,23 +445,24 @@ fn autogen_csharp_access_funcs_for_struct(
     for (col_i, is_unique) in it {
         let field = &tuple.elements[col_i as usize];
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
-        let field_type = &field.element_type;
+        let field_type = &field.algebraic_type;
         let csharp_field_name_pascal = field_name.to_case(Case::Pascal);
 
-        let field_type = match field_type {
-            TypeDef::Tuple(_) => {
+        let (field_type, csharp_field_type) = match field_type {
+            TypeDef::Product(_) | TypeDef::Ref(_) => {
                 // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
                 continue;
             }
-            TypeDef::Enum(_) => unimplemented!(),
-            TypeDef::Primitive(prim) => *prim,
-            TypeDef::Vec { .. } => {
-                // TODO: We don't allow filtering based on a vec type, but we might want other functionality here in the future.
-                // TODO: It would be nice to be able to say, give me all entries where this vec contains this value, which we can do.
-                continue;
-            }
+            TypeDef::Sum(_) => unimplemented!(),
+            TypeDef::Builtin(b) => match maybe_primitive(b) {
+                MaybePrimitive::Primitive(ty) => (b, ty),
+                MaybePrimitive::Array { .. } | MaybePrimitive::Map(_) => {
+                    // TODO: We don't allow filtering based on a vec type, but we might want other functionality here in the future.
+                    // TODO: It would be nice to be able to say, give me all entries where this vec contains this value, which we can do.
+                    continue;
+                }
+            },
         };
-        let csharp_field_type = primitive_to_csharp(field_type);
 
         let filter_return_type = fmt_fn(|f| {
             if is_unique {
@@ -514,7 +501,7 @@ fn autogen_csharp_access_funcs_for_struct(
                 writeln!(
                     output,
                     "var compareValue = ({})tupleArr[{}].GetValue(TypeDef.Def.{:?});",
-                    csharp_field_type, field.tag, field_type
+                    csharp_field_type, col_i, field_type
                 )
                 .unwrap();
                 writeln!(output, "if (compareValue == value)").unwrap();
@@ -553,7 +540,7 @@ fn autogen_csharp_access_funcs_for_struct(
 //     })
 // }
 
-pub fn autogen_csharp_reducer(reducer: &ReducerDef) -> String {
+pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     let func_name = reducer.name.as_ref().expect("reducer should have name");
     // let reducer_pascal_name = func_name.to_case(Case::Pascal);
     let use_namespace = true;
@@ -596,7 +583,7 @@ pub fn autogen_csharp_reducer(reducer: &ReducerDef) -> String {
         for (arg_i, arg) in reducer.args.iter().enumerate() {
             let name = arg.name.as_deref().expect("reducer args should have names");
             let arg_name = name.to_case(Case::Camel);
-            let arg_type_str = ty_fmt(&arg.element_type);
+            let arg_type_str = ty_fmt(ctx, &arg.algebraic_type);
 
             if arg_i > 0 {
                 func_arguments.push_str(", ");

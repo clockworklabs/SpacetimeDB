@@ -86,7 +86,7 @@ impl DataKey {
         data_key_summary
     }
 
-    pub fn decode(bytes: &mut impl BufReader) -> Result<Self, DecodeError> {
+    pub fn decode<'a>(bytes: &mut impl BufReader<'a>) -> Result<Self, DecodeError> {
         let header = bytes.get_u8()?;
 
         let is_hash = (header & IS_HASH_BIT) != 0;
@@ -119,5 +119,24 @@ impl DataKey {
         };
         bytes.put_u8(header);
         bytes.put_slice(data);
+    }
+}
+
+pub trait ToDataKey {
+    fn to_data_key(&self) -> DataKey;
+}
+
+impl ToDataKey for crate::TypeValue {
+    fn to_data_key(&self) -> DataKey {
+        let mut bytes = Vec::new();
+        self.encode(&mut bytes);
+        DataKey::from_data(&bytes.iter())
+    }
+}
+impl ToDataKey for crate::TupleValue {
+    fn to_data_key(&self) -> DataKey {
+        let mut bytes = Vec::new();
+        self.encode(&mut bytes);
+        DataKey::from_data(&bytes.iter())
     }
 }

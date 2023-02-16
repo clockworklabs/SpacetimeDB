@@ -1,6 +1,9 @@
 use std::ops::{Add, Sub};
 use std::time::Duration;
 
+use spacetimedb_lib::de::Deserialize;
+use spacetimedb_lib::ser::Serialize;
+
 use crate::rt::CURRENT_TIMESTAMP;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -70,14 +73,14 @@ impl crate::SchemaType for Timestamp {
     }
 }
 
-impl crate::FromValue for Timestamp {
-    fn from_value(v: spacetimedb_lib::TypeValue) -> Option<Self> {
-        u64::from_value(v).map(|micros_since_epoch| Self { micros_since_epoch })
+impl<'de> Deserialize<'de> for Timestamp {
+    fn deserialize<D: spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        u64::deserialize(deserializer).map(|micros_since_epoch| Self { micros_since_epoch })
     }
 }
 
-impl crate::IntoValue for Timestamp {
-    fn into_value(self) -> spacetimedb_lib::TypeValue {
-        self.micros_since_epoch.into_value()
+impl Serialize for Timestamp {
+    fn serialize<S: spacetimedb_lib::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.micros_since_epoch.serialize(serializer)
     }
 }

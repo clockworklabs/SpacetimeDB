@@ -1,12 +1,13 @@
 use crate::algebraic_type::AlgebraicType;
-use serde::{Deserialize, Serialize};
+use crate::{de::Deserialize, ser::Serialize};
 
 /// NOTE: Each element has an implicit element tag based on its order.
 /// Uniquely identifies an element similarly to protobuf tags.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[sats(crate = "crate")]
 pub struct SumTypeVariant {
-    pub algebraic_type: AlgebraicType,
     pub name: Option<String>,
+    pub algebraic_type: AlgebraicType,
 }
 
 impl SumTypeVariant {

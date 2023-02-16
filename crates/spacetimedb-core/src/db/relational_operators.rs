@@ -108,11 +108,9 @@ impl<S: Iterator<Item = TupleValue>> Iterator for Project<S> {
 
     fn next(&mut self) -> Option<TupleValue> {
         self.source.next().map(|mut row| {
-            let mut elements = row.elements.into_vec();
             for &i in self.cols.iter().rev() {
-                elements.remove(i as usize);
+                row.elements.remove(i as usize);
             }
-            row.elements = elements.into_boxed_slice();
             row
         })
     }

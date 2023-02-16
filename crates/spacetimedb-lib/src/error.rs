@@ -1,4 +1,5 @@
 use crate::{buffer, TypeDef};
+use spacetimedb_sats::product_value::InvalidFieldError;
 use std::fmt;
 use std::string::FromUtf8Error;
 use thiserror::Error;
@@ -41,10 +42,8 @@ pub enum LibError {
     Decode(#[from] DecodeError),
     #[error("BufferError: {0}")]
     Buffer(#[from] buffer::DecodeError),
-    #[error("Field {0}({1:?}) not found")]
-    TupleFieldNotFound(usize, Option<&'static str>),
-    #[error("Field {0}({1:?}) has a invalid type")]
-    TupleFieldTypeInvalid(usize, Option<&'static str>),
+    #[error(transparent)]
+    TupleFieldInvalid(#[from] InvalidFieldError),
 }
 
 /// A wrapper for using on test so the error display nicely

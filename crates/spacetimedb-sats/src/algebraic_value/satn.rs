@@ -1,37 +1,25 @@
-use super::AlgebraicValue;
-use crate::{algebraic_type::AlgebraicType, builtin_value, product_value, sum_value, typespace::Typespace};
-use std::fmt::Display;
+use std::fmt;
 
-pub struct Formatter<'a> {
-    typespace: &'a Typespace,
-    ty: &'a AlgebraicType,
-    val: &'a AlgebraicValue,
-}
+use crate::{AlgebraicType, AlgebraicValue, ValueWithType};
 
-impl<'a> Formatter<'a> {
-    pub fn new(typespace: &'a Typespace, ty: &'a AlgebraicType, val: &'a AlgebraicValue) -> Self {
-        Self { typespace, ty, val }
-    }
-}
-
-impl<'a> Display for Formatter<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.ty {
+impl<'a> crate::satn::Satn for ValueWithType<'a, AlgebraicValue> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.ty() {
             AlgebraicType::Sum(ty) => {
-                let val = self.val.as_sum().unwrap();
-                write!(f, "{}", sum_value::satn::Formatter::new(self.typespace, ty, val))
+                let val = self.value().as_sum().unwrap();
+                self.with(ty, val).fmt(f)
             }
             AlgebraicType::Product(ty) => {
-                let val = self.val.as_product().unwrap();
-                write!(f, "{}", product_value::satn::Formatter::new(self.typespace, ty, val))
+                let val = self.value().as_product().unwrap();
+                self.with(ty, val).fmt(f)
             }
             AlgebraicType::Builtin(ty) => {
-                let val = self.val.as_builtin().unwrap();
-                write!(f, "{}", builtin_value::satn::Formatter::new(self.typespace, ty, val))
+                let val = self.value().as_builtin().unwrap();
+                self.with(ty, val).fmt(f)
             }
             AlgebraicType::Ref(r) => {
-                let ty = &self.typespace.types[r.0 as usize];
-                write!(f, "{}", self::Formatter::new(self.typespace, ty, self.val))
+                let ty = &self.typespace()[*r];
+                self.with(ty, self.value()).fmt(f)
             }
         }
     }

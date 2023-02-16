@@ -1,12 +1,14 @@
-use anyhow::anyhow;
-
+use anyhow::Context;
 use clap::Arg;
 use clap::ArgAction;
 use clap::ArgMatches;
 use serde::Deserialize;
-use serde::Serialize;
+use serde_json::value::RawValue;
+use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::name::{is_address, DnsLookupResponse};
-use spacetimedb_lib::{TupleDef, TypeValue};
+use spacetimedb_lib::sats::satn;
+use spacetimedb_lib::sats::Typespace;
+use spacetimedb_lib::TupleDef;
 use tabled::builder::Builder;
 use tabled::Style;
 
@@ -14,10 +16,11 @@ use crate::config::Config;
 use crate::util::get_auth_header;
 use crate::util::spacetime_dns;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StmtResultJson {
+#[derive(Debug, Clone, Deserialize)]
+pub struct StmtResultJson<'a> {
     pub schema: TupleDef,
-    pub rows: Vec<Vec<TypeValue>>,
+    #[serde(borrow)]
+    pub rows: Vec<&'a RawValue>,
 }
 
 pub fn cli() -> clap::Command {
@@ -91,24 +94,28 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let stmt_result_json: Vec<StmtResultJson> = serde_json::from_str(&json).unwrap();
 
-    let stmt_result = stmt_result_json.first();
-    if stmt_result.is_none() {
-        return Err(anyhow!("Invalid sql query."));
-    }
-    let stmt_result = stmt_result.unwrap();
-    let rows = &stmt_result.rows;
-    let schema = &stmt_result.schema;
+    let stmt_result = stmt_result_json.first().context("Invalid sql query.")?;
+    let StmtResultJson { schema, rows } = &stmt_result;
 
     let mut builder = Builder::default();
     builder.set_columns(
         schema
             .elements
             .iter()
-            .map(|e| e.name.clone().unwrap_or_else(|| format!("column {}", e.tag))),
+            .enumerate()
+            .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}"))),
     );
 
+    let typespace = Typespace::default();
+    let ty = typespace.with_type(schema);
     for row in rows {
-        builder.add_record(row.iter().map(|v| v.fmt_raw()));
+        let row = from_json_seed(row.get(), SeedWrapper(ty))?;
+        builder.add_record(
+            row.elements
+                .iter()
+                .zip(&schema.elements)
+                .map(|(v, e)| satn::Wrapper(ty.with(&e.algebraic_type).with_value(v))),
+        );
     }
 
     let table = builder.build().with(Style::psql());
@@ -116,4 +123,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     println!("{}", table);
 
     Ok(())
+}
+
+fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(
+    s: &'de str,
+    seed: T,
+) -> Result<T::Value, serde_json::Error> {
+    let mut de = serde_json::Deserializer::from_str(s);
+    let out = seed.deserialize(&mut de)?;
+    de.end()?;
+    Ok(out)
 }

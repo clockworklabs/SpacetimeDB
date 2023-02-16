@@ -31,6 +31,7 @@ prost = "0.10"
 lazy_static = "1.4.0"
 # wasmer-compiler-llvm = "2.2.1"
 spacetimedb-lib = { path = "../spacetimedb-lib" }
+spacetimedb-sats = { path = "../spacetimedb-sats" }
 log = "0.4.16"
 gotham = "0.7.1"
 gotham_derive = "0.7"
@@ -76,6 +77,7 @@ flate2 = "1.0.24"
 wasmparser = "0.92.0"
 tokio-util = { version = "0.7.4", features = ["time"] }
 rustc-demangle = "0.1.21"
+serde_with = "2.2.0"
 
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
 [dependencies.rocksdb]

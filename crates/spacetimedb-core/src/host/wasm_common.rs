@@ -10,6 +10,7 @@ pub const REDUCE_DUNDER: &str = "__reducer__";
 pub const DESCRIBE_REDUCER_DUNDER: &str = "__describe_reducer__";
 
 pub const DESCRIBE_TABLE_DUNDER: &str = "__describe_table__";
+pub const DESCRIBE_TYPESPACE: &str = "__describe_typespace__";
 
 /// functions with this prefix run prior to __setup__, initializing global variables and the like
 pub const PREINIT_DUNDER: &str = "__preinit__";

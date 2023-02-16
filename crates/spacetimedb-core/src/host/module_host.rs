@@ -4,9 +4,9 @@ use crate::hash::Hash;
 use crate::host::host_controller::{ReducerBudget, ReducerCallResult};
 use crate::module_subscription_actor::ModuleSubscription;
 use anyhow::Context;
-use spacetimedb_lib::{EntityDef, TupleValue};
+use spacetimedb_lib::{EntityDef, ReducerDef, TableDef, TupleValue};
+use spacetimedb_sats::{TypeInSpace, Typespace};
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
@@ -132,6 +132,7 @@ enum CmdOrExit {
 pub struct ModuleInfo {
     pub identity: Hash,
     pub module_hash: Hash,
+    pub typespace: Typespace,
     pub catalog: HashMap<String, EntityDef>,
 }
 
@@ -219,8 +220,10 @@ impl ModuleHost {
         budget: ReducerBudget,
         args: ReducerArgs,
     ) -> Result<Option<ReducerCallResult>, anyhow::Error> {
-        let Some(EntityDef::Reducer(schema)) = self.info().catalog.get(&reducer_name) else { return Ok(None) };
-        let args = args.into_tuple(schema)?;
+        let args = match self.catalog().get_reducer(&reducer_name) {
+            Some(schema) => args.into_tuple(schema)?,
+            None => return Ok(None),
+        };
         self.call(|respond_to| ModuleHostCommand::CallReducer {
             caller_identity,
             reducer_name,
@@ -241,9 +244,9 @@ impl ModuleHost {
         budget: ReducerBudget,
         args: ReducerArgs,
     ) -> Result<Option<ReducerCallResult>, anyhow::Error> {
-        let args = match self.info().catalog.get("__init__") {
-            Some(EntityDef::Reducer(schema)) => args.into_tuple(schema)?,
-            _ => TupleValue { elements: Box::new([]) },
+        let args = match self.catalog().get_reducer("__init__") {
+            Some(schema) => args.into_tuple(schema)?,
+            _ => TupleValue { elements: vec![] },
         };
         self.call(|respond_to| ModuleHostCommand::InitDatabase {
             budget,
@@ -292,9 +295,22 @@ impl ModuleHost {
 }
 
 pub struct Catalog(Arc<ModuleInfo>);
-impl Deref for Catalog {
-    type Target = HashMap<String, EntityDef>;
-    fn deref(&self) -> &Self::Target {
-        &self.0.catalog
+impl Catalog {
+    pub fn get(&self, name: &str) -> Option<TypeInSpace<'_, EntityDef>> {
+        self.0.catalog.get(name).map(|ty| self.0.typespace.with_type(ty))
+    }
+    pub fn get_reducer(&self, name: &str) -> Option<TypeInSpace<'_, ReducerDef>> {
+        let schema = self.get(name)?;
+        Some(schema.with(schema.ty().as_reducer()?))
+    }
+    pub fn get_table(&self, name: &str) -> Option<TypeInSpace<'_, TableDef>> {
+        let schema = self.get(name)?;
+        Some(schema.with(schema.ty().as_table()?))
+    }
+    pub fn iter(&self) -> impl Iterator<Item = (&str, TypeInSpace<'_, EntityDef>)> + '_ {
+        self.0
+            .catalog
+            .iter()
+            .map(|(name, e)| (&**name, self.0.typespace.with_type(e)))
     }
 }

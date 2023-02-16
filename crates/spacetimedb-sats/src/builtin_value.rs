@@ -1,7 +1,8 @@
-pub mod encoding;
+// pub mod encoding;
 pub mod satn;
 
 use crate::algebraic_value::AlgebraicValue;
+use crate::builtin_type::BuiltinType;
 use enum_as_inner::EnumAsInner;
 use std::collections::BTreeMap;
 
@@ -34,4 +35,8 @@ pub enum BuiltinValue {
     Map {
         val: BTreeMap<AlgebraicValue, AlgebraicValue>,
     },
+}
+
+impl crate::Value for BuiltinValue {
+    type Type = BuiltinType;
 }

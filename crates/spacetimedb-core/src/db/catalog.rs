@@ -112,7 +112,7 @@ impl Catalog {
 
 #[cfg(test)]
 mod tests {
-    use spacetimedb_lib::{ElementDef, TupleDef, TypeDef};
+    use spacetimedb_lib::{TupleDef, TypeDef};
 
     use crate::db::relational_db::tests_utils::make_test_db;
     use spacetimedb_lib::error::ResultTest;
@@ -131,18 +131,7 @@ mod tests {
         let mut tx_ = stdb.begin_tx();
         let (tx, stdb) = tx_.get();
 
-        let table_id = stdb.create_table(
-            tx,
-            "MyTable",
-            TupleDef {
-                name: None,
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_i32".into()),
-                    element_type: TypeDef::I32,
-                }],
-            },
-        )?;
+        let table_id = stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_i32", TypeDef::I32)]))?;
 
         assert_eq!(
             stdb.catalog.tables.len(),

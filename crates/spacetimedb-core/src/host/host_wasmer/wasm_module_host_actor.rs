@@ -5,7 +5,8 @@ use crate::host::instance_env::InstanceEnv;
 use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::*;
 use anyhow::{anyhow, Context};
-use spacetimedb_lib::{EntityDef, ReducerDef, TableDef};
+use spacetimedb_lib::{bsatn, EntityDef, ReducerDef, TableDef};
+use spacetimedb_sats::Typespace;
 use std::cmp::max;
 use std::collections::HashMap;
 use wasmer::{
@@ -52,18 +53,20 @@ fn log_traceback(func_type: &str, func: &str, e: &RuntimeError) {
 pub struct WasmerModule {
     module: Module,
     engine: Engine,
-    abi: abi::SpacetimeAbiVersion,
 }
 
 impl WasmerModule {
-    pub fn new(module: Module, engine: Engine, abi: abi::SpacetimeAbiVersion) -> Self {
-        WasmerModule { module, engine, abi }
+    pub fn new(module: Module, engine: Engine) -> Self {
+        WasmerModule { module, engine }
     }
 
+    pub const SUPPORTED_ABI: abi::SpacetimeAbiVersion = abi::SpacetimeAbiVersion::V0_3_3;
+
     fn imports(&self, store: &mut Store, env: &FunctionEnv<WasmInstanceEnv>) -> Imports {
-        let abi::SpacetimeAbiVersion::V0 = self.abi;
+        const _: () =
+            assert!(WasmerModule::SUPPORTED_ABI.as_tuple().schema_ver == spacetimedb_lib::SCHEMA_FORMAT_VERSION);
         imports! {
-            "spacetime_v0" => {
+            "spacetime" => {
                 "_schedule_reducer" => Function::new_typed_with_env(store, env, WasmInstanceEnv::schedule_reducer),
                 "_delete_pk" => Function::new_typed_with_env(
                     store,
@@ -219,7 +222,26 @@ impl WasmerInstance {
         describer: &Function,
         describer_func_name: &str,
         descr_type: DescribedEntityType,
-    ) -> Result<Option<EntityDef>, anyhow::Error> {
+    ) -> Result<EntityDef, anyhow::Error> {
+        let bytes = self._call_describer(describer, describer_func_name)?;
+        // Decode the memory as EntityDef.
+        let result = match descr_type {
+            DescribedEntityType::Table => {
+                let table: TableDef = bsatn::from_reader(&mut &bytes[..])
+                    .with_context(|| format!("argument tuples has invalid schema: {}", describer_func_name))?;
+                EntityDef::Table(table)
+            }
+            DescribedEntityType::Reducer => {
+                let reducer: ReducerDef = bsatn::from_reader(&mut &bytes[..])
+                    .with_context(|| format!("argument tuples has invalid schema: {}", describer_func_name))?;
+                EntityDef::Reducer(reducer)
+            }
+        };
+
+        Ok(result)
+    }
+
+    fn _call_describer(&mut self, describer: &Function, describer_func_name: &str) -> Result<Box<[u8]>, anyhow::Error> {
         let start = std::time::Instant::now();
         log::trace!("Start describer \"{}\"...", describer_func_name);
 
@@ -228,41 +250,29 @@ impl WasmerInstance {
         let result = describer.call(store);
         let duration = start.elapsed();
         log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros(),);
-        match result {
-            Err(err) => {
-                log_traceback("describer", describer_func_name, &err);
-                Err(anyhow!("Could not invoke describer function {}", describer_func_name))
-            }
-            Ok(buf) => {
-                let bytes = self
-                    .env
-                    .as_mut(store)
-                    .take_buf(Buffer { raw: buf })
-                    .context("invalid buffer")?;
-                self.env.as_mut(store).clear_bufs();
-
-                // Decode the memory as EntityDef.
-                let result = match descr_type {
-                    DescribedEntityType::Table => {
-                        let table = TableDef::decode(&mut &bytes[..])
-                            .with_context(|| format!("argument tuples has invalid schema: {}", describer_func_name))?;
-                        EntityDef::Table(table)
-                    }
-                    DescribedEntityType::Reducer => {
-                        let reducer = ReducerDef::decode(&mut &bytes[..])
-                            .with_context(|| format!("argument tuples has invalid schema: {}", describer_func_name))?;
-                        EntityDef::Reducer(reducer)
-                    }
-                };
-
-                Ok(Some(result))
-            }
-        }
+        let buf = result.map_err(|err| {
+            log_traceback("describer", describer_func_name, &err);
+            anyhow!("Could not invoke describer function {}", describer_func_name)
+        })?;
+        let bytes = self
+            .env
+            .as_mut(store)
+            .take_buf(Buffer { raw: buf })
+            .context("invalid buffer")?;
+        self.env.as_mut(store).clear_bufs();
+        Ok(bytes)
     }
 }
 
 impl host_actor::WasmInstance for WasmerInstance {
-    fn extract_descriptions(&mut self) -> anyhow::Result<HashMap<String, EntityDef>> {
+    fn extract_descriptions(&mut self) -> anyhow::Result<(Typespace, HashMap<String, EntityDef>)> {
+        let typespace = match self.instance.exports.get_function(DESCRIBE_TYPESPACE).cloned() {
+            Ok(describer) => {
+                let bytes = self._call_describer(&describer, DESCRIBE_TYPESPACE)?;
+                bsatn::from_reader(&mut &bytes[..]).context("invalid encoded typespace")?
+            }
+            Err(_) => Typespace::default(),
+        };
         let mut map = HashMap::new();
         let functions = self.instance.exports.iter().functions();
         let describes = functions.filter_map(|(func_name, func)| {
@@ -272,13 +282,11 @@ impl host_actor::WasmInstance for WasmerInstance {
         });
         let describes = describes.collect::<Vec<_>>();
         for (func_name, func, descr_type, entity_name) in describes {
-            let description = self
-                .call_describer(&func, &func_name, descr_type)?
-                .ok_or_else(|| anyhow!("Bad describe function returned None; {}", func_name))?;
+            let description = self.call_describer(&func, &func_name, descr_type)?;
 
             map.insert(entity_name, description);
         }
-        Ok(map)
+        Ok((typespace, map))
     }
 
     fn instance_env(&self) -> &InstanceEnv {

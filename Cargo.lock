@@ -335,6 +335,7 @@ dependencies = [
  "js-sys",
  "num-integer",
  "num-traits",
+ "serde",
  "time 0.1.45",
  "wasm-bindgen",
  "winapi",
@@ -884,6 +885,7 @@ dependencies = [
  "ident_case",
  "proc-macro2",
  "quote",
+ "strsim",
  "syn",
 ]
 
@@ -906,8 +908,6 @@ checksum = "281759d3c8a14f5c3f0c49363be56810fcd7f910422f97f2db850c2920fde5cf"
 dependencies = [
  "approx",
  "num-traits",
- "serde",
- "serde_derive",
 ]
 
 [[package]]
@@ -2990,6 +2990,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_with"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30d904179146de381af4c93d3af6ca4984b3152db687dacb9c3c35e86f39809c"
+dependencies = [
+ "base64",
+ "chrono",
+ "hex",
+ "indexmap",
+ "serde",
+ "serde_json",
+ "serde_with_macros",
+ "time 0.3.17",
+]
+
+[[package]]
+name = "serde_with_macros"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1966009f3c05f095697c537312f5415d1e3ed31ce0a56942bac4c771c5c335e"
+dependencies = [
+ "darling",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "serde_yaml"
 version = "0.8.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3145,8 +3173,6 @@ dependencies = [
  "once_cell",
  "rand 0.8.5",
  "scoped-tls",
- "serde",
- "serde_json",
  "spacetimedb-bindings-macro",
  "spacetimedb-bindings-sys",
  "spacetimedb-lib",
@@ -3312,11 +3338,13 @@ dependencies = [
  "scopeguard",
  "serde",
  "serde_json",
+ "serde_with",
  "sha1 0.10.5",
  "sha3",
  "slab",
  "sled",
  "spacetimedb-lib",
+ "spacetimedb-sats",
  "sqlparser",
  "strum",
  "tempdir",
@@ -3338,7 +3366,6 @@ version = "0.3.2"
 dependencies = [
  "anyhow",
  "bytes",
- "decorum",
  "enum-as-inner",
  "hex",
  "insta",
@@ -3347,6 +3374,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha3",
+ "spacetimedb-bindings-macro",
+ "spacetimedb-sats",
  "thiserror",
 ]
 
@@ -3359,9 +3388,12 @@ dependencies = [
  "decorum",
  "enum-as-inner",
  "hex",
+ "itertools",
  "rand 0.8.5",
  "serde",
  "sha3",
+ "spacetimedb-bindings-macro",
+ "thiserror",
 ]
 
 [[package]]

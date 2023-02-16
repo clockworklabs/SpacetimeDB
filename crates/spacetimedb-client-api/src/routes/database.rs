@@ -23,6 +23,7 @@ use spacetimedb::control_db::CONTROL_DB;
 use spacetimedb::hash::hash_bytes;
 use spacetimedb::host::InvalidReducerArguments;
 use spacetimedb::protobuf::control_db::HostType;
+use spacetimedb_lib::sats::TypeInSpace;
 use spacetimedb_lib::{name, EntityDef};
 
 use crate::auth::get_or_create_creds_from_header;
@@ -198,31 +199,33 @@ fn handle_db_err(address: &Address, err: DBCallErr) -> SimpleHandlerResult {
     }
 }
 
-fn entity_description_json(description: &EntityDef, expand: bool) -> Value {
-    let typ = DescribedEntityType::from_entitydef(description).as_str();
-    let len = match description {
-        EntityDef::Table(t) => t.tuple.elements.len(),
+fn entity_description_json(description: TypeInSpace<EntityDef>, expand: bool) -> Option<Value> {
+    let typ = DescribedEntityType::from_entitydef(description.ty()).as_str();
+    let len = match description.ty() {
+        EntityDef::Table(t) => description.resolve(t.data).ty().as_product()?.elements.len(),
         EntityDef::Reducer(r) => r.args.len(),
     };
     if expand {
         // TODO(noa): make this less hacky; needs coordination w/ spacetime-web
-        let schema = match description {
-            EntityDef::Table(table) => json!(table.tuple),
+        let schema = match description.ty() {
+            EntityDef::Table(table) => {
+                json!(description.with(&table.data).resolve_refs()?.as_product()?)
+            }
             EntityDef::Reducer(r) => json!({
                 "name": r.name,
                 "elements": r.args,
             }),
         };
-        json!({
+        Some(json!({
             "type": typ,
             "arity": len,
             "schema": schema
-        })
+        }))
     } else {
-        json!({
+        Some(json!({
             "type": typ,
             "arity": len,
-        })
+        }))
     }
 }
 
@@ -265,7 +268,7 @@ async fn describe(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     let catalog = host.catalog(instance_id).map_err_with_status(StatusCode::NOT_FOUND)?;
     let description = catalog
         .get(&entity)
-        .filter(|desc| DescribedEntityType::from_entitydef(desc) == entity_type)
+        .filter(|desc| DescribedEntityType::from_entitydef(desc.ty()) == entity_type)
         .with_context(|| format!("{entity_type} {entity:?} not found"))
         .map_err_with_status(StatusCode::NOT_FOUND)?;
 
@@ -450,7 +453,7 @@ async fn sql(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
         };
         let stmt_res_json = StmtResultJson {
             schema: stmt_result.schema,
-            rows: stmt_result.rows.iter().map(|x| x.elements.to_vec()).collect::<Vec<_>>(),
+            rows: stmt_result.rows.into_iter().map(|x| x.elements).collect::<Vec<_>>(),
         };
         json.push(stmt_res_json)
     }

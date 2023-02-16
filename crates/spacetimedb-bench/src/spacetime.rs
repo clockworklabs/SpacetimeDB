@@ -2,7 +2,7 @@ use crate::prelude::*;
 use spacetimedb::db::message_log::MessageLog;
 use spacetimedb::db::relational_db::{open_db, open_log, RelationalDB};
 use spacetimedb::db::transactional_db::Tx;
-use spacetimedb_lib::{ElementDef, TupleDef, TupleValue, TypeDef, TypeValue};
+use spacetimedb_lib::{TupleDef, TupleValue, TypeDef, TypeValue};
 use std::sync::{Arc, Mutex};
 
 type DbResult = (RelationalDB, Arc<Mutex<MessageLog>>, u32);
@@ -15,27 +15,7 @@ fn init_db() -> ResultBench<(TempDir, u32)> {
     let table_id = stdb.create_table(
         tx,
         "data",
-        TupleDef {
-            name: None,
-            elements: vec![
-                ElementDef {
-                    tag: 0,
-                    name: Some("a".into()),
-                    element_type: TypeDef::I32,
-                },
-                ElementDef {
-                    tag: 0,
-                    name: Some("b".into()),
-                    element_type: TypeDef::U64,
-                },
-                ElementDef {
-                    tag: 0,
-                    name: Some("c".into()),
-                    element_type: TypeDef::String,
-                },
-            ]
-            .into(),
-        },
+        TupleDef::from_iter([("a", TypeDef::I32), ("b", TypeDef::U64), ("c", TypeDef::String)]),
     )?;
     let log = open_log(&tmp_dir)?;
 

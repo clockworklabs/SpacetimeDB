@@ -1,3 +1,4 @@
+use crate::MapType;
 use crate::{
     algebraic_type::AlgebraicType, builtin_type::BuiltinType, product_type::ProductType,
     product_type_element::ProductTypeElement, sum_type::SumType, sum_type_variant::SumTypeVariant,
@@ -98,10 +99,10 @@ impl BuiltinType {
                 let (ty, nr) = AlgebraicType::decode(bytes)?;
                 num_read += nr;
                 Ok((
-                    Self::Map {
+                    Self::Map(MapType {
                         key_ty: Box::new(key_ty),
                         ty: Box::new(ty),
-                    },
+                    }),
                     num_read,
                 ))
             }
@@ -129,7 +130,7 @@ impl BuiltinType {
                 bytes.push(TAG_ARRAY);
                 ty.encode(bytes);
             }
-            BuiltinType::Map { key_ty, ty } => {
+            BuiltinType::Map(MapType { key_ty, ty }) => {
                 bytes.push(TAG_MAP);
                 key_ty.encode(bytes);
                 ty.encode(bytes);

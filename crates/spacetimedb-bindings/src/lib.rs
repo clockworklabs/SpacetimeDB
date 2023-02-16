@@ -5,10 +5,11 @@ mod impls;
 pub mod rt;
 mod types;
 
-use once_cell::sync::OnceCell;
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
-use spacetimedb_lib::type_def::TableDef;
-use spacetimedb_lib::{PrimaryKey, TupleDef, TupleValue, TypeDef};
+use spacetimedb_lib::de::DeserializeOwned;
+use spacetimedb_lib::sats::AlgebraicTypeRef;
+use spacetimedb_lib::ser::Serialize;
+use spacetimedb_lib::{bsatn, PrimaryKey, TableDef, TupleDef, TupleValue, TypeDef};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::ops::Range;
@@ -19,11 +20,10 @@ pub use spacetimedb_bindings_macro::{duration, spacetimedb};
 
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::hash;
+pub use spacetimedb_lib::sats;
 pub use spacetimedb_lib::Hash;
 pub use spacetimedb_lib::TypeValue;
 pub use types::Timestamp;
-
-pub use serde_json;
 
 pub use spacetimedb_bindings_sys as sys;
 pub use sys::Errno;
@@ -72,7 +72,7 @@ pub fn encode_row(row: TupleValue, bytes: &mut impl BufWriter) {
     row.encode(bytes);
 }
 
-pub fn decode_row(schema: &TupleDef, bytes: &mut impl BufReader) -> Result<TupleValue, DecodeError> {
+pub fn decode_row<'a>(schema: &TupleDef, bytes: &mut impl BufReader<'a>) -> Result<TupleValue, DecodeError> {
     TupleValue::decode(schema, bytes)
 }
 
@@ -80,7 +80,7 @@ pub fn encode_schema(schema: TupleDef, bytes: &mut impl BufWriter) {
     schema.encode(bytes);
 }
 
-pub fn decode_schema(bytes: &mut impl BufReader) -> Result<TupleDef, DecodeError> {
+pub fn decode_schema<'a>(bytes: &mut impl BufReader<'a>) -> Result<TupleDef, DecodeError> {
     TupleDef::decode(bytes)
 }
 
@@ -97,9 +97,9 @@ pub fn get_table_id(table_name: &str) -> u32 {
     })
 }
 
-pub fn insert(table_id: u32, row: TupleValue) -> Result<()> {
+pub fn insert(table_id: u32, row: impl Serialize) -> Result<()> {
     with_row_buf(|bytes| {
-        row.encode(bytes);
+        bsatn::to_writer(bytes, &row).unwrap();
         sys::insert(table_id, bytes)
     })
 }
@@ -128,9 +128,9 @@ pub fn delete_filter<F: Fn(&TupleValue) -> bool>(table_id: u32, f: F) -> Result<
     })
 }
 
-pub fn delete_eq(table_id: u32, col_id: u8, eq_value: TypeValue) -> Option<u32> {
+pub fn delete_eq(table_id: u32, col_id: u8, eq_value: impl Serialize) -> Option<u32> {
     with_row_buf(|bytes| {
-        eq_value.encode(bytes);
+        bsatn::to_writer(bytes, &eq_value).unwrap();
         sys::delete_eq(table_id, col_id.into(), bytes).ok()
     })
 }
@@ -160,8 +160,8 @@ pub fn delete_range(table_id: u32, col_id: u8, range: Range<TypeValue>) -> Resul
 pub fn __iter__(table_id: u32) -> Result<RawTableIter> {
     let bytes = sys::iter(table_id)?;
 
-    let mut buffer = Cursor::new(bytes);
-    let schema = buffer.get_u16().and_then(|_schema_len| decode_schema(&mut buffer));
+    let buffer = Cursor::new(bytes);
+    let schema = (&buffer).get_u16().and_then(|_schema_len| decode_schema(&mut &buffer));
     let schema = schema.unwrap_or_else(|e| {
         panic!("__iter__: Could not decode schema. Err: {}", e);
     });
@@ -178,129 +178,86 @@ impl Iterator for RawTableIter {
     type Item = TupleValue;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.buffer.remaining() == 0 {
+        if (&self.buffer).remaining() == 0 {
             return None;
         }
-        let row = decode_row(&self.schema, &mut self.buffer).unwrap_or_else(|e| {
+        let row = decode_row(&self.schema, &mut &self.buffer).unwrap_or_else(|e| {
             panic!("TableIter::next: Failed to decode row! Err: {}", e);
         });
         Some(row)
     }
 }
 
-pub trait SchemaType: Sized + 'static {
+pub trait SchemaType: Sized {
     fn get_schema() -> TypeDef;
 }
 
-pub trait FromValue: SchemaType {
-    fn from_value(v: TypeValue) -> Option<Self>;
+pub trait RefType: Sized {
+    fn typeref() -> AlgebraicTypeRef;
 }
 
-pub trait IntoValue: SchemaType {
-    fn into_value(self) -> TypeValue;
-}
-
-pub trait TupleType: Sized + 'static {
-    fn get_tupledef() -> TupleDef;
-
-    #[doc(hidden)]
-    fn describe_tuple() -> Vec<u8> {
-        // const _: () = assert!(std::mem::size_of::<usize>() == std::mem::size_of::<u32>());
-        let tuple_def = Self::get_tupledef();
-        let mut bytes = vec![];
-        tuple_def.encode(&mut bytes);
-        bytes
-    }
-}
-
-impl<T: TupleType> SchemaType for T {
+impl<T: RefType> SchemaType for T {
     fn get_schema() -> TypeDef {
-        TypeDef::Tuple(T::get_tupledef())
+        TypeDef::Ref(T::typeref())
     }
 }
 
-pub trait FromTuple: TupleType {
-    fn from_tuple(v: TupleValue) -> Option<Self>;
-}
-
-pub trait IntoTuple: TupleType {
-    fn into_tuple(self) -> TupleValue;
-}
-
-impl<T: FromTuple> FromValue for T {
-    fn from_value(v: TypeValue) -> Option<Self> {
-        match v {
-            TypeValue::Tuple(v) => Self::from_tuple(v),
-            _ => None,
-        }
-    }
-}
-impl<T: IntoTuple> IntoValue for T {
-    fn into_value(self) -> TypeValue {
-        TypeValue::Tuple(self.into_tuple())
-    }
-}
-
-pub trait TableType: TupleType + FromTuple + IntoTuple {
+pub trait TableType: RefType + DeserializeOwned + Serialize {
     const TABLE_NAME: &'static str;
     const UNIQUE_COLUMNS: &'static [u8];
 
-    fn create_table() -> u32 {
-        let tuple_def = Self::get_tupledef();
-        create_table(Self::TABLE_NAME, tuple_def).unwrap()
-    }
-
-    fn __tabledef_cell() -> &'static OnceCell<TableDef>;
-    fn get_tabledef() -> &'static TableDef {
-        Self::__tabledef_cell().get_or_init(|| TableDef {
-            tuple: Self::get_tupledef(),
+    fn get_tabledef() -> TableDef {
+        TableDef {
+            name: Self::TABLE_NAME.into(),
+            data: Self::typeref(),
             unique_columns: Self::UNIQUE_COLUMNS.to_owned(),
-        })
-    }
-
-    fn describe_table() -> Vec<u8> {
-        let table_def = Self::get_tabledef();
-        let mut bytes = vec![];
-        table_def.encode(&mut bytes);
-        bytes
+        }
     }
 
     fn table_id() -> u32;
 
     fn insert(ins: Self) {
         // TODO: how should we handle this kind of error?
-        let _ = insert(Self::table_id(), ins.into_tuple());
+        let _ = insert(Self::table_id(), ins);
     }
 
     fn iter() -> TableIter<Self> {
+        let bytes = sys::iter(Self::table_id()).unwrap();
+
+        let buffer = Cursor::new(bytes);
+        (&buffer)
+            .get_u16()
+            .and_then(|schema_len| (&buffer).get_slice(schema_len as usize))
+            .unwrap_or_else(|e| {
+                panic!("__iter__: Could not skip schema. Err: {}", e);
+            });
+
         TableIter {
-            inner: Self::iter_tuples(),
+            buffer,
             _marker: PhantomData,
         }
-    }
-
-    fn iter_tuples() -> RawTableIter {
-        __iter__(Self::table_id()).expect("failed to get iterator from table")
     }
 }
 
 pub struct TableIter<T: TableType> {
-    inner: RawTableIter,
+    buffer: Cursor<Box<[u8]>>,
     _marker: PhantomData<T>,
 }
 impl<T: TableType> Iterator for TableIter<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner
-            .next()
-            .map(|row| T::from_tuple(row).expect("failed to convert tuple to struct"))
+        if (&self.buffer).remaining() == 0 {
+            return None;
+        }
+        let row = bsatn::from_reader(&mut &self.buffer).unwrap_or_else(|e| {
+            panic!("TableIter::next: Failed to decode row! Err: {}", e);
+        });
+        Some(row)
     }
 }
 
-pub trait FilterableValue: FromValue + IntoValue {
-    fn equals(&self, other: &TypeValue) -> bool;
-}
+pub trait FilterableValue: Serialize + Eq {}
 
 pub trait UniqueValue: FilterableValue {
     fn into_primarykey(self) -> PrimaryKey;
@@ -310,11 +267,19 @@ pub trait UniqueValue: FilterableValue {
 pub mod query {
     use super::*;
 
+    pub trait FieldAccess<const N: u8> {
+        type Field;
+        fn get_field(&self) -> &Self::Field;
+    }
+
     #[doc(hidden)]
-    pub fn filter_by_unique_field<Table: TableType, T: UniqueValue, const COL_IDX: u8>(val: T) -> Option<Table> {
-        for row in Table::iter_tuples() {
-            if let Some(ret) = check_eq(row, COL_IDX, &val) {
-                return ret.ok();
+    pub fn filter_by_unique_field<Table: TableType, T: UniqueValue, const COL_IDX: u8>(val: T) -> Option<Table>
+    where
+        Table: FieldAccess<COL_IDX, Field = T>,
+    {
+        for row in Table::iter() {
+            if row.get_field() == &val {
+                return Some(row);
             }
         }
         None
@@ -325,16 +290,14 @@ pub mod query {
         val: T,
     ) -> FilterByIter<Table, COL_IDX, T> {
         FilterByIter {
-            inner: Table::iter_tuples(),
+            inner: Table::iter(),
             val,
-            _marker: PhantomData,
         }
     }
 
     #[doc(hidden)]
     pub fn delete_by_field<Table: TableType, T: UniqueValue, const COL_IDX: u8>(val: T) -> bool {
-        let value = val.into_value();
-        let result = delete_eq(Table::table_id(), COL_IDX, value);
+        let result = delete_eq(Table::table_id(), COL_IDX, val);
         match result {
             None => {
                 //TODO: Returning here was supposed to signify an error, but it can also return none when there is nothing to delete.
@@ -354,44 +317,19 @@ pub mod query {
         true
     }
 
-    #[inline]
-    fn check_eq<T: TableType>(row: TupleValue, col_idx: u8, val: &impl FilterableValue) -> Option<Result<T, ()>> {
-        let column_data = &row.elements[usize::from(col_idx)];
-        val.equals(column_data).then(|| {
-            let ret = T::from_tuple(row).ok_or(());
-            if ret.is_err() {
-                fromtuple_failed(T::TABLE_NAME)
-            }
-            ret
-        })
-    }
-
     #[doc(hidden)]
     pub struct FilterByIter<Table: TableType, const COL_IDX: u8, T: FilterableValue> {
-        inner: RawTableIter,
+        inner: TableIter<Table>,
         val: T,
-        _marker: PhantomData<Table>,
     }
-    impl<Table: TableType, const COL_IDX: u8, T: FilterableValue> Iterator for FilterByIter<Table, COL_IDX, T> {
+    impl<Table: TableType, const COL_IDX: u8, T: FilterableValue> Iterator for FilterByIter<Table, COL_IDX, T>
+    where
+        Table: FieldAccess<COL_IDX, Field = T>,
+    {
         type Item = Table;
         fn next(&mut self) -> Option<Self::Item> {
-            self.inner.find_map(|row| {
-                if let Some(Ok(ret)) = check_eq(row, COL_IDX, &self.val) {
-                    Some(ret)
-                } else {
-                    None
-                }
-            })
+            self.inner.find_map(|row| (row.get_field() == &self.val).then_some(row))
         }
-    }
-
-    #[inline(never)]
-    #[cold]
-    fn fromtuple_failed(tablename: &str) {
-        eprintln!(
-            "Internal SpacetimeDB error: Can't convert from tuple to struct (wrong version?) {}",
-            tablename
-        )
     }
 }
 

@@ -9,18 +9,27 @@ description = "A common library for SpacetimeDB"
 # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
 bench = false
 
+[[test]]
+name = "serde"
+required-features = ["serde"]
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "spacetimedb-sats/serde"]
+
 [dependencies]
-decorum = "0.3.1"
 enum-as-inner = "0.5.0"
 sha3 = "0.10.0"
-serde = { version = "1.0.136", features = ["derive"] }
-serde_json = "1.0.87"
+serde = { version = "1.0.136", optional = true }
 hex = "0.4.3"
 thiserror = "1.0.37"
 itertools = "0.10.5"
 anyhow = "1.0.68"
+spacetimedb-bindings-macro = { path = "../spacetimedb-bindings-macro" }
+spacetimedb-sats = { path = "../spacetimedb-sats" }
 
 [dev-dependencies]
 rand = "0.8.5"
 bytes = "1.2.1"
+serde_json = "1.0.87"
 insta = "1.21.0"

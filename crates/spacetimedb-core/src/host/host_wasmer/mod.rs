@@ -52,7 +52,13 @@ pub fn make_actor(
 
     let abi = abi::determine_spacetime_abi(&program_bytes)?;
 
-    let module = WasmerModule::new(module, engine, abi);
+    anyhow::ensure!(
+        abi == WasmerModule::SUPPORTED_ABI,
+        "abi version {abi:?} ({:?}) is not supported",
+        abi.as_tuple()
+    );
+
+    let module = WasmerModule::new(module, engine);
 
     WasmModuleHostActor::new(worker_database_instance, module_hash, module, scheduler)
 }

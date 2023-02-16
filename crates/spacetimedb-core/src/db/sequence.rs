@@ -3,10 +3,11 @@
 //! This involves creating and initializing a new special row in the table [crate::db::relational_db::ST_SEQUENCES_NAME].
 //!
 //! After a sequence is created, you use the functions `next_val` and `set_val` to operate on the sequence
-use crate::db::relational_db::{TableIter, ST_SEQUENCES_NAME};
+use crate::db::relational_db::TableIter;
 use crate::db::sequence;
 use crate::error::DBError;
-use spacetimedb_lib::{ElementDef, TupleDef, TupleValue, TypeDef, TypeValue};
+use spacetimedb_lib::{TupleDef, TupleValue, TypeDef, TypeValue};
+use spacetimedb_sats::product;
 use std::fmt;
 use thiserror::Error;
 
@@ -345,51 +346,16 @@ impl Sequence {
 /// |-------------|-------------------|-----------|-------|-----------|-----------|----------|--------|
 /// | 1           | "seq_customer_id" | 1         | 10    | 10        | 12        | 1        | 1      |
 pub(crate) fn internal_schema() -> TupleDef {
-    TupleDef {
-        name: Some(ST_SEQUENCES_NAME.into()),
-        elements: vec![
-            ElementDef {
-                tag: SequenceFields::SequenceId as u8,
-                name: SequenceFields::SequenceId.into(),
-                element_type: TypeDef::U32,
-            },
-            ElementDef {
-                tag: SequenceFields::SequenceName as u8,
-                name: SequenceFields::SequenceName.into(),
-                element_type: TypeDef::String,
-            },
-            ElementDef {
-                tag: SequenceFields::Increment as u8,
-                name: SequenceFields::Increment.into(),
-                element_type: TypeDef::I64,
-            },
-            ElementDef {
-                tag: SequenceFields::Start as u8,
-                name: SequenceFields::Start.into(),
-                element_type: TypeDef::I64,
-            },
-            ElementDef {
-                tag: SequenceFields::MinValue as u8,
-                name: SequenceFields::MinValue.into(),
-                element_type: TypeDef::I64,
-            },
-            ElementDef {
-                tag: SequenceFields::MaxValue as u8,
-                name: SequenceFields::MaxValue.into(),
-                element_type: TypeDef::I64,
-            },
-            ElementDef {
-                tag: SequenceFields::TableId as u8,
-                name: SequenceFields::TableId.into(),
-                element_type: TypeDef::U32,
-            },
-            ElementDef {
-                tag: SequenceFields::ColId as u8,
-                name: SequenceFields::ColId.into(),
-                element_type: TypeDef::U32,
-            },
-        ],
-    }
+    TupleDef::from_iter([
+        (SequenceFields::SequenceId.name(), TypeDef::U32),
+        (SequenceFields::SequenceName.name(), TypeDef::String),
+        (SequenceFields::Increment.name(), TypeDef::I64),
+        (SequenceFields::Start.name(), TypeDef::I64),
+        (SequenceFields::MinValue.name(), TypeDef::I64),
+        (SequenceFields::MaxValue.name(), TypeDef::I64),
+        (SequenceFields::TableId.name(), TypeDef::U32),
+        (SequenceFields::ColId.name(), TypeDef::U32),
+    ])
 }
 
 pub fn decode_schema(row: TupleValue) -> Result<Sequence, DBError> {
@@ -418,18 +384,16 @@ pub fn decode_schema(row: TupleValue) -> Result<Sequence, DBError> {
 
 impl From<&Sequence> for TupleValue {
     fn from(x: &Sequence) -> Self {
-        TupleValue {
-            elements: Box::new([
-                TypeValue::U32(x.sequence_id.0),
-                TypeValue::String(x.sequence_name.clone()),
-                TypeValue::I64(x.increment),
-                TypeValue::I64(x.start),
-                TypeValue::I64(x.min_value),
-                TypeValue::I64(x.max_value),
-                TypeValue::U32(0),
-                TypeValue::U32(0),
-            ]),
-        }
+        product![
+            TypeValue::U32(x.sequence_id.0),
+            TypeValue::String(x.sequence_name.clone()),
+            TypeValue::I64(x.increment),
+            TypeValue::I64(x.start),
+            TypeValue::I64(x.min_value),
+            TypeValue::I64(x.max_value),
+            TypeValue::U32(0),
+            TypeValue::U32(0),
+        ]
     }
 }
 
@@ -601,19 +565,7 @@ mod tests {
         let mut tx_ = stdb.begin_tx();
         let (tx, stdb) = tx_.get();
 
-        let table_id = stdb.create_table(
-            tx,
-            "MyTable",
-            TupleDef {
-                name: None,
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }]
-                .into(),
-            },
-        )?;
+        let table_id = stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_col", TypeDef::I32)]))?;
 
         let seq_def = SequenceDef::new("simple").with_table(table_id, 0);
         let seq_id = stdb.create_sequence(seq_def, tx)?;
@@ -643,19 +595,7 @@ mod tests {
         let mut tx_ = stdb.begin_tx();
         let (tx, stdb) = tx_.get();
 
-        let table_id = stdb.create_table(
-            tx,
-            "MyTable",
-            TupleDef {
-                name: None,
-                elements: vec![ElementDef {
-                    tag: 0,
-                    name: Some("my_col".into()),
-                    element_type: TypeDef::I32,
-                }]
-                .into(),
-            },
-        )?;
+        let table_id = stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_col", TypeDef::I32)]))?;
 
         let seq_def = SequenceDef::new("simple").with_table(table_id, 0);
         let seq_id = stdb.create_sequence(seq_def, tx)?;
@@ -687,19 +627,7 @@ mod tests {
                 assert_eq!(next, i, "Initial seq wrong");
             }
 
-            let table_id = stdb.create_table(
-                tx,
-                "MyTable",
-                TupleDef {
-                    name: Some("MyTable".into()),
-                    elements: vec![ElementDef {
-                        tag: 0,
-                        name: Some("my_col".into()),
-                        element_type: TypeDef::I32,
-                    }]
-                    .into(),
-                },
-            )?;
+            let table_id = stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_col", TypeDef::I32)]))?;
 
             let seq_def = SequenceDef::new("simple").with_table(table_id, 0);
             let seq_table_id = stdb.create_sequence(seq_def, tx)?;

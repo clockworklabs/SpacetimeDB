@@ -1,10 +1,15 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use std::fmt;
+use std::marker::PhantomData;
+use std::sync::Mutex;
 use std::time::Duration;
 
-use crate::{sys, FromValue, IntoValue, ReducerContext, Timestamp};
-use spacetimedb_lib::{ElementDef, Hash, ReducerDef, TupleValue};
+use crate::{sys, ReducerContext, RefType, SchemaType, TableType, Timestamp};
+use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
+use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, Typespace};
+use spacetimedb_lib::ser::{self, Serialize, SerializeSeqProduct};
+use spacetimedb_lib::{bsatn, ElementDef, Hash, ReducerDef};
 use sys::Buffer;
 
 pub use once_cell::sync::{Lazy, OnceCell};
@@ -13,25 +18,19 @@ scoped_tls::scoped_thread_local! {
     pub(crate) static CURRENT_TIMESTAMP: Timestamp
 }
 
-pub unsafe fn invoke_reducer<A: Args, T>(
-    reducer: impl Reducer<A, T>,
-    schema: &ReducerDef,
+pub unsafe fn invoke_reducer<'a, A: Args<'a>, T>(
+    reducer: impl Reducer<'a, A, T>,
     sender: Buffer,
     timestamp: u64,
-    args: Buffer,
+    args: &'a [u8],
     epilogue: impl FnOnce(Result<(), &str>),
 ) -> Buffer {
     let ctx = assemble_context(sender, timestamp);
-    let args = args.read();
 
-    let mut rdr = &args[..];
-    let args = TupleValue::decode_from_elements(&schema.args, &mut rdr)
-        .ok()
-        .and_then(A::from_tuple)
-        .expect("unable to decode args");
+    let SerDeArgs(args) = bsatn::from_reader(&mut &args[..]).expect("unable to decode args");
 
     let res = CURRENT_TIMESTAMP.set(&{ ctx.timestamp }, || {
-        let res = reducer.invoke(ctx, args);
+        let res: Result<(), Box<str>> = reducer.invoke(ctx, args);
         epilogue(res.as_ref().map(|()| ()).map_err(|e| &**e));
         res
     });
@@ -65,28 +64,33 @@ fn cvt_result(res: Result<(), Box<str>>) -> Buffer {
     }
 }
 
-pub trait Reducer<A: Args, T> {
+pub trait Reducer<'de, A: Args<'de>, T> {
     fn invoke(&self, ctx: ReducerContext, args: A) -> Result<(), Box<str>>;
 }
 
-pub trait Args: Sized {
-    fn from_tuple(tup: TupleValue) -> Option<Self>;
-    fn into_tuple(self) -> TupleValue;
+pub trait Args<'de>: Sized {
+    const LEN: usize;
+    fn visit_seq_product<A: SeqProductAccess<'de>>(prod: A) -> Result<Self, A::Error>;
+    fn serialize_seq_product<S: SerializeSeqProduct>(&self, prod: &mut S) -> Result<(), S::Error>;
     fn schema(name: &str, arg_names: &[Option<&str>]) -> ReducerDef;
 }
 
-pub trait ScheduleArgs: Sized {
-    type Args: Args;
+pub trait ScheduleArgs<'de>: Sized {
+    type Args: Args<'de>;
     fn into_args(self) -> Self::Args;
 }
-impl<T: Args> ScheduleArgs for T {
+impl<'de, T: Args<'de>> ScheduleArgs<'de> for T {
     type Args = Self;
     fn into_args(self) -> Self::Args {
         self
     }
 }
 
-pub fn schema_of_func<A: Args, T>(_: impl Reducer<A, T>, name: &str, arg_names: &[Option<&str>]) -> ReducerDef {
+pub fn schema_of_func<'a, A: Args<'a>, T>(
+    _: impl Reducer<'a, A, T>,
+    name: &str,
+    arg_names: &[Option<&str>],
+) -> ReducerDef {
     A::schema(name, arg_names)
 }
 
@@ -106,14 +110,38 @@ impl<E: fmt::Debug> ReducerResult for Result<(), E> {
     }
 }
 
-pub trait ReducerArg {}
-impl<T: FromValue> ReducerArg for T {}
-impl ReducerArg for ReducerContext {}
-pub fn assert_reducerarg<T: ReducerArg>() {}
+pub trait ReducerArg<'de> {}
+impl<'de, T: Deserialize<'de>> ReducerArg<'de> for T {}
+impl<'de> ReducerArg<'de> for ReducerContext {}
+pub fn assert_reducerarg<'de, T: ReducerArg<'de>>() {}
 pub fn assert_reducerret<T: ReducerResult>() {}
 
 pub struct ContextArg;
 pub struct NoContextArg;
+
+struct ArgsVisitor<A> {
+    _marker: PhantomData<A>,
+}
+
+impl<'de, A: Args<'de>> de::ProductVisitor<'de> for ArgsVisitor<A> {
+    type Output = A;
+
+    fn product_name(&self) -> Option<&str> {
+        None
+    }
+    fn product_len(&self) -> usize {
+        A::LEN
+    }
+    fn product_kind(&self) -> de::ProductKind {
+        de::ProductKind::ReducerArgs
+    }
+    fn visit_seq_product<Acc: SeqProductAccess<'de>>(self, prod: Acc) -> Result<Self::Output, Acc::Error> {
+        A::visit_seq_product(prod)
+    }
+    fn visit_named_product<Acc: de::NamedProductAccess<'de>>(self, _prod: Acc) -> Result<Self::Output, Acc::Error> {
+        Err(de::Error::custom("named products not supported"))
+    }
+}
 
 macro_rules! impl_reducer {
     ($($T1:ident $(, $T:ident)*)?) => {
@@ -121,36 +149,39 @@ macro_rules! impl_reducer {
         $(impl_reducer!($($T),*);)?
     };
     (@impl $($T:ident),*) => {
-        impl<$($T: FromValue + IntoValue),*> Args for ($($T,)*) {
-            fn from_tuple(tup: TupleValue) -> Option<Self> {
-                let tup: Box<[_; impl_reducer!(@count $($T)*)]> = tup.elements.try_into().ok()?;
-                #[allow(non_snake_case)]
-                let [$($T),*] = *tup;
-                Some(($(FromValue::from_value($T)?,)*))
+        impl<'de, $($T: SchemaType + Deserialize<'de> + Serialize),*> Args<'de> for ($($T,)*) {
+            const LEN: usize = impl_reducer!(@count $($T)*);
+            #[allow(non_snake_case)]
+            #[allow(unused)]
+            fn visit_seq_product<Acc: SeqProductAccess<'de>>(mut prod: Acc) -> Result<Self, Acc::Error> {
+                let vis = ArgsVisitor { _marker: PhantomData::<Self> };
+                let i = 0;
+                $(let $T = prod.next_element::<$T>()?.ok_or_else(|| de::Error::missing_field(i, None, &vis))?;
+                  let i = i + 1;)*
+                Ok(($($T,)*))
             }
-            fn into_tuple(self) -> TupleValue {
+            fn serialize_seq_product<Ser: SerializeSeqProduct>(&self, _prod: &mut Ser) -> Result<(), Ser::Error> {
                 #[allow(non_snake_case)]
                 let ($($T,)*) = self;
-                TupleValue { elements: Box::new([$(IntoValue::into_value($T),)*]) }
+                $(_prod.serialize_element($T)?;)*
+                Ok(())
             }
             #[inline]
             fn schema(name: &str, arg_names: &[Option<&str>]) -> ReducerDef {
                 #[allow(non_snake_case, irrefutable_let_patterns)]
                 let [.., $($T),*] = arg_names else { panic!() };
-                let mut _n = 0;
                 ReducerDef {
                     name: Some(name.into()),
                     args: vec![
                         $(ElementDef {
-                            tag: { let n = _n; _n += 1; n },
                             name: $T.map(str::to_owned),
-                            element_type: <$T>::get_schema(),
+                            algebraic_type: <$T>::get_schema(),
                         }),*
                     ],
                 }
             }
         }
-        impl<$($T: FromValue + IntoValue),*> ScheduleArgs for (ReducerContext, $($T,)*) {
+        impl<'de, $($T: SchemaType + Deserialize<'de> + Serialize),*> ScheduleArgs<'de> for (ReducerContext, $($T,)*) {
             type Args = ($($T,)*);
             fn into_args(self) -> Self::Args {
                 #[allow(non_snake_case)]
@@ -158,7 +189,7 @@ macro_rules! impl_reducer {
                 ($($T,)*)
             }
         }
-        impl<Func, Ret, $($T: FromValue + IntoValue),*> Reducer<($($T,)*), ContextArg> for Func
+        impl<'de, Func, Ret, $($T: SchemaType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*), ContextArg> for Func
         where
             Func: Fn(ReducerContext, $($T),*) -> Ret,
             Ret: ReducerResult
@@ -169,7 +200,7 @@ macro_rules! impl_reducer {
                 self(ctx, $($T),*).into_result()
             }
         }
-        impl<Func, Ret, $($T: FromValue + IntoValue),*> Reducer<($($T,)*), NoContextArg> for Func
+        impl<'de, Func, Ret, $($T: SchemaType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*), NoContextArg> for Func
         where
             Func: Fn($($T),*) -> Ret,
             Ret: ReducerResult
@@ -189,6 +220,22 @@ macro_rules! impl_reducer {
 
 impl_reducer!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB, AC, AD, AE, AF);
 
+struct SerDeArgs<A>(A);
+impl<'de, A: Args<'de>> Deserialize<'de> for SerDeArgs<A> {
+    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer
+            .deserialize_product(ArgsVisitor { _marker: PhantomData })
+            .map(Self)
+    }
+}
+impl<'de, A: Args<'de>> Serialize for SerDeArgs<A> {
+    fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut prod = serializer.serialize_seq_product(A::LEN)?;
+        self.0.serialize_seq_product(&mut prod)?;
+        prod.end()
+    }
+}
+
 #[track_caller]
 pub fn schedule_in(dur: Duration) -> Timestamp {
     Timestamp::now()
@@ -196,43 +243,77 @@ pub fn schedule_in(dur: Duration) -> Timestamp {
         .unwrap_or_else(|| panic!("{dur:?} is too far into the future to schedule"))
 }
 
-pub fn schedule(reducer_name: &str, time: Timestamp, args: impl ScheduleArgs) {
-    let mut arg_bytes = Vec::new();
-    args.into_args().into_tuple().encode(&mut arg_bytes);
+pub fn schedule<'de>(reducer_name: &str, time: Timestamp, args: impl ScheduleArgs<'de>) {
+    let arg_bytes = bsatn::to_vec(&SerDeArgs(args.into_args())).unwrap();
     sys::schedule(reducer_name, &arg_bytes, time.micros_since_epoch)
 }
 
-pub fn schedule_repeater<A: RepeaterArgs, T>(_reducer: impl Reducer<A, T>, name: &str, dur: Duration) {
+pub fn schedule_repeater<A: RepeaterArgs, T>(_reducer: impl for<'de> Reducer<'de, A, T>, name: &str, dur: Duration) {
     let time = schedule_in(dur);
-    let mut args = Vec::new();
-    A::KIND.to_tuple().encode(&mut args);
+    let args = bsatn::to_vec(&SerDeArgs(A::get_now())).unwrap();
     sys::schedule(name, &args, time.micros_since_epoch)
 }
 
-pub enum RepeaterArgsKind {
-    Empty,
-    TimestampArg,
-}
-
-impl RepeaterArgsKind {
-    #[inline]
-    fn to_tuple(self) -> TupleValue {
-        let elements: Box<[_]> = match self {
-            RepeaterArgsKind::Empty => Box::new([]),
-            RepeaterArgsKind::TimestampArg => Box::new([Timestamp::now().into_value()]),
-        };
-        TupleValue { elements }
-    }
-}
-
-pub trait RepeaterArgs: Args {
-    const KIND: RepeaterArgsKind;
+pub trait RepeaterArgs: for<'de> Args<'de> {
+    fn get_now() -> Self;
 }
 
 impl RepeaterArgs for () {
-    const KIND: RepeaterArgsKind = RepeaterArgsKind::Empty;
+    fn get_now() -> Self {
+        ()
+    }
 }
 
 impl RepeaterArgs for (Timestamp,) {
-    const KIND: RepeaterArgsKind = RepeaterArgsKind::TimestampArg;
+    fn get_now() -> Self {
+        (Timestamp::now(),)
+    }
+}
+
+pub fn describe_reftype<T: RefType>() -> u32 {
+    T::typeref().0
+}
+
+pub fn describe_table<T: TableType>() -> Buffer {
+    Buffer::alloc(&bsatn::to_vec(&T::get_tabledef()).unwrap())
+}
+
+// not actually a mutex; because wasm is single-threaded this basically just turns into a refcell
+static TYPESPACE_BUILDER: Mutex<Typespace> = Mutex::new(Typespace::new(Vec::new()));
+
+pub fn alloc_typespace_slot() -> AlgebraicTypeRef {
+    TYPESPACE_BUILDER.lock().unwrap().add(AlgebraicType::UNIT_TYPE)
+}
+
+pub fn set_typespace_slot(slot: AlgebraicTypeRef, ty: AlgebraicType) {
+    TYPESPACE_BUILDER.lock().unwrap()[slot] = ty
+}
+
+fn finalize_typespace() {
+    let typespace = std::mem::take(&mut *TYPESPACE_BUILDER.lock().unwrap());
+    GLOBAL_TYPESPACE.inner.set(typespace).unwrap();
+}
+
+pub struct GlobalTypespace {
+    inner: OnceCell<Typespace>,
+}
+
+impl std::ops::Deref for GlobalTypespace {
+    type Target = Typespace;
+    fn deref(&self) -> &Self::Target {
+        self.inner.get().unwrap()
+    }
+}
+
+pub static GLOBAL_TYPESPACE: GlobalTypespace = GlobalTypespace { inner: OnceCell::new() };
+
+#[no_mangle]
+extern "C" fn __preinit__30_finalize_typespace() {
+    finalize_typespace()
+}
+
+#[no_mangle]
+extern "C" fn __describe_typespace__() -> Buffer {
+    let bytes = bsatn::to_vec(&*GLOBAL_TYPESPACE).expect("unable to serialize typespace");
+    Buffer::alloc(&bytes)
 }

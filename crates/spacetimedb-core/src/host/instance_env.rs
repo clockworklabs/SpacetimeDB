@@ -54,7 +54,7 @@ impl InstanceEnv {
         self.scheduler.schedule(
             self.worker_database_instance.database_instance_id,
             reducer,
-            ReducerArgs::Wire(args),
+            ReducerArgs::Bsatn(args),
             time,
         )
     }
@@ -180,7 +180,7 @@ impl InstanceEnv {
             .elements
             .get(col_id as usize)
             .ok_or(NodesError::BadColumn)?
-            .element_type;
+            .algebraic_type;
 
         let eq_value = TypeValue::decode(type_def, &mut &buffer[..]).map_err(NodesError::DecodeValue)?;
         let seek = stdb.seek(tx, table_id, col_id, eq_value)?;
@@ -225,7 +225,7 @@ impl InstanceEnv {
             .elements
             .get(col_id as usize)
             .ok_or(NodesError::BadColumn)?
-            .element_type;
+            .algebraic_type;
 
         let decode = |b: &[u8]| TypeValue::decode(col_type, &mut &b[..]).map_err(NodesError::DecodeValue);
         let start = decode(start_buffer)?;

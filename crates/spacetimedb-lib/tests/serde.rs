@@ -1,31 +1,38 @@
-use serde::de::DeserializeSeed;
+use spacetimedb_lib::de::serde::SerdeDeserializer;
+use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{ElementDef, EnumDef, TupleDef, TupleValue, TypeDef};
+use spacetimedb_sats::{satn::Satn, BuiltinType::*, SumTypeVariant, TypeInSpace, Typespace};
 
 macro_rules! de_json_snapshot {
     ($schema:expr, $json:expr) => {
         let (schema, json) = (&$schema, &$json);
         let value = de_json(schema, json).unwrap();
-        let value = format!("{value:#}");
+        let value = TypeInSpace::new(&EMPTY_TYPESPACE, schema)
+            .with_value(&value)
+            .to_satn_pretty();
         let debug_expr = format!("de_json({})", json.trim());
         insta::assert_snapshot!(insta::internals::AutoName, value, &debug_expr);
     };
 }
 
+fn bytes() -> TypeDef {
+    TypeDef::Builtin(Array {
+        ty: Box::new(TypeDef::Builtin(U8)),
+    })
+}
+
 #[test]
 fn test_json_mappings() {
-    let schema = tuple(
-        "args",
-        [
-            ("foo", TypeDef::U32),
-            ("bar", TypeDef::Bytes),
-            ("baz", vec(TypeDef::String)),
-            (
-                "quux",
-                TypeDef::Enum(enumm([("Hash", TypeDef::Hash), ("Unit", TypeDef::Unit)])),
-            ),
-            ("and_peggy", TypeDef::F64),
-        ],
-    );
+    let schema = tuple([
+        ("foo", TypeDef::Builtin(U32)),
+        ("bar", bytes()),
+        ("baz", vec(TypeDef::Builtin(String))),
+        (
+            "quux",
+            TypeDef::Sum(enumm([("Hash", bytes()), ("Unit", TypeDef::Product(tuple([])))])),
+        ),
+        ("and_peggy", TypeDef::Builtin(F64)),
+    ]);
     let data = r#"
 {
     "foo": 42,
@@ -41,46 +48,51 @@ fn test_json_mappings() {
     "foo": 5654,
     "bar": "010F2C",
     "baz": ["it's 🥶°C"],
-    "quux": { "Unit": null },
+    "quux": { "Unit": [] },
     "and_peggy": 9.8
 }
 "#;
     de_json_snapshot!(schema, data);
 }
 
-fn tuple<'a>(name: &str, elems: impl IntoIterator<Item = (&'a str, TypeDef)>) -> TupleDef {
+fn tuple<'a>(elems: impl IntoIterator<Item = (&'a str, TypeDef)>) -> TupleDef {
     TupleDef {
-        name: Some(name.into()),
-        elements: elements(elems),
+        elements: elems
+            .into_iter()
+            .map(|(name, algebraic_type)| ElementDef {
+                name: Some(name.into()),
+                algebraic_type,
+            })
+            .collect(),
     }
 }
 fn enumm<'a>(elems: impl IntoIterator<Item = (&'a str, TypeDef)>) -> EnumDef {
     EnumDef {
-        variants: elements(elems),
+        variants: elems
+            .into_iter()
+            .map(|(name, algebraic_type)| SumTypeVariant {
+                name: Some(name.into()),
+                algebraic_type,
+            })
+            .collect(),
     }
 }
 
-fn elements<'a>(elems: impl IntoIterator<Item = (&'a str, TypeDef)>) -> Vec<ElementDef> {
-    elems
-        .into_iter()
-        .enumerate()
-        .map(|(i, (name, element_type))| ElementDef {
-            tag: i.try_into().unwrap(),
-            name: Some(name.into()),
-            element_type,
-        })
-        .collect()
+fn vec(ty: TypeDef) -> TypeDef {
+    TypeDef::Builtin(Array { ty: Box::new(ty) })
 }
 
-fn vec(element_type: TypeDef) -> TypeDef {
-    TypeDef::Vec {
-        element_type: Box::new(element_type),
-    }
+static EMPTY_TYPESPACE: Typespace = Typespace::new(Vec::new());
+
+fn in_space<T>(x: &T) -> TypeInSpace<'_, T> {
+    TypeInSpace::new(&EMPTY_TYPESPACE, x)
 }
 
 fn de_json(schema: &TupleDef, data: &str) -> serde_json::Result<TupleValue> {
     let mut de = serde_json::Deserializer::from_str(data);
-    let val = schema.deserialize(&mut de)?;
+    let val = in_space(schema)
+        .deserialize(SerdeDeserializer::new(&mut de))
+        .map_err(|e| e.0)?;
     de.end()?;
     Ok(val)
 }

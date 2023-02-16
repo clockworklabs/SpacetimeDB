@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::fmt;
 use std::str::Utf8Error;
 
@@ -64,8 +65,8 @@ pub trait BufWriter {
     }
 }
 
-pub trait BufReader {
-    fn get_slice(&mut self, size: usize) -> Result<&[u8], DecodeError>;
+pub trait BufReader<'de> {
+    fn get_slice(&mut self, size: usize) -> Result<&'de [u8], DecodeError>;
     fn remaining(&self) -> usize;
 
     fn get_u8(&mut self) -> Result<u8, DecodeError> {
@@ -129,8 +130,8 @@ impl BufWriter for &mut [u8] {
     }
 }
 
-impl BufReader for &[u8] {
-    fn get_slice(&mut self, size: usize) -> Result<&[u8], DecodeError> {
+impl<'de> BufReader<'de> for &'de [u8] {
+    fn get_slice(&mut self, size: usize) -> Result<&'de [u8], DecodeError> {
         if self.len() < size {
             return Err(DecodeError::BufferLength);
         }
@@ -146,24 +147,24 @@ impl BufReader for &[u8] {
 
 pub struct Cursor<B> {
     pub buf: B,
-    pub pos: usize,
+    pub pos: Cell<usize>,
 }
 impl<B> Cursor<B> {
     pub fn new(buf: B) -> Self {
-        Self { buf, pos: 0 }
+        Self { buf, pos: 0.into() }
     }
 }
-impl<B: AsRef<[u8]>> BufReader for Cursor<B> {
-    fn get_slice(&mut self, size: usize) -> Result<&[u8], DecodeError> {
-        let ret = self.buf.as_ref()[self.pos..]
+impl<'de, B: AsRef<[u8]>> BufReader<'de> for &'de Cursor<B> {
+    fn get_slice(&mut self, size: usize) -> Result<&'de [u8], DecodeError> {
+        let ret = self.buf.as_ref()[self.pos.get()..]
             .get(..size)
             .ok_or(DecodeError::BufferLength)?;
-        self.pos += size;
+        self.pos.set(self.pos.get() + size);
         Ok(ret)
     }
 
     fn remaining(&self) -> usize {
-        self.buf.as_ref().len() - self.pos
+        self.buf.as_ref().len() - self.pos.get()
     }
 }
 

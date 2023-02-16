@@ -5,6 +5,7 @@ use hex::FromHexError;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::error::LibError;
 use spacetimedb_lib::{PrimaryKey, TupleValue, TypeValue};
+use spacetimedb_sats::product_value::InvalidFieldError;
 use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::sync::{MutexGuard, PoisonError};
@@ -36,7 +37,7 @@ pub enum IndexError {
     IndexAlreadyExists(IndexDef, String),
     #[error("Column not found: {0}")]
     ColumnNotFound(IndexDef),
-    #[error("Index is duplicated: {0}:{1}")]
+    #[error("Index is duplicated: {0:?}:{1:?}")]
     Duplicated(IndexDef, TypeValue, TupleValue),
 }
 
@@ -71,6 +72,12 @@ pub enum DBError {
     MessageLogPoisoned(String),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl From<InvalidFieldError> for DBError {
+    fn from(value: InvalidFieldError) -> Self {
+        LibError::from(value).into()
+    }
 }
 
 impl From<PoisonError<std::sync::MutexGuard<'_, MessageLog>>> for DBError {

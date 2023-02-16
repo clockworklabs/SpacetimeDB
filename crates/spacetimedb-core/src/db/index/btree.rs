@@ -4,10 +4,11 @@ use std::fmt;
 use std::ops::RangeBounds;
 
 use crate::db::index::btree;
-use crate::db::relational_db::{RelationalDB, TableIter, ST_INDEXES_NAME};
+use crate::db::relational_db::{RelationalDB, TableIter};
 use crate::db::transactional_db::Tx;
 use crate::error::{DBError, IndexError};
-use spacetimedb_lib::{DataKey, ElementDef, PrimaryKey, TupleDef, TupleValue, TypeDef, TypeValue};
+use spacetimedb_lib::data_key::ToDataKey;
+use spacetimedb_lib::{DataKey, PrimaryKey, TupleDef, TupleValue, TypeDef, TypeValue};
 
 /// The `id` for [crate::db::sequence::Sequence]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -410,36 +411,13 @@ impl<'a> Iterator for TuplesRangeIter<'a> {
 /// |---------------|---------------|-------------|--------------------|-----------------|
 /// | 1             | 1             | 1           | ix_sample          | true            |
 pub(crate) fn internal_schema() -> TupleDef {
-    TupleDef {
-        name: Some(ST_INDEXES_NAME.into()),
-        elements: vec![
-            ElementDef {
-                tag: IndexFields::IndexId as u8,
-                name: IndexFields::IndexId.into(),
-                element_type: TypeDef::U32,
-            },
-            ElementDef {
-                tag: IndexFields::TableId as u8,
-                name: IndexFields::TableId.into(),
-                element_type: TypeDef::U32,
-            },
-            ElementDef {
-                tag: IndexFields::ColId as u8,
-                name: IndexFields::ColId.into(),
-                element_type: TypeDef::U32,
-            },
-            ElementDef {
-                tag: IndexFields::IndexName as u8,
-                name: IndexFields::IndexName.into(),
-                element_type: TypeDef::String,
-            },
-            ElementDef {
-                tag: IndexFields::IsUnique as u8,
-                name: IndexFields::IsUnique.into(),
-                element_type: TypeDef::Bool,
-            },
-        ],
-    }
+    TupleDef::from_iter([
+        (IndexFields::IndexId.name(), TypeDef::U32),
+        (IndexFields::TableId.name(), TypeDef::U32),
+        (IndexFields::ColId.name(), TypeDef::U32),
+        (IndexFields::IndexName.name(), TypeDef::String),
+        (IndexFields::IsUnique.name(), TypeDef::Bool),
+    ])
 }
 
 pub fn decode_schema(row: TupleValue) -> Result<BTreeIndex, DBError> {
@@ -479,6 +457,7 @@ mod tests {
     use crate::error::IndexError;
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::TypeValue;
+    use spacetimedb_sats::{product, BuiltinValue};
     use std::ops::Range;
 
     fn _create_data(stdb: &mut RelationalDB, range: Range<i32>) -> ResultTest<u32> {
@@ -488,21 +467,7 @@ mod tests {
         let table_id = stdb.create_table(
             tx,
             "MyTable",
-            TupleDef {
-                name: None,
-                elements: vec![
-                    ElementDef {
-                        tag: 0,
-                        name: Some("my_i32".into()),
-                        element_type: TypeDef::I32,
-                    },
-                    ElementDef {
-                        tag: 0,
-                        name: Some("my_txt".into()),
-                        element_type: TypeDef::String,
-                    },
-                ],
-            },
+            TupleDef::from_iter([("my_i32", TypeDef::I32), ("my_txt", TypeDef::String)]),
         )?;
 
         for x in range {
@@ -515,9 +480,7 @@ mod tests {
             stdb.insert(
                 tx,
                 table_id,
-                TupleValue {
-                    elements: Box::new([TypeValue::I32(x), TypeValue::String(txt.into())]),
-                },
+                product![BuiltinValue::I32(x), BuiltinValue::String(txt.into())],
             )?;
         }
         tx_.commit()?;
@@ -625,9 +588,7 @@ mod tests {
         match stdb.insert(
             tx,
             table_id,
-            TupleValue {
-                elements: Box::new([TypeValue::I32(0), TypeValue::String("Row dup".into())]),
-            },
+            product![TypeValue::I32(0), TypeValue::String("Row dup".into())],
         ) {
             Ok(_) => {
                 panic!("Insert duplicated row")
@@ -648,13 +609,7 @@ mod tests {
         let mut tx_ = stdb.begin_tx();
         let (tx, stdb) = tx_.get();
 
-        stdb.insert(
-            tx,
-            table_id,
-            TupleValue {
-                elements: Box::new([TypeValue::I32(9), TypeValue::String("A".into())]),
-            },
-        )?;
+        stdb.insert(tx, table_id, product![TypeValue::I32(9), TypeValue::String("A".into())])?;
 
         let idx = IndexDef::new("idx_1", table_id, 1, false);
         let mut idx = BTreeIndex::from_def(0.into(), idx);
@@ -692,13 +647,7 @@ mod tests {
         let mut tx_ = stdb.begin_tx();
         let (tx, stdb) = tx_.get();
 
-        stdb.insert(
-            tx,
-            table_id,
-            TupleValue {
-                elements: Box::new([TypeValue::I32(9), TypeValue::String("A".into())]),
-            },
-        )?;
+        stdb.insert(tx, table_id, product![TypeValue::I32(9), TypeValue::String("A".into())])?;
 
         let mut values = _find(&idx, &key, &stdb, tx)?;
         values.sort();
@@ -768,9 +717,7 @@ mod tests {
         stdb.insert(
             tx,
             table_id,
-            TupleValue {
-                elements: Box::new([TypeValue::I32(99), TypeValue::String("NEW".into())]),
-            },
+            product![TypeValue::I32(99), TypeValue::String("NEW".into())],
         )?;
 
         let idx_col_id = stdb.catalog.indexes.get("idx_1").expect("Index not found");
@@ -891,12 +838,8 @@ mod tests {
 
         assert_eq!(
             vec![
-                TupleValue {
-                    elements: Box::new([TypeValue::I32(0), TypeValue::String("A".into())])
-                },
-                TupleValue {
-                    elements: Box::new([TypeValue::I32(1), TypeValue::String("B".into())])
-                }
+                product![TypeValue::I32(0), TypeValue::String("A".into())],
+                product![TypeValue::I32(1), TypeValue::String("B".into())],
             ],
             rows_col_id
         );
@@ -907,12 +850,8 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             vec![
-                TupleValue {
-                    elements: Box::new([TypeValue::I32(0), TypeValue::String("A".into())])
-                },
-                TupleValue {
-                    elements: Box::new([TypeValue::I32(1), TypeValue::String("B".into())])
-                }
+                product![TypeValue::I32(0), TypeValue::String("A".into())],
+                product![TypeValue::I32(1), TypeValue::String("B".into())],
             ],
             rows_col_id
         );

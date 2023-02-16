@@ -5,9 +5,8 @@
 //!
 //! See [`Catalog`](crate::db::catalog::Catalog) documentation for more details.
 //!
-use crate::db::relational_db::{ST_COLUMNS_NAME, ST_TABLES_NAME};
 use crate::error::{DBError, TableError};
-use spacetimedb_lib::{ElementDef, TupleDef, TupleValue, TypeDef};
+use spacetimedb_lib::{TupleDef, TupleValue, TypeDef};
 use std::collections::hash_map::Iter;
 use std::collections::HashMap;
 
@@ -193,21 +192,10 @@ impl TableCatalog {
 /// |----------|----------------|
 /// | 1        | "customers"    |
 pub(crate) fn table_schema() -> TupleDef {
-    TupleDef {
-        name: Some(ST_TABLES_NAME.into()),
-        elements: vec![
-            ElementDef {
-                tag: TableFields::TableId as u8,
-                name: TableFields::TableId.into(),
-                element_type: TypeDef::U32,
-            },
-            ElementDef {
-                tag: TableFields::TableName as u8,
-                name: TableFields::TableName.into(),
-                element_type: TypeDef::String,
-            },
-        ],
-    }
+    TupleDef::from_iter([
+        (TableFields::TableId.name(), TypeDef::U32),
+        (TableFields::TableName.name(), TypeDef::String),
+    ])
 }
 
 impl Default for TableCatalog {
@@ -222,31 +210,12 @@ impl Default for TableCatalog {
 /// |---------------|--------|-----------------|------------------|
 /// | 1             | 0      | TypeDef->0b0101 | "id"             |
 pub(crate) fn columns_schema() -> TupleDef {
-    TupleDef {
-        name: Some(ST_COLUMNS_NAME.into()),
-        elements: vec![
-            ElementDef {
-                tag: ColumnFields::TableId as u8,
-                name: ColumnFields::TableId.into(),
-                element_type: TypeDef::U32,
-            },
-            ElementDef {
-                tag: ColumnFields::ColId as u8,
-                name: ColumnFields::ColId.into(),
-                element_type: TypeDef::U32,
-            },
-            ElementDef {
-                tag: ColumnFields::ColType as u8,
-                name: ColumnFields::ColType.into(),
-                element_type: TypeDef::Bytes,
-            },
-            ElementDef {
-                tag: ColumnFields::ColName as u8,
-                name: ColumnFields::ColName.into(),
-                element_type: TypeDef::String,
-            },
-        ],
-    }
+    TupleDef::from_iter([
+        (ColumnFields::TableId.name(), TypeDef::U32),
+        (ColumnFields::ColId.name(), TypeDef::U32),
+        (ColumnFields::ColType.name(), TypeDef::bytes()),
+        (ColumnFields::ColName.name(), TypeDef::String),
+    ])
 }
 
 pub fn decode_table_schema(row: &TupleValue) -> Result<TableRow, DBError> {

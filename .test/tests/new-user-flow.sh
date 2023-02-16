@@ -57,6 +57,7 @@ run_test cargo run logs "$ADDRESS"
 [ "$(grep -c "Hello, Tyler!" "$TEST_OUT")" == 1 ]
 
 run_test cargo run sql "$ADDRESS" "SELECT * FROM Person"
-[ ' name  
--------
- Tyler ' == "$(tail -n 3 "$TEST_OUT")" ]
+[ "$(tail -n 3 "$TEST_OUT")" == \
+' name    '$'\n'\
+'---------'$'\n'\
+' "Tyler" ' ]

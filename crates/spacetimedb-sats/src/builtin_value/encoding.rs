@@ -3,6 +3,7 @@ use crate::{
     algebraic_value::AlgebraicValue,
     builtin_type::BuiltinType,
     builtin_value::{F32, F64},
+    MapType,
 };
 use std::mem::size_of;
 
@@ -161,7 +162,7 @@ impl BuiltinValue {
                 }
                 Ok((Self::Array { val: vec }, num_read))
             }
-            BuiltinType::Map { key_ty, ty } => {
+            BuiltinType::Map(MapType { key_ty, ty }) => {
                 if bytes.len() < 2 {
                     return Err("Byte array length not long enough to decode Array.");
                 }

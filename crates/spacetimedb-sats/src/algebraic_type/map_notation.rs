@@ -1,5 +1,6 @@
 use super::AlgebraicType;
 use crate::builtin_type::BuiltinType;
+use crate::MapType;
 use std::fmt::Display;
 
 pub struct Formatter<'a> {
@@ -67,7 +68,7 @@ impl<'a> Display for Formatter<'a> {
                     BuiltinType::F64 => write!(f, ", 0: F64")?,
                     BuiltinType::String => write!(f, ", 0: String")?,
                     BuiltinType::Array { ty } => write!(f, ", 0: Array, 1: {}", Formatter::new(ty))?,
-                    BuiltinType::Map { key_ty, ty } => {
+                    BuiltinType::Map(MapType { key_ty, ty }) => {
                         write!(f, "0: Map, 1: {}, 2: {}", Formatter::new(key_ty), Formatter::new(ty))?
                     }
                 }

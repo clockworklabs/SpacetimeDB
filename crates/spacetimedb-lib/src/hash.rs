@@ -1,13 +1,35 @@
+use crate::{de, ser};
 use core::fmt;
 
-use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 
 pub const HASH_SIZE: usize = 32;
 
-#[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Serialize, Deserialize)]
+#[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct Hash {
     pub data: [u8; HASH_SIZE],
+}
+
+impl ser::Serialize for Hash {
+    fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_bytes(&self.data)
+    }
+}
+impl<'de> de::Deserialize<'de> for Hash {
+    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_bytes(HashVisitor)
+    }
+}
+struct HashVisitor;
+impl<'de> de::SliceVisitor<'de, [u8]> for HashVisitor {
+    type Output = Hash;
+
+    fn visit<E: de::Error>(self, slice: &[u8]) -> Result<Self::Output, E> {
+        slice
+            .try_into()
+            .map(Hash::from_arr)
+            .map_err(|_| E::custom("invalid hash length"))
+    }
 }
 
 impl Hash {
@@ -68,5 +90,24 @@ impl hex::FromHex for Hash {
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
         let data = hex::FromHex::from_hex(hex)?;
         Ok(Hash { data })
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Hash {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        ser::serde::serialize_to(self, serializer)
+    }
+}
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Hash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        de::serde::deserialize_from(deserializer)
     }
 }

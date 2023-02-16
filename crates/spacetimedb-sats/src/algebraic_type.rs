@@ -1,12 +1,10 @@
 pub mod map_notation;
 pub mod satn;
-use crate::{
-    algebraic_type_ref::AlgebraicTypeRef, algebraic_value::AlgebraicValue, builtin_type::BuiltinType,
-    builtin_value::BuiltinValue, product_type::ProductType, sum_type::SumType, sum_type_variant::SumTypeVariant,
-    sum_value::SumValue,
-};
+use crate::algebraic_value::de::ValueDeserializer;
+use crate::algebraic_value::ser::ValueSerializer;
+use crate::{de::Deserialize, ser::Serialize};
+use crate::{AlgebraicTypeRef, AlgebraicValue, BuiltinType, ProductType, SumType, SumTypeVariant};
 use enum_as_inner::EnumAsInner;
-use serde::{Deserialize, Serialize};
 
 /// The SpacetimeDB Algebraic Type System (SATS) is a structural type system in
 /// which a nominal type system can be constructed.
@@ -52,11 +50,50 @@ use serde::{Deserialize, Serialize};
 /// )
 /// ```
 #[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[sats(crate = "crate")]
 pub enum AlgebraicType {
     Sum(SumType),
     Product(ProductType),
     Builtin(BuiltinType),
     Ref(AlgebraicTypeRef),
+}
+
+impl AlgebraicType {
+    #[allow(non_upper_case_globals)]
+    pub const Bool: Self = AlgebraicType::Builtin(BuiltinType::Bool);
+    #[allow(non_upper_case_globals)]
+    pub const I8: Self = AlgebraicType::Builtin(BuiltinType::I8);
+    #[allow(non_upper_case_globals)]
+    pub const U8: Self = AlgebraicType::Builtin(BuiltinType::U8);
+    #[allow(non_upper_case_globals)]
+    pub const I16: Self = AlgebraicType::Builtin(BuiltinType::I16);
+    #[allow(non_upper_case_globals)]
+    pub const U16: Self = AlgebraicType::Builtin(BuiltinType::U16);
+    #[allow(non_upper_case_globals)]
+    pub const I32: Self = AlgebraicType::Builtin(BuiltinType::I32);
+    #[allow(non_upper_case_globals)]
+    pub const U32: Self = AlgebraicType::Builtin(BuiltinType::U32);
+    #[allow(non_upper_case_globals)]
+    pub const I64: Self = AlgebraicType::Builtin(BuiltinType::I64);
+    #[allow(non_upper_case_globals)]
+    pub const U64: Self = AlgebraicType::Builtin(BuiltinType::U64);
+    #[allow(non_upper_case_globals)]
+    pub const I128: Self = AlgebraicType::Builtin(BuiltinType::I128);
+    #[allow(non_upper_case_globals)]
+    pub const U128: Self = AlgebraicType::Builtin(BuiltinType::U128);
+    #[allow(non_upper_case_globals)]
+    pub const F32: Self = AlgebraicType::Builtin(BuiltinType::F32);
+    #[allow(non_upper_case_globals)]
+    pub const F64: Self = AlgebraicType::Builtin(BuiltinType::F64);
+    #[allow(non_upper_case_globals)]
+    pub const String: Self = AlgebraicType::Builtin(BuiltinType::String);
+
+    #[allow(non_upper_case_globals)]
+    pub fn bytes() -> Self {
+        AlgebraicType::Builtin(BuiltinType::Array {
+            ty: Box::new(AlgebraicType::U8),
+        })
+    }
 }
 
 impl AlgebraicType {
@@ -76,57 +113,23 @@ impl AlgebraicType {
         AlgebraicType::Sum(SumType { variants: vec![] })
     }
 
+    pub const UNIT_TYPE: AlgebraicType = AlgebraicType::Product(ProductType { elements: Vec::new() });
+
     pub fn make_option_type(some_type: AlgebraicType) -> AlgebraicType {
-        let unit = AlgebraicType::Product(ProductType::new(vec![]));
         AlgebraicType::Sum(SumType {
             variants: vec![
                 SumTypeVariant::new_named(some_type, "some"),
-                SumTypeVariant::new_named(unit, "none"),
+                SumTypeVariant::new_named(AlgebraicType::UNIT_TYPE, "none"),
             ],
         })
     }
 
     pub fn as_value(&self) -> AlgebraicValue {
-        match self {
-            AlgebraicType::Sum(e_ty) => AlgebraicValue::Sum(SumValue {
-                tag: 0,
-                value: Box::new(e_ty.as_value()),
-            }),
-            AlgebraicType::Product(e_ty) => AlgebraicValue::Sum(SumValue {
-                tag: 1,
-                value: Box::new(e_ty.as_value()),
-            }),
-            AlgebraicType::Builtin(e_ty) => AlgebraicValue::Sum(SumValue {
-                tag: 2,
-                value: Box::new(e_ty.as_value()),
-            }),
-            AlgebraicType::Ref(r) => AlgebraicValue::Sum(SumValue {
-                tag: 3,
-                value: Box::new(AlgebraicValue::Builtin(BuiltinValue::U32(r.0))),
-            }),
-        }
+        self.serialize(ValueSerializer).unwrap_or_else(|x| match x {})
     }
 
     pub fn from_value(value: &AlgebraicValue) -> Result<AlgebraicType, ()> {
-        match value {
-            AlgebraicValue::Sum(value) => match value.tag {
-                0 => Ok(AlgebraicType::Sum(SumType::from_value(&value.value)?)),
-                1 => Ok(AlgebraicType::Product(ProductType::from_value(&value.value)?)),
-                2 => Ok(AlgebraicType::Builtin(BuiltinType::from_value(&value.value)?)),
-                3 => {
-                    let Some(value) = value.value.as_builtin() else {
-                            return Err(());
-                        };
-                    let Some(r) = value.as_u32() else {
-                            return Err(());
-                        };
-                    Ok(AlgebraicType::Ref(AlgebraicTypeRef(*r)))
-                }
-                _ => Err(()),
-            },
-            AlgebraicValue::Product(_) => Err(()),
-            AlgebraicValue::Builtin(_) => Err(()),
-        }
+        Self::deserialize(ValueDeserializer::from_ref(value)).map_err(|_| ())
     }
 }
 
@@ -134,11 +137,12 @@ impl AlgebraicType {
 mod tests {
     use super::AlgebraicType;
     use crate::algebraic_type::map_notation;
+    use crate::satn::Satn;
     use crate::{
-        algebraic_type::satn::Formatter, algebraic_type_ref::AlgebraicTypeRef, algebraic_value,
-        builtin_type::BuiltinType, product_type::ProductType, product_type_element::ProductTypeElement,
-        sum_type::SumType, typespace::Typespace,
+        algebraic_type::satn::Formatter, algebraic_type_ref::AlgebraicTypeRef, builtin_type::BuiltinType,
+        product_type::ProductType, product_type_element::ProductTypeElement, sum_type::SumType, typespace::Typespace,
     };
+    use crate::{TypeInSpace, ValueWithType};
 
     #[test]
     fn never() {
@@ -238,6 +242,10 @@ mod tests {
         );
     }
 
+    fn in_space<'a, T: crate::Value>(ts: &'a Typespace, ty: &'a T::Type, val: &'a T) -> ValueWithType<'a, T> {
+        TypeInSpace::new(ts, ty).with_value(val)
+    }
+
     #[test]
     fn option_as_value() {
         let never = AlgebraicType::Sum(SumType::new(Vec::new()));
@@ -247,7 +255,7 @@ mod tests {
         let at_ref = AlgebraicType::Ref(AlgebraicTypeRef(0));
         assert_eq!(
             r#"(sum = (variants = [(name = (some = "some"), algebraic_type = (sum = (variants = []))), (name = (some = "none"), algebraic_type = (product = (elements = [])))]))"#,
-            algebraic_value::satn::Formatter::new(&typespace, &at_ref, &option.as_value()).to_string()
+            in_space(&typespace, &at_ref, &option.as_value()).to_satn()
         );
     }
 
@@ -259,7 +267,7 @@ mod tests {
         let at_ref = AlgebraicType::Ref(AlgebraicTypeRef(0));
         assert_eq!(
             "(builtin = (u8 = ()))",
-            algebraic_value::satn::Formatter::new(&typespace, &at_ref, &array.as_value()).to_string()
+            in_space(&typespace, &at_ref, &array.as_value()).to_satn()
         );
     }
 
@@ -270,7 +278,7 @@ mod tests {
         let at_ref = AlgebraicType::Ref(AlgebraicTypeRef(0));
         assert_eq!(
             r#"(sum = (variants = [(name = (some = "sum"), algebraic_type = (product = (elements = [(name = (some = "variants"), algebraic_type = (builtin = (array = (product = (elements = [(name = (some = "name"), algebraic_type = (sum = (variants = [(name = (some = "some"), algebraic_type = (builtin = (string = ()))), (name = (some = "none"), algebraic_type = (product = (elements = [])))]))), (name = (some = "algebraic_type"), algebraic_type = (ref = 0))])))))]))), (name = (some = "product"), algebraic_type = (product = (elements = [(name = (some = "elements"), algebraic_type = (builtin = (array = (product = (elements = [(name = (some = "name"), algebraic_type = (sum = (variants = [(name = (some = "some"), algebraic_type = (builtin = (string = ()))), (name = (some = "none"), algebraic_type = (product = (elements = [])))]))), (name = (some = "algebraic_type"), algebraic_type = (ref = 0))])))))]))), (name = (some = "builtin"), algebraic_type = (sum = (variants = [(name = (some = "bool"), algebraic_type = (product = (elements = []))), (name = (some = "i8"), algebraic_type = (product = (elements = []))), (name = (some = "u8"), algebraic_type = (product = (elements = []))), (name = (some = "i16"), algebraic_type = (product = (elements = []))), (name = (some = "u16"), algebraic_type = (product = (elements = []))), (name = (some = "i32"), algebraic_type = (product = (elements = []))), (name = (some = "u32"), algebraic_type = (product = (elements = []))), (name = (some = "i64"), algebraic_type = (product = (elements = []))), (name = (some = "u64"), algebraic_type = (product = (elements = []))), (name = (some = "i128"), algebraic_type = (product = (elements = []))), (name = (some = "u128"), algebraic_type = (product = (elements = []))), (name = (some = "f32"), algebraic_type = (product = (elements = []))), (name = (some = "f64"), algebraic_type = (product = (elements = []))), (name = (some = "string"), algebraic_type = (product = (elements = []))), (name = (some = "array"), algebraic_type = (ref = 0)), (name = (some = "map"), algebraic_type = (product = (elements = [(name = (some = "key_ty"), algebraic_type = (ref = 0)), (name = (some = "ty"), algebraic_type = (ref = 0))])))]))), (name = (some = "ref"), algebraic_type = (builtin = (u32 = ())))]))"#,
-            algebraic_value::satn::Formatter::new(&typespace, &at_ref, &algebraic_type.as_value()).to_string()
+            in_space(&typespace, &at_ref, &algebraic_type.as_value()).to_satn()
         );
     }
 

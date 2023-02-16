@@ -9,12 +9,10 @@ use core::num::NonZeroU16;
 
 use alloc::boxed::Box;
 
-pub const ABI_VERSION: u16 = 0;
+pub const ABI_VERSION: u16 = 1;
 
 pub mod raw {
-    // breaking changes to these function signatures should bump the v in the module symbol
-    // as well as in ABI_VERSION above
-    #[link(wasm_import_module = "spacetime_v0")]
+    #[link(wasm_import_module = "spacetime")]
     extern "C" {
         pub fn _create_table(
             name: *const u8,

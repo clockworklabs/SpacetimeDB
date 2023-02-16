@@ -5,7 +5,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use parking_lot::Mutex;
-use spacetimedb_lib::{EntityDef, TupleValue};
+use spacetimedb_lib::ser::serde::SerializeWrapper as SerdeWrapper;
+use spacetimedb_lib::{EntityDef, ReducerDef, TupleValue};
+use spacetimedb_sats::Typespace;
 use tokio::sync::oneshot;
 
 use crate::db::messages::transaction::Transaction;
@@ -43,7 +45,7 @@ pub trait UninitWasmInstance: Send + 'static {
 }
 
 pub trait WasmInstance: Send + 'static {
-    fn extract_descriptions(&mut self) -> anyhow::Result<HashMap<String, EntityDef>>;
+    fn extract_descriptions(&mut self) -> anyhow::Result<(Typespace, HashMap<String, EntityDef>)>;
 
     fn instance_env(&self) -> &InstanceEnv;
 
@@ -151,15 +153,16 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             ))
             .initialize(&func_names)?;
 
-        let description_cache = instance.extract_descriptions()?;
-        description_cache
+        let (typespace, catalog) = instance.extract_descriptions()?;
+        catalog
             .iter()
             .try_for_each(|(name, entity)| func_names.update_from_entity(|s| module.get_export(s), name, entity))?;
 
         let info = Arc::new(ModuleInfo {
             identity: worker_database_instance.identity,
             module_hash,
-            catalog: description_cache,
+            typespace,
+            catalog,
         });
 
         let func_names = Arc::new(func_names);
@@ -380,7 +383,14 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
                 _ => None,
             })
             .try_for_each(|(name, table)| {
-                stdb.create_table(tx, name, table.tuple.clone())
+                let schema = self
+                    .info
+                    .typespace
+                    .with_type(&table.data)
+                    .resolve_refs()
+                    .context("recursive types not yet supported")?;
+                let schema = schema.into_product().ok().context("table not a product type?")?;
+                stdb.create_table(tx, name, schema)
                     .map(drop)
                     .with_context(|| format!("failed to create table {name}"))
             })?;
@@ -453,7 +463,9 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
         let EntityDef::Reducer(reducer_descr) = &self.info.catalog[&reducer_name] else {
             unreachable!() // ModuleHost::call_reducer should've already ensured this is ok
         };
-        let arg_bytes = serde_json::to_vec(&args.serialize_args_with_schema(reducer_descr)).unwrap();
+        let reducer_descr = self.info.typespace.with_type(reducer_descr);
+        let arg_bytes =
+            serde_json::to_vec(&SerdeWrapper::new(ReducerDef::serialize_args(reducer_descr, &args))).unwrap();
         let event = ModuleEvent {
             timestamp,
             caller_identity,

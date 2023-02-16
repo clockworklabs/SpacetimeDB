@@ -46,7 +46,6 @@ pub fn execute_project(
                 })
                 .collect::<Vec<_>>();
             stmt_result.schema = TupleDef {
-                name: None,
                 elements: stmt_result
                     .schema
                     .elements
