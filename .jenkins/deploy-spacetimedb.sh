@@ -18,6 +18,9 @@ fi
 
 docker login -u ${1} -p ${2} https://registry.digitalocean.com
 cd SpacetimeDB 
-echo "REGISTRY_SUFFIX=-partner-${3}" > .env
+if [ ! -f .env ] ; then
+	echo "WARNING: Environment file not found. This file should have already been configured. Adding required fields now."
+	echo "REGISTRY_SUFFIX=-partner-${3}" > .env
+fi
 docker-compose -f docker-compose-live.yml pull
 docker-compose -f docker-compose-live.yml up -d

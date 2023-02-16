@@ -27,6 +27,8 @@ itertools = "0.10.5"
 anyhow = "1.0.68"
 spacetimedb-bindings-macro = { path = "../spacetimedb-bindings-macro" }
 spacetimedb-sats = { path = "../spacetimedb-sats" }
+serde_with = "2.2.0"
+chrono = { version = "0.4.23", features = ["serde"]}
 
 [dev-dependencies]
 rand = "0.8.5"

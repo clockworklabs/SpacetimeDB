@@ -15,6 +15,7 @@ pub mod type_def {
 pub mod type_value {
     pub use spacetimedb_sats::{AlgebraicValue as TypeValue, ProductValue as TupleValue};
 }
+pub mod recovery;
 pub mod version;
 pub use spacetimedb_sats::bsatn;
 

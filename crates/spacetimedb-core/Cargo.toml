@@ -59,6 +59,7 @@ backtrace = "0.3.66"
 urlencoding = "2.1.2"
 fs2 = "0.4.3"
 once_cell = "1.16"
+sendgrid = { version = "0.18.1", features = ["async"] }
 
 slab = "0.4.7"
 

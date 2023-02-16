@@ -6,6 +6,8 @@ services:
     build:
       context: ./
       dockerfile: ./crates/spacetimedb-standalone/Dockerfile
+    env_file:
+      - .env
     volumes:
       - /stdb
     command: start

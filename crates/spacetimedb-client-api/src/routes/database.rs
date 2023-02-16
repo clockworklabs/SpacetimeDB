@@ -135,7 +135,12 @@ enum DBCallErr {
     InstanceNotScheduled,
 }
 
+use crate::routes::util::gen_new_recovery_code;
+use chrono::Utc;
+use spacetimedb::auth::identity::encode_token;
+use spacetimedb::sendgrid_controller::SENDGRID;
 use spacetimedb_lib::name::{DnsLookupResponse, InsertDomainResult, PublishResult};
+use spacetimedb_lib::recovery::RecoveryCodeResponse;
 use std::convert::From;
 
 impl From<HandlerError> for DBCallErr {
@@ -532,11 +537,126 @@ async fn register_tld(_ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHand
     let (caller_identity, _) = creds.unwrap();
 
     let result = CONTROL_DB.spacetime_register_tld(tld.as_str(), caller_identity).await?;
-
     let json = serde_json::to_string(&result).unwrap();
     Ok(Response::builder()
         .status(StatusCode::OK)
         .body(Body::from(json))
+        .unwrap())
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct RequestRecoveryCodeParams {
+    /// Whether or not the client is requesting a login link for a web-login. This is false for CLI logins.
+    link: Option<bool>,
+    email: Option<String>,
+    identity: String,
+}
+
+async fn request_recovery_code(_ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHandlerResult {
+    if !SENDGRID.is_enabled() {
+        log::error!("A recovery code was requested, but SendGrid is disabled.");
+        return Err(HandlerError::from(anyhow!("SendGrid is disabled.")).with_status(StatusCode::INTERNAL_SERVER_ERROR));
+    }
+    let RequestRecoveryCodeParams { link, email, identity } = RequestRecoveryCodeParams::take_from(state);
+    let email = match email {
+        Some(email) => email,
+        None => {
+            return Err(HandlerError::from(anyhow!("Email is required.")).with_status(StatusCode::BAD_REQUEST));
+        }
+    };
+
+    if let Err(_) = Hash::from_hex(&identity) {
+        return Err(HandlerError::from(anyhow!("Malformed identity.")).with_status(StatusCode::BAD_REQUEST));
+    }
+
+    if !CONTROL_DB
+        .get_identities_for_email(email.as_str())?
+        .iter()
+        .any(|a| Hash::from_slice(&a.identity[..]).to_hex() == identity)
+    {
+        return Err(
+            HandlerError::from(anyhow!("Email is not associated with the provided identity."))
+                .with_status(StatusCode::BAD_REQUEST),
+        );
+    }
+
+    let recovery_code = gen_new_recovery_code(identity.clone())?;
+    CONTROL_DB
+        .spacetime_request_recovery_code(email.as_str(), recovery_code.clone())
+        .await?;
+
+    SENDGRID
+        .send_recovery_email(
+            email.as_str(),
+            recovery_code.code.as_str(),
+            identity.as_str(),
+            link.unwrap_or_default(),
+        )
+        .await?;
+    Ok(Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap())
+}
+
+#[derive(Deserialize, StateData, StaticResponseExtender)]
+struct ConfirmRecoveryCodeParams {
+    pub email: String,
+    pub identity: String,
+    pub code: String,
+}
+
+/// Note: We should be slightly more security conscious about this function because
+///  we are providing a login token to the user initiating the request. We want to make
+///  sure there aren't any logical issues in here that would allow a user to request a token
+///  for an identity that they don't have authority over.
+async fn confirm_recovery_code(_ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHandlerResult {
+    let ConfirmRecoveryCodeParams { email, identity, code } = ConfirmRecoveryCodeParams::take_from(state);
+    let recovery_code = match CONTROL_DB
+        .spacetime_get_recovery_code(email.as_str(), code.as_str())
+        .await?
+    {
+        None => {
+            return Err(HandlerError::from(anyhow!("Recovery code not found.")).with_status(StatusCode::BAD_REQUEST));
+        }
+        Some(code) => code,
+    };
+
+    let duration = Utc::now() - recovery_code.generation_time;
+    if duration.num_seconds() > 60 * 10 {
+        return Err(HandlerError::from(anyhow!("Recovery code expired.")).with_status(StatusCode::BAD_REQUEST));
+    }
+
+    // Make sure the identity provided by the request matches the recovery code registration
+    if recovery_code.identity != identity {
+        return Err(
+            HandlerError::from(anyhow!("Recovery code doesn't match the provided identity."))
+                .with_status(StatusCode::BAD_REQUEST),
+        );
+    }
+
+    if !CONTROL_DB
+        .get_identities_for_email(email.as_str())?
+        .iter()
+        .any(|a| Hash::from_slice(&a.identity[..]).to_hex() == identity)
+    {
+        for entry in CONTROL_DB.get_identities_for_email(email.as_str())? {
+            log::error!("{} {}", entry.email, Hash::from_slice(&entry.identity[..]).to_hex());
+        }
+        // This can happen if someone changes their associated email during a recovery request.
+        return Err(
+            HandlerError::from(anyhow!("No identity associated with that email.")).with_status(StatusCode::BAD_REQUEST)
+        );
+    }
+
+    // Recovery code is verified, return the identity and token to the user
+    let identity = Hash::from_hex(identity)?;
+    let token = encode_token(identity)?;
+    let result = RecoveryCodeResponse {
+        identity: identity.to_hex(),
+        token,
+    };
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .body(Body::from(serde_json::to_string(&result)?))
         .unwrap())
 }
 
@@ -820,6 +940,14 @@ pub fn control_router(route: &mut gotham::router::builder::RouterBuilder<'_, (),
             .get("/register_tld")
             .with_query_string_extractor::<RegisterTldParams>()
             .to_new_handler(with_ctx!(ctx, register_tld));
+        route
+            .get("/request_recovery_code")
+            .with_query_string_extractor::<RequestRecoveryCodeParams>()
+            .to_new_handler(with_ctx!(ctx, request_recovery_code));
+        route
+            .get("/confirm_recovery_code")
+            .with_query_string_extractor::<ConfirmRecoveryCodeParams>()
+            .to_new_handler(with_ctx!(ctx, confirm_recovery_code));
 
         route
             .post("/publish")

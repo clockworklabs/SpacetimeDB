@@ -2,11 +2,13 @@ use crate::{
     config::{Config, IdentityConfig},
     util::{init_default, IdentityTokenJson, InitDefaultResultType},
 };
+use std::io::Write;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use email_address::EmailAddress;
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
+use spacetimedb_lib::recovery::RecoveryCodeResponse;
 use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
 
 pub fn cli() -> Command {
@@ -142,6 +144,17 @@ fn get_subcommands() -> Vec<Command> {
                 .required(true)
                 .help("The email associated with the identity that you would like to find"),
         ),
+        Command::new("recover")
+            .about("Recover an existing identity and import it into your local config")
+            .arg(
+                Arg::new("email")
+                    .required(true)
+                    .help("The email associated with the identity that you would like to recover."),
+            )
+            // TODO(jdetter): Unify identity and name here
+            .arg(Arg::new("identity").required(true).help(
+                "The identity you would like to recover. This identity must be associated with the email provided.",
+            )),
     ]
 }
 
@@ -161,6 +174,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
         "import" => exec_import(config, args).await,
         "set-email" => exec_set_email(config, args).await,
         "find" => exec_find(config, args).await,
+        "recover" => exec_recover(config, args).await,
         // TODO(jdetter): Command for logging in via email recovery
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
@@ -403,7 +417,8 @@ async fn exec_find(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     let res = builder.send().await?;
 
     if res.status() == StatusCode::OK {
-        let response: GetIdentityResponse = serde_json::from_slice(&res.bytes().await?[..])?;
+        let response: GetIdentityResponse =
+            serde_json::from_str(String::from_utf8(res.bytes().await?.to_vec())?.as_str())?;
         if response.identities.is_empty() {
             return Err(anyhow::anyhow!("Could not find identity for: {}", email));
         }
@@ -449,4 +464,87 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
     println!(" EMAIL     {}", email);
 
     Ok(())
+}
+
+async fn exec_recover(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let email = args.get_one::<String>("email").unwrap();
+    let identity = args.get_one::<String>("identity").unwrap().to_lowercase();
+
+    let query_params = vec![
+        ("email", email.as_str()),
+        ("identity", identity.as_str()),
+        ("link", "false"),
+    ];
+
+    if config
+        .identity_configs()
+        .iter()
+        .any(|a| a.identity.to_lowercase() == identity.to_lowercase())
+    {
+        return Err(anyhow::anyhow!("No need to recover this identity, it is already stored in your config. Use `spacetime identity list` to list identities."));
+    }
+
+    let client = reqwest::Client::new();
+    let builder = client.get(Url::parse_with_params(
+        format!("{}/database/request_recovery_code", config.get_host_url()).as_str(),
+        query_params,
+    )?);
+    let res = builder.send().await?;
+    res.error_for_status()?;
+
+    println!(
+        "We have successfully sent a recovery code to {}. Enter the code now.",
+        email
+    );
+    for _ in 0..5 {
+        print!("Recovery Code: ");
+        std::io::stdout().flush()?;
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line).unwrap();
+        let code = match line.trim().parse::<u32>() {
+            Ok(value) => value,
+            Err(_) => {
+                println!("Malformed code. Please try again.");
+                continue;
+            }
+        };
+
+        let client = reqwest::Client::new();
+        let builder = client.get(Url::parse_with_params(
+            format!("{}/database/confirm_recovery_code", config.get_host_url()).as_str(),
+            vec![
+                ("code", code.to_string().as_str()),
+                ("email", email.as_str()),
+                ("identity", identity.as_str()),
+            ],
+        )?);
+        let res = builder.send().await?;
+        match res.error_for_status() {
+            Ok(res) => {
+                let buf = res.bytes().await?.to_vec();
+                let utf8 = String::from_utf8(buf)?;
+                let response: RecoveryCodeResponse = serde_json::from_str(utf8.as_str())?;
+                let identity_config = IdentityConfig {
+                    nickname: None,
+                    identity: response.identity.clone(),
+                    token: response.token,
+                };
+                config.identity_configs_mut().push(identity_config.clone());
+                config.update_default_identity();
+                config.save();
+                println!("Success. Identity imported.");
+                // TODO(jdetter): standardize this output
+                println!(" IDENTITY  {}", response.identity);
+                println!(" EMAIL     {}", email);
+                return Ok(());
+            }
+            Err(_) => {
+                println!("Invalid recovery code, please try again.");
+            }
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "Maximum amount of attempts reached. Please start the process over."
+    ))
 }

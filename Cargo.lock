@@ -901,6 +901,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-encoding"
+version = "2.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23d8666cb01533c39dde32bcbab8e227b4ed6679b2c925eba05feabea39508fb"
+
+[[package]]
 name = "decorum"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1668,7 +1674,7 @@ checksum = "09f4f04699947111ec1733e71778d763555737579e44b85844cae8e1940a1828"
 dependencies = [
  "base64",
  "pem",
- "ring",
+ "ring 0.16.20",
  "serde",
  "serde_json",
  "simple_asn1",
@@ -2717,6 +2723,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ring"
+version = "0.17.0-alpha.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4575a179070909595bea5f999d67934737c2e0757a1eb9839af555917817b257"
+dependencies = [
+ "cc",
+ "libc",
+ "once_cell",
+ "spin",
+ "untrusted",
+ "web-sys",
+ "winapi",
+]
+
+[[package]]
 name = "rkyv"
 version = "0.7.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2924,6 +2945,20 @@ name = "semver-parser"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
+
+[[package]]
+name = "sendgrid"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd6ba8c048dc4beab827cebc1d54f1007f5ebdfa240812ed6faa89452fd34ba0"
+dependencies = [
+ "data-encoding",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "url",
+]
 
 [[package]]
 name = "serde"
@@ -3243,6 +3278,7 @@ dependencies = [
  "async-trait",
  "base64",
  "bytes",
+ "chrono",
  "clap 4.0.32",
  "email_address",
  "gotham",
@@ -3254,8 +3290,11 @@ dependencies = [
  "prometheus",
  "prost",
  "regex",
+ "ring 0.17.0-alpha.11",
+ "sendgrid",
  "serde",
  "serde_json",
+ "serde_with",
  "sha1 0.10.5",
  "sled",
  "spacetimedb-core",
@@ -3336,6 +3375,7 @@ dependencies = [
  "rusqlite",
  "rustc-demangle",
  "scopeguard",
+ "sendgrid",
  "serde",
  "serde_json",
  "serde_with",
@@ -3366,6 +3406,7 @@ version = "0.3.2"
 dependencies = [
  "anyhow",
  "bytes",
+ "chrono",
  "enum-as-inner",
  "hex",
  "insta",
@@ -3373,6 +3414,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
+ "serde_with",
  "sha3",
  "spacetimedb-bindings-macro",
  "spacetimedb-sats",

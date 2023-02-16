@@ -5,6 +5,7 @@ use crate::protobuf::control_db::{Database, DatabaseInstance, EnergyBalance, Ide
 use prost::Message;
 
 use spacetimedb_lib::name::{parse_domain_name, InsertDomainResult, RegisterTldResult};
+use spacetimedb_lib::recovery::RecoveryCode;
 
 // TODO: Consider making not static
 lazy_static::lazy_static! {
@@ -152,6 +153,52 @@ impl ControlDb {
                 })
             }
         }
+    }
+
+    /// Starts a recovery code request
+    ///
+    ///  * `email` - The email to send the recovery code to
+    pub async fn spacetime_request_recovery_code(
+        &self,
+        email: &str,
+        new_code: RecoveryCode,
+    ) -> Result<(), anyhow::Error> {
+        let tree = self.db.open_tree("recovery_codes")?;
+        let current_requests = tree.get(email.as_bytes())?;
+        match current_requests {
+            None => {
+                tree.insert(email.as_bytes(), serde_json::to_string(&vec![new_code])?.as_bytes())?;
+            }
+            Some(codes_bytes) => {
+                let mut codes: Vec<RecoveryCode> = serde_json::from_slice(&codes_bytes[..])?;
+                codes.push(new_code);
+                tree.insert(email.as_bytes(), serde_json::to_string(&codes)?.as_bytes())?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn spacetime_get_recovery_code(
+        &self,
+        email: &str,
+        code: &str,
+    ) -> Result<Option<RecoveryCode>, anyhow::Error> {
+        let tree = self.db.open_tree("recovery_codes")?;
+        let current_requests = tree.get(email.as_bytes())?;
+        return match current_requests {
+            None => Ok(None),
+            Some(codes_bytes) => {
+                let codes: Vec<RecoveryCode> = serde_json::from_slice(&codes_bytes[..])?;
+                for recovery_code in codes {
+                    if recovery_code.code == code {
+                        return Ok(Some(recovery_code));
+                    }
+                }
+
+                Ok(None)
+            }
+        };
     }
 
     /// Returns the owner (or `None` if there is no owner) of the domain.

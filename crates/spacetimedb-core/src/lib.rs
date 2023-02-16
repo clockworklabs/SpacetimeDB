@@ -37,6 +37,7 @@ pub mod database_logger;
 pub mod host;
 pub mod module_subscription_actor;
 pub mod object_db;
+pub mod sendgrid_controller;
 pub mod startup;
 pub mod util;
 pub mod worker_database_instance;
