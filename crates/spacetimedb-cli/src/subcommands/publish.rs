@@ -126,7 +126,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
     //  easily create a new identity with an email
     let identity = if !anon_identity {
-        if identity.is_none() && config.default_identity.is_none() {
+        if identity.is_none() && config.default_identity().is_none() {
             init_default(&mut config, None).await?;
         }
 

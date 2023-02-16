@@ -128,9 +128,9 @@ pub async fn init_default(config: &mut Config, nickname: Option<String>) -> Resu
         token: identity_token.token,
         nickname: nickname.clone(),
     };
-    config.identity_configs.push(identity_config.clone());
-    if config.default_identity.is_none() {
-        config.default_identity = Some(identity);
+    config.identity_configs_mut().push(identity_config.clone());
+    if config.default_identity().is_none() {
+        config.set_default_identity(identity);
     }
     config.save();
     Ok(InitDefaultResult {
@@ -204,3 +204,5 @@ pub async fn get_auth_header(
         None
     }
 }
+
+pub const VALID_PROTOCOLS: [&str; 2] = ["http", "https"];

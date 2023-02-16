@@ -29,8 +29,8 @@ struct AddressRow {
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let identity = match args.get_one::<String>("identity") {
         Some(value) => value.to_string(),
-        None => match &config.default_identity {
-            Some(default_ident) => default_ident.clone(),
+        None => match config.default_identity() {
+            Some(default_ident) => default_ident.to_string(),
             None => {
                 return Err(anyhow::anyhow!("No default identity, and no identity provided!"));
             }

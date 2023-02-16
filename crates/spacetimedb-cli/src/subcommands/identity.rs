@@ -170,7 +170,7 @@ async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), a
     let name = args.get_one::<String>("name");
     if let Some(name) = name {
         if let Some(identity_config) = config.get_identity_config_by_name(name) {
-            config.default_identity = Some(identity_config.identity.clone());
+            config.set_default_identity(identity_config.identity.clone());
             config.save();
             return Ok(());
         } else {
@@ -180,7 +180,7 @@ async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), a
 
     if let Some(identity) = args.get_one::<String>("identity") {
         if let Some(identity_config) = config.get_identity_config_by_identity(identity) {
-            config.default_identity = Some(identity_config.identity.clone());
+            config.set_default_identity(identity_config.identity.clone());
             config.save();
             return Ok(());
         } else {
@@ -228,12 +228,8 @@ async fn exec_init_default(mut config: Config, args: &ArgMatches) -> Result<(), 
 async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let name = args.get_one::<String>("name");
     if let Some(name) = name {
-        let index = config
-            .identity_configs
-            .iter()
-            .position(|c| c.nickname.as_ref() == Some(name));
-        if let Some(index) = index {
-            let ic = config.identity_configs.remove(index);
+        let ic = config.delete_identity_config_by_name(name);
+        if let Some(ic) = ic {
             config.update_default_identity();
             config.save();
             println!(" Removed identity");
@@ -248,9 +244,8 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
     }
 
     if let Some(identity) = args.get_one::<String>("identity") {
-        let index = config.identity_configs.iter().position(|c| &c.identity == identity);
-        if let Some(index) = index {
-            let ic = config.identity_configs.remove(index);
+        let ic = config.delete_identity_config_by_identity(identity);
+        if let Some(ic) = ic {
             config.update_default_identity();
             config.save();
             println!(" Removed identity");
@@ -313,13 +308,13 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let identity = identity_token.identity.clone();
 
     if save {
-        config.identity_configs.push(IdentityConfig {
+        config.identity_configs_mut().push(IdentityConfig {
             identity: identity_token.identity,
             token: identity_token.token,
             nickname: alias.map(|s| s.to_string()),
         });
-        if config.default_identity.is_none() {
-            config.default_identity = Some(identity.clone());
+        if config.default_identity().is_none() {
+            config.set_default_identity(identity.clone());
         }
 
         config.save();
@@ -339,7 +334,7 @@ async fn exec_import(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
     //optional
     let nickname = args.get_one::<String>("name").cloned();
 
-    config.identity_configs.push(IdentityConfig {
+    config.identity_configs_mut().push(IdentityConfig {
         identity,
         token,
         nickname: nickname.clone(),
@@ -366,9 +361,9 @@ struct LsRow {
 
 async fn exec_list(config: Config, _args: &ArgMatches) -> Result<(), anyhow::Error> {
     let mut rows: Vec<LsRow> = Vec::new();
-    for identity_token in config.identity_configs {
-        let default_str = if config.default_identity.is_some()
-            && config.default_identity.as_ref().unwrap() == &identity_token.identity
+    for identity_token in config.identity_configs() {
+        let default_str = if config.default_identity().is_some()
+            && config.default_identity().as_ref().unwrap() == &identity_token.identity
         {
             "***"
         } else {
@@ -376,8 +371,8 @@ async fn exec_list(config: Config, _args: &ArgMatches) -> Result<(), anyhow::Err
         };
         rows.push(LsRow {
             default: default_str.to_string(),
-            identity: identity_token.identity,
-            name: identity_token.nickname.unwrap_or_default(),
+            identity: identity_token.clone().identity,
+            name: identity_token.nickname.clone().unwrap_or_default(),
             // TODO(jdetter): We'll have to look this up via a query
             // email: identity_token.email.unwrap_or_default(),
         });

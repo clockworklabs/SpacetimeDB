@@ -10,6 +10,7 @@ pub mod init;
 pub mod list;
 pub mod logs;
 pub mod publish;
+pub mod server;
 pub mod sql;
 pub mod version;
 
