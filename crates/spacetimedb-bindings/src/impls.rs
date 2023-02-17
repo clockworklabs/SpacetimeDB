@@ -79,6 +79,12 @@ impl<T: SchemaType> SchemaType for Vec<T> {
     }
 }
 
+impl<T: SchemaType> SchemaType for Option<T> {
+    fn get_schema() -> TypeDef {
+        TypeDef::make_option_type(T::get_schema())
+    }
+}
+
 impl SchemaType for Hash {
     fn get_schema() -> TypeDef {
         TypeDef::bytes()
