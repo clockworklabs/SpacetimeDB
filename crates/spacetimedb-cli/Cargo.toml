@@ -18,7 +18,7 @@ bench = false
 
 [dependencies]
 clap = { version = "4.0.18", features = ["derive"] }
-reqwest = "0.11.10"
+reqwest = { version = "0.11.10", features = ["stream"] }
 tokio = { version = "1", features = ["full"] }
 anyhow = { version = "1.0.57", features = ["backtrace"] }
 serde = { version = "1.0.136" , features = ["derive"] }
@@ -37,6 +37,10 @@ slab = "0.4.7"
 cargo_metadata = "0.15.2"
 urlencoding = "2.1.2"
 email_address = "0.2.4"
+termcolor = "1.2.0"
+is-terminal = "0.4"
+futures = "0.3"
+tempfile = "3.3"
 
 [dev-dependencies]
 insta = { version = "1.21.0", features = ["toml"] }

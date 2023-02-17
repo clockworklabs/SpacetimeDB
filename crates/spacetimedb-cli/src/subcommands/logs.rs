@@ -1,9 +1,15 @@
+use std::borrow::Cow;
+use std::io::{self, Write};
+
 use crate::config::Config;
 use crate::util::get_auth_header;
 use crate::util::spacetime_dns;
-use clap::Arg;
 use clap::ArgMatches;
+use clap::{Arg, ArgAction};
+use futures::{AsyncBufReadExt, TryStreamExt};
+use is_terminal::IsTerminal;
 use spacetimedb_lib::name::{is_address, DnsLookupResponse};
+use termcolor::{Color, ColorSpec, WriteColor};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("logs")
@@ -26,12 +32,60 @@ pub fn cli() -> clap::Command {
                 .help("The number of lines to print from the start of the log of this database")
                 .long_help("The number of lines to print from the start of the log of this database. If no num lines is provided, all lines will be returned."),
         )
+        .arg(
+            Arg::new("follow")
+                .long("follow")
+                .short('f')
+                .required(false)
+                .action(ArgAction::SetTrue)
+                .help("A flag indicating whether or not to follow the logs")
+                .long_help("A flag that causes logs to not stop when end of the log file is reached, but rather to wait for additional data to be appended to the input."),
+        )
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
 
+#[derive(serde::Deserialize)]
+pub enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+    Panic,
+}
+
+#[derive(serde::Deserialize)]
+struct Record<'a> {
+    level: LogLevel,
+    #[serde(borrow)]
+    #[allow(unused)] // TODO: format this somehow
+    target: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    filename: Option<Cow<'a, str>>,
+    line_number: Option<u32>,
+    #[serde(borrow)]
+    message: Cow<'a, str>,
+    trace: Option<Vec<BacktraceFrame<'a>>>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct BacktraceFrame<'a> {
+    #[serde(borrow)]
+    pub module_name: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    pub func_name: Option<Cow<'a, str>>,
+}
+
+#[derive(serde::Serialize)]
+struct LogsParams {
+    num_lines: Option<u32>,
+    follow: bool,
+}
+
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let num_lines = args.get_one::<u32>("num_lines");
+    let num_lines = args.get_one::<u32>("num_lines").copied();
     let database = args.get_one::<String>("database").unwrap();
+    let follow = args.get_flag("follow");
 
     let identity = args.get_one::<String>("identity");
 
@@ -50,10 +104,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         }
     };
 
-    let mut query_parms = Vec::new();
-    if num_lines.is_some() {
-        query_parms.push(("num_lines", num_lines.unwrap()));
-    }
+    // TODO: num_lines should default to like 10 if follow is specified?
+    let query_parms = LogsParams { num_lines, follow };
 
     let client = reqwest::Client::new();
     let mut builder = client.get(format!("{}/database/logs/{}", config.get_host_url(), address));
@@ -64,9 +116,82 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let res = res.error_for_status()?;
 
-    let body = res.bytes().await?;
-    let str = String::from_utf8(body.to_vec())?;
-    println!("{}", str);
+    let term_color = if std::io::stderr().is_terminal() {
+        termcolor::ColorChoice::Auto
+    } else {
+        termcolor::ColorChoice::Never
+    };
+    let out = termcolor::StandardStream::stderr(term_color);
+    let mut out = out.lock();
+
+    let mut rdr = res
+        .bytes_stream()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        .into_async_read();
+    let mut line = String::new();
+    while rdr.read_line(&mut line).await? != 0 {
+        let record = serde_json::from_str::<Record<'_>>(&line)?;
+
+        let mut color = ColorSpec::new();
+        let level = match record.level {
+            LogLevel::Error => {
+                color.set_fg(Some(Color::Red));
+                "error"
+            }
+            LogLevel::Warn => {
+                color.set_fg(Some(Color::Yellow));
+                "warn"
+            }
+            LogLevel::Info => {
+                color.set_fg(Some(Color::Blue));
+                "info"
+            }
+            LogLevel::Debug => {
+                color.set_dimmed(true).set_bold(true);
+                "debug"
+            }
+            LogLevel::Trace => {
+                color.set_dimmed(true);
+                "trace"
+            }
+            LogLevel::Panic => {
+                color.set_fg(Some(Color::Red)).set_bold(true).set_intense(true);
+                "PANIC"
+            }
+        };
+        out.set_color(&color)?;
+        write!(out, "{level:>5}")?;
+        out.reset()?;
+        let dimmed = ColorSpec::new().set_dimmed(true).clone();
+        if let (LogLevel::Panic, Some(filename)) = (record.level, record.filename) {
+            write!(out, " at ")?;
+            out.set_color(&dimmed)?;
+            write!(out, "{filename}")?;
+            if let Some(line) = record.line_number {
+                write!(out, ":{line}")?;
+            }
+            out.reset()?;
+        }
+        writeln!(out, ": {}", record.message)?;
+        if let Some(trace) = &record.trace {
+            for frame in trace {
+                write!(out, "    in ")?;
+                if let Some(module) = &frame.module_name {
+                    out.set_color(&dimmed)?;
+                    write!(out, "{module}")?;
+                    out.reset()?;
+                    write!(out, " :: ")?;
+                }
+                if let Some(function) = &frame.func_name {
+                    out.set_color(&dimmed)?;
+                    writeln!(out, "{function}")?;
+                    out.reset()?;
+                }
+            }
+        }
+
+        line.clear();
+    }
 
     Ok(())
 }

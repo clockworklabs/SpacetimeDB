@@ -724,7 +724,7 @@ fn parse_duration(lit: &syn::Lit, ctx: &str) -> syn::Result<Duration> {
         }
     };
 
-    parse_duration::parse(&s)
+    humantime::parse_duration(&s)
         .map_err(|e| syn::Error::new_spanned(lit, format_args!("Can't parse {ctx} as duration: {e}")))
 }
 

@@ -23,6 +23,7 @@ spacetimedb-lib = { path = "../spacetimedb-lib", version = "0.3.2", default-feat
 spacetimedb-bindings-macro = { path = "../spacetimedb-bindings-macro", version = "0.3.2", optional = true }
 once_cell = "1.15.0"
 scoped-tls = "1.0.1"
+log = "0.4.17"
 
 [dev-dependencies]
 rand = "0.8.5"

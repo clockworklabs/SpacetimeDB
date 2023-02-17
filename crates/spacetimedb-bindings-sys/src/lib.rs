@@ -6,6 +6,7 @@ mod errno;
 use core::fmt;
 use core::mem::MaybeUninit;
 use core::num::NonZeroU16;
+use std::ptr::{self};
 
 use alloc::boxed::Box;
 
@@ -42,7 +43,16 @@ pub mod raw {
         // pub fn _filter_eq(table_id: u32, col_id: u32, src_ptr: *const u8, result_ptr: *const u8);
 
         pub fn _iter(table_id: u32, out: *mut Buffer) -> u16;
-        pub fn _console_log(level: u8, text: *const u8, text_len: usize);
+        pub fn _console_log(
+            level: u8,
+            target: *const u8,
+            target_len: usize,
+            filename: *const u8,
+            filename_len: usize,
+            line_number: u32,
+            text: *const u8,
+            text_len: usize,
+        );
 
         pub fn _schedule_reducer(name: *const u8, name_len: usize, args: *const u8, args_len: usize, time: u64);
 
@@ -50,6 +60,13 @@ pub mod raw {
         pub fn _buffer_consume(bufh: Buffer, into: *mut u8, len: usize);
         pub fn _buffer_alloc(data: *const u8, data_len: usize) -> Buffer;
     }
+
+    pub const LOG_LEVEL_ERROR: u8 = 0;
+    pub const LOG_LEVEL_WARN: u8 = 1;
+    pub const LOG_LEVEL_INFO: u8 = 2;
+    pub const LOG_LEVEL_DEBUG: u8 = 3;
+    pub const LOG_LEVEL_TRACE: u8 = 4;
+    pub const LOG_LEVEL_PANIC: u8 = 101;
 
     #[repr(transparent)]
     pub struct Buffer {
@@ -191,9 +208,38 @@ pub fn iter(table_id: u32) -> Result<Box<[u8]>, Errno> {
         Ok(buf.read())
     }
 }
+
+#[repr(u8)]
+pub enum LogLevel {
+    Error = raw::LOG_LEVEL_ERROR,
+    Warn = raw::LOG_LEVEL_WARN,
+    Info = raw::LOG_LEVEL_INFO,
+    Debug = raw::LOG_LEVEL_DEBUG,
+    Trace = raw::LOG_LEVEL_TRACE,
+    Panic = raw::LOG_LEVEL_PANIC,
+}
 #[inline]
-pub fn console_log(level: u8, text: &[u8]) {
-    unsafe { raw::_console_log(level, text.as_ptr(), text.len()) }
+pub fn console_log(
+    level: LogLevel,
+    target: Option<&str>,
+    filename: Option<&str>,
+    line_number: Option<u32>,
+    text: &str,
+) {
+    let opt_ptr = |b: Option<&str>| b.map_or(ptr::null(), |b| b.as_ptr());
+    let opt_len = |b: Option<&str>| b.map_or(0, |b| b.len());
+    unsafe {
+        raw::_console_log(
+            level as u8,
+            opt_ptr(target),
+            opt_len(target),
+            opt_ptr(filename),
+            opt_len(filename),
+            line_number.unwrap_or(u32::MAX),
+            text.as_ptr(),
+            text.len(),
+        )
+    }
 }
 
 /// not fully implemented yet

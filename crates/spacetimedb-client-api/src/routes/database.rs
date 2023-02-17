@@ -13,6 +13,8 @@ use gotham::router::Router;
 use gotham::state::State;
 use gotham::state::StateData;
 use hyper::header::AUTHORIZATION;
+use hyper::header::CACHE_CONTROL;
+use hyper::header::CONTENT_TYPE;
 use hyper::Body;
 use hyper::HeaderMap;
 use hyper::{Response, StatusCode};
@@ -25,6 +27,7 @@ use spacetimedb::host::InvalidReducerArguments;
 use spacetimedb::protobuf::control_db::HostType;
 use spacetimedb_lib::sats::TypeInSpace;
 use spacetimedb_lib::{name, EntityDef};
+use tokio::sync::broadcast;
 
 use crate::auth::get_or_create_creds_from_header;
 use crate::{ApiCtx, Controller, ControllerCtx};
@@ -333,11 +336,13 @@ struct LogsParams {
 #[derive(Deserialize, StateData, StaticResponseExtender)]
 struct LogsQuery {
     num_lines: Option<u32>,
+    #[serde(default)]
+    follow: bool,
 }
 
 async fn logs(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     let LogsParams { address } = LogsParams::take_from(state);
-    let LogsQuery { num_lines } = LogsQuery::take_from(state);
+    let LogsQuery { num_lines, follow } = LogsQuery::take_from(state);
 
     let headers = state.borrow::<HeaderMap>();
     let auth_header = headers.get(AUTHORIZATION);
@@ -374,9 +379,39 @@ async fn logs(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     let filepath = DatabaseLogger::filepath(&address, instance_id);
     let lines = DatabaseLogger::read_latest(&filepath, num_lines).await;
 
+    let body = if follow {
+        let mut log_rx = host_controller::get_host().subscribe_to_logs(instance_id)?;
+
+        let (mut tx, body) = Body::channel();
+
+        tokio::spawn(async move {
+            let _ = tx.send_data(lines.into()).await;
+            loop {
+                match log_rx.recv().await {
+                    Ok(log_event) => match tx.send_data(log_event).await {
+                        Ok(()) => {}
+                        Err(e) if e.is_closed() => {}
+                        Err(e) => {
+                            log::warn!("error in sending? {e}");
+                            break;
+                        }
+                    },
+                    Err(broadcast::error::RecvError::Closed) => break,
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                }
+            }
+        });
+
+        body
+    } else {
+        Body::from(lines)
+    };
+
     let res = Response::builder()
         .status(StatusCode::OK)
-        .body(Body::from(lines))
+        .header(CACHE_CONTROL, "no-cache")
+        .header(CONTENT_TYPE, "application/x-ndjson")
+        .body(body)
         .unwrap();
 
     Ok(res)

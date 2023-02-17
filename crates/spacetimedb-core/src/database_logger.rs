@@ -1,14 +1,95 @@
 use crate::address::Address;
-use std::cmp::min;
 use std::fs::OpenOptions;
 use std::fs::{self, File};
 use std::io::{prelude::*, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use tokio::io::AsyncReadExt;
+use tokio::sync::broadcast;
 
 pub struct DatabaseLogger {
     file: File,
+    pub tx: broadcast::Sender<bytes::Bytes>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+    Panic,
+}
+
+impl From<u8> for LogLevel {
+    fn from(level: u8) -> Self {
+        match level {
+            0 => LogLevel::Error,
+            1 => LogLevel::Warn,
+            2 => LogLevel::Info,
+            3 => LogLevel::Debug,
+            4 => LogLevel::Trace,
+            101 => LogLevel::Panic,
+            _ => LogLevel::Debug,
+        }
+    }
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(serde::Serialize, Copy, Clone)]
+pub struct Record<'a> {
+    pub target: Option<&'a str>,
+    pub filename: Option<&'a str>,
+    pub line_number: Option<u32>,
+    pub message: &'a str,
+}
+
+pub trait BacktraceProvider {
+    fn capture(&self) -> Box<dyn ModuleBacktrace>;
+}
+
+pub trait ModuleBacktrace {
+    fn frames(&self) -> Vec<BacktraceFrame<'_>>;
+}
+
+#[serde_with::skip_serializing_none]
+#[serde_with::serde_as]
+#[derive(serde::Serialize)]
+pub struct BacktraceFrame<'a> {
+    #[serde_as(as = "Option<DemangleSymbol>")]
+    pub module_name: Option<&'a str>,
+    #[serde_as(as = "Option<DemangleSymbol>")]
+    pub func_name: Option<&'a str>,
+}
+
+struct DemangleSymbol;
+impl serde_with::SerializeAs<&str> for DemangleSymbol {
+    fn serialize_as<S>(source: &&str, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if let Ok(sym) = rustc_demangle::try_demangle(source) {
+            serializer.serialize_str(&sym.to_string())
+        } else {
+            serializer.serialize_str(source)
+        }
+    }
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(serde::Serialize)]
+#[serde(tag = "level")]
+enum LogEvent<'a> {
+    Error(Record<'a>),
+    Warn(Record<'a>),
+    Info(Record<'a>),
+    Debug(Record<'a>),
+    Trace(Record<'a>),
+    Panic {
+        #[serde(flatten)]
+        record: Record<'a>,
+        trace: &'a [BacktraceFrame<'a>],
+    },
 }
 
 impl DatabaseLogger {
@@ -30,9 +111,9 @@ impl DatabaseLogger {
     //     PathBuf::from(path)
     // }
 
-    pub fn filepath(address: &Address, instance_id: u64) -> String {
+    pub fn filepath(address: &Address, instance_id: u64) -> PathBuf {
         let root = "/stdb/worker_node/database_instances";
-        format!("{}/{}/{}/{}", root, address.to_hex(), instance_id, "module_logs")
+        format!("{}/{}/{}/{}", root, address.to_hex(), instance_id, "module_logs").into()
     }
 
     pub fn open(root: impl AsRef<Path>) -> Self {
@@ -43,7 +124,8 @@ impl DatabaseLogger {
         filepath.push(&PathBuf::from_str("0.log").unwrap());
 
         let file = OpenOptions::new().create(true).append(true).open(&filepath).unwrap();
-        Self { file }
+        let (tx, _) = broadcast::channel(8);
+        Self { file, tx }
     }
 
     pub fn _delete(&mut self) {
@@ -51,50 +133,47 @@ impl DatabaseLogger {
         self.file.seek(SeekFrom::End(0)).unwrap();
     }
 
-    pub fn write(&mut self, level: u8, value: &str) {
-        let file = &mut self.file;
-        match level {
-            0 => writeln!(file, "error: {}", value).unwrap(),
-            1 => writeln!(file, " warn: {}", value).unwrap(),
-            2 => writeln!(file, " info: {}", value).unwrap(),
-            3 => writeln!(file, "debug: {}", value).unwrap(),
-            _ => writeln!(file, "debug: {}", value).unwrap(),
-        }
+    pub fn write(&mut self, level: LogLevel, &record: &Record<'_>, bt: &dyn BacktraceProvider) {
+        let (trace, frames);
+        let event = match level {
+            LogLevel::Error => LogEvent::Error(record),
+            LogLevel::Warn => LogEvent::Warn(record),
+            LogLevel::Info => LogEvent::Info(record),
+            LogLevel::Debug => LogEvent::Debug(record),
+            LogLevel::Trace => LogEvent::Trace(record),
+            LogLevel::Panic => {
+                trace = bt.capture();
+                frames = trace.frames();
+                LogEvent::Panic { record, trace: &frames }
+            }
+        };
+        let mut buf = serde_json::to_string(&event).unwrap();
+        buf.push('\n');
+        self.file.write_all(buf.as_bytes()).unwrap();
+        let _ = self.tx.send(buf.into());
     }
 
-    pub async fn _read_all(root: &str) -> String {
-        let mut filepath = PathBuf::from(root);
-        filepath.push(&PathBuf::from_str("0.log").unwrap());
+    pub async fn _read_all(root: &Path) -> String {
+        let filepath = root.join("0.log");
 
-        use tokio::fs;
-        //contents
-        String::from_utf8(fs::read(filepath).await.unwrap()).unwrap()
+        tokio::fs::read_to_string(&filepath).await.unwrap()
     }
 
-    pub async fn read_latest(root: &str, num_lines: Option<u32>) -> String {
-        let mut filepath = PathBuf::from(root);
-        filepath.push(&PathBuf::from_str("0.log").unwrap());
+    pub async fn read_latest(root: &Path, num_lines: Option<u32>) -> String {
+        let filepath = root.join("0.log");
 
         // TODO: Read backwards from the end of the file to only read in the latest lines
-        let mut file = tokio::fs::OpenOptions::new()
-            .read(true)
-            .open(filepath)
-            .await
-            .expect("opening file");
+        let text = tokio::fs::read_to_string(&filepath).await.expect("reading file");
 
-        let mut text = String::new();
-        file.read_to_string(&mut text).await.expect("reading file");
+        let Some(num_lines) = num_lines else { return text };
 
-        let lines: Vec<&str> = text.lines().collect();
-        let num_lines: usize = match num_lines {
-            None => lines.len(),
-            Some(val) => min(val as usize, lines.len()),
-        };
+        let off_from_end = text
+            .split_inclusive('\n')
+            .rev()
+            .take(num_lines as usize)
+            .map(|line| line.len())
+            .sum::<usize>();
 
-        let start = lines.len() - num_lines;
-        let end = lines.len();
-        let latest = &lines[start..end];
-
-        latest.join("\n")
+        text[text.len() - off_from_end..].to_owned()
     }
 }

@@ -1,9 +1,4 @@
-use spacetimedb::delete_range;
-use spacetimedb::println;
-use spacetimedb::spacetimedb;
-use spacetimedb::ReducerContext;
-use spacetimedb::Timestamp;
-use spacetimedb::TypeValue;
+use spacetimedb::{delete_range, spacetimedb, ReducerContext, Timestamp, TypeValue};
 
 #[spacetimedb(table)]
 pub struct TestA {
@@ -28,15 +23,15 @@ pub fn init() {
 #[spacetimedb(reducer, repeat = 1000ms)]
 pub fn repeating_test(ctx: ReducerContext, prev_time: Timestamp) {
     let delta_time = prev_time.elapsed();
-    println!("Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
+    log::trace!("Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
 }
 
 #[spacetimedb(reducer)]
 pub fn test(ctx: ReducerContext, arg: TestA, arg2: TestB) -> anyhow::Result<()> {
-    println!("BEGIN");
-    println!("sender: {:?}", ctx.sender);
-    println!("timestamp: {:?}", ctx.timestamp);
-    println!("bar: {:?}", arg2.foo);
+    log::info!("BEGIN");
+    log::info!("sender: {:?}", ctx.sender);
+    log::info!("timestamp: {:?}", ctx.timestamp);
+    log::info!("bar: {:?}", arg2.foo);
 
     for i in 0..10 {
         TestA::insert(TestA {
@@ -51,7 +46,7 @@ pub fn test(ctx: ReducerContext, arg: TestA, arg2: TestB) -> anyhow::Result<()> 
         row_count += 1;
     }
 
-    println!("Row count before delete: {:?}", row_count);
+    log::info!("Row count before delete: {:?}", row_count);
 
     delete_range(1, 0, TypeValue::U32(5)..TypeValue::U32(10))?;
 
@@ -60,8 +55,8 @@ pub fn test(ctx: ReducerContext, arg: TestA, arg2: TestB) -> anyhow::Result<()> 
         row_count += 1;
     }
 
-    println!("Row count after delete: {:?}", row_count);
-    println!("END");
+    log::info!("Row count after delete: {:?}", row_count);
+    log::info!("END");
     Ok(())
 }
 

@@ -14,3 +14,4 @@ bench = false
 [dependencies]
 anyhow = "1.0.0"
 spacetimedb = { path = "../spacetimedb-bindings" }
+log = "0.4"

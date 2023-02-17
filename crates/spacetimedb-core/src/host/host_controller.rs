@@ -204,6 +204,13 @@ impl HostController {
         Ok(module_host.catalog())
     }
 
+    pub fn subscribe_to_logs(
+        &self,
+        instance_id: u64,
+    ) -> anyhow::Result<tokio::sync::broadcast::Receiver<bytes::Bytes>> {
+        Ok(self.get_module(instance_id)?.info().log_tx.subscribe())
+    }
+
     /// If a module's DB activity is being traced (for diagnostics etc.), retrieves the current contents of its trace stream.
     #[cfg(feature = "tracelogging")]
     pub async fn get_trace(&self, instance_id: u64) -> Result<Option<bytes::Bytes>, anyhow::Error> {

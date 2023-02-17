@@ -1,6 +1,7 @@
 #[macro_use]
-pub mod io;
+mod io;
 mod impls;
+mod logger;
 #[doc(hidden)]
 pub mod rt;
 mod types;

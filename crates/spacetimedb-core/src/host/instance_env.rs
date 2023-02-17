@@ -5,6 +5,7 @@ use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::relational_db::{RelationalDB, WrapTxWrapper};
 use crate::error::NodesError;
 use crate::util::prometheus_handle::HistogramVecHandle;
@@ -63,12 +64,16 @@ impl InstanceEnv {
         self.tx.get()
     }
 
-    pub fn console_log(&self, level: u8, s: &str) {
-        self.worker_database_instance.logger.lock().unwrap().write(level, s);
+    pub fn console_log(&self, level: LogLevel, record: &Record, bt: &dyn BacktraceProvider) {
+        self.worker_database_instance
+            .logger
+            .lock()
+            .unwrap()
+            .write(level, record, bt);
         log::debug!(
             "MOD({}): {}",
             self.worker_database_instance.address.to_abbreviated_hex(),
-            s
+            record.message
         );
     }
 

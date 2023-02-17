@@ -1,5 +1,6 @@
 #![allow(dead_code, unused_variables)]
 
+use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::error::NodesError;
 use crate::host::timestamp::Timestamp;
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
@@ -134,12 +135,42 @@ impl WasmInstanceEnv {
         .map(|_| ())
     }
 
-    pub fn console_log(caller: FunctionEnvMut<'_, Self>, level: u8, ptr: WasmPtr<u8>, len: u32) {
+    pub fn console_log(
+        caller: FunctionEnvMut<'_, Self>,
+        level: u8,
+        target: WasmPtr<u8>,
+        target_len: u32,
+        filename: WasmPtr<u8>,
+        filename_len: u32,
+        line_number: u32,
+        message: WasmPtr<u8>,
+        message_len: u32,
+    ) {
         let mem = caller.data().mem();
-        if let Ok(buffer) = mem.read_bytes(&caller, ptr, len) {
-            let s = String::from_utf8_lossy(&buffer);
-            caller.data().instance_env.console_log(level, &s);
-        }
+        let read_str = |ptr, len| {
+            mem.read_bytes(&caller, ptr, len)
+                .map(crate::util::string_from_utf8_lossy_owned)
+        };
+        let read_opt_str = |ptr: WasmPtr<_>, len| (!ptr.is_null()).then(|| read_str(ptr, len)).transpose();
+        let _ = (|| -> Result<_, MemoryAccessError> {
+            let target = read_opt_str(target, target_len)?;
+            let filename = read_opt_str(filename, filename_len)?;
+            let message = read_str(message, message_len)?;
+            let line_number = (line_number != u32::MAX).then_some(line_number);
+
+            let record = Record {
+                target: target.as_deref(),
+                filename: filename.as_deref(),
+                line_number,
+                message: &message,
+            };
+
+            caller
+                .data()
+                .instance_env
+                .console_log(level.into(), &record, &WasmerBacktraceProvider);
+            Ok(())
+        })();
     }
 
     pub fn insert(caller: FunctionEnvMut<'_, Self>, table_id: u32, row: WasmPtr<u8>, row_len: u32) -> WasmResult {
@@ -275,5 +306,27 @@ impl WasmInstanceEnv {
             .read_bytes(&caller, data, data_len)
             .map_err(mem_err)?;
         Ok(caller.data_mut().alloc_buf(buf).raw)
+    }
+}
+
+struct WasmerBacktraceProvider;
+impl BacktraceProvider for WasmerBacktraceProvider {
+    fn capture(&self) -> Box<dyn ModuleBacktrace> {
+        Box::new(RuntimeError::new(""))
+    }
+}
+
+impl ModuleBacktrace for RuntimeError {
+    fn frames(&self) -> Vec<BacktraceFrame<'_>> {
+        self.trace()
+            .iter()
+            .map(|f| {
+                let module = f.module_name();
+                BacktraceFrame {
+                    module_name: (module != "<module>").then_some(module),
+                    func_name: f.function_name(),
+                }
+            })
+            .collect()
     }
 }

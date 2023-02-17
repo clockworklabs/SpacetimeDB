@@ -137,6 +137,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         } else {
             None
         };
+        let log_tx = worker_database_instance.logger.lock().unwrap().tx.clone();
 
         let mut func_names = FuncNames::default();
         module.fill_general_funcnames(&mut func_names)?;
@@ -163,6 +164,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             module_hash,
             typespace,
             catalog,
+            log_tx,
         });
 
         let func_names = Arc::new(func_names);

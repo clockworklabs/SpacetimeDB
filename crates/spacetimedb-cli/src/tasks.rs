@@ -1,5 +1,5 @@
-use std::io;
 use std::path::{Path, PathBuf};
+use std::{fs, io};
 
 use anyhow::Context;
 use cargo_metadata::Message;
@@ -27,5 +27,41 @@ pub(crate) fn build(project_path: &Path) -> anyhow::Result<PathBuf> {
         }
     }
     let artifact = artifact.context("no artifact found?")?;
-    Ok(artifact.filenames.into_iter().next().context("no wasm?")?.into())
+    let artifact = artifact.filenames.into_iter().next().context("no wasm?")?;
+
+    let clippy_conf_dir = tempfile::tempdir()?;
+    fs::write(clippy_conf_dir.path().join("clippy.toml"), CLIPPY_TOML)?;
+    println!("checking crate with spacetimedb's clippy configuration");
+    // TODO: should we pass --no-deps here? leaving it out could be valuable if a module is split
+    //       into multiple crates, but without it it lints on proc-macro crates too
+    let out = cmd!(
+        "cargo",
+        "--config=net.git-fetch-with-cli=true",
+        "clippy",
+        "--target=wasm32-unknown-unknown",
+        // TODO: pass -q? otherwise it might be too busy
+        // "-q",
+        "--",
+        "--no-deps",
+        "-Aclippy::all",
+        "-Dclippy::disallowed-macros"
+    )
+    .dir(project_path)
+    .env("CLIPPY_DISABLE_DOCS_LINKS", "1")
+    .env("CLIPPY_CONF_DIR", clippy_conf_dir.path())
+    .unchecked()
+    .run()?;
+    anyhow::ensure!(out.status.success(), "clippy found a lint error");
+
+    Ok(artifact.into())
 }
+
+const CLIPPY_TOML: &str = r#"
+disallowed-macros = [
+    { path = "std::print",       reason = "print!() has no effect inside a spacetimedb module; use log::info!() instead" },
+    { path = "std::println",   reason = "println!() has no effect inside a spacetimedb module; use log::info!() instead" },
+    { path = "std::eprint",     reason = "eprint!() has no effect inside a spacetimedb module; use log::warn!() instead" },
+    { path = "std::eprintln", reason = "eprintln!() has no effect inside a spacetimedb module; use log::warn!() instead" },
+    { path = "std::dbg",      reason = "std::dbg!() has no effect inside a spacetimedb module; import spacetime's dbg!() macro instead" },
+]
+"#;

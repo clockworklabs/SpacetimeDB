@@ -379,7 +379,7 @@ impl WasmerInstance {
                     .as_mut(store)
                     .take_buf(errbuf)
                     .ok_or_else(|| RuntimeError::new("invalid buffer handle"))?;
-                Err(string_from_utf8_lossy_owned(errmsg))
+                Err(crate::util::string_from_utf8_lossy_owned(errmsg.into()).into())
             })
         });
         self.env.as_mut(store).clear_bufs();
@@ -404,13 +404,5 @@ impl WasmerInstance {
                 call_result: result,
             },
         )
-    }
-}
-
-fn string_from_utf8_lossy_owned(v: Box<[u8]>) -> Box<str> {
-    match String::from_utf8_lossy(&v) {
-        // SAFETY: from_utf8_lossy() returned Borrowed, which means the original buffer is valid utf8
-        std::borrow::Cow::Borrowed(_) => unsafe { Box::<str>::from_raw(Box::into_raw(v) as *mut str) },
-        std::borrow::Cow::Owned(s) => s.into_boxed_str(),
     }
 }

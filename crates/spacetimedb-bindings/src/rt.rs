@@ -12,6 +12,7 @@ use spacetimedb_lib::ser::{self, Serialize, SerializeSeqProduct};
 use spacetimedb_lib::{bsatn, ElementDef, Hash, ReducerDef};
 use sys::Buffer;
 
+pub use log;
 pub use once_cell::sync::{Lazy, OnceCell};
 
 scoped_tls::scoped_thread_local! {

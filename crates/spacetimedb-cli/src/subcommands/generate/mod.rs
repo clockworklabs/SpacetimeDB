@@ -158,9 +158,17 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<(Typespace, Vec<(Str
     linker.func_wrap(
         "spacetime",
         "_console_log",
-        |caller: Caller<'_, WasmCtx>, _level: u32, ptr: u32, len: u32| {
+        |caller: Caller<'_, WasmCtx>,
+         _level: u32,
+         _target: u32,
+         _target_len: u32,
+         _filename: u32,
+         _filename_len: u32,
+         _line_number: u32,
+         message: u32,
+         message_len: u32| {
             let mem = caller.data().mem.unwrap();
-            let slice = mem.deref_slice(&caller, ptr, len);
+            let slice = mem.deref_slice(&caller, message, message_len);
             if let Some(slice) = slice {
                 println!("from wasm: {}", String::from_utf8_lossy(slice));
             } else {

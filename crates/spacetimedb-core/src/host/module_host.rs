@@ -134,6 +134,7 @@ pub struct ModuleInfo {
     pub module_hash: Hash,
     pub typespace: Typespace,
     pub catalog: HashMap<String, EntityDef>,
+    pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
 }
 
 pub trait ModuleHostActor: Send + 'static {

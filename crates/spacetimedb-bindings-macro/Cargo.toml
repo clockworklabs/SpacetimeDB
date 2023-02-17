@@ -16,4 +16,4 @@ bench = false
 proc-macro2 = "1.0"
 syn = { version = "1.0.57", features = ["full"] }
 quote = "1.0.8"
-parse_duration = "2.1.1"
+humantime = "2.1.0"
