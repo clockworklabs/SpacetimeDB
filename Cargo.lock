@@ -816,12 +816,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "custom-print"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb50a9067f6b0c4ecdac7986070032d9d299f69078ed69d6131bb5ede3345bd2"
-
-[[package]]
 name = "cxx"
 version = "1.0.85"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3365,14 +3359,12 @@ name = "spacetimedb-sats"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "custom-print",
  "decorum",
  "enum-as-inner",
  "hex",
  "itertools",
  "rand 0.8.5",
  "serde",
- "sha3",
  "spacetimedb-bindings-macro",
  "thiserror",
 ]

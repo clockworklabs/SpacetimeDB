@@ -15,7 +15,7 @@ required-features = ["serde"]
 
 [features]
 default = ["serde"]
-serde = ["dep:serde", "spacetimedb-sats/serde"]
+serde = ["dep:serde", "spacetimedb-sats/serde", "dep:serde_with", "chrono/serde"]
 
 [dependencies]
 enum-as-inner = "0.5.0"
@@ -27,8 +27,8 @@ itertools = "0.10.5"
 anyhow = "1.0.68"
 spacetimedb-bindings-macro = { path = "../spacetimedb-bindings-macro" }
 spacetimedb-sats = { path = "../spacetimedb-sats" }
-serde_with = "2.2.0"
-chrono = { version = "0.4.23", features = ["serde"]}
+serde_with = { version = "2.2.0", optional = true }
+chrono = { version = "0.4.23", optional = true }
 
 [dev-dependencies]
 rand = "0.8.5"
