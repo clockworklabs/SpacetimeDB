@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use crate::{sys, ReducerContext, RefType, SchemaType, TableType, Timestamp};
+use crate::{sys, ReducerContext, RefType, SpacetimeType, TableType, Timestamp};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, Typespace};
 use spacetimedb_lib::ser::{self, Serialize, SerializeSeqProduct};
@@ -150,7 +150,7 @@ macro_rules! impl_reducer {
         $(impl_reducer!($($T),*);)?
     };
     (@impl $($T:ident),*) => {
-        impl<'de, $($T: SchemaType + Deserialize<'de> + Serialize),*> Args<'de> for ($($T,)*) {
+        impl<'de, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Args<'de> for ($($T,)*) {
             const LEN: usize = impl_reducer!(@count $($T)*);
             #[allow(non_snake_case)]
             #[allow(unused)]
@@ -182,7 +182,7 @@ macro_rules! impl_reducer {
                 }
             }
         }
-        impl<'de, $($T: SchemaType + Deserialize<'de> + Serialize),*> ScheduleArgs<'de> for (ReducerContext, $($T,)*) {
+        impl<'de, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> ScheduleArgs<'de> for (ReducerContext, $($T,)*) {
             type Args = ($($T,)*);
             fn into_args(self) -> Self::Args {
                 #[allow(non_snake_case)]
@@ -190,7 +190,7 @@ macro_rules! impl_reducer {
                 ($($T,)*)
             }
         }
-        impl<'de, Func, Ret, $($T: SchemaType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*), ContextArg> for Func
+        impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*), ContextArg> for Func
         where
             Func: Fn(ReducerContext, $($T),*) -> Ret,
             Ret: ReducerResult
@@ -201,7 +201,7 @@ macro_rules! impl_reducer {
                 self(ctx, $($T),*).into_result()
             }
         }
-        impl<'de, Func, Ret, $($T: SchemaType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*), NoContextArg> for Func
+        impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*), NoContextArg> for Func
         where
             Func: Fn($($T),*) -> Ret,
             Ret: ReducerResult

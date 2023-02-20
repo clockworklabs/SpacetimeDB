@@ -4,47 +4,146 @@ extern crate proc_macro;
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
-use syn::{DeriveInput, ItemStruct};
 
-/// This returns a function which will return the schema (TypeDef) for a struct. The signature
-/// for this function is as follows:
-/// pub fn get_struct_schema() -> spacetimedb::spacetimedb_lib::TypeDef {
-///   ...
-/// }
-pub(crate) fn autogen_module_struct_to_schema(
-    original_struct: &ItemStruct,
-    tuple_name: &str,
-) -> syn::Result<TokenStream> {
-    let fields = original_struct.fields.iter().map(move |field| {
-        let field_name = match &field.ident {
-            Some(name) => {
-                let name = name.to_string();
-                quote!(Some(#name.to_owned()))
-            }
-            None => quote!(None),
-        };
-        let ty = &field.ty;
-        quote!(spacetimedb::sats::ProductTypeElement {
-            name: #field_name,
-            algebraic_type: <#ty as spacetimedb::SchemaType>::get_schema(),
+pub(crate) struct SatsType<'a> {
+    pub ident: &'a syn::Ident,
+    pub generics: &'a syn::Generics,
+    pub name: String,
+    pub krate: TokenStream,
+    pub data: SatsTypeData<'a>,
+}
+
+pub(crate) enum SatsTypeData<'a> {
+    Product(Vec<SatsField<'a>>),
+    Sum(Vec<SatsVariant<'a>>),
+}
+
+pub(crate) struct SatsField<'a> {
+    pub ident: Option<&'a syn::Ident>,
+    pub vis: &'a syn::Visibility,
+    pub name: Option<String>,
+    pub ty: &'a syn::Type,
+    pub original_attrs: &'a [syn::Attribute],
+}
+
+pub(crate) struct SatsVariant<'a> {
+    pub ident: &'a syn::Ident,
+    pub name: String,
+    pub ty: Option<&'a syn::Type>,
+    pub member: Option<syn::Member>,
+    #[allow(unused)]
+    pub original_attrs: &'a [syn::Attribute],
+}
+
+pub(crate) fn sats_type_from_derive<'a>(
+    input: &'a syn::DeriveInput,
+    crate_fallback: TokenStream,
+) -> syn::Result<SatsType<'a>> {
+    let data = match &input.data {
+        syn::Data::Struct(struc) => extract_sats_struct(&struc.fields)?,
+        syn::Data::Enum(enu) => {
+            let variants = enu.variants.iter().map(|var| {
+                let (member, ty) = variant_data(var)?.unzip();
+                Ok(SatsVariant {
+                    ident: &var.ident,
+                    name: var.ident.to_string(),
+                    ty,
+                    member,
+                    original_attrs: &var.attrs,
+                })
+            });
+            SatsTypeData::Sum(variants.collect::<syn::Result<Vec<_>>>()?)
+        }
+        syn::Data::Union(u) => return Err(syn::Error::new(u.union_token.span, "unions not supported")),
+    };
+    extract_sats_type(&input.ident, &input.generics, &input.attrs, data, crate_fallback)
+}
+
+pub(crate) fn extract_sats_type<'a>(
+    ident: &'a syn::Ident,
+    generics: &'a syn::Generics,
+    attrs: &'a [syn::Attribute],
+    data: SatsTypeData<'a>,
+    crate_fallback: TokenStream,
+) -> syn::Result<SatsType<'a>> {
+    let krate = crate::find_crate(attrs).unwrap_or(crate_fallback);
+    let name = ident.to_string();
+
+    Ok(SatsType {
+        ident,
+        generics,
+        name,
+        krate,
+        data,
+    })
+}
+
+pub(crate) fn extract_sats_struct<'a>(fields: &'a syn::Fields) -> syn::Result<SatsTypeData<'a>> {
+    let fields = fields.iter().map(|field| {
+        Ok(SatsField {
+            ident: field.ident.as_ref(),
+            vis: &field.vis,
+            name: field.ident.as_ref().map(syn::Ident::to_string),
+            ty: &field.ty,
+            original_attrs: &field.attrs,
         })
     });
+    fields.collect::<Result<Vec<_>, _>>().map(SatsTypeData::Product)
+}
 
-    let init_type_symbol = format!("__preinit__20_init_type_{}", tuple_name);
+pub(crate) fn derive_spacetimetype(ty: &SatsType<'_>) -> TokenStream {
+    let init_type_symbol = format!("__preinit__20_init_type_{}", ty.name);
+    let name = &ty.ident;
 
-    let name = &original_struct.ident;
-    let (impl_generics, ty_generics, where_clause) = original_struct.generics.split_for_impl();
-    Ok(quote! {
+    let typ = match &ty.data {
+        SatsTypeData::Product(fields) => {
+            let fields = fields.iter().map(|field| {
+                let field_name = match &field.name {
+                    Some(name) => quote!(Some(#name.to_owned())),
+                    None => quote!(None),
+                };
+                let ty = field.ty;
+                quote!(spacetimedb::sats::ProductTypeElement {
+                    name: #field_name,
+                    algebraic_type: <#ty as spacetimedb::SpacetimeType>::get_schema(),
+                })
+            });
+            quote!(spacetimedb::sats::AlgebraicType::Product(
+                spacetimedb::sats::ProductType {
+                    elements: vec![#(#fields),*],
+                }
+            ))
+        }
+        SatsTypeData::Sum(variants) => {
+            let unit = syn::Type::Tuple(syn::TypeTuple {
+                paren_token: Default::default(),
+                elems: Default::default(),
+            });
+            let variants = variants.iter().map(|var| {
+                let variant_name = &var.name;
+                let ty = var.ty.unwrap_or(&unit);
+                quote!(spacetimedb::sats::SumTypeVariant {
+                    name: Some(#variant_name.to_owned()),
+                    algebraic_type: <#ty as spacetimedb::SpacetimeType>::get_schema(),
+                })
+            });
+            quote!(spacetimedb::sats::AlgebraicType::Sum(spacetimedb::sats::SumType {
+                variants: vec![#(#variants),*],
+            }))
+            // todo!()
+        } // syn::Data::Union(u) => return Err(syn::Error::new(u.union_token.span, "unions not supported")),
+    };
+
+    let (impl_generics, ty_generics, where_clause) = ty.generics.split_for_impl();
+    quote! {
         const _: () = {
             static __TYPEREF: spacetimedb::rt::Lazy<spacetimedb::sats::AlgebraicTypeRef> =
                 spacetimedb::rt::Lazy::new(spacetimedb::rt::alloc_typespace_slot);
             #[export_name = #init_type_symbol]
             extern "C" fn __init_type() {
                 let __typeref = *__TYPEREF;
-                let __typ = spacetimedb::sats::ProductType {
-                    elements: vec![#(#fields),*],
-                };
-                spacetimedb::rt::set_typespace_slot(__typeref, spacetimedb::sats::AlgebraicType::Product(__typ))
+                let __typ = #typ;
+                spacetimedb::rt::set_typespace_slot(__typeref, __typ)
             }
             impl #impl_generics spacetimedb::RefType for #name #ty_generics #where_clause {
                 fn typeref() -> spacetimedb::sats::AlgebraicTypeRef {
@@ -52,23 +151,15 @@ pub(crate) fn autogen_module_struct_to_schema(
                 }
             }
         };
-    })
+    }
 }
 
-pub(crate) fn derive_deserialize_struct(
-    original_struct: &ItemStruct,
-    spacetimedb_lib: &TokenStream,
-) -> syn::Result<TokenStream> {
-    derive_deserialize(&original_struct.clone().into(), spacetimedb_lib)
-}
+pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
+    let (name, tuple_name) = (&ty.ident, &ty.name);
+    let spacetimedb_lib = &ty.krate;
+    let (_, ty_generics, where_clause) = ty.generics.split_for_impl();
 
-pub(crate) fn derive_deserialize(original: &DeriveInput, spacetimedb_lib: &TokenStream) -> syn::Result<TokenStream> {
-    let tuple_name = original.ident.to_string();
-
-    let name = &original.ident;
-    let (_, ty_generics, where_clause) = original.generics.split_for_impl();
-
-    let mut de_generics = original.generics.clone();
+    let mut de_generics = ty.generics.clone();
     let de_lifetime = syn::Lifetime::new("'de", Span::call_site());
     de_generics
         .params
@@ -77,18 +168,14 @@ pub(crate) fn derive_deserialize(original: &DeriveInput, spacetimedb_lib: &Token
 
     let (iter_n, iter_n2, iter_n3) = (0usize.., 0usize.., 0usize..);
 
-    match &original.data {
-        syn::Data::Struct(struc) => {
-            let n_fields = struc.fields.len();
+    match &ty.data {
+        SatsTypeData::Product(fields) => {
+            let n_fields = fields.len();
 
-            let field_names = struc
-                .fields
-                .iter()
-                .map(|f| f.ident.as_ref().unwrap())
-                .collect::<Vec<_>>();
-            let field_strings = field_names.iter().map(|f| f.to_string()).collect::<Vec<_>>();
-            let field_types = struc.fields.iter().map(|f| &f.ty);
-            Ok(quote! {
+            let field_names = fields.iter().map(|f| f.ident.unwrap()).collect::<Vec<_>>();
+            let field_strings = fields.iter().map(|f| f.name.as_deref().unwrap()).collect::<Vec<_>>();
+            let field_types = fields.iter().map(|f| &f.ty);
+            quote! {
                 #[allow(non_camel_case_types)]
                 const _: () = {
                     impl #de_impl_generics #spacetimedb_lib::de::Deserialize<#de_lifetime> for #name #ty_generics #where_clause {
@@ -154,16 +241,15 @@ pub(crate) fn derive_deserialize(original: &DeriveInput, spacetimedb_lib: &Token
                         #(#field_names,)*
                     }
                 };
-            })
+            }
         }
-        syn::Data::Enum(enu) => {
-            let variant_names = enu.variants.iter().map(|var| var.ident.to_string()).collect::<Vec<_>>();
-            let variant_idents = enu.variants.iter().map(|var| &var.ident).collect::<Vec<_>>();
+        SatsTypeData::Sum(variants) => {
+            let variant_names = variants.iter().map(|var| &*var.name).collect::<Vec<_>>();
+            let variant_idents = variants.iter().map(|var| var.ident).collect::<Vec<_>>();
             let tags = 0u8..;
-            let arms = enu.variants.iter().map(|var| {
-                let data = variant_data(var)?;
-                let ident = &var.ident;
-                Ok(if let Some((member, ty)) = data {
+            let arms = variants.iter().map(|var| {
+                let ident = var.ident;
+                if let (Some(member), Some(ty)) = (&var.member, var.ty) {
                     quote! {
                         __Variant::#ident => Ok(#name::#ident { #member: #spacetimedb_lib::de::VariantAccess::deserialize::<#ty>(__access)? }),
                     }
@@ -174,10 +260,9 @@ pub(crate) fn derive_deserialize(original: &DeriveInput, spacetimedb_lib: &Token
                             Ok(#name::#ident)
                         }
                     }
-                })
+                }
             });
-            let arms = arms.collect::<syn::Result<Vec<_>>>()?;
-            Ok(quote! {
+            quote! {
                 const _: () = {
                     impl #de_impl_generics #spacetimedb_lib::de::Deserialize<#de_lifetime> for #name #ty_generics #where_clause {
                         fn deserialize<D: #spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -227,41 +312,32 @@ pub(crate) fn derive_deserialize(original: &DeriveInput, spacetimedb_lib: &Token
                         }
                     }
                 };
-            })
+            }
         }
-        syn::Data::Union(u) => return Err(syn::Error::new(u.union_token.span, "unions not supported")),
     }
 }
 
-pub(crate) fn derive_serialize_struct(
-    original_struct: &ItemStruct,
-    spacetimedb_lib: &TokenStream,
-) -> syn::Result<TokenStream> {
-    derive_serialize(&original_struct.clone().into(), spacetimedb_lib)
-}
-
-pub(crate) fn derive_serialize(original: &DeriveInput, spacetimedb_lib: &TokenStream) -> syn::Result<TokenStream> {
-    let name = &original.ident;
-    let (impl_generics, ty_generics, where_clause) = original.generics.split_for_impl();
-    let body = match &original.data {
-        syn::Data::Struct(struc) => {
-            let fieldnames = struc.fields.iter().map(|field| field.ident.as_ref().unwrap());
-            let tys = struc.fields.iter().map(|f| &f.ty);
-            let fieldnamestrings = fieldnames.clone().map(|f| f.to_string());
-            let nfields = struc.fields.len();
+pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
+    let spacetimedb_lib = &ty.krate;
+    let name = &ty.ident;
+    let (impl_generics, ty_generics, where_clause) = ty.generics.split_for_impl();
+    let body = match &ty.data {
+        SatsTypeData::Product(fields) => {
+            let fieldnames = fields.iter().map(|field| field.ident.as_ref().unwrap());
+            let tys = fields.iter().map(|f| &f.ty);
+            let fieldnamestrings = fields.iter().map(|field| field.name.as_ref().unwrap());
+            let nfields = fields.len();
             quote! {
                 let mut __prod = __serializer.serialize_named_product(#nfields)?;
                 #(#spacetimedb_lib::ser::SerializeNamedProduct::serialize_element::<#tys>(&mut __prod, Some(#fieldnamestrings), &self.#fieldnames)?;)*
                 #spacetimedb_lib::ser::SerializeNamedProduct::end(__prod)
             }
         }
-        syn::Data::Enum(enu) => {
-            let arms = enu.variants.iter().enumerate().map(|(i, var)| {
-                let data = variant_data(var)?;
-                let name = &var.ident;
-                let name_str = name.to_string();
+        SatsTypeData::Sum(variants) => {
+            let arms = variants.iter().enumerate().map(|(i, var)| {
+                let (name,name_str) = (var.ident, &var.name);
                 let tag = i as u8;
-                Ok(if let Some((member, ty)) = data {
+                if let (Some(member), Some(ty)) = (&var.member, var.ty) {
                     quote_spanned! {ty.span()=>
                         Self::#name { #member: __variant } => __serializer.serialize_variant::<#ty>(#tag, Some(#name_str), __variant),
                     }
@@ -269,20 +345,18 @@ pub(crate) fn derive_serialize(original: &DeriveInput, spacetimedb_lib: &TokenSt
                     quote! {
                         Self::#name => __serializer.serialize_variant(#tag, Some(#name_str), &()),
                     }
-                })
+                }
             });
-            let arms = arms.collect::<syn::Result<Vec<_>>>()?;
             quote!(match self { #(#arms)* })
         }
-        syn::Data::Union(u) => return Err(syn::Error::new(u.union_token.span, "unions not supported")),
     };
-    Ok(quote! {
+    quote! {
         impl #impl_generics #spacetimedb_lib::ser::Serialize for #name #ty_generics #where_clause {
             fn serialize<S: #spacetimedb_lib::ser::Serializer>(&self, __serializer: S) -> Result<S::Ok, S::Error> {
                 #body
             }
         }
-    })
+    }
 }
 
 fn variant_data(variant: &syn::Variant) -> syn::Result<Option<(syn::Member, &syn::Type)>> {

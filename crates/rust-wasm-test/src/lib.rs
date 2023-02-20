@@ -1,4 +1,4 @@
-use spacetimedb::{delete_range, spacetimedb, ReducerContext, Timestamp, TypeValue};
+use spacetimedb::{delete_range, spacetimedb, ReducerContext, SpacetimeType, Timestamp, TypeValue};
 
 #[spacetimedb(table)]
 pub struct TestA {
@@ -7,9 +7,15 @@ pub struct TestA {
     pub z: String,
 }
 
-#[spacetimedb(tuple)]
+#[derive(SpacetimeType)]
 pub struct TestB {
     foo: String,
+}
+
+#[derive(SpacetimeType)]
+pub enum TestC {
+    Foo(String),
+    Bar,
 }
 
 // #[spacetimedb(migrate)]
@@ -26,12 +32,16 @@ pub fn repeating_test(ctx: ReducerContext, prev_time: Timestamp) {
     log::trace!("Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
 }
 
-#[spacetimedb(reducer)]
-pub fn test(ctx: ReducerContext, arg: TestA, arg2: TestB) -> anyhow::Result<()> {
+pub fn test(ctx: ReducerContext, arg: TestA, arg2: TestB, arg3: TestC) -> anyhow::Result<()> {
     log::info!("BEGIN");
     log::info!("sender: {:?}", ctx.sender);
     log::info!("timestamp: {:?}", ctx.timestamp);
     log::info!("bar: {:?}", arg2.foo);
+
+    match arg3 {
+        TestC::Foo(string) => log::info!("{}", string),
+        TestC::Bar => log::info!("Bar"),
+    }
 
     for i in 0..10 {
         TestA::insert(TestA {

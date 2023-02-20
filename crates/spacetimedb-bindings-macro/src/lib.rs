@@ -7,9 +7,8 @@ extern crate proc_macro;
 
 use std::time::Duration;
 
-use crate::module::{autogen_module_struct_to_schema, derive_deserialize_struct, derive_serialize_struct};
-use module::{derive_deserialize, derive_serialize};
-use proc_macro2::{Ident, Span, TokenStream};
+use module::{derive_deserialize, derive_serialize, derive_spacetimetype};
+use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::Fields::{Named, Unit, Unnamed};
 use syn::{parse_macro_input, AttributeArgs, FnArg, ItemFn, ItemStruct, Meta, NestedMeta};
@@ -37,7 +36,6 @@ pub fn spacetimedb(macro_args: proc_macro::TokenStream, item: proc_macro::TokenS
                 "connect" => spacetimedb_connect_disconnect(meta, other_args, item, true),
                 "disconnect" => spacetimedb_connect_disconnect(meta, other_args, item, false),
                 "migrate" => spacetimedb_migrate(meta, other_args, item),
-                "tuple" => spacetimedb_tuple(meta, other_args, item),
                 "index" => spacetimedb_index(meta, other_args, item),
                 _ => return None,
             };
@@ -237,24 +235,15 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
 
 // TODO: We actually need to add a constraint that requires this column to be unique!
 struct Column<'a> {
-    vis: &'a syn::Visibility,
-    ty: &'a syn::Type,
-    ident: &'a Ident,
     index: u8,
-}
-
-fn table_name(struc: &ItemStruct) -> String {
-    struc.ident.to_string()
+    field: &'a module::SatsField<'a>,
 }
 
 fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
     assert_no_args_meta(meta)?;
     assert_no_args(args)?;
 
-    let mut original_struct = syn::parse2::<ItemStruct>(item)?;
-    let original_struct_ident = &original_struct.ident;
-
-    let table_name = table_name(&original_struct);
+    let original_struct = syn::parse2::<ItemStruct>(item)?;
 
     match &original_struct.fields {
         Named(_) => {}
@@ -272,6 +261,19 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
         }
     }
 
+    let data = module::extract_sats_struct(&original_struct.fields)?;
+    let sats_ty = module::extract_sats_type(
+        &original_struct.ident,
+        &original_struct.generics,
+        &original_struct.attrs,
+        data,
+        quote!(spacetimedb::spacetimedb_lib),
+    )?;
+
+    let original_struct_ident = &original_struct.ident;
+    let table_name = &sats_ty.name;
+    let module::SatsTypeData::Product(fields) = &sats_ty.data else { unreachable!() };
+
     let mut unique_columns = Vec::<Column>::new();
     let mut nonunique_columns = Vec::<Column>::new();
 
@@ -284,29 +286,18 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
         }
     };
 
-    for (col_num, field) in original_struct.fields.iter_mut().enumerate() {
-        let col_num: u8 = col_num
+    for (i, field) in fields.iter().enumerate() {
+        let col_num: u8 = i
             .try_into()
-            .map_err(|_| syn::Error::new_spanned(&field, "too many columns; the most a table can have is 256"))?;
-        let col_name = field.ident.as_ref().unwrap();
+            .map_err(|_| syn::Error::new_spanned(&field.ident, "too many columns; the most a table can have is 256"))?;
 
         let mut is_unique = false;
-        let mut remove_idxs = vec![];
-        for (i, attr) in field.attrs.iter().enumerate() {
+        for attr in field.original_attrs {
             if attr.path.is_ident("unique") {
                 is_unique = true;
-                remove_idxs.push(i);
             }
         }
-        for i in remove_idxs.into_iter().rev() {
-            field.attrs.remove(i);
-        }
-        let column = Column {
-            vis: &field.vis,
-            ty: &field.ty,
-            ident: col_name,
-            index: col_num,
-        };
+        let column = Column { index: col_num, field };
 
         if is_unique {
             unique_columns.push(column);
@@ -320,16 +311,14 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
     let mut unique_delete_funcs = Vec::with_capacity(unique_columns.len());
     let mut unique_fields = Vec::with_capacity(unique_columns.len());
     for unique in unique_columns {
-        let filter_func_ident = format_ident!("filter_by_{}", unique.ident);
-        let update_func_ident = format_ident!("update_by_{}", unique.ident);
-        let delete_func_ident = format_ident!("delete_by_{}", unique.ident);
+        let column_index = unique.index;
+        let vis = unique.field.vis;
+        let column_type = unique.field.ty;
+        let column_ident = unique.field.ident.unwrap();
 
-        let Column {
-            vis,
-            ty: column_type,
-            ident: column_ident,
-            index: column_index,
-        } = unique;
+        let filter_func_ident = format_ident!("filter_by_{}", column_ident);
+        let update_func_ident = format_ident!("update_by_{}", column_ident);
+        let delete_func_ident = format_ident!("delete_by_{}", column_ident);
 
         unique_fields.push(column_index);
 
@@ -353,12 +342,12 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
     }
 
     let non_primary_filter_func = nonunique_columns.into_iter().filter_map(|column| {
-        let filter_func_ident = format_ident!("filter_by_{}", column.ident);
-
-        let vis = column.vis;
-        let column_ident = column.ident;
-        let column_type = column.ty;
+        let vis = column.field.vis;
+        let column_ident = column.field.ident.unwrap();
+        let column_type = column.field.ty;
         let column_index = column.index;
+
+        let filter_func_ident = format_ident!("filter_by_{}", column_ident);
 
         let skip = if let syn::Type::Path(p) = column_type {
             // TODO: this is janky as heck
@@ -411,10 +400,9 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
         }
     };
 
-    let spacetimedb_lib = quote!(spacetimedb::spacetimedb_lib);
-    let deserialize_impl = derive_deserialize_struct(&original_struct, &spacetimedb_lib)?;
-    let serialize_impl = derive_serialize_struct(&original_struct, &spacetimedb_lib)?;
-    let schema_impl = autogen_module_struct_to_schema(&original_struct, &table_name)?;
+    let deserialize_impl = derive_deserialize(&sats_ty);
+    let serialize_impl = derive_serialize(&sats_ty);
+    let schema_impl = derive_spacetimetype(&sats_ty);
     let tabletype_impl = quote! {
         impl spacetimedb::TableType for #original_struct_ident {
             const TABLE_NAME: &'static str = #table_name;
@@ -432,8 +420,8 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
         }
     };
 
-    let field_names = original_struct.fields.iter().map(|f| f.ident.as_ref().unwrap());
-    let field_types = original_struct.fields.iter().map(|f| &f.ty);
+    let field_names = fields.iter().map(|f| f.ident.unwrap());
+    let field_types = fields.iter().map(|f| f.ty);
     let col_num = 0u8..;
     let field_access_impls = quote! {
         #(impl spacetimedb::query::FieldAccess<#col_num> for #original_struct_ident {
@@ -450,6 +438,7 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
             #describe_table_func
         };
 
+        #[derive(spacetimedb::__TableHelper)]
         #original_struct
 
         impl #original_struct_ident {
@@ -477,6 +466,11 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
     }
 
     Ok(emission)
+}
+
+#[proc_macro_derive(TableHelper, attributes(sats, unique))]
+pub fn table_attr_helper(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    proc_macro::TokenStream::new()
 }
 
 fn spacetimedb_index(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
@@ -545,7 +539,7 @@ fn spacetimedb_index(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
     let index_name = index_name.as_deref().unwrap_or("default_index");
 
     let original_struct_name = &original_struct.ident;
-    let table_name = table_name(&original_struct);
+    let table_name = original_struct_name.to_string();
     let function_symbol = format!("__create_index__{}__{}", table_name, index_name);
 
     let index_type = format_ident!("{}", format!("{:?}", index_type));
@@ -569,56 +563,6 @@ fn spacetimedb_index(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
     }
 
     Ok(output)
-}
-
-fn spacetimedb_tuple(meta: &Meta, _: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
-    assert_no_args_meta(meta)?;
-    let original_struct = syn::parse2::<ItemStruct>(item)?;
-    let original_struct_ident = original_struct.clone().ident;
-    let tuple_name = original_struct_ident.to_string();
-
-    match original_struct.fields {
-        Named(_) => {}
-        Unnamed(_) => {
-            return Err(syn::Error::new_spanned(
-                &original_struct.fields,
-                "spacetimedb tables and types must have named fields.",
-            ));
-        }
-        Unit => {
-            return Err(syn::Error::new_spanned(
-                &original_struct.fields,
-                "Unit structure not supported.",
-            ));
-        }
-    }
-
-    let schema_impl = autogen_module_struct_to_schema(&original_struct, &tuple_name)?;
-    let spacetimedb_lib = quote!(spacetimedb::spacetimedb_lib);
-    let deserialize_impl = derive_deserialize_struct(&original_struct, &spacetimedb_lib)?;
-    let serialize_impl = derive_serialize_struct(&original_struct, &spacetimedb_lib)?;
-
-    let describe_typealias_symbol = format!("__describe_type_alias__{tuple_name}");
-
-    let emission = quote! {
-        #original_struct
-        #schema_impl
-        #deserialize_impl
-        #serialize_impl
-
-        const _: () = {
-            #[export_name = #describe_typealias_symbol]
-            extern "C" fn __describe_symbol() -> u32 {
-                spacetimedb::rt::describe_reftype::<#original_struct_ident>()
-            }
-        };
-    };
-
-    if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-        println!("{}", emission);
-    }
-
-    Ok(emission)
 }
 
 fn spacetimedb_migrate(meta: &Meta, _: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
@@ -728,7 +672,7 @@ fn parse_duration(lit: &syn::Lit, ctx: &str) -> syn::Result<Duration> {
         .map_err(|e| syn::Error::new_spanned(lit, format_args!("Can't parse {ctx} as duration: {e}")))
 }
 
-fn find_crate(attrs: &[syn::Attribute]) -> TokenStream {
+fn find_crate(attrs: &[syn::Attribute]) -> Option<TokenStream> {
     for attr in attrs {
         if !attr.path.is_ident("sats") {
             continue;
@@ -738,20 +682,20 @@ fn find_crate(attrs: &[syn::Attribute]) -> TokenStream {
             match meta {
                 NestedMeta::Meta(Meta::NameValue(nv)) if nv.path.is_ident("crate") => {
                     let syn::Lit::Str(s) = nv.lit else { continue };
-                    return s.parse().unwrap();
+                    return Some(s.parse().unwrap());
                 }
                 _ => {}
             }
         }
     }
-    quote!(spacetimedb_lib)
+    None
 }
 
 #[proc_macro_derive(Deserialize, attributes(sats))]
 pub fn deserialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    let krate = find_crate(&input.attrs);
-    derive_deserialize(&input, &krate)
+    module::sats_type_from_derive(&input, quote!(spacetimedb_lib))
+        .map(|ty| derive_deserialize(&ty))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
@@ -759,8 +703,46 @@ pub fn deserialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 #[proc_macro_derive(Serialize, attributes(sats))]
 pub fn serialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    let krate = find_crate(&input.attrs);
-    derive_serialize(&input, &krate)
+    module::sats_type_from_derive(&input, quote!(spacetimedb_lib))
+        .map(|ty| derive_serialize(&ty))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
+}
+
+#[proc_macro_derive(SpacetimeType, attributes(sats))]
+pub fn schema_type(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+
+    (|| {
+        let ty = module::sats_type_from_derive(&input, quote!(spacetimedb::spacetimedb_lib))?;
+
+        let ident = ty.ident;
+
+        let schema_impl = derive_spacetimetype(&ty);
+        let deserialize_impl = derive_deserialize(&ty);
+        let serialize_impl = derive_serialize(&ty);
+
+        let describe_typealias_symbol = format!("__describe_type_alias__{}", ty.name);
+
+        let emission = quote! {
+            #schema_impl
+            #deserialize_impl
+            #serialize_impl
+
+            const _: () = {
+                #[export_name = #describe_typealias_symbol]
+                extern "C" fn __describe_symbol() -> u32 {
+                    spacetimedb::rt::describe_reftype::<#ident>()
+                }
+            };
+        };
+
+        if std::env::var("PROC_MACRO_DEBUG").is_ok() {
+            println!("{}", emission);
+        }
+
+        Ok(emission)
+    })()
+    .unwrap_or_else(syn::Error::into_compile_error)
+    .into()
 }

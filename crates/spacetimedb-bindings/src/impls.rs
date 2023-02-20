@@ -2,12 +2,12 @@ use spacetimedb_lib::sats::BuiltinType;
 use spacetimedb_lib::{DataKey, Hash};
 
 use super::{PrimaryKey, TypeDef};
-use crate::{FilterableValue, SchemaType, UniqueValue};
+use crate::{FilterableValue, SpacetimeType, UniqueValue};
 
 macro_rules! impl_primitives {
     ($($t:ty => $x:ident,)*) => {
         $(
-            impl SchemaType for $t {
+            impl SpacetimeType for $t {
                 fn get_schema() -> TypeDef {
                     TypeDef::$x
                 }
@@ -27,7 +27,7 @@ macro_rules! impl_primitives {
     };
 }
 
-impl SchemaType for u8 {
+impl SpacetimeType for u8 {
     fn get_schema() -> TypeDef {
         TypeDef::U8
     }
@@ -60,18 +60,18 @@ impl_primitives! {
     f64 => F64,
 }
 
-impl SchemaType for () {
+impl SpacetimeType for () {
     fn get_schema() -> TypeDef {
         TypeDef::UNIT_TYPE
     }
 }
-impl SchemaType for &str {
+impl SpacetimeType for &str {
     fn get_schema() -> TypeDef {
         TypeDef::String
     }
 }
 
-impl<T: SchemaType> SchemaType for Vec<T> {
+impl<T: SpacetimeType> SpacetimeType for Vec<T> {
     fn get_schema() -> TypeDef {
         TypeDef::Builtin(BuiltinType::Array {
             ty: Box::new(T::get_schema()),
@@ -79,13 +79,13 @@ impl<T: SchemaType> SchemaType for Vec<T> {
     }
 }
 
-impl<T: SchemaType> SchemaType for Option<T> {
+impl<T: SpacetimeType> SpacetimeType for Option<T> {
     fn get_schema() -> TypeDef {
         TypeDef::make_option_type(T::get_schema())
     }
 }
 
-impl SchemaType for Hash {
+impl SpacetimeType for Hash {
     fn get_schema() -> TypeDef {
         TypeDef::bytes()
     }

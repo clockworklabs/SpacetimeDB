@@ -17,7 +17,10 @@ use std::ops::Range;
 use std::panic;
 
 #[cfg(feature = "macro")]
-pub use spacetimedb_bindings_macro::{duration, spacetimedb};
+pub use spacetimedb_bindings_macro::{duration, spacetimedb, SpacetimeType};
+
+#[cfg(feature = "macro")]
+pub use spacetimedb_bindings_macro::TableHelper as __TableHelper;
 
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::hash;
@@ -189,7 +192,7 @@ impl Iterator for RawTableIter {
     }
 }
 
-pub trait SchemaType: Sized {
+pub trait SpacetimeType: Sized {
     fn get_schema() -> TypeDef;
 }
 
@@ -197,7 +200,7 @@ pub trait RefType: Sized {
     fn typeref() -> AlgebraicTypeRef;
 }
 
-impl<T: RefType> SchemaType for T {
+impl<T: RefType> SpacetimeType for T {
     fn get_schema() -> TypeDef {
         TypeDef::Ref(T::typeref())
     }

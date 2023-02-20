@@ -67,7 +67,7 @@ impl Sub<Duration> for Timestamp {
     }
 }
 
-impl crate::SchemaType for Timestamp {
+impl crate::SpacetimeType for Timestamp {
     fn get_schema() -> spacetimedb_lib::TypeDef {
         spacetimedb_lib::TypeDef::U64
     }

@@ -13,7 +13,7 @@ create_project
 cat > "${PROJECT_PATH}/src/lib.rs" <<EOF
 use spacetimedb::{spacetimedb, Hash};
 
-#[spacetimedb(tuple)]
+#[derive(spacetimedb::SpacetimeType)]
 pub struct TupleType {
     a_b: bool,
     a_i8: i8,
