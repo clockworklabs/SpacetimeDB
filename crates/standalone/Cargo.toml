@@ -15,13 +15,13 @@ proc-macro = false     # Set to `true` for a proc-macro library.
 harness = true         # Use libtest harness.
 required-features = [] # Features required to build this target (N/A for lib)
 
-[dependencies] 
-spacetimedb-core = { path = "../spacetimedb-core" }
-spacetimedb-client-api = { path = "../spacetimedb-client-api" }
+[dependencies]
+spacetimedb-core = { path = "../core" }
+spacetimedb-client-api = { path = "../client-api" }
 tokio = { version = "1.2", features = ["full"] }
 prost = "0.10"
 lazy_static = "1.4.0"
-spacetimedb-lib = { path = "../spacetimedb-lib" }
+spacetimedb-lib = { path = "../lib" }
 log = "0.4.4"
 gotham = "0.7.1"
 gotham_derive = "0.7"

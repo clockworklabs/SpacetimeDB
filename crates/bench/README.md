@@ -1,4 +1,4 @@
-# Benchmarking suite for SpacetimeDB
+spacetimedb-bench# Benchmarking suite for SpacetimeDB
 
 ## Install tools
 
@@ -38,7 +38,7 @@ List the available benchmarks:
 
 ```bash
 # From root
-# cd SpacetimeDB/crates/spacetimedb-bench
+# cd SpacetimeDB/crates/bench
 cargo run --  --help
 ```
 Exist two engines to test: `spacetimedb` & `sqlite`.

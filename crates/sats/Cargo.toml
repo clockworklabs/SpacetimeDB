@@ -14,7 +14,7 @@ serde = ["dep:serde", "hex"]
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 enum-as-inner = "0.5.0"
 serde = { version = "1.0.136", optional = true }
-spacetimedb-bindings-macro = { path = "../spacetimedb-bindings-macro" }
+spacetimedb-bindings-macro = { path = "../bindings-macro" }
 hex = { version = "0.4.3", optional = true }
 itertools = "0.10.5"
 thiserror = "1.0.38"

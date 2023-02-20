@@ -15,15 +15,15 @@ harness = true         # Use libtest harness.
 required-features = [] # Features required to build this target (N/A for lib)
 
 [dependencies] 
-spacetimedb-core = { path = "../spacetimedb-core" }
-spacetimedb-client-api = { path = "../spacetimedb-client-api" }
+spacetimedb-core = { path = "../core" }
+spacetimedb-client-api = { path = "../client-api" }
 tokio = { version = "1.2", features = ["full"] }
 clap = { version = "4.0.18", features = ["derive"] }
 futures = "0.3"
 prost = "0.10"
 lazy_static = "1.4.0"
 once_cell = "1.17.0"
-spacetimedb-lib = { path = "../spacetimedb-lib" }
+spacetimedb-lib = { path = "../lib" }
 log = "0.4.4"
 gotham = "0.7.1"
 gotham_derive = "0.7"

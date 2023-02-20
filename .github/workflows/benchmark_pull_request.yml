@@ -13,7 +13,7 @@ jobs:
 #      - name: Check file existence
 #        id: check_files
 #        uses: andstor/file-existence-action@v1
-#        working-directory: crates/spacetimedb-bench/
+#        working-directory: crates/bench/
 #        with:
 #          files: "Cargo.toml"
 
@@ -50,12 +50,12 @@ jobs:
           key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build
-        working-directory: crates/spacetimedb-bench/
+        working-directory: crates/bench/
         run: |
           cargo build --release
 
       - name: Benchmark Vs Sqlite
-        working-directory: crates/spacetimedb-bench/
+        working-directory: crates/bench/
         run: |
           python3 hyper_cmp.py versus > out.report
           cat out.report >> $GITHUB_STEP_SUMMARY

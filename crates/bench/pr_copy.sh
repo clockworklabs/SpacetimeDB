@@ -22,8 +22,8 @@ git clone ../../ $TEMPD
 cd $TEMPD
 git switch master
 cp -r $CURRENT $TEMPD/crates/
-cd $TEMPD/crates/spacetimedb-bench
+cd $TEMPD/crates/bench
 $1
 echo "Copy old.json..."
-cp $TEMPD/crates/spacetimedb-bench/old.json $CURRENT
+cp $TEMPD/crates/bench/old.json $CURRENT
 echo "Done"

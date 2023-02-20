@@ -190,8 +190,8 @@ target/
 
 /protobuf
 cs-src/
-crates/spacetimedb-bench/spacetime.svg
-crates/spacetimedb-bench/sqlite.svg
+crates/bench/spacetime.svg
+crates/bench/sqlite.svg
 
 # benchmark files
 out.json

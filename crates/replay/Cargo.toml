@@ -15,5 +15,5 @@ tempdir = "0.3.7"
 serde_json = "1.0.87"
 
 [dependencies.spacetimedb-core]
-path = "../spacetimedb-core"
+path = "../core"
 

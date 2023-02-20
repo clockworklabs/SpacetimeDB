@@ -1,20 +1,20 @@
 [workspace]
 members = [
-  "crates/spacetimedb-standalone",
-  "crates/spacetimedb-cloud",
-  "crates/spacetimedb-lib",
-  "crates/spacetimedb-core",
-  "crates/spacetimedb-bindings-sys",
-  "crates/spacetimedb-bindings",
-  "crates/spacetimedb-bench",
-  "crates/spacetimedb-bindings-macro",
-  "crates/spacetimedb-cli",
-  "crates/spacetimedb-sats",
+  "crates/standalone",
+  "crates/cloud",
+  "crates/lib",
+  "crates/core",
+  "crates/bindings-sys",
+  "crates/bindings",
+  "crates/bench",
+  "crates/bindings-macro",
+  "crates/cli",
+  "crates/sats",
   "crates/rust-wasm-test",
-  "crates/spacetimedb-replay",
-  "crates/spacetimedb-client-api",
+  "crates/replay",
+  "crates/client-api",
 ]
-default-members = ["crates/spacetimedb-cli"]
+default-members = ["crates/cli"]
 
 [profile.release]
 opt-level = 's'

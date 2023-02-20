@@ -29,7 +29,7 @@ fn cvt(x: Result<(), NodesError>) -> u8 {
 }
 
 mod errnos {
-    include!("../../../../spacetimedb-bindings-sys/src/errno.rs");
+    include!("../../../../bindings-sys/src/errno.rs");
 
     macro_rules! nothing {
         ($($tt:tt)*) => {};

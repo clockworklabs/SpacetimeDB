@@ -30,8 +30,8 @@ hex = "0.4.3"
 prost = "0.10"
 lazy_static = "1.4.0"
 # wasmer-compiler-llvm = "2.2.1"
-spacetimedb-lib = { path = "../spacetimedb-lib" }
-spacetimedb-sats = { path = "../spacetimedb-sats" }
+spacetimedb-lib = { path = "../lib" }
+spacetimedb-sats = { path = "../sats" }
 log = "0.4.16"
 gotham = "0.7.1"
 gotham_derive = "0.7"

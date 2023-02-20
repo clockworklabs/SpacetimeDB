@@ -25,8 +25,8 @@ hex = "0.4.3"
 thiserror = "1.0.37"
 itertools = "0.10.5"
 anyhow = "1.0.68"
-spacetimedb-bindings-macro = { path = "../spacetimedb-bindings-macro" }
-spacetimedb-sats = { path = "../spacetimedb-sats" }
+spacetimedb-bindings-macro = { path = "../bindings-macro" }
+spacetimedb-sats = { path = "../sats" }
 serde_with = { version = "2.2.0", optional = true }
 chrono = { version = "0.4.23", optional = true }
 
