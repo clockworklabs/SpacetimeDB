@@ -1,10 +1,14 @@
 use crate::client::ClientActorId;
 use crate::db::messages::write::Write;
+use crate::db::relational_db::RelationalDBWrapper;
 use crate::hash::Hash;
 use crate::host::host_controller::{ReducerBudget, ReducerCallResult};
-use crate::module_subscription_actor::ModuleSubscription;
+use crate::json::client_api::{SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson};
+use crate::protobuf::client_api::{table_row_operation, SubscriptionUpdate, TableRowOperation, TableUpdate};
+use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use anyhow::Context;
-use spacetimedb_lib::{EntityDef, ReducerDef, TableDef, TupleValue};
+use spacetimedb_lib::{EntityDef, ReducerDef, TableDef, TupleDef, TupleValue};
+use spacetimedb_sats::ProductValue;
 use spacetimedb_sats::{TypeInSpace, Typespace};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -15,8 +19,167 @@ use super::timestamp::Timestamp;
 use super::ReducerArgs;
 
 #[derive(Debug, Clone)]
+pub struct DatabaseUpdate {
+    pub tables: Vec<DatabaseTableUpdate>,
+}
+
+impl DatabaseUpdate {
+    pub fn from_writes(relational_db: &RelationalDBWrapper, writes: &Vec<Write>) -> Self {
+        let mut schemas: HashMap<u32, TupleDef> = HashMap::new();
+        let mut map: HashMap<u32, Vec<TableOp>> = HashMap::new();
+        for write in writes {
+            let op = match write.operation {
+                crate::db::messages::write::Operation::Delete => 0,
+                crate::db::messages::write::Operation::Insert => 1,
+            };
+
+            let tuple_def = if let Some(tuple_def) = schemas.get(&write.set_id) {
+                tuple_def
+            } else {
+                let mut stdb = relational_db.lock().unwrap();
+                let mut tx_ = stdb.begin_tx();
+                let (tx, stdb) = tx_.get();
+                let tuple_def = stdb.schema_for_table(tx, write.set_id).unwrap().unwrap();
+                tx_.rollback();
+                schemas.insert(write.set_id, tuple_def);
+                schemas.get(&write.set_id).unwrap()
+            };
+
+            let vec = if let Some(vec) = map.get_mut(&write.set_id) {
+                vec
+            } else {
+                map.insert(write.set_id, Vec::new());
+                map.get_mut(&write.set_id).unwrap()
+            };
+
+            let (row, row_pk) = {
+                let stdb = relational_db.lock().unwrap();
+                let tuple = stdb
+                    .txdb
+                    .from_data_key(&write.data_key, |data| TupleValue::decode(tuple_def, &mut { data }))
+                    .unwrap();
+                let tuple = match tuple {
+                    Ok(tuple) => tuple,
+                    Err(e) => {
+                        log::error!("Failed to decode row: {}", e);
+                        continue;
+                    }
+                };
+
+                (tuple, write.data_key.to_bytes())
+            };
+
+            vec.push(TableOp {
+                op_type: op.into(),
+                row_pk,
+                row,
+            });
+        }
+
+        let mut table_name_map: HashMap<u32, String> = HashMap::new();
+        let mut table_updates = Vec::new();
+        for (table_id, table_row_operations) in map.drain() {
+            let table_name = if let Some(name) = table_name_map.get(&table_id) {
+                name.clone()
+            } else {
+                let mut stdb = relational_db.lock().unwrap();
+                let mut tx_ = stdb.begin_tx();
+                let (tx, stdb) = tx_.get();
+                let table_name = stdb.table_name_from_id(tx, table_id).unwrap().unwrap();
+                let table_name = table_name.to_string();
+                tx_.rollback();
+                table_name_map.insert(table_id, table_name.clone());
+                table_name
+            };
+            table_updates.push(DatabaseTableUpdate {
+                table_id,
+                table_name,
+                ops: table_row_operations,
+            });
+        }
+
+        DatabaseUpdate { tables: table_updates }
+    }
+
+    pub fn into_protobuf(self) -> SubscriptionUpdate {
+        SubscriptionUpdate {
+            table_updates: self
+                .tables
+                .into_iter()
+                .map(|table| TableUpdate {
+                    table_id: table.table_id,
+                    table_name: table.table_name,
+                    table_row_operations: table
+                        .ops
+                        .into_iter()
+                        .map(|op| {
+                            let mut row_bytes = Vec::new();
+                            op.row.encode(&mut row_bytes);
+                            TableRowOperation {
+                                op: if op.op_type == 1 {
+                                    table_row_operation::OperationType::Insert.into()
+                                } else {
+                                    table_row_operation::OperationType::Delete.into()
+                                },
+                                row_pk: op.row_pk,
+                                row: row_bytes,
+                            }
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
+
+    pub fn into_json(self) -> SubscriptionUpdateJson {
+        // For all tables, push all state
+        // TODO: We need some way to namespace tables so we don't send all the internal tables and stuff
+        SubscriptionUpdateJson {
+            table_updates: self
+                .tables
+                .into_iter()
+                .map(|table| TableUpdateJson {
+                    table_id: table.table_id,
+                    table_name: table.table_name,
+                    table_row_operations: table
+                        .ops
+                        .into_iter()
+                        .map(|op| {
+                            let row_pk = base64::encode(&op.row_pk);
+                            TableRowOperationJson {
+                                op: if op.op_type == 1 {
+                                    "insert".into()
+                                } else {
+                                    "delete".into()
+                                },
+                                row_pk,
+                                row: op.row.elements,
+                            }
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DatabaseTableUpdate {
+    pub table_id: u32,
+    pub table_name: String,
+    pub ops: Vec<TableOp>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TableOp {
+    pub op_type: u8,
+    pub row_pk: Vec<u8>,
+    pub row: ProductValue,
+}
+
+#[derive(Debug, Clone)]
 pub enum EventStatus {
-    Committed(Vec<Write>),
+    Committed(DatabaseUpdate),
     Failed,
     OutOfEnergy,
 }
@@ -64,6 +227,7 @@ enum ModuleHostCommand {
     },
     AddSubscriber {
         client_id: ClientActorId,
+        query_string: String,
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
     },
     RemoveSubscriber {
@@ -104,8 +268,12 @@ impl ModuleHostCommand {
                 let _ = respond_to.send(actor.delete_database());
             }
             ModuleHostCommand::_MigrateDatabase { respond_to } => actor._migrate_database(respond_to),
-            ModuleHostCommand::AddSubscriber { client_id, respond_to } => {
-                let _ = respond_to.send(actor.subscription().add_subscriber(client_id));
+            ModuleHostCommand::AddSubscriber {
+                client_id,
+                query_string,
+                respond_to,
+            } => {
+                let _ = respond_to.send(actor.subscription().add_subscriber(client_id, query_string));
             }
             ModuleHostCommand::RemoveSubscriber { client_id, respond_to } => {
                 let _ = respond_to.send(actor.subscription().remove_subscriber(client_id));
@@ -139,7 +307,7 @@ pub struct ModuleInfo {
 
 pub trait ModuleHostActor: Send + 'static {
     fn info(&self) -> Arc<ModuleInfo>;
-    fn subscription(&self) -> &ModuleSubscription;
+    fn subscription(&self) -> &ModuleSubscriptionManager;
     fn call_connect_disconnect(&mut self, caller_identity: Hash, connected: bool, respond_to: oneshot::Sender<()>);
     fn call_reducer(
         &mut self,
@@ -273,9 +441,13 @@ impl ModuleHost {
         Ok(())
     }
 
-    pub async fn add_subscriber(&self, client_id: ClientActorId) -> Result<(), anyhow::Error> {
-        self.call(|respond_to| ModuleHostCommand::AddSubscriber { client_id, respond_to })
-            .await?
+    pub async fn add_subscriber(&self, client_id: ClientActorId, query_string: String) -> Result<(), anyhow::Error> {
+        self.call(|respond_to| ModuleHostCommand::AddSubscriber {
+            client_id,
+            query_string,
+            respond_to,
+        })
+        .await?
     }
 
     pub async fn remove_subscriber(&self, client_id: ClientActorId) -> Result<(), anyhow::Error> {

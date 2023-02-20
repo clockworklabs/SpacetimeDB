@@ -144,7 +144,6 @@ impl ClientActorIndex {
             // them and stuff. Not right now though.
             let host = host_controller::get_host();
             let module = host.get_module(database_instance_id).unwrap();
-            module.add_subscriber(client_id).await.unwrap();
             module
                 .call_identity_connected_disconnected(identity, true)
                 .await

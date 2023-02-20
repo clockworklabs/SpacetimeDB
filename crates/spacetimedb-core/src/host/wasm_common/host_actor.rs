@@ -10,15 +10,16 @@ use spacetimedb_lib::{EntityDef, ReducerDef, TupleValue};
 use spacetimedb_sats::Typespace;
 use tokio::sync::oneshot;
 
-use crate::db::messages::transaction::Transaction;
 use crate::db::transactional_db::CommitResult;
 use crate::hash::Hash;
 use crate::host::host_controller::{ReducerBudget, ReducerCallResult, Scheduler};
 use crate::host::instance_env::InstanceEnv;
-use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHostActor, ModuleInfo};
+use crate::host::module_host::{
+    DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHostActor, ModuleInfo,
+};
 use crate::host::timestamp::Timestamp;
 use crate::host::tracelog::instance_trace::TraceLog;
-use crate::module_subscription_actor::ModuleSubscription;
+use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::worker_database_instance::WorkerDatabaseInstance;
 use crate::worker_metrics::{REDUCER_COMPUTE_TIME, REDUCER_COUNT, REDUCER_WRITE_SIZE};
 
@@ -89,7 +90,7 @@ pub struct ExecuteResult<E> {
 }
 
 pub struct ReducerResult {
-    pub tx: Option<Transaction>,
+    pub tx: Option<DatabaseUpdate>,
     pub energy: EnergyStats,
 }
 
@@ -97,7 +98,7 @@ pub(crate) struct WasmModuleHostActor<T: WasmModule> {
     module: T,
     worker_database_instance: WorkerDatabaseInstance,
     // store: Store,
-    subscription: ModuleSubscription,
+    subscription: ModuleSubscriptionManager,
     #[allow(dead_code)]
     // Don't warn about 'trace_log' below when tracelogging feature isn't enabled.
     trace_log: Option<Arc<Mutex<TraceLog>>>,
@@ -144,7 +145,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         func_names.preinits.sort_unstable();
 
         let relational_db = worker_database_instance.relational_db.clone();
-        let subscription = ModuleSubscription::spawn(relational_db);
+        let subscription = ModuleSubscriptionManager::spawn(relational_db);
 
         let mut instance = module
             .create_instance(InstanceEnv::new(
@@ -248,7 +249,7 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
         self.info.clone()
     }
 
-    fn subscription(&self) -> &ModuleSubscription {
+    fn subscription(&self) -> &ModuleSubscriptionManager {
         &self.subscription
     }
 
@@ -331,7 +332,7 @@ struct WasmInstanceActor<T: WasmInstance> {
     func_names: Arc<FuncNames>,
     info: Arc<ModuleInfo>,
     msg_rx: crossbeam_channel::Receiver<InstanceMessage>,
-    subscription: ModuleSubscription,
+    subscription: ModuleSubscriptionManager,
 }
 
 impl<T: WasmInstance> WasmInstanceActor<T> {
@@ -452,7 +453,7 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
         );
 
         let (committed, status, budget_exceeded) = if let Some(tx) = tx {
-            (true, EventStatus::Committed(tx.writes), false)
+            (true, EventStatus::Committed(tx), false)
         } else if energy.remaining == 0 {
             log::error!("Ran out of energy while executing reducer {}", reducer_name);
             (false, EventStatus::OutOfEnergy, true)
@@ -513,7 +514,7 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
         );
 
         let status = if let Some(tx) = result.tx {
-            EventStatus::Committed(tx.writes)
+            EventStatus::Committed(tx)
         } else {
             EventStatus::Failed
         };
@@ -630,7 +631,13 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
                         mlog.append(commit_bytes).unwrap();
                         mlog.sync_all().unwrap();
                     }
-                    ReducerResult { tx: Some(tx), energy }
+                    ReducerResult {
+                        tx: Some(DatabaseUpdate::from_writes(
+                            &self.worker_database_instance().relational_db,
+                            &tx.writes,
+                        )),
+                        energy,
+                    }
                 } else {
                     todo!("Write skew, you need to implement retries my man, T-dawg.");
                 }

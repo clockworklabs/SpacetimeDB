@@ -13,6 +13,7 @@ message Message {
         Event event = 3;
         TransactionUpdate transactionUpdate = 4;
         IdentityToken identityToken = 5;
+        Subscribe subscribe = 6;
     }
 }
 
@@ -22,11 +23,15 @@ message IdentityToken {
 }
 
 // TODO: Evaluate if it makes sense for this to also include the
-// identity and name of the module this is calling
+// address of the database this is calling
 message FunctionCall {
     // TODO: Maybe this should be replaced with an int identifier for performance?
     string reducer = 1;
     bytes argBytes = 2;
+}
+
+message Subscribe {
+    repeated string query_strings = 1;
 }
 
 message Event {

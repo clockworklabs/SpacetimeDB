@@ -269,6 +269,21 @@ impl ClientConnection {
 
                 Ok(())
             }
+            Some(message::Type::Subscribe(subscribe)) => {
+                let host = host_controller::get_host();
+                let module = host.get_module(instance_id);
+                match module {
+                    Ok(module) => {
+                        for query_string in subscribe.query_strings {
+                            module.add_subscriber(client_id, query_string).await?;
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Could not find module {} to subscribe to: {:?}", instance_id, e)
+                    }
+                }
+                Ok(())
+            }
             Some(_) => Err(anyhow::anyhow!("Unexpected client message type.")),
             None => Err(anyhow::anyhow!("No message from client")),
         }
@@ -284,23 +299,46 @@ impl ClientConnection {
             .inc();
 
         #[derive(serde::Deserialize)]
-        struct Call<'a> {
-            #[serde(borrow, rename = "fn")]
-            func: std::borrow::Cow<'a, str>,
-            args: &'a serde_json::value::RawValue,
+        enum Message<'a> {
+            #[serde(rename = "call")]
+            Call {
+                #[serde(borrow, rename = "fn")]
+                func: std::borrow::Cow<'a, str>,
+                args: &'a serde_json::value::RawValue,
+            },
+            #[serde(rename = "subscribe")]
+            Subscribe { query_strings: Vec<String> },
         }
-        let bytes = Bytes::from(message);
-        let Call { func, args } = serde_json::from_slice(&bytes)?;
-        let args = ReducerArgs::Json(bytes.slice_ref(args.get().as_bytes()));
 
-        let host = host_controller::get_host();
-        match host.call_reducer(instance_id, client_id.identity, &func, args).await {
-            Ok(Some(_)) => {}
-            Ok(None) => {
-                log::error!("reducer {func} not found")
+        let bytes = Bytes::from(message);
+        match serde_json::from_slice::<Message>(&bytes)? {
+            Message::Call { func, args } => {
+                let args = ReducerArgs::Json(bytes.slice_ref(args.get().as_bytes()));
+
+                let host = host_controller::get_host();
+                match host.call_reducer(instance_id, client_id.identity, &func, args).await {
+                    Ok(Some(_)) => {}
+                    Ok(None) => {
+                        log::error!("reducer {func} not found")
+                    }
+                    Err(e) => {
+                        log::error!("{}", e)
+                    }
+                }
             }
-            Err(e) => {
-                log::error!("{}", e)
+            Message::Subscribe { query_strings } => {
+                let host = host_controller::get_host();
+                let module = host.get_module(instance_id);
+                match module {
+                    Ok(module) => {
+                        for query_string in query_strings {
+                            module.add_subscriber(client_id, query_string).await?;
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Could not find module {} to subscribe to: {:?}", instance_id, e)
+                    }
+                }
             }
         }
 

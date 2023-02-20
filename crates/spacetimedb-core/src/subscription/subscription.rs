@@ -1,0 +1,100 @@
+use super::query::Query;
+use crate::{
+    client::{client_connection::Protocol, client_connection_index::ClientConnectionSender, ClientActorId},
+    db::relational_db::{RelationalDB, RelationalDBWrapper},
+    host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp},
+};
+
+#[derive(Clone)]
+pub struct Subscriber {
+    pub sender: ClientConnectionSender,
+    pub protocol: Protocol,
+}
+
+pub struct Subscription {
+    pub query_id: u64,
+    pub query: Query,
+    pub subscribers: Vec<Subscriber>,
+}
+
+impl Subscription {
+    pub fn remove_subscriber(&mut self, client_id: ClientActorId) -> Option<Subscriber> {
+        let mut i = 0;
+        while i < self.subscribers.len() {
+            let subscriber = &self.subscribers[i];
+            if subscriber.sender.id == client_id {
+                return Some(self.subscribers.swap_remove(i));
+            } else {
+                i += 1;
+            }
+        }
+        return None;
+    }
+
+    pub fn add_subscriber(&mut self, sender: ClientConnectionSender, protocol: Protocol) {
+        if !self.subscribers.iter().any(|s| s.sender.id == sender.id) {
+            self.subscribers.push(Subscriber {
+                sender: sender.clone(),
+                protocol,
+            });
+        }
+    }
+
+    pub fn eval_incr_query(
+        &mut self,
+        _relational_db: &mut RelationalDBWrapper,
+        database_update: DatabaseUpdate,
+    ) -> DatabaseUpdate {
+        let mut output = DatabaseUpdate { tables: vec![] };
+
+        for table in database_update.tables {
+            if table.table_name == self.query.table_name {
+                output.tables.push(table);
+            }
+        }
+
+        output
+    }
+
+    pub fn eval_query(&mut self, relational_db: &mut RelationalDBWrapper) -> DatabaseUpdate {
+        let mut database_update = DatabaseUpdate { tables: vec![] };
+
+        let mut stdb = relational_db.lock().unwrap();
+        let mut tx_ = stdb.begin_tx();
+        let (tx, stdb) = tx_.get();
+        let tables = stdb.scan_table_names(tx).unwrap().collect::<Vec<_>>();
+
+        let table_name = &self.query.table_name;
+        let mut table_id: i32 = -1;
+        for (t_id, t_name) in tables {
+            if table_name == t_name.as_str() {
+                table_id = t_id as i32;
+            }
+        }
+
+        if table_id == -1 {
+            panic!("This is not supposed to happen.");
+        }
+
+        let table_id = table_id as u32;
+
+        let mut table_row_operations = Vec::new();
+        for row in stdb.scan(tx, table_id).unwrap() {
+            let row_pk = RelationalDB::pk_for_row(&row);
+            let row_pk = row_pk.to_bytes();
+            table_row_operations.push(TableOp {
+                op_type: 1, // Insert
+                row_pk,
+                row,
+            });
+        }
+        database_update.tables.push(DatabaseTableUpdate {
+            table_id,
+            table_name: table_name.clone(),
+            ops: table_row_operations,
+        });
+        tx_.rollback();
+
+        database_update
+    }
+}
