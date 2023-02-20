@@ -146,7 +146,7 @@ pub async fn handle_websocket(state: &mut State) -> SimpleHandlerResult {
     };
     let instance_id = database_instance.id;
 
-    let req_id = request_id(&state).to_owned();
+    let req_id = request_id(state).to_owned();
     let identity_token_clone = identity_token.clone();
     tokio::spawn(async move {
         let config = WebSocketConfig {

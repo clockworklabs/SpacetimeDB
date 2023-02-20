@@ -130,13 +130,13 @@ impl ToDataKey for crate::TypeValue {
     fn to_data_key(&self) -> DataKey {
         let mut bytes = Vec::new();
         self.encode(&mut bytes);
-        DataKey::from_data(&bytes.iter())
+        DataKey::from_data(&bytes)
     }
 }
 impl ToDataKey for crate::TupleValue {
     fn to_data_key(&self) -> DataKey {
         let mut bytes = Vec::new();
         self.encode(&mut bytes);
-        DataKey::from_data(&bytes.iter())
+        DataKey::from_data(&bytes)
     }
 }

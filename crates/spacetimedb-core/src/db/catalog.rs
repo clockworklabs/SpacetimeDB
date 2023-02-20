@@ -74,7 +74,7 @@ impl Catalog {
 
     /// Returns an iterator for all the [Sequence] in the [Catalog]
     pub fn sequences_iter(&self) -> impl Iterator<Item = &Sequence> {
-        self.sequences.iter().map(|(_, seq)| seq)
+        self.sequences.values()
     }
 
     // TODO: We should verify if the table/column are valid!

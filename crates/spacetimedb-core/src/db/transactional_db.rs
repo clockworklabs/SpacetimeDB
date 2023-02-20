@@ -488,7 +488,7 @@ impl TransactionalDB {
 
     pub fn from_data_key<T, F: Fn(&[u8]) -> T>(&self, data_key: &DataKey, f: F) -> Option<T> {
         let data = match data_key {
-            DataKey::Data(data) => Some(f(&data)),
+            DataKey::Data(data) => Some(f(data)),
             DataKey::Hash(hash) => {
                 let odb = self.odb.lock().unwrap();
                 let t = f(odb.get(Hash::from_arr(&hash.data)).unwrap().to_vec().as_slice());
@@ -971,7 +971,7 @@ mod tests {
             .encode(),
         );
 
-        let mut scan_1 = db.scan(tx_1, 0).map(|b| b.to_owned()).collect::<Vec<Vec<u8>>>();
+        let mut scan_1 = db.scan(tx_1, 0).collect::<Vec<Vec<u8>>>();
         scan_1.sort();
 
         let (db, _) = tx_1_.commit_into_db()?;

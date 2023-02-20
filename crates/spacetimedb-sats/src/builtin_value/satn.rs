@@ -29,7 +29,7 @@ impl<'a> crate::satn::Satn for ValueWithType<'a, BuiltinValue> {
                 write!(f, "]")
             }
             BuiltinValue::Map { val } => {
-                if val.len() == 0 {
+                if val.is_empty() {
                     return write!(f, "[:]");
                 }
                 let MapType { key_ty, ty } = self.ty().as_map().unwrap();

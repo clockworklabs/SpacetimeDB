@@ -189,7 +189,7 @@ impl HostController {
         let budget = ReducerBudget(DEFAULT_EXECUTION_BUDGET);
 
         let res = module_host
-            .call_reducer(caller_identity, reducer_name.into(), budget, args)
+            .call_reducer(caller_identity, reducer_name, budget, args)
             .await;
         // TODO(cloutiertyler): Move this outside of the host controller
         // if let Ok(Some(rcr)) = &res {

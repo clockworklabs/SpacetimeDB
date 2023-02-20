@@ -147,19 +147,19 @@ fn perform_bench<F>(bench_group: &mut BenchmarkGroup<WallTime>, valgen: &F, flav
 where
     F: Fn() -> Vec<u8>,
 {
-    bench_group.bench_with_input(BenchmarkId::new("add", &flavor), &flavor, |bench, &flavor| {
+    bench_group.bench_with_input(BenchmarkId::new("add", flavor), &flavor, |bench, &flavor| {
         add(bench, flavor, valgen)
     });
-    bench_group.bench_with_input(BenchmarkId::new("get", &flavor), &flavor, |bench, &flavor| {
+    bench_group.bench_with_input(BenchmarkId::new("get", flavor), &flavor, |bench, &flavor| {
         get(bench, flavor, valgen)
     });
-    bench_group.bench_with_input(BenchmarkId::new("add_get", &flavor), &flavor, |bench, &flavor| {
+    bench_group.bench_with_input(BenchmarkId::new("add_get", flavor), &flavor, |bench, &flavor| {
         add_get(bench, flavor, valgen)
     });
     for delay_count in [16, 64] {
         let param = FlavoredDelayedCount {
             count: delay_count,
-            flavor: flavor.clone(),
+            flavor,
         };
         bench_group.bench_with_input(BenchmarkId::new("add_get_delayed", param), &param, |bench, &param| {
             add_get_delayed(bench, param.flavor, valgen, param.count)
@@ -169,7 +169,7 @@ where
 
 fn latency_bench(c: &mut Criterion) {
     let mut latency_bench_group = c.benchmark_group("object_db_latency");
-    let latency_valgen = || generate_random_sized_value();
+    let latency_valgen = generate_random_sized_value;
 
     perform_bench(&mut latency_bench_group, &latency_valgen, ODBFlavor::HashMap);
     #[cfg(feature = "odb_sled")]

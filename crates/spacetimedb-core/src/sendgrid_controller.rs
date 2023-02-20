@@ -76,6 +76,6 @@ impl SendGridController {
     }
 
     pub fn is_enabled(&self) -> bool {
-        *&self.settings.is_some()
+        self.settings.is_some()
     }
 }

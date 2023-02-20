@@ -491,7 +491,7 @@ mod tests {
     fn _find(idx: &BTreeIndex, key: &TypeValue, stdb: &RelationalDB, tx: &mut Tx) -> ResultTest<Vec<Vec<TypeValue>>> {
         let mut result = Vec::new();
 
-        for row in idx.get(stdb, tx, &key) {
+        for row in idx.get(stdb, tx, key) {
             result.push(row.elements.to_vec());
         }
 
@@ -528,12 +528,12 @@ mod tests {
         stdb.begin_tx().with(|tx, stdb| {
             let idx = IndexDef::new("idx_1", table_id, 0, true);
             let mut idx = BTreeIndex::from_def(0.into(), idx);
-            idx.index_full_column(&stdb, tx)?;
+            idx.index_full_column(stdb, tx)?;
 
             assert_eq!(idx.len(), 9, "Wrong number of index unique keys");
 
             let key = TypeValue::I32(1);
-            let values = _find(&idx, &key, &stdb, tx)?;
+            let values = _find(&idx, &key, stdb, tx)?;
             assert_eq!(values, vec![vec![TypeValue::I32(1), TypeValue::String("B".into())]]);
 
             Ok::<(), TestError>(())
@@ -552,10 +552,10 @@ mod tests {
 
         let idx = IndexDef::new("idx_1", table_id, 1, false);
         let mut idx = BTreeIndex::from_def(0.into(), idx);
-        idx.index_full_column(&stdb, tx)?;
+        idx.index_full_column(stdb, tx)?;
 
         let key = TypeValue::String("A".into());
-        let mut values = _find(&idx, &key, &stdb, tx)?;
+        let mut values = _find(&idx, &key, stdb, tx)?;
         values.sort();
         assert_eq!(
             values,
@@ -613,10 +613,10 @@ mod tests {
 
         let idx = IndexDef::new("idx_1", table_id, 1, false);
         let mut idx = BTreeIndex::from_def(0.into(), idx);
-        idx.index_full_column(&stdb, tx)?;
+        idx.index_full_column(stdb, tx)?;
 
         let key = TypeValue::String("A".into());
-        let mut values = _find(&idx, &key, &stdb, tx)?;
+        let mut values = _find(&idx, &key, stdb, tx)?;
         values.sort();
         assert_eq!(
             values,
@@ -633,7 +633,7 @@ mod tests {
         let mut tx_ = stdb.begin_tx();
         let (tx, stdb) = tx_.get();
 
-        let mut values = _find(&idx, &key, &stdb, tx)?;
+        let mut values = _find(&idx, &key, stdb, tx)?;
         values.sort();
         assert_eq!(
             values,
@@ -649,7 +649,7 @@ mod tests {
 
         stdb.insert(tx, table_id, product![TypeValue::I32(9), TypeValue::String("A".into())])?;
 
-        let mut values = _find(&idx, &key, &stdb, tx)?;
+        let mut values = _find(&idx, &key, stdb, tx)?;
         values.sort();
         assert_eq!(
             values,
@@ -724,12 +724,12 @@ mod tests {
         let idx_col_name = stdb.catalog.indexes.get("idx_2").expect("Index not found");
 
         let key = TypeValue::I32(99);
-        let mut values = _find(&idx_col_id, &key, &stdb, tx)?;
+        let mut values = _find(idx_col_id, &key, stdb, tx)?;
         values.sort();
         assert_eq!(values, vec![vec![TypeValue::I32(99), TypeValue::String("NEW".into())],]);
 
         let key = TypeValue::String("NEW".into());
-        let mut values = _find(&idx_col_name, &key, &stdb, tx)?;
+        let mut values = _find(idx_col_name, &key, stdb, tx)?;
         values.sort();
         assert_eq!(values, vec![vec![TypeValue::I32(99), TypeValue::String("NEW".into())],]);
         Ok(())
@@ -756,14 +756,14 @@ mod tests {
         }
         all_rows.sort();
 
-        let rows_col_id = idx_col_id.iter(&stdb, tx).collect::<Vec<_>>();
+        let rows_col_id = idx_col_id.iter(stdb, tx).collect::<Vec<_>>();
         assert_eq!(all_rows, rows_col_id);
 
         stdb.delete_in(tx, table_id, all_rows)?;
 
         let idx_col_id = stdb.catalog.indexes.get("idx_1").expect("Index not found");
 
-        let rows_col_id = idx_col_id.iter(&stdb, tx).collect::<Vec<_>>();
+        let rows_col_id = idx_col_id.iter(stdb, tx).collect::<Vec<_>>();
         let empty: Vec<TupleValue> = Vec::new();
 
         assert_eq!(empty, rows_col_id);
@@ -794,10 +794,10 @@ mod tests {
         let idx_col_id = stdb.catalog.indexes.get("idx_1").expect("Index not found");
         let idx_col_name = stdb.catalog.indexes.get("idx_2").expect("Index not found");
 
-        let rows_col_id = idx_col_id.iter(&stdb, tx).collect::<Vec<_>>();
+        let rows_col_id = idx_col_id.iter(stdb, tx).collect::<Vec<_>>();
         assert_eq!(all_rows, rows_col_id);
 
-        let mut rows_col_name = idx_col_name.iter(&stdb, tx).collect::<Vec<_>>();
+        let mut rows_col_name = idx_col_name.iter(stdb, tx).collect::<Vec<_>>();
         rows_col_name.sort();
 
         assert_eq!(all_rows, rows_col_name);
@@ -833,7 +833,7 @@ mod tests {
         let idx_col_id = stdb.catalog.indexes.get("idx_1").expect("Index not found");
 
         let rows_col_id = idx_col_id
-            .iter_range(&stdb, tx, TypeValue::I32(0)..=TypeValue::I32(1))
+            .iter_range(stdb, tx, TypeValue::I32(0)..=TypeValue::I32(1))
             .collect::<Vec<_>>();
 
         assert_eq!(

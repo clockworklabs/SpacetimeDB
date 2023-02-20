@@ -349,11 +349,9 @@ async fn logs(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
 
     // You should not be able to read the logs from a database that you do not own
     // so, unless you are the owner, this will fail, hence `create = false`.
-    let creds = get_or_create_creds_from_header(auth_header, false).await?;
-    if let None = creds {
-        return Err(HandlerError::from(anyhow!("Invalid credentials.")).with_status(StatusCode::BAD_REQUEST));
-    }
-    let (caller_identity, _) = creds.unwrap();
+    let (caller_identity, _) = get_or_create_creds_from_header(auth_header, false)
+        .await?
+        .ok_or_else(|| HandlerError::from(anyhow!("Invalid credentials.")).with_status(StatusCode::BAD_REQUEST))?;
 
     let address = Address::from_hex(&address)?;
 
@@ -434,11 +432,9 @@ async fn sql(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
 
     // You should not be able to query a database that you do not own
     // so, unless you are the owner, this will fail, hence `create = false`.
-    let creds = get_or_create_creds_from_header(auth_header, false).await?;
-    if let None = creds {
-        return Err(HandlerError::from(anyhow!("Invalid credentials.")).with_status(StatusCode::BAD_REQUEST));
-    }
-    let (caller_identity, _) = creds.unwrap();
+    let (caller_identity, _) = get_or_create_creds_from_header(auth_header, false)
+        .await?
+        .ok_or_else(|| HandlerError::from(anyhow!("Invalid credentials.")).with_status(StatusCode::BAD_REQUEST))?;
 
     let address = Address::from_hex(&address)?;
 
@@ -458,7 +454,7 @@ async fn sql(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
 
     let body = state.borrow_mut::<Body>();
     let data = hyper::body::to_bytes(body).await?;
-    if data.len() == 0 {
+    if data.is_empty() {
         return Err(HandlerError::from(anyhow!("Missing request body.")).with_status(StatusCode::BAD_REQUEST));
     }
 
@@ -565,11 +561,9 @@ async fn register_tld(_ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHand
 
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail, hence `create = false`.
-    let creds = get_or_create_creds_from_header(auth_header, false).await?;
-    if let None = creds {
-        return Err(HandlerError::from(anyhow!("Invalid credentials.")).with_status(StatusCode::BAD_REQUEST));
-    }
-    let (caller_identity, _) = creds.unwrap();
+    let (caller_identity, _) = get_or_create_creds_from_header(auth_header, false)
+        .await?
+        .ok_or_else(|| HandlerError::from(anyhow!("Invalid credentials.")).with_status(StatusCode::BAD_REQUEST))?;
 
     let result = CONTROL_DB.spacetime_register_tld(tld.as_str(), caller_identity).await?;
     let json = serde_json::to_string(&result).unwrap();
@@ -733,11 +727,9 @@ async fn publish(ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHandlerRes
 
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail, hence `create = false`.
-    let creds = get_or_create_creds_from_header(auth_header, true).await?;
-    if let None = creds {
-        return Err(HandlerError::from(anyhow!("Invalid credentials.")).with_status(StatusCode::BAD_REQUEST));
-    }
-    let (caller_identity, _) = creds.unwrap();
+    let (caller_identity, _) = get_or_create_creds_from_header(auth_header, true)
+        .await?
+        .ok_or_else(|| HandlerError::from(anyhow!("Invalid credentials.")).with_status(StatusCode::BAD_REQUEST))?;
 
     // Parse the address or convert the name to a usable address
     let (db_address, specified_address) = if let Some(name_or_address) = name_or_address.clone() {
@@ -791,20 +783,15 @@ async fn publish(ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHandlerRes
 
     let host_type = match host_type {
         None => HostType::Wasmer,
-        Some(ht) => match ht.parse() {
-            Ok(ht) => ht,
-            Err(_) => {
-                return Err(HandlerError::from(anyhow!("unknown host type {ht}")).with_status(StatusCode::BAD_REQUEST));
-            }
-        },
+        Some(ht) => ht
+            .parse()
+            .map_err(|_| HandlerError::from(anyhow!("unknown host type {ht}")).with_status(StatusCode::BAD_REQUEST))?,
     };
 
     let body = state.borrow_mut::<Body>();
-    let data = hyper::body::to_bytes(body).await;
-    let data = match data {
-        Ok(data) => data,
-        Err(_) => return Err(HandlerError::from(anyhow!("Invalid request body")).with_status(StatusCode::BAD_REQUEST)),
-    };
+    let data = hyper::body::to_bytes(body)
+        .await
+        .map_err(|_| HandlerError::from(anyhow!("Invalid request body")).with_status(StatusCode::BAD_REQUEST))?;
     let program_bytes = data.to_vec();
     let program_bytes_addr = hash_bytes(&program_bytes);
     ctx.object_db().insert_object(program_bytes).unwrap();
@@ -928,11 +915,9 @@ async fn set_name(ctx: &dyn ControllerCtx, state: &mut State) -> SimpleHandlerRe
     let headers = state.borrow::<HeaderMap>();
     let auth_header = headers.get(AUTHORIZATION);
 
-    let creds = get_or_create_creds_from_header(auth_header, false).await?;
-    if let None = creds {
-        return Err(HandlerError::from(anyhow!("Invalid credentials.")).with_status(StatusCode::BAD_REQUEST));
-    }
-    let (caller_identity, _) = creds.unwrap();
+    let (caller_identity, _) = get_or_create_creds_from_header(auth_header, false)
+        .await?
+        .ok_or_else(|| HandlerError::from(anyhow!("Invalid credentials.")).with_status(StatusCode::BAD_REQUEST))?;
     let address = Address::from_hex(&address)?;
 
     let database = match ctx.get_database_by_address(&address).await? {

@@ -230,17 +230,17 @@ fn perform_bench<F>(bench_group: &mut BenchmarkGroup<WallTime>, valgen: &F, flav
 where
     F: Fn() -> (u32 /* set_id */, Vec<u8>),
 {
-    bench_group.bench_with_input(BenchmarkId::new("insert_commit", &flavor), &flavor, |bench, &flavor| {
+    bench_group.bench_with_input(BenchmarkId::new("insert_commit", flavor), &flavor, |bench, &flavor| {
         insert_commit(bench, flavor, valgen)
     });
-    bench_group.bench_with_input(BenchmarkId::new("seek", &flavor), &flavor, |bench, &flavor| {
+    bench_group.bench_with_input(BenchmarkId::new("seek", flavor), &flavor, |bench, &flavor| {
         seek(bench, flavor, valgen)
     });
-    bench_group.bench_with_input(BenchmarkId::new("insert_seek", &flavor), &flavor, |bench, &flavor| {
+    bench_group.bench_with_input(BenchmarkId::new("insert_seek", flavor), &flavor, |bench, &flavor| {
         insert_seek(bench, flavor, valgen)
     });
     bench_group.bench_with_input(
-        BenchmarkId::new("insert_seek_sep_tx", &flavor),
+        BenchmarkId::new("insert_seek_sep_tx", flavor),
         &flavor,
         |bench, &flavor| insert_seek_new_tx(bench, flavor, valgen),
     );
@@ -248,7 +248,7 @@ where
     for delay_count in [16, 64] {
         let param = FlavoredDelayedCount {
             count: delay_count,
-            flavor: flavor.clone(),
+            flavor,
         };
         bench_group.bench_with_input(
             BenchmarkId::new("insert_seek_delayed", param),
@@ -260,7 +260,7 @@ where
 
 fn latency_bench(c: &mut Criterion) {
     let mut latency_bench_group = c.benchmark_group("transactional_db_latency");
-    let latency_valgen = || generate_random_sized_value();
+    let latency_valgen = generate_random_sized_value;
 
     perform_bench(&mut latency_bench_group, &latency_valgen, ODBFlavor::HashMap);
     #[cfg(feature = "odb_sled")]

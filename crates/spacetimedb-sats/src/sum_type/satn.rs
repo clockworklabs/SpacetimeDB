@@ -14,7 +14,7 @@ impl<'a> Formatter<'a> {
 
 impl<'a> Display for Formatter<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.ty.variants.len() == 0 {
+        if self.ty.variants.is_empty() {
             return write!(f, "(|)");
         }
         write!(f, "(")?;

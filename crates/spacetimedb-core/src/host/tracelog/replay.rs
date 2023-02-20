@@ -38,7 +38,7 @@ where
     loop {
         let mut len_byte: [u8; 8] = [0; 8];
         let prefix_result = reader.read_exact(&mut len_byte[..]);
-        if !prefix_result.is_ok() {
+        if prefix_result.is_err() {
             log::info!("Done trace. {} events replayed", event_count);
             return Ok(event_count);
         }

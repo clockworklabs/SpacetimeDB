@@ -21,7 +21,7 @@ pub fn match_subcommand_or_exit(command: Command) -> (String, ArgMatches) {
                 let cmd = e
                     .context()
                     .find_map(|c| match c {
-                        (ContextKind::InvalidSubcommand, &ContextValue::String(ref cmd)) => {
+                        (ContextKind::InvalidSubcommand, ContextValue::String(cmd)) => {
                             Some(cmd.split_ascii_whitespace().last().unwrap())
                         }
                         _ => None,

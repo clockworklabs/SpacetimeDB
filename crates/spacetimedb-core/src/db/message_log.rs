@@ -125,7 +125,7 @@ impl MessageLog {
             let last_segment = self.segments.last().unwrap();
             let last_segment_path = self.root.join(last_segment.name() + ".log");
 
-            let file = OpenOptions::new().append(true).create(true).open(&last_segment_path)?;
+            let file = OpenOptions::new().append(true).create(true).open(last_segment_path)?;
             let file = BufWriter::new(file);
 
             self.open_segment_size = 0;

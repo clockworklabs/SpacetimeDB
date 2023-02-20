@@ -25,14 +25,12 @@ pub async fn get_or_create_creds_from_header(
                     .with_status(StatusCode::BAD_REQUEST),
             ),
         }
-    } else {
-        if create {
-            let identity = CONTROL_DB.alloc_spacetime_identity().await?;
-            let token = encode_token(identity)?;
+    } else if create {
+        let identity = CONTROL_DB.alloc_spacetime_identity().await?;
+        let token = encode_token(identity)?;
 
-            Ok(Some((identity, token)))
-        } else {
-            Ok(None)
-        }
+        Ok(Some((identity, token)))
+    } else {
+        Ok(None)
     }
 }

@@ -577,7 +577,7 @@ impl RelationalDB {
             tx,
             index_table_id,
             index::IndexFields::IndexId as u32,
-            TypeValue::U32(index_id.0).into(),
+            TypeValue::U32(index_id.0),
         )?;
 
         let row = iter.collect::<Vec<_>>();
@@ -1053,7 +1053,7 @@ pub(crate) mod tests_utils {
 
     //Utility for creating a database on the same TempDir, for checking behaviours after shutdown
     pub(crate) fn make_test_db_reopen(tmp_dir: &TempDir) -> Result<RelationalDB, DBError> {
-        open_db(&tmp_dir)
+        open_db(tmp_dir)
     }
 }
 
@@ -1114,7 +1114,7 @@ mod tests {
         let tmp_dir = TempDir::new("stdb_test")?;
         let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
         let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
-        let mut stdb = RelationalDB::open(tmp_dir.path(), mlog.clone(), odb.clone())?;
+        let mut stdb = RelationalDB::open(tmp_dir.path(), mlog, odb.clone())?;
         let mut tx_ = stdb.begin_tx();
         let (tx, stdb) = tx_.get();
 
@@ -1304,8 +1304,6 @@ mod tests {
         let (tx, stdb) = tx.get();
 
         let table_id = stdb.create_table(tx, "MyTable", TupleDef::from_iter([("my_col", TypeDef::I32)]))?;
-
-        drop(tx);
 
         let mut tx = stdb.begin_tx();
         let (tx, stdb) = tx.get();

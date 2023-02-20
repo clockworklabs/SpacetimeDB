@@ -6,7 +6,7 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use prost::Message;
 use std::fs::File;
-use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{BufWriter, Read, Seek, Write};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
@@ -41,7 +41,7 @@ impl TraceLog {
     pub fn retrieve(&mut self) -> Result<bytes::Bytes, anyhow::Error> {
         self.flush()?;
         let mut reader = self.trace_writer.get_ref();
-        reader.seek(SeekFrom::Start(0))?;
+        reader.rewind()?;
         let mut buf_vec = vec![];
         let _read_bytes = reader.read_to_end(&mut buf_vec)?;
         Ok(buf_vec.into())
@@ -93,7 +93,7 @@ impl TraceLog {
         match self.trace_writer.write(&len_bytes[..]) {
             Ok(_) => {
                 self.trace_writer
-                    .write(compressed.as_slice())
+                    .write_all(compressed.as_slice())
                     .expect("Unable to write event to file");
                 self.flush().unwrap()
             }
@@ -206,10 +206,10 @@ impl TraceLog {
         self.write_event(start_time, duration, event)
     }
 
-    pub fn iter(&mut self, start_time: SystemTime, duration: Duration, table_id: u32, bytes: &Vec<u8>) {
+    pub fn iter(&mut self, start_time: SystemTime, duration: Duration, table_id: u32, bytes: &[u8]) {
         let event = Type::Iter(Iter {
             table_id,
-            result_bytes: bytes.clone(),
+            result_bytes: bytes.to_owned(),
         });
         self.write_event(start_time, duration, event)
     }

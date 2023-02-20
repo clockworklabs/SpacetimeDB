@@ -18,34 +18,24 @@ impl<'a> Display for Formatter<'a> {
         match &self.ty {
             AlgebraicType::Sum(ty) => {
                 write!(f, "{{ ty_: Sum",)?;
-                if ty.variants.len() != 0 {
-                    write!(f, ", ")?;
-                }
                 for (i, e_ty) in ty.variants.iter().enumerate() {
+                    write!(f, ", ")?;
                     if let Some(name) = &e_ty.name {
                         write!(f, "{}: {}", name, Formatter::new(&e_ty.algebraic_type))?;
                     } else {
                         write!(f, "{}: {}", i, Formatter::new(&e_ty.algebraic_type))?;
-                    }
-                    if i < ty.variants.len() - 1 {
-                        write!(f, ", ")?;
                     }
                 }
                 write!(f, " }}",)
             }
             AlgebraicType::Product(ty) => {
                 write!(f, "{{ ty_: Product",)?;
-                if ty.elements.len() != 0 {
-                    write!(f, ", ")?;
-                }
                 for (i, e_ty) in ty.elements.iter().enumerate() {
+                    write!(f, ", ")?;
                     if let Some(name) = &e_ty.name {
                         write!(f, "{}: {}", name, Formatter::new(&e_ty.algebraic_type))?;
                     } else {
                         write!(f, "{}: {}", i, Formatter::new(&e_ty.algebraic_type))?;
-                    }
-                    if i < ty.elements.len() - 1 {
-                        write!(f, ", ")?;
                     }
                 }
                 write!(f, " }}",)

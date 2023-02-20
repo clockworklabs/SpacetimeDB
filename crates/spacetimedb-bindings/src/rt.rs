@@ -184,6 +184,7 @@ macro_rules! impl_reducer {
         }
         impl<'de, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> ScheduleArgs<'de> for (ReducerContext, $($T,)*) {
             type Args = ($($T,)*);
+            #[allow(clippy::unused_unit)]
             fn into_args(self) -> Self::Args {
                 #[allow(non_snake_case)]
                 let (_ctx, $($T,)*) = self;

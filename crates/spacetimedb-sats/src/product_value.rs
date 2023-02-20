@@ -4,7 +4,7 @@ pub mod satn;
 use crate::algebraic_value::AlgebraicValue;
 use crate::product_type::ProductType;
 
-#[derive(Debug, Clone, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct ProductValue {
     pub elements: Vec<AlgebraicValue>,
 }
@@ -28,25 +28,6 @@ impl FromIterator<AlgebraicValue> for ProductValue {
 impl crate::Value for ProductValue {
     type Type = ProductType;
 }
-
-impl PartialEq for ProductValue {
-    fn eq(&self, other: &Self) -> bool {
-        if self.elements.len() != other.elements.len() {
-            return false;
-        }
-
-        for i in 0..self.elements.len() {
-            let x = &self.elements[i];
-            let y = &other.elements[i];
-            if x != y {
-                return false;
-            }
-        }
-        return true;
-    }
-}
-
-impl Eq for ProductValue {}
 
 #[derive(thiserror::Error, Debug, Clone)]
 #[error("Field {0}({1:?}) not found or has a invalid type")]

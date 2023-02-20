@@ -355,7 +355,8 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
                     connected,
                     respond_to,
                 } => {
-                    let _ = respond_to.send(self.call_connect_disconnect(caller_identity, connected));
+                    self.call_connect_disconnect(caller_identity, connected);
+                    let _ = respond_to.send(());
                 }
                 InstanceMessage::CallReducer {
                     caller_identity,

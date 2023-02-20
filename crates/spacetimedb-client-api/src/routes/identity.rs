@@ -1,4 +1,3 @@
-use email_address;
 use gotham::{
     handler::SimpleHandlerResult,
     prelude::*,

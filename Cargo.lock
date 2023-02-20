@@ -1668,7 +1668,7 @@ checksum = "09f4f04699947111ec1733e71778d763555737579e44b85844cae8e1940a1828"
 dependencies = [
  "base64",
  "pem",
- "ring 0.16.20",
+ "ring",
  "serde",
  "serde_json",
  "simple_asn1",
@@ -2649,21 +2649,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ring"
-version = "0.17.0-alpha.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4575a179070909595bea5f999d67934737c2e0757a1eb9839af555917817b257"
-dependencies = [
- "cc",
- "libc",
- "once_cell",
- "spin",
- "untrusted",
- "web-sys",
- "winapi",
-]
-
-[[package]]
 name = "rkyv"
 version = "0.7.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3222,8 +3207,8 @@ dependencies = [
  "log",
  "prometheus",
  "prost",
+ "rand 0.8.5",
  "regex",
- "ring 0.17.0-alpha.11",
  "sendgrid",
  "serde",
  "serde_json",

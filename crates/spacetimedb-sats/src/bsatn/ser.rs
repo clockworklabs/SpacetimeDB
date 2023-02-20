@@ -15,9 +15,7 @@ impl<'a, W> Serializer<'a, W> {
 
     #[inline]
     fn reborrow(&mut self) -> Serializer<'_, W> {
-        Serializer {
-            writer: &mut self.writer,
-        }
+        Serializer { writer: self.writer }
     }
 }
 

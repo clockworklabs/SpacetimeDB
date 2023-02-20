@@ -353,7 +353,7 @@ impl ControlDb {
 
         if let Some(old_value) = tree.get(id.to_be_bytes())? {
             let database = Database::decode(&old_value[..])?;
-            let key = Address::from_slice(&database.address).to_hex();
+            let key = Address::from_slice(database.address).to_hex();
 
             tree_by_address.remove(key.as_bytes())?;
             tree.remove(id.to_be_bytes())?;

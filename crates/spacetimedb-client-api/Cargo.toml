@@ -33,6 +33,6 @@ bytes = "1.2.0" # TODO(rdaum): there's also a copy/fork of this inside prost. hm
 tempdir = "0.3.7"
 async-trait = "0.1.60"
 sendgrid = "0.18.1"
-ring = "0.17.0-alpha.11"
 serde_with = "2.2.0"
 chrono = { version = "0.4.23", features = ["serde"]}
+rand = "0.8.5"

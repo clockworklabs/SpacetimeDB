@@ -13,9 +13,7 @@ impl<'a, 'de, R: BufReader<'de>> Deserializer<'a, R> {
 
     #[inline]
     fn reborrow(&mut self) -> Deserializer<'_, R> {
-        Deserializer {
-            reader: &mut self.reader,
-        }
+        Deserializer { reader: self.reader }
     }
 }
 

@@ -644,7 +644,6 @@ fn assert_no_args(args: &[NestedMeta]) -> syn::Result<()> {
 
 #[proc_macro]
 pub fn duration(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let input = TokenStream::from(input);
     duration_impl(input.into())
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
