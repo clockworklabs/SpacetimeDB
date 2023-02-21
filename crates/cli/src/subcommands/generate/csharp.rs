@@ -60,7 +60,7 @@ fn convert_builtintype<'a>(
     fmt_fn(move |f| match maybe_primitive(b) {
         MaybePrimitive::Primitive(csharp_type) => {
             write!(f, "({csharp_type}){value}.GetValue(TypeDef.Def.{b:?})")
-        }
+    }
         MaybePrimitive::Array { ty } if *ty == AlgebraicType::U8 => {
             write!(f, "(byte[]){value}.GetValue(TypeDef.Def.Bytes)")
         }
@@ -138,7 +138,7 @@ fn convert_typedef<'a>(ctx: &'a GenCtx, ty: &'a TypeDef) -> impl fmt::Display + 
         TypeDef::Builtin(b) => match maybe_primitive(b) {
             MaybePrimitive::Primitive(_) => {
                 write!(f, "SpacetimeDB.TypeDef.BuiltInType(SpacetimeDB.TypeDef.Def.{:?})", b)
-            }
+        }
             MaybePrimitive::Array { ty } => write!(f, "SpacetimeDB.TypeDef.GetVec({})", convert_typedef(ctx, ty)),
             MaybePrimitive::Map(_) => todo!(),
         },
@@ -176,7 +176,7 @@ fn autogen_csharp_tuple_table_common(
 ) -> String {
     let mut output = CodeIndenter::new(String::new());
 
-    let struct_name_pascal_case = name.to_case(Case::Pascal);
+    let struct_name_pascal_case = name.replace("r#", "").to_case(Case::Pascal);
 
     writeln!(
         output,
@@ -203,40 +203,20 @@ fn autogen_csharp_tuple_table_common(
             indent_scope!(output);
 
             for field in &tuple.elements {
-                let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
+                let field_name = field
+                    .name
+                    .as_ref()
+                    .expect("autogen'd tuples should have field names")
+                    .replace("r#", "");
                 writeln!(output, "[Newtonsoft.Json.JsonProperty(\"{field_name}\")]").unwrap();
                 writeln!(
                     output,
                     "public {} {};",
                     ty_fmt(ctx, &field.algebraic_type),
-                    field_name.to_case(Case::Camel)
+                    field_name.to_case(Case::Pascal)
                 )
                 .unwrap();
             }
-
-            writeln!(output).unwrap();
-
-            writeln!(
-                output,
-                "public static event Action<{struct_name_pascal_case}> OnInsert;"
-            )
-            .unwrap();
-            writeln!(
-                output,
-                "public static event Action<{struct_name_pascal_case}, {struct_name_pascal_case}> OnUpdate;"
-            )
-            .unwrap();
-            writeln!(
-                output,
-                "public static event Action<{struct_name_pascal_case}> OnDelete;"
-            )
-            .unwrap();
-
-            writeln!(
-                output,
-                "public static event Action<NetworkManager.TableOp, {struct_name_pascal_case}, {struct_name_pascal_case}> OnRowUpdate;"
-            )
-            .unwrap();
 
             writeln!(output).unwrap();
 
@@ -266,32 +246,45 @@ fn autogen_csharp_tuple_table_common(
                     name,
                     unique_columns,
                 );
-            }
 
-            writeln!(output, "public static void OnInsertEvent(object newValue)").unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(output, "if(OnInsert != null)").unwrap();
+                writeln!(
+                    output,
+                    "public static event Action<{struct_name_pascal_case}> OnInsert;"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "public static event Action<{struct_name_pascal_case}, {struct_name_pascal_case}> OnUpdate;"
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "public static event Action<{struct_name_pascal_case}> OnDelete;"
+                )
+                .unwrap();
+
+                writeln!(
+                    output,
+                    "public static event Action<NetworkManager.TableOp, {struct_name_pascal_case}, {struct_name_pascal_case}> OnRowUpdate;"
+                )
+                .unwrap();
+
+                writeln!(output).unwrap();
+
+                writeln!(output, "public static void OnInsertEvent(object newValue)").unwrap();
                 writeln!(output, "{{").unwrap();
                 {
                     indent_scope!(output);
                     writeln!(output, "OnInsert?.Invoke(({struct_name_pascal_case})newValue);").unwrap();
                 }
                 writeln!(output, "}}").unwrap();
-            }
-            writeln!(output, "}}").unwrap();
-            writeln!(output).unwrap();
+                writeln!(output).unwrap();
 
-            writeln!(
-                output,
-                "public static void OnUpdateEvent(object oldValue, object newValue)"
-            )
-            .unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(output, "if(OnUpdate != null)").unwrap();
+                writeln!(
+                    output,
+                    "public static void OnUpdateEvent(object oldValue, object newValue)"
+                )
+                .unwrap();
                 writeln!(output, "{{").unwrap();
                 {
                     indent_scope!(output);
@@ -302,34 +295,22 @@ fn autogen_csharp_tuple_table_common(
                     .unwrap();
                 }
                 writeln!(output, "}}").unwrap();
-            }
-            writeln!(output, "}}").unwrap();
-            writeln!(output).unwrap();
+                writeln!(output).unwrap();
 
-            writeln!(output, "public static void OnDeleteEvent(object oldValue)").unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(output, "if(OnDelete != null)").unwrap();
+                writeln!(output, "public static void OnDeleteEvent(object oldValue)").unwrap();
                 writeln!(output, "{{").unwrap();
                 {
                     indent_scope!(output);
                     writeln!(output, "OnDelete?.Invoke(({struct_name_pascal_case})oldValue);").unwrap();
                 }
                 writeln!(output, "}}").unwrap();
-            }
-            writeln!(output, "}}").unwrap();
-            writeln!(output).unwrap();
+                writeln!(output).unwrap();
 
-            writeln!(
-                output,
-                "public static void OnRowUpdateEvent(NetworkManager.TableOp op, object oldValue, object newValue)"
-            )
-            .unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(output, "if(OnRowUpdate != null)").unwrap();
+                writeln!(
+                    output,
+                    "public static void OnRowUpdateEvent(NetworkManager.TableOp op, object oldValue, object newValue)"
+                )
+                .unwrap();
                 writeln!(output, "{{").unwrap();
                 {
                     indent_scope!(output);
@@ -341,7 +322,6 @@ fn autogen_csharp_tuple_table_common(
                 }
                 writeln!(output, "}}").unwrap();
             }
-            writeln!(output, "}}").unwrap();
         }
         writeln!(output, "}}").unwrap();
     }
@@ -381,15 +361,15 @@ fn autogen_csharp_tuple_to_struct(ctx: &GenCtx, struct_name_pascal_case: &str, t
     for (idx, field) in tuple.elements.iter().enumerate() {
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
         let field_type = &field.algebraic_type;
-        let csharp_field_name = field_name.to_string().to_case(Case::Camel);
+        let csharp_field_name = field_name.to_string().replace("r#", "").to_case(Case::Pascal);
 
-        writeln!(
-            output_contents_return,
+                writeln!(
+                    output_contents_return,
             "\t\t{csharp_field_name} = {},",
             convert_type(ctx, 0, field_type, format_args!("tupleValue[{idx}]"))
-        )
-        .unwrap();
-    }
+                )
+                .unwrap();
+            }
 
     // End Struct
     writeln!(output_contents_return, "\t}};").unwrap();
@@ -442,11 +422,17 @@ fn autogen_csharp_access_funcs_for_struct(
             writeln!(output, "yield return ({struct_name_pascal_case})entry;").unwrap();
         });
     });
+
+    writeln!(output, "public static int Count()").unwrap();
+    indented_block(output, |output| {
+        writeln!(output, "return NetworkManager.clientDB.Count(\"{table_name}\");",).unwrap();
+    });
+
     for (col_i, is_unique) in it {
         let field = &tuple.elements[col_i as usize];
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
         let field_type = &field.algebraic_type;
-        let csharp_field_name_pascal = field_name.to_case(Case::Pascal);
+        let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
 
         let (field_type, csharp_field_type) = match field_type {
             TypeDef::Product(_) | TypeDef::Ref(_) => {
@@ -457,10 +443,10 @@ fn autogen_csharp_access_funcs_for_struct(
             TypeDef::Builtin(b) => match maybe_primitive(b) {
                 MaybePrimitive::Primitive(ty) => (b, ty),
                 MaybePrimitive::Array { .. } | MaybePrimitive::Map(_) => {
-                    // TODO: We don't allow filtering based on a vec type, but we might want other functionality here in the future.
-                    // TODO: It would be nice to be able to say, give me all entries where this vec contains this value, which we can do.
-                    continue;
-                }
+                // TODO: We don't allow filtering based on a vec type, but we might want other functionality here in the future.
+                // TODO: It would be nice to be able to say, give me all entries where this vec contains this value, which we can do.
+                continue;
+            }
             },
         };
 
@@ -602,7 +588,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 
         writeln!(
             output,
-            "public static event Action<Event.Types.Status, Hash{arg_types}> On{func_name_pascal_case}Event;"
+            "public static event Action<ClientApi.Event.Types.Status, Hash{arg_types}> On{func_name_pascal_case}Event;"
         )
         .unwrap();
 
@@ -648,7 +634,11 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
         writeln!(output).unwrap();
 
         writeln!(output, "[ReducerEvent(FunctionName = \"{func_name}\")]").unwrap();
-        writeln!(output, "public static void On{func_name_pascal_case}(Event dbEvent)").unwrap();
+        writeln!(
+            output,
+            "public static void On{func_name_pascal_case}(ClientApi.Event dbEvent)"
+        )
+        .unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
