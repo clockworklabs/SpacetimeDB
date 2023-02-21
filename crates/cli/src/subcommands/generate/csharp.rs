@@ -60,7 +60,7 @@ fn convert_builtintype<'a>(
     fmt_fn(move |f| match maybe_primitive(b) {
         MaybePrimitive::Primitive(csharp_type) => {
             write!(f, "({csharp_type}){value}.GetValue(TypeDef.Def.{b:?})")
-    }
+        }
         MaybePrimitive::Array { ty } if *ty == AlgebraicType::U8 => {
             write!(f, "(byte[]){value}.GetValue(TypeDef.Def.Bytes)")
         }
@@ -138,7 +138,7 @@ fn convert_typedef<'a>(ctx: &'a GenCtx, ty: &'a TypeDef) -> impl fmt::Display + 
         TypeDef::Builtin(b) => match maybe_primitive(b) {
             MaybePrimitive::Primitive(_) => {
                 write!(f, "SpacetimeDB.TypeDef.BuiltInType(SpacetimeDB.TypeDef.Def.{:?})", b)
-        }
+            }
             MaybePrimitive::Array { ty } => write!(f, "SpacetimeDB.TypeDef.GetVec({})", convert_typedef(ctx, ty)),
             MaybePrimitive::Map(_) => todo!(),
         },
@@ -363,13 +363,13 @@ fn autogen_csharp_tuple_to_struct(ctx: &GenCtx, struct_name_pascal_case: &str, t
         let field_type = &field.algebraic_type;
         let csharp_field_name = field_name.to_string().replace("r#", "").to_case(Case::Pascal);
 
-                writeln!(
-                    output_contents_return,
+        writeln!(
+            output_contents_return,
             "\t\t{csharp_field_name} = {},",
             convert_type(ctx, 0, field_type, format_args!("tupleValue[{idx}]"))
-                )
-                .unwrap();
-            }
+        )
+        .unwrap();
+    }
 
     // End Struct
     writeln!(output_contents_return, "\t}};").unwrap();
@@ -443,10 +443,10 @@ fn autogen_csharp_access_funcs_for_struct(
             TypeDef::Builtin(b) => match maybe_primitive(b) {
                 MaybePrimitive::Primitive(ty) => (b, ty),
                 MaybePrimitive::Array { .. } | MaybePrimitive::Map(_) => {
-                // TODO: We don't allow filtering based on a vec type, but we might want other functionality here in the future.
-                // TODO: It would be nice to be able to say, give me all entries where this vec contains this value, which we can do.
-                continue;
-            }
+                    // TODO: We don't allow filtering based on a vec type, but we might want other functionality here in the future.
+                    // TODO: It would be nice to be able to say, give me all entries where this vec contains this value, which we can do.
+                    continue;
+                }
             },
         };
 
