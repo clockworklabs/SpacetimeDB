@@ -128,7 +128,6 @@ namespace SpacetimeDB
 
                 var typeDefFunc = @class.GetMethod("GetTypeDef", BindingFlags.Static | BindingFlags.Public);
                 var typeDef = typeDefFunc!.Invoke(null, null) as TypeDef;
-                // var conversionFunc = @class.GetMethod("op_Explicit");
                 var conversionFunc = @class.GetMethods().FirstOrDefault(a =>
                     a.Name == "op_Explicit" && a.GetParameters().Length > 0 &&
                     a.GetParameters()[0].ParameterType == typeof(TypeValue));
@@ -137,12 +136,10 @@ namespace SpacetimeDB
             }
 
             // cache all our reducer events by their function name 
-            foreach (var methodInfo in (typeof(Reducer)).GetMethods())
+            foreach (var methodInfo in typeof(SpacetimeDB.Reducer).GetMethods())
             {
-                var ca = methodInfo.GetCustomAttribute<ReducerEvent>();
-                if (ca != null)
+                if (methodInfo.GetCustomAttribute<ReducerEvent>() is { } reducerEvent)
                 {
-                    ReducerEvent reducerEvent = (ReducerEvent)ca;
                     reducerEventCache.Add(reducerEvent.FunctionName, methodInfo);
                 }
             }
