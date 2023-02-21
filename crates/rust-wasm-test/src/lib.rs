@@ -32,6 +32,7 @@ pub fn repeating_test(ctx: ReducerContext, prev_time: Timestamp) {
     log::trace!("Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
 }
 
+#[spacetimedb(reducer)]
 pub fn test(ctx: ReducerContext, arg: TestA, arg2: TestB, arg3: TestC) -> anyhow::Result<()> {
     log::info!("BEGIN");
     log::info!("sender: {:?}", ctx.sender);

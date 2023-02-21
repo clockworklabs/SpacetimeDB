@@ -116,7 +116,7 @@ pub fn generate(wasm_file: &Path, lang: Language) -> anyhow::Result<impl Iterato
             Some((name + ".cs", code))
         }
         ModuleItemDef::TypeAlias(r) => match &ctx.typespace[r] {
-            AlgebraicType::Sum(_) => todo!(),
+            AlgebraicType::Sum(_) => None, // TODO: csharp codegen for sum types
             AlgebraicType::Product(prod) => {
                 let code = csharp::autogen_csharp_tuple(&ctx, &name, prod);
                 Some((name + ".cs", code))

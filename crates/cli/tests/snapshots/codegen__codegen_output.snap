@@ -1,5 +1,5 @@
 ---
-source: crates/spacetimedb-cli/tests/codegen.rs
+source: crates/cli/tests/codegen.rs
 expression: outfiles
 ---
 "RepeatingTestReducer.cs" = '''
@@ -14,7 +14,7 @@ namespace SpacetimeDB
 {
 	public static partial class Reducer
 	{
-		public static event Action<Event.Types.Status, Hash, ulong> OnRepeatingTestEvent;
+		public static event Action<ClientApi.Event.Types.Status, Hash, ulong> OnRepeatingTestEvent;
 
 		public static void RepeatingTest(ulong prevTime)
 		{
@@ -26,7 +26,7 @@ namespace SpacetimeDB
 		}
 
 		[ReducerEvent(FunctionName = "repeating_test")]
-		public static void OnRepeatingTest(Event dbEvent)
+		public static void OnRepeatingTest(ClientApi.Event dbEvent)
 		{
 			if(OnRepeatingTestEvent != null)
 			{
@@ -52,16 +52,11 @@ namespace SpacetimeDB
 	public partial class TestA : IDatabaseTable
 	{
 		[Newtonsoft.Json.JsonProperty("x")]
-		public uint x;
+		public uint X;
 		[Newtonsoft.Json.JsonProperty("y")]
-		public uint y;
+		public uint Y;
 		[Newtonsoft.Json.JsonProperty("z")]
-		public string z;
-
-		public static event Action<TestA> OnInsert;
-		public static event Action<TestA, TestA> OnUpdate;
-		public static event Action<TestA> OnDelete;
-		public static event Action<NetworkManager.TableOp, TestA, TestA> OnRowUpdate;
+		public string Z;
 
 		public static TypeDef GetTypeDef()
 		{
@@ -83,9 +78,9 @@ namespace SpacetimeDB
 
 			return new TestA
 			{
-				x = (uint)tupleValue[0].GetValue(TypeDef.Def.U32),
-				y = (uint)tupleValue[1].GetValue(TypeDef.Def.U32),
-				z = (string)tupleValue[2].GetValue(TypeDef.Def.String),
+				X = (uint)tupleValue[0].GetValue(TypeDef.Def.U32),
+				Y = (uint)tupleValue[1].GetValue(TypeDef.Def.U32),
+				Z = (string)tupleValue[2].GetValue(TypeDef.Def.String),
 			};
 		}
 		public static System.Collections.Generic.IEnumerable<TestA> Iter()
@@ -96,6 +91,10 @@ namespace SpacetimeDB
 				if (tupleArr == null) continue;
 				yield return (TestA)entry;
 			}
+		}
+		public static int Count()
+		{
+			return NetworkManager.clientDB.Count("TestA");
 		}
 		public static System.Collections.Generic.IEnumerable<TestA> FilterByX(uint value)
 		{
@@ -133,36 +132,29 @@ namespace SpacetimeDB
 			}
 		}
 
+		public static event Action<TestA> OnInsert;
+		public static event Action<TestA, TestA> OnUpdate;
+		public static event Action<TestA> OnDelete;
+		public static event Action<NetworkManager.TableOp, TestA, TestA> OnRowUpdate;
+
 		public static void OnInsertEvent(object newValue)
 		{
-			if(OnInsert != null)
-			{
-				OnInsert?.Invoke((TestA)newValue);
-			}
+			OnInsert?.Invoke((TestA)newValue);
 		}
 
 		public static void OnUpdateEvent(object oldValue, object newValue)
 		{
-			if(OnUpdate != null)
-			{
-				OnUpdate?.Invoke((TestA)oldValue,(TestA)newValue);
-			}
+			OnUpdate?.Invoke((TestA)oldValue,(TestA)newValue);
 		}
 
 		public static void OnDeleteEvent(object oldValue)
 		{
-			if(OnDelete != null)
-			{
-				OnDelete?.Invoke((TestA)oldValue);
-			}
+			OnDelete?.Invoke((TestA)oldValue);
 		}
 
 		public static void OnRowUpdateEvent(NetworkManager.TableOp op, object oldValue, object newValue)
 		{
-			if(OnRowUpdate != null)
-			{
-				OnRowUpdate?.Invoke(op, (TestA)oldValue,(TestA)newValue);
-			}
+			OnRowUpdate?.Invoke(op, (TestA)oldValue,(TestA)newValue);
 		}
 	}
 }
@@ -178,12 +170,7 @@ namespace SpacetimeDB
 	public partial class TestB : IDatabaseTable
 	{
 		[Newtonsoft.Json.JsonProperty("foo")]
-		public string foo;
-
-		public static event Action<TestB> OnInsert;
-		public static event Action<TestB, TestB> OnUpdate;
-		public static event Action<TestB> OnDelete;
-		public static event Action<NetworkManager.TableOp, TestB, TestB> OnRowUpdate;
+		public string Foo;
 
 		public static TypeDef GetTypeDef()
 		{
@@ -203,39 +190,8 @@ namespace SpacetimeDB
 
 			return new TestB
 			{
-				foo = (string)tupleValue[0].GetValue(TypeDef.Def.String),
+				Foo = (string)tupleValue[0].GetValue(TypeDef.Def.String),
 			};
-		}
-		public static void OnInsertEvent(object newValue)
-		{
-			if(OnInsert != null)
-			{
-				OnInsert?.Invoke((TestB)newValue);
-			}
-		}
-
-		public static void OnUpdateEvent(object oldValue, object newValue)
-		{
-			if(OnUpdate != null)
-			{
-				OnUpdate?.Invoke((TestB)oldValue,(TestB)newValue);
-			}
-		}
-
-		public static void OnDeleteEvent(object oldValue)
-		{
-			if(OnDelete != null)
-			{
-				OnDelete?.Invoke((TestB)oldValue);
-			}
-		}
-
-		public static void OnRowUpdateEvent(NetworkManager.TableOp op, object oldValue, object newValue)
-		{
-			if(OnRowUpdate != null)
-			{
-				OnRowUpdate?.Invoke(op, (TestB)oldValue,(TestB)newValue);
-			}
 		}
 	}
 }
@@ -252,27 +208,27 @@ namespace SpacetimeDB
 {
 	public static partial class Reducer
 	{
-		public static event Action<Event.Types.Status, Hash, TestA, TestB> OnTestEvent;
+		public static event Action<ClientApi.Event.Types.Status, Hash, TestA, TestB, TestC> OnTestEvent;
 
-		public static void Test(TestA arg, TestB arg2)
+		public static void Test(TestA arg, TestB arg2, TestC arg3)
 		{
 			NetworkManager.instance.InternalCallReducer(new NetworkManager.Message
 			{
 				fn = "test",
-				args = new object[] { arg, arg2 },
+				args = new object[] { arg, arg2, arg3 },
 			});
 		}
 
 		[ReducerEvent(FunctionName = "test")]
-		public static void OnTest(Event dbEvent)
+		public static void OnTest(ClientApi.Event dbEvent)
 		{
 			if(OnTestEvent != null)
 			{
 				var jsonString = dbEvent.FunctionCall.ArgBytes.ToStringUtf8();
 				var args = Newtonsoft.Json.JsonConvert.DeserializeObject<JArray>(jsonString);
-				if(args.Count >= 2)
+				if(args.Count >= 3)
 				{
-					OnTestEvent(dbEvent.Status, Hash.From(dbEvent.CallerIdentity.ToByteArray()), args[0].ToObject<TestA>(), args[1].ToObject<TestB>());
+					OnTestEvent(dbEvent.Status, Hash.From(dbEvent.CallerIdentity.ToByteArray()), args[0].ToObject<TestA>(), args[1].ToObject<TestB>(), args[2].ToObject<TestC>());
 				}
 			}
 		}
