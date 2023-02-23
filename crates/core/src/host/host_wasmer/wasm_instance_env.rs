@@ -1,4 +1,5 @@
 #![allow(dead_code, unused_variables)]
+#![allow(clippy::too_many_arguments)]
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::error::NodesError;

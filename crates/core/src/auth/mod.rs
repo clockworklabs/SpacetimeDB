@@ -11,6 +11,7 @@ pub fn invalid_token_res() -> Response<Body> {
         .unwrap()
 }
 
+#[allow(clippy::result_unit_err)]
 pub fn get_creds_from_header(auth_header: &HeaderValue) -> Result<(Hash, String), ()> {
     // Yes, this is using basic auth. See the below issues.
     // The current form is: Authorization: Basic base64("token:<token>")

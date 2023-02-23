@@ -186,7 +186,7 @@ impl ControlDb {
     ) -> Result<Option<RecoveryCode>, anyhow::Error> {
         let tree = self.db.open_tree("recovery_codes")?;
         let current_requests = tree.get(email.as_bytes())?;
-        return match current_requests {
+        match current_requests {
             None => Ok(None),
             Some(codes_bytes) => {
                 let codes: Vec<RecoveryCode> = serde_json::from_slice(&codes_bytes[..])?;
@@ -198,7 +198,7 @@ impl ControlDb {
 
                 Ok(None)
             }
-        };
+        }
     }
 
     /// Returns the owner (or `None` if there is no owner) of the domain.

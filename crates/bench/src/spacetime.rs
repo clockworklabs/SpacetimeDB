@@ -2,13 +2,14 @@ use crate::prelude::*;
 use spacetimedb::db::message_log::MessageLog;
 use spacetimedb::db::relational_db::{open_db, open_log, RelationalDB};
 use spacetimedb::db::transactional_db::Tx;
-use spacetimedb_lib::{TupleDef, TupleValue, TypeDef, TypeValue};
+use spacetimedb_lib::sats::product;
+use spacetimedb_lib::{TupleDef, TypeDef, TypeValue};
 use std::sync::{Arc, Mutex};
 
 type DbResult = (RelationalDB, Arc<Mutex<MessageLog>>, u32);
 
 fn init_db() -> ResultBench<(TempDir, u32)> {
-    let tmp_dir = TempDir::new(&format!("stdb_test"))?;
+    let tmp_dir = TempDir::new("stdb_test")?;
     let mut stdb = open_db(tmp_dir.path())?;
     let mut tx_ = stdb.begin_tx();
     let (tx, stdb) = tx_.get();
@@ -37,9 +38,7 @@ fn insert(db: &mut RelationalDB, tx: &mut Tx, table_id: u32, run: Runs) -> Resul
         db.insert(
             tx,
             table_id,
-            TupleValue {
-                elements: vec![TypeValue::I32(row.a), TypeValue::U64(row.b), TypeValue::String(row.c)].into(),
-            },
+            product![TypeValue::I32(row.a), TypeValue::U64(row.b), TypeValue::String(row.c),],
         )?;
     }
 
@@ -68,7 +67,7 @@ pub fn prefill_data(db: &mut DbResult, run: Runs) -> ResultBench<()> {
     insert(db, tx, *table_id, run)?;
 
     let commit_result = tx_.commit()?;
-    RelationalDB::persist_tx(&log, commit_result)?;
+    RelationalDB::persist_tx(log, commit_result)?;
 
     Ok(())
 }
@@ -83,9 +82,7 @@ pub fn insert_tx_per_row(pool: &mut Pool<DbResult>, run: Runs) -> ResultBench<()
         db.insert(
             tx,
             table_id,
-            TupleValue {
-                elements: vec![TypeValue::I32(row.a), TypeValue::U64(row.b), TypeValue::String(row.c)].into(),
-            },
+            product![TypeValue::I32(row.a), TypeValue::U64(row.b), TypeValue::String(row.c),],
         )?;
         let commit_result = tx_.commit()?;
         RelationalDB::persist_tx(&log, commit_result)?;

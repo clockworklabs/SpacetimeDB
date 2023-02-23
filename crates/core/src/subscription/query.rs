@@ -5,7 +5,7 @@ pub struct Query {
     pub table_name: String,
 }
 
-pub fn compile_query(relational_db: &mut RelationalDBWrapper, input: &str) -> Result<Query, ()> {
+pub fn compile_query(relational_db: &mut RelationalDBWrapper, input: &str) -> anyhow::Result<Query> {
     let mut stdb = relational_db.lock().unwrap();
     let mut tx_ = stdb.begin_tx();
     let (tx, stdb) = tx_.get();
@@ -13,9 +13,7 @@ pub fn compile_query(relational_db: &mut RelationalDBWrapper, input: &str) -> Re
     tx_.rollback();
 
     // Check for the table name
-    if !tables.iter().map(|(_, name)| name).any(|name| name == input) {
-        return Err(());
-    }
+    anyhow::ensure!(tables.iter().any(|(_, name)| name == input), "table in query not in db");
 
     Ok(Query {
         table_name: input.into(),

@@ -35,10 +35,10 @@ pub(crate) struct SatsVariant<'a> {
     pub original_attrs: &'a [syn::Attribute],
 }
 
-pub(crate) fn sats_type_from_derive<'a>(
-    input: &'a syn::DeriveInput,
+pub(crate) fn sats_type_from_derive(
+    input: &syn::DeriveInput,
     crate_fallback: TokenStream,
-) -> syn::Result<SatsType<'a>> {
+) -> syn::Result<SatsType<'_>> {
     let data = match &input.data {
         syn::Data::Struct(struc) => extract_sats_struct(&struc.fields)?,
         syn::Data::Enum(enu) => {
@@ -78,7 +78,7 @@ pub(crate) fn extract_sats_type<'a>(
     })
 }
 
-pub(crate) fn extract_sats_struct<'a>(fields: &'a syn::Fields) -> syn::Result<SatsTypeData<'a>> {
+pub(crate) fn extract_sats_struct(fields: &syn::Fields) -> syn::Result<SatsTypeData<'_>> {
     let fields = fields.iter().map(|field| {
         Ok(SatsField {
             ident: field.ident.as_ref(),

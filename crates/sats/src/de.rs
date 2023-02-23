@@ -295,6 +295,7 @@ pub trait MapAccess<'de> {
     type Value;
     type Error;
 
+    #[allow(clippy::type_complexity)]
     fn next_entry(&mut self) -> Result<Option<(Self::Key, Self::Value)>, Self::Error>;
 
     fn size_hint(&self) -> Option<usize> {

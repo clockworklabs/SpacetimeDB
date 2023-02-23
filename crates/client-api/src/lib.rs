@@ -49,6 +49,7 @@ impl<T: Controller + ApiCtx> ControllerCtx for T {}
 
 #[async_trait]
 pub trait Controller: Send + Sync {
+    #[allow(clippy::too_many_arguments)]
     async fn insert_database(
         &self,
         address: &Address,

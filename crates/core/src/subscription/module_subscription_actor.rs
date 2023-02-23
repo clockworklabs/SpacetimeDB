@@ -154,7 +154,7 @@ impl ModuleSubscriptionActor {
         while i < self.subscriptions.len() {
             let sub = &mut self.subscriptions[i];
             sub.remove_subscriber(client_id);
-            if sub.subscribers.len() == 0 {
+            if sub.subscribers.is_empty() {
                 // No more subscribers, remove the subscription
                 self.subscriptions.swap_remove(i);
             } else {

@@ -2,14 +2,14 @@ use std::{collections::HashMap, sync::Mutex};
 
 use super::worker_database_instance::WorkerDatabaseInstance;
 
+#[derive(Default)]
 pub struct DatabaseInstanceContextController {
     contexts: Mutex<HashMap<u64, WorkerDatabaseInstance>>,
 }
 
 impl DatabaseInstanceContextController {
     pub fn new() -> Self {
-        let contexts = Mutex::new(HashMap::new());
-        Self { contexts }
+        Self::default()
     }
 
     pub fn get(&self, database_instance_id: u64) -> Option<WorkerDatabaseInstance> {

@@ -587,21 +587,18 @@ async fn request_recovery_code(_ctx: &dyn ControllerCtx, state: &mut State) -> S
         return Err(HandlerError::from(anyhow!("SendGrid is disabled.")).with_status(StatusCode::INTERNAL_SERVER_ERROR));
     }
     let RequestRecoveryCodeParams { link, email, identity } = RequestRecoveryCodeParams::take_from(state);
-    let email = match email {
-        Some(email) => email,
-        None => {
-            return Err(HandlerError::from(anyhow!("Email is required.")).with_status(StatusCode::BAD_REQUEST));
-        }
-    };
+    let email = email
+        .context("Email is required.")
+        .map_err_with_status(StatusCode::BAD_REQUEST)?;
 
-    if let Err(_) = Hash::from_hex(&identity) {
-        return Err(HandlerError::from(anyhow!("Malformed identity.")).with_status(StatusCode::BAD_REQUEST));
-    }
+    let identity_bytes = Hash::from_hex(&identity)
+        .context("Malformed identity.")
+        .map_err_with_status(StatusCode::BAD_REQUEST)?;
 
     if !CONTROL_DB
         .get_identities_for_email(email.as_str())?
         .iter()
-        .any(|a| Hash::from_slice(&a.identity[..]).to_hex() == identity)
+        .any(|a| Hash::from_slice(&a.identity[..]) == identity_bytes)
     {
         return Err(
             HandlerError::from(anyhow!("Email is not associated with the provided identity."))

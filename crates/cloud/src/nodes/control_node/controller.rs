@@ -70,6 +70,7 @@ impl Controller {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn insert_database(
         &self,
         address: &Address,

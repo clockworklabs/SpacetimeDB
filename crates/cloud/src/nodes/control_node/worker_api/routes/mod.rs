@@ -58,7 +58,7 @@ async fn join(controller: &Controller, state: &mut State) -> SimpleHandlerResult
     } else {
         controller.create_node(advertise_addr).await.unwrap()
     };
-    let req_id = request_id(&state).to_owned();
+    let req_id = request_id(state).to_owned();
 
     let controller = controller.clone();
     spawn(async move {
@@ -98,7 +98,7 @@ pub struct ProgramBytesParams {
 async fn program_bytes(controller: &Controller, state: &mut State) -> SimpleHandlerResult {
     let ProgramBytesParams { program_bytes_address } = ProgramBytesParams::take_from(state);
 
-    let hash = match Hash::from_hex(&program_bytes_address) {
+    let hash = match Hash::from_hex(program_bytes_address) {
         Ok(hash) => hash,
         Err(err) => {
             log::debug!("{}", err);

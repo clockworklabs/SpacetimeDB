@@ -261,9 +261,7 @@ pub trait RepeaterArgs: for<'de> Args<'de> {
 }
 
 impl RepeaterArgs for () {
-    fn get_now() -> Self {
-        ()
-    }
+    fn get_now() -> Self {}
 }
 
 impl RepeaterArgs for (Timestamp,) {

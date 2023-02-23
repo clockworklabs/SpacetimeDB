@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_names)]
+
 use spacetimedb::{delete_range, spacetimedb, ReducerContext, SpacetimeType, Timestamp, TypeValue};
 
 #[spacetimedb(table)]

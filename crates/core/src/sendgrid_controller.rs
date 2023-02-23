@@ -17,6 +17,7 @@ pub struct SendGridController {
 }
 
 impl SendGridController {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> SendGridController {
         match (std::env::var("SENDGRID_API_KEY"), std::env::var("SENDGRID_SENDER")) {
             (Ok(api_key), Ok(sendgrid_sender)) => SendGridController {

@@ -28,15 +28,12 @@ impl Subscription {
                 i += 1;
             }
         }
-        return None;
+        None
     }
 
     pub fn add_subscriber(&mut self, sender: ClientConnectionSender, protocol: Protocol) {
         if !self.subscribers.iter().any(|s| s.sender.id == sender.id) {
-            self.subscribers.push(Subscriber {
-                sender: sender.clone(),
-                protocol,
-            });
+            self.subscribers.push(Subscriber { sender, protocol });
         }
     }
 

@@ -24,6 +24,7 @@ impl<T: BuildDb> Pool<T> {
         })
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> ResultBench<T> {
         self.instance += 1;
         dbg!(self.instance);

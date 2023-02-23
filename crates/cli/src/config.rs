@@ -86,7 +86,7 @@ impl Config {
     }
 
     pub fn identity_configs_mut(&mut self) -> &mut Vec<IdentityConfig> {
-        self.home.identity_configs.get_or_insert(vec![]).as_mut()
+        self.home.identity_configs.get_or_insert(vec![])
     }
 
     fn find_config_filename(config_dir: &PathBuf) -> Option<&'static str> {

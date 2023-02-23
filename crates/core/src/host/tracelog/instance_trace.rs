@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use crate::protobuf::instance_db_trace_log::instance_event::Type;
 use crate::protobuf::instance_db_trace_log::{
     CreateTable, DeleteEq, DeletePk, DeleteRange, DeleteValue, GetTableId, Insert, InstanceEvent, Iter,

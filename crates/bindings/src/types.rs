@@ -23,7 +23,6 @@ impl Timestamp {
     pub fn elapsed(&self) -> Duration {
         Self::now()
             .duration_since(*self)
-            .ok()
             .expect("timestamp for elapsed() is after current time")
     }
 

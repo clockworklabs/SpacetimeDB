@@ -19,6 +19,7 @@ impl From<AlgebraicValue> for ValueDeserializer {
     }
 }
 
+#[derive(Debug)]
 pub enum ValueDeserializeError {
     MismatchedType,
     Custom(String),

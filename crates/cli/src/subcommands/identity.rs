@@ -529,7 +529,7 @@ async fn exec_recover(mut config: Config, args: &ArgMatches) -> Result<(), anyho
                     identity: response.identity.clone(),
                     token: response.token,
                 };
-                config.identity_configs_mut().push(identity_config.clone());
+                config.identity_configs_mut().push(identity_config);
                 config.update_default_identity();
                 config.save();
                 println!("Success. Identity imported.");

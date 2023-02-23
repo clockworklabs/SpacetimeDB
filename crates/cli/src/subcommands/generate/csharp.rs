@@ -45,7 +45,9 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType) -> impl fmt::Display + 'a 
         TypeDef::Builtin(b) => match maybe_primitive(b) {
             MaybePrimitive::Primitive(p) => f.write_str(p),
             MaybePrimitive::Array { ty } if *ty == AlgebraicType::U8 => f.write_str("byte[]"),
-            MaybePrimitive::Array { ty } => return write!(f, "System.Collections.Generic.List<{}>", ty_fmt(ctx, ty)),
+            MaybePrimitive::Array { ty } => {
+                write!(f, "System.Collections.Generic.List<{}>", ty_fmt(ctx, ty))
+            }
             MaybePrimitive::Map(_) => todo!(),
         },
         TypeDef::Ref(r) => f.write_str(csharp_typename(ctx, *r)),

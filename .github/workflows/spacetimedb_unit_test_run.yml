@@ -47,7 +47,6 @@ jobs:
 
       - name: Run cargo clippy
         uses: actions-rs/cargo@v1
-        continue-on-error: true  # TODO: temporary until all errors resolved
         with:
           command: clippy
           args: --all --features odb_rocksdb,odb_sled,tracelogging -- -D warnings

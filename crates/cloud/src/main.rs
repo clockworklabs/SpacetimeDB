@@ -86,12 +86,12 @@ async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 listen_addr,
                 advertise_addr,
                 worker_api_bootstrap_addrs: if let Some(bootstrap_addrs) = &bootstrap_addrs {
-                    bootstrap_addrs.split(",").map(str::to_string).collect::<Vec<_>>()
+                    bootstrap_addrs.split(',').map(str::to_string).collect::<Vec<_>>()
                 } else {
                     Vec::new()
                 },
                 client_api_bootstrap_addrs: if let Some(bootstrap_addrs) = &bootstrap_addrs {
-                    bootstrap_addrs.split(",").map(str::to_string).collect::<Vec<_>>()
+                    bootstrap_addrs.split(',').map(str::to_string).collect::<Vec<_>>()
                 } else {
                     Vec::new()
                 },
@@ -100,7 +100,7 @@ async fn async_main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 // TODO(cloutiertyler): I think it's fine to use the bootstrap addrs here too,
                 // although it could get confusing with ports
                 peer_api_bootstrap_addrs: if let Some(bootstrap_addrs) = &bootstrap_addrs {
-                    bootstrap_addrs.split(",").map(str::to_string).collect::<Vec<_>>()
+                    bootstrap_addrs.split(',').map(str::to_string).collect::<Vec<_>>()
                 } else {
                     Vec::new()
                 },

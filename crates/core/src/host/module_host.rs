@@ -70,7 +70,7 @@ impl DatabaseUpdate {
             };
 
             vec.push(TableOp {
-                op_type: op.into(),
+                op_type: op,
                 row_pk,
                 row,
             });
@@ -345,6 +345,7 @@ impl ModuleHost {
         ModuleHost { info, tx }
     }
 
+    #[allow(clippy::boxed_local)] // I don't wanna risk passing on stack
     fn run_actor(mut rx: mpsc::Receiver<CmdOrExit>, mut actor: Box<impl ModuleHostActor>) {
         let actor = &mut *actor;
         while let Some(command) = rx.blocking_recv() {

@@ -281,12 +281,7 @@ pub mod query {
     where
         Table: FieldAccess<COL_IDX, Field = T>,
     {
-        for row in Table::iter() {
-            if row.get_field() == &val {
-                return Some(row);
-            }
-        }
-        None
+        Table::iter().find(|row| row.get_field() == &val)
     }
 
     #[doc(hidden)]

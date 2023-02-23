@@ -289,7 +289,7 @@ fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
     for (i, field) in fields.iter().enumerate() {
         let col_num: u8 = i
             .try_into()
-            .map_err(|_| syn::Error::new_spanned(&field.ident, "too many columns; the most a table can have is 256"))?;
+            .map_err(|_| syn::Error::new_spanned(field.ident, "too many columns; the most a table can have is 256"))?;
 
         let mut is_unique = false;
         for attr in field.original_attrs {

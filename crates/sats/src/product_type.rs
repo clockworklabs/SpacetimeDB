@@ -1,6 +1,6 @@
 pub mod satn;
 
-use crate::algebraic_value::de::ValueDeserializer;
+use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::{de::Deserialize, ser::Serialize};
 use crate::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, BuiltinType, ProductTypeElement};
@@ -57,7 +57,7 @@ impl ProductType {
         self.serialize(ValueSerializer).unwrap_or_else(|x| match x {})
     }
 
-    pub fn from_value(value: &AlgebraicValue) -> Result<ProductType, ()> {
-        Self::deserialize(ValueDeserializer::from_ref(value)).map_err(|_| ())
+    pub fn from_value(value: &AlgebraicValue) -> Result<ProductType, ValueDeserializeError> {
+        Self::deserialize(ValueDeserializer::from_ref(value))
     }
 }

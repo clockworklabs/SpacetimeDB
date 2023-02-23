@@ -24,6 +24,7 @@ pub struct WorkerDatabaseInstance {
 }
 
 impl WorkerDatabaseInstance {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         database_instance_id: u64,
         database_id: u64,

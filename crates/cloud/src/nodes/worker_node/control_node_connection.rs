@@ -38,7 +38,7 @@ pub async fn start(dicc: Arc<DatabaseInstanceContextController>, config: crate::
     let worker_api_bootstrap_addr = &config.worker_api_bootstrap_addrs[0];
     let client_api_bootstrap_addr = &config.client_api_bootstrap_addrs[0];
     let advertise_addr = config.advertise_addr;
-    ControlNodeClient::set_shared(&worker_api_bootstrap_addr, &client_api_bootstrap_addr);
+    ControlNodeClient::set_shared(worker_api_bootstrap_addr, client_api_bootstrap_addr);
     let bootstrap_addr = worker_api_bootstrap_addr;
 
     let node_id = WORKER_DB.get_node_id().unwrap();
@@ -441,7 +441,7 @@ impl ControlNodeClient {
         CONTROL_NODE_CLIENT.lock().unwrap().clone().unwrap()
     }
 
-    pub async fn get_new_identity(&self) -> Result<(Hash, String), anyhow::Error> {
+    pub async fn _get_new_identity(&self) -> Result<(Hash, String), anyhow::Error> {
         let uri = format!("http://{}/identity", self.client_api_bootstrap_addr)
             .parse::<Uri>()
             .unwrap();
@@ -457,7 +457,7 @@ impl ControlNodeClient {
         Ok((Hash::from_hex(&res.identity).unwrap(), res.token))
     }
 
-    pub async fn resolve_name(&self, name: &str) -> Result<Option<Address>, anyhow::Error> {
+    pub async fn _resolve_name(&self, name: &str) -> Result<Option<Address>, anyhow::Error> {
         let uri = format!("http://{}/database/dns/{}", self.client_api_bootstrap_addr, name)
             .parse::<Uri>()
             .unwrap();
