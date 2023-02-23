@@ -23,7 +23,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use spacetimedb::control_db::CONTROL_DB;
 use spacetimedb::hash::hash_bytes;
-use spacetimedb::host::InvalidReducerArguments;
+use spacetimedb::host::host_controller::ReducerOutcome;
+use spacetimedb::host::ReducerCallError;
 use spacetimedb::protobuf::control_db::HostType;
 use spacetimedb_lib::sats::TypeInSpace;
 use spacetimedb_lib::{name, EntityDef};
@@ -69,54 +70,52 @@ async fn call(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     }
     let args = ReducerArgs::Json(data);
 
-    let database = match ctx.get_database_by_address(&address).await? {
-        Some(database) => database,
-        None => {
-            log::error!("Could not find database: {}", address.to_hex());
-            return Err(HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND));
-        }
-    };
-    let database_instance = match ctx.get_leader_database_instance_by_database(database.id).await {
-        Some(database) => database,
-        None => {
-            return Err(
-                HandlerError::from(anyhow!("Database instance not scheduled to this node yet."))
-                    .with_status(StatusCode::NOT_FOUND),
-            )
-        }
-    };
+    let database = ctx.get_database_by_address(&address).await?.ok_or_else(|| {
+        log::error!("Could not find database: {}", address.to_hex());
+        HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)
+    })?;
+    let database_instance = ctx
+        .get_leader_database_instance_by_database(database.id)
+        .await
+        .context("Database instance not scheduled to this node yet.")
+        .map_err_with_status(StatusCode::NOT_FOUND)?;
     let instance_id = database_instance.id;
     let host = host_controller::get_host();
 
-    let result = match host.call_reducer(instance_id, caller_identity, &reducer, args).await {
-        Ok(Some(rcr)) => {
-            if rcr.budget_exceeded {
-                log::warn!(
-                    "Node's energy budget exceeded for identity: {} while executing {}",
-                    Hash::from_slice(&database.identity),
-                    reducer
-                );
-                return Err(HandlerError::from(anyhow!("Module energy budget exhausted."))
-                    .with_status(StatusCode::PAYMENT_REQUIRED));
-            }
-            rcr
-        }
-        Ok(None) => {
-            log::debug!("Attempt to call non-existent reducer {}", reducer);
-            return Err(HandlerError::from(anyhow!("reducer not found")).with_status(StatusCode::NOT_FOUND));
-        }
-        Err(e) => {
-            let status_code = if e.is::<InvalidReducerArguments>() {
-                log::debug!("Attempt to call reducer with invalid arguments");
-                StatusCode::BAD_REQUEST
-            } else {
-                StatusCode::SERVICE_UNAVAILABLE
+    let result = host
+        .call_reducer(instance_id, caller_identity, &reducer, args)
+        .await
+        .map_err(|e| {
+            let status_code = match e {
+                ReducerCallError::Args(_) => {
+                    log::debug!("Attempt to call reducer with invalid arguments");
+                    StatusCode::BAD_REQUEST
+                }
+                ReducerCallError::NoSuchModule(_) => StatusCode::NOT_FOUND,
             };
 
             log::debug!("Error while invoking reducer {}", e);
-            return Err(HandlerError::from(e).with_status(status_code));
+            HandlerError::from(e).with_status(status_code)
+        })?
+        .ok_or_else(|| {
+            log::debug!("Attempt to call non-existent reducer {}", reducer);
+            HandlerError::from(anyhow!("reducer not found")).with_status(StatusCode::NOT_FOUND)
+        })?;
+
+    match &result.outcome {
+        ReducerOutcome::Committed => {}
+        // TODO: return error message somehow
+        ReducerOutcome::Failed(_) => {}
+        ReducerOutcome::BudgetExceeded => {
+            log::warn!(
+                "Node's energy budget exceeded for identity: {} while executing {}",
+                Hash::from_slice(&database.identity),
+                reducer
+            );
+            return Err(HandlerError::from(anyhow!("Module energy budget exhausted."))
+                .with_status(StatusCode::PAYMENT_REQUIRED));
         }
-    };
+    }
 
     let res = Response::builder()
         .header("Spacetime-Identity", caller_identity.to_hex())

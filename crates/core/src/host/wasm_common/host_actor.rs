@@ -1,10 +1,10 @@
 use std::collections::HashMap;
-use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use parking_lot::Mutex;
+use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::ser::serde::SerializeWrapper as SerdeWrapper;
 use spacetimedb_lib::{EntityDef, ReducerDef, TupleValue};
 use spacetimedb_sats::Typespace;
@@ -12,7 +12,7 @@ use tokio::sync::oneshot;
 
 use crate::db::transactional_db::CommitResult;
 use crate::hash::Hash;
-use crate::host::host_controller::{ReducerBudget, ReducerCallResult, Scheduler};
+use crate::host::host_controller::{ReducerBudget, ReducerCallResult, ReducerOutcome, Scheduler};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
     DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHostActor, ModuleInfo,
@@ -33,21 +33,21 @@ pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
     type UninitInstance: UninitWasmInstance<Instance = Self::Instance>;
 
-    type ExternType: for<'a> PartialEq<FuncSig<'a>> + fmt::Debug;
+    type ExternType: FuncSigLike;
     fn get_export(&self, s: &str) -> Option<Self::ExternType>;
 
-    fn fill_general_funcnames(&self, func_names: &mut FuncNames) -> anyhow::Result<()>;
+    fn fill_general_funcnames(&self, func_names: &mut FuncNames) -> Result<(), ValidationError>;
 
     fn create_instance(&mut self, env: InstanceEnv) -> Self::UninitInstance;
 }
 
 pub trait UninitWasmInstance: Send + 'static {
     type Instance: WasmInstance;
-    fn initialize(self, func_names: &FuncNames) -> anyhow::Result<Self::Instance>;
+    fn initialize(self, func_names: &FuncNames) -> Result<Self::Instance, InitializationError>;
 }
 
 pub trait WasmInstance: Send + 'static {
-    fn extract_descriptions(&mut self) -> anyhow::Result<(Typespace, HashMap<String, EntityDef>)>;
+    fn extract_descriptions(&mut self) -> Result<(Typespace, HashMap<String, EntityDef>), DescribeError>;
 
     fn instance_env(&self) -> &InstanceEnv;
 
@@ -114,12 +114,54 @@ enum InitOrUninit<T: UninitWasmInstance> {
     Uninit(T),
 }
 impl<T: UninitWasmInstance> InitOrUninit<T> {
-    fn initialize(self, func_names: &FuncNames) -> anyhow::Result<T::Instance> {
+    fn initialize(self, func_names: &FuncNames) -> Result<T::Instance, InitializationError> {
         match self {
             InitOrUninit::Init(inst) => Ok(inst),
             InitOrUninit::Uninit(uninit) => uninit.initialize(func_names),
         }
     }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum InitializationError {
+    #[error(transparent)]
+    Validation(#[from] ValidationError),
+    #[error("setup function returned an error: {0}")]
+    Setup(Box<str>),
+    #[error("wasm trap while calling {func:?}")]
+    RuntimeError {
+        #[source]
+        err: anyhow::Error,
+        func: String,
+    },
+    #[error(transparent)]
+    Instantiation(anyhow::Error),
+    #[error(transparent)]
+    Describe(#[from] DescribeError),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum DescribeErrorKind {
+    #[error("bad signature for descriptor function")]
+    Signature,
+    #[error("error decoding table schema: {0}")]
+    BadTable(#[source] DecodeError),
+    #[error("error decoding reducer schema: {0}")]
+    BadReducer(#[source] DecodeError),
+    #[error("error decoding typespace: {0}")]
+    BadTypespace(#[source] DecodeError),
+    #[error(transparent)]
+    RuntimeError(anyhow::Error),
+    #[error("invalid buffer")]
+    BadBuffer,
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error("error while calling descriptor {describer:?}: {err}")]
+pub struct DescribeError {
+    #[source]
+    pub err: DescribeErrorKind,
+    pub describer: String,
 }
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
@@ -128,7 +170,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         module_hash: Hash,
         mut module: T,
         scheduler: Scheduler,
-    ) -> anyhow::Result<Box<Self>> {
+    ) -> Result<Box<Self>, InitializationError> {
         let trace_log = if worker_database_instance.trace_log {
             Some(Arc::new(Mutex::new(TraceLog::new().unwrap())))
         } else {
@@ -136,6 +178,9 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         };
         let log_tx = worker_database_instance.logger.lock().unwrap().tx.clone();
 
+        if !module.get_export("memory").map_or(false, |t| t.is_memory()) {
+            return Err(ValidationError::NoMemory.into());
+        }
         let mut func_names = FuncNames::default();
         module.fill_general_funcnames(&mut func_names)?;
         func_names.preinits.sort_unstable();
@@ -451,8 +496,7 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
 
         let host_execution_duration = start_instant.elapsed();
 
-        let committed = matches!(status, EventStatus::Committed(_));
-        let budget_exceeded = matches!(status, EventStatus::OutOfEnergy);
+        let outcome = ReducerOutcome::from(&status);
 
         let EntityDef::Reducer(reducer_descr) = &self.info.catalog[&reducer_name] else {
             unreachable!() // ModuleHost::call_reducer should've already ensured this is ok
@@ -473,10 +517,8 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
         };
         self.subscription.broadcast_event(event).unwrap();
 
-        // TODO: the error message should get bubbled up to the http client too
         ReducerCallResult {
-            committed,
-            budget_exceeded,
+            outcome,
             energy_quanta_used: energy.used,
             host_execution_duration,
         }

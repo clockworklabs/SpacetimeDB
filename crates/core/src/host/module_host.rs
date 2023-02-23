@@ -7,7 +7,6 @@ use crate::identity::Identity;
 use crate::json::client_api::{SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson};
 use crate::protobuf::client_api::{table_row_operation, Subscribe, SubscriptionUpdate, TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
-use anyhow::Context;
 use spacetimedb_lib::{EntityDef, ReducerDef, TableDef, TupleDef, TupleValue};
 use spacetimedb_sats::ProductValue;
 use spacetimedb_sats::{TypeInSpace, Typespace};
@@ -17,7 +16,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
 use super::timestamp::Timestamp;
-use super::ReducerArgs;
+use super::{InvalidReducerArguments, ReducerArgs};
 
 #[derive(Debug, Clone)]
 pub struct DatabaseUpdate {
@@ -345,6 +344,28 @@ pub struct ModuleHost {
     tx: mpsc::Sender<CmdOrExit>,
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("no such module")]
+pub struct NoSuchModule;
+
+#[derive(thiserror::Error, Debug)]
+pub enum ReducerCallError {
+    #[error(transparent)]
+    Args(#[from] InvalidReducerArguments),
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum InitDatabaseError {
+    #[error(transparent)]
+    Args(#[from] InvalidReducerArguments),
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+    #[error(transparent)]
+    Other(anyhow::Error),
+}
+
 impl ModuleHost {
     pub fn spawn(actor: Box<impl ModuleHostActor>) -> Self {
         let (tx, rx) = mpsc::channel(8);
@@ -369,20 +390,18 @@ impl ModuleHost {
         &self.info
     }
 
-    async fn call<T>(&self, f: impl FnOnce(oneshot::Sender<T>) -> ModuleHostCommand) -> anyhow::Result<T> {
-        let permit = self.tx.reserve().await.context("module closed")?;
+    async fn call<T>(&self, f: impl FnOnce(oneshot::Sender<T>) -> ModuleHostCommand) -> Result<T, NoSuchModule> {
+        let permit = self.tx.reserve().await.map_err(|_| NoSuchModule)?;
         let (tx, rx) = oneshot::channel();
         permit.send(CmdOrExit::Cmd(f(tx)));
-        // TODO: is it worth it to bubble up? if rx fails it means that the task panicked.
-        //       we should either panic or respawn it
-        rx.await.context("sender dropped")
+        Ok(rx.await.expect("task panicked"))
     }
 
     pub async fn call_identity_connected_disconnected(
         &self,
         caller_identity: Identity,
         connected: bool,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), NoSuchModule> {
         self.call(|respond_to| ModuleHostCommand::CallConnectDisconnect {
             caller_identity,
             connected,
@@ -397,7 +416,7 @@ impl ModuleHost {
         reducer_name: String,
         budget: ReducerBudget,
         args: ReducerArgs,
-    ) -> Result<Option<ReducerCallResult>, anyhow::Error> {
+    ) -> Result<Option<ReducerCallResult>, ReducerCallError> {
         let args = match self.catalog().get_reducer(&reducer_name) {
             Some(schema) => args.into_tuple(schema)?,
             None => return Ok(None),
@@ -411,6 +430,7 @@ impl ModuleHost {
         })
         .await
         .map(Some)
+        .map_err(Into::into)
     }
 
     pub fn catalog(&self) -> Catalog {
@@ -421,7 +441,7 @@ impl ModuleHost {
         &self,
         budget: ReducerBudget,
         args: ReducerArgs,
-    ) -> Result<Option<ReducerCallResult>, anyhow::Error> {
+    ) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
         let args = match self.catalog().get_reducer("__init__") {
             Some(schema) => args.into_tuple(schema)?,
             _ => TupleValue { elements: vec![] },
@@ -432,6 +452,7 @@ impl ModuleHost {
             respond_to,
         })
         .await?
+        .map_err(InitDatabaseError::Other)
     }
 
     pub async fn delete_database(&self) -> Result<(), anyhow::Error> {
@@ -444,10 +465,11 @@ impl ModuleHost {
             .await?
     }
 
-    pub async fn exit(&self) -> Result<(), anyhow::Error> {
-        self.tx.send(CmdOrExit::Exit).await?;
-        self.tx.closed().await;
-        Ok(())
+    pub async fn exit(&self) {
+        // if we can't send, it's already closed :P
+        if self.tx.send(CmdOrExit::Exit).await.is_ok() {
+            self.tx.closed().await;
+        }
     }
 
     pub async fn add_subscriber(&self, client_id: ClientActorId, subscription: Subscribe) -> Result<(), anyhow::Error> {
@@ -465,7 +487,7 @@ impl ModuleHost {
     }
 
     #[cfg(feature = "tracelogging")]
-    pub async fn get_trace(&self) -> Result<Option<bytes::Bytes>, anyhow::Error> {
+    pub async fn get_trace(&self) -> Result<Option<bytes::Bytes>, NoSuchModule> {
         self.call(|respond_to| ModuleHostCommand::GetTrace { respond_to }).await
     }
 

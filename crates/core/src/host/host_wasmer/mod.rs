@@ -18,15 +18,15 @@ use wasm_module_host_actor::WasmerModule;
 
 use super::host_controller::Scheduler;
 use super::module_host::ModuleHostActor;
-use super::wasm_common::DEFAULT_EXECUTION_BUDGET;
 use super::wasm_common::{abi, host_actor::WasmModuleHostActor};
+use super::wasm_common::{ModuleCreationError, DEFAULT_EXECUTION_BUDGET};
 
 pub fn make_actor(
     worker_database_instance: WorkerDatabaseInstance,
     module_hash: Hash,
     program_bytes: Vec<u8>,
     scheduler: Scheduler,
-) -> anyhow::Result<Box<impl ModuleHostActor>> {
+) -> Result<Box<impl ModuleHostActor>, ModuleCreationError> {
     let cost_function =
         |operator: &Operator| -> u64 { opcode_cost::OperationType::operation_type_of(operator).energy_cost() };
 
@@ -48,19 +48,17 @@ pub fn make_actor(
     let engine = EngineBuilder::new(compiler_config).engine();
 
     let store = Store::new(&engine);
-    let module = Module::new(&store, &program_bytes)?;
+    let module = Module::new(&store, &program_bytes).map_err(|e| ModuleCreationError::WasmCompileError(e.into()))?;
 
     let abi = abi::determine_spacetime_abi(&program_bytes)?;
 
-    anyhow::ensure!(
-        abi == WasmerModule::SUPPORTED_ABI,
-        "abi version {abi:?} ({:?}) is not supported",
-        abi.as_tuple()
-    );
+    if abi != WasmerModule::SUPPORTED_ABI {
+        return Err(abi::AbiVersionError::UnsupportedVersion(abi).into());
+    }
 
     let module = WasmerModule::new(module, engine);
 
-    WasmModuleHostActor::new(worker_database_instance, module_hash, module, scheduler)
+    WasmModuleHostActor::new(worker_database_instance, module_hash, module, scheduler).map_err(Into::into)
 }
 
 #[derive(Debug, thiserror::Error)]

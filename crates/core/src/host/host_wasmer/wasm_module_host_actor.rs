@@ -3,8 +3,8 @@ use super::{Buffer, Mem};
 use crate::host::host_controller::{DescribedEntityType, ReducerBudget};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::timestamp::Timestamp;
+use crate::host::wasm_common::host_actor::{DescribeError, DescribeErrorKind, InitializationError};
 use crate::host::wasm_common::*;
-use anyhow::{anyhow, Context};
 use spacetimedb_lib::{bsatn, EntityDef, ReducerDef, TableDef};
 use spacetimedb_sats::Typespace;
 use std::cmp::max;
@@ -134,7 +134,7 @@ impl host_actor::WasmModule for WasmerModule {
             .map(|exp| exp.ty().clone())
     }
 
-    fn fill_general_funcnames(&self, func_names: &mut FuncNames) -> anyhow::Result<()> {
+    fn fill_general_funcnames(&self, func_names: &mut FuncNames) -> Result<(), ValidationError> {
         self.module
             .exports()
             .try_for_each(|exp| func_names.update_from_general(exp.name(), exp.ty()))
@@ -168,11 +168,12 @@ pub struct UninitWasmerInstance {
 impl host_actor::UninitWasmInstance for UninitWasmerInstance {
     type Instance = WasmerInstance;
 
-    fn initialize(self, func_names: &FuncNames) -> anyhow::Result<Self::Instance> {
+    fn initialize(self, func_names: &FuncNames) -> Result<Self::Instance, InitializationError> {
         let Self { mut store, env, .. } = self;
-        let instance = Instance::new(&mut store, &self.module, &self.imports)?;
+        let instance = Instance::new(&mut store, &self.module, &self.imports)
+            .map_err(|err| InitializationError::Instantiation(err.into()))?;
 
-        let mem = Mem::extract(&instance.exports).context("couldn't access memory exports")?;
+        let mem = Mem::extract(&instance.exports).unwrap();
         env.as_mut(&mut store).mem = Some(mem);
 
         // Note: this budget is just for initializers
@@ -181,8 +182,10 @@ impl host_actor::UninitWasmInstance for UninitWasmerInstance {
 
         for preinit in &func_names.preinits {
             let func = instance.exports.get_typed_function::<(), ()>(&store, preinit).unwrap();
-            func.call(&mut store)
-                .with_context(|| format!("preinit {preinit:?} trapped"))?;
+            func.call(&mut store).map_err(|err| InitializationError::RuntimeError {
+                err: err.into(),
+                func: preinit.clone(),
+            })?;
         }
 
         let init = instance.exports.get_typed_function::<(), u32>(&store, SETUP_DUNDER);
@@ -195,13 +198,16 @@ impl host_actor::UninitWasmInstance for UninitWasmerInstance {
                             .as_mut(&mut store)
                             .take_buf(errbuf)
                             .unwrap_or_else(|| "unknown error".as_bytes().into());
-                        let errbuf = String::from_utf8_lossy(&errbuf);
+                        let errbuf = crate::util::string_from_utf8_lossy_owned(errbuf.into()).into();
                         // TODO: catch this and return the error message to the http client
-                        anyhow::bail!("Error returned from __setup__: {}", errbuf)
+                        return Err(InitializationError::Setup(errbuf));
                     }
                 }
                 Err(err) => {
-                    anyhow::bail!("Trap while running __setup__: {}", err)
+                    return Err(InitializationError::RuntimeError {
+                        err: err.into(),
+                        func: SETUP_DUNDER.to_owned(),
+                    });
                 }
             }
         }
@@ -222,18 +228,16 @@ impl WasmerInstance {
         describer: &Function,
         describer_func_name: &str,
         descr_type: DescribedEntityType,
-    ) -> Result<EntityDef, anyhow::Error> {
+    ) -> Result<EntityDef, DescribeErrorKind> {
         let bytes = self._call_describer(describer, describer_func_name)?;
         // Decode the memory as EntityDef.
         let result = match descr_type {
             DescribedEntityType::Table => {
-                let table: TableDef = bsatn::from_reader(&mut &bytes[..])
-                    .with_context(|| format!("argument tuples has invalid schema: {}", describer_func_name))?;
+                let table: TableDef = bsatn::from_reader(&mut &bytes[..]).map_err(DescribeErrorKind::BadTable)?;
                 EntityDef::Table(table)
             }
             DescribedEntityType::Reducer => {
-                let reducer: ReducerDef = bsatn::from_reader(&mut &bytes[..])
-                    .with_context(|| format!("argument tuples has invalid schema: {}", describer_func_name))?;
+                let reducer: ReducerDef = bsatn::from_reader(&mut &bytes[..]).map_err(DescribeErrorKind::BadReducer)?;
                 EntityDef::Reducer(reducer)
             }
         };
@@ -241,36 +245,45 @@ impl WasmerInstance {
         Ok(result)
     }
 
-    fn _call_describer(&mut self, describer: &Function, describer_func_name: &str) -> Result<Box<[u8]>, anyhow::Error> {
+    fn _call_describer(
+        &mut self,
+        describer: &Function,
+        describer_func_name: &str,
+    ) -> Result<Box<[u8]>, DescribeErrorKind> {
         let start = std::time::Instant::now();
         log::trace!("Start describer \"{}\"...", describer_func_name);
 
         let store = &mut self.store;
-        let describer = describer.typed::<(), u32>(store)?;
+        let describer = describer
+            .typed::<(), u32>(store)
+            .map_err(|_| DescribeErrorKind::Signature)?;
         let result = describer.call(store);
         let duration = start.elapsed();
         log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros(),);
         let buf = result.map_err(|err| {
             log_traceback("describer", describer_func_name, &err);
-            anyhow!("Could not invoke describer function {}", describer_func_name)
+            DescribeErrorKind::RuntimeError(err.into())
         })?;
         let bytes = self
             .env
             .as_mut(store)
             .take_buf(Buffer { raw: buf })
-            .context("invalid buffer")?;
+            .ok_or(DescribeErrorKind::BadBuffer)?;
         self.env.as_mut(store).clear_bufs();
         Ok(bytes)
     }
 }
 
 impl host_actor::WasmInstance for WasmerInstance {
-    fn extract_descriptions(&mut self) -> anyhow::Result<(Typespace, HashMap<String, EntityDef>)> {
+    fn extract_descriptions(&mut self) -> Result<(Typespace, HashMap<String, EntityDef>), DescribeError> {
         let typespace = match self.instance.exports.get_function(DESCRIBE_TYPESPACE).cloned() {
-            Ok(describer) => {
-                let bytes = self._call_describer(&describer, DESCRIBE_TYPESPACE)?;
-                bsatn::from_reader(&mut &bytes[..]).context("invalid encoded typespace")?
-            }
+            Ok(describer) => self
+                ._call_describer(&describer, DESCRIBE_TYPESPACE)
+                .and_then(|bytes| bsatn::from_reader(&mut &bytes[..]).map_err(DescribeErrorKind::BadTypespace))
+                .map_err(|err| DescribeError {
+                    err,
+                    describer: DESCRIBE_TYPESPACE.to_owned(),
+                })?,
             Err(_) => Typespace::default(),
         };
         let mut map = HashMap::new();
@@ -282,7 +295,12 @@ impl host_actor::WasmInstance for WasmerInstance {
         });
         let describes = describes.collect::<Vec<_>>();
         for (func_name, func, descr_type, entity_name) in describes {
-            let description = self.call_describer(&func, &func_name, descr_type)?;
+            let description = self
+                .call_describer(&func, &func_name, descr_type)
+                .map_err(|err| DescribeError {
+                    err,
+                    describer: func_name,
+                })?;
 
             map.insert(entity_name, description);
         }

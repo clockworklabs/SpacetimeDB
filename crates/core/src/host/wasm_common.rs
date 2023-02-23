@@ -1,9 +1,6 @@
 pub mod abi;
 pub mod host_actor;
 
-use std::fmt;
-
-use anyhow::anyhow;
 use spacetimedb_lib::EntityDef;
 
 pub const REDUCE_DUNDER: &str = "__reducer__";
@@ -29,7 +26,7 @@ pub const DEFAULT_EXECUTION_BUDGET: i64 = 1_000_000_000_000_000_000;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[allow(unused)]
-enum WasmType {
+pub enum WasmType {
     I32,
     I64,
     F32,
@@ -60,34 +57,87 @@ macro_rules! type_eq {
                 self.eq(*other)
             }
         }
+        impl From<$t> for WasmType {
+            fn from(ty: $t) -> WasmType {
+                match ty {
+                    <$t>::I32 => WasmType::I32,
+                    <$t>::I64 => WasmType::I64,
+                    <$t>::F32 => WasmType::F32,
+                    <$t>::F64 => WasmType::F64,
+                    <$t>::V128 => WasmType::V128,
+                    <$t>::FuncRef => WasmType::FuncRef,
+                    <$t>::ExternRef => WasmType::ExternRef,
+                }
+            }
+        }
     };
 }
 type_eq!(wasmer::Type);
 
 #[derive(Debug)]
-pub struct FuncSig<'a> {
-    params: &'a [WasmType],
-    results: &'a [WasmType],
+pub struct FuncSig<T: AsRef<[WasmType]>> {
+    params: T,
+    results: T,
 }
-impl<'a> FuncSig<'a> {
-    const fn new(params: &'a [WasmType], results: &'a [WasmType]) -> Self {
+type StaticFuncSig = FuncSig<&'static [WasmType]>;
+type BoxFuncSig = FuncSig<Box<[WasmType]>>;
+impl StaticFuncSig {
+    const fn new(params: &'static [WasmType], results: &'static [WasmType]) -> Self {
         Self { params, results }
     }
 }
-impl PartialEq<FuncSig<'_>> for wasmer::FunctionType {
-    fn eq(&self, other: &FuncSig<'_>) -> bool {
-        self.params().eq(other.params) && self.results().eq(other.results)
+impl<T: AsRef<[WasmType]>> PartialEq<FuncSig<T>> for wasmer::ExternType {
+    fn eq(&self, other: &FuncSig<T>) -> bool {
+        self.func().map_or(false, |f| {
+            f.params() == other.params.as_ref() && f.results() == other.results.as_ref()
+        })
     }
 }
-impl PartialEq<FuncSig<'_>> for wasmer::ExternType {
-    fn eq(&self, other: &FuncSig<'_>) -> bool {
-        matches!(self, wasmer::ExternType::Function(f) if f == other)
+impl FuncSigLike for wasmer::ExternType {
+    fn to_func_sig(&self) -> Option<BoxFuncSig> {
+        self.func().map(|f| FuncSig {
+            params: f.params().iter().map(|t| (*t).into()).collect(),
+            results: f.results().iter().map(|t| (*t).into()).collect(),
+        })
+    }
+    fn is_memory(&self) -> bool {
+        matches!(self, wasmer::ExternType::Memory(_))
     }
 }
 
-const PREINIT_SIG: FuncSig = FuncSig::new(&[], &[]);
-const INIT_SIG: FuncSig = FuncSig::new(&[], &[WasmType::I32]);
-const REDUCER_SIG: FuncSig = FuncSig::new(&[WasmType::I32, WasmType::I64, WasmType::I32], &[WasmType::I32]);
+pub trait FuncSigLike: PartialEq<StaticFuncSig> {
+    fn to_func_sig(&self) -> Option<BoxFuncSig>;
+    fn is_memory(&self) -> bool;
+}
+
+const PREINIT_SIG: StaticFuncSig = FuncSig::new(&[], &[]);
+const INIT_SIG: StaticFuncSig = FuncSig::new(&[], &[WasmType::I32]);
+const REDUCER_SIG: StaticFuncSig = FuncSig::new(&[WasmType::I32, WasmType::I64, WasmType::I32], &[WasmType::I32]);
+
+#[derive(thiserror::Error, Debug)]
+pub enum ValidationError {
+    #[error("bad {kind} signature for {name:?}; expected {expected:?} got {actual:?}")]
+    MismatchedSignature {
+        kind: &'static str,
+        name: Box<str>,
+        expected: StaticFuncSig,
+        actual: BoxFuncSig,
+    },
+    #[error("expected {name:?} export to be a {kind} with signature {expected:?}, but it wasn't a function at all")]
+    NotAFunction {
+        kind: &'static str,
+        name: Box<str>,
+        expected: StaticFuncSig,
+    },
+    #[error("a descriptor exists for {kind} {name:?} but not a {func_name:?} function")]
+    NoExport {
+        kind: &'static str,
+        name: Box<str>,
+        func_name: Box<str>,
+    },
+    #[error("there should be a memory export called \"memory\" but it does not exist")]
+    NoMemory,
+}
 
 #[derive(Default)]
 pub struct FuncNames {
@@ -98,37 +148,59 @@ pub struct FuncNames {
     pub preinits: Vec<String>,
 }
 impl FuncNames {
-    fn validate_signature<T>(kind: &str, ty: &T, name: &str, expected: FuncSig<'_>) -> anyhow::Result<()>
+    fn validate_signature<T>(
+        kind: &'static str,
+        ty: &T,
+        name: &str,
+        expected: StaticFuncSig,
+    ) -> Result<(), ValidationError>
     where
-        for<'a> T: PartialEq<FuncSig<'a>> + fmt::Debug,
+        T: FuncSigLike,
     {
-        anyhow::ensure!(
-            *ty == expected,
-            "bad {kind} signature for {name:?}; expected {expected:?} got {ty:?}",
-        );
-        Ok(())
+        if *ty == expected {
+            Ok(())
+        } else {
+            let name = name.into();
+            Err(match ty.to_func_sig() {
+                Some(actual) => ValidationError::MismatchedSignature {
+                    kind,
+                    name,
+                    expected,
+                    actual,
+                },
+                None => ValidationError::NotAFunction { kind, name, expected },
+            })
+        }
     }
-    pub fn update_from_entity<F, T>(&mut self, get_export: F, name: &str, entity: &EntityDef) -> anyhow::Result<()>
+    pub fn update_from_entity<F, T>(
+        &mut self,
+        get_export: F,
+        name: &str,
+        entity: &EntityDef,
+    ) -> Result<(), ValidationError>
     where
         F: Fn(&str) -> Option<T>,
-        for<'a> T: PartialEq<FuncSig<'a>> + fmt::Debug,
+        T: FuncSigLike,
     {
-        let check_signature = |kind, func_name, expected| {
-            let ty = get_export(func_name)
-                .ok_or_else(|| anyhow!("a descriptor exists for {kind} {name:?} but not a {func_name:?} function"))?;
+        let check_signature = |kind, func_name: String, expected| {
+            let ty = get_export(&func_name).ok_or_else(|| ValidationError::NoExport {
+                kind,
+                name: name.into(),
+                func_name: func_name.into(),
+            })?;
             Self::validate_signature(kind, &ty, name, expected)
         };
         match &entity {
             EntityDef::Reducer(_) => {
-                check_signature("reducer", &[REDUCE_DUNDER, name].concat(), REDUCER_SIG)?;
+                check_signature("reducer", [REDUCE_DUNDER, name].concat(), REDUCER_SIG)?;
             }
             EntityDef::Table(_) => {}
         }
         Ok(())
     }
-    pub fn update_from_general<T>(&mut self, sym: &str, ty: &T) -> anyhow::Result<()>
+    pub fn update_from_general<T>(&mut self, sym: &str, ty: &T) -> Result<(), ValidationError>
     where
-        for<'a> T: PartialEq<FuncSig<'a>> + fmt::Debug,
+        T: FuncSigLike,
     {
         if let Some(name) = sym.strip_prefix(MIGRATE_DATABASE_DUNDER) {
             Self::validate_signature("migrate", ty, name, REDUCER_SIG)?;
@@ -145,4 +217,12 @@ impl FuncNames {
         }
         Ok(())
     }
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error(transparent)]
+pub enum ModuleCreationError {
+    WasmCompileError(anyhow::Error),
+    Abi(#[from] abi::AbiVersionError),
+    Init(#[from] host_actor::InitializationError),
 }

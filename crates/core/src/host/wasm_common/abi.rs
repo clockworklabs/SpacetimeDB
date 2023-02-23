@@ -1,5 +1,4 @@
 use super::{STDB_ABI_IS_ADDR_SYM, STDB_ABI_SYM};
-use anyhow::Context;
 use std::collections::HashMap;
 
 const ABIVER_GLOBAL_TY: wasmparser::GlobalType = wasmparser::GlobalType {
@@ -64,7 +63,7 @@ impl From<VersionTuple> for u32 {
 
 /// wasm-runtime-agnostic function to extract spacetime ABI version from a module
 /// wasm_module must be a valid wasm module
-pub fn determine_spacetime_abi(wasm_module: &[u8]) -> anyhow::Result<SpacetimeAbiVersion> {
+pub fn determine_spacetime_abi(wasm_module: &[u8]) -> Result<SpacetimeAbiVersion, AbiVersionError> {
     let mut parser = wasmparser::Parser::new(0);
     let mut data = wasm_module;
     let (mut globals, mut exports, mut datas) = (None, None, None);
@@ -89,9 +88,7 @@ pub fn determine_spacetime_abi(wasm_module: &[u8]) -> anyhow::Result<SpacetimeAb
         }
     }
 
-    let err_msg = "module doesn't indicate spacetime ABI version";
-
-    let (globals, exports) = globals.zip(exports).context(err_msg)?;
+    let (globals, exports) = globals.zip(exports).ok_or(AbiVersionError::NoVersion)?;
 
     // TODO: wasmparser Validator should provide access to exports map? bytecodealliance/wasm-tools#806
 
@@ -101,12 +98,14 @@ pub fn determine_spacetime_abi(wasm_module: &[u8]) -> anyhow::Result<SpacetimeAb
         .map(|exp| (exp.name, exp))
         .collect::<HashMap<_, _>>();
 
-    let export = exports.get(STDB_ABI_SYM).context(err_msg)?;
+    let export = exports.get(STDB_ABI_SYM).ok_or(AbiVersionError::NoVersion)?;
     // LLVM can only output statics as addresses into the data section currently, so we need to do
     // resolve the address if it is one
     let export_is_addr = exports.contains_key(STDB_ABI_IS_ADDR_SYM);
 
-    anyhow::ensure!(export.kind == wasmparser::ExternalKind::Global, "{err_msg}");
+    if export.kind != wasmparser::ExternalKind::Global {
+        return Err(AbiVersionError::NoVersion);
+    }
 
     let global = globals
         .into_iter()
@@ -114,30 +113,42 @@ pub fn determine_spacetime_abi(wasm_module: &[u8]) -> anyhow::Result<SpacetimeAb
         .nth(export.index as usize)
         .unwrap();
 
-    anyhow::ensure!(global.ty == ABIVER_GLOBAL_TY, "{STDB_ABI_SYM} is wrong type");
+    if global.ty != ABIVER_GLOBAL_TY {
+        return Err(AbiVersionError::Malformed);
+    }
     let mut op_rdr = global.init_expr.get_operators_reader();
-    let wasmparser::Operator::I32Const { value } = op_rdr.read()? else {
-        anyhow::bail!("invalid const expr for ABI version")
+    let wasmparser::Operator::I32Const { value } = op_rdr.read().unwrap() else {
+        return Err(AbiVersionError::Malformed);
     };
     let ver = if export_is_addr {
-        let mut datas = datas.context("SPACETIME_ABI_VERSION is an address but there's no data")?;
+        let mut datas = datas.ok_or(AbiVersionError::Malformed)?;
         let data = datas.read().unwrap();
-        let wasmparser::DataKind::Active { memory_index, offset_expr } = data.kind else {
-            anyhow::bail!("passive data segment")
+        let wasmparser::DataKind::Active { memory_index: 0, offset_expr } = data.kind else {
+            return Err(AbiVersionError::Malformed);
         };
-        anyhow::ensure!(memory_index == 0, "non-0 memory_index");
         let offset_op = offset_expr.get_operators_reader().read().unwrap();
         let wasmparser::Operator::I32Const { value: offset } = offset_op else { unreachable!() };
         let slice = value
             .checked_sub(offset)
             .and_then(|idx| data.data.get(idx as usize..)?.get(..4))
-            .context("abi version addr out of bounds")?;
+            .ok_or(AbiVersionError::Malformed)?;
         u32::from_le_bytes(slice.try_into().unwrap())
     } else {
         value as u32
     };
     let ver = VersionTuple::from(ver);
-    let ver = SpacetimeAbiVersion::from_tuple(ver)
-        .ok_or_else(|| anyhow::anyhow!("unknown ABI version (too new?): {ver:x?}"))?;
+    let ver = SpacetimeAbiVersion::from_tuple(ver).ok_or(AbiVersionError::UnknownVersion(ver))?;
     Ok(ver)
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum AbiVersionError {
+    #[error("module doesn't indicate spacetime ABI version")]
+    NoVersion,
+    #[error("abi version is malformed somehow (out-of-bounds, etc)")]
+    Malformed,
+    #[error("unknown ABI version (too new?): {0:x?}")]
+    UnknownVersion(VersionTuple),
+    #[error("abi version {0:?} ({:?}) is not supported", .0.as_tuple())]
+    UnsupportedVersion(SpacetimeAbiVersion),
 }

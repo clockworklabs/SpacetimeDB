@@ -4,7 +4,6 @@ use crate::host::module_host::ModuleHost;
 use crate::identity::Identity;
 use crate::protobuf::control_db::HostType;
 use crate::worker_database_instance::WorkerDatabaseInstance;
-use anyhow::{self, Context};
 use futures::StreamExt;
 use once_cell::sync::Lazy;
 use serde::Serialize;
@@ -15,7 +14,7 @@ use std::{collections::HashMap, sync::Mutex};
 use tokio::sync::mpsc;
 use tokio_util::time::DelayQueue;
 
-use super::module_host::Catalog;
+use super::module_host::{Catalog, EventStatus, NoSuchModule, ReducerCallError};
 use super::timestamp::Timestamp;
 use super::wasm_common::DEFAULT_EXECUTION_BUDGET;
 use super::ReducerArgs;
@@ -73,10 +72,26 @@ pub struct ReducerBudget(pub i64 /* maximum spend for this call */);
 
 #[derive(Serialize, Clone, Debug)]
 pub struct ReducerCallResult {
-    pub committed: bool,
-    pub budget_exceeded: bool,
+    pub outcome: ReducerOutcome,
     pub energy_quanta_used: i64,
     pub host_execution_duration: Duration,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub enum ReducerOutcome {
+    Committed,
+    Failed(String),
+    BudgetExceeded,
+}
+
+impl From<&EventStatus> for ReducerOutcome {
+    fn from(status: &EventStatus) -> Self {
+        match &status {
+            EventStatus::Committed(_) => ReducerOutcome::Committed,
+            EventStatus::Failed(e) => ReducerOutcome::Failed(e.clone()),
+            EventStatus::OutOfEnergy => ReducerOutcome::BudgetExceeded,
+        }
+    }
 }
 
 impl HostController {
@@ -103,7 +118,11 @@ impl HostController {
         let rcr = module_host.init_database(budget, ReducerArgs::Nullary).await?;
         // worker_budget::record_tx_spend(identity, rcr.energy_quanta_used);
         if let Some(rcr) = rcr {
-            anyhow::ensure!(rcr.committed, "init reducer failed");
+            match rcr.outcome {
+                ReducerOutcome::Committed => {}
+                ReducerOutcome::Failed(err) => anyhow::bail!("init reducer failed: {err}"),
+                ReducerOutcome::BudgetExceeded => anyhow::bail!("init reducer ran out of energy"),
+            }
         }
         Ok(module_host)
     }
@@ -145,7 +164,7 @@ impl HostController {
         let key = worker_database_instance.database_instance_id;
         let module_host = self.take_module(key);
         if let Some(module_host) = module_host {
-            module_host.exit().await?;
+            module_host.exit().await;
         }
 
         let scheduler = self.scheduler.clone();
@@ -174,7 +193,7 @@ impl HostController {
         caller_identity: Identity,
         reducer_name: &str,
         args: ReducerArgs,
-    ) -> Result<Option<ReducerCallResult>, anyhow::Error> {
+    ) -> Result<Option<ReducerCallResult>, ReducerCallError> {
         let module_host = self.get_module(instance_id)?;
         Self::call_reducer_inner(module_host, caller_identity, reducer_name.into(), args).await
     }
@@ -184,7 +203,7 @@ impl HostController {
         caller_identity: Identity,
         reducer_name: String,
         args: ReducerArgs,
-    ) -> Result<Option<ReducerCallResult>, anyhow::Error> {
+    ) -> Result<Option<ReducerCallResult>, ReducerCallError> {
         // TODO(cloutiertyler): Move this outside of the host controller
         // let max_spend = worker_budget::max_tx_spend(&module_host.identity);
         // let budget = ReducerBudget(max_spend);
@@ -229,9 +248,9 @@ impl HostController {
         Ok(())
     }
 
-    pub fn get_module(&self, instance_id: u64) -> Result<ModuleHost, anyhow::Error> {
+    pub fn get_module(&self, instance_id: u64) -> Result<ModuleHost, NoSuchModule> {
         let modules = self.modules.lock().unwrap();
-        modules.get(&instance_id).cloned().context("No such module found.")
+        modules.get(&instance_id).cloned().ok_or(NoSuchModule)
     }
 
     fn take_module(&self, instance_id: u64) -> Option<ModuleHost> {
