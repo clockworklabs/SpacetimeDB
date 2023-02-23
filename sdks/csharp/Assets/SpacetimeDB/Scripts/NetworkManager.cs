@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.WebSockets;
 using System.Reflection;
@@ -181,14 +182,17 @@ namespace SpacetimeDB
                         {
                             foreach (var row in update.TableRowOperations)
                             {
+                                // TODO(jdetter): We can do a custom read-only memory stream to prevent an allocation here
+                                using var stream = new MemoryStream(row.Row.ToByteArray());
+                                using var reader = new BinaryReader(stream);
                                 var table = clientDB.GetTable(update.TableName);
-                                var typeDef = table.RowSchema;
-                                var (typeValue, _) = TypeValue.Decode(typeDef, row.Row);
-                                if (typeValue.HasValue)
+                                var algebraicType = table.RowSchema;
+                                var algebraicValue = AlgebraicValue.Deserialize(algebraicType, reader);
+                                if (algebraicValue != null)
                                 {
                                     // Here we are decoding on our message thread so that by the time we get to the
                                     // main thread the cache is already warm.
-                                    table.Decode(row.RowPk.ToByteArray(), typeValue.Value);
+                                    table.Decode(row.RowPk.ToByteArray(), algebraicValue);
                                 }
                             }
                         }
