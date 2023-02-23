@@ -22,11 +22,15 @@ impl HistogramHandle {
     }
 
     pub fn stop(&mut self) {
-        if self.start_instant.is_none() {
-            return;
+        self.hist.observe(self.elapsed().as_secs_f64());
+    }
+
+    pub fn elapsed(&self) -> Duration {
+        let Some(start_instant) = self.start_instant else {
+            return Duration::ZERO;
         };
-        let duration = self.start_instant.unwrap().elapsed();
-        self.hist.observe(duration.unwrap().as_micros() as f64);
+        let duration = start_instant.elapsed();
+        duration.unwrap_or(Duration::ZERO)
     }
 }
 impl Drop for HistogramHandle {
@@ -55,21 +59,18 @@ impl HistogramVecHandle {
     }
 
     pub fn stop(&mut self) {
-        if self.start_instant.is_none() {
-            return;
-        };
-        let duration = self.start_instant.unwrap().elapsed();
         let labels: Vec<&str> = self.label_values.as_slice().iter().map(|s| s.as_str()).collect();
         self.hist
             .with_label_values(labels.as_slice())
-            .observe(duration.unwrap().as_micros() as f64);
+            .observe(self.elapsed().as_secs_f64());
     }
 
     pub fn elapsed(&self) -> Duration {
-        match self.start_instant {
-            None => Duration::new(0, 0),
-            Some(i) => i.elapsed().unwrap(),
-        }
+        let Some(start_instant) = self.start_instant else {
+            return Duration::ZERO;
+        };
+        let duration = start_instant.elapsed();
+        duration.unwrap_or(Duration::ZERO)
     }
 }
 impl Drop for HistogramVecHandle {
