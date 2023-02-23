@@ -235,10 +235,10 @@ impl ModuleSubscriptionActor {
     }
 
     pub fn render_protobuf_event(event: &ModuleEvent, database_update: DatabaseUpdate) -> MessageProtobuf {
-        let status = match &event.status {
-            EventStatus::Committed(_) => event::Status::Committed,
-            EventStatus::Failed => event::Status::Failed,
-            EventStatus::OutOfEnergy => event::Status::OutOfEnergy,
+        let (status, errmsg) = match &event.status {
+            EventStatus::Committed(_) => (event::Status::Committed, String::new()),
+            EventStatus::Failed(errmsg) => (event::Status::Failed, errmsg.clone()),
+            EventStatus::OutOfEnergy => (event::Status::OutOfEnergy, String::new()),
         };
 
         let event = Event {
@@ -249,7 +249,7 @@ impl ModuleSubscriptionActor {
                 reducer: event.function_call.reducer.to_owned(),
                 arg_bytes: event.function_call.arg_bytes.to_owned(),
             }),
-            message: "TODO".to_owned(),
+            message: errmsg,
             energy_quanta_used: event.energy_quanta_used,
             host_execution_duration_micros: event.host_execution_duration.as_micros() as u64,
         };
@@ -267,10 +267,10 @@ impl ModuleSubscriptionActor {
     }
 
     pub fn render_json_event(event: &ModuleEvent, database_update: DatabaseUpdate) -> MessageJson {
-        let status_str = match &event.status {
-            EventStatus::Committed(_) => "committed",
-            EventStatus::Failed => "failed",
-            EventStatus::OutOfEnergy => "out_of_energy",
+        let (status_str, errmsg) = match &event.status {
+            EventStatus::Committed(_) => ("committed", String::new()),
+            EventStatus::Failed(errmsg) => ("failed", errmsg.clone()),
+            EventStatus::OutOfEnergy => ("out_of_energy", String::new()),
         };
 
         let event = EventJson {
@@ -282,6 +282,7 @@ impl ModuleSubscriptionActor {
                 arg_bytes: event.function_call.arg_bytes.to_owned(),
             },
             energy_quanta_used: event.energy_quanta_used,
+            message: errmsg,
         };
 
         let subscription_update = database_update.into_json();

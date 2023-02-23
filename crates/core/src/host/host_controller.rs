@@ -175,9 +175,10 @@ impl HostController {
         args: ReducerArgs,
     ) -> Result<Option<ReducerCallResult>, anyhow::Error> {
         let module_host = self.get_module(instance_id)?;
-        Self::_call_reducer(module_host, caller_identity, reducer_name.into(), args).await
+        Self::call_reducer_inner(module_host, caller_identity, reducer_name.into(), args).await
     }
-    async fn _call_reducer(
+
+    async fn call_reducer_inner(
         module_host: ModuleHost,
         caller_identity: Hash,
         reducer_name: String,
@@ -303,7 +304,8 @@ impl SchedulerActor {
             let identity = module_host.info().identity;
             // TODO: pass a logical "now" timestamp to this reducer call, but there's some
             //       intricacies to get right (how much drift to tolerate? what kind of tokio::time::MissedTickBehavior do we want?)
-            let res = HostController::_call_reducer(module_host, identity, scheduled.reducer, scheduled.args).await;
+            let res =
+                HostController::call_reducer_inner(module_host, identity, scheduled.reducer, scheduled.args).await;
             match res {
                 Ok(Some(_)) => {}
                 Ok(None) => log::error!("scheduled reducer doesn't exist?"),

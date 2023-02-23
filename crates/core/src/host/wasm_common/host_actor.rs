@@ -89,11 +89,6 @@ pub struct ExecuteResult<E> {
     pub call_result: Result<Result<(), Box<str>>, E>,
 }
 
-pub struct ReducerResult {
-    pub tx: Option<DatabaseUpdate>,
-    pub energy: EnergyStats,
-}
-
 pub(crate) struct WasmModuleHostActor<T: WasmModule> {
     module: T,
     worker_database_instance: WorkerDatabaseInstance,
@@ -443,7 +438,7 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
         args.encode(&mut arg_bytes);
 
         let reducer_symbol = [REDUCE_DUNDER, &reducer_name].concat();
-        let ReducerResult { tx, energy } = self.execute(
+        let (status, energy) = self.execute(
             budget,
             InstanceOp::Reducer {
                 sym: &reducer_symbol,
@@ -453,16 +448,10 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
             },
         );
 
-        let (committed, status, budget_exceeded) = if let Some(tx) = tx {
-            (true, EventStatus::Committed(tx), false)
-        } else if energy.remaining == 0 {
-            log::error!("Ran out of energy while executing reducer {}", reducer_name);
-            (false, EventStatus::OutOfEnergy, true)
-        } else {
-            (false, EventStatus::Failed, false)
-        };
-
         let host_execution_duration = start_instant.elapsed();
+
+        let committed = matches!(status, EventStatus::Committed(_));
+        let budget_exceeded = matches!(status, EventStatus::OutOfEnergy);
 
         let EntityDef::Reducer(reducer_descr) = &self.info.catalog[&reducer_name] else {
             unreachable!() // ModuleHost::call_reducer should've already ensured this is ok
@@ -483,6 +472,7 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
         };
         self.subscription.broadcast_event(event).unwrap();
 
+        // TODO: the error message should get bubbled up to the http client too
         ReducerCallResult {
             committed,
             budget_exceeded,
@@ -505,7 +495,7 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
 
         let timestamp = Timestamp::now();
 
-        let result = self.execute(
+        let (status, energy) = self.execute(
             ReducerBudget(DEFAULT_EXECUTION_BUDGET),
             InstanceOp::ConnDisconn {
                 conn: connected,
@@ -513,12 +503,6 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
                 timestamp,
             },
         );
-
-        let status = if let Some(tx) = result.tx {
-            EventStatus::Committed(tx)
-        } else {
-            EventStatus::Failed
-        };
 
         let reducer_symbol = if connected {
             IDENTITY_CONNECTED_DUNDER
@@ -538,13 +522,13 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
             },
             status,
             caller_identity: identity,
-            energy_quanta_used: 0,
+            energy_quanta_used: energy.used,
             host_execution_duration: start_instant.elapsed(),
         };
         self.subscription.broadcast_event(event).unwrap();
     }
 
-    fn execute(&mut self, budget: ReducerBudget, op: InstanceOp<'_>) -> ReducerResult {
+    fn execute(&mut self, budget: ReducerBudget, op: InstanceOp<'_>) -> (EventStatus, EnergyStats) {
         let address = &self.worker_database_instance().address.to_abbreviated_hex();
         let func_ident = match op {
             InstanceOp::Reducer { sym, .. } => sym,
@@ -607,20 +591,25 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
         //     };
         // }
 
-        match call_result {
+        let status = match call_result {
             Err(err) => {
                 tx.rollback();
 
                 T::log_traceback("reducer", func_ident, &err);
-                // TODO: discard instance on trap? there are likely memory leaks
-                ReducerResult { tx: None, energy }
+                // TODO: Discard instance on trap. there are likely memory leaks
+
+                if energy.remaining == 0 {
+                    EventStatus::OutOfEnergy
+                } else {
+                    EventStatus::Failed("The Wasm instance encountered a fatal error.".into())
+                }
             }
             Ok(Err(errmsg)) => {
                 tx.rollback();
 
                 log::info!("reducer returned error: {errmsg}");
 
-                ReducerResult { tx: None, energy }
+                EventStatus::Failed(errmsg.into())
             }
             Ok(Ok(())) => {
                 if let Some(CommitResult { tx, commit_bytes }) = tx.commit().unwrap() {
@@ -632,18 +621,16 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
                         mlog.append(commit_bytes).unwrap();
                         mlog.sync_all().unwrap();
                     }
-                    ReducerResult {
-                        tx: Some(DatabaseUpdate::from_writes(
-                            &self.worker_database_instance().relational_db,
-                            &tx.writes,
-                        )),
-                        energy,
-                    }
+                    EventStatus::Committed(DatabaseUpdate::from_writes(
+                        &self.worker_database_instance().relational_db,
+                        &tx.writes,
+                    ))
                 } else {
                     todo!("Write skew, you need to implement retries my man, T-dawg.");
                 }
             }
-        }
+        };
+        (status, energy)
     }
 }
 

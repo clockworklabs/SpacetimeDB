@@ -180,7 +180,7 @@ pub struct TableOp {
 #[derive(Debug, Clone)]
 pub enum EventStatus {
     Committed(DatabaseUpdate),
-    Failed,
+    Failed(String),
     OutOfEnergy,
 }
 

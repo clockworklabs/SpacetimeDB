@@ -75,6 +75,7 @@ pub struct EventJson {
     pub caller_identity: String, // hex identity
     pub function_call: FunctionCallJson,
     pub energy_quanta_used: i64,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
