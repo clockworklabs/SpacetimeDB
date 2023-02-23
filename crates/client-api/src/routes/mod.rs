@@ -22,7 +22,6 @@ mod identity;
 mod metrics;
 mod prometheus;
 pub mod subscribe;
-mod util;
 
 #[cfg(feature = "tracelogging")]
 mod tracelog;

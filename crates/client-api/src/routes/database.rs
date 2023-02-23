@@ -138,12 +138,12 @@ enum DBCallErr {
     InstanceNotScheduled,
 }
 
-use crate::routes::util::gen_new_recovery_code;
 use chrono::Utc;
+use rand::Rng;
 use spacetimedb::auth::identity::encode_token;
 use spacetimedb::sendgrid_controller::SENDGRID;
 use spacetimedb_lib::name::{DnsLookupResponse, InsertDomainResult, PublishResult};
-use spacetimedb_lib::recovery::RecoveryCodeResponse;
+use spacetimedb_lib::recovery::{RecoveryCode, RecoveryCodeResponse};
 use std::convert::From;
 
 impl From<HandlerError> for DBCallErr {
@@ -606,9 +606,14 @@ async fn request_recovery_code(_ctx: &dyn ControllerCtx, state: &mut State) -> S
         );
     }
 
-    let recovery_code = gen_new_recovery_code(identity.clone())?;
+    let code = rand::thread_rng().gen_range(0..=999999);
+    let recovery_code = RecoveryCode {
+        code: format!("{code:06}"),
+        generation_time: Utc::now(),
+        identity: identity.clone(),
+    };
     CONTROL_DB
-        .spacetime_request_recovery_code(email.as_str(), recovery_code.clone())
+        .spacetime_insert_recovery_code(email.as_str(), recovery_code.clone())
         .await?;
 
     SENDGRID
@@ -663,9 +668,6 @@ async fn confirm_recovery_code(_ctx: &dyn ControllerCtx, state: &mut State) -> S
         .iter()
         .any(|a| Hash::from_slice(&a.identity[..]).to_hex() == identity)
     {
-        for entry in CONTROL_DB.get_identities_for_email(email.as_str())? {
-            log::error!("{} {}", entry.email, Hash::from_slice(&entry.identity[..]).to_hex());
-        }
         // This can happen if someone changes their associated email during a recovery request.
         return Err(
             HandlerError::from(anyhow!("No identity associated with that email.")).with_status(StatusCode::BAD_REQUEST)

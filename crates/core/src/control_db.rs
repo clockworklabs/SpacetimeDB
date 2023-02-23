@@ -158,11 +158,12 @@ impl ControlDb {
     /// Starts a recovery code request
     ///
     ///  * `email` - The email to send the recovery code to
-    pub async fn spacetime_request_recovery_code(
+    pub async fn spacetime_insert_recovery_code(
         &self,
         email: &str,
         new_code: RecoveryCode,
     ) -> Result<(), anyhow::Error> {
+        // TODO(jdetter): This function should take an identity instead of an email
         let tree = self.db.open_tree("recovery_codes")?;
         let current_requests = tree.get(email.as_bytes())?;
         match current_requests {
