@@ -50,7 +50,7 @@ namespace SpacetimeDB
         /// Called when a connection attempt fails.
         /// </summary>
         public event Action<WebSocketError?> onConnectError;
-        
+
         /// <summary>
         /// Called when an exception occurs when sending a message.
         /// </summary>
@@ -90,7 +90,10 @@ namespace SpacetimeDB
 
         public static NetworkManager instance;
 
-        public string TokenKey { get { return GetTokenKey(); } }
+        public string TokenKey
+        {
+            get { return GetTokenKey(); }
+        }
 
         protected void Awake()
         {
@@ -114,7 +117,7 @@ namespace SpacetimeDB
             webSocket.OnConnect += () => onConnect?.Invoke();
             webSocket.OnConnectError += a => onConnectError?.Invoke(a);
             webSocket.OnSendError += a => onSendError?.Invoke(a);
-            
+
             clientDB = new ClientCache();
 
             var type = typeof(IDatabaseTable);
@@ -175,16 +178,22 @@ namespace SpacetimeDB
                 {
                     case ClientApi.Message.TypeOneofCase.SubscriptionUpdate:
                     case ClientApi.Message.TypeOneofCase.TransactionUpdate:
+                    {
                         // First apply all of the state
                         System.Diagnostics.Debug.Assert(subscriptionUpdate != null,
                             nameof(subscriptionUpdate) + " != null");
+                        var maxReadLength =
+                            subscriptionUpdate!.TableUpdates.Max(a => a.TableRowOperations.Max(b => b.Row.Length));
+                        var baseBuffer = new byte[maxReadLength];
+                        using var stream = new MemoryStream(baseBuffer);
+                        using var reader = new BinaryReader(stream);
                         foreach (var update in subscriptionUpdate.TableUpdates)
                         {
                             foreach (var row in update.TableRowOperations)
                             {
-                                // TODO(jdetter): We can do a custom read-only memory stream to prevent an allocation here
-                                using var stream = new MemoryStream(row.Row.ToByteArray());
-                                using var reader = new BinaryReader(stream);
+                                stream.Position = 0;
+                                stream.SetLength(row.Row.Length);
+                                row.Row.CopyTo(baseBuffer, 0);
                                 var table = clientDB.GetTable(update.TableName);
                                 var algebraicType = table.RowSchema;
                                 var algebraicValue = AlgebraicValue.Deserialize(algebraicType, reader);
@@ -196,7 +205,7 @@ namespace SpacetimeDB
                                 }
                             }
                         }
-
+                    }
                         break;
                 }
 
@@ -339,12 +348,12 @@ namespace SpacetimeDB
                             i++;
 
                             var clientEvent = _dbEvents[i].clientTableType.GetMethod("OnUpdateEvent");
-                            if(clientEvent != null)
+                            if (clientEvent != null)
                             {
                                 clientEvent.Invoke(null, new object[] { oldValue, newValue });
-                            }                            
+                            }
                         }
-                        else if(tableOp == TableOp.Insert)
+                        else if (tableOp == TableOp.Insert)
                         {
                             var clientEvent = _dbEvents[i].clientTableType.GetMethod("OnInsertEvent");
                             if (clientEvent != null)
@@ -352,7 +361,7 @@ namespace SpacetimeDB
                                 clientEvent.Invoke(null, new object[] { newValue });
                             }
                         }
-                        else if(tableOp == TableOp.Delete)
+                        else if (tableOp == TableOp.Delete)
                         {
                             var clientEvent = _dbEvents[i].clientTableType.GetMethod("OnDeleteEvent");
                             if (clientEvent != null)
@@ -382,8 +391,10 @@ namespace SpacetimeDB
                             string functionName = message.TransactionUpdate.Event.FunctionCall.Reducer;
                             if (reducerEventCache.ContainsKey(functionName))
                             {
-                                reducerEventCache[functionName].Invoke(null, new object[] { message.TransactionUpdate.Event });
+                                reducerEventCache[functionName]
+                                    .Invoke(null, new object[] { message.TransactionUpdate.Event });
                             }
+
                             break;
                     }
 
