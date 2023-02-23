@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Google.Protobuf;
+using SpacetimeDB.SATS;
 using UnityEngine;
 
 namespace SpacetimeDB
@@ -217,17 +218,23 @@ namespace SpacetimeDB
 
         public override string ToString()
         {
-            if (tupleElements != null) {
+            if (tupleElements != null)
+            {
                 var s = "(\n";
-                foreach (var e in tupleElements) {
+                foreach (var e in tupleElements)
+                {
                     s += "\t";
                     s += e.ToString();
                     s += "\n";
                 }
+
                 s += ")";
                 return s;
-            } else {
-                return String.Format($"typeDef={typeDef.Type}, unsigned={unsigned}, signed={signed}, str={str}, bytes={bytes}, bool={b}, float={f32}, double={f64}");
+            }
+            else
+            {
+                return String.Format(
+                    $"typeDef={typeDef.Type}, unsigned={unsigned}, signed={signed}, str={str}, bytes={bytes}, bool={b}, float={f32}, double={f64}");
             }
         }
 
@@ -461,7 +468,30 @@ namespace SpacetimeDB
             return TypeDef.BuiltInType(TypeDef.Def.Hash);
         }
 
-        public static explicit operator Hash(TypeValue v) => (Hash)v.GetValue(GetTypeDef());
+        public static AlgebraicType GetAlgebraicType()
+        {
+            return new AlgebraicType
+            {
+                type = AlgebraicType.Type.Builtin,
+                builtin = new BuiltinType
+                {
+                    type = BuiltinType.Type.Array,
+                    arrayType = new AlgebraicType
+                    {
+                        type = AlgebraicType.Type.Builtin,
+                        builtin = new BuiltinType
+                        {
+                            type = BuiltinType.Type.U8
+                        }
+                    }
+                }
+            };
+        }
+
+        public static explicit operator Hash(AlgebraicValue v) => new Hash
+        {
+            bytes = v.GetBytes(),
+        };
 
         public static Hash From(byte[] bytes)
         {
@@ -477,14 +507,16 @@ namespace SpacetimeDB
             return bytes.SequenceEqual(other.bytes);
         }
 
-        public override bool Equals(object o) {
+        public override bool Equals(object o)
+        {
             return o is Hash other && Equals(other);
         }
 
         public static bool operator ==(Hash a, Hash b) => a.Equals(b);
         public static bool operator !=(Hash a, Hash b) => !a.Equals(b);
 
-        public override int GetHashCode() {
+        public override int GetHashCode()
+        {
             if (bytes == null)
             {
                 throw new InvalidOperationException("Cannot hash on null bytes.");

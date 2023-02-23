@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using ClientApi;
 using SpacetimeDB;
+using SpacetimeDB.SATS;
 using UnityEngine;
 
 namespace SpacetimeDB
@@ -126,11 +127,11 @@ namespace SpacetimeDB
                     continue;
                 }
 
-                var typeDefFunc = @class.GetMethod("GetTypeDef", BindingFlags.Static | BindingFlags.Public);
-                var typeDef = typeDefFunc!.Invoke(null, null) as TypeDef;
+                var algebraicTypeFunc = @class.GetMethod("GetAlgebraicType", BindingFlags.Static | BindingFlags.Public);
+                var typeDef = algebraicTypeFunc!.Invoke(null, null) as AlgebraicType;
                 var conversionFunc = @class.GetMethods().FirstOrDefault(a =>
                     a.Name == "op_Explicit" && a.GetParameters().Length > 0 &&
-                    a.GetParameters()[0].ParameterType == typeof(TypeValue));
+                    a.GetParameters()[0].ParameterType == typeof(AlgebraicType));
                 clientDB.AddTable(@class, typeDef,
                     a => { return conversionFunc!.Invoke(null, new object[] { a }); });
             }
