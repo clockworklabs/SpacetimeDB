@@ -43,7 +43,7 @@ node {
 
     stage('Build SpacetimeDB Image') {
       SPACETIMEDB_IMAGE_TAG="clockwork/spacetimedb-partner-${env.PARTNER_NAME}"
-      def spacetimedb = docker.build("${SPACETIMEDB_IMAGE_TAG}", ". -f crates/spacetimedb-standalone/Dockerfile")
+      def spacetimedb = docker.build("${SPACETIMEDB_IMAGE_TAG}", ". -f crates/standalone/Dockerfile")
       docker.withRegistry('https://registry.digitalocean.com', 'DIGITAL_OCEAN_DOCKER_REGISTRY_CREDENTIALS') {
         spacetimedb.push()
         SPACETIMEDB_IMAGE_DIGEST = imageDigest("${SPACETIMEDB_IMAGE_TAG}")

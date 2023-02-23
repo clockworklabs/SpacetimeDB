@@ -10,6 +10,8 @@ if [ $# != 1 ] ; then
 	exit 1
 fi
 
+rustup update
+
 cd SpacetimeDB
 git fetch -a origin
 git checkout -f "origin/$1"

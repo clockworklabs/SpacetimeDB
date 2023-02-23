@@ -18,10 +18,11 @@ export PATH="$PATH:/Users/jenkins/.cargo/bin"
 CROSSBUILD_MACOS_SDK="macosx12.3"
 targets="aarch64-apple-darwin x86_64-apple-darwin"
 
+rustup update
 git fetch -a origin
 git checkout -f "origin/$1"
 
-cd ./crates/spacetimedb-cli
+cd ./crates/cli
 # Build macOS binaries
 for target in $targets; do
   rustup target add "$target"
