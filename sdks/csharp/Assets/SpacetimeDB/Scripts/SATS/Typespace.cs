@@ -26,7 +26,7 @@ namespace SpacetimeDB.SATS
 
     public struct GenCtx
     {
-        public Typespace typspace;
+        public Typespace typespace;
         public List<string> names;
     }
 }

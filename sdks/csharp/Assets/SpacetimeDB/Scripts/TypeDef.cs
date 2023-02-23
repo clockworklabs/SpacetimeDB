@@ -148,7 +148,7 @@ namespace SpacetimeDB
                     case TypeDef.Def.F64:
                         throw new InvalidOperationException("Cannot hash on floats");
                     case TypeDef.Def.Hash:
-                        return (int)(obj.hash.GetHashCode() ^ 0x8595a70b);
+                        return (int)(obj.identity.GetHashCode() ^ 0x8595a70b);
                     case TypeDef.Def.I8:
                         return (int)(obj.signed ^ 0x6bac6c4e);
                     case TypeDef.Def.I16:
@@ -208,7 +208,7 @@ namespace SpacetimeDB
         private long signed;
         private string str;
         private byte[] bytes;
-        private Hash hash;
+        private Identity identity;
         private bool b;
 
         private float f32;
@@ -319,10 +319,10 @@ namespace SpacetimeDB
                         read += byteLength + 2;
                         break;
                     case TypeDef.Def.Hash:
-                        byte[] hashVal = new byte[Hash.SIZE];
-                        Array.Copy(arr, offset, hashVal, 0, Hash.SIZE);
-                        read += Hash.SIZE;
-                        value.hash = Hash.From(hashVal);
+                        byte[] hashVal = new byte[Identity.SIZE];
+                        Array.Copy(arr, offset, hashVal, 0, Identity.SIZE);
+                        read += Identity.SIZE;
+                        value.identity = Identity.From(hashVal);
                         break;
                     case TypeDef.Def.Tuple:
                         return ReadTuple(def, arr, offset, length);
@@ -417,7 +417,7 @@ namespace SpacetimeDB
                         throw new InvalidOperationException("byte array is null!");
                     return bytes;
                 case TypeDef.Def.Hash:
-                    return hash;
+                    return identity;
                 case TypeDef.Def.F32:
                     return f32;
                 case TypeDef.Def.F64:
@@ -455,7 +455,7 @@ namespace SpacetimeDB
         }
     }
 
-    public struct Hash : IEquatable<Hash>
+    public struct Identity : IEquatable<Identity>
     {
         private byte[] bytes;
 
@@ -488,32 +488,32 @@ namespace SpacetimeDB
             };
         }
 
-        public static explicit operator Hash(AlgebraicValue v) => new Hash
+        public static explicit operator Identity(AlgebraicValue v) => new Identity
         {
             bytes = v.GetBytes(),
         };
 
-        public static Hash From(byte[] bytes)
+        public static Identity From(byte[] bytes)
         {
             // TODO: should we validate length here?
-            return new Hash
+            return new Identity
             {
                 bytes = bytes,
             };
         }
 
-        public bool Equals(Hash other)
+        public bool Equals(Identity other)
         {
             return bytes.SequenceEqual(other.bytes);
         }
 
         public override bool Equals(object o)
         {
-            return o is Hash other && Equals(other);
+            return o is Identity other && Equals(other);
         }
 
-        public static bool operator ==(Hash a, Hash b) => a.Equals(b);
-        public static bool operator !=(Hash a, Hash b) => !a.Equals(b);
+        public static bool operator ==(Identity a, Identity b) => a.Equals(b);
+        public static bool operator !=(Identity a, Identity b) => !a.Equals(b);
 
         public override int GetHashCode()
         {

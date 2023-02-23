@@ -74,7 +74,7 @@ namespace SpacetimeDB
         /// <summary>
         /// Called when we receive an identity from the server
         /// </summary>
-        public event Action<Hash> onIdentityReceived;
+        public event Action<Identity> onIdentityReceived;
 
         /// <summary>
         /// Invoked when an event message is received or at the end of a transaction update.
@@ -400,7 +400,7 @@ namespace SpacetimeDB
 
                     break;
                 case ClientApi.Message.TypeOneofCase.IdentityToken:
-                    onIdentityReceived?.Invoke(Hash.From(message.IdentityToken.Identity.ToByteArray()));
+                    onIdentityReceived?.Invoke(Identity.From(message.IdentityToken.Identity.ToByteArray()));
                     PlayerPrefs.SetString(GetTokenKey(), message.IdentityToken.Token);
                     break;
                 case ClientApi.Message.TypeOneofCase.Event:
