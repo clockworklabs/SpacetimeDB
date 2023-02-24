@@ -27,6 +27,10 @@ impl de::Error for DecodeError {
     }
 }
 
+fn get_len<'de>(reader: &mut impl BufReader<'de>) -> Result<usize, DecodeError> {
+    Ok(reader.get_u32()? as usize)
+}
+
 impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
     type Error = DecodeError;
 
@@ -79,15 +83,15 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
     }
 
     fn deserialize_str<V: de::SliceVisitor<'de, str>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        let len = self.reader.get_u16()?;
-        let slice = self.reader.get_slice(len.into())?;
+        let len = get_len(self.reader)?;
+        let slice = self.reader.get_slice(len)?;
         let slice = core::str::from_utf8(slice)?;
         visitor.visit_borrowed(slice)
     }
 
     fn deserialize_bytes<V: de::SliceVisitor<'de, [u8]>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        let len = self.reader.get_u16()?;
-        let slice = self.reader.get_slice(len.into())?;
+        let len = get_len(self.reader)?;
+        let slice = self.reader.get_slice(len)?;
         visitor.visit_borrowed(slice)
     }
 
@@ -96,7 +100,7 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
         visitor: V,
         seed: T,
     ) -> Result<V::Output, Self::Error> {
-        let len = self.reader.get_u16()?.into();
+        let len = get_len(self.reader)?;
         let seeds = itertools::repeat_n(seed, len);
         visitor.visit(ArrayAccess { de: self, seeds })
     }
@@ -111,7 +115,7 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
         kseed: K,
         vseed: V,
     ) -> Result<Vi::Output, Self::Error> {
-        let len = self.reader.get_u16()?.into();
+        let len = get_len(self.reader)?;
         let seeds = itertools::repeat_n((kseed, vseed), len);
         visitor.visit(MapAccess { de: self, seeds })
     }

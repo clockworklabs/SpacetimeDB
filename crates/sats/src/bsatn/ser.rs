@@ -36,6 +36,12 @@ impl Error for BsatnError {
     }
 }
 
+fn put_len(writer: &mut impl BufWriter, len: usize) -> Result<(), BsatnError> {
+    let len = len.try_into().map_err(|_| BsatnError::custom("len too long"))?;
+    writer.put_u32(len);
+    Ok(())
+}
+
 impl<W: BufWriter> ser::Serializer for Serializer<'_, W> {
     type Ok = ();
     type Error = BsatnError;
@@ -100,19 +106,16 @@ impl<W: BufWriter> ser::Serializer for Serializer<'_, W> {
         self.serialize_bytes(v.as_bytes())
     }
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
-        let len = v.len().try_into().map_err(|_| Error::custom("too big"))?;
-        self.writer.put_u16(len);
+        put_len(self.writer, v.len())?;
         self.writer.put_slice(v);
         Ok(())
     }
     fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error> {
-        let len = len.try_into().map_err(|_| Error::custom("too big"))?;
-        self.writer.put_u16(len);
+        put_len(self.writer, len)?;
         Ok(self)
     }
     fn serialize_map(self, len: usize) -> Result<Self::SerializeMap, Self::Error> {
-        let len = len.try_into().map_err(|_| Error::custom("too big"))?;
-        self.writer.put_u16(len);
+        put_len(self.writer, len)?;
         Ok(self)
     }
     fn serialize_seq_product(self, _len: usize) -> Result<Self::SerializeSeqProduct, Self::Error> {
