@@ -37,4 +37,4 @@ fi
 echo "Deploying files..."
 deploy spacetime.linux /var/www/install/spacetime.linux
 deploy spacetime.macos /var/www/install/spacetime.macos
-deploy spacetime.exe /var/www/winows/spacetime.exe
+deploy spacetime.exe /var/www/windows/spacetime.exe
