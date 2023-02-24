@@ -284,19 +284,11 @@ namespace SpacetimeDB.SATS
         }
     }
 
-    [StructLayout(LayoutKind.Explicit)]
     public class AlgebraicValue
     {
-        public enum Type
-        {
-            Sum,
-            Product,
-            Builtin
-        }
-
-        [FieldOffset(0)] public SumValue sum;
-        [FieldOffset(0)] public ProductValue product;
-        [FieldOffset(0)] public BuiltinValue builtin;
+        public SumValue sum;
+        public ProductValue product;
+        public BuiltinValue builtin;
 
         public bool ToBool() => builtin.b;
         public sbyte ToI8() => builtin.i8;
@@ -348,6 +340,8 @@ namespace SpacetimeDB.SATS
         public string GetString() => builtin.s;
         public byte[] GetBytes() => builtin.bytes;
         public List<AlgebraicValue> GetArray() => builtin.array;
+        public ProductValue GetProductValue() => product;
+        public SumValue GetSumValue() => sum;
 
         public static AlgebraicValue Vec(AlgebraicType vecType, IEnumerable<AlgebraicValue> elements)
         {

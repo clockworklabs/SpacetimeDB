@@ -182,5 +182,14 @@ namespace SpacetimeDB
             Debug.LogError($"We don't know that this table is: {name}");
             return null;
         }
+
+        public int Count(string name)
+        {
+            if (!tables.TryGetValue(name, out var table))
+            {
+                return 0;
+            }
+            return table.entries.Count;
+        }
     }
 }

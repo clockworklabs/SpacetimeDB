@@ -72,8 +72,7 @@ namespace SpacetimeDB.SATS
         public AlgebraicType valueType;
     }
 
-    [StructLayout(LayoutKind.Explicit)]
-    public struct BuiltinType
+    public class BuiltinType
     {
         public enum Type
         {
@@ -95,12 +94,12 @@ namespace SpacetimeDB.SATS
             Map
         }
 
-        [FieldOffset(0)] public Type type;
-        [FieldOffset(4)] public AlgebraicType arrayType;
-        [FieldOffset(4)] public MapType mapType;
+        public Type type;
+
+        public AlgebraicType arrayType;
+        public MapType mapType;
     }
 
-    [StructLayout(LayoutKind.Explicit)]
     public class AlgebraicType
     {
         public enum Type
@@ -108,14 +107,44 @@ namespace SpacetimeDB.SATS
             Sum,
             Product,
             Builtin,
-            TypeRef
+            TypeRef,
+            None,
         }
 
-        [FieldOffset(0)] public Type type;
-        [FieldOffset(4)] public SumType sum;
-        [FieldOffset(4)] public ProductType product;
-        [FieldOffset(4)] public BuiltinType builtin;
-        [FieldOffset(4)] public int typeRef;
+        public Type type;
+        private object type_;
+
+        public SumType sum {
+            get { return type == Type.Sum ? (SumType)type_ : null; }
+            set {
+                type_ = value;
+                type = value == null ? Type.None : Type.Sum;
+            }
+        }
+        
+        public ProductType product {
+            get { return type == Type.Product ? (ProductType)type_ : null; }
+            set {
+                type_ = value;
+                type = value == null ? Type.None : Type.Product;
+            }
+        }
+        
+        public BuiltinType builtin {
+            get { return type == Type.Builtin ? (BuiltinType)type_ : null; }
+            set {
+                type_ = value;
+                type = value == null ? Type.None : Type.Builtin;
+            }
+        }
+
+        public int typeRef {
+            get { return type == Type.TypeRef ? (int)type_ : -1; }
+            set {
+                type_ = value;
+                type = value == -1 ? Type.None : Type.TypeRef;
+            }
+        }
 
         public static AlgebraicType CreateProductType(IEnumerable<ProductTypeElement> elements)
         {
@@ -128,5 +157,29 @@ namespace SpacetimeDB.SATS
                 }
             };
         }
+
+        public static AlgebraicType CreateArrayType(AlgebraicType elementType)  {
+            return new AlgebraicType
+            {
+                type = Type.Builtin,
+                builtin = new BuiltinType
+                {
+                    type = BuiltinType.Type.Array,
+                    arrayType = elementType
+                }
+            };
+        }
+
+        public static AlgebraicType CreatePrimitiveType(BuiltinType.Type type)  {
+            return new AlgebraicType
+            {
+                type = Type.Builtin,
+                builtin = new BuiltinType
+                {
+                    type = type,
+                }
+            };
+        }
+
     }
 }
