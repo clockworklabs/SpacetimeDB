@@ -11,46 +11,45 @@ using Type = System.Type;
 
 namespace SpacetimeDB.SATS
 {
-    [StructLayout(LayoutKind.Explicit)]
     public struct BuiltinValue
     {
-        [FieldOffset(0)] public bool b;
-        [FieldOffset(0)] public sbyte i8;
-        [FieldOffset(0)] public byte u8;
-        [FieldOffset(0)] public short i16;
-        [FieldOffset(0)] public ushort u16;
-        [FieldOffset(0)] public int i32;
-        [FieldOffset(0)] public uint u32;
-        [FieldOffset(0)] public long i64;
-        [FieldOffset(0)] public ulong u64;
-        [FieldOffset(0)] public byte[] i128;
-        [FieldOffset(0)] public byte[] u128;
-        [FieldOffset(0)] public float f32;
-        [FieldOffset(0)] public double f64;
-        [FieldOffset(0)] public string s;
-        [FieldOffset(0)] public byte[] bytes;
-        [FieldOffset(0)] public List<AlgebraicValue> array;
-        [FieldOffset(0)] public Dictionary<AlgebraicValue, AlgebraicValue> map;
+        private object value;
 
-        public static BuiltinValue Create(bool b) => new BuiltinValue { b = b };
-        public static BuiltinValue Create(sbyte i8) => new BuiltinValue { i8 = i8 };
-        public static BuiltinValue Create(byte u8) => new BuiltinValue { u8 = u8 };
-        public static BuiltinValue Create(short i16) => new BuiltinValue { i16 = i16 };
-        public static BuiltinValue Create(ushort u16) => new BuiltinValue { u16 = u16 };
-        public static BuiltinValue Create(int i32) => new BuiltinValue { i32 = i32 };
-        public static BuiltinValue Create(uint u32) => new BuiltinValue { u32 = u32 };
-        public static BuiltinValue Create(long i64) => new BuiltinValue { i64 = i64 };
-
-        public static BuiltinValue Create(ulong u64) => new BuiltinValue { u64 = u64 };
-
-        public static BuiltinValue CreateI128(byte[] i128) => new BuiltinValue { i128 = i128 };
-        public static BuiltinValue CreateU128(byte[] u128) => new BuiltinValue { u128 = u128 };
-        public static BuiltinValue Create(float f32) => new BuiltinValue { f32 = f32 };
-        public static BuiltinValue Create(double f64) => new BuiltinValue { f64 = f64 };
-        public static BuiltinValue Create(string s) => new BuiltinValue { s = s };
-        public static BuiltinValue CreateBytes(byte[] bytes) => new BuiltinValue { bytes = bytes };
-        public static BuiltinValue Create(List<AlgebraicValue> array) => new BuiltinValue { array = array };
-        public static BuiltinValue Create(Dictionary<AlgebraicValue, AlgebraicValue> map) => new BuiltinValue { map = map };
+        public bool AsBool() => (bool)value;
+        public sbyte AsI8() => (sbyte)value;
+        public byte AsU8() => (byte)value;
+        public short AsI16() => (short)value;
+        public ushort AsU16() => (ushort)value;
+        public int AsI32() => (int)value;
+        public uint AsU32() => (uint)value;
+        public long AsI64() => (long)value;
+        public ulong AsU64() => (ulong)value;
+        public byte[] AsI128() => (byte[])value;
+        public byte[] AsU128() => (byte[])value;
+        public float AsF32() => (float)value;
+        public double AsF64() => (double)value;
+        public byte[] AsBytes() => (byte[])value;
+        public string AsString() => (string)value;
+        public List<AlgebraicValue> AsArray() => (List<AlgebraicValue>)value;
+        public Dictionary<AlgebraicValue, AlgebraicValue> AsMap() => (Dictionary<AlgebraicValue, AlgebraicValue>)value;
+        
+        public static BuiltinValue CreateBool(bool value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateI8(sbyte value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateU8(byte value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateI16(short value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateU16(ushort value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateI32(int value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateU32(uint value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateI64(long value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateU64(ulong value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateI128(byte[] value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateU128(byte[] value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateF32(float value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateF64(double value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateString(string value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateBytes(byte[] value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateArray(List<AlgebraicValue> value) => new BuiltinValue { value = value };
+        public static BuiltinValue CreateMap(Dictionary<AlgebraicValue, AlgebraicValue> value) => new BuiltinValue { value = value };
 
         public void Serialize(BuiltinType type, BinaryWriter writer)
         {
@@ -68,55 +67,56 @@ namespace SpacetimeDB.SATS
             switch (type.type)
             {
                 case BuiltinType.Type.Bool:
-                    writer.Write(b);
+                    writer.Write(AsBool());
                     break;
                 case BuiltinType.Type.I8:
-                    writer.Write(i8);
+                    writer.Write(AsI8());
                     break;
                 case BuiltinType.Type.U8:
-                    writer.Write(u8);
+                    writer.Write(AsU8());
                     break;
                 case BuiltinType.Type.I16:
-                    writer.Write(i16);
+                    writer.Write(AsI16());
                     break;
                 case BuiltinType.Type.U16:
-                    writer.Write(u16);
+                    writer.Write(AsU16());
                     break;
                 case BuiltinType.Type.I32:
-                    writer.Write(i32);
+                    writer.Write(AsI32());
                     break;
                 case BuiltinType.Type.U32:
-                    writer.Write(u32);
+                    writer.Write(AsU32());
                     break;
                 case BuiltinType.Type.I64:
-                    writer.Write(i64);
+                    writer.Write(AsI64());
                     break;
                 case BuiltinType.Type.U64:
-                    writer.Write(u64);
+                    writer.Write(AsU64());
                     break;
                 case BuiltinType.Type.I128:
-                    writer.Write(i128);
+                    writer.Write(AsI128());
                     break;
                 case BuiltinType.Type.U128:
-                    writer.Write(u128);
+                    writer.Write(AsU128());
                     break;
                 case BuiltinType.Type.F32:
-                    writer.Write(f32);
+                    writer.Write(AsF32());
                     break;
                 case BuiltinType.Type.F64:
-                    writer.Write(f64);
+                    writer.Write(AsF64());
                     break;
                 case BuiltinType.Type.String:
-                    WriteByteBuffer(System.Text.Encoding.UTF8.GetBytes(s));
+                    WriteByteBuffer(System.Text.Encoding.UTF8.GetBytes((string)value));
                     break;
                 case BuiltinType.Type.Array:
                     if (type.arrayType.type == AlgebraicType.Type.Builtin &&
                         type.arrayType.builtin.type == BuiltinType.Type.U8)
                     {
-                        WriteByteBuffer(bytes);
+                        WriteByteBuffer(AsBytes());
                         break;
                     }
 
+                    var array = AsArray();
                     writer.Write(array.Count);
                     foreach (var entry in array)
                     {
@@ -124,7 +124,7 @@ namespace SpacetimeDB.SATS
                     }
                     break;
                 case BuiltinType.Type.Map:
-                    break;
+                    throw new NotImplementedException();
             }
         }
 
@@ -162,33 +162,33 @@ namespace SpacetimeDB.SATS
             switch (type.type)
             {
                 case BuiltinType.Type.Bool:
-                    return Create(reader.ReadByte() != 0);
+                    return CreateBool(reader.ReadByte() != 0);
                 case BuiltinType.Type.I8:
-                    return Create(reader.ReadSByte());
+                    return CreateI8(reader.ReadSByte());
                 case BuiltinType.Type.U8:
-                    return Create(reader.ReadByte());
+                    return CreateU8(reader.ReadByte());
                 case BuiltinType.Type.I16:
-                    return Create(reader.ReadInt16());
+                    return CreateI16(reader.ReadInt16());
                 case BuiltinType.Type.U16:
-                    return Create(reader.ReadUInt16());
+                    return CreateU16(reader.ReadUInt16());
                 case BuiltinType.Type.I32:
-                    return Create(reader.ReadInt32());
+                    return CreateI32(reader.ReadInt32());
                 case BuiltinType.Type.U32:
-                    return Create(reader.ReadUInt32());
+                    return CreateU32(reader.ReadUInt32());
                 case BuiltinType.Type.I64:
-                    return Create(reader.ReadInt64());
+                    return CreateI64(reader.ReadInt64());
                 case BuiltinType.Type.U64:
-                    return Create(reader.ReadUInt64());
+                    return CreateU64(reader.ReadUInt64());
                 case BuiltinType.Type.I128:
                     return CreateI128(reader.ReadBytes(16));
                 case BuiltinType.Type.U128:
                     return CreateU128(reader.ReadBytes(16));
                 case BuiltinType.Type.F32:
-                    return Create(reader.ReadSingle());
+                    return CreateF32(reader.ReadSingle());
                 case BuiltinType.Type.F64:
-                    return Create(reader.ReadDouble());
+                    return CreateF64(reader.ReadDouble());
                 case BuiltinType.Type.String:
-                    return Create(System.Text.Encoding.UTF8.GetString(ReadByteArray()));
+                    return CreateString(System.Text.Encoding.UTF8.GetString(ReadByteArray()));
                 case BuiltinType.Type.Array:
                     if (type.arrayType.type == AlgebraicType.Type.Builtin &&
                         type.arrayType.builtin.type == BuiltinType.Type.U8)
@@ -203,7 +203,7 @@ namespace SpacetimeDB.SATS
                         arrayResult.Add(AlgebraicValue.Deserialize(type.arrayType, reader));
                     }
 
-                    return Create(arrayResult);
+                    return CreateArray(arrayResult);
                 case BuiltinType.Type.Map:
                 {
                     var len = reader.ReadUInt32();
@@ -215,7 +215,7 @@ namespace SpacetimeDB.SATS
                         mapResult.Add(key, value);
                     }
 
-                    return Create(mapResult);
+                    return CreateMap(mapResult);
                 }
                 default:
                     throw new NotImplementedException();
@@ -290,71 +290,44 @@ namespace SpacetimeDB.SATS
         public ProductValue product;
         public BuiltinValue builtin;
 
-        public bool ToBool() => builtin.b;
-        public sbyte ToI8() => builtin.i8;
-        public byte ToU8() => builtin.u8;
-        public short ToI16() => builtin.i16;
-        public ushort ToU16() => builtin.u16;
-        public int ToI32() => builtin.i32;
-        public uint ToU32() => builtin.u32;
-        public long ToI64() => builtin.i64;
-        public ulong ToU64() => builtin.u64;
-        public byte[] ToI128() => builtin.i128;
-        public byte[] ToU128() => builtin.u128;
-        public float ToF32() => builtin.f32;
-        public double ToF64() => builtin.f64;
-        public string ToFString() => builtin.s;
-        public byte[] ToBytes() => builtin.bytes;
-        public List<AlgebraicValue> ToArray() => builtin.array;
-        public Dictionary<AlgebraicValue, AlgebraicValue> ToMap() => builtin.map;
+        public bool AsBool() => builtin.AsBool();
+        public sbyte AsI8() => builtin.AsI8();
+        public byte AsU8() => builtin.AsU8();
+        public short AsI16() => builtin.AsI16();
+        public ushort AsU16() => builtin.AsU16();
+        public int AsI32() => builtin.AsI32();
+        public uint AsU32() => builtin.AsU32();
+        public long AsI64() => builtin.AsI64();
+        public ulong AsU64() => builtin.AsU64();
+        public byte[] AsI128() => builtin.AsI128();
+        public byte[] AsU128() => builtin.AsU128();
+        public float AsF32() => builtin.AsF32();
+        public double AsF64() => builtin.AsF64();
+        public string AsString() => builtin.AsString();
+        public byte[] AsBytes() => builtin.AsBytes();
+        public List<AlgebraicValue> AsArray() => builtin.AsArray();
+        public Dictionary<AlgebraicValue, AlgebraicValue> AsMap() => builtin.AsMap();
+        public static AlgebraicValue CreateBool(bool v) => new AlgebraicValue { builtin = BuiltinValue.CreateBool(v) };
+        public static AlgebraicValue CreateI8(sbyte v) => new AlgebraicValue { builtin = BuiltinValue.CreateI8(v) };
+        public static AlgebraicValue CreateU8(byte v) => new AlgebraicValue { builtin = BuiltinValue.CreateU8(v) };
+        public static AlgebraicValue CreateI16(short v) => new AlgebraicValue { builtin = BuiltinValue.CreateI16(v) };
+        public static AlgebraicValue CreateU16(ushort v) => new AlgebraicValue { builtin = BuiltinValue.CreateU16(v) };
+        public static AlgebraicValue CreateI32(int v) => new AlgebraicValue { builtin = BuiltinValue.CreateI32(v) };
+        public static AlgebraicValue CreateU32(uint v) => new AlgebraicValue { builtin = BuiltinValue.CreateU32(v) };
+        public static AlgebraicValue CreateI64(long v) => new AlgebraicValue { builtin = BuiltinValue.CreateI64(v) };
+        public static AlgebraicValue CreateU64(ulong v) => new AlgebraicValue { builtin = BuiltinValue.CreateU64(v) };
+        public static AlgebraicValue CreateI128(byte[] v) => new AlgebraicValue { builtin = BuiltinValue.CreateI128(v) };
+        public static AlgebraicValue CreateU128(byte[] v) => new AlgebraicValue { builtin = BuiltinValue.CreateU128(v) };
+        public static AlgebraicValue CreateF32(float v) => new AlgebraicValue { builtin = BuiltinValue.CreateF32(v) };
+        public static AlgebraicValue CreateF64(double v) => new AlgebraicValue { builtin = BuiltinValue.CreateF64(v) };
+        public static AlgebraicValue CreateString(string v) => new AlgebraicValue { builtin = BuiltinValue.CreateString(v) };
+        public static AlgebraicValue CreateBytes(byte[] v) => new AlgebraicValue { builtin = BuiltinValue.CreateBytes(v) };
+        public static AlgebraicValue CreateArray(List<AlgebraicValue> v) => new AlgebraicValue { builtin = BuiltinValue.CreateArray(v) };
+        public static AlgebraicValue CreateMap(Dictionary<AlgebraicValue, AlgebraicValue> v) => new AlgebraicValue { builtin = BuiltinValue.CreateMap(v) };
 
-        public static AlgebraicValue Bool(bool v) => new AlgebraicValue { builtin = new BuiltinValue { b = v } };
-        public static AlgebraicValue I8(sbyte v) => new AlgebraicValue { builtin = new BuiltinValue { i8 = v } };
-        public static AlgebraicValue U8(byte v) => new AlgebraicValue { builtin = new BuiltinValue { u8 = v } };
-        public static AlgebraicValue I16(short v) => new AlgebraicValue { builtin = new BuiltinValue { i16 = v } };
-        public static AlgebraicValue U16(ushort v) => new AlgebraicValue { builtin = new BuiltinValue { u16 = v } };
-        public static AlgebraicValue I32(int v) => new AlgebraicValue { builtin = new BuiltinValue { i32 = v } };
-        public static AlgebraicValue U32(uint v) => new AlgebraicValue { builtin = new BuiltinValue { u32 = v } };
-        public static AlgebraicValue I64(long v) => new AlgebraicValue { builtin = new BuiltinValue { i64 = v } };
-        public static AlgebraicValue U64(ulong v) => new AlgebraicValue { builtin = new BuiltinValue { u64 = v } };
-        public static AlgebraicValue I128(byte[] v) => new AlgebraicValue { builtin = new BuiltinValue { i128 = v } };
-        public static AlgebraicValue U128(byte[] v) => new AlgebraicValue { builtin = new BuiltinValue { u128 = v } };
-        public static AlgebraicValue F32(float v) => new AlgebraicValue { builtin = new BuiltinValue { f32 = v } };
-        public static AlgebraicValue F64(double v) => new AlgebraicValue { builtin = new BuiltinValue { f64 = v } };
-        public static AlgebraicValue String(string v) => new AlgebraicValue { builtin = new BuiltinValue { s = v } };
-        public static AlgebraicValue Bytes(byte[] v) => new AlgebraicValue { builtin = new BuiltinValue { bytes = v } };
-
-        public bool GetBool() => builtin.b;
-        public sbyte GetI8() => builtin.i8;
-        public byte GetU8() => builtin.u8;
-        public short GetI16() => builtin.i16;
-        public ushort GetU16() => builtin.u16;
-        public int GetI32() => builtin.i32;
-        public uint GetU32() => builtin.u32;
-        public long GetI64() => builtin.i64;
-        public ulong GetU64() => builtin.u64;
-        public byte[] GetI128() => builtin.i128;
-        public byte[] GetU128() => builtin.u128;
-        public float GetF32() => builtin.f32;
-        public double GetF64() => builtin.f64;
-        public string GetString() => builtin.s;
-        public byte[] GetBytes() => builtin.bytes;
-        public List<AlgebraicValue> GetArray() => builtin.array;
-        public ProductValue GetProductValue() => product;
-        public SumValue GetSumValue() => sum;
-
-        public static AlgebraicValue Vec(AlgebraicType vecType, IEnumerable<AlgebraicValue> elements)
-        {
-            var array = new List<AlgebraicValue>();
-            array.AddRange(elements);
-            return new AlgebraicValue
-            {
-                builtin = new BuiltinValue
-                {
-                    array = array
-                }
-            };
-        }
+        public BuiltinValue AsBuiltInValue() => builtin;
+        public ProductValue AsProductValue() => product;
+        public SumValue AsSumValue() => sum;
 
         public static AlgebraicValue Create(BuiltinValue value) => new AlgebraicValue { builtin = value };
         public static AlgebraicValue Create(ProductValue value) => new AlgebraicValue { product = value };
@@ -392,11 +365,5 @@ namespace SpacetimeDB.SATS
                     throw new NotImplementedException();
             }
         }
-
-        public static AlgebraicValue Array(List<AlgebraicValue> v) =>
-            new AlgebraicValue { builtin = new BuiltinValue { array = v } };
-
-        public static AlgebraicValue Map(Dictionary<AlgebraicValue, AlgebraicValue> v) =>
-            new AlgebraicValue { builtin = new BuiltinValue { map = v } };
     }
 }
