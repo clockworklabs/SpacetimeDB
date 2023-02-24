@@ -8,6 +8,7 @@ use hyper::{header::AUTHORIZATION, Body, HeaderMap, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use spacetimedb::address::Address;
 use spacetimedb::control_db::CONTROL_DB;
+use spacetimedb::identity::Identity;
 use spacetimedb::{
     auth::{
         get_creds_from_header,
@@ -74,7 +75,7 @@ async fn get_identity(state: &mut State) -> SimpleHandlerResult {
 
                         for identity_email in identities {
                             response.identities.push(GetIdentityResponseEntry {
-                                identity: Hash::from_slice(&identity_email.identity[..]).to_hex(),
+                                identity: Identity::from_slice(&identity_email.identity[..]).to_hex(),
                                 email: identity_email.email,
                             })
                         }

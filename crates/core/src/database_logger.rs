@@ -93,13 +93,13 @@ enum LogEvent<'a> {
 }
 
 impl DatabaseLogger {
-    // fn log_dir_from(identity: Hash, _name: &str) -> PathBuf {
+    // fn log_dir_from(identity: Identity, _name: &str) -> PathBuf {
     //     let mut path = PathBuf::from(ROOT);
     //     path.push(Self::path_from_hash(identity));
     //     path
     // }
 
-    // fn log_path_from(identity: Hash, name: &str) -> PathBuf {
+    // fn log_path_from(identity: Identity, name: &str) -> PathBuf {
     //     let mut path = Self::log_dir_from(identity, name);
     //     path.push(PathBuf::from_str(&format!("{}.log", name)).unwrap());
     //     path

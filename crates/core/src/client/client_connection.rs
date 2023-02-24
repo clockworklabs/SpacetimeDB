@@ -1,9 +1,9 @@
 use super::client_connection_index::CLIENT_ACTOR_INDEX;
 use crate::address::Address;
 use crate::client::ClientActorId;
-use crate::hash::Hash;
 use crate::host::host_controller;
 use crate::host::ReducerArgs;
+use crate::identity::Identity;
 use crate::json::client_api::IdentityTokenJson;
 use crate::json::client_api::MessageJson;
 use crate::protobuf::client_api::IdentityToken;
@@ -67,7 +67,7 @@ impl ClientConnectionSender {
         result
     }
 
-    pub async fn send_identity_token_message(self, identity: Hash, identity_token: String) {
+    pub async fn send_identity_token_message(self, identity: Identity, identity_token: String) {
         let message = if self.protocol == Protocol::Binary {
             let message = Message {
                 r#type: Some(message::Type::IdentityToken(IdentityToken {

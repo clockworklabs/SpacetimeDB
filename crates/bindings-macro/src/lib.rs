@@ -113,7 +113,7 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
     let func_name = &original_function.sig.ident;
     let vis = &original_function.vis;
 
-    // let errmsg = "reducer should have at least 2 arguments: (identity: Hash, timestamp: u64, ...)";
+    // let errmsg = "reducer should have at least 2 arguments: (identity: Identity, timestamp: u64, ...)";
     // let ([arg1, arg2], args) = validate_reducer_args(&original_function.sig, errmsg)?;
 
     // // TODO: better (non-string-based) validation for these

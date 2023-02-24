@@ -1,4 +1,5 @@
 use spacetimedb::hash::Hash;
+use spacetimedb::identity::Identity;
 
 use crate::nodes::worker_node::worker_metrics::NODE_IDENTITY_ENERGY_BUDGET_GAUGE;
 use futures::SinkExt;
@@ -43,7 +44,7 @@ impl WorkerBudgets {
 
 /// Get the maximum amount we should spend on the next transaction.
 /// (Returns the default maximum spend or the remaining balance, whichever is least.)
-pub(crate) fn _max_tx_spend(identity: &Hash) -> i64 {
+pub(crate) fn _max_tx_spend(identity: &Identity) -> i64 {
     let budgets = BUDGETS.lock().expect("budgets lock");
     budgets
         .identity_budget
@@ -54,7 +55,7 @@ pub(crate) fn _max_tx_spend(identity: &Hash) -> i64 {
 
 /// Called by host controller to register spending for a given identity.
 /// Returns remaining balance (from this node's current allocation)
-pub(crate) fn _record_tx_spend(identity: &Hash, spent_quanta: i64) -> i64 {
+pub(crate) fn _record_tx_spend(identity: &Identity, spent_quanta: i64) -> i64 {
     let mut budgets = BUDGETS.lock().expect("budgets lock");
     log::trace!("Subtracting {} from ledger for {}", spent_quanta, identity.to_hex());
     budgets
@@ -80,7 +81,7 @@ pub(crate) fn _record_tx_spend(identity: &Hash, spent_quanta: i64) -> i64 {
 
 /// Called by control node to add to (or remove from) a node's current budget allocation and
 /// default spend.
-pub(crate) fn on_budget_receive_allocation(node_id: u64, identity: &Hash, allocation_delta: i64) {
+pub(crate) fn on_budget_receive_allocation(node_id: u64, identity: &Identity, allocation_delta: i64) {
     log::trace!("Received budget allocation with delta: {}", allocation_delta,);
     let mut budgets = BUDGETS.lock().expect("budgets lock");
     budgets

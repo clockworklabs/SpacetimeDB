@@ -199,7 +199,7 @@ impl CPythonModuleHostActor {
         Ok(())
     }
 
-    fn call_identity_connected_disconnected(&self, identity: &Hash, connected: bool) -> Result<(), anyhow::Error> {
+    fn call_identity_connected_disconnected(&self, identity: &Identity, connected: bool) -> Result<(), anyhow::Error> {
         let start_instant = Instant::now();
 
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64;
@@ -286,7 +286,7 @@ impl CPythonModuleHostActor {
 
     fn call_reducer(
         &self,
-        caller_identity: Hash,
+        caller_identity: Identity,
         reducer_name: &str,
         arg_bytes: &[u8],
     ) -> Result<ReducerCallResult, anyhow::Error> {

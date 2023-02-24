@@ -3,6 +3,7 @@ use spacetimedb::address::Address;
 use spacetimedb::client::client_connection_index;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::hash::Hash;
+use spacetimedb::identity::Identity;
 use spacetimedb::object_db::ObjectDb;
 use spacetimedb::protobuf::control_db::{Database, DatabaseInstance, HostType};
 use spacetimedb::protobuf::control_worker_api::ScheduleState;
@@ -53,7 +54,7 @@ pub trait Controller: Send + Sync {
     async fn insert_database(
         &self,
         address: &Address,
-        identity: &Hash,
+        identity: &Identity,
         program_bytes_address: &Hash,
         host_type: HostType,
         num_replicas: u32,

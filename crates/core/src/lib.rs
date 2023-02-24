@@ -26,6 +26,7 @@ pub mod auth;
 pub mod db;
 pub mod error;
 pub mod hash;
+pub mod identity;
 #[allow(clippy::derive_partial_eq_without_eq)]
 pub mod protobuf {
     include!(concat!(env!("OUT_DIR"), "/protobuf.rs"));

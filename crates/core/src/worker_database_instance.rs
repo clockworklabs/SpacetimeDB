@@ -3,7 +3,7 @@ use crate::db::message_log::MessageLog;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::db::relational_db::RelationalDB;
-use crate::hash::Hash;
+use crate::identity::Identity;
 use crate::protobuf::control_db::HostType;
 use crate::{address::Address, db::relational_db::RelationalDBWrapper};
 use std::path::Path;
@@ -15,7 +15,7 @@ pub struct WorkerDatabaseInstance {
     pub database_id: u64,
     pub host_type: HostType,
     pub trace_log: bool,
-    pub identity: Hash,
+    pub identity: Identity,
     pub address: Address,
     pub logger: Arc<Mutex<DatabaseLogger>>,
     pub relational_db: RelationalDBWrapper,
@@ -30,7 +30,7 @@ impl WorkerDatabaseInstance {
         database_id: u64,
         host_type: HostType,
         trace_log: bool,
-        identity: Hash,
+        identity: Identity,
         address: Address,
         db_path: impl AsRef<Path>,
         log_path: impl AsRef<Path>,

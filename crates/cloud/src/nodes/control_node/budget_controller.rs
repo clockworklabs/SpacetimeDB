@@ -9,6 +9,7 @@ use crate::nodes::control_node::controller::Controller;
 use crate::nodes::control_node::prometheus_metrics::IDENTITY_ENERGY_BALANCE_GAUGE;
 use spacetimedb::control_db::CONTROL_DB;
 use spacetimedb::hash::Hash;
+use spacetimedb::identity::Identity;
 use spacetimedb::protobuf::control_db::EnergyBalance;
 
 #[derive(Default)]
@@ -39,7 +40,7 @@ impl BudgetController {
     pub(crate) async fn _set_identity_energy_balance(
         &self,
         controller: &Controller,
-        identity: &Hash,
+        identity: &Identity,
         budget: &EnergyBalance,
     ) {
         // Fill the write-through global budget cache first.
@@ -60,7 +61,7 @@ impl BudgetController {
     }
 
     /// Retrieve the global budget for a given identity.
-    pub(crate) fn _get_identity_energy_balance(&self, identity: &Hash) -> Option<EnergyBalance> {
+    pub(crate) fn _get_identity_energy_balance(&self, identity: &Identity) -> Option<EnergyBalance> {
         let identity_budget = self.global_identity_energy_balance.lock().expect("unlock ctrl budget");
         identity_budget.get(identity).cloned()
     }
@@ -91,7 +92,12 @@ impl BudgetController {
     }
 
     // Refresh budget allocation for a single identity.
-    pub(crate) async fn _update_energy_allocation(&self, controller: &Controller, identity: &Hash, eb: &EnergyBalance) {
+    pub(crate) async fn _update_energy_allocation(
+        &self,
+        controller: &Controller,
+        identity: &Identity,
+        eb: &EnergyBalance,
+    ) {
         // Fill identity -> global budget cache
         let balance = controller
             .control_db
@@ -138,7 +144,7 @@ fn calculate_per_node_quanta(eb: &EnergyBalance, _worker_node_id: u64, number_of
 
 impl BudgetController {
     /// Set per-node budget partitions. Called by both initial setup and on the budget refresh loop.
-    async fn update_identity_worker_energy_state(&self, identity: &Hash, eb: &EnergyBalance) {
+    async fn update_identity_worker_energy_state(&self, identity: &Identity, eb: &EnergyBalance) {
         let nodes = CONTROL_DB.get_nodes().await.expect("retrieve all nodes");
         let num_nodes = nodes.len();
         for node in nodes {
@@ -186,7 +192,7 @@ impl BudgetController {
     pub(crate) async fn _identity_budget_allocations(
         &self,
         node_id: u64,
-        identity: &Hash,
+        identity: &Identity,
     ) -> Option<WorkerBudgetState> {
         let node_identity_budget = self
             .node_identity_budget
@@ -200,7 +206,7 @@ impl BudgetController {
     pub(crate) fn node_energy_spend_update(
         &self,
         node_id: u64,
-        identity: &Hash,
+        identity: &Identity,
         spend: i64,
     ) -> Result<(), anyhow::Error> {
         log::trace!("Worker {} identity: {} spent: {}", node_id, identity.to_hex(), spend);

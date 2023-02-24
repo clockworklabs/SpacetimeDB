@@ -1,6 +1,7 @@
 use crate::address::Address;
 
-use crate::hash::{hash_bytes, Hash};
+use crate::hash::hash_bytes;
+use crate::identity::Identity;
 use crate::protobuf::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
 use prost::Message;
 
@@ -64,7 +65,7 @@ impl ControlDb {
         &self,
         address: &Address,
         domain: &str,
-        owner_identity: Hash,
+        owner_identity: Identity,
         try_register_tld: bool,
     ) -> Result<InsertDomainResult, anyhow::Error> {
         if self.spacetime_dns(domain).await?.is_some() {
@@ -130,13 +131,13 @@ impl ControlDb {
     pub async fn spacetime_register_tld(
         &self,
         tld: &str,
-        owner_identity: Hash,
+        owner_identity: Identity,
     ) -> Result<RegisterTldResult, anyhow::Error> {
         let tree = self.db.open_tree("top_level_domains")?;
         let current_owner = tree.get(tld.as_bytes())?;
         match current_owner {
             Some(owner) => {
-                if Hash::from_slice(&owner[..]) == owner_identity {
+                if Identity::from_slice(&owner[..]) == owner_identity {
                     Ok(RegisterTldResult::AlreadyRegistered {
                         domain: tld.to_string(),
                     })
@@ -206,24 +207,24 @@ impl ControlDb {
     ///
     /// # Arguments
     ///  * `domain` - The domain to lookup
-    pub async fn spacetime_lookup_tld(&self, domain: &str) -> Result<Option<Hash>, anyhow::Error> {
+    pub async fn spacetime_lookup_tld(&self, domain: &str) -> Result<Option<Identity>, anyhow::Error> {
         // Make sure the domain is valid first
         parse_domain_name(domain)?;
 
         let tree = self.db.open_tree("top_level_domains")?;
         return match tree.get(domain.as_bytes())? {
-            Some(owner) => Ok(Some(Hash::from_slice(&owner[..]))),
+            Some(owner) => Ok(Some(Identity::from_slice(&owner[..]))),
             None => Ok(None),
         };
     }
 
-    pub async fn alloc_spacetime_identity(&self) -> Result<Hash, anyhow::Error> {
+    pub async fn alloc_spacetime_identity(&self) -> Result<Identity, anyhow::Error> {
         // TODO: this really doesn't need to be a single global count
         let id = self.db.generate_id()?;
         let bytes: &[u8] = &id.to_le_bytes();
         let name = b"clockworklabs:";
         let bytes = [name, bytes].concat();
-        let hash = hash_bytes(bytes);
+        let hash = Identity::from_hashing_bytes(bytes);
         Ok(hash)
     }
 
@@ -241,7 +242,11 @@ impl ControlDb {
         Ok(address)
     }
 
-    pub async fn associate_email_spacetime_identity(&self, identity: &Hash, email: &str) -> Result<(), anyhow::Error> {
+    pub async fn associate_email_spacetime_identity(
+        &self,
+        identity: &Identity,
+        email: &str,
+    ) -> Result<(), anyhow::Error> {
         // Lowercase the email before storing
         let email = email.to_lowercase();
 
@@ -523,7 +528,7 @@ impl ControlDb {
     /// Return the current budget for a given identity as stored in the db.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-    pub async fn get_energy_balance(&self, identity: &Hash) -> Result<Option<EnergyBalance>, anyhow::Error> {
+    pub async fn get_energy_balance(&self, identity: &Identity) -> Result<Option<EnergyBalance>, anyhow::Error> {
         let tree = self.db.open_tree("energy_budget")?;
         let key = identity.to_hex();
         let value = tree.get(key.as_bytes())?;
@@ -538,7 +543,7 @@ impl ControlDb {
     /// Update the stored current budget for a identity.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-    pub fn set_energy_balance(&self, identity: &Hash, budget: &EnergyBalance) -> Result<(), anyhow::Error> {
+    pub fn set_energy_balance(&self, identity: &Identity, budget: &EnergyBalance) -> Result<(), anyhow::Error> {
         let tree = self.db.open_tree("energy_budget")?;
         let key = identity.to_hex();
         let mut buf = Vec::new();

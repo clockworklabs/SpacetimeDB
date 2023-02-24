@@ -1,4 +1,4 @@
-use crate::hash::Hash;
+use crate::identity::Identity;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ static PRIVATE_KEY: Lazy<EncodingKey> = Lazy::new(|| EncodingKey::from_ec_pem(PR
 const PUBLIC_KEY_PEM: &[u8] = include_bytes!("./id_ecdsa.pub");
 static PUBLIC_KEY: Lazy<DecodingKey> = Lazy::new(|| DecodingKey::from_ec_pem(PUBLIC_KEY_PEM).unwrap());
 
-pub fn encode_token(identity: Hash) -> Result<String, jsonwebtoken::errors::Error> {
+pub fn encode_token(identity: Identity) -> Result<String, jsonwebtoken::errors::Error> {
     let header = Header::new(jsonwebtoken::Algorithm::ES256);
     let hex_identity = identity.to_hex();
     let claims = SpacetimeIdentityClaims {

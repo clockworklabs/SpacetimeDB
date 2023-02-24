@@ -1,6 +1,6 @@
 use crate::address::Address;
-use crate::hash::Hash;
 use crate::host::host_controller;
+use crate::identity::Identity;
 use crate::worker_metrics::CONNECTED_CLIENTS;
 use hyper::upgrade::Upgraded;
 use lazy_static::lazy_static;
@@ -106,7 +106,7 @@ impl ClientActorIndex {
 
     pub fn new_client(
         &mut self,
-        identity: Hash,
+        identity: Identity,
         target_address: Address,
         protocol: Protocol,
         ws: WebSocketStream<Upgraded>,

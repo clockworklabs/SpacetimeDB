@@ -3,6 +3,7 @@ use spacetimedb::control_db::ControlDb;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::host_controller;
+use spacetimedb::identity::Identity;
 use spacetimedb::object_db::ObjectDb;
 use spacetimedb::protobuf::control_db::HostType;
 use spacetimedb::protobuf::worker_db::DatabaseInstanceState;
@@ -44,7 +45,7 @@ impl spacetimedb_client_api::Controller for Controller {
     async fn insert_database(
         &self,
         address: &Address,
-        identity: &Hash,
+        identity: &Identity,
         program_bytes_address: &Hash,
         host_type: HostType,
         num_replicas: u32,

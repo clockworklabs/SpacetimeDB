@@ -2,6 +2,7 @@ use crate::nodes::control_node::budget_controller::{WorkerBudgetState, BUDGET_CO
 use crate::nodes::control_node::worker_api::worker_connection::WorkerConnectionSender;
 use prost::Message;
 use spacetimedb::address::Address;
+use spacetimedb::identity::Identity;
 use spacetimedb::object_db::ObjectDb;
 use spacetimedb::protobuf::control_db::HostType;
 use spacetimedb::{
@@ -74,7 +75,7 @@ impl Controller {
     pub async fn insert_database(
         &self,
         address: &Address,
-        identity: &Hash,
+        identity: &Identity,
         program_bytes_address: &Hash,
         host_type: HostType,
         num_replicas: u32,
@@ -366,7 +367,7 @@ impl Controller {
     async fn send_budget_allocation(
         &self,
         node_id: u64,
-        identity: &Hash,
+        identity: &Identity,
         sender: &WorkerConnectionSender,
         budget_allocation: &WorkerBudgetState,
     ) {
@@ -388,7 +389,7 @@ impl Controller {
 
     // Broadcast the budget allocations for only a single module to all worker nodes.
     // Called when a specific module budget is updated.
-    pub(crate) async fn _publish_energy_balance_state(&self, identity: &Hash) -> Result<(), anyhow::Error> {
+    pub(crate) async fn _publish_energy_balance_state(&self, identity: &Identity) -> Result<(), anyhow::Error> {
         // To avoid trying to hold the WCI mutex in the .awaits below, we'll pre-collect the node ids
         // here.
         let node_ids: Vec<_> = {

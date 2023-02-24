@@ -1,6 +1,7 @@
-use crate::hash::{hash_bytes, Hash};
+use crate::hash::hash_bytes;
 use crate::host::host_wasmer;
 use crate::host::module_host::ModuleHost;
+use crate::identity::Identity;
 use crate::protobuf::control_db::HostType;
 use crate::worker_database_instance::WorkerDatabaseInstance;
 use anyhow::{self, Context};
@@ -170,7 +171,7 @@ impl HostController {
     pub async fn call_reducer(
         &self,
         instance_id: u64,
-        caller_identity: Hash,
+        caller_identity: Identity,
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<Option<ReducerCallResult>, anyhow::Error> {
@@ -180,7 +181,7 @@ impl HostController {
 
     async fn call_reducer_inner(
         module_host: ModuleHost,
-        caller_identity: Hash,
+        caller_identity: Identity,
         reducer_name: String,
         args: ReducerArgs,
     ) -> Result<Option<ReducerCallResult>, anyhow::Error> {

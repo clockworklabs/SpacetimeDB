@@ -216,7 +216,7 @@ impl HostController {
     pub async fn call_reducer(
         &self,
         instance_id: u64,
-        caller_identity: Hash,
+        caller_identity: Identity,
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, anyhow::Error> {

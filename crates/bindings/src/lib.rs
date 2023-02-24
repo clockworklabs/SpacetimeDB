@@ -23,9 +23,8 @@ pub use spacetimedb_bindings_macro::{duration, spacetimedb, SpacetimeType};
 pub use spacetimedb_bindings_macro::TableHelper as __TableHelper;
 
 pub use spacetimedb_lib;
-pub use spacetimedb_lib::hash;
 pub use spacetimedb_lib::sats;
-pub use spacetimedb_lib::Hash;
+pub use spacetimedb_lib::Hash as Identity;
 pub use spacetimedb_lib::TypeValue;
 pub use types::Timestamp;
 
@@ -41,7 +40,7 @@ static SPACETIME_ABI_VERSION_IS_ADDR: () = ();
 
 #[non_exhaustive]
 pub struct ReducerContext {
-    pub sender: Hash,
+    pub sender: Identity,
     pub timestamp: Timestamp,
 }
 
@@ -49,7 +48,7 @@ impl ReducerContext {
     #[doc(hidden)]
     pub fn __dummy() -> Self {
         Self {
-            sender: Hash { data: [0; 32] },
+            sender: Identity { data: [0; 32] },
             timestamp: Timestamp::UNIX_EPOCH,
         }
     }

@@ -19,6 +19,7 @@ use crate::host::module_host::{
 };
 use crate::host::timestamp::Timestamp;
 use crate::host::tracelog::instance_trace::TraceLog;
+use crate::identity::Identity;
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::worker_database_instance::WorkerDatabaseInstance;
 use crate::worker_metrics::{REDUCER_COMPUTE_TIME, REDUCER_COUNT, REDUCER_WRITE_SIZE};
@@ -296,7 +297,7 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
         Ok(())
     }
 
-    fn call_connect_disconnect(&mut self, caller_identity: Hash, connected: bool, respond_to: oneshot::Sender<()>) {
+    fn call_connect_disconnect(&mut self, caller_identity: Identity, connected: bool, respond_to: oneshot::Sender<()>) {
         self.send(InstanceMessage::CallConnectDisconnect {
             caller_identity,
             connected,
@@ -306,7 +307,7 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
 
     fn call_reducer(
         &mut self,
-        caller_identity: Hash,
+        caller_identity: Identity,
         reducer_name: String,
         budget: ReducerBudget,
         args: TupleValue,
@@ -423,7 +424,7 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
 
     fn call_reducer(
         &mut self,
-        caller_identity: Hash,
+        caller_identity: Identity,
         reducer_name: String,
         budget: ReducerBudget,
         args: TupleValue,
@@ -481,7 +482,7 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
         }
     }
 
-    fn call_connect_disconnect(&mut self, identity: Hash, connected: bool) {
+    fn call_connect_disconnect(&mut self, identity: Identity, connected: bool) {
         let has_function = if connected {
             self.func_names.conn
         } else {
@@ -658,12 +659,12 @@ enum InstanceMessage {
         respond_to: oneshot::Sender<Result<Option<ReducerCallResult>, anyhow::Error>>,
     },
     CallConnectDisconnect {
-        caller_identity: Hash,
+        caller_identity: Identity,
         connected: bool,
         respond_to: oneshot::Sender<()>,
     },
     CallReducer {
-        caller_identity: Hash,
+        caller_identity: Identity,
         reducer_name: String,
         budget: ReducerBudget,
         args: TupleValue,

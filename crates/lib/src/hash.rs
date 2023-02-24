@@ -63,6 +63,10 @@ impl Hash {
     pub fn from_hex(hex: impl AsRef<[u8]>) -> Result<Self, hex::FromHexError> {
         hex::FromHex::from_hex(hex)
     }
+
+    pub fn from_hashing_bytes(bytes: impl AsRef<[u8]>) -> Hash {
+        hash_bytes(bytes)
+    }
 }
 
 pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> Hash {

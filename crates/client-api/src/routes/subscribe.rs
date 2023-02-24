@@ -25,7 +25,7 @@ use spacetimedb::auth::invalid_token_res;
 use spacetimedb::client::client_connection::Protocol;
 use spacetimedb::client::client_connection_index::CLIENT_ACTOR_INDEX;
 use spacetimedb::control_db::CONTROL_DB;
-use spacetimedb::hash::Hash;
+use spacetimedb::identity::Identity;
 use spacetimedb::websocket;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::WebSocketStream;
@@ -64,7 +64,7 @@ fn invalid_protocol_res() -> Response<Body> {
 }
 
 async fn on_connected(
-    identity: Hash,
+    identity: Identity,
     identity_token: String,
     target_address: Address,
     headers: HeaderMap,

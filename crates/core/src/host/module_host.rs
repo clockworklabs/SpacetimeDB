@@ -3,6 +3,7 @@ use crate::db::messages::write::Write;
 use crate::db::relational_db::RelationalDBWrapper;
 use crate::hash::Hash;
 use crate::host::host_controller::{ReducerBudget, ReducerCallResult};
+use crate::identity::Identity;
 use crate::json::client_api::{SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson};
 use crate::protobuf::client_api::{table_row_operation, SubscriptionUpdate, TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
@@ -193,7 +194,7 @@ pub struct ModuleFunctionCall {
 #[derive(Debug, Clone)]
 pub struct ModuleEvent {
     pub timestamp: Timestamp,
-    pub caller_identity: Hash,
+    pub caller_identity: Identity,
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
     pub energy_quanta_used: i64,
@@ -203,12 +204,12 @@ pub struct ModuleEvent {
 #[derive(Debug)]
 enum ModuleHostCommand {
     CallConnectDisconnect {
-        caller_identity: Hash,
+        caller_identity: Identity,
         connected: bool,
         respond_to: oneshot::Sender<()>,
     },
     CallReducer {
-        caller_identity: Hash,
+        caller_identity: Identity,
         reducer_name: String,
         budget: ReducerBudget,
         args: TupleValue,
@@ -298,7 +299,7 @@ enum CmdOrExit {
 
 #[derive(Debug)]
 pub struct ModuleInfo {
-    pub identity: Hash,
+    pub identity: Identity,
     pub module_hash: Hash,
     pub typespace: Typespace,
     pub catalog: HashMap<String, EntityDef>,
@@ -308,10 +309,10 @@ pub struct ModuleInfo {
 pub trait ModuleHostActor: Send + 'static {
     fn info(&self) -> Arc<ModuleInfo>;
     fn subscription(&self) -> &ModuleSubscriptionManager;
-    fn call_connect_disconnect(&mut self, caller_identity: Hash, connected: bool, respond_to: oneshot::Sender<()>);
+    fn call_connect_disconnect(&mut self, caller_identity: Identity, connected: bool, respond_to: oneshot::Sender<()>);
     fn call_reducer(
         &mut self,
-        caller_identity: Hash,
+        caller_identity: Identity,
         reducer_name: String,
         budget: ReducerBudget,
         args: TupleValue,
@@ -372,7 +373,7 @@ impl ModuleHost {
 
     pub async fn call_identity_connected_disconnected(
         &self,
-        caller_identity: Hash,
+        caller_identity: Identity,
         connected: bool,
     ) -> Result<(), anyhow::Error> {
         self.call(|respond_to| ModuleHostCommand::CallConnectDisconnect {
@@ -385,7 +386,7 @@ impl ModuleHost {
 
     pub async fn call_reducer(
         &self,
-        caller_identity: Hash,
+        caller_identity: Identity,
         reducer_name: String,
         budget: ReducerBudget,
         args: ReducerArgs,

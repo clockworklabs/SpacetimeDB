@@ -37,6 +37,7 @@ use spacetimedb::hash::Hash;
 use spacetimedb::host::host_controller;
 use spacetimedb::host::host_controller::DescribedEntityType;
 use spacetimedb::host::ReducerArgs;
+use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::protobuf::control_db::DatabaseInstance;
 use spacetimedb::sql;
@@ -154,7 +155,7 @@ impl From<HandlerError> for DBCallErr {
 
 struct DatabaseInformation {
     database_instance: DatabaseInstance,
-    caller_identity: Hash,
+    caller_identity: Identity,
     caller_identity_token: String,
 }
 /// Extract some common parameters that most API call invocations to the database will use.
