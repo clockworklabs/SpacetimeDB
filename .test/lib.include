@@ -41,9 +41,9 @@ create_project() {
 	run_test cargo run init --lang=rust "$PROJECT_PATH"
 	# We have to force using the local spacetimedb_bindings otherwise we will download them from crates.io
 	if [[ "$OSTYPE" == "darwin"* ]]; then
-		sed -i '' "s@.*spacetimedb.*=.*@spacetimedb = { version = \"0.3.1\", path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${PROJECT_PATH}/Cargo.toml" 
+		sed -i '' "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${PROJECT_PATH}/Cargo.toml" 
 	else
-		sed -i "s@.*spacetimedb.*=.*@spacetimedb = { version = \"0.3.1\", path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${PROJECT_PATH}/Cargo.toml"
+		sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${PROJECT_PATH}/Cargo.toml"
 	fi
 
 

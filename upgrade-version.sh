@@ -8,7 +8,7 @@ if [ $# != 1 ] ; then
 fi
 
 version="$1"
-declare -a crates=("spacetimedb-bindings" "spacetimedb-bindings-macro" "spacetimedb-bindings-sys" "spacetimedb-cli" "spacetimedb-lib" "spacetimedb-client-api" "spacetimedb-core" "spacetimedb-standalone" "spacetimedb-cloud")
+declare -a crates=("bindings" "bindings-macro" "bindings-sys" "cli" "lib" "client-api" "core" "standalone" "cloud" "bench")
 
 upgrade_version() {
 	toml=crates/$1/Cargo.toml
@@ -22,12 +22,7 @@ upgrade_version() {
 
 	# Upgrade any dependencies
 	for crate in "${crates[@]}" ; do
-		if [ "${crate}" = "spacetimedb-bindings-macro" ] ; then
-			sed -i 's/.*'"${crate}"'\s*=.*/'"${crate}"' = { path = "..\/'"${crate}"'", version = "'"${version}"'", optional = true }/' "${toml}"
-		else
-
-			sed -i 's/.*'"${crate}"'\s*=.*/'"${crate}"' = { path = "..\/'"${crate}"'", version = "'"${version}"'" }/' "${toml}"
-		fi
+		sed -i 's/.*'"spacetimedb-${crate}"'\s*=.*/'"spacetimedb-${crate}"' = { path = "..\/'"${crate}"'" }/' "${toml}"
 	done
 }
 
@@ -35,8 +30,10 @@ for crate in "${crates[@]}" ; do
 	upgrade_version "${crate}"
 done
 
-# Upgrade the template that is shipped with spacetimedb-cli
-sed -i 's/.*spacetimedb.*=.*".*".*/spacetimedb = "'"${version}"'"/' "crates/spacetimedb-cli/src/subcommands/project/Cargo._toml"
+# Upgrade the template that is shipped with the cli
+sed -i 's@.*spacetimedb.*=.*".*".*@spacetimedb = "'"${version}"'"@' "crates/cli/src/subcommands/project/Cargo._toml"
+sed -i 's@.*spacetimedb-lib.*=.*@spacetimedb-lib = { path = "../lib", default-features = false }@' "crates/bindings/Cargo.toml"
+sed -i 's@.*spacetimedb-bindings-macro.*=.*@spacetimedb-bindings-macro = { path = "../bindings-macro", optional = true }@' "crates/bindings/Cargo.toml"
 
 cargo check
 
