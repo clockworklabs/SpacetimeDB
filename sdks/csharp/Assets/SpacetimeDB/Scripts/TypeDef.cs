@@ -490,7 +490,7 @@ namespace SpacetimeDB
 
         public static explicit operator Identity(AlgebraicValue v) => new Identity
         {
-            bytes = v.GetBytes(),
+            bytes = v.AsBytes(),
         };
 
         public static Identity From(byte[] bytes)

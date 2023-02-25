@@ -6,9 +6,11 @@ using System.Linq;
 using System.Net.WebSockets;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using ClientApi;
+using Newtonsoft.Json;
 using SpacetimeDB;
 using SpacetimeDB.SATS;
 using UnityEngine;
@@ -24,11 +26,15 @@ namespace SpacetimeDB
             Update
         }
 
-        [Serializable]
-        public class Message
+        public class ReducerCallRequest
         {
             public string fn;
             public object[] args;
+        }
+
+        public class SubscriptionRequest
+        {
+            public string subscriptionQuery;
         }
 
         private struct DbEvent
@@ -132,11 +138,11 @@ namespace SpacetimeDB
                 }
 
                 var algebraicTypeFunc = @class.GetMethod("GetAlgebraicType", BindingFlags.Static | BindingFlags.Public);
-                var typeDef = algebraicTypeFunc!.Invoke(null, null) as AlgebraicType;
+                var algebraicValue = algebraicTypeFunc!.Invoke(null, null) as AlgebraicType;
                 var conversionFunc = @class.GetMethods().FirstOrDefault(a =>
                     a.Name == "op_Explicit" && a.GetParameters().Length > 0 &&
-                    a.GetParameters()[0].ParameterType == typeof(AlgebraicType));
-                clientDB.AddTable(@class, typeDef,
+                    a.GetParameters()[0].ParameterType == typeof(AlgebraicValue));
+                clientDB.AddTable(@class, algebraicValue,
                     a => { return conversionFunc!.Invoke(null, new object[] { a }); });
             }
 
@@ -148,7 +154,7 @@ namespace SpacetimeDB
                     reducerEventCache.Add(reducerEvent.FunctionName, methodInfo);
                 }
             }
-
+            
             messageProcessThread = new Thread(ProcessMessages);
             messageProcessThread.Start();
         }
@@ -182,10 +188,7 @@ namespace SpacetimeDB
                         // First apply all of the state
                         System.Diagnostics.Debug.Assert(subscriptionUpdate != null,
                             nameof(subscriptionUpdate) + " != null");
-                        var maxReadLength =
-                            subscriptionUpdate!.TableUpdates.Max(a => a.TableRowOperations.Max(b => b.Row.Length));
-                        var baseBuffer = new byte[maxReadLength];
-                        using var stream = new MemoryStream(baseBuffer);
+                        using var stream = new MemoryStream();
                         using var reader = new BinaryReader(stream);
                         foreach (var update in subscriptionUpdate.TableUpdates)
                         {
@@ -193,7 +196,8 @@ namespace SpacetimeDB
                             {
                                 stream.Position = 0;
                                 stream.SetLength(row.Row.Length);
-                                row.Row.CopyTo(baseBuffer, 0);
+                                stream.Write(row.Row.ToByteArray(), 0, row.Row.Length);
+                                stream.Position = 0;
                                 var table = clientDB.GetTable(update.TableName);
                                 var algebraicType = table.RowSchema;
                                 var algebraicValue = AlgebraicValue.Deserialize(algebraicType, reader);
@@ -388,7 +392,7 @@ namespace SpacetimeDB
                             onTransactionComplete?.Invoke();
                             onEvent?.Invoke(message.TransactionUpdate.Event);
 
-                            string functionName = message.TransactionUpdate.Event.FunctionCall.Reducer;
+                            var functionName = message.TransactionUpdate.Event.FunctionCall.Reducer;
                             if (reducerEventCache.ContainsKey(functionName))
                             {
                                 reducerEventCache[functionName]
@@ -422,10 +426,22 @@ namespace SpacetimeDB
             return key;
         }
 
-        internal void InternalCallReducer(Message message)
+        internal void InternalCallReducer(string reducer, object[] args)
         {
-            var json = Newtonsoft.Json.JsonConvert.SerializeObject(message);
-            webSocket.Send(Encoding.ASCII.GetBytes(json));
+            // var argBytes = Encoding.ASCII.GetBytes(JsonConvert.SerializeObject(args));
+            var message = new ReducerCallRequest
+            {
+                fn = reducer,
+                args = args,
+            };
+            var json = JsonConvert.SerializeObject(message);
+            webSocket.Send(Encoding.ASCII.GetBytes("{ \"call\": " + json + " }"));
+        }
+        
+        public void Subscribe(List<string> queries)
+        {
+            var json = JsonConvert.SerializeObject(queries);
+            webSocket.Send(Encoding.ASCII.GetBytes("{ \"subscribe\": { \"query_strings\": " + json + " }}"));
         }
 
         private void Update()

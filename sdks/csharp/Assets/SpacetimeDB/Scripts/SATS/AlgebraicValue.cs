@@ -273,9 +273,8 @@ namespace SpacetimeDB.SATS
 
         public static ProductValue Deserialize(ProductType type, BinaryReader reader)
         {
-            var len = reader.ReadUInt32();
             var result = new ProductValue();
-            for (var x = 0; x < len; x++)
+            for (var x = 0; x < type.elements.Count; x++)
             {
                 result.elements.Add(AlgebraicValue.Deserialize(type.elements[x].algebraicType, reader));
             }

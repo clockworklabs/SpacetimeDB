@@ -191,5 +191,7 @@ namespace SpacetimeDB
             }
             return table.entries.Count;
         }
+
+        public IEnumerable<string> GetTableNames() => tables.Keys;
     }
 }
