@@ -27,6 +27,7 @@ pub fn cli() -> clap::Command {
             Arg::new("clear_database")
                 .long("clear-database")
                 .short('c')
+                .required(true)
                 .action(SetTrue)
                 .help("When publishing a new module to an existing address, also delete all tables associated with the database"),
         )
