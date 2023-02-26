@@ -7,6 +7,8 @@ if [ $# != 1 ] ; then
 	exit 1
 fi
 
+cargo check -p spacetimedb-cli
+
 version="$1"
 declare -a crates=("bindings" "bindings-macro" "bindings-sys" "cli" "lib" "client-api" "core" "standalone" "cloud" "bench")
 
