@@ -21,7 +21,7 @@ run_fail_test() {
 reset_config() {
 	RETURN_DIR=$PWD
 	cd "$SPACETIME_HOME" || exit 1
-	cp "./.test/config.toml" "$HOME/.spacetime/config.toml"
+	cp "./test/config.toml" "$HOME/.spacetime/config.toml"
 	cd "$RETURN_DIR" || exit 1
 }
 

@@ -7,7 +7,7 @@ fi
 
 set -euox pipefail
 
-source "./.test/lib.include"
+source "./test/lib.include"
 
 run_test cargo run server "https://spacetimedb.com/spacetimedb"
 [ "$(grep Host "$TEST_OUT")" == "Host: spacetimedb.com/spacetimedb" ]

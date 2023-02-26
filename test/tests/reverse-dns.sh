@@ -7,13 +7,13 @@ fi
 
 set -euox pipefail
 
-source "./.test/lib.include"
+source "./test/lib.include"
 
 create_project
 
 RAND=$(random_string)
 run_test cargo run dns register-tld "$RAND"
-run_test cargo run publish "$RAND" --project-path "$PROJECT_PATH"
+run_test cargo run publish "$RAND" --project-path "$PROJECT_PATH" --clear-database
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 if [ "$ADDRESS" == "" ] ; then
 	exit 1

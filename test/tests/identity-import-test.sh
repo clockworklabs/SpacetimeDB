@@ -7,7 +7,7 @@ fi
 
 set -euox pipefail
 
-source "./.test/lib.include"
+source "./test/lib.include"
 
 run_test cargo run identity new --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')

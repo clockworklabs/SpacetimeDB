@@ -7,7 +7,7 @@ fi
 
 set -euox pipefail
 
-source "./.test/lib.include"
+source "./test/lib.include"
 
 create_project
 cat > "${PROJECT_PATH}/src/lib.rs" <<EOF
@@ -91,7 +91,7 @@ pub fn test() {
 }
 EOF
 
-run_test cargo run publish --project-path "$PROJECT_PATH"
+run_test cargo run publish --project-path "$PROJECT_PATH" --clear-database
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 # We have to give the database some time to setup our instance

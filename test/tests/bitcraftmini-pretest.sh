@@ -7,12 +7,12 @@ fi
 
 set -euox pipefail
 
-source "./.test/lib.include"
+source "./test/lib.include"
 
 [ -d ../BitCraftMini ]
 
 # 2. Compile the Spacetime Module
-run_test cargo run publish --project-path "../BitCraftMini/Server"
+run_test cargo run publish --project-path "../BitCraftMini/Server" --clear-database
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 sleep 2
 mkdir -p ../BitCraftMini/Client/Assets/_Project/autogen

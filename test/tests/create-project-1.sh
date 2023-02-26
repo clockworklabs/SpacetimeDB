@@ -7,7 +7,7 @@ fi
 
 set -euo pipefail
 
-source "./.test/lib.include"
+source "./test/lib.include"
 
 run_fail_test cargo run init
 run_fail_test cargo run init "$PROJECT_PATH"

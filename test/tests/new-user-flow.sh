@@ -7,7 +7,7 @@ fi
 
 set -euox pipefail
 
-source "./.test/lib.include"
+source "./test/lib.include"
 
 ## Create a new spacetimedb rust project
 create_project
@@ -37,7 +37,7 @@ pub fn say_hello() {
 EOF
 
 ## Publish your module
-run_test cargo run publish --project-path "$PROJECT_PATH"
+run_test cargo run publish --project-path "$PROJECT_PATH" --clear-database
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 # We have to give the database some time to setup our instance

@@ -8,7 +8,7 @@ fi
 set -euox pipefail
 set -x
 
-source "./.test/lib.include"
+source "./test/lib.include"
 
 run_test cargo run identity new --no-email
 run_test cargo run identity new --no-email

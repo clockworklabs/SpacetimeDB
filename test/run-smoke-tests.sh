@@ -30,7 +30,7 @@ export SPACETIME_HOME=$PWD
 execute_test() {
 	reset_config
 	reset_project
-	TEST_PATH=".test/tests/$1.sh"
+	TEST_PATH="test/tests/$1.sh"
 	printf " **************** Running %s... " "$1"
 	if ! bash -x "$TEST_PATH" > "$OUT_TMP" 2>&1 ; then
 		printf "${RED}FAIL${CRST}\n"
@@ -44,9 +44,9 @@ execute_test() {
 	fi
 }
 
-TESTS="./.test/tests/*.sh"
+TESTS="./test/tests/*.sh"
 if [ $# == 1 ] ; then
-	if [ -f "./.test/tests/$1.sh" ]; then 
+	if [ -f "./test/tests/$1.sh" ]; then 
 		execute_test "$1"
 	else
 		echo "Unknown test: $1"
@@ -85,7 +85,7 @@ else
 	printf "\nDescriptions for failed tests:\n"
 	for t in "${failed_tests[@]}" ; do 
 		printf "\n%s\n\t" "$t"
-		DESCRIBE_TEST=1 bash ".test/tests/${t}.sh"
+		DESCRIBE_TEST=1 bash "test/tests/${t}.sh"
 	done
 fi
 

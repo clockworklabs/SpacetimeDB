@@ -7,12 +7,12 @@ fi
 
 set -euox pipefail
 
-source "./.test/lib.include"
+source "./test/lib.include"
 
 reset_config
 run_test cargo run identity init-default
 create_project
-run_test cargo run publish --project-path "$PROJECT_PATH"
+run_test cargo run publish --project-path "$PROJECT_PATH" --clear-database
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 RAND_NAME="$(random_string)"
