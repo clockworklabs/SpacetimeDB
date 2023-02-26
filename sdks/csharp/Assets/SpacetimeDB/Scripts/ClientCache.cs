@@ -7,6 +7,7 @@ using System.Net.Http.Headers;
 using Google.Protobuf;
 using UnityEngine;
 using ClientApi;
+using SpacetimeDB.SATS;
 
 namespace SpacetimeDB
 {
@@ -36,43 +37,43 @@ namespace SpacetimeDB
 
             private readonly string name;
             private readonly Type clientTableType;
-            private readonly TypeDef rowSchema;
+            private readonly AlgebraicType rowSchema;
 
             // The function to use for decoding a type value
-            private Func<TypeValue, object> decoderFunc;
+            private Func<AlgebraicValue, object> decoderFunc;
 
             // Maps from primary key to type value
-            public readonly Dictionary<byte[], (TypeValue, object)> entries;
+            public readonly Dictionary<byte[], (AlgebraicValue, object)> entries;
             // Maps from primary key to decoded value
-            public readonly ConcurrentDictionary<byte[], (TypeValue, object)> decodedValues;
+            public readonly ConcurrentDictionary<byte[], (AlgebraicValue, object)> decodedValues;
 
             public Type ClientTableType { get => clientTableType; }
             public string Name { get => name; }
-            public TypeDef RowSchema { get => rowSchema; }
+            public AlgebraicType RowSchema { get => rowSchema; }
 
-            public TableCache(Type clientTableType, TypeDef rowSchema, Func<TypeValue, object> decoderFunc)
+            public TableCache(Type clientTableType, AlgebraicType rowSchema, Func<AlgebraicValue, object> decoderFunc)
             {
                 name = clientTableType.Name;
                 this.clientTableType = clientTableType;
 
                 this.rowSchema = rowSchema;
                 this.decoderFunc = decoderFunc;
-                entries = new Dictionary<byte[], (TypeValue, object)>(new ByteArrayComparer());
-                decodedValues = new ConcurrentDictionary<byte[], (TypeValue, object)>(new ByteArrayComparer());
+                entries = new Dictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
+                decodedValues = new ConcurrentDictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
             }
 
-            public (TypeValue?, object) Decode(byte[] pk, TypeValue? value)
+            public (AlgebraicValue, object) Decode(byte[] pk, AlgebraicValue value)
             {
                 if (decodedValues.TryGetValue(pk, out var decoded))
                 {
                     return decoded;
                 }
 
-                if (!value.HasValue)
+                if (value == null)
                 {
                     return (null, null);
                 }
-                decoded = (value.Value, decoderFunc(value.Value));
+                decoded = (value, decoderFunc(value));
                 decodedValues[pk] = decoded;
                 return decoded;
             }            
@@ -89,9 +90,9 @@ namespace SpacetimeDB
                 }
 
                 var decodedTuple = Decode(rowPk, null);
-                if (decodedTuple.Item1.HasValue && decodedTuple.Item2 != null)
+                if (decodedTuple.Item1 != null && decodedTuple.Item2 != null)
                 {
-                    entries[rowPk] = (decodedTuple.Item1.Value, decodedTuple.Item2);
+                    entries[rowPk] = (decodedTuple.Item1, decodedTuple.Item2);
                     return decodedTuple.Item2;
                 }
 
@@ -132,7 +133,7 @@ namespace SpacetimeDB
 
         private readonly ConcurrentDictionary<string, TableCache> tables = new ConcurrentDictionary<string, TableCache>();
 
-        public void AddTable(Type clientTableType, TypeDef tableRowDef, Func<TypeValue, object> decodeFunc)
+        public void AddTable(Type clientTableType, AlgebraicType tableRowDef, Func<AlgebraicValue, object> decodeFunc)
         {
             string name = clientTableType.Name;
 
@@ -158,7 +159,7 @@ namespace SpacetimeDB
             }
         }
 
-        public IEnumerable<TypeValue> GetEntries(string name)
+        public IEnumerable<AlgebraicValue> GetEntries(string name)
         {
             if (!tables.TryGetValue(name, out var table))
             {
@@ -181,5 +182,16 @@ namespace SpacetimeDB
             Debug.LogError($"We don't know that this table is: {name}");
             return null;
         }
+
+        public int Count(string name)
+        {
+            if (!tables.TryGetValue(name, out var table))
+            {
+                return 0;
+            }
+            return table.entries.Count;
+        }
+
+        public IEnumerable<string> GetTableNames() => tables.Keys;
     }
 }

@@ -1,14 +1,18 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.WebSockets;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using ClientApi;
+using Newtonsoft.Json;
 using SpacetimeDB;
+using SpacetimeDB.SATS;
 using UnityEngine;
 
 namespace SpacetimeDB
@@ -22,11 +26,15 @@ namespace SpacetimeDB
             Update
         }
 
-        [Serializable]
-        public class Message
+        public class ReducerCallRequest
         {
             public string fn;
             public object[] args;
+        }
+
+        public class SubscriptionRequest
+        {
+            public string subscriptionQuery;
         }
 
         private struct DbEvent
@@ -48,7 +56,7 @@ namespace SpacetimeDB
         /// Called when a connection attempt fails.
         /// </summary>
         public event Action<WebSocketError?> onConnectError;
-        
+
         /// <summary>
         /// Called when an exception occurs when sending a message.
         /// </summary>
@@ -72,7 +80,7 @@ namespace SpacetimeDB
         /// <summary>
         /// Called when we receive an identity from the server
         /// </summary>
-        public event Action<Hash> onIdentityReceived;
+        public event Action<Identity> onIdentityReceived;
 
         /// <summary>
         /// Invoked when an event message is received or at the end of a transaction update.
@@ -88,7 +96,10 @@ namespace SpacetimeDB
 
         public static NetworkManager instance;
 
-        public string TokenKey { get { return GetTokenKey(); } }
+        public string TokenKey
+        {
+            get { return GetTokenKey(); }
+        }
 
         protected void Awake()
         {
@@ -112,7 +123,7 @@ namespace SpacetimeDB
             webSocket.OnConnect += () => onConnect?.Invoke();
             webSocket.OnConnectError += a => onConnectError?.Invoke(a);
             webSocket.OnSendError += a => onSendError?.Invoke(a);
-            
+
             clientDB = new ClientCache();
 
             var type = typeof(IDatabaseTable);
@@ -126,27 +137,24 @@ namespace SpacetimeDB
                     continue;
                 }
 
-                var typeDefFunc = @class.GetMethod("GetTypeDef", BindingFlags.Static | BindingFlags.Public);
-                var typeDef = typeDefFunc!.Invoke(null, null) as TypeDef;
-                // var conversionFunc = @class.GetMethod("op_Explicit");
+                var algebraicTypeFunc = @class.GetMethod("GetAlgebraicType", BindingFlags.Static | BindingFlags.Public);
+                var algebraicValue = algebraicTypeFunc!.Invoke(null, null) as AlgebraicType;
                 var conversionFunc = @class.GetMethods().FirstOrDefault(a =>
                     a.Name == "op_Explicit" && a.GetParameters().Length > 0 &&
-                    a.GetParameters()[0].ParameterType == typeof(TypeValue));
-                clientDB.AddTable(@class, typeDef,
+                    a.GetParameters()[0].ParameterType == typeof(AlgebraicValue));
+                clientDB.AddTable(@class, algebraicValue,
                     a => { return conversionFunc!.Invoke(null, new object[] { a }); });
             }
 
             // cache all our reducer events by their function name 
-            foreach (var methodInfo in (typeof(Reducer)).GetMethods())
+            foreach (var methodInfo in typeof(SpacetimeDB.Reducer).GetMethods())
             {
-                var ca = methodInfo.GetCustomAttribute<ReducerEvent>();
-                if (ca != null)
+                if (methodInfo.GetCustomAttribute<ReducerEvent>() is { } reducerEvent)
                 {
-                    ReducerEvent reducerEvent = (ReducerEvent)ca;
                     reducerEventCache.Add(reducerEvent.FunctionName, methodInfo);
                 }
             }
-
+            
             messageProcessThread = new Thread(ProcessMessages);
             messageProcessThread.Start();
         }
@@ -176,25 +184,32 @@ namespace SpacetimeDB
                 {
                     case ClientApi.Message.TypeOneofCase.SubscriptionUpdate:
                     case ClientApi.Message.TypeOneofCase.TransactionUpdate:
+                    {
                         // First apply all of the state
                         System.Diagnostics.Debug.Assert(subscriptionUpdate != null,
                             nameof(subscriptionUpdate) + " != null");
+                        using var stream = new MemoryStream();
+                        using var reader = new BinaryReader(stream);
                         foreach (var update in subscriptionUpdate.TableUpdates)
                         {
                             foreach (var row in update.TableRowOperations)
                             {
+                                stream.Position = 0;
+                                stream.SetLength(row.Row.Length);
+                                stream.Write(row.Row.ToByteArray(), 0, row.Row.Length);
+                                stream.Position = 0;
                                 var table = clientDB.GetTable(update.TableName);
-                                var typeDef = table.RowSchema;
-                                var (typeValue, _) = TypeValue.Decode(typeDef, row.Row);
-                                if (typeValue.HasValue)
+                                var algebraicType = table.RowSchema;
+                                var algebraicValue = AlgebraicValue.Deserialize(algebraicType, reader);
+                                if (algebraicValue != null)
                                 {
                                     // Here we are decoding on our message thread so that by the time we get to the
                                     // main thread the cache is already warm.
-                                    table.Decode(row.RowPk.ToByteArray(), typeValue.Value);
+                                    table.Decode(row.RowPk.ToByteArray(), algebraicValue);
                                 }
                             }
                         }
-
+                    }
                         break;
                 }
 
@@ -337,12 +352,12 @@ namespace SpacetimeDB
                             i++;
 
                             var clientEvent = _dbEvents[i].clientTableType.GetMethod("OnUpdateEvent");
-                            if(clientEvent != null)
+                            if (clientEvent != null)
                             {
                                 clientEvent.Invoke(null, new object[] { oldValue, newValue });
-                            }                            
+                            }
                         }
-                        else if(tableOp == TableOp.Insert)
+                        else if (tableOp == TableOp.Insert)
                         {
                             var clientEvent = _dbEvents[i].clientTableType.GetMethod("OnInsertEvent");
                             if (clientEvent != null)
@@ -350,7 +365,7 @@ namespace SpacetimeDB
                                 clientEvent.Invoke(null, new object[] { newValue });
                             }
                         }
-                        else if(tableOp == TableOp.Delete)
+                        else if (tableOp == TableOp.Delete)
                         {
                             var clientEvent = _dbEvents[i].clientTableType.GetMethod("OnDeleteEvent");
                             if (clientEvent != null)
@@ -377,17 +392,19 @@ namespace SpacetimeDB
                             onTransactionComplete?.Invoke();
                             onEvent?.Invoke(message.TransactionUpdate.Event);
 
-                            string functionName = message.TransactionUpdate.Event.FunctionCall.Reducer;
+                            var functionName = message.TransactionUpdate.Event.FunctionCall.Reducer;
                             if (reducerEventCache.ContainsKey(functionName))
                             {
-                                reducerEventCache[functionName].Invoke(null, new object[] { message.TransactionUpdate.Event });
+                                reducerEventCache[functionName]
+                                    .Invoke(null, new object[] { message.TransactionUpdate.Event });
                             }
+
                             break;
                     }
 
                     break;
                 case ClientApi.Message.TypeOneofCase.IdentityToken:
-                    onIdentityReceived?.Invoke(Hash.From(message.IdentityToken.Identity.ToByteArray()));
+                    onIdentityReceived?.Invoke(Identity.From(message.IdentityToken.Identity.ToByteArray()));
                     PlayerPrefs.SetString(GetTokenKey(), message.IdentityToken.Token);
                     break;
                 case ClientApi.Message.TypeOneofCase.Event:
@@ -409,10 +426,22 @@ namespace SpacetimeDB
             return key;
         }
 
-        internal void InternalCallReducer(Message message)
+        internal void InternalCallReducer(string reducer, object[] args)
         {
-            var json = Newtonsoft.Json.JsonConvert.SerializeObject(message);
-            webSocket.Send(Encoding.ASCII.GetBytes(json));
+            // var argBytes = Encoding.ASCII.GetBytes(JsonConvert.SerializeObject(args));
+            var message = new ReducerCallRequest
+            {
+                fn = reducer,
+                args = args,
+            };
+            var json = JsonConvert.SerializeObject(message);
+            webSocket.Send(Encoding.ASCII.GetBytes("{ \"call\": " + json + " }"));
+        }
+        
+        public void Subscribe(List<string> queries)
+        {
+            var json = JsonConvert.SerializeObject(queries);
+            webSocket.Send(Encoding.ASCII.GetBytes("{ \"subscribe\": { \"query_strings\": " + json + " }}"));
         }
 
         private void Update()
