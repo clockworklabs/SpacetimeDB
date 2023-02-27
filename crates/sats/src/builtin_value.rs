@@ -1,5 +1,3 @@
-// pub mod encoding;
-
 use crate::algebraic_value::AlgebraicValue;
 use crate::builtin_type::BuiltinType;
 use enum_as_inner::EnumAsInner;

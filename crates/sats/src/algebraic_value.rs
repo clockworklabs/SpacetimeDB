@@ -1,4 +1,3 @@
-// pub mod encoding;
 pub mod de;
 pub mod ser;
 use std::collections::BTreeMap;

@@ -1,5 +1,3 @@
-// pub mod encoding;
-
 use crate::algebraic_value::AlgebraicValue;
 use crate::sum_type::SumType;
 
