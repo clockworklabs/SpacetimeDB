@@ -18,9 +18,9 @@ getrandom = ["spacetimedb-bindings-sys/getrandom"]
 macro = ["dep:spacetimedb-bindings-macro"]
 
 [dependencies]
-spacetimedb-bindings-sys = { path = "../bindings-sys" }
-spacetimedb-lib = { path = "../lib", default-features = false }
-spacetimedb-bindings-macro = { path = "../bindings-macro", optional = true }
+spacetimedb-bindings-sys = { path = "../bindings-sys", version = "0.3.3" }
+spacetimedb-lib = { path = "../lib", default-features = false, version = "0.3.3" }
+spacetimedb-bindings-macro = { path = "../bindings-macro", optional = true, version = "0.3.3" }
 once_cell = "1.15.0"
 scoped-tls = "1.0.1"
 log = "0.4.17"

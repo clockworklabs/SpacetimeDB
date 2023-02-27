@@ -22,7 +22,7 @@ fi
 
 BASEDIR=$(pwd)
 FIRST_CRATE=1
-declare -a CRATES=("sats" "lib" "bindings-sys" "bindings-macro" "bindings" "cli")
+declare -a CRATES=("bindings-macro" "bindings-sys" "sats" "lib" "bindings" "cli")
 
 
 for crate in "${CRATES[@]}" ; do
