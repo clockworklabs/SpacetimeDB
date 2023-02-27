@@ -2,14 +2,11 @@
 
 set -euo pipefail
 
-# declare -a HOSTS=("cloud", "civitas")
-declare -a HOSTS=("cloud.spacetimedb.com")
-
 usage() {
-	echo "Usage: upload.sh <ssh-key-file-path>"
+	echo "Usage: upload.sh <ssh-key-file-path> <hostname>"
 }
 
-if [ "$#" != 1 ] ; then
+if [ "$#" != 2 ] ; then
 	usage
 	exit 1
 fi
@@ -20,15 +17,12 @@ if [ ! -f "$1" ] ; then
 	exit
 fi
 
-echo "This script will upload to all of the environments listed below:"
+echo "Make sure you have used \"export.sh\" to regenerate the SpacetimeDBUnitySDK."
 echo
-for host in "${HOSTS[@]}" ; do
-	printf "\t%s\n" "${host}"
-done
-
+echo "We will be uploading this SDK to $2"
+echo "Your current branch is $(git rev-parse --abbrev-ref HEAD)"
 echo
-echo "If you want to add a host, use Ctrl-C to exit now and add the host to this script."
-echo "Otherwise, press [Enter] now to continue."
+echo "If everything looks correct, press [Enter] now to continue."
 read -rp ""
 
 # Build the sdk
