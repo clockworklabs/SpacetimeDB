@@ -8,8 +8,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Start containers
-        env: { DOCKER_BUILDKIT: 1 }
-        run: docker-compose up -d
+        run: docker compose up -d
+      - name: Run smoketests
+        run: test/run-smoke-tests.sh
       - name: Stop containers
         if: always()
-        run: docker-compose down
+        run: docker compose down
