@@ -1,4 +1,7 @@
-use crate::hash::{hash_bytes, Hash};
+use crate::{
+    hash::{hash_bytes, Hash},
+    stdb_path,
+};
 
 pub struct ObjectDb {
     db: sled::Db,
@@ -7,7 +10,7 @@ pub struct ObjectDb {
 impl ObjectDb {
     pub fn init() -> Result<Self, anyhow::Error> {
         let config = sled::Config::default()
-            .path("/stdb/control_node/object_db")
+            .path(stdb_path("control_node/object_db"))
             .flush_every_ms(Some(50))
             .mode(sled::Mode::HighThroughput);
         let db = config.open()?;

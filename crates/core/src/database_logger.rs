@@ -112,8 +112,10 @@ impl DatabaseLogger {
     // }
 
     pub fn filepath(address: &Address, instance_id: u64) -> PathBuf {
-        let root = "/stdb/worker_node/database_instances";
-        format!("{}/{}/{}/{}", root, address.to_hex(), instance_id, "module_logs").into()
+        let root = crate::stdb_path("worker_node/database_instances");
+        root.join(address.to_hex())
+            .join(instance_id.to_string())
+            .join("module_logs")
     }
 
     pub fn open(root: impl AsRef<Path>) -> Self {

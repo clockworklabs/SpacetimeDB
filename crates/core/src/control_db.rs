@@ -3,6 +3,7 @@ use crate::address::Address;
 use crate::hash::hash_bytes;
 use crate::identity::Identity;
 use crate::protobuf::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
+use crate::stdb_path;
 use prost::Message;
 
 use spacetimedb_lib::name::{parse_domain_name, InsertDomainResult, RegisterTldResult};
@@ -20,7 +21,7 @@ pub struct ControlDb {
 impl ControlDb {
     fn init() -> Result<Self, anyhow::Error> {
         let config = sled::Config::default()
-            .path("/stdb/control_node/control_db")
+            .path(stdb_path("control_node/control_db"))
             .flush_every_ms(Some(50))
             .mode(sled::Mode::HighThroughput);
         let db = config.open()?;

@@ -4,8 +4,9 @@ pub mod odb {
     use hex;
     use std::path::PathBuf;
     use tokio::fs;
+    use crate::stdb_path;
 
-    const ROOT: &str = "/stdb/odb";
+    const ROOT: PathBuf = stdb_path("odb");
 
     pub async fn total_key_size_bytes() -> u64 {
         unimplemented!()
@@ -24,7 +25,7 @@ pub mod odb {
 
         let folder = hex::encode(&hash[0..2]);
         let filename = hex::encode(&hash[2..]);
-        let path = PathBuf::from(format!("{}/{}/{}", ROOT, folder, filename));
+        let path = PathBuf::from(format!("{}/{}/{}", ROOT.display(), folder, filename));
 
         if let Some(p) = path.parent() {
             fs::create_dir_all(p).await.unwrap()

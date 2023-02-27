@@ -1,8 +1,21 @@
+use std::path::{Path, PathBuf};
+
 extern crate core;
 
 pub mod json;
 pub mod sql;
 pub mod websocket;
+
+lazy_static::lazy_static! {
+    pub static ref STDB_PATH: String = std::env::var("STDB_PATH").unwrap_or("/stdb".to_owned());
+}
+
+pub fn stdb_path<S>(s: &S) -> PathBuf
+where
+    S: AsRef<Path> + ?Sized,
+{
+    Path::new(&STDB_PATH.as_str()).join(s)
+}
 
 // to let us be incremental in updating all the references to what used to be individual lazy_statics
 macro_rules! metrics_delegator {

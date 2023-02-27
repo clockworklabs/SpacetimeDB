@@ -7,6 +7,7 @@ use spacetimedb::identity::Identity;
 use spacetimedb::object_db::ObjectDb;
 use spacetimedb::protobuf::control_db::HostType;
 use spacetimedb::protobuf::worker_db::DatabaseInstanceState;
+use spacetimedb::stdb_path;
 use spacetimedb::worker_database_instance::WorkerDatabaseInstance;
 use spacetimedb::{
     hash::Hash,
@@ -264,8 +265,8 @@ impl Controller {
         let program_bytes = self.object_db.get_object(&program_bytes_address)?.unwrap();
 
         let log_path = DatabaseLogger::filepath(&address, instance_id);
-        let root = "/stdb/worker_node/database_instances";
-        let db_path = format!("{}/{}/{}/{}", root, address.to_hex(), instance_id, "database");
+        let root = stdb_path("worker_node/database_instances");
+        let db_path = format!("{}/{}/{}/{}", root.display(), address.to_hex(), instance_id, "database");
 
         let worker_database_instance = WorkerDatabaseInstance::new(
             instance_id,
@@ -304,8 +305,11 @@ impl Controller {
         let program_bytes = self.object_db.get_object(&program_bytes_address)?.unwrap();
 
         let log_path = DatabaseLogger::filepath(&address, instance_id);
-        let root = "/stdb/worker_node/database_instances";
-        let db_path = format!("{}/{}/{}/{}", root, address.to_hex(), instance_id, "database");
+        let root = stdb_path("worker_node/database_instances");
+        let db_path = root
+            .join(address.to_hex())
+            .join(instance_id.to_string())
+            .join("database");
 
         let worker_database_instance = WorkerDatabaseInstance::new(
             instance_id,
