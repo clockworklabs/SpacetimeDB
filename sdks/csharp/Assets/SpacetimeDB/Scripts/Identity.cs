@@ -56,6 +56,12 @@ namespace SpacetimeDB
 
         public override bool Equals(object o)
         {
+            // TODO(jdetter): Remove this after the bug fix
+            if (o is byte[] b)
+            {
+                return Equals(From(b));
+            }
+
             return o is Identity other && Equals(other);
         }
 
