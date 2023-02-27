@@ -70,7 +70,7 @@ impl InstanceEnv {
             .lock()
             .unwrap()
             .write(level, record, bt);
-        log::debug!(
+        log::trace!(
             "MOD({}): {}",
             self.worker_database_instance.address.to_abbreviated_hex(),
             record.message
