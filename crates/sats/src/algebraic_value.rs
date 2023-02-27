@@ -1,6 +1,5 @@
 // pub mod encoding;
 pub mod de;
-pub mod satn;
 pub mod ser;
 use std::collections::BTreeMap;
 

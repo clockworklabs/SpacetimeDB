@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::{AlgebraicType, AlgebraicValue, BuiltinType, BuiltinValue, ProductValue, SumValue, ValueWithType};
+use crate::{AlgebraicType, AlgebraicValue, BuiltinType, BuiltinValue, MapType, ProductValue, SumValue, ValueWithType};
 
 use super::{Serialize, SerializeArray, SerializeMap, SerializeNamedProduct, SerializeSeqProduct, Serializer};
 
@@ -181,6 +181,13 @@ impl Serialize for ValueWithType<'_, BuiltinValue> {
                     vec.serialize_element(&self.with(&**ty, val))?;
                 }
                 vec.end()
+            }
+            (BuiltinValue::Map { val }, BuiltinType::Map(MapType { key_ty, ty })) => {
+                let mut map = serializer.serialize_map(val.len())?;
+                for (key, val) in val {
+                    map.serialize_entry(&self.with(&**key_ty, key), &self.with(&**ty, val))?;
+                }
+                map.end()
             }
             _ => panic!("mismatched value and schema"),
         }

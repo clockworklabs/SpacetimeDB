@@ -1,5 +1,4 @@
 // pub mod encoding;
-pub mod satn;
 
 use crate::algebraic_value::AlgebraicValue;
 use crate::sum_type::SumType;
