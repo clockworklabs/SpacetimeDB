@@ -4,18 +4,14 @@ use super::{
     query::compile_query,
     subscription::Subscription,
 };
-use crate::db::relational_db::RelationalDBWrapper;
 use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::{client::ClientActorId, host::module_host::DatabaseUpdate};
+use crate::{db::relational_db::RelationalDBWrapper, protobuf::client_api::Subscribe};
 use crate::{
     json::client_api::{EventJson, FunctionCallJson, MessageJson, TransactionUpdateJson},
     protobuf::client_api::{event, message, Event, FunctionCall, Message as MessageProtobuf, TransactionUpdate},
 };
 use prost::Message as ProstMessage;
-use std::{
-    collections::hash_map::DefaultHasher,
-    hash::{Hash, Hasher},
-};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -23,7 +19,7 @@ use tokio_tungstenite::tungstenite::Message;
 enum ModuleSubscriptionCommand {
     AddSubscriber {
         client_id: ClientActorId,
-        query_string: String,
+        subscription: Subscribe,
     },
     RemoveSubscriber {
         client_id: ClientActorId,
@@ -52,10 +48,10 @@ impl ModuleSubscriptionManager {
         Self { tx }
     }
 
-    pub fn add_subscriber(&self, client_id: ClientActorId, query_string: String) -> Result<(), anyhow::Error> {
+    pub fn add_subscriber(&self, client_id: ClientActorId, subscription: Subscribe) -> Result<(), anyhow::Error> {
         self.tx.send(ModuleSubscriptionCommand::AddSubscriber {
             client_id,
-            query_string,
+            subscription,
         })?;
         Ok(())
     }
@@ -90,8 +86,8 @@ impl ModuleSubscriptionActor {
         match command {
             ModuleSubscriptionCommand::AddSubscriber {
                 client_id,
-                query_string,
-            } => self.add_subscription(client_id, query_string).await,
+                subscription,
+            } => self.add_subscription(client_id, subscription).await,
             ModuleSubscriptionCommand::RemoveSubscriber { client_id } => self.remove_subscriber(client_id),
             ModuleSubscriptionCommand::BroadcastEvent { event } => {
                 self.broadcast_event(event).await;
@@ -100,25 +96,35 @@ impl ModuleSubscriptionActor {
         }
     }
 
-    pub async fn add_subscription(&mut self, client_id: ClientActorId, query_string: String) -> bool {
+    pub async fn add_subscription(&mut self, client_id: ClientActorId, subscription: Subscribe) -> bool {
         let (sender, protocol) = {
             let cai = CLIENT_ACTOR_INDEX.lock().unwrap();
             let client = cai.get_client(&client_id).unwrap();
             (client.sender(), client.protocol)
         };
 
-        // TODO(cloutiertyler): Currently using string equivalence as an easy
-        // hack to dedup queries. This is not good and should eventually be
-        // changed to check the semantic (or at least structure) equivalence of
-        // the query.
-        let mut s = DefaultHasher::new();
-        query_string.hash(&mut s);
-        let query_id = s.finish();
+        let mut queries = vec![];
+
+        for query_string in subscription.query_strings {
+            let query = match compile_query(&mut self.relational_db, &query_string) {
+                Ok(v) => v,
+                Err(e) => {
+                    log::error!("Error: {} query string: {}", e, query_string);
+                    return false;
+                }
+            };
+            queries.push(query)
+        }
+
+        let mut sub = Subscription {
+            queries,
+            subscribers: vec![],
+        };
 
         let mut found = false;
         let mut database_update: Option<DatabaseUpdate> = None;
-        for sub in &mut self.subscriptions {
-            if sub.query_id == query_id {
+        for s in &mut self.subscriptions {
+            if s == sub {
                 sub.add_subscriber(sender.clone(), protocol);
                 database_update = Some(sub.eval_query(&mut self.relational_db));
                 found = true;
@@ -127,15 +133,6 @@ impl ModuleSubscriptionActor {
         }
 
         if !found {
-            let query = compile_query(&mut self.relational_db, &query_string);
-            let Ok(query) = query else {
-                todo!("Handle this error");
-            };
-            let mut sub = Subscription {
-                query_id,
-                query,
-                subscribers: vec![],
-            };
             sub.add_subscriber(sender.clone(), protocol);
             database_update = Some(sub.eval_query(&mut self.relational_db));
             self.subscriptions.push(sub)
@@ -143,10 +140,6 @@ impl ModuleSubscriptionActor {
 
         self.send_state(protocol, sender, database_update.unwrap()).await;
         false
-    }
-
-    pub fn _remove_subscription(&mut self, _client_id: ClientActorId, _query_id: u64) -> bool {
-        todo!()
     }
 
     pub fn remove_subscriber(&mut self, client_id: ClientActorId) -> bool {
@@ -165,25 +158,19 @@ impl ModuleSubscriptionActor {
     }
 
     async fn broadcast_event(&mut self, event: ModuleEvent) {
+        let empty = DatabaseUpdate { tables: vec![] };
         let database_update = if let EventStatus::Committed(database_update) = &event.status {
-            database_update.clone()
+            database_update
         } else {
-            DatabaseUpdate { tables: vec![] }
+            &empty
         };
 
         for subscription in &mut self.subscriptions {
-            let incr = subscription.eval_incr_query(&mut self.relational_db, database_update.clone());
+            let incr = subscription.eval_incr_query(&mut self.relational_db, database_update);
 
-            // NOTE: Currently we are sending all events to all clients even if
-            // the query does not yield any rows. This provides support for
-            // listening to empty events.  In the future, we probably want to
-            // require that client explicitly subscribe to events they want to
-            // hear about that have no rows in them.
-            //
-            // if incr.is_empty() {
-            //     continue;
-            // }
-
+            if incr.is_empty() {
+                continue;
+            }
             let protobuf_event = Self::render_protobuf_event(&event, incr.clone());
             let mut protobuf_buf = Vec::new();
             protobuf_event.encode(&mut protobuf_buf).unwrap();

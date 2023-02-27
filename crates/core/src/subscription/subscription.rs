@@ -12,9 +12,28 @@ pub struct Subscriber {
 }
 
 pub struct Subscription {
-    pub query_id: u64,
-    pub query: Query,
+    pub queries: Vec<Query>,
     pub subscribers: Vec<Subscriber>,
+}
+
+impl PartialEq for Subscription {
+    fn eq(&self, other: &Self) -> bool {
+        let mut a = self.queries.clone();
+        let mut b = other.queries.clone();
+        a.sort();
+        b.sort();
+        a == b
+    }
+}
+
+impl PartialEq<Subscription> for &mut Subscription {
+    fn eq(&self, other: &Subscription) -> bool {
+        let mut a = self.queries.clone();
+        let mut b = other.queries.clone();
+        a.sort();
+        b.sort();
+        a == b
+    }
 }
 
 impl Subscription {
@@ -40,13 +59,15 @@ impl Subscription {
     pub fn eval_incr_query(
         &mut self,
         _relational_db: &mut RelationalDBWrapper,
-        database_update: DatabaseUpdate,
+        database_update: &DatabaseUpdate,
     ) -> DatabaseUpdate {
         let mut output = DatabaseUpdate { tables: vec![] };
 
-        for table in database_update.tables {
-            if table.table_name == self.query.table_name {
-                output.tables.push(table);
+        for query in &self.queries {
+            for table in &database_update.tables {
+                if table.table_name == query.table_name {
+                    output.tables.push(table.clone());
+                }
             }
         }
 
@@ -61,35 +82,38 @@ impl Subscription {
         let (tx, stdb) = tx_.get();
         let tables = stdb.scan_table_names(tx).unwrap().collect::<Vec<_>>();
 
-        let table_name = &self.query.table_name;
-        let mut table_id: i32 = -1;
-        for (t_id, t_name) in tables {
-            if table_name == t_name.as_str() {
-                table_id = t_id as i32;
+        for query in &self.queries {
+            let table_name = &query.table_name;
+            let mut table_id: i32 = -1;
+            for (t_id, t_name) in &tables {
+                if table_name == t_name.as_str() {
+                    table_id = *t_id as i32;
+                }
             }
-        }
 
-        if table_id == -1 {
-            panic!("This is not supposed to happen.");
-        }
+            if table_id == -1 {
+                panic!("This is not supposed to happen.");
+            }
 
-        let table_id = table_id as u32;
+            let table_id = table_id as u32;
 
-        let mut table_row_operations = Vec::new();
-        for row in stdb.scan(tx, table_id).unwrap() {
-            let row_pk = RelationalDB::pk_for_row(&row);
-            let row_pk = row_pk.to_bytes();
-            table_row_operations.push(TableOp {
-                op_type: 1, // Insert
-                row_pk,
-                row,
+            let mut table_row_operations = Vec::new();
+            for row in stdb.scan(tx, table_id).unwrap() {
+                let row_pk = RelationalDB::pk_for_row(&row);
+                let row_pk = row_pk.to_bytes();
+                table_row_operations.push(TableOp {
+                    op_type: 1, // Insert
+                    row_pk,
+                    row,
+                });
+            }
+            database_update.tables.push(DatabaseTableUpdate {
+                table_id,
+                table_name: table_name.clone(),
+                ops: table_row_operations,
             });
         }
-        database_update.tables.push(DatabaseTableUpdate {
-            table_id,
-            table_name: table_name.clone(),
-            ops: table_row_operations,
-        });
+
         tx_.rollback();
 
         database_update

@@ -1,6 +1,6 @@
 use crate::db::relational_db::RelationalDBWrapper;
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Query {
     pub table_name: String,
 }

@@ -14,15 +14,11 @@ namespace SpacetimeDB
 {
 	public static partial class Reducer
 	{
-		public static event Action<ClientApi.Event.Types.Status, Hash, ulong> OnRepeatingTestEvent;
+		public static event Action<ClientApi.Event.Types.Status, Identity, ulong> OnRepeatingTestEvent;
 
 		public static void RepeatingTest(ulong prevTime)
 		{
-			NetworkManager.instance.InternalCallReducer(new NetworkManager.Message
-			{
-				fn = "repeating_test",
-				args = new object[] { prevTime },
-			});
+			NetworkManager.instance.InternalCallReducer("repeating_test", new object[] { prevTime });
 		}
 
 		[ReducerEvent(FunctionName = "repeating_test")]
@@ -34,7 +30,7 @@ namespace SpacetimeDB
 				var args = Newtonsoft.Json.JsonConvert.DeserializeObject<JArray>(jsonString);
 				if(args.Count >= 1)
 				{
-					OnRepeatingTestEvent(dbEvent.Status, Hash.From(dbEvent.CallerIdentity.ToByteArray()), args[0].ToObject<ulong>());
+					OnRepeatingTestEvent(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray()), args[0].ToObject<ulong>());
 				}
 			}
 		}
@@ -58,37 +54,31 @@ namespace SpacetimeDB
 		[Newtonsoft.Json.JsonProperty("z")]
 		public string Z;
 
-		public static TypeDef GetTypeDef()
+		public static SpacetimeDB.SATS.AlgebraicType GetAlgebraicType()
 		{
-			return TypeDef.Tuple(new ElementDef[]
+			return SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
 			{
-				new SpacetimeDB.ElementDef(0, SpacetimeDB.TypeDef.BuiltInType(SpacetimeDB.TypeDef.Def.U32)),
-				new SpacetimeDB.ElementDef(1, SpacetimeDB.TypeDef.BuiltInType(SpacetimeDB.TypeDef.Def.U32)),
-				new SpacetimeDB.ElementDef(2, SpacetimeDB.TypeDef.BuiltInType(SpacetimeDB.TypeDef.Def.String)),
+				new SpacetimeDB.SATS.ProductTypeElement("x", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U32)),
+				new SpacetimeDB.SATS.ProductTypeElement("y", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U32)),
+				new SpacetimeDB.SATS.ProductTypeElement("z", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.String)),
 			});
 		}
 
-		public static explicit operator TestA(TypeValue value)
+		public static explicit operator TestA(SpacetimeDB.SATS.AlgebraicValue value)
 		{
-			var tupleValue = value.GetValue(TypeDef.Def.Tuple) as TypeValue[];
-			if (tupleValue == null)
-			{
-				throw new System.InvalidOperationException($"Invalid value (must be Tuple): {value.TypeDef.Type}");
-			}
-
+			var productValue = value.AsProductValue();
 			return new TestA
 			{
-				X = (uint)tupleValue[0].GetValue(TypeDef.Def.U32),
-				Y = (uint)tupleValue[1].GetValue(TypeDef.Def.U32),
-				Z = (string)tupleValue[2].GetValue(TypeDef.Def.String),
+				X = productValue.elements[0].AsU32(),
+				Y = productValue.elements[1].AsU32(),
+				Z = productValue.elements[2].AsString(),
 			};
 		}
+
 		public static System.Collections.Generic.IEnumerable<TestA> Iter()
 		{
 			foreach(var entry in NetworkManager.clientDB.GetEntries("TestA"))
 			{
-				var tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];
-				if (tupleArr == null) continue;
 				yield return (TestA)entry;
 			}
 		}
@@ -100,11 +90,11 @@ namespace SpacetimeDB
 		{
 			foreach(var entry in NetworkManager.clientDB.GetEntries("TestA"))
 			{
-				var tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];
-				if (tupleArr == null) continue;
-				var compareValue = (uint)tupleArr[0].GetValue(TypeDef.Def.U32);
-				if (compareValue == value)
+				var productValue = entry.AsProductValue();
+				var compareValue = (uint)productValue.elements[0].AsU32();
+				if (compareValue == value) {
 					yield return (TestA)entry;
+				}
 			}
 		}
 
@@ -112,11 +102,11 @@ namespace SpacetimeDB
 		{
 			foreach(var entry in NetworkManager.clientDB.GetEntries("TestA"))
 			{
-				var tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];
-				if (tupleArr == null) continue;
-				var compareValue = (uint)tupleArr[1].GetValue(TypeDef.Def.U32);
-				if (compareValue == value)
+				var productValue = entry.AsProductValue();
+				var compareValue = (uint)productValue.elements[1].AsU32();
+				if (compareValue == value) {
 					yield return (TestA)entry;
+				}
 			}
 		}
 
@@ -124,11 +114,11 @@ namespace SpacetimeDB
 		{
 			foreach(var entry in NetworkManager.clientDB.GetEntries("TestA"))
 			{
-				var tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];
-				if (tupleArr == null) continue;
-				var compareValue = (string)tupleArr[2].GetValue(TypeDef.Def.String);
-				if (compareValue == value)
+				var productValue = entry.AsProductValue();
+				var compareValue = (string)productValue.elements[2].AsString();
+				if (compareValue == value) {
 					yield return (TestA)entry;
+				}
 			}
 		}
 
@@ -172,27 +162,23 @@ namespace SpacetimeDB
 		[Newtonsoft.Json.JsonProperty("foo")]
 		public string Foo;
 
-		public static TypeDef GetTypeDef()
+		public static SpacetimeDB.SATS.AlgebraicType GetAlgebraicType()
 		{
-			return TypeDef.Tuple(new ElementDef[]
+			return SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]
 			{
-				new SpacetimeDB.ElementDef(0, SpacetimeDB.TypeDef.BuiltInType(SpacetimeDB.TypeDef.Def.String)),
+				new SpacetimeDB.SATS.ProductTypeElement("foo", SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.String)),
 			});
 		}
 
-		public static explicit operator TestB(TypeValue value)
+		public static explicit operator TestB(SpacetimeDB.SATS.AlgebraicValue value)
 		{
-			var tupleValue = value.GetValue(TypeDef.Def.Tuple) as TypeValue[];
-			if (tupleValue == null)
-			{
-				throw new System.InvalidOperationException($"Invalid value (must be Tuple): {value.TypeDef.Type}");
-			}
-
+			var productValue = value.AsProductValue();
 			return new TestB
 			{
-				Foo = (string)tupleValue[0].GetValue(TypeDef.Def.String),
+				Foo = productValue.elements[0].AsString(),
 			};
 		}
+
 	}
 }
 '''
@@ -208,15 +194,11 @@ namespace SpacetimeDB
 {
 	public static partial class Reducer
 	{
-		public static event Action<ClientApi.Event.Types.Status, Hash, TestA, TestB, TestC> OnTestEvent;
+		public static event Action<ClientApi.Event.Types.Status, Identity, TestA, TestB, TestC> OnTestEvent;
 
 		public static void Test(TestA arg, TestB arg2, TestC arg3)
 		{
-			NetworkManager.instance.InternalCallReducer(new NetworkManager.Message
-			{
-				fn = "test",
-				args = new object[] { arg, arg2, arg3 },
-			});
+			NetworkManager.instance.InternalCallReducer("test", new object[] { arg, arg2, arg3 });
 		}
 
 		[ReducerEvent(FunctionName = "test")]
@@ -228,7 +210,7 @@ namespace SpacetimeDB
 				var args = Newtonsoft.Json.JsonConvert.DeserializeObject<JArray>(jsonString);
 				if(args.Count >= 3)
 				{
-					OnTestEvent(dbEvent.Status, Hash.From(dbEvent.CallerIdentity.ToByteArray()), args[0].ToObject<TestA>(), args[1].ToObject<TestB>(), args[2].ToObject<TestC>());
+					OnTestEvent(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray()), args[0].ToObject<TestA>(), args[1].ToObject<TestB>(), args[2].ToObject<TestC>());
 				}
 			}
 		}

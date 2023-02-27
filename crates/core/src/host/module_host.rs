@@ -5,7 +5,7 @@ use crate::hash::Hash;
 use crate::host::host_controller::{ReducerBudget, ReducerCallResult};
 use crate::identity::Identity;
 use crate::json::client_api::{SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson};
-use crate::protobuf::client_api::{table_row_operation, SubscriptionUpdate, TableRowOperation, TableUpdate};
+use crate::protobuf::client_api::{table_row_operation, Subscribe, SubscriptionUpdate, TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use anyhow::Context;
 use spacetimedb_lib::{EntityDef, ReducerDef, TableDef, TupleDef, TupleValue};
@@ -25,6 +25,13 @@ pub struct DatabaseUpdate {
 }
 
 impl DatabaseUpdate {
+    pub fn is_empty(&self) -> bool {
+        if self.tables.len() == 0 {
+            return true;
+        }
+        false
+    }
+
     pub fn from_writes(relational_db: &RelationalDBWrapper, writes: &Vec<Write>) -> Self {
         let mut schemas: HashMap<u32, TupleDef> = HashMap::new();
         let mut map: HashMap<u32, Vec<TableOp>> = HashMap::new();
@@ -228,7 +235,7 @@ enum ModuleHostCommand {
     },
     AddSubscriber {
         client_id: ClientActorId,
-        query_string: String,
+        subscription: Subscribe,
         respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
     },
     RemoveSubscriber {
@@ -271,10 +278,10 @@ impl ModuleHostCommand {
             ModuleHostCommand::_MigrateDatabase { respond_to } => actor._migrate_database(respond_to),
             ModuleHostCommand::AddSubscriber {
                 client_id,
-                query_string,
+                subscription,
                 respond_to,
             } => {
-                let _ = respond_to.send(actor.subscription().add_subscriber(client_id, query_string));
+                let _ = respond_to.send(actor.subscription().add_subscriber(client_id, subscription));
             }
             ModuleHostCommand::RemoveSubscriber { client_id, respond_to } => {
                 let _ = respond_to.send(actor.subscription().remove_subscriber(client_id));
@@ -443,10 +450,10 @@ impl ModuleHost {
         Ok(())
     }
 
-    pub async fn add_subscriber(&self, client_id: ClientActorId, query_string: String) -> Result<(), anyhow::Error> {
+    pub async fn add_subscriber(&self, client_id: ClientActorId, subscription: Subscribe) -> Result<(), anyhow::Error> {
         self.call(|respond_to| ModuleHostCommand::AddSubscriber {
             client_id,
-            query_string,
+            subscription,
             respond_to,
         })
         .await?

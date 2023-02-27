@@ -7,6 +7,7 @@ use crate::identity::Identity;
 use crate::json::client_api::IdentityTokenJson;
 use crate::json::client_api::MessageJson;
 use crate::protobuf::client_api::IdentityToken;
+use crate::protobuf::client_api::Subscribe;
 use crate::protobuf::client_api::{message, Message};
 use crate::worker_metrics::{WEBSOCKET_REQUESTS, WEBSOCKET_REQUEST_MSG_SIZE, WEBSOCKET_SENT, WEBSOCKET_SENT_MSG_SIZE};
 use futures::{prelude::*, stream::SplitStream, SinkExt};
@@ -176,6 +177,7 @@ impl ClientConnection {
             while let Some(message) = stream.next().await {
                 match message {
                     Ok(WebSocketMessage::Text(message)) => {
+                        log::trace!("Message: {}", message);
                         if let Err(e) = Self::on_text(id, instance_id, message).await {
                             log::debug!("Client caused error on text message: {}", e);
                             break;
@@ -274,9 +276,7 @@ impl ClientConnection {
                 let module = host.get_module(instance_id);
                 match module {
                     Ok(module) => {
-                        for query_string in subscribe.query_strings {
-                            module.add_subscriber(client_id, query_string).await?;
-                        }
+                        module.add_subscriber(client_id, subscribe).await?;
                     }
                     Err(e) => {
                         log::warn!("Could not find module {} to subscribe to: {:?}", instance_id, e)
@@ -331,9 +331,7 @@ impl ClientConnection {
                 let module = host.get_module(instance_id);
                 match module {
                     Ok(module) => {
-                        for query_string in query_strings {
-                            module.add_subscriber(client_id, query_string).await?;
-                        }
+                        module.add_subscriber(client_id, Subscribe { query_strings }).await?;
                     }
                     Err(e) => {
                         log::warn!("Could not find module {} to subscribe to: {:?}", instance_id, e)

@@ -1,7 +1,7 @@
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, BuiltinType, MapType};
+use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, BuiltinType, MapType, ProductType};
 use spacetimedb_lib::{ReducerDef, TableDef, TupleDef, TypeDef};
 
 use super::code_indenter::CodeIndenter;
@@ -48,7 +48,14 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType) -> impl fmt::Display + 'a 
             MaybePrimitive::Array { ty } => {
                 write!(f, "System.Collections.Generic.List<{}>", ty_fmt(ctx, ty))
             }
-            MaybePrimitive::Map(_) => todo!(),
+            MaybePrimitive::Map(ty) => {
+                write!(
+                    f,
+                    "System.Collections.Generic.Dictionary<{}, {}>",
+                    ty_fmt(ctx, &ty.ty),
+                    ty_fmt(ctx, &ty.key_ty)
+                )
+            }
         },
         TypeDef::Ref(r) => f.write_str(csharp_typename(ctx, *r)),
     })
@@ -60,11 +67,11 @@ fn convert_builtintype<'a>(
     value: impl fmt::Display + 'a,
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match maybe_primitive(b) {
-        MaybePrimitive::Primitive(csharp_type) => {
-            write!(f, "({csharp_type}){value}.GetValue(TypeDef.Def.{b:?})")
+        MaybePrimitive::Primitive(_) => {
+            write!(f, "{value}.As{b:?}()")
         }
         MaybePrimitive::Array { ty } if *ty == AlgebraicType::U8 => {
-            write!(f, "(byte[]){value}.GetValue(TypeDef.Def.Bytes)")
+            write!(f, "{value}.AsBytes()")
         }
         MaybePrimitive::Array { ty } => {
             let csharp_type = ty_fmt(ctx, ty);
@@ -77,10 +84,7 @@ fn convert_builtintype<'a>(
                 "\tvar vec{vecnest} = new System.Collections.Generic.List<{}>();",
                 csharp_type
             )?;
-            writeln!(
-                f,
-                "\tvar vec{vecnest}_source = {value}.GetValue(TypeDef.Def.Vec) as System.Collections.Generic.List<SpacetimeDB.TypeValue>;",
-            )?;
+            writeln!(f, "\tvar vec{vecnest}_source = {value}.AsArray();",)?;
             writeln!(f, "\tforeach(var entry in vec{vecnest}_source!)")?;
             writeln!(f, "\t{{")?;
             writeln!(
@@ -88,6 +92,7 @@ fn convert_builtintype<'a>(
                 "\t\tvec{vecnest}.Add({});",
                 convert_type(ctx, vecnest + 1, ty, "entry")
             )?;
+            writeln!(f, "\t}}")?;
             writeln!(f, "\treturn vec{vecnest};")?;
             write!(f, "}}))()")
         }
@@ -133,30 +138,45 @@ macro_rules! indent_scope {
     };
 }
 
-fn convert_typedef<'a>(ctx: &'a GenCtx, ty: &'a TypeDef) -> impl fmt::Display + 'a {
+fn convert_algebraic_type<'a>(ctx: &'a GenCtx, ty: &'a TypeDef) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        TypeDef::Product(_) => unimplemented!(),
-        TypeDef::Sum(_) => unimplemented!(),
-        TypeDef::Builtin(b) => match maybe_primitive(b) {
+        AlgebraicType::Product(product_type) => write!(f, "{}", convert_product_type(ctx, product_type)),
+        AlgebraicType::Sum(_) => unimplemented!(),
+        AlgebraicType::Builtin(b) => match maybe_primitive(b) {
             MaybePrimitive::Primitive(_) => {
-                write!(f, "SpacetimeDB.TypeDef.BuiltInType(SpacetimeDB.TypeDef.Def.{:?})", b)
+                write!(
+                    f,
+                    "SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.{:?})",
+                    b
+                )
             }
-            MaybePrimitive::Array { ty } => write!(f, "SpacetimeDB.TypeDef.GetVec({})", convert_typedef(ctx, ty)),
+            MaybePrimitive::Array { ty } => write!(
+                f,
+                "SpacetimeDB.SATS.AlgebraicType.CreateArrayType({})",
+                convert_algebraic_type(ctx, ty)
+            ),
             MaybePrimitive::Map(_) => todo!(),
         },
-        TypeDef::Ref(r) => write!(f, "{}.GetTypeDef()", csharp_typename(ctx, *r)),
+        AlgebraicType::Ref(r) => write!(f, "SpacetimeDB.{}.GetAlgebraicType()", csharp_typename(ctx, *r)),
     })
 }
 
-fn convert_tupledef<'a>(ctx: &'a GenCtx, tuple: &'a TupleDef) -> impl fmt::Display + 'a {
+fn convert_product_type<'a>(ctx: &'a GenCtx, product_type: &'a ProductType) -> impl fmt::Display + 'a {
     fmt_fn(move |f| {
-        writeln!(f, "TypeDef.Tuple(new ElementDef[]")?;
+        writeln!(
+            f,
+            "SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]"
+        )?;
         writeln!(f, "{{")?;
-        for (i, elem) in tuple.elements.iter().enumerate() {
+        for (_, elem) in product_type.elements.iter().enumerate() {
             writeln!(
                 f,
-                "{INDENT}new SpacetimeDB.ElementDef({i}, {}),",
-                convert_typedef(ctx, &elem.algebraic_type)
+                "{INDENT}new SpacetimeDB.SATS.ProductTypeElement({}, {}),",
+                elem.name
+                    .to_owned()
+                    .map(|s| format!("\"{}\"", s))
+                    .unwrap_or("null".into()),
+                convert_algebraic_type(ctx, &elem.algebraic_type)
             )?;
         }
         write!(f, "}})")
@@ -164,16 +184,16 @@ fn convert_tupledef<'a>(ctx: &'a GenCtx, tuple: &'a TupleDef) -> impl fmt::Displ
 }
 
 pub fn autogen_csharp_tuple(ctx: &GenCtx, name: &str, tuple: &TupleDef) -> String {
-    autogen_csharp_tuple_table_common(ctx, name, tuple, None)
+    autogen_csharp_product_table_common(ctx, name, tuple, None)
 }
 pub fn autogen_csharp_table(ctx: &GenCtx, name: &str, table: &TableDef) -> String {
     let tuple = ctx.typespace[table.data].as_product().unwrap();
-    autogen_csharp_tuple_table_common(ctx, name, tuple, Some(&table.unique_columns))
+    autogen_csharp_product_table_common(ctx, name, tuple, Some(&table.unique_columns))
 }
-fn autogen_csharp_tuple_table_common(
+fn autogen_csharp_product_table_common(
     ctx: &GenCtx,
     name: &str,
-    tuple: &TupleDef,
+    product_type: &ProductType,
     unique_columns: Option<&[u8]>,
 ) -> String {
     let mut output = CodeIndenter::new(String::new());
@@ -204,7 +224,7 @@ fn autogen_csharp_tuple_table_common(
         {
             indent_scope!(output);
 
-            for field in &tuple.elements {
+            for field in &product_type.elements {
                 let field_name = field
                     .name
                     .as_ref()
@@ -222,11 +242,15 @@ fn autogen_csharp_tuple_table_common(
 
             writeln!(output).unwrap();
 
-            writeln!(output, "public static TypeDef GetTypeDef()").unwrap();
+            writeln!(
+                output,
+                "public static SpacetimeDB.SATS.AlgebraicType GetAlgebraicType()"
+            )
+            .unwrap();
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
-                writeln!(output, "return {};", convert_tupledef(ctx, tuple)).unwrap();
+                writeln!(output, "return {};", convert_product_type(ctx, product_type)).unwrap();
             }
             writeln!(output, "}}").unwrap();
             writeln!(output).unwrap();
@@ -234,9 +258,11 @@ fn autogen_csharp_tuple_table_common(
             write!(
                 output,
                 "{}",
-                autogen_csharp_tuple_to_struct(ctx, &struct_name_pascal_case, tuple)
+                autogen_csharp_product_value_to_struct(ctx, &struct_name_pascal_case, product_type)
             )
             .unwrap();
+
+            writeln!(output).unwrap();
 
             // If this is a table, we want to include functions for accessing the table data
             if let Some(unique_columns) = unique_columns {
@@ -244,7 +270,7 @@ fn autogen_csharp_tuple_table_common(
                 autogen_csharp_access_funcs_for_struct(
                     &mut output,
                     &struct_name_pascal_case,
-                    tuple,
+                    product_type,
                     name,
                     unique_columns,
                 );
@@ -332,43 +358,38 @@ fn autogen_csharp_tuple_table_common(
     output.into_inner()
 }
 
-fn autogen_csharp_tuple_to_struct(ctx: &GenCtx, struct_name_pascal_case: &str, tuple: &TupleDef) -> String {
+fn autogen_csharp_product_value_to_struct(
+    ctx: &GenCtx,
+    struct_name_pascal_case: &str,
+    product_type: &ProductType,
+) -> String {
     let mut output_contents_header: String = String::new();
     let mut output_contents_return: String = String::new();
 
     writeln!(
         output_contents_header,
-        "public static explicit operator {struct_name_pascal_case}(TypeValue value)",
+        "public static explicit operator {struct_name_pascal_case}(SpacetimeDB.SATS.AlgebraicValue value)",
     )
     .unwrap();
     writeln!(output_contents_header, "{{").unwrap();
-    writeln!(
-        output_contents_header,
-        "\tvar tupleValue = value.GetValue(TypeDef.Def.Tuple) as TypeValue[];"
-    )
-    .unwrap();
-    writeln!(output_contents_header, "\tif (tupleValue == null)").unwrap();
-    writeln!(output_contents_header, "\t{{").unwrap();
-    writeln!(
-        output_contents_header,
-        "\t\tthrow new System.InvalidOperationException($\"Invalid value (must be Tuple): {{value.TypeDef.Type}}\");"
-    )
-    .unwrap();
-    writeln!(output_contents_header, "\t}}").unwrap();
-    writeln!(output_contents_header).unwrap();
+    writeln!(output_contents_header, "\tvar productValue = value.AsProductValue();").unwrap();
+
     // vec conversion go here
     writeln!(output_contents_return, "\treturn new {}", struct_name_pascal_case).unwrap();
     writeln!(output_contents_return, "\t{{").unwrap();
 
-    for (idx, field) in tuple.elements.iter().enumerate() {
-        let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
+    for (idx, field) in product_type.elements.iter().enumerate() {
+        let field_name = field
+            .name
+            .as_ref()
+            .expect("autogen'd product types should have field names");
         let field_type = &field.algebraic_type;
         let csharp_field_name = field_name.to_string().replace("r#", "").to_case(Case::Pascal);
 
         writeln!(
             output_contents_return,
             "\t\t{csharp_field_name} = {},",
-            convert_type(ctx, 0, field_type, format_args!("tupleValue[{idx}]"))
+            convert_type(ctx, 0, field_type, format_args!("productValue.elements[{idx}]"))
         )
         .unwrap();
     }
@@ -391,13 +412,13 @@ fn indented_block<R>(output: &mut CodeIndenter<String>, f: impl FnOnce(&mut Code
 fn autogen_csharp_access_funcs_for_struct(
     output: &mut CodeIndenter<String>,
     struct_name_pascal_case: &str,
-    tuple: &TupleDef,
+    product_type: &ProductType,
     table_name: &str,
     unique_columns: &[u8],
 ) {
     let it = Iterator::chain(
         unique_columns.iter().copied().zip(std::iter::repeat(true)),
-        (0..tuple.elements.len())
+        (0..product_type.elements.len())
             .map(|i| i as u8)
             .filter(|i| unique_columns.binary_search(i).is_err())
             .zip(std::iter::repeat(false)),
@@ -414,13 +435,7 @@ fn autogen_csharp_access_funcs_for_struct(
         )
         .unwrap();
         indented_block(output, |output| {
-            writeln!(
-                output,
-                "var tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];"
-            )
-            .unwrap();
             // TODO: best way to handle this?
-            writeln!(output, "if (tupleArr == null) continue;").unwrap();
             writeln!(output, "yield return ({struct_name_pascal_case})entry;").unwrap();
         });
     });
@@ -431,21 +446,32 @@ fn autogen_csharp_access_funcs_for_struct(
     });
 
     for (col_i, is_unique) in it {
-        let field = &tuple.elements[col_i as usize];
+        let field = &product_type.elements[col_i as usize];
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
         let field_type = &field.algebraic_type;
         let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
 
         let (field_type, csharp_field_type) = match field_type {
-            TypeDef::Product(_) | TypeDef::Ref(_) => {
+            AlgebraicType::Product(_) | AlgebraicType::Ref(_) => {
                 // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
                 continue;
             }
-            TypeDef::Sum(_) => unimplemented!(),
-            TypeDef::Builtin(b) => match maybe_primitive(b) {
-                MaybePrimitive::Primitive(ty) => (b, ty),
-                MaybePrimitive::Array { .. } | MaybePrimitive::Map(_) => {
-                    // TODO: We don't allow filtering based on a vec type, but we might want other functionality here in the future.
+            AlgebraicType::Sum(_) => {
+                // TODO: We don't allow filtering on enums right now, its possible we may consider it for the future.
+                continue;
+            }
+            AlgebraicType::Builtin(b) => match maybe_primitive(b) {
+                MaybePrimitive::Primitive(ty) => (format!("{:?}", b), ty),
+                MaybePrimitive::Array { ty } => {
+                    if let Some(BuiltinType::U8) = ty.as_builtin() {
+                        // Do allow filtering for byte arrays
+                        ("Bytes".into(), "byte[]")
+                    } else {
+                        // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
+                        continue;
+                    }
+                }
+                MaybePrimitive::Map(_) => {
                     // TODO: It would be nice to be able to say, give me all entries where this vec contains this value, which we can do.
                     continue;
                 }
@@ -479,28 +505,51 @@ fn autogen_csharp_access_funcs_for_struct(
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
+                writeln!(output, "var productValue = entry.AsProductValue();").unwrap();
                 writeln!(
                     output,
-                    "var tupleArr = entry.GetValue(TypeDef.Def.Tuple) as TypeValue[];"
-                )
-                .unwrap();
-                writeln!(output, "if (tupleArr == null) continue;").unwrap();
-
-                writeln!(
-                    output,
-                    "var compareValue = ({})tupleArr[{}].GetValue(TypeDef.Def.{:?});",
+                    "var compareValue = ({})productValue.elements[{}].As{}();",
                     csharp_field_type, col_i, field_type
                 )
                 .unwrap();
-                writeln!(output, "if (compareValue == value)").unwrap();
+                if csharp_field_type == "byte[]" {
+                    writeln!(
+                        output,
+                        "static bool ByteArrayCompare(byte[] a1, byte[] a2)
+{{
+    if (a1.Length != a2.Length)
+        return false;
 
-                {
-                    indent_scope!(output);
-                    if is_unique {
-                        writeln!(output, "return ({struct_name_pascal_case})entry;").unwrap();
-                    } else {
-                        writeln!(output, "yield return ({struct_name_pascal_case})entry;").unwrap();
+    for (int i=0; i<a1.Length; i++)
+        if (a1[i]!=a2[i])
+            return false;
+
+    return true;
+}}"
+                    )
+                    .unwrap();
+                    writeln!(output).unwrap();
+                    writeln!(output, "if (ByteArrayCompare(compareValue, value)) {{").unwrap();
+                    {
+                        indent_scope!(output);
+                        if is_unique {
+                            writeln!(output, "return ({struct_name_pascal_case})entry;").unwrap();
+                        } else {
+                            writeln!(output, "yield return ({struct_name_pascal_case})entry;").unwrap();
+                        }
                     }
+                    writeln!(output, "}}").unwrap();
+                } else {
+                    writeln!(output, "if (compareValue == value) {{").unwrap();
+                    {
+                        indent_scope!(output);
+                        if is_unique {
+                            writeln!(output, "return ({struct_name_pascal_case})entry;").unwrap();
+                        } else {
+                            writeln!(output, "yield return ({struct_name_pascal_case})entry;").unwrap();
+                        }
+                    }
+                    writeln!(output, "}}").unwrap();
                 }
             }
             // End foreach
@@ -590,7 +639,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 
         writeln!(
             output,
-            "public static event Action<ClientApi.Event.Types.Status, Hash{arg_types}> On{func_name_pascal_case}Event;"
+            "public static event Action<ClientApi.Event.Types.Status, Identity{arg_types}> On{func_name_pascal_case}Event;"
         )
         .unwrap();
 
@@ -618,18 +667,9 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
             // TEMPORARY OLD FUNCTIONALITY
             writeln!(
                 output,
-                "NetworkManager.instance.InternalCallReducer(new NetworkManager.Message",
+                "NetworkManager.instance.InternalCallReducer(\"{func_name}\", new object[] {{ {arg_names} }});",
             )
             .unwrap();
-            {
-                writeln!(output, "{{").unwrap();
-                {
-                    indent_scope!(output);
-                    writeln!(output, "fn = \"{func_name}\",").unwrap();
-                    writeln!(output, "args = new object[] {{ {arg_names} }},").unwrap();
-                }
-                writeln!(output, "}});").unwrap();
-            }
         }
         // Closing brace for reducer
         writeln!(output, "}}").unwrap();
@@ -662,7 +702,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "On{func_name_pascal_case}Event(dbEvent.Status, Hash.From(dbEvent.CallerIdentity.ToByteArray()){arg_event_parse});"
+                        "On{func_name_pascal_case}Event(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray()){arg_event_parse});"
                     )
                     .unwrap();
                 }
