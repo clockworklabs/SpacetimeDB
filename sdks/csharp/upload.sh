@@ -25,5 +25,6 @@ echo
 echo "If everything looks correct, press [Enter] now to continue."
 read -rp ""
 
-scp -oStrictHostKeyChecking=no -i "$1" "SpacetimeDBUnitySDK.unitypackage" "root@${host}:/var/www/sdk/SpacetimeDBUnitySDK.unitypackage"
-ssh -oStrictHostKeyChecking=no -i "$1" "root@${host}" "chown -R jenkins:jenkins /var/www/sdk"
+scp -oStrictHostKeyChecking=no -i "$1" "SpacetimeDBUnitySDK.unitypackage" "root@${2}:/var/www/sdk/SpacetimeDBUnitySDK.unitypackage"
+ssh -oStrictHostKeyChecking=no -i "$1" "root@${2}" "chown -R jenkins:jenkins /var/www/sdk"
+echo "Upload success."
