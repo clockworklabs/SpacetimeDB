@@ -25,10 +25,5 @@ echo
 echo "If everything looks correct, press [Enter] now to continue."
 read -rp ""
 
-# Build the sdk
-bash ./export.sh
-
-for host in "${HOSTS[@]}" ; do
-	scp -oStrictHostKeyChecking=no -i "$1" "SpacetimeDBUnitySDK.unitypackage" "root@${host}:/var/www/sdk/SpacetimeDBUnitySDK.unitypackage"
-	ssh -oStrictHostKeyChecking=no -i "$1" "root@${host}" "chown -R jenkins:jenkins /var/www/sdk"
-done
+scp -oStrictHostKeyChecking=no -i "$1" "SpacetimeDBUnitySDK.unitypackage" "root@${host}:/var/www/sdk/SpacetimeDBUnitySDK.unitypackage"
+ssh -oStrictHostKeyChecking=no -i "$1" "root@${host}" "chown -R jenkins:jenkins /var/www/sdk"
