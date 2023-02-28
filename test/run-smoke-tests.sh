@@ -13,8 +13,7 @@ TEST_OUT=$(mktemp)
 export TEST_OUT
 PROJECT_PATH=$(mktemp -d)
 export PROJECT_PATH
-SPACETIME_DIR="$PWD/.."
-export SPACETIME_DIR
+export SPACETIME_DIR="$PWD/.."
 
 source "lib.include"
 mkdir -p ~/.spacetime
@@ -44,22 +43,44 @@ execute_test() {
 	fi
 }
 
-TESTS="./test/tests/*.sh"
-if [ $# == 1 ] ; then
-	if [ -f "./test/tests/$1.sh" ]; then 
-		execute_test "$1"
+list_contains() {
+	local a=$1
+	shift
+	for x in "$@"; do
+		if [[ "$x" == "$a" ]]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+TESTS=(./test/tests/*.sh)
+TESTS=("${TESTS[@]#./test/tests/}")
+TESTS=("${TESTS[@]%.sh}")
+
+EXCLUDE_TESTS=()
+
+if [ $# != 0 ] ; then
+	case $1 in
+		-x)
+			shift
+			EXCLUDE_TESTS+=("$@")
+		;;
+		*)
+			TESTS=("$@")
+		;;
+	esac
+fi
+
+for smoke_test in "${TESTS[@]}" ; do
+	list_contains "$smoke_test" "${EXCLUDE_TESTS[@]}" && continue
+	if [ -f "./test/tests/$smoke_test.sh" ]; then
+		execute_test "$smoke_test"
 	else
-		echo "Unknown test: $1"
+		echo "Unknown test: $smoke_test"
 		exit 1
 	fi
-elif [ $# == 0 ] ; then
-	for smoke_test in $TESTS ; do
-		execute_test "$(basename "$smoke_test" .sh)"
-	done
-else
-	echo "Unknown parameters."
-	exit 1
-fi
+done
 
 if [ -f ~/.spacetime/.config.toml ] ; then
 	cp ~/.spacetime/.config.toml ~/.spacetime/config.toml 

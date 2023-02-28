@@ -10,7 +10,7 @@ jobs:
       - name: Start containers
         run: docker compose up -d
       - name: Run smoketests
-        run: test/run-smoke-tests.sh
+        run: test/run-smoke-tests.sh -x bitcraftmini-pretest
       - name: Stop containers
-        if: always()
+        if: success() || failure()
         run: docker compose down

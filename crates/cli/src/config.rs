@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs,
     io::{Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -105,6 +105,9 @@ impl Config {
     }
 
     fn load_raw(config_dir: PathBuf) -> RawConfig {
+        if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
+            return Self::load_from_file(config_path.as_ref());
+        }
         if !config_dir.exists() {
             fs::create_dir_all(&config_dir).unwrap();
         }
@@ -116,6 +119,10 @@ impl Config {
         };
 
         let config_path = config_dir.join(config_filename);
+        Self::load_from_file(&config_path)
+    }
+
+    fn load_from_file(config_path: &Path) -> RawConfig {
         let mut file = fs::OpenOptions::new()
             .create(true)
             .write(true)
