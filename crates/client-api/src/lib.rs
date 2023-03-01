@@ -94,25 +94,28 @@ pub trait DatabaseDb: Send + Sync {
 
     async fn init_with_schedule_state(&self, schedule_state: ScheduleState);
 
-    async fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>>;
+    async fn get_database_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<Database>>;
 
-    async fn get_database_by_address(&self, address: &Address) -> anyhow::Result<Option<Database>>;
+    async fn get_database_by_address(&self, address: &Address) -> spacetimedb::control_db::Result<Option<Database>>;
 
-    async fn _get_databases(&self) -> anyhow::Result<Vec<Database>>;
+    async fn _get_databases(&self) -> spacetimedb::control_db::Result<Vec<Database>>;
 
-    async fn insert_database(&self, database: Database) -> anyhow::Result<u64>;
+    async fn insert_database(&self, database: Database) -> spacetimedb::control_db::Result<u64>;
 
-    async fn delete_database(&self, database_id: u64) -> anyhow::Result<Option<u64>>;
+    async fn delete_database(&self, database_id: u64) -> spacetimedb::control_db::Result<Option<u64>>;
 
-    async fn _get_database_instance_by_id(&self, id: u64) -> anyhow::Result<Option<DatabaseInstance>>;
+    async fn _get_database_instance_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<DatabaseInstance>>;
 
-    async fn get_database_instances(&self) -> anyhow::Result<Vec<DatabaseInstance>>;
+    async fn get_database_instances(&self) -> spacetimedb::control_db::Result<Vec<DatabaseInstance>>;
 
     async fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance>;
 
-    async fn insert_database_instance(&self, database_instance: DatabaseInstance) -> anyhow::Result<u64>;
+    async fn insert_database_instance(
+        &self,
+        database_instance: DatabaseInstance,
+    ) -> spacetimedb::control_db::Result<u64>;
 
-    async fn delete_database_instance(&self, database_instance_id: u64) -> anyhow::Result<()>;
+    async fn delete_database_instance(&self, database_instance_id: u64) -> spacetimedb::control_db::Result<()>;
 }
 
 #[macro_export]
@@ -214,7 +217,7 @@ macro_rules! delegate_databasedb {
             async fn get_database_by_id(
                 &$self,
                 id: u64,
-            ) -> anyhow::Result<Option<spacetimedb::protobuf::control_db::Database>> {
+            ) -> spacetimedb::control_db::Result<Option<spacetimedb::protobuf::control_db::Database>> {
                 let x = $target.get_database_by_id(id);
                 $(let x = match x { $x => $map };)?
                 x
@@ -223,13 +226,13 @@ macro_rules! delegate_databasedb {
             async fn get_database_by_address(
                 &$self,
                 address: &spacetimedb::address::Address,
-            ) -> anyhow::Result<Option<spacetimedb::protobuf::control_db::Database>> {
+            ) -> spacetimedb::control_db::Result<Option<spacetimedb::protobuf::control_db::Database>> {
                 let x = $target.get_database_by_address(address);
                 $(let x = match x { $x => $map };)?
                 x
             }
 
-            async fn _get_databases(&$self) -> anyhow::Result<Vec<spacetimedb::protobuf::control_db::Database>> {
+            async fn _get_databases(&$self) -> spacetimedb::control_db::Result<Vec<spacetimedb::protobuf::control_db::Database>> {
                 let x = $target._get_databases();
                 $(let x = match x { $x => $map };)?
                 x
@@ -238,13 +241,13 @@ macro_rules! delegate_databasedb {
             async fn insert_database(
                 &$self,
                 database: spacetimedb::protobuf::control_db::Database,
-            ) -> anyhow::Result<u64> {
+            ) -> spacetimedb::control_db::Result<u64> {
                 let x = $target.insert_database(database);
                 $(let x = match x { $x => $map };)?
                 x
             }
 
-            async fn delete_database(&$self, database_id: u64) -> anyhow::Result<Option<u64>> {
+            async fn delete_database(&$self, database_id: u64) -> spacetimedb::control_db::Result<Option<u64>> {
                 let x = $target.delete_database(database_id);
                 $(let x = match x { $x => $map };)?
                 x
@@ -253,7 +256,7 @@ macro_rules! delegate_databasedb {
             async fn _get_database_instance_by_id(
                 &$self,
                 id: u64,
-            ) -> anyhow::Result<Option<spacetimedb::protobuf::control_db::DatabaseInstance>> {
+            ) -> spacetimedb::control_db::Result<Option<spacetimedb::protobuf::control_db::DatabaseInstance>> {
                 let x = $target._get_database_instance_by_id(id);
                 $(let x = match x { $x => $map };)?
                 x
@@ -261,7 +264,7 @@ macro_rules! delegate_databasedb {
 
             async fn get_database_instances(
                 &$self,
-            ) -> anyhow::Result<Vec<spacetimedb::protobuf::control_db::DatabaseInstance>> {
+            ) -> spacetimedb::control_db::Result<Vec<spacetimedb::protobuf::control_db::DatabaseInstance>> {
                 let x = $target.get_database_instances();
                 $(let x = match x { $x => $map };)?
                 x
@@ -279,13 +282,13 @@ macro_rules! delegate_databasedb {
             async fn insert_database_instance(
                 &$self,
                 database_instance: spacetimedb::protobuf::control_db::DatabaseInstance,
-            ) -> anyhow::Result<u64> {
+            ) -> spacetimedb::control_db::Result<u64> {
                 let x = $target.insert_database_instance(database_instance);
                 $(let x = match x { $x => $map };)?
                 x
             }
 
-            async fn delete_database_instance(&$self, database_instance_id: u64) -> anyhow::Result<()> {
+            async fn delete_database_instance(&$self, database_instance_id: u64) -> spacetimedb::control_db::Result<()> {
                 let x = $target.delete_database_instance(database_instance_id);
                 $(let x = match x { $x => $map };)?
                 x

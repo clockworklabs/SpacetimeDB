@@ -128,6 +128,10 @@ pub fn is_address(hex: &str) -> bool {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("Error when parsing a domain, reason: {0}")]
+pub struct DomainParsingError(String);
+
 /// Parses a database name. A database name is usually in one of the two following forms:
 ///  my_database_name
 /// or
@@ -140,24 +144,30 @@ pub fn is_address(hex: &str) -> bool {
 ///  my_domain/a//c/d
 ///  /my_domain
 ///  my_domain/
-pub fn parse_domain_name(domain: &str) -> Result<DomainName, anyhow::Error> {
+pub fn parse_domain_name(domain: &str) -> Result<DomainName, DomainParsingError> {
     if is_address(domain) {
-        return Err(anyhow::anyhow!("Database names cannot be a valid address: {}", domain));
+        return Err(DomainParsingError(format!(
+            "Database names cannot be a valid address: {}",
+            domain
+        )));
     }
     if domain.ends_with('/') {
-        return Err(anyhow::anyhow!("Database names must not end with a slash: {}", domain));
+        return Err(DomainParsingError(format!(
+            "Database names must not end with a slash: {}",
+            domain
+        )));
     }
     if domain.starts_with('/') {
-        return Err(anyhow::anyhow!(
+        return Err(DomainParsingError(format!(
             "Database names must not start with a slash: {}",
             domain
-        ));
+        )));
     }
     if domain.contains("//") {
-        return Err(anyhow::anyhow!(
+        return Err(DomainParsingError(format!(
             "Database names must not have 2 consecutive slashes: {}",
             domain
-        ));
+        )));
     }
 
     if domain.contains('/') {

@@ -6,7 +6,7 @@ use crate::protobuf::control_db::{Database, DatabaseInstance, EnergyBalance, Ide
 use crate::stdb_path;
 use prost::Message;
 
-use spacetimedb_lib::name::{parse_domain_name, InsertDomainResult, RegisterTldResult};
+use spacetimedb_lib::name::{parse_domain_name, DomainParsingError, InsertDomainResult, RegisterTldResult};
 use spacetimedb_lib::recovery::RecoveryCode;
 
 // TODO: Consider making not static
@@ -18,8 +18,45 @@ pub struct ControlDb {
     db: sled::Db,
 }
 
+pub type Result<T> = core::result::Result<T, Error>;
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("collection not found")]
+    CollectionNotFound(sled::Error),
+    #[error("database error")]
+    DatabaseError(sled::Error),
+    #[error("record with the name {0} already exists")]
+    RecordAlreadyExists(String),
+    #[error("database with address {0} already exists")]
+    DatabaseAlreadyExists(String),
+    #[error("failed to register {0} domain")]
+    DomainRegistrationFailure(String),
+    #[error("failed to decode data")]
+    DecodingError(prost::DecodeError),
+    #[error(transparent)]
+    DomainParsingError(#[from] DomainParsingError),
+    #[error(transparent)]
+    JSONDeserializationError(#[from] serde_json::Error),
+}
+
+impl From<sled::Error> for Error {
+    fn from(err: sled::Error) -> Self {
+        match err {
+            sled::Error::CollectionNotFound(_) => Error::CollectionNotFound(err),
+            err => Error::DatabaseError(err),
+        }
+    }
+}
+
+impl From<prost::DecodeError> for Error {
+    fn from(err: prost::DecodeError) -> Self {
+        Error::DecodingError(err)
+    }
+}
+
 impl ControlDb {
-    fn init() -> Result<Self, anyhow::Error> {
+    fn init() -> Result<Self> {
         let config = sled::Config::default()
             .path(stdb_path("control_node/control_db"))
             .flush_every_ms(Some(50))
@@ -30,7 +67,7 @@ impl ControlDb {
 }
 
 impl ControlDb {
-    pub async fn spacetime_dns(&self, domain: &str) -> Result<Option<Address>, anyhow::Error> {
+    pub async fn spacetime_dns(&self, domain: &str) -> Result<Option<Address>> {
         let tree = self.db.open_tree("dns")?;
         let value = tree.get(domain.as_bytes())?;
         if let Some(value) = value {
@@ -39,7 +76,7 @@ impl ControlDb {
         Ok(None)
     }
 
-    pub async fn spacetime_reverse_dns(&self, address: &Address) -> Result<Vec<String>, anyhow::Error> {
+    pub async fn spacetime_reverse_dns(&self, address: &Address) -> Result<Vec<String>> {
         let tree = self.db.open_tree("reverse_dns")?;
         let value = tree.get(address.as_slice())?;
         if let Some(value) = value {
@@ -68,9 +105,9 @@ impl ControlDb {
         domain: &str,
         owner_identity: Identity,
         try_register_tld: bool,
-    ) -> Result<InsertDomainResult, anyhow::Error> {
+    ) -> Result<InsertDomainResult> {
         if self.spacetime_dns(domain).await?.is_some() {
-            return Err(anyhow::anyhow!("Record for name '{}' already exists. ", domain));
+            return Err(Error::RecordAlreadyExists(domain.to_string()));
         }
         let result = parse_domain_name(domain)?;
         match self.spacetime_lookup_tld(result.tld.as_str()).await? {
@@ -92,7 +129,7 @@ impl ControlDb {
                         // This identity now owns this TLD
                     } else {
                         // This is technically possibly due to race conditions
-                        return Err(anyhow::anyhow!("Failed to register domain."));
+                        return Err(Error::DomainRegistrationFailure(domain.to_string()));
                     }
                 } else {
                     return Ok(InsertDomainResult::TldNotRegistered {
@@ -129,11 +166,7 @@ impl ControlDb {
     ///
     /// * `domain` - The domain name to register
     /// * `owner_identity` - The identity that should own this domain name.
-    pub async fn spacetime_register_tld(
-        &self,
-        tld: &str,
-        owner_identity: Identity,
-    ) -> Result<RegisterTldResult, anyhow::Error> {
+    pub async fn spacetime_register_tld(&self, tld: &str, owner_identity: Identity) -> Result<RegisterTldResult> {
         let tree = self.db.open_tree("top_level_domains")?;
         let current_owner = tree.get(tld.as_bytes())?;
         match current_owner {
@@ -160,11 +193,7 @@ impl ControlDb {
     /// Starts a recovery code request
     ///
     ///  * `email` - The email to send the recovery code to
-    pub async fn spacetime_insert_recovery_code(
-        &self,
-        email: &str,
-        new_code: RecoveryCode,
-    ) -> Result<(), anyhow::Error> {
+    pub async fn spacetime_insert_recovery_code(&self, email: &str, new_code: RecoveryCode) -> Result<()> {
         // TODO(jdetter): This function should take an identity instead of an email
         let tree = self.db.open_tree("recovery_codes")?;
         let current_requests = tree.get(email.as_bytes())?;
@@ -182,11 +211,7 @@ impl ControlDb {
         Ok(())
     }
 
-    pub async fn spacetime_get_recovery_code(
-        &self,
-        email: &str,
-        code: &str,
-    ) -> Result<Option<RecoveryCode>, anyhow::Error> {
+    pub async fn spacetime_get_recovery_code(&self, email: &str, code: &str) -> Result<Option<RecoveryCode>> {
         let tree = self.db.open_tree("recovery_codes")?;
         let current_requests = tree.get(email.as_bytes())?;
         match current_requests {
@@ -208,7 +233,7 @@ impl ControlDb {
     ///
     /// # Arguments
     ///  * `domain` - The domain to lookup
-    pub async fn spacetime_lookup_tld(&self, domain: &str) -> Result<Option<Identity>, anyhow::Error> {
+    pub async fn spacetime_lookup_tld(&self, domain: &str) -> Result<Option<Identity>> {
         // Make sure the domain is valid first
         parse_domain_name(domain)?;
 
@@ -219,7 +244,7 @@ impl ControlDb {
         };
     }
 
-    pub async fn alloc_spacetime_identity(&self) -> Result<Identity, anyhow::Error> {
+    pub async fn alloc_spacetime_identity(&self) -> Result<Identity> {
         // TODO: this really doesn't need to be a single global count
         let id = self.db.generate_id()?;
         let bytes: &[u8] = &id.to_le_bytes();
@@ -229,7 +254,7 @@ impl ControlDb {
         Ok(hash)
     }
 
-    pub async fn alloc_spacetime_address(&self) -> Result<Address, anyhow::Error> {
+    pub async fn alloc_spacetime_address(&self) -> Result<Address> {
         // TODO: this really doesn't need to be a single global count
         // We could do something more intelligent for addresses...
         // A. generating them randomly
@@ -243,11 +268,7 @@ impl ControlDb {
         Ok(address)
     }
 
-    pub async fn associate_email_spacetime_identity(
-        &self,
-        identity: &Identity,
-        email: &str,
-    ) -> Result<(), anyhow::Error> {
+    pub async fn associate_email_spacetime_identity(&self, identity: &Identity, email: &str) -> Result<()> {
         // Lowercase the email before storing
         let email = email.to_lowercase();
 
@@ -262,7 +283,7 @@ impl ControlDb {
         Ok(())
     }
 
-    pub fn get_identities_for_email(&self, email: &str) -> Result<Vec<IdentityEmail>, anyhow::Error> {
+    pub fn get_identities_for_email(&self, email: &str) -> Result<Vec<IdentityEmail>> {
         let mut result = Vec::<IdentityEmail>::new();
         let tree = self.db.open_tree("email")?;
         for i in tree.iter() {
@@ -275,7 +296,7 @@ impl ControlDb {
         Ok(result)
     }
 
-    pub async fn get_databases(&self) -> Result<Vec<Database>, anyhow::Error> {
+    pub async fn get_databases(&self) -> Result<Vec<Database>> {
         let tree = self.db.open_tree("database")?;
         let mut databases = Vec::new();
         let scan_key: &[u8] = b"";
@@ -287,7 +308,7 @@ impl ControlDb {
         Ok(databases)
     }
 
-    pub async fn get_database_by_id(&self, id: u64) -> Result<Option<Database>, anyhow::Error> {
+    pub async fn get_database_by_id(&self, id: u64) -> Result<Option<Database>> {
         for database in self.get_databases().await? {
             if database.id == id {
                 return Ok(Some(database));
@@ -296,7 +317,7 @@ impl ControlDb {
         Ok(None)
     }
 
-    pub async fn get_database_by_address(&self, address: &Address) -> Result<Option<Database>, anyhow::Error> {
+    pub async fn get_database_by_address(&self, address: &Address) -> Result<Option<Database>> {
         let tree = self.db.open_tree("database_by_address")?;
         let key = address.to_hex();
         let value = tree.get(key.as_bytes())?;
@@ -307,13 +328,13 @@ impl ControlDb {
         Ok(None)
     }
 
-    pub async fn insert_database(&self, mut database: Database) -> Result<u64, anyhow::Error> {
+    pub async fn insert_database(&self, mut database: Database) -> Result<u64> {
         let id = self.db.generate_id()?;
         let tree = self.db.open_tree("database_by_address")?;
 
         let key = Address::from_slice(&database.address).to_hex();
         if tree.contains_key(key.as_bytes())? {
-            return Err(anyhow::anyhow!("Database with address {} already exists", key));
+            return Err(Error::DatabaseAlreadyExists(key));
         }
 
         database.id = id;
@@ -329,7 +350,7 @@ impl ControlDb {
         Ok(id)
     }
 
-    pub async fn update_database(&self, database: Database) -> Result<(), anyhow::Error> {
+    pub async fn update_database(&self, database: Database) -> Result<()> {
         let tree = self.db.open_tree("database")?;
         let tree_by_address = self.db.open_tree("database_by_address")?;
         let key = Address::from_slice(&database.address).to_hex();
@@ -339,7 +360,7 @@ impl ControlDb {
             let old_database = Database::decode(&old_value[..])?;
 
             if database.address != old_database.address && tree_by_address.contains_key(key.as_bytes())? {
-                return Err(anyhow::anyhow!("Database with address {} already exists", key));
+                return Err(Error::DatabaseAlreadyExists(key));
             }
         }
 
@@ -354,7 +375,7 @@ impl ControlDb {
         Ok(())
     }
 
-    pub async fn delete_database(&self, id: u64) -> Result<Option<u64>, anyhow::Error> {
+    pub async fn delete_database(&self, id: u64) -> Result<Option<u64>> {
         let tree = self.db.open_tree("database")?;
         let tree_by_address = self.db.open_tree("database_by_address")?;
 
@@ -370,7 +391,7 @@ impl ControlDb {
         Ok(None)
     }
 
-    pub async fn get_database_instances(&self) -> Result<Vec<DatabaseInstance>, anyhow::Error> {
+    pub async fn get_database_instances(&self) -> Result<Vec<DatabaseInstance>> {
         let tree = self.db.open_tree("database_instance")?;
         let mut database_instances = Vec::new();
         let scan_key: &[u8] = b"";
@@ -390,10 +411,7 @@ impl ControlDb {
             .find(|instance| instance.database_id == database_id && instance.leader)
     }
 
-    pub async fn get_database_instances_by_database(
-        &self,
-        database_id: u64,
-    ) -> Result<Vec<DatabaseInstance>, anyhow::Error> {
+    pub async fn get_database_instances_by_database(&self, database_id: u64) -> Result<Vec<DatabaseInstance>> {
         // TODO: because we don't have foreign key constraints it's actually possible to have
         // instances in here with no database. Although we'd be in a bit of a corrupted state
         // in that case
@@ -413,10 +431,7 @@ impl ControlDb {
         Ok(database_instances)
     }
 
-    pub async fn insert_database_instance(
-        &self,
-        mut database_instance: DatabaseInstance,
-    ) -> Result<u64, anyhow::Error> {
+    pub async fn insert_database_instance(&self, mut database_instance: DatabaseInstance) -> Result<u64> {
         let tree = self.db.open_tree("database_instance")?;
 
         let id = self.db.generate_id()?;
@@ -430,7 +445,7 @@ impl ControlDb {
         Ok(id)
     }
 
-    pub async fn _update_database_instance(&self, database_instance: DatabaseInstance) -> Result<(), anyhow::Error> {
+    pub async fn _update_database_instance(&self, database_instance: DatabaseInstance) -> Result<()> {
         let tree = self.db.open_tree("database_instance")?;
 
         let mut buf = Vec::new();
@@ -440,13 +455,13 @@ impl ControlDb {
         Ok(())
     }
 
-    pub async fn delete_database_instance(&self, id: u64) -> Result<(), anyhow::Error> {
+    pub async fn delete_database_instance(&self, id: u64) -> Result<()> {
         let tree = self.db.open_tree("database_instance")?;
         tree.remove(id.to_be_bytes())?;
         Ok(())
     }
 
-    pub async fn get_nodes(&self) -> Result<Vec<Node>, anyhow::Error> {
+    pub async fn get_nodes(&self) -> Result<Vec<Node>> {
         let tree = self.db.open_tree("node")?;
         let mut nodes = Vec::new();
         let scan_key: &[u8] = b"";
@@ -458,7 +473,7 @@ impl ControlDb {
         Ok(nodes)
     }
 
-    pub async fn get_node(&self, id: u64) -> Result<Option<Node>, anyhow::Error> {
+    pub async fn get_node(&self, id: u64) -> Result<Option<Node>> {
         let tree = self.db.open_tree("node")?;
 
         let value = tree.get(id.to_be_bytes())?;
@@ -470,7 +485,7 @@ impl ControlDb {
         }
     }
 
-    pub async fn insert_node(&self, mut node: Node) -> Result<u64, anyhow::Error> {
+    pub async fn insert_node(&self, mut node: Node) -> Result<u64> {
         let tree = self.db.open_tree("node")?;
 
         let id = self.db.generate_id()?;
@@ -484,7 +499,7 @@ impl ControlDb {
         Ok(id)
     }
 
-    pub async fn update_node(&self, node: Node) -> Result<(), anyhow::Error> {
+    pub async fn update_node(&self, node: Node) -> Result<()> {
         let tree = self.db.open_tree("node")?;
 
         let mut buf = Vec::new();
@@ -494,7 +509,7 @@ impl ControlDb {
         Ok(())
     }
 
-    pub async fn _delete_node(&self, id: u64) -> Result<(), anyhow::Error> {
+    pub async fn _delete_node(&self, id: u64) -> Result<()> {
         let tree = self.db.open_tree("node")?;
         tree.remove(id.to_be_bytes())?;
         Ok(())
@@ -503,7 +518,7 @@ impl ControlDb {
     /// Return the current budget for all identities as stored in the db.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-    pub async fn get_energy_balances(&self) -> Result<Vec<EnergyBalance>, anyhow::Error> {
+    pub async fn get_energy_balances(&self) -> Result<Vec<EnergyBalance>> {
         let mut budgets = vec![];
         let tree = self.db.open_tree("energy_budget")?;
         for budget_entry in tree.iter() {
@@ -529,7 +544,7 @@ impl ControlDb {
     /// Return the current budget for a given identity as stored in the db.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-    pub async fn get_energy_balance(&self, identity: &Identity) -> Result<Option<EnergyBalance>, anyhow::Error> {
+    pub async fn get_energy_balance(&self, identity: &Identity) -> Result<Option<EnergyBalance>> {
         let tree = self.db.open_tree("energy_budget")?;
         let key = identity.to_hex();
         let value = tree.get(key.as_bytes())?;
@@ -544,7 +559,7 @@ impl ControlDb {
     /// Update the stored current budget for a identity.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-    pub fn set_energy_balance(&self, identity: &Identity, budget: &EnergyBalance) -> Result<(), anyhow::Error> {
+    pub fn set_energy_balance(&self, identity: &Identity, budget: &EnergyBalance) -> Result<()> {
         let tree = self.db.open_tree("energy_budget")?;
         let key = identity.to_hex();
         let mut buf = Vec::new();
