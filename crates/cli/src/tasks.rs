@@ -29,29 +29,31 @@ pub(crate) fn build(project_path: &Path) -> anyhow::Result<PathBuf> {
     let artifact = artifact.context("no artifact found?")?;
     let artifact = artifact.filenames.into_iter().next().context("no wasm?")?;
 
-    let clippy_conf_dir = tempfile::tempdir()?;
-    fs::write(clippy_conf_dir.path().join("clippy.toml"), CLIPPY_TOML)?;
-    println!("checking crate with spacetimedb's clippy configuration");
-    // TODO: should we pass --no-deps here? leaving it out could be valuable if a module is split
-    //       into multiple crates, but without it it lints on proc-macro crates too
-    let out = cmd!(
-        "cargo",
-        "--config=net.git-fetch-with-cli=true",
-        "clippy",
-        "--target=wasm32-unknown-unknown",
-        // TODO: pass -q? otherwise it might be too busy
-        // "-q",
-        "--",
-        "--no-deps",
-        "-Aclippy::all",
-        "-Dclippy::disallowed-macros"
-    )
-    .dir(project_path)
-    .env("CLIPPY_DISABLE_DOCS_LINKS", "1")
-    .env("CLIPPY_CONF_DIR", clippy_conf_dir.path())
-    .unchecked()
-    .run()?;
-    anyhow::ensure!(out.status.success(), "clippy found a lint error");
+    if std::env::var_os("SPACETIME_SKIP_CLIPPY").as_deref() != Some("1".as_ref()) {
+        let clippy_conf_dir = tempfile::tempdir()?;
+        fs::write(clippy_conf_dir.path().join("clippy.toml"), CLIPPY_TOML)?;
+        println!("checking crate with spacetimedb's clippy configuration");
+        // TODO: should we pass --no-deps here? leaving it out could be valuable if a module is split
+        //       into multiple crates, but without it it lints on proc-macro crates too
+        let out = cmd!(
+            "cargo",
+            "--config=net.git-fetch-with-cli=true",
+            "clippy",
+            "--target=wasm32-unknown-unknown",
+            // TODO: pass -q? otherwise it might be too busy
+            // "-q",
+            "--",
+            "--no-deps",
+            "-Aclippy::all",
+            "-Dclippy::disallowed-macros"
+        )
+        .dir(project_path)
+        .env("CLIPPY_DISABLE_DOCS_LINKS", "1")
+        .env("CLIPPY_CONF_DIR", clippy_conf_dir.path())
+        .unchecked()
+        .run()?;
+        anyhow::ensure!(out.status.success(), "clippy found a lint error");
+    }
 
     Ok(artifact.into())
 }

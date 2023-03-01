@@ -15,6 +15,8 @@ PROJECT_PATH=$(mktemp -d)
 export PROJECT_PATH
 export SPACETIME_DIR="$PWD/.."
 
+export SPACETIME_SKIP_CLIPPY=1
+
 source "lib.include"
 mkdir -p ~/.spacetime
 if [ -f ~/.spacetime/config.toml ] ; then
