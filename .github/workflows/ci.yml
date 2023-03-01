@@ -1,0 +1,122 @@
+on:
+  pull_request:
+
+name: CI
+
+jobs:
+  pre_ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+  docker_smoketests:
+    needs: pre_ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Start containers
+        run: docker compose up -d
+      - name: Run smoketests
+        run: test/run-smoke-tests.sh -x bitcraftmini-pretest
+      - name: Stop containers
+        if: success() || failure()
+        run: docker compose down
+
+  test:
+    name: Test Suite
+    needs: pre_ci
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: wasm32-unknown-unknown }
+
+      - name: Create /stdb dir
+        run: |
+          sudo mkdir /stdb
+          sudo chmod 777 /stdb
+
+      - name: Run cargo test
+        run: cargo test --all --features odb_rocksdb,odb_sled,tracelogging
+
+  lints:
+    name: Lints
+    needs: pre_ci
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: 'rustfmt, clippy' }
+
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: Run cargo clippy
+        run: cargo clippy --all --features odb_rocksdb,odb_sled,tracelogging -- -D warnings
+
+  wasm_bindings:
+    name: Build and test wasm bindings
+    needs: pre_ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: wasm32-unknown-unknown }
+
+      - name: Build rust-wasm-test
+        run: cargo build -p rust-wasm-test --release --target wasm32-unknown-unknown
+
+      - name: Run bindgen tests
+        run: cargo test -p spacetimedb-cli
+
+  modulesBenchmark:
+    name: run benchmarks
+    needs: pre_ci
+    runs-on: self-hosted
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+
+      - name: ⚡ Cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build
+        working-directory: crates/bench/
+        run: |
+          cargo build --release
+
+      - name: Benchmark Vs Sqlite
+        working-directory: crates/bench/
+        run: |
+          python3 hyper_cmp.py versus > out.report
+          cat out.report >> $GITHUB_STEP_SUMMARY
+
+      - name: Criterion compare
+        uses: boa-dev/criterion-compare-action@v3
+        with:
+          cwd: "crates/bench"
+          branchName: ${{ github.base_ref }}
+          benchName: modules
