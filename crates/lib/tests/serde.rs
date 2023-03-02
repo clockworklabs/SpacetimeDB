@@ -15,21 +15,15 @@ macro_rules! de_json_snapshot {
     };
 }
 
-fn bytes() -> TypeDef {
-    TypeDef::Builtin(Array {
-        ty: Box::new(TypeDef::Builtin(U8)),
-    })
-}
-
 #[test]
 fn test_json_mappings() {
     let schema = tuple([
         ("foo", TypeDef::Builtin(U32)),
-        ("bar", bytes()),
+        ("bar", TypeDef::bytes()),
         ("baz", vec(TypeDef::Builtin(String))),
         (
             "quux",
-            TypeDef::Sum(enumm([("Hash", bytes()), ("Unit", TypeDef::Product(tuple([])))])),
+            TypeDef::Sum(enumm([("Hash", TypeDef::bytes()), ("Unit", TypeDef::UNIT_TYPE)])),
         ),
         ("and_peggy", TypeDef::Builtin(F64)),
     ]);
@@ -46,7 +40,7 @@ fn test_json_mappings() {
     let data = r#"
 {
     "foo": 5654,
-    "bar": "010F2C",
+    "bar": [1, 15, 44],
     "baz": ["it's 🥶°C"],
     "quux": { "Unit": [] },
     "and_peggy": 9.8

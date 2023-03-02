@@ -92,7 +92,11 @@ impl<'de, D: serde::Deserializer<'de>> Deserializer<'de> for SerdeDeserializer<D
     }
 
     fn deserialize_bytes<V: super::SliceVisitor<'de, [u8]>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        self.de.deserialize_str(BytesVisitor { visitor }).map_err(SerdeError)
+        if self.de.is_human_readable() {
+            self.de.deserialize_any(BytesVisitor { visitor }).map_err(SerdeError)
+        } else {
+            self.de.deserialize_bytes(BytesVisitor { visitor }).map_err(SerdeError)
+        }
     }
 
     fn deserialize_array_seed<V: super::ArrayVisitor<'de, T::Output>, T: super::DeserializeSeed<'de> + Clone>(
@@ -410,6 +414,17 @@ impl<'de, V: super::SliceVisitor<'de, [u8]>> serde::Visitor<'de> for BytesVisito
     {
         let data = hex_string(v, &self)?;
         self.visitor.visit_owned(data).map_err(unwrap_error)
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::SeqAccess<'de>,
+    {
+        let mut v = Vec::with_capacity(std::cmp::min(seq.size_hint().unwrap_or(0), 4096));
+        while let Some(val) = seq.next_element()? {
+            v.push(val);
+        }
+        self.visitor.visit_owned(v).map_err(unwrap_error)
     }
 }
 
