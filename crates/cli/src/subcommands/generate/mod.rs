@@ -41,6 +41,13 @@ pub fn cli() -> clap::Command {
                 .help("The system path (absolute or relative) to the generate output directory"),
         )
         .arg(
+            Arg::new("namespace")
+                .default_value("SpacetimeDB")
+                .long("namespace")
+                .short('n')
+                .help("The namespace that should be used (default is 'SpacetimeDB')"),
+        )
+        .arg(
             Arg::new("lang")
                 .required(true)
                 .long("lang")
@@ -56,6 +63,7 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
     let wasm_file = args.get_one::<PathBuf>("wasm_file").cloned();
     let out_dir = args.get_one::<PathBuf>("out_dir").unwrap();
     let lang = *args.get_one::<Language>("lang").unwrap();
+    let namespace = args.get_one::<String>("namespace").unwrap();
 
     let wasm_file = match wasm_file {
         Some(x) => x,
@@ -69,7 +77,7 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
         ));
     }
 
-    for (fname, code) in generate(&wasm_file, lang)? {
+    for (fname, code) in generate(&wasm_file, lang, namespace.as_str())? {
         fs::write(out_dir.join(fname), code)?;
     }
 
@@ -97,7 +105,11 @@ pub struct GenCtx {
     names: Vec<Option<String>>,
 }
 
-pub fn generate(wasm_file: &Path, lang: Language) -> anyhow::Result<impl Iterator<Item = (String, String)>> {
+pub fn generate<'a>(
+    wasm_file: &'a Path,
+    lang: Language,
+    namespace: &'a str,
+) -> anyhow::Result<impl Iterator<Item = (String, String)> + 'a> {
     let Language::Csharp = lang;
     let (typespace, descriptions) = extract_descriptions(wasm_file)?;
     let mut names = vec![None; typespace.types.len()];
@@ -112,13 +124,13 @@ pub fn generate(wasm_file: &Path, lang: Language) -> anyhow::Result<impl Iterato
     let ctx = GenCtx { typespace, names };
     Ok(descriptions.into_iter().filter_map(move |(name, desc)| match desc {
         ModuleItemDef::Entity(EntityDef::Table(table)) => {
-            let code = csharp::autogen_csharp_table(&ctx, &name, &table);
+            let code = csharp::autogen_csharp_table(&ctx, &name, &table, namespace);
             Some((name + ".cs", code))
         }
         ModuleItemDef::TypeAlias(r) => match &ctx.typespace[r] {
             AlgebraicType::Sum(_) => None, // TODO: csharp codegen for sum types
             AlgebraicType::Product(prod) => {
-                let code = csharp::autogen_csharp_tuple(&ctx, &name, prod);
+                let code = csharp::autogen_csharp_tuple(&ctx, &name, prod, namespace);
                 Some((name + ".cs", code))
             }
             AlgebraicType::Builtin(_) => todo!(),
@@ -127,7 +139,7 @@ pub fn generate(wasm_file: &Path, lang: Language) -> anyhow::Result<impl Iterato
         // I'm not sure exactly how this should work; when does init_database get called with csharp?
         ModuleItemDef::Entity(EntityDef::Reducer(reducer)) if reducer.name.as_deref() == Some("__init__") => None,
         ModuleItemDef::Entity(EntityDef::Reducer(reducer)) => {
-            let code = csharp::autogen_csharp_reducer(&ctx, &reducer);
+            let code = csharp::autogen_csharp_reducer(&ctx, &reducer, namespace);
             let pascalcase = name.to_case(Case::Pascal);
             Some((pascalcase + "Reducer.cs", code))
         }

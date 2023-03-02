@@ -7,8 +7,6 @@ use spacetimedb_lib::{ReducerDef, TableDef, TupleDef, TypeDef};
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, INDENT};
 
-const NAMESPACE: &str = "SpacetimeDB";
-
 enum MaybePrimitive<'a> {
     Primitive(&'static str),
     Array { ty: &'a AlgebraicType },
@@ -138,9 +136,9 @@ macro_rules! indent_scope {
     };
 }
 
-fn convert_algebraic_type<'a>(ctx: &'a GenCtx, ty: &'a TypeDef) -> impl fmt::Display + 'a {
+fn convert_algebraic_type<'a>(ctx: &'a GenCtx, ty: &'a TypeDef, namespace: &'a str) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Product(product_type) => write!(f, "{}", convert_product_type(ctx, product_type)),
+        AlgebraicType::Product(product_type) => write!(f, "{}", convert_product_type(ctx, product_type, namespace)),
         AlgebraicType::Sum(_) => unimplemented!(),
         AlgebraicType::Builtin(b) => match maybe_primitive(b) {
             MaybePrimitive::Primitive(_) => {
@@ -153,15 +151,19 @@ fn convert_algebraic_type<'a>(ctx: &'a GenCtx, ty: &'a TypeDef) -> impl fmt::Dis
             MaybePrimitive::Array { ty } => write!(
                 f,
                 "SpacetimeDB.SATS.AlgebraicType.CreateArrayType({})",
-                convert_algebraic_type(ctx, ty)
+                convert_algebraic_type(ctx, ty, namespace)
             ),
             MaybePrimitive::Map(_) => todo!(),
         },
-        AlgebraicType::Ref(r) => write!(f, "SpacetimeDB.{}.GetAlgebraicType()", csharp_typename(ctx, *r)),
+        AlgebraicType::Ref(r) => write!(f, "{}.{}.GetAlgebraicType()", namespace, csharp_typename(ctx, *r)),
     })
 }
 
-fn convert_product_type<'a>(ctx: &'a GenCtx, product_type: &'a ProductType) -> impl fmt::Display + 'a {
+fn convert_product_type<'a>(
+    ctx: &'a GenCtx,
+    product_type: &'a ProductType,
+    namespace: &'a str,
+) -> impl fmt::Display + 'a {
     fmt_fn(move |f| {
         writeln!(
             f,
@@ -176,25 +178,26 @@ fn convert_product_type<'a>(ctx: &'a GenCtx, product_type: &'a ProductType) -> i
                     .to_owned()
                     .map(|s| format!("\"{}\"", s))
                     .unwrap_or("null".into()),
-                convert_algebraic_type(ctx, &elem.algebraic_type)
+                convert_algebraic_type(ctx, &elem.algebraic_type, namespace)
             )?;
         }
         write!(f, "}})")
     })
 }
 
-pub fn autogen_csharp_tuple(ctx: &GenCtx, name: &str, tuple: &TupleDef) -> String {
-    autogen_csharp_product_table_common(ctx, name, tuple, None)
+pub fn autogen_csharp_tuple(ctx: &GenCtx, name: &str, tuple: &TupleDef, namespace: &str) -> String {
+    autogen_csharp_product_table_common(ctx, name, tuple, None, namespace)
 }
-pub fn autogen_csharp_table(ctx: &GenCtx, name: &str, table: &TableDef) -> String {
+pub fn autogen_csharp_table(ctx: &GenCtx, name: &str, table: &TableDef, namespace: &str) -> String {
     let tuple = ctx.typespace[table.data].as_product().unwrap();
-    autogen_csharp_product_table_common(ctx, name, tuple, Some(&table.unique_columns))
+    autogen_csharp_product_table_common(ctx, name, tuple, Some(&table.unique_columns), namespace)
 }
 fn autogen_csharp_product_table_common(
     ctx: &GenCtx,
     name: &str,
     product_type: &ProductType,
     unique_columns: Option<&[u8]>,
+    namespace: &str,
 ) -> String {
     let mut output = CodeIndenter::new(String::new());
 
@@ -209,9 +212,13 @@ fn autogen_csharp_product_table_common(
     writeln!(output).unwrap();
 
     writeln!(output, "using System;").unwrap();
+    if namespace != "SpacetimeDB" {
+        writeln!(output, "using SpacetimeDB;").unwrap();
+    }
+
     writeln!(output).unwrap();
 
-    writeln!(output, "namespace {NAMESPACE}").unwrap();
+    writeln!(output, "namespace {namespace}").unwrap();
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
@@ -250,7 +257,7 @@ fn autogen_csharp_product_table_common(
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
-                writeln!(output, "return {};", convert_product_type(ctx, product_type)).unwrap();
+                writeln!(output, "return {};", convert_product_type(ctx, product_type, namespace)).unwrap();
             }
             writeln!(output, "}}").unwrap();
             writeln!(output).unwrap();
@@ -577,7 +584,7 @@ fn autogen_csharp_access_funcs_for_struct(
 //     })
 // }
 
-pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
+pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &str) -> String {
     let func_name = reducer.name.as_ref().expect("reducer should have name");
     // let reducer_pascal_name = func_name.to_case(Case::Pascal);
     let use_namespace = true;
@@ -602,11 +609,14 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(output, "using System;").unwrap();
     writeln!(output, "using ClientApi;").unwrap();
     writeln!(output, "using Newtonsoft.Json.Linq;").unwrap();
+    if namespace != "SpacetimeDB" {
+        writeln!(output, "using SpacetimeDB;").unwrap();
+    }
 
     writeln!(output).unwrap();
 
     if use_namespace {
-        writeln!(output, "namespace {NAMESPACE}").unwrap();
+        writeln!(output, "namespace {}", namespace).unwrap();
         writeln!(output, "{{").unwrap();
         output.indent(1);
     }
@@ -618,7 +628,10 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
         indent_scope!(output);
 
         for (arg_i, arg) in reducer.args.iter().enumerate() {
-            let name = arg.name.as_deref().expect("reducer args should have names");
+            let name = arg
+                .name
+                .as_deref()
+                .expect(format!("reducer args should have names: {}", reducer.clone().name.unwrap()).as_str());
             let arg_name = name.to_case(Case::Camel);
             let arg_type_str = ty_fmt(ctx, &arg.algebraic_type);
 
