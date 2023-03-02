@@ -23,9 +23,8 @@ RUN apt-get update && apt-get install -y \
   less \
   linux-perf
 
-RUN cargo binstall --no-confirm --no-symlinks \
-  cargo-watch@8.1.2 \
-  flamegraph@0.6.2
+RUN cargo install cargo-watch
+RUN cargo install flamegraph
 
 COPY --from=planner /usr/src/app/recipe.json .
 

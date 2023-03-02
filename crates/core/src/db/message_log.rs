@@ -169,6 +169,10 @@ impl MessageLog {
         self.total_size
     }
 
+    pub fn get_root(&self) -> PathBuf {
+        self.root.clone()
+    }
+
     pub fn iter(&self) -> MessageLogIter {
         self.iter_from(0)
     }

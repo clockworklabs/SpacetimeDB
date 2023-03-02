@@ -18,6 +18,14 @@ jobs:
           toolchain: stable
           override: true
 
+      - name: Add wasm32-unknown-unknown target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Create /stdb dir
+        run: |
+          sudo mkdir /stdb
+          sudo chmod 777 /stdb
+
       - name: Run cargo test
         uses: actions-rs/cargo@v1
         with:

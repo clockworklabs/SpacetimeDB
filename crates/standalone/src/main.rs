@@ -1,21 +1,14 @@
-mod controller;
-mod worker_db;
-
-use controller::Controller;
-use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
-use spacetimedb::object_db::ObjectDb;
-use tokio::runtime::Builder;
-use worker_db::WorkerDb;
-
 use anyhow::Context;
 use clap::Parser;
 use clap::Subcommand;
-use spacetimedb::control_db::CONTROL_DB;
+
 use spacetimedb::db::db_metrics;
 use spacetimedb::startup;
 use spacetimedb::worker_metrics;
+use spacetimedb_standalone::StandaloneEnv;
 use std::convert::Infallible;
 use std::sync::Arc;
+use tokio::runtime::Builder;
 
 use std::panic;
 use std::process;
@@ -45,37 +38,6 @@ impl Config {
             listen_addr,
             advertise_addr,
         })
-    }
-}
-
-struct StandaloneEnv {
-    controller: Controller,
-}
-
-impl StandaloneEnv {
-    fn init() -> anyhow::Result<Self> {
-        let worker_db = WorkerDb::init()?;
-        let object_db = ObjectDb::init()?;
-        let db_inst_ctx_controller = DatabaseInstanceContextController::new();
-        let control_db = &*CONTROL_DB;
-        Ok(Self {
-            controller: Controller::new(worker_db, control_db, db_inst_ctx_controller, object_db),
-        })
-    }
-}
-
-spacetimedb_client_api::delegate_databasedb!(for StandaloneEnv, self to self.controller, |x| x.await);
-spacetimedb_client_api::delegate_controller!(for StandaloneEnv, self to self.controller);
-
-impl spacetimedb_client_api::ApiCtx for StandaloneEnv {
-    fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
-        let mut metric_families = worker_metrics::REGISTRY.gather();
-        metric_families.extend(db_metrics::REGISTRY.gather());
-        metric_families
-    }
-
-    fn database_instance_context_controller(&self) -> &DatabaseInstanceContextController {
-        &self.controller.db_inst_ctx_controller
     }
 }
 

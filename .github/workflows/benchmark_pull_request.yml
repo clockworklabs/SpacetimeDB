@@ -2,40 +2,19 @@ on: [pull_request]
 name: Benchmark Pull Requests
 
 jobs:
-#  check:
-#    runs-on: ubuntu-latest
-#    outputs:
-#      status: ${{ steps.check_files.outputs.files_exists }}
-#    steps:
-#      - name: Checkout sources
-#        uses: actions/checkout@v3
-#
-#      - name: Check file existence
-#        id: check_files
-#        uses: andstor/file-existence-action@v1
-#        working-directory: crates/bench/
-#        with:
-#          files: "Cargo.toml"
-
-  runBenchmark:
-#    needs: check
-#    if: needs.check.outputs.status == 'true'
+  modulesBenchmark:
     name: run benchmarks
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
-
-      - name: Install deps
-        run: |
-          wget https://github.com/sharkdp/hyperfine/releases/download/v1.15.0/hyperfine_1.15.0_amd64.deb
-          sudo dpkg -i hyperfine_1.15.0_amd64.deb
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
+          target: wasm32-unknown-unknown
           override: true
 
       - name: ⚡ Cache
@@ -59,3 +38,10 @@ jobs:
         run: |
           python3 hyper_cmp.py versus > out.report
           cat out.report >> $GITHUB_STEP_SUMMARY
+
+      - name: Criterion compare
+        uses: boa-dev/criterion-compare-action@v3
+        with:
+          cwd: "crates/bench"
+          branchName: ${{ github.base_ref }}
+          benchName: modules

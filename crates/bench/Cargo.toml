@@ -9,12 +9,26 @@ description = "Bench library/utility for SpacetimeDB"
 name = "db"
 harness = false
 
+[[bench]]
+name = "modules"
+harness = false
+
+[lib]
+bench = false
+
 [dependencies]
 spacetimedb-lib = { path = "../lib" }
 spacetimedb-core = { path = "../core" }
+spacetimedb-standalone = { path = "../standalone" }
+spacetimedb-client-api = { path = "../client-api" }
+spacetimedb-testing = { path = "../testing" }
 
 clap = { version = "4.0.18", features = ["derive"] }
 rusqlite = {version = "0.28.0", features = ["bundled"]}
 criterion = { version = "0.4.0", features = ["async", "async_tokio", "html_reports"] }
 tempdir = "0.3.7"
-rand = "0.8.5"
+rand = { version = "0.8.5", features = [] }
+tokio = { version = "1.25", features = ["full"]}
+serde_json = "1.0"
+anyhow = "1.0"
+byte-unit = "4.0.18"

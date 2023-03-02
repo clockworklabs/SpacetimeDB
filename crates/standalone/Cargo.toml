@@ -26,3 +26,6 @@ hostname = "^0.3"
 clap = { version = "4.0.18", features = ["derive"] }
 sled = "0.34.7"
 async-trait = "0.1.60"
+
+[dev-dependencies]
+serde_json = "1.0"

@@ -1,5 +1,6 @@
 pub mod client_connection;
 pub mod client_connection_index;
+pub mod message_handlers;
 
 use crate::identity::Identity;
 use std::fmt;

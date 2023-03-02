@@ -10,8 +10,9 @@ members = [
   "crates/bindings-macro",
   "crates/cli",
   "crates/sats",
+  "crates/modules/rust-wasm-test",
+  "crates/testing",
   "crates/vm",
-  "crates/rust-wasm-test",
   "crates/replay",
   "crates/client-api",
 ]

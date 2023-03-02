@@ -16,7 +16,7 @@ services:
       - ./crates/bindings:/usr/src/app/crates/bindings
       - ./crates/bindings-macro:/usr/src/app/crates/bindings-macro
       - ./crates/bindings-sys:/usr/src/app/crates/bindings-sys
-      - ./crates/rust-wasm-test:/usr/src/app/crates/rust-wasm-test
+      - ./crates/modules/rust-wasm-test:/usr/src/app/crates/modules/rust-wasm-test
       - /stdb
     ports:
       - "3000:80"
