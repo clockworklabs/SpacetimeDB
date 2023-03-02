@@ -659,8 +659,8 @@ mod tests {
             ("x", BuiltinType::F32),
             ("z", BuiltinType::F32),
         ]);
-        let row1 = product!(100u64, 0.0, 32.0);
-        let row2 = product!(100u64, 1.0, 31.0);
+        let row1 = product!(100u64, 0.0f32, 32.0f32);
+        let row2 = product!(100u64, 1.0f32, 31.0f32);
         let location = mem_table(head, [row1, row2]);
 
         let entity_id = FieldName::Name("entity_id".into());
@@ -703,10 +703,10 @@ mod tests {
         let q = query(inv)
             .with_join_inner(player, inventory_id.clone(), inventory_id.clone())
             .with_join_inner(location, entity_id.clone(), entity_id)
-            .with_select(OpCmp::Greater, x.clone(), scalar(0.0))
-            .with_select(OpCmp::LessThan, x, scalar(32.0))
-            .with_select(OpCmp::Greater, z.clone(), scalar(0.0))
-            .with_select(OpCmp::LessThan, z, scalar(32.0))
+            .with_select(OpCmp::Greater, x.clone(), scalar(0.0f32))
+            .with_select(OpCmp::LessThan, x, scalar(32.0f32))
+            .with_select(OpCmp::Greater, z.clone(), scalar(0.0f32))
+            .with_select(OpCmp::LessThan, z, scalar(32.0f32))
             .with_project(&[inventory_id, name]);
 
         let result = run_ast(p, q.into());

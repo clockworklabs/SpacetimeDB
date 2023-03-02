@@ -189,7 +189,7 @@ impl Serialize for ValueWithType<'_, BuiltinValue> {
                 }
                 map.end()
             }
-            _ => panic!("mismatched value and schema"),
+            (val, ty) => panic!("mismatched value and schema: {val:?} {ty:?}"),
         }
     }
 }
