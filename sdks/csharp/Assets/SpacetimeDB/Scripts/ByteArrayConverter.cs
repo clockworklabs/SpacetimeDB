@@ -1,7 +1,7 @@
 using System;
 using Newtonsoft.Json;
 
-namespace SpacetimeDB.Scripts
+namespace SpacetimeDB
 {
     public class ByteArrayConverter : JsonConverter
     {
