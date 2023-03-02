@@ -36,7 +36,7 @@ pub struct ModuleSubscriptionManager {
 }
 
 impl ModuleSubscriptionManager {
-    pub fn spawn(relational_db: RelationalDBWrapper) -> Result<Self, DBError> {
+    pub fn spawn(relational_db: RelationalDBWrapper) -> Self {
         let (tx, mut rx) = mpsc::unbounded_channel();
         tokio::spawn(async move {
             let mut actor = ModuleSubscriptionActor::new(relational_db);
@@ -47,7 +47,7 @@ impl ModuleSubscriptionManager {
             }
             Ok::<(), DBError>(())
         });
-        Ok(Self { tx })
+        Self { tx }
     }
 
     pub fn add_subscriber(&self, client_id: ClientActorId, subscription: Subscribe) -> Result<(), anyhow::Error> {

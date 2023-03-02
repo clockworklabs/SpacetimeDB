@@ -631,7 +631,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             let name = arg
                 .name
                 .as_deref()
-                .expect(format!("reducer args should have names: {}", reducer.clone().name.unwrap()).as_str());
+                .unwrap_or_else(|| panic!("reducer args should have names: {}", func_name));
             let arg_name = name.to_case(Case::Camel);
             let arg_type_str = ty_fmt(ctx, &arg.algebraic_type);
 
