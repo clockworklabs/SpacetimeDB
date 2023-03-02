@@ -92,11 +92,10 @@ pub struct ColumnRow<'a> {
     pub(crate) col_type: TypeDef,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct TableDef {
     pub(crate) table_id: u32,
     pub(crate) name: String,
-    // TODO: This is required for the next pr that joins all the pieces of the catalog
-    #[allow(dead_code)]
     pub(crate) schema: TupleDef,
     pub(crate) is_system_table: bool,
 }
@@ -137,8 +136,15 @@ impl TableCatalog {
     }
 
     /// Return the [TableDef] by their `table_id`
-    pub fn get(&mut self, table_id: u32) -> Option<&TableDef> {
+    pub fn get(&self, table_id: u32) -> Option<&TableDef> {
         self.tables.get(&table_id)
+    }
+
+    /// Return the [TableDef] by their `name`
+    pub fn get_by_name(&self, named: &str) -> Option<&TableDef> {
+        self.tables
+            .iter()
+            .find_map(|(_, table)| if table.name == named { Some(table) } else { None })
     }
 
     /// Return the `table_id` from the [TableDef]

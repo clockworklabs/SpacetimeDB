@@ -15,6 +15,14 @@ macro_rules! product {
     }
 }
 
+impl ProductValue {
+    pub fn new(elements: &[AlgebraicValue]) -> Self {
+        Self {
+            elements: elements.into(),
+        }
+    }
+}
+
 impl FromIterator<AlgebraicValue> for ProductValue {
     fn from_iter<T: IntoIterator<Item = AlgebraicValue>>(iter: T) -> Self {
         let elements = iter.into_iter().collect();

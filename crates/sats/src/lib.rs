@@ -1,18 +1,18 @@
+pub mod algebraic_type;
 pub mod builtin_type;
 pub mod builtin_value;
+pub mod convert;
 pub mod product_type;
 pub mod product_type_element;
 pub mod product_value;
+pub mod relation;
 pub mod sum_type;
 pub mod sum_type_variant;
 pub mod sum_value;
 pub mod typespace;
-
-pub mod algebraic_type;
 // mod algebraic_type_legacy_encoding;
 mod algebraic_type_ref;
 pub mod algebraic_value;
-
 pub mod bsatn;
 pub mod buffer;
 pub mod de;

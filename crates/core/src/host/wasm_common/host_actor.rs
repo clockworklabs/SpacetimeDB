@@ -186,7 +186,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         func_names.preinits.sort_unstable();
 
         let relational_db = worker_database_instance.relational_db.clone();
-        let subscription = ModuleSubscriptionManager::spawn(relational_db);
+        let subscription = ModuleSubscriptionManager::spawn(relational_db)?;
 
         let mut instance = module
             .create_instance(InstanceEnv::new(

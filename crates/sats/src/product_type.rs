@@ -17,15 +17,23 @@ impl ProductType {
     }
 }
 
-impl FromIterator<ProductTypeElement> for ProductType {
-    fn from_iter<T: IntoIterator<Item = ProductTypeElement>>(iter: T) -> Self {
-        Self::new(iter.into_iter().collect())
+impl<I: Into<ProductTypeElement>> FromIterator<I> for ProductType {
+    fn from_iter<T: IntoIterator<Item = I>>(iter: T) -> Self {
+        Self::new(iter.into_iter().map(Into::into).collect())
     }
 }
-impl<'a> FromIterator<(&'a str, AlgebraicType)> for ProductType {
-    fn from_iter<T: IntoIterator<Item = (&'a str, AlgebraicType)>>(iter: T) -> Self {
+impl<'a, I: Into<AlgebraicType>> FromIterator<(&'a str, I)> for ProductType {
+    fn from_iter<T: IntoIterator<Item = (&'a str, I)>>(iter: T) -> Self {
         iter.into_iter()
-            .map(|(name, ty)| ProductTypeElement::new_named(ty, name))
+            .map(|(name, ty)| ProductTypeElement::new_named(ty.into(), name))
+            .collect()
+    }
+}
+
+impl<'a, I: Into<AlgebraicType>> FromIterator<(Option<&'a str>, I)> for ProductType {
+    fn from_iter<T: IntoIterator<Item = (Option<&'a str>, I)>>(iter: T) -> Self {
+        iter.into_iter()
+            .map(|(name, ty)| ProductTypeElement::new(ty.into(), name.map(str::to_string)))
             .collect()
     }
 }

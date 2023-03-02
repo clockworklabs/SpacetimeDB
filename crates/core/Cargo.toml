@@ -32,6 +32,7 @@ lazy_static = "1.4.0"
 # wasmer-compiler-llvm = "2.2.1"
 spacetimedb-lib = { path = "../lib" }
 spacetimedb-sats = { path = "../sats" }
+spacetimedb-vm = { path = "../vm" }
 log = "0.4.16"
 gotham = "0.7.1"
 gotham_derive = "0.7"
@@ -60,7 +61,6 @@ urlencoding = "2.1.2"
 fs2 = "0.4.3"
 once_cell = "1.16"
 sendgrid = { version = "0.18.1", features = ["async"] }
-
 slab = "0.4.7"
 
 # gluesql = "0.10"

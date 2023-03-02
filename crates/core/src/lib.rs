@@ -54,5 +54,6 @@ pub mod sendgrid_controller;
 pub mod startup;
 pub mod subscription;
 pub mod util;
+pub mod vm;
 pub mod worker_database_instance;
 pub mod worker_metrics;

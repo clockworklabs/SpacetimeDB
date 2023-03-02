@@ -1,4 +1,6 @@
 use super::query::Query;
+use crate::error::DBError;
+use crate::subscription::query::run_query;
 use crate::{
     client::{client_connection::Protocol, client_connection_index::ClientConnectionSender, ClientActorId},
     db::relational_db::{RelationalDB, RelationalDBWrapper},
@@ -58,20 +60,24 @@ impl Subscription {
 
     pub fn eval_incr_query(
         &mut self,
-        _relational_db: &mut RelationalDBWrapper,
-        database_update: &DatabaseUpdate,
-    ) -> DatabaseUpdate {
+        relational_db: &mut RelationalDBWrapper,
+        database_update: DatabaseUpdate,
+    ) -> Result<DatabaseUpdate, DBError> {
         let mut output = DatabaseUpdate { tables: vec![] };
 
         for query in &self.queries {
             for table in &database_update.tables {
-                if table.table_name == query.table_name {
+                if table.table_name == query.table.name {
+                    let result = run_query(relational_db.clone(), &query.table, table)?;
+                    if result.data.is_empty() {
+                        continue;
+                    }
                     output.tables.push(table.clone());
                 }
             }
         }
 
-        output
+        Ok(output)
     }
 
     pub fn eval_query(&mut self, relational_db: &mut RelationalDBWrapper) -> DatabaseUpdate {
@@ -83,7 +89,7 @@ impl Subscription {
         let tables = stdb.scan_table_names(tx).unwrap().collect::<Vec<_>>();
 
         for query in &self.queries {
-            let table_name = &query.table_name;
+            let table_name = &query.table.name;
             let mut table_id: i32 = -1;
             for (t_id, t_name) in &tables {
                 if table_name == t_name.as_str() {

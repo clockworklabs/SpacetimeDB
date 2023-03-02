@@ -676,6 +676,21 @@ impl RelationalDB {
     }
 
     /// Return the tables from [ST_TABLES_NAME], filtering out the system tables.
+    pub fn scan_tables<'a>(
+        &'a self,
+        tx: &'a mut Tx,
+    ) -> Result<impl Iterator<Item = (u32, &'a TableDef)> + 'a, DBError> {
+        let iter = self.scan(tx, ST_TABLES_ID)?;
+        let tables = &self.catalog.tables;
+
+        Ok(iter.filter_map(move |x| {
+            let table_id = x.field_as_u32(TableFields::TableId as usize, None).unwrap();
+
+            tables.get(table_id).map(|t| (table_id, t))
+        }))
+    }
+
+    /// Return the tables from [ST_TABLES_NAME], filtering out the system tables.
     pub fn scan_table_names<'a>(&'a self, tx: &'a mut Tx) -> Result<impl Iterator<Item = (u32, String)> + 'a, DBError> {
         let iter = self.scan(tx, ST_TABLES_ID)?;
 

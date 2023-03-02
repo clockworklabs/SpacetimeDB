@@ -3,7 +3,7 @@ pub mod ser;
 use std::collections::BTreeMap;
 
 use crate::builtin_value::{F32, F64};
-use crate::{AlgebraicType, BuiltinValue, ProductValue, SumValue};
+use crate::{AlgebraicType, BuiltinType, BuiltinValue, ProductType, ProductTypeElement, ProductValue, SumValue};
 use enum_as_inner::EnumAsInner;
 
 #[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -227,42 +227,60 @@ impl AlgebraicValue {
     pub fn Bytes(v: Vec<u8>) -> Self {
         Self::Builtin(BuiltinValue::Bytes(v))
     }
-}
 
-macro_rules! impl_from {
-    ($var:ident, $ty:ty) => {
-        impl From<$ty> for AlgebraicValue {
-            fn from(v: $ty) -> Self {
-                AlgebraicValue::Builtin(BuiltinValue::$var(v.into()))
+    /// Infer the [AlgebraicType] of [Self].
+    pub fn type_of(&self) -> AlgebraicType {
+        //todo: What are the types of empty arrays/maps/sums...
+        match self {
+            AlgebraicValue::Sum(x) => {
+                AlgebraicType::Product(ProductType::new(vec![ProductTypeElement::new(x.value.type_of(), None)]))
             }
+            AlgebraicValue::Product(x) => {
+                let ty = x.elements.iter().map(|x| ProductTypeElement::new(x.type_of(), None));
+
+                AlgebraicType::Product(ProductType::new(ty.collect()))
+            }
+            AlgebraicValue::Builtin(x) => match x {
+                BuiltinValue::Bool(_) => BuiltinType::Bool.into(),
+                BuiltinValue::I8(_) => BuiltinType::I8.into(),
+                BuiltinValue::U8(_) => BuiltinType::U8.into(),
+                BuiltinValue::I16(_) => BuiltinType::I16.into(),
+                BuiltinValue::U16(_) => BuiltinType::U16.into(),
+                BuiltinValue::I32(_) => BuiltinType::I32.into(),
+                BuiltinValue::U32(_) => BuiltinType::U32.into(),
+                BuiltinValue::I64(_) => BuiltinType::I64.into(),
+                BuiltinValue::U64(_) => BuiltinType::U64.into(),
+                BuiltinValue::I128(_) => BuiltinType::I128.into(),
+                BuiltinValue::U128(_) => BuiltinType::U128.into(),
+                BuiltinValue::F32(_) => BuiltinType::F32.into(),
+                BuiltinValue::F64(_) => BuiltinType::F64.into(),
+                BuiltinValue::String(_) => BuiltinType::String.into(),
+                BuiltinValue::Bytes(_) => AlgebraicType::Builtin(BuiltinType::Array {
+                    ty: Box::new(BuiltinType::U8.into()),
+                }),
+                BuiltinValue::Array { val } => {
+                    let ty = if let Some(x) = val.first() {
+                        Box::new(x.type_of())
+                    } else {
+                        Box::new(AlgebraicType::make_never_type())
+                    };
+                    AlgebraicType::Builtin(BuiltinType::Array { ty })
+                }
+                BuiltinValue::Map { val } => {
+                    let ty = if let Some((k, v)) = val.first_key_value() {
+                        ProductType::new(vec![
+                            ProductTypeElement::new(k.type_of(), None),
+                            ProductTypeElement::new(v.type_of(), None),
+                        ])
+                    } else {
+                        let ty = ProductTypeElement::new(AlgebraicType::make_never_type(), None);
+                        ProductType::new(vec![ty.clone(), ty])
+                    };
+                    AlgebraicType::Product(ty)
+                }
+            },
         }
-    };
-}
-
-impl_from!(Bool, bool);
-impl_from!(I8, i8);
-impl_from!(U8, u8);
-impl_from!(I16, i16);
-impl_from!(U16, u16);
-impl_from!(I32, i32);
-impl_from!(U32, u32);
-impl_from!(I64, i64);
-impl_from!(U64, u64);
-impl_from!(I128, i128);
-impl_from!(U128, u128);
-impl_from!(F32, f32);
-impl_from!(F64, f64);
-impl_from!(String, String);
-impl_from!(String, &str);
-
-impl From<BuiltinValue> for AlgebraicValue {
-    fn from(value: BuiltinValue) -> Self {
-        AlgebraicValue::Builtin(value)
     }
-}
-
-impl crate::Value for AlgebraicValue {
-    type Type = AlgebraicType;
 }
 
 #[cfg(test)]

@@ -1,11 +1,12 @@
+use crate::client::ClientActorId;
 use crate::db::index::{IndexDef, IndexId};
-use crate::db::message_log::MessageLog;
 use crate::db::sequence::SequenceError;
 use hex::FromHexError;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::error::LibError;
 use spacetimedb_lib::{PrimaryKey, TupleValue, TypeValue};
 use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_vm::errors::{ErrorUser, ErrorVm};
 use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::sync::{MutexGuard, PoisonError};
@@ -41,6 +42,18 @@ pub enum IndexError {
     Duplicated(IndexDef, TypeValue, TupleValue),
 }
 
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum ClientError {
+    #[error("Client not found: {0}")]
+    NotFound(ClientActorId),
+}
+
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum SubscriptionError {
+    #[error("Index not found: {0}")]
+    NotFound(IndexId),
+}
+
 #[derive(Error, Debug)]
 pub enum DBError {
     #[error("LibError: {0}")]
@@ -70,6 +83,16 @@ pub enum DBError {
     SledDbError(#[from] sled::Error),
     #[error("Mutex was poisoned acquiring lock on MessageLog: {0}")]
     MessageLogPoisoned(String),
+    #[error("VmError: {0}")]
+    Vm(#[from] ErrorVm),
+    #[error("VmErrorUser: {0}")]
+    VmUser(#[from] ErrorUser),
+    #[error("SubscriptionError: {0}")]
+    Subscription(#[from] SubscriptionError),
+    #[error("ClientError: {0}")]
+    Client(#[from] ClientError),
+    #[error("ProstError: {0}")]
+    Prost(#[from] prost::EncodeError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -80,8 +103,8 @@ impl From<InvalidFieldError> for DBError {
     }
 }
 
-impl From<PoisonError<std::sync::MutexGuard<'_, MessageLog>>> for DBError {
-    fn from(err: PoisonError<MutexGuard<'_, MessageLog>>) -> Self {
+impl<'a, T: ?Sized + 'a> From<PoisonError<std::sync::MutexGuard<'a, T>>> for DBError {
+    fn from(err: PoisonError<MutexGuard<'_, T>>) -> Self {
         DBError::MessageLogPoisoned(err.to_string())
     }
 }

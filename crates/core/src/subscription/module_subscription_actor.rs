@@ -4,6 +4,7 @@ use super::{
     query::compile_query,
     subscription::Subscription,
 };
+use crate::error::{ClientError, DBError};
 use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::{client::ClientActorId, host::module_host::DatabaseUpdate};
 use crate::{db::relational_db::RelationalDBWrapper, protobuf::client_api::Subscribe};
@@ -35,17 +36,18 @@ pub struct ModuleSubscriptionManager {
 }
 
 impl ModuleSubscriptionManager {
-    pub fn spawn(relational_db: RelationalDBWrapper) -> Self {
+    pub fn spawn(relational_db: RelationalDBWrapper) -> Result<Self, DBError> {
         let (tx, mut rx) = mpsc::unbounded_channel();
         tokio::spawn(async move {
             let mut actor = ModuleSubscriptionActor::new(relational_db);
             while let Some(command) = rx.recv().await {
-                if actor.handle_message(command).await {
+                if actor.handle_message(command).await? {
                     break;
                 }
             }
+            Ok::<(), DBError>(())
         });
-        Self { tx }
+        Ok(Self { tx })
     }
 
     pub fn add_subscriber(&self, client_id: ClientActorId, subscription: Subscribe) -> Result<(), anyhow::Error> {
@@ -81,38 +83,40 @@ impl ModuleSubscriptionActor {
         }
     }
 
-    pub async fn handle_message(&mut self, command: ModuleSubscriptionCommand) -> bool {
+    pub async fn handle_message(&mut self, command: ModuleSubscriptionCommand) -> Result<bool, DBError> {
         // should_exit if true
         match command {
             ModuleSubscriptionCommand::AddSubscriber {
                 client_id,
                 subscription,
             } => self.add_subscription(client_id, subscription).await,
-            ModuleSubscriptionCommand::RemoveSubscriber { client_id } => self.remove_subscriber(client_id),
+            ModuleSubscriptionCommand::RemoveSubscriber { client_id } => Ok(self.remove_subscriber(client_id)),
             ModuleSubscriptionCommand::BroadcastEvent { event } => {
-                self.broadcast_event(event).await;
-                false
+                self.broadcast_event(event).await?;
+                Ok(false)
             }
         }
     }
 
-    pub async fn add_subscription(&mut self, client_id: ClientActorId, subscription: Subscribe) -> bool {
+    pub async fn add_subscription(
+        &mut self,
+        client_id: ClientActorId,
+        subscription: Subscribe,
+    ) -> Result<bool, DBError> {
         let (sender, protocol) = {
-            let cai = CLIENT_ACTOR_INDEX.lock().unwrap();
-            let client = cai.get_client(&client_id).unwrap();
+            let cai = CLIENT_ACTOR_INDEX.lock()?;
+            let client = if let Some(client) = cai.get_client(&client_id) {
+                client
+            } else {
+                return Err(ClientError::NotFound(client_id).into());
+            };
             (client.sender(), client.protocol)
         };
 
         let mut queries = vec![];
 
         for query_string in subscription.query_strings {
-            let query = match compile_query(&mut self.relational_db, &query_string) {
-                Ok(v) => v,
-                Err(e) => {
-                    log::error!("Error: {} query string: {}", e, query_string);
-                    return false;
-                }
-            };
+            let query = compile_query(&mut self.relational_db, &query_string)?;
             queries.push(query)
         }
 
@@ -139,7 +143,7 @@ impl ModuleSubscriptionActor {
         }
 
         self.send_state(protocol, sender, database_update.unwrap()).await;
-        false
+        Ok(false)
     }
 
     pub fn remove_subscriber(&mut self, client_id: ClientActorId) -> bool {
@@ -157,7 +161,7 @@ impl ModuleSubscriptionActor {
         false
     }
 
-    async fn broadcast_event(&mut self, event: ModuleEvent) {
+    async fn broadcast_event(&mut self, event: ModuleEvent) -> Result<(), DBError> {
         let empty = DatabaseUpdate { tables: vec![] };
         let database_update = if let EventStatus::Committed(database_update) = &event.status {
             database_update
@@ -166,14 +170,15 @@ impl ModuleSubscriptionActor {
         };
 
         for subscription in &mut self.subscriptions {
-            let incr = subscription.eval_incr_query(&mut self.relational_db, database_update);
+            let incr = subscription.eval_incr_query(&mut self.relational_db, database_update.clone())?;
 
-            if incr.is_empty() {
+            if incr.tables.is_empty() {
                 continue;
             }
+
             let protobuf_event = Self::render_protobuf_event(&event, incr.clone());
             let mut protobuf_buf = Vec::new();
-            protobuf_event.encode(&mut protobuf_buf).unwrap();
+            protobuf_event.encode(&mut protobuf_buf)?;
 
             let json_event = Self::render_json_event(&event, incr);
             let json_string = serde_json::to_string(&json_event).unwrap();
@@ -192,6 +197,8 @@ impl ModuleSubscriptionActor {
                 }
             }
         }
+
+        Ok(())
     }
 
     /// NOTE: It is important to send the state in this thread because if you spawn a new

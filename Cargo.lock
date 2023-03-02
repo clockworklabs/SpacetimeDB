@@ -3291,6 +3291,7 @@ dependencies = [
  "sled",
  "spacetimedb-lib",
  "spacetimedb-sats",
+ "spacetimedb-vm",
  "sqlparser",
  "strum",
  "tempdir",
@@ -3356,6 +3357,17 @@ dependencies = [
  "spacetimedb-client-api",
  "spacetimedb-core",
  "tokio",
+]
+
+[[package]]
+name = "spacetimedb-vm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "spacetimedb-lib",
+ "spacetimedb-sats",
+ "tempdir",
+ "thiserror",
 ]
 
 [[package]]

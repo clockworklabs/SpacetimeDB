@@ -1,0 +1,15 @@
+[package]
+name = "spacetimedb-vm"
+version = "0.1.0"
+edition = "2021"
+license-file = "LICENSE"
+description = "A VM for SpacetimeDB"
+
+[dependencies]
+spacetimedb-sats= { path = "../sats" }
+thiserror = "1.0.37"
+anyhow = { version = "1.0.57", features = ["backtrace"] }
+
+[dev-dependencies]
+spacetimedb-lib = { path = "../lib" }
+tempdir = "0.3.7"

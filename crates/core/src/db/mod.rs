@@ -1,4 +1,5 @@
 pub mod catalog;
+pub mod cursor;
 pub mod db_metrics;
 pub mod index;
 pub mod message_log;
