@@ -2,6 +2,7 @@ use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, BuiltinType, MapType, ProductType};
+use spacetimedb_lib::TypeDef::Builtin;
 use spacetimedb_lib::{ReducerDef, TableDef, TupleDef, TypeDef};
 
 use super::code_indenter::CodeIndenter;
@@ -238,6 +239,11 @@ fn autogen_csharp_product_table_common(
                     .expect("autogen'd tuples should have field names")
                     .replace("r#", "");
                 writeln!(output, "[Newtonsoft.Json.JsonProperty(\"{field_name}\")]").unwrap();
+                if let Builtin(BuiltinType::Array { ty: array_type }) = field.clone().algebraic_type {
+                    if let Builtin(BuiltinType::U8) = *array_type {
+                        writeln!(output, "[JsonConverter(typeof(SpacetimeDB.ByteArrayConverter))]").unwrap();
+                    }
+                }
                 writeln!(
                     output,
                     "public {} {};",
