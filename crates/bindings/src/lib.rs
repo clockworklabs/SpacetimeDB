@@ -6,7 +6,7 @@ mod logger;
 pub mod rt;
 mod types;
 
-use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
+use spacetimedb_lib::buffer::{BufReader, BufWriter, DecodeError};
 use spacetimedb_lib::de::DeserializeOwned;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_lib::ser::Serialize;
@@ -29,6 +29,7 @@ pub use spacetimedb_lib::TypeValue;
 pub use types::Timestamp;
 
 pub use spacetimedb_bindings_sys as sys;
+use sys::BufferIter;
 pub use sys::Errno;
 
 pub type Result<T = (), E = Errno> = core::result::Result<T, E>;
@@ -161,32 +162,29 @@ pub fn delete_range(table_id: u32, col_id: u8, range: Range<TypeValue>) -> Resul
 // }
 
 pub fn __iter__(table_id: u32) -> Result<RawTableIter> {
-    let bytes = sys::iter(table_id)?;
+    let mut iter = sys::iter(table_id)?;
 
-    let buffer = Cursor::new(bytes);
-    let schema = (&buffer).get_u16().and_then(|_schema_len| decode_schema(&mut &buffer));
-    let schema = schema.unwrap_or_else(|e| {
-        panic!("__iter__: Could not decode schema. Err: {}", e);
-    });
+    // First item is an encoded schema.
+    let schema_raw = iter
+        .next()
+        .expect("__iter__: Missing schema")
+        .expect("__iter__: Failed to get schema");
+    let schema = decode_schema(&mut &schema_raw[..]).expect("__iter__: Could not decode schema");
 
-    Ok(RawTableIter { buffer, schema })
+    Ok(RawTableIter { schema, inner: iter })
 }
 
 pub struct RawTableIter {
-    buffer: Cursor<Box<[u8]>>,
     schema: TupleDef,
+    inner: BufferIter,
 }
 
 impl Iterator for RawTableIter {
     type Item = TupleValue;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if (&self.buffer).remaining() == 0 {
-            return None;
-        }
-        let row = decode_row(&self.schema, &mut &self.buffer).unwrap_or_else(|e| {
-            panic!("TableIter::next: Failed to decode row! Err: {}", e);
-        });
+        let row = self.inner.next()?.expect("RawTableIter::next: Failed to get row!");
+        let row = decode_row(&self.schema, &mut &row[..]).expect("RawTableIter::next: Failed to decode row!");
         Some(row)
     }
 }
@@ -225,37 +223,29 @@ pub trait TableType: RefType + DeserializeOwned + Serialize {
     }
 
     fn iter() -> TableIter<Self> {
-        let bytes = sys::iter(Self::table_id()).unwrap();
-
-        let buffer = Cursor::new(bytes);
-        (&buffer)
-            .get_u16()
-            .and_then(|schema_len| (&buffer).get_slice(schema_len as usize))
-            .unwrap_or_else(|e| {
-                panic!("__iter__: Could not skip schema. Err: {}", e);
-            });
+        let raw_table_iter = __iter__(Self::table_id()).unwrap();
 
         TableIter {
-            buffer,
+            inner: raw_table_iter.inner,
             _marker: PhantomData,
         }
     }
 }
 
 pub struct TableIter<T: TableType> {
-    buffer: Cursor<Box<[u8]>>,
+    inner: BufferIter,
     _marker: PhantomData<T>,
 }
 impl<T: TableType> Iterator for TableIter<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if (&self.buffer).remaining() == 0 {
-            return None;
-        }
-        let row = bsatn::from_reader(&mut &self.buffer).unwrap_or_else(|e| {
-            panic!("TableIter::next: Failed to decode row! Err: {}", e);
-        });
+        let mut row_raw = &self.inner.next()?.expect("TableIter::next: Failed to get row!")[..];
+        let row = bsatn::from_reader(&mut row_raw).expect("TableIter::next: Failed to decode row!");
+        assert!(
+            row_raw.is_empty(),
+            "TableIter::next: Row buffer was not fully consumed!"
+        );
         Some(row)
     }
 }

@@ -13,6 +13,8 @@ use alloc::boxed::Box;
 pub const ABI_VERSION: u16 = 1;
 
 pub mod raw {
+    use core::mem::ManuallyDrop;
+
     #[link(wasm_import_module = "spacetime")]
     extern "C" {
         pub fn _create_table(
@@ -42,7 +44,9 @@ pub mod raw {
 
         // pub fn _filter_eq(table_id: u32, col_id: u32, src_ptr: *const u8, result_ptr: *const u8);
 
-        pub fn _iter(table_id: u32, out: *mut Buffer) -> u16;
+        pub fn _iter_start(table_id: u32, out: *mut BufferIter) -> u16;
+        pub fn _iter_next(iter: ManuallyDrop<BufferIter>, out: *mut Buffer) -> u16;
+        pub fn _iter_drop(iter: ManuallyDrop<BufferIter>) -> u16;
         pub fn _console_log(
             level: u8,
             target: *const u8,
@@ -56,7 +60,7 @@ pub mod raw {
 
         pub fn _schedule_reducer(name: *const u8, name_len: usize, args: *const u8, args_len: usize, time: u64);
 
-        pub fn _buffer_len(bufh: Buffer) -> usize;
+        pub fn _buffer_len(bufh: ManuallyDrop<Buffer>) -> usize;
         pub fn _buffer_consume(bufh: Buffer, into: *mut u8, len: usize);
         pub fn _buffer_alloc(data: *const u8, data_len: usize) -> Buffer;
     }
@@ -70,9 +74,32 @@ pub mod raw {
 
     #[repr(transparent)]
     pub struct Buffer {
-        pub raw: u32,
+        raw: u32,
     }
-    pub const INVALID_BUFFER: Buffer = Buffer { raw: u32::MAX };
+    impl Buffer {
+        /// Returns a "handle" that can be passed across the FFI boundary
+        /// as if it was the Buffer itself, but without consuming it.
+        pub const fn handle(&self) -> ManuallyDrop<Self> {
+            ManuallyDrop::new(Self { raw: self.raw })
+        }
+
+        pub const INVALID: Self = Self { raw: u32::MAX };
+
+        pub const fn is_invalid(&self) -> bool {
+            self.raw == Self::INVALID.raw
+        }
+    }
+
+    // Similar API to Buffer, but represents table iterators.
+    #[repr(transparent)]
+    pub struct BufferIter {
+        raw: u32,
+    }
+    impl BufferIter {
+        pub const fn handle(&self) -> ManuallyDrop<Self> {
+            ManuallyDrop::new(Self { raw: self.raw })
+        }
+    }
 
     pub type DescriptorFunc = extern "C" fn() -> Buffer;
     pub type InitFunc = extern "C" fn() -> Buffer;
@@ -202,11 +229,8 @@ pub fn delete_range(table_id: u32, col_id: u32, range_start: &[u8], range_end: &
 // pub fn filter_eq(table_id: u32, col_id: u32, src_ptr: *mut u8, result_ptr: *mut u8) {}
 
 #[inline]
-pub fn iter(table_id: u32) -> Result<Box<[u8]>, Errno> {
-    unsafe {
-        let buf = call(|out| raw::_iter(table_id, out))?;
-        Ok(buf.read())
-    }
+pub fn iter(table_id: u32) -> Result<BufferIter, Errno> {
+    unsafe { call(|out| raw::_iter_start(table_id, out)) }
 }
 
 #[repr(u8)]
@@ -248,11 +272,11 @@ pub fn schedule(name: &str, args: &[u8], time: u64) {
     unsafe { raw::_schedule_reducer(name.as_ptr(), name.len(), args.as_ptr(), args.len(), time) }
 }
 
-pub use raw::Buffer;
+pub use raw::{Buffer, BufferIter};
 
 impl Buffer {
     pub fn data_len(&self) -> usize {
-        unsafe { raw::_buffer_len(Buffer { raw: self.raw }) }
+        unsafe { raw::_buffer_len(self.handle()) }
     }
 
     pub fn read(self) -> Box<[u8]> {
@@ -279,9 +303,24 @@ impl Buffer {
     pub fn alloc(data: &[u8]) -> Self {
         unsafe { raw::_buffer_alloc(data.as_ptr(), data.len()) }
     }
+}
 
-    pub fn is_invalid(&self) -> bool {
-        self.raw == raw::INVALID_BUFFER.raw
+impl Iterator for BufferIter {
+    type Item = Result<Box<[u8]>, Errno>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let buf = unsafe { call(|out| raw::_iter_next(self.handle(), out)) };
+        match buf {
+            Ok(buf) if buf.is_invalid() => None,
+            Ok(buf) => Some(Ok(buf.read())),
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
+
+impl Drop for BufferIter {
+    fn drop(&mut self) {
+        cvt(unsafe { raw::_iter_drop(self.handle()) }).unwrap();
     }
 }
 

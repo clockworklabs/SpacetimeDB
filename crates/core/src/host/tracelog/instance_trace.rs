@@ -2,7 +2,7 @@
 
 use crate::protobuf::instance_db_trace_log::instance_event::Type;
 use crate::protobuf::instance_db_trace_log::{
-    CreateTable, DeleteEq, DeletePk, DeleteRange, DeleteValue, GetTableId, Insert, InstanceEvent, Iter,
+    CreateTable, DeleteEq, DeletePk, DeleteRange, DeleteValue, GetTableId, Insert, InstanceEvent,
 };
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -204,14 +204,6 @@ impl TraceLog {
         let event = Type::GetTableId(GetTableId {
             table_name,
             result_table_id: table_id,
-        });
-        self.write_event(start_time, duration, event)
-    }
-
-    pub fn iter(&mut self, start_time: SystemTime, duration: Duration, table_id: u32, bytes: &[u8]) {
-        let event = Type::Iter(Iter {
-            table_id,
-            result_bytes: bytes.to_owned(),
         });
         self.write_event(start_time, duration, event)
     }

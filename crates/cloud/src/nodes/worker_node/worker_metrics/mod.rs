@@ -108,14 +108,6 @@ lazy_static! {
         &["database_address", "table_id"]
     )
     .unwrap();
-    pub static ref INSTANCE_ENV_ITER: HistogramVec = HistogramVec::new(
-        HistogramOpts::new(
-            "spacetime_instance_env_iter",
-            "Time spent by reducers retrieving table tuples (InstanceEnv::iter)"
-        ),
-        &["database_address", "table_id"]
-    )
-    .unwrap();
 }
 
 pub fn register_custom_metrics() {
@@ -133,7 +125,6 @@ pub fn register_custom_metrics() {
     REGISTRY.register(Box::new(INSTANCE_ENV_DELETE_VALUE.clone())).unwrap();
     REGISTRY.register(Box::new(INSTANCE_ENV_DELETE_EQ.clone())).unwrap();
     REGISTRY.register(Box::new(INSTANCE_ENV_DELETE_RANGE.clone())).unwrap();
-    REGISTRY.register(Box::new(INSTANCE_ENV_ITER.clone())).unwrap();
     REGISTRY
         .register(Box::new(NODE_IDENTITY_ENERGY_BUDGET_GAUGE.clone()))
         .unwrap();

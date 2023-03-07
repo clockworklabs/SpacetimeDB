@@ -8,12 +8,13 @@ use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr
 
 use crate::host::instance_env::InstanceEnv;
 
-use super::{Buffer, Mem, WasmError};
+use super::{Buffer, BufferIter, Mem, WasmError};
 
 pub(super) struct WasmInstanceEnv {
     pub instance_env: InstanceEnv,
     pub mem: Option<Mem>,
     pub buffers: slab::Slab<Vec<u8>>,
+    pub iters: slab::Slab<Box<dyn Iterator<Item = Result<Vec<u8>, NodesError>> + Send>>,
 }
 
 fn cvt_count(x: Result<u32, NodesError>) -> u32 {
@@ -265,10 +266,45 @@ impl WasmInstanceEnv {
         })
     }
 
-    pub fn iter(caller: FunctionEnvMut<'_, Self>, table_id: u32, out: WasmPtr<Buffer>) -> WasmResult {
-        Self::cvt_ret(caller, "iter", out, |mut caller, mem| {
-            let bytes = caller.data().instance_env.iter(table_id)?;
-            Ok(caller.data_mut().alloc_buf(bytes))
+    pub fn iter_start(caller: FunctionEnvMut<'_, Self>, table_id: u32, out: WasmPtr<BufferIter>) -> WasmResult {
+        Self::cvt_ret(caller, "iter_start", out, |mut caller, mem| {
+            let iter = Box::new(caller.data().instance_env.iter(table_id));
+
+            Ok(BufferIter {
+                raw: caller.data_mut().iters.insert(iter) as u32,
+            })
+        })
+    }
+
+    pub fn iter_next(caller: FunctionEnvMut<'_, Self>, iter_key: u32, out: WasmPtr<Buffer>) -> WasmResult {
+        Self::cvt_ret(caller, "iter_next", out, |mut caller, mem| {
+            let data_mut = caller.data_mut();
+            let iter_key = iter_key as usize;
+
+            let iter = data_mut
+                .iters
+                .get_mut(iter_key)
+                .ok_or_else(|| RuntimeError::new("no such iterator"))?;
+
+            match iter.next() {
+                Some(Ok(buf)) => Ok(data_mut.alloc_buf(buf)),
+                Some(Err(err)) => Err(err.into()),
+                None => Ok(Buffer::INVALID),
+            }
+        })
+    }
+
+    pub fn iter_drop(caller: FunctionEnvMut<'_, Self>, iter_key: u32) -> WasmResult {
+        Self::cvt(caller, "iter_drop", |mut caller, mem| {
+            drop(
+                caller
+                    .data_mut()
+                    .iters
+                    .try_remove(iter_key as usize)
+                    .ok_or_else(|| RuntimeError::new("no such iterator"))?,
+            );
+
+            Ok(())
         })
     }
 

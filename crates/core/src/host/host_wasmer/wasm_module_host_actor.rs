@@ -103,10 +103,20 @@ impl WasmerModule {
                     env,
                     WasmInstanceEnv::get_table_id,
                 ),
-                "_iter" => Function::new_typed_with_env(
+                "_iter_start" => Function::new_typed_with_env(
                     store,
                     env,
-                    WasmInstanceEnv::iter
+                    WasmInstanceEnv::iter_start
+                ),
+                "_iter_next" => Function::new_typed_with_env(
+                    store,
+                    env,
+                    WasmInstanceEnv::iter_next
+                ),
+                "_iter_drop" => Function::new_typed_with_env(
+                    store,
+                    env,
+                    WasmInstanceEnv::iter_drop
                 ),
                 "_console_log" => Function::new_typed_with_env(
                     store,
@@ -146,6 +156,7 @@ impl host_actor::WasmModule for WasmerModule {
             instance_env: env,
             mem: None,
             buffers: Default::default(),
+            iters: Default::default(),
         };
         let env = FunctionEnv::new(&mut store, env);
         let imports = self.imports(&mut store, &env);

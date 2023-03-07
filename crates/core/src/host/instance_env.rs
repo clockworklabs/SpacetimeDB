@@ -13,7 +13,7 @@ use crate::util::ResultInspectExt;
 use crate::worker_database_instance::WorkerDatabaseInstance;
 use crate::worker_metrics::{
     INSTANCE_ENV_DELETE_EQ, INSTANCE_ENV_DELETE_PK, INSTANCE_ENV_DELETE_RANGE, INSTANCE_ENV_DELETE_VALUE,
-    INSTANCE_ENV_INSERT, INSTANCE_ENV_ITER,
+    INSTANCE_ENV_INSERT,
 };
 
 use super::host_controller::Scheduler;
@@ -294,40 +294,38 @@ impl InstanceEnv {
         Ok(table_id)
     }
 
-    pub fn iter(&self, table_id: u32) -> Result<Vec<u8>, NodesError> {
-        let mut measure = HistogramVecHandle::new(
-            &INSTANCE_ENV_ITER,
-            vec![self.worker_database_instance.address.to_hex(), format!("{}", table_id)],
-        );
-        measure.start();
+    pub fn iter(&self, table_id: u32) -> impl Iterator<Item = Result<Vec<u8>, NodesError>> + Send {
+        use genawaiter::{sync::gen, yield_, GeneratorState};
 
-        let stdb = self.worker_database_instance.relational_db.lock().unwrap();
-        let tx = &mut *self.get_tx()?;
+        // Cheap Arc clones to untie the returned iterator from our own lifetime.
+        let relational_db = self.worker_database_instance.relational_db.clone();
+        let tx = self.tx.clone();
 
-        let mut bytes = Vec::new();
-        let schema = stdb.schema_for_table(tx, table_id)?.ok_or(NodesError::TableNotFound)?;
-        schema.encode(&mut bytes);
-        let encoded_schema_len = bytes.len() as u16;
-        bytes.splice(0..0, encoded_schema_len.to_le_bytes());
+        let mut generator = gen!({
+            let stdb = relational_db.lock().unwrap();
+            let mut tx = &mut *tx.get()?;
 
-        let mut count = 0;
-        for row_bytes in stdb.scan_raw(tx, table_id)? {
-            count += 1;
-            bytes.extend(row_bytes);
-        }
+            let mut bytes = Vec::new();
+            let schema = stdb
+                .schema_for_table(&mut tx, table_id)?
+                .ok_or(NodesError::TableNotFound)?;
+            schema.encode(&mut bytes);
+            yield_!(bytes);
 
-        log::trace!(
-            "Allocating iteration buffer of size {} for {} rows.",
-            bytes.len(),
-            count
-        );
+            let mut count = 0;
+            for row_bytes in stdb.scan_raw(&mut tx, table_id)? {
+                count += 1;
+                yield_!(row_bytes);
+            }
 
-        if let Some(trace_log) = &self.trace_log {
-            trace_log
-                .lock()
-                .iter(measure.start_instant.unwrap(), measure.elapsed(), table_id, &bytes);
-        }
-        Ok(bytes)
+            Ok(())
+        });
+
+        std::iter::from_fn(move || match generator.resume() {
+            GeneratorState::Yielded(bytes) => Some(Ok(bytes)),
+            GeneratorState::Complete(Err(err)) => Some(Err(err)),
+            GeneratorState::Complete(Ok(())) => None,
+        })
     }
 }
 

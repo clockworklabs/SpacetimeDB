@@ -33,7 +33,7 @@ use std::fs::File;
 use std::{
     ops::{Deref, DerefMut, RangeBounds},
     path::Path,
-    sync::{Arc, Mutex, MutexGuard, PoisonError},
+    sync::{Arc, Mutex},
 };
 
 pub const ST_TABLES_NAME: &str = "st_table";
@@ -50,21 +50,18 @@ pub const ST_TABLE_ID_START: u32 = 2;
 
 #[derive(Clone)]
 pub struct RelationalDBWrapper {
-    inner: Arc<Mutex<RelationalDB>>,
+    inner: Arc<parking_lot::Mutex<RelationalDB>>,
 }
 
 impl RelationalDBWrapper {
     pub fn new(relational_db: RelationalDB) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(relational_db)),
+            inner: Arc::new(parking_lot::Mutex::new(relational_db)),
         }
     }
 
-    pub fn lock(&self) -> Result<RelationalDBGuard, PoisonError<std::sync::MutexGuard<'_, RelationalDB>>> {
-        match self.inner.lock() {
-            Ok(inner) => Ok(RelationalDBGuard::new(inner)),
-            Err(err) => Err(err),
-        }
+    pub fn lock(&self) -> Option<RelationalDBGuard> {
+        self.inner.try_lock().map(RelationalDBGuard::new)
     }
 
     pub fn begin_tx(&self) -> TxWrapper<Self> {
@@ -89,26 +86,26 @@ impl TxCtx for RelationalDBWrapper {
 pub type WrapTxWrapper = TxWrapper<RelationalDBWrapper>;
 
 pub struct RelationalDBGuard<'a> {
-    inner: MutexGuard<'a, RelationalDB>,
+    inner: parking_lot::MutexGuard<'a, RelationalDB>,
 }
 
 impl<'a> RelationalDBGuard<'a> {
-    fn new(inner: MutexGuard<'a, RelationalDB>) -> Self {
+    fn new(inner: parking_lot::MutexGuard<'a, RelationalDB>) -> Self {
         log::trace!("LOCKING DB");
         Self { inner }
     }
 }
 
 impl<'a> Deref for RelationalDBGuard<'a> {
-    type Target = MutexGuard<'a, RelationalDB>;
+    type Target = RelationalDB;
 
-    fn deref(&self) -> &MutexGuard<'a, RelationalDB> {
+    fn deref(&self) -> &RelationalDB {
         &self.inner
     }
 }
 
 impl<'a> DerefMut for RelationalDBGuard<'a> {
-    fn deref_mut(&mut self) -> &mut MutexGuard<'a, RelationalDB> {
+    fn deref_mut(&mut self) -> &mut RelationalDB {
         &mut self.inner
     }
 }

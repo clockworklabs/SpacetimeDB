@@ -95,7 +95,15 @@ struct Buffer {
 }
 
 impl Buffer {
-    fn is_invalid(&self) -> bool {
-        self.raw == u32::MAX
+    const INVALID: Self = Self { raw: u32::MAX };
+
+    const fn is_invalid(&self) -> bool {
+        self.raw == Self::INVALID.raw
     }
+}
+
+#[derive(Copy, Clone, wasmer::ValueType)]
+#[repr(transparent)]
+struct BufferIter {
+    raw: u32,
 }

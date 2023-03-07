@@ -18,7 +18,6 @@ pub struct WorkerMetrics {
     instance_env_delete_value: HistogramVec,
     instance_env_delete_eq: HistogramVec,
     instance_env_delete_range: HistogramVec,
-    instance_env_iter: HistogramVec,
 }
 
 static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);
@@ -132,14 +131,6 @@ impl WorkerMetrics {
                 &["database_address", "table_id"],
             )
             .unwrap(),
-            instance_env_iter: HistogramVec::new(
-                HistogramOpts::new(
-                    "spacetime_instance_env_iter",
-                    "Time spent by reducers retrieving table tuples (InstanceEnv::iter)",
-                ),
-                &["database_address", "table_id"],
-            )
-            .unwrap(),
         }
     }
 
@@ -183,9 +174,6 @@ impl WorkerMetrics {
             .register(Box::new(self.instance_env_delete_range.clone()))
             .unwrap();
         self.registry
-            .register(Box::new(self.instance_env_iter.clone()))
-            .unwrap();
-        self.registry
             .register(Box::new(self.node_identity_energy_budget_gauge.clone()))
             .unwrap();
     }
@@ -211,7 +199,6 @@ metrics_delegator!(INSTANCE_ENV_DELETE_PK, instance_env_delete_pk: HistogramVec)
 metrics_delegator!(INSTANCE_ENV_DELETE_VALUE, instance_env_delete_value: HistogramVec);
 metrics_delegator!(INSTANCE_ENV_DELETE_EQ, instance_env_delete_eq: HistogramVec);
 metrics_delegator!(INSTANCE_ENV_DELETE_RANGE, instance_env_delete_range: HistogramVec);
-metrics_delegator!(INSTANCE_ENV_ITER, instance_env_iter: HistogramVec);
 
 pub fn register_custom_metrics() {
     WORKER_METRICS.register_custom_metrics()

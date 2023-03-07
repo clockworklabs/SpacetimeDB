@@ -120,7 +120,12 @@ where
                     );
                 }
                 Type::Iter(iter) => {
-                    let result_bytes = instance_env.iter(iter.table_id).unwrap();
+                    let result_bytes = instance_env.iter(iter.table_id).try_fold(Vec::new(), |mut acc, row| {
+                        row.map(|row| {
+                            acc.extend_from_slice(&row);
+                            acc
+                        })
+                    })?;
                     sink(
                         ReplayEvent::Iter(iter.result_bytes),
                         ReplayEvent::Iter(result_bytes),

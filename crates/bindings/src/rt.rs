@@ -60,7 +60,7 @@ fn assemble_context(sender: Buffer, timestamp: u64) -> ReducerContext {
 
 fn cvt_result(res: Result<(), Box<str>>) -> Buffer {
     match res {
-        Ok(()) => sys::raw::INVALID_BUFFER,
+        Ok(()) => Buffer::INVALID,
         Err(errmsg) => Buffer::alloc(errmsg.as_bytes()),
     }
 }
