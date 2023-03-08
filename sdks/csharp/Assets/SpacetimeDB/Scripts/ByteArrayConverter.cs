@@ -17,7 +17,7 @@ namespace SpacetimeDB
 
         public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
         {
-            writer.WriteValue(BitConverter.ToString((byte[])value));
+            writer.WriteValue(BitConverter.ToString((byte[])value).Replace("-",""););
         }
     }
 }
