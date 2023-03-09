@@ -152,13 +152,13 @@ pub async fn select_identity_config(
         if let Some(identity_config) = config.get_identity_config_by_identity(identity) {
             Ok(identity_config.clone())
         } else {
-            return Err(anyhow::anyhow!(format!(
+            Err(anyhow::anyhow!(
                 "Missing identity credentials for identity: {}",
                 identity
-            )));
+            ))
         }
     } else {
-        return Ok(init_default(config, None).await?.identity_config);
+        Ok(init_default(config, None).await?.identity_config)
     }
 }
 

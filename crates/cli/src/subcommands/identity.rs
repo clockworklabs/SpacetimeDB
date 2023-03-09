@@ -4,6 +4,7 @@ use crate::{
 };
 use std::io::Write;
 
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use email_address::EmailAddress;
 use reqwest::{StatusCode, Url};
@@ -257,24 +258,19 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
         }
     }
 
-    if let Some(identity) = args.get_one::<String>("identity") {
-        let ic = config.delete_identity_config_by_identity(identity);
-        if let Some(ic) = ic {
-            config.update_default_identity();
-            config.save();
-            println!(" Removed identity");
-            // TODO(jdetter): This should be standardized output
-            println!(" IDENTITY  {}", ic.identity);
-            println!(" NAME  {}", ic.nickname.unwrap_or_default());
-            return Ok(());
-        } else {
-            return Err(anyhow::anyhow!("No such identity."));
-        }
-    }
-
-    return Err(anyhow::anyhow!(
-        "You either need to supply a name or identity to delete."
-    ));
+    let identity = args
+        .get_one::<String>("identity")
+        .context("You either need to supply a name or identity to delete.")?;
+    let ic = config
+        .delete_identity_config_by_identity(identity)
+        .context("No such identity")?;
+    config.update_default_identity();
+    config.save();
+    println!(" Removed identity");
+    // TODO(jdetter): This should be standardized output
+    println!(" IDENTITY  {}", ic.identity);
+    println!(" NAME  {}", ic.nickname.unwrap_or_default());
+    Ok(())
 }
 
 async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
