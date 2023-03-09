@@ -115,11 +115,12 @@ jobs:
           branchName: ${{ github.base_ref }}
           benchName: modules
 
-      # - name: Benchmark Vs Sqlite
-      #   working-directory: crates/bench/
-      #   run: |
-      #     python3 hyper_cmp.py versus > out.report
-      #     cat out.report >> $GITHUB_STEP_SUMMARY
+      - name: Benchmark Vs Sqlite
+        working-directory: crates/bench/
+        run: |
+          python3 hyper_cmp.py versus > out.report
+          cat out.report >> $GITHUB_STEP_SUMMARY
+
       - name: Clean up
         if: always()
         run: |
