@@ -1,8 +1,8 @@
 import { SpacetimeDBClient, ProductValue, AlgebraicValue, AlgebraicType, BuiltinTypeType, ProductTypeElement, SumType, SumTypeVariant } from "./spacetimedb";
 
-let token = process.env.STDB_TOKEN;
-let identity = process.env.STDB_IDENTITY;
-let db_name = process.env.STDB_DATABASE;
+let token: string = process.env.STDB_TOKEN || "";
+let identity: string = process.env.STDB_IDENTITY || "";
+let db_name: string = process.env.STDB_DATABASE || "";
 
 // let type = AlgebraicType.createProductType([
 //   new ProductTypeElement("name", AlgebraicType.createPrimitiveType(BuiltinTypeType.String))
@@ -52,15 +52,38 @@ class Education {
   }
 }
 
+class Hobby {
+  public name: string;
+
+  constructor(name: string) {
+    this.name = name;
+  }
+
+  public static getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("name", AlgebraicType.createPrimitiveType(BuiltinTypeType.String))
+    ]);
+  }
+
+  public static fromValue(value: AlgebraicValue): Hobby {
+    let productValue = value.asProductValue();
+		let name: string = productValue.elements[0].asString();
+
+    return new Hobby(name);
+  }
+}
+
 class Person {
   public name: string;
   public education: Education;
   public address: Address;
+  public hobbies: Hobby[];
 
-  constructor(name: string, education: Education, address: Address) {
+  constructor(name: string, education: Education, address: Address, hobbies: Hobby[]) {
     this.name = name;
     this.education = education;
     this.address = address;
+    this.hobbies = hobbies;
   }
 
   public static getAlgebraicType(): AlgebraicType {
@@ -68,6 +91,7 @@ class Person {
       new ProductTypeElement("name", AlgebraicType.createPrimitiveType(BuiltinTypeType.String)),
       new ProductTypeElement("education", Education.getAlgebraicType()),
       new ProductTypeElement("address", Address.getAlgebraicType()),
+      new ProductTypeElement("hobbies", AlgebraicType.createArrayType(Hobby.getAlgebraicType())),
     ])
   }
 
@@ -77,12 +101,18 @@ class Person {
 		let education: Education = Education.fromValue(productValue.elements[1]);
 		let address: Address = Address.fromValue(productValue.elements[2]);
 
-    return new Person(name, education, address);
+    let hobbies: Hobby[] = [];
+    for (let el of productValue.elements[3].asArray()) {
+      hobbies.push(Hobby.fromValue(el));
+    }
+
+    return new Person(name, education, address, hobbies);
   }
 }
 
-let object = ["foo2",{"0":[]},["Frankfurter Allee 53","10247","Germany"]];
+let object = ["foo",{"1":[]},["Frankfurter Allee 53","10247","Germany"],[["programming"]]];
 let v = AlgebraicValue.deserialize(Person.getAlgebraicType(), object);
 console.log(v);
 console.log(Person.fromValue(v));
+
 // let client = new SpacetimeDBClient("localhost:3000", db_name, {identity: identity, token: token});
