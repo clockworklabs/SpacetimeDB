@@ -1,0 +1,34 @@
+{
+  "name": "@clockworklabs/english-auction",
+  "version": "0.0.1",
+  "description": "A client for use in the EnglishAuction",
+  "author": {
+    "name": "Clockwork Labs",
+    "email": "no-reply@clockworklabs.io"
+  },
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "tsc"
+  },
+  "repository": {
+      "type": "git",
+      "url": "https://github.com/clockworklabs/EnglishAuction.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com/clockworklabs"
+  },
+  "types": "./dist/index.d.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "devDependencies": {
+    "@types/websocket": "^1.0.5",
+    "typescript": "^4.9.3",
+    "rimraf": "^3.0.2",
+    "@types/node": "^18.14.6",
+    "ts-node": "^10.9.1"
+  },
+  "dependencies": {
+    "buffer": "^6.0.3",
+    "websocket": "^1.0.34"
+  }
+}
