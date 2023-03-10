@@ -25,6 +25,13 @@ pub fn single_insert(name: String) {
 }
 
 #[spacetimedb(reducer)]
+pub fn person_iterator() {
+    for person in Person::iter() {
+        std::hint::black_box(person);
+    }
+}
+
+#[spacetimedb(reducer)]
 pub fn multi_insert(count: u64, offset: u64) {
     let start = offset;
     let end = offset + count;

@@ -73,6 +73,13 @@ fn criterion_benchmark(c: &mut Criterion) {
         }
 
         group.finish();
+
+        // As we now have a lot of records in the DB, we can check iterator
+        c.bench_function("iterator/1_000_000 rows", |b| {
+            b.to_async(runtime).iter(|| async move {
+                module.call_reducer("person_iterator", "[]".to_string()).await.unwrap();
+            });
+        });
     });
 
     with_module("benchmarks", |runtime, module| {
