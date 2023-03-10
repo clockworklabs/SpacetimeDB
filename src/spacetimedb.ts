@@ -45,7 +45,7 @@ export class ProductValue {
   }
 }
 
-type BuiltinValueType = boolean | string | number;
+type BuiltinValueType = boolean | string | number | AlgebraicValue[];
 
 export class BuiltinValue {
   value: BuiltinValueType;
@@ -60,11 +60,25 @@ export class BuiltinValue {
       return new BuiltinValue(false);
     }
 
-    return new this(value);
+    switch (type.type) {
+      case BuiltinTypeType.Array:
+        // TODO: handle byte array
+        let result: AlgebraicValue[] = [];
+        for (let el of value) {
+          result.push(AlgebraicValue.deserialize(type.arrayType as AlgebraicType, el));
+        }
+        return new this(result);
+      default:
+        return new this(value);
+    }
   }
 
   public asString(): string {
     return this.value as string;
+  }
+  
+  public asArray(): AlgebraicValue[] {
+    return this.value as AlgebraicValue[];
   }
 }
 
@@ -105,7 +119,7 @@ export class AlgebraicValue {
         throw new Error("not implemented exception");
     }
   }
-  
+
   public asProductValue(): ProductValue {
     return this.product as ProductValue;
   }
@@ -116,6 +130,10 @@ export class AlgebraicValue {
 
   public asSumValue(): SumValue {
     return this.sum as SumValue;
+  }
+
+  public asArray(): AlgebraicValue[] {
+    return (this.builtin as BuiltinValue).asArray();
   }
 
   public asString(): string {
@@ -195,8 +213,15 @@ class BuiltinType {
   public arrayType: AlgebraicType | undefined;
   public mapType: MapType | undefined;
 
-  constructor(type: BuiltinTypeType) {
+  constructor(type: BuiltinTypeType, arrayOrMapType: AlgebraicType | MapType | undefined) {
     this.type = type;
+    if (arrayOrMapType !== undefined) {
+      if (arrayOrMapType.constructor === MapType) {
+        this.mapType = arrayOrMapType;
+      } else if (arrayOrMapType.constructor === AlgebraicType) {
+        this.arrayType = arrayOrMapType;
+      }
+    }
   }
 }
 
@@ -246,6 +271,12 @@ export class AlgebraicType {
     return type;
   }
 
+  public static createArrayType(elementType: AlgebraicType) {
+    let type = new AlgebraicType();
+    type.builtin = new BuiltinType(BuiltinTypeType.Array, elementType);
+    return type;
+  }
+
   public static createSumType(variants: SumTypeVariant[]): AlgebraicType {
     let type = new AlgebraicType();
     type.sum = new SumType(variants);
@@ -254,7 +285,7 @@ export class AlgebraicType {
 
   public static createPrimitiveType(type: BuiltinTypeType) {
     let algebraicType = new AlgebraicType();
-    algebraicType.builtin = new BuiltinType(type);
+    algebraicType.builtin = new BuiltinType(type, undefined);
     return algebraicType;
   }
 }
