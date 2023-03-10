@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
+use anyhow::Context;
 use gotham::handler::SimpleHandlerResult;
+use gotham::prelude::MapHandlerError;
 use gotham::prelude::StaticResponseExtender;
 use gotham::state::request_id;
 use gotham::state::FromState;
@@ -23,8 +25,11 @@ use spacetimedb::auth::get_creds_from_header;
 use spacetimedb::auth::identity::encode_token;
 use spacetimedb::auth::invalid_token_res;
 use spacetimedb::client::client_connection::Protocol;
+use spacetimedb::client::client_connection_index::ModuleHost;
+use spacetimedb::client::client_connection_index::NoSuchModule;
 use spacetimedb::client::client_connection_index::CLIENT_ACTOR_INDEX;
 use spacetimedb::control_db::CONTROL_DB;
+use spacetimedb::host::host_controller;
 use spacetimedb::identity::Identity;
 use spacetimedb::websocket;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
@@ -63,6 +68,7 @@ fn invalid_protocol_res() -> Response<Body> {
         .unwrap()
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn on_connected(
     identity: Identity,
     identity_token: String,
@@ -71,7 +77,8 @@ async fn on_connected(
     protocol: Protocol,
     ws: WebSocketStream<Upgraded>,
     instance_id: u64,
-) {
+    module: ModuleHost,
+) -> Result<(), NoSuchModule> {
     let ip_address = headers.get("x-forwarded-for").and_then(|value| {
         value.to_str().ok().and_then(|str| {
             let split = SEPARATOR.split(str);
@@ -85,11 +92,9 @@ async fn on_connected(
         None => log::debug!("New client connected from unknown ip"),
     }
 
-    let sender = {
-        let cai = &mut CLIENT_ACTOR_INDEX.lock().unwrap();
-        let id = cai.new_client(identity, target_address, protocol, ws, instance_id);
-        cai.get_client(&id).unwrap().sender()
-    };
+    let (_, sender) = CLIENT_ACTOR_INDEX
+        .new_client(identity, target_address, protocol, ws, instance_id, module)
+        .await?;
 
     // Send the client their identity token message as the first message
     // NOTE: We're adding this to the protocol because some client libraries are
@@ -97,6 +102,7 @@ async fn on_connected(
     // Clients that receive the token from the response headers should ignore this
     // message.
     sender.send_identity_token_message(identity, identity_token).await;
+    Ok(())
 }
 
 pub async fn handle_websocket(state: &mut State) -> SimpleHandlerResult {
@@ -105,7 +111,6 @@ pub async fn handle_websocket(state: &mut State) -> SimpleHandlerResult {
         TEXT_PROTOCOL => Protocol::Text,
         BIN_PROTOCOL => Protocol::Binary,
         _ => {
-            log::debug!("Unsupported protocol: {}", protocol_string);
             return Ok(invalid_protocol_res());
         }
     };
@@ -148,6 +153,13 @@ pub async fn handle_websocket(state: &mut State) -> SimpleHandlerResult {
 
     let req_id = request_id(state).to_owned();
     let identity_token_clone = identity_token.clone();
+
+    let host = host_controller::get_host();
+    let module = host
+        .get_module(instance_id)
+        .context("Database instance not scheduled to this node yet.")
+        .map_err_with_status(StatusCode::NOT_FOUND)?;
+
     tokio::spawn(async move {
         let config = WebSocketConfig {
             max_send_queue: None,
@@ -158,7 +170,8 @@ pub async fn handle_websocket(state: &mut State) -> SimpleHandlerResult {
         let ws = websocket::execute_upgrade(&req_id, on_upgrade, Some(config))
             .await
             .unwrap();
-        on_connected(
+
+        if let Err(err) = on_connected(
             identity,
             identity_token_clone,
             target_address,
@@ -166,8 +179,15 @@ pub async fn handle_websocket(state: &mut State) -> SimpleHandlerResult {
             protocol,
             ws,
             instance_id,
+            module,
         )
-        .await;
+        .await
+        {
+            // debug here should be fine, because `on_connected` can only
+            // error out on `NoSuchModule` and we just found a module, so
+            // this should be really rare
+            log::debug!("Error during client connection: {:?}", err);
+        }
     });
 
     let mut custom_headers = HashMap::new();

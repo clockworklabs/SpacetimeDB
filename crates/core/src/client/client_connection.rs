@@ -113,6 +113,14 @@ impl ClientConnectionSender {
         }))
         .await
     }
+
+    pub async fn close_with_error(self, reason: &str) {
+        self._close_warn_fail(Some(CloseFrame {
+            code: CloseCode::Error,
+            reason: reason.into(),
+        }))
+        .await
+    }
 }
 
 pub struct ClientConnection {
@@ -192,10 +200,9 @@ impl ClientConnection {
                     }
                     Ok(WebSocketMessage::Pong(_message)) => {
                         log::trace!("Received heartbeat from client {}", id);
-                        let mut cai = CLIENT_ACTOR_INDEX.lock().unwrap();
-                        match cai.get_client_mut(&id) {
-                            Some(client) => client.alive = true,
-                            None => log::warn!("Received heartbeat from missing client {}", id), // Oh well, client must be gone.
+                        if CLIENT_ACTOR_INDEX.mark_client_as_alive(&id).await.is_none() {
+                            log::warn!("Received heartbeat from missing client {}", id);
+                            // Oh well, client must be gone.
                         }
                     }
                     Ok(WebSocketMessage::Close(close_frame)) => {
@@ -237,8 +244,7 @@ impl ClientConnection {
             // That's not actually an error, but rather a notification saying that the handshake has been
             // completed. At this point it's safe to drop the underlying connection.
             {
-                let mut cai = CLIENT_ACTOR_INDEX.lock().unwrap();
-                cai.drop_client(&id);
+                CLIENT_ACTOR_INDEX.drop_client(&id).await;
             }
         }));
     }

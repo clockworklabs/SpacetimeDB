@@ -74,7 +74,7 @@ impl TraceLog {
                     return;
                 }
             }
-            let compressed = match e.finish() {
+            match e.finish() {
                 Ok(b) => b,
                 Err(e) => {
                     // Don't spam the log.
@@ -84,8 +84,7 @@ impl TraceLog {
                     self.write_error_count += 1;
                     return;
                 }
-            };
-            compressed
+            }
         };
 
         // Prefix with msg bytes length.

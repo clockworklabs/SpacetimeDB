@@ -104,13 +104,12 @@ impl ModuleSubscriptionActor {
         subscription: Subscribe,
     ) -> Result<bool, DBError> {
         let (sender, protocol) = {
-            let cai = CLIENT_ACTOR_INDEX.lock()?;
-            let client = if let Some(client) = cai.get_client(&client_id) {
-                client
-            } else {
-                return Err(ClientError::NotFound(client_id).into());
-            };
-            (client.sender(), client.protocol)
+            let sender = CLIENT_ACTOR_INDEX
+                .get_sender_for_client(&client_id)
+                .await
+                .ok_or(ClientError::NotFound(client_id))?;
+            let protocol = sender.protocol;
+            (sender, protocol)
         };
 
         let mut queries = vec![];

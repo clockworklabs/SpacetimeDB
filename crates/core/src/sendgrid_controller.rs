@@ -72,7 +72,7 @@ impl SendGridController {
             settings.sender.send(&message).await?;
             Ok(())
         } else {
-            return Err(anyhow::anyhow!("SendGrid is disabled."));
+            Err(anyhow::anyhow!("SendGrid is disabled."))
         }
     }
 

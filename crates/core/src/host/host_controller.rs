@@ -209,14 +209,13 @@ impl HostController {
         // let budget = ReducerBudget(max_spend);
         let budget = ReducerBudget(DEFAULT_EXECUTION_BUDGET);
 
-        let res = module_host
+        module_host
             .call_reducer(caller_identity, reducer_name, budget, args)
-            .await;
+            .await
         // TODO(cloutiertyler): Move this outside of the host controller
         // if let Ok(Some(rcr)) = &res {
         //     worker_budget::record_tx_spend(identity, rcr.energy_quanta_used);
         // }
-        res
     }
 
     /// Request a list of all describable entities in a module.

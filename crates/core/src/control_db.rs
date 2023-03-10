@@ -238,10 +238,10 @@ impl ControlDb {
         parse_domain_name(domain)?;
 
         let tree = self.db.open_tree("top_level_domains")?;
-        return match tree.get(domain.as_bytes())? {
+        match tree.get(domain.as_bytes())? {
             Some(owner) => Ok(Some(Identity::from_slice(&owner[..]))),
             None => Ok(None),
-        };
+        }
     }
 
     pub async fn alloc_spacetime_identity(&self) -> Result<Identity> {

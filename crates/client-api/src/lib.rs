@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use spacetimedb::address::Address;
-use spacetimedb::client::client_connection_index;
+use spacetimedb::client::client_connection_index::CLIENT_ACTOR_INDEX;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::hash::Hash;
 use spacetimedb::identity::Identity;
@@ -37,7 +37,7 @@ pub async fn start_customized(
 }
 
 pub async fn _start(route: gotham::router::Router, addr: impl ToSocketAddrs) -> ! {
-    client_connection_index::ClientActorIndex::start_liveliness_check();
+    CLIENT_ACTOR_INDEX.start_liveliness_check();
 
     let tcp = TcpListener::bind(addr).await.unwrap();
 

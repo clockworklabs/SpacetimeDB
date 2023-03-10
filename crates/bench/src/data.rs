@@ -74,6 +74,6 @@ impl Runs {
 
     pub fn data(self) -> impl Iterator<Item = Data> {
         let x = self as u16;
-        (0..x).into_iter().map(|x| Data::new(x as i32))
+        (0..x).map(|x| Data::new(x as i32))
     }
 }
