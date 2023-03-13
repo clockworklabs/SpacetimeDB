@@ -239,7 +239,7 @@ macro_rules! decl_index {
     ($name:ident => $resource:ty) => {
         #[derive(Copy, Clone, wasmer::ValueType)]
         #[repr(transparent)]
-        pub struct $name(pub u32);
+        pub(super) struct $name(pub u32);
 
         impl ResourceIndex for $name {
             type Resource = $resource;
@@ -289,7 +289,7 @@ impl<I: ResourceIndex> ResourceSlab<I> {
 }
 
 decl_index!(BufferIdx => Vec<u8>);
-pub type Buffers = ResourceSlab<BufferIdx>;
+pub(super) type Buffers = ResourceSlab<BufferIdx>;
 
 impl BufferIdx {
     pub const INVALID: Self = Self(u32::MAX);
@@ -300,7 +300,7 @@ impl BufferIdx {
 }
 
 decl_index!(BufferIterIdx => Box<dyn Iterator<Item = Result<Vec<u8>, NodesError>> + Send>);
-pub type BufferIters = ResourceSlab<BufferIterIdx>;
+pub(super) type BufferIters = ResourceSlab<BufferIterIdx>;
 
 pub mod errnos {
     include!("../../../bindings-sys/src/errno.rs");
