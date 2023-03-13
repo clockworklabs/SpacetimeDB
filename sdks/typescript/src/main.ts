@@ -1,4 +1,4 @@
-import { SpacetimeDBClient, ProductValue, AlgebraicValue, AlgebraicType, BuiltinTypeType, ProductTypeElement, SumType, SumTypeVariant } from "./spacetimedb";
+import { SpacetimeDBClient, ProductValue, AlgebraicValue, AlgebraicType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant } from "./spacetimedb";
 
 let token: string = process.env.STDB_TOKEN || "";
 let identity: string = process.env.STDB_IDENTITY || "";
@@ -22,9 +22,9 @@ class Address {
 
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("street", AlgebraicType.createPrimitiveType(BuiltinTypeType.String)),
-      new ProductTypeElement("zipcode", AlgebraicType.createPrimitiveType(BuiltinTypeType.String)),
-      new ProductTypeElement("country", AlgebraicType.createPrimitiveType(BuiltinTypeType.String))
+      new ProductTypeElement("street", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
+      new ProductTypeElement("zipcode", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
+      new ProductTypeElement("country", AlgebraicType.createPrimitiveType(BuiltinType.Type.String))
     ]);
   }
 
@@ -41,9 +41,9 @@ class Address {
 class Education {
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createSumType([
-      new SumTypeVariant("None", AlgebraicType.createPrimitiveType(BuiltinTypeType.String)),
-      new SumTypeVariant("High", AlgebraicType.createPrimitiveType(BuiltinTypeType.String)),
-      new SumTypeVariant("Higher", AlgebraicType.createPrimitiveType(BuiltinTypeType.String))
+      new SumTypeVariant("None", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
+      new SumTypeVariant("High", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
+      new SumTypeVariant("Higher", AlgebraicType.createPrimitiveType(BuiltinType.Type.String))
     ]);
   }
 
@@ -61,7 +61,7 @@ class Hobby {
 
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("name", AlgebraicType.createPrimitiveType(BuiltinTypeType.String))
+      new ProductTypeElement("name", AlgebraicType.createPrimitiveType(BuiltinType.Type.String))
     ]);
   }
 
@@ -88,7 +88,7 @@ class Person {
 
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("name", AlgebraicType.createPrimitiveType(BuiltinTypeType.String)),
+      new ProductTypeElement("name", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
       new ProductTypeElement("education", Education.getAlgebraicType()),
       new ProductTypeElement("address", Address.getAlgebraicType()),
       new ProductTypeElement("hobbies", AlgebraicType.createArrayType(Hobby.getAlgebraicType())),
