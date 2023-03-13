@@ -6,7 +6,7 @@ use crate::{de::Deserialize, ser::Serialize};
 use crate::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, BuiltinType, ProductTypeElement};
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[sats(crate = "crate")]
+#[sats(crate = crate)]
 pub struct ProductType {
     pub elements: Vec<ProductTypeElement>,
 }

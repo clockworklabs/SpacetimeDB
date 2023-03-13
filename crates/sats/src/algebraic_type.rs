@@ -50,7 +50,7 @@ use enum_as_inner::EnumAsInner;
 /// )
 /// ```
 #[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[sats(crate = "crate")]
+#[sats(crate = crate)]
 pub enum AlgebraicType {
     Sum(SumType),
     Product(ProductType),

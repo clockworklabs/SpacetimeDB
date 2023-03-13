@@ -4,7 +4,7 @@ use crate::{de::Deserialize, ser::Serialize};
 /// NOTE: Each element has an implicit element tag based on its order.
 /// Uniquely identifies an element similarly to protobuf tags.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[sats(crate = "crate")]
+#[sats(crate = crate)]
 pub struct SumTypeVariant {
     pub name: Option<String>,
     pub algebraic_type: AlgebraicType,

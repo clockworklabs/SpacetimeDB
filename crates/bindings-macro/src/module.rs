@@ -2,8 +2,9 @@ extern crate core;
 extern crate proc_macro;
 
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, quote_spanned};
+use quote::{quote, quote_spanned, ToTokens};
 use syn::spanned::Spanned;
+use syn::{LitStr, Token};
 
 pub(crate) struct SatsType<'a> {
     pub ident: &'a syn::Ident,
@@ -66,8 +67,40 @@ pub(crate) fn extract_sats_type<'a>(
     data: SatsTypeData<'a>,
     crate_fallback: TokenStream,
 ) -> syn::Result<SatsType<'a>> {
-    let krate = crate::find_crate(attrs).unwrap_or(crate_fallback);
-    let name = ident.to_string();
+    let mut name = None;
+    let mut krate = None;
+    for attr in attrs {
+        if !attr.path.is_ident("sats") {
+            continue;
+        }
+        attr.parse_args_with(|input: syn::parse::ParseStream| loop {
+            if input.is_empty() {
+                return Ok(());
+            }
+
+            let lookahead = input.lookahead1();
+            if lookahead.peek(Token![crate]) {
+                input.parse::<Token![crate]>()?;
+                input.parse::<Token![=]>()?;
+                let v = input.call(syn::Path::parse_mod_style)?;
+                krate = Some(v.into_token_stream());
+            } else if lookahead.peek(kw::name) {
+                input.parse::<kw::name>()?;
+                input.parse::<Token![=]>()?;
+                let v = input.parse::<LitStr>()?;
+                name = Some(v.value());
+            } else {
+                return Err(lookahead.error());
+            }
+
+            if input.is_empty() {
+                return Ok(());
+            }
+            input.parse::<Token![,]>()?;
+        })?;
+    }
+    let krate = krate.unwrap_or(crate_fallback);
+    let name = name.unwrap_or_else(|| ident.to_string());
 
     Ok(SatsType {
         ident,
@@ -76,6 +109,10 @@ pub(crate) fn extract_sats_type<'a>(
         krate,
         data,
     })
+}
+
+mod kw {
+    syn::custom_keyword!(name);
 }
 
 pub(crate) fn extract_sats_struct(fields: &syn::Fields) -> syn::Result<SatsTypeData<'_>> {

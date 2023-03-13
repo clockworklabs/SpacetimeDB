@@ -194,9 +194,9 @@ namespace SpacetimeDB
 {
 	public static partial class Reducer
 	{
-		public static event Action<ClientApi.Event.Types.Status, Identity, TestA, TestB, TestC> OnTestEvent;
+		public static event Action<ClientApi.Event.Types.Status, Identity, TestA, TestB, Namespace.TestC> OnTestEvent;
 
-		public static void Test(TestA arg, TestB arg2, TestC arg3)
+		public static void Test(TestA arg, TestB arg2, Namespace.TestC arg3)
 		{
 			NetworkManager.instance.InternalCallReducer("test", new object[] { arg, arg2, arg3 });
 		}
@@ -210,7 +210,7 @@ namespace SpacetimeDB
 				var args = Newtonsoft.Json.JsonConvert.DeserializeObject<JArray>(jsonString);
 				if(args.Count >= 3)
 				{
-					OnTestEvent(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray()), args[0].ToObject<TestA>(), args[1].ToObject<TestB>(), args[2].ToObject<TestC>());
+					OnTestEvent(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray()), args[0].ToObject<TestA>(), args[1].ToObject<TestB>(), args[2].ToObject<Namespace.TestC>());
 				}
 			}
 		}

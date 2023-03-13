@@ -7,7 +7,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[sats(crate = "crate")]
+#[sats(crate = crate)]
 pub struct SumType {
     pub variants: Vec<SumTypeVariant>,
 }

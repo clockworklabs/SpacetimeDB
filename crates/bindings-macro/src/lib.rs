@@ -671,25 +671,6 @@ fn parse_duration(lit: &syn::Lit, ctx: &str) -> syn::Result<Duration> {
         .map_err(|e| syn::Error::new_spanned(lit, format_args!("Can't parse {ctx} as duration: {e}")))
 }
 
-fn find_crate(attrs: &[syn::Attribute]) -> Option<TokenStream> {
-    for attr in attrs {
-        if !attr.path.is_ident("sats") {
-            continue;
-        }
-        let Ok(Meta::List(l)) = attr.parse_meta() else { continue };
-        for meta in l.nested {
-            match meta {
-                NestedMeta::Meta(Meta::NameValue(nv)) if nv.path.is_ident("crate") => {
-                    let syn::Lit::Str(s) = nv.lit else { continue };
-                    return Some(s.parse().unwrap());
-                }
-                _ => {}
-            }
-        }
-    }
-    None
-}
-
 #[proc_macro_derive(Deserialize, attributes(sats))]
 pub fn deserialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);

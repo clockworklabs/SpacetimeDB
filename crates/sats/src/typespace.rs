@@ -6,7 +6,7 @@ use crate::TypeInSpace;
 use crate::{de::Deserialize, ser::Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[sats(crate = "crate")]
+#[sats(crate = crate)]
 pub struct Typespace {
     pub root: AlgebraicTypeRef,
     pub types: Vec<AlgebraicType>,

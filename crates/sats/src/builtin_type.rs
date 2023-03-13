@@ -9,7 +9,7 @@ use crate::{
 use enum_as_inner::EnumAsInner;
 
 #[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[sats(crate = "crate")]
+#[sats(crate = crate)]
 pub enum BuiltinType {
     Bool,
     I8,
@@ -30,7 +30,7 @@ pub enum BuiltinType {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[sats(crate = "crate")]
+#[sats(crate = crate)]
 pub struct MapType {
     pub key_ty: Box<AlgebraicType>,
     pub ty: Box<AlgebraicType>,

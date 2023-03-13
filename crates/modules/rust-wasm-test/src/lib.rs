@@ -15,6 +15,7 @@ pub struct TestB {
 }
 
 #[derive(SpacetimeType)]
+#[sats(name = "Namespace.TestC")]
 pub enum TestC {
     Foo(String),
     Bar,
