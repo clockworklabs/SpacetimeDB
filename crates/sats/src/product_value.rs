@@ -35,41 +35,49 @@ impl crate::Value for ProductValue {
 }
 
 #[derive(thiserror::Error, Debug, Clone)]
-#[error("Field {0}({1:?}) not found or has a invalid type")]
-pub struct InvalidFieldError(usize, Option<&'static str>);
+#[error("Field {0}({1:?}) not found or has an invalid type")]
+pub struct InvalidFieldError(pub usize, pub Option<&'static str>);
 
 impl ProductValue {
     pub fn get_field(&self, index: usize, named: Option<&'static str>) -> Result<&AlgebraicValue, InvalidFieldError> {
         self.elements.get(index).ok_or(InvalidFieldError(index, named))
     }
 
+    pub fn extract_field<'a, T, F>(
+        &'a self,
+        index: usize,
+        named: Option<&'static str>,
+        f: F,
+    ) -> Result<T, InvalidFieldError>
+    where
+        F: Fn(&'a AlgebraicValue) -> Option<T> + 'a,
+    {
+        let v = self.elements.get(index).ok_or(InvalidFieldError(index, named))?;
+        let r = f(v).ok_or(InvalidFieldError(index, named))?;
+        Ok(r)
+    }
+
     pub fn field_as_bool(&self, index: usize, named: Option<&'static str>) -> Result<bool, InvalidFieldError> {
-        let f = self.get_field(index, named)?;
-        let r = f.as_bool().ok_or(InvalidFieldError(index, named))?;
-        Ok(*r)
+        self.extract_field(index, named, |f| f.as_bool().copied())
+    }
+
+    pub fn field_as_u8(&self, index: usize, named: Option<&'static str>) -> Result<u8, InvalidFieldError> {
+        self.extract_field(index, named, |f| f.as_u8().copied())
     }
 
     pub fn field_as_u32(&self, index: usize, named: Option<&'static str>) -> Result<u32, InvalidFieldError> {
-        let f = self.get_field(index, named)?;
-        let r = f.as_u32().ok_or(InvalidFieldError(index, named))?;
-        Ok(*r)
+        self.extract_field(index, named, |f| f.as_u32().copied())
     }
 
     pub fn field_as_i64(&self, index: usize, named: Option<&'static str>) -> Result<i64, InvalidFieldError> {
-        let f = self.get_field(index, named)?;
-        let r = f.as_i64().ok_or(InvalidFieldError(index, named))?;
-        Ok(*r)
+        self.extract_field(index, named, |f| f.as_i64().copied())
     }
 
     pub fn field_as_str(&self, index: usize, named: Option<&'static str>) -> Result<&str, InvalidFieldError> {
-        let f = self.get_field(index, named)?;
-        let r = f.as_string().ok_or(InvalidFieldError(index, named))?;
-        Ok(r)
+        self.extract_field(index, named, |f| f.as_string().map(|x| x.as_str()))
     }
 
     pub fn field_as_bytes(&self, index: usize, named: Option<&'static str>) -> Result<&[u8], InvalidFieldError> {
-        let f = self.get_field(index, named)?;
-        let r = f.as_bytes().ok_or(InvalidFieldError(index, named))?;
-        Ok(r)
+        self.extract_field(index, named, |f| f.as_bytes().map(|x| x.as_slice()))
     }
 }

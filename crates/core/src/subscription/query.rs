@@ -20,7 +20,7 @@ pub(crate) fn run_query(
     schema: &TableDef,
     table: &DatabaseTableUpdate,
 ) -> Result<MemTable, DBError> {
-    let table = mem_table(schema.schema.clone(), table.ops.iter().map(|x| x.row.clone()));
+    let table = mem_table(schema.columns.columns.clone(), table.ops.iter().map(|x| x.row.clone()));
     let code = query(table);
 
     let mut p = Program::new(db);
@@ -41,10 +41,10 @@ pub fn compile_query(relational_db: &mut RelationalDBWrapper, input: &str) -> Re
     let mut stdb = relational_db.lock().unwrap();
 
     let mut tx_ = stdb.begin_tx();
-    let (tx, stdb) = tx_.get();
+    let (_, stdb) = tx_.get();
 
     let result = stdb
-        .scan_tables(tx)?
+        .scan_tables()
         .find_map(|(_, x)| if x.name == input { Some(x.clone()) } else { None });
 
     tx_.rollback();
@@ -61,7 +61,7 @@ mod tests {
     use super::*;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::host::module_host::TableOp;
-    use crate::vm::tests::create_table_with_rows;
+    use crate::vm::tests::create_table_with_program;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::{product, BuiltinType, ProductType};
 
@@ -74,7 +74,7 @@ mod tests {
         let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
         let row = product!(1u64, "health");
         let table = mem_table(head.clone(), [row.clone()]);
-        let table_id = create_table_with_rows(p, "inventory", head, &[row.clone()])?;
+        let table_id = create_table_with_program(p, "inventory", head, &[row.clone()])?;
 
         let stdb = p.db.lock().unwrap();
 

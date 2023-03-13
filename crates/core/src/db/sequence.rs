@@ -3,11 +3,14 @@
 //! This involves creating and initializing a new special row in the table [crate::db::relational_db::ST_SEQUENCES_NAME].
 //!
 //! After a sequence is created, you use the functions `next_val` and `set_val` to operate on the sequence
-use crate::db::relational_db::TableIter;
+use crate::db::catalog::{ST_INDEX_ID, ST_INDEX_SEQ, ST_SEQUENCE_ID, ST_SEQUENCE_SEQ, ST_TABLE_ID, ST_TABLE_SEQ};
+use crate::db::relational_db::{TableIter, ST_TABLE_ID_START};
 use crate::db::sequence;
 use crate::error::DBError;
 use spacetimedb_lib::{TupleDef, TupleValue, TypeDef, TypeValue};
-use spacetimedb_sats::product;
+use spacetimedb_sats::relation::{DbTable, Header};
+use spacetimedb_sats::{product, AlgebraicValue, ProductType, ProductValue};
+use std::collections::HashMap;
 use std::fmt;
 use thiserror::Error;
 
@@ -62,19 +65,21 @@ pub enum SequenceError {
     NotFound(SequenceId),
 }
 
+// WARNING: In order to keep a stable schema, don't change the discriminant of the fields
 /// The fields that define the internal table [crate::db::relational_db::ST_SEQUENCES_NAME].
 #[derive(Debug)]
 pub enum SequenceFields {
     SequenceId = 0,
-    SequenceName,
-    //Not stored in the DB instance. Is taken from Sled instead
-    //Current,
-    Start,
-    Increment,
-    MinValue,
-    MaxValue,
-    TableId,
-    ColId,
+    SequenceName = 1,
+    Start = 2,
+    Increment = 3,
+    MinValue = 4,
+    MaxValue = 5,
+    TableId = 6,
+    ColId = 7,
+    //Not stored in the DB instance.
+    Current, //Is taken from Sled instead
+    Cache,
 }
 
 impl SequenceFields {
@@ -88,6 +93,8 @@ impl SequenceFields {
             SequenceFields::MaxValue => "max_value",
             SequenceFields::TableId => "table_id",
             SequenceFields::ColId => "col_id",
+            SequenceFields::Current => "current",
+            SequenceFields::Cache => "cache",
         }
     }
 }
@@ -113,6 +120,7 @@ pub struct SequenceDef {
     start: Option<i64>,
     min_value: Option<i64>,
     max_value: Option<i64>,
+    cache: Option<u32>,
 }
 
 impl SequenceDef {
@@ -124,7 +132,17 @@ impl SequenceDef {
             start: None,
             min_value: None,
             max_value: None,
+            cache: None,
         }
+    }
+
+    pub fn sequence_name_column(table_name: &str, col_name: &str) -> String {
+        format!("seq_{table_name}_{col_name}")
+    }
+
+    pub fn new_for_column(table_id: u32, table_name: &str, col_id: u32, col_name: &str) -> Self {
+        let name = Self::sequence_name_column(table_name, col_name);
+        Self::new(&name).with_table(table_id, col_id)
     }
 
     /// Specifies which value is added to the current sequence value.
@@ -153,7 +171,8 @@ impl SequenceDef {
 
     /// Determines the minimum value a sequence can generate.
     ///
-    /// The default for an ascending sequence is 1. The default for a descending sequence is [i64::MIN].
+    /// The default for an ascending sequence is 1.
+    /// The default for a descending sequence is [i64::MIN].
     pub fn with_min_value(self, value: i64) -> Self {
         let mut x = self;
         x.min_value = Some(value);
@@ -162,7 +181,8 @@ impl SequenceDef {
 
     /// Determines the maximum value for the sequence.
     ///
-    /// The default for an ascending sequence is [i64::MAX]. The default for a descending sequence is -1.
+    /// The default for an ascending sequence is [i64::MAX].
+    /// The default for a descending sequence is -1.
     pub fn with_max_value(self, value: i64) -> Self {
         let mut x = self;
         x.max_value = Some(value);
@@ -178,6 +198,13 @@ impl SequenceDef {
         x.for_table = Some((table_id, col_id));
         x
     }
+
+    /// How many sequences are cached or by default [PREFETCH_LOG].
+    pub fn with_cached(self, cache: u32) -> Self {
+        let mut x = self;
+        x.cache = Some(cache);
+        x
+    }
 }
 
 /// A [Sequence] generator
@@ -186,16 +213,16 @@ impl SequenceDef {
 pub struct Sequence {
     pub(crate) sequence_id: SequenceId,
     pub(crate) sequence_name: String,
-    current: i64,
-    increment: i64,
+    pub(crate) current: i64,
+    pub(crate) increment: i64,
     pub(crate) start: i64,
-    min_value: i64,
-    max_value: i64,
+    pub(crate) min_value: i64,
+    pub(crate) max_value: i64,
     /// Optionally attached to this table
-    table_id: Option<u32>,
-    col_id: Option<u32>,
+    pub(crate) table_id: Option<u32>,
+    pub(crate) col_id: Option<u32>,
     /// Cache this amount of sequences
-    cache: u32,
+    pub(crate) cache: u32,
 }
 
 impl Sequence {
@@ -251,7 +278,7 @@ impl Sequence {
             start,
             max_value,
             current: start,
-            cache: PREFETCH_LOG,
+            cache: seq.cache.unwrap_or(PREFETCH_LOG),
         })
     }
 
@@ -394,6 +421,152 @@ impl From<&Sequence> for TupleValue {
             TypeValue::U32(0),
             TypeValue::U32(0),
         ]
+    }
+}
+
+pub struct SequenceCatalog {
+    sequences: HashMap<SequenceId, Sequence>,
+    /// Cache the [SequenceId] of the main sequence generator, for generating `ids` for others [Sequence] objects.
+    pub(crate) seq_id: SequenceId,
+    /// Cache the [SequenceId] for the generator of tables ([spacetimedb_lib::type_def::TableDef] objects).
+    seq_table_id: SequenceId,
+    /// Cache the [SequenceId]  for the generator of [crate::db::index::IndexDef] objects.
+    index_seq_id: SequenceId,
+    /// Stores the `table_id` for the [crate::db::relational_db::ST_SEQUENCES_NAME] table
+    pub(crate) table_idx_id: u32,
+}
+
+impl SequenceCatalog {
+    pub fn new() -> Result<Self, DBError> {
+        // Initialize the internal sequences for the schema
+        let seq_id = ST_SEQUENCE_ID.into();
+        let seq = SequenceDef::new(ST_SEQUENCE_SEQ);
+        let mut sequences = HashMap::new();
+        sequences.insert(seq_id, Sequence::from_def(seq_id, seq)?);
+
+        let seq_table_id = ST_TABLE_ID.into();
+        let seq = SequenceDef::new(ST_TABLE_SEQ).with_min_value((ST_TABLE_ID_START + 1) as i64);
+        sequences.insert(seq_table_id, Sequence::from_def(seq_table_id, seq)?);
+
+        let index_seq_id = ST_INDEX_ID.into();
+        let seq = SequenceDef::new(ST_INDEX_SEQ);
+        sequences.insert(index_seq_id, Sequence::from_def(index_seq_id, seq)?);
+
+        Ok(Self {
+            sequences,
+            seq_id,
+            seq_table_id,
+            index_seq_id,
+            table_idx_id: 0,
+        })
+    }
+
+    pub fn len(&self) -> usize {
+        self.sequences.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.sequences.is_empty()
+    }
+
+    /// Returns an iterator for all the [Sequence] in the [Catalog]
+    pub fn sequences_iter(&self) -> impl Iterator<Item = &Sequence> {
+        self.sequences.values()
+    }
+
+    pub(crate) fn schema(&self) -> DbTable {
+        DbTable::new(
+            &Header::new(ProductType::from_iter([
+                (SequenceFields::SequenceId.name(), TypeDef::U32),
+                (SequenceFields::SequenceName.name(), TypeDef::String),
+                (SequenceFields::TableId.name(), TypeDef::make_option_type(TypeDef::U32)),
+                (SequenceFields::ColId.name(), TypeDef::make_option_type(TypeDef::U32)),
+                (SequenceFields::Current.name(), TypeDef::I64),
+                (SequenceFields::MinValue.name(), TypeDef::I64),
+                (SequenceFields::MaxValue.name(), TypeDef::I64),
+                (SequenceFields::Increment.name(), TypeDef::I64),
+                (SequenceFields::Cache.name(), TypeDef::U32),
+            ])),
+            self.table_idx_id,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn make_row(
+        sequence_id: u32,
+        sequence_name: &str,
+        table_id: Option<u32>,
+        col_id: Option<u32>,
+        current: i64,
+        min_value: i64,
+        max_value: i64,
+        increment: i64,
+        cache: u32,
+    ) -> ProductValue {
+        product!(
+            AlgebraicValue::U32(sequence_id),
+            AlgebraicValue::String(sequence_name.to_string()),
+            AlgebraicValue::from(table_id),
+            AlgebraicValue::from(col_id),
+            AlgebraicValue::I64(current),
+            AlgebraicValue::I64(min_value),
+            AlgebraicValue::I64(max_value),
+            AlgebraicValue::I64(increment),
+            AlgebraicValue::U32(cache),
+        )
+    }
+
+    /// Returns a [Iterator] than map [Sequence] to [ProductValue]
+    pub fn iter_row(&self) -> impl Iterator<Item = ProductValue> + '_ {
+        self.sequences.values().map(|row| {
+            Self::make_row(
+                row.sequence_id.0,
+                &row.sequence_name,
+                row.table_id,
+                row.col_id,
+                row.current,
+                row.min_value,
+                row.max_value,
+                row.increment,
+                row.cache,
+            )
+        })
+    }
+
+    // TODO: We should verify if the table/column are valid!
+    /// Insert a new [Sequence]. Overwrite the last one if exist with the same [SequenceId]
+    pub fn add_sequence(&mut self, seq: Sequence) -> SequenceId {
+        let idx = seq.sequence_id;
+        self.sequences.insert(idx, seq);
+
+        idx
+    }
+
+    pub fn get_sequence_mut(&mut self, seq_id: SequenceId) -> Option<&mut Sequence> {
+        self.sequences.get_mut(&seq_id)
+    }
+
+    pub fn get_sequence(&mut self, seq_id: SequenceId) -> Option<&Sequence> {
+        self.sequences.get(&seq_id)
+    }
+
+    pub fn get_sequence_by_name(&self, name: &str) -> Option<&Sequence> {
+        self.sequences_iter().find(|x| x.sequence_name == name)
+    }
+
+    /// Returns the [SequenceId] for generating `ids` for [Sequence] objects
+    pub fn seq_id(&self) -> SequenceId {
+        self.seq_id
+    }
+
+    /// Returns the [SequenceId] for generating `ids` for table objects
+    pub fn seq_table_id(&self) -> SequenceId {
+        self.seq_table_id
+    }
+
+    /// Returns the [SequenceId] for generating `ids` for [crate::db::index::IndexDef] objects
+    pub fn seq_index(&self) -> SequenceId {
+        self.index_seq_id
     }
 }
 
@@ -573,7 +746,7 @@ mod tests {
         let seq: Vec<_> = stdb.scan_sequences(tx)?.collect();
         assert_eq!(seq.len(), 1, "Not create the seq for table");
 
-        let seq = stdb.catalog.get_sequence_mut(seq_id).unwrap();
+        let seq = stdb.catalog.sequences.get_sequence_mut(seq_id).unwrap();
         assert_eq!(seq.next_val(), 1);
 
         //
@@ -620,7 +793,7 @@ mod tests {
             let mut tx_ = stdb.begin_tx();
             let (tx, stdb) = tx_.get();
 
-            let seq_id = stdb.catalog.seq_id();
+            let seq_id = stdb.catalog.sequences.seq_id();
 
             for i in 1..(PREFETCH_LOG as i64) {
                 let next = stdb.next_sequence(seq_id)?;
@@ -645,14 +818,14 @@ mod tests {
 
         assert!(stdb.seqdb.was_recovered(), "Sled not was reloaded");
 
-        let seq_id = stdb.catalog.seq_id();
+        let seq_id = stdb.catalog.sequences.seq_id();
         let next = stdb.next_sequence(seq_id)?;
 
         assert_eq!(next, PREFETCH_LOG as i64, "Seq after shutdown wrong");
 
         let seq: Vec<_> = stdb.scan_sequences(tx)?.collect();
         assert_eq!(seq.len(), 1, "Did not create the seq for table");
-        let seq_table = stdb.catalog.get_sequence(seq_table_id);
+        let seq_table = stdb.catalog.sequences.get_sequence(seq_table_id);
 
         assert!(seq_table.is_some(), "Not reload seq for table");
         let seq_table = seq_table.unwrap();

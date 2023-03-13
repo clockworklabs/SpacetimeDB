@@ -86,7 +86,7 @@ impl Subscription {
         let mut stdb = relational_db.lock().unwrap();
         let mut tx_ = stdb.begin_tx();
         let (tx, stdb) = tx_.get();
-        let tables = stdb.scan_table_names(tx).unwrap().collect::<Vec<_>>();
+        let tables = stdb.scan_table_names().collect::<Vec<_>>();
 
         for query in &self.queries {
             let table_name = &query.table.name;

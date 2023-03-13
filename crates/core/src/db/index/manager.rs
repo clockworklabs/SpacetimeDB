@@ -1,5 +1,7 @@
-use crate::db::index::{IndexDef, IndexId, IndexKey};
-use spacetimedb_lib::{PrimaryKey, TupleValue};
+use crate::db::index::{IndexDef, IndexFields, IndexFieldsExtra, IndexId, IndexKey};
+use spacetimedb_lib::{PrimaryKey, TupleValue, TypeDef};
+use spacetimedb_sats::relation::{DbTable, Header};
+use spacetimedb_sats::{product, AlgebraicValue, ProductType, ProductValue};
 use std::collections::HashMap;
 
 use crate::db::index::btree::BTreeIndex;
@@ -22,9 +24,12 @@ impl IndexCatalog {
         }
     }
 
-    /// Delete all the indexes from memory
-    pub fn clear(&mut self) {
-        self.indexes.clear();
+    pub fn len(&self) -> usize {
+        self.indexes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.indexes.is_empty()
     }
 
     /// Returns the [BTreeIndex] from the database by their name
@@ -98,6 +103,52 @@ impl IndexCatalog {
 
         log::debug!("INDEX: RELOAD ALL DONE");
         Ok(())
+    }
+
+    pub(crate) fn schema(&self) -> DbTable {
+        DbTable::new(
+            &Header::new(ProductType::from_iter([
+                (IndexFields::IndexId.name(), TypeDef::U32),
+                (IndexFields::IndexName.name(), TypeDef::String),
+                (IndexFields::TableId.name(), TypeDef::U32),
+                (IndexFields::ColId.name(), TypeDef::U32),
+                (IndexFields::IsUnique.name(), TypeDef::Bool),
+                (IndexFieldsExtra::Count.name(), TypeDef::U64),
+            ])),
+            self.table_idx_id,
+        )
+    }
+
+    pub fn make_row(
+        index_id: u32,
+        index_name: &str,
+        table_id: u32,
+        col_id: u32,
+        is_unique: bool,
+        count: u64,
+    ) -> ProductValue {
+        product!(
+            AlgebraicValue::U32(index_id),
+            AlgebraicValue::String(index_name.to_string()),
+            AlgebraicValue::U32(table_id),
+            AlgebraicValue::U32(col_id),
+            AlgebraicValue::Bool(is_unique),
+            AlgebraicValue::U64(count),
+        )
+    }
+
+    /// Returns a [Iterator] than map to [ProductValue]
+    pub fn iter_row(&self) -> impl Iterator<Item = ProductValue> + '_ {
+        self.indexes.values().map(|row| {
+            Self::make_row(
+                row.index_id.0,
+                &row.name,
+                row.table_id,
+                row.col_id,
+                row.is_unique,
+                row.idx.len() as u64,
+            )
+        })
     }
 
     pub fn iter_by_index_id(&self, index_id: IndexId) -> impl Iterator<Item = &BTreeIndex> {

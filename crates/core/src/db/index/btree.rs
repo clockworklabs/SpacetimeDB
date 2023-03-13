@@ -44,17 +44,19 @@ impl From<u32> for IndexId {
     }
 }
 
+// WARNING: In order to keep a stable schema, don't change the discriminant of the fields
 #[derive(Debug)]
 pub enum IndexFields {
     IndexId = 0,
-    TableId,
-    ColId,
-    IndexName,
-    IsUnique,
+    TableId = 1,
+    ColId = 2,
+    IndexName = 3,
+    IsUnique = 4,
 }
 
 impl IndexFields {
     pub(crate) fn name(&self) -> &'static str {
+        // WARNING: Not change the field names
         match self {
             IndexFields::IndexId => "index_id",
             IndexFields::TableId => "table_id",
@@ -74,6 +76,20 @@ impl From<IndexFields> for Option<&'static str> {
 impl From<IndexFields> for Option<String> {
     fn from(x: IndexFields) -> Self {
         Some(x.name().into())
+    }
+}
+
+// Extra fields generated in the query of index catalog
+#[derive(Debug)]
+pub enum IndexFieldsExtra {
+    Count,
+}
+
+impl IndexFieldsExtra {
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
+            Self::Count => "count",
+        }
     }
 }
 

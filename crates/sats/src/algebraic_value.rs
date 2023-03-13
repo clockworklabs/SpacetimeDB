@@ -227,6 +227,22 @@ impl AlgebraicValue {
     pub fn Bytes(v: Vec<u8>) -> Self {
         Self::Builtin(BuiltinValue::Bytes(v))
     }
+    #[allow(non_snake_case)]
+    #[inline]
+    pub fn OptionSome(v: AlgebraicValue) -> Self {
+        Self::Sum(SumValue {
+            tag: 1,
+            value: Box::new(v),
+        })
+    }
+    #[allow(non_snake_case)]
+    #[inline]
+    pub fn OptionNone() -> Self {
+        Self::Sum(SumValue {
+            tag: 1,
+            value: Box::new(AlgebraicValue::Product(ProductValue { elements: Vec::new() })),
+        })
+    }
 
     /// Infer the [AlgebraicType] of [Self].
     pub fn type_of(&self) -> AlgebraicType {
@@ -283,6 +299,15 @@ impl AlgebraicValue {
     }
 }
 
+impl<T: Into<AlgebraicValue>> From<Option<T>> for AlgebraicValue {
+    fn from(value: Option<T>) -> Self {
+        match value {
+            None => AlgebraicValue::OptionNone(),
+            Some(x) => AlgebraicValue::OptionSome(x.into()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -290,7 +315,7 @@ mod tests {
     use crate::satn::Satn;
     use crate::{
         AlgebraicType, AlgebraicValue, BuiltinType, BuiltinValue, MapType, ProductType, ProductTypeElement,
-        ProductValue, SumValue, TypeInSpace, Typespace, ValueWithType,
+        ProductValue, TypeInSpace, Typespace, ValueWithType,
     };
 
     fn in_space<'a, T: crate::Value>(ts: &'a Typespace, ty: &'a T::Type, val: &'a T) -> ValueWithType<'a, T> {
@@ -325,10 +350,7 @@ mod tests {
     fn option_some() {
         let never = AlgebraicType::make_never_type();
         let option = AlgebraicType::make_option_type(never);
-        let sum_value = AlgebraicValue::Sum(SumValue {
-            tag: 1,
-            value: Box::new(AlgebraicValue::Product(ProductValue { elements: Vec::new() })),
-        });
+        let sum_value = AlgebraicValue::OptionNone();
         let typespace = Typespace::new(vec![]);
         assert_eq!("(none = ())", in_space(&typespace, &option, &sum_value).to_satn(),);
     }

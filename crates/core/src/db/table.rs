@@ -5,10 +5,18 @@
 //!
 //! See [`Catalog`](crate::db::catalog::Catalog) documentation for more details.
 //!
-use crate::error::{DBError, TableError};
-use spacetimedb_lib::{TupleDef, TupleValue, TypeDef};
 use std::collections::hash_map::Iter;
 use std::collections::HashMap;
+
+use crate::db::relational_db::{ST_COLUMNS_ID, ST_TABLES_ID};
+use crate::db::TypeValue;
+use crate::error::{DBError, TableError};
+use spacetimedb_lib::error::LibError;
+use spacetimedb_lib::{TupleValue, TypeDef};
+use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::relation::{DbTable, Header};
+use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
+use spacetimedb_vm::dsl::scalar;
 
 // WARNING: In order to keep a stable schema, don't change the discriminant of the fields
 #[derive(Debug)]
@@ -27,6 +35,67 @@ impl TableFields {
     }
 }
 
+/// Extra fields generated for schema queries
+#[derive(Debug)]
+pub enum TableFieldsExtra {
+    IsSystemTable,
+}
+
+impl TableFieldsExtra {
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
+            Self::IsSystemTable => "is_system_table",
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+pub enum ColumnIndexAttribute {
+    #[default]
+    UnSet = 0,
+    /// Unique + AutoInc
+    Identity = 1,
+    /// Index unique
+    Unique = 2,
+    ///  Index no unique
+    Indexed = 3,
+    /// Generate the next [Sequence]
+    AutoInc = 4,
+}
+
+impl ColumnIndexAttribute {
+    pub fn as_value(&self) -> AlgebraicValue {
+        let name = match self {
+            ColumnIndexAttribute::UnSet => "UnSet",
+            ColumnIndexAttribute::Identity => "Identity",
+            ColumnIndexAttribute::Unique => "Unique",
+            ColumnIndexAttribute::Indexed => "Indexed",
+            ColumnIndexAttribute::AutoInc => "AutoInc",
+        };
+
+        AlgebraicValue::String(name.to_string())
+    }
+}
+
+impl TryFrom<u8> for ColumnIndexAttribute {
+    type Error = LibError;
+
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v {
+            0 => Ok(Self::UnSet),
+            1 => Ok(Self::Identity),
+            2 => Ok(Self::Unique),
+            3 => Ok(Self::Indexed),
+            4 => Ok(Self::AutoInc),
+            _ => Err(InvalidFieldError(
+                ColumnFields::ColIndexAttribute as usize,
+                ColumnFields::ColIndexAttribute.into(),
+            )
+            .into()),
+        }
+    }
+}
+
 // WARNING: In order to keep a stable schema, don't change the discriminant of the fields
 #[derive(Debug)]
 pub enum ColumnFields {
@@ -34,6 +103,7 @@ pub enum ColumnFields {
     ColId = 1,
     ColType = 2,
     ColName = 3,
+    ColIndexAttribute = 4,
 }
 
 impl ColumnFields {
@@ -44,6 +114,7 @@ impl ColumnFields {
             Self::ColId => "col_id",
             Self::ColType => "col_type",
             Self::ColName => "col_name",
+            Self::ColIndexAttribute => "col_idx_attr",
         }
     }
 }
@@ -78,34 +149,86 @@ impl From<ColumnFields> for String {
     }
 }
 
+pub struct ColumnDef<'a> {
+    pub column: &'a ProductTypeElement,
+    pub attr: ColumnIndexAttribute,
+}
+
+/// Describe the column + meta attributes
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+pub struct ProductTypeMeta {
+    pub columns: ProductType,
+    pub attr: Vec<ColumnIndexAttribute>,
+}
+
+impl ProductTypeMeta {
+    pub fn new(columns: ProductType) -> Self {
+        Self {
+            attr: vec![ColumnIndexAttribute::UnSet; columns.elements.len()],
+            columns,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.columns.elements.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.columns.elements.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = ColumnDef> {
+        self.columns
+            .elements
+            .iter()
+            .zip(self.attr.iter())
+            .map(|(column, attr)| ColumnDef { column, attr: *attr })
+    }
+}
+
+impl From<ProductType> for ProductTypeMeta {
+    fn from(value: ProductType) -> Self {
+        ProductTypeMeta::new(value)
+    }
+}
+
+impl From<ProductTypeMeta> for ProductType {
+    fn from(value: ProductTypeMeta) -> Self {
+        value.columns
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct TableRow<'a> {
     pub(crate) table_id: u32,
     pub(crate) table_name: &'a str,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct ColumnRow<'a> {
     pub(crate) table_id: u32,
     pub(crate) col_id: u32,
     pub(crate) col_name: &'a str,
     pub(crate) col_type: TypeDef,
+    pub(crate) col_idx: ColumnIndexAttribute,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[allow(dead_code)]
 pub struct TableDef {
     pub(crate) table_id: u32,
     pub(crate) name: String,
-    pub(crate) schema: TupleDef,
+    pub(crate) columns: ProductTypeMeta,
     pub(crate) is_system_table: bool,
 }
 
 impl TableDef {
-    pub fn new(table_id: u32, name: &str, schema: TupleDef, is_system_table: bool) -> Self {
+    pub fn new(table_id: u32, name: &str, columns: ProductTypeMeta, is_system_table: bool) -> Self {
         Self {
             table_id,
             name: name.into(),
-            schema,
+            columns,
             is_system_table,
         }
     }
@@ -129,6 +252,11 @@ impl TableCatalog {
 
     pub fn is_empty(&self) -> bool {
         self.tables.is_empty()
+    }
+
+    /// Return the number of columns stored in the catalog
+    pub fn len_columns(&self) -> usize {
+        self.tables.values().map(|x| x.columns.len()).sum()
     }
 
     pub fn insert(&mut self, schema: TableDef) {
@@ -164,9 +292,78 @@ impl TableCatalog {
         self.tables.get(&table_id).map(|x| x.name.as_str())
     }
 
+    pub(crate) fn schema_table(&self) -> DbTable {
+        DbTable::new(
+            &Header::new(ProductType::from_iter([
+                (TableFields::TableId.name(), TypeDef::U32),
+                (TableFields::TableName.name(), TypeDef::String),
+                (TableFieldsExtra::IsSystemTable.name(), TypeDef::Bool),
+            ])),
+            ST_TABLES_ID,
+        )
+    }
+
+    pub(crate) fn schema_columns(&self) -> DbTable {
+        DbTable::new(
+            &Header::new(ProductType::from_iter([
+                (ColumnFields::TableId.name(), TypeDef::U32),
+                (ColumnFields::ColId.name(), TypeDef::U32),
+                (ColumnFields::ColName.name(), TypeDef::String),
+                (ColumnFields::ColType.name(), TypeDef::make_meta_type()),
+                (ColumnFields::ColIndexAttribute.name(), TypeDef::String),
+            ])),
+            ST_COLUMNS_ID,
+        )
+    }
+
     /// Returns a [Iterator] across all the tables
     pub fn iter(&self) -> Iter<'_, u32, TableDef> {
         self.tables.iter()
+    }
+
+    pub fn make_row_table(table_id: u32, table_name: &str, is_system_table: bool) -> ProductValue {
+        product!(scalar(table_id), scalar(table_name), scalar(is_system_table))
+    }
+
+    pub fn make_row_column(
+        table_id: u32,
+        col_id: u32,
+        col_name: &str,
+        col_type: &AlgebraicType,
+        index_attr: ColumnIndexAttribute,
+    ) -> ProductValue {
+        product!(
+            scalar(table_id),
+            scalar(col_id),
+            scalar(col_name),
+            //AlgebraicType::bytes().as_value(),
+            col_type.as_value(),
+            index_attr.as_value()
+        )
+    }
+
+    /// Returns a [Iterator] than map [TableDef] to [ProductValue]
+    pub fn iter_row(&self) -> impl Iterator<Item = ProductValue> + '_ {
+        self.tables
+            .values()
+            .map(|row| Self::make_row_table(row.table_id, &row.name, row.is_system_table))
+    }
+
+    /// Returns a [Iterator] than map [ProductTypeMeta] (aka: table columns) to [ProductValue]
+    pub fn iter_columns_row(&self) -> impl Iterator<Item = ProductValue> + '_ {
+        self.tables.values().flat_map(|row| {
+            let mut cols = Vec::with_capacity(row.columns.len());
+            for (pos, col) in row.columns.iter().enumerate() {
+                cols.push(Self::make_row_column(
+                    row.table_id,
+                    pos as u32,
+                    col.column.name.as_deref().unwrap_or_default(),
+                    &col.column.algebraic_type,
+                    col.attr,
+                ));
+            }
+            cols
+        })
     }
 
     /// Returns a [Iterator] for the system tables
@@ -192,46 +389,20 @@ impl TableCatalog {
     }
 }
 
-/// System Table [ST_TABLES_NAME]
-///
-/// | table_id | table_name     |
-/// |----------|----------------|
-/// | 1        | "customers"    |
-pub(crate) fn table_schema() -> TupleDef {
-    TupleDef::from_iter([
-        (TableFields::TableId.name(), TypeDef::U32),
-        (TableFields::TableName.name(), TypeDef::String),
-    ])
-}
-
 impl Default for TableCatalog {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// System Table [ST_COLUMNS_NAME]
-///
-/// | table_id: u32 | col_id | col_type: Bytes | col_name: String |
-/// |---------------|--------|-----------------|------------------|
-/// | 1             | 0      | TypeDef->0b0101 | "id"             |
-pub(crate) fn columns_schema() -> TupleDef {
-    TupleDef::from_iter([
-        (ColumnFields::TableId.name(), TypeDef::U32),
-        (ColumnFields::ColId.name(), TypeDef::U32),
-        (ColumnFields::ColType.name(), TypeDef::bytes()),
-        (ColumnFields::ColName.name(), TypeDef::String),
-    ])
-}
-
-pub fn decode_table_schema(row: &TupleValue) -> Result<TableRow, DBError> {
+pub fn decode_st_table_schema(row: &TupleValue) -> Result<TableRow, DBError> {
     let table_id = row.field_as_u32(TableFields::TableId as usize, TableFields::TableId.into())?;
     let table_name = row.field_as_str(TableFields::TableName as usize, TableFields::TableName.into())?;
 
     Ok(TableRow { table_id, table_name })
 }
 
-pub fn decode_columns_schema(row: &TupleValue) -> Result<ColumnRow, DBError> {
+pub fn decode_st_columns_schema(row: &TupleValue) -> Result<ColumnRow, DBError> {
     let table_id = row.field_as_u32(ColumnFields::TableId as usize, ColumnFields::TableId.into())?;
     let col_id = row.field_as_u32(ColumnFields::ColId as usize, ColumnFields::ColId.into())?;
 
@@ -239,11 +410,68 @@ pub fn decode_columns_schema(row: &TupleValue) -> Result<ColumnRow, DBError> {
     let col_type = TypeDef::decode(&mut &bytes[..]).map_err(|e| TableError::InvalidSchema(table_id, e.into()))?;
 
     let col_name = row.field_as_str(ColumnFields::ColName as usize, ColumnFields::ColName.into())?;
+    let col_idx = row
+        .field_as_u8(
+            ColumnFields::ColIndexAttribute as usize,
+            ColumnFields::ColIndexAttribute.into(),
+        )?
+        .try_into()?;
 
     Ok(ColumnRow {
         table_id,
         col_id,
         col_name,
         col_type,
+        col_idx,
     })
+}
+
+/// System Table [ST_COLUMNS_NAME]
+///
+/// | table_id: u32 | col_id | col_type: Bytes | col_name: String | col_idx_attr: u8     |
+/// |---------------|--------|-----------------|------------------|----------------------|
+/// | 1             | 0      | TypeDef->0b0101 | "id"             | 0                    |
+pub(crate) fn st_columns_schema() -> ProductTypeMeta {
+    ProductTypeMeta::new(ProductType::from_iter([
+        (ColumnFields::TableId.name(), TypeDef::U32),
+        (ColumnFields::ColId.name(), TypeDef::U32),
+        (ColumnFields::ColType.name(), TypeDef::bytes()),
+        (ColumnFields::ColName.name(), TypeDef::String),
+        (ColumnFields::ColIndexAttribute.name(), TypeDef::U8),
+    ]))
+}
+
+/// System Table [ST_TABLES_NAME]
+///
+/// | table_id | table_name     |
+/// |----------|----------------|
+/// | 1        | "customers"    |
+pub(crate) fn st_table_schema() -> ProductTypeMeta {
+    ProductTypeMeta::new(ProductType::from_iter([
+        (TableFields::TableId.name(), TypeDef::U32),
+        (TableFields::TableName.name(), TypeDef::String),
+    ]))
+}
+
+pub(crate) fn row_st_table(table_id: u32, table_name: &str) -> ProductValue {
+    product![TypeValue::U32(table_id), TypeValue::String(table_name.to_string()),]
+}
+
+pub(crate) fn row_st_columns(
+    table_id: u32,
+    pos: u32,
+    col_name: &str,
+    ty: &AlgebraicType,
+    attribute: ColumnIndexAttribute,
+) -> ProductValue {
+    let mut bytes = Vec::new();
+    ty.encode(&mut bytes);
+
+    product![
+        TypeValue::U32(table_id),
+        TypeValue::U32(pos),
+        TypeValue::Bytes(bytes),
+        TypeValue::String(col_name.into()),
+        TypeValue::U8(attribute as u8),
+    ]
 }

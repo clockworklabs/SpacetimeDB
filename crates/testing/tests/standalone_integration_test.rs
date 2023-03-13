@@ -11,7 +11,7 @@ fn test_calling_a_reducer() {
         module.send(json).await.unwrap();
 
         let lines = module.read_log(Some(10)).await;
-        let lines: Vec<&str> = lines.trim().split("\n").collect();
+        let lines: Vec<&str> = lines.trim().split('\n').collect();
 
         assert_eq!(lines.len(), 2);
 
