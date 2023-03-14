@@ -44,7 +44,7 @@ export class ProductValue {
   }
 }
 
-type BuiltinValueType = boolean | string | number | AlgebraicValue[];
+type BuiltinValueType = boolean | string | number | AlgebraicValue[] | Uint8Array;
 
 export class BuiltinValue {
   value: BuiltinValueType;
@@ -53,20 +53,25 @@ export class BuiltinValue {
     this.value = value
   }
 
-  public static deserialize(type: BuiltinType | undefined, value: any): BuiltinValue {
-    if (type === undefined) {
-      // TODO: what to do here? I guess I would prefer to remove this case alltogether
-      return new BuiltinValue(false);
-    }
-
+  public static deserialize(type: BuiltinType, value: any): BuiltinValue {
     switch (type.type) {
       case BuiltinType.Type.Array:
-        // TODO: handle byte array
-        let result: AlgebraicValue[] = [];
-        for (let el of value) {
-          result.push(AlgebraicValue.deserialize(type.arrayType as AlgebraicType, el));
+        let arrayBuiltinType: BuiltinType.Type | undefined = type.arrayType && type.arrayType.type === AlgebraicType.Type.BuiltinType ? type.arrayType.builtin.type : undefined;
+        if (arrayBuiltinType !== undefined && arrayBuiltinType === BuiltinType.Type.U8) {
+          // first let's change 0s to x, but only preceding 0s,
+          // like "00000FF" -> "x0x0xFF"
+          const replaced: string = value.replaceAll(/0(0)|0([^0])/g, (match: string, arg1: string | undefined, arg2: string | undefined) => { return "x" + (arg1 || arg2) });
+          // then split by 'x' and convert to ints
+          let array: string[] = replaced.substring(1).split('x');
+          let bytes: Uint8Array = new Uint8Array(array.map((hex) => Number("0x" +  hex)));
+          return new this(bytes);
+        } else {
+          let result: AlgebraicValue[] = [];
+          for (let el of value) {
+            result.push(AlgebraicValue.deserialize(type.arrayType as AlgebraicType, el));
+          }
+          return new this(result);
         }
-        return new this(result);
       default:
         return new this(value);
     }
@@ -82,6 +87,14 @@ export class BuiltinValue {
 
   public asNumber(): number {
     return this.value as number;
+  }
+
+  public asBool(): boolean {
+    return this.value as boolean;
+  }
+
+  public asBytes(): Uint8Array {
+    return this.value as Uint8Array;
   }
 }
 
@@ -131,10 +144,7 @@ export class AlgebraicValue {
   }
 
   public asBuiltinValue(): BuiltinValue {
-    if (!this.builtin) {
-      throw "AlgebraicValue is not a BuiltinValue and a builtin value was requested";
-    }
-
+    this.assertBuiltin();
     return this.builtin as BuiltinValue;
   }
 
@@ -147,23 +157,34 @@ export class AlgebraicValue {
   }
 
   public asArray(): AlgebraicValue[] {
-    if (!this.builtin) {
-      throw "AlgebraicValue is not a BuiltinValue and an array of builtin values was requested";
-    }
-
+    this.assertBuiltin();
     return (this.builtin as BuiltinValue).asArray();
   }
 
   public asString(): string {
-    if (!this.builtin) {
-      throw "AlgebraicValue is not a BuiltinValue and a string was requested";
-    }
-
+    this.assertBuiltin();
     return (this.builtin as BuiltinValue).asString();
   }
 
   public asNumber(): number {
+    this.assertBuiltin();
     return (this.builtin as BuiltinValue).asNumber();
+  }
+
+  public asBool(): boolean {
+    this.assertBuiltin();
+    return (this.builtin as BuiltinValue).asBool();
+  }
+
+  public asBytes(): Uint8Array {
+    this.assertBuiltin();
+    return (this.builtin as BuiltinValue).asBytes();
+  }
+
+  private assertBuiltin() {
+    if (!this.builtin) {
+      throw "AlgebraicValue is not a BuiltinValue and a string was requested";
+    }
   }
 }
 

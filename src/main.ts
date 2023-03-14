@@ -1,4 +1,4 @@
-import { SpacetimeDBClient, ProductValue, AlgebraicValue, AlgebraicType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant } from "./spacetimedb";
+import { SpacetimeDBClient, ProductValue, AlgebraicValue, AlgebraicType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable } from "./spacetimedb";
 
 let token: string = process.env.STDB_TOKEN || "";
 let identity: string = process.env.STDB_IDENTITY || "";
@@ -9,110 +9,119 @@ let db_name: string = process.env.STDB_DATABASE || "";
 // ]);
 // let product = AlgebraicValue.deserialize(type, ["foo"]);
 
-class Address {
-  public street: string;
-  public zipcode: string;
-  public country: string;
+class InventoryItem {
+  public item_id: number;
 
-  constructor(street: string, zipcode: string, country: string) {
-    this.street = street;
-    this.zipcode = zipcode;
-    this.country = country;
+  constructor(item_id: number) {
+    this.item_id = item_id;
   }
 
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("street", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
-      new ProductTypeElement("zipcode", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
-      new ProductTypeElement("country", AlgebraicType.createPrimitiveType(BuiltinType.Type.String))
+      new ProductTypeElement("item_id", AlgebraicType.createPrimitiveType(BuiltinType.Type.I64))
     ]);
   }
 
-  public static fromValue(value: AlgebraicValue): Address {
+  public static fromValue(value: AlgebraicValue): InventoryItem {
     let productValue = value.asProductValue();
-		let street = productValue.elements[0].asString();
-		let zipcode = productValue.elements[1].asString();
-		let country = productValue.elements[2].asString();
+		let item_id = productValue.elements[0].asNumber();
 
-    return new Address(street, zipcode, country);
+    return new InventoryItem(item_id);
   }
 }
 
-class Education {
+class Inventory {
+  public gold: number;
+  public items: InventoryItem[];
+
+  constructor(gold: number, items: InventoryItem[]) {
+    this.gold = gold;
+    this.items = items;
+  }
+
+  public static getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("gold", AlgebraicType.createPrimitiveType(BuiltinType.Type.U64)),
+      new ProductTypeElement("items", AlgebraicType.createArrayType(InventoryItem.getAlgebraicType()))
+    ]);
+  }
+
+  public static fromValue(value: AlgebraicValue): Inventory {
+    let productValue = value.asProductValue();
+		let gold = productValue.elements[0].asNumber();
+    let items: InventoryItem[] = [];
+    for (let el of productValue.elements[1].asArray()) {
+      items.push(InventoryItem.fromValue(el));
+    }
+
+    return new Inventory(gold, items);
+  }
+}
+
+class Class {
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createSumType([
-      new SumTypeVariant("None", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
-      new SumTypeVariant("High", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
-      new SumTypeVariant("Higher", AlgebraicType.createPrimitiveType(BuiltinType.Type.String))
+      new SumTypeVariant("Barbarian", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
+      new SumTypeVariant("Sorceress", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
+      new SumTypeVariant("Druid", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
+      new SumTypeVariant("Rogue", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
+      new SumTypeVariant("Necromancer", AlgebraicType.createPrimitiveType(BuiltinType.Type.String))
     ]);
   }
 
-  public static fromValue(value: AlgebraicValue): Education {
-    return new Education();
+  public static fromValue(value: AlgebraicValue): Class {
+    return new Class();
   }
 }
 
-class Hobby {
+class Player extends DatabaseTable {
+  public static tableName = "Player";
   public name: string;
+  public _class: Class;
+  public inventory: Inventory;
+  public avatar: Uint8Array;
 
-  constructor(name: string) {
+  constructor(name: string, _class: Class, inventory: Inventory, avatar: Uint8Array) {
+    super();
+
     this.name = name;
-  }
-
-  public static getAlgebraicType(): AlgebraicType {
-    return AlgebraicType.createProductType([
-      new ProductTypeElement("name", AlgebraicType.createPrimitiveType(BuiltinType.Type.String))
-    ]);
-  }
-
-  public static fromValue(value: AlgebraicValue): Hobby {
-    let productValue = value.asProductValue();
-		let name: string = productValue.elements[0].asString();
-
-    return new Hobby(name);
-  }
-}
-
-class Person {
-  public name: string;
-  public education: Education;
-  public address: Address;
-  public hobbies: Hobby[];
-
-  constructor(name: string, education: Education, address: Address, hobbies: Hobby[]) {
-    this.name = name;
-    this.education = education;
-    this.address = address;
-    this.hobbies = hobbies;
+    this._class = _class;
+    this.inventory = inventory;
+    this.avatar = avatar;
   }
 
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("name", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
-      new ProductTypeElement("education", Education.getAlgebraicType()),
-      new ProductTypeElement("address", Address.getAlgebraicType()),
-      new ProductTypeElement("hobbies", AlgebraicType.createArrayType(Hobby.getAlgebraicType())),
+      new ProductTypeElement("_class", Class.getAlgebraicType()),
+      new ProductTypeElement("inventory", Inventory.getAlgebraicType()),
+      new ProductTypeElement("avatar", AlgebraicType.createArrayType(AlgebraicType.createPrimitiveType(BuiltinType.Type.U8))),
     ])
   }
 
-  public static fromValue(value: AlgebraicValue): Person {
+  public static fromValue(value: AlgebraicValue): Player {
     let productValue = value.asProductValue();
 		let name: string = productValue.elements[0].asString();
-		let education: Education = Education.fromValue(productValue.elements[1]);
-		let address: Address = Address.fromValue(productValue.elements[2]);
+		let _class: Class = Class.fromValue(productValue.elements[1]);
+		let inventory: Inventory = Inventory.fromValue(productValue.elements[2]);
+    let avatar: Uint8Array = productValue.elements[3].asBytes();
 
-    let hobbies: Hobby[] = [];
-    for (let el of productValue.elements[3].asArray()) {
-      hobbies.push(Hobby.fromValue(el));
-    }
-
-    return new Person(name, education, address, hobbies);
+    return new Player(name, _class, inventory, avatar);
   }
 }
 
-let object = ["foo",{"1":[]},["Frankfurter Allee 53","10247","Germany"],[["programming"]]];
-let v = AlgebraicValue.deserialize(Person.getAlgebraicType(), object);
-console.log(v);
-console.log(Person.fromValue(v));
+// let object = ["foo",{"1":[]},["Frankfurter Allee 53","10247","Germany"],[["programming"]]];
+// let v = AlgebraicValue.deserialize(Person.getAlgebraicType(), object);
+// console.log(v);
+// console.log(Person.fromValue(v));
 
-// let client = new SpacetimeDBClient("localhost:3000", db_name, {identity: identity, token: token});
+global.entityClasses.set("Player", Player);
+let client = new SpacetimeDBClient("localhost:3000", db_name, {identity: identity, token: token});
+
+setTimeout(() => {
+  let table = client.db.tables.get('Player');
+  if (table !== undefined) {
+    console.log(table.rows);
+  }
+
+}, 500);
