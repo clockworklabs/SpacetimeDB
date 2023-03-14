@@ -6,6 +6,16 @@ import { AlgebraicType, ProductTypeElement, SumType, SumTypeVariant, BuiltinType
 
 export { ProductValue, AlgebraicValue, AlgebraicType, ProductTypeElement, SumType, SumTypeVariant, BuiltinType };
 
+declare global {
+  var entityClasses: Map<string, any>;
+
+}
+
+global.entityClasses = new Map();
+
+export class DatabaseTable {
+}
+
 export type SpacetimeDBEvent = {
   timestamp: number;
   status: string;
@@ -19,15 +29,17 @@ export type SpacetimeDBEvent = {
 
 class Table {
   public name: string;
-  public rows: Map<string, Array<any>>;
+  public rows: Map<string, DatabaseTable>;
   public emitter: EventEmitter;
+  private entityClass: any;
   pkCol?: number;
 
-  constructor(name: string, pkCol?: number) {
+  constructor(name: string, pkCol: number | undefined, entityClass: any) {
     this.name = name;
     this.rows = new Map();
     this.emitter = new EventEmitter();
     this.pkCol = pkCol;
+    this.entityClass = entityClass;
   }
 
   applyOperations = (operations: { op: string, row_pk: string, row: any[] }[]) => {
@@ -65,35 +77,43 @@ class Table {
 
   }
 
+  instanceFromRow(row: Array<any>): DatabaseTable {
+    console.log('deserialize row', row);
+    let value = AlgebraicValue.deserialize(this.entityClass.getAlgebraicType(), row);
+    return this.entityClass.fromValue(value);
+  }
+
   update = (oldPk: string, pk: string, row: Array<any>) => {
-    this.rows.set(pk, row);
-    const oldRow = this.rows.get(oldPk)!;
+    const instance = this.instanceFromRow(row);
+    this.rows.set(pk, instance);
+    const oldInstance = this.rows.get(oldPk)!;
     this.rows.delete(oldPk);
-    this.emitter.emit("update", row, oldRow);
+    this.emitter.emit("update", instance, oldInstance);
   }
 
   insert = (pk: string, row: Array<any>) => {
-    this.rows.set(pk, row);
-    this.emitter.emit("insert", row);
+    const instance = this.instanceFromRow(row);
+    this.rows.set(pk, instance);
+    this.emitter.emit("insert", instance);
   }
 
   delete = (pk: string) => {
-    const row = this.rows.get(pk);
+    const instance = this.rows.get(pk);
     this.rows.delete(pk);
-    if (row) {
-      this.emitter.emit("delete", row);
+    if (instance) {
+      this.emitter.emit("delete", instance);
     }
   }
 
-  onInsert = (cb: (row: Array<any>) => void) => {
+  onInsert = (cb: (row: DatabaseTable) => void) => {
     this.emitter.on("insert", cb);
   }
 
-  onDelete = (cb: (row: Array<any>) => void) => {
+  onDelete = (cb: (row: DatabaseTable) => void) => {
     this.emitter.on("delete", cb);
   }
 
-  onUpdate = (cb: (row: Array<any>, oldRow: Array<any>) => void) => {
+  onUpdate = (cb: (row: DatabaseTable, oldRow: DatabaseTable) => void) => {
     this.emitter.on("update", cb);
   }
 }
@@ -105,10 +125,10 @@ class Database {
     this.tables = new Map();
   }
 
-  getOrCreateTable = (tableName: string, pkCol?: number) => {
+  getOrCreateTable = (tableName: string, pkCol: number | undefined, entityClass: any) => {
     let table;
     if (!this.tables.has(tableName)) {
-      table = new Table(tableName, pkCol);
+      table = new Table(tableName, pkCol, entityClass);
       this.tables.set(tableName, table);
     } else {
       table = this.tables.get(tableName)!;
@@ -124,8 +144,12 @@ export class SpacetimeDBClient {
   public db: Database;
   public emitter: EventEmitter;
   private ws: WSClient;
+  // this should get populated with codegen
 
   constructor(host: string, name_or_address: string, credentials?: { identity: string, token: string }) {
+    // TODO: not sure if we should connect right away. Maybe it's better
+    // to decouple this and first just create the client to then
+    // allow calling sth like `client.connect()`
     let headers = undefined;
     if (credentials) {
       this.identity = credentials.identity;
@@ -151,8 +175,11 @@ export class SpacetimeDBClient {
     this.ws.onclose = (event) => {
       console.error("Closed: ", event);
     };
+
     this.ws.onopen = () => {
-      this.ws.send(JSON.stringify({ "subscribe": { "query_strings": ["Person"] } }));
+      global.entityClasses.forEach(element => {
+        this.ws.send(JSON.stringify({ "subscribe": { "query_strings": [element.tableName] } }));
+      });
     }
     this.ws.onmessage = (message: any) => {
       console.log('message', message);
@@ -163,7 +190,8 @@ export class SpacetimeDBClient {
           const tableUpdates = subUpdate["table_updates"];
           for (const tableUpdate of tableUpdates) {
             const tableName = tableUpdate["table_name"];
-            const table = this.db.getOrCreateTable(tableName);
+            const entityClass = global.entityClasses.get(tableName);
+            const table = this.db.getOrCreateTable(tableName, undefined, entityClass);
             table.applyOperations(tableUpdate["table_row_operations"]);
           }
           this.emitter.emit("initialStateSync");
@@ -173,17 +201,19 @@ export class SpacetimeDBClient {
           const tableUpdates = subUpdate["table_updates"];
           for (const tableUpdate of tableUpdates) {
             const tableName = tableUpdate["table_name"];
-            const table = this.db.getOrCreateTable(tableName);
+            const entityClass = global.entityClasses.get(tableName);
+            const table = this.db.getOrCreateTable(tableName, undefined, entityClass);
             table.applyOperations(tableUpdate["table_row_operations"]);
           }
           this.emitter.emit("event", txUpdate['event']);
-        } else if (data['IdentityToken']) {
-          const identityToken = data['IdentityToken'];
-          const identity = identityToken['identity'];
-          const token = identityToken['token'];
-          this.identity = identity;
-          this.token = token;
-        }
+        } 
+        // else if (data['IdentityToken']) {
+        //   const identityToken = data['IdentityToken'];
+        //   const identity = identityToken['identity'];
+        //   const token = identityToken['token'];
+        //   this.identity = identity;
+        //   this.token = token;
+        // }
       }
     };
   }

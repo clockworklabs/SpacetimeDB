@@ -44,7 +44,6 @@ describe('AlgebraicValue', () => {
 
 describe('ProductValue', () => {
   test('can be deserialized from an array', () => {
-    let elements: AlgebraicValue[] = [new AlgebraicValue(new BuiltinValue(1))];
     let type = new ProductType([
       new ProductTypeElement("age", AlgebraicType.createPrimitiveType(BuiltinType.Type.U16))
     ]);

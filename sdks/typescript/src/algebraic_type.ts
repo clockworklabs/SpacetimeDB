@@ -93,24 +93,34 @@ export class AlgebraicType {
   type!: Type;
   type_?: AnyType;
 
-  public get product(): ProductType | undefined {
-    return this.type == Type.ProductType ? this.type_ as ProductType : undefined;
+  public get product(): ProductType {
+    if (this.type !== Type.ProductType) {
+      throw "product type was requested, but the type is not ProductType";
+    }
+    return this.type_ as ProductType;
   }
+
   public set product(value: ProductType | undefined) {
     this.type_ = value;
     this.type = value == undefined ? Type.None : Type.ProductType;
   }
 
-  public get sum(): SumType | undefined {
-    return this.type == Type.SumType ? this.type_ as SumType : undefined;
+  public get sum(): SumType {
+    if (this.type !== Type.SumType) {
+      throw "sum type was requested, but the type is not SumType";
+    }
+    return this.type_ as SumType;
   }
   public set sum(value: SumType | undefined) {
     this.type_ = value;
     this.type = value == undefined ? Type.None : Type.SumType;
   }
 
-  public get builtin(): BuiltinType | undefined {
-    return this.type == Type.BuiltinType ? this.type_ as BuiltinType : undefined;
+  public get builtin(): BuiltinType {
+    if (this.type !== Type.BuiltinType) {
+      throw "builtin type was requested, but the type is not BuiltinType";
+    }
+    return this.type_ as BuiltinType;
   }
   public set builtin(value: BuiltinType | undefined) {
     this.type_ = value;
