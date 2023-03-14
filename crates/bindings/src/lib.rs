@@ -10,7 +10,7 @@ use spacetimedb_lib::buffer::{BufReader, BufWriter, DecodeError};
 use spacetimedb_lib::de::DeserializeOwned;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_lib::ser::Serialize;
-use spacetimedb_lib::{bsatn, PrimaryKey, TableDef, TupleDef, TupleValue, TypeDef};
+use spacetimedb_lib::{bsatn, ColumnIndexAttribute, PrimaryKey, TableDef, TupleDef, TupleValue, TypeDef};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::ops::Range;
@@ -205,13 +205,13 @@ impl<T: RefType> SpacetimeType for T {
 
 pub trait TableType: RefType + DeserializeOwned + Serialize {
     const TABLE_NAME: &'static str;
-    const UNIQUE_COLUMNS: &'static [u8];
+    const COLUMN_ATTRS: &'static [ColumnIndexAttribute];
 
     fn get_tabledef() -> TableDef {
         TableDef {
             name: Self::TABLE_NAME.into(),
             data: Self::typeref(),
-            unique_columns: Self::UNIQUE_COLUMNS.to_owned(),
+            column_attrs: Self::COLUMN_ATTRS.to_owned(),
         }
     }
 

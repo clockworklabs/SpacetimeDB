@@ -11,6 +11,7 @@ use spacetimedb_sats::Typespace;
 use tokio::sync::oneshot;
 
 use crate::db::relational_db::RelationalDB;
+use crate::db::table::ProductTypeMeta;
 use crate::db::transactional_db::CommitResult;
 use crate::hash::Hash;
 use crate::host::host_controller::{ReducerBudget, ReducerCallResult, ReducerOutcome, Scheduler};
@@ -436,6 +437,10 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
                     .resolve_refs()
                     .context("recursive types not yet supported")?;
                 let schema = schema.into_product().ok().context("table not a product type?")?;
+                let schema = ProductTypeMeta {
+                    columns: schema,
+                    attr: table.column_attrs.clone(),
+                };
                 stdb.create_table(tx, name, schema)
                     .map(drop)
                     .with_context(|| format!("failed to create table {name}"))

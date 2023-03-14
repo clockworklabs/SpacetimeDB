@@ -339,6 +339,21 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
 struct Column<'a> {
     index: u8,
     field: &'a module::SatsField<'a>,
+    attr: ColumnIndexAttribute,
+}
+
+#[derive(Debug)]
+enum ColumnIndexAttribute {
+    UnSet = 0,
+    /// Unique + AutoInc
+    Identity = 1,
+    /// Index unique
+    Unique = 2,
+    ///  Index no unique
+    #[allow(unused)]
+    Indexed = 3,
+    /// Generate the next [Sequence]
+    AutoInc = 4,
 }
 
 fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
@@ -373,8 +388,7 @@ fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
     let table_name = &sats_ty.name;
     let module::SatsTypeData::Product(fields) = &sats_ty.data else { unreachable!() };
 
-    let mut unique_columns = Vec::<Column>::new();
-    let mut nonunique_columns = Vec::<Column>::new();
+    let mut columns = Vec::<Column>::new();
 
     let get_table_id_func = quote! {
         fn table_id() -> u32 {
@@ -390,20 +404,39 @@ fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
             .try_into()
             .map_err(|_| syn::Error::new_spanned(field.ident, "too many columns; the most a table can have is 256"))?;
 
-        let mut is_unique = false;
+        let mut col_attr = ColumnIndexAttribute::UnSet;
         for attr in field.original_attrs {
-            if attr.path.is_ident("unique") {
-                is_unique = true;
+            let Some(ident) = attr.path.get_ident() else { continue };
+            let duplicate = || syn::Error::new(ident.span(), "duplicate attribute");
+            use ColumnIndexAttribute::*;
+            match &*ident.to_string() {
+                "unique" => match col_attr {
+                    UnSet => col_attr = Unique,
+                    Identity | Unique => return Err(duplicate()),
+                    Indexed => unreachable!(),
+                    AutoInc => col_attr = Identity,
+                },
+                "autoinc" => match col_attr {
+                    UnSet => col_attr = AutoInc,
+                    Identity | AutoInc => return Err(duplicate()),
+                    Unique => col_attr = Identity,
+                    Indexed => unreachable!(),
+                },
+                _ => {}
             }
         }
-        let column = Column { index: col_num, field };
+        let column = Column {
+            index: col_num,
+            field,
+            attr: col_attr,
+        };
 
-        if is_unique {
-            unique_columns.push(column);
-        } else {
-            nonunique_columns.push(column);
-        }
+        columns.push(column);
     }
+
+    let (unique_columns, nonunique_columns): (Vec<_>, Vec<_>) = columns
+        .iter()
+        .partition(|x| matches!(x.attr, ColumnIndexAttribute::Identity | ColumnIndexAttribute::Unique));
 
     let mut unique_filter_funcs = Vec::with_capacity(unique_columns.len());
     let mut unique_update_funcs = Vec::with_capacity(unique_columns.len());
@@ -502,10 +535,15 @@ fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
     let deserialize_impl = derive_deserialize(&sats_ty);
     let serialize_impl = derive_serialize(&sats_ty);
     let schema_impl = derive_spacetimetype(&sats_ty);
+    let column_attrs = columns
+        .iter()
+        .map(|col| Ident::new(&format!("{:?}", col.attr), Span::call_site()));
     let tabletype_impl = quote! {
         impl spacetimedb::TableType for #original_struct_ident {
             const TABLE_NAME: &'static str = #table_name;
-            const UNIQUE_COLUMNS: &'static [u8] = &[#(#unique_fields),*];
+            const COLUMN_ATTRS: &'static [spacetimedb::spacetimedb_lib::ColumnIndexAttribute] = &[
+                #(spacetimedb::spacetimedb_lib::ColumnIndexAttribute::#column_attrs),*
+            ];
             #get_table_id_func
         }
     };
@@ -567,7 +605,7 @@ fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
     Ok(emission)
 }
 
-#[proc_macro_derive(TableHelper, attributes(sats, unique))]
+#[proc_macro_derive(TableHelper, attributes(sats, unique, autoinc))]
 pub fn table_attr_helper(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
     proc_macro::TokenStream::new()
 }

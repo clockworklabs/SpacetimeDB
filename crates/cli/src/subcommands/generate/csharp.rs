@@ -3,7 +3,7 @@ use std::fmt::{self, Write};
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, BuiltinType, MapType, ProductType};
 use spacetimedb_lib::TypeDef::Builtin;
-use spacetimedb_lib::{ReducerDef, TableDef, TupleDef, TypeDef};
+use spacetimedb_lib::{ColumnIndexAttribute, ReducerDef, TableDef, TupleDef, TypeDef};
 
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, INDENT};
@@ -191,13 +191,13 @@ pub fn autogen_csharp_tuple(ctx: &GenCtx, name: &str, tuple: &TupleDef, namespac
 }
 pub fn autogen_csharp_table(ctx: &GenCtx, name: &str, table: &TableDef, namespace: &str) -> String {
     let tuple = ctx.typespace[table.data].as_product().unwrap();
-    autogen_csharp_product_table_common(ctx, name, tuple, Some(&table.unique_columns), namespace)
+    autogen_csharp_product_table_common(ctx, name, tuple, Some(&table.column_attrs), namespace)
 }
 fn autogen_csharp_product_table_common(
     ctx: &GenCtx,
     name: &str,
     product_type: &ProductType,
-    unique_columns: Option<&[u8]>,
+    column_attrs: Option<&[ColumnIndexAttribute]>,
     namespace: &str,
 ) -> String {
     let mut output = CodeIndenter::new(String::new());
@@ -278,14 +278,14 @@ fn autogen_csharp_product_table_common(
             writeln!(output).unwrap();
 
             // If this is a table, we want to include functions for accessing the table data
-            if let Some(unique_columns) = unique_columns {
+            if let Some(column_attrs) = column_attrs {
                 // Insert the funcs for accessing this struct
                 autogen_csharp_access_funcs_for_struct(
                     &mut output,
                     &struct_name_pascal_case,
                     product_type,
                     name,
-                    unique_columns,
+                    column_attrs,
                 );
 
                 writeln!(
@@ -427,15 +427,14 @@ fn autogen_csharp_access_funcs_for_struct(
     struct_name_pascal_case: &str,
     product_type: &ProductType,
     table_name: &str,
-    unique_columns: &[u8],
+    column_attrs: &[ColumnIndexAttribute],
 ) {
-    let it = Iterator::chain(
-        unique_columns.iter().copied().zip(std::iter::repeat(true)),
-        (0..product_type.elements.len())
-            .map(|i| i as u8)
-            .filter(|i| unique_columns.binary_search(i).is_err())
-            .zip(std::iter::repeat(false)),
-    );
+    let (unique, nonunique) = column_attrs
+        .iter()
+        .copied()
+        .enumerate()
+        .partition::<Vec<_>, _>(|(_, attr)| attr.is_unique());
+    let it = unique.into_iter().chain(nonunique);
     writeln!(
         output,
         "public static System.Collections.Generic.IEnumerable<{struct_name_pascal_case}> Iter()"
@@ -458,8 +457,9 @@ fn autogen_csharp_access_funcs_for_struct(
         writeln!(output, "return NetworkManager.clientDB.Count(\"{table_name}\");",).unwrap();
     });
 
-    for (col_i, is_unique) in it {
-        let field = &product_type.elements[col_i as usize];
+    for (col_i, attr) in it {
+        let is_unique = attr.is_unique();
+        let field = &product_type.elements[col_i];
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
         let field_type = &field.algebraic_type;
         let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);

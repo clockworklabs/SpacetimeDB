@@ -46,8 +46,7 @@ extern crate self as spacetimedb_lib;
 pub struct TableDef {
     pub name: String,
     pub data: sats::AlgebraicTypeRef,
-    /// must be sorted!
-    pub unique_columns: Vec<u8>,
+    pub column_attrs: Vec<ColumnIndexAttribute>,
 }
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
@@ -131,6 +130,41 @@ pub enum EntityDef {
 pub enum ModuleItemDef {
     Entity(EntityDef),
     TypeAlias(sats::AlgebraicTypeRef),
+}
+
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
+pub enum ColumnIndexAttribute {
+    #[default]
+    UnSet = 0,
+    /// Unique + AutoInc
+    Identity = 1,
+    /// Index unique
+    Unique = 2,
+    ///  Index no unique
+    Indexed = 3,
+    /// Generate the next [Sequence]
+    AutoInc = 4,
+}
+
+impl ColumnIndexAttribute {
+    pub fn is_unique(self) -> bool {
+        matches!(self, Self::Identity | Self::Unique)
+    }
+}
+
+impl TryFrom<u8> for ColumnIndexAttribute {
+    type Error = ();
+
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v {
+            0 => Ok(Self::UnSet),
+            1 => Ok(Self::Identity),
+            2 => Ok(Self::Unique),
+            3 => Ok(Self::Indexed),
+            4 => Ok(Self::AutoInc),
+            _ => Err(()),
+        }
+    }
 }
 
 // use std::fmt;

@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use crate::db::relational_db::{ST_COLUMNS_ID, ST_TABLES_ID};
 use crate::db::TypeValue;
 use crate::error::{DBError, TableError};
-use spacetimedb_lib::error::LibError;
+pub use spacetimedb_lib::ColumnIndexAttribute;
 use spacetimedb_lib::{TupleValue, TypeDef};
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::relation::{DbTable, Header};
@@ -45,53 +45,6 @@ impl TableFieldsExtra {
     pub(crate) fn name(&self) -> &'static str {
         match self {
             Self::IsSystemTable => "is_system_table",
-        }
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub enum ColumnIndexAttribute {
-    #[default]
-    UnSet = 0,
-    /// Unique + AutoInc
-    Identity = 1,
-    /// Index unique
-    Unique = 2,
-    ///  Index no unique
-    Indexed = 3,
-    /// Generate the next [Sequence]
-    AutoInc = 4,
-}
-
-impl ColumnIndexAttribute {
-    pub fn as_value(&self) -> AlgebraicValue {
-        let name = match self {
-            ColumnIndexAttribute::UnSet => "UnSet",
-            ColumnIndexAttribute::Identity => "Identity",
-            ColumnIndexAttribute::Unique => "Unique",
-            ColumnIndexAttribute::Indexed => "Indexed",
-            ColumnIndexAttribute::AutoInc => "AutoInc",
-        };
-
-        AlgebraicValue::String(name.to_string())
-    }
-}
-
-impl TryFrom<u8> for ColumnIndexAttribute {
-    type Error = LibError;
-
-    fn try_from(v: u8) -> Result<Self, Self::Error> {
-        match v {
-            0 => Ok(Self::UnSet),
-            1 => Ok(Self::Identity),
-            2 => Ok(Self::Unique),
-            3 => Ok(Self::Indexed),
-            4 => Ok(Self::AutoInc),
-            _ => Err(InvalidFieldError(
-                ColumnFields::ColIndexAttribute as usize,
-                ColumnFields::ColIndexAttribute.into(),
-            )
-            .into()),
         }
     }
 }
@@ -376,7 +329,7 @@ impl TableCatalog {
             scalar(col_name),
             //AlgebraicType::bytes().as_value(),
             col_type.as_value(),
-            index_attr.as_value()
+            index_attr as u8,
         )
     }
 
@@ -453,7 +406,13 @@ pub fn decode_st_columns_schema(row: &TupleValue) -> Result<ColumnRow, DBError> 
             ColumnFields::ColIndexAttribute as usize,
             ColumnFields::ColIndexAttribute.into(),
         )?
-        .try_into()?;
+        .try_into()
+        .map_err(|()| {
+            InvalidFieldError(
+                ColumnFields::ColIndexAttribute as usize,
+                ColumnFields::ColIndexAttribute.into(),
+            )
+        })?;
 
     Ok(ColumnRow {
         table_id,
