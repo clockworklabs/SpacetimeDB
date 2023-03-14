@@ -6,6 +6,8 @@ use quote::{quote, quote_spanned, ToTokens};
 use syn::spanned::Spanned;
 use syn::{LitStr, Token};
 
+use crate::{comma_delim_parser, kw};
+
 pub(crate) struct SatsType<'a> {
     pub ident: &'a syn::Ident,
     pub generics: &'a syn::Generics,
@@ -73,31 +75,21 @@ pub(crate) fn extract_sats_type<'a>(
         if !attr.path.is_ident("sats") {
             continue;
         }
-        attr.parse_args_with(|input: syn::parse::ParseStream| loop {
-            if input.is_empty() {
-                return Ok(());
-            }
-
-            let lookahead = input.lookahead1();
-            if lookahead.peek(Token![crate]) {
-                input.parse::<Token![crate]>()?;
-                input.parse::<Token![=]>()?;
-                let v = input.call(syn::Path::parse_mod_style)?;
-                krate = Some(v.into_token_stream());
-            } else if lookahead.peek(kw::name) {
-                input.parse::<kw::name>()?;
-                input.parse::<Token![=]>()?;
-                let v = input.parse::<LitStr>()?;
-                name = Some(v.value());
-            } else {
-                return Err(lookahead.error());
-            }
-
-            if input.is_empty() {
-                return Ok(());
-            }
-            input.parse::<Token![,]>()?;
-        })?;
+        attr.parse_args_with(comma_delim_parser(|input| {
+            match_tok!(match input {
+                Token![crate] => {
+                    input.parse::<Token![=]>()?;
+                    let v = input.call(syn::Path::parse_mod_style)?;
+                    krate = Some(v.into_token_stream());
+                }
+                kw::name => {
+                    input.parse::<Token![=]>()?;
+                    let v = input.parse::<LitStr>()?;
+                    name = Some(v.value());
+                }
+            });
+            Ok(())
+        }))?;
     }
     let krate = krate.unwrap_or(crate_fallback);
     let name = name.unwrap_or_else(|| ident.to_string());
@@ -109,10 +101,6 @@ pub(crate) fn extract_sats_type<'a>(
         krate,
         data,
     })
-}
-
-mod kw {
-    syn::custom_keyword!(name);
 }
 
 pub(crate) fn extract_sats_struct(fields: &syn::Fields) -> syn::Result<SatsTypeData<'_>> {

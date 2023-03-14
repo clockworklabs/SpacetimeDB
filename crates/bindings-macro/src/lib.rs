@@ -1,5 +1,8 @@
 #![crate_type = "proc-macro"]
 
+#[macro_use]
+mod macros;
+
 mod module;
 
 extern crate core;
@@ -11,45 +14,30 @@ use module::{derive_deserialize, derive_serialize, derive_spacetimetype};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::Fields::{Named, Unit, Unnamed};
-use syn::{parse_macro_input, AttributeArgs, FnArg, ItemFn, ItemStruct, Meta, NestedMeta};
+use syn::{FnArg, Ident, ItemFn, ItemStruct, Token};
 
 #[proc_macro_attribute]
 pub fn spacetimedb(macro_args: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let item = item.into();
-    let attribute_args = parse_macro_input!(macro_args as AttributeArgs);
-    let (attr_arg_0, other_args) = match attribute_args.split_first() {
-        Some(x) => x,
-        None => {
-            return syn::Error::new(Span::call_site(), "must provide arg to #[spacetimedb]")
-                .into_compile_error()
-                .into()
-        }
-    };
+    let item: TokenStream = item.into();
+    let orig_input = item.clone();
+    let input = syn::parse::<MacroInput>(macro_args);
 
-    let res = match attr_arg_0 {
-        NestedMeta::Lit(_) => None,
-        NestedMeta::Meta(meta) => meta.path().get_ident().and_then(|id| {
-            let res = match &*id.to_string() {
-                "table" => spacetimedb_table(meta, other_args, item),
-                "init" => spacetimedb_init(meta, other_args, item),
-                "reducer" => spacetimedb_reducer(meta, other_args, item),
-                "connect" => spacetimedb_connect_disconnect(meta, other_args, item, true),
-                "disconnect" => spacetimedb_connect_disconnect(meta, other_args, item, false),
-                "migrate" => spacetimedb_migrate(meta, other_args, item),
-                "index" => spacetimedb_index(meta, other_args, item),
-                _ => return None,
-            };
-            Some(res)
-        }),
-    };
-    let res = res.unwrap_or_else(|| {
-        Err(syn::Error::new_spanned(
-            attr_arg_0,
-            "Please pass a valid attribute to the spacetimedb macro: \
-                 reducer, table, connect, disconnect, migrate, tuple, index, ...",
-        ))
+    let res = input.and_then(|input| match input {
+        MacroInput::Table => spacetimedb_table(item),
+        MacroInput::Init => spacetimedb_init(item),
+        MacroInput::Reducer { repeat } => spacetimedb_reducer(repeat, item),
+        MacroInput::Connect => spacetimedb_connect_disconnect(item, true),
+        MacroInput::Disconnect => spacetimedb_connect_disconnect(item, false),
+        MacroInput::Migrate => spacetimedb_migrate(item),
+        MacroInput::Index { ty, name, field_names } => spacetimedb_index(ty, name, field_names, item),
     });
-    res.unwrap_or_else(syn::Error::into_compile_error).into()
+
+    res.unwrap_or_else(|x| {
+        let mut out = orig_input;
+        out.extend(x.into_compile_error());
+        out
+    })
+    .into()
 }
 
 fn duration_totokens(dur: Duration) -> TokenStream {
@@ -60,26 +48,143 @@ fn duration_totokens(dur: Duration) -> TokenStream {
     })
 }
 
-fn spacetimedb_reducer(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
-    assert_no_args_meta(meta)?;
-    let repeat_dur = if let Some((first, args)) = args.split_first() {
-        let value = match first {
-            NestedMeta::Meta(Meta::NameValue(p)) if p.path.is_ident("repeat") => &p.lit,
-            _ => {
-                return Err(syn::Error::new_spanned(
-                    first,
-                    r#"unknown argument. did you mean `repeat = "..."`?"#,
-                ))
-            }
-        };
-        let dur = parse_duration(value, "repeat argument")?;
+enum MacroInput {
+    Table,
+    Init,
+    Reducer {
+        repeat: Option<Duration>,
+    },
+    Connect,
+    Disconnect,
+    Migrate,
+    Index {
+        ty: IndexType,
+        name: Option<String>,
+        field_names: Vec<Ident>,
+    },
+}
 
-        assert_no_args(args)?;
+fn comma_delimited(input: syn::parse::ParseStream, mut f: impl FnMut() -> syn::Result<()>) -> syn::Result<()> {
+    loop {
+        if input.is_empty() {
+            break;
+        }
+        f()?;
+        if input.is_empty() {
+            break;
+        }
+        input.parse::<Token![,]>()?;
+    }
+    Ok(())
+}
+fn comma_delim_parser(
+    mut f: impl FnMut(syn::parse::ParseStream) -> syn::Result<()>,
+) -> impl syn::parse::Parser<Output = ()> {
+    move |input: syn::parse::ParseStream| comma_delimited(input, || f(input))
+}
+fn comma_then_comma_delimited(
+    input: syn::parse::ParseStream,
+    mut f: impl FnMut() -> syn::Result<()>,
+) -> syn::Result<()> {
+    loop {
+        if input.is_empty() {
+            break;
+        }
+        input.parse::<Token![,]>()?;
+        if input.is_empty() {
+            break;
+        }
+        f()?;
+    }
+    Ok(())
+}
 
-        ReducerExtra::Repeat(dur)
+fn check_duplicate<T>(x: &Option<T>, span: Span) -> syn::Result<()> {
+    if x.is_none() {
+        Ok(())
     } else {
-        ReducerExtra::None
-    };
+        Err(syn::Error::new(span, "duplicate attribute"))
+    }
+}
+
+impl syn::parse::Parse for MacroInput {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        Ok(match_tok!(match input {
+            kw::table => Self::Table,
+            kw::init => Self::Init,
+            kw::reducer => {
+                let mut repeat = None;
+                comma_then_comma_delimited(input, || {
+                    match_tok!(match input {
+                        tok @ kw::repeat => {
+                            check_duplicate(&repeat, tok.span)?;
+                            input.parse::<Token![=]>()?;
+                            let v = input.call(parse_duration)?;
+                            repeat = Some(v);
+                        }
+                    });
+                    Ok(())
+                })?;
+                Self::Reducer { repeat }
+            }
+            kw::connect => Self::Connect,
+            kw::disconnect => Self::Disconnect,
+            kw::migrate => Self::Migrate,
+            kw::index => {
+                let in_parens;
+                syn::parenthesized!(in_parens in input);
+                let ty: IndexType = in_parens.parse()?;
+
+                let mut name = None;
+                let mut field_names = Vec::new();
+                comma_then_comma_delimited(input, || {
+                    match_tok!(match input {
+                        (tok, _) @ (kw::name, Token![=]) => {
+                            check_duplicate(&name, tok.span)?;
+                            let v = input.parse::<syn::LitStr>()?;
+                            name = Some(v.value())
+                        }
+                        ident @ Ident => field_names.push(ident),
+                    });
+                    Ok(())
+                })?;
+                Self::Index { ty, name, field_names }
+            }
+        }))
+    }
+}
+
+#[derive(Debug)]
+enum IndexType {
+    BTree,
+    Hash,
+}
+
+impl syn::parse::Parse for IndexType {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        Ok(match_tok!(match input {
+            kw::btree => Self::BTree,
+            kw::hash => Self::Hash,
+        }))
+    }
+}
+
+mod kw {
+    syn::custom_keyword!(table);
+    syn::custom_keyword!(init);
+    syn::custom_keyword!(reducer);
+    syn::custom_keyword!(connect);
+    syn::custom_keyword!(disconnect);
+    syn::custom_keyword!(migrate);
+    syn::custom_keyword!(index);
+    syn::custom_keyword!(btree);
+    syn::custom_keyword!(hash);
+    syn::custom_keyword!(name);
+    syn::custom_keyword!(repeat);
+}
+
+fn spacetimedb_reducer(repeat: Option<Duration>, item: TokenStream) -> syn::Result<TokenStream> {
+    let repeat_dur = repeat.map_or(ReducerExtra::None, ReducerExtra::Repeat);
 
     let original_function = syn::parse2::<ItemFn>(item)?;
 
@@ -94,10 +199,7 @@ fn spacetimedb_reducer(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> s
     gen_reducer(original_function, &reducer_name, repeat_dur)
 }
 
-fn spacetimedb_init(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
-    assert_no_args_meta(meta)?;
-    assert_no_args(args)?;
-
+fn spacetimedb_init(item: TokenStream) -> syn::Result<TokenStream> {
     let original_function = syn::parse2::<ItemFn>(item)?;
 
     gen_reducer(original_function, "__init__", ReducerExtra::Init)
@@ -239,10 +341,7 @@ struct Column<'a> {
     field: &'a module::SatsField<'a>,
 }
 
-fn spacetimedb_table(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
-    assert_no_args_meta(meta)?;
-    assert_no_args(args)?;
-
+fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
     let original_struct = syn::parse2::<ItemStruct>(item)?;
 
     match &original_struct.fields {
@@ -473,69 +572,25 @@ pub fn table_attr_helper(_: proc_macro::TokenStream) -> proc_macro::TokenStream 
     proc_macro::TokenStream::new()
 }
 
-fn spacetimedb_index(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
-    let mut index_fields = Vec::<u32>::new();
-    #[derive(Debug)]
-    enum IndexType {
-        BTree,
-        Hash,
-    }
-
-    let generic_err = "index() must have index type passed; try index(btree) or index(hash)";
-    let index_type = match meta {
-        Meta::List(l) => match l.nested.len() {
-            0 => return Err(syn::Error::new_spanned(meta, generic_err)),
-            1 => {
-                let err = || syn::Error::new_spanned(&l.nested[0], "index() only accepts `btree` or `hash`");
-                match &l.nested[0] {
-                    NestedMeta::Meta(Meta::Path(p)) => {
-                        if p.is_ident("btree") {
-                            IndexType::BTree
-                        } else if p.is_ident("hash") {
-                            IndexType::Hash
-                        } else {
-                            return Err(err());
-                        }
-                    }
-                    _ => return Err(err()),
-                }
-            }
-            _ => return Err(syn::Error::new_spanned(l, "index() only takes one argument")),
-        },
-        _ => return Err(syn::Error::new_spanned(meta, generic_err)),
-    };
-
+fn spacetimedb_index(
+    index_type: IndexType,
+    index_name: Option<String>,
+    field_names: Vec<Ident>,
+    item: TokenStream,
+) -> syn::Result<TokenStream> {
     let original_struct = syn::parse2::<ItemStruct>(item)?;
 
-    let mut index_name = None;
-    for arg in args {
-        match arg {
-            NestedMeta::Meta(Meta::NameValue(nv)) => {
-                if nv.path.is_ident("name") {
-                    if index_name.is_some() {
-                        return Err(syn::Error::new_spanned(nv, "can only define name once"));
-                    }
-                    if let syn::Lit::Str(s) = &nv.lit {
-                        index_name = Some(s.value())
-                    } else {
-                        return Err(syn::Error::new_spanned(&nv.lit, "name must be a string"));
-                    }
-                }
-            }
-            NestedMeta::Meta(Meta::Path(p)) => {
-                let field_name = p
-                    .get_ident()
-                    .ok_or_else(|| syn::Error::new_spanned(p, "field name must be single ident"))?;
-                let i = original_struct
-                    .fields
-                    .iter()
-                    .position(|field| field.ident.as_ref().unwrap() == field_name)
-                    .ok_or_else(|| syn::Error::new_spanned(field_name, "not a field of the struct"))?;
-                index_fields.push(i.try_into().unwrap());
-            }
-            _ => return Err(syn::Error::new_spanned(arg, "unknown arg for index")),
-        }
-    }
+    let index_fields = field_names
+        .iter()
+        .map(|field_name| {
+            original_struct
+                .fields
+                .iter()
+                .position(|field| field.ident.as_ref().unwrap() == field_name)
+                .ok_or_else(|| syn::Error::new(field_name.span(), "not a field of the struct"))
+        })
+        .collect::<syn::Result<Vec<_>>>()?;
+
     let index_name = index_name.as_deref().unwrap_or("default_index");
 
     let original_struct_name = &original_struct.ident;
@@ -555,7 +610,7 @@ fn spacetimedb_index(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
                     vec!(#(#index_fields),*)
                 );
             }
-        }
+        };
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
@@ -565,8 +620,7 @@ fn spacetimedb_index(meta: &Meta, args: &[NestedMeta], item: TokenStream) -> syn
     Ok(output)
 }
 
-fn spacetimedb_migrate(meta: &Meta, _: &[NestedMeta], item: TokenStream) -> syn::Result<TokenStream> {
-    assert_no_args_meta(meta)?;
+fn spacetimedb_migrate(item: TokenStream) -> syn::Result<TokenStream> {
     let original_func = syn::parse2::<ItemFn>(item)?;
     let func_name = &original_func.sig.ident;
 
@@ -584,15 +638,7 @@ fn spacetimedb_migrate(meta: &Meta, _: &[NestedMeta], item: TokenStream) -> syn:
     Ok(emission)
 }
 
-fn spacetimedb_connect_disconnect(
-    meta: &Meta,
-    args: &[NestedMeta],
-    item: TokenStream,
-    connect: bool,
-) -> syn::Result<TokenStream> {
-    assert_no_args_meta(meta)?;
-    assert_no_args(args)?;
-
+fn spacetimedb_connect_disconnect(item: TokenStream, connect: bool) -> syn::Result<TokenStream> {
     let original_function = syn::parse2::<ItemFn>(item)?;
     let func_name = &original_function.sig.ident;
     let connect_disconnect_symbol = if connect {
@@ -619,56 +665,18 @@ fn spacetimedb_connect_disconnect(
     Ok(emission)
 }
 
-fn assert_no_args_meta(meta: &Meta) -> syn::Result<()> {
-    match meta {
-        Meta::Path(_) => Ok(()),
-        _ => Err(syn::Error::new_spanned(
-            meta,
-            format!(
-                "#[spacetimedb({})] doesn't take any args",
-                meta.path().get_ident().unwrap()
-            ),
-        )),
-    }
-}
-fn assert_no_args(args: &[NestedMeta]) -> syn::Result<()> {
-    if args.is_empty() {
-        Ok(())
-    } else {
-        Err(syn::Error::new_spanned(
-            quote!(#(#args)*),
-            "unexpected macro argument(s)",
-        ))
-    }
-}
-
 #[proc_macro]
 pub fn duration(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    duration_impl(input.into())
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+    let dur = syn::parse_macro_input!(input with parse_duration);
+    duration_totokens(dur).into()
 }
 
-fn duration_impl(input: TokenStream) -> syn::Result<TokenStream> {
-    let lit = syn::parse2::<syn::Lit>(input)?;
-    let dur = parse_duration(&lit, "duration!() argument")?;
-    Ok(duration_totokens(dur))
-}
-
-fn parse_duration(lit: &syn::Lit, ctx: &str) -> syn::Result<Duration> {
-    let s = match lit {
-        syn::Lit::Str(s) => s.value(),
-        syn::Lit::Int(i) => i.to_string(),
-        _ => {
-            return Err(syn::Error::new_spanned(
-                lit,
-                format_args!("{ctx} must be a string or an int with a suffix"),
-            ))
-        }
-    };
-
-    humantime::parse_duration(&s)
-        .map_err(|e| syn::Error::new_spanned(lit, format_args!("Can't parse {ctx} as duration: {e}")))
+fn parse_duration(input: syn::parse::ParseStream) -> syn::Result<Duration> {
+    let (s, span) = match_tok!(match input {
+        s @ syn::LitStr => (s.value(), s.span()),
+        i @ syn::LitInt => (i.to_string(), i.span()),
+    });
+    humantime::parse_duration(&s).map_err(|e| syn::Error::new(span, format_args!("can't parse as duration: {e}")))
 }
 
 #[proc_macro_derive(Deserialize, attributes(sats))]
