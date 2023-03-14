@@ -180,6 +180,27 @@ namespace SpacetimeDB.SATS
                 }
             };
         }
-
+        
+        public static AlgebraicType CreateSumType(List<SumTypeVariant> variants)  {
+            return new AlgebraicType
+            {
+                type = Type.Sum,
+                sum = new SumType
+                {
+                    variants = variants,
+                }
+            };
+        }
+        
+        public static AlgebraicType CreateSumType(IEnumerable<SumTypeVariant> variants)  {
+            return new AlgebraicType
+            {
+                type = Type.Sum,
+                sum = new SumType
+                {
+                    variants = variants.ToList(),
+                }
+            };
+        }
     }
 }
