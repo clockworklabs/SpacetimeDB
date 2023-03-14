@@ -169,6 +169,19 @@ impl ProductTypeMeta {
         }
     }
 
+    pub fn with_attributes(iter: impl Iterator<Item = (ProductTypeElement, ColumnIndexAttribute)>) -> Self {
+        let mut columns = Vec::new();
+        let mut attrs = Vec::new();
+        for (col, attr) in iter {
+            columns.push(col);
+            attrs.push(attr);
+        }
+        Self {
+            attr: attrs,
+            columns: ProductType::new(columns),
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.columns.elements.len()
     }
@@ -184,6 +197,15 @@ impl ProductTypeMeta {
             .zip(self.attr.iter())
             .map(|(column, attr)| ColumnDef { column, attr: *attr })
     }
+
+    pub fn with_defaults<'a>(
+        &'a self,
+        row: &'a mut ProductValue,
+    ) -> impl Iterator<Item = (ColumnDef, &'a mut AlgebraicValue)> + 'a {
+        self.iter()
+            .zip(row.elements.iter_mut())
+            .filter(|(col, _)| matches!(col.attr, ColumnIndexAttribute::Identity | ColumnIndexAttribute::AutoInc))
+    }
 }
 
 impl From<ProductType> for ProductTypeMeta {
@@ -195,6 +217,15 @@ impl From<ProductType> for ProductTypeMeta {
 impl From<ProductTypeMeta> for ProductType {
     fn from(value: ProductTypeMeta) -> Self {
         value.columns
+    }
+}
+
+impl<'a> FromIterator<&'a (&'a str, AlgebraicType, ColumnIndexAttribute)> for ProductTypeMeta {
+    fn from_iter<T: IntoIterator<Item = &'a (&'a str, AlgebraicType, ColumnIndexAttribute)>>(iter: T) -> Self {
+        Self::with_attributes(
+            iter.into_iter()
+                .map(|(name, ty, attr)| (ProductTypeElement::new(ty.clone(), Some(name.to_string())), *attr)),
+        )
     }
 }
 

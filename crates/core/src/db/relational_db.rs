@@ -16,7 +16,7 @@ use crate::db::sequence::{
 };
 use crate::db::table::{
     decode_st_columns_schema, decode_st_table_schema, row_st_columns, row_st_table, st_columns_schema, st_table_schema,
-    ColumnFields, ProductTypeMeta, TableDef, TableFields,
+    ColumnFields, ColumnIndexAttribute, ProductTypeMeta, TableDef, TableFields,
 };
 use crate::db::{index, sequence};
 use crate::error::{DBError, IndexError, TableError};
@@ -29,7 +29,7 @@ use spacetimedb_lib::{
     ElementDef, PrimaryKey,
 };
 use spacetimedb_lib::{TupleDef, TupleValue, TypeValue};
-use spacetimedb_sats::product;
+use spacetimedb_sats::{product, AlgebraicValue};
 use std::fs::File;
 use std::{
     ops::{Deref, DerefMut, RangeBounds},
@@ -373,11 +373,11 @@ impl RelationalDB {
                 .name
                 .clone()
                 .ok_or_else(|| TableError::ColumnWithoutName(table_name.into(), i as u32))?;
+
             let row = row_st_columns(table_id, i as u32, &col_name, &col.column.algebraic_type, col.attr);
 
             Self::insert_row_raw(txdb, tx, ST_COLUMNS_ID, row);
         }
-
         Ok(())
     }
 
@@ -405,6 +405,23 @@ impl RelationalDB {
         );
 
         Self::make_table(&mut self.txdb, tx, table_name, table_id, &schema)?;
+
+        // Create the auxiliar objects
+        for (pos, col) in schema.iter().enumerate() {
+            match col.attr {
+                ColumnIndexAttribute::UnSet => {}
+                ColumnIndexAttribute::AutoInc => {
+                    let seq = SequenceDef::new_for_column(
+                        table_id,
+                        table_name,
+                        pos as u32,
+                        col.column.name.as_deref().unwrap(),
+                    );
+                    self.create_sequence(seq, tx)?;
+                }
+                _ => todo!(),
+            }
+        }
 
         self.catalog
             .tables
@@ -729,6 +746,27 @@ impl RelationalDB {
         let mut measure = HistogramVecHandle::new(&RDB_INSERT_TIME, vec![format!("{}", table_id)]);
         measure.start();
 
+        let schema = if let Some(schema) = self.catalog.tables.get(table_id) {
+            schema.clone()
+        } else {
+            return Err(TableError::IdNotFound(table_id).into());
+        };
+        // 1. Fill defaults
+        let mut row = row;
+        for (col, value) in schema.columns.with_defaults(&mut row) {
+            match col.attr {
+                ColumnIndexAttribute::AutoInc => {
+                    let name = SequenceDef::sequence_name_column(&schema.name, col.column.name.as_deref().unwrap());
+                    if let Some(seq) = self.catalog.sequences.get_sequence_by_name(&name) {
+                        let next_id = self.next_sequence(seq.sequence_id)?;
+                        *value = AlgebraicValue::I64(next_id);
+                    }
+                }
+                _ => {
+                    todo!()
+                }
+            }
+        }
         // TODO: verify schema
         self.before_insert(table_id, tx, &row)?;
         Self::insert_row_raw(&mut self.txdb, tx, table_id, row);
@@ -1018,6 +1056,7 @@ mod tests {
     use crate::db::relational_db::make_default_ostorage;
     use crate::db::relational_db::open_log;
     use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::db::table::{ColumnIndexAttribute, ProductTypeMeta};
     use crate::error::DBError;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::{TupleDef, TypeDef, TypeValue};
@@ -1269,6 +1308,29 @@ mod tests {
 
         let expected: Vec<i32> = Vec::new();
         assert_eq!(rows, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_inc() -> ResultTest<()> {
+        let (mut stdb, _) = make_test_db()?;
+
+        let mut tx_ = stdb.begin_tx();
+        let (tx, stdb) = tx_.get();
+        let schema = ProductTypeMeta::from_iter(&[("my_col", TypeDef::I64, ColumnIndexAttribute::AutoInc)]);
+        let table_id = stdb.create_table(tx, "MyTable", schema)?;
+
+        stdb.insert(tx, table_id, product![TypeValue::I64(-1)])?;
+        stdb.insert(tx, table_id, product![TypeValue::I64(-1)])?;
+
+        let mut rows = stdb
+            .range_scan(tx, table_id, 0, TypeValue::I64(0)..)?
+            .map(|r| *r.elements[0].as_i64().unwrap())
+            .collect::<Vec<i64>>();
+        rows.sort();
+
+        assert_eq!(rows, vec![1, 2]);
+
         Ok(())
     }
 }
