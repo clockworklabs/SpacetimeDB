@@ -169,6 +169,13 @@ impl ProductTypeMeta {
         }
     }
 
+    pub fn push(&mut self, name: &str, ty: AlgebraicType, attr: ColumnIndexAttribute) {
+        self.columns
+            .elements
+            .push(ProductTypeElement::new(ty, Some(name.to_string())));
+        self.attr.push(attr);
+    }
+
     pub fn with_attributes(iter: impl Iterator<Item = (ProductTypeElement, ColumnIndexAttribute)>) -> Self {
         let mut columns = Vec::new();
         let mut attrs = Vec::new();

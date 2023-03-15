@@ -30,6 +30,7 @@ use spacetimedb_lib::{
 };
 use spacetimedb_lib::{TupleDef, TupleValue, TypeValue};
 use spacetimedb_sats::{product, AlgebraicValue};
+use std::collections::HashMap;
 use std::fs::File;
 use std::{
     ops::{Deref, DerefMut, RangeBounds},
@@ -195,10 +196,49 @@ impl RelationalDB {
         };
 
         // Re-load the database objects
+        db.bootstrap_tables()?;
         db.bootstrap_sequences()?;
         db.bootstrap_indexes()?;
 
         Ok(db)
+    }
+
+    fn bootstrap_tables(&mut self) -> Result<(), DBError> {
+        let mut tx_ = self.begin_tx();
+        let (tx, stdb) = tx_.get();
+
+        // Scan for user tables only, the other should be bootstrapped
+        let ids: Vec<_> = stdb
+            .catalog
+            .tables
+            .iter_system_tables()
+            .map(|(table_id, _)| table_id)
+            .collect();
+
+        let mut tables = HashMap::new();
+        for row in stdb.scan(tx, ST_TABLES_ID)? {
+            let table = decode_st_table_schema(&row)?;
+            if !ids.contains(&table.table_id) {
+                tables.insert(
+                    table.table_id,
+                    TableDef::new(table.table_id, table.table_name, ProductTypeMeta::from_iter(&[]), false),
+                );
+            }
+        }
+
+        for row in stdb.scan(tx, ST_COLUMNS_ID)? {
+            let col = decode_st_columns_schema(&row)?;
+            if !ids.contains(&col.table_id) {
+                let table = tables.get_mut(&col.table_id).unwrap();
+                table.columns.push(col.col_name, col.col_type, col.col_idx);
+            }
+        }
+
+        for table in tables.into_values() {
+            stdb.catalog.tables.insert(table);
+        }
+
+        Ok(())
     }
 
     fn bootstrap_sequences(&mut self) -> Result<(), DBError> {
@@ -1128,7 +1168,6 @@ mod tests {
     }
 
     #[test]
-
     fn test_table_name() -> ResultTest<()> {
         let (mut stdb, _) = make_test_db()?;
 

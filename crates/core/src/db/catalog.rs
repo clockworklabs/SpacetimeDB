@@ -53,8 +53,10 @@ impl Catalog {
 #[cfg(test)]
 mod tests {
     use spacetimedb_lib::{TupleDef, TypeDef};
+    use tempdir::TempDir;
 
     use crate::db::relational_db::tests_utils::make_test_db;
+    use crate::db::relational_db::{open_db, open_log, RelationalDB};
     use spacetimedb_lib::error::ResultTest;
 
     #[test]
@@ -91,6 +93,33 @@ mod tests {
 
         let table = stdb.catalog.tables.find_id_by_name("MyTable");
         assert_eq!(Some(table_id), table, "Not found the table by ID");
+
+        Ok(())
+    }
+
+    fn build_db() -> ResultTest<TempDir> {
+        let (mut stdb, tmp_dir) = make_test_db()?;
+        let mut tx_ = stdb.begin_tx();
+        let (tx, stdb) = tx_.get();
+
+        stdb.create_table(tx, "data", TupleDef::from_iter([("a", TypeDef::I32)]))?;
+        let log = open_log(&tmp_dir)?;
+
+        let commit_result = tx_.commit()?;
+        RelationalDB::persist_tx(&log, commit_result)?;
+        Ok(tmp_dir)
+    }
+
+    #[test]
+    fn test_open_twice() -> ResultTest<()> {
+        let tmp_dir = build_db()?;
+
+        let stdb = open_db(&tmp_dir)?;
+
+        assert!(
+            stdb.catalog.tables.get_by_name("data").is_some(),
+            "Not bootstrap the tables"
+        );
 
         Ok(())
     }
