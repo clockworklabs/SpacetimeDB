@@ -1,4 +1,4 @@
-import { SpacetimeDBClient, ProductValue, AlgebraicValue, AlgebraicType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable } from "./spacetimedb";
+import { SpacetimeDBClient, ProductValue, AlgebraicValue, AlgebraicType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, ClientDB } from "./spacetimedb";
 
 let token: string = process.env.STDB_TOKEN || "";
 let identity: string = process.env.STDB_IDENTITY || "";
@@ -76,6 +76,7 @@ class Class {
 
 class Player extends DatabaseTable {
   public static tableName = "Player";
+  private static clientDB: ClientDB = global.clientDB;
   public name: string;
   public _class: Class;
   public inventory: Inventory;
@@ -108,6 +109,10 @@ class Player extends DatabaseTable {
 
     return new Player(name, _class, inventory, avatar);
   }
+
+  public static count(): number {
+    return this.clientDB.getTable("Player").count();
+  }
 }
 
 // let object = ["foo",{"1":[]},["Frankfurter Allee 53","10247","Germany"],[["programming"]]];
@@ -115,7 +120,9 @@ class Player extends DatabaseTable {
 // console.log(v);
 // console.log(Person.fromValue(v));
 
+// the next line would be generated for each table to automatically subscribe and process entities in cache
 global.entityClasses.set("Player", Player);
+clientDB.getOrCreateTable("Player", undefined, Player);
 let client = new SpacetimeDBClient("localhost:3000", db_name, {identity: identity, token: token});
 
 setTimeout(() => {
@@ -124,4 +131,5 @@ setTimeout(() => {
     console.log(table.rows);
   }
 
+  console.log(Player.count());
 }, 500);

@@ -8,10 +8,9 @@ export { ProductValue, AlgebraicValue, AlgebraicType, ProductTypeElement, SumTyp
 
 declare global {
   var entityClasses: Map<string, any>;
-
+  var clientDB: ClientDB;
+  var spacetimeDBClient: SpacetimeDBClient;
 }
-
-global.entityClasses = new Map();
 
 export class DatabaseTable {
 }
@@ -28,18 +27,30 @@ export type SpacetimeDBEvent = {
 };
 
 class Table {
+  // TODO: most of this stuff should be probably private
   public name: string;
-  public rows: Map<string, DatabaseTable>;
+  public entries: Map<string, AlgebraicValue>;
+  public instances: Map<string, DatabaseTable>;
   public emitter: EventEmitter;
   private entityClass: any;
   pkCol?: number;
 
   constructor(name: string, pkCol: number | undefined, entityClass: any) {
     this.name = name;
-    this.rows = new Map();
+    // TODO: not sure if it's worth it to keep both rows and entries here 🤔
+    this.entries = new Map();
+    this.instances = new Map();
     this.emitter = new EventEmitter();
     this.pkCol = pkCol;
     this.entityClass = entityClass;
+  }
+
+  public count(): number {
+    return this.rows.size;
+  }
+
+  public getEntries(): IterableIterator<AlgebraicValue> {
+    return this.entries.values();
   }
 
   applyOperations = (operations: { op: string, row_pk: string, row: any[] }[]) => {
@@ -77,29 +88,29 @@ class Table {
 
   }
 
-  instanceFromRow(row: Array<any>): DatabaseTable {
-    console.log('deserialize row', row);
-    let value = AlgebraicValue.deserialize(this.entityClass.getAlgebraicType(), row);
-    return this.entityClass.fromValue(value);
-  }
-
   update = (oldPk: string, pk: string, row: Array<any>) => {
-    const instance = this.instanceFromRow(row);
-    this.rows.set(pk, instance);
-    const oldInstance = this.rows.get(oldPk)!;
-    this.rows.delete(oldPk);
+    let entry = AlgebraicValue.deserialize(this.entityClass.getAlgebraicType(), row);
+    const instance = this.entityClass.fromValue(value);
+    this.entries.set(pk, entry);
+    this.instances.set(pk, instance);
+    const oldInstance = this.instances.get(oldPk)!;
+    this.entries.delete(oldPk);
+    this.instances.delete(oldPk);
     this.emitter.emit("update", instance, oldInstance);
   }
 
   insert = (pk: string, row: Array<any>) => {
-    const instance = this.instanceFromRow(row);
-    this.rows.set(pk, instance);
+    let entry = AlgebraicValue.deserialize(this.entityClass.getAlgebraicType(), row);
+    const instance = this.entityClass.fromValue(value);
+    this.instances.set(pk, instance);
+    this.entries.set(pk, entry);
     this.emitter.emit("insert", instance);
   }
 
   delete = (pk: string) => {
-    const instance = this.rows.get(pk);
-    this.rows.delete(pk);
+    const instance = this.instances.get(pk);
+    this.instances.delete(pk);
+    this.entries.delete(pk);
     if (instance) {
       this.emitter.emit("delete", instance);
     }
@@ -118,11 +129,18 @@ class Table {
   }
 }
 
-class Database {
+export class ClientDB {
   tables: Map<string, Table>
 
   constructor() {
     this.tables = new Map();
+  }
+
+  getTable(name: string): Table {
+    // I cast to Table, because this will assume that the table is
+    // already there
+    // TODO: might be better to throw an exception here?
+    return this.tables.get(name) as Table;
   }
 
   getOrCreateTable = (tableName: string, pkCol: number | undefined, entityClass: any) => {
@@ -141,12 +159,16 @@ export class SpacetimeDBClient {
   // ws: WoperationsSClient;
   identity?: string = undefined;
   token?: string = undefined;
-  public db: Database;
+  public db: ClientDB;
   public emitter: EventEmitter;
   private ws: WSClient;
   // this should get populated with codegen
 
   constructor(host: string, name_or_address: string, credentials?: { identity: string, token: string }) {
+    // I don't really like it, but it seems like the only way to
+    // make reducers work like they do in C#
+    global.spacetimeDBClient = this;
+
     // TODO: not sure if we should connect right away. Maybe it's better
     // to decouple this and first just create the client to then
     // allow calling sth like `client.connect()`
@@ -171,7 +193,7 @@ export class SpacetimeDBClient {
       }
     );
 
-    this.db = new Database();
+    this.db = global.clientDB;
     this.ws.onclose = (event) => {
       console.error("Closed: ", event);
     };
@@ -182,7 +204,6 @@ export class SpacetimeDBClient {
       });
     }
     this.ws.onmessage = (message: any) => {
-      console.log('message', message);
       const data = JSON.parse(message.data);
       if (data) {
         if (data['SubscriptionUpdate']) {
@@ -205,15 +226,19 @@ export class SpacetimeDBClient {
             const table = this.db.getOrCreateTable(tableName, undefined, entityClass);
             table.applyOperations(tableUpdate["table_row_operations"]);
           }
+          const reducerName: string | undefined = txUpdate["event"]?.["function_call"]?.["reducer"];
+          if (reducerName) {
+            this.emitter.emit("reducer:" + reducerName, txUpdate);
+          }
           this.emitter.emit("event", txUpdate['event']);
         } 
-        // else if (data['IdentityToken']) {
-        //   const identityToken = data['IdentityToken'];
-        //   const identity = identityToken['identity'];
-        //   const token = identityToken['token'];
-        //   this.identity = identity;
-        //   this.token = token;
-        // }
+        else if (data['IdentityToken']) {
+          const identityToken = data['IdentityToken'];
+          const identity = identityToken['identity'];
+          const token = identityToken['token'];
+          this.identity = identity;
+          this.token = token;
+        }
       }
     };
   }
@@ -225,4 +250,11 @@ export class SpacetimeDBClient {
 }`;
     this.ws.send(msg);
   }
+
+  onEvent(eventName: string, callback: (...args: any[]) => void) {
+    this.emitter.on(eventName, callback);
+  }
 }
+
+global.entityClasses = new Map();
+global.clientDB = new ClientDB();
