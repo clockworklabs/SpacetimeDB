@@ -426,15 +426,8 @@ namespace SpacetimeDB
             return key;
         }
 
-        internal void InternalCallReducer(string reducer, object[] args)
+        internal void InternalCallReducer(string json)
         {
-            // var argBytes = Encoding.ASCII.GetBytes(JsonConvert.SerializeObject(args));
-            var message = new ReducerCallRequest
-            {
-                fn = reducer,
-                args = args,
-            };
-            var json = JsonConvert.SerializeObject(message);
             webSocket.Send(Encoding.ASCII.GetBytes("{ \"call\": " + json + " }"));
         }
         
