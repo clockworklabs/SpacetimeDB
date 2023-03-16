@@ -1,4 +1,4 @@
-import { SpacetimeDBClient, ProductValue, AlgebraicValue, AlgebraicType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, ClientDB } from "./spacetimedb";
+import { SpacetimeDBClient, ProductValue, AlgebraicValue, AlgebraicType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, ClientDB } from "./spacetimedb";
 
 let token: string = process.env.STDB_TOKEN || "";
 let identity: string = process.env.STDB_IDENTITY || "";
@@ -74,7 +74,7 @@ class Class {
   }
 }
 
-class Player extends DatabaseTable {
+class Player extends IDatabaseTable {
   public static tableName = "Player";
   private static clientDB: ClientDB = global.clientDB;
   public name: string;
@@ -125,11 +125,11 @@ global.entityClasses.set("Player", Player);
 clientDB.getOrCreateTable("Player", undefined, Player);
 let client = new SpacetimeDBClient("localhost:3000", db_name, {identity: identity, token: token});
 
-setTimeout(() => {
-  let table = client.db.tables.get('Player');
-  if (table !== undefined) {
-    console.log(table.rows);
-  }
-
-  console.log(Player.count());
-}, 500);
+// setTimeout(() => {
+//   let table = client.db.tables.get('Player');
+//   if (table !== undefined) {
+//     console.log(table.rows);
+//   }
+//
+//   console.log(Player.count());
+// }, 500);

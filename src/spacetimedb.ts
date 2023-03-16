@@ -12,7 +12,7 @@ declare global {
   var spacetimeDBClient: SpacetimeDBClient;
 }
 
-export class DatabaseTable {
+export class IDatabaseTable {
 }
 
 export type SpacetimeDBEvent = {
@@ -30,7 +30,7 @@ class Table {
   // TODO: most of this stuff should be probably private
   public name: string;
   public entries: Map<string, AlgebraicValue>;
-  public instances: Map<string, DatabaseTable>;
+  public instances: Map<string, IDatabaseTable>;
   public emitter: EventEmitter;
   private entityClass: any;
   pkCol?: number;
@@ -46,7 +46,7 @@ class Table {
   }
 
   public count(): number {
-    return this.rows.size;
+    return this.entries.size;
   }
 
   public getEntries(): IterableIterator<AlgebraicValue> {
@@ -90,7 +90,7 @@ class Table {
 
   update = (oldPk: string, pk: string, row: Array<any>) => {
     let entry = AlgebraicValue.deserialize(this.entityClass.getAlgebraicType(), row);
-    const instance = this.entityClass.fromValue(value);
+    const instance = this.entityClass.fromValue(entry);
     this.entries.set(pk, entry);
     this.instances.set(pk, instance);
     const oldInstance = this.instances.get(oldPk)!;
@@ -101,7 +101,7 @@ class Table {
 
   insert = (pk: string, row: Array<any>) => {
     let entry = AlgebraicValue.deserialize(this.entityClass.getAlgebraicType(), row);
-    const instance = this.entityClass.fromValue(value);
+    const instance = this.entityClass.fromValue(entry);
     this.instances.set(pk, instance);
     this.entries.set(pk, entry);
     this.emitter.emit("insert", instance);
@@ -116,16 +116,28 @@ class Table {
     }
   }
 
-  onInsert = (cb: (row: DatabaseTable) => void) => {
+  onInsert = (cb: (row: IDatabaseTable) => void) => {
     this.emitter.on("insert", cb);
   }
 
-  onDelete = (cb: (row: DatabaseTable) => void) => {
+  onDelete = (cb: (row: IDatabaseTable) => void) => {
     this.emitter.on("delete", cb);
   }
 
-  onUpdate = (cb: (row: DatabaseTable, oldRow: DatabaseTable) => void) => {
+  onUpdate = (cb: (row: IDatabaseTable, oldRow: IDatabaseTable) => void) => {
     this.emitter.on("update", cb);
+  }
+
+  removeOnInsert = (cb: (row: IDatabaseTable) => void) => {
+    this.emitter.off("insert", cb);
+  }
+
+  removeOnDelete = (cb: (row: IDatabaseTable) => void) => {
+    this.emitter.off("delete", cb);
+  }
+
+  removeOnUpdate = (cb: (row: IDatabaseTable, oldRow: IDatabaseTable) => void) => {
+    this.emitter.off("update", cb);
   }
 }
 
@@ -243,7 +255,7 @@ export class SpacetimeDBClient {
     };
   }
 
-  call = (reducerName: String, args: Array<any>) => {
+  public call(reducerName: String, args: Array<any>) {
     const msg = `{
     "fn": "${reducerName}",
     "args": ${JSON.stringify(args)}
