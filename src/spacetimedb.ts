@@ -2,9 +2,9 @@ import { EventEmitter } from "events";
 import { ICloseEvent, w3cwebsocket as WSClient } from 'websocket';
 
 import { ProductValue, AlgebraicValue } from "./algebraic_value";
-import { AlgebraicType, ProductTypeElement, SumType, SumTypeVariant, BuiltinType } from "./algebraic_type";
+import { AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, BuiltinType } from "./algebraic_type";
 
-export { ProductValue, AlgebraicValue, AlgebraicType, ProductTypeElement, SumType, SumTypeVariant, BuiltinType };
+export { ProductValue, AlgebraicValue, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, BuiltinType };
 
 declare global {
   var entityClasses: Map<string, any>;
