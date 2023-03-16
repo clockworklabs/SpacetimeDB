@@ -193,7 +193,7 @@ impl HostController {
         caller_identity: Identity,
         reducer_name: &str,
         args: ReducerArgs,
-    ) -> Result<Option<ReducerCallResult>, ReducerCallError> {
+    ) -> Result<ReducerCallResult, ReducerCallError> {
         let module_host = self.get_module(instance_id)?;
         Self::call_reducer_inner(module_host, caller_identity, reducer_name.into(), args).await
     }
@@ -203,7 +203,7 @@ impl HostController {
         caller_identity: Identity,
         reducer_name: String,
         args: ReducerArgs,
-    ) -> Result<Option<ReducerCallResult>, ReducerCallError> {
+    ) -> Result<ReducerCallResult, ReducerCallError> {
         // TODO(cloutiertyler): Move this outside of the host controller
         // let max_spend = worker_budget::max_tx_spend(&module_host.identity);
         // let budget = ReducerBudget(max_spend);
@@ -326,8 +326,7 @@ impl SchedulerActor {
             let res =
                 HostController::call_reducer_inner(module_host, identity, scheduled.reducer, scheduled.args).await;
             match res {
-                Ok(Some(_)) => {}
-                Ok(None) => log::error!("scheduled reducer doesn't exist?"),
+                Ok(_) => {}
                 Err(e) => log::error!("invoking scheduled reducer failed: {e:#}"),
             }
         });

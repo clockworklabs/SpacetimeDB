@@ -28,10 +28,9 @@ pub async fn handle_binary(
 
             let host = host_controller::get_host();
             match host.call_reducer(instance_id, client_id.identity, &reducer, args).await {
-                Ok(Some(_)) => {}
-                Ok(None) => log::error!("reducer {reducer} not found"),
+                Ok(_) => {}
                 Err(e) => {
-                    log::error!("{}", e)
+                    log::error!("{:#}", e)
                 }
             }
 
@@ -83,12 +82,9 @@ pub async fn handle_text(client_id: ClientActorId, instance_id: u64, message: St
 
             let host = host_controller::get_host();
             match host.call_reducer(instance_id, client_id.identity, &func, args).await {
-                Ok(Some(_)) => {}
-                Ok(None) => {
-                    log::error!("reducer {func} not found")
-                }
+                Ok(_) => {}
                 Err(e) => {
-                    log::error!("{}", e)
+                    log::error!("{:#}", e)
                 }
             }
         }

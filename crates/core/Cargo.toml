@@ -82,6 +82,7 @@ wasmparser = "0.92.0"
 tokio-util = { version = "0.7.4", features = ["time"] }
 rustc-demangle = "0.1.21"
 serde_with = "2.2.0"
+serde_path_to_error = "0.1.9"
 genawaiter = "0.99.1"
 
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.

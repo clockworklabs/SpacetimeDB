@@ -53,6 +53,13 @@ struct CallParams {
     reducer: String,
 }
 
+fn make_error_response(status: StatusCode, err: anyhow::Error) -> Response<Body> {
+    Response::builder()
+        .status(status)
+        .body(format!("{err:#}").into())
+        .unwrap()
+}
+
 async fn call(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     let CallParams { address, reducer } = CallParams::take_from(state);
 
@@ -82,40 +89,41 @@ async fn call(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     let instance_id = database_instance.id;
     let host = host_controller::get_host();
 
-    let result = host
-        .call_reducer(instance_id, caller_identity, &reducer, args)
-        .await
-        .map_err(|e| {
+    let result = match host.call_reducer(instance_id, caller_identity, &reducer, args).await {
+        Ok(rcr) => rcr,
+        Err(e) => {
             let status_code = match e {
                 ReducerCallError::Args(_) => {
                     log::debug!("Attempt to call reducer with invalid arguments");
                     StatusCode::BAD_REQUEST
                 }
                 ReducerCallError::NoSuchModule(_) => StatusCode::NOT_FOUND,
+                ReducerCallError::NoSuchReducer => {
+                    log::debug!("Attempt to call non-existent reducer {}", reducer);
+                    StatusCode::NOT_FOUND
+                }
             };
 
-            log::debug!("Error while invoking reducer {}", e);
-            HandlerError::from(e).with_status(status_code)
-        })?
-        .ok_or_else(|| {
-            log::debug!("Attempt to call non-existent reducer {}", reducer);
-            HandlerError::from(anyhow!("reducer not found")).with_status(StatusCode::NOT_FOUND)
-        })?;
+            log::debug!("Error while invoking reducer {:#}", e);
+            return Ok(make_error_response(status_code, e.into()));
+        }
+    };
 
-    match &result.outcome {
-        ReducerOutcome::Committed => {}
-        // TODO: return error message somehow
-        ReducerOutcome::Failed(_) => {}
+    let (status, body) = match result.outcome {
+        ReducerOutcome::Committed => (StatusCode::OK, Body::empty()),
+        ReducerOutcome::Failed(errmsg) => {
+            // TODO: different status code? this is what cloudflare uses, sorta
+            (StatusCode::from_u16(530).unwrap(), errmsg.into())
+        }
         ReducerOutcome::BudgetExceeded => {
             log::warn!(
                 "Node's energy budget exceeded for identity: {} while executing {}",
                 Hash::from_slice(&database.identity),
                 reducer
             );
-            return Err(HandlerError::from(anyhow!("Module energy budget exhausted."))
-                .with_status(StatusCode::PAYMENT_REQUIRED));
+            (StatusCode::PAYMENT_REQUIRED, "Module energy budget exhausted.".into())
         }
-    }
+    };
 
     let res = Response::builder()
         .header("Spacetime-Identity", caller_identity.to_hex())
@@ -125,8 +133,8 @@ async fn call(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
             "Spacetime-Execution-Duration-Micros",
             result.host_execution_duration.as_micros().to_string(),
         )
-        .status(StatusCode::OK)
-        .body(Body::empty())
+        .status(status)
+        .body(body)
         .unwrap();
     Ok(res)
 }

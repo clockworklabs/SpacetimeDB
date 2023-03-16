@@ -1,3 +1,4 @@
+use anyhow::Context;
 use bytes::Bytes;
 use spacetimedb_lib::bsatn;
 use spacetimedb_lib::de::serde::SeedWrapper;
@@ -56,12 +57,12 @@ pub struct InvalidReducerArguments {
 
 pub use module_host::ReducerCallError;
 
-fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(
-    s: &'de [u8],
-    seed: T,
-) -> Result<T::Value, serde_json::Error> {
+fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de [u8], seed: T) -> anyhow::Result<T::Value> {
     let mut de = serde_json::Deserializer::from_slice(s);
-    let out = seed.deserialize(&mut de)?;
+    let mut track = serde_path_to_error::Track::new();
+    let out = seed
+        .deserialize(serde_path_to_error::Deserializer::new(&mut de, &mut track))
+        .context(track.path())?;
     de.end()?;
     Ok(out)
 }

@@ -354,6 +354,8 @@ pub enum ReducerCallError {
     Args(#[from] InvalidReducerArguments),
     #[error(transparent)]
     NoSuchModule(#[from] NoSuchModule),
+    #[error("no such reducer")]
+    NoSuchReducer,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -416,11 +418,12 @@ impl ModuleHost {
         reducer_name: String,
         budget: ReducerBudget,
         args: ReducerArgs,
-    ) -> Result<Option<ReducerCallResult>, ReducerCallError> {
-        let args = match self.catalog().get_reducer(&reducer_name) {
-            Some(schema) => args.into_tuple(schema)?,
-            None => return Ok(None),
-        };
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        let catalog = self.catalog();
+        let schema = catalog
+            .get_reducer(&reducer_name)
+            .ok_or(ReducerCallError::NoSuchReducer)?;
+        let args = args.into_tuple(schema)?;
         self.call(|respond_to| ModuleHostCommand::CallReducer {
             caller_identity,
             reducer_name,
@@ -429,7 +432,6 @@ impl ModuleHost {
             respond_to,
         })
         .await
-        .map(Some)
         .map_err(Into::into)
     }
 
