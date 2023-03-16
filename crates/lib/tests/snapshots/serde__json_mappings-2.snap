@@ -1,6 +1,6 @@
 ---
-source: crates/spacetimedb-lib/tests/serde.rs
-expression: "de_json({\n    \"foo\": 5654,\n    \"bar\": \"010F2C\",\n    \"baz\": [\"it's 🥶°C\"],\n    \"quux\": { \"Unit\": [] },\n    \"and_peggy\": 9.8\n})"
+source: crates/lib/tests/serde.rs
+expression: "de_json({\n    \"foo\": 5654,\n    \"bar\": [1, 15, 44],\n    \"baz\": [\"it's 🥶°C\"],\n    \"quux\": { \"Unit\": [] },\n    \"and_peggy\": null\n})"
 ---
 (
     foo = 5654,
@@ -11,5 +11,7 @@ expression: "de_json({\n    \"foo\": 5654,\n    \"bar\": \"010F2C\",\n    \"baz\
     quux = (
         Unit = (),
     ),
-    and_peggy = 9.8,
+    and_peggy = (
+        none = (),
+    ),
 )

@@ -25,7 +25,7 @@ fn test_json_mappings() {
             "quux",
             TypeDef::Sum(enumm([("Hash", TypeDef::bytes()), ("Unit", TypeDef::UNIT_TYPE)])),
         ),
-        ("and_peggy", TypeDef::Builtin(F64)),
+        ("and_peggy", TypeDef::make_option_type(TypeDef::Builtin(F64))),
     ]);
     let data = r#"
 {
@@ -33,7 +33,7 @@ fn test_json_mappings() {
     "bar": "404040FFFF0A48656C6C6F",
     "baz": ["heyyyyyy", "hooo"],
     "quux": { "Hash": "54a3e6d2b0959deaacf102292b1cbd6fcbb8cf237f73306e27ed82c3153878aa" },
-    "and_peggy": 3.141592653589793238426
+    "and_peggy": { "some": 3.141592653589793238426 }
 }
 "#; // all of those ^^^^^^ digits are from memory
     de_json_snapshot!(schema, data);
@@ -43,7 +43,7 @@ fn test_json_mappings() {
     "bar": [1, 15, 44],
     "baz": ["it's 🥶°C"],
     "quux": { "Unit": [] },
-    "and_peggy": 9.8
+    "and_peggy": null
 }
 "#;
     de_json_snapshot!(schema, data);

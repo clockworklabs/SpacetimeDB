@@ -179,6 +179,9 @@ impl<'de, T: Deserialize<'de>> SumVisitor<'de> for OptionVisitor<T> {
     fn sum_name(&self) -> Option<&str> {
         Some("option")
     }
+    fn is_option(&self) -> bool {
+        true
+    }
     fn visit_sum<A: SumAccess<'de>>(self, data: A) -> Result<Self::Output, A::Error> {
         let (some, data) = data.variant(self)?;
         Ok(if some {
@@ -273,6 +276,9 @@ impl<'de> SumVisitor<'de> for TypeInSpace<'_, SumType> {
 
     fn sum_name(&self) -> Option<&str> {
         None
+    }
+    fn is_option(&self) -> bool {
+        self.ty().looks_like_option().is_some()
     }
 
     fn visit_sum<A: SumAccess<'de>>(self, data: A) -> Result<Self::Output, A::Error> {

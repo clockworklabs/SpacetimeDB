@@ -24,6 +24,19 @@ impl SumType {
             .collect::<Vec<_>>();
         Self { variants }
     }
+
+    pub fn looks_like_option(&self) -> Option<&AlgebraicType> {
+        match &*self.variants {
+            [first, second]
+                if first.name.as_deref() == Some("some")
+                    && second.name.as_deref() == Some("none")
+                    && second.algebraic_type == AlgebraicType::UNIT_TYPE =>
+            {
+                Some(&first.algebraic_type)
+            }
+            _ => None,
+        }
+    }
 }
 
 impl SumType {

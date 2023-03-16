@@ -42,9 +42,13 @@ impl<'de, D: serde::Deserializer<'de>> Deserializer<'de> for SerdeDeserializer<D
     }
 
     fn deserialize_sum<V: super::SumVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        self.de
-            .deserialize_enum("", &[], EnumVisitor { visitor })
-            .map_err(SerdeError)
+        if visitor.is_option() && self.de.is_human_readable() {
+            self.de.deserialize_any(OptionVisitor { visitor }).map_err(SerdeError)
+        } else {
+            self.de
+                .deserialize_enum("", &[], EnumVisitor { visitor })
+                .map_err(SerdeError)
+        }
     }
 
     fn deserialize_bool(self) -> Result<bool, Self::Error> {
@@ -249,6 +253,91 @@ impl<'de, A: serde::SeqAccess<'de>> super::SeqProductAccess<'de> for SeqTupleAcc
     fn next_element_seed<T: super::DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<T::Output>, Self::Error> {
         let res = self.seq.next_element_seed(SeedWrapper(seed)).map_err(SerdeError)?;
         Ok(res)
+    }
+}
+
+struct OptionVisitor<V> {
+    visitor: V,
+}
+
+impl<'de, V: super::SumVisitor<'de>> serde::Visitor<'de> for OptionVisitor<V> {
+    type Value = V::Output;
+
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("option")
+    }
+
+    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::MapAccess<'de>,
+    {
+        self.visitor.visit_sum(SomeAccess(map)).map_err(unwrap_error)
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E>
+    where
+        E: serde::Error,
+    {
+        self.visitor.visit_sum(NoneAccess(PhantomData)).map_err(unwrap_error)
+    }
+}
+
+struct SomeAccess<A>(A);
+impl<'de, A: serde::MapAccess<'de>> super::SumAccess<'de> for SomeAccess<A> {
+    type Error = SerdeError<A::Error>;
+    type Variant = Self;
+
+    fn variant<V: super::VariantVisitor>(mut self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+        self.0
+            .next_key_seed(VariantVisitor { visitor })
+            .and_then(|x| match x {
+                Some(x) => Ok((x, self)),
+                None => Err(serde::Error::custom("expected variant name")),
+            })
+            .map_err(SerdeError)
+    }
+}
+impl<'de, A: serde::MapAccess<'de>> super::VariantAccess<'de> for SomeAccess<A> {
+    type Error = SerdeError<A::Error>;
+
+    fn deserialize_seed<T: super::DeserializeSeed<'de>>(mut self, seed: T) -> Result<T::Output, Self::Error> {
+        let ret = self.0.next_value_seed(SeedWrapper(seed)).map_err(SerdeError)?;
+        self.0.next_key_seed(NothingVisitor).map_err(SerdeError)?;
+        Ok(ret)
+    }
+}
+struct NothingVisitor;
+impl<'de> serde::DeserializeSeed<'de> for NothingVisitor {
+    type Value = std::convert::Infallible;
+    fn deserialize<D: serde::Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
+        deserializer.deserialize_identifier(self)
+    }
+}
+impl<'de> serde::Visitor<'de> for NothingVisitor {
+    type Value = std::convert::Infallible;
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("nothing")
+    }
+}
+
+struct NoneAccess<E>(PhantomData<E>);
+impl<'de, E: super::Error> super::SumAccess<'de> for NoneAccess<E> {
+    type Error = E;
+    type Variant = Self;
+
+    fn variant<V: super::VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+        visitor.visit_name("none").map(|var| (var, self))
+    }
+}
+impl<'de, E: super::Error> super::VariantAccess<'de> for NoneAccess<E> {
+    type Error = E;
+    fn deserialize_seed<T: super::DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
+        use crate::algebraic_value::de::*;
+        seed.deserialize(ValueDeserializer::new(crate::AlgebraicValue::UNIT))
+            .map_err(|err| match err {
+                ValueDeserializeError::MismatchedType => E::custom("mismatched type"),
+                ValueDeserializeError::Custom(err) => E::custom(err),
+            })
     }
 }
 

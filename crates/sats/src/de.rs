@@ -223,6 +223,9 @@ pub trait SumVisitor<'de> {
     type Output;
 
     fn sum_name(&self) -> Option<&str>;
+    fn is_option(&self) -> bool {
+        false
+    }
 
     fn visit_sum<A: SumAccess<'de>>(self, data: A) -> Result<Self::Output, A::Error>;
 }

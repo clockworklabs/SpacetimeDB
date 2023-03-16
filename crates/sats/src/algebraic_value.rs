@@ -14,6 +14,8 @@ pub enum AlgebraicValue {
 }
 
 impl AlgebraicValue {
+    pub const UNIT: Self = AlgebraicValue::Product(ProductValue { elements: Vec::new() });
+
     #[inline]
     pub fn as_bool(&self) -> Option<&bool> {
         self.as_builtin()?.as_bool()
