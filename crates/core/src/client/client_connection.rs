@@ -265,7 +265,7 @@ impl Drop for ClientConnection {
         let client_id = self.id;
 
         spawn(async move {
-            let host = host_controller::get_host();
+            let host = host_controller::get();
             let module = host.get_module(instance_id);
             match module {
                 Ok(module) => {

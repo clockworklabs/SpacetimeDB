@@ -81,15 +81,26 @@ async fn call(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
         log::error!("Could not find database: {}", address.to_hex());
         HandlerError::from(anyhow!("No such database.")).with_status(StatusCode::NOT_FOUND)
     })?;
+    let identity = Identity::from_slice(&database.identity);
     let database_instance = ctx
         .get_leader_database_instance_by_database(database.id)
         .await
         .context("Database instance not scheduled to this node yet.")
         .map_err_with_status(StatusCode::NOT_FOUND)?;
     let instance_id = database_instance.id;
-    let host = host_controller::get_host();
+    let host = host_controller::get();
 
-    let result = match host.call_reducer(instance_id, caller_identity, &reducer, args).await {
+    let module = match host.get_module(instance_id) {
+        Ok(m) => m,
+        Err(_) => {
+            let (wdi, program_bytes) = ctx.load_database_instance(database, instance_id).await?;
+            host.spawn_module(wdi, program_bytes).await?
+        }
+    };
+    let result = match module
+        .call_reducer(caller_identity, reducer.clone(), Default::default(), args)
+        .await
+    {
         Ok(rcr) => rcr,
         Err(e) => {
             let status_code = match e {
@@ -118,7 +129,7 @@ async fn call(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
         ReducerOutcome::BudgetExceeded => {
             log::warn!(
                 "Node's energy budget exceeded for identity: {} while executing {}",
-                Hash::from_slice(&database.identity),
+                identity,
                 reducer
             );
             (StatusCode::PAYMENT_REQUIRED, "Module energy budget exhausted.".into())
@@ -274,7 +285,7 @@ async fn describe(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     };
 
     let instance_id = call_info.database_instance.id;
-    let host = host_controller::get_host();
+    let host = host_controller::get();
 
     let entity_type = entity_type.as_str().parse().map_err(|()| {
         log::debug!("Request to describe unhandled entity type: {}", entity_type);
@@ -317,7 +328,7 @@ async fn catalog(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     };
 
     let instance_id = call_info.database_instance.id;
-    let host = host_controller::get_host();
+    let host = host_controller::get();
     let catalog = host.catalog(instance_id).map_err_with_status(StatusCode::NOT_FOUND)?;
     let expand = expand.unwrap_or(false);
     let response_catalog: HashMap<_, _> = catalog
@@ -386,7 +397,7 @@ async fn logs(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     let lines = DatabaseLogger::read_latest(&filepath, num_lines).await;
 
     let body = if follow {
-        let mut log_rx = host_controller::get_host().subscribe_to_logs(instance_id)?;
+        let mut log_rx = host_controller::get().subscribe_to_logs(instance_id)?;
 
         let (mut tx, body) = Body::channel();
 
@@ -1000,7 +1011,7 @@ pub fn router(ctx: &Arc<dyn ApiCtx>, control_ctx: Option<&Arc<dyn ControllerCtx>
             .get("/subscribe")
             .with_path_extractor::<SubscribeParams>()
             .with_query_string_extractor::<SubscribeQueryParams>()
-            .to_async_borrowing(handle_websocket);
+            .to_new_handler(with_ctx!(ctx, handle_websocket));
 
         route
             .post("/call/:address/:reducer")

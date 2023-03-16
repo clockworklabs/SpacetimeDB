@@ -4,13 +4,15 @@ use crate::host::module_host::ModuleHost;
 use crate::identity::Identity;
 use crate::protobuf::control_db::HostType;
 use crate::worker_database_instance::WorkerDatabaseInstance;
-use futures::StreamExt;
-use once_cell::sync::Lazy;
+use futures::{stream, StreamExt, TryStreamExt};
+use once_cell::sync::OnceCell;
 use serde::Serialize;
-use spacetimedb_lib::EntityDef;
+use sled::transaction::ConflictableTransactionError::Abort as TxAbort;
+use spacetimedb_lib::{bsatn, EntityDef};
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use std::{collections::HashMap, sync::Mutex};
 use tokio::sync::mpsc;
 use tokio_util::time::DelayQueue;
 
@@ -19,10 +21,27 @@ use super::timestamp::Timestamp;
 use super::wasm_common::DEFAULT_EXECUTION_BUDGET;
 use super::ReducerArgs;
 
-pub static HOST: Lazy<HostController> = Lazy::new(HostController::new);
+static HOST: OnceCell<HostController> = OnceCell::new();
 
-pub fn get_host() -> &'static HostController {
-    &HOST
+pub async fn init(f: &impl DbGetter) -> anyhow::Result<()> {
+    let (mut scheduler_actor, scheduler) = SchedulerActor::new()?;
+    let modules = scheduler_actor.populate(&scheduler, f).await?.into();
+    let host = HOST.try_insert(HostController { modules, scheduler }).ok().unwrap();
+    tokio::spawn(scheduler_actor.run(host));
+    Ok(())
+}
+
+pub fn init_basic() -> anyhow::Result<()> {
+    let (scheduler_actor, scheduler) = SchedulerActor::new()?;
+    let modules = Mutex::default();
+    let host = HOST.try_insert(HostController { modules, scheduler }).ok().unwrap();
+    tokio::spawn(scheduler_actor.run(host));
+    Ok(())
+}
+
+#[inline]
+pub fn get() -> &'static HostController {
+    HOST.get().unwrap()
 }
 
 pub struct HostController {
@@ -70,6 +89,12 @@ impl Display for DescribedEntityType {
 #[derive(Serialize, Clone, Debug)]
 pub struct ReducerBudget(pub i64 /* maximum spend for this call */);
 
+impl Default for ReducerBudget {
+    fn default() -> Self {
+        Self(DEFAULT_EXECUTION_BUDGET)
+    }
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct ReducerCallResult {
     pub outcome: ReducerOutcome,
@@ -95,19 +120,10 @@ impl From<&EventStatus> for ReducerOutcome {
 }
 
 impl HostController {
-    fn new() -> Self {
-        let modules = Mutex::new(HashMap::new());
-
-        let (schedule_tx, schedule_rx) = mpsc::unbounded_channel();
-        tokio::spawn(SchedulerActor::new(schedule_rx).run());
-        let scheduler = Scheduler { tx: schedule_tx };
-        Self { modules, scheduler }
-    }
-
     pub async fn init_module(
         &self,
-        worker_database_instance: WorkerDatabaseInstance,
-        program_bytes: Vec<u8>,
+        worker_database_instance: Arc<WorkerDatabaseInstance>,
+        program_bytes: impl AsRef<[u8]> + Send + 'static,
     ) -> Result<ModuleHost, anyhow::Error> {
         let module_host = self.spawn_module(worker_database_instance, program_bytes).await?;
         // TODO(cloutiertyler): Hook this up again
@@ -137,8 +153,8 @@ impl HostController {
 
     pub async fn _update_module(
         &self,
-        worker_database_instance: WorkerDatabaseInstance,
-        program_bytes: Vec<u8>,
+        worker_database_instance: Arc<WorkerDatabaseInstance>,
+        program_bytes: impl AsRef<[u8]> + Send + 'static,
     ) -> Result<ModuleHost, anyhow::Error> {
         let module_host = self.spawn_module(worker_database_instance, program_bytes).await?;
         module_host._migrate_database().await?;
@@ -147,8 +163,8 @@ impl HostController {
 
     pub async fn add_module(
         &self,
-        worker_database_instance: WorkerDatabaseInstance,
-        program_bytes: Vec<u8>,
+        worker_database_instance: Arc<WorkerDatabaseInstance>,
+        program_bytes: impl AsRef<[u8]> + Send + 'static,
     ) -> Result<ModuleHost, anyhow::Error> {
         let module_host = self.spawn_module(worker_database_instance, program_bytes).await?;
         // module_host.init_function(); ??
@@ -157,34 +173,41 @@ impl HostController {
 
     pub async fn spawn_module(
         &self,
-        worker_database_instance: WorkerDatabaseInstance,
-        program_bytes: Vec<u8>,
+        worker_database_instance: Arc<WorkerDatabaseInstance>,
+        program_bytes: impl AsRef<[u8]> + Send + 'static,
     ) -> Result<ModuleHost, anyhow::Error> {
-        let module_hash = hash_bytes(&program_bytes);
         let key = worker_database_instance.database_instance_id;
         let module_host = self.take_module(key);
         if let Some(module_host) = module_host {
             module_host.exit().await;
         }
 
-        let scheduler = self.scheduler.clone();
-        let module_host = tokio::task::spawn_blocking(move || {
-            anyhow::Ok(match worker_database_instance.host_type {
-                HostType::Wasmer => ModuleHost::spawn(host_wasmer::make_actor(
-                    worker_database_instance,
-                    module_hash,
-                    program_bytes,
-                    scheduler,
-                )?),
-            })
-        })
-        .await
-        .unwrap()?;
+        let module_host = Self::make_module(self.scheduler.clone(), worker_database_instance, program_bytes).await?;
 
         let mut modules = self.modules.lock().unwrap();
         modules.insert(key, module_host.clone());
 
         Ok(module_host)
+    }
+
+    async fn make_module(
+        scheduler: Scheduler,
+        worker_database_instance: Arc<WorkerDatabaseInstance>,
+        program_bytes: impl AsRef<[u8]> + Send + 'static,
+    ) -> anyhow::Result<ModuleHost> {
+        let module_hash = hash_bytes(&program_bytes);
+        tokio::task::spawn_blocking(move || {
+            anyhow::Ok(match worker_database_instance.host_type {
+                HostType::Wasmer => ModuleHost::spawn(host_wasmer::make_actor(
+                    worker_database_instance,
+                    module_hash,
+                    program_bytes.as_ref(),
+                    scheduler,
+                )?),
+            })
+        })
+        .await
+        .unwrap()
     }
 
     pub async fn call_reducer(
@@ -268,63 +291,129 @@ impl Scheduler {
         Self { tx }
     }
 
-    pub fn schedule(&self, instance_id: u64, reducer: String, args: ReducerArgs, at: Timestamp) {
+    pub fn schedule(&self, db_id: u64, instance_id: u64, reducer: String, bsatn_args: Vec<u8>, at: Timestamp) {
         let reducer = ScheduledReducer {
+            at,
+            database_id: db_id,
             instance_id,
             reducer,
-            args,
+            bsatn_args,
         };
         self.tx
-            .send(SchedulerMessage::Schedule(reducer, at))
+            .send(SchedulerMessage::Schedule(reducer))
             .unwrap_or_else(|_| panic!("scheduler actor panicked"))
     }
 }
 
 enum SchedulerMessage {
-    Schedule(ScheduledReducer, Timestamp),
+    Schedule(ScheduledReducer),
 }
 
+#[derive(spacetimedb_sats::ser::Serialize, spacetimedb_sats::de::Deserialize)]
 struct ScheduledReducer {
+    at: Timestamp,
+    database_id: u64,
     instance_id: u64,
     reducer: String,
-    args: ReducerArgs,
+    bsatn_args: Vec<u8>,
 }
 
 struct SchedulerActor {
     rx: mpsc::UnboundedReceiver<SchedulerMessage>,
-    queue: DelayQueue<ScheduledReducer>,
+    queue: DelayQueue<u64>,
+    db: sled::Db,
+}
+
+#[async_trait::async_trait]
+pub trait DbGetter {
+    type ProgramBytes: AsRef<[u8]> + Send + 'static;
+    async fn load_db_instance(
+        &self,
+        db_id: u64,
+        instance_id: u64,
+    ) -> anyhow::Result<(Arc<WorkerDatabaseInstance>, Self::ProgramBytes)>;
 }
 
 impl SchedulerActor {
-    fn new(rx: mpsc::UnboundedReceiver<SchedulerMessage>) -> Self {
+    fn new() -> anyhow::Result<(Self, Scheduler)> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let scheduler = Scheduler { tx };
+
         let queue = DelayQueue::new();
-        Self { rx, queue }
+        let db = sled::Config::default()
+            .path(crate::stdb_path("schedule"))
+            .flush_every_ms(Some(50))
+            .mode(sled::Mode::HighThroughput)
+            .open()?;
+
+        Ok((Self { rx, queue, db }, scheduler))
     }
-    async fn run(mut self) {
-        let controller = get_host();
+    async fn populate(
+        &mut self,
+        sched_ref: &Scheduler,
+        get_db: &impl DbGetter,
+    ) -> anyhow::Result<HashMap<u64, ModuleHost>> {
+        let mut insts_to_spawn = HashSet::new();
+        for entry in self.db.iter() {
+            let (k, v) = entry?;
+            let get_u64 = |b: &[u8]| u64::from_le_bytes(b.try_into().unwrap());
+            let id = get_u64(&k);
+            let at = Timestamp(get_u64(&v[..8]));
+            let db_id = get_u64(&v[8..16]);
+            let inst_id = get_u64(&v[16..24]);
+            insts_to_spawn.insert((db_id, inst_id));
+            self.queue.insert(id, at.to_duration_from_now());
+        }
+        let modules = insts_to_spawn.into_iter().map(|(db_id, inst_id)| async move {
+            let (wdi, program_bytes) = get_db.load_db_instance(db_id, inst_id).await?;
+            HostController::make_module(sched_ref.clone(), wdi, program_bytes)
+                .await
+                .map(|m| (inst_id, m))
+        });
+        let modules = stream::FuturesUnordered::from_iter(modules).try_collect().await?;
+        Ok(modules)
+    }
+    async fn run(mut self, host: &'static HostController) {
         loop {
             tokio::select! {
                 Some(msg) = self.rx.recv() => self.handle_message(msg),
-                Some(scheduled) = self.queue.next() => Self::handle_queued(controller, scheduled.into_inner()),
+                Some(scheduled) = self.queue.next() => self.handle_queued(host, scheduled.into_inner()),
                 else => break,
             }
         }
     }
     fn handle_message(&mut self, msg: SchedulerMessage) {
         match msg {
-            SchedulerMessage::Schedule(reducer, time) => {
-                self.queue.insert(reducer, time.to_duration_from_now());
+            SchedulerMessage::Schedule(reducer) => {
+                let at = reducer.at;
+                let id = self
+                    .db
+                    .transaction(|tx| {
+                        let id = tx.generate_id()?;
+                        let reducer = bsatn::to_vec(&reducer).map_err(TxAbort)?;
+                        tx.insert(&id.to_le_bytes(), reducer)?;
+                        Ok(id)
+                    })
+                    .unwrap();
+                self.queue.insert(id, at.to_duration_from_now());
             }
         }
     }
-    fn handle_queued(controller: &HostController, scheduled: ScheduledReducer) {
-        let Ok(module_host) = controller.get_module(scheduled.instance_id) else { return };
+    fn handle_queued(&self, host: &HostController, scheduled: u64) {
+        let Some(scheduled) = self.db.remove(scheduled.to_le_bytes()).unwrap() else { return };
+        let scheduled: ScheduledReducer = bsatn::from_reader(&mut &scheduled[..]).unwrap();
+        let Ok(module_host) = host.get_module(scheduled.instance_id) else { return };
         tokio::spawn(async move {
             let identity = module_host.info().identity;
             // TODO: pass a logical "now" timestamp to this reducer call, but there's some
             //       intricacies to get right (how much drift to tolerate? what kind of tokio::time::MissedTickBehavior do we want?)
-            let res =
-                HostController::call_reducer_inner(module_host, identity, scheduled.reducer, scheduled.args).await;
+            let res = HostController::call_reducer_inner(
+                module_host,
+                identity,
+                scheduled.reducer,
+                ReducerArgs::Bsatn(scheduled.bsatn_args.into()),
+            )
+            .await;
             match res {
                 Ok(_) => {}
                 Err(e) => log::error!("invoking scheduled reducer failed: {e:#}"),

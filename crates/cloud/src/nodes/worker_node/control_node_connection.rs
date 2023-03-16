@@ -20,7 +20,7 @@ use spacetimedb::protobuf::control_worker_api::BudgetUpdate;
 use spacetimedb::{
     hash::Hash,
     protobuf::{
-        control_db::{DatabaseInstance, HostType},
+        control_db::{Database, DatabaseInstance, HostType},
         control_worker_api::{
             delete_operation, insert_operation, schedule_update, update_operation, worker_bound_message, ScheduleState,
             ScheduleUpdate, WorkerBoundMessage,
@@ -30,9 +30,7 @@ use spacetimedb::{
 };
 
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
-use spacetimedb::{
-    database_logger::DatabaseLogger, host::host_controller, worker_database_instance::WorkerDatabaseInstance,
-};
+use spacetimedb::{host::host_controller, worker_database_instance::WorkerDatabaseInstance};
 
 pub async fn start(dicc: Arc<DatabaseInstanceContextController>, config: crate::nodes::node_config::WorkerNodeConfig) {
     let worker_api_bootstrap_addr = &config.worker_api_bootstrap_addrs[0];
@@ -318,7 +316,7 @@ async fn on_update_database_instance(
 async fn on_delete_database_instance(dicc: &DatabaseInstanceContextController, instance_id: u64) {
     let state = WORKER_DB.get_database_instance_state(instance_id).unwrap();
     if let Some(_state) = state {
-        let host = host_controller::get_host();
+        let host = host_controller::get();
 
         // TODO: This is getting pretty messy
         dicc.remove(instance_id);
@@ -327,44 +325,59 @@ async fn on_delete_database_instance(dicc: &DatabaseInstanceContextController, i
     }
 }
 
-async fn init_module_on_database_instance(
+pub struct DbGetter<'a>(pub &'a DatabaseInstanceContextController);
+#[async_trait::async_trait]
+impl host_controller::DbGetter for DbGetter<'_> {
+    type ProgramBytes = Vec<u8>;
+    async fn load_db_instance(
+        &self,
+        db_id: u64,
+        instance_id: u64,
+    ) -> anyhow::Result<(Arc<WorkerDatabaseInstance>, Vec<u8>)> {
+        load_db_instance(self.0, db_id, instance_id).await
+    }
+}
+
+async fn load_db_instance(
     dicc: &DatabaseInstanceContextController,
     database_id: u64,
     instance_id: u64,
-) -> Result<(), anyhow::Error> {
+) -> Result<(Arc<WorkerDatabaseInstance>, Vec<u8>), anyhow::Error> {
     let database = if let Some(database) = WORKER_DB.get_database_by_id(database_id) {
         database
     } else {
         return Err(anyhow!("Unknown database/instance: {}/{}", database_id, instance_id));
     };
-    let identity = Hash::from_slice(&database.identity);
-    let address = Address::from_slice(database.address);
+    load_db_instance_inner(dicc, database, instance_id).await
+}
+pub(super) async fn load_db_instance_inner(
+    dicc: &DatabaseInstanceContextController,
+    database: Database,
+    instance_id: u64,
+) -> Result<(Arc<WorkerDatabaseInstance>, Vec<u8>), anyhow::Error> {
     let program_bytes_address = Hash::from_slice(&database.program_bytes_address);
     let program_bytes = ControlNodeClient::get_shared()
         .get_program_bytes(&program_bytes_address)
         .await;
 
-    let log_path = DatabaseLogger::filepath(&address, instance_id);
     let root = "/stdb/worker_node/database_instances";
-    let db_path = format!("{}/{}/{}/{}", root, address.to_hex(), instance_id, "database");
 
-    let worker_database_instance = WorkerDatabaseInstance::new(
-        instance_id,
-        database_id,
-        HostType::from_i32(database.host_type).expect("unknown module host type"),
-        database.trace_log,
-        identity,
-        address,
-        &db_path,
-        &log_path,
-    );
+    let worker_database_instance = WorkerDatabaseInstance::from_database(database, instance_id, root);
 
     // TODO: This is getting pretty messy
     dicc.insert(worker_database_instance.clone());
-    let host = host_controller::get_host();
-    let _address = host
-        .init_module(worker_database_instance, program_bytes.clone())
-        .await?;
+
+    Ok((worker_database_instance, program_bytes))
+}
+
+async fn init_module_on_database_instance(
+    dicc: &DatabaseInstanceContextController,
+    database_id: u64,
+    instance_id: u64,
+) -> Result<(), anyhow::Error> {
+    let (worker_database_instance, program_bytes) = load_db_instance(dicc, database_id, instance_id).await?;
+    let host = host_controller::get();
+    let _address = host.init_module(worker_database_instance, program_bytes).await?;
     Ok(())
 }
 
@@ -373,38 +386,9 @@ async fn start_module_on_database_instance(
     database_id: u64,
     instance_id: u64,
 ) -> Result<(), anyhow::Error> {
-    let database = if let Some(database) = WORKER_DB.get_database_by_id(database_id) {
-        database
-    } else {
-        return Err(anyhow!("Unknown database/instance: {}/{}", database_id, instance_id));
-    };
-    let host_type = database.host_type();
-    let identity = Hash::from_slice(&database.identity);
-    let address = Address::from_slice(database.address);
-    let program_bytes_address = Hash::from_slice(&database.program_bytes_address);
-    let program_bytes = ControlNodeClient::get_shared()
-        .get_program_bytes(&program_bytes_address)
-        .await;
-
-    let log_path = DatabaseLogger::filepath(&address, instance_id);
-    let root = "/stdb/worker_node/database_instances";
-    let db_path = format!("{}/{}/{}/{}", root, address.to_hex(), instance_id, "database");
-
-    let worker_database_instance = WorkerDatabaseInstance::new(
-        instance_id,
-        database_id,
-        host_type,
-        database.trace_log,
-        identity,
-        address,
-        db_path,
-        log_path,
-    );
-
-    // TODO: This is getting pretty messy
-    dicc.insert(worker_database_instance.clone());
-    let host = host_controller::get_host();
-    let _address = host.add_module(worker_database_instance, program_bytes.clone()).await?;
+    let (worker_database_instance, program_bytes) = load_db_instance(dicc, database_id, instance_id).await?;
+    let host = host_controller::get();
+    let _address = host.add_module(worker_database_instance, program_bytes).await?;
     Ok(())
 }
 

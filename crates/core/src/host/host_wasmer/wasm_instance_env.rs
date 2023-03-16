@@ -82,7 +82,7 @@ impl WasmInstanceEnv {
             let name = mem.read_bytes(&caller, name, name_len)?;
             let name = String::from_utf8(name).map_err(|_| RuntimeError::new("name must be utf8"))?;
             let args = mem.read_bytes(&caller, args, args_len)?;
-            caller.data().instance_env.schedule(name, args.into(), Timestamp(time));
+            caller.data().instance_env.schedule(name, args, Timestamp(time));
             Ok(())
         })
         .map(|_| ())

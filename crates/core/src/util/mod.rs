@@ -22,3 +22,5 @@ pub(crate) fn string_from_utf8_lossy_owned(v: Vec<u8>) -> String {
         Cow::Owned(s) => s,
     }
 }
+
+pub use sled::IVec;

@@ -5,6 +5,8 @@ use tracing_appender::rolling;
 use tracing_subscriber::fmt::writer::MakeWriterExt;
 use tracing_subscriber::{reload, EnvFilter};
 
+pub use crate::host::host_controller::{init as init_host, init_basic as init_host_basic};
+
 pub fn configure_logging() {
     // Use this to change log levels at runtime.
     // This means you can change the default log level to trace

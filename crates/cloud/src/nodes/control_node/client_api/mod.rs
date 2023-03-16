@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use spacetimedb::control_db::{ControlDb, CONTROL_DB};
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
+use spacetimedb::protobuf::control_db::Database;
+use spacetimedb::worker_database_instance::WorkerDatabaseInstance;
 
 use super::controller::Controller;
 
@@ -13,6 +15,7 @@ struct ControlEnv {
 
 spacetimedb_client_api::delegate_databasedb!(for ControlEnv, self to self.control_db, |x| x.await);
 
+#[async_trait::async_trait]
 impl spacetimedb_client_api::ApiCtx for ControlEnv {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         super::prometheus_metrics::REGISTRY.gather()
@@ -20,6 +23,14 @@ impl spacetimedb_client_api::ApiCtx for ControlEnv {
 
     fn database_instance_context_controller(&self) -> &DatabaseInstanceContextController {
         &self.db_inst_ctx_controller
+    }
+
+    async fn load_database_instance(
+        &self,
+        _db: Database,
+        _instance_id: u64,
+    ) -> anyhow::Result<(Arc<WorkerDatabaseInstance>, spacetimedb::util::IVec)> {
+        unimplemented!()
     }
 }
 

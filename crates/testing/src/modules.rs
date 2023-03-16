@@ -4,7 +4,7 @@ use std::io::Read;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 
 use spacetimedb::address::Address;
 use spacetimedb::client::ClientActorId;
@@ -131,7 +131,11 @@ impl ModuleHandle {
     }
 }
 
+static INIT_HOST: Once = Once::new();
+
 pub async fn load_module(name: &str) -> ModuleHandle {
+    INIT_HOST.call_once(|| spacetimedb::startup::init_host_basic().unwrap());
+
     let env: &dyn ControllerCtx = &spacetimedb_standalone::StandaloneEnv::init().unwrap();
     let identity = CONTROL_DB.alloc_spacetime_identity().await.unwrap();
     let address = CONTROL_DB.alloc_spacetime_address().await.unwrap();
@@ -164,7 +168,7 @@ pub async fn load_module(name: &str) -> ModuleHandle {
     let client_id = ClientActorId { identity, name: 0 };
 
     let dicc = env.database_instance_context_controller();
-    let message_log = dicc.get(instance.id).unwrap().message_log;
+    let message_log = dicc.get(instance.id).unwrap().message_log.clone();
 
     // TODO: it might be neat to add some functionality to module handle to make
     // it easier to interact with the database. For example it could include

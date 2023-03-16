@@ -111,7 +111,7 @@ async fn program_bytes(controller: &Controller, state: &mut State) -> SimpleHand
     if let Some(program_bytes) = program_bytes {
         let res = Response::builder()
             .status(StatusCode::OK)
-            .body(Body::from(program_bytes))
+            .body(Body::from(program_bytes.to_vec()))
             .unwrap();
         Ok(res)
     } else {

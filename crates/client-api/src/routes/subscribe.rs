@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::Context;
 use gotham::handler::SimpleHandlerResult;
-use gotham::prelude::MapHandlerError;
 use gotham::prelude::StaticResponseExtender;
 use gotham::state::request_id;
 use gotham::state::FromState;
@@ -34,6 +32,8 @@ use spacetimedb::identity::Identity;
 use spacetimedb::websocket;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::WebSocketStream;
+
+use crate::ApiCtx;
 
 lazy_static! {
     static ref SEPARATOR: Regex = Regex::new(r"\s*,\s*").unwrap();
@@ -105,7 +105,7 @@ async fn on_connected(
     Ok(())
 }
 
-pub async fn handle_websocket(state: &mut State) -> SimpleHandlerResult {
+pub async fn handle_websocket(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     let (headers, key, on_upgrade, protocol_string) = websocket::validate_upgrade(state)?;
     let protocol = match protocol_string.as_str() {
         TEXT_PROTOCOL => Protocol::Text,
@@ -154,11 +154,14 @@ pub async fn handle_websocket(state: &mut State) -> SimpleHandlerResult {
     let req_id = request_id(state).to_owned();
     let identity_token_clone = identity_token.clone();
 
-    let host = host_controller::get_host();
-    let module = host
-        .get_module(instance_id)
-        .context("Database instance not scheduled to this node yet.")
-        .map_err_with_status(StatusCode::NOT_FOUND)?;
+    let host = host_controller::get();
+    let module = match host.get_module(instance_id) {
+        Ok(m) => m,
+        Err(_) => {
+            let (wdi, program_bytes) = ctx.load_database_instance(database, instance_id).await?;
+            host.spawn_module(wdi, program_bytes).await?
+        }
+    };
 
     tokio::spawn(async move {
         let config = WebSocketConfig {

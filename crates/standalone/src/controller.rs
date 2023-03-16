@@ -1,7 +1,8 @@
+use std::sync::Arc;
+
 use spacetimedb::address::Address;
 use spacetimedb::control_db::ControlDb;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
-use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::host_controller;
 use spacetimedb::identity::Identity;
 use spacetimedb::object_db::ObjectDb;
@@ -241,7 +242,7 @@ impl Controller {
     async fn on_delete_database_instance(&self, instance_id: u64) {
         let state = self.worker_db.get_database_instance_state(instance_id).unwrap();
         if let Some(_state) = state {
-            let host = host_controller::get_host();
+            let host = host_controller::get();
 
             // TODO: This is getting pretty messy
             self.db_inst_ctx_controller.remove(instance_id);
@@ -249,7 +250,11 @@ impl Controller {
         }
     }
 
-    async fn init_module_on_database_instance(&self, database_id: u64, instance_id: u64) -> Result<(), anyhow::Error> {
+    async fn load_database_instance(
+        &self,
+        database_id: u64,
+        instance_id: u64,
+    ) -> Result<(Arc<WorkerDatabaseInstance>, sled::IVec), anyhow::Error> {
         let database = if let Some(database) = self.control_db.get_database_by_id(database_id).await? {
             database
         } else {
@@ -259,73 +264,49 @@ impl Controller {
                 instance_id
             ));
         };
-        let identity = Hash::from_slice(&database.identity);
-        let address = Address::from_slice(database.address);
+        self.load_database_instance_inner(database, instance_id).await
+    }
+    pub(super) async fn load_database_instance_inner(
+        &self,
+        database: Database,
+        instance_id: u64,
+    ) -> anyhow::Result<(Arc<WorkerDatabaseInstance>, sled::IVec)> {
         let program_bytes_address = Hash::from_slice(&database.program_bytes_address);
         let program_bytes = self.object_db.get_object(&program_bytes_address)?.unwrap();
 
-        let log_path = DatabaseLogger::filepath(&address, instance_id);
-        let root = stdb_path("worker_node/database_instances");
-        let db_path = format!("{}/{}/{}/{}", root.display(), address.to_hex(), instance_id, "database");
+        let root_db_path = stdb_path("worker_node/database_instances");
 
-        let worker_database_instance = WorkerDatabaseInstance::new(
-            instance_id,
-            database_id,
-            HostType::from_i32(database.host_type).expect("unknown module host type"),
-            database.trace_log,
-            identity,
-            address,
-            &db_path,
-            &log_path,
-        );
+        let worker_database_instance = WorkerDatabaseInstance::from_database(database, instance_id, root_db_path);
 
         // TODO: This is getting pretty messy
         self.db_inst_ctx_controller.insert(worker_database_instance.clone());
-        let host = host_controller::get_host();
-        let _address = host
-            .init_module(worker_database_instance, program_bytes.clone())
-            .await?;
+
+        Ok((worker_database_instance, program_bytes))
+    }
+
+    async fn init_module_on_database_instance(&self, database_id: u64, instance_id: u64) -> Result<(), anyhow::Error> {
+        let (wdi, program_bytes) = self.load_database_instance(database_id, instance_id).await?;
+        let host = host_controller::get();
+        let _address = host.init_module(wdi, program_bytes).await?;
         Ok(())
     }
 
     async fn start_module_on_database_instance(&self, database_id: u64, instance_id: u64) -> Result<(), anyhow::Error> {
-        let database = if let Some(database) = self.control_db.get_database_by_id(database_id).await? {
-            database
-        } else {
-            return Err(anyhow::anyhow!(
-                "Unknown database/instance: {}/{}",
-                database_id,
-                instance_id
-            ));
-        };
-        let host_type = database.host_type();
-        let identity = Hash::from_slice(&database.identity);
-        let address = Address::from_slice(database.address);
-        let program_bytes_address = Hash::from_slice(&database.program_bytes_address);
-        let program_bytes = self.object_db.get_object(&program_bytes_address)?.unwrap();
-
-        let log_path = DatabaseLogger::filepath(&address, instance_id);
-        let root = stdb_path("worker_node/database_instances");
-        let db_path = root
-            .join(address.to_hex())
-            .join(instance_id.to_string())
-            .join("database");
-
-        let worker_database_instance = WorkerDatabaseInstance::new(
-            instance_id,
-            database_id,
-            host_type,
-            database.trace_log,
-            identity,
-            address,
-            db_path,
-            log_path,
-        );
-
-        // TODO: This is getting pretty messy
-        self.db_inst_ctx_controller.insert(worker_database_instance.clone());
-        let host = host_controller::get_host();
-        let _address = host.add_module(worker_database_instance, program_bytes.clone()).await?;
+        let (wdi, program_bytes) = self.load_database_instance(database_id, instance_id).await?;
+        let host = host_controller::get();
+        let _address = host.add_module(wdi, program_bytes).await?;
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl host_controller::DbGetter for Controller {
+    type ProgramBytes = sled::IVec;
+    async fn load_db_instance(
+        &self,
+        database_id: u64,
+        instance_id: u64,
+    ) -> Result<(Arc<WorkerDatabaseInstance>, sled::IVec), anyhow::Error> {
+        self.load_database_instance(database_id, instance_id).await
     }
 }

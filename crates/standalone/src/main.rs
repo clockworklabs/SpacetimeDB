@@ -51,6 +51,9 @@ async fn start(config: Config) -> anyhow::Result<Infallible> {
     db_metrics::register_custom_metrics();
 
     let ctx = StandaloneEnv::init()?;
+
+    startup::init_host(&ctx.controller).await?;
+
     spacetimedb_client_api::start_control(Arc::new(ctx), config.listen_addr, |_| {}).await
 }
 

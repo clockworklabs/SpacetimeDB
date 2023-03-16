@@ -36,7 +36,7 @@ async fn get_tracelog(state: &mut State) -> SimpleHandlerResult {
     let database_instance = control_db::get_leader_database_instance_by_database(database.id).await;
     let instance_id = database_instance.unwrap().id;
 
-    let host = host_controller::get_host();
+    let host = host_controller::get();
     let trace = match host.get_trace(instance_id).await {
         Ok(trace) => trace,
         Err(e) => {
@@ -74,7 +74,7 @@ async fn stop_tracelog(state: &mut State) -> SimpleHandlerResult {
     let database_instance = control_db::get_leader_database_instance_by_database(database.id).await;
     let instance_id = database_instance.unwrap().id;
 
-    let host = host_controller::get_host();
+    let host = host_controller::get();
     match host.stop_trace(instance_id).await {
         Ok(trace) => trace,
         Err(e) => {

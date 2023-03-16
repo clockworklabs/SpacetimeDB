@@ -22,3 +22,14 @@ impl Timestamp {
             .unwrap_or(Duration::ZERO)
     }
 }
+
+impl<'de> spacetimedb_sats::de::Deserialize<'de> for Timestamp {
+    fn deserialize<D: spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        u64::deserialize(deserializer).map(Self)
+    }
+}
+impl spacetimedb_sats::ser::Serialize for Timestamp {
+    fn serialize<S: spacetimedb_lib::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}

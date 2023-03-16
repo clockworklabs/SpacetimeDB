@@ -4,9 +4,9 @@ use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::db::relational_db::RelationalDB;
 use crate::identity::Identity;
-use crate::protobuf::control_db::HostType;
+use crate::protobuf::control_db::{Database, HostType};
 use crate::{address::Address, db::relational_db::RelationalDBWrapper};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
@@ -24,6 +24,30 @@ pub struct WorkerDatabaseInstance {
 }
 
 impl WorkerDatabaseInstance {
+    pub fn from_database(database: Database, instance_id: u64, root_db_path: impl Into<PathBuf>) -> Arc<Self> {
+        let host_type = database.host_type();
+        let identity = Identity::from_slice(&database.identity);
+        let address = Address::from_slice(database.address);
+
+        let mut db_path = root_db_path.into();
+        db_path.push(address.to_hex());
+        db_path.push(instance_id.to_string());
+        db_path.push("database");
+
+        let log_path = DatabaseLogger::filepath(&address, instance_id);
+
+        Self::new(
+            instance_id,
+            database.id,
+            host_type,
+            database.trace_log,
+            identity,
+            address,
+            db_path,
+            log_path,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         database_instance_id: u64,
@@ -34,13 +58,13 @@ impl WorkerDatabaseInstance {
         address: Address,
         db_path: impl AsRef<Path>,
         log_path: impl AsRef<Path>,
-    ) -> Self {
-        let mlog_path = db_path.as_ref().to_path_buf().join("mlog");
-        let odb_path = db_path.as_ref().to_path_buf().join("odb");
+    ) -> Arc<Self> {
+        let mlog_path = db_path.as_ref().join("mlog");
+        let odb_path = db_path.as_ref().join("odb");
 
         let message_log = Arc::new(Mutex::new(MessageLog::open(mlog_path).unwrap()));
         let odb = Arc::new(Mutex::new(WorkerDatabaseInstance::make_default_ostorage(odb_path)));
-        Self {
+        Arc::new(Self {
             database_instance_id,
             database_id,
             host_type,
@@ -51,7 +75,7 @@ impl WorkerDatabaseInstance {
             message_log: message_log.clone(),
             odb: odb.clone(),
             relational_db: RelationalDBWrapper::new(RelationalDB::open(db_path, message_log, odb).unwrap()),
-        }
+        })
     }
 
     pub(crate) fn make_default_ostorage(path: impl AsRef<Path>) -> Box<dyn ObjectDB + Send> {

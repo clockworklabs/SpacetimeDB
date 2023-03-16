@@ -31,6 +31,8 @@ async fn init(options: NodeOptions) -> Result<(), Box<dyn Error + Send + Sync>> 
 
     let dicc = Arc::new(DatabaseInstanceContextController::new());
 
+    startup::init_host(&worker_node::control_node_connection::DbGetter(&dicc)).await?;
+
     let (worker_tasks, control_tasks) = tokio::join!(
         OptionFuture::from(config.worker_node.map(|x| worker_node::start(dicc.clone(), x))),
         OptionFuture::from(config.control_node.map(|x| control_node::start(dicc, x))),

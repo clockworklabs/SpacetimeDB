@@ -8,6 +8,7 @@ use spacetimedb::object_db::ObjectDb;
 use spacetimedb::protobuf::control_db::{Database, DatabaseInstance, HostType};
 use spacetimedb::protobuf::control_worker_api::ScheduleState;
 use spacetimedb::protobuf::worker_db::DatabaseInstanceState;
+use spacetimedb::worker_database_instance::WorkerDatabaseInstance;
 use tokio::net::{TcpListener, ToSocketAddrs};
 mod auth;
 mod routes;
@@ -74,9 +75,15 @@ pub trait Controller: Send + Sync {
     fn object_db(&self) -> &ObjectDb;
 }
 
+#[async_trait]
 pub trait ApiCtx: DatabaseDb {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily>;
     fn database_instance_context_controller(&self) -> &DatabaseInstanceContextController;
+    async fn load_database_instance(
+        &self,
+        db: Database,
+        instance_id: u64,
+    ) -> anyhow::Result<(Arc<WorkerDatabaseInstance>, spacetimedb::util::IVec)>;
 }
 
 #[async_trait]

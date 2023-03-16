@@ -17,10 +17,10 @@ impl ObjectDb {
         Ok(Self { db })
     }
 
-    pub fn get_object(&self, hash: &Hash) -> Result<Option<Vec<u8>>, anyhow::Error> {
+    pub fn get_object(&self, hash: &Hash) -> Result<Option<sled::IVec>, anyhow::Error> {
         let value = self.db.get(hash.as_slice())?;
         if let Some(value) = value {
-            Ok(Some(value.to_vec()))
+            Ok(Some(value))
         } else {
             Ok(None)
         }

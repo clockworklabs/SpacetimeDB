@@ -22,9 +22,9 @@ use super::wasm_common::{abi, host_actor::WasmModuleHostActor};
 use super::wasm_common::{ModuleCreationError, DEFAULT_EXECUTION_BUDGET};
 
 pub fn make_actor(
-    worker_database_instance: WorkerDatabaseInstance,
+    worker_database_instance: Arc<WorkerDatabaseInstance>,
     module_hash: Hash,
-    program_bytes: Vec<u8>,
+    program_bytes: &[u8],
     scheduler: Scheduler,
 ) -> Result<Box<impl ModuleHostActor>, ModuleCreationError> {
     let cost_function =
@@ -48,9 +48,9 @@ pub fn make_actor(
     let engine = EngineBuilder::new(compiler_config).engine();
 
     let store = Store::new(&engine);
-    let module = Module::new(&store, &program_bytes).map_err(|e| ModuleCreationError::WasmCompileError(e.into()))?;
+    let module = Module::new(&store, program_bytes).map_err(|e| ModuleCreationError::WasmCompileError(e.into()))?;
 
-    let abi = abi::determine_spacetime_abi(&program_bytes)?;
+    let abi = abi::determine_spacetime_abi(program_bytes)?;
 
     if abi != WasmerModule::SUPPORTED_ABI {
         return Err(abi::AbiVersionError::UnsupportedVersion(abi).into());

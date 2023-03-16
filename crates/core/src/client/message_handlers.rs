@@ -26,7 +26,7 @@ pub async fn handle_binary(
             let reducer = f.reducer;
             let args = ReducerArgs::Json(f.arg_bytes.into());
 
-            let host = host_controller::get_host();
+            let host = host_controller::get();
             match host.call_reducer(instance_id, client_id.identity, &reducer, args).await {
                 Ok(_) => {}
                 Err(e) => {
@@ -37,7 +37,7 @@ pub async fn handle_binary(
             Ok(())
         }
         Some(message::Type::Subscribe(subscribe)) => {
-            let host = host_controller::get_host();
+            let host = host_controller::get();
             let module = host.get_module(instance_id);
             match module {
                 Ok(module) => {
@@ -80,7 +80,7 @@ pub async fn handle_text(client_id: ClientActorId, instance_id: u64, message: St
         Message::Call { func, args } => {
             let args = ReducerArgs::Json(bytes.slice_ref(args.get().as_bytes()));
 
-            let host = host_controller::get_host();
+            let host = host_controller::get();
             match host.call_reducer(instance_id, client_id.identity, &func, args).await {
                 Ok(_) => {}
                 Err(e) => {
@@ -89,7 +89,7 @@ pub async fn handle_text(client_id: ClientActorId, instance_id: u64, message: St
             }
         }
         Message::Subscribe { query_strings } => {
-            let host = host_controller::get_host();
+            let host = host_controller::get();
             let module = host.get_module(instance_id);
             match module {
                 Ok(module) => {

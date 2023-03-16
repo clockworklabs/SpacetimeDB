@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use parking_lot::{Mutex, MutexGuard};
 use spacetimedb_lib::{PrimaryKey, TupleDef, TupleValue, TypeValue};
 use std::ops::DerefMut;
@@ -19,11 +18,10 @@ use crate::worker_metrics::{
 use super::host_controller::Scheduler;
 use super::timestamp::Timestamp;
 use super::tracelog::instance_trace::TraceLog;
-use super::ReducerArgs;
 
 #[derive(Clone)]
 pub struct InstanceEnv {
-    pub worker_database_instance: WorkerDatabaseInstance,
+    pub worker_database_instance: Arc<WorkerDatabaseInstance>,
     pub scheduler: Scheduler,
     pub tx: TxSlot,
     pub trace_log: Option<Arc<Mutex<TraceLog>>>,
@@ -39,7 +37,7 @@ pub struct TxSlot {
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
     pub fn new(
-        worker_database_instance: WorkerDatabaseInstance,
+        worker_database_instance: Arc<WorkerDatabaseInstance>,
         scheduler: Scheduler,
         trace_log: Option<Arc<Mutex<TraceLog>>>,
     ) -> Self {
@@ -51,13 +49,10 @@ impl InstanceEnv {
         }
     }
 
-    pub fn schedule(&self, reducer: String, args: Bytes, time: Timestamp) {
-        self.scheduler.schedule(
-            self.worker_database_instance.database_instance_id,
-            reducer,
-            ReducerArgs::Bsatn(args),
-            time,
-        )
+    pub fn schedule(&self, reducer: String, args: Vec<u8>, time: Timestamp) {
+        let wdi = &self.worker_database_instance;
+        self.scheduler
+            .schedule(wdi.database_id, wdi.database_instance_id, reducer, args, time)
     }
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = WrapTxWrapper> + '_, GetTxError> {

@@ -92,7 +92,7 @@ pub struct ExecuteResult<E> {
 
 pub(crate) struct WasmModuleHostActor<T: WasmModule> {
     module: T,
-    worker_database_instance: WorkerDatabaseInstance,
+    worker_database_instance: Arc<WorkerDatabaseInstance>,
     // store: Store,
     subscription: ModuleSubscriptionManager,
     #[allow(dead_code)]
@@ -166,7 +166,7 @@ pub struct DescribeError {
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
     pub fn new(
-        worker_database_instance: WorkerDatabaseInstance,
+        worker_database_instance: Arc<WorkerDatabaseInstance>,
         module_hash: Hash,
         mut module: T,
         scheduler: Scheduler,
