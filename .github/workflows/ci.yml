@@ -21,7 +21,7 @@ jobs:
       - name: Run smoketests
         run: test/run-smoke-tests.sh -x bitcraftmini-pretest
       - name: Stop containers
-        if: success() || failure()
+        if: always()
         run: docker compose down
 
   test:

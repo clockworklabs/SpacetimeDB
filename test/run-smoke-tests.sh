@@ -88,6 +88,8 @@ if [ -f ~/.spacetime/.config.toml ] ; then
 	cp ~/.spacetime/.config.toml ~/.spacetime/config.toml 
 fi
 
+rm -f "$OUT_TMP" "$TEST_OUT"
+
 printf "\n\n*************************\n"
 printf "** Smoke Tests Summary **\n"
 printf "*************************\n\n"
@@ -110,6 +112,6 @@ else
 		printf "\n%s\n\t" "$t"
 		DESCRIBE_TEST=1 bash "test/tests/${t}.sh"
 	done
-fi
 
-rm -f "$OUT_TMP" "$TEST_OUT"
+	exit 1
+fi
