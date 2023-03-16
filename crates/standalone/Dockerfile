@@ -23,8 +23,8 @@ RUN apt-get update && apt-get install -y \
   less \
   linux-perf
 
-RUN cargo install cargo-watch
-RUN cargo install flamegraph
+RUN cargo binstall -y cargo-watch
+RUN cargo binstall -y flamegraph
 
 COPY --from=planner /usr/src/app/recipe.json .
 
@@ -38,13 +38,13 @@ COPY . .
 RUN cargo build -p spacetimedb-standalone --profile=${CARGO_PROFILE} --locked
 
 FROM builder as env-dev
-ENV SPACETIMEDB_LOG_CONFIG=/usr/src/app/crates/standalone/log4rs.yaml
+ENV SPACETIMEDB_LOG_CONFIG=/usr/src/app/crates/standalone/log.conf
 ENV PATH="/usr/src/app/target/debug:${PATH}"
 
 FROM debian as env-release
 RUN apt-get update && apt-get install -y libpython3.9 linux-perf
 COPY --from=builder /usr/src/app/target/release/spacetimedb /usr/local/bin/
-COPY --from=builder /usr/src/app/crates/standalone/log4rs.yaml /etc/spacetimedb/
+COPY --from=builder /usr/src/app/crates/standalone/log.conf /etc/spacetimedb/
 
 FROM env-${CARGO_PROFILE}
 

@@ -20,11 +20,15 @@ services:
       - /stdb
     ports:
       - "3000:80"
+    entrypoint: ''
     # for release/non-watch mode
-    entrypoint: bash -c "RUST_BACKTRACE=1 cargo watch -i flamegraphs --why -w crates/standalone -w crates/core -x 'run -p spacetimedb-standalone -- start'"
-    # entrypoint: bash -c "CARGO_PROFILE_RELEASE_DEBUG=true cargo flamegraph -o my_flamegraph.svg --bin spacetimedb -c 'record -c 100 -g' -- init --worker-node"
+    # command: init --worker-node
+    # for rebuilding on changes
+    command: cargo watch -i flamegraphs -i log.conf --why -C crates/standalone -x 'run start'
+    # command: bash -c "CARGO_PROFILE_RELEASE_DEBUG=true cargo flamegraph -o my_flamegraph.svg --bin spacetimedb -c 'record -c 100 -g' -- init --worker-node"
     privileged: true
     environment:
+      RUST_BACKTRACE: 1
       ENV: dev
     # Turn on core dumps, hopefully.
     ulimits:
