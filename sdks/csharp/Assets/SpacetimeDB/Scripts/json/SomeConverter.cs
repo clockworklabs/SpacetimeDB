@@ -7,13 +7,7 @@ namespace SpacetimeDB
 {
     public class SomeConverter : JsonConverter
     {
-        public override bool CanConvert(Type objectType) => ignoreValues.Where(value => value != null).All(value => value.GetType() != objectType);
-
-        private readonly List<object> convertValues = new List<object>();
-        private readonly List<object> ignoreValues = new List<object>();
-
-        public void Add(object o) => convertValues.Add(o);
-        public void AddIgnore(object o) => ignoreValues.Add(o);
+        public override bool CanConvert(Type objectType) => true;
 
         public override object ReadJson(JsonReader reader, Type objectType, object existingValue,
             JsonSerializer serializer)
@@ -29,18 +23,11 @@ namespace SpacetimeDB
                 DateFormatHandling = serializer.DateFormatHandling,
                 // Add any other settings you need from the original serializer
             };
-
-            if (convertValues.Contains(value))
-            {
-                writer.WriteStartObject();
-                writer.WritePropertyName("some");
-                internalSerializer.Serialize(writer, value);
-                writer.WriteEndObject();
-            }
-            else
-            {
-                internalSerializer.Serialize(writer, value);
-            }
+            
+            writer.WriteStartObject();
+            writer.WritePropertyName("some");
+            internalSerializer.Serialize(writer, value);
+            writer.WriteEndObject();
         }
     }
 }
