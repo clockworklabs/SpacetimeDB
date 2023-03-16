@@ -10,6 +10,7 @@ use spacetimedb_lib::{EntityDef, ReducerDef, TupleValue};
 use spacetimedb_sats::Typespace;
 use tokio::sync::oneshot;
 
+use crate::db::relational_db::RelationalDB;
 use crate::db::transactional_db::CommitResult;
 use crate::hash::Hash;
 use crate::host::host_controller::{ReducerBudget, ReducerCallResult, ReducerOutcome, Scheduler};
@@ -439,7 +440,8 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
                     .map(drop)
                     .with_context(|| format!("failed to create table {name}"))
             })?;
-        tx_.commit()?.expect("TODO: retry?");
+        let commit_result = tx_.commit()?.expect("TODO: retry?");
+        RelationalDB::persist_tx(&self.worker_database_instance().message_log, Some(commit_result))?;
         drop(stdb_);
 
         let rcr = self.info.catalog.contains_key(INIT_DUNDER).then(|| {
