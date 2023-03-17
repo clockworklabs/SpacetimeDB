@@ -296,7 +296,7 @@ impl InstanceEnv {
         let relational_db = self.worker_database_instance.relational_db.clone();
         let tx = self.tx.clone();
 
-        let mut generator = gen!({
+        let mut generator = Some(gen!({
             let stdb = relational_db.lock().unwrap();
             let mut tx = &mut *tx.get()?;
 
@@ -314,12 +314,17 @@ impl InstanceEnv {
             }
 
             Ok(())
-        });
+        }));
 
-        std::iter::from_fn(move || match generator.resume() {
+        std::iter::from_fn(move || match generator.as_mut()?.resume() {
             GeneratorState::Yielded(bytes) => Some(Ok(bytes)),
-            GeneratorState::Complete(Err(err)) => Some(Err(err)),
-            GeneratorState::Complete(Ok(())) => None,
+            GeneratorState::Complete(res) => {
+                generator = None;
+                match res {
+                    Ok(()) => None,
+                    Err(err) => Some(Err(err)),
+                }
+            }
         })
     }
 }
