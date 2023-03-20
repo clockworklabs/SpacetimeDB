@@ -63,7 +63,7 @@ impl RelationalDBWrapper {
     }
 
     pub fn lock(&self) -> Option<RelationalDBGuard> {
-        self.inner.try_lock().map(RelationalDBGuard::new)
+        Some(RelationalDBGuard::new(self.inner.lock()))
     }
 
     pub fn begin_tx(&self) -> TxWrapper<Self> {
