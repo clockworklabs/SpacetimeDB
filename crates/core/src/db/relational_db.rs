@@ -459,7 +459,8 @@ impl RelationalDB {
                     );
                     self.create_sequence(seq, tx)?;
                 }
-                _ => todo!(),
+                // TODO
+                _ => {}
             }
         }
 
