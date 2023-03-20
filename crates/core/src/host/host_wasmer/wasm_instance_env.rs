@@ -223,7 +223,7 @@ impl WasmInstanceEnv {
         Self::cvt_ret(caller, "iter_start", out, |mut caller, _mem| {
             let iter = caller.data().instance_env.iter(table_id);
             // TODO: make it so the above iterator doesn't lock the database for its whole lifetime
-            let iter = iter.map_ok(|a| Bytes::from(a)).collect::<Vec<_>>().into_iter();
+            let iter = iter.map_ok(Bytes::from).collect::<Vec<_>>().into_iter();
 
             Ok(caller.data_mut().iters.insert(Box::new(iter)))
         })
