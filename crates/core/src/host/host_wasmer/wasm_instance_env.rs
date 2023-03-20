@@ -5,6 +5,7 @@ use crate::error::NodesError;
 use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::{err_to_errno, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers};
 use bytes::Bytes;
+use itertools::Itertools;
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
 
 use crate::host::instance_env::InstanceEnv;
@@ -222,7 +223,7 @@ impl WasmInstanceEnv {
         Self::cvt_ret(caller, "iter_start", out, |mut caller, _mem| {
             let iter = caller.data().instance_env.iter(table_id);
             // TODO: make it so the above iterator doesn't lock the database for its whole lifetime
-            let iter = iter.collect::<Vec<_>>().into_iter();
+            let iter = iter.map_ok(|a| Bytes::from(a)).collect::<Vec<_>>().into_iter();
 
             Ok(caller.data_mut().iters.insert(Box::new(iter)))
         })
