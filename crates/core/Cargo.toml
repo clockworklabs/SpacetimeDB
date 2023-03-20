@@ -85,6 +85,7 @@ serde_with = "2.2.0"
 serde_path_to_error = "0.1.9"
 genawaiter = "0.99.1"
 async-trait = "0.1.66"
+bytestring = { version = "1.2.0", features = ["serde"] }
 
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
 [dependencies.rocksdb]

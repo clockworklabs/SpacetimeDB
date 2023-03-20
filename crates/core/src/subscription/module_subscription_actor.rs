@@ -160,38 +160,49 @@ impl ModuleSubscriptionActor {
         false
     }
 
-    async fn broadcast_event(&mut self, event: ModuleEvent) -> Result<(), DBError> {
-        let empty = DatabaseUpdate { tables: vec![] };
-        let database_update = if let EventStatus::Committed(database_update) = &event.status {
-            database_update
-        } else {
-            &empty
-        };
-
+    async fn broadcast_event(&mut self, mut event: ModuleEvent) -> Result<(), DBError> {
         for subscription in &mut self.subscriptions {
-            let incr = subscription.eval_incr_query(&mut self.relational_db, database_update.clone())?;
+            let database_update = event.status.database_update().unwrap_or_default();
+            let incr = subscription.eval_incr_query(&mut self.relational_db, database_update)?;
 
             if incr.tables.is_empty() {
                 continue;
             }
 
-            let protobuf_event = Self::render_protobuf_event(&event, incr.clone());
-            let mut protobuf_buf = Vec::new();
-            protobuf_event.encode(&mut protobuf_buf)?;
+            let mut protobuf_buf = None;
+            let mut protobuf_buf = |event: &mut ModuleEvent| {
+                protobuf_buf
+                    .get_or_insert_with(|| {
+                        let protobuf_event = Self::render_protobuf_event(event, incr.clone());
+                        let mut protobuf_buf = Vec::new();
+                        protobuf_event.encode(&mut protobuf_buf).unwrap();
+                        protobuf_buf
+                    })
+                    .clone()
+            };
 
-            let json_event = Self::render_json_event(&event, incr);
-            let json_string = serde_json::to_string(&json_event).unwrap();
+            let mut json_string = None;
+            let mut json_string = |event: &mut ModuleEvent| {
+                json_string
+                    .get_or_insert_with(|| {
+                        let json_event = Self::render_json_event(event, incr.clone());
+                        serde_json::to_string(&json_event).unwrap()
+                    })
+                    .clone()
+            };
 
             for subscriber in &subscription.subscribers {
                 let protocol = subscriber.protocol;
                 match protocol {
                     Protocol::Text => {
+                        let message = json_string(&mut event);
                         let sender = subscriber.sender.clone();
-                        Self::send_sync_text(sender, json_string.clone()).await;
+                        Self::send_sync_text(sender, message).await;
                     }
                     Protocol::Binary => {
+                        let message = protobuf_buf(&mut event);
                         let sender = subscriber.sender.clone();
-                        Self::send_sync_binary(sender, protobuf_buf.clone()).await;
+                        Self::send_sync_binary(sender, message).await;
                     }
                 }
             }
@@ -227,7 +238,7 @@ impl ModuleSubscriptionActor {
         }
     }
 
-    pub fn render_protobuf_event(event: &ModuleEvent, database_update: DatabaseUpdate) -> MessageProtobuf {
+    pub fn render_protobuf_event(event: &mut ModuleEvent, database_update: DatabaseUpdate) -> MessageProtobuf {
         let (status, errmsg) = match &event.status {
             EventStatus::Committed(_) => (event::Status::Committed, String::new()),
             EventStatus::Failed(errmsg) => (event::Status::Failed, errmsg.clone()),
@@ -240,7 +251,7 @@ impl ModuleSubscriptionActor {
             caller_identity: event.caller_identity.data.to_vec(),
             function_call: Some(FunctionCall {
                 reducer: event.function_call.reducer.to_owned(),
-                arg_bytes: event.function_call.arg_bytes.to_owned(),
+                arg_bytes: event.function_call.args.get_bsatn().clone().into(),
             }),
             message: errmsg,
             energy_quanta_used: event.energy_quanta_used,
@@ -259,7 +270,7 @@ impl ModuleSubscriptionActor {
         }
     }
 
-    pub fn render_json_event(event: &ModuleEvent, database_update: DatabaseUpdate) -> MessageJson {
+    pub fn render_json_event(event: &mut ModuleEvent, database_update: DatabaseUpdate) -> MessageJson {
         let (status_str, errmsg) = match &event.status {
             EventStatus::Committed(_) => ("committed", String::new()),
             EventStatus::Failed(errmsg) => ("failed", errmsg.clone()),
@@ -272,7 +283,7 @@ impl ModuleSubscriptionActor {
             caller_identity: event.caller_identity.to_hex(),
             function_call: FunctionCallJson {
                 reducer: event.function_call.reducer.to_owned(),
-                arg_bytes: event.function_call.arg_bytes.to_owned(),
+                args: event.function_call.args.get_json().clone(),
             },
             energy_quanta_used: event.energy_quanta_used,
             message: errmsg,
@@ -290,8 +301,7 @@ impl ModuleSubscriptionActor {
         let _ = subscriber.send(message).await;
     }
 
-    async fn send_sync_binary(subscriber: ClientConnectionSender, message: impl AsRef<[u8]>) {
-        let message = message.as_ref().to_owned();
+    async fn send_sync_binary(subscriber: ClientConnectionSender, message: Vec<u8>) {
         let message = Message::Binary(message);
         let _ = subscriber.send(message).await;
     }

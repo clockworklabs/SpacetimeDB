@@ -75,6 +75,9 @@ async fn call(ctx: &dyn ApiCtx, state: &mut State) -> SimpleHandlerResult {
     if data.is_empty() {
         return Err(HandlerError::from(anyhow!("Missing request body.")).with_status(StatusCode::BAD_REQUEST));
     }
+    let Ok(data) = data.try_into() else {
+        return Ok(Response::builder().status(StatusCode::BAD_REQUEST).body("invalid utf8".into()).unwrap())
+    };
     let args = ReducerArgs::Json(data);
 
     let database = ctx.get_database_by_address(&address).await?.ok_or_else(|| {

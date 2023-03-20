@@ -3,10 +3,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
+use bytes::Bytes;
 use parking_lot::Mutex;
 use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::ser::serde::SerializeWrapper as SerdeWrapper;
-use spacetimedb_lib::{EntityDef, ReducerDef, TupleValue};
+use spacetimedb_lib::EntityDef;
 use spacetimedb_sats::Typespace;
 use tokio::sync::oneshot;
 
@@ -21,6 +21,7 @@ use crate::host::module_host::{
 };
 use crate::host::timestamp::Timestamp;
 use crate::host::tracelog::instance_trace::TraceLog;
+use crate::host::ArgsTuple;
 use crate::identity::Identity;
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::worker_database_instance::WorkerDatabaseInstance;
@@ -68,7 +69,7 @@ pub trait WasmInstance: Send + 'static {
         budget: ReducerBudget,
         sender: &[u8; 32],
         timestamp: Timestamp,
-        arg_bytes: Vec<u8>,
+        arg_bytes: Bytes,
     ) -> (EnergyStats, ExecuteResult<Self::Trap>);
 
     fn call_connect_disconnect(
@@ -299,7 +300,7 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
     fn init_database(
         &mut self,
         budget: ReducerBudget,
-        args: TupleValue,
+        args: ArgsTuple,
         respond_to: oneshot::Sender<Result<Option<ReducerCallResult>, anyhow::Error>>,
     ) {
         self.send(InstanceMessage::InitDatabase {
@@ -357,7 +358,7 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
         caller_identity: Identity,
         reducer_name: String,
         budget: ReducerBudget,
-        args: TupleValue,
+        args: ArgsTuple,
         respond_to: oneshot::Sender<ReducerCallResult>,
     ) {
         self.send(InstanceMessage::CallReducer {
@@ -418,7 +419,7 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
         }
     }
 
-    fn init_database(&mut self, budget: ReducerBudget, args: TupleValue) -> anyhow::Result<Option<ReducerCallResult>> {
+    fn init_database(&mut self, budget: ReducerBudget, args: ArgsTuple) -> anyhow::Result<Option<ReducerCallResult>> {
         let mut stdb_ = self.worker_database_instance().relational_db.lock().unwrap();
         let mut tx_ = stdb_.begin_tx();
         let (tx, stdb) = tx_.get();
@@ -479,16 +480,13 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
         caller_identity: Identity,
         reducer_name: String,
         budget: ReducerBudget,
-        args: TupleValue,
+        mut args: ArgsTuple,
     ) -> ReducerCallResult {
         let start_instant = Instant::now();
 
         let timestamp = Timestamp::now();
 
         log::trace!("Calling reducer {} with a budget of {}", reducer_name, budget.0);
-
-        let mut arg_bytes = Vec::new();
-        args.encode(&mut arg_bytes);
 
         let reducer_symbol = [REDUCE_DUNDER, &reducer_name].concat();
         let (status, energy) = self.execute(
@@ -497,7 +495,7 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
                 sym: &reducer_symbol,
                 sender: &caller_identity,
                 timestamp,
-                arg_bytes,
+                arg_bytes: args.get_bsatn().clone(),
             },
         );
 
@@ -505,18 +503,12 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
 
         let outcome = ReducerOutcome::from(&status);
 
-        let EntityDef::Reducer(reducer_descr) = &self.info.catalog[&reducer_name] else {
-            unreachable!() // ModuleHost::call_reducer should've already ensured this is ok
-        };
-        let reducer_descr = self.info.typespace.with_type(reducer_descr);
-        let arg_bytes =
-            serde_json::to_vec(&SerdeWrapper::new(ReducerDef::serialize_args(reducer_descr, &args))).unwrap();
         let event = ModuleEvent {
             timestamp,
             caller_identity,
             function_call: ModuleFunctionCall {
                 reducer: reducer_name,
-                arg_bytes,
+                args,
             },
             status,
             energy_quanta_used: energy.used,
@@ -568,7 +560,7 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
             timestamp,
             function_call: ModuleFunctionCall {
                 reducer: reducer_symbol.to_string(),
-                arg_bytes: Vec::new(),
+                args: ArgsTuple::default(),
             },
             status,
             caller_identity: identity,
@@ -689,7 +681,7 @@ enum InstanceOp<'a> {
         sym: &'a str,
         sender: &'a Hash,
         timestamp: Timestamp,
-        arg_bytes: Vec<u8>,
+        arg_bytes: Bytes,
     },
     Migrate {
         idx: usize,
@@ -704,7 +696,7 @@ enum InstanceOp<'a> {
 enum InstanceMessage {
     InitDatabase {
         budget: ReducerBudget,
-        args: TupleValue,
+        args: ArgsTuple,
         respond_to: oneshot::Sender<Result<Option<ReducerCallResult>, anyhow::Error>>,
     },
     CallConnectDisconnect {
@@ -716,7 +708,7 @@ enum InstanceMessage {
         caller_identity: Identity,
         reducer_name: String,
         budget: ReducerBudget,
-        args: TupleValue,
+        args: ArgsTuple,
         respond_to: oneshot::Sender<ReducerCallResult>,
     },
     MigrateDatabase {

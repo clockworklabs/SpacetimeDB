@@ -288,7 +288,7 @@ impl<I: ResourceIndex> ResourceSlab<I> {
     }
 }
 
-decl_index!(BufferIdx => Vec<u8>);
+decl_index!(BufferIdx => bytes::Bytes);
 pub(super) type Buffers = ResourceSlab<BufferIdx>;
 
 impl BufferIdx {
@@ -299,7 +299,7 @@ impl BufferIdx {
     }
 }
 
-decl_index!(BufferIterIdx => Box<dyn Iterator<Item = Result<Vec<u8>, NodesError>> + Send>);
+decl_index!(BufferIterIdx => Box<dyn Iterator<Item = Result<bytes::Bytes, NodesError>> + Send>);
 pub(super) type BufferIters = ResourceSlab<BufferIterIdx>;
 
 pub mod errnos {

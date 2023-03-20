@@ -4,6 +4,7 @@ use crate::host::ReducerArgs;
 use crate::protobuf::client_api::Subscribe;
 use crate::protobuf::client_api::{message, Message};
 use crate::worker_metrics::{WEBSOCKET_REQUESTS, WEBSOCKET_REQUEST_MSG_SIZE};
+use bytestring::ByteString;
 use prost::bytes::Bytes;
 use prost::Message as OtherMessage;
 
@@ -24,7 +25,7 @@ pub async fn handle_binary(
     match message.r#type {
         Some(message::Type::FunctionCall(f)) => {
             let reducer = f.reducer;
-            let args = ReducerArgs::Json(f.arg_bytes.into());
+            let args = ReducerArgs::Bsatn(f.arg_bytes.into());
 
             let host = host_controller::get();
             match host.call_reducer(instance_id, client_id.identity, &reducer, args).await {
@@ -75,10 +76,10 @@ pub async fn handle_text(client_id: ClientActorId, instance_id: u64, message: St
         Subscribe { query_strings: Vec<String> },
     }
 
-    let bytes = Bytes::from(message);
-    match serde_json::from_slice::<Message>(&bytes)? {
+    let message = ByteString::from(message);
+    match serde_json::from_str::<Message>(&message)? {
         Message::Call { func, args } => {
-            let args = ReducerArgs::Json(bytes.slice_ref(args.get().as_bytes()));
+            let args = ReducerArgs::Json(message.slice_ref(args.get()));
 
             let host = host_controller::get();
             match host.call_reducer(instance_id, client_id.identity, &func, args).await {

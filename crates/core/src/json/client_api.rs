@@ -1,4 +1,5 @@
-use serde::{Deserialize, Serialize};
+use bytestring::ByteString;
+use serde::Serialize;
 use spacetimedb_lib::TupleDef;
 use spacetimedb_lib::TypeValue;
 
@@ -35,16 +36,16 @@ pub enum MessageJson {
     IdentityToken(IdentityTokenJson),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct IdentityTokenJson {
     pub identity: String,
     pub token: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FunctionCallJson {
     pub reducer: String,
-    pub arg_bytes: Vec<u8>,
+    pub args: ByteString,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -68,7 +69,7 @@ pub struct SubscriptionUpdateJson {
     pub table_updates: Vec<TableUpdateJson>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct EventJson {
     pub timestamp: u64,
     pub status: String,          // committed, failed

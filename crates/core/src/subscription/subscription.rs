@@ -61,7 +61,7 @@ impl Subscription {
     pub fn eval_incr_query(
         &mut self,
         relational_db: &mut RelationalDBWrapper,
-        database_update: DatabaseUpdate,
+        database_update: &DatabaseUpdate,
     ) -> Result<DatabaseUpdate, DBError> {
         let mut output = DatabaseUpdate { tables: vec![] };
 

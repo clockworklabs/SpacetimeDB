@@ -4,6 +4,7 @@ use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace,
 use crate::error::NodesError;
 use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::{err_to_errno, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers};
+use bytes::Bytes;
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
 
 use crate::host::instance_env::InstanceEnv;
@@ -220,6 +221,7 @@ impl WasmInstanceEnv {
     pub fn iter_start(caller: FunctionEnvMut<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> WasmResult {
         Self::cvt_ret(caller, "iter_start", out, |mut caller, _mem| {
             let iter = caller.data().instance_env.iter(table_id);
+            let iter = iter.map(|res| res.map(Bytes::from));
 
             Ok(caller.data_mut().iters.insert(Box::new(iter)))
         })
@@ -293,7 +295,7 @@ impl WasmInstanceEnv {
             .mem()
             .read_bytes(&caller, data, data_len)
             .map_err(mem_err)?;
-        Ok(caller.data_mut().buffers.insert(buf).0)
+        Ok(caller.data_mut().buffers.insert(buf.into()).0)
     }
 }
 

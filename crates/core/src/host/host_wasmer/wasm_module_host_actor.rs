@@ -5,6 +5,7 @@ use crate::host::instance_env::InstanceEnv;
 use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::host_actor::{DescribeError, DescribeErrorKind, InitializationError};
 use crate::host::wasm_common::*;
+use bytes::Bytes;
 use spacetimedb_lib::{bsatn, EntityDef, ReducerDef, TableDef};
 use spacetimedb_sats::Typespace;
 use std::cmp::max;
@@ -209,7 +210,7 @@ impl host_actor::UninitWasmInstance for UninitWasmerInstance {
                         .buffers
                         .take(errbuf)
                         .unwrap_or_else(|| "unknown error".as_bytes().into());
-                    let errbuf = crate::util::string_from_utf8_lossy_owned(errbuf).into();
+                    let errbuf = crate::util::string_from_utf8_lossy_owned(errbuf.into()).into();
                     // TODO: catch this and return the error message to the http client
                     return Err(InitializationError::Setup(errbuf));
                 }
@@ -255,11 +256,7 @@ impl WasmerInstance {
         Ok(result)
     }
 
-    fn _call_describer(
-        &mut self,
-        describer: &Function,
-        describer_func_name: &str,
-    ) -> Result<Vec<u8>, DescribeErrorKind> {
+    fn _call_describer(&mut self, describer: &Function, describer_func_name: &str) -> Result<Bytes, DescribeErrorKind> {
         let start = std::time::Instant::now();
         log::trace!("Start describer \"{}\"...", describer_func_name);
 
@@ -339,12 +336,12 @@ impl host_actor::WasmInstance for WasmerInstance {
         points: ReducerBudget,
         sender: &[u8; 32],
         timestamp: Timestamp,
-        arg_bytes: Vec<u8>,
+        arg_bytes: Bytes,
     ) -> (host_actor::EnergyStats, host_actor::ExecuteResult<Self::Trap>) {
         self.call_tx_function::<(u32, u64, u32), 2>(
             reducer_symbol,
             points,
-            [sender.to_vec(), arg_bytes],
+            [sender.to_vec().into(), arg_bytes],
             |func, store, [sender, args]| func.call(store, sender.0, timestamp.0, args.0),
         )
     }
@@ -363,7 +360,7 @@ impl host_actor::WasmInstance for WasmerInstance {
                 IDENTITY_DISCONNECTED_DUNDER
             },
             budget,
-            [sender.to_vec()],
+            [sender.to_vec().into()],
             |func, store, [sender]| func.call(store, sender.0, timestamp.0),
         )
     }
@@ -378,7 +375,7 @@ impl WasmerInstance {
         &mut self,
         reducer_symbol: &str,
         points: ReducerBudget,
-        bufs: [Vec<u8>; N_BUFS],
+        bufs: [Bytes; N_BUFS],
         // would be nicer if there was a TypedFunction::call_tuple(&self, store, ArgsTuple)
         call: impl FnOnce(TypedFunction<Args, u32>, &mut Store, [BufferIdx; N_BUFS]) -> Result<u32, RuntimeError>,
     ) -> (host_actor::EnergyStats, host_actor::ExecuteResult<RuntimeError>) {
@@ -409,7 +406,7 @@ impl WasmerInstance {
                     .buffers
                     .take(errbuf)
                     .ok_or_else(|| RuntimeError::new("invalid buffer handle"))?;
-                Err(crate::util::string_from_utf8_lossy_owned(errmsg).into())
+                Err(crate::util::string_from_utf8_lossy_owned(errmsg.into()).into())
             })
         });
         self.env.as_mut(store).buffers.clear();

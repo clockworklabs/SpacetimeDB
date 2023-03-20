@@ -16,13 +16,19 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
 use super::timestamp::Timestamp;
-use super::{InvalidReducerArguments, ReducerArgs};
+use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs};
 
 #[derive(Debug, Clone)]
 pub struct DatabaseUpdate {
     pub tables: Vec<DatabaseTableUpdate>,
 }
 
+impl Default for &DatabaseUpdate {
+    fn default() -> Self {
+        static EMPTY: DatabaseUpdate = DatabaseUpdate { tables: Vec::new() };
+        &EMPTY
+    }
+}
 impl DatabaseUpdate {
     pub fn is_empty(&self) -> bool {
         if self.tables.len() == 0 {
@@ -191,10 +197,19 @@ pub enum EventStatus {
     OutOfEnergy,
 }
 
+impl EventStatus {
+    pub fn database_update(&self) -> Option<&DatabaseUpdate> {
+        match self {
+            EventStatus::Committed(upd) => Some(upd),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ModuleFunctionCall {
     pub reducer: String,
-    pub arg_bytes: Vec<u8>,
+    pub args: ArgsTuple,
 }
 
 #[derive(Debug, Clone)]
@@ -218,12 +233,12 @@ enum ModuleHostCommand {
         caller_identity: Identity,
         reducer_name: String,
         budget: ReducerBudget,
-        args: TupleValue,
+        args: ArgsTuple,
         respond_to: oneshot::Sender<ReducerCallResult>,
     },
     InitDatabase {
         budget: ReducerBudget,
-        args: TupleValue,
+        args: ArgsTuple,
         respond_to: oneshot::Sender<Result<Option<ReducerCallResult>, anyhow::Error>>,
     },
     DeleteDatabase {
@@ -321,13 +336,13 @@ pub trait ModuleHostActor: Send + 'static {
         caller_identity: Identity,
         reducer_name: String,
         budget: ReducerBudget,
-        args: TupleValue,
+        args: ArgsTuple,
         respond_to: oneshot::Sender<ReducerCallResult>,
     );
     fn init_database(
         &mut self,
         budget: ReducerBudget,
-        args: TupleValue,
+        args: ArgsTuple,
         respond_to: oneshot::Sender<Result<Option<ReducerCallResult>, anyhow::Error>>,
     );
     fn delete_database(&mut self) -> Result<(), anyhow::Error>;
@@ -446,7 +461,7 @@ impl ModuleHost {
     ) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
         let args = match self.catalog().get_reducer("__init__") {
             Some(schema) => args.into_tuple(schema)?,
-            _ => TupleValue { elements: vec![] },
+            _ => ArgsTuple::default(),
         };
         self.call(|respond_to| ModuleHostCommand::InitDatabase {
             budget,
