@@ -91,6 +91,7 @@ namespace SpacetimeDB
         private bool connectionClosed;
         public static ClientCache clientDB;
         public static Dictionary<string, MethodInfo> reducerEventCache = new Dictionary<string, MethodInfo>();
+        public static Dictionary<string, MethodInfo> deserializeEventCache = new Dictionary<string, MethodInfo>();
 
         private Thread messageProcessThread;
 
@@ -152,6 +153,10 @@ namespace SpacetimeDB
                 if (methodInfo.GetCustomAttribute<ReducerEvent>() is { } reducerEvent)
                 {
                     reducerEventCache.Add(reducerEvent.FunctionName, methodInfo);
+                }
+                if (methodInfo.GetCustomAttribute<DeserializeEvent>() is { } deserializeEvent)
+                {
+                    deserializeEventCache.Add(deserializeEvent.FunctionName, methodInfo);
                 }
             }
             
@@ -426,15 +431,8 @@ namespace SpacetimeDB
             return key;
         }
 
-        internal void InternalCallReducer(string reducer, object[] args)
+        internal void InternalCallReducer(string json)
         {
-            // var argBytes = Encoding.ASCII.GetBytes(JsonConvert.SerializeObject(args));
-            var message = new ReducerCallRequest
-            {
-                fn = reducer,
-                args = args,
-            };
-            var json = JsonConvert.SerializeObject(message);
             webSocket.Send(Encoding.ASCII.GetBytes("{ \"call\": " + json + " }"));
         }
         
