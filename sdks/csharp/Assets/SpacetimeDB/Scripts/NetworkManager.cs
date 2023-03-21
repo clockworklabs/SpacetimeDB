@@ -91,6 +91,7 @@ namespace SpacetimeDB
         private bool connectionClosed;
         public static ClientCache clientDB;
         public static Dictionary<string, MethodInfo> reducerEventCache = new Dictionary<string, MethodInfo>();
+        public static Dictionary<string, MethodInfo> deserializeEventCache = new Dictionary<string, MethodInfo>();
 
         private Thread messageProcessThread;
 
@@ -152,6 +153,10 @@ namespace SpacetimeDB
                 if (methodInfo.GetCustomAttribute<ReducerEvent>() is { } reducerEvent)
                 {
                     reducerEventCache.Add(reducerEvent.FunctionName, methodInfo);
+                }
+                if (methodInfo.GetCustomAttribute<DeserializeEvent>() is { } deserializeEvent)
+                {
+                    deserializeEventCache.Add(deserializeEvent.FunctionName, methodInfo);
                 }
             }
             

@@ -1,16 +1,22 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
+using Namespace;
 using Newtonsoft.Json;
+using UnityEngine;
 
-namespace SpacetimeDB
+namespace SpacetimeDB 
 {
-    public class EnumConverter : JsonConverter
+    public class EnumWrapperConverter : JsonConverter
     {
-        public override bool CanConvert(Type objectType) => true;
+        public override bool CanConvert(Type objectType) => objectType == typeof(EnumWrapper<>);
 
-        public override object ReadJson(JsonReader reader, Type objectType, object existingValue,
-            JsonSerializer serializer)
+        public override object ReadJson(
+            JsonReader reader,
+            Type objectType,
+            object existingValue,
+            JsonSerializer serializer
+        )
         {
             throw new NotImplementedException();
         }
@@ -21,6 +27,7 @@ namespace SpacetimeDB
             writer.WritePropertyName(value.ToString());
             writer.WriteRaw("{}");
             writer.WriteEndObject();
+
         }
     }
 }
