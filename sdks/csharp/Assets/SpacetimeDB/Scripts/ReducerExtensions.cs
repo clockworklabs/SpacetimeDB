@@ -6,4 +6,9 @@ namespace SpacetimeDB
     {
         public string FunctionName { get; set; }
     }
+
+    public class DeserializeEvent : Attribute
+    {
+        public string FunctionName { get; set; }
+    }
 }
