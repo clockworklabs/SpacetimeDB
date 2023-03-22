@@ -32,6 +32,10 @@ export class ProductType {
   constructor(elements: ProductTypeElement[]) {
     this.elements = elements;
   }
+
+  public isEmpty(): boolean {
+    return this.elements.length === 0;
+  }
 }
 
 export class MapType {
@@ -65,29 +69,30 @@ export class BuiltinType {
 // export types on the namespace, so we can use BuiltinType.Type
 export namespace BuiltinType {
   export enum Type {
-    Bool,
-    I8,
-    U8,
-    I16,
-    U16,
-    I32,
-    U32,
-    I64,
-    U64,
-    I128,
-    U128,
-    F32,
-    F64,
-    String,
-    Array,
-    Map
+    Bool = "Bool",
+    I8 = "I8",
+    U8 = "U8",
+    I16 = "I16",
+    U16 = "U16",
+    I32 = "I32",
+    U32 = "U32",
+    I64 = "I64",
+    U64 = "U64",
+    I128 = "I128",
+    U128 = "U128",
+    F32 = "F32",
+    F64 = "F64",
+    String = "String",
+    Array = "Array",
+    Map = "Map"
   }
 }
 
 type TypeRef = null;
 type None = null;
+export type EnumLabel = { label: string };
 
-type AnyType = ProductType | SumType | BuiltinType | TypeRef | None;
+type AnyType = ProductType | SumType | BuiltinType | EnumLabel | TypeRef | None;
 
 export class AlgebraicType {
   type!: Type;
@@ -150,14 +155,22 @@ export class AlgebraicType {
     algebraicType.builtin = new BuiltinType(type, undefined);
     return algebraicType;
   }
+
+  public isProductType(): boolean {
+    return this.type === Type.ProductType;
+  }
+
+  public isSumType(): boolean {
+    return this.type === Type.SumType;
+  }
 }
 
 export namespace AlgebraicType {
   export enum Type {
-    SumType,
-    ProductType,
-    BuiltinType,
-    None
+    SumType = "SumType",
+    ProductType = "ProductType",
+    BuiltinType = "BuiltinType",
+    None = "None"
   }
 }
 

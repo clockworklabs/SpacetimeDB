@@ -1,4 +1,4 @@
-import { ProductType, SumType, AlgebraicType, BuiltinType } from './algebraic_type'
+import { ProductType, SumType, AlgebraicType, BuiltinType, EnumLabel } from './algebraic_type'
 
 export class SumValue {
   public tag: number;
@@ -15,9 +15,11 @@ export class SumValue {
       throw "sum type is undefined";
     }
 
-    // TODO: this will likely change, but I'm using whatever we return from the server now
     let tag = parseInt(Object.keys(value)[0]);
-    let sumValue = AlgebraicValue.deserialize(type.variants[tag].algebraicType, tag);
+    let variant = type.variants[tag];
+    let at = variant.algebraicType;
+    let enumValue = Object.values(value)[0];
+    let sumValue = AlgebraicValue.deserialize(type.variants[tag].algebraicType, enumValue);
     return new SumValue(tag, sumValue);
   }
 }
@@ -63,7 +65,7 @@ export class BuiltinValue {
           const replaced: string = value.replaceAll(/0(0)|0([^0])/g, (match: string, arg1: string | undefined, arg2: string | undefined) => { return "x" + (arg1 || arg2) });
           // then split by 'x' and convert to ints
           let array: string[] = replaced.substring(1).split('x');
-          let bytes: Uint8Array = new Uint8Array(array.map((hex) => Number("0x" +  hex)));
+          let bytes: Uint8Array = new Uint8Array(array.map((hex) => Number("0x" + hex)));
           return new this(bytes);
         } else {
           let result: AlgebraicValue[] = [];
@@ -80,7 +82,7 @@ export class BuiltinValue {
   public asString(): string {
     return this.value as string;
   }
-  
+
   public asArray(): AlgebraicValue[] {
     return this.value as AlgebraicValue[];
   }
