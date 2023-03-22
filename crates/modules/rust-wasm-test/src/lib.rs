@@ -17,7 +17,8 @@ pub struct TestB {
 #[derive(SpacetimeType)]
 #[sats(name = "Namespace.TestC")]
 pub enum TestC {
-    Foo(String),
+    // Foo(String),
+    Foo,
     Bar,
 }
 
@@ -43,7 +44,8 @@ pub fn test(ctx: ReducerContext, arg: TestA, arg2: TestB, arg3: TestC) -> anyhow
     log::info!("bar: {:?}", arg2.foo);
 
     match arg3 {
-        TestC::Foo(string) => log::info!("{}", string),
+        // TestC::Foo(string) => log::info!("{}", string),
+        TestC::Foo => log::info!("Foo"),
         TestC::Bar => log::info!("Bar"),
     }
 

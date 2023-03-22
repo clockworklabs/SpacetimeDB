@@ -128,7 +128,11 @@ pub fn generate<'a>(
             Some((name + ".cs", code))
         }
         ModuleItemDef::TypeAlias(r) => match &ctx.typespace[r] {
-            AlgebraicType::Sum(_) => None, // TODO: csharp codegen for sum types
+            AlgebraicType::Sum(sum) => {
+                let filename = name.replace('.', "");
+                let code = csharp::autogen_csharp_sum(&ctx, &name, sum, namespace);
+                Some((filename + ".cs", code))
+            }
             AlgebraicType::Product(prod) => {
                 let code = csharp::autogen_csharp_tuple(&ctx, &name, prod, namespace);
                 Some((name + ".cs", code))
