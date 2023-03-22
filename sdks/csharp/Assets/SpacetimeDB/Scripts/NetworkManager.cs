@@ -235,10 +235,10 @@ namespace SpacetimeDB
         /// <param name="host">The host or IP address and the port to connect to. Example: spacetime.spacetimedb.net:3000</param>
         /// <param name="addressOrName">The name or address of the database to connect to</param>
         /// <param name="sslEnabled">Should websocket use SSL</param>
-        public string Connect(string host, string addressOrName, bool sslEnabled = true)
+        public void Connect(string host, string addressOrName, bool sslEnabled = true)
         {
             var token = PlayerPrefs.HasKey(GetTokenKey()) ? PlayerPrefs.GetString(GetTokenKey()) : null;
-            return Connect(host, addressOrName, token, sslEnabled);
+            Connect(host, addressOrName, token, sslEnabled);
         }
 
         /// <summary>
@@ -248,7 +248,7 @@ namespace SpacetimeDB
         /// <param name="addressOrName">The name or address of the database to connect to</param>
         /// <param name="identityToken">The token to login with</param>
         /// <param name="sslEnabled">Should websocket use SSL</param>
-        public string Connect(string host, string addressOrName, string identityToken, bool sslEnabled = true)
+        public void Connect(string host, string addressOrName, string identityToken, bool sslEnabled = true)
         {
             Task.Run(async () =>
             {
