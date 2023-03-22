@@ -228,22 +228,33 @@ namespace SpacetimeDB
             webSocket.Close();
             webSocket = null;
         }
-
+        
         /// <summary>
-        /// Connect to a remote spacetime instance.
+        /// Connect to a remote spacetime instance. Returns the token for the identity after connecting.
         /// </summary>
         /// <param name="host">The host or IP address and the port to connect to. Example: spacetime.spacetimedb.net:3000</param>
         /// <param name="addressOrName">The name or address of the database to connect to</param>
         /// <param name="sslEnabled">Should websocket use SSL</param>
-        public void Connect(string host, string addressOrName, bool sslEnabled = true)
+        public string Connect(string host, string addressOrName, bool sslEnabled = true)
         {
             var token = PlayerPrefs.HasKey(GetTokenKey()) ? PlayerPrefs.GetString(GetTokenKey()) : null;
+            return Connect(host, addressOrName, token, sslEnabled);
+        }
 
+        /// <summary>
+        /// Connect to a remote spacetime instance. Returns the token for the identity after connecting.
+        /// </summary>
+        /// <param name="host">The host or IP address and the port to connect to. Example: spacetime.spacetimedb.net:3000</param>
+        /// <param name="addressOrName">The name or address of the database to connect to</param>
+        /// <param name="identityToken">The token to login with</param>
+        /// <param name="sslEnabled">Should websocket use SSL</param>
+        public string Connect(string host, string addressOrName, string identityToken, bool sslEnabled = true)
+        {
             Task.Run(async () =>
             {
                 try
                 {
-                    await webSocket.Connect(token, host, addressOrName, sslEnabled);
+                    await webSocket.Connect(identityToken, host, addressOrName, sslEnabled);
                 }
                 catch (Exception e)
                 {
