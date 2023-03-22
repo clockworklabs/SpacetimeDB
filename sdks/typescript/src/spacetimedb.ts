@@ -6,16 +6,23 @@ import { AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant
 
 export { ProductValue, AlgebraicValue, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, BuiltinType };
 
-declare global {
+type SpacetimeDBGlobals = {
+  clientDB: ClientDB,
+  spacetimeDBClient: SpacetimeDBClient | undefined,
   // TODO: it would be better to use a "family of classes" instead of any
-  // in entityClasses and reducers, but I didn't have time to research
+  // in components and reducers, but I didn't have time to research
   // how to do it in TS
-  var entityClasses: Map<string, any>;
-  var clientDB: ClientDB;
-  var spacetimeDBClient: SpacetimeDBClient | undefined;
-  var reducers: Map<string, any>;
+  reducers: Map<string, any>,
+  components: Map<string, any>,
 
-  var registerReducer: (name: string, reducer: any) => void;
+  registerReducer: (name: string, reducer: any) => void,
+  registerComponent: (name: string, component: any) => void,
+}
+
+declare global {
+  interface Window {
+    __SPACETIMEDB__: SpacetimeDBGlobals;
+  }
 }
 
 export class Reducer {
@@ -188,8 +195,12 @@ export class SpacetimeDBClient {
   public emitter: EventEmitter;
   private ws: WSClient;
   private reducers: Map<string, any>;
+  private components: Map<string, any>;
+  private live: boolean;
 
   constructor(host: string, name_or_address: string, credentials?: { identity: string, token: string }) {
+    const global = window.__SPACETIMEDB__;
+    this.db = global.clientDB;
     // I don't really like it, but it seems like the only way to
     // make reducers work like they do in C#
     global.spacetimeDBClient = this;
@@ -198,6 +209,11 @@ export class SpacetimeDBClient {
     for (const [name, reducer] of global.reducers) {
       this.reducers.set(name, reducer);
     }
+    this.components = new Map();
+    for (const [name, component] of global.components) {
+      this.registerComponent(name, component);
+    }
+    this.live = false;
 
     // TODO: not sure if we should connect right away. Maybe it's better
     // to decouple this and first just create the client to then
@@ -207,7 +223,7 @@ export class SpacetimeDBClient {
       this.identity = credentials.identity;
       this.token = credentials.token;
       headers = {
-        "Authorization": `Basic ${Buffer.from("token:" + this.token).toString('base64')}`
+        "Authorization": `Basic ${btoa("token:" + this.token)}`
       };
     }
     this.emitter = new EventEmitter();
@@ -223,19 +239,18 @@ export class SpacetimeDBClient {
       }
     );
 
-    this.db = global.clientDB;
     this.ws.onclose = (event) => {
       console.error("Closed: ", event);
     };
 
     this.ws.onopen = () => {
-      global.entityClasses.forEach(element => {
-        if (element.tableName) {
-          this.ws.send(JSON.stringify({ "subscribe": { "query_strings": [element.tableName] } }));
-        }
+      this.live = true;
+      this.components.forEach(component => {
+        this.subscribeComponent(component);
       });
     }
     this.ws.onmessage = (message: any) => {
+      console.log(message);
       const data = JSON.parse(message.data);
       if (data) {
         if (data['SubscriptionUpdate']) {
@@ -243,7 +258,7 @@ export class SpacetimeDBClient {
           const tableUpdates = subUpdate["table_updates"];
           for (const tableUpdate of tableUpdates) {
             const tableName = tableUpdate["table_name"];
-            const entityClass = global.entityClasses.get(tableName);
+            const entityClass = global.components.get(tableName);
             const table = this.db.getOrCreateTable(tableName, undefined, entityClass);
             table.applyOperations(tableUpdate["table_row_operations"]);
           }
@@ -254,7 +269,7 @@ export class SpacetimeDBClient {
           const tableUpdates = subUpdate["table_updates"];
           for (const tableUpdate of tableUpdates) {
             const tableName = tableUpdate["table_name"];
-            const entityClass = global.entityClasses.get(tableName);
+            const entityClass = global.components.get(tableName);
             const table = this.db.getOrCreateTable(tableName, undefined, entityClass);
             table.applyOperations(tableUpdate["table_row_operations"]);
           }
@@ -292,6 +307,20 @@ export class SpacetimeDBClient {
     this.reducers.set(name, reducer);
   }
 
+  public registerComponent(name: string, component: any) {
+    this.components.set(name, component);
+    this.db.getOrCreateTable(name, undefined, component);
+    if (this.live) {
+      this.subscribeComponent(component);
+    }
+  }
+
+  public subscribeComponent(element: any) {
+    if (element.tableName) {
+      this.ws.send(JSON.stringify({ "subscribe": { "query_strings": [element.tableName] } }));
+    }
+  }
+
   public call(reducerName: String, args: Array<any>) {
     const msg = `{
     "call": {
@@ -311,15 +340,28 @@ export class SpacetimeDBClient {
   }
 }
 
-global.entityClasses = new Map();
-global.clientDB = new ClientDB();
-global.reducers = new Map();
+window.__SPACETIMEDB__ = {
+  components: new Map(),
+  clientDB: new ClientDB(),
+  reducers: new Map(),
 
-global.registerReducer = function(name: string, reducer: any) {
-  global.reducers.set(name, reducer);
+  registerReducer: function(name: string, reducer: any) {
+    let global = window.__SPACETIMEDB__;
+    global.reducers.set(name, reducer);
 
-  if (global.spacetimeDBClient) {
-    global.spacetimeDBClient.registerReducer(name, reducer);
-  }
-}
+    if (global.spacetimeDBClient) {
+      global.spacetimeDBClient.registerReducer(name, reducer);
+    }
+  },
+
+  registerComponent: function(name: string, component: any) {
+    let global = window.__SPACETIMEDB__;
+    global.components.set(name, component);
+
+    if (global.spacetimeDBClient) {
+      global.spacetimeDBClient.registerComponent(name, component);
+    }
+  },
+  spacetimeDBClient: undefined
+};
 

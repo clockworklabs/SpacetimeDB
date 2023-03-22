@@ -6,6 +6,7 @@
     "name": "Clockwork Labs",
     "email": "no-reply@clockworklabs.io"
   },
+  "type": "module",
   "scripts": {
     "clean": "rimraf dist",
     "build": "tsc",
@@ -33,6 +34,7 @@
   },
   "dependencies": {
     "buffer": "^6.0.3",
+    "events": "^3.3.0",
     "websocket": "^1.0.34"
   }
 }

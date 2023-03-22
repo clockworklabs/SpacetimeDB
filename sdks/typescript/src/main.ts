@@ -76,7 +76,7 @@ class Class {
 
 class Player extends IDatabaseTable {
   public static tableName = "Player";
-  private static clientDB: ClientDB = global.clientDB;
+  private static clientDB: ClientDB = window.__SPACETIMEDB__.clientDB;
   public name: string;
   public _class: Class;
   public inventory: Inventory;
@@ -121,9 +121,8 @@ class Player extends IDatabaseTable {
 // console.log(Person.fromValue(v));
 
 // the next line would be generated for each table to automatically subscribe and process entities in cache
-global.entityClasses.set("Player", Player);
-clientDB.getOrCreateTable("Player", undefined, Player);
-let client = new SpacetimeDBClient("localhost:3000", db_name, {identity: identity, token: token});
+window.__SPACETIMEDB__.registerComponent("Player", Player);
+// let client = new SpacetimeDBClient("localhost:3000", db_name, {identity: identity, token: token});
 
 // setTimeout(() => {
 //   let table = client.db.tables.get('Player');
