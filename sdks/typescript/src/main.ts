@@ -24,7 +24,7 @@ class InventoryItem {
 
   public static fromValue(value: AlgebraicValue): InventoryItem {
     let productValue = value.asProductValue();
-		let item_id = productValue.elements[0].asNumber();
+    let item_id = productValue.elements[0].asNumber();
 
     return new InventoryItem(item_id);
   }
@@ -48,7 +48,7 @@ class Inventory {
 
   public static fromValue(value: AlgebraicValue): Inventory {
     let productValue = value.asProductValue();
-		let gold = productValue.elements[0].asNumber();
+    let gold = productValue.elements[0].asNumber();
     let items: InventoryItem[] = [];
     for (let el of productValue.elements[1].asArray()) {
       items.push(InventoryItem.fromValue(el));
@@ -102,9 +102,9 @@ class Player extends IDatabaseTable {
 
   public static fromValue(value: AlgebraicValue): Player {
     let productValue = value.asProductValue();
-		let name: string = productValue.elements[0].asString();
-		let _class: Class = Class.fromValue(productValue.elements[1]);
-		let inventory: Inventory = Inventory.fromValue(productValue.elements[2]);
+    let name: string = productValue.elements[0].asString();
+    let _class: Class = Class.fromValue(productValue.elements[1]);
+    let inventory: Inventory = Inventory.fromValue(productValue.elements[2]);
     let avatar: Uint8Array = productValue.elements[3].asBytes();
 
     return new Player(name, _class, inventory, avatar);

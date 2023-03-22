@@ -7,9 +7,18 @@ import { AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant
 export { ProductValue, AlgebraicValue, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, BuiltinType };
 
 declare global {
+  // TODO: it would be better to use a "family of classes" instead of any
+  // in entityClasses and reducers, but I didn't have time to research
+  // how to do it in TS
   var entityClasses: Map<string, any>;
   var clientDB: ClientDB;
-  var spacetimeDBClient: SpacetimeDBClient;
+  var spacetimeDBClient: SpacetimeDBClient | undefined;
+  var reducers: Map<string, any>;
+
+  var registerReducer: (name: string, reducer: any) => void;
+}
+
+export class Reducer {
 }
 
 export class IDatabaseTable {
@@ -51,6 +60,10 @@ class Table {
 
   public getEntries(): IterableIterator<AlgebraicValue> {
     return this.entries.values();
+  }
+
+  public getInstances(): IterableIterator<IDatabaseTable> {
+    return this.instances.values();
   }
 
   applyOperations = (operations: { op: string, row_pk: string, row: any[] }[]) => {
@@ -116,27 +129,27 @@ class Table {
     }
   }
 
-  onInsert = (cb: (row: IDatabaseTable) => void) => {
+  onInsert = (cb: (value: any) => void) => {
     this.emitter.on("insert", cb);
   }
 
-  onDelete = (cb: (row: IDatabaseTable) => void) => {
+  onDelete = (cb: (value: any) => void) => {
     this.emitter.on("delete", cb);
   }
 
-  onUpdate = (cb: (row: IDatabaseTable, oldRow: IDatabaseTable) => void) => {
+  onUpdate = (cb: (value: any, oldValue: any) => void) => {
     this.emitter.on("update", cb);
   }
 
-  removeOnInsert = (cb: (row: IDatabaseTable) => void) => {
+  removeOnInsert = (cb: (value: any) => void) => {
     this.emitter.off("insert", cb);
   }
 
-  removeOnDelete = (cb: (row: IDatabaseTable) => void) => {
+  removeOnDelete = (cb: (value: any) => void) => {
     this.emitter.off("delete", cb);
   }
 
-  removeOnUpdate = (cb: (row: IDatabaseTable, oldRow: IDatabaseTable) => void) => {
+  removeOnUpdate = (cb: (value: any, oldRow: any) => void) => {
     this.emitter.off("update", cb);
   }
 }
@@ -174,12 +187,17 @@ export class SpacetimeDBClient {
   public db: ClientDB;
   public emitter: EventEmitter;
   private ws: WSClient;
-  // this should get populated with codegen
+  private reducers: Map<string, any>;
 
   constructor(host: string, name_or_address: string, credentials?: { identity: string, token: string }) {
     // I don't really like it, but it seems like the only way to
     // make reducers work like they do in C#
     global.spacetimeDBClient = this;
+    // register any reducers added before creating a client
+    this.reducers = new Map();
+    for (const [name, reducer] of global.reducers) {
+      this.reducers.set(name, reducer);
+    }
 
     // TODO: not sure if we should connect right away. Maybe it's better
     // to decouple this and first just create the client to then
@@ -212,7 +230,9 @@ export class SpacetimeDBClient {
 
     this.ws.onopen = () => {
       global.entityClasses.forEach(element => {
-        this.ws.send(JSON.stringify({ "subscribe": { "query_strings": [element.tableName] } }));
+        if (element.tableName) {
+          this.ws.send(JSON.stringify({ "subscribe": { "query_strings": [element.tableName] } }));
+        }
       });
     }
     this.ws.onmessage = (message: any) => {
@@ -238,12 +258,25 @@ export class SpacetimeDBClient {
             const table = this.db.getOrCreateTable(tableName, undefined, entityClass);
             table.applyOperations(tableUpdate["table_row_operations"]);
           }
-          const reducerName: string | undefined = txUpdate["event"]?.["function_call"]?.["reducer"];
-          if (reducerName) {
-            this.emitter.emit("reducer:" + reducerName, txUpdate);
+
+          const event = txUpdate['event'];
+          if (event) {
+            const functionCall = event['function_call'];
+            const identity = event['caller_identity']
+            const reducerName: string | undefined = functionCall?.['reducer'];
+            const args: number[] | undefined = functionCall?.['arg_bytes'];
+            const status: string | undefined = event['status'];
+            const reducer: any | undefined = reducerName ? this.reducers.get(reducerName) : undefined;
+
+            if (reducerName && args && identity && status && reducer) {
+              const jsonArray = JSON.parse(String.fromCharCode(...args));
+              const reducerArgs = reducer.deserializeArgs(jsonArray);
+              this.emitter.emit("reducer:" + reducerName, status, identity, reducerArgs);
+            }
           }
-          this.emitter.emit("event", txUpdate['event']);
-        } 
+
+          // this.emitter.emit("event", txUpdate['event']);
+        }
         else if (data['IdentityToken']) {
           const identityToken = data['IdentityToken'];
           const identity = identityToken['identity'];
@@ -255,10 +288,16 @@ export class SpacetimeDBClient {
     };
   }
 
+  public registerReducer(name: string, reducer: any) {
+    this.reducers.set(name, reducer);
+  }
+
   public call(reducerName: String, args: Array<any>) {
     const msg = `{
-    "fn": "${reducerName}",
-    "args": ${JSON.stringify(args)}
+    "call": {
+      "fn": "${reducerName}",
+      "args": ${JSON.stringify(args)}
+    }
 }`;
     this.ws.send(msg);
   }
@@ -266,7 +305,21 @@ export class SpacetimeDBClient {
   onEvent(eventName: string, callback: (...args: any[]) => void) {
     this.emitter.on(eventName, callback);
   }
+
+  offEvent(eventName: string, callback: (...args: any[]) => void) {
+    this.emitter.off(eventName, callback);
+  }
 }
 
 global.entityClasses = new Map();
 global.clientDB = new ClientDB();
+global.reducers = new Map();
+
+global.registerReducer = function(name: string, reducer: any) {
+  global.reducers.set(name, reducer);
+
+  if (global.spacetimeDBClient) {
+    global.spacetimeDBClient.registerReducer(name, reducer);
+  }
+}
+
