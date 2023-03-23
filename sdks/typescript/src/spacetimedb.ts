@@ -105,7 +105,6 @@ class Table {
         }
       }
     }
-
   }
 
   update = (oldPk: string, pk: string, row: Array<any>) => {
@@ -250,7 +249,6 @@ export class SpacetimeDBClient {
       });
     }
     this.ws.onmessage = (message: any) => {
-      console.log(message);
       const data = JSON.parse(message.data);
       if (data) {
         if (data['SubscriptionUpdate']) {
@@ -298,6 +296,7 @@ export class SpacetimeDBClient {
           const token = identityToken['token'];
           this.identity = identity;
           this.token = token;
+          this.emitter.emit("connected", identity);
         }
       }
     };
@@ -331,12 +330,16 @@ export class SpacetimeDBClient {
     this.ws.send(msg);
   }
 
-  onEvent(eventName: string, callback: (...args: any[]) => void) {
+  on(eventName: string, callback: (...args: any[]) => void) {
     this.emitter.on(eventName, callback);
   }
 
-  offEvent(eventName: string, callback: (...args: any[]) => void) {
+  off(eventName: string, callback: (...args: any[]) => void) {
     this.emitter.off(eventName, callback);
+  }
+
+  onConnect(callback: (...args: any[]) => void) {
+    this.on("connected", callback);
   }
 }
 
