@@ -10,7 +10,7 @@ fi
 cargo check -p spacetimedb-cli
 
 version="$1"
-declare -a crates=("bindings" "bindings-macro" "bindings-sys" "cli" "lib" "client-api" "core" "standalone" "cloud" "bench")
+declare -a crates=("bindings" "bindings-macro" "bindings-sys" "cli" "lib" "client-api" "core" "standalone" "cloud" "bench" "sats")
 
 upgrade_version() {
 	toml=crates/$1/Cargo.toml

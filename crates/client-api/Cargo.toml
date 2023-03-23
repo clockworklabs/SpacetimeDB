@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb-client-api"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 publish = false
 
