@@ -85,7 +85,6 @@ fn build_typed<P: ProgramVm>(p: &mut P, node: Expr) -> ExprOpt {
 /// Then validate & type-check it.
 pub fn optimize<P: ProgramVm>(p: &mut P, code: Expr) -> Result<ExprOpt, ErrorType> {
     let result = build_typed(p, code);
-    println!("{}", &result);
     check_types(&mut p.env_mut().ty, &result)?;
 
     Ok(result)
@@ -190,8 +189,6 @@ fn compile<P: ProgramVm>(p: &mut P, node: ExprOpt) -> Result<Code, ErrorVm> {
 /// Execute the code
 pub fn eval<P: ProgramVm>(p: &mut P, code: Code, deep: usize) -> Code {
     let key = format!("{:?}", &code);
-
-    println!("{}{}", " ".repeat(deep), &key);
 
     //p.stats.entry(key).and_modify(|counter| *counter += 1).or_insert(1);
 

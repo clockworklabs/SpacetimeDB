@@ -74,7 +74,6 @@ impl ColumnOp {
     pub fn compare(&self, row: RelValueRef) -> bool {
         let lhs = row.get(&self.lhs);
         let rhs = row.get(&self.rhs);
-        dbg!(&lhs, self.op, &rhs);
         match self.op {
             OpQuery::Cmp(op) => match op {
                 OpCmp::Eq => lhs == rhs,
