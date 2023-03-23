@@ -60,23 +60,23 @@ node {
       parallel (
         linux: {
           withCredentials([sshUserPrivateKey(credentialsId: "AWS_EC2_INSTANCE_JENKINS_SSH_KEY", keyFileVariable: 'keyfile')]) {
-            sh "scp -o StrictHostKeyChecking=accept-new -P 9001 -i '${keyfile}' .jenkins/linux-build.sh jenkins@vpn.partner.spacetimedb.net:linux-build.sh"
-            sh "ssh -o StrictHostKeyChecking=accept-new -p 9001 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net bash linux-build.sh ${env.BRANCH_NAME}"
-            sh "scp -o StrictHostKeyChecking=accept-new -P 9001 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net:/home/jenkins/SpacetimeDB/target/release/spacetime ./cli-bin/spacetime.linux"
+            sh "scp -o StrictHostKeyChecking=accept-new -i '${keyfile}' .jenkins/linux-build.sh jenkins@linux.build.spacetimedb.com:linux-build.sh"
+            sh "ssh -o StrictHostKeyChecking=accept-new -i '${keyfile}' jenkins@linux.build.spacetimedb.com bash linux-build.sh ${env.BRANCH_NAME}"
+            sh "scp -o StrictHostKeyChecking=accept-new -i '${keyfile}' jenkins@linux.build.spacetimedb.com:/home/jenkins/SpacetimeDB/target/release/spacetime ./cli-bin/spacetime.linux"
           }
         },
         macos: {
           withCredentials([sshUserPrivateKey(credentialsId: "AWS_EC2_INSTANCE_JENKINS_SSH_KEY", keyFileVariable: 'keyfile')]) {
-            sh "scp -o StrictHostKeyChecking=accept-new -P 9002 -i '${keyfile}' .jenkins/macos-build.sh jenkins@vpn.partner.spacetimedb.net:/Users/jenkins/macos-build.sh"
-            sh "ssh -o StrictHostKeyChecking=accept-new -p 9002 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net bash macos-build.sh ${env.BRANCH_NAME}"
-            sh "scp -o StrictHostKeyChecking=accept-new -P 9002 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net:/Users/jenkins/SpacetimeDB/target/spacetime-universal-apple-darwin-release ./cli-bin/spacetime.macos"
+            sh "scp -o StrictHostKeyChecking=accept-new -i '${keyfile}' .jenkins/macos-build.sh jenkins@macos.build.spacetimedb.com:/Users/jenkins/macos-build.sh"
+            sh "ssh -o StrictHostKeyChecking=accept-new -i '${keyfile}' jenkins@macos.build.spacetimedb.com bash macos-build.sh ${env.BRANCH_NAME}"
+            sh "scp -o StrictHostKeyChecking=accept-new -i '${keyfile}' jenkins@macos.build.spacetimedb.com:/Users/jenkins/SpacetimeDB/target/spacetime-universal-apple-darwin-release ./cli-bin/spacetime.macos"
           }
         },
         windows: {
           withCredentials([sshUserPrivateKey(credentialsId: "AWS_EC2_INSTANCE_JENKINS_SSH_KEY", keyFileVariable: 'keyfile')]) {
-            sh "scp -o StrictHostKeyChecking=accept-new -P 9003 -i '${keyfile}' .jenkins/windows_build.bat jenkins@vpn.partner.spacetimedb.net:windows_build.bat"
-            sh "ssh -o StrictHostKeyChecking=accept-new -p 9003 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net windows_build ${env.BRANCH_NAME}"
-            sh "scp -o StrictHostKeyChecking=accept-new -P 9003 -i '${keyfile}' jenkins@vpn.partner.spacetimedb.net:C:/Users/jenkins/SpacetimeDB/target/release/spacetime.exe ./cli-bin/spacetime.exe"
+            sh "scp -o StrictHostKeyChecking=accept-new -i '${keyfile}' .jenkins/windows_build.bat jenkins@windows.build.spacetimedb.com:windows_build.bat"
+            sh "ssh -o StrictHostKeyChecking=accept-new -i '${keyfile}' jenkins@windows.build.spacetimedb.com windows_build ${env.BRANCH_NAME}"
+            sh "scp -o StrictHostKeyChecking=accept-new -i '${keyfile}' jenkins@windows.build.spacetimedb.com:C:/Users/jenkins/SpacetimeDB/target/release/spacetime.exe ./cli-bin/spacetime.exe"
           }
         }
       )
