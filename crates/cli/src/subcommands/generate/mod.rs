@@ -9,6 +9,7 @@ use wasmtime::{AsContext, Caller, ExternType, Trap};
 
 mod code_indenter;
 pub mod csharp;
+pub mod typescript;
 
 const INDENT: &str = "\t";
 
@@ -77,7 +78,7 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
         ));
     }
 
-    for (fname, code) in generate(&wasm_file, lang, namespace.as_str())? {
+    for (fname, code) in generate(&wasm_file, lang, namespace.as_str())?.into_iter() {
         fs::write(out_dir.join(fname), code)?;
     }
 
@@ -88,14 +89,16 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
 #[derive(Clone, Copy)]
 pub enum Language {
     Csharp,
+    TypeScript,
 }
 impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp]
+        &[Self::Csharp, Self::TypeScript]
     }
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self {
             Self::Csharp => Some(clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"])),
+            Self::TypeScript => Some(clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"])),
         }
     }
 }
@@ -105,12 +108,7 @@ pub struct GenCtx {
     names: Vec<Option<String>>,
 }
 
-pub fn generate<'a>(
-    wasm_file: &'a Path,
-    lang: Language,
-    namespace: &'a str,
-) -> anyhow::Result<impl Iterator<Item = (String, String)> + 'a> {
-    let Language::Csharp = lang;
+pub fn generate<'a>(wasm_file: &'a Path, lang: Language, namespace: &'a str) -> anyhow::Result<Vec<(String, String)>> {
     let (typespace, descriptions) = extract_descriptions(wasm_file)?;
     let mut names = vec![None; typespace.types.len()];
     for (name, descr) in &descriptions {
@@ -121,33 +119,89 @@ pub fn generate<'a>(
         };
         names[typeref.idx()] = Some(name.clone())
     }
+
+    match lang {
+        Language::TypeScript => Ok(generate_typescript(descriptions, names, typespace)?),
+        Language::Csharp => Ok(generate_csharp(namespace, descriptions, names, typespace)?),
+    }
+}
+
+fn generate_typescript(
+    descriptions: Vec<(String, ModuleItemDef)>,
+    names: Vec<Option<String>>,
+    typespace: Typespace,
+) -> anyhow::Result<Vec<(String, String)>> {
     let ctx = GenCtx { typespace, names };
-    Ok(descriptions.into_iter().filter_map(move |(name, desc)| match desc {
-        ModuleItemDef::Entity(EntityDef::Table(table)) => {
-            let code = csharp::autogen_csharp_table(&ctx, &name, &table, namespace);
-            Some((name + ".cs", code))
-        }
-        ModuleItemDef::TypeAlias(r) => match &ctx.typespace[r] {
-            AlgebraicType::Sum(sum) => {
-                let filename = name.replace('.', "");
-                let code = csharp::autogen_csharp_sum(&ctx, &name, sum, namespace);
-                Some((filename + ".cs", code))
+    Ok(descriptions
+        .into_iter()
+        .filter_map(move |(name, desc)| match desc {
+            ModuleItemDef::Entity(EntityDef::Table(table)) => {
+                let code = typescript::autogen_typescript_table(&ctx, &name, &table);
+                let name = name.to_case(Case::Snake);
+                Some((name + ".ts", code))
             }
-            AlgebraicType::Product(prod) => {
-                let code = csharp::autogen_csharp_tuple(&ctx, &name, prod, namespace);
+            ModuleItemDef::TypeAlias(r) => match &ctx.typespace[r] {
+                AlgebraicType::Sum(sum) => {
+                    let filename = name.replace('.', "").to_case(Case::Snake);
+                    let code = typescript::autogen_typescript_sum(&ctx, &name, sum);
+                    Some((filename + ".ts", code))
+                }
+                AlgebraicType::Product(prod) => {
+                    let code = typescript::autogen_typescript_tuple(&ctx, &name, prod);
+                    let name = name.to_case(Case::Snake);
+                    Some((name + ".ts", code))
+                }
+                AlgebraicType::Builtin(_) => todo!(),
+                AlgebraicType::Ref(_) => todo!(),
+            },
+            // I'm not sure exactly how this should work; when does init_database get called with csharp?
+            ModuleItemDef::Entity(EntityDef::Reducer(reducer)) if reducer.name.as_deref() == Some("__init__") => None,
+            ModuleItemDef::Entity(EntityDef::Reducer(reducer)) => {
+                let code = typescript::autogen_typescript_reducer(&ctx, &reducer);
+                let name = name.to_case(Case::Snake);
+                Some((name + "_reducer.ts", code))
+            }
+        })
+        .collect())
+}
+
+fn generate_csharp(
+    namespace: &str,
+    descriptions: Vec<(String, ModuleItemDef)>,
+    names: Vec<Option<String>>,
+    typespace: Typespace,
+) -> anyhow::Result<Vec<(String, String)>> {
+    let ctx = GenCtx { typespace, names };
+
+    Ok(descriptions
+        .into_iter()
+        .filter_map(move |(name, desc)| match desc {
+            ModuleItemDef::Entity(EntityDef::Table(table)) => {
+                let code = csharp::autogen_csharp_table(&ctx, &name, &table, namespace);
                 Some((name + ".cs", code))
             }
-            AlgebraicType::Builtin(_) => todo!(),
-            AlgebraicType::Ref(_) => todo!(),
-        },
-        // I'm not sure exactly how this should work; when does init_database get called with csharp?
-        ModuleItemDef::Entity(EntityDef::Reducer(reducer)) if reducer.name.as_deref() == Some("__init__") => None,
-        ModuleItemDef::Entity(EntityDef::Reducer(reducer)) => {
-            let code = csharp::autogen_csharp_reducer(&ctx, &reducer, namespace);
-            let pascalcase = name.to_case(Case::Pascal);
-            Some((pascalcase + "Reducer.cs", code))
-        }
-    }))
+            ModuleItemDef::TypeAlias(r) => match &ctx.typespace[r] {
+                AlgebraicType::Sum(sum) => {
+                    let filename = name.replace('.', "");
+                    let code = csharp::autogen_csharp_sum(&ctx, &name, sum, namespace);
+                    Some((filename + ".cs", code))
+                }
+                AlgebraicType::Product(prod) => {
+                    let code = csharp::autogen_csharp_tuple(&ctx, &name, prod, namespace);
+                    Some((name + ".cs", code))
+                }
+                AlgebraicType::Builtin(_) => todo!(),
+                AlgebraicType::Ref(_) => todo!(),
+            },
+            // I'm not sure exactly how this should work; when does init_database get called with csharp?
+            ModuleItemDef::Entity(EntityDef::Reducer(reducer)) if reducer.name.as_deref() == Some("__init__") => None,
+            ModuleItemDef::Entity(EntityDef::Reducer(reducer)) => {
+                let code = csharp::autogen_csharp_reducer(&ctx, &reducer, namespace);
+                let pascalcase = name.to_case(Case::Pascal);
+                Some((pascalcase + "Reducer.cs", code))
+            }
+        })
+        .collect())
 }
 
 fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<(Typespace, Vec<(String, ModuleItemDef)>)> {
