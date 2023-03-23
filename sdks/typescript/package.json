@@ -1,6 +1,6 @@
 {
   "name": "@clockworklabs/spacetimedb-typescript-sdk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A client for use in the EnglishAuction",
   "author": {
     "name": "Clockwork Labs",
@@ -36,5 +36,8 @@
     "buffer": "^6.0.3",
     "events": "^3.3.0",
     "websocket": "^1.0.34"
-  }
+  },
+  "files": [
+    "/dist"
+  ]
 }

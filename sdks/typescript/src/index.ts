@@ -1,2 +1,1 @@
-export * from './spacetimedb';
-
+export * from './spacetimedb.js';
