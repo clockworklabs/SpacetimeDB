@@ -128,8 +128,8 @@ impl ModuleSubscriptionActor {
         let mut database_update: Option<DatabaseUpdate> = None;
         for s in &mut self.subscriptions {
             if s == sub {
-                sub.add_subscriber(sender.clone(), protocol);
-                database_update = Some(sub.eval_query(&mut self.relational_db));
+                s.add_subscriber(sender.clone(), protocol);
+                database_update = Some(s.eval_query(&mut self.relational_db));
                 found = true;
                 break;
             }
