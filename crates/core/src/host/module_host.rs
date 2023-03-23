@@ -18,17 +18,11 @@ use tokio::sync::{mpsc, oneshot};
 use super::timestamp::Timestamp;
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct DatabaseUpdate {
     pub tables: Vec<DatabaseTableUpdate>,
 }
 
-impl Default for &DatabaseUpdate {
-    fn default() -> Self {
-        static EMPTY: DatabaseUpdate = DatabaseUpdate { tables: Vec::new() };
-        &EMPTY
-    }
-}
 impl DatabaseUpdate {
     pub fn is_empty(&self) -> bool {
         if self.tables.len() == 0 {

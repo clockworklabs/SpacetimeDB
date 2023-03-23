@@ -91,8 +91,27 @@ impl ModuleSubscriptionActor {
                 subscription,
             } => self.add_subscription(client_id, subscription).await,
             ModuleSubscriptionCommand::RemoveSubscriber { client_id } => Ok(self.remove_subscriber(client_id)),
-            ModuleSubscriptionCommand::BroadcastEvent { event } => {
-                self.broadcast_event(event).await?;
+            ModuleSubscriptionCommand::BroadcastEvent { mut event } => {
+                match event.status {
+                    EventStatus::Committed(_) => self.broadcast_commit_event(event).await?,
+                    EventStatus::Failed(_) => {
+                        // TODO: better way of doing this
+                        let client = self.subscriptions.iter().find_map(|sub| {
+                            sub.subscribers
+                                .iter()
+                                .find(|sub| sub.sender.id.identity == event.caller_identity)
+                        });
+                        if let Some(client) = client {
+                            let db_upd = DatabaseUpdate::default();
+                            let msg = match client.protocol {
+                                Protocol::Text => Message::Text(Self::serialize_json_event(&mut event, db_upd)),
+                                Protocol::Binary => Message::Binary(Self::serialize_protobuf_event(&mut event, db_upd)),
+                            };
+                            let _ = client.sender.clone().send(msg).await;
+                        }
+                    }
+                    EventStatus::OutOfEnergy => {} // ?
+                }
                 Ok(false)
             }
         }
@@ -160,9 +179,9 @@ impl ModuleSubscriptionActor {
         false
     }
 
-    async fn broadcast_event(&mut self, mut event: ModuleEvent) -> Result<(), DBError> {
+    async fn broadcast_commit_event(&mut self, mut event: ModuleEvent) -> Result<(), DBError> {
         for subscription in &mut self.subscriptions {
-            let database_update = event.status.database_update().unwrap_or_default();
+            let database_update = event.status.database_update().unwrap();
             let incr = subscription.eval_incr_query(&mut self.relational_db, database_update)?;
 
             if incr.tables.is_empty() {
@@ -172,22 +191,14 @@ impl ModuleSubscriptionActor {
             let mut protobuf_buf = None;
             let mut protobuf_buf = |event: &mut ModuleEvent| {
                 protobuf_buf
-                    .get_or_insert_with(|| {
-                        let protobuf_event = Self::render_protobuf_event(event, incr.clone());
-                        let mut protobuf_buf = Vec::new();
-                        protobuf_event.encode(&mut protobuf_buf).unwrap();
-                        protobuf_buf
-                    })
+                    .get_or_insert_with(|| Self::serialize_protobuf_event(event, incr.clone()))
                     .clone()
             };
 
             let mut json_string = None;
             let mut json_string = |event: &mut ModuleEvent| {
                 json_string
-                    .get_or_insert_with(|| {
-                        let json_event = Self::render_json_event(event, incr.clone());
-                        serde_json::to_string(&json_event).unwrap()
-                    })
+                    .get_or_insert_with(|| Self::serialize_json_event(event, incr.clone()))
                     .clone()
             };
 
@@ -238,6 +249,11 @@ impl ModuleSubscriptionActor {
         }
     }
 
+    fn serialize_protobuf_event(event: &mut ModuleEvent, database_update: DatabaseUpdate) -> Vec<u8> {
+        let protobuf_event = Self::render_protobuf_event(event, database_update);
+        protobuf_event.encode_to_vec()
+    }
+
     pub fn render_protobuf_event(event: &mut ModuleEvent, database_update: DatabaseUpdate) -> MessageProtobuf {
         let (status, errmsg) = match &event.status {
             EventStatus::Committed(_) => (event::Status::Committed, String::new()),
@@ -268,6 +284,11 @@ impl ModuleSubscriptionActor {
         MessageProtobuf {
             r#type: Some(message::Type::TransactionUpdate(tx_update)),
         }
+    }
+
+    fn serialize_json_event(event: &mut ModuleEvent, database_update: DatabaseUpdate) -> String {
+        let json_event = Self::render_json_event(event, database_update);
+        serde_json::to_string(&json_event).unwrap()
     }
 
     pub fn render_json_event(event: &mut ModuleEvent, database_update: DatabaseUpdate) -> MessageJson {
