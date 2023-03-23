@@ -1,10 +1,13 @@
 import { EventEmitter } from "events";
-import { ICloseEvent, w3cwebsocket as WSClient } from 'websocket';
 
-import { ProductValue, AlgebraicValue } from "./algebraic_value";
-import { AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, BuiltinType } from "./algebraic_type";
+import WS from 'websocket';
+
+import { ProductValue, AlgebraicValue } from "./algebraic_value.js";
+import { AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, BuiltinType } from "./algebraic_type.js";
 
 export { ProductValue, AlgebraicValue, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, BuiltinType };
+
+const g = (typeof window === 'undefined' ? global : window)!;
 
 type SpacetimeDBGlobals = {
   clientDB: ClientDB,
@@ -23,6 +26,7 @@ declare global {
   interface Window {
     __SPACETIMEDB__: SpacetimeDBGlobals;
   }
+  var __SPACETIMEDB__: SpacetimeDBGlobals;
 }
 
 export class Reducer {
@@ -69,7 +73,7 @@ class Table {
     return this.entries.values();
   }
 
-  public getInstances(): IterableIterator<IDatabaseTable> {
+  public getInstances(): IterableIterator<any> {
     return this.instances.values();
   }
 
@@ -192,13 +196,13 @@ export class SpacetimeDBClient {
   token?: string = undefined;
   public db: ClientDB;
   public emitter: EventEmitter;
-  private ws: WSClient;
+  private ws: WS.w3cwebsocket;
   private reducers: Map<string, any>;
   private components: Map<string, any>;
   private live: boolean;
 
   constructor(host: string, name_or_address: string, credentials?: { identity: string, token: string }) {
-    const global = window.__SPACETIMEDB__;
+    const global = g.__SPACETIMEDB__;
     this.db = global.clientDB;
     // I don't really like it, but it seems like the only way to
     // make reducers work like they do in C#
@@ -226,7 +230,7 @@ export class SpacetimeDBClient {
       };
     }
     this.emitter = new EventEmitter();
-    this.ws = new WSClient(
+    this.ws = new WS.w3cwebsocket(
       `ws://${host}/database/subscribe?name_or_address=${name_or_address}`,
       'v1.text.spacetimedb',
       undefined,
@@ -343,13 +347,13 @@ export class SpacetimeDBClient {
   }
 }
 
-window.__SPACETIMEDB__ = {
+g.__SPACETIMEDB__ = {
   components: new Map(),
   clientDB: new ClientDB(),
   reducers: new Map(),
 
   registerReducer: function(name: string, reducer: any) {
-    let global = window.__SPACETIMEDB__;
+    let global = g.__SPACETIMEDB__;
     global.reducers.set(name, reducer);
 
     if (global.spacetimeDBClient) {
@@ -358,7 +362,7 @@ window.__SPACETIMEDB__ = {
   },
 
   registerComponent: function(name: string, component: any) {
-    let global = window.__SPACETIMEDB__;
+    let global = g.__SPACETIMEDB__;
     global.components.set(name, component);
 
     if (global.spacetimeDBClient) {
@@ -368,3 +372,4 @@ window.__SPACETIMEDB__ = {
   spacetimeDBClient: undefined
 };
 
+export const __SPACETIMEDB__ = (typeof(window) === 'undefined' ? global.__SPACETIMEDB__ : window.__SPACETIMEDB__)!;
