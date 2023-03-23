@@ -1,4 +1,3 @@
-dist/
 tests
 jest.config.js
 .envrc
