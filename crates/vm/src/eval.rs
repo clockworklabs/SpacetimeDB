@@ -187,8 +187,8 @@ fn compile<P: ProgramVm>(p: &mut P, node: ExprOpt) -> Result<Code, ErrorVm> {
 /// Third pass:
 ///
 /// Execute the code
-pub fn eval<P: ProgramVm>(p: &mut P, code: Code, deep: usize) -> Code {
-    let key = format!("{:?}", &code);
+pub fn eval<P: ProgramVm>(p: &mut P, code: Code) -> Code {
+    let _key = format!("{:?}", &code);
 
     //p.stats.entry(key).and_modify(|counter| *counter += 1).or_insert(1);
 
@@ -197,7 +197,7 @@ pub fn eval<P: ProgramVm>(p: &mut P, code: Code, deep: usize) -> Code {
         Code::CallFn(id, old) => {
             let mut params = Vec::with_capacity(old.len());
             for param in old {
-                let p = eval(p, param, deep + 1);
+                let p = eval(p, param);
                 let param = match p {
                     Code::Value(x) => x,
                     Code::Halt(x) => return Code::Halt(x),
@@ -221,10 +221,10 @@ pub fn eval<P: ProgramVm>(p: &mut P, code: Code, deep: usize) -> Code {
             let body = f.body.clone();
             p.env_mut().push_scope();
             for (k, v) in args {
-                let v = eval(p, v, deep + 1);
+                let v = eval(p, v);
                 p.add_ident(&k, v);
             }
-            let r = eval(p, body, deep + 1);
+            let r = eval(p, body);
             p.env_mut().pop_scope();
 
             r
@@ -232,14 +232,14 @@ pub fn eval<P: ProgramVm>(p: &mut P, code: Code, deep: usize) -> Code {
         Code::Ident(name) => p.find_ident(&name).unwrap().clone(),
         Code::If(inner) => {
             let (test, if_true, if_false) = &*inner;
-            let test = eval(p, test.clone(), deep + 1);
+            let test = eval(p, test.clone());
 
             match test {
                 Code::Value(x) => {
                     if x == AlgebraicValue::from(true) {
-                        eval(p, if_true.clone(), deep + 1)
+                        eval(p, if_true.clone())
                     } else {
-                        eval(p, if_false.clone(), deep + 1)
+                        eval(p, if_false.clone())
                     }
                 }
                 x => unimplemented!("{x}"),
@@ -248,7 +248,7 @@ pub fn eval<P: ProgramVm>(p: &mut P, code: Code, deep: usize) -> Code {
         Code::Block(lines) => {
             let mut last = None;
             for x in lines {
-                last = Some(eval(p, x, deep + 1));
+                last = Some(eval(p, x));
             }
 
             if let Some(x) = last {
@@ -334,7 +334,7 @@ pub fn build_ast<P: ProgramVm>(p: &mut P, ast: Expr) -> Result<Code, ErrorVm> {
 /// Optimize, compile & run the [Expr]
 pub fn run_ast<P: ProgramVm>(p: &mut P, ast: Expr) -> Code {
     match build_ast(p, ast) {
-        Ok(code) => eval(p, code, 0),
+        Ok(code) => eval(p, code),
         Err(err) => Code::Halt(err.into()),
     }
 }
@@ -446,10 +446,10 @@ mod tests {
         assert_eq!(result, Code::Value(scalar(0.5)), "/ Float");
 
         // Checking a vectorized ops: 0 + 1 + 2...
-        let nums = prefix_op(OpMath::Add, (0..9i64).into_iter().map(value));
+        let nums = prefix_op(OpMath::Add, (0..9i64).map(value));
         let result = run_ast(p, nums);
 
-        let total = (0..9i64).into_iter().reduce(|a, b| a + b).unwrap();
+        let total = (0..9i64).reduce(|a, b| a + b).unwrap();
         assert_eq!(result, Code::Value(scalar(total)), "+ range");
     }
 

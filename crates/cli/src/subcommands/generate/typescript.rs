@@ -362,9 +362,10 @@ pub fn autogen_typescript_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> S
     writeln!(output, "// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.").unwrap();
     writeln!(output).unwrap();
 
+    writeln!(output, "// @ts-ignore").unwrap();
     writeln!(
         output,
-        "import {{ AlgebraicType, SumTypeVariant, BuiltinType, AlgebraicValue }} from \"@clockworklabs/spacetimedb-typescript-sdk\";"
+        "import {{ __SPACETIMEDB__, AlgebraicType, SumTypeVariant, BuiltinType, AlgebraicValue }} from \"@clockworklabs/spacetimedb-typescript-sdk\";"
     )
     .unwrap();
 
@@ -372,6 +373,7 @@ pub fn autogen_typescript_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> S
     generate_imports_variants(ctx, &sum_type.variants, &mut imports, Some("__"));
 
     for import in imports {
+        writeln!(output, "// @ts-ignore").unwrap();
         writeln!(output, "{import}").unwrap();
     }
 
@@ -655,12 +657,14 @@ fn autogen_typescript_product_table_common(
     writeln!(output, "// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.").unwrap();
     writeln!(output).unwrap();
 
-    writeln!(output, "import {{ AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue }} from \"@clockworklabs/spacetimedb-typescript-sdk\";").unwrap();
+    writeln!(output, "// @ts-ignore").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue }} from \"@clockworklabs/spacetimedb-typescript-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(ctx, &product_type.elements, &mut imports, None);
 
     for import in imports {
+        writeln!(output, "// @ts-ignore").unwrap();
         writeln!(output, "{import}").unwrap();
     }
 
@@ -780,7 +784,7 @@ fn autogen_typescript_product_table_common(
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "window.__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").onInsert(callback);"
+                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").onInsert(callback);"
                 )
                 .unwrap();
             }
@@ -793,7 +797,7 @@ fn autogen_typescript_product_table_common(
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "window.__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").onUpdate(callback);"
+                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").onUpdate(callback);"
                 )
                 .unwrap();
             }
@@ -810,7 +814,7 @@ fn autogen_typescript_product_table_common(
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "window.__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").onDelete(callback);"
+                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").onDelete(callback);"
                 )
                 .unwrap();
             }
@@ -827,7 +831,7 @@ fn autogen_typescript_product_table_common(
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "window.__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").removeOnInsert(callback);"
+                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").removeOnInsert(callback);"
                 )
                 .unwrap();
             }
@@ -840,7 +844,7 @@ fn autogen_typescript_product_table_common(
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "window.__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").removeOnUpdate(callback);"
+                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").removeOnUpdate(callback);"
                 )
                 .unwrap();
             }
@@ -857,7 +861,7 @@ fn autogen_typescript_product_table_common(
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "window.__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").removeOnDelete(callback);"
+                    "__SPACETIMEDB__.clientDB.getTable(\"{struct_name_pascal_case}\").removeOnDelete(callback);"
                 )
                 .unwrap();
             }
@@ -938,7 +942,7 @@ fn autogen_typescript_access_funcs_for_struct(
     indented_block(output, |output| {
         writeln!(
             output,
-            "return window.__SPACETIMEDB__.clientDB.getTable(\"{table_name}\").count();",
+            "return __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").count();",
         )
         .unwrap();
     });
@@ -949,7 +953,7 @@ fn autogen_typescript_access_funcs_for_struct(
     indented_block(output, |output| {
         writeln!(
             output,
-            "return window.__SPACETIMEDB__.clientDB.getTable(\"{table_name}\").getInstances() as {table_name}[];",
+            "return __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").getInstances() as unknown as {table_name}[];",
         )
         .unwrap();
     });
@@ -973,7 +977,7 @@ fn autogen_typescript_access_funcs_for_struct(
                 continue;
             }
             AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-                MaybePrimitive::Primitive(ty) => (format!("{b:?}"), ty),
+                MaybePrimitive::Primitive(ty) => (typescript_as_type(b).to_string(), ty),
                 MaybePrimitive::Array { ty } => {
                     if let Some(BuiltinType::U8) = ty.as_builtin() {
                         // Do allow filtering for byte arrays
@@ -1012,7 +1016,7 @@ fn autogen_typescript_access_funcs_for_struct(
             }
             writeln!(
                 output,
-                "for(let entry of window.__SPACETIMEDB__.clientDB.getTable(\"{table_name}\").getEntries())"
+                "for(let entry of __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").getEntries())"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
@@ -1106,7 +1110,8 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output, "// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.").unwrap();
     writeln!(output).unwrap();
 
-    writeln!(output, "import {{ AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue }} from \"@clockworklabs/spacetimedb-typescript-sdk\";").unwrap();
+    writeln!(output, "// @ts-ignore").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue }} from \"@clockworklabs/spacetimedb-typescript-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(
@@ -1117,6 +1122,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     );
 
     for import in imports {
+        writeln!(output, "// @ts-ignore").unwrap();
         writeln!(output, "{import}").unwrap();
     }
 
@@ -1147,10 +1153,10 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         {
             indent_scope!(output);
 
-            writeln!(output, "if (window.__SPACETIMEDB__.spacetimeDBClient) {{").unwrap();
+            writeln!(output, "if (__SPACETIMEDB__.spacetimeDBClient) {{").unwrap();
             writeln!(
                 output,
-                "\twindow.__SPACETIMEDB__.spacetimeDBClient.call(\"{func_name}\", [{}]);",
+                "\t__SPACETIMEDB__.spacetimeDBClient.call(\"{func_name}\", [{}]);",
                 arg_names.join(", ")
             )
             .unwrap();
@@ -1160,7 +1166,8 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         writeln!(output, "}}").unwrap();
         writeln!(output).unwrap();
 
-        writeln!(output, "public static deserializeArgs(rawArgs: any[]): any[] {{").unwrap();
+        let args: &str = if reducer.args.is_empty() { "" } else { "rawArgs: any[]" };
+        writeln!(output, "public static deserializeArgs({args}): any[] {{").unwrap();
 
         {
             indent_scope!(output);
@@ -1206,10 +1213,10 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         {
             indent_scope!(output);
 
-            writeln!(output, "if (window.__SPACETIMEDB__.spacetimeDBClient) {{").unwrap();
+            writeln!(output, "if (__SPACETIMEDB__.spacetimeDBClient) {{").unwrap();
             writeln!(
                 output,
-                "\twindow.__SPACETIMEDB__.spacetimeDBClient.onEvent(\"reducer:{reducer_name_pascal_case}\", callback);"
+                "\t__SPACETIMEDB__.spacetimeDBClient.on(\"reducer:{reducer_name_pascal_case}\", callback);"
             )
             .unwrap();
             writeln!(output, "}}").unwrap();
@@ -1225,16 +1232,16 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
 
     writeln!(
         output,
-        "window.__SPACETIMEDB__.reducers.set(\"{reducer_name_pascal_case}\", {reducer_name_pascal_case}Reducer);"
+        "__SPACETIMEDB__.reducers.set(\"{reducer_name_pascal_case}\", {reducer_name_pascal_case}Reducer);"
     )
     .unwrap();
 
-    writeln!(output, "if (window.__SPACETIMEDB__.spacetimeDBClient) {{").unwrap();
+    writeln!(output, "if (__SPACETIMEDB__.spacetimeDBClient) {{").unwrap();
 
     {
         indent_scope!(output);
 
-        writeln!(output, "window.__SPACETIMEDB__.spacetimeDBClient.registerReducer(\"{reducer_name_pascal_case}\", {reducer_name_pascal_case}Reducer);").unwrap();
+        writeln!(output, "__SPACETIMEDB__.spacetimeDBClient.registerReducer(\"{reducer_name_pascal_case}\", {reducer_name_pascal_case}Reducer);").unwrap();
     }
 
     writeln!(output, "}}").unwrap();
