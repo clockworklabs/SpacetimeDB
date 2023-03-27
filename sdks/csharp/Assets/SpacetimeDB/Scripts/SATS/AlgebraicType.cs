@@ -1,8 +1,5 @@
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Numerics;
-using System.Runtime.InteropServices;
 
 namespace SpacetimeDB.SATS
 {
@@ -23,6 +20,18 @@ namespace SpacetimeDB.SATS
                 variants = variants.Select(a => new SumTypeVariant(null, a.algebraicType)).ToList()
             };
             return s;
+        }
+
+        public static AlgebraicType MakeMetaType()
+        {
+            var string_type = AlgebraicType.CreatePrimitiveType(BuiltinType.Type.String);
+            var option_type = AlgebraicType.CreateOptionType(string_type);
+            var variant_type = AlgebraicType.CreateProductType(
+                new ProductTypeElement("name", option_type),
+                new ProductTypeElement("algebraic_type", AlgebraicType.CreateTypeRef(0))
+            );
+            var array = AlgebraicType.CreateArrayType(variant_type);
+            return AlgebraicType.CreateProductType(new ProductTypeElement("variants", array));
         }
     }
 
@@ -45,6 +54,18 @@ namespace SpacetimeDB.SATS
         public ProductType()
         {
             elements = new List<ProductTypeElement>();
+        }
+
+        public static AlgebraicType MakeMetaType()
+        {
+            var string_type = AlgebraicType.CreatePrimitiveType(BuiltinType.Type.String);
+            var option_type = AlgebraicType.CreateOptionType(string_type);
+            var element_type = AlgebraicType.CreateProductType(
+                new ProductTypeElement("name", option_type),
+                new ProductTypeElement("algebraic_type", AlgebraicType.CreateTypeRef(0))
+            );
+            var array = AlgebraicType.CreateArrayType(element_type);
+            return AlgebraicType.CreateProductType(new ProductTypeElement("elements", array));
         }
     }
 
@@ -98,6 +119,34 @@ namespace SpacetimeDB.SATS
 
         public AlgebraicType arrayType;
         public MapType mapType;
+
+        public static AlgebraicType MakeMetaType()
+        {
+            return AlgebraicType.CreateSumType(
+                new SumTypeVariant("bool", AlgebraicType.CreateProductType()),
+                new SumTypeVariant("i8", AlgebraicType.CreateProductType()),
+                new SumTypeVariant("u8", AlgebraicType.CreateProductType()),
+                new SumTypeVariant("i16", AlgebraicType.CreateProductType()),
+                new SumTypeVariant("u16", AlgebraicType.CreateProductType()),
+                new SumTypeVariant("i32", AlgebraicType.CreateProductType()),
+                new SumTypeVariant("u32", AlgebraicType.CreateProductType()),
+                new SumTypeVariant("i64", AlgebraicType.CreateProductType()),
+                new SumTypeVariant("u64", AlgebraicType.CreateProductType()),
+                new SumTypeVariant("i128", AlgebraicType.CreateProductType()),
+                new SumTypeVariant("u128", AlgebraicType.CreateProductType()),
+                new SumTypeVariant("f32", AlgebraicType.CreateProductType()),
+                new SumTypeVariant("f64", AlgebraicType.CreateProductType()),
+                new SumTypeVariant("string", AlgebraicType.CreateProductType()),
+                new SumTypeVariant("array", AlgebraicType.CreateTypeRef(0)),
+                new SumTypeVariant(
+                    "map",
+                    AlgebraicType.CreateProductType(
+                        new ProductTypeElement("key_ty", AlgebraicType.CreateTypeRef(0)),
+                        new ProductTypeElement("ty", AlgebraicType.CreateTypeRef(0))
+                    )
+                )
+            );
+        }
     }
 
     public class AlgebraicType
@@ -114,84 +163,113 @@ namespace SpacetimeDB.SATS
         public Type type;
         private object type_;
 
-        public SumType sum {
+        public SumType sum
+        {
             get { return type == Type.Sum ? (SumType)type_ : null; }
-            set {
+            set
+            {
                 type_ = value;
                 type = value == null ? Type.None : Type.Sum;
             }
         }
-        
-        public ProductType product {
+
+        public ProductType product
+        {
             get { return type == Type.Product ? (ProductType)type_ : null; }
-            set {
+            set
+            {
                 type_ = value;
                 type = value == null ? Type.None : Type.Product;
             }
         }
-        
-        public BuiltinType builtin {
+
+        public BuiltinType builtin
+        {
             get { return type == Type.Builtin ? (BuiltinType)type_ : null; }
-            set {
+            set
+            {
                 type_ = value;
                 type = value == null ? Type.None : Type.Builtin;
             }
         }
 
-        public int typeRef {
+        public int typeRef
+        {
             get { return type == Type.TypeRef ? (int)type_ : -1; }
-            set {
+            set
+            {
                 type_ = value;
                 type = value == -1 ? Type.None : Type.TypeRef;
             }
         }
 
-        public static AlgebraicType CreateProductType(IEnumerable<ProductTypeElement> elements)
+        public static AlgebraicType CreateProductType(params ProductTypeElement[] elements)
         {
             return new AlgebraicType
             {
                 type = Type.Product,
-                product = new ProductType
-                {
-                    elements = elements.ToList()
-                }
+                product = new ProductType { elements = elements.ToList() }
             };
         }
-        
-        public static AlgebraicType CreateSumType(IEnumerable<SumTypeVariant> variants)
+
+        public static AlgebraicType CreateProductType(IEnumerable<ProductTypeElement> elements)
+        {
+            return CreateProductType(elements.ToArray());
+        }
+
+        public static AlgebraicType CreateSumType(params SumTypeVariant[] variants)
         {
             return new AlgebraicType
             {
                 type = Type.Sum,
-                sum = new SumType
-                {
-                    variants = variants.ToList(),
-                }
+                sum = new SumType { variants = variants.ToList() }
             };
         }
 
-        public static AlgebraicType CreateArrayType(AlgebraicType elementType)  {
+        public static AlgebraicType CreateSumType(IEnumerable<SumTypeVariant> variants)
+        {
+            return CreateSumType(variants.ToArray());
+        }
+
+        public static AlgebraicType CreateArrayType(AlgebraicType elementType)
+        {
             return new AlgebraicType
             {
                 type = Type.Builtin,
-                builtin = new BuiltinType
-                {
-                    type = BuiltinType.Type.Array,
-                    arrayType = elementType
-                }
+                builtin = new BuiltinType { type = BuiltinType.Type.Array, arrayType = elementType }
             };
         }
 
-        public static AlgebraicType CreatePrimitiveType(BuiltinType.Type type)  {
+        public static AlgebraicType CreatePrimitiveType(BuiltinType.Type type)
+        {
             return new AlgebraicType
             {
                 type = Type.Builtin,
-                builtin = new BuiltinType
-                {
-                    type = type,
-                }
+                builtin = new BuiltinType { type = type }
             };
         }
 
+        public static AlgebraicType CreateTypeRef(int typeRef)
+        {
+            return new AlgebraicType { type = Type.TypeRef, typeRef = typeRef };
+        }
+
+        public static AlgebraicType CreateOptionType(AlgebraicType elementType)
+        {
+            return CreateSumType(
+                new SumTypeVariant("some", CreateProductType(new ProductTypeElement(elementType))),
+                new SumTypeVariant("none", CreateProductType())
+            );
+        }
+
+        public static AlgebraicType MakeMetaType()
+        {
+            return AlgebraicType.CreateSumType(
+                new SumTypeVariant("sum", SumType.MakeMetaType()),
+                new SumTypeVariant("product", ProductType.MakeMetaType()),
+                new SumTypeVariant("builtin", BuiltinType.MakeMetaType()),
+                new SumTypeVariant("ref", AlgebraicType.CreatePrimitiveType(BuiltinType.Type.U32))
+            );
+        }
     }
 }
