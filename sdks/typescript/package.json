@@ -1,7 +1,7 @@
 {
   "name": "@clockworklabs/spacetimedb-typescript-sdk",
   "version": "0.1.2",
-  "description": "A client for use in the EnglishAuction",
+  "description": "SDK for SpacetimeDB",
   "author": {
     "name": "Clockwork Labs",
     "email": "no-reply@clockworklabs.io"
@@ -14,7 +14,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/clockworklabs/EnglishAuction.git"
+    "url": "https://github.com/clockworklabs/spacetimedb-typescript-sdk"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com/clockworklabs"
