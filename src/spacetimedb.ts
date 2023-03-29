@@ -229,9 +229,13 @@ export class SpacetimeDBClient {
         "Authorization": `Basic ${btoa("token:" + this.token)}`
       };
     }
+    let url = `${host}/database/subscribe?name_or_address=${name_or_address}`;
+    if (!host.startsWith("ws://") && !host.startsWith("wss://")) {
+      url = "ws://" + url;
+    }
     this.emitter = new EventEmitter();
     this.ws = new WS.w3cwebsocket(
-      `ws://${host}/database/subscribe?name_or_address=${name_or_address}`,
+      url,
       'v1.text.spacetimedb',
       undefined,
       headers,
