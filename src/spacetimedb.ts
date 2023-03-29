@@ -322,7 +322,6 @@ export class SpacetimeDBClient {
    * @param credentials The credentials to use to connect to the spacetimeDB module
    */
   public connect(
-    useWebsocketSecure: boolean = true,
     host?: string,
     name_or_address?: string,
     credentials?: { identity: string; token: string }
@@ -347,13 +346,17 @@ export class SpacetimeDBClient {
         Authorization: `Basic ${btoa("token:" + this.token)}`,
       };
     }
-
+    let url = `${this.runtime.host}/database/subscribe?name_or_address=${this.runtime.name_or_address}`;
+    if (
+      !this.runtime.host.startsWith("ws://") &&
+      !this.runtime.host.startsWith("wss://")
+    ) {
+      url = "ws://" + url;
+    }
     this.emitter = new EventEmitter();
 
     this.ws = new WS.w3cwebsocket(
-      `ws${useWebsocketSecure ? "s" : ""}://${
-        this.runtime.host
-      }/database/subscribe?name_or_address=${this.runtime.name_or_address}`,
+      url,
       "v1.text.spacetimedb",
       undefined,
       headers,

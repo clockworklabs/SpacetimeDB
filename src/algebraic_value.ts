@@ -95,6 +95,10 @@ export class BuiltinValue {
     return this.value as boolean;
   }
 
+  public asBoolean(): boolean {
+    return this.value as boolean;
+  }
+
   public asBytes(): Uint8Array {
     return this.value as Uint8Array;
   }
@@ -174,6 +178,11 @@ export class AlgebraicValue {
   }
 
   public asBool(): boolean {
+    this.assertBuiltin();
+    return (this.builtin as BuiltinValue).asBool();
+  }
+
+  public asBoolean(): boolean {
     this.assertBuiltin();
     return (this.builtin as BuiltinValue).asBool();
   }
