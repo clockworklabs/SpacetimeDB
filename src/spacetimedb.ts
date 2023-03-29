@@ -80,10 +80,16 @@ class Table {
     this.entityClass = entityClass;
   }
 
+  /**
+   * @returns number of entries in the table
+   */
   public count(): number {
     return this.entries.size;
   }
 
+  /**
+   * @returns The values of the entries in the table
+   */
   public getEntries(): IterableIterator<AlgebraicValue> {
     return this.entries.values();
   }
@@ -162,43 +168,79 @@ class Table {
     }
   };
 
+  /**
+   * Called when a new row is inserted
+   * @param cb Callback to be called when a new row is inserted
+   */
   onInsert = (cb: (value: any) => void) => {
     this.emitter.on("insert", cb);
   };
 
+  /**
+   * Called when a row is deleted
+   * @param cb Callback to be called when a row is deleted
+   */
   onDelete = (cb: (value: any) => void) => {
     this.emitter.on("delete", cb);
   };
 
+  /**
+   * Called when a row is updated
+   * @param cb Callback to be called when a row is updated
+   */
   onUpdate = (cb: (value: any, oldValue: any) => void) => {
     this.emitter.on("update", cb);
   };
 
+  /**
+   * Removes the event listener for when a new row is inserted
+   * @param cb Callback to be called when the event listener is removed
+   */
   removeOnInsert = (cb: (value: any) => void) => {
     this.emitter.off("insert", cb);
   };
 
+  /**
+   * Removes the event listener for when a row is deleted
+   * @param cb Callback to be called when the event listener is removed
+   */
   removeOnDelete = (cb: (value: any) => void) => {
     this.emitter.off("delete", cb);
   };
 
+  /**
+   * Removes the event listener for when a row is updated
+   * @param cb Callback to be called when the event listener is removed
+   */
   removeOnUpdate = (cb: (value: any, oldRow: any) => void) => {
     this.emitter.off("update", cb);
   };
 }
 
 export class ClientDB {
+  /**
+   * The tables in the database.
+   */
   tables: Map<string, Table>;
 
   constructor() {
     this.tables = new Map();
   }
 
+  /**
+   * Returns the table with the given name.
+   * @param name The name of the table.
+   * @returns The table
+   */
   getTable(name: string): Table {
-    // I cast to Table, because this will assume that the table is
-    // already there
-    // TODO: might be better to throw an exception here?
-    return this.tables.get(name) as Table;
+    const table = this.tables.get(name);
+
+    // ! This should not happen as the table should be available but an exception is thrown just in case.
+    if (!table) {
+      throw new Error(`Table ${name} does not exist`);
+    }
+
+    return table;
   }
 
   getOrCreateTable = (
@@ -218,10 +260,20 @@ export class ClientDB {
 }
 
 export class SpacetimeDBClient {
+  /**
+   * The identity of the user.
+   */
   identity?: string = undefined;
+  /**
+   * The token of the user.
+   */
   token?: string = undefined;
+  /**
+   * Reference to the database of the client.
+   */
   public db: ClientDB;
   public emitter!: EventEmitter;
+
   private ws!: WS.w3cwebsocket;
   private reducers: Map<string, any>;
   private components: Map<string, any>;
@@ -402,10 +454,20 @@ export class SpacetimeDBClient {
     };
   }
 
+  /**
+   * Register a reducer to be used with your SpacetimeDB module
+   * @param name The name of the reducer to register
+   * @param reducer The reducer to register
+   */
   public registerReducer(name: string, reducer: any) {
     this.reducers.set(name, reducer);
   }
 
+  /**
+   * Register a component to be used with your SpacetimeDB module. If the websocket is already connected it will add it to the list of subscribed components
+   * @param name The name of the component to register
+   * @param component The component to register
+   */
   public registerComponent(name: string, component: any) {
     this.components.set(name, component);
     this.db.getOrCreateTable(name, undefined, component);
@@ -414,6 +476,10 @@ export class SpacetimeDBClient {
     }
   }
 
+  /**
+   * Adds a component to the list of components to subscribe to in your websocket connection
+   * @param element The component to subscribe to
+   */
   public subscribeComponent(element: any) {
     if (element.tableName) {
       this.ws.send(
@@ -422,6 +488,11 @@ export class SpacetimeDBClient {
     }
   }
 
+  /**
+   * Call a reducer on your SpacetimeDB module
+   * @param reducerName The name of the reducer to call
+   * @param args The arguments to pass to the reducer
+   */
   public call(reducerName: String, args: Array<any>) {
     const msg = `{
     "call": {
