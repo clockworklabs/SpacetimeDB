@@ -340,6 +340,8 @@ export class SpacetimeDBClient {
       return;
     }
 
+    console.info("Connecting to SpacetimeDB WS...");
+
     if (host) {
       this.runtime.host = host;
     }
@@ -402,6 +404,7 @@ export class SpacetimeDBClient {
 
     this.ws.onmessage = (message: any) => {
       const data = JSON.parse(message.data);
+
       if (data) {
         if (data["SubscriptionUpdate"]) {
           let subUpdate = data["SubscriptionUpdate"];

@@ -4,13 +4,27 @@ import "./App.css";
 
 function App() {
   const [client] = useState<SpacetimeDBClient>(
-    new SpacetimeDBClient("localhost:3000", "goldbreezycanid")
+    new SpacetimeDBClient("localhost:3000", "goldbreezycanid", {
+      identity:
+        "49f2d472cabfbc7ded52ac1f93316750dc8ea162aac97cc52a340aed221b7ff3",
+      token:
+        "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJoZXhfaWRlbnRpdHkiOiI0OWYyZDQ3MmNhYmZiYzdkZWQ1MmFjMWY5MzMxNjc1MGRjOGVhMTYyYWFjOTdjYzUyYTM0MGFlZDIyMWI3ZmYzIiwiaWF0IjoxNjgwMTkwNDc5fQ.KPz0DjrWb6I5c51wa71FGTgWz0Nh6CiNycM0ynmDDNkGjRxsci5cmiEjHQdYKyIeaG9MizSVPGlaDJ2Z7uctcg",
+    })
   );
 
   useEffect(() => {
-    if (client.live) {
-      client.connect();
-    }
+    client.connect();
+    client.on("disconnected", () => {
+      console.log("disconnected");
+    });
+    client.on("client_error", () => {
+      console.log("client_error");
+    });
+
+    client.on("connected", (e) => {
+      // logs the identity
+      console.log(e);
+    });
   }, [client]);
 
   return (
