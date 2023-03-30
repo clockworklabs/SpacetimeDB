@@ -102,7 +102,7 @@ class Table {
     operations: { op: string; row_pk: string; row: any[] }[]
   ) => {
     if (this.pkCol !== undefined) {
-      const inserts = [];
+      const inserts: any[] = [];
       const deleteMap = new Map();
       for (const op of operations) {
         if (op.op === "insert") {
@@ -274,10 +274,14 @@ export class SpacetimeDBClient {
   public db: ClientDB;
   public emitter!: EventEmitter;
 
+  /**
+   * Whether the client is connected via websocket.
+   */
+  public live: boolean;
+
   private ws!: WS.w3cwebsocket;
   private reducers: Map<string, any>;
   private components: Map<string, any>;
-  private live: boolean;
   private runtime: {
     host: string;
     name_or_address: string;
@@ -323,7 +327,6 @@ export class SpacetimeDBClient {
 
   /**
    * Connect to The SpacetimeDB Websocket For Your Module. By default, this will use a secure websocket connection. The parameters are optional, and if not provided, will use the values provided on construction of the client.
-   * @param useWebsocketSecure Whether to use a secure websocket connection
    * @param host The host of the spacetimeDB server
    * @param name_or_address The name or address of the spacetimeDB module
    * @param credentials The credentials to use to connect to the spacetimeDB module
@@ -349,7 +352,7 @@ export class SpacetimeDBClient {
       this.runtime.credentials = credentials;
     }
 
-    let headers = undefined;
+    let headers: any = undefined;
     if (this.runtime.credentials) {
       this.identity = this.runtime.credentials.identity;
       this.token = this.runtime.credentials.token;
