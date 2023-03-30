@@ -6,7 +6,6 @@
     "name": "Clockwork Labs",
     "email": "no-reply@clockworklabs.io"
   },
-  "type": "module",
   "scripts": {
     "clean": "rimraf dist",
     "build": "tsc",
