@@ -315,6 +315,13 @@ export class SpacetimeDBClient {
   }
 
   /**
+   * Disconnect from The SpacetimeDB Websocket For Your Module.
+   */
+  public disconnect() {
+    this.ws.close();
+  }
+
+  /**
    * Connect to The SpacetimeDB Websocket For Your Module. By default, this will use a secure websocket connection. The parameters are optional, and if not provided, will use the values provided on construction of the client.
    * @param useWebsocketSecure Whether to use a secure websocket connection
    * @param host The host of the spacetimeDB server
@@ -326,6 +333,10 @@ export class SpacetimeDBClient {
     name_or_address?: string,
     credentials?: { identity: string; token: string }
   ) {
+    if (this.live) {
+      return;
+    }
+
     if (host) {
       this.runtime.host = host;
     }
