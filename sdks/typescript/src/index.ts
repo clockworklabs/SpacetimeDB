@@ -1,1 +1,1 @@
-export * from './spacetimedb.js';
+export { SpacetimeDBClient } from "./spacetimedb";

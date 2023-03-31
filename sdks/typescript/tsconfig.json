@@ -1,16 +1,16 @@
 {
   "compilerOptions": {
-    "incremental": true,            /* Enable incremental compilation */
-    "target": "ESNext",                /* Specify ECMAScript target version: */
-    "module": "ESNext",           /* 'none', 'commonjs', 'amd', 'system', etc */
-    "declaration": true,            /* Concatenate & emit output to single file.*/
-    "outDir": "dist",                /* Redirect output to the directory. */
-    "esModuleInterop": true,        /* Enables intero between CommonJS and ES */
-    "skipLibCheck": true,           /* Skip type checking of declaration files. */
-    "forceConsistentCasingInFileNames": true, /* Disallow inconsistently */
-    "strict": true
+    "incremental": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "declaration": true,
+    "outDir": "dist",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noImplicitAny": false
   },
-  "include": [
-    "src"
-  ]
+  "include": ["src"],
+  "exclude": ["node_modules", "**/__tests__/*"]
 }
