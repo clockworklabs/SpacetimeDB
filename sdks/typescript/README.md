@@ -24,6 +24,18 @@ import { SpacetimeDBClient } from '@clockworklabs/spacetimedb-typescript-sdk';
 let client = new SpacetimeDBClient("spacetimedb.com/spacetimedb", "<db-name>");
 ```
 
+If you would like to connect to the client you can call the below method. This also takes optional parameters to override the host or credentials:
+
+```ts
+client.connect();
+```
+
+If for some reason you  need to disconnect the client:
+
+```ts
+client.disconnect();
+```
+
 This will connect to a database instance without a specified identity. If you want to persist an identity fetched on connection you can register an `onConnect` callback, which will receive a new assigned identity as an argument:
 
 ```ts
