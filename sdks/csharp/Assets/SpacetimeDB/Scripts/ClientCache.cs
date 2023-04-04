@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.ComponentModel.Design;
 using System.Linq;
 using System.Net.Http.Headers;
+using System.Reflection;
 using Google.Protobuf;
 using UnityEngine;
 using ClientApi;
@@ -48,6 +49,11 @@ namespace SpacetimeDB
             public readonly ConcurrentDictionary<byte[], (AlgebraicValue, object)> decodedValues;
 
             public Type ClientTableType { get => clientTableType; }
+
+            public MethodInfo InsertCallback;
+            public MethodInfo DeleteCallback;
+            public MethodInfo RowUpdatedCallback;
+            
             public string Name { get => name; }
             public AlgebraicType RowSchema { get => rowSchema; }
 
@@ -58,6 +64,9 @@ namespace SpacetimeDB
 
                 this.rowSchema = rowSchema;
                 this.decoderFunc = decoderFunc;
+                InsertCallback = clientTableType.GetMethod("OnInsertEvent");
+                DeleteCallback = clientTableType.GetMethod("OnDeleteEvent");
+                RowUpdatedCallback = clientTableType.GetMethod("OnRowUpdateEvent");
                 entries = new Dictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
                 decodedValues = new ConcurrentDictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
             }

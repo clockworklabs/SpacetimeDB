@@ -14,6 +14,7 @@ using Newtonsoft.Json;
 using SpacetimeDB;
 using SpacetimeDB.SATS;
 using UnityEngine;
+using Event = ClientApi.Event;
 
 namespace SpacetimeDB
 {
@@ -39,7 +40,8 @@ namespace SpacetimeDB
 
         private struct DbEvent
         {
-            public Type clientTableType;
+            public ClientCache.TableCache table;
+            public byte[] rowPk;
             public TableOp op;
             public object oldValue;
             public object newValue;
@@ -154,18 +156,26 @@ namespace SpacetimeDB
                 {
                     reducerEventCache.Add(reducerEvent.FunctionName, methodInfo);
                 }
+
                 if (methodInfo.GetCustomAttribute<DeserializeEvent>() is { } deserializeEvent)
                 {
                     deserializeEventCache.Add(deserializeEvent.FunctionName, methodInfo);
                 }
             }
-            
+
             messageProcessThread = new Thread(ProcessMessages);
             messageProcessThread.Start();
         }
 
+        struct ProcessedMessage
+        {
+            public Message message;
+            public IList<DbEvent> events;
+        }
+        
         private readonly BlockingCollection<byte[]> _messageQueue = new BlockingCollection<byte[]>();
-        private readonly ConcurrentQueue<byte[]> _completedMessages = new ConcurrentQueue<byte[]>();
+        private readonly ConcurrentQueue<ProcessedMessage> _completedMessages = new ConcurrentQueue<ProcessedMessage>();
+        
 
         void ProcessMessages()
         {
@@ -218,7 +228,97 @@ namespace SpacetimeDB
                         break;
                 }
 
-                _completedMessages.Enqueue(bytes);
+                var (m, events) = PreProcessMessage(bytes);
+                _completedMessages.Enqueue(new ProcessedMessage
+                {
+                    message = m,
+                    events = events,
+                });
+            }
+
+            (Message, List<DbEvent>) PreProcessMessage(byte[] bytes)
+            {
+                var dbEvents = new List<DbEvent>();
+                var message = ClientApi.Message.Parser.ParseFrom(bytes);
+                using var stream = new MemoryStream();
+                using var reader = new BinaryReader(stream);
+
+                SubscriptionUpdate subscriptionUpdate = null;
+                switch (message.TypeCase)
+                {
+                    case ClientApi.Message.TypeOneofCase.SubscriptionUpdate:
+                        subscriptionUpdate = message.SubscriptionUpdate;
+                        break;
+                    case ClientApi.Message.TypeOneofCase.TransactionUpdate:
+                        subscriptionUpdate = message.TransactionUpdate.SubscriptionUpdate;
+                        break;
+                }
+
+                switch (message.TypeCase)
+                {
+                    case ClientApi.Message.TypeOneofCase.SubscriptionUpdate:
+                    case ClientApi.Message.TypeOneofCase.TransactionUpdate:
+                        // First apply all of the state
+                        foreach (var update in subscriptionUpdate.TableUpdates)
+                        {
+                            var tableName = update.TableName;
+                            var table = clientDB.GetTable(tableName);
+                            if (table == null)
+                            {
+                                continue;
+                            }
+
+                            foreach (var row in update.TableRowOperations)
+                            {
+                                var rowPk = row.RowPk.ToByteArray();
+                                var rowValue = row.Row.ToByteArray();
+                                stream.Position = 0;
+                                stream.Write(rowValue, 0, rowValue.Length);
+                                stream.Position = 0;
+                                stream.SetLength(rowValue.Length);
+
+                                switch (row.Op)
+                                {
+                                    case TableRowOperation.Types.OperationType.Delete:
+                                        if (table.entries.TryGetValue(rowPk, out var previousValue))
+                                        {
+                                            dbEvents.Add(new DbEvent
+                                            {
+                                                table = table,
+                                                op = TableOp.Delete,
+                                                newValue = null,
+                                                oldValue = previousValue.Item2,
+                                            });
+                                        }
+
+                                        break;
+                                    case TableRowOperation.Types.OperationType.Insert:
+                                        var algebraicValue = AlgebraicValue.Deserialize(table.RowSchema, reader);
+                                        var decode = table.Decode(rowPk, algebraicValue);
+                                        if (!table.entries.TryGetValue(rowPk, out _))
+                                        {
+                                            dbEvents.Add(new DbEvent
+                                            {
+                                                table = table,
+                                                op = TableOp.Insert,
+                                                newValue = decode.Item2,
+                                                oldValue = null
+                                            });
+                                        }
+
+                                        break;
+                                }
+                            }
+                        }
+
+                        break;
+                    case ClientApi.Message.TypeOneofCase.IdentityToken:
+                        break;
+                    case ClientApi.Message.TypeOneofCase.Event:
+                        break;
+                }
+
+                return (message, dbEvents);
             }
         }
 
@@ -258,13 +358,8 @@ namespace SpacetimeDB
             });
         }
 
-        readonly List<DbEvent> _dbEvents = new List<DbEvent>();
-
-        private void OnMessageProcessComplete(byte[] bytes)
+        private void OnMessageProcessComplete(Message message, IList<DbEvent> events)
         {
-            _dbEvents.Clear();
-            var message = ClientApi.Message.Parser.ParseFrom(bytes);
-
             SubscriptionUpdate subscriptionUpdate = null;
             switch (message.TypeCase)
             {
@@ -290,101 +385,56 @@ namespace SpacetimeDB
                             continue;
                         }
 
-                        foreach (var row in update.TableRowOperations)
+                        foreach (var ev in events)
                         {
-                            var rowPk = row.RowPk.ToByteArray();
-
-                            switch (row.Op)
+                            switch (ev.op)
                             {
-                                case TableRowOperation.Types.OperationType.Delete:
-                                    var deletedValue = table.Delete(rowPk);
-                                    if (deletedValue != null)
-                                    {
-                                        _dbEvents.Add(new DbEvent
-                                        {
-                                            clientTableType = table.ClientTableType,
-                                            op = TableOp.Delete,
-                                            newValue = null,
-                                            oldValue = deletedValue,
-                                        });
-                                    }
-
+                                case TableOp.Delete:
+                                    table.Delete(ev.rowPk);
                                     break;
-                                case TableRowOperation.Types.OperationType.Insert:
-                                    var insertedValue = table.Insert(rowPk);
-                                    if (insertedValue != null)
-                                    {
-                                        _dbEvents.Add(new DbEvent
-                                        {
-                                            clientTableType = table.ClientTableType,
-                                            op = TableOp.Insert,
-                                            newValue = insertedValue,
-                                            oldValue = null
-                                        });
-                                    }
-
+                                case TableOp.Insert:
+                                    table.Insert(ev.rowPk);
                                     break;
                             }
                         }
                     }
 
                     // Send out events
-                    var eventCount = _dbEvents.Count;
-                    for (int i = 0; i < eventCount; i++)
+                    var eventCount = events.Count;
+                    for (var i = 0; i < eventCount; i++)
                     {
-                        string tableName = _dbEvents[i].clientTableType.Name;
+                        var tableName = events[i].table.ClientTableType.Name;
+                        var tableOp = events[i].op;
+                        object oldValue = events[i].oldValue, newValue = events[i].newValue;
 
-                        bool isUpdate = false;
-                        if (i < eventCount - 1)
+                        switch (tableOp)
                         {
-                            if (_dbEvents[i].op == TableOp.Delete && _dbEvents[i + 1].op == TableOp.Insert)
+                            case TableOp.Insert:
                             {
-                                // somewhat hacky: Delete followed by an insert on the same table is considered an update.
-                                isUpdate = tableName.Equals(_dbEvents[i + 1].clientTableType.Name);
+                                if (events[i].table.InsertCallback != null)
+                                {
+                                    events[i].table.InsertCallback.Invoke(null, new [] { newValue });
+                                }
+                                break;
                             }
-                        }
-
-                        TableOp tableOp = _dbEvents[i].op;
-
-                        object oldValue = _dbEvents[i].oldValue, newValue = _dbEvents[i].newValue;
-
-                        if (isUpdate)
-                        {
-                            // Merge delete and insert in one update
-                            tableOp = TableOp.Update;
-                            newValue = _dbEvents[i + 1].newValue;
-
-                            i++;
-
-                            var clientEvent = _dbEvents[i].clientTableType.GetMethod("OnUpdateEvent");
-                            if (clientEvent != null)
+                            case TableOp.Delete:
                             {
-                                clientEvent.Invoke(null, new object[] { oldValue, newValue });
+                                if (events[i].table.DeleteCallback != null)
+                                {
+                                    events[i].table.DeleteCallback.Invoke(null, new [] { oldValue });
+                                }
+                                break;
                             }
-                        }
-                        else if (tableOp == TableOp.Insert)
-                        {
-                            var clientEvent = _dbEvents[i].clientTableType.GetMethod("OnInsertEvent");
-                            if (clientEvent != null)
-                            {
-                                clientEvent.Invoke(null, new object[] { newValue });
-                            }
-                        }
-                        else if (tableOp == TableOp.Delete)
-                        {
-                            var clientEvent = _dbEvents[i].clientTableType.GetMethod("OnDeleteEvent");
-                            if (clientEvent != null)
-                            {
-                                clientEvent.Invoke(null, new object[] { oldValue });
-                            }
+                            case TableOp.Update:
+                                throw new NotImplementedException();
+                            default:
+                                throw new ArgumentOutOfRangeException();
                         }
 
-                        var clientRowUpdate = _dbEvents[i].clientTableType.GetMethod("OnRowUpdateEvent");
-                        if (clientRowUpdate != null)
+                        if (events[i].table.RowUpdatedCallback != null)
                         {
-                            clientRowUpdate.Invoke(null, new object[] { tableOp, oldValue, newValue });
+                            events[i].table.RowUpdatedCallback.Invoke(null, new[] { tableOp, oldValue, newValue });
                         }
-
                         onRowUpdate?.Invoke(tableName, tableOp, oldValue, newValue);
                     }
 
@@ -435,7 +485,7 @@ namespace SpacetimeDB
         {
             webSocket.Send(Encoding.ASCII.GetBytes("{ \"call\": " + json + " }"));
         }
-        
+
         public void Subscribe(List<string> queries)
         {
             var json = JsonConvert.SerializeObject(queries);
@@ -448,7 +498,7 @@ namespace SpacetimeDB
 
             while (_completedMessages.TryDequeue(out var result))
             {
-                OnMessageProcessComplete(result);
+                OnMessageProcessComplete(result.message, result.events);
             }
         }
     }
