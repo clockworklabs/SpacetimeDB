@@ -10,6 +10,8 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using ClientApi;
+using Google.Protobuf;
+using Google.Protobuf.WellKnownTypes;
 using Newtonsoft.Json;
 using SpacetimeDB;
 using SpacetimeDB.SATS;
@@ -43,8 +45,8 @@ namespace SpacetimeDB
             public ClientCache.TableCache table;
             public byte[] rowPk;
             public TableOp op;
-            public object oldValue;
             public object newValue;
+            public object oldValue;
         }
 
         public delegate void RowUpdate(string tableName, TableOp op, object oldValue, object newValue);
@@ -172,10 +174,10 @@ namespace SpacetimeDB
             public Message message;
             public IList<DbEvent> events;
         }
-        
+
         private readonly BlockingCollection<byte[]> _messageQueue = new BlockingCollection<byte[]>();
         private readonly ConcurrentQueue<ProcessedMessage> _completedMessages = new ConcurrentQueue<ProcessedMessage>();
-        
+
 
         void ProcessMessages()
         {
@@ -192,39 +194,6 @@ namespace SpacetimeDB
                         break;
                     case ClientApi.Message.TypeOneofCase.TransactionUpdate:
                         subscriptionUpdate = message.TransactionUpdate.SubscriptionUpdate;
-                        break;
-                }
-
-                switch (message.TypeCase)
-                {
-                    case ClientApi.Message.TypeOneofCase.SubscriptionUpdate:
-                    case ClientApi.Message.TypeOneofCase.TransactionUpdate:
-                    {
-                        // First apply all of the state
-                        System.Diagnostics.Debug.Assert(subscriptionUpdate != null,
-                            nameof(subscriptionUpdate) + " != null");
-                        using var stream = new MemoryStream();
-                        using var reader = new BinaryReader(stream);
-                        foreach (var update in subscriptionUpdate.TableUpdates)
-                        {
-                            foreach (var row in update.TableRowOperations)
-                            {
-                                stream.Position = 0;
-                                stream.SetLength(row.Row.Length);
-                                stream.Write(row.Row.ToByteArray(), 0, row.Row.Length);
-                                stream.Position = 0;
-                                var table = clientDB.GetTable(update.TableName);
-                                var algebraicType = table.RowSchema;
-                                var algebraicValue = AlgebraicValue.Deserialize(algebraicType, reader);
-                                if (algebraicValue != null)
-                                {
-                                    // Here we are decoding on our message thread so that by the time we get to the
-                                    // main thread the cache is already warm.
-                                    table.Decode(row.RowPk.ToByteArray(), algebraicValue);
-                                }
-                            }
-                        }
-                    }
                         break;
                 }
 
@@ -265,6 +234,7 @@ namespace SpacetimeDB
                             var table = clientDB.GetTable(tableName);
                             if (table == null)
                             {
+                                Debug.LogError($"Unknown table name: {tableName}");
                                 continue;
                             }
 
@@ -280,32 +250,31 @@ namespace SpacetimeDB
                                 switch (row.Op)
                                 {
                                     case TableRowOperation.Types.OperationType.Delete:
-                                        if (table.entries.TryGetValue(rowPk, out var previousValue))
+                                        dbEvents.Add(new DbEvent
                                         {
-                                            dbEvents.Add(new DbEvent
-                                            {
-                                                table = table,
-                                                op = TableOp.Delete,
-                                                newValue = null,
-                                                oldValue = previousValue.Item2,
-                                            });
-                                        }
-
+                                            table = table,
+                                            rowPk = rowPk,
+                                            op = TableOp.Delete,
+                                            newValue = null,
+                                            // We cannot grab the old value here because there might be other
+                                            // pending operations that will execute before us. We should only
+                                            // set this value on the main thread where we know there are no other
+                                            // operations which could remove this value.
+                                            oldValue = null,
+                                        });
                                         break;
                                     case TableRowOperation.Types.OperationType.Insert:
                                         var algebraicValue = AlgebraicValue.Deserialize(table.RowSchema, reader);
-                                        var decode = table.Decode(rowPk, algebraicValue);
-                                        if (!table.entries.TryGetValue(rowPk, out _))
+                                        Debug.Assert(algebraicValue != null);
+                                        table.SetDecodedValue(rowPk, algebraicValue, out var obj);
+                                        dbEvents.Add(new DbEvent
                                         {
-                                            dbEvents.Add(new DbEvent
-                                            {
-                                                table = table,
-                                                op = TableOp.Insert,
-                                                newValue = decode.Item2,
-                                                oldValue = null
-                                            });
-                                        }
-
+                                            table = table,
+                                            rowPk = rowPk,
+                                            op = TableOp.Insert,
+                                            newValue = obj,
+                                            oldValue = null,
+                                        });
                                         break;
                                 }
                             }
@@ -376,26 +345,19 @@ namespace SpacetimeDB
                 case ClientApi.Message.TypeOneofCase.SubscriptionUpdate:
                 case ClientApi.Message.TypeOneofCase.TransactionUpdate:
                     // First apply all of the state
-                    foreach (var update in subscriptionUpdate.TableUpdates)
+                    for (var i = 0; i < events.Count; i++)
                     {
-                        var tableName = update.TableName;
-                        var table = clientDB.GetTable(tableName);
-                        if (table == null)
+                        var ev = events[i];
+                        switch (ev.op)
                         {
-                            continue;
-                        }
-
-                        foreach (var ev in events)
-                        {
-                            switch (ev.op)
-                            {
-                                case TableOp.Delete:
-                                    table.Delete(ev.rowPk);
-                                    break;
-                                case TableOp.Insert:
-                                    table.Insert(ev.rowPk);
-                                    break;
-                            }
+                            case TableOp.Delete:
+                                ev.oldValue = events[i].table.DeleteEntry(ev.rowPk);
+                                events[i] = ev;
+                                break;
+                            case TableOp.Insert:
+                                ev.newValue = events[i].table.InsertEntry(ev.rowPk);
+                                events[i] = ev;
+                                break;
                         }
                     }
 
@@ -405,7 +367,8 @@ namespace SpacetimeDB
                     {
                         var tableName = events[i].table.ClientTableType.Name;
                         var tableOp = events[i].op;
-                        object oldValue = events[i].oldValue, newValue = events[i].newValue;
+                        var oldValue = events[i].oldValue;
+                        var newValue = events[i].newValue;
 
                         switch (tableOp)
                         {
@@ -413,16 +376,42 @@ namespace SpacetimeDB
                             {
                                 if (events[i].table.InsertCallback != null)
                                 {
-                                    events[i].table.InsertCallback.Invoke(null, new [] { newValue });
+                                    if (oldValue == null && newValue != null)
+                                    {
+                                        events[i].table.InsertCallback.Invoke(null, new[] { newValue });
+                                        if (events[i].table.RowUpdatedCallback != null)
+                                        {
+                                            events[i].table.RowUpdatedCallback
+                                                .Invoke(null, new[] { tableOp, null, newValue });
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("Failed to send callback: invalid insert!");
+                                    }
                                 }
+
                                 break;
                             }
                             case TableOp.Delete:
                             {
                                 if (events[i].table.DeleteCallback != null)
                                 {
-                                    events[i].table.DeleteCallback.Invoke(null, new [] { oldValue });
+                                    if (oldValue != null && newValue == null)
+                                    {
+                                        events[i].table.DeleteCallback.Invoke(null, new[] { oldValue });
+                                        if (events[i].table.RowUpdatedCallback != null)
+                                        {
+                                            events[i].table.RowUpdatedCallback
+                                                .Invoke(null, new[] { tableOp, oldValue, null });
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("Failed to send callback: invalid delete");
+                                    }
                                 }
+
                                 break;
                             }
                             case TableOp.Update:
@@ -431,10 +420,7 @@ namespace SpacetimeDB
                                 throw new ArgumentOutOfRangeException();
                         }
 
-                        if (events[i].table.RowUpdatedCallback != null)
-                        {
-                            events[i].table.RowUpdatedCallback.Invoke(null, new[] { tableOp, oldValue, newValue });
-                        }
+
                         onRowUpdate?.Invoke(tableName, tableOp, oldValue, newValue);
                     }
 

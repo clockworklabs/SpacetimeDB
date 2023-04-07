@@ -45,17 +45,28 @@ namespace SpacetimeDB
 
             // Maps from primary key to type value
             public readonly Dictionary<byte[], (AlgebraicValue, object)> entries;
+
             // Maps from primary key to decoded value
             public readonly ConcurrentDictionary<byte[], (AlgebraicValue, object)> decodedValues;
 
-            public Type ClientTableType { get => clientTableType; }
+            public Type ClientTableType
+            {
+                get => clientTableType;
+            }
 
             public MethodInfo InsertCallback;
             public MethodInfo DeleteCallback;
             public MethodInfo RowUpdatedCallback;
-            
-            public string Name { get => name; }
-            public AlgebraicType RowSchema { get => rowSchema; }
+
+            public string Name
+            {
+                get => name;
+            }
+
+            public AlgebraicType RowSchema
+            {
+                get => rowSchema;
+            }
 
             public TableCache(Type clientTableType, AlgebraicType rowSchema, Func<AlgebraicValue, object> decoderFunc)
             {
@@ -71,42 +82,62 @@ namespace SpacetimeDB
                 decodedValues = new ConcurrentDictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
             }
 
-            public (AlgebraicValue, object) Decode(byte[] pk, AlgebraicValue value)
+            public bool GetDecodedValue(byte[] pk, out AlgebraicValue value, out object obj)
             {
                 if (decodedValues.TryGetValue(pk, out var decoded))
                 {
-                    return decoded;
+                    value = decoded.Item1;
+                    obj = decoded.Item2;
+                    return true;
                 }
 
-                if (value == null)
+                value = null;
+                obj = null;
+                return false;
+            }
+
+            /// <summary>
+            /// Decodes the given AlgebraicValue into the out parameter `obj`.
+            /// </summary>
+            /// <param name="pk">The primary key of the row associated with `value`.</param>
+            /// <param name="value">The AlgebraicValue to decode.</param>
+            /// <param name="obj">The domain object for `value`</param>
+            public void SetDecodedValue(byte[] pk, AlgebraicValue value, out object obj)
+            {
+                if (decodedValues.TryGetValue(pk, out var existingObj))
                 {
-                    return (null, null);
+                    obj = existingObj.Item2;
                 }
-                decoded = (value, decoderFunc(value));
-                decodedValues[pk] = decoded;
-                return decoded;
-            }            
+                else
+                {
+                    var decoded = (value, decoderFunc(value));
+                    decodedValues[pk] = decoded;
+                    obj = decoded.Item2;
+                }
+            }
 
             /// <summary>
             /// Inserts the value into the table. There can be no existing value with the provided pk.
             /// </summary>
             /// <returns></returns>
-            public object Insert(byte[] rowPk)
+            public object InsertEntry(byte[] rowPk)
             {
                 if (entries.TryGetValue(rowPk, out _))
                 {
+                    Debug.LogError("Already inserted!");
                     return null;
                 }
 
-                var decodedTuple = Decode(rowPk, null);
-                if (decodedTuple.Item1 != null && decodedTuple.Item2 != null)
+                if (GetDecodedValue(rowPk, out var value, out var obj))
                 {
-                    entries[rowPk] = (decodedTuple.Item1, decodedTuple.Item2);
-                    return decodedTuple.Item2;
+                    Debug.Log("Inserted already decoded value.");
+                    entries[rowPk] = (value, obj);
+                    return obj;
                 }
 
                 // Read failure
-                Debug.LogError($"Read error when converting row value for table: {name} (version issue?)");
+                Debug.LogError(
+                    $"Read error when converting row value for table: {clientTableType.Name} rowPk={Convert.ToBase64String(rowPk)} (version issue?)");
                 return null;
             }
 
@@ -117,7 +148,7 @@ namespace SpacetimeDB
             /// <param name="pk">The primary key that uniquely identifies this row</param>
             /// <param name="newValueByteString">The new for the table entry</param>
             /// <returns>True when the old value was removed and the new value was inserted.</returns>
-            public bool Update(ByteString pk, ByteString newValueByteString)
+            public bool UpdateEntry(ByteString pk, ByteString newValueByteString)
             {
                 // We have to figure out if pk is going to change or not
                 throw new InvalidOperationException();
@@ -128,7 +159,7 @@ namespace SpacetimeDB
             /// </summary>
             /// <param name="rowPk">The primary key that uniquely identifies this row</param>
             /// <returns></returns>
-            public object Delete(byte[] rowPk)
+            public object DeleteEntry(byte[] rowPk)
             {
                 if (entries.TryGetValue(rowPk, out var value))
                 {
@@ -140,7 +171,8 @@ namespace SpacetimeDB
             }
         }
 
-        private readonly ConcurrentDictionary<string, TableCache> tables = new ConcurrentDictionary<string, TableCache>();
+        private readonly ConcurrentDictionary<string, TableCache> tables =
+            new ConcurrentDictionary<string, TableCache>();
 
         public void AddTable(Type clientTableType, AlgebraicType tableRowDef, Func<AlgebraicValue, object> decodeFunc)
         {
@@ -155,6 +187,7 @@ namespace SpacetimeDB
             // Initialize this table
             tables[name] = new TableCache(clientTableType, tableRowDef, decodeFunc);
         }
+
         public IEnumerable<object> GetObjects(string name)
         {
             if (!tables.TryGetValue(name, out var table))
@@ -198,6 +231,7 @@ namespace SpacetimeDB
             {
                 return 0;
             }
+
             return table.entries.Count;
         }
 
