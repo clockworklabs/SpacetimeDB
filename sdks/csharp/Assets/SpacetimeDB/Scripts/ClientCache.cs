@@ -124,13 +124,11 @@ namespace SpacetimeDB
             {
                 if (entries.TryGetValue(rowPk, out _))
                 {
-                    Debug.LogError("Already inserted!");
                     return null;
                 }
 
                 if (GetDecodedValue(rowPk, out var value, out var obj))
                 {
-                    Debug.Log("Inserted already decoded value.");
                     entries[rowPk] = (value, obj);
                     return obj;
                 }
