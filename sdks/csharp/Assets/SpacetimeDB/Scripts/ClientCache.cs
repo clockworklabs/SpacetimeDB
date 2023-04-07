@@ -159,7 +159,7 @@ namespace SpacetimeDB
             }
         }
 
-        public IEnumerable<AlgebraicValue> GetEntries(string name)
+        public IEnumerable<(AlgebraicValue, object)> GetEntries(string name)
         {
             if (!tables.TryGetValue(name, out var table))
             {
@@ -168,7 +168,7 @@ namespace SpacetimeDB
 
             foreach (var entry in table.entries)
             {
-                yield return entry.Value.Item1;
+                yield return entry.Value;
             }
         }
 
