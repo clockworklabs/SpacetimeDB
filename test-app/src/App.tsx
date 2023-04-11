@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { SpacetimeDBClient } from "@clockworklabs/spacetimedb-typescript-sdk";
+import { SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 import "./App.css";
 
 function App() {
