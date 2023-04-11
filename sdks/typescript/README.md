@@ -9,7 +9,7 @@ This repository contains the TypeScript SDK for SpacetimeDB. The SDK allows to i
 The SDK is an NPM package, thus you can use your package manager of choice like NPM or Yarn, for example:
 
 ```
-npm install --save @clockworklabs/spacetimedb-typescript-sdk
+npm install --save @clockworklabs/spacetimedb-sdk
 ```
 
 You can use the package in the browser, using a bundler like webpack of vite, and in terminal applications
@@ -19,7 +19,7 @@ You can use the package in the browser, using a bundler like webpack of vite, an
 In order to connect to a database you have to create a new client:
 
 ```ts 
-import { SpacetimeDBClient } from '@clockworklabs/spacetimedb-typescript-sdk';
+import { SpacetimeDBClient } from '@clockworklabs/spacetimedb-sdk';
 
 let client = new SpacetimeDBClient("spacetimedb.com/spacetimedb", "<db-name>");
 ```
