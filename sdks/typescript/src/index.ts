@@ -1,1 +1,1 @@
-export { SpacetimeDBClient } from "./spacetimedb";
+export * from "./spacetimedb";
