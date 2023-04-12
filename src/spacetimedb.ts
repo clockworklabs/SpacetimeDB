@@ -282,6 +282,7 @@ export class SpacetimeDBClient {
   private ws!: WS.w3cwebsocket;
   private reducers: Map<string, any>;
   private components: Map<string, any>;
+  private queriesQueue: string[];
   private runtime: {
     host: string;
     name_or_address: string;
@@ -309,6 +310,8 @@ export class SpacetimeDBClient {
       this.registerComponent(name, component);
     }
     this.live = false;
+    this.emitter = new EventEmitter();
+    this.queriesQueue = [];
 
     this.runtime = {
       host,
@@ -369,7 +372,6 @@ export class SpacetimeDBClient {
     ) {
       url = "ws://" + url;
     }
-    this.emitter = new EventEmitter();
 
     this.ws = new WS.w3cwebsocket(
       url,
@@ -397,9 +399,9 @@ export class SpacetimeDBClient {
 
     this.ws.onopen = () => {
       this.live = true;
-      this.components.forEach((component) => {
-        this.subscribeComponent(component);
-      });
+
+      this.subscribe(this.queriesQueue);
+      this.queriesQueue = [];
     };
 
     this.ws.onmessage = (message: any) => {
@@ -491,12 +493,10 @@ export class SpacetimeDBClient {
   public registerComponent(name: string, component: any) {
     this.components.set(name, component);
     this.db.getOrCreateTable(name, undefined, component);
-    if (this.live) {
-      this.subscribeComponent(component);
-    }
   }
 
   /**
+   * @deprecated
    * Adds a component to the list of components to subscribe to in your websocket connection
    * @param element The component to subscribe to
    */
@@ -505,6 +505,22 @@ export class SpacetimeDBClient {
       this.ws.send(
         JSON.stringify({ subscribe: { query_strings: [element.tableName] } })
       );
+    }
+  }
+
+  /**
+   * Subscribes to a query or multiple queries
+   * @param queries Can be either a string for one query or an array for multiple queries
+   */
+  public subscribe(queryOrQueries: string | string[]) {
+    const queries = typeof queryOrQueries === "string" ? [queryOrQueries] : queryOrQueries;
+
+    if (this.live) {
+      this.ws.send(
+        JSON.stringify({ subscribe: { query_strings: queries } })
+      );
+    } else {
+      this.queriesQueue = this.queriesQueue.concat(queries);
     }
   }
 
