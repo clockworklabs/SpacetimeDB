@@ -53,7 +53,10 @@ export class BuiltinType {
   public arrayType: AlgebraicType | undefined;
   public mapType: MapType | undefined;
 
-  constructor(type: BuiltinType.Type, arrayOrMapType: AlgebraicType | MapType | undefined) {
+  constructor(
+    type: BuiltinType.Type,
+    arrayOrMapType: AlgebraicType | MapType | undefined
+  ) {
     this.type = type;
     if (arrayOrMapType !== undefined) {
       if (arrayOrMapType.constructor === MapType) {
@@ -84,7 +87,7 @@ export namespace BuiltinType {
     F64 = "F64",
     String = "String",
     Array = "Array",
-    Map = "Map"
+    Map = "Map",
   }
 }
 
@@ -132,7 +135,9 @@ export class AlgebraicType {
     this.type = value == undefined ? Type.None : Type.BuiltinType;
   }
 
-  public static createProductType(elements: ProductTypeElement[]): AlgebraicType {
+  public static createProductType(
+    elements: ProductTypeElement[]
+  ): AlgebraicType {
     let type = new AlgebraicType();
     type.product = new ProductType(elements);
     return type;
@@ -170,7 +175,7 @@ export namespace AlgebraicType {
     SumType = "SumType",
     ProductType = "ProductType",
     BuiltinType = "BuiltinType",
-    None = "None"
+    None = "None",
   }
 }
 
