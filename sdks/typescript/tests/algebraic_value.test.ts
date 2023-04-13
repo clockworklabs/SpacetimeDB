@@ -1,8 +1,18 @@
-import { AlgebraicType, ProductType, ProductTypeElement, BuiltinType } from '../src/algebraic_type';
-import { ProductValue, AlgebraicValue, SumValue, BuiltinValue } from '../src/algebraic_value';
+import {
+  AlgebraicType,
+  ProductType,
+  ProductTypeElement,
+  BuiltinType,
+} from "../src/algebraic_type";
+import {
+  ProductValue,
+  AlgebraicValue,
+  SumValue,
+  BuiltinValue,
+} from "../src/algebraic_value";
 
-describe('AlgebraicValue', () => {
-  test('when created with a ProductValue it assigns the product property', () => {
+describe("AlgebraicValue", () => {
+  test("when created with a ProductValue it assigns the product property", () => {
     let value = new ProductValue([]);
     let av = new AlgebraicValue(value);
 
@@ -10,7 +20,7 @@ describe('AlgebraicValue', () => {
     expect(av.asProductValue()).toBe(value);
   });
 
-  test('when created with a SumValue it assigns the sum property', () => {
+  test("when created with a SumValue it assigns the sum property", () => {
     let value = new SumValue(1, new AlgebraicValue(new BuiltinValue(1)));
     let av = new AlgebraicValue(value);
 
@@ -18,7 +28,7 @@ describe('AlgebraicValue', () => {
     expect(av.asSumValue()).toBe(value);
   });
 
-  test('when created with a BuiltinValue it assigns the builtin property', () => {
+  test("when created with a BuiltinValue it assigns the builtin property", () => {
     let value = new BuiltinValue(1);
     let av = new AlgebraicValue(value);
 
@@ -26,14 +36,14 @@ describe('AlgebraicValue', () => {
     expect(av.asBuiltinValue()).toBe(value);
   });
 
-  test('when created with a BuiltinValue(string) it can be requested as a string', () => {
+  test("when created with a BuiltinValue(string) it can be requested as a string", () => {
     let value = new BuiltinValue("foo");
     let av = new AlgebraicValue(value);
 
     expect(av.asString()).toBe("foo");
   });
 
-  test('when created with a BuiltinValue(AlgebraicValue[]) it can be requested as an array', () => {
+  test("when created with a BuiltinValue(AlgebraicValue[]) it can be requested as an array", () => {
     let array: AlgebraicValue[] = [new AlgebraicValue(new BuiltinValue(1))];
     let value = new BuiltinValue(array);
     let av = new AlgebraicValue(value);
@@ -42,10 +52,13 @@ describe('AlgebraicValue', () => {
   });
 });
 
-describe('ProductValue', () => {
-  test('can be deserialized from an array', () => {
+describe("ProductValue", () => {
+  test("can be deserialized from an array", () => {
     let type = new ProductType([
-      new ProductTypeElement("age", AlgebraicType.createPrimitiveType(BuiltinType.Type.U16))
+      new ProductTypeElement(
+        "age",
+        AlgebraicType.createPrimitiveType(BuiltinType.Type.U16)
+      ),
     ]);
     let value = ProductValue.deserialize(type, [1]);
 

@@ -18,8 +18,8 @@ You can use the package in the browser, using a bundler like webpack of vite, an
 
 In order to connect to a database you have to create a new client:
 
-```ts 
-import { SpacetimeDBClient } from '@clockworklabs/spacetimedb-sdk';
+```ts
+import { SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 
 let client = new SpacetimeDBClient("spacetimedb.com/spacetimedb", "<db-name>");
 ```
@@ -30,7 +30,7 @@ If you would like to connect to the client you can call the below method. This a
 client.connect();
 ```
 
-If for some reason you  need to disconnect the client:
+If for some reason you need to disconnect the client:
 
 ```ts
 client.disconnect();
@@ -40,8 +40,8 @@ This will connect to a database instance without a specified identity. If you wa
 
 ```ts
 client.onConnect((identity: string) => {
-    console.log(identity);
-    console.log(client.token);
+  console.log(identity);
+  console.log(client.token);
 });
 ```
 
@@ -49,7 +49,11 @@ You may also pass credentials as an optional third argument:
 
 ```ts
 let credentials = { identity: "<identity>", token: "<token>" };
-let client = new SpacetimeDBClient("spacetimedb.com/spacetimedb", "<db-name>", credentials);
+let client = new SpacetimeDBClient(
+  "spacetimedb.com/spacetimedb",
+  "<db-name>",
+  credentials
+);
 ```
 
 Typically, you will use the SDK with types generated from a backend DB service. For example, given a component named `Player` you can subscribe to player updates by registering the component:
@@ -62,7 +66,7 @@ Then you will be able to register callbacks on insert and delete events, for exa
 
 ```ts
 Player.onInsert((newPlayer: Player) => {
-    console.log(newPlayer);
+  console.log(newPlayer);
 });
 ```
 
@@ -71,4 +75,3 @@ Given a reducer called `CreatePlayer` you can call it using a call method:
 ```ts
 CreatePlayer.call("Nickname");
 ```
-

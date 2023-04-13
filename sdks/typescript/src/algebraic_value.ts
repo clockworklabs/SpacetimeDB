@@ -1,4 +1,10 @@
-import { ProductType, SumType, AlgebraicType, BuiltinType, EnumLabel } from './algebraic_type'
+import {
+  ProductType,
+  SumType,
+  AlgebraicType,
+  BuiltinType,
+  EnumLabel,
+} from "./algebraic_type";
 
 export class SumValue {
   public tag: number;
@@ -9,7 +15,10 @@ export class SumValue {
     this.value = value;
   }
 
-  public static deserialize(type: SumType | undefined, value: object): SumValue {
+  public static deserialize(
+    type: SumType | undefined,
+    value: object
+  ): SumValue {
     if (type === undefined) {
       // TODO: get rid of undefined here
       throw "sum type is undefined";
@@ -19,7 +28,10 @@ export class SumValue {
     let variant = type.variants[tag];
     let at = variant.algebraicType;
     let enumValue = Object.values(value)[0];
-    let sumValue = AlgebraicValue.deserialize(type.variants[tag].algebraicType, enumValue);
+    let sumValue = AlgebraicValue.deserialize(
+      type.variants[tag].algebraicType,
+      enumValue
+    );
     return new SumValue(tag, sumValue);
   }
 }
@@ -31,46 +43,76 @@ export class ProductValue {
     this.elements = elements;
   }
 
-  public static deserialize(type: ProductType | undefined, value: any): ProductValue {
+  public static deserialize(
+    type: ProductType | undefined,
+    value: any
+  ): ProductValue {
     if (type === undefined) {
-      throw "type is undefined"
+      throw "type is undefined";
     }
 
     let elements: AlgebraicValue[] = [];
 
     for (let i in type.elements) {
       let element = type.elements[i];
-      elements.push(AlgebraicValue.deserialize(element.algebraicType, value[i]));
+      elements.push(
+        AlgebraicValue.deserialize(element.algebraicType, value[i])
+      );
     }
     return new ProductValue(elements);
   }
 }
 
-type BuiltinValueType = boolean | string | number | AlgebraicValue[] | Uint8Array;
+type BuiltinValueType =
+  | boolean
+  | string
+  | number
+  | AlgebraicValue[]
+  | Uint8Array;
 
 export class BuiltinValue {
   value: BuiltinValueType;
 
   constructor(value: BuiltinValueType) {
-    this.value = value
+    this.value = value;
   }
 
   public static deserialize(type: BuiltinType, value: any): BuiltinValue {
     switch (type.type) {
       case BuiltinType.Type.Array:
-        let arrayBuiltinType: BuiltinType.Type | undefined = type.arrayType && type.arrayType.type === AlgebraicType.Type.BuiltinType ? type.arrayType.builtin.type : undefined;
-        if (arrayBuiltinType !== undefined && arrayBuiltinType === BuiltinType.Type.U8) {
+        let arrayBuiltinType: BuiltinType.Type | undefined =
+          type.arrayType &&
+          type.arrayType.type === AlgebraicType.Type.BuiltinType
+            ? type.arrayType.builtin.type
+            : undefined;
+        if (
+          arrayBuiltinType !== undefined &&
+          arrayBuiltinType === BuiltinType.Type.U8
+        ) {
           // first let's change 0s to x, but only preceding 0s,
           // like "00000FF" -> "x0x0xFF"
-          const replaced: string = value.replaceAll(/0(0)|0([^0])/g, (match: string, arg1: string | undefined, arg2: string | undefined) => { return "x" + (arg1 || arg2) });
+          const replaced: string = value.replaceAll(
+            /0(0)|0([^0])/g,
+            (
+              match: string,
+              arg1: string | undefined,
+              arg2: string | undefined
+            ) => {
+              return "x" + (arg1 || arg2);
+            }
+          );
           // then split by 'x' and convert to ints
-          let array: string[] = replaced.substring(1).split('x');
-          let bytes: Uint8Array = new Uint8Array(array.map((hex) => Number("0x" + hex)));
+          let array: string[] = replaced.substring(1).split("x");
+          let bytes: Uint8Array = new Uint8Array(
+            array.map((hex) => Number("0x" + hex))
+          );
           return new this(bytes);
         } else {
           let result: AlgebraicValue[] = [];
           for (let el of value) {
-            result.push(AlgebraicValue.deserialize(type.arrayType as AlgebraicType, el));
+            result.push(
+              AlgebraicValue.deserialize(type.arrayType as AlgebraicType, el)
+            );
           }
           return new this(result);
         }
@@ -114,7 +156,7 @@ export class AlgebraicValue {
   constructor(value: AnyValue | undefined) {
     if (value === undefined) {
       // TODO: possibly get rid of it
-      throw "value is undefined"
+      throw "value is undefined";
     }
     switch (value.constructor) {
       case SumValue:
@@ -198,5 +240,3 @@ export class AlgebraicValue {
     }
   }
 }
-
-

@@ -521,12 +521,11 @@ export class SpacetimeDBClient {
    * @param queries Can be either a string for one query or an array for multiple queries
    */
   public subscribe(queryOrQueries: string | string[]) {
-    const queries = typeof queryOrQueries === "string" ? [queryOrQueries] : queryOrQueries;
+    const queries =
+      typeof queryOrQueries === "string" ? [queryOrQueries] : queryOrQueries;
 
     if (this.live) {
-      this.ws.send(
-        JSON.stringify({ subscribe: { query_strings: queries } })
-      );
+      this.ws.send(JSON.stringify({ subscribe: { query_strings: queries } }));
     } else {
       this.queriesQueue = this.queriesQueue.concat(queries);
     }
