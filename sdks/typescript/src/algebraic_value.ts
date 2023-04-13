@@ -1,4 +1,4 @@
-import { ProductType, SumType, AlgebraicType, BuiltinType, EnumLabel } from './algebraic_type.js'
+import { ProductType, SumType, AlgebraicType, BuiltinType, EnumLabel } from './algebraic_type'
 
 export class SumValue {
   public tag: number;
