@@ -1,8 +1,9 @@
 import { EventEmitter } from "events";
 
 import WS from "websocket";
+import type { WebsocketTestAdapter } from "./websocket_test_adapter";
 
-import { ProductValue, AlgebraicValue } from "./algebraic_value.js";
+import { ProductValue, AlgebraicValue } from "./algebraic_value";
 import {
   AlgebraicType,
   ProductType,
@@ -10,8 +11,8 @@ import {
   SumType,
   SumTypeVariant,
   BuiltinType,
-} from "./algebraic_type.js";
-import { EventType } from "./types.js";
+} from "./algebraic_type";
+import { EventType } from "./types";
 
 export {
   ProductValue,
@@ -46,9 +47,9 @@ declare global {
   var __SPACETIMEDB__: SpacetimeDBGlobals;
 }
 
-export class Reducer {}
+export class Reducer { }
 
-export class IDatabaseTable {}
+export class IDatabaseTable { }
 
 export type SpacetimeDBEvent = {
   timestamp: number;
@@ -259,6 +260,8 @@ export class ClientDB {
   };
 }
 
+type CreateWSFnType = (url: string, headers: { [key: string]: string }, protocol: string) => WS.w3cwebsocket | WebsocketTestAdapter;
+
 export class SpacetimeDBClient {
   /**
    * The identity of the user.
@@ -279,7 +282,7 @@ export class SpacetimeDBClient {
    */
   public live: boolean;
 
-  private ws!: WS.w3cwebsocket;
+  private ws!: WS.w3cwebsocket | WebsocketTestAdapter;
   private reducers: Map<string, any>;
   private components: Map<string, any>;
   private queriesQueue: string[];
@@ -289,6 +292,7 @@ export class SpacetimeDBClient {
     credentials?: { identity: string; token: string };
     global: SpacetimeDBGlobals;
   };
+  private createWSFn: CreateWSFnType;
 
   constructor(
     host: string,
@@ -319,6 +323,20 @@ export class SpacetimeDBClient {
       credentials,
       global,
     };
+
+    this.createWSFn = (url: string, headers: { [key: string]: string }, protocol: string) => {
+      return new WS.w3cwebsocket(
+        url,
+        protocol,
+        undefined,
+        headers,
+        undefined,
+        {
+          maxReceivedFrameSize: 100000000,
+          maxReceivedMessageSize: 100000000,
+        }
+      );
+    }
   }
 
   /**
@@ -357,13 +375,11 @@ export class SpacetimeDBClient {
       this.runtime.credentials = credentials;
     }
 
-    let headers: any = undefined;
+    let headers: { [key: string]: string } = {};
     if (this.runtime.credentials) {
       this.identity = this.runtime.credentials.identity;
       this.token = this.runtime.credentials.token;
-      headers = {
-        Authorization: `Basic ${btoa("token:" + this.token)}`,
-      };
+      headers['Authorization'] = `Basic ${btoa("token:" + this.token)}`;
     }
     let url = `${this.runtime.host}/database/subscribe?name_or_address=${this.runtime.name_or_address}`;
     if (
@@ -373,17 +389,7 @@ export class SpacetimeDBClient {
       url = "ws://" + url;
     }
 
-    this.ws = new WS.w3cwebsocket(
-      url,
-      "v1.text.spacetimedb",
-      undefined,
-      headers,
-      undefined,
-      {
-        maxReceivedFrameSize: 100000000,
-        maxReceivedMessageSize: 100000000,
-      }
-    );
+    this.ws = this.createWSFn(url, headers, "v1.text.spacetimedb");
 
     this.ws.onclose = (event) => {
       console.error("Closed: ", event);
@@ -400,8 +406,10 @@ export class SpacetimeDBClient {
     this.ws.onopen = () => {
       this.live = true;
 
-      this.subscribe(this.queriesQueue);
-      this.queriesQueue = [];
+      if (this.queriesQueue.length > 0) {
+        this.subscribe(this.queriesQueue);
+        this.queriesQueue = [];
+      }
     };
 
     this.ws.onmessage = (message: any) => {
@@ -550,6 +558,10 @@ export class SpacetimeDBClient {
   onConnect(callback: (...args: any[]) => void) {
     this.on("connected", callback);
   }
+
+  _setCreateWSFn(fn: CreateWSFnType) {
+    this.createWSFn = fn;
+  }
 }
 
 g.__SPACETIMEDB__ = {
@@ -557,7 +569,7 @@ g.__SPACETIMEDB__ = {
   clientDB: new ClientDB(),
   reducers: new Map(),
 
-  registerReducer: function (name: string, reducer: any) {
+  registerReducer: function(name: string, reducer: any) {
     let global = g.__SPACETIMEDB__;
     global.reducers.set(name, reducer);
 
@@ -566,7 +578,7 @@ g.__SPACETIMEDB__ = {
     }
   },
 
-  registerComponent: function (name: string, component: any) {
+  registerComponent: function(name: string, component: any) {
     let global = g.__SPACETIMEDB__;
     global.components.set(name, component);
 
@@ -574,7 +586,7 @@ g.__SPACETIMEDB__ = {
       global.spacetimeDBClient.registerComponent(name, component);
     }
   },
-  spacetimeDBClient: undefined,
+  spacetimeDBClient: undefined
 };
 
 export const __SPACETIMEDB__ = (
