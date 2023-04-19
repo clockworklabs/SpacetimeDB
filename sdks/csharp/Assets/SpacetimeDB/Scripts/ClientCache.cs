@@ -16,7 +16,7 @@ namespace SpacetimeDB
     {
         public class TableCache
         {
-            private class ByteArrayComparer : IEqualityComparer<byte[]>
+            public class ByteArrayComparer : IEqualityComparer<byte[]>
             {
                 public bool Equals(byte[] left, byte[] right)
                 {

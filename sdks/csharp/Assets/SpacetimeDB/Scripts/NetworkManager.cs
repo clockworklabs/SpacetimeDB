@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Net.WebSockets;
 using System.Reflection;
+using System.Runtime.Remoting.Channels;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -217,6 +218,31 @@ namespace SpacetimeDB
                 {
                     case ClientApi.Message.TypeOneofCase.SubscriptionUpdate:
                         subscriptionUpdate = message.SubscriptionUpdate;
+                       
+                        // NOTE: We are going to calculate a local state diff here. This is kind of expensive to do,
+                        // but keep in mind that we're still on the network thread so spending some extra time here
+                        // is acceptable.
+                        if (subscriptionUpdate.TableUpdates.Any(a =>
+                                a.TableRowOperations.Any(b => b.Op == TableRowOperation.Types.OperationType.Delete)))
+                        {
+                            Debug.LogWarning("We see delete events in our subscription update, this is unexpected. Likely you should update your SpacetimeDBUnitySDK.");
+                            break;
+                        }
+
+                        foreach (var tableUpdate in subscriptionUpdate.TableUpdates)
+                        {
+                            var clienTable = clientDB.GetTable(tableUpdate.TableName);
+                            var newPks = tableUpdate.TableRowOperations
+                                .Where(a => a.Op == TableRowOperation.Types.OperationType.Insert).Select(b => b.RowPk.ToByteArray());
+                            var existingPks = clienTable.entries.Select(a => a.Key);
+                            dbEvents.AddRange(existingPks.Except(newPks, new ClientCache.TableCache.ByteArrayComparer()).Select(a => new DbEvent
+                            {
+                                newValue = null,
+                                oldValue = clienTable.entries[a].Item2,
+                                op = TableOp.Delete,
+                                table = clienTable,
+                            }));
+                        }
                         break;
                     case ClientApi.Message.TypeOneofCase.TransactionUpdate:
                         subscriptionUpdate = message.TransactionUpdate.SubscriptionUpdate;
@@ -264,6 +290,12 @@ namespace SpacetimeDB
                                         });
                                         break;
                                     case TableRowOperation.Types.OperationType.Insert:
+                                        // If we already have this row, we can ignore it.
+                                        if (table.entries.ContainsKey(rowPk))
+                                        {
+                                            continue;
+                                        }
+                                        
                                         var algebraicValue = AlgebraicValue.Deserialize(table.RowSchema, reader);
                                         Debug.Assert(algebraicValue != null);
                                         table.SetDecodedValue(rowPk, algebraicValue, out var obj);
