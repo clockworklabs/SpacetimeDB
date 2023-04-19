@@ -152,7 +152,7 @@ namespace SpacetimeDB
             }
 
             // cache all our reducer events by their function name 
-            foreach (var methodInfo in typeof(SpacetimeDB.Reducer).GetMethods())
+            foreach (var methodInfo in typeof(Bitcraft.Reducer).GetMethods())
             {
                 if (methodInfo.GetCustomAttribute<ReducerEvent>() is { } reducerEvent)
                 {
@@ -329,25 +329,30 @@ namespace SpacetimeDB
 
         private void OnMessageProcessComplete(Message message, IList<DbEvent> events)
         {
-            SubscriptionUpdate subscriptionUpdate = null;
             switch (message.TypeCase)
             {
-                case ClientApi.Message.TypeOneofCase.SubscriptionUpdate:
-                    subscriptionUpdate = message.SubscriptionUpdate;
-                    break;
-                case ClientApi.Message.TypeOneofCase.TransactionUpdate:
-                    subscriptionUpdate = message.TransactionUpdate.SubscriptionUpdate;
-                    break;
-            }
-
-            switch (message.TypeCase)
-            {
-                case ClientApi.Message.TypeOneofCase.SubscriptionUpdate:
-                case ClientApi.Message.TypeOneofCase.TransactionUpdate:
+                case Message.TypeOneofCase.SubscriptionUpdate:
+                case Message.TypeOneofCase.TransactionUpdate:
                     // First apply all of the state
                     for (var i = 0; i < events.Count; i++)
                     {
-                        var ev = events[i];
+                        // TODO: Reimplement updates when we add support for primary keys
+			            var ev = events[i];                        
+                        if (i < events.Count - 1)
+                        {
+                            if (events[i].op == TableOp.Delete && events[i + 1].op == TableOp.Insert)
+                            {
+                                // somewhat hacky: Delete followed by an insert on the same table is considered an update.
+                                ev.oldValue = events[i].table.DeleteEntry(ev.rowPk);
+                                ev.newValue = events[i].table.InsertEntry(events[i+1].rowPk);
+                                ev.op = TableOp.Update;
+                                events[i] = ev;
+
+                                // Skip the next event, this is part of the hack 
+                                events.RemoveAt(i+1);
+                            }
+                        }
+
                         switch (ev.op)
                         {
                             case TableOp.Delete:
@@ -358,6 +363,10 @@ namespace SpacetimeDB
                                 ev.newValue = events[i].table.InsertEntry(ev.rowPk);
                                 events[i] = ev;
                                 break;
+                            case TableOp.Update:
+                                break;
+                            default:
+                                throw new ArgumentOutOfRangeException();
                         }
                     }
 
@@ -374,48 +383,70 @@ namespace SpacetimeDB
                         {
                             case TableOp.Insert:
                             {
-                                if (events[i].table.InsertCallback != null)
+                                if (oldValue == null && newValue != null)
                                 {
-                                    if (oldValue == null && newValue != null)
+                                    if (events[i].table.InsertCallback != null)
                                     {
                                         events[i].table.InsertCallback.Invoke(null, new[] { newValue });
-                                        if (events[i].table.RowUpdatedCallback != null)
-                                        {
-                                            events[i].table.RowUpdatedCallback
-                                                .Invoke(null, new[] { tableOp, null, newValue });
-                                        }
                                     }
-                                    else
+
+                                    if (events[i].table.RowUpdatedCallback != null)
                                     {
-                                        Debug.LogError("Failed to send callback: invalid insert!");
+                                        events[i].table.RowUpdatedCallback
+                                            .Invoke(null, new[] { tableOp, null, newValue });
                                     }
+                                }
+                                else
+                                {
+                                    Debug.LogError("Failed to send callback: invalid insert!");
                                 }
 
                                 break;
                             }
                             case TableOp.Delete:
                             {
-                                if (events[i].table.DeleteCallback != null)
+                                if (oldValue != null && newValue == null)
                                 {
-                                    if (oldValue != null && newValue == null)
+                                    if (events[i].table.DeleteCallback != null)
                                     {
                                         events[i].table.DeleteCallback.Invoke(null, new[] { oldValue });
-                                        if (events[i].table.RowUpdatedCallback != null)
-                                        {
-                                            events[i].table.RowUpdatedCallback
-                                                .Invoke(null, new[] { tableOp, oldValue, null });
-                                        }
                                     }
-                                    else
+
+                                    if (events[i].table.RowUpdatedCallback != null)
                                     {
-                                        Debug.LogError("Failed to send callback: invalid delete");
+                                        events[i].table.RowUpdatedCallback
+                                            .Invoke(null, new[] { tableOp, oldValue, null });
                                     }
+                                }
+                                else
+                                {
+                                    Debug.LogError("Failed to send callback: invalid delete");
                                 }
 
                                 break;
                             }
                             case TableOp.Update:
-                                throw new NotImplementedException();
+                            {
+                                if (oldValue != null && newValue != null)
+                                {
+                                    if (events[i].table.UpdateCallback != null)
+                                    {
+                                        events[i].table.UpdateCallback.Invoke(null, new[] { oldValue, newValue });
+                                    }
+
+                                    if (events[i].table.RowUpdatedCallback != null)
+                                    {
+                                        events[i].table.RowUpdatedCallback
+                                            .Invoke(null, new[] { tableOp, oldValue, null });
+                                    }
+                                }
+                                else
+                                {
+                                    Debug.LogError("Failed to send callback: invalid update");
+                                }
+
+                                break;
+                            }
                             default:
                                 throw new ArgumentOutOfRangeException();
                         }
@@ -423,32 +454,41 @@ namespace SpacetimeDB
 
                         onRowUpdate?.Invoke(tableName, tableOp, oldValue, newValue);
                     }
-
+                    
                     switch (message.TypeCase)
                     {
-                        case ClientApi.Message.TypeOneofCase.SubscriptionUpdate:
+                        case Message.TypeOneofCase.SubscriptionUpdate:
                             onTransactionComplete?.Invoke();
                             break;
-                        case ClientApi.Message.TypeOneofCase.TransactionUpdate:
+                        case Message.TypeOneofCase.TransactionUpdate:
                             onTransactionComplete?.Invoke();
                             onEvent?.Invoke(message.TransactionUpdate.Event);
 
                             var functionName = message.TransactionUpdate.Event.FunctionCall.Reducer;
-                            if (reducerEventCache.ContainsKey(functionName))
+                            if (reducerEventCache.TryGetValue(functionName, out var value))
                             {
-                                reducerEventCache[functionName]
-                                    .Invoke(null, new object[] { message.TransactionUpdate.Event });
+                                value.Invoke(null, new object[] { message.TransactionUpdate.Event });
                             }
 
                             break;
+                        case Message.TypeOneofCase.None:
+                            break;
+                        case Message.TypeOneofCase.FunctionCall:
+                            break;
+                        case Message.TypeOneofCase.Event:
+                            break;
+                        case Message.TypeOneofCase.IdentityToken:
+                            break;
+                        default:
+                            throw new ArgumentOutOfRangeException();
                     }
 
                     break;
-                case ClientApi.Message.TypeOneofCase.IdentityToken:
+                case Message.TypeOneofCase.IdentityToken:
                     onIdentityReceived?.Invoke(Identity.From(message.IdentityToken.Identity.ToByteArray()));
                     PlayerPrefs.SetString(GetTokenKey(), message.IdentityToken.Token);
                     break;
-                case ClientApi.Message.TypeOneofCase.Event:
+                case Message.TypeOneofCase.Event:
                     onEvent?.Invoke(message.Event);
                     break;
             }

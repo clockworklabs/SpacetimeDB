@@ -56,6 +56,8 @@ namespace SpacetimeDB
 
             public MethodInfo InsertCallback;
             public MethodInfo DeleteCallback;
+            public MethodInfo UpdateCallback;
+            // TODO: Consider renaming this one, this kind of implies that its a callback for the Update operation
             public MethodInfo RowUpdatedCallback;
 
             public string Name
@@ -77,6 +79,7 @@ namespace SpacetimeDB
                 this.decoderFunc = decoderFunc;
                 InsertCallback = clientTableType.GetMethod("OnInsertEvent");
                 DeleteCallback = clientTableType.GetMethod("OnDeleteEvent");
+                UpdateCallback = clientTableType.GetMethod("OnUpdateEvent");
                 RowUpdatedCallback = clientTableType.GetMethod("OnRowUpdateEvent");
                 entries = new Dictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
                 decodedValues = new ConcurrentDictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
@@ -122,9 +125,10 @@ namespace SpacetimeDB
             /// <returns></returns>
             public object InsertEntry(byte[] rowPk)
             {
-                if (entries.TryGetValue(rowPk, out _))
+                if (entries.TryGetValue(rowPk, out var existingValue))
                 {
-                    return null;
+                    Debug.LogWarning("We tried to insert a database row that already exists.");
+                    return existingValue.Item2;
                 }
 
                 if (GetDecodedValue(rowPk, out var value, out var obj))
@@ -165,6 +169,15 @@ namespace SpacetimeDB
                     return value.Item2;
                 }
 
+                // SpacetimeDB is asking us to delete something we don't have, this makes no sense. We can
+                // fabricate the deletion by trying to look it up in our local decode table.
+                if (decodedValues.TryGetValue(rowPk, out var decodedValue))
+                {
+                    Debug.LogWarning("Deleting value that we don't have (using cached value)");
+                    return decodedValue.Item2;
+                }
+
+                Debug.LogWarning("Deleting value that we don't have (no cached value available)");
                 return null;
             }
         }
