@@ -307,7 +307,6 @@ namespace SpacetimeDB
                     {
                         Debug.LogWarning(
                             "We see delete events in our subscription update, this is unexpected. Likely you should update your SpacetimeDBUnitySDK.");
-                        break;
                     }
 
                     foreach (var tableUpdate in subscriptionUpdate.TableUpdates)
