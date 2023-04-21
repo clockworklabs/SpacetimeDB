@@ -127,7 +127,7 @@ namespace SpacetimeDB
             {
                 if (entries.TryGetValue(rowPk, out var existingValue))
                 {
-                    Debug.LogWarning("We tried to insert a database row that already exists.");
+                    Debug.LogWarning($"We tried to insert a database row that already exists. table={Name} RowPK={Convert.ToBase64String(rowPk)}");
                     return existingValue.Item2;
                 }
 
