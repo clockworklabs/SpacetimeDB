@@ -154,7 +154,7 @@ namespace SpacetimeDB
             }
 
             // cache all our reducer events by their function name 
-            foreach (var methodInfo in typeof(Bitcraft.Reducer).GetMethods())
+            foreach (var methodInfo in typeof(Reducer).GetMethods())
             {
                 if (methodInfo.GetCustomAttribute<ReducerEvent>() is
                     { } reducerEvent)
@@ -179,7 +179,7 @@ namespace SpacetimeDB
             public IList<DbEvent> events;
         }
 
-        private readonly BlockingCollection<byte[]> _messageQueue = new(new ConcurrentQueue<byte[]>());
+        private readonly BlockingCollection<byte[]> _messageQueue = new BlockingCollection<byte[]>(new ConcurrentQueue<byte[]>());
         private ProcessedMessage? nextMessage;
 
         void ProcessMessages()
