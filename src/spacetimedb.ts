@@ -47,9 +47,9 @@ declare global {
   var __SPACETIMEDB__: SpacetimeDBGlobals;
 }
 
-export class Reducer { }
+export class Reducer {}
 
-export class IDatabaseTable { }
+export class IDatabaseTable {}
 
 export type SpacetimeDBEvent = {
   timestamp: number;
@@ -260,7 +260,11 @@ export class ClientDB {
   };
 }
 
-type CreateWSFnType = (url: string, headers: { [key: string]: string }, protocol: string) => WS.w3cwebsocket | WebsocketTestAdapter;
+type CreateWSFnType = (
+  url: string,
+  headers: { [key: string]: string },
+  protocol: string
+) => WS.w3cwebsocket | WebsocketTestAdapter;
 
 export class SpacetimeDBClient {
   /**
@@ -324,19 +328,16 @@ export class SpacetimeDBClient {
       global,
     };
 
-    this.createWSFn = (url: string, headers: { [key: string]: string }, protocol: string) => {
-      return new WS.w3cwebsocket(
-        url,
-        protocol,
-        undefined,
-        headers,
-        undefined,
-        {
-          maxReceivedFrameSize: 100000000,
-          maxReceivedMessageSize: 100000000,
-        }
-      );
-    }
+    this.createWSFn = (
+      url: string,
+      headers: { [key: string]: string },
+      protocol: string
+    ) => {
+      return new WS.w3cwebsocket(url, protocol, undefined, headers, undefined, {
+        maxReceivedFrameSize: 100000000,
+        maxReceivedMessageSize: 100000000,
+      });
+    };
   }
 
   /**
@@ -379,9 +380,9 @@ export class SpacetimeDBClient {
     if (this.runtime.credentials) {
       this.identity = this.runtime.credentials.identity;
       this.token = this.runtime.credentials.token;
-      headers['Authorization'] = `Basic ${btoa("token:" + this.token)}`;
+      headers["Authorization"] = `Basic ${btoa("token:" + this.token)}`;
     }
-    let url = `${this.runtime.host}/database/subscribe?name_or_address=${this.runtime.name_or_address}`;
+    let url = `${this.runtime.host}/database/subscribe/${this.runtime.name_or_address}`;
     if (
       !this.runtime.host.startsWith("ws://") &&
       !this.runtime.host.startsWith("wss://")
@@ -568,7 +569,7 @@ g.__SPACETIMEDB__ = {
   clientDB: new ClientDB(),
   reducers: new Map(),
 
-  registerReducer: function(name: string, reducer: any) {
+  registerReducer: function (name: string, reducer: any) {
     let global = g.__SPACETIMEDB__;
     global.reducers.set(name, reducer);
 
@@ -577,7 +578,7 @@ g.__SPACETIMEDB__ = {
     }
   },
 
-  registerComponent: function(name: string, component: any) {
+  registerComponent: function (name: string, component: any) {
     let global = g.__SPACETIMEDB__;
     global.components.set(name, component);
 
@@ -585,7 +586,7 @@ g.__SPACETIMEDB__ = {
       global.spacetimeDBClient.registerComponent(name, component);
     }
   },
-  spacetimeDBClient: undefined
+  spacetimeDBClient: undefined,
 };
 
 export const __SPACETIMEDB__ = (
