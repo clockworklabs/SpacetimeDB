@@ -404,19 +404,6 @@ namespace SpacetimeDB
 
                                     // Skip the next event, this is part of the hack 
                                     events.RemoveAt(i + 1);
-                                    Debug.LogWarning("These do match!");
-                                }
-                                else
-                                {
-                                    Debug.LogWarning("These don't match!");
-                                }
-                            }
-                            else
-                            {
-                                if (events[i].table == events[i + 1].table && events[i].op == TableOp.Delete &&
-                                    events[i + 1].op == TableOp.Insert)
-                                {
-                                    Debug.LogWarning("Something weird happend.");
                                 }
                             }
                         }
