@@ -17,6 +17,7 @@ using Newtonsoft.Json;
 using SpacetimeDB;
 using SpacetimeDB.SATS;
 using UnityEngine;
+using UnityEngine.Rendering;
 using Event = ClientApi.Event;
 
 namespace SpacetimeDB
@@ -154,7 +155,7 @@ namespace SpacetimeDB
             }
 
             // cache all our reducer events by their function name 
-            foreach (var methodInfo in typeof(Reducer).GetMethods())
+            foreach (var methodInfo in typeof(SpacetimeDB.Reducer).GetMethods())
             {
                 if (methodInfo.GetCustomAttribute<ReducerEvent>() is
                     { } reducerEvent)
@@ -179,7 +180,7 @@ namespace SpacetimeDB
             public IList<DbEvent> events;
         }
 
-        private readonly BlockingCollection<byte[]> _messageQueue = new BlockingCollection<byte[]>(new ConcurrentQueue<byte[]>());
+        private readonly BlockingCollection<byte[]> _messageQueue = new(new ConcurrentQueue<byte[]>());
         private ProcessedMessage? nextMessage;
 
         void ProcessMessages()
@@ -249,8 +250,16 @@ namespace SpacetimeDB
                                         // If we don't already have this row, we should skip this delete
                                         if (!table.entries.ContainsKey(rowPk))
                                         {
-                                            Debug.LogError(
-                                                $"We received a delete for a row we don't even subscribe to! table={table.Name}");
+                                            if (update.TableRowOperations.Any(
+                                                    a => a.RowPk.ToByteArray().SequenceEqual(rowPk)))
+                                            {
+                                                // Debug.LogWarning("We are deleting and inserting the same row in the same TX!");
+                                            }
+                                            else
+                                            {
+                                                Debug.LogWarning(
+                                                    $"We received a delete for a row we don't even subscribe to! table={table.Name}");
+                                            }
                                             continue;
                                         }
 
@@ -382,16 +391,33 @@ namespace SpacetimeDB
                         if (i < events.Count - 1)
                         {
                             if (events[i].table == events[i + 1].table && events[i].op == TableOp.Delete &&
-                                events[i + 1].op == TableOp.Insert)
+                                events[i + 1].op == TableOp.Insert && 
+                                events[i].table.GetDecodedValue(events[i].rowPk, out var deletedValue, out _) &&
+                                events[i].table.GetDecodedValue(events[i + 1].rowPk, out var insertedValue, out _))
                             {
-                                // somewhat hacky: Delete followed by an insert on the same table is considered an update.
-                                ev.oldValue = events[i].table.DeleteEntry(ev.rowPk);
-                                ev.newValue = events[i].table.InsertEntry(events[i + 1].rowPk);
-                                ev.op = TableOp.Update;
-                                events[i] = ev;
+                                if (events[i].table.ComparePrimaryKey(deletedValue, insertedValue))
+                                {
+                                    ev.oldValue = events[i].table.DeleteEntry(events[i].rowPk);
+                                    ev.newValue = events[i].table.InsertEntry(events[i + 1].rowPk);
+                                    ev.op = TableOp.Update;
+                                    events[i] = ev;
 
-                                // Skip the next event, this is part of the hack 
-                                events.RemoveAt(i + 1);
+                                    // Skip the next event, this is part of the hack 
+                                    events.RemoveAt(i + 1);
+                                    Debug.LogWarning("These do match!");
+                                }
+                                else
+                                {
+                                    Debug.LogWarning("These don't match!");
+                                }
+                            }
+                            else
+                            {
+                                if (events[i].table == events[i + 1].table && events[i].op == TableOp.Delete &&
+                                    events[i + 1].op == TableOp.Insert)
+                                {
+                                    Debug.LogWarning("Something weird happend.");
+                                }
                             }
                         }
 
@@ -424,40 +450,67 @@ namespace SpacetimeDB
                         switch (tableOp)
                         {
                             case TableOp.Insert:
+                                if (oldValue == null && newValue != null)
                                 {
-                                    if (oldValue == null && newValue != null)
+                                    try
                                     {
                                         if (events[i].table.InsertCallback != null)
                                         {
                                             events[i].table.InsertCallback.Invoke(null, new[] { newValue });
                                         }
-
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        Debug.LogException(e);
+                                    }
+                                    
+                                    try
+                                    {
                                         if (events[i].table.RowUpdatedCallback != null)
                                         {
                                             events[i].table.RowUpdatedCallback
                                                      .Invoke(null, new[] { tableOp, null, newValue });
                                         }
                                     }
-                                    else
+                                    catch (Exception e)
                                     {
-                                        Debug.LogError("Failed to send callback: invalid insert!");
+                                        Debug.LogException(e);
                                     }
 
-                                    break;
                                 }
+                                else
+                                {
+                                    Debug.LogError("Failed to send callback: invalid insert!");
+                                }
+
+                                break;
                             case TableOp.Delete:
                                 {
                                     if (oldValue != null && newValue == null)
                                     {
                                         if (events[i].table.DeleteCallback != null)
                                         {
-                                            events[i].table.DeleteCallback.Invoke(null, new[] { oldValue });
+                                            try
+                                            {
+                                                events[i].table.DeleteCallback.Invoke(null, new[] { oldValue });
+                                            }
+                                            catch (Exception e)
+                                            {
+                                                Debug.LogException(e);
+                                            }
                                         }
 
                                         if (events[i].table.RowUpdatedCallback != null)
                                         {
-                                            events[i].table.RowUpdatedCallback
+                                            try
+                                            {
+                                                events[i].table.RowUpdatedCallback
                                                      .Invoke(null, new[] { tableOp, oldValue, null });
+                                            }
+                                            catch (Exception e)
+                                            {
+                                                Debug.LogException(e);
+                                            }
                                         }
                                     }
                                     else
@@ -471,15 +524,29 @@ namespace SpacetimeDB
                                 {
                                     if (oldValue != null && newValue != null)
                                     {
-                                        if (events[i].table.UpdateCallback != null)
+                                        try
                                         {
-                                            events[i].table.UpdateCallback.Invoke(null, new[] { oldValue, newValue });
+                                            if (events[i].table.UpdateCallback != null)
+                                            {
+                                                events[i].table.UpdateCallback.Invoke(null, new[] { oldValue, newValue });
+                                            }
                                         }
-
-                                        if (events[i].table.RowUpdatedCallback != null)
+                                        catch (Exception e)
                                         {
-                                            events[i].table.RowUpdatedCallback
-                                                     .Invoke(null, new[] { tableOp, oldValue, null });
+                                            Debug.LogException(e);
+                                        }
+                                        
+                                        try
+                                        {
+                                            if (events[i].table.RowUpdatedCallback != null)
+                                            {
+                                                events[i].table.RowUpdatedCallback
+                                                         .Invoke(null, new[] { tableOp, oldValue, null });
+                                            }
+                                        }
+                                        catch (Exception e)
+                                        {
+                                            Debug.LogException(e);
                                         }
                                     }
                                     else
