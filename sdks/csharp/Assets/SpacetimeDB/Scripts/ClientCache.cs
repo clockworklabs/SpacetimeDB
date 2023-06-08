@@ -54,12 +54,12 @@ namespace SpacetimeDB
                 get => clientTableType;
             }
 
-            public MethodInfo InsertCallback;
-            public MethodInfo DeleteCallback;
-            public MethodInfo UpdateCallback;
+            public Action<object, ClientApi.Event> InsertCallback;
+            public Action<object, ClientApi.Event> DeleteCallback;
+            public Action<object, object, ClientApi.Event> UpdateCallback;
             // TODO: Consider renaming this one, this kind of implies that its a callback for the Update operation
-            public MethodInfo RowUpdatedCallback;
-            public MethodInfo ComparePrimaryKeyFunc;
+            public Action<NetworkManager.TableOp, object, object, ClientApi.Event> RowUpdatedCallback;
+            public Func<AlgebraicType, AlgebraicValue, AlgebraicValue, bool> ComparePrimaryKeyFunc;
 
             public string Name
             {
@@ -78,11 +78,13 @@ namespace SpacetimeDB
 
                 this.rowSchema = rowSchema;
                 this.decoderFunc = decoderFunc;
-                InsertCallback = clientTableType.GetMethod("OnInsertEvent");
-                DeleteCallback = clientTableType.GetMethod("OnDeleteEvent");
-                UpdateCallback = clientTableType.GetMethod("OnUpdateEvent");
-                RowUpdatedCallback = clientTableType.GetMethod("OnRowUpdateEvent");
-                ComparePrimaryKeyFunc = clientTableType.GetMethod("ComparePrimaryKey", BindingFlags.Static | BindingFlags.Public);
+                InsertCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnInsertEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
+                DeleteCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnDeleteEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
+                UpdateCallback = (Action<object, object, ClientApi.Event>)clientTableType.GetMethod("OnUpdateEvent")?.CreateDelegate(typeof(Action<object, object, ClientApi.Event>));
+                RowUpdatedCallback = (Action<NetworkManager.TableOp, object, object, ClientApi.Event>)clientTableType.GetMethod("OnRowUpdateEvent")
+                    ?.CreateDelegate(typeof(Action<NetworkManager.TableOp, object, object, ClientApi.Event>));
+                ComparePrimaryKeyFunc = (Func<AlgebraicType, AlgebraicValue, AlgebraicValue, bool>)clientTableType.GetMethod("ComparePrimaryKey", BindingFlags.Static | BindingFlags.Public)
+                    ?.CreateDelegate(typeof(Func<AlgebraicType, AlgebraicValue, AlgebraicValue, bool>));
                 entries = new Dictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
                 decodedValues = new ConcurrentDictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
             }
@@ -185,7 +187,7 @@ namespace SpacetimeDB
 
             public bool ComparePrimaryKey(AlgebraicValue v1, AlgebraicValue v2)
             {
-                return (bool)ComparePrimaryKeyFunc.Invoke(null, new object[] { rowSchema, v1, v2 });
+                return (bool)ComparePrimaryKeyFunc.Invoke(rowSchema, v1, v2);
             }
             
             public bool ComparePrimaryKey(byte[] rowPk1, byte[] rowPk2)
@@ -199,7 +201,7 @@ namespace SpacetimeDB
                     return false;
                 }
                 
-                return (bool)ComparePrimaryKeyFunc.Invoke(null, new object[] { rowSchema, v1.Item1, v2.Item1 });
+                return (bool)ComparePrimaryKeyFunc.Invoke(rowSchema, v1.Item1, v2.Item1);
             }
         }
 

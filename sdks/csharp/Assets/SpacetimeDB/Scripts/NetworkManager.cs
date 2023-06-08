@@ -51,7 +51,7 @@ namespace SpacetimeDB
             public byte[] insertedPk;
         }
 
-        public delegate void RowUpdate(string tableName, TableOp op, object oldValue, object newValue);
+        public delegate void RowUpdate(string tableName, TableOp op, object oldValue, object newValue, ClientApi.Event dbEvent);
 
         /// <summary>
         /// Called when a connection is established to a spacetimedb instance.
@@ -456,7 +456,7 @@ namespace SpacetimeDB
                                     {
                                         if (events[i].table.InsertCallback != null)
                                         {
-                                            events[i].table.InsertCallback.Invoke(null, new[] { newValue });
+                                            events[i].table.InsertCallback.Invoke(newValue, message.Event);
                                         }
                                     }
                                     catch (Exception e)
@@ -469,7 +469,7 @@ namespace SpacetimeDB
                                         if (events[i].table.RowUpdatedCallback != null)
                                         {
                                             events[i].table.RowUpdatedCallback
-                                                     .Invoke(null, new[] { tableOp, null, newValue });
+                                                .Invoke(tableOp, null, newValue, message.Event);
                                         }
                                     }
                                     catch (Exception e)
@@ -492,7 +492,7 @@ namespace SpacetimeDB
                                         {
                                             try
                                             {
-                                                events[i].table.DeleteCallback.Invoke(null, new[] { oldValue });
+                                                events[i].table.DeleteCallback.Invoke(oldValue, message.Event);
                                             }
                                             catch (Exception e)
                                             {
@@ -505,7 +505,7 @@ namespace SpacetimeDB
                                             try
                                             {
                                                 events[i].table.RowUpdatedCallback
-                                                     .Invoke(null, new[] { tableOp, oldValue, null });
+                                                     .Invoke(tableOp, oldValue, null, message.Event);
                                             }
                                             catch (Exception e)
                                             {
@@ -528,7 +528,7 @@ namespace SpacetimeDB
                                         {
                                             if (events[i].table.UpdateCallback != null)
                                             {
-                                                events[i].table.UpdateCallback.Invoke(null, new[] { oldValue, newValue });
+                                                events[i].table.UpdateCallback.Invoke(oldValue, newValue, message.Event);
                                             }
                                         }
                                         catch (Exception e)
@@ -541,7 +541,7 @@ namespace SpacetimeDB
                                             if (events[i].table.RowUpdatedCallback != null)
                                             {
                                                 events[i].table.RowUpdatedCallback
-                                                         .Invoke(null, new[] { tableOp, oldValue, null });
+                                                         .Invoke(tableOp, oldValue, null, message.Event);
                                             }
                                         }
                                         catch (Exception e)
@@ -560,7 +560,7 @@ namespace SpacetimeDB
                                 throw new ArgumentOutOfRangeException();
                         }
 
-                        onRowUpdate?.Invoke(tableName, tableOp, oldValue, newValue);
+                        onRowUpdate?.Invoke(tableName, tableOp, oldValue, newValue, message.Event);
                     }
 
                     switch (message.TypeCase)
