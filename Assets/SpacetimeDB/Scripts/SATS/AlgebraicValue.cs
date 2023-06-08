@@ -1,13 +1,6 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.Runtime.InteropServices;
-using Google.Protobuf.WellKnownTypes;
-using TMPro;
-using UnityEditor.Build.Content;
-using UnityEngine;
-using Type = System.Type;
 
 namespace SpacetimeDB.SATS
 {
@@ -221,6 +214,57 @@ namespace SpacetimeDB.SATS
                     throw new NotImplementedException();
             }
         }
+
+        public static bool Compare(BuiltinType t, BuiltinValue v1, BuiltinValue v2)
+        {
+            switch (t.type)
+            {
+                case BuiltinType.Type.Bool:
+                    return v1.AsBool() == v2.AsBool();
+                case BuiltinType.Type.U8:
+                    return v1.AsU8() == v2.AsU8();
+                case BuiltinType.Type.I8:
+                    return v1.AsI8() == v2.AsI8();
+                case BuiltinType.Type.U16:
+                    return v1.AsU16() == v2.AsU16();
+                case BuiltinType.Type.I16:
+                    return v1.AsI16() == v2.AsI16();
+                case BuiltinType.Type.U32:
+                    return v1.AsU32() == v2.AsU32();
+                case BuiltinType.Type.I32:
+                    return v1.AsI32() == v2.AsI32();
+                case BuiltinType.Type.U64:
+                    return v1.AsU64() == v2.AsU64();
+                case BuiltinType.Type.I64:
+                    return v1.AsI64() == v2.AsI64();
+                case BuiltinType.Type.U128:
+                case BuiltinType.Type.I128:
+                case BuiltinType.Type.F32:
+                case BuiltinType.Type.F64:
+                case BuiltinType.Type.Map:
+                    throw new NotImplementedException();
+                case BuiltinType.Type.String:
+                    return v1.AsString() == v2.AsString();
+                case BuiltinType.Type.Array:
+                    var list1 = v1.AsArray();
+                    var list2 = v2.AsArray();
+                    if (list1.Count != list2.Count)
+                    {
+                        return false;
+                    }
+
+                    for (var i = 0; i < list1.Count; i++)
+                    {
+                        if (!AlgebraicValue.Compare(t.arrayType, list1[i], list2[i]))
+                        {
+                            return false;
+                        }
+                    }
+                    return true;
+                default:
+                    throw new NotImplementedException();
+            }
+        }
     }
 
     public class SumValue
@@ -251,6 +295,16 @@ namespace SpacetimeDB.SATS
             writer.Write(tag);
             value.Serialize(type.variants[tag].algebraicType, writer);
         }
+
+        public static bool Compare(SumType t, SumValue v1, SumValue v2)
+        {
+            if (v1.tag != v2.tag)
+            {
+                return false;
+            }
+
+            return AlgebraicValue.Compare(t.variants[v1.tag].algebraicType, v1.value, v2.value);
+        }
     }
 
     public class ProductValue
@@ -280,6 +334,24 @@ namespace SpacetimeDB.SATS
             }
 
             return result;
+        }
+
+        public static bool Compare(ProductType type, ProductValue v1, ProductValue v2)
+        {
+            if (v1.elements.Count != v2.elements.Count)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < type.elements.Count; i++)
+            {
+                if(!AlgebraicValue.Compare(type.elements[i].algebraicType, v1.elements[i], v2.elements[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 
@@ -332,6 +404,23 @@ namespace SpacetimeDB.SATS
         public static AlgebraicValue Create(ProductValue value) => new AlgebraicValue { product = value };
         public static AlgebraicValue Create(SumValue value) => new AlgebraicValue { sum = value };
 
+        public static bool Compare(AlgebraicType t, AlgebraicValue v1, AlgebraicValue v2)
+        {
+            switch (t.type)
+            {
+                case AlgebraicType.Type.Builtin:
+                    return BuiltinValue.Compare(t.builtin, v1.builtin, v2.builtin);
+                case AlgebraicType.Type.Sum:
+                    return SumValue.Compare(t.sum, v1.sum, v2.sum);
+                case AlgebraicType.Type.Product:
+                    return ProductValue.Compare(t.product, v1.product, v2.product);
+                case AlgebraicType.Type.TypeRef:
+                case AlgebraicType.Type.None:
+                default:
+                    throw new NotImplementedException();
+            }
+        }
+        
         public static AlgebraicValue Deserialize(AlgebraicType type, BinaryReader reader)
         {
             switch (type.type)

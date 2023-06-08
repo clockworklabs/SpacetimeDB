@@ -59,6 +59,7 @@ namespace SpacetimeDB
             public MethodInfo UpdateCallback;
             // TODO: Consider renaming this one, this kind of implies that its a callback for the Update operation
             public MethodInfo RowUpdatedCallback;
+            public MethodInfo ComparePrimaryKeyFunc;
 
             public string Name
             {
@@ -81,6 +82,7 @@ namespace SpacetimeDB
                 DeleteCallback = clientTableType.GetMethod("OnDeleteEvent");
                 UpdateCallback = clientTableType.GetMethod("OnUpdateEvent");
                 RowUpdatedCallback = clientTableType.GetMethod("OnRowUpdateEvent");
+                ComparePrimaryKeyFunc = clientTableType.GetMethod("ComparePrimaryKey", BindingFlags.Static | BindingFlags.Public);
                 entries = new Dictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
                 decodedValues = new ConcurrentDictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
             }
@@ -127,7 +129,7 @@ namespace SpacetimeDB
             {
                 if (entries.TryGetValue(rowPk, out var existingValue))
                 {
-                    Debug.LogWarning($"We tried to insert a database row that already exists. table={Name} RowPK={Convert.ToBase64String(rowPk)}");
+                    // Debug.LogWarning($"We tried to insert a database row that already exists. table={Name} RowPK={Convert.ToBase64String(rowPk)}");
                     return existingValue.Item2;
                 }
 
@@ -179,6 +181,25 @@ namespace SpacetimeDB
 
                 Debug.LogWarning("Deleting value that we don't have (no cached value available)");
                 return null;
+            }
+
+            public bool ComparePrimaryKey(AlgebraicValue v1, AlgebraicValue v2)
+            {
+                return (bool)ComparePrimaryKeyFunc.Invoke(null, new object[] { rowSchema, v1, v2 });
+            }
+            
+            public bool ComparePrimaryKey(byte[] rowPk1, byte[] rowPk2)
+            {
+                if (!decodedValues.TryGetValue(rowPk1, out var v1))
+                {
+                    return false;
+                }
+                if (!decodedValues.TryGetValue(rowPk2, out var v2))
+                {
+                    return false;
+                }
+                
+                return (bool)ComparePrimaryKeyFunc.Invoke(null, new object[] { rowSchema, v1.Item1, v2.Item1 });
             }
         }
 
