@@ -45,10 +45,11 @@ namespace SpacetimeDB
         private struct DbEvent
         {
             public ClientCache.TableCache table;
-            public byte[] rowPk;
             public TableOp op;
             public object newValue;
             public object oldValue;
+            public byte[] deletedPk;
+            public byte[] insertedPk;
         }
 
         public delegate void RowUpdate(string tableName, TableOp op, object oldValue, object newValue);
@@ -266,7 +267,7 @@ namespace SpacetimeDB
                                         dbEvents.Add(new DbEvent
                                         {
                                             table = table,
-                                            rowPk = rowPk,
+                                            deletedPk = rowPk,
                                             op = TableOp.Delete,
                                             newValue = null,
                                             // We cannot grab the old value here because there might be other
@@ -289,7 +290,7 @@ namespace SpacetimeDB
                                         dbEvents.Add(new DbEvent
                                         {
                                             table = table,
-                                            rowPk = rowPk,
+                                            insertedPk = rowPk,
                                             op = TableOp.Insert,
                                             newValue = obj,
                                             oldValue = null,
@@ -304,6 +305,36 @@ namespace SpacetimeDB
                         break;
                     case ClientApi.Message.TypeOneofCase.Event:
                         break;
+                }
+                
+                // Factor out any insert/deletes into updates
+                for (var x = 0; x < dbEvents.Count; x++)
+                {
+                    var insertEvent = dbEvents[x];
+                    if (insertEvent.op != TableOp.Insert)
+                    {
+                        continue;
+                    }
+
+                    for (var y = 0; y < dbEvents.Count; y++)
+                    {
+                        var deleteEvent = dbEvents[y];
+                        if (deleteEvent.op != TableOp.Delete || deleteEvent.table != insertEvent.table
+                            || !insertEvent.table.ComparePrimaryKey(insertEvent.insertedPk, deleteEvent.deletedPk))
+                        {
+                            continue;
+                        }
+
+                        var updateEvent = new DbEvent { 
+                            deletedPk = deleteEvent.deletedPk,
+                            insertedPk = insertEvent.insertedPk,
+                            op = TableOp.Update,
+                            table = insertEvent.table,
+                        };
+                        dbEvents[x] = updateEvent;
+                        dbEvents.RemoveAt(y);
+                        break;
+                    }
                 }
 
                 if (message.TypeCase == Message.TypeOneofCase.SubscriptionUpdate)
@@ -328,7 +359,7 @@ namespace SpacetimeDB
                         dbEvents.AddRange(existingPks.Except(newPks, new ClientCache.TableCache.ByteArrayComparer())
                                                      .Select(a => new DbEvent
                                                      {
-                                                         rowPk = a,
+                                                         deletedPk = a,
                                                          newValue = null,
                                                          oldValue = clientTable.entries[a].Item2,
                                                          op = TableOp.Delete,
@@ -388,50 +419,20 @@ namespace SpacetimeDB
                     {
                         // TODO: Reimplement updates when we add support for primary keys
                         var ev = events[i];
-                        if (i < events.Count - 1)
-                        {
-                            if (events[i].table == events[i + 1].table && events[i].op == TableOp.Delete &&
-                                events[i + 1].op == TableOp.Insert && 
-                                events[i].table.GetDecodedValue(events[i].rowPk, out var deletedValue, out _) &&
-                                events[i].table.GetDecodedValue(events[i + 1].rowPk, out var insertedValue, out _))
-                            {
-                                if (events[i].table.ComparePrimaryKey(deletedValue, insertedValue))
-                                {
-                                    ev.oldValue = events[i].table.DeleteEntry(events[i].rowPk);
-                                    ev.newValue = events[i].table.InsertEntry(events[i + 1].rowPk);
-                                    ev.op = TableOp.Update;
-                                    events[i] = ev;
-
-                                    // Skip the next event, this is part of the hack 
-                                    events.RemoveAt(i + 1);
-                                    Debug.LogWarning("These do match!");
-                                }
-                                else
-                                {
-                                    Debug.LogWarning("These don't match!");
-                                }
-                            }
-                            else
-                            {
-                                if (events[i].table == events[i + 1].table && events[i].op == TableOp.Delete &&
-                                    events[i + 1].op == TableOp.Insert)
-                                {
-                                    Debug.LogWarning("Something weird happend.");
-                                }
-                            }
-                        }
-
                         switch (ev.op)
                         {
                             case TableOp.Delete:
-                                ev.oldValue = events[i].table.DeleteEntry(ev.rowPk);
+                                ev.oldValue = events[i].table.DeleteEntry(ev.deletedPk);
                                 events[i] = ev;
                                 break;
                             case TableOp.Insert:
-                                ev.newValue = events[i].table.InsertEntry(ev.rowPk);
+                                ev.newValue = events[i].table.InsertEntry(ev.insertedPk);
                                 events[i] = ev;
                                 break;
                             case TableOp.Update:
+                                ev.oldValue = events[i].table.DeleteEntry(ev.deletedPk);
+                                ev.newValue = events[i].table.InsertEntry(ev.insertedPk);
+                                events[i] = ev;
                                 break;
                             default:
                                 throw new ArgumentOutOfRangeException();

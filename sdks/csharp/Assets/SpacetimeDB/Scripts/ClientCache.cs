@@ -187,6 +187,20 @@ namespace SpacetimeDB
             {
                 return (bool)ComparePrimaryKeyFunc.Invoke(null, new object[] { rowSchema, v1, v2 });
             }
+            
+            public bool ComparePrimaryKey(byte[] rowPk1, byte[] rowPk2)
+            {
+                if (!decodedValues.TryGetValue(rowPk1, out var v1))
+                {
+                    return false;
+                }
+                if (!decodedValues.TryGetValue(rowPk2, out var v2))
+                {
+                    return false;
+                }
+                
+                return (bool)ComparePrimaryKeyFunc.Invoke(null, new object[] { rowSchema, v1.Item1, v2.Item1 });
+            }
         }
 
         private readonly ConcurrentDictionary<string, TableCache> tables =
