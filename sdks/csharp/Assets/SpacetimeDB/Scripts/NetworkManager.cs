@@ -155,7 +155,7 @@ namespace SpacetimeDB
             }
 
             // cache all our reducer events by their function name 
-            foreach (var methodInfo in typeof(Bitcraft.Reducer).GetMethods())
+            foreach (var methodInfo in typeof(SpacetimeDB.Reducer).GetMethods())
             {
                 if (methodInfo.GetCustomAttribute<ReducerEvent>() is
                     { } reducerEvent)
