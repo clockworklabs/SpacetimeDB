@@ -84,6 +84,11 @@ namespace SpacetimeDB
         public event Action onTransactionComplete;
 
         /// <summary>
+        /// Invoked when the local client cache is updated as a result of changes made to the subscription queries.
+        /// </summary>
+        public event Action onSubscriptionUpdate;
+
+        /// <summary>
         /// Called when we receive an identity from the server
         /// </summary>
         public event Action<Identity> onIdentityReceived;
@@ -567,6 +572,7 @@ namespace SpacetimeDB
                     {
                         case Message.TypeOneofCase.SubscriptionUpdate:
                             onTransactionComplete?.Invoke();
+                            onSubscriptionUpdate?.Invoke();
                             break;
                         case Message.TypeOneofCase.TransactionUpdate:
                             onTransactionComplete?.Invoke();
