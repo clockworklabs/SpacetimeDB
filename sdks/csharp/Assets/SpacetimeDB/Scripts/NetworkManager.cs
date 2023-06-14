@@ -79,9 +79,9 @@ namespace SpacetimeDB
         public event RowUpdate onRowUpdate;
 
         /// <summary>
-        /// Callback is invoked after a transaction or subscription update is received and all updates have been applied.
+        /// Invoked when the local client cache is updated as a result of changes made to the subscription queries.
         /// </summary>
-        public event Action onTransactionComplete;
+        public event Action onSubscriptionUpdate;
 
         /// <summary>
         /// Called when we receive an identity from the server
@@ -566,10 +566,9 @@ namespace SpacetimeDB
                     switch (message.TypeCase)
                     {
                         case Message.TypeOneofCase.SubscriptionUpdate:
-                            onTransactionComplete?.Invoke();
+                            onSubscriptionUpdate?.Invoke();
                             break;
                         case Message.TypeOneofCase.TransactionUpdate:
-                            onTransactionComplete?.Invoke();
                             onEvent?.Invoke(message.TransactionUpdate.Event);
 
                             var functionName = message.TransactionUpdate.Event.FunctionCall.Reducer;
