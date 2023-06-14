@@ -41,7 +41,7 @@ namespace SpacetimeDB
             public string subscriptionQuery;
         }
 
-        private struct DbEvent
+        public struct DbEvent
         {
             public ClientCache.TableCache table;
             public TableOp op;
@@ -51,7 +51,7 @@ namespace SpacetimeDB
             public byte[] insertedPk;
         }
 
-        public delegate void RowUpdate(string tableName, TableOp op, object oldValue, object newValue, ClientApi.Event dbEvent);
+        public delegate void RowUpdate(string tableName, TableOp op, object oldValue, object newValue, SpacetimeDB.ReducerCallInfo dbEvent);
 
         /// <summary>
         /// Called when a connection is established to a spacetimedb instance.
@@ -84,6 +84,11 @@ namespace SpacetimeDB
         public event Action onTransactionComplete;
 
         /// <summary>
+        /// Invoked when the local client cache is updated as a result of changes made to the subscription queries.
+        /// </summary>
+        public event Action onSubscriptionUpdate;
+
+        /// <summary>
         /// Called when we receive an identity from the server
         /// </summary>
         public event Action<Identity> onIdentityReceived;
@@ -97,7 +102,7 @@ namespace SpacetimeDB
         private bool connectionClosed;
         public static ClientCache clientDB;
         public static Dictionary<string, Action<ClientApi.Event>> reducerEventCache = new Dictionary<string, Action<ClientApi.Event>>();
-        public static Dictionary<string, Func<ClientApi.Event, object[]>> deserializeEventCache = new Dictionary<string, Func<ClientApi.Event, object[]>>();
+        public static Dictionary<string, Action<ClientApi.Event>> deserializeEventCache = new Dictionary<string, Action<ClientApi.Event>>();
 
         private Thread messageProcessThread;
 
@@ -166,7 +171,7 @@ namespace SpacetimeDB
                 if (methodInfo.GetCustomAttribute<DeserializeEvent>() is
                     { } deserializeEvent)
                 {
-                    deserializeEventCache.Add(deserializeEvent.FunctionName, (Func<ClientApi.Event, object[]>)methodInfo.CreateDelegate(typeof(Func<ClientApi.Event, object[]>)));
+                    deserializeEventCache.Add(deserializeEvent.FunctionName, (Action<ClientApi.Event>)methodInfo.CreateDelegate(typeof(Action<ClientApi.Event>)));
                 }
             }
 
@@ -371,7 +376,7 @@ namespace SpacetimeDB
                 if (message.TypeCase == Message.TypeOneofCase.TransactionUpdate && 
                     deserializeEventCache.TryGetValue(message.TransactionUpdate.Event.FunctionCall.Reducer, out var deserializer))
                 {
-                    message.TransactionUpdate.Event.FunctionCall.ReducerArguments = deserializer.Invoke(message.TransactionUpdate.Event);
+                    deserializer.Invoke(message.TransactionUpdate.Event);
                 }
 
                 return (message, dbEvents);
@@ -444,7 +449,7 @@ namespace SpacetimeDB
                                 throw new ArgumentOutOfRangeException();
                         }
                     }
-
+                    
                     // Send out events
                     var eventCount = events.Count;
                     for (var i = 0; i < eventCount; i++)
@@ -567,13 +572,14 @@ namespace SpacetimeDB
                                 throw new ArgumentOutOfRangeException();
                         }
 
-                        onRowUpdate?.Invoke(tableName, tableOp, oldValue, newValue, message.Event);
+                        onRowUpdate?.Invoke(tableName, tableOp, oldValue, newValue, message.Event?.FunctionCall.CallInfo);
                     }
 
                     switch (message.TypeCase)
                     {
                         case Message.TypeOneofCase.SubscriptionUpdate:
                             onTransactionComplete?.Invoke();
+                            onSubscriptionUpdate?.Invoke();
                             break;
                         case Message.TypeOneofCase.TransactionUpdate:
                             onTransactionComplete?.Invoke();

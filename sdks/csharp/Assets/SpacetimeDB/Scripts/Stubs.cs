@@ -7,4 +7,9 @@ namespace SpacetimeDB
     public partial class Reducer
     {
     }
+
+    public partial class ReducerCallInfo
+    {
+        public SpacetimeDB.NetworkManager.DbEvent[] RowChanges { get; internal set; }
+    }
 }
