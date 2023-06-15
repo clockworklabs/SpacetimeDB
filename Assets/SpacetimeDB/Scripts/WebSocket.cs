@@ -142,7 +142,7 @@ namespace SpacetimeDB
         public async Task Connect(string auth, string host, string nameOrAddress, bool sslEnabled)
         {
             var protocol = sslEnabled ? "wss" : "ws";
-            var url = new Uri($"{protocol}://{host}/database/subscribe?name_or_address={nameOrAddress}");
+            var url = new Uri($"{protocol}://{host}/database/subscribe/{nameOrAddress}");
             Ws.Options.AddSubProtocol(_options.Protocol);
 
             var source = new CancellationTokenSource(10000);
