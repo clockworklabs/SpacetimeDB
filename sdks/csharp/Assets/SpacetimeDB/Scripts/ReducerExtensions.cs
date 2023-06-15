@@ -2,12 +2,12 @@
 
 namespace SpacetimeDB
 {
-    public class ReducerEvent : Attribute
+    public class ReducerCallbackAttribute : Attribute
     {
         public string FunctionName { get; set; }
     }
 
-    public class DeserializeEvent : Attribute
+    public class DeserializeEventAttribute : Attribute
     {
         public string FunctionName { get; set; }
     }

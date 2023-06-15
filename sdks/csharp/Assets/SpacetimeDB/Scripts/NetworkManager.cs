@@ -162,13 +162,13 @@ namespace SpacetimeDB
             // cache all our reducer events by their function name 
             foreach (var methodInfo in typeof(SpacetimeDB.Reducer).GetMethods())
             {
-                if (methodInfo.GetCustomAttribute<ReducerEvent>() is
+                if (methodInfo.GetCustomAttribute<ReducerCallbackAttribute>() is
                     { } reducerEvent)
                 {
                     reducerEventCache.Add(reducerEvent.FunctionName, (Action<ClientApi.Event>)methodInfo.CreateDelegate(typeof(Action<ClientApi.Event>)));
                 }
 
-                if (methodInfo.GetCustomAttribute<DeserializeEvent>() is
+                if (methodInfo.GetCustomAttribute<DeserializeEventAttribute>() is
                     { } deserializeEvent)
                 {
                     deserializeEventCache.Add(deserializeEvent.FunctionName, (Action<ClientApi.Event>)methodInfo.CreateDelegate(typeof(Action<ClientApi.Event>)));
