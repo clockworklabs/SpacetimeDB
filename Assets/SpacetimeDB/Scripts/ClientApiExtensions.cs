@@ -1,8 +1,7 @@
-﻿
-namespace ClientApi
+﻿namespace ClientApi
 {
     public partial class FunctionCall
     {
-        public object[] ReducerArguments { get; internal set; }
+        public SpacetimeDB.ReducerCallInfo CallInfo { get; internal set; }
     }
 }
