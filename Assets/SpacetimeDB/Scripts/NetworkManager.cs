@@ -84,6 +84,11 @@ namespace SpacetimeDB
         public event Action onSubscriptionUpdate;
 
         /// <summary>
+        /// Invoked when the local client cache is updated as a result of changes made to the subscription queries.
+        /// </summary>
+        public event Action onSubscriptionUpdate;
+
+        /// <summary>
         /// Called when we receive an identity from the server
         /// </summary>
         public event Action<Identity> onIdentityReceived;
