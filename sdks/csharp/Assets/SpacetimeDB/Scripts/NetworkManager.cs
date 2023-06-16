@@ -157,13 +157,13 @@ namespace SpacetimeDB
             // cache all our reducer events by their function name 
             foreach (var methodInfo in typeof(SpacetimeDB.Reducer).GetMethods())
             {
-                if (methodInfo.GetCustomAttribute<ReducerEvent>() is
+                if (methodInfo.GetCustomAttribute<ReducerCallbackAttribute>() is
                     { } reducerEvent)
                 {
                     reducerEventCache.Add(reducerEvent.FunctionName, (Action<ClientApi.Event>)methodInfo.CreateDelegate(typeof(Action<ClientApi.Event>)));
                 }
 
-                if (methodInfo.GetCustomAttribute<DeserializeEvent>() is
+                if (methodInfo.GetCustomAttribute<DeserializeEventAttribute>() is
                     { } deserializeEvent)
                 {
                     deserializeEventCache.Add(deserializeEvent.FunctionName, (Action<ClientApi.Event>)methodInfo.CreateDelegate(typeof(Action<ClientApi.Event>)));
@@ -420,7 +420,25 @@ namespace SpacetimeDB
             {
                 case Message.TypeOneofCase.SubscriptionUpdate:
                 case Message.TypeOneofCase.TransactionUpdate:
-                    // First apply all of the state
+                    // First trigger OnBeforeDelete
+                    for (var i = 0; i < events.Count; i++)
+                    {
+                        // TODO: Reimplement updates when we add support for primary keys
+                        var ev = events[i];
+                        if (ev.op == TableOp.Delete && ev.table.TryGetValue(ev.deletedPk, out var oldVal))
+                        {
+                            try
+                            {
+                                ev.table.BeforeDeleteCallback?.Invoke(oldVal, message.Event);
+                            }
+                            catch (Exception e)
+                            {
+                                Debug.LogException(e);
+                            }
+                        }
+                    }
+
+                    // Apply all of the state
                     for (var i = 0; i < events.Count; i++)
                     {
                         // TODO: Reimplement updates when we add support for primary keys

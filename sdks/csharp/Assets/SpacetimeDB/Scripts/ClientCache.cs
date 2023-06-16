@@ -55,6 +55,7 @@ namespace SpacetimeDB
             }
 
             public Action<object, ClientApi.Event> InsertCallback;
+            public Action<object, ClientApi.Event> BeforeDeleteCallback;
             public Action<object, ClientApi.Event> DeleteCallback;
             public Action<object, object, ClientApi.Event> UpdateCallback;
             // TODO: Consider renaming this one, this kind of implies that its a callback for the Update operation
@@ -79,6 +80,7 @@ namespace SpacetimeDB
                 this.rowSchema = rowSchema;
                 this.decoderFunc = decoderFunc;
                 InsertCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnInsertEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
+                BeforeDeleteCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnBeforeDeleteEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
                 DeleteCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnDeleteEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
                 UpdateCallback = (Action<object, object, ClientApi.Event>)clientTableType.GetMethod("OnUpdateEvent")?.CreateDelegate(typeof(Action<object, object, ClientApi.Event>));
                 RowUpdatedCallback = (Action<NetworkManager.TableOp, object, object, ClientApi.Event>)clientTableType.GetMethod("OnRowUpdateEvent")
@@ -183,6 +185,23 @@ namespace SpacetimeDB
 
                 Debug.LogWarning("Deleting value that we don't have (no cached value available)");
                 return null;
+            }
+
+            /// <summary>
+            /// Gets a value from the table
+            /// </summary>
+            /// <param name="rowPk">The primary key that uniquely identifies this row</param>
+            /// <returns></returns>
+            public bool TryGetValue(byte[] rowPk, out object value)
+            {
+                if (entries.TryGetValue(rowPk, out var v))
+                {
+                    value = v.Item2;
+                    return true;
+                }
+
+                value = null;
+                return false;
             }
 
             public bool ComparePrimaryKey(AlgebraicValue v1, AlgebraicValue v2)
