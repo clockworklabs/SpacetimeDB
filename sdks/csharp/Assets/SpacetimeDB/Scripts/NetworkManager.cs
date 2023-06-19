@@ -252,22 +252,6 @@ namespace SpacetimeDB
                                 switch (row.Op)
                                 {
                                     case TableRowOperation.Types.OperationType.Delete:
-                                        // If we don't already have this row, we should skip this delete
-                                        if (!table.entries.ContainsKey(rowPk))
-                                        {
-                                            if (update.TableRowOperations.Any(
-                                                    a => a.RowPk.ToByteArray().SequenceEqual(rowPk)))
-                                            {
-                                                // Debug.LogWarning("We are deleting and inserting the same row in the same TX!");
-                                            }
-                                            else
-                                            {
-                                                Debug.LogWarning(
-                                                    $"We received a delete for a row we don't even subscribe to! table={table.Name}");
-                                            }
-                                            continue;
-                                        }
-
                                         dbEvents.Add(new DbEvent
                                         {
                                             table = table,
