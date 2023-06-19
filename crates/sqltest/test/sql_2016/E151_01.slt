@@ -1,0 +1,9 @@
+# E151-01: COMMIT statement
+
+statement ok
+START TRANSACTION;
+COMMIT
+
+statement ok
+START TRANSACTION;
+COMMIT WORK

@@ -1,0 +1,9 @@
+# E151-02: ROLLBACK statement
+
+statement ok
+START TRANSACTION;
+ROLLBACK
+
+statement ok
+START TRANSACTION;
+ROLLBACK WORK

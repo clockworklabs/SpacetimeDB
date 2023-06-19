@@ -1,0 +1,6 @@
+# E121-03: Value expressions in ORDER BY clause
+
+onlyif Postgres
+statement ok
+CREATE TABLE TABLE_E121_03_01_01 ( A INT );
+DECLARE CUR_E121_03_01_01 CURSOR FOR SELECT A FROM TABLE_E121_03_01_01 ORDER BY A +5

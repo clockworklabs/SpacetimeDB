@@ -1,0 +1,14 @@
+# S011: Distinct data types
+
+onlyif Postgres
+statement ok
+CREATE TYPE TABLE_S011_01_01
+
+onlyif Postgres
+statement ok
+CREATE TYPE TABLE_S011_01_02 AS INT
+
+onlyif Postgres
+statement ok
+CREATE TYPE TABLE_S011_02_01 AS INT;
+DROP TYPE TABLE_S011_02_01

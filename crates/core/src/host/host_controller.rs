@@ -1,0 +1,253 @@
+use crate::hash::hash_bytes;
+use crate::host::wasmer;
+use crate::messages::control_db::HostType;
+use crate::module_host_context::ModuleHostContext;
+use anyhow::Context;
+use serde::Serialize;
+use std::collections::HashMap;
+use std::fmt;
+use std::ops::Sub;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use super::module_host::{
+    Catalog, EntityDef, EventStatus, ModuleHost, ModuleStarter, NoSuchModule, UpdateDatabaseResult,
+};
+use super::scheduler::SchedulerStarter;
+use super::{EnergyMonitor, NullEnergyMonitor, ReducerArgs};
+
+pub struct HostController {
+    modules: Mutex<HashMap<u64, ModuleHost>>,
+    energy_monitor: Arc<dyn EnergyMonitor>,
+}
+
+#[derive(PartialEq, Eq, Hash, Copy, Clone, Serialize, Debug)]
+pub enum DescribedEntityType {
+    Table,
+    Reducer,
+}
+
+impl DescribedEntityType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DescribedEntityType::Table => "table",
+            DescribedEntityType::Reducer => "reducer",
+        }
+    }
+    pub fn from_entitydef(def: &EntityDef) -> Self {
+        match def {
+            EntityDef::Table(_) => Self::Table,
+            EntityDef::Reducer(_) => Self::Reducer,
+        }
+    }
+}
+impl std::str::FromStr for DescribedEntityType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "table" => Ok(DescribedEntityType::Table),
+            "reducer" => Ok(DescribedEntityType::Reducer),
+            _ => Err(()),
+        }
+    }
+}
+impl fmt::Display for DescribedEntityType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EnergyQuanta(pub u64);
+
+impl EnergyQuanta {
+    pub const ZERO: Self = EnergyQuanta(0);
+
+    pub const DEFAULT_BUDGET: Self = EnergyQuanta(1_000_000_000_000_000_000);
+}
+
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EnergyDiff(pub u64);
+
+impl EnergyDiff {
+    pub const ZERO: Self = EnergyDiff(0);
+}
+
+impl Sub for EnergyQuanta {
+    type Output = EnergyDiff;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        EnergyDiff(self.0 - rhs.0)
+    }
+}
+
+impl fmt::Debug for EnergyDiff {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)?;
+        f.write_str("eV")
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ReducerCallResult {
+    pub outcome: ReducerOutcome,
+    pub energy_used: EnergyDiff,
+    pub execution_duration: Duration,
+}
+
+#[derive(Clone, Debug)]
+pub enum ReducerOutcome {
+    Committed,
+    Failed(String),
+    BudgetExceeded,
+}
+
+impl ReducerOutcome {
+    pub fn into_result(self) -> anyhow::Result<()> {
+        match self {
+            Self::Committed => Ok(()),
+            Self::Failed(e) => Err(anyhow::anyhow!(e)),
+            Self::BudgetExceeded => Err(anyhow::anyhow!("reducer ran out of energy")),
+        }
+    }
+}
+
+impl From<&EventStatus> for ReducerOutcome {
+    fn from(status: &EventStatus) -> Self {
+        match &status {
+            EventStatus::Committed(_) => ReducerOutcome::Committed,
+            EventStatus::Failed(e) => ReducerOutcome::Failed(e.clone()),
+            EventStatus::OutOfEnergy => ReducerOutcome::BudgetExceeded,
+        }
+    }
+}
+
+pub struct UpdateOutcome {
+    pub module_host: ModuleHost,
+    pub update_result: UpdateDatabaseResult,
+}
+
+impl HostController {
+    pub fn new(energy_monitor: Arc<impl EnergyMonitor>) -> Self {
+        Self {
+            modules: Mutex::new(HashMap::new()),
+            energy_monitor,
+        }
+    }
+
+    pub async fn init_module_host(&self, module_host_context: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
+        let module_host = self.spawn_module_host(module_host_context).await?;
+        // TODO(cloutiertyler): Hook this up again
+        // let identity = &module_host.info().identity;
+        // let max_spend = worker_budget::max_tx_spend(identity);
+
+        let rcr = module_host.init_database(ReducerArgs::Nullary).await?;
+        // worker_budget::record_tx_spend(identity, rcr.energy_quanta_used);
+        rcr.outcome.into_result().context("init reducer failed")?;
+        Ok(module_host)
+    }
+
+    pub async fn delete_module_host(&self, worker_database_instance_id: u64) -> Result<(), anyhow::Error> {
+        if let Some(host) = self.take_module_host(worker_database_instance_id) {
+            host.exit().await;
+        }
+        Ok(())
+    }
+
+    pub async fn update_module_host(
+        &self,
+        module_host_context: ModuleHostContext,
+    ) -> Result<UpdateOutcome, anyhow::Error> {
+        let module_host = self.spawn_module_host(module_host_context).await?;
+        // TODO: see init_module_host
+        let update_result = module_host.update_database().await?;
+
+        Ok(UpdateOutcome {
+            module_host,
+            update_result,
+        })
+    }
+
+    pub async fn add_module_host(&self, module_host_context: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
+        let module_host = self.spawn_module_host(module_host_context).await?;
+        // module_host.init_function(); ??
+        Ok(module_host)
+    }
+
+    pub async fn spawn_module_host(&self, module_host_context: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
+        let key = module_host_context.dbic.database_instance_id;
+
+        let (module_host, start_module, start_scheduler) =
+            tokio::task::block_in_place(|| Self::make_module_host(module_host_context, self.energy_monitor.clone()))?;
+
+        let old_module = self.modules.lock().unwrap().insert(key, module_host.clone());
+        if let Some(old_module) = old_module {
+            old_module.exit().await
+        }
+        start_module.start();
+        start_scheduler.start(&module_host)?;
+
+        Ok(module_host)
+    }
+
+    fn make_module_host(
+        mhc: ModuleHostContext,
+        energy_monitor: Arc<dyn EnergyMonitor>,
+    ) -> anyhow::Result<(ModuleHost, ModuleStarter, SchedulerStarter)> {
+        let module_hash = hash_bytes(&mhc.program_bytes);
+        let (module_host, module_starter) = match mhc.host_type {
+            HostType::Wasmer => ModuleHost::spawn(wasmer::make_actor(
+                mhc.dbic,
+                module_hash,
+                &mhc.program_bytes,
+                mhc.scheduler,
+                energy_monitor,
+            )?),
+        };
+        Ok((module_host, module_starter, mhc.scheduler_starter))
+    }
+
+    /// Request a list of all describable entities in a module.
+    pub fn catalog(&self, instance_id: u64) -> Result<Catalog, anyhow::Error> {
+        let module_host = self.get_module_host(instance_id)?;
+        Ok(module_host.catalog())
+    }
+
+    pub fn subscribe_to_logs(
+        &self,
+        instance_id: u64,
+    ) -> anyhow::Result<tokio::sync::broadcast::Receiver<bytes::Bytes>> {
+        Ok(self.get_module_host(instance_id)?.info().log_tx.subscribe())
+    }
+    pub fn get_module_host(&self, instance_id: u64) -> Result<ModuleHost, NoSuchModule> {
+        let modules = self.modules.lock().unwrap();
+        modules.get(&instance_id).cloned().ok_or(NoSuchModule)
+    }
+
+    fn take_module_host(&self, instance_id: u64) -> Option<ModuleHost> {
+        self.modules.lock().unwrap().remove(&instance_id)
+    }
+
+    /// If a module's DB activity is being traced (for diagnostics etc.), retrieves the current contents of its trace stream.
+    #[cfg(feature = "tracelogging")]
+    pub async fn get_trace(&self, instance_id: u64) -> Result<Option<bytes::Bytes>, anyhow::Error> {
+        let module_host = self.get_module_host(instance_id)?;
+        let trace = module_host.get_trace().await.unwrap();
+        Ok(trace)
+    }
+
+    /// If a module's DB activity is being traced (for diagnostics etc.), stop tracing it.
+    #[cfg(feature = "tracelogging")]
+    pub async fn stop_trace(&self, instance_id: u64) -> Result<(), anyhow::Error> {
+        let module_host = self.get_module_host(instance_id)?;
+        module_host.stop_trace().await.unwrap();
+        Ok(())
+    }
+}
+
+impl Default for HostController {
+    fn default() -> Self {
+        Self::new(Arc::new(NullEnergyMonitor))
+    }
+}

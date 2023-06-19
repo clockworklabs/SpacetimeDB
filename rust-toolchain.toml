@@ -1,0 +1,4 @@
+[toolchain]
+channel = "1.70"
+profile = "default"
+targets = ["wasm32-unknown-unknown"]

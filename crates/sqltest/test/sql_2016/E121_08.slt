@@ -1,0 +1,10 @@
+# E121-08: CLOSE statement
+
+onlyif Postgres
+onlyif Postgres
+onlyif Postgres
+statement ok
+CREATE TABLE TABLE_E121_08_01_01 ( A INT );
+DECLARE CUR_E121_08_01_01 CURSOR FOR SELECT A FROM TABLE_E121_08_01_01;
+OPEN CUR_E121_08_01_01;
+CLOSE CUR_E121_08_01_01

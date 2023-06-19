@@ -1,0 +1,57 @@
+pub mod api;
+mod config;
+mod subcommands;
+mod tasks;
+pub mod util;
+
+use clap::{ArgMatches, Command};
+
+pub use config::Config;
+pub use subcommands::*;
+
+pub fn get_subcommands() -> Vec<Command> {
+    vec![
+        version::cli(),
+        publish::cli(),
+        delete::cli(),
+        logs::cli(),
+        call::cli(),
+        describe::cli(),
+        identity::cli(),
+        energy::cli(),
+        sql::cli(),
+        dns::cli(),
+        generate::cli(),
+        list::cli(),
+        init::cli(),
+        build::cli(),
+        #[cfg(feature = "tracelogging")]
+        tracelog::cli(),
+        server::cli(),
+        repl::cli(),
+    ]
+}
+
+pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    match cmd {
+        "version" => version::exec(config, args).await,
+        "identity" => identity::exec(config, args).await,
+        "call" => call::exec(config, args).await,
+        "describe" => describe::exec(config, args).await,
+        "energy" => energy::exec(config, args).await,
+        "publish" => publish::exec(config, args).await,
+        "delete" => delete::exec(config, args).await,
+        "logs" => logs::exec(config, args).await,
+        "sql" => sql::exec(config, args).await,
+        "dns" => dns::exec(config, args).await,
+        "generate" => generate::exec(args),
+        "list" => list::exec(config, args).await,
+        "init" => init::exec(config, args).await,
+        "build" => build::exec(config, args).await,
+        "server" => server::exec(config, args).await,
+        "repl" => repl::exec(config, args).await,
+        #[cfg(feature = "tracelogging")]
+        "tracelog" => tracelog::exec(config, args).await,
+        unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
+    }
+}

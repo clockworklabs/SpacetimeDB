@@ -1,0 +1,6 @@
+# E121-02: ORDER BY columns need not be in select list
+
+onlyif Postgres
+statement ok
+CREATE TABLE TABLE_E121_02_01_01 ( A INT, B INT );
+DECLARE CUR_E121_02_01_01 CURSOR FOR SELECT A FROM TABLE_E121_02_01_01 ORDER BY B

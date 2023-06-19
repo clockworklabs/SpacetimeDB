@@ -1,0 +1,91 @@
+# F051-04: Comparison predicate on DATE, TIME, and TIMESTAMP data types
+
+query B
+SELECT DATE '2016-03-26' < DATE '2016-03-26'
+----
+0
+
+query B
+SELECT DATE '2016-03-26' <= DATE '2016-03-26'
+----
+1
+
+query B
+SELECT DATE '2016-03-26' <> DATE '2016-03-26'
+----
+0
+
+query B
+SELECT DATE '2016-03-26' = DATE '2016-03-26'
+----
+1
+
+query B
+SELECT DATE '2016-03-26' > DATE '2016-03-26'
+----
+0
+
+query B
+SELECT DATE '2016-03-26' >= DATE '2016-03-26'
+----
+1
+
+query B
+SELECT TIME '01:02:03' < TIME '01:02:03'
+----
+0
+
+query B
+SELECT TIME '01:02:03' <= TIME '01:02:03'
+----
+1
+
+query B
+SELECT TIME '01:02:03' <> TIME '01:02:03'
+----
+0
+
+query B
+SELECT TIME '01:02:03' = TIME '01:02:03'
+----
+1
+
+query B
+SELECT TIME '01:02:03' > TIME '01:02:03'
+----
+0
+
+query B
+SELECT TIME '01:02:03' >= TIME '01:02:03'
+----
+1
+
+query B
+SELECT TIMESTAMP '2016-03-26 01:02:03' < TIMESTAMP '2016-03-26 01:02:03'
+----
+0
+
+query B
+SELECT TIMESTAMP '2016-03-26 01:02:03' <= TIMESTAMP '2016-03-26 01:02:03'
+----
+1
+
+query B
+SELECT TIMESTAMP '2016-03-26 01:02:03' <> TIMESTAMP '2016-03-26 01:02:03'
+----
+0
+
+query B
+SELECT TIMESTAMP '2016-03-26 01:02:03' = TIMESTAMP '2016-03-26 01:02:03'
+----
+1
+
+query B
+SELECT TIMESTAMP '2016-03-26 01:02:03' > TIMESTAMP '2016-03-26 01:02:03'
+----
+0
+
+query B
+SELECT TIMESTAMP '2016-03-26 01:02:03' >= TIMESTAMP '2016-03-26 01:02:03'
+----
+1

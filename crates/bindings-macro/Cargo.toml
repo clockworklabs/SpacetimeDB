@@ -1,0 +1,19 @@
+[package]
+name = "spacetimedb-bindings-macro"
+version = "0.4.1"
+edition = "2021"
+license-file = "LICENSE"
+description = "Easy support for interacting between SpacetimeDB and Rust."
+
+[lib]
+proc-macro = true
+# Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
+bench = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+proc-macro2 = "1.0"
+syn = { version = "2", features = ["full", "extra-traits"] }
+quote = "1.0.8"
+humantime = "2.1.0"

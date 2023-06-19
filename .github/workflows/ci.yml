@@ -1,0 +1,69 @@
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+name: CI
+
+jobs:
+  docker_smoketests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Start containers
+        run: docker compose up -d
+      - name: Run smoketests
+        run: test/run-smoke-tests.sh -x bitcraftmini-pretest zz_docker-restart-repeating-reducer zz_docker-restart-module zz_docker-restart-sql
+      - name: Stop containers 
+        if: always()
+        run: docker compose down
+
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - name: Create /stdb dir
+        run: |
+          sudo mkdir /stdb
+          sudo chmod 777 /stdb
+
+      - name: Run cargo test
+        run: cargo test --all --features odb_rocksdb,odb_sled,tracelogging
+
+  lints:
+    name: Lints
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: Run cargo clippy
+        run: cargo clippy --all --features odb_rocksdb,odb_sled,tracelogging -- -D warnings
+
+  wasm_bindings:
+    name: Build and test wasm bindings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      - name: Build rust-wasm-test
+        run: cargo run -p spacetimedb-cli -- build crates/modules/rust-wasm-test
+
+      - name: Run bindgen tests
+        run: cargo test -p spacetimedb-cli

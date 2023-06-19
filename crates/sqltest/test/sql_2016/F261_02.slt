@@ -1,0 +1,31 @@
+# F261-02: Searched CASE
+
+query I
+SELECT CASE WHEN 0 = 1 THEN 1 ELSE 1 END
+----
+1
+
+query I
+SELECT CASE WHEN 0 = 1 THEN 1 ELSE NULL END
+----
+null
+
+query I
+SELECT CASE WHEN 0 = 1 THEN 1 END
+----
+null
+
+query I
+SELECT CASE WHEN 0 = 1 THEN NULL ELSE 1 END
+----
+1
+
+query T
+SELECT CASE WHEN 0 = 1 THEN NULL ELSE NULL END
+----
+null
+
+query T
+SELECT CASE WHEN 0 = 1 THEN NULL END
+----
+null

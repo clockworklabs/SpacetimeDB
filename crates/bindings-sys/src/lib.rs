@@ -1,0 +1,673 @@
+//! Defines sys calls to interact with SpacetimeDB.
+//! This forms an ABI of sorts that modules written in Rust can use.
+
+extern crate alloc;
+
+#[macro_use]
+mod errno;
+
+use core::fmt;
+use core::mem::MaybeUninit;
+use core::num::NonZeroU16;
+use std::ptr;
+
+use alloc::boxed::Box;
+
+/// The current version of the ABI.
+///
+/// Exported as `SPACETIME_ABI_VERSION`, a `u32` WASM global.
+/// If this global contains an address into linear memory at which the version is stored,
+/// then a WASM global named `SPACETIME_ABI_VERSION_IS_ADDR` is also be exported.
+///
+/// In rust this looks like:
+/// ```rust,ignore
+/// #[no_mangle]
+/// static SPACETIME_ABI_VERSION: u32 = _; // right now, rust `static`s always export as an address.
+/// #[no_mangle]
+/// static SPACETIME_ABI_VERSION_IS_ADDR: () = ();
+/// ```
+///
+/// The (big-endian) first 2 bytes constitute the major version (`A`) of the ABI,
+/// and the last 2 bytes constitute the minor version (`B`).
+///
+/// The semantics of a version number `A.B` is that a host implementing version `A.B`
+/// can run a module declaring `X.Y` if and only if `X == A && Y <= B`.
+/// So, the minor version is intended for backwards-compatible changes, e.g. adding a new function,
+/// and the major version is for fully breaking changes.
+pub const ABI_VERSION: u32 = 0x0002_0000;
+
+/// Provides a raw set of sys calls which abstractions can be built atop of.
+pub mod raw {
+    use core::mem::ManuallyDrop;
+
+    #[link(wasm_import_module = "spacetime")]
+    extern "C" {
+        /*
+        /// Create a table with `name`, a UTF-8 slice in WASM memory lasting `name_len` bytes,
+        /// and with the table's `schema` in a slice in WASM memory lasting `schema_len` bytes.
+        ///
+        /// Writes the table id of the new table into the WASM pointer `out`.
+        pub fn _create_table(
+            name: *const u8,
+            name_len: usize,
+            schema: *const u8,
+            schema_len: usize,
+            out: *mut u32,
+        ) -> u16;
+        */
+
+        /// Queries the `table_id` associated with the given (table) `name`
+        /// where `name` points to a UTF-8 slice in WASM memory of `name_len` bytes.
+        ///
+        /// The table id is written into the `out` pointer.
+        ///
+        /// Returns an error if the table does not exist.
+        pub fn _get_table_id(name: *const u8, name_len: usize, out: *mut u32) -> u16;
+
+        /// Creates an index with the name `index_name` and type `index_type`,
+        /// on a product of the given columns in `col_ids`
+        /// in the table identified by `table_id`.
+        ///
+        /// Here `index_name` points to a UTF-8 slice in WASM memory
+        /// and `col_ids` points to a byte slice in WASM memory with each element being a column.
+        ///
+        /// Currently only single-column-indices are supported
+        /// and they may only be of the btree index type.
+        /// In the former case, the function will panic,
+        /// and in latter, an error is returned.
+        ///
+        /// Returns an error when a table with the provided `table_id` doesn't exist.
+        pub fn _create_index(
+            index_name: *const u8,
+            index_name_len: usize,
+            table_id: u32,
+            index_type: u8,
+            col_ids: *const u8,
+            col_len: usize,
+        ) -> u16;
+
+        /// Finds all rows in the table identified by `table_id`,
+        /// where the row has a column, identified by `col_id`,
+        /// with data matching the byte string, in WASM memory, pointed to at by `val`.
+        ///
+        /// The rows found are bsatn encoded and then concatenated.
+        /// The resulting byte string from the concatenation is written
+        /// to a fresh buffer with the buffer's identifier written to the WASM pointer `out`.
+        pub fn _seek_eq(table_id: u32, col_id: u32, value: *const u8, value_len: usize, out: *mut Buffer) -> u16;
+
+        /// Insert a row into the table identified by `table_id`,
+        /// where the row is read from the byte slice `row_ptr` in WASM memory,
+        /// lasting `row_len` bytes.
+        pub fn _insert(table_id: u32, row: *mut u8, row_len: usize) -> u16;
+
+        /// Deletes all rows in the table identified by `table_id`
+        /// where the column identified by `col_id` equates to the byte string,
+        /// in WASM memory, pointed to at by `value`.
+        ///
+        /// The number of rows deleted is written to the WASM pointer `out`.
+        ///
+        /// Returns an error if no columns were deleted or if the column wasn't found.
+        pub fn _delete_eq(table_id: u32, col_id: u32, value: *const u8, value_len: usize, out: *mut u32) -> u16;
+
+        /*
+        /// Deletes the primary key pointed to at by `pk` in the table identified by `table_id`.
+        pub fn _delete_pk(table_id: u32, pk: *const u8, pk_len: usize) -> u16;
+        pub fn _delete_value(table_id: u32, row: *const u8, row_len: usize) -> u16;
+        pub fn _delete_range(
+            table_id: u32,
+            col_id: u32,
+            range_start: *const u8,
+            range_start_len: usize,
+            range_end: *const u8,
+            range_end_len: usize,
+            out: *mut u32,
+        ) -> u16;
+        */
+
+        /// Start iteration on each row, as bytes, of a table identified by `table_id`.
+        ///
+        /// The iterator is registered in the host environment
+        /// under an assigned index which is written to the `out` pointer provided.
+        pub fn _iter_start(table_id: u32, out: *mut BufferIter) -> u16;
+
+        /// Like [`_iter_start`], start iteration on each row,
+        /// as bytes, of a table identified by `table_id`.
+        ///
+        /// The rows are filtered through `filter`, which is read from WASM memory
+        /// and is encoded in the embedded language defined by `spacetimedb_lib::filter::Expr`.
+        ///
+        /// The iterator is registered in the host environment
+        /// under an assigned index which is written to the `out` pointer provided.
+        pub fn _iter_start_filtered(table_id: u32, filter: *const u8, filter_len: usize, out: *mut BufferIter) -> u16;
+
+        /// Advances the registered iterator with the index given by `iter_key`.
+        ///
+        /// On success, the next element (the row as bytes) is written to a buffer.
+        /// The buffer's index is returned and written to the `out` pointer.
+        /// If there are no elements left, an invalid buffer index is written to `out`.
+        /// On failure however, the error is returned.
+        pub fn _iter_next(iter: ManuallyDrop<BufferIter>, out: *mut Buffer) -> u16;
+
+        /// Drops the entire registered iterator with the index given by `iter_key`.
+        /// The iterator is effectively de-registered.
+        ///
+        /// Returns an error if the iterator does not exist.
+        pub fn _iter_drop(iter: ManuallyDrop<BufferIter>) -> u16;
+
+        /// Log at `level` a `text` message occuring in `filename:line_number`
+        /// with [`target`] being the module path at the `log!` invocation site.
+        ///
+        /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.
+        ///
+        /// [`target`]: https://docs.rs/log/latest/log/struct.Record.html#method.target
+        pub fn _console_log(
+            level: u8,
+            target: *const u8,
+            target_len: usize,
+            filename: *const u8,
+            filename_len: usize,
+            line_number: u32,
+            text: *const u8,
+            text_len: usize,
+        );
+
+        /// Schedule a reducer to be called asynchronously at `time`.
+        ///
+        /// The reducer is named as the UTF-8 slice `(name, name_len)`,
+        /// and is passed the slice `(args, args_len)` as its argument.
+        ///
+        /// A generated schedule id is assigned to the reducer.
+        /// This id is written to the pointer `out`.
+        pub fn _schedule_reducer(
+            name: *const u8,
+            name_len: usize,
+            args: *const u8,
+            args_len: usize,
+            time: u64,
+            out: *mut u64,
+        );
+
+        /// Unschedule a reducer using the same `id` generated as when it was scheduled.
+        ///
+        /// This assumes that the reducer hasn't already been executed.
+        pub fn _cancel_reducer(id: u64);
+
+        /// Returns the length of buffer `bufh` without consuming the buffer handle.
+        ///
+        /// Returns an error if the buffer does not exist.
+        pub fn _buffer_len(bufh: ManuallyDrop<Buffer>) -> usize;
+
+        /// Consumes the buffer `bufh`, moving its contents to the slice `(into, len)`.
+        ///
+        /// Returns an error if the buffer does not exist.
+        pub fn _buffer_consume(bufh: Buffer, into: *mut u8, len: usize);
+
+        /// Creates a buffer of size `data_len` in the host environment.
+        /// The buffer is initialized with the contents at the `data` WASM pointer.
+        pub fn _buffer_alloc(data: *const u8, data_len: usize) -> Buffer;
+    }
+
+    /// What strategy does the database index use?
+    ///
+    /// See also: https://www.postgresql.org/docs/current/sql-createindex.html
+    #[repr(u8)]
+    #[non_exhaustive]
+    pub enum IndexType {
+        /// Indexing works by putting the index key into a b-tree.
+        BTree = 0,
+        /// Indexing works by hashing the index key.
+        Hash = 1,
+    }
+
+    /// The error log level. See [`_console_log`].
+    pub const LOG_LEVEL_ERROR: u8 = 0;
+    /// The warn log level. See [`_console_log`].
+    pub const LOG_LEVEL_WARN: u8 = 1;
+    /// The info log level. See [`_console_log`].
+    pub const LOG_LEVEL_INFO: u8 = 2;
+    /// The debug log level. See [`_console_log`].
+    pub const LOG_LEVEL_DEBUG: u8 = 3;
+    /// The trace log level. See [`_console_log`].
+    pub const LOG_LEVEL_TRACE: u8 = 4;
+    /// The panic log level. See [`_console_log`].
+    ///
+    /// A panic level is emitted just before a fatal error causes the WASM module to trap.
+    pub const LOG_LEVEL_PANIC: u8 = 101;
+
+    /// A handle into a buffer of bytes in the host environment.
+    ///
+    /// Used for transporting bytes host <-> WASM linear memory.
+    #[repr(transparent)]
+    pub struct Buffer {
+        /// The actual handle. A key into a `ResourceSlab`.
+        raw: u32,
+    }
+
+    impl Buffer {
+        /// Returns a "handle" that can be passed across the FFI boundary
+        /// as if it was the Buffer itself, but without consuming it.
+        pub const fn handle(&self) -> ManuallyDrop<Self> {
+            ManuallyDrop::new(Self { raw: self.raw })
+        }
+
+        /// An invalid buffer handle.
+        ///
+        /// Could happen if too many buffers exist, making the key overflow a `u32`.
+        /// `INVALID` is also used for parts of the protocol
+        /// that are "morally" sending a `None`s in `Option<Box<[u8]>>`s.
+        pub const INVALID: Self = Self { raw: u32::MAX };
+
+        /// Is the buffer handle invalid?
+        pub const fn is_invalid(&self) -> bool {
+            self.raw == Self::INVALID.raw
+        }
+    }
+
+    /// Represents table iterators, with a similar API to [`Buffer`].
+    #[repr(transparent)]
+    pub struct BufferIter {
+        raw: u32,
+    }
+
+    impl BufferIter {
+        /// Returns a handle usable for non-consuming operations.
+        pub const fn handle(&self) -> ManuallyDrop<Self> {
+            ManuallyDrop::new(Self { raw: self.raw })
+        }
+    }
+
+    #[cfg(any())]
+    mod module_exports {
+        type Encoded<T> = Buffer;
+        type Identity = Encoded<[u8; 32]>;
+        /// microseconds since the unix epoch
+        type Timestamp = u64;
+        /// Buffer::INVALID => Ok(()); else errmsg => Err(errmsg)
+        type Result = Buffer;
+        extern "C" {
+            /// All functions prefixed with `__preinit__` are run first in alphabetical order.
+            /// For those it's recommended to use /etc/xxxx.d conventions of like `__preinit__20_do_thing`:
+            /// <https://man7.org/linux/man-pages/man5/sysctl.d.5.html#CONFIGURATION_DIRECTORIES_AND_PRECEDENCE>
+            fn __preinit__XX_XXXX();
+            /// Optional. Run after `__preinit__`; can return an error. Intended for dynamic languages; this
+            /// would be where you would initialize the interepreter and load the user module into it.
+            fn __setup__() -> Result;
+            /// Required. Runs after `__setup__`; returns all the exports for the module.
+            fn __describe_module__() -> Encoded<ModuleDef>;
+            /// Required. id is an index into the `ModuleDef.reducers` returned from `__describe_module__`.
+            /// args is a bsatn-encoded product value defined by the schema at `reducers[id]`.
+            fn __call_reducer__(id: usize, sender: Identity, timestamp: Timestamp, args: Buffer) -> Result;
+            /// Optional. Called when a client connects to the database.
+            fn __identity_connected__(sender: Identity, timestamp: Timestamp) -> Result;
+            /// Optional. Called when a client disconnects to the database.
+            fn __identity_disconnected__(sender: Identity, timestamp: Timestamp) -> Result;
+            /// Currently unused?
+            fn __migrate_database__XXXX(sender: Identity, timestamp: Timestamp, something: Buffer) -> Result;
+        }
+    }
+}
+
+/// Error values used in the safe bindings API.
+#[derive(Copy, Clone, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct Errno(NonZeroU16);
+
+// once Error gets exposed from core this crate can be no_std again
+impl std::error::Error for Errno {}
+
+macro_rules! def_errno {
+    ($($name:ident => $desc:literal,)*) => {
+        impl Errno {
+            // SAFETY: We've checked that `errnos!` contains no `0` values.
+            $(#[doc = $desc] pub const $name: Errno = Errno(unsafe { NonZeroU16::new_unchecked(errno::$name) });)*
+        }
+
+        /// Returns a string representation of the error.
+        const fn strerror(err: Errno) -> Option<&'static str> {
+            match err {
+                $(Errno::$name => Some($desc),)*
+                _ => None,
+            }
+        }
+    };
+}
+errnos!(def_errno);
+
+impl Errno {
+    /// Returns a description of the errno value, if any.
+    pub const fn message(self) -> Option<&'static str> {
+        strerror(self)
+    }
+
+    /// Converts the given `code` to an error number in `Errno`'s representation.
+    #[inline]
+    pub const fn from_code(code: u16) -> Option<Self> {
+        match NonZeroU16::new(code) {
+            Some(code) => Some(Errno(code)),
+            None => None,
+        }
+    }
+
+    /// Converts this `errno` into a primitive error code.
+    #[inline]
+    pub const fn code(self) -> u16 {
+        self.0.get()
+    }
+}
+
+impl fmt::Debug for Errno {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut fmt = f.debug_struct("Errno");
+        fmt.field("code", &self.code());
+        if let Some(msg) = self.message() {
+            fmt.field("message", &msg);
+        }
+        fmt.finish()
+    }
+}
+
+impl fmt::Display for Errno {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = self.message().unwrap_or("Unknown error");
+        write!(f, "{message} (error {})", self.code())
+    }
+}
+
+/// Convert the status value `x` into a result.
+/// When `x = 0`, we have a success status.
+fn cvt(x: u16) -> Result<(), Errno> {
+    match Errno::from_code(x) {
+        None => Ok(()),
+        Some(err) => Err(err),
+    }
+}
+
+/// Runs the given function `f` provided with an uninitialized `out` pointer.
+///
+/// Assuming the call to `f` succeeds (`Ok(_)`), the `out` pointer's value is returned.
+///
+/// # Safety
+///
+/// This function is safe to call, if and only if,
+/// - The function `f` writes a safe and valid `T` to the `out` pointer.
+///   It's not required to write to `out` when `f(out)` returns an error code.
+/// - The function `f` never reads a safe and valid `T` from the `out` pointer
+///   before writing a safe and valid `T` to it.
+/// - If running `Drop` on `T` is required for safety,
+///   `f` must never panic nor return an error once `out` has been written to.
+#[inline]
+unsafe fn call<T>(f: impl FnOnce(*mut T) -> u16) -> Result<T, Errno> {
+    let mut out = MaybeUninit::uninit();
+    // TODO: If we have a panic here after writing a safe `T` to `out`,
+    // we will may have a memory leak if `T` requires running `Drop` for cleanup.
+    let f_code = f(out.as_mut_ptr());
+    // TODO: A memory leak may also result due to an error code from `f(out)`
+    // if `out` has been written to.
+    cvt(f_code)?;
+    Ok(out.assume_init())
+}
+
+/*
+/// Create a table with `name`, a UTF-8 slice in WASM memory lasting `name_len` bytes,
+/// and with the table's `schema` in a slice in WASM memory lasting `schem_len` bytes.
+///
+/// Returns the table id of the new table.
+#[inline]
+pub fn create_table(name: &str, schema: &[u8]) -> Result<u32, Errno> {
+    unsafe { call(|out| raw::_create_table(name.as_ptr(), name.len(), schema.as_ptr(), schema.len(), out)) }
+}
+*/
+
+/// Queries and returns the `table_id` associated with the given (table) `name`.
+///
+/// Returns an error if the table does not exist.
+#[inline]
+pub fn get_table_id(name: &str) -> Result<u32, Errno> {
+    unsafe { call(|out| raw::_get_table_id(name.as_ptr(), name.len(), out)) }
+}
+
+/// Creates an index with the name `index_name` and type `index_type`,
+/// on a product of the given columns ids in `col_ids`,
+/// identifying columns in the table identified by `table_id`.
+///
+/// Currently only single-column-indices are supported
+/// and they may only be of the btree index type.
+/// In the former case, the function will panic,
+/// and in latter, an error is returned.
+///
+/// Returns an error when a table with the provided `table_id` doesn't exist.
+#[inline]
+pub fn create_index(index_name: &str, table_id: u32, index_type: u8, col_ids: &[u8]) -> Result<(), Errno> {
+    cvt(unsafe {
+        raw::_create_index(
+            index_name.as_ptr(),
+            index_name.len(),
+            table_id,
+            index_type,
+            col_ids.as_ptr(),
+            col_ids.len(),
+        )
+    })
+}
+
+/// Finds all rows in the table identified by `table_id`,
+/// where the row has a column, identified by `col_id`,
+/// with data matching `val.
+///
+/// The rows found are bsatn encoded and then concatenated.
+/// The resulting byte string from the concatenation is written
+/// to a fresh buffer with a handle to it returned as a `Buffer`.
+#[inline]
+pub fn seek_eq(table_id: u32, col_id: u32, val: &[u8]) -> Result<Buffer, Errno> {
+    unsafe { call(|out| raw::_seek_eq(table_id, col_id, val.as_ptr(), val.len(), out)) }
+}
+
+/// Insert `row`, provided as a byte slice, into the table identified by `table_id`.
+#[inline]
+pub fn insert(table_id: u32, row: &mut [u8]) -> Result<(), Errno> {
+    cvt(unsafe { raw::_insert(table_id, row.as_mut_ptr(), row.len()) })
+}
+
+/// Deletes all rows in the table identified by `table_id`
+/// where the column identified by `col_id` equates to `value`.
+///
+/// Returns the number of rows deleted
+/// or an error if no columns were deleted or if the column wasn't found.
+#[inline]
+pub fn delete_eq(table_id: u32, col_id: u32, value: &[u8]) -> Result<u32, Errno> {
+    unsafe { call(|out| raw::_delete_eq(table_id, col_id, value.as_ptr(), value.len(), out)) }
+}
+
+/*
+#[inline]
+pub fn delete_pk(table_id: u32, pk: &[u8]) -> Result<(), Errno> {
+    cvt(unsafe { raw::_delete_pk(table_id, pk.as_ptr(), pk.len()) })
+}
+#[inline]
+pub fn delete_value(table_id: u32, row: &[u8]) -> Result<(), Errno> {
+    cvt(unsafe { raw::_delete_value(table_id, row.as_ptr(), row.len()) })
+}
+#[inline]
+pub fn delete_range(table_id: u32, col_id: u32, range_start: &[u8], range_end: &[u8]) -> Result<u32, Errno> {
+    unsafe {
+        call(|out| {
+            raw::_delete_range(
+                table_id,
+                col_id,
+                range_start.as_ptr(),
+                range_start.len(),
+                range_end.as_ptr(),
+                range_end.len(),
+                out,
+            )
+        })
+    }
+}
+*/
+
+/// Returns an iterator for each row, as bytes, of a table identified by `table_id`.
+/// The rows can be put through an optional `filter`,
+/// which is encoded in the embedded language defined by `spacetimedb_lib::filter::Expr`.
+///
+/// The actual return value is a handle to an iterator registered with the host environment,
+/// but [`BufferIter`] can be used directly as an `Iterator`.
+#[inline]
+pub fn iter(table_id: u32, filter: Option<&[u8]>) -> Result<BufferIter, Errno> {
+    unsafe {
+        call(|out| match filter {
+            None => raw::_iter_start(table_id, out),
+            Some(filter) => raw::_iter_start_filtered(table_id, filter.as_ptr(), filter.len(), out),
+        })
+    }
+}
+
+/// A log level that can be used in `console_log`.
+/// The variants are convertible into a raw `u8` log level.
+#[repr(u8)]
+pub enum LogLevel {
+    /// The error log level. See [`console_log`].
+    Error = raw::LOG_LEVEL_ERROR,
+    /// The warn log level. See [`console_log`].
+    Warn = raw::LOG_LEVEL_WARN,
+    /// The info log level. See [`console_log`].
+    Info = raw::LOG_LEVEL_INFO,
+    /// The debug log level. See [`console_log`].
+    Debug = raw::LOG_LEVEL_DEBUG,
+    /// The trace log level. See [`console_log`].
+    Trace = raw::LOG_LEVEL_TRACE,
+    /// The panic log level. See [`console_log`].
+    ///
+    /// A panic level is emitted just before a fatal error causes the WASM module to trap.
+    Panic = raw::LOG_LEVEL_PANIC,
+}
+
+/// Log at `level` a `text` message occuring in `filename:line_number`
+/// with [`target`] being the module path at the `log!` invocation site.
+///
+/// [`target`]: https://docs.rs/log/latest/log/struct.Record.html#method.target
+#[inline]
+pub fn console_log(
+    level: LogLevel,
+    target: Option<&str>,
+    filename: Option<&str>,
+    line_number: Option<u32>,
+    text: &str,
+) {
+    let opt_ptr = |b: Option<&str>| b.map_or(ptr::null(), |b| b.as_ptr());
+    let opt_len = |b: Option<&str>| b.map_or(0, |b| b.len());
+    unsafe {
+        raw::_console_log(
+            level as u8,
+            opt_ptr(target),
+            opt_len(target),
+            opt_ptr(filename),
+            opt_len(filename),
+            line_number.unwrap_or(u32::MAX),
+            text.as_ptr(),
+            text.len(),
+        )
+    }
+}
+
+/// Schedule a reducer to be called asynchronously at `time`.
+///
+/// The reducer is assigned `name` and is provided `args` as its argument.
+///
+/// A generated schedule id is assigned to the reducer which is returned.
+///
+/// TODO: not fully implemented yet
+/// TODO(Centril): Unsure what is unimplemented; perhaps it refers to a new
+///   implementation with a special system table rather than a special sys call.
+#[inline]
+pub fn schedule(name: &str, args: &[u8], time: u64) -> u64 {
+    let mut out = 0;
+    unsafe { raw::_schedule_reducer(name.as_ptr(), name.len(), args.as_ptr(), args.len(), time, &mut out) }
+    out
+}
+
+/// Unschedule a reducer using the same `id` generated as when it was scheduled.
+///
+/// This assumes that the reducer hasn't already been executed.
+pub fn cancel_reducer(id: u64) {
+    unsafe { raw::_cancel_reducer(id) }
+}
+
+pub use raw::{Buffer, BufferIter};
+
+impl Buffer {
+    /// Returns the number of bytes of the data stored in the buffer.
+    pub fn data_len(&self) -> usize {
+        unsafe { raw::_buffer_len(self.handle()) }
+    }
+
+    /// Read the contents of the buffer into a boxed byte slice.
+    pub fn read(self) -> Box<[u8]> {
+        let len = self.data_len();
+        let mut buf = alloc::vec::Vec::with_capacity(len);
+        self.read_uninit(buf.spare_capacity_mut());
+        // SAFETY: We just wrote `len` bytes to `buf`.
+        unsafe { buf.set_len(len) };
+        buf.into_boxed_slice()
+    }
+
+    /// Read the contents of the buffer into an array of fixed size `N`.
+    ///
+    /// If the length is wrong, the module will crash.
+    pub fn read_array<const N: usize>(self) -> [u8; N] {
+        // use MaybeUninit::uninit_array once stable
+        let mut arr = unsafe { MaybeUninit::<[MaybeUninit<u8>; N]>::uninit().assume_init() };
+        self.read_uninit(&mut arr);
+        // use MaybeUninit::array_assume_init once stable
+        unsafe { (&arr as *const [_; N]).cast::<[u8; N]>().read() }
+    }
+
+    /// Reads the buffer into an uninitialized byte string `buf`.
+    ///
+    /// The module will crash if `buf`'s length doesn't match the buffer.
+    pub fn read_uninit(self, buf: &mut [MaybeUninit<u8>]) {
+        unsafe { raw::_buffer_consume(self, buf.as_mut_ptr().cast(), buf.len()) }
+    }
+
+    /// Allocates a buffer with the contents of `data`.
+    pub fn alloc(data: &[u8]) -> Self {
+        unsafe { raw::_buffer_alloc(data.as_ptr(), data.len()) }
+    }
+}
+
+impl Iterator for BufferIter {
+    type Item = Result<Box<[u8]>, Errno>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let buf = unsafe { call(|out| raw::_iter_next(self.handle(), out)) };
+        match buf {
+            Ok(buf) if buf.is_invalid() => None,
+            Ok(buf) => Some(Ok(buf.read())),
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
+
+impl Drop for BufferIter {
+    fn drop(&mut self) {
+        cvt(unsafe { raw::_iter_drop(self.handle()) }).unwrap();
+    }
+}
+
+// TODO: eventually there should be a way to set a consistent random seed for a module
+#[cfg(feature = "getrandom")]
+fn fake_random(buf: &mut [u8]) -> Result<(), getrandom::Error> {
+    #[allow(clippy::needless_range_loop)]
+    for i in 0..buf.len() {
+        let start = match i % 4 {
+            0 => 0x64,
+            1 => 0xe9,
+            2 => 0x48,
+            _ => 0xb5,
+        };
+        buf[i] = (start ^ i) as u8;
+    }
+
+    Result::Ok(())
+}
+#[cfg(feature = "getrandom")]
+getrandom::register_custom_getrandom!(fake_random);
