@@ -186,25 +186,21 @@ namespace SpacetimeDB
         }
 
         private readonly BlockingCollection<byte[]> _messageQueue = new BlockingCollection<byte[]>(new ConcurrentQueue<byte[]>());
-        private ProcessedMessage? nextMessage;
+        private readonly BlockingCollection<ProcessedMessage> _nextMessageQueue = new BlockingCollection<ProcessedMessage>(new ConcurrentQueue<ProcessedMessage>());
 
         void ProcessMessages()
         {
             while (true)
             {
                 var bytes = _messageQueue.Take();
-                // Wait for the main thread to consume the message we digested for them
-                while (nextMessage.HasValue)
-                {
-                    Thread.Sleep(1);
-                }
 
                 var (m, events) = PreProcessMessage(bytes);
-                nextMessage = new ProcessedMessage
+                var processedMessage = new ProcessedMessage
                 {
                     message = m,
                     events = events,
                 };
+                _nextMessageQueue.Add(processedMessage);
             }
 
             (Message, List<DbEvent>) PreProcessMessage(byte[] bytes)
@@ -642,10 +638,9 @@ namespace SpacetimeDB
         {
             webSocket.Update();
 
-            if (nextMessage != null)
+            while (_nextMessageQueue.TryTake(out var nextMessage))
             {
-                OnMessageProcessComplete(nextMessage.Value.message, nextMessage.Value.events);
-                nextMessage = null;
+                OnMessageProcessComplete(nextMessage.message, nextMessage.events);
             }
         }
     }
