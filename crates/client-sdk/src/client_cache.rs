@@ -100,8 +100,18 @@ impl<T: TableType> TableCache<T> {
             }
             Ok(value) => {
                 if op_is_delete(op) {
+                    log::info!(
+                        "Got delete event for {:?} row {:?}",
+                        T::TABLE_NAME,
+                        value,
+                    );
                     self.delete(callbacks, row_pk, value);
                 } else if op_is_insert(op) {
+                    log::info!(
+                        "Got insert event for {:?} row {:?}",
+                        T::TABLE_NAME,
+                        value,
+                    );
                     self.insert(callbacks, row_pk, value);
                 } else {
                     log::error!("Unknown table_row_operation::OperationType {}", op);
@@ -225,6 +235,7 @@ impl<T: TableType> TableCache<T> {
                         log::error!("Error while deserializing row from `TableRowOperation`: {:?}", e);
                     }
                     Ok(row) => {
+                        log::info!("Initializing table {:?}: got new row {:?}", T::TABLE_NAME, row);
                         diff.insert(row_pk, DiffEntry::Insert(row));
                     }
                 },
@@ -233,6 +244,7 @@ impl<T: TableType> TableCache<T> {
                     diff.insert(row_pk, diff_entry);
                 }
                 Some(DiffEntry::Delete(row)) => {
+                    log::info!("Initializing table {:?}: row {:?} remains present", T::TABLE_NAME, row);
                     diff.insert(row_pk, DiffEntry::NoChange(row));
                 }
             };
@@ -277,6 +289,8 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
         callbacks: &mut TableCallbacks<T>,
         table_update: client_api_messages::TableUpdate,
     ) {
+        log::info!("Handling TableUpdate for table {:?} with primary key", T::TABLE_NAME);
+
         enum DiffEntry<T> {
             Insert(Vec<u8>, T),
             Delete(Vec<u8>, T),
@@ -288,7 +302,7 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
             },
         }
 
-        fn merge_diff_entries<T>(left: DiffEntry<T>, right: Option<DiffEntry<T>>) -> DiffEntry<T> {
+        fn merge_diff_entries<T: std::fmt::Debug>(left: DiffEntry<T>, right: Option<DiffEntry<T>>) -> DiffEntry<T> {
             match (left, right) {
                 (left, None) => left,
                 (_, Some(u @ DiffEntry::Update { .. })) => {
@@ -307,13 +321,21 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
                     new_hash,
                     new,
                 },
-                (l @ DiffEntry::Insert(_, _), Some(DiffEntry::Insert(_, _))) => {
-                    log::warn!("Received duplicate insert operations for a row within one `TableUpdate`");
-                    l
+                (DiffEntry::Insert(left_hash, left), Some(DiffEntry::Insert(_, right))) => {
+                    log::warn!(
+                        "Received duplicate insert operations for a row within one `TableUpdate`: {:?}; {:?}",
+                        left,
+                        right,
+                    );
+                    DiffEntry::Insert(left_hash, left)
                 }
-                (l @ DiffEntry::Delete(_, _), Some(DiffEntry::Delete(_, _))) => {
-                    log::warn!("Received duplicate delete operations for a row within one `TableUpdate`");
-                    l
+                (DiffEntry::Delete(left_hash, left), Some(DiffEntry::Delete(_, right))) => {
+                    log::warn!(
+                        "Received duplicate delete operations for a row within one `TableUpdate`: {:?}; {:?}",
+                        left,
+                        right,
+                    );
+                    DiffEntry::Delete(left_hash, left)
                 }
                 (DiffEntry::Update { .. }, _) => unreachable!(),
             }
@@ -329,8 +351,18 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
                 }
                 Ok(row) => {
                     if op_is_delete(op) {
+                        log::info!(
+                            "Got delete event for {:?} row {:?}",
+                            T::TABLE_NAME,
+                            row,
+                        );
                         Some(DiffEntry::Delete(row_pk, row))
                     } else if op_is_insert(op) {
+                        log::info!(
+                            "Got insert event for {:?} row {:?}",
+                            T::TABLE_NAME,
+                            row,
+                        );
                         Some(DiffEntry::Insert(row_pk, row))
                     } else {
                         log::error!("Unknown table_row_operation::OperationType {}", op);
