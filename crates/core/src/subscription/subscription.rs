@@ -61,31 +61,28 @@ impl QuerySet {
 
         for query in &self.0 {
             for table in &database_update.tables {
-                let mut rows = Vec::with_capacity(table.ops.len());
-                for row in &table.ops {
-                    if seen.contains(&(table.table_id, row.row_pk.clone())) {
-                        continue;
+                for q in query.queries_of_table_id(table) {
+                    if let Some(result) = run_query(relational_db, &q)?.into_iter().find(|x| !x.data.is_empty()) {
+                        let mut table_row_operations = table.clone();
+                        table_row_operations.ops.clear();
+                        for row in result.data {
+                            let row_pk = RelationalDB::pk_for_row(&row);
+
+                            //Skip rows that are already resolved in a previous subscription...
+                            if seen.contains(&(table.table_id, row_pk.clone())) {
+                                continue;
+                            }
+                            seen.insert((table.table_id, row_pk.clone()));
+
+                            let row_pk = row_pk.to_bytes();
+                            table_row_operations.ops.push(TableOp {
+                                op_type: 1, // Insert
+                                row_pk,
+                                row,
+                            });
+                        }
+                        output.tables.push(table_row_operations);
                     }
-                    seen.insert((table.table_id, row.row_pk.clone()));
-                    rows.push(row.clone());
-                }
-
-                if rows.is_empty() {
-                    continue;
-                }
-
-                let table = DatabaseTableUpdate {
-                    table_id: table.table_id,
-                    table_name: table.table_name.clone(),
-                    ops: rows,
-                };
-
-                for q in query.queries_of_table_id(&table) {
-                    let result = run_query(relational_db, &q)?.into_iter().find(|x| !x.data.is_empty());
-                    if result.is_none() {
-                        continue;
-                    }
-                    output.tables.push(table.clone());
                 }
             }
         }
@@ -128,9 +125,9 @@ impl QuerySet {
                                 });
                             }
 
-                            if table_row_operations.is_empty() {
-                                continue;
-                            }
+                            // if table_row_operations.is_empty() {
+                            //     continue;
+                            // }
 
                             database_update.tables.push(DatabaseTableUpdate {
                                 table_id: t.table_id,

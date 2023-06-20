@@ -189,8 +189,12 @@ mod tests {
         ]);
 
         let result = s.eval(&db)?;
-        assert_eq!(result.tables.len(), 1, "Must return 1 table");
-        assert_eq!(result.tables[0].ops.len(), 1, "Must return 1 row");
+        assert_eq!(result.tables.len(), 3, "Must return 3 tables");
+        assert_eq!(
+            result.tables.iter().map(|x| x.ops.len()).sum::<usize>(),
+            1,
+            "Must return 1 row"
+        );
         assert_eq!(result.tables[0].ops[0].row, row, "Must return the correct row");
         Ok(())
     }
@@ -246,8 +250,12 @@ mod tests {
         let update = DatabaseUpdate { tables: vec![data] };
 
         let result = s.eval_incr(&db, &update)?;
-        assert_eq!(result.tables.len(), 1, "Must return 1 table");
-        assert_eq!(result.tables[0].ops.len(), 1, "Must return 1 row");
+        assert_eq!(result.tables.len(), 3, "Must return 3 tables");
+        assert_eq!(
+            result.tables.iter().map(|x| x.ops.len()).sum::<usize>(),
+            1,
+            "Must return 1 row"
+        );
         assert_eq!(result.tables[0].ops[0].row, row, "Must return the correct row");
         Ok(())
     }
