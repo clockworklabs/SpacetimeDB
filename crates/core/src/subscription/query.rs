@@ -87,6 +87,7 @@ mod tests {
     use crate::subscription::subscription::QuerySet;
     use crate::vm::tests::create_table_from_program;
     use crate::vm::DbProgram;
+    use itertools::Itertools;
     use spacetimedb_lib::data_key::ToDataKey;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::relation::FieldName;
@@ -257,6 +258,70 @@ mod tests {
             "Must return 1 row"
         );
         assert_eq!(result.tables[0].ops[0].row, row, "Must return the correct row");
+        Ok(())
+    }
+
+    //Check that
+    //```
+    //SELECT * FROM table1
+    //SELECT * FROM table2
+    // =
+    //SELECT * FROM table2
+    //SELECT * FROM table1
+    //```
+    // return just one row
+    #[test]
+    fn test_subscribe_commutative() -> ResultTest<()> {
+        let (db, _tmp_dir) = make_test_db()?;
+        let p = &mut DbProgram::new(db.clone());
+
+        let head_1 = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let row_1 = product!(1u64, "health");
+        let table_id_1 = create_table_from_program(p, "inventory", head_1.clone(), &[row_1.clone()])?;
+
+        let head_2 = ProductType::from_iter([("player_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let row_2 = product!(2u64, "jhon doe");
+        let table_id_2 = create_table_from_program(p, "player", head_2, &[row_2.clone()])?;
+
+        let tx = db.begin_tx();
+        let schema_1 = db.schema_for_table(&tx, table_id_1).unwrap();
+        let schema_2 = db.schema_for_table(&tx, table_id_2).unwrap();
+        db.rollback_tx(tx);
+
+        let q_1 = QueryExpr::new(db_table((&schema_1).into(), "inventory", table_id_1));
+        let q_2 = QueryExpr::new(db_table((&schema_2).into(), "player", table_id_2));
+
+        let s = QuerySet(vec![
+            Query {
+                queries: vec![q_1.clone()],
+            },
+            Query {
+                queries: vec![q_2.clone()],
+            },
+        ]);
+
+        let result_1 = s.eval(&db)?;
+
+        let s = QuerySet(vec![
+            Query {
+                queries: vec![q_2.clone()],
+            },
+            Query { queries: vec![q_1] },
+        ]);
+
+        let result_2 = s.eval(&db)?;
+        dbg!(&result_1, &result_2);
+        let to_row = |of: DatabaseUpdate| {
+            of.tables
+                .iter()
+                .map(|x| x.ops.iter().map(|x| x.row.clone()))
+                .flatten()
+                .sorted()
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(to_row(result_1), to_row(result_2));
+
         Ok(())
     }
 }

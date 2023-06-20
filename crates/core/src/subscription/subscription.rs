@@ -69,10 +69,10 @@ impl QuerySet {
                             let row_pk = RelationalDB::pk_for_row(&row);
 
                             //Skip rows that are already resolved in a previous subscription...
-                            if seen.contains(&(table.table_id, row_pk.clone())) {
+                            if seen.contains(&(table.table_id, row_pk)) {
                                 continue;
                             }
-                            seen.insert((table.table_id, row_pk.clone()));
+                            seen.insert((table.table_id, row_pk));
 
                             let row_pk = row_pk.to_bytes();
                             table_row_operations.ops.push(TableOp {
