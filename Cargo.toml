@@ -18,7 +18,7 @@ members = [
   "crates/sqltest",
   "modules/rust-wasm-test",
   "modules/benchmarks",
-  "modules/spacetimedb_quickstart",
+  "modules/spacetimedb-quickstart",
 ]
 default-members = ["crates/cli"]
 
