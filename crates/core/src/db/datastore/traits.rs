@@ -20,6 +20,12 @@ pub struct IndexId(pub(crate) u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SequenceId(pub(crate) u32);
 
+impl TableId {
+    pub fn from_u32_for_testing(id: u32) -> Self {
+        Self(id)
+    }
+}
+
 impl fmt::Display for SequenceId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -99,8 +105,6 @@ pub struct ColumnSchema {
     pub(crate) col_name: String,
     pub(crate) col_type: AlgebraicType,
     pub(crate) is_autoinc: bool,
-    // TODO(cloutiertyler): Unique constraints do not belong here.
-    // pub(crate) is_unique: bool,
 }
 
 impl From<&ColumnSchema> for spacetimedb_lib::table::ColumnDef {

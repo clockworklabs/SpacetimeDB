@@ -16,10 +16,6 @@ bench = false
 name = "odb_flavor_bench"
 harness = false
 
-[[bench]]
-name = "tx_blobstore_bench"
-harness = false
-
 [dependencies]
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.
