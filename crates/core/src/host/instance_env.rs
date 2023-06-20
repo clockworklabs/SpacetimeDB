@@ -37,8 +37,6 @@ pub struct TxSlot {
     inner: Arc<Mutex<Option<MutTxId>>>,
 }
 
-// pub enum
-
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
     pub fn new(
