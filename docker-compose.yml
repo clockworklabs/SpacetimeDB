@@ -16,7 +16,6 @@ services:
       - ./crates/bindings:/usr/src/app/crates/bindings
       - ./crates/bindings-macro:/usr/src/app/crates/bindings-macro
       - ./crates/bindings-sys:/usr/src/app/crates/bindings-sys
-      - ./crates/modules/rust-wasm-test:/usr/src/app/crates/modules/rust-wasm-test
       - ./crates/vm:/usr/src/app/crates/vm
       - ./crates/client-api-messages:/usr/src/app/crates/client-api-messages
       - ./flamegraphs:/usr/src/app/flamegraphs

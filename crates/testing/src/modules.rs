@@ -49,13 +49,13 @@ where
         func(runtime, &module);
     });
 }
-fn module_path(path: &str) -> PathBuf {
+fn module_path(name: &str) -> PathBuf {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    root.join("../../modules").join(path)
+    root.join("../../modules").join(name)
 }
 
-fn wasm_path(path: &str) -> PathBuf {
-    module_path(path).join("target/wasm32-unknown-unknown/release/spacetime_module.wasm")
+fn wasm_path(name: &str) -> PathBuf {
+    module_path(name).join(format!("target/wasm32-unknown-unknown/release/{}_module.wasm", name.replace('-', '_')))
 }
 
 fn read_module(path: &str) -> Vec<u8> {
