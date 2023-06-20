@@ -37,7 +37,10 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
     };
 
     for row in &data.ops {
-        t.data.push(row.row.clone());
+        if row.op_type == 1 {
+            //INSERT
+            t.data.push(row.row.clone());
+        }
     }
 
     q.source = SourceExpr::MemTable(t);
@@ -110,7 +113,7 @@ mod tests {
         db.rollback_tx(tx);
 
         let op = TableOp {
-            op_type: 0,
+            op_type: 1,
             row_pk: vec![],
             row,
         };

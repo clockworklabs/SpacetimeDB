@@ -60,8 +60,8 @@ impl QuerySet {
         let mut seen = HashSet::new();
 
         for query in &self.0 {
-            for table in &database_update.tables {
-                for q in query.queries_of_table_id(table) {
+            for table in database_update.tables.iter().cloned() {
+                for q in query.queries_of_table_id(&table) {
                     if let Some(result) = run_query(relational_db, &q)?.into_iter().find(|x| !x.data.is_empty()) {
                         let mut table_row_operations = table.clone();
                         table_row_operations.ops.clear();
