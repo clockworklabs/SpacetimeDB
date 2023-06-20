@@ -3,8 +3,8 @@ use spacetimedb_testing::modules::{compile, with_module_async};
 
 #[test]
 fn test_calling_a_reducer() {
-    compile("spacetimedb_quickstart");
-    with_module_async("spacetimedb_quickstart", |module| async move {
+    compile("spacetimedb-quickstart");
+    with_module_async("spacetimedb-quickstart", |module| async move {
         let json = r#"{"call": {"fn": "add", "args": ["Tyrion"]}}"#.to_string();
         module.send(json).await.unwrap();
         let json = r#"{"call": {"fn": "say_hello", "args": []}}"#.to_string();
