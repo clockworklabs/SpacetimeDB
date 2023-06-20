@@ -51,7 +51,7 @@ where
 }
 fn module_path(path: &str) -> PathBuf {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    root.join("../modules").join(path)
+    root.join("../../modules").join(path)
 }
 
 fn wasm_path(path: &str) -> PathBuf {
