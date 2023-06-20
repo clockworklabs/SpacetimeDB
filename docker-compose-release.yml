@@ -23,6 +23,8 @@ services:
     environment:
       RUST_BACKTRACE: 1
       ENV: release
+    env_file:
+      - .env
     # Turn on core dumps, hopefully.
     ulimits:
       core:
