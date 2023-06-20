@@ -55,7 +55,10 @@ fn module_path(name: &str) -> PathBuf {
 }
 
 fn wasm_path(name: &str) -> PathBuf {
-    module_path(name).join(format!("target/wasm32-unknown-unknown/release/{}_module.wasm", name.replace('-', '_')))
+    module_path(name).join(format!(
+        "target/wasm32-unknown-unknown/release/{}_module.wasm",
+        name.replace('-', '_')
+    ))
 }
 
 fn read_module(path: &str) -> Vec<u8> {
