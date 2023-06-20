@@ -8,6 +8,7 @@ name: CI
 
 jobs:
   docker_smoketests:
+    name: Smoketests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
