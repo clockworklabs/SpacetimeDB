@@ -266,6 +266,14 @@ type CreateWSFnType = (
   protocol: string
 ) => WS.w3cwebsocket | WebsocketTestAdapter;
 
+let toPascalCase = function (s: string): string {
+  const str = s.replace(/([-_][a-z])/gi, ($1) => {
+    return $1.toUpperCase().replace("-", "").replace("_", "");
+  });
+
+  return str.charAt(0).toUpperCase() + str.slice(1);
+};
+
 export class SpacetimeDBClient {
   /**
    * The identity of the user.
@@ -453,15 +461,18 @@ export class SpacetimeDBClient {
           if (event) {
             const functionCall = event["function_call"];
             const identity = event["caller_identity"];
-            const reducerName: string | undefined = functionCall?.["reducer"];
-            const args: number[] | undefined = functionCall?.["arg_bytes"];
+            const reducerName: string | undefined =
+              functionCall && functionCall["reducer"]
+                ? toPascalCase(functionCall["reducer"])
+                : undefined;
+            const args: string | undefined = functionCall?.["args"];
             const status: string | undefined = event["status"];
             const reducer: any | undefined = reducerName
               ? this.reducers.get(reducerName)
               : undefined;
 
             if (reducerName && args && identity && status && reducer) {
-              const jsonArray = JSON.parse(String.fromCharCode(...args));
+              const jsonArray = JSON.parse(args);
               const reducerArgs = reducer.deserializeArgs(jsonArray);
               this.emitter.emit(
                 "reducer:" + reducerName,
