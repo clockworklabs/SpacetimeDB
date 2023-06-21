@@ -10,7 +10,7 @@ use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use spacetimedb_lib::recovery::RecoveryCodeResponse;
 use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
-use crate::util::is_hex_identity;
+use crate::util::{is_hex_identity, print_identity_config};
 
 pub fn cli() -> Command {
     Command::new("identity")
@@ -180,16 +180,12 @@ async fn exec_init_default(mut config: Config, args: &ArgMatches) -> Result<(), 
         match result_type {
             InitDefaultResultType::Existing => {
                 println!(" Existing default identity");
-                // TODO(jdetter): This should be standardized output
-                println!(" IDENTITY  {}", identity_config.identity);
-                println!(" NAME      {}", identity_config.nickname.unwrap_or_default());
+                print_identity_config(&identity_config);
                 return Ok(());
             }
             InitDefaultResultType::SavedNew => {
                 println!(" Saved new identity");
-                // TODO(jdetter): This should be standardized output
-                println!(" IDENTITY  {}", identity_config.identity);
-                println!(" NAME      {}", identity_config.nickname.unwrap_or_default());
+                print_identity_config(&identity_config);
             }
         }
     }
@@ -209,9 +205,7 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
         config.update_default_identity();
         config.save();
         println!(" Removed identity");
-        // TODO(jdetter): This should be standardized output
-        println!(" IDENTITY  {}", ic.identity);
-        println!(" NAME  {}", ic.nickname.unwrap_or_default());
+        print_identity_config(&ic);
     } else {
         if config.identity_configs().is_empty() {
             println!(" No identities to remove");
@@ -423,9 +417,7 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
     res.error_for_status()?;
 
     println!(" Associated email with identity");
-    // TODO(jdetter): standardize this output
-    println!(" IDENTITY  {}", identity_or_name);
-    println!(" EMAIL     {}", email);
+    print_identity_config(config.get_identity_config_by_identity(&identity_or_name).unwrap());
 
     Ok(())
 }
@@ -493,12 +485,12 @@ async fn exec_recover(mut config: Config, args: &ArgMatches) -> Result<(), anyho
                     identity: response.identity.clone(),
                     token: response.token,
                 };
-                config.identity_configs_mut().push(identity_config);
+                config.identity_configs_mut().push(identity_config.clone());
                 config.update_default_identity();
                 config.save();
                 println!("Success. Identity imported.");
-                // TODO(jdetter): standardize this output
-                println!(" IDENTITY  {}", response.identity);
+                print_identity_config(&identity_config);
+                // TODO: Remove this once print_identity_config prints email
                 println!(" EMAIL     {}", email);
                 return Ok(());
             }

@@ -235,4 +235,13 @@ pub fn is_hex_identity(ident: &str) -> bool {
     ident.chars().all(|c| c.is_ascii_hexdigit())
 }
 
+pub fn print_identity_config(ident: &IdentityConfig) {
+    println!(" IDENTITY  {}", ident.identity);
+    println!(" NAME      {}", match &ident.nickname {
+        None => "",
+        Some(name) => name.as_str(),
+    });
+    // TODO: lookup email here when we have an API endpoint for it
+}
+
 pub const VALID_PROTOCOLS: [&str; 2] = ["http", "https"];
