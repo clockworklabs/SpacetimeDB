@@ -17,7 +17,7 @@ using SpacetimeDB;
 using SpacetimeDB.SATS;
 using UnityEngine;
 using UnityEngine.Rendering;
-using Event = ClientApi.Event;
+using ReducerEvent = Bitcraft.ReducerEvent;
 
 namespace SpacetimeDB
 {
@@ -89,6 +89,11 @@ namespace SpacetimeDB
         public event Action onSubscriptionUpdate;
 
         /// <summary>
+        /// Invoked when a reducer is returned with an error and has no client-side handler.
+        /// </summary>
+        public event Action<ReducerEvent> onUnhandledReducerError;
+
+        /// <summary>
         /// Called when we receive an identity from the server
         /// </summary>
         public event Action<Identity> onIdentityReceived;
@@ -101,7 +106,7 @@ namespace SpacetimeDB
         private SpacetimeDB.WebSocket webSocket;
         private bool connectionClosed;
         public static ClientCache clientDB;
-        public static Dictionary<string, Action<ClientApi.Event>> reducerEventCache = new Dictionary<string, Action<ClientApi.Event>>();
+        public static Dictionary<string, Func<ClientApi.Event, bool>> reducerEventCache = new Dictionary<string, Func<ClientApi.Event, bool>>();
         public static Dictionary<string, Action<ClientApi.Event>> deserializeEventCache = new Dictionary<string, Action<ClientApi.Event>>();
 
         private Thread messageProcessThread;
@@ -165,7 +170,7 @@ namespace SpacetimeDB
                 if (methodInfo.GetCustomAttribute<ReducerCallbackAttribute>() is
                     { } reducerEvent)
                 {
-                    reducerEventCache.Add(reducerEvent.FunctionName, (Action<ClientApi.Event>)methodInfo.CreateDelegate(typeof(Action<ClientApi.Event>)));
+                    reducerEventCache.Add(reducerEvent.FunctionName, (Func<ClientApi.Event, bool>)methodInfo.CreateDelegate(typeof(Func<ClientApi.Event, bool>)));
                 }
 
                 if (methodInfo.GetCustomAttribute<DeserializeEventAttribute>() is
@@ -581,10 +586,15 @@ namespace SpacetimeDB
                         case Message.TypeOneofCase.TransactionUpdate:
                             onEvent?.Invoke(message.TransactionUpdate.Event);
 
+                            bool reducerFound = false;
                             var functionName = message.TransactionUpdate.Event.FunctionCall.Reducer;
                             if (reducerEventCache.TryGetValue(functionName, out var value))
                             {
-                                value.Invoke(message.TransactionUpdate.Event);
+                                reducerFound = value.Invoke(message.TransactionUpdate.Event);
+                            }
+                            if (!reducerFound && message.TransactionUpdate.Event.Status == ClientApi.Event.Types.Status.Failed)
+                            {
+                                onUnhandledReducerError?.Invoke(message.TransactionUpdate.Event.FunctionCall.CallInfo);
                             }
 
                             break;
