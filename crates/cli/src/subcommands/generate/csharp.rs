@@ -1149,17 +1149,21 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             write!(arg_types, "{}", arg_type_str).unwrap();
         }
 
-        let delegate_args = if reducer.args.len() > 0 { format!(", {}", func_arguments.clone()) } else { func_arguments.clone() };
+        let delegate_args = if reducer.args.len() > 0 {
+            format!(", {}", func_arguments.clone())
+        } else {
+            func_arguments.clone()
+        };
         writeln!(
             output,
             "public delegate void {func_name_pascal_case}Handler(ReducerEvent reducerEvent{delegate_args});"
         )
-            .unwrap();
+        .unwrap();
         writeln!(
             output,
             "public static event {func_name_pascal_case}Handler On{func_name_pascal_case}Event;"
         )
-            .unwrap();
+        .unwrap();
 
         writeln!(output).unwrap();
 
@@ -1230,11 +1234,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                     "var args = dbEvent.FunctionCall.CallInfo.{func_name_pascal_case}Args;"
                 )
                 .unwrap();
-                writeln!(
-                    output,
-                    "On{func_name_pascal_case}Event(dbEvent.FunctionCall.CallInfo"
-                )
-                .unwrap();
+                writeln!(output, "On{func_name_pascal_case}Event(dbEvent.FunctionCall.CallInfo").unwrap();
                 // Write out arguments one per line
                 {
                     indent_scope!(output);
@@ -1427,11 +1427,7 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
                     continue;
                 }
                 let reducer_name = reducer.name.to_case(Case::Pascal);
-                writeln!(
-                    output,
-                    "public {reducer_name}ArgsStruct {reducer_name}Args"
-                )
-                .unwrap();
+                writeln!(output, "public {reducer_name}ArgsStruct {reducer_name}Args").unwrap();
                 writeln!(output, "{{").unwrap();
                 {
                     indent_scope!(output);
@@ -1514,11 +1510,7 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
                 }
                 let reducer_name = reducer.name.to_case(Case::Pascal);
                 writeln!(output, "[System.Runtime.InteropServices.FieldOffset(0)]").unwrap();
-                writeln!(
-                    output,
-                    "public {reducer_name}ArgsStruct {reducer_name}Args;"
-                )
-                .unwrap();
+                writeln!(output, "public {reducer_name}ArgsStruct {reducer_name}Args;").unwrap();
             }
         }
     }
