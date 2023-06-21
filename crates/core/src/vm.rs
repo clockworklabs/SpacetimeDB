@@ -132,7 +132,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
     }
 
     fn _eval_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
-        let result = build_query(&self.db, self.tx, query)?;
+        let result = build_query(self.db, self.tx, query)?;
         let head = result.head().clone();
         let rows: Vec<_> = result.collect_vec()?;
 
