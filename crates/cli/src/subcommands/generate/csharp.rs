@@ -1149,7 +1149,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             write!(arg_types, "{}", arg_type_str).unwrap();
         }
 
-        let delegate_args = if reducer.args.len() > 0 {
+        let delegate_args = if !reducer.args.is_empty() {
             format!(", {}", func_arguments.clone())
         } else {
             func_arguments.clone()
