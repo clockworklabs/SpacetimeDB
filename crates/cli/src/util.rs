@@ -232,7 +232,7 @@ pub fn is_hex_identity(ident: &str) -> bool {
     if ident.len() != 64 {
         return false;
     }
-    ident.chars().all(|c| c.is_digit(16))
+    ident.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 pub const VALID_PROTOCOLS: [&str; 2] = ["http", "https"];

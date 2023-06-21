@@ -208,7 +208,7 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
             config.delete_identity_config_by_identity(identity_or_name.as_str())
         } else {
             config.delete_identity_config_by_name(identity_or_name.as_str())
-        }.expect(format!("No such identity or name: {}", identity_or_name).as_str());
+        }.unwrap_or_else(|| panic!("No such identity or name: {}", identity_or_name));
         config.update_default_identity();
         config.save();
         println!(" Removed identity");
@@ -216,7 +216,7 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
         println!(" IDENTITY  {}", ic.identity);
         println!(" NAME  {}", ic.nickname.unwrap_or_default());
     } else {
-        if config.identity_configs().len() == 0 {
+        if config.identity_configs().is_empty() {
             println!(" No identities to remove");
             return Ok(());
         }
@@ -405,7 +405,7 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
     let email = args.get_one::<String>("email").unwrap().clone();
     let identity_or_name = args.get_one::<String>("identity").unwrap().clone();
     let identity_config = config.get_identity_config_by_identity(&identity_or_name)
-        .expect(format!("Could not find identity: {}", identity_or_name).as_str());
+        .unwrap_or_else(|| panic!("Could not find identity: {}", identity_or_name));
 
     let client = reqwest::Client::new();
     let mut builder = client.post(format!(
