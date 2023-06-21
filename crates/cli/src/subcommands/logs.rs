@@ -88,7 +88,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let follow = args.get_flag("follow");
 
     let identity = args.get_one::<String>("identity");
-
     let auth_header = get_auth_header(&mut config, false, identity.map(|x| x.as_str()))
         .await
         .map(|x| x.0);

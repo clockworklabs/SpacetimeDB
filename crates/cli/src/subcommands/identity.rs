@@ -4,13 +4,13 @@ use crate::{
 };
 use std::io::Write;
 
-use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use email_address::EmailAddress;
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use spacetimedb_lib::recovery::RecoveryCodeResponse;
 use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
+use crate::util::is_hex_identity;
 
 pub fn cli() -> Command {
     Command::new("identity")
@@ -30,31 +30,15 @@ fn get_subcommands() -> Vec<Command> {
             .about("Set the default identity")
             .arg(
                 Arg::new("identity")
-                    .long("identity")
-                    .short('i')
-                    .help("The identity that should become the new default identity")
-                    .conflicts_with("name"),
-            )
-            .arg(
-                Arg::new("name")
-                    .long("name")
-                    .short('n')
-                    .help("The name of the identity that should become the new default identity")
-                    .conflicts_with("identity"),
+                    .help("The identity string or name that should become the new default identity")
+                    .required(true),
             ),
         Command::new("set-email")
             .about("Associates an email address with an identity")
             .arg(
                 Arg::new("identity")
-                    .long("identity")
-                    .short('i')
-                    .help("The identity that should become the new default identity"),
-            )
-            .arg(
-                Arg::new("name")
-                    .long("name")
-                    .short('n')
-                    .help("The name of the identity that should become the new default identity"),
+                    .help("The identity string or name that should become the new default identity")
+                    .required(true),
             )
             .arg(
                 Arg::new("email")
@@ -110,16 +94,12 @@ fn get_subcommands() -> Vec<Command> {
             // TODO(jdetter): Unify identity + name parameters
             .arg(
                 Arg::new("identity")
-                    .long("identity")
-                    .short('i')
-                    .help("The identity to delete")
-                    .conflicts_with("name"),
-            )
-            .arg(
-                Arg::new("name")
-                    .long("name")
-                    .short('n')
-                    .help("The name of the identity to delete")
+                    .help("The identity string or name to delete"),
+            ).arg(
+                Arg::new("all")
+                    .long("all")
+                    .help("Remove all identities from your spacetime config")
+                    .action(ArgAction::SetTrue)
                     .conflicts_with("identity"),
             ),
         Command::new("import")
@@ -127,7 +107,7 @@ fn get_subcommands() -> Vec<Command> {
             .arg(
                 Arg::new("identity")
                     .required(true)
-                    .help("The identity that is associated with the provided token"),
+                    .help("The identity string that is associated with the provided token"),
             )
             .arg(
                 Arg::new("token")
@@ -182,30 +162,10 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
 }
 
 async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let name = args.get_one::<String>("name");
-    if let Some(name) = name {
-        if let Some(identity_config) = config.get_identity_config_by_name(name) {
-            config.set_default_identity(identity_config.identity.clone());
-            config.save();
-            return Ok(());
-        } else {
-            return Err(anyhow::anyhow!("No such identity by that name."));
-        }
-    }
-
-    if let Some(identity) = args.get_one::<String>("identity") {
-        if let Some(identity_config) = config.get_identity_config_by_identity(identity) {
-            config.set_default_identity(identity_config.identity.clone());
-            config.save();
-            return Ok(());
-        } else {
-            return Err(anyhow::anyhow!("No such identity."));
-        }
-    }
-
-    Err(anyhow::anyhow!(
-        "Either an identity or the name of an identity must be provided."
-    ))
+    let identity = config.map_name_to_identity(args.get_one::<String>("identity")).unwrap();
+    config.set_default_identity(identity.clone());
+    config.save();
+    Ok(())
 }
 
 // TODO(cloutiertyler): Realistically this should just be run before every
@@ -241,35 +201,40 @@ async fn exec_init_default(mut config: Config, args: &ArgMatches) -> Result<(), 
 }
 
 async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let name = args.get_one::<String>("name");
-    if let Some(name) = name {
-        let ic = config.delete_identity_config_by_name(name);
-        if let Some(ic) = ic {
-            config.update_default_identity();
-            config.save();
-            println!(" Removed identity");
-            // TODO(jdetter): Standardize this identity output
-            println!(" IDENTITY  {}", ic.identity);
-            println!(" NAME  {}", ic.nickname.unwrap_or_default());
-            return Ok(());
+    let identity_or_name = args.get_one::<String>("identity");
+
+    if let Some(identity_or_name) = identity_or_name {
+        let ic = if is_hex_identity(identity_or_name) {
+            config.delete_identity_config_by_identity(identity_or_name.as_str())
         } else {
-            println!("No such identity by that name.");
-            return Err(anyhow::anyhow!("No such identity."));
+            config.delete_identity_config_by_name(identity_or_name.as_str())
+        }.expect(format!("No such identity or name: {}", identity_or_name).as_str());
+        config.update_default_identity();
+        config.save();
+        println!(" Removed identity");
+        // TODO(jdetter): This should be standardized output
+        println!(" IDENTITY  {}", ic.identity);
+        println!(" NAME  {}", ic.nickname.unwrap_or_default());
+    } else {
+        if config.identity_configs().len() == 0 {
+            println!(" No identities to remove");
+            return Ok(());
+        }
+
+        print!("Are you sure you want to remove all identities? (y/n) ");
+        std::io::stdout().flush()?;
+
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if input.trim() == "y" {
+            let identity_count = config.identity_configs().len();
+            config.delete_all_identity_configs();
+            config.save();
+            println!(" {} {} removed.", identity_count, if identity_count > 1 { "identities" } else { "identity" });
+        } else {
+            println!(" Aborted");
         }
     }
-
-    let identity = args
-        .get_one::<String>("identity")
-        .context("You either need to supply a name or identity to delete.")?;
-    let ic = config
-        .delete_identity_config_by_identity(identity)
-        .context("No such identity")?;
-    config.update_default_identity();
-    config.save();
-    println!(" Removed identity");
-    // TODO(jdetter): This should be standardized output
-    println!(" IDENTITY  {}", ic.identity);
-    println!(" NAME  {}", ic.nickname.unwrap_or_default());
     Ok(())
 }
 
@@ -279,6 +244,10 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     if let Some(alias) = alias {
         if config.name_exists(alias) {
             return Err(anyhow::anyhow!("An identity with that name already exists."));
+        }
+
+        if is_hex_identity(alias.as_str()) {
+            return Err(anyhow::anyhow!("An identity name cannot be an identity."));
         }
     }
 
@@ -434,17 +403,19 @@ async fn exec_find(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
 
 async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let email = args.get_one::<String>("email").unwrap().clone();
-    let identity = args.get_one::<String>("identity").unwrap().clone();
+    let identity_or_name = args.get_one::<String>("identity").unwrap().clone();
+    let identity_config = config.get_identity_config_by_identity(&identity_or_name)
+        .expect(format!("Could not find identity: {}", identity_or_name).as_str());
 
     let client = reqwest::Client::new();
     let mut builder = client.post(format!(
         "{}/identity/{}/set-email?email={}",
         config.get_host_url(),
-        identity,
+        identity_config.identity,
         email
     ));
 
-    if let Some(identity_token) = config.get_identity_config_by_identity(&identity) {
+    if let Some(identity_token) = config.get_identity_config_by_identity(&identity_or_name) {
         builder = builder.basic_auth("token", Some(identity_token.token.clone()));
     } else {
         println!("Missing identity credentials for identity.");
@@ -456,7 +427,7 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
 
     println!(" Associated email with identity");
     // TODO(jdetter): standardize this output
-    println!(" IDENTITY  {}", identity);
+    println!(" IDENTITY  {}", identity_or_name);
     println!(" EMAIL     {}", email);
 
     Ok(())

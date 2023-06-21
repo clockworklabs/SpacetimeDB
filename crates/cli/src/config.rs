@@ -4,6 +4,7 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
 };
+use crate::util::is_hex_identity;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IdentityConfig {
@@ -224,6 +225,32 @@ impl Config {
         self.identity_configs_mut().iter_mut().find(|c| c.identity == identity)
     }
 
+    /// Converts some name or identity to an identity. If the input is None, None is returned. If an
+    /// identity is looked up and it doesn't exist, we panic.
+    pub fn map_name_to_identity(&self, identity_or_name: Option<&String>) -> Option<&String> {
+        if let Some(identity_or_name) = identity_or_name {
+            Some(if is_hex_identity(identity_or_name.as_str()) {
+                &self.identity_configs().iter().find(|c| c.identity == identity_or_name.clone()).expect(format!("No such identity: {}", identity_or_name).as_str()).identity
+            } else {
+                &self.identity_configs()
+                    .iter()
+                    .find(|c| c.nickname.as_ref() == Some(identity_or_name)).expect(format!("No such identity: {}", identity_or_name).as_str()).identity
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn get_identity_config_mut(&mut self, identity_or_name: &str) -> Option<&mut IdentityConfig> {
+        if is_hex_identity(identity_or_name) {
+            self.get_identity_config_by_identity_mut(identity_or_name)
+        } else {
+            self.identity_configs_mut()
+                .iter_mut()
+                .find(|c| c.nickname.as_ref() == Some(&identity_or_name.to_string()))
+        }
+    }
+
     pub fn delete_identity_config_by_name(&mut self, name: &str) -> Option<IdentityConfig> {
         let index = self
             .home
@@ -252,6 +279,11 @@ impl Config {
         } else {
             None
         }
+    }
+
+    pub fn delete_all_identity_configs(&mut self) {
+        self.home.identity_configs = Some(vec![]);
+        self.home.default_identity = None;
     }
 
     pub fn update_default_identity(&mut self) {
