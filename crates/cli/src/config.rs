@@ -22,6 +22,7 @@ pub struct RawConfig {
     identity_configs: Option<Vec<IdentityConfig>>,
 }
 
+#[derive(Clone)]
 pub struct Config {
     proj: RawConfig,
     home: RawConfig,

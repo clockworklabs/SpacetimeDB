@@ -26,7 +26,6 @@ fn get_subcommands() -> Vec<Command> {
     vec![
         Command::new("list").about("List saved identities"),
         Command::new("set-default")
-            // TODO(jdetter): Unify providing an identity an a name
             .about("Set the default identity")
             .arg(
                 Arg::new("identity")
@@ -91,7 +90,6 @@ fn get_subcommands() -> Vec<Command> {
             ),
         Command::new("remove")
             .about("Removes a saved identity from your spacetime config")
-            // TODO(jdetter): Unify identity + name parameters
             .arg(
                 Arg::new("identity")
                     .help("The identity string or name to delete"),
@@ -132,7 +130,6 @@ fn get_subcommands() -> Vec<Command> {
                     .required(true)
                     .help("The email associated with the identity that you would like to recover."),
             )
-            // TODO(jdetter): Unify identity and name here
             .arg(Arg::new("identity").required(true).help(
                 "The identity you would like to recover. This identity must be associated with the email provided.",
             )),
@@ -435,7 +432,7 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
 
 async fn exec_recover(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let email = args.get_one::<String>("email").unwrap();
-    let identity = args.get_one::<String>("identity").unwrap().to_lowercase();
+    let identity = config.map_name_to_identity(args.get_one::<String>("identity")).unwrap();
 
     let query_params = vec![
         ("email", email.as_str()),

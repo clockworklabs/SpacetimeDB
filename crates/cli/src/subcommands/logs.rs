@@ -20,7 +20,6 @@ pub fn cli() -> clap::Command {
                 .help("The domain or address of the database to print logs from"),
         )
         .arg(
-            // TODO(jdetter): unify this with identity + name
             Arg::new("identity")
                 .long("identity")
                 .short('i')
@@ -87,7 +86,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let database = args.get_one::<String>("database").unwrap();
     let follow = args.get_flag("follow");
 
-    let identity = args.get_one::<String>("identity");
+    let cloned_config = config.clone();
+    let identity = cloned_config.map_name_to_identity(args.get_one::<String>("identity"));
     let auth_header = get_auth_header(&mut config, false, identity.map(|x| x.as_str()))
         .await
         .map(|x| x.0);
