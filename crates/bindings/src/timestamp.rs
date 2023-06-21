@@ -4,11 +4,18 @@ use std::ops::{Add, Sub};
 use std::time::Duration;
 
 use crate as spacetimedb;
-use crate::rt::CURRENT_TIMESTAMP;
+
+scoped_tls::scoped_thread_local! {
+    static CURRENT_TIMESTAMP: Timestamp
+}
+
+/// Set the current timestamp for the duration of the function `f`.
+pub(crate) fn with_timestamp_set<R>(ts: Timestamp, f: impl FnOnce() -> R) -> R {
+    CURRENT_TIMESTAMP.set(&ts, f)
+}
 
 /// A timestamp measured as micro seconds since the UNIX epoch.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-#[derive(spacetimedb_lib::sats::SpacetimeType)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, spacetimedb_lib::sats::SpacetimeType)]
 pub struct Timestamp {
     /// The number of micro seconds since the UNIX epoch.
     pub(crate) micros_since_epoch: u64,
