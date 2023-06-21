@@ -17,7 +17,7 @@ using SpacetimeDB;
 using SpacetimeDB.SATS;
 using UnityEngine;
 using UnityEngine.Rendering;
-using ReducerEvent = Bitcraft.ReducerEvent;
+using ReducerEvent = SpacetimeDB.ReducerEvent;
 
 namespace SpacetimeDB
 {
