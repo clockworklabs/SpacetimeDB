@@ -77,6 +77,11 @@ namespace SpacetimeDB
         public event Action onSubscriptionApplied;
 
         /// <summary>
+        /// Invoked when a reducer is returned with an error and has no client-side handler.
+        /// </summary>
+        public event Action<ReducerEvent> onUnhandledReducerError;
+
+        /// <summary>
         /// Called when we receive an identity from the server
         /// </summary>
         public event Action<string, Identity> onIdentityReceived;
@@ -88,7 +93,7 @@ namespace SpacetimeDB
 
         private SpacetimeDB.WebSocket webSocket;
         private bool connectionClosed;
-        public static ClientCache clientDB; 
+        public static ClientCache clientDB;
         public static Dictionary<string, Func<ClientApi.Event, bool>> reducerEventCache = new Dictionary<string, Func<ClientApi.Event, bool>>();
         public static Dictionary<string, Action<ClientApi.Event>> deserializeEventCache = new Dictionary<string, Action<ClientApi.Event>>();
 
@@ -648,10 +653,15 @@ namespace SpacetimeDB
                         case Message.TypeOneofCase.TransactionUpdate:
                             onEvent?.Invoke(message.TransactionUpdate.Event);
 
+                            bool reducerFound = false;
                             var functionName = message.TransactionUpdate.Event.FunctionCall.Reducer;
                             if (reducerEventCache.TryGetValue(functionName, out var value))
                             {
-                                value.Invoke(message.TransactionUpdate.Event);
+                                reducerFound = value.Invoke(message.TransactionUpdate.Event);
+                            }
+                            if (!reducerFound && message.TransactionUpdate.Event.Status == ClientApi.Event.Types.Status.Failed)
+                            {
+                                onUnhandledReducerError?.Invoke(message.TransactionUpdate.Event.FunctionCall.CallInfo);
                             }
 
                             break;
