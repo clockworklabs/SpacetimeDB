@@ -83,6 +83,7 @@ async fn exec_register_tld(mut config: Config, args: &ArgMatches) -> Result<(), 
 
 pub async fn exec_dns_lookup(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let domain = args.get_one::<String>("domain").unwrap();
+
     let response = spacetime_dns(&config, domain).await?;
     match response {
         DnsLookupResponse::Success { domain: _, address } => {
