@@ -7,7 +7,7 @@ mod impls;
 mod logger;
 #[doc(hidden)]
 pub mod rt;
-mod types;
+mod timestamp;
 
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
@@ -24,7 +24,7 @@ pub use spacetimedb_lib;
 pub use spacetimedb_lib::sats;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::Identity;
-pub use types::Timestamp;
+pub use timestamp::Timestamp;
 
 pub use spacetimedb_bindings_sys as sys;
 pub use sys::Errno;
