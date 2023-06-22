@@ -1,8 +1,9 @@
+use spacetimedb_sats::{AlgebraicValue, BuiltinValue};
 use std::collections::HashSet;
 
 use super::query::Query;
 use crate::error::DBError;
-use crate::subscription::query::run_query;
+use crate::subscription::query::{run_query, OP_TYPE_FIELD_NAME};
 use crate::{
     client::{ClientActorId, ClientConnectionSender},
     db::relational_db::RelationalDB,
@@ -60,32 +61,35 @@ impl QuerySet {
         let mut seen = HashSet::new();
 
         for query in &self.0 {
-            for table in &database_update.tables {
-                let mut rows = Vec::with_capacity(table.ops.len());
-                for row in &table.ops {
-                    if seen.contains(&(table.table_id, row.row_pk.clone())) {
-                        continue;
-                    }
-                    seen.insert((table.table_id, row.row_pk.clone()));
-                    rows.push(row.clone());
-                }
-
-                if rows.is_empty() {
-                    continue;
-                }
-
-                let table = DatabaseTableUpdate {
-                    table_id: table.table_id,
-                    table_name: table.table_name.clone(),
-                    ops: rows,
-                };
-
+            for table in database_update.tables.iter().cloned() {
                 for q in query.queries_of_table_id(&table) {
-                    let result = run_query(relational_db, &q)?.into_iter().find(|x| !x.data.is_empty());
-                    if result.is_none() {
-                        continue;
+                    if let Some(result) = run_query(relational_db, &q)?.into_iter().find(|x| !x.data.is_empty()) {
+                        let mut table_row_operations = table.clone();
+                        table_row_operations.ops.clear();
+                        for mut row in result.data {
+                            //Hack: remove the hidden field OP_TYPE_FIELD_NAME. see `to_mem_table`
+                            // needs to be done before calculate the PK
+                            let op_type =
+                                if let Some(AlgebraicValue::Builtin(BuiltinValue::U8(op))) = row.elements.pop() {
+                                    op
+                                } else {
+                                    panic!("Fail to extract {OP_TYPE_FIELD_NAME}")
+                                };
+
+                            let row_pk = RelationalDB::pk_for_row(&row);
+
+                            //Skip rows that are already resolved in a previous subscription...
+                            if seen.contains(&(table.table_id, row_pk)) {
+                                continue;
+                            }
+
+                            seen.insert((table.table_id, row_pk));
+
+                            let row_pk = row_pk.to_bytes();
+                            table_row_operations.ops.push(TableOp { op_type, row_pk, row });
+                        }
+                        output.tables.push(table_row_operations);
                     }
-                    output.tables.push(table.clone());
                 }
             }
         }
@@ -128,9 +132,9 @@ impl QuerySet {
                                 });
                             }
 
-                            if table_row_operations.is_empty() {
-                                continue;
-                            }
+                            // if table_row_operations.is_empty() {
+                            //     continue;
+                            // }
 
                             database_update.tables.push(DatabaseTableUpdate {
                                 table_id: t.table_id,
