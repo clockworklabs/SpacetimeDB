@@ -355,7 +355,7 @@ pub fn schedule<'de, R: ReducerInfo>(time: Timestamp, args: impl ScheduleArgs<'d
 
 /// Schedule a repeating `_reducer` `I` with repeater args `A`.
 pub fn schedule_repeater<A: RepeaterArgs, T, I: RepeaterInfo>(_reducer: impl for<'de> Reducer<'de, A, T>) {
-    // What's the first time to execute the reducer?
+    // First time to schedule reducer at.
     let time = schedule_in(I::REPEAT_INTERVAL);
 
     // bsatn serialize the repeater args into a vector.

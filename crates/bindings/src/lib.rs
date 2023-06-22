@@ -123,7 +123,7 @@ pub fn insert<T: TableType>(table_id: u32, row: T) -> T::InsertResult {
     }
     impl<T: TableType> HasAutoinc for T {
         const HAS_AUTOINC: bool = {
-            // NOTE: Written this way to work on stable.
+            // NOTE: Written this way to work on a stable compiler since we don't use nightly.
             // Same as `T::COLUMN_ATTRS.iter().any(|attr| attr.is_auto_inc())`.
             let mut i = 0;
             let mut x = false;
