@@ -112,45 +112,41 @@ fn get_table<'a>(
 
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it
 /// query execution
-pub struct DbProgram {
+pub struct DbProgram<'db, 'tx> {
     pub(crate) env: EnvDb,
     pub(crate) stats: HashMap<String, u64>,
-    pub(crate) db: RelationalDB,
+    pub(crate) db: &'db RelationalDB,
+    pub(crate) tx: &'tx mut MutTxId,
 }
 
-impl DbProgram {
-    pub fn new(db: RelationalDB) -> Self {
+impl<'db, 'tx> DbProgram<'db, 'tx> {
+    pub fn new(db: &'db RelationalDB, tx: &'tx mut MutTxId) -> Self {
         let mut env = EnvDb::new();
         Self::load_ops(&mut env);
         Self {
             env,
             db,
             stats: Default::default(),
+            tx,
         }
     }
 
-    fn _eval_query(&self, query: QueryCode, stdb: &RelationalDB, tx: &mut MutTxId) -> Result<Code, ErrorVm> {
-        let result = build_query(stdb, tx, query)?;
+    fn _eval_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
+        let result = build_query(self.db, self.tx, query)?;
         let head = result.head().clone();
         let rows: Vec<_> = result.collect_vec()?;
 
         Ok(Code::Table(MemTable::new(&head, &rows)))
     }
 
-    fn _execute_insert(
-        &self,
-        stdb: &RelationalDB,
-        tx: &mut MutTxId,
-        table: &Table,
-        rows: Vec<ProductValue>,
-    ) -> Result<Code, ErrorVm> {
+    fn _execute_insert(&mut self, table: &Table, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
         match table {
             Table::MemTable(_) => {
                 todo!("How deal with mutating values?")
             }
             Table::DbTable(x) => {
                 for row in rows {
-                    stdb.insert(tx, x.table_id, row)?;
+                    self.db.insert(self.tx, x.table_id, row)?;
                 }
             }
         }
@@ -158,55 +154,37 @@ impl DbProgram {
         Ok(Code::Pass)
     }
 
-    fn _execute_delete(
-        &self,
-        stdb: &RelationalDB,
-        tx: &mut MutTxId,
-        table: &Table,
-        rows: Vec<ProductValue>,
-    ) -> Result<Code, ErrorVm> {
+    fn _execute_delete(&mut self, table: &Table, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
         match table {
             Table::MemTable(_) => {
                 todo!("How deal with mutating values?")
             }
             Table::DbTable(t) => {
-                let count = stdb.delete_in(tx, t.table_id, rows)?;
+                let count = self.db.delete_in(self.tx, t.table_id, rows)?;
                 Ok(Code::Value(count.unwrap_or_default().into()))
             }
         }
     }
 
-    fn delete_query(&self, query: QueryCode, stdb: &RelationalDB, tx: &mut MutTxId) -> Result<Code, ErrorVm> {
+    fn delete_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
         let table = query.table.clone();
-        let result = self._eval_query(query, stdb, tx)?;
+        let result = self._eval_query(query)?;
 
         match result {
-            Code::Table(result) => self._execute_delete(stdb, tx, &table, result.data),
+            Code::Table(result) => self._execute_delete(&table, result.data),
             _ => Ok(result),
         }
     }
 
-    fn insert_query(
-        &self,
-        table: &Table,
-        query: QueryCode,
-        stdb: &RelationalDB,
-        tx: &mut MutTxId,
-    ) -> Result<Code, ErrorVm> {
-        let result = self._eval_query(query, stdb, tx)?;
+    fn insert_query(&mut self, table: &Table, query: QueryCode) -> Result<Code, ErrorVm> {
+        let result = self._eval_query(query)?;
         match result {
-            Code::Table(result) => self._execute_insert(stdb, tx, table, result.data),
+            Code::Table(result) => self._execute_insert(table, result.data),
             _ => Ok(result),
         }
     }
 
-    fn create_table(
-        &self,
-        table_name: &str,
-        columns: ProductTypeMeta,
-        stdb: &RelationalDB,
-        tx: &mut MutTxId,
-    ) -> Result<Code, ErrorVm> {
+    fn create_table(&mut self, table_name: &str, columns: ProductTypeMeta) -> Result<Code, ErrorVm> {
         let mut cols = Vec::new();
         let mut indexes = Vec::new();
         for (i, column) in columns.columns.elements.iter().enumerate() {
@@ -225,8 +203,8 @@ impl DbProgram {
                 is_autoinc: meta.is_autoinc(),
             })
         }
-        stdb.create_table(
-            tx,
+        self.db.create_table(
+            self.tx,
             TableDef {
                 table_name: table_name.to_string(),
                 columns: cols,
@@ -236,21 +214,21 @@ impl DbProgram {
         Ok(Code::Pass)
     }
 
-    fn drop(&self, name: &str, kind: DbType, stdb: &RelationalDB, tx: &mut MutTxId) -> Result<Code, ErrorVm> {
+    fn drop(&mut self, name: &str, kind: DbType) -> Result<Code, ErrorVm> {
         match kind {
             DbType::Table => {
-                if let Some(id) = stdb.table_id_from_name(tx, name)? {
-                    stdb.drop_table(tx, id)?;
+                if let Some(id) = self.db.table_id_from_name(self.tx, name)? {
+                    self.db.drop_table(self.tx, id)?;
                 }
             }
             DbType::Index => {
-                if let Some(id) = stdb.index_id_from_name(tx, name)? {
-                    stdb.drop_index(tx, IndexId(id))?;
+                if let Some(id) = self.db.index_id_from_name(self.tx, name)? {
+                    self.db.drop_index(self.tx, IndexId(id))?;
                 }
             }
             DbType::Sequence => {
-                if let Some(id) = stdb.sequence_id_from_name(tx, name)? {
-                    stdb.drop_sequence(tx, SequenceId(id))?;
+                if let Some(id) = self.db.sequence_id_from_name(self.tx, name)? {
+                    self.db.drop_sequence(self.tx, SequenceId(id))?;
                 }
             }
         }
@@ -259,7 +237,7 @@ impl DbProgram {
     }
 }
 
-impl ProgramVm for DbProgram {
+impl ProgramVm for DbProgram<'_, '_> {
     fn env(&self) -> &EnvDb {
         &self.env
     }
@@ -273,54 +251,38 @@ impl ProgramVm for DbProgram {
     }
 
     fn eval_query(&mut self, query: CrudCode) -> Result<Code, ErrorVm> {
-        let stdb = &self.db;
-        let mut tx = stdb.begin_tx();
-
-        let result = match query {
-            CrudCode::Query(query) => self._eval_query(query, stdb, &mut tx),
-            CrudCode::Insert { table, rows } => self._execute_insert(stdb, &mut tx, &table, rows),
+        match query {
+            CrudCode::Query(query) => self._eval_query(query),
+            CrudCode::Insert { table, rows } => self._execute_insert(&table, rows),
             CrudCode::Update { mut insert, delete } => {
                 let table = delete.table.clone();
-                let result = self._eval_query(delete, stdb, &mut tx)?;
+                let result = self._eval_query(delete)?;
 
                 let deleted = match result {
                     Code::Table(result) => result,
                     _ => return Ok(result),
                 };
-                self._execute_delete(stdb, &mut tx, &table, deleted.data.clone())?;
+                self._execute_delete(&table, deleted.data.clone())?;
 
                 let to_insert = mem_table(table.head(), deleted.data);
                 insert.table = Table::MemTable(to_insert);
 
-                let result = self.insert_query(&table, insert, stdb, &mut tx)?;
+                let result = self.insert_query(&table, insert)?;
                 Ok(result)
             }
             CrudCode::Delete { query } => {
-                let result = self.delete_query(query, stdb, &mut tx)?;
+                let result = self.delete_query(query)?;
                 Ok(result)
             }
             CrudCode::CreateTable { name, columns } => {
-                let result = self.create_table(&name, columns, stdb, &mut tx)?;
+                let result = self.create_table(&name, columns)?;
                 Ok(result)
             }
             CrudCode::Drop { name, kind } => {
-                let result = self.drop(&name, kind, stdb, &mut tx)?;
+                let result = self.drop(&name, kind)?;
                 Ok(result)
             }
-        };
-
-        match result {
-            Ok(Code::Halt(_)) => {
-                stdb.rollback_tx(tx);
-            }
-            Ok(_) => {
-                stdb.commit_tx(tx)?;
-            }
-            Err(_) => {
-                stdb.rollback_tx(tx);
-            }
         }
-        result
     }
 
     fn as_program_ref(&self) -> ProgramRef<'_> {
@@ -394,13 +356,13 @@ pub(crate) mod tests {
 
     pub(crate) fn create_table_with_rows(
         db: &RelationalDB,
+        tx: &mut MutTxId,
         table_name: &str,
         schema: ProductType,
         rows: &[ProductValue],
     ) -> ResultTest<u32> {
-        let mut tx = db.begin_tx();
         let table_id = db.create_table(
-            &mut tx,
+            tx,
             TableDef {
                 table_name: table_name.to_string(),
                 columns: schema
@@ -417,9 +379,8 @@ pub(crate) mod tests {
             },
         )?;
         for row in rows {
-            db.insert(&mut tx, table_id, row.clone())?;
+            db.insert(tx, table_id, row.clone())?;
         }
-        db.commit_tx(tx)?;
 
         Ok(table_id)
     }
@@ -431,7 +392,7 @@ pub(crate) mod tests {
         rows: &[ProductValue],
     ) -> ResultTest<u32> {
         let db = &mut p.db;
-        create_table_with_rows(db, table_name, schema, rows)
+        create_table_with_rows(db, p.tx, table_name, schema, rows)
     }
 
     #[test]
@@ -444,7 +405,8 @@ pub(crate) mod tests {
     fn test_db_query() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
 
-        let p = &mut DbProgram::new(stdb);
+        let mut tx = stdb.begin_tx();
+        let p = &mut DbProgram::new(&stdb, &mut tx);
 
         let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
         let row = product!(1u64, "health");
@@ -473,6 +435,8 @@ pub(crate) mod tests {
 
         assert_eq!(result.data, input.data, "Inventory");
 
+        stdb.rollback_tx(tx);
+
         Ok(())
     }
 
@@ -488,7 +452,9 @@ pub(crate) mod tests {
     #[test]
     fn test_query_catalog_tables() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
-        let p = &mut DbProgram::new(stdb);
+
+        let mut tx = stdb.begin_tx();
+        let p = &mut DbProgram::new(&stdb, &mut tx);
 
         let q = query(&st_table_schema()).with_select_cmp(
             OpCmp::Eq,
@@ -507,13 +473,17 @@ pub(crate) mod tests {
             DbTable::from(&st_table_schema()),
         );
 
+        stdb.rollback_tx(tx);
+
         Ok(())
     }
 
     #[test]
     fn test_query_catalog_columns() -> ResultTest<()> {
         let (stdb, _tmp_dir) = make_test_db()?;
-        let p = &mut DbProgram::new(stdb);
+
+        let mut tx = stdb.begin_tx();
+        let p = &mut DbProgram::new(&stdb, &mut tx);
 
         let q = query(&st_columns_schema())
             .with_select_cmp(
@@ -541,6 +511,8 @@ pub(crate) mod tests {
             (&st_columns_schema()).into(),
         );
 
+        stdb.rollback_tx(tx);
+
         Ok(())
     }
 
@@ -551,14 +523,15 @@ pub(crate) mod tests {
         let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
         let row = product!(1u64, "health");
 
-        let table_id = create_table_with_rows(&db, "inventory", head, &[row])?;
+        let mut tx = db.begin_tx();
+        let table_id = create_table_with_rows(&db, &mut tx, "inventory", head, &[row])?;
+        db.commit_tx(tx)?;
 
         let mut tx = db.begin_tx();
         let index = IndexDef::new("idx_1".into(), table_id, 0, true);
         let index_id = db.create_index(&mut tx, index)?;
-        db.commit_tx(tx)?;
 
-        let p = &mut DbProgram::new(db);
+        let p = &mut DbProgram::new(&db, &mut tx);
 
         let q = query(&st_indexes_schema()).with_select_cmp(
             OpCmp::Eq,
@@ -580,6 +553,8 @@ pub(crate) mod tests {
             (&st_indexes_schema()).into(),
         );
 
+        db.rollback_tx(tx);
+
         Ok(())
     }
 
@@ -587,7 +562,8 @@ pub(crate) mod tests {
     fn test_query_catalog_sequences() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
 
-        let p = &mut DbProgram::new(db);
+        let mut tx = db.begin_tx();
+        let p = &mut DbProgram::new(&db, &mut tx);
 
         let q = query(&st_sequences_schema()).with_select_cmp(
             OpCmp::Eq,
@@ -612,6 +588,8 @@ pub(crate) mod tests {
             q,
             (&st_sequences_schema()).into(),
         );
+
+        db.rollback_tx(tx);
 
         Ok(())
     }
