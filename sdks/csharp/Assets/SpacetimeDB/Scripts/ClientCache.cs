@@ -54,6 +54,8 @@ namespace SpacetimeDB
                 get => clientTableType;
             }
 
+            public Action<object> InternalValueInsertedCallback;
+            public Action<object> InternalValueDeletedCallback;
             public Action<object, ClientApi.Event> InsertCallback;
             public Action<object, ClientApi.Event> BeforeDeleteCallback;
             public Action<object, ClientApi.Event> DeleteCallback;
@@ -79,6 +81,8 @@ namespace SpacetimeDB
 
                 this.rowSchema = rowSchema;
                 this.decoderFunc = decoderFunc;
+                InternalValueInsertedCallback = (Action<object>)clientTableType.GetMethod("InternalOnValueInserted", BindingFlags.NonPublic | BindingFlags.Static)?.CreateDelegate(typeof(Action<object>));
+                InternalValueDeletedCallback = (Action<object>)clientTableType.GetMethod("InternalOnValueDeleted", BindingFlags.NonPublic | BindingFlags.Static)?.CreateDelegate(typeof(Action<object>));
                 InsertCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnInsertEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
                 BeforeDeleteCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnBeforeDeleteEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
                 DeleteCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnDeleteEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));

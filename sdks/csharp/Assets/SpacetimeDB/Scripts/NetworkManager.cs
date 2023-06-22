@@ -84,11 +84,6 @@ namespace SpacetimeDB
         public event Action onSubscriptionApplied;
 
         /// <summary>
-        /// Invoked when the local client cache is updated as a result of changes made to the subscription queries.
-        /// </summary>
-        public event Action onSubscriptionUpdate;
-
-        /// <summary>
         /// Invoked when a reducer is returned with an error and has no client-side handler.
         /// </summary>
         public event Action<ReducerEvent> onUnhandledReducerError;
@@ -437,15 +432,25 @@ namespace SpacetimeDB
                         {
                             case TableOp.Delete:
                                 ev.oldValue = events[i].table.DeleteEntry(ev.deletedPk);
+                                if (ev.oldValue != null)
+                                {
+                                    ev.table.InternalValueDeletedCallback(ev.oldValue);
+                                }
                                 events[i] = ev;
                                 break;
                             case TableOp.Insert:
                                 ev.newValue = events[i].table.InsertEntry(ev.insertedPk);
+                                ev.table.InternalValueInsertedCallback(ev.newValue);
                                 events[i] = ev;
                                 break;
                             case TableOp.Update:
                                 ev.oldValue = events[i].table.DeleteEntry(ev.deletedPk);
                                 ev.newValue = events[i].table.InsertEntry(ev.insertedPk);
+                                if (ev.oldValue != null)
+                                {
+                                    ev.table.InternalValueDeletedCallback(ev.oldValue);
+                                }
+                                ev.table.InternalValueInsertedCallback(ev.newValue);
                                 events[i] = ev;
                                 break;
                             default:
