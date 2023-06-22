@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- needs to be exe for initializers to be embedded correctly -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net7.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);SpacetimeSharpSATS\**</DefaultItemExcludes>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="SpacetimeSharpSATS/Codegen/Codegen.csproj" OutputItemType="Analyzer" />
+    <ProjectReference Include="SpacetimeSharpSATS/Runtime/Runtime.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Wasi.Sdk" Version="0.1.4-preview.10020" />
+    <WasiNativeFileReference Include="SpacetimeSharpSATS/Runtime/bindings.c" />
+    <WasiNativeFileReference Include="-Wl,--export=SPACETIME_ABI_VERSION,--export=SPACETIME_ABI_VERSION_IS_ADDR" />
+    <WasiAfterRuntimeLoaded Include="mono_stdb_attach_bindings" />
+  </ItemGroup>
+
+</Project>
