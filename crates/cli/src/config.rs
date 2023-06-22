@@ -85,6 +85,15 @@ impl Config {
         self.home.default_identity = Some(default_identity);
     }
 
+    /// Sets a nickname for an identity.
+    ///
+    /// # Arguments
+    /// * `identity` - The identity to configure a nickname for.
+    /// * `name` - The nickname to set for the identity.
+    ///
+    /// # Returns
+    /// * `Ok(())` - If the identity was found and the nickname was set.
+    /// * `Err(anyhow::Error)` - If the identity was not found.
     pub fn set_identity_nickname(&mut self, identity: String, name: String) -> Result<(), anyhow::Error> {
         let configs = self.identity_configs_mut();
         for config in configs.iter_mut() {
