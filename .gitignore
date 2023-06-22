@@ -204,3 +204,4 @@ new.json
 
 # Keys
 *.pem
+.ok.sql
