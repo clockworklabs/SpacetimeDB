@@ -1420,7 +1420,7 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
         // Closing brace for ctor
         writeln!(output, "}}").unwrap();
         writeln!(output).unwrap();
-        //Properties for reducer args
+        // Properties for reducer args
         for item in items {
             if let GenItem::Reducer(reducer) = item {
                 if reducer.name == "__init__" {
