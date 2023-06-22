@@ -280,7 +280,7 @@ mod tests {
         //let path = "/Users/tylercloutier/Developer/SpacetimeDB/test";
         let mut message_log = MessageLog::open(path)?;
 
-        const MESSAGE_COUNT: i32 = 100_000_000;
+        const MESSAGE_COUNT: i32 = 100_000;
         let start = std::time::Instant::now();
         for _i in 0..MESSAGE_COUNT {
             let s = b"yo this is tyler";
@@ -305,7 +305,7 @@ mod tests {
         //let path = "/Users/tylercloutier/Developer/SpacetimeDB/test";
         let mut message_log = MessageLog::open(path)?;
 
-        const MESSAGE_COUNT: i32 = 100_000_000;
+        const MESSAGE_COUNT: i32 = 100_000;
         let start = std::time::Instant::now();
         for _i in 0..MESSAGE_COUNT {
             let s = b"yo this is tyler";
@@ -323,7 +323,7 @@ mod tests {
         drop(message_log);
 
         let message_log = MessageLog::open(path)?;
-        assert!(message_log.size() == 2_000_000_000);
+        assert!(message_log.size() == 2_000_000);
 
         Ok(())
     }

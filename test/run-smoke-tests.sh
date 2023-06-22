@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set -euo pipefail
-set -x
+
 cd "$(dirname "$0")"
 
 CRST='\033[0m'       # Text Reset
@@ -19,6 +19,9 @@ export SPACETIME_DIR="$PWD/.."
 export SPACETIME_SKIP_CLIPPY=1
 CONTAINER_NAME=$(docker ps | grep node | awk '{print $NF}')
 docker logs "$CONTAINER_NAME"
+
+rustup update
+rustup component add clippy
 
 source "lib.include"
 mkdir -p ~/.spacetime

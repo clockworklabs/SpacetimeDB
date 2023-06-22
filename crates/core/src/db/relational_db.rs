@@ -276,9 +276,9 @@ impl RelationalDB {
     ///     Ok(())
     /// })?;
     /// ```
-    pub fn with_auto_commit<F, A, E>(&self, mut f: F) -> Result<A, E>
+    pub fn with_auto_commit<F, A, E>(&self, f: F) -> Result<A, E>
     where
-        F: FnMut(&mut MutTxId) -> Result<A, E>,
+        F: FnOnce(&mut MutTxId) -> Result<A, E>,
         E: From<DBError>,
     {
         let mut tx = self.begin_tx();

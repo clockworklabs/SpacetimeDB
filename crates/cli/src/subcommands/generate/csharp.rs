@@ -1330,22 +1330,15 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 }
 
 pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(String, String)> {
-    let reducer_names: Vec<String> = items
+    let reducers: Vec<&ReducerDef> = items.iter()
+        .map(|i| if let GenItem::Reducer(reducer) = i { Some(reducer) } else { None })
+        .filter(|r| r.is_some())
+        .map(|r| r.unwrap())
+        .filter(|r| r.name != "__init__")
+        .collect();
+    let reducer_names: Vec<String> = reducers
         .iter()
-        .filter(|item| {
-            if let GenItem::Reducer(reducer) = item {
-                reducer.name != "__init__"
-            } else {
-                false
-            }
-        })
-        .map(|item| {
-            if let GenItem::Reducer(reducer) = item {
-                reducer.name.to_case(Case::Pascal)
-            } else {
-                unreachable!()
-            }
-        })
+        .map(|reducer| reducer.name.to_case(Case::Pascal))
         .collect();
 
     let use_namespace = true;
@@ -1418,30 +1411,25 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
         // Closing brace for ctor
         writeln!(output, "}}").unwrap();
         writeln!(output).unwrap();
-        //Properties for reducer args
-        for item in items {
-            if let GenItem::Reducer(reducer) = item {
-                if reducer.name == "__init__" {
-                    continue;
-                }
-                let reducer_name = reducer.name.to_case(Case::Pascal);
-                writeln!(output, "public {reducer_name}ArgsStruct {reducer_name}Args").unwrap();
+        // Properties for reducer args
+        for reducer in &reducers {
+            let reducer_name = reducer.name.to_case(Case::Pascal);
+            writeln!(output, "public {reducer_name}ArgsStruct {reducer_name}Args").unwrap();
+            writeln!(output, "{{").unwrap();
+            {
+                indent_scope!(output);
+                writeln!(output, "get").unwrap();
                 writeln!(output, "{{").unwrap();
                 {
                     indent_scope!(output);
-                    writeln!(output, "get").unwrap();
-                    writeln!(output, "{{").unwrap();
-                    {
-                        indent_scope!(output);
-                        writeln!(output, "if (Reducer != ReducerType.{reducer_name}) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), \"{reducer_name}\");").unwrap();
-                        writeln!(output, "return ({reducer_name}ArgsStruct)Args;").unwrap();
-                    }
-                    // Closing brace for struct ReducerArgs
-                    writeln!(output, "}}").unwrap();
+                    writeln!(output, "if (Reducer != ReducerType.{reducer_name}) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), \"{reducer_name}\");").unwrap();
+                    writeln!(output, "return ({reducer_name}ArgsStruct)Args;").unwrap();
                 }
                 // Closing brace for struct ReducerArgs
                 writeln!(output, "}}").unwrap();
             }
+            // Closing brace for struct ReducerArgs
+            writeln!(output, "}}").unwrap();
         }
         writeln!(output).unwrap();
         writeln!(output, "public object[] GetArgsAsObjectArray()").unwrap();
@@ -1452,34 +1440,29 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
-                for item in items {
-                    if let GenItem::Reducer(reducer) = item {
-                        if reducer.name == "__init__" {
-                            continue;
-                        }
-                        let reducer_name = reducer.name.to_case(Case::Pascal);
-                        writeln!(output, "case ReducerType.{reducer_name}:").unwrap();
-                        writeln!(output, "{{").unwrap();
+                for reducer in &reducers {
+                    let reducer_name = reducer.name.to_case(Case::Pascal);
+                    writeln!(output, "case ReducerType.{reducer_name}:").unwrap();
+                    writeln!(output, "{{").unwrap();
+                    {
+                        indent_scope!(output);
+                        writeln!(output, "var args = {reducer_name}Args;").unwrap();
+                        writeln!(output, "return new object[] {{").unwrap();
                         {
                             indent_scope!(output);
-                            writeln!(output, "var args = {reducer_name}Args;").unwrap();
-                            writeln!(output, "return new object[] {{").unwrap();
-                            {
-                                indent_scope!(output);
-                                for (i, arg) in reducer.args.iter().enumerate() {
-                                    let arg_name = arg
-                                        .name
-                                        .clone()
-                                        .unwrap_or_else(|| format!("arg_{}", i))
-                                        .to_case(Case::Pascal);
-                                    writeln!(output, "args.{arg_name},").unwrap();
-                                }
+                            for (i, arg) in reducer.args.iter().enumerate() {
+                                let arg_name = arg
+                                    .name
+                                    .clone()
+                                    .unwrap_or_else(|| format!("arg_{}", i))
+                                    .to_case(Case::Pascal);
+                                writeln!(output, "args.{arg_name},").unwrap();
                             }
-                            writeln!(output, "}};").unwrap();
                         }
-                        // Closing brace for switch
-                        writeln!(output, "}}").unwrap();
+                        writeln!(output, "}};").unwrap();
                     }
+                    // Closing brace for switch
+                    writeln!(output, "}}").unwrap();
                 }
                 writeln!(output, "default: throw new System.Exception($\"Unhandled reducer case: {{Reducer}}. Please run SpacetimeDB code generator\");").unwrap();
             }
