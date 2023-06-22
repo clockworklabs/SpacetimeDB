@@ -105,7 +105,7 @@ impl QuerySet {
     ///
     /// This is a *major* difference with normal query execution, where is expected to return the full result set for each query.
     pub fn eval(&self, relational_db: &RelationalDB) -> Result<DatabaseUpdate, DBError> {
-        let mut database_update = DatabaseUpdate { tables: vec![] };
+        let mut database_update: DatabaseUpdate = DatabaseUpdate { tables: vec![] };
         let mut seen = HashSet::new();
 
         for query in &self.0 {

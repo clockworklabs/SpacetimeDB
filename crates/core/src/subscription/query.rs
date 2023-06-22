@@ -108,7 +108,9 @@ mod tests {
     #[test]
     fn test_subscribe() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let p = &mut DbProgram::new(db.clone());
+
+        let mut tx = db.begin_tx();
+        let p = &mut DbProgram::new(&db, &mut tx);
 
         let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
 
@@ -116,9 +118,8 @@ mod tests {
         let table = mem_table(head.clone(), [row.clone()]);
         let table_id = create_table_from_program(p, "inventory", head.clone(), &[row.clone()])?;
 
-        let tx = db.begin_tx();
         let schema = db.schema_for_table(&tx, table_id).unwrap();
-        db.rollback_tx(tx);
+        db.commit_tx(tx)?;
 
         let op = TableOp {
             op_type: 1,
@@ -165,6 +166,7 @@ mod tests {
             Some(table.as_without_table_name()),
             result.first().map(|x| x.as_without_table_name())
         );
+
         Ok(())
     }
 
@@ -177,15 +179,16 @@ mod tests {
     #[test]
     fn test_subscribe_dedup() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let p = &mut DbProgram::new(db.clone());
+
+        let mut tx = db.begin_tx();
+        let p = &mut DbProgram::new(&db, &mut tx);
 
         let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
         let row = product!(1u64, "health");
         let table_id = create_table_from_program(p, "inventory", head, &[row.clone()])?;
 
-        let tx = db.begin_tx();
         let schema = db.schema_for_table(&tx, table_id).unwrap();
-        db.rollback_tx(tx);
+        db.commit_tx(tx)?;
 
         //SELECT * FROM inventory
         let q_all = QueryExpr::new(db_table((&schema).into(), "inventory", table_id));
@@ -212,21 +215,23 @@ mod tests {
             "Must return 1 row"
         );
         assert_eq!(result.tables[0].ops[0].row, row, "Must return the correct row");
+
         Ok(())
     }
 
     #[test]
     fn test_subscribe_dedup_incr() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let p = &mut DbProgram::new(db.clone());
+
+        let mut tx = db.begin_tx();
+        let p = &mut DbProgram::new(&db, &mut tx);
 
         let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
         let row = product!(1u64, "health");
         let table_id = create_table_from_program(p, "inventory", head, &[row.clone()])?;
 
-        let tx = db.begin_tx();
         let schema = db.schema_for_table(&tx, table_id).unwrap();
-        db.rollback_tx(tx);
+        db.commit_tx(tx)?;
 
         //SELECT * FROM inventory
         let q_all = QueryExpr::new(db_table((&schema).into(), "inventory", table_id));
@@ -273,6 +278,7 @@ mod tests {
             "Must return 1 row"
         );
         assert_eq!(result.tables[0].ops[0].row, row, "Must return the correct row");
+
         Ok(())
     }
 
