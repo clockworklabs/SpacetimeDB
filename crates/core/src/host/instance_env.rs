@@ -458,9 +458,8 @@ impl InstanceEnv {
             }
         }
 
-        let stdb = self.dbic.relational_db.clone();
-        let tx = self.tx.clone();
-        let tx = &mut *tx.get()?;
+        let stdb = &self.dbic.relational_db;
+        let tx = &mut *self.tx.get()?;
 
         let schema = stdb.schema_for_table(tx, table_id)?;
         let row_type = ProductType::from(&schema);
@@ -474,7 +473,7 @@ impl InstanceEnv {
         )
         .map_err(NodesError::DecodeFilter)?;
         let q = spacetimedb_vm::dsl::query(&schema).with_select(filter_to_column_op(&schema.table_name, filter));
-        let p = &mut DbProgram::new((*stdb).clone());
+        let p = &mut DbProgram::new(stdb, tx);
         let results = match spacetimedb_vm::eval::run_ast(p, q.into()) {
             Code::Table(table) => table,
             _ => unreachable!("query should always return a table"),
