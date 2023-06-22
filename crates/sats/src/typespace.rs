@@ -40,6 +40,10 @@ impl Typespace {
         self.types.get(r.0 as usize)
     }
 
+    /// Generates a fresh "type variable" that is set to `ty` and returns it.
+    ///
+    /// This allows later changing the meaning of the returned type variable
+    /// if for whatever reason, you cannot provide the full definition of the type yet.
     pub fn add(&mut self, ty: AlgebraicType) -> AlgebraicTypeRef {
         let i = self.types.len();
         self.types.push(ty);
