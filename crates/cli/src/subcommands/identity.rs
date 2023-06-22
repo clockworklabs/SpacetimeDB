@@ -439,7 +439,7 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
     let email = args.get_one::<String>("email").unwrap().clone();
     let identity = config.map_name_to_identity(args.get_one::<String>("identity")).unwrap();
     let identity_config = config
-        .get_identity_config_by_identity(&identity)
+        .get_identity_config_by_identity(identity)
         .unwrap_or_else(|| panic!("Could not find identity: {}", identity));
 
     let client = reqwest::Client::new();
@@ -450,7 +450,7 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
         email
     ));
 
-    if let Some(identity_token) = config.get_identity_config_by_identity(&identity) {
+    if let Some(identity_token) = config.get_identity_config_by_identity(identity) {
         builder = builder.basic_auth("token", Some(identity_token.token.clone()));
     } else {
         println!("Missing identity credentials for identity.");
@@ -461,7 +461,7 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
     res.error_for_status()?;
 
     println!(" Associated email with identity");
-    print_identity_config(config.get_identity_config_by_identity(&identity).unwrap());
+    print_identity_config(config.get_identity_config_by_identity(identity).unwrap());
 
     Ok(())
 }
