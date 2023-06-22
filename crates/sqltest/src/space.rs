@@ -7,6 +7,8 @@ use spacetimedb_sats::relation::MemTable;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, BuiltinType, BuiltinValue};
 use sqllogictest::{AsyncDB, ColumnType, DBOutput};
+use std::fs;
+use std::io::Write;
 use tempdir::TempDir;
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -46,6 +48,15 @@ impl ColumnType for Kind {
     }
 }
 
+#[allow(dead_code)]
+fn append_file(to: &std::path::Path, content: &str) -> anyhow::Result<()> {
+    let mut f = fs::OpenOptions::new().create(true).append(true).write(true).open(to)?;
+
+    f.write_all(format!("{content}\n").as_bytes())?;
+
+    Ok(())
+}
+
 pub struct SpaceDb {
     pub(crate) conn: RelationalDB,
     #[allow(dead_code)]
@@ -62,7 +73,8 @@ impl SpaceDb {
     pub(crate) fn run_sql(&self, sql: &str) -> anyhow::Result<Vec<MemTable>> {
         let ast = compile_sql(&self.conn, sql)?;
         let result = execute_sql(&self.conn, ast)?;
-
+        //remove comments to see which SQL worked. Can't collect it outside from lack of a hook in the external `sqllogictest` crate... :(
+        //append_file(&std::path::PathBuf::from(".ok.sql"), sql)?;
         Ok(result)
     }
 

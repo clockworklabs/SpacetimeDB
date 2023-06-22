@@ -452,7 +452,7 @@ pub fn create_index(index_name: &str, table_id: u32, index_type: u8, col_ids: &[
 
 /// Finds all rows in the table identified by `table_id`,
 /// where the row has a column, identified by `col_id`,
-/// with data matching `val.
+/// with data matching `val`.
 ///
 /// The rows found are bsatn encoded and then concatenated.
 /// The resulting byte string from the concatenation is written
