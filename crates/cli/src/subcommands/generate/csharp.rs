@@ -1329,7 +1329,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     output.into_inner()
 }
 
-pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(String, String)> {
+pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String, String)> {
     let reducers: Vec<&ReducerDef> = items
         .iter()
         .map(|i| {
@@ -1340,7 +1340,7 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
             }
         })
         .filter(|r| r.is_some())
-        .map(|r| r.unwrap())
+        .flatten()
         .filter(|r| r.name != "__init__")
         .collect();
     let reducer_names: Vec<String> = reducers
