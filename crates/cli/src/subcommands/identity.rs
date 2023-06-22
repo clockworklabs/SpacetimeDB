@@ -96,6 +96,19 @@ fn get_subcommands() -> Vec<Command> {
                     .action(ArgAction::SetTrue)
                     .conflicts_with("identity"),
             ),
+        Command::new("token").about("Print the token for an identity").arg(
+            Arg::new("identity")
+                .help("The identity string or name that we should print the token for")
+                .required(true),
+        ),
+        Command::new("set-name").about("Sets the name of an identity").arg(
+            Arg::new("identity")
+                .help("The identity string or name that we should name, in the case of a name this will rename the identity")
+                .required(true))
+            .arg(Arg::new("name")
+                .help("The name that we should set for the provided identity")
+                .required(true)
+        ),
         Command::new("import")
             .about("Imports an existing identity into your spacetime config")
             .arg(
@@ -144,10 +157,12 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
         "init-default" => exec_init_default(config, args).await,
         "new" => exec_new(config, args).await,
         "remove" => exec_remove(config, args).await,
+        "set-name" => exec_set_name(config, args).await,
         // TODO(jdetter): Rename to import
         "import" => exec_import(config, args).await,
         "set-email" => exec_set_email(config, args).await,
         "find" => exec_find(config, args).await,
+        "token" => exec_token(config, args).await,
         "recover" => exec_recover(config, args).await,
         // TODO(jdetter): Command for logging in via email recovery
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
@@ -393,12 +408,39 @@ async fn exec_find(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     }
 }
 
+async fn exec_token(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let identity_or_name = config
+        .map_name_to_identity(args.get_one::<String>("identity"))
+        .unwrap()
+        .clone();
+    let ic = config
+        .get_identity_config_by_identity(identity_or_name.as_str())
+        .unwrap();
+    println!("{}", ic.token);
+    Ok(())
+}
+
+async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let cloned_config = config.clone();
+    let identity_or_name = cloned_config
+        .map_name_to_identity(args.get_one::<String>("identity"))
+        .unwrap();
+    let new_name = args.get_one::<String>("new-name").unwrap();
+    config.set_identity_nickname(identity_or_name.clone(), new_name.clone())?;
+    config.save();
+    let ic = config
+        .get_identity_config_by_identity(identity_or_name.as_str())
+        .unwrap();
+    println!("{}", ic.token);
+    Ok(())
+}
+
 async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let email = args.get_one::<String>("email").unwrap().clone();
-    let identity_or_name = args.get_one::<String>("identity").unwrap().clone();
+    let identity = config.map_name_to_identity(args.get_one::<String>("identity")).unwrap();
     let identity_config = config
-        .get_identity_config_by_identity(&identity_or_name)
-        .unwrap_or_else(|| panic!("Could not find identity: {}", identity_or_name));
+        .get_identity_config_by_identity(&identity)
+        .unwrap_or_else(|| panic!("Could not find identity: {}", identity));
 
     let client = reqwest::Client::new();
     let mut builder = client.post(format!(
@@ -408,7 +450,7 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
         email
     ));
 
-    if let Some(identity_token) = config.get_identity_config_by_identity(&identity_or_name) {
+    if let Some(identity_token) = config.get_identity_config_by_identity(&identity) {
         builder = builder.basic_auth("token", Some(identity_token.token.clone()));
     } else {
         println!("Missing identity credentials for identity.");
@@ -419,7 +461,7 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
     res.error_for_status()?;
 
     println!(" Associated email with identity");
-    print_identity_config(config.get_identity_config_by_identity(&identity_or_name).unwrap());
+    print_identity_config(config.get_identity_config_by_identity(&identity).unwrap());
 
     Ok(())
 }

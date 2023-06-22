@@ -85,6 +85,18 @@ impl Config {
         self.home.default_identity = Some(default_identity);
     }
 
+    pub fn set_identity_nickname(&mut self, identity: String, name: String) -> Result<(), anyhow::Error> {
+        let configs = self.identity_configs_mut();
+        for x in 0..configs.len() {
+            if configs[x].identity == identity {
+                configs[x].nickname = Some(name);
+                return Ok(());
+            }
+        }
+
+        return Err(anyhow::anyhow!("Identity {} not found", identity));
+    }
+
     pub fn default_address(&self) -> Option<&str> {
         self.proj
             .default_identity
