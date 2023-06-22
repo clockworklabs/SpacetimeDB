@@ -1292,9 +1292,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 writeln!(output, "args.{arg_name} = {convert};").unwrap();
             }
 
-            writeln!(output, "var argsGeneric = new ReducerArgs();").unwrap();
-            writeln!(output, "argsGeneric.{func_name_pascal_case}Args = args;").unwrap();
-            writeln!(output, "dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.{func_name_pascal_case}, \"{func_name}\", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), dbEvent.Message, dbEvent.Status, argsGeneric);").unwrap();
+            writeln!(output, "dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.{func_name_pascal_case}, \"{func_name}\", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), dbEvent.Message, dbEvent.Status, args);").unwrap();
         }
 
         // Closing brace for Event parsing function
@@ -1305,7 +1303,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     writeln!(output).unwrap();
 
     //Args struct
-    writeln!(output, "public struct {func_name_pascal_case}ArgsStruct").unwrap();
+    writeln!(output, "public class {func_name_pascal_case}ArgsStruct").unwrap();
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
@@ -1403,9 +1401,9 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
             "public ClientApi.Event.Types.Status Status {{ get; private set; }}"
         )
         .unwrap();
-        writeln!(output, "private ReducerArgs Args;").unwrap();
+        writeln!(output, "private object Args;").unwrap();
         writeln!(output).unwrap();
-        writeln!(output, "public ReducerEvent(ReducerType reducer, string reducerName, ulong timestamp, SpacetimeDB.Identity identity, string errMessage, ClientApi.Event.Types.Status status, ReducerArgs args)").unwrap();
+        writeln!(output, "public ReducerEvent(ReducerType reducer, string reducerName, ulong timestamp, SpacetimeDB.Identity identity, string errMessage, ClientApi.Event.Types.Status status, object args)").unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
@@ -1436,7 +1434,7 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
                     {
                         indent_scope!(output);
                         writeln!(output, "if (Reducer != ReducerType.{reducer_name}) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), \"{reducer_name}\");").unwrap();
-                        writeln!(output, "return Args.{reducer_name}Args;").unwrap();
+                        writeln!(output, "return ({reducer_name}ArgsStruct)Args;").unwrap();
                     }
                     // Closing brace for struct ReducerArgs
                     writeln!(output, "}}").unwrap();
@@ -1493,30 +1491,6 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
     }
     // Closing brace for ReducerEvent
     writeln!(output, "}}").unwrap();
-
-    writeln!(
-        output,
-        "[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit)]"
-    )
-    .unwrap();
-    writeln!(output, "public partial struct ReducerArgs").unwrap();
-    writeln!(output, "{{").unwrap();
-    {
-        indent_scope!(output);
-        for item in items {
-            if let GenItem::Reducer(reducer) = item {
-                if reducer.name == "__init__" {
-                    continue;
-                }
-                let reducer_name = reducer.name.to_case(Case::Pascal);
-                writeln!(output, "[System.Runtime.InteropServices.FieldOffset(0)]").unwrap();
-                writeln!(output, "public {reducer_name}ArgsStruct {reducer_name}Args;").unwrap();
-            }
-        }
-    }
-    // Closing brace for struct ReducerArgs
-    writeln!(output, "}}").unwrap();
-    writeln!(output).unwrap();
 
     if use_namespace {
         output.dedent(1);
