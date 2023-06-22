@@ -4,13 +4,13 @@ use crate::{
 };
 use std::io::Write;
 
+use crate::util::{is_hex_identity, print_identity_config};
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use email_address::EmailAddress;
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use spacetimedb_lib::recovery::RecoveryCodeResponse;
 use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
-use crate::util::{is_hex_identity, print_identity_config};
 
 pub fn cli() -> Command {
     Command::new("identity")
@@ -25,13 +25,11 @@ pub fn cli() -> Command {
 fn get_subcommands() -> Vec<Command> {
     vec![
         Command::new("list").about("List saved identities"),
-        Command::new("set-default")
-            .about("Set the default identity")
-            .arg(
-                Arg::new("identity")
-                    .help("The identity string or name that should become the new default identity")
-                    .required(true),
-            ),
+        Command::new("set-default").about("Set the default identity").arg(
+            Arg::new("identity")
+                .help("The identity string or name that should become the new default identity")
+                .required(true),
+        ),
         Command::new("set-email")
             .about("Associates an email address with an identity")
             .arg(
@@ -90,10 +88,8 @@ fn get_subcommands() -> Vec<Command> {
             ),
         Command::new("remove")
             .about("Removes a saved identity from your spacetime config")
+            .arg(Arg::new("identity").help("The identity string or name to delete"))
             .arg(
-                Arg::new("identity")
-                    .help("The identity string or name to delete"),
-            ).arg(
                 Arg::new("all")
                     .long("all")
                     .help("Remove all identities from your spacetime config")
@@ -201,7 +197,8 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
             config.delete_identity_config_by_identity(identity_or_name.as_str())
         } else {
             config.delete_identity_config_by_name(identity_or_name.as_str())
-        }.unwrap_or_else(|| panic!("No such identity or name: {}", identity_or_name));
+        }
+        .unwrap_or_else(|| panic!("No such identity or name: {}", identity_or_name));
         config.update_default_identity();
         config.save();
         println!(" Removed identity");
@@ -221,7 +218,11 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
             let identity_count = config.identity_configs().len();
             config.delete_all_identity_configs();
             config.save();
-            println!(" {} {} removed.", identity_count, if identity_count > 1 { "identities" } else { "identity" });
+            println!(
+                " {} {} removed.",
+                identity_count,
+                if identity_count > 1 { "identities" } else { "identity" }
+            );
         } else {
             println!(" Aborted");
         }
@@ -395,7 +396,8 @@ async fn exec_find(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
 async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let email = args.get_one::<String>("email").unwrap().clone();
     let identity_or_name = args.get_one::<String>("identity").unwrap().clone();
-    let identity_config = config.get_identity_config_by_identity(&identity_or_name)
+    let identity_config = config
+        .get_identity_config_by_identity(&identity_or_name)
         .unwrap_or_else(|| panic!("Could not find identity: {}", identity_or_name));
 
     let client = reqwest::Client::new();

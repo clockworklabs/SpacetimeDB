@@ -1,10 +1,10 @@
+use crate::util::is_hex_identity;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
 };
-use crate::util::is_hex_identity;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IdentityConfig {
@@ -229,13 +229,23 @@ impl Config {
     /// Converts some name or identity to an identity. If the input is None, None is returned. If an
     /// identity is looked up and it doesn't exist, we panic.
     pub fn map_name_to_identity(&self, identity_or_name: Option<&String>) -> Option<&String> {
-        identity_or_name.map(|identity_or_name| if is_hex_identity(identity_or_name.as_str()) {
-                &self.identity_configs().iter().find(|c| c.identity == identity_or_name.clone()).unwrap_or_else(|| panic!("No such identity: {}", identity_or_name)).identity
-            } else {
-                &self.identity_configs()
+        identity_or_name.map(|identity_or_name| {
+            if is_hex_identity(identity_or_name.as_str()) {
+                &self
+                    .identity_configs()
                     .iter()
-                    .find(|c| c.nickname.as_ref() == Some(identity_or_name)).unwrap_or_else(|| panic!("No such identity: {}", identity_or_name)).identity
-            })
+                    .find(|c| c.identity == identity_or_name.clone())
+                    .unwrap_or_else(|| panic!("No such identity: {}", identity_or_name))
+                    .identity
+            } else {
+                &self
+                    .identity_configs()
+                    .iter()
+                    .find(|c| c.nickname.as_ref() == Some(identity_or_name))
+                    .unwrap_or_else(|| panic!("No such identity: {}", identity_or_name))
+                    .identity
+            }
+        })
     }
 
     pub fn get_identity_config_mut(&mut self, identity_or_name: &str) -> Option<&mut IdentityConfig> {

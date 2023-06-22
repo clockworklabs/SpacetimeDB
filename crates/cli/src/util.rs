@@ -161,12 +161,7 @@ pub async fn select_identity_config(
         } else {
             // First check to see if we can convert the name to an identity, then return the config for that identity
             match config.map_name_to_identity(Some(&identity_or_name.to_string())) {
-                None => {
-                    Err(anyhow::anyhow!(
-                        "No such identity for name: {}",
-                        identity_or_name,
-                    ))
-                }
+                None => Err(anyhow::anyhow!("No such identity for name: {}", identity_or_name,)),
                 Some(_) => {
                     if let Some(identity_config) = config.get_identity_config_by_name(identity_or_name) {
                         Ok(identity_config.clone())
@@ -178,7 +173,6 @@ pub async fn select_identity_config(
                     }
                 }
             }
-
         }
     } else {
         Ok(init_default(config, None).await?.identity_config)
@@ -237,10 +231,13 @@ pub fn is_hex_identity(ident: &str) -> bool {
 
 pub fn print_identity_config(ident: &IdentityConfig) {
     println!(" IDENTITY  {}", ident.identity);
-    println!(" NAME      {}", match &ident.nickname {
-        None => "",
-        Some(name) => name.as_str(),
-    });
+    println!(
+        " NAME      {}",
+        match &ident.nickname {
+            None => "",
+            Some(name) => name.as_str(),
+        }
+    );
     // TODO: lookup email here when we have an API endpoint for it
 }
 
