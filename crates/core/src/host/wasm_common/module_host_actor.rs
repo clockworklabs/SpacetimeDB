@@ -556,7 +556,7 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
             for orphan in known_tables.into_keys() {
                 if !orphan.starts_with("st_") {
                     self.system_logger()
-                        .warn(format!("Orphaned table: {}", orphan.clone()).as_str());
+                        .warn(format!("Orphaned table: {}", orphan).as_str());
                     tainted.push(orphan);
                 }
             }
