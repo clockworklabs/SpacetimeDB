@@ -107,6 +107,7 @@ mod tests {
         let table_id = create_table_from_program(p, "inventory", head.clone(), &[row.clone()])?;
 
         let schema = db.schema_for_table(&tx, table_id).unwrap();
+        db.commit_tx(tx)?;
 
         let op = TableOp {
             op_type: 0,
@@ -150,8 +151,6 @@ mod tests {
             result.first().map(|x| x.as_without_table_name())
         );
 
-        db.rollback_tx(tx);
-
         Ok(())
     }
 
@@ -173,6 +172,7 @@ mod tests {
         let table_id = create_table_from_program(p, "inventory", head, &[row.clone()])?;
 
         let schema = db.schema_for_table(&tx, table_id).unwrap();
+        db.commit_tx(tx)?;
 
         //SELECT * FROM inventory
         let q_all = QueryExpr::new(db_table((&schema).into(), "inventory", table_id));
@@ -196,8 +196,6 @@ mod tests {
         assert_eq!(result.tables[0].ops.len(), 1, "Must return 1 row");
         assert_eq!(result.tables[0].ops[0].row, row, "Must return the correct row");
 
-        db.rollback_tx(tx);
-
         Ok(())
     }
 
@@ -213,6 +211,7 @@ mod tests {
         let table_id = create_table_from_program(p, "inventory", head, &[row.clone()])?;
 
         let schema = db.schema_for_table(&tx, table_id).unwrap();
+        db.commit_tx(tx)?;
 
         //SELECT * FROM inventory
         let q_all = QueryExpr::new(db_table((&schema).into(), "inventory", table_id));
@@ -255,8 +254,6 @@ mod tests {
         assert_eq!(result.tables.len(), 1, "Must return 1 table");
         assert_eq!(result.tables[0].ops.len(), 1, "Must return 1 row");
         assert_eq!(result.tables[0].ops[0].row, row, "Must return the correct row");
-
-        db.rollback_tx(tx);
 
         Ok(())
     }

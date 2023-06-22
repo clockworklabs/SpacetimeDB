@@ -356,13 +356,13 @@ pub(crate) mod tests {
 
     pub(crate) fn create_table_with_rows(
         db: &RelationalDB,
+        tx: &mut MutTxId,
         table_name: &str,
         schema: ProductType,
         rows: &[ProductValue],
     ) -> ResultTest<u32> {
-        let mut tx = db.begin_tx();
         let table_id = db.create_table(
-            &mut tx,
+            tx,
             TableDef {
                 table_name: table_name.to_string(),
                 columns: schema
@@ -379,9 +379,8 @@ pub(crate) mod tests {
             },
         )?;
         for row in rows {
-            db.insert(&mut tx, table_id, row.clone())?;
+            db.insert(tx, table_id, row.clone())?;
         }
-        db.commit_tx(tx)?;
 
         Ok(table_id)
     }
@@ -393,7 +392,7 @@ pub(crate) mod tests {
         rows: &[ProductValue],
     ) -> ResultTest<u32> {
         let db = &mut p.db;
-        create_table_with_rows(db, table_name, schema, rows)
+        create_table_with_rows(db, p.tx, table_name, schema, rows)
     }
 
     #[test]
@@ -524,7 +523,9 @@ pub(crate) mod tests {
         let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
         let row = product!(1u64, "health");
 
-        let table_id = create_table_with_rows(&db, "inventory", head, &[row])?;
+        let mut tx = db.begin_tx();
+        let table_id = create_table_with_rows(&db, &mut tx, "inventory", head, &[row])?;
+        db.commit_tx(tx)?;
 
         let mut tx = db.begin_tx();
         let index = IndexDef::new("idx_1".into(), table_id, 0, true);

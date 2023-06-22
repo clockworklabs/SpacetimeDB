@@ -95,9 +95,11 @@ pub(crate) mod tests {
     fn create_data(total_rows: u64) -> ResultTest<(RelationalDB, MemTable, TempDir)> {
         let (db, tmp_dir) = make_test_db()?;
 
+        let mut tx = db.begin_tx();
         let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
         let rows: Vec<_> = (1..=total_rows).map(|i| product!(i, format!("health{i}"))).collect();
-        create_table_with_rows(&db, "inventory", head.clone(), &rows)?;
+        create_table_with_rows(&db, &mut tx, "inventory", head.clone(), &rows)?;
+        db.commit_tx(tx)?;
 
         Ok((db, mem_table(head, rows), tmp_dir))
     }
@@ -308,9 +310,11 @@ pub(crate) mod tests {
 
         let (db, _tmp_dir) = make_test_db()?;
 
-        create_table_with_rows(&db, "Inventory", data.inv.head.into(), &data.inv.data)?;
-        create_table_with_rows(&db, "Player", data.player.head.into(), &data.player.data)?;
-        create_table_with_rows(&db, "Location", data.location.head.into(), &data.location.data)?;
+        let mut tx = db.begin_tx();
+        create_table_with_rows(&db, &mut tx, "Inventory", data.inv.head.into(), &data.inv.data)?;
+        create_table_with_rows(&db, &mut tx, "Player", data.player.head.into(), &data.player.data)?;
+        create_table_with_rows(&db, &mut tx, "Location", data.location.head.into(), &data.location.data)?;
+        db.commit_tx(tx)?;
 
         let result = &run(
             &db,
