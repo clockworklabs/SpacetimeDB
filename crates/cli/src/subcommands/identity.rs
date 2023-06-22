@@ -425,13 +425,13 @@ async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyh
     let identity_or_name = cloned_config
         .map_name_to_identity(args.get_one::<String>("identity"))
         .unwrap();
-    let new_name = args.get_one::<String>("new-name").unwrap();
+    let new_name = args.get_one::<String>("name").unwrap();
     config.set_identity_nickname(identity_or_name.clone(), new_name.clone())?;
     config.save();
     let ic = config
         .get_identity_config_by_identity(identity_or_name.as_str())
         .unwrap();
-    println!("{}", ic.token);
+    print_identity_config(ic);
     Ok(())
 }
 
