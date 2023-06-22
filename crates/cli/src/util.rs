@@ -2,6 +2,7 @@ use reqwest::RequestBuilder;
 use serde::Deserialize;
 use spacetimedb_lib::name::{is_address, DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
 use spacetimedb_lib::Identity;
+use std::path::Path;
 use std::process::exit;
 
 use crate::config::{Config, IdentityConfig};
@@ -222,3 +223,30 @@ pub fn print_identity_config(ident: &IdentityConfig) {
 }
 
 pub const VALID_PROTOCOLS: [&str; 2] = ["http", "https"];
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum ModuleLanguage {
+    Csharp,
+    Rust,
+}
+impl clap::ValueEnum for ModuleLanguage {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Csharp, Self::Rust]
+    }
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self {
+            Self::Csharp => Some(clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"])),
+            Self::Rust => Some(clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"])),
+        }
+    }
+}
+
+pub fn detect_module_language(path_to_project: &Path) -> ModuleLanguage {
+    // TODO: Possible add a config file during spacetime init with the language
+    // check for Cargo.toml
+    if path_to_project.join("Cargo.toml").exists() {
+        return ModuleLanguage::Rust;
+    } else {
+        return ModuleLanguage::Csharp;
+    }
+}
