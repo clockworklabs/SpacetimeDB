@@ -1,0 +1,31 @@
+using SpacetimeDB.Module;
+using static SpacetimeDB.Runtime;
+
+static partial class Program
+{
+    [SpacetimeDB.Table]
+    [SpacetimeDB.Type]
+    public partial struct Person
+    {
+        [SpacetimeDB.ColumnIndex(ColumnIndexAttributeKind.Identity)]
+        public int Id;
+        public string Name;
+        public int Age;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void Add(string name, int age)
+    {
+        new Person { Name = name, Age = age }.Insert();
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void SayHello()
+    {
+        Log("Hello from C#!");
+        foreach (var person in Person.Iter())
+        {
+            Log($"Hello, {person.Name}!");
+        }
+    }
+}
