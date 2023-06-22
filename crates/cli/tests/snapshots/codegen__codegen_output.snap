@@ -297,6 +297,7 @@ namespace SpacetimeDB
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 using System;
+using System.Collections.Generic;
 
 namespace SpacetimeDB
 {
@@ -427,6 +428,7 @@ namespace SpacetimeDB
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 using System;
+using System.Collections.Generic;
 
 namespace SpacetimeDB
 {
@@ -463,6 +465,7 @@ namespace SpacetimeDB
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 using System;
+using System.Collections.Generic;
 
 namespace SpacetimeDB
 {
@@ -558,6 +561,7 @@ namespace SpacetimeDB
 using System;
 
 namespace SpacetimeDB
+using System.Collections.Generic;
 {
 	public partial class TestE : IDatabaseTable
 	{
