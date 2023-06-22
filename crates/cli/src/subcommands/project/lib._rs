@@ -1,5 +1,4 @@
 use spacetimedb::{spacetimedb, ReducerContext};
-use log;
 
 #[spacetimedb(table)]
 pub struct Person {
