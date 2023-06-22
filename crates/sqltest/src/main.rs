@@ -230,11 +230,7 @@ async fn run_test_file<T: std::io::Write, D: AsyncDB>(
         }
 
         let will_skip = match &record {
-            Record::Statement { conditions, .. } => {
-                total += 1;
-                conditions.iter().any(|c| c.should_skip(db_name))
-            }
-            Record::Query { conditions, .. } => {
+            Record::Statement { conditions, .. } | Record::Query { conditions, .. } => {
                 total += 1;
                 conditions.iter().any(|c| c.should_skip(db_name))
             }
