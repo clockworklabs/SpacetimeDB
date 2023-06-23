@@ -11,7 +11,7 @@ use crate::{log_and_500, ControlCtx, ControlNodeDelegate};
 
 #[derive(Deserialize)]
 pub struct CreateIdentityQueryParams {
-    email: email_address::EmailAddress,
+    email: Option<email_address::EmailAddress>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,10 +25,12 @@ pub async fn create_identity(
     Query(CreateIdentityQueryParams { email }): Query<CreateIdentityQueryParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let auth = SpacetimeAuth::alloc(&*ctx).await?;
-    ctx.control_db()
-        .associate_email_spacetime_identity(auth.identity, email.as_str())
-        .await
-        .unwrap();
+    if let Some(email) = email {
+        ctx.control_db()
+            .associate_email_spacetime_identity(auth.identity, email.as_str())
+            .await
+            .unwrap();
+    }
 
     let identity_response = CreateIdentityResponse {
         identity: auth.identity.to_hex(),
