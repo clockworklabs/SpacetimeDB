@@ -12,9 +12,17 @@ pub(crate) fn build_csharp(project_path: &Path, _build_debug: bool) -> anyhow::R
     }
 
     // run dotnet publish using cmd macro
-    cmd!("dotnet", "publish", "-c", "Release").dir(project_path).run()?;
-
-    println!("publish complete at {:?}", output_path);
+    let result = cmd!("dotnet", "publish", "-c", "Release").dir(project_path).run();
+    match result {
+        Ok(_) => {}
+        Err(error) => {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                anyhow::bail!("Failed to build project. dotnet not found in path. Please install the .NET Core SDK.");
+            } else {
+                anyhow::bail!("Failed to build project. {}", error);
+            }
+        }
+    }
 
     // check if file exists
     if !output_path.exists() {
