@@ -46,7 +46,6 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue),
         )
         // TODO(tyler): We should be able to pass in either an identity or an alias here
-        // TODO(jdetter): Unify identity + identity alias
         .arg(
             Arg::new("identity")
                 .long("identity")
@@ -92,7 +91,8 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let identity = args.get_one::<String>("identity");
+    let cloned_config = config.clone();
+    let identity = cloned_config.resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()));
     let name_or_address = args.get_one::<String>("name|address");
     let path_to_project = args.get_one::<PathBuf>("path_to_project").unwrap();
     let host_type = args.get_one::<String>("host_type").unwrap();
@@ -150,7 +150,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         }
 
         if let Some((auth_header, chosen_identity)) =
-            get_auth_header(&mut config, anon_identity, identity.map(|x| x.as_str())).await
+            get_auth_header(&mut config, anon_identity, identity.as_deref()).await
         {
             builder = builder.header("Authorization", auth_header);
             Some(chosen_identity)
