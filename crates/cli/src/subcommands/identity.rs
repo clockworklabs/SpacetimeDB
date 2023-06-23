@@ -86,13 +86,17 @@ fn get_subcommands() -> Vec<Command> {
             ),
         Command::new("remove")
             .about("Removes a saved identity from your spacetime config")
-            .arg(Arg::new("identity").help("The identity string or name to delete"))
+            .arg(Arg::new("identity")
+                .help("The identity string or name to delete")
+                .required_unless_present("all")
+            )
             .arg(
                 Arg::new("all")
                     .long("all")
                     .help("Remove all identities from your spacetime config")
                     .action(ArgAction::SetTrue)
-                    .conflicts_with("identity"),
+                    .conflicts_with("identity")
+                    .required_unless_present("identity"),
             ),
         Command::new("token").about("Print the token for an identity").arg(
             Arg::new("identity")

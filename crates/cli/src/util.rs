@@ -148,30 +148,21 @@ pub async fn select_identity_config(
     config: &mut Config,
     identity_or_name: Option<&str>,
 ) -> Result<IdentityConfig, anyhow::Error> {
+    let resolve_identity_to_identity_config = |ident: &str| -> Result<IdentityConfig, anyhow::Error> {
+        config
+            .get_identity_config_by_identity(ident)
+            .map(Clone::clone)
+            .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {}", ident))
+    };
+
     if let Some(identity_or_name) = identity_or_name {
         if is_hex_identity(identity_or_name) {
-            if let Some(identity_config) = config.get_identity_config_by_identity(identity_or_name) {
-                Ok(identity_config.clone())
-            } else {
-                Err(anyhow::anyhow!(
-                    "Missing identity credentials for identity: {}",
-                    identity_or_name
-                ))
-            }
+            resolve_identity_to_identity_config(identity_or_name)
         } else {
             // First check to see if we can convert the name to an identity, then return the config for that identity
             match config.resolve_name_to_identity(Some(identity_or_name)) {
                 None => Err(anyhow::anyhow!("No such identity for name: {}", identity_or_name,)),
-                Some(_) => {
-                    if let Some(identity_config) = config.get_identity_config_by_name(identity_or_name) {
-                        Ok(identity_config.clone())
-                    } else {
-                        Err(anyhow::anyhow!(
-                            "Missing identity credentials for identity with name: {}",
-                            identity_or_name
-                        ))
-                    }
-                }
+                Some(identity) => resolve_identity_to_identity_config(&identity),
             }
         }
     } else {
