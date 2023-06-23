@@ -1,8 +1,8 @@
 #!/bin/bash
 
 if [ "$DESCRIBE_TEST" = 1 ] ; then
-	echo 'This test is designed to test the "spacetime identity" subcommand.'
-        exit
+    echo "This test is designed to make sure an email can be set while creating a new identity"
+    exit
 fi
 
 set -euox pipefail
@@ -10,9 +10,9 @@ set -euox pipefail
 source "./test/lib.include"
 
 # Create a new identity
-run_test cargo run identity new --no-email
-IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
 EMAIL="$(random_string)@clockworklabs.io"
+run_test cargo run identity new --email "$EMAIL"
+IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
 TOKEN=$(grep token "$HOME/.spacetime/config.toml" | awk '{print $3}' | tr -d \')
 
 # Reset our config so we lose this identity
