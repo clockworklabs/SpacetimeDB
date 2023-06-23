@@ -324,6 +324,8 @@ impl Config {
         }
     }
 
+    /// Deletes all stored identity configs. This function does not save the config after removing
+    /// all configs.
     pub fn delete_all_identity_configs(&mut self) {
         self.home.identity_configs = Some(vec![]);
         self.home.default_identity = None;

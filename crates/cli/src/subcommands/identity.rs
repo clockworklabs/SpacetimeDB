@@ -20,8 +20,6 @@ pub fn cli() -> Command {
         .about("Manage identities stored by the command line tool")
 }
 
-// TODO(jdetter): identity name and the identity itself should be ubiquitous. You should be able to pass
-//  an identity or the alias into the command instead of this --name/--identity business
 fn get_subcommands() -> Vec<Command> {
     vec![
         Command::new("list").about("List saved identities"),
@@ -101,20 +99,20 @@ fn get_subcommands() -> Vec<Command> {
                 .help("The identity string or name that we should print the token for")
                 .required(true),
         ),
-        Command::new("set-name").about("Sets the name of an identity").arg(
+        Command::new("set-name").about("Set the name of an identity or rename an existing identity nickname").arg(
             Arg::new("identity")
-                .help("The identity string or name that we should name, in the case of a name this will rename the identity")
+                .help("The identity string or name to be named. If a name is supplied, the corresponding identity will be renamed.")
                 .required(true))
             .arg(Arg::new("name")
-                .help("The name that we should set for the provided identity")
+                .help("The new name for the identity")
                 .required(true)
         ),
         Command::new("import")
-            .about("Imports an existing identity into your spacetime config")
+            .about("Import an existing identity into your spacetime config")
             .arg(
                 Arg::new("identity")
                     .required(true)
-                    .help("The identity string that is associated with the provided token"),
+                    .help("The identity string associated with the provided token"),
             )
             .arg(
                 Arg::new("token")
@@ -158,17 +156,16 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
         "new" => exec_new(config, args).await,
         "remove" => exec_remove(config, args).await,
         "set-name" => exec_set_name(config, args).await,
-        // TODO(jdetter): Rename to import
         "import" => exec_import(config, args).await,
         "set-email" => exec_set_email(config, args).await,
         "find" => exec_find(config, args).await,
         "token" => exec_token(config, args).await,
         "recover" => exec_recover(config, args).await,
-        // TODO(jdetter): Command for logging in via email recovery
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
 
+/// Executes the `identity set-default` command which sets the default identity.
 async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let identity = config
         .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))
@@ -181,6 +178,7 @@ async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), a
 // TODO(cloutiertyler): Realistically this should just be run before every
 //  single command, but I'm separating it out into its own command for now for
 //  simplicity.
+/// Executes the `identity init-default` command which initializes the default identity.
 async fn exec_init_default(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let nickname = args.get_one::<String>("name").map(|s| s.to_owned());
     let quiet = args.get_flag("quiet");
@@ -206,6 +204,7 @@ async fn exec_init_default(mut config: Config, args: &ArgMatches) -> Result<(), 
     Ok(())
 }
 
+/// Executes the `identity remove` command which removes an identity from the config.
 async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let identity_or_name = args.get_one::<String>("identity");
 
@@ -247,6 +246,7 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
     Ok(())
 }
 
+/// Executes the `identity new` command which creates a new identity.
 async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let save = !args.get_flag("no-save");
     let alias = args.get_one::<String>("name");
@@ -315,6 +315,7 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     Ok(())
 }
 
+/// Executes the `identity import` command which imports an identity from a token into the config.
 async fn exec_import(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let identity: String = args.get_one::<String>("identity").unwrap().clone();
     let token: String = args.get_one::<String>("token").unwrap().clone();
@@ -347,6 +348,7 @@ struct LsRow {
     // email: String,
 }
 
+/// Executes the `identity list` command which lists all identities in the config.
 async fn exec_list(config: Config, _args: &ArgMatches) -> Result<(), anyhow::Error> {
     let mut rows: Vec<LsRow> = Vec::new();
     for identity_token in config.identity_configs() {
@@ -383,6 +385,7 @@ struct GetIdentityResponseEntry {
     email: String,
 }
 
+/// Executes the `identity find` command which finds an identity by email.
 async fn exec_find(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let email = args.get_one::<String>("email").unwrap().clone();
     let client = reqwest::Client::new();
@@ -410,11 +413,11 @@ async fn exec_find(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     }
 }
 
+/// Executes the `identity token` command which prints the token for an identity.
 async fn exec_token(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let identity_or_name = config
         .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()))
-        .unwrap()
-        ;
+        .unwrap();
     let ic = config
         .get_identity_config_by_identity(identity_or_name.as_str())
         .unwrap();
@@ -422,6 +425,7 @@ async fn exec_token(config: Config, args: &ArgMatches) -> Result<(), anyhow::Err
     Ok(())
 }
 
+/// Executes the `identity set-default` command which sets the default identity.
 async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let cloned_config = config.clone();
     let identity_or_name = cloned_config
@@ -445,6 +449,7 @@ async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyh
     Ok(())
 }
 
+/// Executes the `identity set-email` command which sets the email for an identity.
 async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let email = args.get_one::<String>("email").unwrap().clone();
     let identity = config
@@ -478,6 +483,7 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
     Ok(())
 }
 
+/// Executes the `identity recover` command which recovers an identity from an email.
 async fn exec_recover(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let email = args.get_one::<String>("email").unwrap();
     let identity = config
