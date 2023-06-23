@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Runs a test with the assumption that it will return a zero result code
 run_test() {
 	set +e
 	"$@" > "$TEST_OUT" 2>&1
@@ -9,6 +10,7 @@ run_test() {
 	return "$RESULT"
 }
 
+# Runs a test with the assumption that it will return a non-zero result code
 run_fail_test() {
 	if "$@" > "$TEST_OUT" 2>&1 ; then
 		cat "$TEST_OUT"
@@ -18,21 +20,30 @@ run_fail_test() {
 	return 0
 }
 
+# This resets the spacetime config for a new test run
 reset_config() {
-	RETURN_DIR=$PWD
-	cd "$SPACETIME_HOME" || exit 1
-	cp "./test/config.toml" "$HOME/.spacetime/config.toml"
-	cd "$RETURN_DIR" || exit 1
+    if [ "$SPACETIME_CONFIG_FILE" == "" ] ; then
+        SPACETIME_CONFIG_FILE="$(mktemp)"
+        export SPACETIME_CONFIG_FILE
+    fi
+    cp "$RESET_SPACETIME_CONFIG" "$SPACETIME_CONFIG_FILE"
 }
 
 # This deletes the project from the previous test run
 reset_project() {
 	RETURN_DIR=$PWD
-	if [ -d "$PROJECT_PATH" ] ; then
+	if [ "$PROJECT_PATH" != "" ] && [ -d "$PROJECT_PATH" ] ; then
 		rm -rf "$PROJECT_PATH"
 	fi
+    PROJECT_PATH="$(mktemp -d)"
+    export PROJECT_PATH
 
 	cd "$RETURN_DIR" || exit 1
+}
+
+reset_test_out() {
+    TEST_OUT="$(mktemp)"   
+    export TEST_OUT
 }
 
 # This creates a new spacetime project that is completely dependent on the local repository.

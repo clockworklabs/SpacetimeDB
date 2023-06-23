@@ -12,9 +12,13 @@ failed_tests=()
 OUT_TMP=$(mktemp)
 TEST_OUT=$(mktemp)
 export TEST_OUT
+RESET_SPACETIME_CONFIG=$(mktemp)
+export RESET_SPACETIME_CONFIG
 PROJECT_PATH=$(mktemp -d)
 export PROJECT_PATH
 export SPACETIME_DIR="$PWD/.."
+SPACETIME_CONFIG_FILE=$(mktemp)
+export SPACETIME_CONFIG_FILE
 
 export SPACETIME_SKIP_CLIPPY=1
 CONTAINER_NAME=$(docker ps | grep node | awk '{print $NF}')
@@ -24,19 +28,17 @@ rustup update
 rustup component add clippy
 
 source "lib.include"
-mkdir -p ~/.spacetime
-if [ -f ~/.spacetime/config.toml ] ; then
-	cp ~/.spacetime/config.toml ~/.spacetime/.config.toml
-fi
-cp ./config.toml ~/.spacetime/config.toml
+cp ./config.toml "$RESET_SPACETIME_CONFIG"
 
 cd ..
 cargo build
 export SPACETIME_HOME=$PWD
 
 execute_test() {
+    reset_test_out
 	reset_config
 	reset_project
+    echo "TEST_OUT=$TEST_OUT PROJECT_PATH=$PROJECT_PATH SPACETIME_CONFIG_FILE=$SPACETIME_CONFIG_FILE"
 	TEST_PATH="test/tests/$1.sh"
 	printf " **************** Running %s... " "$1"
 	if ! bash -x "$TEST_PATH" > "$OUT_TMP" 2>&1 ; then
@@ -44,12 +46,14 @@ execute_test() {
 		cat "$OUT_TMP"
 		echo "Config file:"
 		cat "$HOME/.spacetime/config.toml"
-		docker logs "$CONTAINER_NAME"
+		# docker logs "$CONTAINER_NAME"
 		failed_tests+=("$1")
-	else 
+	else
 		printf "${GRN}PASS${CRST}\n"
 		passed_tests+=("$1")
 	fi
+
+    rm -rf "$PROJECT_PATH" "$TEST_OUT" "$SPACETIME_CONFIG_FILE"
 }
 
 list_contains() {
@@ -93,10 +97,6 @@ for smoke_test in "${TESTS[@]}" ; do
 	fi
 done
 
-if [ -f ~/.spacetime/.config.toml ] ; then
-	cp ~/.spacetime/.config.toml ~/.spacetime/config.toml 
-fi
-
 rm -f "$OUT_TMP" "$TEST_OUT"
 
 printf "\n\n*************************\n"
@@ -114,12 +114,12 @@ if [ ${#failed_tests[@]} -eq 0 ] ; then
 	printf "\nNo failures reported.\n\n"
 else
 	printf "\n${RED}Failed${CRST} Tests:\n"
-	for t in "${failed_tests[@]}" ; do 
+	for t in "${failed_tests[@]}" ; do
 		echo "	$t"
 	done
 
 	printf "\nDescriptions for failed tests:\n"
-	for t in "${failed_tests[@]}" ; do 
+	for t in "${failed_tests[@]}" ; do
 		printf "\n%s\n\t" "$t"
 		DESCRIBE_TEST=1 bash "test/tests/${t}.sh"
 	done
