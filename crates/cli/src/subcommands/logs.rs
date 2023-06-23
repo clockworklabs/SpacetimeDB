@@ -91,6 +91,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let auth_header = get_auth_header(&mut config, false, identity.as_deref())
         .await
         .map(|x| x.0);
+    println!("Got identity for logs: {}", auth_header.clone().unwrap_or_default());
 
     let address = if is_address(database.as_str()) {
         database.clone()

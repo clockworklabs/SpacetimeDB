@@ -193,15 +193,19 @@ impl Config {
     }
 
     pub fn save(&self) {
-        let home_dir = dirs::home_dir().unwrap();
-        let config_dir = home_dir.join(HOME_CONFIG_DIR);
-        if !config_dir.exists() {
-            fs::create_dir_all(&config_dir).unwrap();
-        }
+        let config_path = if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
+            PathBuf::from(&config_path)
+        } else {
+            let home_dir = dirs::home_dir().unwrap();
+            let config_dir = home_dir.join(HOME_CONFIG_DIR);
+            if !config_dir.exists() {
+                fs::create_dir_all(&config_dir).unwrap();
+            }
 
-        let config_filename = Self::find_config_filename(&config_dir).unwrap_or(CONFIG_FILENAME);
+            let config_filename = Self::find_config_filename(&config_dir).unwrap_or(CONFIG_FILENAME);
+            config_dir.join(config_filename)
+        };
 
-        let config_path = config_dir.join(config_filename);
         let mut file = fs::OpenOptions::new()
             .create(true)
             .write(true)

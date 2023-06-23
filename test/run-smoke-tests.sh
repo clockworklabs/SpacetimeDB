@@ -19,6 +19,7 @@ export PROJECT_PATH
 export SPACETIME_DIR="$PWD/.."
 SPACETIME_CONFIG_FILE=$(mktemp)
 export SPACETIME_CONFIG_FILE
+RUN_PARALLEL=false
 
 export SPACETIME_SKIP_CLIPPY=1
 CONTAINER_NAME=$(docker ps | grep node | awk '{print $NF}')
@@ -45,7 +46,7 @@ execute_test() {
 		printf "${RED}FAIL${CRST}\n"
 		cat "$OUT_TMP"
 		echo "Config file:"
-		cat "$HOME/.spacetime/config.toml"
+        cat "$SPACETIME_CONFIG_FILE"
 		# docker logs "$CONTAINER_NAME"
 		failed_tests+=("$1")
 	else
@@ -79,23 +80,54 @@ if [ $# != 0 ] ; then
 			shift
 			EXCLUDE_TESTS+=("$@")
 		;;
+        --parallel)
+            shift
+            RUN_PARALLEL=true
+        ;;
 		*)
 			TESTS=("$@")
 		;;
 	esac
 fi
 
+
+PIDs=()
+PIDs_OUT=()
 for smoke_test in "${TESTS[@]}" ; do
 	if [ ${#EXCLUDE_TESTS[@]} -ne 0 ] && list_contains "$smoke_test" "${EXCLUDE_TESTS[@]}"; then
 		continue
 	fi
 	if [ -f "./test/tests/$smoke_test.sh" ]; then
-		execute_test "$smoke_test"
+        if [ "$RUN_PARALLEL" == "true" ] ; then
+            # Skip any non-parallizable tests if we're running in parallel
+            if [[ "$smoke_test" == zz_* ]] ; then
+                continue
+            fi
+
+            process_output_file=$(mktemp)
+		    execute_test "$smoke_test" > "$process_output_file" &
+            PIDs+=($!)
+            PIDs_OUT+=("$process_output_file")
+        else
+		    execute_test "$smoke_test"
+        fi
 	else
 		echo "Unknown test: $smoke_test"
 		exit 1
 	fi
 done
+
+
+if [ "$RUN_PARALLEL" == "true" ] ; then
+    # Wait for all processes to end, and save their exit codes
+    length=${#PIDs[@]}
+    for ((i=0; i<length; i++)) ; do
+        pid=${PIDs[$i]}
+        out_file=${PIDs_OUT[$i]}
+        wait "$pid"
+        cat "$out_file"
+    done
+fi
 
 rm -f "$OUT_TMP" "$TEST_OUT"
 
