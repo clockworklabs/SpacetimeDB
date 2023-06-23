@@ -12,7 +12,7 @@ source "./test/lib.include"
 do_test() {
   echo "RUNNING TEST FOR VALUE: $1"
   create_project
-  
+
   cat > "${PROJECT_PATH}/src/lib.rs" << EOF
 use spacetimedb::{println, spacetimedb};
 
@@ -46,12 +46,12 @@ pub fn say_hello() {
 }
 EOF
 
-  sed -i "s/REPLACE_VALUE/$1/g" "${PROJECT_PATH}/src/lib.rs"
-  
+  fsed -i "s/REPLACE_VALUE/$1/g" "${PROJECT_PATH}/src/lib.rs"
+
   run_test cargo run publish --project-path "$PROJECT_PATH" --clear-database
   [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
   IDENT="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
-  
+
   run_test cargo run call "$IDENT" update '["Robert", 2]'
   run_test cargo run call "$IDENT" add_new '["Success"]'
   if run_test cargo run call "$IDENT" add_new '["Failure"]' ; then
