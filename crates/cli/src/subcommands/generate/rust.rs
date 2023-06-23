@@ -555,10 +555,11 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 
 const DISPATCH_IMPORTS: &[&str] = &[
     "use spacetimedb_client_sdk::client_api_messages::{TableUpdate, Event};",
-    "use spacetimedb_client_sdk::client_cache::{ClientCache};",
+    "use spacetimedb_client_sdk::client_cache::{ClientCache, RowCallbackReminders};",
     "use spacetimedb_client_sdk::background_connection::BackgroundDbConnection;",
     "use spacetimedb_client_sdk::identity::Credentials;",
     "use spacetimedb_client_sdk::callbacks::{DbCallbacks, ReducerCallbacks};",
+    "use std::sync::Arc;",
 ];
 
 fn print_dispatch_imports(out: &mut Indenter) {
@@ -626,7 +627,7 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, Str
     // sufficient, and not as confusing.
     writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     out.delimited_block(
-        "fn handle_table_update(table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut DbCallbacks) {",
+        "fn handle_table_update(table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
         |out| {
             writeln!(out, "let table_name = &table_update.table_name[..];").unwrap();
             out.delimited_block(
@@ -663,7 +664,27 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, Str
 
     writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     out.delimited_block(
-        "fn handle_resubscribe(new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut DbCallbacks) {",
+        "fn invoke_row_callbacks(reminders: &mut RowCallbackReminders, worker: &mut DbCallbacks, state: &Arc<ClientCache>) {",
+        |out| {
+            for item in items {
+                if let GenItem::Table(table) = item {
+                    writeln!(
+                        out,
+                        "reminders.invoke_callbacks::<{}::{}>(worker, state);",
+                        table.name.to_case(Case::Snake),
+                        table.name.to_case(Case::Pascal),
+                    ).unwrap();
+                }
+            }
+        },
+        "}\n"
+    );
+
+    out.newline();
+
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    out.delimited_block(
+        "fn handle_resubscribe(new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
         |out| {
             writeln!(out, "let table_name = &new_subs.table_name[..];").unwrap();
             out.delimited_block(
@@ -696,7 +717,7 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, Str
     // Like `handle_row_update`, muffle unused warning for `handle_event`.
     writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     out.delimited_block(
-        "fn handle_event(event: Event, reducer_callbacks: &mut ReducerCallbacks) {",
+        "fn handle_event(event: Event, reducer_callbacks: &mut ReducerCallbacks, state: Arc<ClientCache>) {",
         |out| {
             out.delimited_block(
                 "let Some(function_call) = &event.function_call else {",
@@ -712,7 +733,7 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, Str
                             if !is_init(reducer) {
                                 writeln!(
                                     out,
-                                    "{:?} => reducer_callbacks.handle_event_of_type::<{}_reducer::{}>(event),",
+                                    "{:?} => reducer_callbacks.handle_event_of_type::<{}_reducer::{}>(event, state),",
                                     reducer.name,
                                     reducer.name.to_case(Case::Snake),
                                     reducer.name.to_case(Case::Pascal),
@@ -745,7 +766,7 @@ where
             |out| {
                 writeln!(
                     out,
-                    "*connection = Some(BackgroundDbConnection::connect(host, db_name, credentials, handle_table_update, handle_resubscribe, handle_event)?);"
+                    "*connection = Some(BackgroundDbConnection::connect(host, db_name, credentials, handle_table_update, handle_resubscribe, invoke_row_callbacks, handle_event)?);"
                 ).unwrap();
                 writeln!(out, "Ok(())").unwrap();
             },
