@@ -23,6 +23,6 @@ run_test cargo run call "$DATABASE" "say_hello"
 
 reset_config
 run_test cargo run identity import "$IDENT" "$TOKEN"
-run_test cargo run identity set-default --identity "$IDENT"
+run_test cargo run identity set-default "$IDENT"
 run_test cargo run logs "$DATABASE" 10000
 if [ "1" != "$(grep -c "World" "$TEST_OUT")" ]; then exit 1; fi

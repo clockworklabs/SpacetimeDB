@@ -30,3 +30,11 @@ services:
       SPACETIMEDB_FLAMEGRAPH_PATH: ../../../../flamegraphs/flamegraph.folded
       RUST_BACKTRACE: 1
       ENV: dev
+      SENDGRID_API_KEY:
+      SENDGRID_SENDER:
+    networks:
+      - spacetimedb_default
+
+networks:
+  spacetimedb_default:
+     name: spacetimedb_default
