@@ -290,7 +290,7 @@ impl Config {
         } else {
             self.identity_configs_mut()
                 .iter_mut()
-                .find(|c| c.nickname.as_ref().map(|c| c.as_str()) == Some(identity_or_name))
+                .find(|c| c.nickname.as_deref() == Some(identity_or_name))
         }
     }
 
