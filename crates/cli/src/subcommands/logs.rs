@@ -87,8 +87,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let follow = args.get_flag("follow");
 
     let cloned_config = config.clone();
-    let identity = cloned_config.map_name_to_identity(args.get_one::<String>("identity"));
-    let auth_header = get_auth_header(&mut config, false, identity.map(|x| x.as_str()))
+    let identity = cloned_config.resolve_name_to_identity(args.get_one::<String>("identity").map(|x| x.as_str()));
+    let auth_header = get_auth_header(&mut config, false, identity.as_deref())
         .await
         .map(|x| x.0);
 

@@ -85,25 +85,29 @@ impl Config {
         self.home.default_identity = Some(default_identity);
     }
 
-    /// Sets a nickname for an identity.
+    /// Sets the `nickname` for the provided `identity`.
     ///
-    /// # Arguments
-    /// * `identity` - The identity to configure a nickname for.
-    /// * `name` - The nickname to set for the identity.
+    /// If the `identity` already has a `nickname` set, it will be overwritten and returned. If the
+    /// `identity` is not found, an error will be returned.
     ///
     /// # Returns
-    /// * `Ok(())` - If the identity was found and the nickname was set.
+    /// * `Ok(Option<String>)` - If the identity was found, the old nickname will be returned.
     /// * `Err(anyhow::Error)` - If the identity was not found.
-    pub fn set_identity_nickname(&mut self, identity: String, name: String) -> Result<(), anyhow::Error> {
-        let configs = self.identity_configs_mut();
-        for config in configs.iter_mut() {
-            if config.identity == identity {
-                config.nickname = Some(name);
-                return Ok(());
+    pub fn set_identity_nickname(&mut self, identity: &str, nickname: &str) -> Result<Option<String>, anyhow::Error> {
+        match &mut self.home.identity_configs {
+            None => {
+                panic!("Identity {} not found", identity);
+            }
+            Some(ref mut configs) => {
+                let config = configs
+                    .iter_mut()
+                    .find(|c| c.identity == identity)
+                    .ok_or_else(|| anyhow::anyhow!("Identity {} not found", identity))?;
+                let old_nickname = config.nickname.clone();
+                config.nickname = Some(nickname.to_string());
+                Ok(old_nickname)
             }
         }
-
-        Err(anyhow::anyhow!("Identity {} not found", identity))
     }
 
     pub fn default_address(&self) -> Option<&str> {
@@ -247,26 +251,32 @@ impl Config {
         self.identity_configs_mut().iter_mut().find(|c| c.identity == identity)
     }
 
-    /// Converts some name or identity to an identity. If the input is None, None is returned. If an
-    /// identity is looked up and it doesn't exist, we panic.
-    pub fn map_name_to_identity(&self, identity_or_name: Option<&String>) -> Option<&String> {
-        identity_or_name.map(|identity_or_name| {
-            if is_hex_identity(identity_or_name.as_str()) {
-                &self
-                    .identity_configs()
-                    .iter()
-                    .find(|c| c.identity == identity_or_name.clone())
-                    .unwrap_or_else(|| panic!("No such identity: {}", identity_or_name))
-                    .identity
-            } else {
-                &self
-                    .identity_configs()
-                    .iter()
-                    .find(|c| c.nickname.as_ref() == Some(identity_or_name))
-                    .unwrap_or_else(|| panic!("No such identity: {}", identity_or_name))
-                    .identity
-            }
-        })
+    /// Converts some given `identity_or_name` into an identity.
+    ///
+    /// If `identity_or_name` is `None` then `None` is returned. If `identity_or_name` is `Some`,
+    /// then if its an identity then its just returned. If its not an identity it is assumed to be
+    /// a name and it is looked up as an identity nickname. If the identity exists it is returned,
+    /// otherwise we panic.
+    pub fn resolve_name_to_identity(&self, identity_or_name: Option<&str>) -> Option<String> {
+        identity_or_name
+            .map(|identity_or_name| {
+                if is_hex_identity(identity_or_name) {
+                    &self
+                        .identity_configs()
+                        .iter()
+                        .find(|c| c.identity == *identity_or_name)
+                        .unwrap_or_else(|| panic!("No such identity: {}", identity_or_name))
+                        .identity
+                } else {
+                    &self
+                        .identity_configs()
+                        .iter()
+                        .find(|c| c.nickname == Some(identity_or_name.to_string()))
+                        .unwrap_or_else(|| panic!("No such identity: {}", identity_or_name))
+                        .identity
+                }
+            })
+            .cloned()
     }
 
     pub fn get_identity_config_mut(&mut self, identity_or_name: &str) -> Option<&mut IdentityConfig> {

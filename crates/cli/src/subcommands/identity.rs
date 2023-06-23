@@ -170,8 +170,10 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
 }
 
 async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let identity = config.map_name_to_identity(args.get_one::<String>("identity")).unwrap();
-    config.set_default_identity(identity.clone());
+    let identity = config
+        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))
+        .unwrap();
+    config.set_default_identity(identity);
     config.save();
     Ok(())
 }
@@ -410,9 +412,9 @@ async fn exec_find(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
 
 async fn exec_token(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let identity_or_name = config
-        .map_name_to_identity(args.get_one::<String>("identity"))
+        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()))
         .unwrap()
-        .clone();
+        ;
     let ic = config
         .get_identity_config_by_identity(identity_or_name.as_str())
         .unwrap();
@@ -423,13 +425,21 @@ async fn exec_token(config: Config, args: &ArgMatches) -> Result<(), anyhow::Err
 async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let cloned_config = config.clone();
     let identity_or_name = cloned_config
-        .map_name_to_identity(args.get_one::<String>("identity"))
+        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))
         .unwrap();
-    let new_name = args.get_one::<String>("name").unwrap();
-    config.set_identity_nickname(identity_or_name.clone(), new_name.clone())?;
+    let new_name = args.get_one::<String>("name").unwrap().as_ref();
+    let old_nickname = config.set_identity_nickname(identity_or_name.as_ref(), new_name)?;
+    if let Some(old_nickname) = old_nickname {
+        println!("Updated identity: {}", identity_or_name);
+        println!(" OLD NAME: {}", old_nickname);
+        println!(" NEW NAME: {}", new_name);
+    } else {
+        println!("Created identity: {}", identity_or_name);
+        println!(" NAME: {}", new_name);
+    }
     config.save();
     let ic = config
-        .get_identity_config_by_identity(identity_or_name.as_str())
+        .get_identity_config_by_identity(identity_or_name.as_ref())
         .unwrap();
     print_identity_config(ic);
     Ok(())
@@ -437,9 +447,11 @@ async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyh
 
 async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let email = args.get_one::<String>("email").unwrap().clone();
-    let identity = config.map_name_to_identity(args.get_one::<String>("identity")).unwrap();
+    let identity = config
+        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))
+        .unwrap();
     let identity_config = config
-        .get_identity_config_by_identity(identity)
+        .get_identity_config_by_identity(identity.as_str())
         .unwrap_or_else(|| panic!("Could not find identity: {}", identity));
 
     let client = reqwest::Client::new();
@@ -450,7 +462,7 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
         email
     ));
 
-    if let Some(identity_token) = config.get_identity_config_by_identity(identity) {
+    if let Some(identity_token) = config.get_identity_config_by_identity(identity.as_str()) {
         builder = builder.basic_auth("token", Some(identity_token.token.clone()));
     } else {
         println!("Missing identity credentials for identity.");
@@ -461,14 +473,16 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
     res.error_for_status()?;
 
     println!(" Associated email with identity");
-    print_identity_config(config.get_identity_config_by_identity(identity).unwrap());
+    print_identity_config(config.get_identity_config_by_identity(identity.as_str()).unwrap());
 
     Ok(())
 }
 
 async fn exec_recover(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let email = args.get_one::<String>("email").unwrap();
-    let identity = config.map_name_to_identity(args.get_one::<String>("identity")).unwrap();
+    let identity = config
+        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()))
+        .unwrap();
 
     let query_params = vec![
         ("email", email.as_str()),

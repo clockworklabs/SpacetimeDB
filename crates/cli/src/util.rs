@@ -160,7 +160,7 @@ pub async fn select_identity_config(
             }
         } else {
             // First check to see if we can convert the name to an identity, then return the config for that identity
-            match config.map_name_to_identity(Some(&identity_or_name.to_string())) {
+            match config.resolve_name_to_identity(Some(identity_or_name)) {
                 None => Err(anyhow::anyhow!("No such identity for name: {}", identity_or_name,)),
                 Some(_) => {
                     if let Some(identity_config) = config.get_identity_config_by_name(identity_or_name) {
