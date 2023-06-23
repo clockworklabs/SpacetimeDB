@@ -7,6 +7,13 @@ pub struct Identity {
     pub data: [u8; 32],
 }
 
+impl Identity {
+    #[doc(hidden)]
+    pub fn __dummy() -> Self {
+        Self { data: [0; 32] }
+    }
+}
+
 impl sats::SpacetimeType for Identity {
     fn make_type<S: sats::typespace::TypespaceBuilder>(_ts: &mut S) -> crate::AlgebraicType {
         crate::AlgebraicType::bytes()
