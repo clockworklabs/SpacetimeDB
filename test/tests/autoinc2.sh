@@ -46,7 +46,7 @@ pub fn say_hello() {
 }
 EOF
 
-  fsed -i "s/REPLACE_VALUE/$1/g" "${PROJECT_PATH}/src/lib.rs"
+  fsed "s/REPLACE_VALUE/$1/g" "${PROJECT_PATH}/src/lib.rs"
 
   run_test cargo run publish --project-path "$PROJECT_PATH" --clear-database
   [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
