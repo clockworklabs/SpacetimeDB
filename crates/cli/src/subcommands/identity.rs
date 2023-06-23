@@ -483,6 +483,7 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
 
     println!(" Associated email with identity");
     print_identity_config(config.get_identity_config_by_identity(identity.as_str()).unwrap());
+    println!(" EMAIL {}", email);
 
     Ok(())
 }
