@@ -883,6 +883,7 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
             table_name: table.name.clone(),
             columns,
             indexes,
+            table_type: table.table_type,
         })
     }
 

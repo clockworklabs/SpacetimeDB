@@ -1,4 +1,5 @@
 use spacetimedb_lib::table::ProductTypeMeta;
+use spacetimedb_lib::StTableType;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -241,6 +242,7 @@ pub enum CrudExpr {
     CreateTable {
         name: String,
         columns: ProductTypeMeta,
+        table_type: StTableType,
     },
     Drop {
         name: String,
@@ -362,6 +364,7 @@ pub enum CrudExprOpt {
     CreateTable {
         name: String,
         columns: ProductTypeMeta,
+        table_type: StTableType,
     },
     Drop {
         name: String,
@@ -567,11 +570,26 @@ impl Relation for QueryCode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CrudCode {
     Query(QueryCode),
-    Insert { table: Table, rows: Vec<ProductValue> },
-    Update { insert: QueryCode, delete: QueryCode },
-    Delete { query: QueryCode },
-    CreateTable { name: String, columns: ProductTypeMeta },
-    Drop { name: String, kind: DbType },
+    Insert {
+        table: Table,
+        rows: Vec<ProductValue>,
+    },
+    Update {
+        insert: QueryCode,
+        delete: QueryCode,
+    },
+    Delete {
+        query: QueryCode,
+    },
+    CreateTable {
+        name: String,
+        columns: ProductTypeMeta,
+        table_type: StTableType,
+    },
+    Drop {
+        name: String,
+        kind: DbType,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

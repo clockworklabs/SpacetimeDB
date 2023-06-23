@@ -5,6 +5,7 @@ use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, SequenceId, Tab
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use spacetimedb_lib::table::ProductTypeMeta;
+use spacetimedb_lib::StTableType;
 use spacetimedb_sats::relation::{FieldExpr, Relation};
 use spacetimedb_sats::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
 use spacetimedb_sats::ProductValue;
@@ -16,6 +17,7 @@ use spacetimedb_vm::expr::*;
 use spacetimedb_vm::program::{ProgramRef, ProgramVm};
 use spacetimedb_vm::rel_ops::RelOps;
 use std::collections::HashMap;
+
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
 pub fn build_query<'a>(
@@ -184,7 +186,12 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    fn create_table(&mut self, table_name: &str, columns: ProductTypeMeta) -> Result<Code, ErrorVm> {
+    fn create_table(
+        &mut self,
+        table_name: &str,
+        columns: ProductTypeMeta,
+        table_type: StTableType,
+    ) -> Result<Code, ErrorVm> {
         let mut cols = Vec::new();
         let mut indexes = Vec::new();
         for (i, column) in columns.columns.elements.iter().enumerate() {
@@ -209,6 +216,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
                 table_name: table_name.to_string(),
                 columns: cols,
                 indexes: vec![],
+                table_type,
             },
         )?;
         Ok(Code::Pass)
@@ -274,8 +282,12 @@ impl ProgramVm for DbProgram<'_, '_> {
                 let result = self.delete_query(query)?;
                 Ok(result)
             }
-            CrudCode::CreateTable { name, columns } => {
-                let result = self.create_table(&name, columns)?;
+            CrudCode::CreateTable {
+                name,
+                columns,
+                table_type,
+            } => {
+                let result = self.create_table(&name, columns, table_type)?;
                 Ok(result)
             }
             CrudCode::Drop { name, kind } => {
@@ -376,6 +388,7 @@ pub(crate) mod tests {
                     })
                     .collect(),
                 indexes: vec![],
+                table_type: StTableType::Public,
             },
         )?;
         for row in rows {
@@ -467,6 +480,7 @@ pub(crate) mod tests {
             (&StTableRow {
                 table_id: ST_TABLES_ID.0,
                 table_name: ST_TABLES_NAME,
+                table_type: StTableType::System,
             })
                 .into(),
             q,

@@ -1,3 +1,4 @@
+use spacetimedb_lib::StTableType;
 use std::collections::HashMap;
 
 use crate::db::datastore::traits::TableSchema;
@@ -12,7 +13,7 @@ use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceEx
 use spacetimedb_vm::operator::OpCmp;
 
 /// Compile the `SQL` expression into a `ast`
-pub fn compile(db: &RelationalDB, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
+pub fn compile_sql(db: &RelationalDB, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
     let ast = compile_to_ast(db, sql_text)?;
 
     let mut results = Vec::with_capacity(ast.len());
@@ -205,8 +206,16 @@ fn compile_update(
     Ok(CrudExpr::Update { insert, delete })
 }
 
-fn compile_create_table(name: String, columns: ProductTypeMeta) -> Result<CrudExpr, PlanError> {
-    Ok(CrudExpr::CreateTable { name, columns })
+fn compile_create_table(
+    name: String,
+    columns: ProductTypeMeta,
+    table_type: StTableType,
+) -> Result<CrudExpr, PlanError> {
+    Ok(CrudExpr::CreateTable {
+        name,
+        columns,
+        table_type,
+    })
 }
 
 fn compile_drop(name: String, kind: DbType) -> Result<CrudExpr, PlanError> {
@@ -227,7 +236,11 @@ fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
             selection,
         } => compile_update(table, assignments, selection)?,
         SqlAst::Delete { table, selection } => compile_delete(table, selection)?,
-        SqlAst::CreateTable { table, columns } => compile_create_table(table, columns)?,
+        SqlAst::CreateTable {
+            table,
+            columns,
+            table_type,
+        } => compile_create_table(table, columns, table_type)?,
         SqlAst::Drop { name, kind } => compile_drop(name, kind)?,
     };
 

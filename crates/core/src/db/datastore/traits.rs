@@ -1,6 +1,6 @@
 use crate::db::relational_db::ST_TABLES_ID;
 use core::fmt;
-use spacetimedb_lib::DataKey;
+use spacetimedb_lib::{DataKey, StTableType};
 use spacetimedb_sats::{
     relation::{DbTable, FieldName, FieldOnly, Header, TableField},
     AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue,
@@ -165,6 +165,7 @@ pub struct TableSchema {
     pub(crate) table_name: String,
     pub(crate) columns: Vec<ColumnSchema>,
     pub(crate) indexes: Vec<IndexSchema>,
+    pub(crate) table_type: StTableType,
 }
 
 impl TableSchema {
@@ -245,6 +246,7 @@ pub struct TableDef {
     pub(crate) table_name: String,
     pub(crate) columns: Vec<ColumnDef>,
     pub(crate) indexes: Vec<IndexDef>,
+    pub(crate) table_type: StTableType,
 }
 
 impl From<ProductType> for TableDef {
@@ -262,6 +264,7 @@ impl From<ProductType> for TableDef {
                 })
                 .collect(),
             indexes: vec![],
+            table_type: StTableType::Public,
         }
     }
 }
@@ -272,6 +275,7 @@ impl From<TableSchema> for TableDef {
             table_name: value.table_name,
             columns: value.columns.into_iter().map(Into::into).collect(),
             indexes: value.indexes.into_iter().map(Into::into).collect(),
+            table_type: value.table_type,
         }
     }
 }

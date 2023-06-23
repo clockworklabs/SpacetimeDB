@@ -24,6 +24,8 @@ use super::{
         TableId, TableSchema, TxData, TxDatastore,
     },
 };
+
+use crate::db::datastore::system_tables::table_name_is_system;
 use crate::{
     db::datastore::traits::{TxOp, TxRecord},
     db::{
@@ -37,7 +39,7 @@ use crate::{
     error::{DBError, IndexError, TableError},
 };
 use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
-use spacetimedb_lib::{data_key::ToDataKey, DataKey};
+use spacetimedb_lib::{data_key::ToDataKey, DataKey, StTableType};
 use spacetimedb_sats::{
     AlgebraicType, AlgebraicValue, BuiltinType, BuiltinValue, ProductType, ProductTypeElement, ProductValue,
 };
@@ -312,6 +314,7 @@ impl Inner {
         let row = StTableRow {
             table_id,
             table_name: &table_name,
+            table_type: StTableType::System,
         };
         let row: ProductValue = (&row).into();
         let data_key = row.to_data_key();
@@ -585,12 +588,16 @@ impl Inner {
         let table_name = table_schema.table_name.as_str();
         log::trace!("TABLE CREATING: {table_name}");
 
+        if table_name_is_system(table_name) {
+            return Err(TableError::System(table_name.into()).into());
+        }
         // Insert the table row into st_tables
         // NOTE: Because st_tables has a unique index on table_name, this will
         // fail if the table already exists.
         let row = StTableRow {
             table_id: 0,
             table_name,
+            table_type: table_schema.table_type,
         };
         let table_id = StTableRow::try_from(&self.insert(ST_TABLES_ID, (&row).into())?)?.table_id;
 
@@ -742,6 +749,7 @@ impl Inner {
             table_id,
             table_name,
             indexes,
+            table_type: el.table_type,
         })
     }
 
@@ -1930,6 +1938,7 @@ mod tests {
     };
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::StTableType;
     use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
 
     fn get_datastore() -> super::super::Result<Locking> {
@@ -1970,6 +1979,7 @@ mod tests {
                     is_unique: true,
                 },
             ],
+            table_type: StTableType::Public,
         }
     }
 
@@ -1986,10 +1996,10 @@ mod tests {
         assert_eq!(
             table_rows,
             vec![
-                StTableRow { table_id: 0, table_name: "st_table".to_string() },
-                StTableRow { table_id: 1, table_name: "st_columns".to_string() },
-                StTableRow { table_id: 2, table_name: "st_sequence".to_string() },
-                StTableRow { table_id: 3, table_name: "st_indexes".to_string() },
+                StTableRow { table_id: 0, table_name: "st_table".to_string(), table_type: StTableType::System },
+                StTableRow { table_id: 1, table_name: "st_columns".to_string(), table_type: StTableType::System },
+                StTableRow { table_id: 2, table_name: "st_sequence".to_string(), table_type: StTableType::System },
+                StTableRow { table_id: 3, table_name: "st_indexes".to_string() , table_type: StTableType::System},
             ]
         );
         let column_rows = datastore
@@ -2003,7 +2013,7 @@ mod tests {
             vec![
                 StColumnRow { table_id: 0, col_id: 0, col_name: "table_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: true },
                 StColumnRow { table_id: 0, col_id: 1, col_name: "table_name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
-                StColumnRow { table_id: 0, col_id: 2, col_name: "is_system_table".to_string(), col_type: AlgebraicType::Bool, is_autoinc: false },
+                StColumnRow { table_id: 0, col_id: 2, col_name: "table_type".to_string(), col_type: AlgebraicType::U8, is_autoinc: false },
 
                 StColumnRow { table_id: 1, col_id: 0, col_name: "table_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
                 StColumnRow { table_id: 1, col_id: 1, col_name: "col_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
@@ -2076,7 +2086,7 @@ mod tests {
         assert_eq!(
             table_rows,
             vec![
-                StTableRow { table_id: 4, table_name: "Foo".to_string() }
+                StTableRow { table_id: 4, table_name: "Foo".to_string(), table_type: StTableType::Public }
             ]
         );
         let column_rows = datastore
@@ -2113,7 +2123,7 @@ mod tests {
         assert_eq!(
             table_rows,
             vec![
-                StTableRow { table_id: 4, table_name: "Foo".to_string() }
+                StTableRow { table_id: 4, table_name: "Foo".to_string() , table_type: StTableType::Public}
             ]
         );
         let column_rows = datastore
@@ -2176,6 +2186,7 @@ mod tests {
                 IndexSchema { index_id: 4, table_id: 4, col_id: 0, index_name: "id_idx".to_string(), is_unique: true },
                 IndexSchema { index_id: 5, table_id: 4, col_id: 1, index_name: "name_idx".to_string(), is_unique: true },
             ],
+            table_type: StTableType::Public,
         });
         Ok(())
     }
@@ -2202,6 +2213,7 @@ mod tests {
                 IndexSchema { index_id: 4, table_id: 4, col_id: 0, index_name: "id_idx".to_string(), is_unique: true },
                 IndexSchema { index_id: 5, table_id: 4, col_id: 1, index_name: "name_idx".to_string(), is_unique: true },
             ],
+            table_type: StTableType::Public,
         });
         Ok(())
     }

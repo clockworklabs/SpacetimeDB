@@ -6,7 +6,7 @@ use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use crate::database_instance_context_controller::DatabaseInstanceContextController;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, DatabaseError};
-use crate::sql::compiler::compile;
+use crate::sql::compiler::compile_sql;
 use crate::vm::DbProgram;
 
 pub struct StmtResult {
@@ -46,10 +46,6 @@ fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBErr
     Ok(())
 }
 
-pub fn compile_sql(db: &RelationalDB, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
-    compile(db, sql_text)
-}
-
 pub fn execute_single_sql(db: &RelationalDB, ast: CrudExpr) -> Result<Vec<MemTable>, DBError> {
     db.with_auto_commit(|tx| {
         let p = &mut DbProgram::new(db, tx);
@@ -86,6 +82,7 @@ pub(crate) mod tests {
     use crate::db::relational_db::{ST_TABLES_ID, ST_TABLES_NAME};
     use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::StTableType;
     use spacetimedb_sats::relation::Header;
     use spacetimedb_sats::{product, BuiltinType, ProductType};
     use spacetimedb_vm::dsl::{mem_table, scalar};
@@ -196,7 +193,11 @@ pub(crate) mod tests {
 
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
-        let row = product!(scalar(ST_TABLES_ID), scalar(ST_TABLES_NAME), scalar(true));
+        let row = product!(
+            scalar(ST_TABLES_ID),
+            scalar(ST_TABLES_NAME),
+            scalar(StTableType::System as u8)
+        );
         let input = mem_table(Header::from(&schema), vec![row]);
 
         assert_eq!(

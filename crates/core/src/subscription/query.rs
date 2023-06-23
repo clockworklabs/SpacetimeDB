@@ -1,9 +1,9 @@
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, SubscriptionError};
 use crate::host::module_host::DatabaseTableUpdate;
-use crate::sql::execute::{compile_sql, execute_single_sql};
-use spacetimedb_sats::relation::{Column, FieldName, MemTable};
-use spacetimedb_sats::AlgebraicType;
+use crate::sql::compiler::compile_sql;
+use crate::sql::execute::execute_single_sql;
+use spacetimedb_sats::relation::MemTable;
 use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
 
 pub enum QueryDef {
@@ -167,6 +167,87 @@ mod tests {
             result.first().map(|x| x.as_without_table_name())
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_subscribe_private() -> ResultTest<()> {
+        let (db, _tmp_dir) = make_test_db()?;
+
+        let mut tx = db.begin_tx();
+        let p = &mut DbProgram::new(&db, &mut tx);
+
+        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+
+        let row = product!(1u64, "health");
+        let table = mem_table(head.clone(), [row.clone()]);
+        let table_id = create_table_from_program(p, "_inventory", head.clone(), &[row.clone()])?;
+
+        let schema = db.schema_for_table(&tx, table_id).unwrap();
+        db.commit_tx(tx)?;
+
+        let op = TableOp {
+            op_type: 0,
+            row_pk: vec![],
+            row: row.clone(),
+        };
+
+        let data = DatabaseTableUpdate {
+            table_id,
+            table_name: "_inventory".to_string(),
+            ops: vec![op.clone()],
+        };
+        let q = QueryExpr::new(db_table((&schema).into(), "_inventory", table_id));
+
+        let q = to_mem_table(q, &data);
+        let result = run_query(&db, &q)?;
+
+        assert_eq!(
+            Some(table.as_without_table_name()),
+            result.first().map(|x| x.as_without_table_name())
+        );
+
+        //SELECT * FROM inventory
+        let q_all = QueryExpr::new(db_table((&schema).into(), "_inventory", table_id));
+        //SELECT * FROM inventory WHERE inventory_id = 1
+        let q_id =
+            q_all
+                .clone()
+                .with_select_cmp(OpCmp::Eq, FieldName::named("_inventory", "inventory_id"), scalar(1u64));
+
+        let s = QuerySet(vec![
+            Query {
+                queries: vec![q_all.clone()],
+            },
+            Query {
+                queries: vec![q_all, q_id],
+            },
+        ]);
+
+        let row1 = TableOp {
+            op_type: 0,
+            row_pk: row.to_data_key().to_bytes(),
+            row: row.clone(),
+        };
+
+        let row2 = TableOp {
+            op_type: 1,
+            row_pk: row.to_data_key().to_bytes(),
+            row: row.clone(),
+        };
+
+        let data = DatabaseTableUpdate {
+            table_id,
+            table_name: "_inventory".to_string(),
+            ops: vec![row1, row2],
+        };
+
+        let update = DatabaseUpdate { tables: vec![data] };
+
+        let result = s.eval_incr(&db, &update)?;
+        assert_eq!(result.tables.len(), 1, "Must return 1 table");
+        assert_eq!(result.tables[0].ops.len(), 1, "Must return 1 row");
+        assert_eq!(result.tables[0].ops[0].row, row, "Must return the correct row");
         Ok(())
     }
 

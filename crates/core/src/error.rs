@@ -37,6 +37,19 @@ pub enum TableError {
     DuplicateColumnName(String),
     #[error("Column `{0}` not found")]
     ColumnNotFound(u32),
+    #[error(
+        "DecodeError for field `{0}.{1}`, expect `{2}` but found `{3}`",
+        table,
+        field,
+        expect,
+        found
+    )]
+    DecodeField {
+        table: String,
+        field: String,
+        expect: String,
+        found: String,
+    },
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]

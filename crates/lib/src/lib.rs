@@ -33,6 +33,7 @@ pub use type_def::*;
 pub use type_value::{AlgebraicValue, ProductValue};
 
 pub use spacetimedb_sats as sats;
+use spacetimedb_sats::de::{Deserializer, Error};
 
 pub const MODULE_ABI_VERSION: VersionTuple = VersionTuple::new(2, 0);
 
@@ -84,13 +85,47 @@ impl std::fmt::Display for VersionTuple {
 
 extern crate self as spacetimedb_lib;
 
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+// WARNING: In order to keep a stable schema, don't change the discriminant of the fields
+/// Describe the visibility scope of the table and if is a `system table` or not.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ser::Serialize)]
+pub enum StTableType {
+    System = 0,
+    Public = 1,
+    Private = 2,
+}
+
+impl TryFrom<u8> for StTableType {
+    type Error = u8;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Ok(match value {
+            0 => StTableType::System,
+            1 => StTableType::Public,
+            2 => StTableType::Private,
+            x => return Err(x),
+        })
+    }
+}
+
+impl<'de> de::Deserialize<'de> for StTableType {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = deserializer.deserialize_u8()?;
+        StTableType::try_from(value).map_err(|x| {
+            Error::custom(format!(
+                "DecodeError for StTableType:  `{x}`. Expected one in the range 0..2"
+            ))
+        })
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub struct TableDef {
     pub name: String,
     /// data should always point to a ProductType in the typespace
     pub data: sats::AlgebraicTypeRef,
     pub column_attrs: Vec<ColumnIndexAttribute>,
     pub indexes: Vec<IndexDef>,
+    pub table_type: StTableType,
 }
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
@@ -184,14 +219,14 @@ pub struct TypeAlias {
     pub ty: sats::AlgebraicTypeRef,
 }
 
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub struct IndexDef {
     pub name: String,
     pub ty: IndexType,
     pub col_ids: Vec<u8>,
 }
 
-#[derive(Debug, Copy, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub enum IndexType {
     BTree,
     Hash,
