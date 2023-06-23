@@ -279,13 +279,18 @@ impl Config {
             .cloned()
     }
 
+    /// Converts some given `identity_or_name` into a mutable `IdentityConfig`.
+    ///
+    /// # Returns
+    /// * `None` - If an identity config with the given `identity_or_name` does not exist.
+    /// * `Some` - A mutable reference to the `IdentityConfig` with the given `identity_or_name`.
     pub fn get_identity_config_mut(&mut self, identity_or_name: &str) -> Option<&mut IdentityConfig> {
         if is_hex_identity(identity_or_name) {
             self.get_identity_config_by_identity_mut(identity_or_name)
         } else {
             self.identity_configs_mut()
                 .iter_mut()
-                .find(|c| c.nickname.as_ref() == Some(&identity_or_name.to_string()))
+                .find(|c| c.nickname.as_ref().map(|c| c.as_str()) == Some(identity_or_name))
         }
     }
 
