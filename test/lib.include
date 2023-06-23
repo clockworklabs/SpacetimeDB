@@ -71,3 +71,13 @@ spacetime_publish() {
 	set -e
 	return "$RESULT_CODE"
 }
+
+fsed() {
+	if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i.sed_bak "$@"
+        rm -f rm *.sed_bak
+	else
+        sed -i "$@"
+	fi
+}
+
