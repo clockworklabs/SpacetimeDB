@@ -223,10 +223,7 @@ pub async fn get_auth_header(
 }
 
 pub fn is_hex_identity(ident: &str) -> bool {
-    if ident.len() != 64 {
-        return false;
-    }
-    ident.chars().all(|c| c.is_ascii_hexdigit())
+    ident.len() == 64 && ident.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 pub fn print_identity_config(ident: &IdentityConfig) {
