@@ -42,6 +42,7 @@ execute_test() {
     echo "TEST_OUT=$TEST_OUT PROJECT_PATH=$PROJECT_PATH SPACETIME_CONFIG_FILE=$SPACETIME_CONFIG_FILE"
 	TEST_PATH="test/tests/$1.sh"
 	printf " **************** Running %s... " "$1"
+    RETURN_CODE=0
 	if ! bash -x "$TEST_PATH" > "$OUT_TMP" 2>&1 ; then
 		printf "${RED}FAIL${CRST}\n"
 		cat "$OUT_TMP"
@@ -49,12 +50,20 @@ execute_test() {
         cat "$SPACETIME_CONFIG_FILE"
 		# docker logs "$CONTAINER_NAME"
 		failed_tests+=("$1")
+
+        if [ "$RUN_PARALLEL" == "true" ] ; then
+            RETURN_CODE=1
+        fi
 	else
 		printf "${GRN}PASS${CRST}\n"
 		passed_tests+=("$1")
 	fi
 
     rm -rf "$PROJECT_PATH" "$TEST_OUT" "$SPACETIME_CONFIG_FILE"
+    if [[ $RETURN_CODE != 0 ]] ; then
+        echo "Returning non-zero exit code!"
+        exit 1
+    fi
 }
 
 list_contains() {
@@ -71,6 +80,9 @@ list_contains() {
 TESTS=(./test/tests/*.sh)
 TESTS=("${TESTS[@]#./test/tests/}")
 TESTS=("${TESTS[@]%.sh}")
+
+# TODO: Remove this!
+# TESTS=("upload-module-1" "upload-module-1")
 
 EXCLUDE_TESTS=()
 
@@ -91,8 +103,9 @@ if [ $# != 0 ] ; then
 fi
 
 
-PIDs=()
-PIDs_OUT=()
+TESTS_PID=()
+TESTS_OUT=()
+TESTS_NAME=()
 for smoke_test in "${TESTS[@]}" ; do
 	if [ ${#EXCLUDE_TESTS[@]} -ne 0 ] && list_contains "$smoke_test" "${EXCLUDE_TESTS[@]}"; then
 		continue
@@ -105,9 +118,10 @@ for smoke_test in "${TESTS[@]}" ; do
             fi
 
             process_output_file=$(mktemp)
-		    execute_test "$smoke_test" > "$process_output_file" &
-            PIDs+=($!)
-            PIDs_OUT+=("$process_output_file")
+            (execute_test "$smoke_test" > "$process_output_file") &
+            TESTS_PID+=($!)
+            TESTS_OUT+=("$process_output_file")
+            TESTS_NAME+=("$smoke_test")
         else
 		    execute_test "$smoke_test"
         fi
@@ -120,12 +134,27 @@ done
 
 if [ "$RUN_PARALLEL" == "true" ] ; then
     # Wait for all processes to end, and save their exit codes
-    length=${#PIDs[@]}
+    length=${#TESTS_PID[@]}
     for ((i=0; i<length; i++)) ; do
-        pid=${PIDs[$i]}
-        out_file=${PIDs_OUT[$i]}
+        pid=${TESTS_PID[$i]}
+        out_file=${TESTS_OUT[$i]}
+        test_name=${TESTS_NAME[$i]}
+        set +e
         wait "$pid"
-        cat "$out_file"
+        RESULT_CODE=$?
+        set -e
+        echo "Process result code: $RESULT_CODE"
+        if [ $RESULT_CODE == 0 ] ; then
+            cat "$out_file"
+		    passed_tests+=("$test_name")
+        else
+            echo "+------------------------------------------+"
+            printf "$RED TEST FAILURE:$CRST $test_name\n"
+            echo
+            cat "$out_file"
+		    failed_tests+=("$test_name")
+        fi
+        echo "Process finished: $pid"
     done
 fi
 

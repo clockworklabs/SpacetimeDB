@@ -22,11 +22,11 @@ run_fail_test() {
 
 # This resets the spacetime config for a new test run
 reset_config() {
-    if [ "$SPACETIME_CONFIG_FILE" == "" ] ; then
-        SPACETIME_CONFIG_FILE="$(mktemp)"
-        export SPACETIME_CONFIG_FILE
-    fi
+    SPACETIME_CONFIG_FILE="$(mktemp)"
+    export SPACETIME_CONFIG_FILE
     cp "$RESET_SPACETIME_CONFIG" "$SPACETIME_CONFIG_FILE"
+    echo "Using config file: $SPACETIME_CONFIG_FILE"
+    cat "$SPACETIME_CONFIG_FILE"
 }
 
 # This deletes the project from the previous test run

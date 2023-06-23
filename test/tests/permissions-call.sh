@@ -11,7 +11,7 @@ source "./test/lib.include"
 
 run_test cargo run identity new --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
-TOKEN=$(grep token "$HOME/.spacetime/config.toml" | awk '{print $3}' | tr -d \')
+TOKEN="$(spacetime identity token "$IDENT")"
 create_project
 run_test cargo run publish -s -d --project-path "$PROJECT_PATH" --clear-database
 sleep 2

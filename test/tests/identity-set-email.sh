@@ -13,7 +13,7 @@ source "./test/lib.include"
 run_test cargo run identity new --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
 EMAIL="$(random_string)@clockworklabs.io"
-TOKEN=$(grep token "$HOME/.spacetime/config.toml" | awk '{print $3}' | tr -d \')
+TOKEN="$(spacetime identity token "$IDENT")"
 
 # Reset our config so we lose this identity
 reset_config
