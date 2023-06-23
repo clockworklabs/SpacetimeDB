@@ -9,14 +9,28 @@ use spacetimedb_lib::Identity;
 use crate::auth::{SpacetimeAuth, SpacetimeAuthHeader};
 use crate::{log_and_500, ControlCtx, ControlNodeDelegate};
 
+#[derive(Deserialize)]
+pub struct CreateIdentityQueryParams {
+    email: Option<email_address::EmailAddress>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateIdentityResponse {
     identity: String,
     token: String,
 }
 
-pub async fn create_identity(State(ctx): State<Arc<dyn ControlCtx>>) -> axum::response::Result<impl IntoResponse> {
+pub async fn create_identity(
+    State(ctx): State<Arc<dyn ControlCtx>>,
+    Query(CreateIdentityQueryParams { email }): Query<CreateIdentityQueryParams>,
+) -> axum::response::Result<impl IntoResponse> {
     let auth = SpacetimeAuth::alloc(&*ctx).await?;
+    if let Some(email) = email {
+        ctx.control_db()
+            .associate_email_spacetime_identity(auth.identity, email.as_str())
+            .await
+            .unwrap();
+    }
 
     let identity_response = CreateIdentityResponse {
         identity: auth.identity.to_hex(),

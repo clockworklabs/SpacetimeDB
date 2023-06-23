@@ -22,6 +22,6 @@ run_test cargo run call "$DATABASE" "say_hello"
 reset_config
 run_test cargo run identity new --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
-run_test cargo run identity set-default --identity "$IDENT"
+run_test cargo run identity set-default "$IDENT"
 if run_test cargo run logs "$DATABASE" 10000 ; then exit 1; fi
 if [ "0" != "$(grep -c "World" "$TEST_OUT")" ]; then exit 1; fi
