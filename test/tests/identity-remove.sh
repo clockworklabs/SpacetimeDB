@@ -16,8 +16,8 @@ IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
 run_test cargo run identity list
 [ "1" == "$(grep -c "$IDENT" "$TEST_OUT")" ]
 
-run_test cargo run identity remove --identity "$IDENT"
+run_test cargo run identity remove "$IDENT"
 run_test cargo run identity list
 [ "0" == "$(grep -c "$IDENT" "$TEST_OUT")" ]
 
-run_fail_test cargo run identity remove --identity "$IDENT"
+run_fail_test cargo run identity remove "$IDENT"

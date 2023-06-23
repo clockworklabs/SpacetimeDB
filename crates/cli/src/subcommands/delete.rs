@@ -27,8 +27,8 @@ pub fn cli() -> clap::Command {
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
 
-    let identity = args.get_one::<String>("identity");
-    let auth_header = get_auth_header(&mut config, false, identity.map(|x| x.as_str()))
+    let identity_or_name = args.get_one::<String>("identity");
+    let auth_header = get_auth_header(&mut config, false, identity_or_name.map(|x| x.as_str()))
         .await
         .map(|x| x.0);
 
