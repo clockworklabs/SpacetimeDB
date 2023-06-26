@@ -54,8 +54,8 @@ pub fn invoke_reducer<'a, A: Args<'a>, T>(
 ///
 /// Currently only single-column-indices are supported
 /// and they may only be of the btree index type.
-/// In the former case, the function will panic,
-/// and in latter, an error is returned.
+/// Attempting to create a multi-column index will result in a panic.
+/// Attempting to use an index type other than btree, meanwhile, will return an error.
 ///
 /// Returns an invalid buffer on success
 /// and otherwise the error is written into the fresh one returned

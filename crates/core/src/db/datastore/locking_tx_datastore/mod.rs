@@ -240,6 +240,8 @@ impl TxState {
     /// returns an iterator over the [BTreeIndex] that yields all the `RowId`s
     /// that match the specified `value` in the indexed column.
     ///
+    /// Matching is defined by `Ord for AlgebraicValue`.
+    ///
     /// For a unique index this will always yield at most one `RowId`.
     /// When there is no index this returns `None`.
     pub fn index_seek<'a>(

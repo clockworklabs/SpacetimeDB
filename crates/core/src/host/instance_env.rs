@@ -355,9 +355,12 @@ impl InstanceEnv {
     }
 
     /// Finds all rows in the table identified by `table_id`
-    /// where the column identified by `col_id` equates to `value`.
+    /// where the column identified by `col_id` matches to `value`.
     ///
     /// These rows are returned concatenated with each row bsatn encoded.
+    ///
+    /// Matching is defined by decoding of `value` to an `AlgebraicValue`
+    /// according to the column's schema and then `Ord for AlgebraicValue`.
     #[tracing::instrument(skip_all)]
     pub fn seek_eq(&self, table_id: u32, col_id: u32, value: &[u8]) -> Result<Vec<u8>, NodesError> {
         let stdb = &*self.dbic.relational_db;
@@ -366,7 +369,7 @@ impl InstanceEnv {
         // Interpret the `value` using the schema of the column.
         let value = stdb.decode_column(tx, table_id, col_id, value)?;
 
-        // Find all rows in the table where the column data equates to `value`.
+        // Find all rows in the table where the column data matches `value`.
         // Concatenate and return these rows using bsatn encoding.
         let results = stdb.seek(tx, table_id, col_id, &value)?;
         let mut bytes = Vec::new();
