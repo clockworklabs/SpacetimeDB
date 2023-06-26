@@ -4,7 +4,7 @@ use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, SumType,
 };
-use spacetimedb_lib::{ColumnIndexAttribute, ReducerDef, TableDef};
+use spacetimedb_lib::{ColumnIndexAttribute, ProductTypeElement, ReducerDef, TableDef};
 
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem, INDENT};
@@ -579,6 +579,7 @@ fn autogen_csharp_product_table_common(
     writeln!(output).unwrap();
 
     writeln!(output, "using System;").unwrap();
+    writeln!(output, "using System.Collections.Generic;").unwrap();
     if namespace != "SpacetimeDB" {
         writeln!(output, "using SpacetimeDB;").unwrap();
     }
@@ -635,6 +636,64 @@ fn autogen_csharp_product_table_common(
             }
 
             writeln!(output).unwrap();
+
+            // If this is a table, we want to generate indexes
+            if let Some(column_attrs) = column_attrs {
+                let indexed_fields: Vec<(&ProductTypeElement, String)> = column_attrs
+                    .iter()
+                    .enumerate()
+                    .filter(|a| a.1.is_unique() || a.1.is_primary())
+                    .map(|a| &product_type.elements[a.0])
+                    .map(|f| (f, f.name.as_ref().unwrap().replace("r#", "").to_case(Case::Pascal)))
+                    .collect();
+                // Declare custom index dictionaries
+                for (field, field_name) in &indexed_fields {
+                    let type_name = ty_fmt(ctx, &field.algebraic_type, namespace);
+                    let comparer = if format!("{}", type_name) == "byte[]" {
+                        ", new SpacetimeDB.ByteArrayComparer()"
+                    } else {
+                        ""
+                    };
+                    writeln!(
+                        output,
+                        "private static Dictionary<{type_name}, {name}> {field_name}_Index = new Dictionary<{type_name}, {name}>(16{comparer});"
+                    )
+                    .unwrap();
+                }
+                writeln!(output).unwrap();
+                // OnInsert method for updating indexes
+                writeln!(
+                    output,
+                    "private static void InternalOnValueInserted(object insertedValue)"
+                )
+                .unwrap();
+                writeln!(output, "{{").unwrap();
+                {
+                    indent_scope!(output);
+                    writeln!(output, "var val = ({name})insertedValue;").unwrap();
+                    for (_, field_name) in &indexed_fields {
+                        writeln!(output, "{field_name}_Index[val.{field_name}] = val;").unwrap();
+                    }
+                }
+                writeln!(output, "}}").unwrap();
+                writeln!(output).unwrap();
+                // OnDelete method for updating indexes
+                writeln!(
+                    output,
+                    "private static void InternalOnValueDeleted(object deletedValue)"
+                )
+                .unwrap();
+                writeln!(output, "{{").unwrap();
+                {
+                    indent_scope!(output);
+                    writeln!(output, "var val = ({name})deletedValue;").unwrap();
+                    for (_, field_name) in &indexed_fields {
+                        writeln!(output, "{field_name}_Index.Remove(val.{field_name});").unwrap();
+                    }
+                }
+                writeln!(output, "}}").unwrap();
+                writeln!(output).unwrap();
+            } // End indexes
 
             writeln!(
                 output,
@@ -937,67 +996,76 @@ fn autogen_csharp_access_funcs_for_struct(
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
-            writeln!(
-                output,
-                "foreach(var entry in NetworkManager.clientDB.GetEntries(\"{}\"))",
-                table_name
-            )
-            .unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(output, "var productValue = entry.Item1.AsProductValue();").unwrap();
+            if is_unique || is_primary {
                 writeln!(
                     output,
-                    "var compareValue = ({})productValue.elements[{}].As{}();",
-                    csharp_field_type, col_i, field_type
+                    "{csharp_field_name_pascal}_Index.TryGetValue(value, out var r);"
                 )
                 .unwrap();
-                if csharp_field_type == "byte[]" {
+                writeln!(output, "return r;").unwrap();
+            } else {
+                writeln!(
+                    output,
+                    "foreach(var entry in NetworkManager.clientDB.GetEntries(\"{}\"))",
+                    table_name
+                )
+                .unwrap();
+                writeln!(output, "{{").unwrap();
+                {
+                    indent_scope!(output);
+                    writeln!(output, "var productValue = entry.Item1.AsProductValue();").unwrap();
                     writeln!(
                         output,
-                        "static bool ByteArrayCompare(byte[] a1, byte[] a2)
-{{
-    if (a1.Length != a2.Length)
-        return false;
-
-    for (int i=0; i<a1.Length; i++)
-        if (a1[i]!=a2[i])
-            return false;
-
-    return true;
-}}"
+                        "var compareValue = ({})productValue.elements[{}].As{}();",
+                        csharp_field_type, col_i, field_type
                     )
                     .unwrap();
-                    writeln!(output).unwrap();
-                    writeln!(output, "if (ByteArrayCompare(compareValue, value)) {{").unwrap();
-                    {
-                        indent_scope!(output);
-                        if is_unique {
-                            writeln!(output, "return ({struct_name_pascal_case})entry.Item2;").unwrap();
-                        } else {
-                            writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;").unwrap();
-                        }
-                    }
-                    writeln!(output, "}}").unwrap();
-                } else {
-                    writeln!(output, "if (compareValue == value) {{").unwrap();
-                    {
-                        indent_scope!(output);
-                        if is_unique {
-                            writeln!(output, "return ({struct_name_pascal_case})entry.Item2;").unwrap();
-                        } else {
-                            writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;").unwrap();
-                        }
-                    }
-                    writeln!(output, "}}").unwrap();
-                }
-            }
-            // End foreach
-            writeln!(output, "}}").unwrap();
+                    if csharp_field_type == "byte[]" {
+                        writeln!(
+                            output,
+                            "static bool ByteArrayCompare(byte[] a1, byte[] a2)
+    {{
+        if (a1.Length != a2.Length)
+            return false;
 
-            if is_unique {
-                writeln!(output, "return null;").unwrap();
+        for (int i=0; i<a1.Length; i++)
+            if (a1[i]!=a2[i])
+                return false;
+
+        return true;
+    }}"
+                        )
+                        .unwrap();
+                        writeln!(output).unwrap();
+                        writeln!(output, "if (ByteArrayCompare(compareValue, value)) {{").unwrap();
+                        {
+                            indent_scope!(output);
+                            if is_unique {
+                                writeln!(output, "return ({struct_name_pascal_case})entry.Item2;").unwrap();
+                            } else {
+                                writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;").unwrap();
+                            }
+                        }
+                        writeln!(output, "}}").unwrap();
+                    } else {
+                        writeln!(output, "if (compareValue == value) {{").unwrap();
+                        {
+                            indent_scope!(output);
+                            if is_unique {
+                                writeln!(output, "return ({struct_name_pascal_case})entry.Item2;").unwrap();
+                            } else {
+                                writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;").unwrap();
+                            }
+                        }
+                        writeln!(output, "}}").unwrap();
+                    }
+                }
+                // End foreach
+                writeln!(output, "}}").unwrap();
+
+                if is_unique {
+                    writeln!(output, "return null;").unwrap();
+                }
             }
         }
         // End Func
@@ -1292,9 +1360,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 writeln!(output, "args.{arg_name} = {convert};").unwrap();
             }
 
-            writeln!(output, "var argsGeneric = new ReducerArgs();").unwrap();
-            writeln!(output, "argsGeneric.{func_name_pascal_case}Args = args;").unwrap();
-            writeln!(output, "dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.{func_name_pascal_case}, \"{func_name}\", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), dbEvent.Message, dbEvent.Status, argsGeneric);").unwrap();
+            writeln!(output, "dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.{func_name_pascal_case}, \"{func_name}\", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), dbEvent.Message, dbEvent.Status, args);").unwrap();
         }
 
         // Closing brace for Event parsing function
@@ -1305,7 +1371,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     writeln!(output).unwrap();
 
     //Args struct
-    writeln!(output, "public struct {func_name_pascal_case}ArgsStruct").unwrap();
+    writeln!(output, "public class {func_name_pascal_case}ArgsStruct").unwrap();
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
@@ -1403,9 +1469,9 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
             "public ClientApi.Event.Types.Status Status {{ get; private set; }}"
         )
         .unwrap();
-        writeln!(output, "private ReducerArgs Args;").unwrap();
+        writeln!(output, "private object Args;").unwrap();
         writeln!(output).unwrap();
-        writeln!(output, "public ReducerEvent(ReducerType reducer, string reducerName, ulong timestamp, SpacetimeDB.Identity identity, string errMessage, ClientApi.Event.Types.Status status, ReducerArgs args)").unwrap();
+        writeln!(output, "public ReducerEvent(ReducerType reducer, string reducerName, ulong timestamp, SpacetimeDB.Identity identity, string errMessage, ClientApi.Event.Types.Status status, object args)").unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
@@ -1432,7 +1498,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
                 {
                     indent_scope!(output);
                     writeln!(output, "if (Reducer != ReducerType.{reducer_name}) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), \"{reducer_name}\");").unwrap();
-                    writeln!(output, "return Args.{reducer_name}Args;").unwrap();
+                    writeln!(output, "return ({reducer_name}ArgsStruct)Args;").unwrap();
                 }
                 // Closing brace for struct ReducerArgs
                 writeln!(output, "}}").unwrap();
@@ -1483,25 +1549,6 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
     }
     // Closing brace for ReducerEvent
     writeln!(output, "}}").unwrap();
-
-    writeln!(
-        output,
-        "[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit)]"
-    )
-    .unwrap();
-    writeln!(output, "public partial struct ReducerArgs").unwrap();
-    writeln!(output, "{{").unwrap();
-    {
-        indent_scope!(output);
-        for reducer in &reducers {
-            let reducer_name = reducer.name.to_case(Case::Pascal);
-            writeln!(output, "[System.Runtime.InteropServices.FieldOffset(0)]").unwrap();
-            writeln!(output, "public {reducer_name}ArgsStruct {reducer_name}Args;").unwrap();
-        }
-    }
-    // Closing brace for struct ReducerArgs
-    writeln!(output, "}}").unwrap();
-    writeln!(output).unwrap();
 
     if use_namespace {
         output.dedent(1);
