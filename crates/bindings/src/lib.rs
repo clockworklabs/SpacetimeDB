@@ -46,9 +46,9 @@ static SPACETIME_ABI_VERSION_IS_ADDR: () = ();
 #[non_exhaustive]
 #[derive(Copy, Clone)]
 pub struct ReducerContext {
-    /// Who called the reducer?
+    /// The `Identity` of the client that invoked the reducer.
     pub sender: Identity,
-    /// When was the reducer called?
+    /// The time at which the reducer was started.
     pub timestamp: Timestamp,
 }
 
