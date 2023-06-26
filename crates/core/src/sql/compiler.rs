@@ -1,4 +1,4 @@
-use spacetimedb_lib::StTableType;
+use spacetimedb_lib::{StAccess, StTableType};
 use std::collections::HashMap;
 
 use crate::db::datastore::traits::TableSchema;
@@ -210,11 +210,13 @@ fn compile_create_table(
     name: String,
     columns: ProductTypeMeta,
     table_type: StTableType,
+    table_access: StAccess,
 ) -> Result<CrudExpr, PlanError> {
     Ok(CrudExpr::CreateTable {
         name,
         columns,
         table_type,
+        table_access,
     })
 }
 
@@ -240,7 +242,8 @@ fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
             table,
             columns,
             table_type,
-        } => compile_create_table(table, columns, table_type)?,
+            table_access: schema,
+        } => compile_create_table(table, columns, table_type, schema)?,
         SqlAst::Drop { name, kind } => compile_drop(name, kind)?,
     };
 

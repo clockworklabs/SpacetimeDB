@@ -1,7 +1,7 @@
 use super::traits::{ColumnSchema, IndexSchema, SequenceId, SequenceSchema, TableId, TableSchema};
 use crate::error::{DBError, TableError};
 use once_cell::sync::Lazy;
-use spacetimedb_lib::StTableType;
+use spacetimedb_lib::{StAccess, StTableType};
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 
 /// The static ID of the table that defines tables
@@ -33,6 +33,7 @@ pub enum StTableFields {
     TableId = 0,
     TableName = 1,
     TableType = 2,
+    TablesAccess = 3,
 }
 
 impl StTableFields {
@@ -42,6 +43,7 @@ impl StTableFields {
             Self::TableId => "table_id",
             Self::TableName => "table_name",
             Self::TableType => "table_type",
+            Self::TablesAccess => "table_access",
         }
     }
 }
@@ -125,9 +127,9 @@ impl StSequenceFields {
 
 /// System Table [ST_TABLES_NAME]
 ///
-/// | table_id: u32 | table_name: String | table_type: u8 |
-/// |---------------|--------------------| -------------- |
-/// | 1             | "customers"        | 1              |
+/// | table_id: u32 | table_name: String | table_type: String | table_access: String |
+/// |---------------|--------------------| ------------------ | -------------------- |
+/// | 4             | "customers"        | "user"             | "public"             |
 pub fn st_table_schema() -> TableSchema {
     TableSchema {
         table_id: ST_TABLES_ID.0,
@@ -167,11 +169,19 @@ pub fn st_table_schema() -> TableSchema {
                 table_id: ST_TABLES_ID.0,
                 col_id: StTableFields::TableType as u32,
                 col_name: StTableFields::TableType.name().into(),
-                col_type: AlgebraicType::U8,
+                col_type: AlgebraicType::String,
+                is_autoinc: false,
+            },
+            ColumnSchema {
+                table_id: ST_TABLES_ID.0,
+                col_id: StTableFields::TablesAccess as u32,
+                col_name: StTableFields::TablesAccess.name().into(),
+                col_type: AlgebraicType::String,
                 is_autoinc: false,
             },
         ],
         table_type: StTableType::System,
+        table_access: StAccess::Public,
     }
 }
 
@@ -227,6 +237,7 @@ pub fn st_columns_schema() -> TableSchema {
             },
         ],
         table_type: StTableType::System,
+        table_access: StAccess::Public,
     }
 }
 
@@ -288,6 +299,7 @@ pub fn st_indexes_schema() -> TableSchema {
             },
         ],
         table_type: StTableType::System,
+        table_access: StAccess::Public,
     }
 }
 
@@ -377,6 +389,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
             },
         ],
         table_type: StTableType::System,
+        table_access: StAccess::Public,
     }
 }
 
@@ -392,6 +405,7 @@ pub struct StTableRow<Name: AsRef<str>> {
     pub(crate) table_id: u32,
     pub(crate) table_name: Name,
     pub(crate) table_type: StTableType,
+    pub(crate) table_access: StAccess,
 }
 
 impl<'a> TryFrom<&'a ProductValue> for StTableRow<&'a str> {
@@ -401,18 +415,30 @@ impl<'a> TryFrom<&'a ProductValue> for StTableRow<&'a str> {
         let table_id = row.field_as_u32(StTableFields::TableId as usize, None)?;
         let table_name = row.field_as_str(StTableFields::TableName as usize, None)?;
         let table_type = row
-            .field_as_u8(StTableFields::TableType as usize, None)?
+            .field_as_str(StTableFields::TableType as usize, None)?
             .try_into()
-            .map_err(|x: u8| TableError::DecodeField {
+            .map_err(|x: &str| TableError::DecodeField {
                 table: ST_TABLES_NAME.into(),
                 field: StTableFields::TableType.name().into(),
-                expect: "0..3".to_string(),
+                expect: format!("`{}` or `{}`", StTableType::System.as_str(), StTableType::User.as_str()),
                 found: x.to_string(),
             })?;
+
+        let table_access = row
+            .field_as_str(StTableFields::TablesAccess as usize, None)?
+            .try_into()
+            .map_err(|x: &str| TableError::DecodeField {
+                table: ST_TABLES_NAME.into(),
+                field: StTableFields::TablesAccess.name().into(),
+                expect: format!("`{}` or `{}`", StAccess::Public.as_str(), StAccess::Private.as_str()),
+                found: x.to_string(),
+            })?;
+
         Ok(StTableRow {
             table_id,
             table_name,
             table_type,
+            table_access,
         })
     }
 }
@@ -423,6 +449,7 @@ impl StTableRow<&str> {
             table_id: self.table_id,
             table_name: self.table_name.to_owned(),
             table_type: self.table_type,
+            table_access: self.table_access,
         }
     }
 }
@@ -432,7 +459,8 @@ impl<Name: AsRef<str>> From<&StTableRow<Name>> for ProductValue {
         product![
             AlgebraicValue::U32(x.table_id),
             AlgebraicValue::String(x.table_name.as_ref().to_owned()),
-            AlgebraicValue::U8(x.table_type as u8)
+            AlgebraicValue::String(x.table_type.as_str().into()),
+            AlgebraicValue::String(x.table_access.as_str().into())
         ]
     }
 }

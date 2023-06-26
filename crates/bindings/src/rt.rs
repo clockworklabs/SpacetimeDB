@@ -13,7 +13,9 @@ use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
 use spacetimedb_lib::ser::{self, Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, Identity, MiscModuleExport, ModuleDef, ReducerDef, StTableType, TableDef, TypeAlias};
+use spacetimedb_lib::{
+    bsatn, Identity, MiscModuleExport, ModuleDef, ReducerDef, StAccess, StTableType, TableDef, TypeAlias,
+};
 use sys::Buffer;
 
 pub use once_cell::sync::{Lazy, OnceCell};
@@ -402,7 +404,8 @@ pub fn register_table<T: TableType>() {
             data,
             column_attrs: T::COLUMN_ATTRS.to_owned(),
             indexes: T::INDEXES.iter().copied().map(Into::into).collect(),
-            table_type: StTableType::Public,
+            table_type: StTableType::User,
+            table_access: StAccess::for_name(T::TABLE_NAME),
         };
         module.module.tables.push(schema)
     })

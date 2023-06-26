@@ -3,7 +3,8 @@ use crate::error::{DBError, SubscriptionError};
 use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
-use spacetimedb_sats::relation::MemTable;
+use spacetimedb_sats::relation::{Column, FieldName, MemTable};
+use spacetimedb_sats::AlgebraicType;
 use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
 
 pub enum QueryDef {
@@ -100,6 +101,7 @@ mod tests {
     use itertools::Itertools;
     use spacetimedb_lib::data_key::ToDataKey;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::{StAccess, StTableType};
     use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, BuiltinType, ProductType};
     use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
@@ -184,6 +186,9 @@ mod tests {
         let table_id = create_table_from_program(p, "_inventory", head.clone(), &[row.clone()])?;
 
         let schema = db.schema_for_table(&tx, table_id).unwrap();
+        assert_eq!(schema.table_type, StTableType::User);
+        assert_eq!(schema.table_access, StAccess::Private);
+
         db.commit_tx(tx)?;
 
         let op = TableOp {
@@ -197,7 +202,13 @@ mod tests {
             table_name: "_inventory".to_string(),
             ops: vec![op.clone()],
         };
-        let q = QueryExpr::new(db_table((&schema).into(), "_inventory", table_id));
+        // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
+        let fields = &[
+            FieldName::named("_inventory", "inventory_id").into(),
+            FieldName::named("_inventory", "name").into(),
+        ];
+
+        let q = QueryExpr::new(db_table((&schema).into(), "_inventory", table_id)).with_project(fields);
 
         let q = to_mem_table(q, &data);
         let result = run_query(&db, &q)?;
@@ -245,8 +256,12 @@ mod tests {
         let update = DatabaseUpdate { tables: vec![data] };
 
         let result = s.eval_incr(&db, &update)?;
-        assert_eq!(result.tables.len(), 1, "Must return 1 table");
-        assert_eq!(result.tables[0].ops.len(), 1, "Must return 1 row");
+        assert_eq!(result.tables.len(), 3, "Must return 3 tables");
+        assert_eq!(
+            result.tables.iter().map(|x| x.ops.len()).sum::<usize>(),
+            1,
+            "Must return 1 row"
+        );
         assert_eq!(result.tables[0].ops[0].row, row, "Must return the correct row");
         Ok(())
     }

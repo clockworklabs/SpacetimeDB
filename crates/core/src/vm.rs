@@ -5,7 +5,7 @@ use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, SequenceId, Tab
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use spacetimedb_lib::table::ProductTypeMeta;
-use spacetimedb_lib::StTableType;
+use spacetimedb_lib::{StAccess, StTableType};
 use spacetimedb_sats::relation::{FieldExpr, Relation};
 use spacetimedb_sats::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
 use spacetimedb_sats::ProductValue;
@@ -191,6 +191,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         table_name: &str,
         columns: ProductTypeMeta,
         table_type: StTableType,
+        table_access: StAccess,
     ) -> Result<Code, ErrorVm> {
         let mut cols = Vec::new();
         let mut indexes = Vec::new();
@@ -217,6 +218,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
                 columns: cols,
                 indexes: vec![],
                 table_type,
+                table_access,
             },
         )?;
         Ok(Code::Pass)
@@ -286,8 +288,9 @@ impl ProgramVm for DbProgram<'_, '_> {
                 name,
                 columns,
                 table_type,
+                table_access,
             } => {
-                let result = self.create_table(&name, columns, table_type)?;
+                let result = self.create_table(&name, columns, table_type, table_access)?;
                 Ok(result)
             }
             CrudCode::Drop { name, kind } => {
@@ -388,7 +391,8 @@ pub(crate) mod tests {
                     })
                     .collect(),
                 indexes: vec![],
-                table_type: StTableType::Public,
+                table_type: StTableType::User,
+                table_access: StAccess::for_name(table_name),
             },
         )?;
         for row in rows {
@@ -481,6 +485,7 @@ pub(crate) mod tests {
                 table_id: ST_TABLES_ID.0,
                 table_name: ST_TABLES_NAME,
                 table_type: StTableType::System,
+                table_access: StAccess::Public,
             })
                 .into(),
             q,

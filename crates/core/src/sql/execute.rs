@@ -82,7 +82,7 @@ pub(crate) mod tests {
     use crate::db::relational_db::{ST_TABLES_ID, ST_TABLES_NAME};
     use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::StTableType;
+    use spacetimedb_lib::{StAccess, StTableType};
     use spacetimedb_sats::relation::Header;
     use spacetimedb_sats::{product, BuiltinType, ProductType};
     use spacetimedb_vm::dsl::{mem_table, scalar};
@@ -196,7 +196,8 @@ pub(crate) mod tests {
         let row = product!(
             scalar(ST_TABLES_ID),
             scalar(ST_TABLES_NAME),
-            scalar(StTableType::System as u8)
+            scalar(StTableType::System.as_str()),
+            scalar(StAccess::Public.as_str()),
         );
         let input = mem_table(Header::from(&schema), vec![row]);
 

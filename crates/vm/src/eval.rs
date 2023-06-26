@@ -117,10 +117,12 @@ fn build_typed<P: ProgramVm>(p: &mut P, node: Expr) -> ExprOpt {
                 name,
                 columns,
                 table_type,
+                table_access,
             } => ExprOpt::Crud(Box::new(CrudExprOpt::CreateTable {
                 name,
                 columns,
                 table_type,
+                table_access,
             })),
             CrudExpr::Drop { name, kind } => ExprOpt::Crud(Box::new(CrudExprOpt::Drop { name, kind })),
         },
@@ -272,10 +274,12 @@ fn compile<P: ProgramVm>(p: &mut P, node: ExprOpt) -> Result<Code, ErrorVm> {
                     name,
                     columns,
                     table_type,
+                    table_access,
                 } => Code::Crud(CrudCode::CreateTable {
                     name,
                     columns,
                     table_type,
+                    table_access,
                 }),
                 CrudExprOpt::Drop { name, kind } => Code::Crud(CrudCode::Drop { name, kind }),
             }

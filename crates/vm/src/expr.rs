@@ -1,5 +1,5 @@
 use spacetimedb_lib::table::ProductTypeMeta;
-use spacetimedb_lib::StTableType;
+use spacetimedb_lib::{StAccess, StTableType};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -243,6 +243,7 @@ pub enum CrudExpr {
         name: String,
         columns: ProductTypeMeta,
         table_type: StTableType,
+        table_access: StAccess,
     },
     Drop {
         name: String,
@@ -365,6 +366,7 @@ pub enum CrudExprOpt {
         name: String,
         columns: ProductTypeMeta,
         table_type: StTableType,
+        table_access: StAccess,
     },
     Drop {
         name: String,
@@ -585,6 +587,7 @@ pub enum CrudCode {
         name: String,
         columns: ProductTypeMeta,
         table_type: StTableType,
+        table_access: StAccess,
     },
     Drop {
         name: String,

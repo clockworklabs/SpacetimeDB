@@ -139,11 +139,7 @@ pub(crate) fn check_types(env: &mut EnvTy, ast: &ExprOpt) -> Result<Ty, ErrorTyp
                 CrudExprOpt::Insert { source, .. } => Ok(ty_source(source)),
                 CrudExprOpt::Update { insert, .. } => Ok(ty_source(&insert.source)),
                 CrudExprOpt::Delete { query } => Ok(ty_source(&query.source)),
-                CrudExprOpt::CreateTable {
-                    name: _,
-                    columns,
-                    table_type: _,
-                } => Ok(AlgebraicType::Product(columns.columns.clone()).into()),
+                CrudExprOpt::CreateTable { columns, .. } => Ok(AlgebraicType::Product(columns.columns.clone()).into()),
                 CrudExprOpt::Drop { .. } => {
                     //todo: Extract the type from the catalog...
                     Ok(Ty::Unknown)

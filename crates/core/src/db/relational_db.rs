@@ -505,7 +505,7 @@ mod tests {
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::error::{DBError, DatabaseError, IndexError};
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType, StTableType};
+    use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType, StAccess, StTableType};
     use spacetimedb_sats::product;
 
     #[test]
@@ -751,7 +751,8 @@ mod tests {
                 is_autoinc: true,
             }],
             indexes: vec![],
-            table_type: StTableType::Public,
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
         };
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -785,7 +786,8 @@ mod tests {
                 is_autoinc: true,
             }],
             indexes: vec![],
-            table_type: StTableType::Public,
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
         };
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -824,7 +826,8 @@ mod tests {
                 name: "MyTable_my_col_idx".to_string(),
                 is_unique: false,
             }],
-            table_type: StTableType::Public,
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
         };
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -865,7 +868,8 @@ mod tests {
                 name: "MyTable_my_col_idx".to_string(),
                 is_unique: true,
             }],
-            table_type: StTableType::Public,
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
         };
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -911,7 +915,8 @@ mod tests {
                 name: "MyTable_my_col_idx".to_string(),
                 is_unique: true,
             }],
-            table_type: StTableType::Public,
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
         };
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -986,7 +991,8 @@ mod tests {
                     is_unique: true,
                 },
             ],
-            table_type: StTableType::Public,
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
         };
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -1042,7 +1048,8 @@ mod tests {
                 name: "MyTable_my_col_idx".to_string(),
                 is_unique: true,
             }],
-            table_type: StTableType::Public,
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
         };
         let table_id = stdb.create_table(&mut tx, schema)?;
         stdb.rename_table(&mut tx, table_id, "YourTable")?;

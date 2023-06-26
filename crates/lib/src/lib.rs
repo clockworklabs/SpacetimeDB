@@ -34,6 +34,7 @@ pub use type_value::{AlgebraicValue, ProductValue};
 
 pub use spacetimedb_sats as sats;
 use spacetimedb_sats::de::{Deserializer, Error};
+use spacetimedb_sats::ser::Serializer;
 
 pub const MODULE_ABI_VERSION: VersionTuple = VersionTuple::new(2, 0);
 
@@ -85,34 +86,108 @@ impl std::fmt::Display for VersionTuple {
 
 extern crate self as spacetimedb_lib;
 
-// WARNING: In order to keep a stable schema, don't change the discriminant of the fields
-/// Describe the visibility scope of the table and if is a `system table` or not.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ser::Serialize)]
-pub enum StTableType {
-    System = 0,
-    Public = 1,
-    Private = 2,
+/// Describe the visibility of the table
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StAccess {
+    /// Visible to all
+    Public,
+    /// Visible only to the owner
+    Private,
 }
 
-impl TryFrom<u8> for StTableType {
-    type Error = u8;
+impl StAccess {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Private => "private",
+        }
+    }
 
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+    /// Select the appropriated [Self] for the name.
+    ///
+    /// A name that start with '_' like '_sample' is [Self::Private]
+    pub fn for_name(of: &str) -> Self {
+        if of.starts_with('_') {
+            Self::Private
+        } else {
+            Self::Public
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a str> for StAccess {
+    type Error = &'a str;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         Ok(match value {
-            0 => StTableType::System,
-            1 => StTableType::Public,
-            2 => StTableType::Private,
+            "public" => Self::Public,
+            "private" => Self::Private,
             x => return Err(x),
         })
     }
 }
 
+impl ser::Serialize for StAccess {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> de::Deserialize<'de> for StAccess {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = deserializer.deserialize_str_slice()?;
+        StAccess::try_from(value).map_err(|x| {
+            Error::custom(format!(
+                "DecodeError for StAccess: `{x}`. Expected `public` | 'private'"
+            ))
+        })
+    }
+}
+
+/// Describe is the table is a `system table` or not.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StTableType {
+    /// Created by the system
+    ///
+    /// System tables are `StAccess::Public` by default
+    System,
+    /// Created by the User
+    User,
+}
+
+impl StTableType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::User => "user",
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a str> for StTableType {
+    type Error = &'a str;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        Ok(match value {
+            "system" => Self::System,
+            "user" => Self::User,
+            x => return Err(x),
+        })
+    }
+}
+
+impl ser::Serialize for StTableType {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
 impl<'de> de::Deserialize<'de> for StTableType {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = deserializer.deserialize_u8()?;
+        let value = deserializer.deserialize_str_slice()?;
         StTableType::try_from(value).map_err(|x| {
             Error::custom(format!(
-                "DecodeError for StTableType:  `{x}`. Expected one in the range 0..2"
+                "DecodeError for StTableType: `{x}`. Expected 'system' | 'user'"
             ))
         })
     }
@@ -126,6 +201,7 @@ pub struct TableDef {
     pub column_attrs: Vec<ColumnIndexAttribute>,
     pub indexes: Vec<IndexDef>,
     pub table_type: StTableType,
+    pub table_access: StAccess,
 }
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]

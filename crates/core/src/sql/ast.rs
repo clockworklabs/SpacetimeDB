@@ -1,5 +1,5 @@
 use spacetimedb_lib::table::{ColumnDef, ProductTypeMeta};
-use spacetimedb_lib::{ColumnIndexAttribute, StTableType};
+use spacetimedb_lib::{ColumnIndexAttribute, StAccess, StTableType};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
 use sqlparser::ast::{
     Assignment, BinaryOperator, ColumnDef as SqlColumnDef, ColumnOption, ColumnOptionDef, DataType, Expr as SqlExpr,
@@ -233,6 +233,7 @@ pub enum SqlAst {
         table: String,
         columns: ProductTypeMeta,
         table_type: StTableType,
+        table_access: StAccess,
     },
     Drop {
         name: String,
@@ -765,9 +766,10 @@ fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst,
     }
 
     Ok(SqlAst::CreateTable {
+        table_access: StAccess::for_name(&table),
         table,
         columns,
-        table_type: StTableType::Public,
+        table_type: StTableType::User,
     })
 }
 

@@ -884,6 +884,7 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
             columns,
             indexes,
             table_type: table.table_type,
+            table_access: table.table_access,
         })
     }
 
