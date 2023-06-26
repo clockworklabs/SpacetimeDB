@@ -16,26 +16,6 @@ namespace SpacetimeDB
     {
         public class TableCache
         {
-            public class ByteArrayComparer : IEqualityComparer<byte[]>
-            {
-                public bool Equals(byte[] left, byte[] right)
-                {
-                    if (left == null || right == null)
-                    {
-                        return left == right;
-                    }
-
-                    return left.SequenceEqual(right);
-                }
-
-                public int GetHashCode(byte[] key)
-                {
-                    if (key == null)
-                        throw new ArgumentNullException(nameof(key));
-                    return key.Sum(b => b);
-                }
-            }
-
             private readonly string name;
             private readonly Type clientTableType;
             private readonly AlgebraicType rowSchema;
@@ -54,6 +34,8 @@ namespace SpacetimeDB
                 get => clientTableType;
             }
 
+            public Action<object> InternalValueInsertedCallback;
+            public Action<object> InternalValueDeletedCallback;
             public Action<object, ClientApi.Event> InsertCallback;
             public Action<object, ClientApi.Event> BeforeDeleteCallback;
             public Action<object, ClientApi.Event> DeleteCallback;
@@ -79,6 +61,8 @@ namespace SpacetimeDB
 
                 this.rowSchema = rowSchema;
                 this.decoderFunc = decoderFunc;
+                InternalValueInsertedCallback = (Action<object>)clientTableType.GetMethod("InternalOnValueInserted", BindingFlags.NonPublic | BindingFlags.Static)?.CreateDelegate(typeof(Action<object>));
+                InternalValueDeletedCallback = (Action<object>)clientTableType.GetMethod("InternalOnValueDeleted", BindingFlags.NonPublic | BindingFlags.Static)?.CreateDelegate(typeof(Action<object>));
                 InsertCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnInsertEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
                 BeforeDeleteCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnBeforeDeleteEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
                 DeleteCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnDeleteEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
