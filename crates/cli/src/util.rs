@@ -146,16 +146,24 @@ pub async fn init_default(config: &mut Config, nickname: Option<String>) -> Resu
 /// or create and save a new default identity.
 pub async fn select_identity_config(
     config: &mut Config,
-    identity: Option<&str>,
+    identity_or_name: Option<&str>,
 ) -> Result<IdentityConfig, anyhow::Error> {
-    if let Some(identity) = identity {
-        if let Some(identity_config) = config.get_identity_config_by_identity(identity) {
-            Ok(identity_config.clone())
+    let resolve_identity_to_identity_config = |ident: &str| -> Result<IdentityConfig, anyhow::Error> {
+        config
+            .get_identity_config_by_identity(ident)
+            .map(Clone::clone)
+            .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {}", ident))
+    };
+
+    if let Some(identity_or_name) = identity_or_name {
+        if is_hex_identity(identity_or_name) {
+            resolve_identity_to_identity_config(identity_or_name)
         } else {
-            Err(anyhow::anyhow!(
-                "Missing identity credentials for identity: {}",
-                identity
-            ))
+            // First check to see if we can convert the name to an identity, then return the config for that identity
+            match config.resolve_name_to_identity(Some(identity_or_name)) {
+                None => Err(anyhow::anyhow!("No such identity for name: {}", identity_or_name,)),
+                Some(identity) => resolve_identity_to_identity_config(&identity),
+            }
         }
     } else {
         Ok(init_default(config, None).await?.identity_config)
@@ -177,10 +185,10 @@ pub async fn select_identity_config(
 pub async fn get_auth_header(
     config: &mut Config,
     anon_identity: bool,
-    identity: Option<&str>,
+    identity_or_name: Option<&str>,
 ) -> Option<(String, Identity)> {
     if !anon_identity {
-        let identity_config = match select_identity_config(config, identity).await {
+        let identity_config = match select_identity_config(config, identity_or_name).await {
             Ok(ic) => ic,
             Err(err) => {
                 println!("{}", err);
@@ -203,6 +211,22 @@ pub async fn get_auth_header(
     } else {
         None
     }
+}
+
+pub fn is_hex_identity(ident: &str) -> bool {
+    ident.len() == 64 && ident.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+pub fn print_identity_config(ident: &IdentityConfig) {
+    println!(" IDENTITY  {}", ident.identity);
+    println!(
+        " NAME      {}",
+        match &ident.nickname {
+            None => "",
+            Some(name) => name.as_str(),
+        }
+    );
+    // TODO: lookup email here when we have an API endpoint for it
 }
 
 pub const VALID_PROTOCOLS: [&str; 2] = ["http", "https"];

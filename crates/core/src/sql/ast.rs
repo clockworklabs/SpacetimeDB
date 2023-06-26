@@ -546,8 +546,31 @@ fn compile_select(db: &RelationalDB, select: Select) -> Result<SqlAst, PlanError
 }
 
 fn compile_query(db: &RelationalDB, query: Query) -> Result<SqlAst, PlanError> {
+    unsupported!(
+        "SELECT",
+        query.order_by,
+        query.fetch,
+        query.limit,
+        query.offset,
+        query.lock,
+        query.with
+    );
+
     match *query.body {
-        SetExpr::Select(select) => compile_select(db, *select),
+        SetExpr::Select(select) => {
+            unsupported!(
+                "SELECT",
+                select.distinct,
+                select.top,
+                select.into,
+                select.lateral_views,
+                select.group_by,
+                select.having,
+                select.sort_by
+            );
+
+            compile_select(db, *select)
+        }
         SetExpr::Query(_) => Err(PlanError::Unsupported {
             feature: "Query".into(),
         }),

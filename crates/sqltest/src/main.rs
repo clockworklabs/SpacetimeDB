@@ -135,12 +135,20 @@ async fn run_serial(test_suite: &mut TestSuite, files: Vec<PathBuf>, engine: DbT
 
     for file in files {
         let engine = open_db(&engine).await?;
+        let db_name = engine.engine_name().to_string();
         let runner = Runner::new(engine);
         let filename = file.to_string_lossy().to_string();
         let test_case_name = filename.replace(['/', ' ', '.', '-'], "_");
-        let case = match run_test_file(&mut std::io::stdout(), runner, &file).await {
-            Ok(duration) => {
-                let mut case = TestCase::new(test_case_name, TestCaseStatus::success());
+        let case = match run_test_file(&mut std::io::stdout(), runner, &file, &db_name).await {
+            Ok((skipped, duration)) => {
+                let status = if skipped {
+                    TestCaseStatus::skipped()
+                } else {
+                    TestCaseStatus::success()
+                };
+
+                let mut case = TestCase::new(test_case_name, status);
+
                 case.set_time(duration);
                 case.set_timestamp(Local::now());
                 case.set_classname(TEST_NAME);
@@ -169,10 +177,11 @@ async fn run_serial(test_suite: &mut TestSuite, files: Vec<PathBuf>, engine: DbT
     }
     println!();
 
-    let total = test_suite.tests;
+    let total = test_suite.tests - test_suite.disabled;
     let failed = test_suite.failures + test_suite.errors;
-    let ok = test_suite.tests - failed;
+    let ok = total - failed;
     println!("{}: {}", style("[FAILED]").red().bold(), failed);
+    println!("{}: {}", style("[SKIP  ]").yellow().bold(), test_suite.disabled);
     println!("{}: {}", style("[OK    ]").green().bold(), ok);
     println!("{}: {}%", style("[PASS  ]").blue().bold(), (ok * 100) / total);
     println!("{}: {:?}", style("[Elapsed]").reverse().bold(), start.elapsed());
@@ -186,12 +195,15 @@ async fn run_test_file<T: std::io::Write, D: AsyncDB>(
     out: &mut T,
     mut runner: Runner<D>,
     filename: impl AsRef<Path>,
-) -> anyhow::Result<Duration> {
+    db_name: &str,
+) -> anyhow::Result<(bool, Duration)> {
     let filename = filename.as_ref();
     let records = sqllogictest::parse_file(filename).map_err(|e| anyhow!("{:?}", e))?;
 
     let mut begin_times = vec![];
     let mut did_pop = false;
+    let mut skipped = 0;
+    let mut total = 0;
 
     writeln!(out, "{: <60} .. ", filename.to_string_lossy())?;
     flush(out).await?;
@@ -212,9 +224,21 @@ async fn run_test_file<T: std::io::Write, D: AsyncDB>(
                 flush(out).await?;
             }
             Record::Injected(Injected::EndInclude(file)) => {
-                finish_test_file(out, &mut begin_times, &mut did_pop, file).await?;
+                finish_test_file(out, &mut begin_times, &mut did_pop, file, total - skipped == 0).await?;
             }
             _ => {}
+        }
+
+        let will_skip = match &record {
+            Record::Statement { conditions, .. } | Record::Query { conditions, .. } => {
+                total += 1;
+                conditions.iter().any(|c| c.should_skip(db_name))
+            }
+            _ => false,
+        };
+
+        if will_skip {
+            skipped += 1;
         }
 
         runner
@@ -225,11 +249,20 @@ async fn run_test_file<T: std::io::Write, D: AsyncDB>(
 
     let duration = begin_times[0].elapsed();
 
-    finish_test_file(out, &mut begin_times, &mut did_pop, &filename.to_string_lossy()).await?;
+    let skipped = total - skipped == 0;
+
+    finish_test_file(
+        out,
+        &mut begin_times,
+        &mut did_pop,
+        &filename.to_string_lossy(),
+        skipped,
+    )
+    .await?;
 
     writeln!(out)?;
 
-    Ok(duration)
+    Ok((skipped, duration))
 }
 
 async fn finish_test_file<T: std::io::Write>(
@@ -237,8 +270,14 @@ async fn finish_test_file<T: std::io::Write>(
     time_stack: &mut Vec<Instant>,
     did_pop: &mut bool,
     file: &str,
+    skipped: bool,
 ) -> anyhow::Result<()> {
     let begin_time = time_stack.pop().unwrap();
+    let result = if skipped {
+        style("[SKIP]").yellow().strikethrough().bold()
+    } else {
+        style("[OK]").green().bold()
+    };
 
     if *did_pop {
         // start a new line if the result is not immediately after the item
@@ -248,17 +287,12 @@ async fn finish_test_file<T: std::io::Write>(
             "| ".repeat(time_stack.len()),
             style("[END]").blue().bold(),
             file,
-            style("[OK]").green().bold(),
+            result,
             begin_time.elapsed().as_millis()
         )?;
     } else {
         // otherwise, append time to the previous line
-        write!(
-            out,
-            "{} in {} ms",
-            style("[OK]").green().bold(),
-            begin_time.elapsed().as_millis()
-        )?;
+        write!(out, "{} in {} ms", result, begin_time.elapsed().as_millis())?;
     }
 
     *did_pop = true;
@@ -392,7 +426,7 @@ async fn update_test_file<T: std::io::Write, D: AsyncDB>(
             Record::Injected(Injected::EndInclude(file)) => {
                 override_with_outfile(filename, outfilename, outfile)?;
                 stack.pop();
-                finish_test_file(out, &mut begin_times, &mut did_pop, file).await?;
+                finish_test_file(out, &mut begin_times, &mut did_pop, file, false).await?;
             }
             _ => {
                 if *halt {
@@ -424,7 +458,7 @@ async fn update_test_file<T: std::io::Write, D: AsyncDB>(
         }
     }
 
-    finish_test_file(out, &mut begin_times, &mut did_pop, &filename.to_string_lossy()).await?;
+    finish_test_file(out, &mut begin_times, &mut did_pop, &filename.to_string_lossy(), false).await?;
 
     let Item {
         filename,
