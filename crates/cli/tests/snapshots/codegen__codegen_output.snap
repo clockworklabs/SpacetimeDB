@@ -14,7 +14,8 @@ namespace SpacetimeDB
 {
 	public static partial class Reducer
 	{
-		public static event Action<ClientApi.Event.Types.Status, Identity, string> OnAddPlayerEvent;
+		public delegate void AddPlayerHandler(ReducerEvent reducerEvent, string name);
+		public static event AddPlayerHandler OnAddPlayerEvent;
 
 		public static void AddPlayer(string name)
 		{
@@ -32,7 +33,7 @@ namespace SpacetimeDB
 		}
 
 		[ReducerCallback(FunctionName = "add_player")]
-		public static void OnAddPlayer(ClientApi.Event dbEvent)
+		public static bool OnAddPlayer(ClientApi.Event dbEvent)
 		{
 			if(OnAddPlayerEvent != null)
 			{
@@ -40,8 +41,11 @@ namespace SpacetimeDB
 				OnAddPlayerEvent(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray())
 					,(string)args.Name
 				);
+				return true;
 			}
+			return false;
 		}
+		
 		[DeserializeEvent(FunctionName = "add_player")]
 		public static void AddPlayerDeserializeEventArgs(ClientApi.Event dbEvent)
 		{
@@ -54,33 +58,13 @@ namespace SpacetimeDB
 			using var reader = new System.IO.BinaryReader(ms);
 			var args_0_value = SpacetimeDB.SATS.AlgebraicValue.Deserialize(SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.String), reader);
 			args.Name = args_0_value.AsString();
-			var argsGeneric = new ReducerArgs();
-			argsGeneric.AddPlayerArgs = args;
-			dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.AddPlayer, dbEvent.Message, dbEvent.Status, argsGeneric);
+			dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.AddPlayer, "add_player", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), dbEvent.Message, dbEvent.Status, args);
 		}
 	}
 
-	public struct AddPlayerArgsStruct
+	public class AddPlayerArgsStruct
 	{
 		public string Name;
-	}
-
-	public partial struct ReducerArgs
-	{
-		[System.Runtime.InteropServices.FieldOffset(0)]
-		public AddPlayerArgsStruct AddPlayerArgs;
-	}
-
-	public partial class ReducerEvent
-	{
-		public AddPlayerArgsStruct AddPlayerArgs
-		{
-			get
-			{
-				if (Reducer != ReducerType.AddPlayer) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), "AddPlayer");
-				return Args.AddPlayerArgs;
-			}
-		}
 	}
 }
 '''
@@ -142,6 +126,7 @@ namespace SpacetimeDB
 {
 	public enum ReducerType
 	{
+		None,
 		Update,
 		AddPlayer,
 		RepeatingTest,
@@ -151,16 +136,55 @@ namespace SpacetimeDB
 	public partial class ReducerEvent
 	{
 		public ReducerType Reducer { get; private set; }
+		public string ReducerName { get; private set; }
+		public ulong Timestamp { get; private set; }
+		public SpacetimeDB.Identity Identity { get; private set; }
 		public string ErrMessage { get; private set; }
 		public ClientApi.Event.Types.Status Status { get; private set; }
-		private ReducerArgs Args;
+		private object Args;
 
-		public ReducerEvent(ReducerType reducer, string errMessage, ClientApi.Event.Types.Status status, ReducerArgs args)
+		public ReducerEvent(ReducerType reducer, string reducerName, ulong timestamp, SpacetimeDB.Identity identity, string errMessage, ClientApi.Event.Types.Status status, object args)
 		{
 			Reducer = reducer;
+			ReducerName = reducerName;
+			Timestamp = timestamp;
+			Identity = identity;
 			ErrMessage = errMessage;
 			Status = status;
 			Args = args;
+		}
+
+		public UpdateArgsStruct UpdateArgs
+		{
+			get
+			{
+				if (Reducer != ReducerType.Update) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), "Update");
+				return (UpdateArgsStruct)Args;
+			}
+		}
+		public AddPlayerArgsStruct AddPlayerArgs
+		{
+			get
+			{
+				if (Reducer != ReducerType.AddPlayer) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), "AddPlayer");
+				return (AddPlayerArgsStruct)Args;
+			}
+		}
+		public RepeatingTestArgsStruct RepeatingTestArgs
+		{
+			get
+			{
+				if (Reducer != ReducerType.RepeatingTest) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), "RepeatingTest");
+				return (RepeatingTestArgsStruct)Args;
+			}
+		}
+		public TestArgsStruct TestArgs
+		{
+			get
+			{
+				if (Reducer != ReducerType.Test) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), "Test");
+				return (TestArgsStruct)Args;
+			}
 		}
 
 		public object[] GetArgsAsObjectArray()
@@ -200,8 +224,6 @@ namespace SpacetimeDB
 			}
 		}
 	}
-	[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit)]
-	public partial struct ReducerArgs { }
 }
 '''
 "RepeatingTestReducer.cs" = '''
@@ -216,7 +238,8 @@ namespace SpacetimeDB
 {
 	public static partial class Reducer
 	{
-		public static event Action<ClientApi.Event.Types.Status, Identity, ulong> OnRepeatingTestEvent;
+		public delegate void RepeatingTestHandler(ReducerEvent reducerEvent, ulong prevTime);
+		public static event RepeatingTestHandler OnRepeatingTestEvent;
 
 		public static void RepeatingTest(ulong prevTime)
 		{
@@ -234,7 +257,7 @@ namespace SpacetimeDB
 		}
 
 		[ReducerCallback(FunctionName = "repeating_test")]
-		public static void OnRepeatingTest(ClientApi.Event dbEvent)
+		public static bool OnRepeatingTest(ClientApi.Event dbEvent)
 		{
 			if(OnRepeatingTestEvent != null)
 			{
@@ -242,8 +265,11 @@ namespace SpacetimeDB
 				OnRepeatingTestEvent(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray())
 					,(ulong)args.PrevTime
 				);
+				return true;
 			}
+			return false;
 		}
+
 		[DeserializeEvent(FunctionName = "repeating_test")]
 		public static void RepeatingTestDeserializeEventArgs(ClientApi.Event dbEvent)
 		{
@@ -256,33 +282,13 @@ namespace SpacetimeDB
 			using var reader = new System.IO.BinaryReader(ms);
 			var args_0_value = SpacetimeDB.SATS.AlgebraicValue.Deserialize(SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.U64), reader);
 			args.PrevTime = args_0_value.AsU64();
-			var argsGeneric = new ReducerArgs();
-			argsGeneric.RepeatingTestArgs = args;
-			dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.RepeatingTest, dbEvent.Message, dbEvent.Status, argsGeneric);
+			dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.RepeatingTest, "repeating_test", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), dbEvent.Message, dbEvent.Status, args);
 		}
 	}
 
-	public struct RepeatingTestArgsStruct
+	public class RepeatingTestArgsStruct
 	{
 		public ulong PrevTime;
-	}
-
-	public partial struct ReducerArgs
-	{
-		[System.Runtime.InteropServices.FieldOffset(0)]
-		public RepeatingTestArgsStruct RepeatingTestArgs;
-	}
-
-	public partial class ReducerEvent
-	{
-		public RepeatingTestArgsStruct RepeatingTestArgs
-		{
-			get
-			{
-				if (Reducer != ReducerType.RepeatingTest) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), "RepeatingTest");
-				return Args.RepeatingTestArgs;
-			}
-		}
 	}
 }
 '''
@@ -291,6 +297,7 @@ namespace SpacetimeDB
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 using System;
+using System.Collections.Generic;
 
 namespace SpacetimeDB
 {
@@ -421,6 +428,7 @@ namespace SpacetimeDB
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 using System;
+using System.Collections.Generic;
 
 namespace SpacetimeDB
 {
@@ -457,6 +465,7 @@ namespace SpacetimeDB
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 using System;
+using System.Collections.Generic;
 
 namespace SpacetimeDB
 {
@@ -552,6 +561,7 @@ namespace SpacetimeDB
 using System;
 
 namespace SpacetimeDB
+using System.Collections.Generic;
 {
 	public partial class TestE : IDatabaseTable
 	{
@@ -674,7 +684,8 @@ namespace SpacetimeDB
 {
 	public static partial class Reducer
 	{
-		public static event Action<ClientApi.Event.Types.Status, Identity, SpacetimeDB.TestA, SpacetimeDB.TestB, SpacetimeDB.Namespace.Types.TestC> OnTestEvent;
+		public delegate void TestHandler(ReducerEvent reducerEvent, SpacetimeDB.TestA arg, SpacetimeDB.TestB arg2, SpacetimeDB.Namespace.Types.TestC arg3);
+		public static event TestHandler OnTestEvent;
 
 		public static void Test(SpacetimeDB.TestA arg, SpacetimeDB.TestB arg2, SpacetimeDB.Namespace.Types.TestC arg3)
 		{
@@ -692,7 +703,7 @@ namespace SpacetimeDB
 		}
 
 		[ReducerCallback(FunctionName = "test")]
-		public static void OnTest(ClientApi.Event dbEvent)
+		public static bool OnTest(ClientApi.Event dbEvent)
 		{
 			if(OnTestEvent != null)
 			{
@@ -702,8 +713,11 @@ namespace SpacetimeDB
 					,(SpacetimeDB.TestB)args.Arg2
 					,(SpacetimeDB.Namespace.Types.TestC)args.Arg3
 				);
+				return true;
 			}
+			return false;
 		}
+
 		[DeserializeEvent(FunctionName = "test")]
 		public static void TestDeserializeEventArgs(ClientApi.Event dbEvent)
 		{
@@ -720,35 +734,15 @@ namespace SpacetimeDB
 			args.Arg2 = (SpacetimeDB.TestB)(args_1_value);
 			var args_2_value = SpacetimeDB.SATS.AlgebraicValue.Deserialize(SpacetimeDB.Namespace.GetAlgebraicTypeForTestC(), reader);
 			args.Arg3 = SpacetimeDB.Namespace.IntoTestC(args_2_value);
-			var argsGeneric = new ReducerArgs();
-			argsGeneric.TestArgs = args;
-			dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.Test, dbEvent.Message, dbEvent.Status, argsGeneric);
+			dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.Test, "test", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), dbEvent.Message, dbEvent.Status, args);
 		}
 	}
 
-	public struct TestArgsStruct
+	public class TestArgsStruct
 	{
 		public SpacetimeDB.TestA Arg;
 		public SpacetimeDB.TestB Arg2;
 		public SpacetimeDB.Namespace.Types.TestC Arg3;
-	}
-
-	public partial struct ReducerArgs
-	{
-		[System.Runtime.InteropServices.FieldOffset(0)]
-		public TestArgsStruct TestArgs;
-	}
-
-	public partial class ReducerEvent
-	{
-		public TestArgsStruct TestArgs
-		{
-			get
-			{
-				if (Reducer != ReducerType.Test) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), "Test");
-				return Args.TestArgs;
-			}
-		}
 	}
 }
 '''
@@ -764,7 +758,8 @@ namespace SpacetimeDB
 {
 	public static partial class Reducer
 	{
-		public static event Action<ClientApi.Event.Types.Status, Identity> OnUpdateEvent;
+		public delegate void UpdateHandler(ReducerEvent reducerEvent);
+		public static event UpdateHandler OnUpdateEvent;
 
 		public static void Update()
 		{
@@ -782,15 +777,18 @@ namespace SpacetimeDB
 		}
 
 		[ReducerCallback(FunctionName = "__update__")]
-		public static void OnUpdate(ClientApi.Event dbEvent)
+		public static bool OnUpdate(ClientApi.Event dbEvent)
 		{
 			if(OnUpdateEvent != null)
 			{
 				var args = dbEvent.FunctionCall.CallInfo.UpdateArgs;
 				OnUpdateEvent(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray())
 				);
+				return true;
 			}
+			return false;
 		}
+
 		[DeserializeEvent(FunctionName = "__update__")]
 		public static void UpdateDeserializeEventArgs(ClientApi.Event dbEvent)
 		{
@@ -801,32 +799,12 @@ namespace SpacetimeDB
 			bsatnBytes.CopyTo(ms.GetBuffer(), 0);
 			ms.Position = 0;
 			using var reader = new System.IO.BinaryReader(ms);
-			var argsGeneric = new ReducerArgs();
-			argsGeneric.UpdateArgs = args;
-			dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.Update, dbEvent.Message, dbEvent.Status, argsGeneric);
+			dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.Update, "update", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), dbEvent.Message, dbEvent.Status, args);
 		}
 	}
 
-	public struct UpdateArgsStruct
+	public class UpdateArgsStruct
 	{
-	}
-
-	public partial struct ReducerArgs
-	{
-		[System.Runtime.InteropServices.FieldOffset(0)]
-		public UpdateArgsStruct UpdateArgs;
-	}
-
-	public partial class ReducerEvent
-	{
-		public UpdateArgsStruct UpdateArgs
-		{
-			get
-			{
-				if (Reducer != ReducerType.Update) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), "Update");
-				return Args.UpdateArgs;
-			}
-		}
 	}
 }
 '''
