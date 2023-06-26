@@ -17,7 +17,7 @@ using SpacetimeDB;
 using SpacetimeDB.SATS;
 using UnityEngine;
 using UnityEngine.Rendering;
-using Event = ClientApi.Event;
+using ReducerEvent = SpacetimeDB.ReducerEvent;
 
 namespace SpacetimeDB
 {
@@ -84,11 +84,6 @@ namespace SpacetimeDB
         public event Action onSubscriptionApplied;
 
         /// <summary>
-        /// Invoked when the local client cache is updated as a result of changes made to the subscription queries.
-        /// </summary>
-        public event Action onSubscriptionUpdate;
-
-        /// <summary>
         /// Called when we receive an identity from the server
         /// </summary>
         public event Action<Identity> onIdentityReceived;
@@ -101,7 +96,7 @@ namespace SpacetimeDB
         private SpacetimeDB.WebSocket webSocket;
         private bool connectionClosed;
         public static ClientCache clientDB;
-        public static Dictionary<string, Action<ClientApi.Event>> reducerEventCache = new Dictionary<string, Action<ClientApi.Event>>();
+        public static Dictionary<string, Func<ClientApi.Event, bool>> reducerEventCache = new Dictionary<string, Func<ClientApi.Event, bool>>();
         public static Dictionary<string, Action<ClientApi.Event>> deserializeEventCache = new Dictionary<string, Action<ClientApi.Event>>();
 
         private Thread messageProcessThread;
@@ -165,7 +160,7 @@ namespace SpacetimeDB
                 if (methodInfo.GetCustomAttribute<ReducerCallbackAttribute>() is
                     { } reducerEvent)
                 {
-                    reducerEventCache.Add(reducerEvent.FunctionName, (Action<ClientApi.Event>)methodInfo.CreateDelegate(typeof(Action<ClientApi.Event>)));
+                    reducerEventCache.Add(reducerEvent.FunctionName, (Func<ClientApi.Event, bool>)methodInfo.CreateDelegate(typeof(Func<ClientApi.Event, bool>)));
                 }
 
                 if (methodInfo.GetCustomAttribute<DeserializeEventAttribute>() is
@@ -340,7 +335,7 @@ namespace SpacetimeDB
                                                 .Where(a => a.Op == TableRowOperation.Types.OperationType.Insert)
                                                 .Select(b => b.RowPk.ToByteArray());
                         var existingPks = clientTable.entries.Select(a => a.Key);
-                        dbEvents.AddRange(existingPks.Except(newPks, new ClientCache.TableCache.ByteArrayComparer())
+                        dbEvents.AddRange(existingPks.Except(newPks, new ByteArrayComparer())
                                                      .Select(a => new DbEvent
                                                      {
                                                          deletedPk = a,
@@ -432,15 +427,25 @@ namespace SpacetimeDB
                         {
                             case TableOp.Delete:
                                 ev.oldValue = events[i].table.DeleteEntry(ev.deletedPk);
+                                if (ev.oldValue != null)
+                                {
+                                    ev.table.InternalValueDeletedCallback(ev.oldValue);
+                                }
                                 events[i] = ev;
                                 break;
                             case TableOp.Insert:
                                 ev.newValue = events[i].table.InsertEntry(ev.insertedPk);
+                                ev.table.InternalValueInsertedCallback(ev.newValue);
                                 events[i] = ev;
                                 break;
                             case TableOp.Update:
                                 ev.oldValue = events[i].table.DeleteEntry(ev.deletedPk);
                                 ev.newValue = events[i].table.InsertEntry(ev.insertedPk);
+                                if (ev.oldValue != null)
+                                {
+                                    ev.table.InternalValueDeletedCallback(ev.oldValue);
+                                }
+                                ev.table.InternalValueInsertedCallback(ev.newValue);
                                 events[i] = ev;
                                 break;
                             default:
