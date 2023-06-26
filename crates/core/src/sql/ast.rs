@@ -392,15 +392,13 @@ fn find_table(db: &RelationalDB, t: Table) -> Result<TableSchema, PlanError> {
     //TODO: We should thread the `tx` from a upper layer instead...
     db.with_auto_commit(|tx| {
         let table_id = db
-            .table_id_from_name(&tx, &t.name)?
+            .table_id_from_name(tx, &t.name)?
             .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
-        if !db.inner.table_id_exists(&tx, &TableId(table_id)) {
+        if !db.inner.table_id_exists(tx, &TableId(table_id)) {
             return Err(PlanError::UnknownTable { table: t.name });
         }
-        let schema = db
-            .schema_for_table(&tx, table_id)
-            .map_err(|e| PlanError::DatabaseInternal(Box::new(e)));
-        schema
+        db.schema_for_table(tx, table_id)
+            .map_err(|e| PlanError::DatabaseInternal(Box::new(e)))
     })
 }
 
