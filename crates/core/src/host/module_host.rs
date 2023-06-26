@@ -34,6 +34,7 @@ impl DatabaseUpdate {
 
     pub fn from_writes(stdb: &RelationalDB, writes: &Vec<Write>) -> Self {
         let mut map: HashMap<u32, Vec<TableOp>> = HashMap::new();
+        //TODO: This should be wrapped with .auto_commit
         let tx = stdb.begin_tx();
         for write in writes {
             let op = match write.operation {
