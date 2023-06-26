@@ -301,16 +301,12 @@ export class SpacetimeDBClient {
   private runtime: {
     host: string;
     name_or_address: string;
-    credentials?: { identity: string; token: string };
+    auth_token?: string;
     global: SpacetimeDBGlobals;
   };
   private createWSFn: CreateWSFnType;
 
-  constructor(
-    host: string,
-    name_or_address: string,
-    credentials?: { identity: string; token: string }
-  ) {
+  constructor(host: string, name_or_address: string, auth_token?: string) {
     const global = g.__SPACETIMEDB__;
     this.db = global.clientDB;
     // I don't really like it, but it seems like the only way to
@@ -332,7 +328,7 @@ export class SpacetimeDBClient {
     this.runtime = {
       host,
       name_or_address,
-      credentials,
+      auth_token,
       global,
     };
 
@@ -361,11 +357,7 @@ export class SpacetimeDBClient {
    * @param name_or_address The name or address of the spacetimeDB module
    * @param credentials The credentials to use to connect to the spacetimeDB module
    */
-  public connect(
-    host?: string,
-    name_or_address?: string,
-    credentials?: { identity: string; token: string }
-  ) {
+  public connect(host?: string, name_or_address?: string, auth_token?: string) {
     if (this.live) {
       return;
     }
@@ -380,14 +372,13 @@ export class SpacetimeDBClient {
       this.runtime.name_or_address = name_or_address;
     }
 
-    if (credentials) {
-      this.runtime.credentials = credentials;
+    if (auth_token) {
+      this.runtime.auth_token = auth_token;
     }
 
     let headers: { [key: string]: string } = {};
-    if (this.runtime.credentials) {
-      this.identity = this.runtime.credentials.identity;
-      this.token = this.runtime.credentials.token;
+    if (this.runtime.auth_token) {
+      this.token = this.runtime.auth_token;
       headers["Authorization"] = `Basic ${btoa("token:" + this.token)}`;
     }
     let url = `${this.runtime.host}/database/subscribe/${this.runtime.name_or_address}`;
@@ -399,6 +390,14 @@ export class SpacetimeDBClient {
     }
 
     this.ws = this.createWSFn(url, headers, "v1.text.spacetimedb");
+
+    // Create a timeout for the connection to be established
+    var connectionTimeout = setTimeout(() => {
+      this.ws.close();
+      console.error("Connect failed: timeout");
+      this.emitter.emit("disconnected");
+      this.emitter.emit("client_error", event);
+    }, 5000); // 5000 ms = 5 seconds
 
     this.ws.onclose = (event) => {
       console.error("Closed: ", event);
@@ -413,6 +412,8 @@ export class SpacetimeDBClient {
     };
 
     this.ws.onopen = () => {
+      clearTimeout(connectionTimeout);
+
       this.live = true;
 
       if (this.queriesQueue.length > 0) {
@@ -490,7 +491,7 @@ export class SpacetimeDBClient {
           const token = identityToken["token"];
           this.identity = identity;
           this.token = token;
-          this.emitter.emit("connected", identity);
+          this.emitter.emit("connected", token, identity);
         }
       }
     };
@@ -568,6 +569,10 @@ export class SpacetimeDBClient {
 
   onConnect(callback: (...args: any[]) => void) {
     this.on("connected", callback);
+  }
+
+  onError(callback: (...args: any[]) => void) {
+    this.on("client_error", callback);
   }
 
   _setCreateWSFn(fn: CreateWSFnType) {
