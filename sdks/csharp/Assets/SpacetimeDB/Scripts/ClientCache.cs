@@ -16,26 +16,6 @@ namespace SpacetimeDB
     {
         public class TableCache
         {
-            public class ByteArrayComparer : IEqualityComparer<byte[]>
-            {
-                public bool Equals(byte[] left, byte[] right)
-                {
-                    if (left == null || right == null)
-                    {
-                        return left == right;
-                    }
-
-                    return left.SequenceEqual(right);
-                }
-
-                public int GetHashCode(byte[] key)
-                {
-                    if (key == null)
-                        throw new ArgumentNullException(nameof(key));
-                    return key.Sum(b => b);
-                }
-            }
-
             private readonly string name;
             private readonly Type clientTableType;
             private readonly AlgebraicType rowSchema;

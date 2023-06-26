@@ -340,7 +340,7 @@ namespace SpacetimeDB
                                                 .Where(a => a.Op == TableRowOperation.Types.OperationType.Insert)
                                                 .Select(b => b.RowPk.ToByteArray());
                         var existingPks = clientTable.entries.Select(a => a.Key);
-                        dbEvents.AddRange(existingPks.Except(newPks, new ClientCache.TableCache.ByteArrayComparer())
+                        dbEvents.AddRange(existingPks.Except(newPks, new ByteArrayComparer())
                                                      .Select(a => new DbEvent
                                                      {
                                                          deletedPk = a,
