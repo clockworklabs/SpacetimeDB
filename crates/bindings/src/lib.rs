@@ -474,7 +474,7 @@ impl<T: TableType> sealed::InsertResult for Result<T, UniqueConstraintViolation<
     type T = T;
     fn from_res(res: Result<Self::T>) -> Self {
         res.map_err(|e| match e {
-            Errno::EXISTS => UniqueConstraintViolation(PhantomData),
+            Errno::UNIQUE_ALREADY_EXISTS => UniqueConstraintViolation(PhantomData),
             _ => panic!("unexpected error from insert(): {e}"),
         })
     }
