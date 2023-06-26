@@ -89,24 +89,7 @@ export class BuiltinValue {
           arrayBuiltinType !== undefined &&
           arrayBuiltinType === BuiltinType.Type.U8
         ) {
-          // first let's change 0s to x, but only preceding 0s,
-          // like "00000FF" -> "x0x0xFF"
-          const replaced: string = value.replaceAll(
-            /0(0)|0([^0])/g,
-            (
-              match: string,
-              arg1: string | undefined,
-              arg2: string | undefined
-            ) => {
-              return "x" + (arg1 || arg2);
-            }
-          );
-          // then split by 'x' and convert to ints
-          let array: string[] = replaced.substring(1).split("x");
-          let bytes: Uint8Array = new Uint8Array(
-            array.map((hex) => Number("0x" + hex))
-          );
-          return new this(bytes);
+          return new this(new TextEncoder().encode(value));
         } else {
           let result: AlgebraicValue[] = [];
           for (let el of value) {
