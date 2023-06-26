@@ -1149,11 +1149,21 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             write!(arg_types, "{}", arg_type_str).unwrap();
         }
 
+        let delegate_args = if !reducer.args.is_empty() {
+            format!(", {}", func_arguments.clone())
+        } else {
+            func_arguments.clone()
+        };
         writeln!(
             output,
-            "public static event Action<ClientApi.Event.Types.Status, Identity{arg_types}> On{func_name_pascal_case}Event;"
+            "public delegate void {func_name_pascal_case}Handler(ReducerEvent reducerEvent{delegate_args});"
         )
-            .unwrap();
+        .unwrap();
+        writeln!(
+            output,
+            "public static event {func_name_pascal_case}Handler On{func_name_pascal_case}Event;"
+        )
+        .unwrap();
 
         writeln!(output).unwrap();
 
@@ -1208,7 +1218,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         writeln!(output, "[ReducerCallback(FunctionName = \"{func_name}\")]").unwrap();
         writeln!(
             output,
-            "public static void On{func_name_pascal_case}(ClientApi.Event dbEvent)"
+            "public static bool On{func_name_pascal_case}(ClientApi.Event dbEvent)"
         )
         .unwrap();
         writeln!(output, "{{").unwrap();
@@ -1224,11 +1234,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                     "var args = dbEvent.FunctionCall.CallInfo.{func_name_pascal_case}Args;"
                 )
                 .unwrap();
-                writeln!(
-                    output,
-                    "On{func_name_pascal_case}Event(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray())"
-                )
-                .unwrap();
+                writeln!(output, "On{func_name_pascal_case}Event(dbEvent.FunctionCall.CallInfo").unwrap();
                 // Write out arguments one per line
                 {
                     indent_scope!(output);
@@ -1243,13 +1249,15 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                     }
                 }
                 writeln!(output, ");").unwrap();
+                writeln!(output, "return true;").unwrap();
             }
             // Closing brace for if event is registered
             writeln!(output, "}}").unwrap();
+            writeln!(output, "return false;").unwrap();
         }
-
         // Closing brace for Event parsing function
         writeln!(output, "}}").unwrap();
+        writeln!(output).unwrap();
 
         writeln!(output, "[DeserializeEvent(FunctionName = \"{func_name}\")]").unwrap();
         writeln!(
@@ -1286,7 +1294,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
             writeln!(output, "var argsGeneric = new ReducerArgs();").unwrap();
             writeln!(output, "argsGeneric.{func_name_pascal_case}Args = args;").unwrap();
-            writeln!(output, "dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.{func_name_pascal_case}, dbEvent.Message, dbEvent.Status, argsGeneric);").unwrap();
+            writeln!(output, "dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.{func_name_pascal_case}, \"{func_name}\", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), dbEvent.Message, dbEvent.Status, argsGeneric);").unwrap();
         }
 
         // Closing brace for Event parsing function
@@ -1315,51 +1323,6 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     writeln!(output, "}}").unwrap();
     writeln!(output).unwrap();
 
-    //ReducerArgs struct
-    writeln!(output, "public partial struct ReducerArgs").unwrap();
-    writeln!(output, "{{").unwrap();
-    {
-        indent_scope!(output);
-        writeln!(output, "[System.Runtime.InteropServices.FieldOffset(0)]").unwrap();
-        writeln!(
-            output,
-            "public {func_name_pascal_case}ArgsStruct {func_name_pascal_case}Args;"
-        )
-        .unwrap();
-    }
-    // Closing brace for struct ReducerArgs
-    writeln!(output, "}}").unwrap();
-    writeln!(output).unwrap();
-
-    //ReducerEvent
-    writeln!(output, "public partial class ReducerEvent").unwrap();
-    writeln!(output, "{{").unwrap();
-    {
-        indent_scope!(output);
-        writeln!(
-            output,
-            "public {func_name_pascal_case}ArgsStruct {func_name_pascal_case}Args"
-        )
-        .unwrap();
-        writeln!(output, "{{").unwrap();
-        {
-            indent_scope!(output);
-            writeln!(output, "get").unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(output, "if (Reducer != ReducerType.{func_name_pascal_case}) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), \"{func_name_pascal_case}\");").unwrap();
-                writeln!(output, "return Args.{func_name_pascal_case}Args;").unwrap();
-            }
-            // Closing brace for struct ReducerArgs
-            writeln!(output, "}}").unwrap();
-        }
-        // Closing brace for struct ReducerArgs
-        writeln!(output, "}}").unwrap();
-    }
-    // Closing brace for struct ReducerArgs
-    writeln!(output, "}}").unwrap();
-
     if use_namespace {
         output.dedent(1);
         writeln!(output, "}}").unwrap();
@@ -1368,23 +1331,23 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     output.into_inner()
 }
 
-pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(String, String)> {
-    let reducer_names: Vec<String> = items
+pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String, String)> {
+    let reducers: Vec<&ReducerDef> = items
         .iter()
-        .filter(|item| {
-            if let GenItem::Reducer(reducer) = item {
-                reducer.name != "__init__"
+        .map(|i| {
+            if let GenItem::Reducer(reducer) = i {
+                Some(reducer)
             } else {
-                false
+                None
             }
         })
-        .map(|item| {
-            if let GenItem::Reducer(reducer) = item {
-                reducer.name.to_case(Case::Pascal)
-            } else {
-                unreachable!()
-            }
-        })
+        .filter(|r| r.is_some())
+        .flatten()
+        .filter(|r| r.name != "__init__")
+        .collect();
+    let reducer_names: Vec<String> = reducers
+        .iter()
+        .map(|reducer| reducer.name.to_case(Case::Pascal))
         .collect();
 
     let use_namespace = true;
@@ -1417,6 +1380,7 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
+        writeln!(output, "None,").unwrap();
         for reducer in reducer_names {
             writeln!(output, "{reducer},").unwrap();
         }
@@ -1430,6 +1394,9 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
     {
         indent_scope!(output);
         writeln!(output, "public ReducerType Reducer {{ get; private set; }}").unwrap();
+        writeln!(output, "public string ReducerName {{ get; private set; }}").unwrap();
+        writeln!(output, "public ulong Timestamp {{ get; private set; }}").unwrap();
+        writeln!(output, "public SpacetimeDB.Identity Identity {{ get; private set; }}").unwrap();
         writeln!(output, "public string ErrMessage {{ get; private set; }}").unwrap();
         writeln!(
             output,
@@ -1438,17 +1405,41 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
         .unwrap();
         writeln!(output, "private ReducerArgs Args;").unwrap();
         writeln!(output).unwrap();
-        writeln!(output, "public ReducerEvent(ReducerType reducer, string errMessage, ClientApi.Event.Types.Status status, ReducerArgs args)").unwrap();
+        writeln!(output, "public ReducerEvent(ReducerType reducer, string reducerName, ulong timestamp, SpacetimeDB.Identity identity, string errMessage, ClientApi.Event.Types.Status status, ReducerArgs args)").unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
             writeln!(output, "Reducer = reducer;").unwrap();
+            writeln!(output, "ReducerName = reducerName;").unwrap();
+            writeln!(output, "Timestamp = timestamp;").unwrap();
+            writeln!(output, "Identity = identity;").unwrap();
             writeln!(output, "ErrMessage = errMessage;").unwrap();
             writeln!(output, "Status = status;").unwrap();
             writeln!(output, "Args = args;").unwrap();
         }
         // Closing brace for ctor
         writeln!(output, "}}").unwrap();
+        writeln!(output).unwrap();
+        // Properties for reducer args
+        for reducer in &reducers {
+            let reducer_name = reducer.name.to_case(Case::Pascal);
+            writeln!(output, "public {reducer_name}ArgsStruct {reducer_name}Args").unwrap();
+            writeln!(output, "{{").unwrap();
+            {
+                indent_scope!(output);
+                writeln!(output, "get").unwrap();
+                writeln!(output, "{{").unwrap();
+                {
+                    indent_scope!(output);
+                    writeln!(output, "if (Reducer != ReducerType.{reducer_name}) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), \"{reducer_name}\");").unwrap();
+                    writeln!(output, "return Args.{reducer_name}Args;").unwrap();
+                }
+                // Closing brace for struct ReducerArgs
+                writeln!(output, "}}").unwrap();
+            }
+            // Closing brace for struct ReducerArgs
+            writeln!(output, "}}").unwrap();
+        }
         writeln!(output).unwrap();
         writeln!(output, "public object[] GetArgsAsObjectArray()").unwrap();
         writeln!(output, "{{").unwrap();
@@ -1458,34 +1449,29 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
-                for item in items {
-                    if let GenItem::Reducer(reducer) = item {
-                        if reducer.name == "__init__" {
-                            continue;
-                        }
-                        let reducer_name = reducer.name.to_case(Case::Pascal);
-                        writeln!(output, "case ReducerType.{reducer_name}:").unwrap();
-                        writeln!(output, "{{").unwrap();
+                for reducer in &reducers {
+                    let reducer_name = reducer.name.to_case(Case::Pascal);
+                    writeln!(output, "case ReducerType.{reducer_name}:").unwrap();
+                    writeln!(output, "{{").unwrap();
+                    {
+                        indent_scope!(output);
+                        writeln!(output, "var args = {reducer_name}Args;").unwrap();
+                        writeln!(output, "return new object[] {{").unwrap();
                         {
                             indent_scope!(output);
-                            writeln!(output, "var args = {reducer_name}Args;").unwrap();
-                            writeln!(output, "return new object[] {{").unwrap();
-                            {
-                                indent_scope!(output);
-                                for (i, arg) in reducer.args.iter().enumerate() {
-                                    let arg_name = arg
-                                        .name
-                                        .clone()
-                                        .unwrap_or_else(|| format!("arg_{}", i))
-                                        .to_case(Case::Pascal);
-                                    writeln!(output, "args.{arg_name},").unwrap();
-                                }
+                            for (i, arg) in reducer.args.iter().enumerate() {
+                                let arg_name = arg
+                                    .name
+                                    .clone()
+                                    .unwrap_or_else(|| format!("arg_{}", i))
+                                    .to_case(Case::Pascal);
+                                writeln!(output, "args.{arg_name},").unwrap();
                             }
-                            writeln!(output, "}};").unwrap();
                         }
-                        // Closing brace for switch
-                        writeln!(output, "}}").unwrap();
+                        writeln!(output, "}};").unwrap();
                     }
+                    // Closing brace for switch
+                    writeln!(output, "}}").unwrap();
                 }
                 writeln!(output, "default: throw new System.Exception($\"Unhandled reducer case: {{Reducer}}. Please run SpacetimeDB code generator\");").unwrap();
             }
@@ -1503,7 +1489,19 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
         "[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit)]"
     )
     .unwrap();
-    writeln!(output, "public partial struct ReducerArgs {{ }}").unwrap();
+    writeln!(output, "public partial struct ReducerArgs").unwrap();
+    writeln!(output, "{{").unwrap();
+    {
+        indent_scope!(output);
+        for reducer in &reducers {
+            let reducer_name = reducer.name.to_case(Case::Pascal);
+            writeln!(output, "[System.Runtime.InteropServices.FieldOffset(0)]").unwrap();
+            writeln!(output, "public {reducer_name}ArgsStruct {reducer_name}Args;").unwrap();
+        }
+    }
+    // Closing brace for struct ReducerArgs
+    writeln!(output, "}}").unwrap();
+    writeln!(output).unwrap();
 
     if use_namespace {
         output.dedent(1);
