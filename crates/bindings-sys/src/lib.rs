@@ -96,7 +96,8 @@ pub mod raw {
         /// The rows found are bsatn encoded and then concatenated.
         /// The resulting byte string from the concatenation is written
         /// to a fresh buffer with the buffer's identifier written to the WASM pointer `out`.
-        pub fn _seek_eq(table_id: u32, col_id: u32, value: *const u8, value_len: usize, out: *mut Buffer) -> u16;
+        pub fn _iter_by_col_eq(table_id: u32, col_id: u32, value: *const u8, value_len: usize, out: *mut Buffer)
+            -> u16;
 
         /// Insert a row into the table identified by `table_id`,
         /// where the row is read from the byte slice `row_ptr` in WASM memory,
@@ -113,7 +114,7 @@ pub mod raw {
         /// The number of rows deleted is written to the WASM pointer `out`.
         ///
         /// Returns an error if no columns were deleted or if the column wasn't found.
-        pub fn _delete_eq(table_id: u32, col_id: u32, value: *const u8, value_len: usize, out: *mut u32) -> u16;
+        pub fn _delete_by_col_eq(table_id: u32, col_id: u32, value: *const u8, value_len: usize, out: *mut u32) -> u16;
 
         /*
         /// Deletes the primary key pointed to at by `pk` in the table identified by `table_id`.
@@ -464,8 +465,8 @@ pub fn create_index(index_name: &str, table_id: u32, index_type: u8, col_ids: &[
 /// The resulting byte string from the concatenation is written
 /// to a fresh buffer with a handle to it returned as a `Buffer`.
 #[inline]
-pub fn seek_eq(table_id: u32, col_id: u32, val: &[u8]) -> Result<Buffer, Errno> {
-    unsafe { call(|out| raw::_seek_eq(table_id, col_id, val.as_ptr(), val.len(), out)) }
+pub fn iter_by_col_eq(table_id: u32, col_id: u32, val: &[u8]) -> Result<Buffer, Errno> {
+    unsafe { call(|out| raw::_iter_by_col_eq(table_id, col_id, val.as_ptr(), val.len(), out)) }
 }
 
 /// Insert `row`, provided as a byte slice, into the table identified by `table_id`.
@@ -480,8 +481,8 @@ pub fn insert(table_id: u32, row: &mut [u8]) -> Result<(), Errno> {
 /// Returns the number of rows deleted
 /// or an error if no columns were deleted or if the column wasn't found.
 #[inline]
-pub fn delete_eq(table_id: u32, col_id: u32, value: &[u8]) -> Result<u32, Errno> {
-    unsafe { call(|out| raw::_delete_eq(table_id, col_id, value.as_ptr(), value.len(), out)) }
+pub fn delete_by_col_eq(table_id: u32, col_id: u32, value: &[u8]) -> Result<u32, Errno> {
+    unsafe { call(|out| raw::_delete_by_col_eq(table_id, col_id, value.as_ptr(), value.len(), out)) }
 }
 
 /*

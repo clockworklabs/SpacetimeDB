@@ -29,7 +29,7 @@ fn build_db() -> ResultBench<DbResult> {
     Ok((stdb, table_id))
 }
 
-fn insert(db: &RelationalDB, tx: &mut MutTxId, table_id: u32, run: Runs) -> ResultBench<()> {
+fn insert_row(db: &RelationalDB, tx: &mut MutTxId, table_id: u32, run: Runs) -> ResultBench<()> {
     for row in run.data() {
         db.insert(
             tx,
@@ -63,7 +63,7 @@ pub fn prefill_data(db: &DbResult, run: Runs) -> ResultBench<()> {
     let (conn, table_id) = db;
 
     let mut tx = conn.begin_tx();
-    insert(conn, &mut tx, *table_id, run)?;
+    insert_row(conn, &mut tx, *table_id, run)?;
 
     conn.commit_tx(tx)?;
     Ok(())
@@ -103,7 +103,7 @@ pub fn select_no_index(pool: &mut Pool<DbResult>, run: Runs) -> ResultBench<()> 
     for i in run.range().skip(1) {
         let i = i as u64;
         let _r = conn
-            .scan(&tx, table_id)?
+            .iter(&tx, table_id)?
             .map(|r| Data {
                 a: *r.view().elements[0].as_i32().unwrap(),
                 b: *r.view().elements[1].as_u64().unwrap(),
