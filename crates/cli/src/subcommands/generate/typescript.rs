@@ -666,7 +666,7 @@ fn autogen_typescript_product_table_common(
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(ctx, &product_type.elements, &mut imports, None);
@@ -784,7 +784,7 @@ fn autogen_typescript_product_table_common(
 
             writeln!(
                 output,
-                "public static onInsert(callback: (value: {struct_name_pascal_case}) => void)"
+                "public static onInsert(callback: (value: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
@@ -799,7 +799,7 @@ fn autogen_typescript_product_table_common(
             writeln!(output, "}}").unwrap();
             writeln!(output).unwrap();
 
-            writeln!(output, "public static onUpdate(callback: (oldValue: {struct_name_pascal_case}, newValue: {struct_name_pascal_case}) => void)").unwrap();
+            writeln!(output, "public static onUpdate(callback: (oldValue: {struct_name_pascal_case}, newValue: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)").unwrap();
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
@@ -814,7 +814,7 @@ fn autogen_typescript_product_table_common(
 
             writeln!(
                 output,
-                "public static onDelete(callback: (value: {struct_name_pascal_case}) => void)"
+                "public static onDelete(callback: (value: {struct_name_pascal_case}, oldValue: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
@@ -831,7 +831,7 @@ fn autogen_typescript_product_table_common(
 
             writeln!(
                 output,
-                "public static removeOnInsert(callback: (value: {struct_name_pascal_case}) => void)"
+                "public static removeOnInsert(callback: (value: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
@@ -846,7 +846,7 @@ fn autogen_typescript_product_table_common(
             writeln!(output, "}}").unwrap();
             writeln!(output).unwrap();
 
-            writeln!(output, "public static removeOnUpdate(callback: (oldValue: {struct_name_pascal_case}, newValue: {struct_name_pascal_case}) => void)").unwrap();
+            writeln!(output, "public static removeOnUpdate(callback: (oldValue: {struct_name_pascal_case}, newValue: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)").unwrap();
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
@@ -861,7 +861,7 @@ fn autogen_typescript_product_table_common(
 
             writeln!(
                 output,
-                "public static removeOnDelete(callback: (value: {struct_name_pascal_case}) => void)"
+                "public static removeOnDelete(callback: (value: {struct_name_pascal_case}, oldValue: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();

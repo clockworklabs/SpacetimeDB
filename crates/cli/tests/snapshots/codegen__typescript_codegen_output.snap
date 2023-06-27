@@ -120,7 +120,7 @@ export default RepeatingTestReducer
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent } from "@clockworklabs/spacetimedb-sdk";
 
 export class TestA extends IDatabaseTable
 {
@@ -213,32 +213,32 @@ export class TestA extends IDatabaseTable
 	}
 
 
-	public static onInsert(callback: (value: TestA) => void)
+	public static onInsert(callback: (value: TestA, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestA").onInsert(callback);
 	}
 
-	public static onUpdate(callback: (oldValue: TestA, newValue: TestA) => void)
+	public static onUpdate(callback: (oldValue: TestA, newValue: TestA, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestA").onUpdate(callback);
 	}
 
-	public static onDelete(callback: (value: TestA) => void)
+	public static onDelete(callback: (value: TestA, oldValue: TestA, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestA").onDelete(callback);
 	}
 
-	public static removeOnInsert(callback: (value: TestA) => void)
+	public static removeOnInsert(callback: (value: TestA, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestA").removeOnInsert(callback);
 	}
 
-	public static removeOnUpdate(callback: (oldValue: TestA, newValue: TestA) => void)
+	public static removeOnUpdate(callback: (oldValue: TestA, newValue: TestA, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestA").removeOnUpdate(callback);
 	}
 
-	public static removeOnDelete(callback: (value: TestA) => void)
+	public static removeOnDelete(callback: (value: TestA, oldValue: TestA, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestA").removeOnDelete(callback);
 	}
@@ -254,7 +254,7 @@ __SPACETIMEDB__.registerComponent("TestA", TestA);
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent } from "@clockworklabs/spacetimedb-sdk";
 
 export class TestB extends IDatabaseTable
 {
@@ -297,7 +297,7 @@ __SPACETIMEDB__.registerComponent("TestB", TestB);
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent } from "@clockworklabs/spacetimedb-sdk";
 // @ts-ignore
 import { Namespace.TestC } from "./namespace.test_c";
 
@@ -346,32 +346,32 @@ export class TestD extends IDatabaseTable
 	}
 
 
-	public static onInsert(callback: (value: TestD) => void)
+	public static onInsert(callback: (value: TestD, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestD").onInsert(callback);
 	}
 
-	public static onUpdate(callback: (oldValue: TestD, newValue: TestD) => void)
+	public static onUpdate(callback: (oldValue: TestD, newValue: TestD, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestD").onUpdate(callback);
 	}
 
-	public static onDelete(callback: (value: TestD) => void)
+	public static onDelete(callback: (value: TestD, oldValue: TestD, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestD").onDelete(callback);
 	}
 
-	public static removeOnInsert(callback: (value: TestD) => void)
+	public static removeOnInsert(callback: (value: TestD, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestD").removeOnInsert(callback);
 	}
 
-	public static removeOnUpdate(callback: (oldValue: TestD, newValue: TestD) => void)
+	public static removeOnUpdate(callback: (oldValue: TestD, newValue: TestD, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestD").removeOnUpdate(callback);
 	}
 
-	public static removeOnDelete(callback: (value: TestD) => void)
+	public static removeOnDelete(callback: (value: TestD, oldValue: TestD, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestD").removeOnDelete(callback);
 	}
@@ -387,7 +387,7 @@ __SPACETIMEDB__.registerComponent("TestD", TestD);
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent } from "@clockworklabs/spacetimedb-sdk";
 
 export class TestE extends IDatabaseTable
 {
@@ -461,32 +461,32 @@ export class TestE extends IDatabaseTable
 	}
 
 
-	public static onInsert(callback: (value: TestE) => void)
+	public static onInsert(callback: (value: TestE, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestE").onInsert(callback);
 	}
 
-	public static onUpdate(callback: (oldValue: TestE, newValue: TestE) => void)
+	public static onUpdate(callback: (oldValue: TestE, newValue: TestE, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestE").onUpdate(callback);
 	}
 
-	public static onDelete(callback: (value: TestE) => void)
+	public static onDelete(callback: (value: TestE, oldValue: TestE, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestE").onDelete(callback);
 	}
 
-	public static removeOnInsert(callback: (value: TestE) => void)
+	public static removeOnInsert(callback: (value: TestE, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestE").removeOnInsert(callback);
 	}
 
-	public static removeOnUpdate(callback: (oldValue: TestE, newValue: TestE) => void)
+	public static removeOnUpdate(callback: (oldValue: TestE, newValue: TestE, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestE").removeOnUpdate(callback);
 	}
 
-	public static removeOnDelete(callback: (value: TestE) => void)
+	public static removeOnDelete(callback: (value: TestE, oldValue: TestE, reducerEvent: ReducerEvent | undefined) => void)
 	{
 		__SPACETIMEDB__.clientDB.getTable("TestE").removeOnDelete(callback);
 	}
