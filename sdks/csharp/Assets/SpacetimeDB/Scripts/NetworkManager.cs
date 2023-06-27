@@ -409,7 +409,7 @@ namespace SpacetimeDB
                         {
                             try
                             {
-                                ev.table.BeforeDeleteCallback?.Invoke(oldVal, message.Event);
+                                ev.table.BeforeDeleteCallback?.Invoke(oldVal, message.TransactionUpdate?.Event);
                             }
                             catch (Exception e)
                             {
@@ -471,7 +471,7 @@ namespace SpacetimeDB
                                     {
                                         if (events[i].table.InsertCallback != null)
                                         {
-                                            events[i].table.InsertCallback.Invoke(newValue, message.Event);
+                                            events[i].table.InsertCallback.Invoke(newValue, message.TransactionUpdate?.Event);
                                         }
                                     }
                                     catch (Exception e)
@@ -484,7 +484,7 @@ namespace SpacetimeDB
                                         if (events[i].table.RowUpdatedCallback != null)
                                         {
                                             events[i].table.RowUpdatedCallback
-                                                .Invoke(tableOp, null, newValue, message.Event);
+                                                .Invoke(tableOp, null, newValue, message.TransactionUpdate?.Event);
                                         }
                                     }
                                     catch (Exception e)
@@ -507,7 +507,7 @@ namespace SpacetimeDB
                                         {
                                             try
                                             {
-                                                events[i].table.DeleteCallback.Invoke(oldValue, message.Event);
+                                                events[i].table.DeleteCallback.Invoke(oldValue, message.TransactionUpdate?.Event);
                                             }
                                             catch (Exception e)
                                             {
@@ -520,7 +520,7 @@ namespace SpacetimeDB
                                             try
                                             {
                                                 events[i].table.RowUpdatedCallback
-                                                     .Invoke(tableOp, oldValue, null, message.Event);
+                                                     .Invoke(tableOp, oldValue, null, message.TransactionUpdate?.Event);
                                             }
                                             catch (Exception e)
                                             {
@@ -543,7 +543,7 @@ namespace SpacetimeDB
                                         {
                                             if (events[i].table.UpdateCallback != null)
                                             {
-                                                events[i].table.UpdateCallback.Invoke(oldValue, newValue, message.Event);
+                                                events[i].table.UpdateCallback.Invoke(oldValue, newValue, message.TransactionUpdate?.Event);
                                             }
                                         }
                                         catch (Exception e)
@@ -556,7 +556,7 @@ namespace SpacetimeDB
                                             if (events[i].table.RowUpdatedCallback != null)
                                             {
                                                 events[i].table.RowUpdatedCallback
-                                                         .Invoke(tableOp, oldValue, null, message.Event);
+                                                         .Invoke(tableOp, oldValue, null, message.TransactionUpdate?.Event);
                                             }
                                         }
                                         catch (Exception e)
@@ -575,7 +575,7 @@ namespace SpacetimeDB
                                 throw new ArgumentOutOfRangeException();
                         }
 
-                        onRowUpdate?.Invoke(tableName, tableOp, oldValue, newValue, message.Event?.FunctionCall.CallInfo);
+                        onRowUpdate?.Invoke(tableName, tableOp, oldValue, newValue, message.TransactionUpdate?.Event?.FunctionCall.CallInfo);
                     }
 
                     switch (message.TypeCase)
