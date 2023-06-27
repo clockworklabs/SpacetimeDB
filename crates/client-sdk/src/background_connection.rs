@@ -2,7 +2,7 @@ use crate::callbacks::{CredentialStore, DbCallbacks, ReducerCallbacks};
 use crate::client_api_messages;
 use crate::client_cache::{ClientCache, RowCallbackReminders};
 use crate::identity::Credentials;
-use crate::reducer::Reducer;
+use crate::reducer::{AnyReducerEvent, Reducer};
 use crate::websocket::DbConnection;
 use anyhow::Result;
 use futures::stream::StreamExt;
@@ -65,8 +65,12 @@ fn process_subscription_update_for_transaction_update(
     }
 }
 
-fn process_event(msg: client_api_messages::Event, reducer_callbacks: &mut ReducerCallbacks, state: Arc<ClientCache>) {
-    reducer_callbacks.handle_event(msg, state);
+fn process_event(
+    msg: client_api_messages::Event,
+    reducer_callbacks: &mut ReducerCallbacks,
+    state: Arc<ClientCache>,
+) -> Option<Arc<AnyReducerEvent>> {
+    reducer_callbacks.handle_event(msg, state)
 }
 
 fn update_client_cache(
@@ -91,11 +95,6 @@ fn process_transaction_update(
     db_callbacks: &Mutex<DbCallbacks>,
     reducer_callbacks: &Mutex<ReducerCallbacks>,
 ) {
-    // TODO: should we have some third kind of callback that takes both a
-    //       `Reducer` and a `TableType` so clients can observe all of a `TransactionUpdate`?
-
-    // TODO: does the order of invoking these two sets of callbacks matter?
-
     // Process the updated tables in the `subscription_update`.
     if let Some(update) = subscription_update {
         let mut callback_reminders = RowCallbackReminders::new_for_subscription_update(&update);
@@ -107,16 +106,16 @@ fn process_transaction_update(
         let mut db_callbacks_lock = db_callbacks.lock().expect("DbCallbacks Mutex is poisoned");
         log::info!("Got DbCallbacks Mutex");
 
-        new_state.invoke_row_callbacks(&mut callback_reminders, &mut db_callbacks_lock);
-
         // Invoke reducer callbacks, if any, on the `event`.
         if let Some(event) = event {
             log::info!("Acquiring ReducerCallbacks Mutex");
             let mut reducer_lock = reducer_callbacks.lock().expect("ReducerCallbacks Mutex is poisoned");
             log::info!("Got ReducerCallbacks Mutex");
-            process_event(event, &mut reducer_lock, new_state);
+            let event = process_event(event, &mut reducer_lock, new_state.clone());
+            new_state.invoke_row_callbacks(&mut callback_reminders, &mut db_callbacks_lock, event);
         } else {
             log::error!("Received TransactionUpdate with no Event");
+            new_state.invoke_row_callbacks(&mut callback_reminders, &mut db_callbacks_lock, None);
         }
     } else {
         log::error!("Received TransactionUpdate with no SubscriptionUpdate");
@@ -148,7 +147,7 @@ async fn receiver_loop(
                 log::info!("Acquiring DbCallbacks Mutex");
                 let mut db_callbacks_lock = db_callbacks.lock().expect("DbCallbacks Mutex is poisoned");
                 log::info!("Got DbCallbacks Mutex");
-                new_state.invoke_row_callbacks(&mut callback_reminders, &mut db_callbacks_lock);
+                new_state.invoke_row_callbacks(&mut callback_reminders, &mut db_callbacks_lock, None);
             }
             client_api_messages::Message {
                 r#type: Some(client_api_messages::message::Type::TransactionUpdate(transaction_update)),
