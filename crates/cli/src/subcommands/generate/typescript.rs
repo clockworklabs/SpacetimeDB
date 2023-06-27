@@ -655,6 +655,8 @@ fn autogen_typescript_product_table_common(
 ) -> String {
     let mut output = CodeIndenter::new(String::new());
 
+    let is_table = column_attrs.is_some();
+
     let struct_name_pascal_case = name.replace("r#", "").to_case(Case::Pascal);
 
     writeln!(
@@ -704,6 +706,39 @@ fn autogen_typescript_product_table_common(
         }
 
         writeln!(output).unwrap();
+
+        if is_table {
+            // if this table has a primary key add it to the codegen
+            if let Some(primary_key) = column_attrs
+                .unwrap()
+                .iter()
+                .enumerate()
+                .find_map(|(idx, attr)| attr.is_primary().then(|| idx))
+                .map(|idx| {
+                    let field_name = product_type.elements[idx]
+                        .name
+                        .as_ref()
+                        .expect("autogen'd tuples should have field names")
+                        .replace("r#", "");
+                    format!("\"{}\"", field_name)
+                })
+            {
+                writeln!(
+                    output,
+                    "public static primaryKey: string | undefined = {};",
+                    primary_key
+                )
+                .unwrap();
+                writeln!(output).unwrap();
+            }
+        } else {
+            writeln!(
+                output,
+                "public static primaryKey: string | undefined = undefined;",
+            )
+            .unwrap();
+            writeln!(output).unwrap();
+        }
 
         writeln!(output, "constructor({}) {{", constructor_signature.join(", ")).unwrap();
         writeln!(output, "super();").unwrap();
