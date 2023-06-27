@@ -7,7 +7,7 @@ static partial class Program
     [SpacetimeDB.Type]
     public partial struct Person
     {
-        [SpacetimeDB.ColumnIndex(ColumnIndexAttributeKind.Identity)]
+        [SpacetimeDB.ColumnIndex(ColumnIndexKind.Identity)]
         public int Id;
         public string Name;
         public int Age;
