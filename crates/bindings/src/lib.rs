@@ -460,6 +460,11 @@ impl<T: TableType> fmt::Display for UniqueConstraintViolation<T> {
         )
     }
 }
+impl<T: TableType> From<UniqueConstraintViolation<T>> for String {
+    fn from(err: UniqueConstraintViolation<T>) -> Self {
+        err.to_string()
+    }
+}
 impl<T: TableType> std::error::Error for UniqueConstraintViolation<T> {}
 
 impl<T: TableType> sealed::InsertResult for Result<T, UniqueConstraintViolation<T>> {
