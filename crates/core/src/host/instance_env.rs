@@ -106,9 +106,9 @@ impl InstanceEnv {
                 _ => {
                     let res = stdb.table_name_from_id(tx, table_id);
                     if let Ok(Some(table_name)) = res {
-                        log::debug!("insert_row(table: {table_name}, table_id: {table_id}): {e}")
+                        log::debug!("insert(table: {table_name}, table_id: {table_id}): {e}")
                     } else {
-                        log::debug!("insert_row(table_id: {table_id}): {e}")
+                        log::debug!("insert(table_id: {table_id}): {e}")
                     }
                 }
             })?;
