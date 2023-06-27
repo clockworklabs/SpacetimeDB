@@ -166,11 +166,11 @@ pub fn insert<T: TableType>(table_id: u32, row: T) -> T::InsertResult {
 /// to a fresh buffer with a handle to it returned as a `Buffer`.
 ///
 /// Panics when serialization fails.
-pub fn seek_eq(table_id: u32, col_id: u8, val: &impl Serialize) -> Result<Buffer> {
+pub fn iter_by_col_eq(table_id: u32, col_id: u8, val: &impl Serialize) -> Result<Buffer> {
     with_row_buf(|bytes| {
         // Encode `val` as bsatn into `bytes` and then use that.
         bsatn::to_writer(bytes, val).unwrap();
-        sys::seek_eq(table_id, col_id as u32, bytes)
+        sys::iter_by_col_eq(table_id, col_id as u32, bytes)
     })
 }
 
@@ -184,11 +184,11 @@ pub fn seek_eq(table_id: u32, col_id: u8, val: &impl Serialize) -> Result<Buffer
 /// or an error if no columns were deleted or if the column wasn't found.
 ///
 /// Panics when serialization fails.
-pub fn delete_eq(table_id: u32, col_id: u8, eq_value: &impl Serialize) -> Result<u32> {
+pub fn delete_by_col_eq(table_id: u32, col_id: u8, eq_value: &impl Serialize) -> Result<u32> {
     with_row_buf(|bytes| {
         // Encode `val` as bsatn into `bytes` and then use that.
         bsatn::to_writer(bytes, eq_value).unwrap();
-        sys::delete_eq(table_id, col_id.into(), bytes)
+        sys::delete_by_col_eq(table_id, col_id.into(), bytes)
     })
 }
 
@@ -533,7 +533,7 @@ pub mod query {
         val: &T,
     ) -> Option<Table> {
         // Find the row with a match.
-        let slice: &mut &[u8] = &mut &*seek_eq(Table::table_id(), COL_IDX, val).unwrap().read();
+        let slice: &mut &[u8] = &mut &*iter_by_col_eq(Table::table_id(), COL_IDX, val).unwrap().read();
         // We will always find either 0 or 1 rows here due to the unique constraint.
         match slice.remaining() {
             0 => None,
@@ -572,7 +572,7 @@ pub mod query {
     /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb(table)]`.
     #[doc(hidden)]
     pub fn delete_by_field<Table: TableType, T: UniqueValue, const COL_IDX: u8>(val: &T) -> bool {
-        let result = delete_eq(Table::table_id(), COL_IDX, val);
+        let result = delete_by_col_eq(Table::table_id(), COL_IDX, val);
         match result {
             Err(_) => {
                 // TODO: Returning here was supposed to signify an error,

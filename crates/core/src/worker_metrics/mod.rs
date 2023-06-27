@@ -205,7 +205,7 @@ metrics_delegator!(
 metrics_delegator!(INSTANCE_ENV_INSERT, instance_env_insert: HistogramVec);
 // metrics_delegator!(INSTANCE_ENV_DELETE_PK, instance_env_delete_pk: HistogramVec);
 // metrics_delegator!(INSTANCE_ENV_DELETE_VALUE, instance_env_delete_value: HistogramVec);
-metrics_delegator!(INSTANCE_ENV_DELETE_EQ, instance_env_delete_eq: HistogramVec);
+metrics_delegator!(INSTANCE_ENV_DELETE_BY_COL_EQ, instance_env_delete_eq: HistogramVec);
 //metrics_delegator!(INSTANCE_ENV_DELETE_RANGE, instance_env_delete_range: HistogramVec);
 
 pub fn register_custom_metrics() {

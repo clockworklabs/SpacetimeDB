@@ -185,11 +185,7 @@ impl TableSchema {
 
     /// Turn a [TableField] that could be an unqualified field `id` into `table.id`
     pub fn normalize_field(&self, name: &TableField) -> FieldName {
-        if let Some(t) = name.table {
-            FieldName::named(t, name.field)
-        } else {
-            FieldName::named(&self.table_name, name.field)
-        }
+        FieldName::named(name.table.unwrap_or(&self.table_name), name.field)
     }
 }
 
@@ -260,7 +256,7 @@ impl From<ProductType> for TableDef {
                 .iter()
                 .enumerate()
                 .map(|(i, e)| ColumnDef {
-                    col_name: e.name.to_owned().unwrap_or(i.to_string()),
+                    col_name: e.name.to_owned().unwrap_or_else(|| i.to_string()),
                     col_type: e.algebraic_type.clone(),
                     is_autoinc: false,
                 })
@@ -323,67 +319,67 @@ pub trait MutTx {
 }
 
 pub trait Blobstore: BlobRow {
-    type ScanIterator<'a>: Iterator<Item = Self::BlobRef>
+    type Iter<'a>: Iterator<Item = Self::BlobRef>
     where
         Self: 'a;
 
-    fn scan_blobs(&self, table_id: TableId) -> Result<Self::ScanIterator<'_>>;
+    fn iter_blobs(&self, table_id: TableId) -> Result<Self::Iter<'_>>;
 
-    fn get_row_blob(&self, table_id: TableId, row_id: Self::RowId) -> Result<Option<Self::BlobRef>>;
+    fn get_blob(&self, table_id: TableId, row_id: Self::RowId) -> Result<Option<Self::BlobRef>>;
 }
 
 pub trait MutBlobstore: Blobstore {
-    fn delete_row_blob(&self, table_id: TableId, row_id: Self::RowId) -> Result<()>;
+    fn delete_blob(&self, table_id: TableId, row_id: Self::RowId) -> Result<()>;
 
-    fn insert_row_blob(&self, table_id: TableId, row: &[u8]) -> Result<Self::RowId>;
+    fn insert_blob(&self, table_id: TableId, row: &[u8]) -> Result<Self::RowId>;
 }
 
 pub trait Datastore: DataRow {
-    type ScanIterator<'a>: Iterator<Item = Self::DataRef>
+    type Iter<'a>: Iterator<Item = Self::DataRef>
     where
         Self: 'a;
 
-    type RangeIterator<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::DataRef>
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::DataRef>
     where
         Self: 'a;
 
-    type SeekIterator<'a>: Iterator<Item = Self::DataRef>
+    type IterByColEq<'a>: Iterator<Item = Self::DataRef>
     where
         Self: 'a;
 
-    fn scan(&self, table_id: TableId) -> Result<Self::ScanIterator<'_>>;
+    fn iter(&self, table_id: TableId) -> Result<Self::Iter<'_>>;
 
-    fn range_scan<R: RangeBounds<AlgebraicValue>>(
+    fn iter_by_col_range<R: RangeBounds<AlgebraicValue>>(
         &self,
         table_id: TableId,
         col_id: ColId,
         range: R,
-    ) -> Result<Self::RangeIterator<'_, R>>;
+    ) -> Result<Self::IterByColRange<'_, R>>;
 
-    fn seek<'a>(
+    fn iter_by_col_eq<'a>(
         &'a self,
         table_id: TableId,
         col_id: ColId,
         value: &'a AlgebraicValue,
-    ) -> Result<Self::SeekIterator<'a>>;
+    ) -> Result<Self::IterByColEq<'a>>;
 
-    fn get_row(&self, table_id: TableId, row_id: Self::RowId) -> Result<Option<Self::DataRef>>;
+    fn get(&self, table_id: TableId, row_id: Self::RowId) -> Result<Option<Self::DataRef>>;
 }
 
 pub trait MutDatastore: Datastore {
-    fn delete_row(&self, table_id: TableId, row_id: Self::RowId) -> Result<()>;
+    fn delete(&self, table_id: TableId, row_id: Self::RowId) -> Result<()>;
 
-    fn insert_row(&self, table_id: TableId, row: ProductValue) -> Result<Self::RowId>;
+    fn insert(&self, table_id: TableId, row: ProductValue) -> Result<Self::RowId>;
 }
 
 pub trait TxBlobstore: BlobRow + Tx {
-    type ScanIterator<'a>: Iterator<Item = Self::BlobRef>
+    type Iter<'a>: Iterator<Item = Self::BlobRef>
     where
         Self: 'a;
 
-    fn scan_blobs_tx<'a>(&'a self, tx: &'a Self::TxId, table_id: TableId) -> Result<Self::ScanIterator<'a>>;
+    fn iter_blobs_tx<'a>(&'a self, tx: &'a Self::TxId, table_id: TableId) -> Result<Self::Iter<'a>>;
 
-    fn get_row_blob_tx<'a>(
+    fn get_blob_tx<'a>(
         &'a self,
         tx: &'a Self::TxId,
         table_id: TableId,
@@ -392,23 +388,23 @@ pub trait TxBlobstore: BlobRow + Tx {
 }
 
 pub trait MutTxBlobstore: TxBlobstore + MutTx {
-    fn scan_blobs_mut_tx<'a>(&'a self, tx: &'a Self::MutTxId, table_id: TableId) -> Result<Self::ScanIterator<'a>>;
+    fn iter_blobs_mut_tx<'a>(&'a self, tx: &'a Self::MutTxId, table_id: TableId) -> Result<Self::Iter<'a>>;
 
-    fn get_row_blob_mut_tx<'a>(
+    fn get_blob_mut_tx<'a>(
         &'a self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
         row_id: Self::RowId,
     ) -> Result<Option<Self::BlobRef>>;
 
-    fn delete_row_blob_mut_tx<'a>(
+    fn delete_blob_mut_tx<'a>(
         &'a self,
         tx: &'a mut Self::MutTxId,
         table_id: TableId,
         row_id: Self::RowId,
     ) -> Result<()>;
 
-    fn insert_row_blob_mut_tx<'a>(
+    fn insert_blob_mut_tx<'a>(
         &'a self,
         tx: &'a mut Self::MutTxId,
         table_id: TableId,
@@ -417,37 +413,37 @@ pub trait MutTxBlobstore: TxBlobstore + MutTx {
 }
 
 pub trait TxDatastore: DataRow + Tx {
-    type ScanIterator<'a>: Iterator<Item = Self::DataRef>
+    type Iter<'a>: Iterator<Item = Self::DataRef>
     where
         Self: 'a;
 
-    type RangeIterator<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::DataRef>
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::DataRef>
     where
         Self: 'a;
 
-    type SeekIterator<'a>: Iterator<Item = Self::DataRef>
+    type IterByColEq<'a>: Iterator<Item = Self::DataRef>
     where
         Self: 'a;
 
-    fn scan_tx<'a>(&'a self, tx: &'a Self::TxId, table_id: TableId) -> Result<Self::ScanIterator<'a>>;
+    fn iter_tx<'a>(&'a self, tx: &'a Self::TxId, table_id: TableId) -> Result<Self::Iter<'a>>;
 
-    fn range_scan_tx<'a, R: RangeBounds<AlgebraicValue>>(
+    fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         tx: &'a Self::TxId,
         table_id: TableId,
         col_id: ColId,
         range: R,
-    ) -> Result<Self::RangeIterator<'a, R>>;
+    ) -> Result<Self::IterByColRange<'a, R>>;
 
-    fn seek_tx<'a>(
+    fn iter_by_col_eq_tx<'a>(
         &'a self,
         tx: &'a Self::TxId,
         table_id: TableId,
         col_id: ColId,
         value: &'a AlgebraicValue,
-    ) -> Result<Self::SeekIterator<'a>>;
+    ) -> Result<Self::IterByColEq<'a>>;
 
-    fn get_row_tx<'a>(
+    fn get_tx<'a>(
         &'a self,
         tx: &'a Self::TxId,
         table_id: TableId,
@@ -467,7 +463,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn table_name_from_id_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<Option<String>>;
     fn get_all_tables_mut_tx(&self, tx: &Self::MutTxId) -> super::Result<Vec<TableSchema>> {
         let mut tables = Vec::new();
-        let table_rows = self.scan_mut_tx(tx, TableId(ST_TABLES_ID))?.collect::<Vec<_>>();
+        let table_rows = self.iter_mut_tx(tx, TableId(ST_TABLES_ID))?.collect::<Vec<_>>();
         for data_ref in table_rows {
             let data = self.data_to_owned(data_ref);
             let row = StTableRow::try_from(data.view())?;
@@ -498,40 +494,35 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     ) -> super::Result<Option<SequenceId>>;
 
     // Data
-    fn scan_mut_tx<'a>(&'a self, tx: &'a Self::MutTxId, table_id: TableId) -> Result<Self::ScanIterator<'a>>;
-    fn range_scan_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
+    fn iter_mut_tx<'a>(&'a self, tx: &'a Self::MutTxId, table_id: TableId) -> Result<Self::Iter<'a>>;
+    fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
         col_id: ColId,
         range: R,
-    ) -> Result<Self::RangeIterator<'a, R>>;
-    fn seek_mut_tx<'a>(
+    ) -> Result<Self::IterByColRange<'a, R>>;
+    fn iter_by_col_eq_mut_tx<'a>(
         &'a self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
         col_id: ColId,
         value: &'a AlgebraicValue,
-    ) -> Result<Self::SeekIterator<'a>>;
-    fn get_row_mut_tx<'a>(
+    ) -> Result<Self::IterByColEq<'a>>;
+    fn get_mut_tx<'a>(
         &'a self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
         row_id: Self::RowId,
     ) -> Result<Option<Self::DataRef>>;
-    fn delete_row_mut_tx<'a>(
-        &'a self,
-        tx: &'a mut Self::MutTxId,
-        table_id: TableId,
-        row_id: Self::RowId,
-    ) -> Result<bool>;
-    fn delete_rows_in_mut_tx<R: IntoIterator<Item = ProductValue>>(
+    fn delete_mut_tx<'a>(&'a self, tx: &'a mut Self::MutTxId, table_id: TableId, row_id: Self::RowId) -> Result<bool>;
+    fn delete_by_rel_mut_tx<R: IntoIterator<Item = ProductValue>>(
         &self,
         tx: &mut Self::MutTxId,
         table_id: TableId,
         relation: R,
     ) -> Result<Option<u32>>;
-    fn insert_row_mut_tx<'a>(
+    fn insert_mut_tx<'a>(
         &'a self,
         tx: &'a mut Self::MutTxId,
         table_id: TableId,

@@ -17,7 +17,7 @@ pub enum ReplayEventType {
     Insert,
     // DeletePk(bool),
     // DeleteValue(bool),
-    DeleteEq(u32),
+    DeleteByColEq(u32),
     // DeleteRange(u32),
     // CreateTable(u32),
     Iter(Vec<u8>),
@@ -44,7 +44,7 @@ impl From<InstanceEventType> for ReplayEventType {
     fn from(event: InstanceEventType) -> Self {
         match event {
             InstanceEventType::Insert(_) => Self::Insert,
-            InstanceEventType::DeleteEq(event) => Self::DeleteEq(event.result_deleted_count),
+            InstanceEventType::DeleteByColEq(event) => Self::DeleteByColEq(event.result_deleted_count),
             /*
             InstanceEventType::DeletePk(event) => Self::DeletePk(event.result_success),
             InstanceEventType::DeleteValue(event) => Self::DeleteValue(event.result_success),
@@ -114,11 +114,11 @@ fn execute_event(instance_env: &InstanceEnv, event: &InstanceEventType) -> anyho
             ReplayEventType::DeleteValue(result_success)
         }
         */
-        InstanceEventType::DeleteEq(delete) => {
+        InstanceEventType::DeleteByColEq(delete) => {
             let result_count = instance_env
-                .delete_eq(delete.table_id, delete.col_id, &delete.buffer)
+                .delete_by_col_eq(delete.table_id, delete.col_id, &delete.buffer)
                 .unwrap();
-            ReplayEventType::DeleteEq(result_count)
+            ReplayEventType::DeleteByColEq(result_count)
         }
         /*
         InstanceEventType::DeleteRange(delete) => {

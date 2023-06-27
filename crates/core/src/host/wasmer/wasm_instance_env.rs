@@ -230,7 +230,7 @@ impl WasmInstanceEnv {
     ///
     /// Returns an error if no columns were deleted or if the column wasn't found.
     #[tracing::instrument(skip_all)]
-    pub fn delete_eq(
+    pub fn delete_by_col_eq(
         caller: FunctionEnvMut<'_, Self>,
         table_id: u32,
         col_id: u32,
@@ -238,9 +238,9 @@ impl WasmInstanceEnv {
         value_len: u32,
         out: WasmPtr<u32>,
     ) -> RtResult<u16> {
-        Self::cvt_ret(caller, "delete_eq", out, |caller, mem| {
+        Self::cvt_ret(caller, "delete_by_col_eq", out, |caller, mem| {
             let value = mem.read_bytes(&caller, value, value_len)?;
-            Ok(caller.data().instance_env.delete_eq(table_id, col_id, &value)?)
+            Ok(caller.data().instance_env.delete_by_col_eq(table_id, col_id, &value)?)
         })
     }
 
@@ -395,7 +395,7 @@ impl WasmInstanceEnv {
     /// The resulting byte string from the concatenation is written
     /// to a fresh buffer with the buffer's identifier written to the WASM pointer `out`.
     #[tracing::instrument(skip_all)]
-    pub fn seek_eq(
+    pub fn iter_by_col_eq(
         caller: FunctionEnvMut<'_, Self>,
         table_id: u32,
         col_id: u32,
@@ -403,12 +403,12 @@ impl WasmInstanceEnv {
         val_len: u32,
         out: WasmPtr<BufferIdx>,
     ) -> RtResult<u16> {
-        Self::cvt_ret(caller, "seek_eq", out, |mut caller, mem| {
+        Self::cvt_ret(caller, "iter_by_col_eq", out, |mut caller, mem| {
             // Read the test value from WASM memory.
             let value = mem.read_bytes(&caller, val, val_len)?;
 
             // Find the relevant rows.
-            let data = caller.data().instance_env.seek_eq(table_id, col_id, &value)?;
+            let data = caller.data().instance_env.iter_by_col_eq(table_id, col_id, &value)?;
 
             // Insert the encoded + concatenated rows into a new buffer and return its id.
             Ok(caller.data_mut().buffers.insert(data.into()))
