@@ -8,7 +8,7 @@ use futures_channel::mpsc;
 use http::uri::{Parts, Uri};
 use prost::Message as ProtobufMessage;
 use spacetimedb_client_api_messages::client_api::Message;
-use tokio::{net::TcpStream, runtime::Runtime, task::JoinHandle};
+use tokio::{net::TcpStream, runtime, task::JoinHandle};
 use tokio_tungstenite::{
     connect_async, tungstenite::client::IntoClientRequest, tungstenite::protocol::Message as WebSocketMessage,
     MaybeTlsStream, WebSocketStream,
@@ -179,7 +179,7 @@ impl DbConnection {
 
     pub(crate) fn spawn_message_loop(
         self,
-        runtime: &Runtime,
+        runtime: &runtime::Handle,
     ) -> (
         JoinHandle<()>,
         mpsc::UnboundedReceiver<Message>,

@@ -10,7 +10,7 @@ use futures_channel::mpsc;
 use spacetimedb_sats::bsatn;
 use std::sync::{Arc, Mutex};
 use tokio::{
-    runtime::{Builder, Runtime},
+    runtime::{self, Builder, Runtime},
     task::JoinHandle,
 };
 
@@ -18,8 +18,10 @@ use tokio::{
 type SharedCell<T> = Arc<Mutex<T>>;
 
 pub struct BackgroundDbConnection {
+    // `Some` if not within the context of an outer runtime. The `Runtime` must
+    // then live as long as `Self`.
     #[allow(unused)]
-    runtime: Arc<Runtime>,
+    runtime: Option<Runtime>,
     send_chan: mpsc::UnboundedSender<client_api_messages::Message>,
     #[allow(unused)]
     websocket_loop_handle: JoinHandle<()>,
@@ -49,12 +51,24 @@ pub struct BackgroundDbConnection {
     pub(crate) reducer_callbacks: SharedCell<ReducerCallbacks>,
 }
 
-fn make_runtime() -> Result<Runtime> {
-    Ok(Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(1)
-        .thread_name("spacetimedb-background-connection")
-        .build()?)
+// When called from within an async context, return a handle to it (and no
+// `Runtime`), otherwise create a fresh `Runtime` and return it along with a
+// handle to it.
+fn enter_or_create_runtime() -> Result<(Option<Runtime>, runtime::Handle)> {
+    match runtime::Handle::try_current() {
+        Err(e) if e.is_missing_context() => {
+            let rt = Builder::new_multi_thread()
+                .enable_all()
+                .worker_threads(1)
+                .thread_name("spacetimedb-background-connection")
+                .build()?;
+            let handle = rt.handle().clone();
+
+            Ok((Some(rt), handle))
+        }
+        Ok(handle) => Ok((None, handle)),
+        Err(e) => Err(e.into()),
+    }
 }
 
 fn process_table_update(
@@ -210,7 +224,7 @@ async fn receiver_loop(
 impl BackgroundDbConnection {
     fn spawn_receiver(
         recv: mpsc::UnboundedReceiver<client_api_messages::Message>,
-        runtime: &Runtime,
+        runtime: &runtime::Handle,
         client_cache: SharedCell<ClientCacheView>,
         db_callbacks: SharedCell<DbCallbacks>,
         reducer_callbacks: SharedCell<ReducerCallbacks>,
@@ -251,23 +265,27 @@ impl BackgroundDbConnection {
         Host: TryInto<http::Uri>,
         <Host as TryInto<http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
     {
-        let runtime = Arc::new(make_runtime()?);
-        let connection = runtime.block_on(DbConnection::connect(host, db_name, credentials.as_ref()))?;
+        let (runtime, handle) = enter_or_create_runtime()?;
+        // `block_in_place` is required here, as tokio won't allow us to call
+        // `block_on` if it would block the current thread of an outer runtime
+        let connection = tokio::task::block_in_place(|| {
+            handle.block_on(DbConnection::connect(host, db_name, credentials.as_ref()))
+        })?;
         let client_cache = Arc::new(Mutex::new(Arc::new(ClientCache::new(
             handle_table_update,
             handle_resubscribe,
             invoke_row_callbacks,
         ))));
-        let db_callbacks = Arc::new(Mutex::new(DbCallbacks::new(runtime.clone())));
-        let reducer_callbacks = Arc::new(Mutex::new(ReducerCallbacks::new(handle_event, runtime.clone())));
+        let db_callbacks = Arc::new(Mutex::new(DbCallbacks::new(handle.clone())));
+        let reducer_callbacks = Arc::new(Mutex::new(ReducerCallbacks::new(handle_event, handle.clone())));
         let credentials = Arc::new(Mutex::new(CredentialStore::maybe_with_credentials(
             credentials,
-            &runtime,
+            &handle,
         )));
-        let (websocket_loop_handle, recv_chan, send_chan) = connection.spawn_message_loop(&runtime);
+        let (websocket_loop_handle, recv_chan, send_chan) = connection.spawn_message_loop(&handle);
         let recv_handle = Self::spawn_receiver(
             recv_chan,
-            &runtime,
+            &handle,
             client_cache.clone(),
             db_callbacks.clone(),
             reducer_callbacks.clone(),

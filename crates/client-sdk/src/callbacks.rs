@@ -30,12 +30,9 @@ use spacetimedb_sats::bsatn;
 use std::{
     collections::HashMap,
     marker::PhantomData,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicUsize, Ordering},
 };
-use tokio::{runtime::Runtime, task::JoinHandle};
+use tokio::{runtime, task::JoinHandle};
 
 /// An owned tuple which can be sent to a `CallbackMap` worker,
 /// then converted to a borrowed form to be passed to any number of callbacks.
@@ -283,7 +280,7 @@ impl<Args: OwnedArgs> CallbackMap<Args> {
     ///
     /// This will create an unbounded channel, with the returned `CallbackMap` holding
     /// the sender, and the background handler loop holding the receiver.
-    fn spawn(runtime: &Runtime) -> Self {
+    fn spawn(runtime: &runtime::Handle) -> Self {
         let (send, recv) = mpsc::unbounded();
         let handle = runtime.spawn(Self::callback_handler_loop(recv));
         CallbackMap {
@@ -521,6 +518,14 @@ where
         self.on_delete.invoke((deleted,), db_state);
     }
 
+    pub(crate) fn new(runtime: &runtime::Handle) -> TableCallbacks<T> {
+        TableCallbacks {
+            on_insert: CallbackMap::spawn(runtime),
+            on_delete: CallbackMap::spawn(runtime),
+            on_update: CallbackMap::spawn(runtime),
+        }
+    }
+
     /// Register an `on_update` callback for when an inserted row overwrites an existing
     /// row.
     ///
@@ -550,14 +555,6 @@ where
     pub(crate) fn invoke_on_update(&mut self, old: T, new: T, db_state: ClientCacheView) {
         self.on_update.invoke((old, new), db_state);
     }
-
-    pub(crate) fn new(runtime: &Runtime) -> TableCallbacks<T> {
-        TableCallbacks {
-            on_insert: CallbackMap::spawn(runtime),
-            on_delete: CallbackMap::spawn(runtime),
-            on_update: CallbackMap::spawn(runtime),
-        }
-    }
 }
 
 pub struct DbCallbacks {
@@ -566,7 +563,7 @@ pub struct DbCallbacks {
 
     /// A handle on the Tokio runtime, used to spawn `CallbackMap` workers
     /// for specific reducer types in `ClientCache::find_table`.
-    runtime: Arc<Runtime>,
+    runtime: runtime::Handle,
 }
 
 impl DbCallbacks {
@@ -576,7 +573,7 @@ impl DbCallbacks {
             .or_insert_with(|| TableCallbacks::new(&self.runtime))
     }
 
-    pub(crate) fn new(runtime: Arc<Runtime>) -> DbCallbacks {
+    pub(crate) fn new(runtime: runtime::Handle) -> DbCallbacks {
         DbCallbacks {
             table_callbacks: Map::new(),
             runtime,
@@ -606,7 +603,7 @@ pub struct ReducerCallbacks {
 
     /// A handle on the Tokio runtime, used to spawn `CallbackMap` workers
     /// for specific reducer types in `ReducerCallbacks::find_callbacks`.
-    runtime: Arc<Runtime>,
+    runtime: runtime::Handle,
 }
 
 // In order to be resilient against future extensions to the protocol,
@@ -628,7 +625,7 @@ fn parse_status(status: i32) -> Option<Status> {
 }
 
 impl ReducerCallbacks {
-    pub(crate) fn new(handle_event: HandleEventFn, runtime: Arc<Runtime>) -> ReducerCallbacks {
+    pub(crate) fn new(handle_event: HandleEventFn, runtime: runtime::Handle) -> ReducerCallbacks {
         ReducerCallbacks {
             callbacks: Map::new(),
             handle_event,
@@ -730,7 +727,7 @@ impl CredentialStore {
     /// where `credentials` were passed to `connect`.
     ///
     /// The background worker for on-connect callbacks will be spawned in `runtime`.
-    pub(crate) fn maybe_with_credentials(credentials: Option<Credentials>, runtime: &Runtime) -> Self {
+    pub(crate) fn maybe_with_credentials(credentials: Option<Credentials>, runtime: &runtime::Handle) -> Self {
         CredentialStore {
             credentials,
             callbacks: CallbackMap::spawn(runtime),
