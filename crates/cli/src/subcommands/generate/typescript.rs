@@ -705,8 +705,6 @@ fn autogen_typescript_product_table_common(
 
         writeln!(output).unwrap();
 
-<<<<<<< Updated upstream
-=======
         if is_table {
             // if this table has a primary key add it to the codegen
             if let Some(primary_key) = column_attrs
@@ -736,7 +734,6 @@ fn autogen_typescript_product_table_common(
             writeln!(output).unwrap();
         }
 
->>>>>>> Stashed changes
         writeln!(output, "constructor({}) {{", constructor_signature.join(", ")).unwrap();
         writeln!(output, "super();").unwrap();
         {
