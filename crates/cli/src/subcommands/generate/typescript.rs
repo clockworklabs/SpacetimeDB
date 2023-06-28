@@ -705,6 +705,38 @@ fn autogen_typescript_product_table_common(
 
         writeln!(output).unwrap();
 
+<<<<<<< Updated upstream
+=======
+        if is_table {
+            // if this table has a primary key add it to the codegen
+            if let Some(primary_key) = column_attrs
+                .unwrap()
+                .iter()
+                .enumerate()
+                .find_map(|(idx, attr)| attr.is_primary().then(|| idx))
+                .map(|idx| {
+                    let field_name = product_type.elements[idx]
+                        .name
+                        .as_ref()
+                        .expect("autogen'd tuples should have field names")
+                        .replace("r#", "");
+                    format!("\"{}\"", field_name)
+                })
+            {
+                writeln!(
+                    output,
+                    "public static primaryKey: string | undefined = {};",
+                    primary_key
+                )
+                .unwrap();
+                writeln!(output).unwrap();
+            }
+        } else {
+            writeln!(output, "public static primaryKey: string | undefined = undefined;",).unwrap();
+            writeln!(output).unwrap();
+        }
+
+>>>>>>> Stashed changes
         writeln!(output, "constructor({}) {{", constructor_signature.join(", ")).unwrap();
         writeln!(output, "super();").unwrap();
         {
@@ -981,8 +1013,9 @@ fn autogen_typescript_access_funcs_for_struct(
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
         let field_type = &field.algebraic_type;
         let typescript_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
+        let typescript_field_name_camel = field_name.replace("r#", "").to_case(Case::Camel);
 
-        let (field_type, typescript_field_type) = match field_type {
+        let typescript_field_type = match field_type {
             AlgebraicType::Product(_) | AlgebraicType::Ref(_) => {
                 // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
                 continue;
@@ -992,11 +1025,11 @@ fn autogen_typescript_access_funcs_for_struct(
                 continue;
             }
             AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-                MaybePrimitive::Primitive(ty) => (typescript_as_type(b).to_string(), ty),
+                MaybePrimitive::Primitive(ty) => ty,
                 MaybePrimitive::Array(ArrayType { elem_ty }) => {
                     if let Some(BuiltinType::U8) = elem_ty.as_builtin() {
                         // Do allow filtering for byte arrays
-                        ("Bytes".into(), "Uint8Array")
+                        "Uint8Array"
                     } else {
                         // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
                         continue;
@@ -1011,7 +1044,7 @@ fn autogen_typescript_access_funcs_for_struct(
 
         let filter_return_type = fmt_fn(|f| {
             if is_unique {
-                f.write_str(struct_name_pascal_case)
+                write!(f, "{struct_name_pascal_case} | null")
             } else {
                 write!(f, "{struct_name_pascal_case}[]")
             }
@@ -1019,7 +1052,7 @@ fn autogen_typescript_access_funcs_for_struct(
 
         writeln!(
             output,
-            "public static filterBy{typescript_field_name_pascal}(value: {typescript_field_type}): {filter_return_type} | null"
+            "public static filterBy{typescript_field_name_pascal}(value: {typescript_field_type}): {filter_return_type}"
         )
         .unwrap();
 
@@ -1031,28 +1064,22 @@ fn autogen_typescript_access_funcs_for_struct(
             }
             writeln!(
                 output,
-                "for(let entry of __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").getEntries())"
+                "for(let instance of __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").getInstances())"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
-                writeln!(output, "var productValue = entry.asProductValue();").unwrap();
-                writeln!(
-                    output,
-                    "let compareValue = productValue.elements[{col_i}].as{field_type}() as {typescript_field_type};"
-                )
-                .unwrap();
                 if typescript_field_type == "Uint8Array" {
                     writeln!(
                         output,
                         "let byteArrayCompare = function (a1: Uint8Array, a2: Uint8Array)
 {{
-    if (a1.length != a2.length)
+    if (a1.length !== a2.length)
         return false;
 
     for (let i=0; i<a1.length; i++)
-        if (a1[i]!=a2[i])
+        if (a1[i]!==a2[i])
             return false;
 
     return true;
@@ -1060,24 +1087,28 @@ fn autogen_typescript_access_funcs_for_struct(
                     )
                     .unwrap();
                     writeln!(output).unwrap();
-                    writeln!(output, "if (byteArrayCompare(compareValue, value)) {{").unwrap();
+                    writeln!(
+                        output,
+                        "if (byteArrayCompare(instance.{typescript_field_name_camel}, value)) {{"
+                    )
+                    .unwrap();
                     {
                         indent_scope!(output);
                         if is_unique {
-                            writeln!(output, "return {struct_name_pascal_case}.fromValue(entry);").unwrap();
+                            writeln!(output, "return instance;").unwrap();
                         } else {
-                            writeln!(output, "result.push({struct_name_pascal_case}.fromValue(entry));").unwrap();
+                            writeln!(output, "result.push(instance);").unwrap();
                         }
                     }
                     writeln!(output, "}}").unwrap();
                 } else {
-                    writeln!(output, "if (compareValue == value) {{").unwrap();
+                    writeln!(output, "if (instance.{typescript_field_name_camel} === value) {{").unwrap();
                     {
                         indent_scope!(output);
                         if is_unique {
-                            writeln!(output, "return {struct_name_pascal_case}.fromValue(entry);").unwrap();
+                            writeln!(output, "return instance;").unwrap();
                         } else {
-                            writeln!(output, "result.push({struct_name_pascal_case}.fromValue(entry));").unwrap();
+                            writeln!(output, "result.push(instance);").unwrap();
                         }
                     }
                     writeln!(output, "}}").unwrap();
