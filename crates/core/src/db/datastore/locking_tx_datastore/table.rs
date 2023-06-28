@@ -29,12 +29,13 @@ impl Table {
         self.rows.insert(row_id, row);
     }
 
-    pub(crate) fn delete(&mut self, row_id: &RowId) {
-        let Some(row) = self.rows.remove(row_id) else { return };
+    pub(crate) fn delete(&mut self, row_id: &RowId) -> Option<ProductValue> {
+        let row = self.rows.remove(row_id)?;
         for (col_id, index) in self.indexes.iter_mut() {
             let col_value = row.get_field(col_id.0 as usize, None).unwrap();
             index.delete(col_value, row_id)
         }
+        Some(row)
     }
 
     pub(crate) fn get_row(&self, row_id: &RowId) -> Option<&ProductValue> {

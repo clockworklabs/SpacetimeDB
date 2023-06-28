@@ -1,6 +1,5 @@
 use crate::client::ClientConnectionSender;
-use crate::db::datastore::traits::MutTxDatastore;
-use crate::db::messages::write::Write;
+use crate::db::datastore::traits::{TxData, TxOp, TableId};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::hash::Hash;
@@ -32,38 +31,24 @@ impl DatabaseUpdate {
         false
     }
 
-    pub fn from_writes(stdb: &RelationalDB, writes: &Vec<Write>) -> Self {
-        let mut map: HashMap<u32, Vec<TableOp>> = HashMap::new();
+    pub fn from_writes(stdb: &RelationalDB, tx_data: &TxData) -> Self {
+        let mut map: HashMap<TableId, Vec<TableOp>> = HashMap::new();
         //TODO: This should be wrapped with .auto_commit
         let tx = stdb.begin_tx();
-        for write in writes {
-            let op = match write.operation {
-                crate::db::messages::write::Operation::Delete => 0,
-                crate::db::messages::write::Operation::Insert => 1,
+        for record in tx_data.records.iter() {
+            let op = match record.op {
+                TxOp::Delete => 0,
+                TxOp::Insert(_) => 1,
             };
 
-            let vec = if let Some(vec) = map.get_mut(&write.set_id) {
+            let vec = if let Some(vec) = map.get_mut(&record.table_id) {
                 vec
             } else {
-                map.insert(write.set_id, Vec::new());
-                map.get_mut(&write.set_id).unwrap()
+                map.insert(record.table_id, Vec::new());
+                map.get_mut(&record.table_id).unwrap()
             };
 
-            let (row, row_pk) = {
-                // TODO: This is not safe at all and horribly horrible.
-                // The following code will panic if you try to get the row_type for the table
-                // and the table has since been deleted from the datastore.
-                let bytes = stdb
-                    .inner
-                    .resolve_data_key_mut_tx(&tx, &write.data_key)
-                    .unwrap()
-                    .unwrap();
-                let ty = stdb
-                    .row_schema_for_table(&tx, write.set_id)
-                    .expect("Tyler to have written better code.");
-                let tuple = ProductValue::decode(&ty, &mut &bytes[..]).unwrap();
-                (tuple, write.data_key.to_bytes())
-            };
+            let (row, row_pk) = (record.pv.clone(), record.key.to_bytes());
 
             vec.push(TableOp {
                 op_type: op,
@@ -72,18 +57,18 @@ impl DatabaseUpdate {
             });
         }
 
-        let mut table_name_map: HashMap<u32, String> = HashMap::new();
+        let mut table_name_map: HashMap<TableId, String> = HashMap::new();
         let mut table_updates = Vec::new();
         for (table_id, table_row_operations) in map.drain() {
             let table_name = if let Some(name) = table_name_map.get(&table_id) {
                 name.clone()
             } else {
-                let table_name = stdb.table_name_from_id(&tx, table_id).unwrap().unwrap();
+                let table_name = stdb.table_name_from_id(&tx, table_id.0).unwrap().unwrap();
                 table_name_map.insert(table_id, table_name.clone());
                 table_name
             };
             table_updates.push(DatabaseTableUpdate {
-                table_id,
+                table_id: table_id.0,
                 table_name,
                 ops: table_row_operations,
             });

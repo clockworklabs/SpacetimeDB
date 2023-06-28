@@ -1,4 +1,4 @@
-use crate::db::{messages::transaction::Transaction, relational_db::ST_TABLES_ID};
+use crate::db::relational_db::ST_TABLES_ID;
 use core::fmt;
 use spacetimedb_lib::DataKey;
 use spacetimedb_sats::{
@@ -280,6 +280,31 @@ impl From<TableSchema> for TableDef {
     }
 }
 
+/// Operations in a transaction are either Inserts or Deletes.
+/// Inserts report the byte objects they inserted, to be persisted
+/// later in an object store.
+pub enum TxOp {
+    Insert(Arc<Vec<u8>>),
+    Delete,
+}
+
+/// A record of a single operation within a transaction.
+pub struct TxRecord {
+    /// Whether the operation was an insert or a delete.
+    pub(crate) op: TxOp,
+    /// The value of the modified row.
+    pub(crate) pv: ProductValue,
+    /// The key of the modified row.
+    pub(crate) key: DataKey,
+    /// The table that was modified.
+    pub(crate) table_id: TableId,
+}
+
+/// A record of all the operations within a transaction.
+pub struct TxData {
+    pub(crate) records: Vec<TxRecord>,
+}
+
 pub trait Blob {
     fn view(&self) -> &[u8];
 }
@@ -319,7 +344,7 @@ pub trait MutTx {
 
     fn begin_mut_tx(&self) -> Self::MutTxId;
     fn rollback_mut_tx(&self, tx: Self::MutTxId);
-    fn commit_mut_tx(&self, tx: Self::MutTxId) -> Result<Option<Arc<Transaction>>>;
+    fn commit_mut_tx(&self, tx: Self::MutTxId) -> Result<Option<TxData>>;
 }
 
 pub trait Blobstore: BlobRow {
@@ -537,7 +562,4 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         table_id: TableId,
         row: ProductValue,
     ) -> Result<ProductValue>;
-
-    // TODO(cloutiertyler): This function is needed as a kludge and should be removed.
-    fn resolve_data_key_mut_tx(&self, tx: &Self::MutTxId, data_key: &DataKey) -> Result<Option<Arc<Vec<u8>>>>;
 }
