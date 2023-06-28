@@ -735,7 +735,7 @@ fn autogen_csharp_product_table_common(
                     "public delegate void DeleteEventHandler({name} deletedValue, {namespace}.ReducerEvent dbEvent);"
                 )
                 .unwrap();
-                writeln!(output, "public delegate void RowUpdateEventHandler(NetworkManager.TableOp op, {name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
+                writeln!(output, "public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, {name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
                 writeln!(output, "public static event InsertEventHandler OnInsert;").unwrap();
                 writeln!(output, "public static event UpdateEventHandler OnUpdate;").unwrap();
                 writeln!(output, "public static event DeleteEventHandler OnBeforeDelete;").unwrap();
@@ -815,7 +815,7 @@ fn autogen_csharp_product_table_common(
 
                 writeln!(
                     output,
-                    "public static void OnRowUpdateEvent(NetworkManager.TableOp op, object oldValue, object newValue, ClientApi.Event dbEvent)"
+                    "public static void OnRowUpdateEvent(SpacetimeDBClient.TableOp op, object oldValue, object newValue, ClientApi.Event dbEvent)"
                 )
                 .unwrap();
                 writeln!(output, "{{").unwrap();
@@ -921,7 +921,7 @@ fn autogen_csharp_access_funcs_for_struct(
     indented_block(output, |output| {
         writeln!(
             output,
-            "foreach(var entry in NetworkManager.clientDB.GetEntries(\"{table_name}\"))",
+            "foreach(var entry in SpacetimeDBClient.clientDB.GetEntries(\"{table_name}\"))",
         )
         .unwrap();
         indented_block(output, |output| {
@@ -932,7 +932,7 @@ fn autogen_csharp_access_funcs_for_struct(
 
     writeln!(output, "public static int Count()").unwrap();
     indented_block(output, |output| {
-        writeln!(output, "return NetworkManager.clientDB.Count(\"{table_name}\");",).unwrap();
+        writeln!(output, "return SpacetimeDBClient.clientDB.Count(\"{table_name}\");",).unwrap();
     });
     let mut primary_col_idx = None;
 
@@ -1006,7 +1006,7 @@ fn autogen_csharp_access_funcs_for_struct(
             } else {
                 writeln!(
                     output,
-                    "foreach(var entry in NetworkManager.clientDB.GetEntries(\"{}\"))",
+                    "foreach(var entry in SpacetimeDBClient.clientDB.GetEntries(\"{}\"))",
                     table_name
                 )
                 .unwrap();
@@ -1240,7 +1240,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         {
             indent_scope!(output);
 
-            //           NetworkManager.instance.InternalCallReducer(new NetworkManager.Message
+            //           SpacetimeDBClient.instance.InternalCallReducer(new SpacetimeDBClient.Message
             // 			{
             // 				fn = "create_new_player",
             // 				args = new object[] { playerId, position },
@@ -1248,7 +1248,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
             // Tell the network manager to send this message
             writeln!(output, "var _argArray = new object[] {{{}}};", json_args).unwrap();
-            writeln!(output, "var _message = new NetworkManager.ReducerCallRequest {{").unwrap();
+            writeln!(output, "var _message = new SpacetimeDBClient.ReducerCallRequest {{").unwrap();
             {
                 indent_scope!(output);
                 writeln!(output, "fn = \"{}\",", reducer.name).unwrap();
@@ -1275,7 +1275,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
             writeln!(
                 output,
-                "NetworkManager.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));"
+                "SpacetimeDBClient.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));"
             )
                 .unwrap();
         }
