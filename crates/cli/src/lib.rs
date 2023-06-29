@@ -3,6 +3,7 @@ mod config;
 mod subcommands;
 mod tasks;
 pub mod util;
+mod edit_distance;
 
 use clap::{ArgMatches, Command};
 

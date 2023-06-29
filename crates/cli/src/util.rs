@@ -5,6 +5,7 @@ use clap::{
     ArgMatches, Command,
 };
 
+use reqwest::RequestBuilder;
 use serde::Deserialize;
 use spacetimedb_lib::name::{is_address, DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
 use spacetimedb_lib::Identity;
@@ -74,8 +75,8 @@ pub async fn spacetime_register_tld(
 
     // TODO(jdetter): Fix URL encoding on specifying this domain
     let builder = reqwest::Client::new()
-        .get(format!("{}/database/register_tld?tld={}", config.get_host_url(), tld).as_str())
-        .header("Authorization", auth_header);
+        .get(format!("{}/database/register_tld?tld={}", config.get_host_url(), tld).as_str());
+    let builder = add_auth_header_opt(builder, &Some(auth_header));
 
     let res = builder.send().await?.error_for_status()?;
     let bytes = res.bytes().await.unwrap();
@@ -177,6 +178,14 @@ pub async fn select_identity_config(
     } else {
         Ok(init_default(config, None).await?.identity_config)
     }
+}
+
+/// Add an authorization header, if provided, to the request `builder`.
+pub fn add_auth_header_opt(mut builder: RequestBuilder, auth_header: &Option<String>) -> RequestBuilder {
+    if let Some(auth_header) = auth_header {
+        builder = builder.header("Authorization", auth_header);
+    }
+    builder
 }
 
 /// See [`get_auth_header`].
