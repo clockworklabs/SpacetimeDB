@@ -16,7 +16,7 @@ jobs:
       - name: Start containers
         run: docker compose up -d
       - name: Run smoketests
-        run: test/run-smoke-tests.sh -x bitcraftmini-pretest zz_docker-restart-repeating-reducer zz_docker-restart-module zz_docker-restart-sql
+        run: test/run-smoke-tests.sh -x bitcraftmini-pretest
       - name: Stop containers 
         if: always()
         run: docker compose down
