@@ -40,10 +40,14 @@ impl Typespace {
         self.types.get(r.0 as usize)
     }
 
-    /// Generates a fresh "type variable" that is set to `ty` and returns it.
+    /// Inserts an `AlgebraicType` into the typespace
+    /// and returns an `AlgebraicTypeRef` that refers to the inserted `AlgebraicType`.
     ///
-    /// This allows later changing the meaning of the returned type variable
-    /// if for whatever reason, you cannot provide the full definition of the type yet.
+    /// This allows for self referential,
+    /// recursive or other complex types to be declared in the typespace.
+    ///
+    /// You can also use this to later change the meaning of the returned `AlgebraicTypeRef`
+    /// when you cannot provide the full definition of the type yet.
     pub fn add(&mut self, ty: AlgebraicType) -> AlgebraicTypeRef {
         let i = self.types.len();
         self.types.push(ty);
