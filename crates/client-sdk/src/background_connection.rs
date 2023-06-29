@@ -42,9 +42,9 @@ pub struct BackgroundDbConnection {
     /// by which multiple concurrent workers can communicate the most recent state.
     ///
     /// The inner layer, around the `ClientCache`, allows those workers to
-    /// cheaply extract a reference to the `ClientCache`
-    /// without holding a lock for the lifetime of that reference,
-    /// and without changes to the state invalidating the reference.
+    /// cheaply extract a snapshot of the `ClientCache`
+    /// without holding a lock for the lifetime of that snapshot,
+    /// and without changes to the state invalidating or altering the snapshot.
     pub(crate) client_cache: SharedCell<ClientCacheView>,
 
     pub(crate) db_callbacks: SharedCell<DbCallbacks>,
@@ -109,7 +109,8 @@ fn process_event(msg: client_api_messages::Event, reducer_callbacks: &mut Reduce
 ///
 /// The existing `ClientCacheView` in `client_cache` is not mutated,
 /// so handles on it held in other places (e.g. by callback workers)
-/// remain valid.
+/// remain valid. That is, these workers store their own snapshots
+/// of the `ClientCache`, and `update_client_cache` does not alter those snapshots.
 ///
 /// The lock on `client_cache` is held
 /// for the duration of the `update` function's invocation,
