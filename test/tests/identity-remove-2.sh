@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if [ "$DESCRIBE_TEST" = 1 ] ; then
-	echo "This test checks to see if you're able to delete an identity without --force"
+	echo "This test checks to see if you're able to delete all identities with --force"
         exit
 fi
 
@@ -20,4 +20,4 @@ run_test cargo run identity remove "$IDENT"
 run_test cargo run identity list
 [ "0" == "$(grep -c "$IDENT" "$TEST_OUT")" ]
 
-echo "y" | run_fail_test cargo run identity remove --all
+run_test cargo run identity remove --all --force
