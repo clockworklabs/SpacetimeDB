@@ -732,11 +732,7 @@ fn autogen_typescript_product_table_common(
                 writeln!(output).unwrap();
             }
         } else {
-            writeln!(
-                output,
-                "public static primaryKey: string | undefined = undefined;",
-            )
-            .unwrap();
+            writeln!(output, "public static primaryKey: string | undefined = undefined;",).unwrap();
             writeln!(output).unwrap();
         }
 
