@@ -845,7 +845,7 @@ fn autogen_typescript_product_table_common(
 
             writeln!(
                 output,
-                "public static onDelete(callback: (value: {struct_name_pascal_case}, oldValue: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
+                "public static onDelete(callback: (value: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
@@ -892,7 +892,7 @@ fn autogen_typescript_product_table_common(
 
             writeln!(
                 output,
-                "public static removeOnDelete(callback: (value: {struct_name_pascal_case}, oldValue: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
+                "public static removeOnDelete(callback: (value: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
