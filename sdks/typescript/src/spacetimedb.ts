@@ -51,16 +51,27 @@ export class Reducer {}
 
 export class IDatabaseTable {}
 
-export type SpacetimeDBEvent = {
-  timestamp: number;
-  status: string;
-  caller_identity: string;
-  energy_quanta_used: number;
-  function_call?: {
-    reducer: string;
-    arg_bytes: number[];
-  };
-};
+export class ReducerEvent {
+  public callerIdentity: string;
+  public reducerName: string;
+  public status: string;
+  public message: string;
+  public args: any;
+
+  constructor(
+    callerIdentity: string,
+    reducerName: string,
+    status: string,
+    message: string,
+    args: any
+  ) {
+    this.callerIdentity = callerIdentity;
+    this.reducerName = reducerName;
+    this.status = status;
+    this.message = message;
+    this.args = args;
+  }
+}
 
 type DBOpType = "insert" | "update" | "delete";
 
@@ -107,7 +118,8 @@ class Table {
   }
 
   applyOperations = (
-    operations: { op: string; row_pk: string; row: any[] }[]
+    operations: { op: string; row_pk: string; row: any[] }[],
+    reducerEvent: ReducerEvent | undefined
   ) => {
     let dbOps: DBOp[] = [];
     for (let operation of operations) {
@@ -117,7 +129,6 @@ class Table {
         operation.row
       );
       const instance = this.entityClass.fromValue(entry);
-
       dbOps.push(new DBOp(operation.op as DBOpType, pk, instance));
     }
 
@@ -137,50 +148,51 @@ class Table {
         if (deleteOp) {
           // the pk for updates will differ between insert/delete, so we have to
           // use the instance from delete
-          this.update(dbOp, deleteOp);
+          this.update(dbOp, deleteOp, reducerEvent);
           deleteMap.delete(dbOp.instance[pkName]);
         } else {
-          this.insert(dbOp);
+          this.insert(dbOp, reducerEvent);
         }
       }
       for (const dbOp of deleteMap.values()) {
-        this.delete(dbOp);
+        this.delete(dbOp, reducerEvent);
       }
     } else {
       for (const dbOp of dbOps) {
         if (dbOp.type === "insert") {
-          this.insert(dbOp);
+          this.insert(dbOp, reducerEvent);
         } else {
-          this.delete(dbOp);
+          this.delete(dbOp, reducerEvent);
         }
       }
     }
   };
 
-  update = (newDbOp, oldDbOp) => {
+  update = (newDbOp, oldDbOp, reducerEvent: ReducerEvent | undefined) => {
     const newInstance = newDbOp.instance;
     const oldInstance = oldDbOp.instance;
     this.instances.delete(oldDbOp.rowPk);
     this.instances.set(newDbOp.rowPk, newInstance);
-    this.emitter.emit("update", oldInstance, newInstance);
+    this.emitter.emit("update", oldInstance, newInstance, reducerEvent);
   };
 
-  insert = (dbOp) => {
+  insert = (dbOp, reducerEvent: ReducerEvent | undefined) => {
     this.instances.set(dbOp.rowPk, dbOp.instance);
-    this.emitter.emit("insert", dbOp.instance);
+    this.emitter.emit("insert", dbOp.instance, reducerEvent);
   };
 
-  delete = (dbOp) => {
-    const oldInstance = this.instances.get(dbOp.rowPk);
+  delete = (dbOp, reducerEvent: ReducerEvent | undefined) => {
     this.instances.delete(dbOp.rowPk);
-    this.emitter.emit("delete", oldInstance, dbOp.instance);
+    this.emitter.emit("delete", dbOp.instance, reducerEvent);
   };
 
   /**
    * Called when a new row is inserted
    * @param cb Callback to be called when a new row is inserted
    */
-  onInsert = (cb: (value: any) => void) => {
+  onInsert = (
+    cb: (value: any, reducerEvent: ReducerEvent | undefined) => void
+  ) => {
     this.emitter.on("insert", cb);
   };
 
@@ -188,7 +200,9 @@ class Table {
    * Called when a row is deleted
    * @param cb Callback to be called when a row is deleted
    */
-  onDelete = (cb: (value: any, oldValue: any) => void) => {
+  onDelete = (
+    cb: (value: any, reducerEvent: ReducerEvent | undefined) => void
+  ) => {
     this.emitter.on("delete", cb);
   };
 
@@ -196,7 +210,13 @@ class Table {
    * Called when a row is updated
    * @param cb Callback to be called when a row is updated
    */
-  onUpdate = (cb: (value: any, oldValue: any) => void) => {
+  onUpdate = (
+    cb: (
+      value: any,
+      oldValue: any,
+      reducerEvent: ReducerEvent | undefined
+    ) => void
+  ) => {
     this.emitter.on("update", cb);
   };
 
@@ -204,7 +224,9 @@ class Table {
    * Removes the event listener for when a new row is inserted
    * @param cb Callback to be called when the event listener is removed
    */
-  removeOnInsert = (cb: (value: any) => void) => {
+  removeOnInsert = (
+    cb: (value: any, reducerEvent: ReducerEvent | undefined) => void
+  ) => {
     this.emitter.off("insert", cb);
   };
 
@@ -212,7 +234,9 @@ class Table {
    * Removes the event listener for when a row is deleted
    * @param cb Callback to be called when the event listener is removed
    */
-  removeOnDelete = (cb: (value: any, oldValue: any) => void) => {
+  removeOnDelete = (
+    cb: (value: any, reducerEvent: ReducerEvent | undefined) => void
+  ) => {
     this.emitter.off("delete", cb);
   };
 
@@ -220,7 +244,13 @@ class Table {
    * Removes the event listener for when a row is updated
    * @param cb Callback to be called when the event listener is removed
    */
-  removeOnUpdate = (cb: (value: any, oldValue: any) => void) => {
+  removeOnUpdate = (
+    cb: (
+      value: any,
+      oldValue: any,
+      reducerEvent: ReducerEvent | undefined
+    ) => void
+  ) => {
     this.emitter.off("update", cb);
   };
 }
@@ -452,8 +482,50 @@ export class SpacetimeDBClient {
           }
         } else if (data["TransactionUpdate"]) {
           const txUpdate = data["TransactionUpdate"];
+          const event = txUpdate["event"];
           const subUpdate = txUpdate["subscription_update"];
           const tableUpdates = subUpdate["table_updates"];
+
+          let reducerEvent: ReducerEvent | undefined;
+          let reducerName: string | undefined;
+          let status: string | undefined;
+          let reducer: any | undefined;
+          let reducerArgs: any | undefined;
+          let identity: any | string;
+
+          if (event) {
+            const functionCall = event["function_call"];
+            identity = event["caller_identity"];
+            const originalReducerName: string | undefined =
+              functionCall && functionCall["reducer"];
+            reducerName = originalReducerName
+              ? toPascalCase(originalReducerName)
+              : undefined;
+            const args: string | undefined = functionCall?.["args"];
+            status = event["status"];
+            reducer = reducerName ? this.reducers.get(reducerName) : undefined;
+
+            if (
+              reducerName &&
+              args &&
+              identity &&
+              status &&
+              reducer &&
+              originalReducerName
+            ) {
+              const jsonArray = JSON.parse(args);
+              reducerArgs = reducer.deserializeArgs(jsonArray);
+
+              reducerEvent = new ReducerEvent(
+                identity,
+                originalReducerName,
+                status,
+                event.message,
+                reducerArgs
+              );
+            }
+          }
+
           for (const tableUpdate of tableUpdates) {
             const tableName = tableUpdate["table_name"];
             const entityClass = this.runtime.global.components.get(tableName);
@@ -462,36 +534,20 @@ export class SpacetimeDBClient {
               undefined,
               entityClass
             );
-            table.applyOperations(tableUpdate["table_row_operations"]);
+            table.applyOperations(
+              tableUpdate["table_row_operations"],
+              reducerEvent
+            );
           }
 
-          const event = txUpdate["event"];
-          if (event) {
-            const functionCall = event["function_call"];
-            const identity = event["caller_identity"];
-            const reducerName: string | undefined =
-              functionCall && functionCall["reducer"]
-                ? toPascalCase(functionCall["reducer"])
-                : undefined;
-            const args: string | undefined = functionCall?.["args"];
-            const status: string | undefined = event["status"];
-            const reducer: any | undefined = reducerName
-              ? this.reducers.get(reducerName)
-              : undefined;
-
-            if (reducerName && args && identity && status && reducer) {
-              const jsonArray = JSON.parse(args);
-              const reducerArgs = reducer.deserializeArgs(jsonArray);
-              this.emitter.emit(
-                "reducer:" + reducerName,
-                status,
-                identity,
-                reducerArgs
-              );
-            }
+          if (reducerName && status && identity && reducerArgs) {
+            this.emitter.emit(
+              "reducer:" + reducerName,
+              status,
+              identity,
+              reducerArgs
+            );
           }
-
-          // this.emitter.emit("event", txUpdate['event']);
         } else if (data["IdentityToken"]) {
           const identityToken = data["IdentityToken"];
           const identity = identityToken["identity"];
