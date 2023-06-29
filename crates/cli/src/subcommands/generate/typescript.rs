@@ -655,6 +655,8 @@ fn autogen_typescript_product_table_common(
 ) -> String {
     let mut output = CodeIndenter::new(String::new());
 
+    let is_table = column_attrs.is_some();
+
     let struct_name_pascal_case = name.replace("r#", "").to_case(Case::Pascal);
 
     writeln!(
@@ -711,7 +713,7 @@ fn autogen_typescript_product_table_common(
                 .unwrap()
                 .iter()
                 .enumerate()
-                .find_map(|(idx, attr)| attr.is_primary().then(|| idx))
+                .find_map(|(idx, attr)| attr.is_primary().then_some(idx))
                 .map(|idx| {
                     let field_name = product_type.elements[idx]
                         .name
