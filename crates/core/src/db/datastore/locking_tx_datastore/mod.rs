@@ -1417,12 +1417,6 @@ impl Locking {
         inner.build_indexes()?;
         inner.build_sequence_state()?;
 
-        for table in inner.committed_state.tables.values_mut() {
-            println!("Table: {}", table.schema.table_name);
-            for row in table.rows.values() {
-                println!("  {:?}", row);
-            }
-        }
         Ok(())
     }
 
