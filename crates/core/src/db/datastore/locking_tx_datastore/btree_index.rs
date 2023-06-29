@@ -138,6 +138,8 @@ impl BTreeIndex {
     /// Returns an iterator over the [BTreeIndex] that yields all the `RowId`s
     /// that match the specified `value` in the indexed column.
     ///
+    /// Matches is defined by `Ord for AlgebraicValue`.
+    ///
     /// For a unique index this will always yield at most one `RowId`.
     #[tracing::instrument(skip_all)]
     pub(crate) fn seek<'a>(&'a self, value: &'a AlgebraicValue) -> BTreeIndexRangeIter<'a> {
