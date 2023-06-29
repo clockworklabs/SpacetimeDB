@@ -1371,7 +1371,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     writeln!(output).unwrap();
 
     //Args struct
-    writeln!(output, "public class {func_name_pascal_case}ArgsStruct").unwrap();
+    writeln!(output, "public partial class {func_name_pascal_case}ArgsStruct").unwrap();
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);

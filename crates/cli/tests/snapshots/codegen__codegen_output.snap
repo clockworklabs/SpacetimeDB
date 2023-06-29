@@ -62,7 +62,7 @@ namespace SpacetimeDB
 		}
 	}
 
-	public class AddPlayerArgsStruct
+	public partial class AddPlayerArgsStruct
 	{
 		public string Name;
 	}
@@ -286,7 +286,7 @@ namespace SpacetimeDB
 		}
 	}
 
-	public class RepeatingTestArgsStruct
+	public partial class RepeatingTestArgsStruct
 	{
 		public ulong PrevTime;
 	}
@@ -738,7 +738,7 @@ namespace SpacetimeDB
 		}
 	}
 
-	public class TestArgsStruct
+	public partial class TestArgsStruct
 	{
 		public SpacetimeDB.TestA Arg;
 		public SpacetimeDB.TestB Arg2;
@@ -803,7 +803,7 @@ namespace SpacetimeDB
 		}
 	}
 
-	public class UpdateArgsStruct
+	public partial class UpdateArgsStruct
 	{
 	}
 }
