@@ -12,6 +12,7 @@ import {
   SumTypeVariant,
   IDatabaseTable,
   AlgebraicValue,
+  ReducerEvent,
 } from "../../src/index";
 // @ts-ignore
 import { Point } from "./point";
@@ -20,19 +21,19 @@ export class Player extends IDatabaseTable {
   public static tableName = "Player";
   public ownerId: string;
   public name: string;
-  public position: Point;
+  public location: Point;
 
-  public static primaryKey: string | undefined = "ownerId";
+  public static primaryKey: string | undefined = "owner_id";
 
-  constructor(ownerId: string, name: string, position: Point) {
+  constructor(ownerId: string, name: string, location: Point) {
     super();
     this.ownerId = ownerId;
     this.name = name;
-    this.position = position;
+    this.location = location;
   }
 
   public static serialize(value: Player): object {
-    return [value.ownerId, Point.serialize(value.position)];
+    return [value.ownerId, value.name, Point.serialize(value.location)];
   }
 
   public static getAlgebraicType(): AlgebraicType {
@@ -45,7 +46,7 @@ export class Player extends IDatabaseTable {
         "name",
         AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
       ),
-      new ProductTypeElement("position", Point.getAlgebraicType()),
+      new ProductTypeElement("location", Point.getAlgebraicType()),
     ]);
   }
 
@@ -53,8 +54,8 @@ export class Player extends IDatabaseTable {
     let productValue = value.asProductValue();
     let __owner_id = productValue.elements[0].asString();
     let __name = productValue.elements[1].asString();
-    let __position = Point.fromValue(productValue.elements[2]);
-    return new this(__owner_id, __name, __position);
+    let __location = Point.fromValue(productValue.elements[2]);
+    return new this(__owner_id, __name, __location);
   }
 
   public static count(): number {
@@ -78,31 +79,59 @@ export class Player extends IDatabaseTable {
     return null;
   }
 
-  public static onInsert(callback: (value: Player) => void) {
+  public static filterByName(value: string): Player[] {
+    let result: Player[] = [];
+    for (let instance of __SPACETIMEDB__.clientDB
+      .getTable("Player")
+      .getInstances()) {
+      if (instance.name === value) {
+        result.push(instance);
+      }
+    }
+    return result;
+  }
+
+  public static onInsert(
+    callback: (value: Player, reducerEvent: ReducerEvent | undefined) => void
+  ) {
     __SPACETIMEDB__.clientDB.getTable("Player").onInsert(callback);
   }
 
   public static onUpdate(
-    callback: (oldValue: Player, newValue: Player) => void
+    callback: (
+      oldValue: Player,
+      newValue: Player,
+      reducerEvent: ReducerEvent | undefined
+    ) => void
   ) {
     __SPACETIMEDB__.clientDB.getTable("Player").onUpdate(callback);
   }
 
-  public static onDelete(callback: (value: Player) => void) {
+  public static onDelete(
+    callback: (value: Player, reducerEvent: ReducerEvent | undefined) => void
+  ) {
     __SPACETIMEDB__.clientDB.getTable("Player").onDelete(callback);
   }
 
-  public static removeOnInsert(callback: (value: Player) => void) {
+  public static removeOnInsert(
+    callback: (value: Player, reducerEvent: ReducerEvent | undefined) => void
+  ) {
     __SPACETIMEDB__.clientDB.getTable("Player").removeOnInsert(callback);
   }
 
   public static removeOnUpdate(
-    callback: (oldValue: Player, newValue: Player) => void
+    callback: (
+      oldValue: Player,
+      newValue: Player,
+      reducerEvent: ReducerEvent | undefined
+    ) => void
   ) {
     __SPACETIMEDB__.clientDB.getTable("Player").removeOnUpdate(callback);
   }
 
-  public static removeOnDelete(callback: (value: Player) => void) {
+  public static removeOnDelete(
+    callback: (value: Player, reducerEvent: ReducerEvent | undefined) => void
+  ) {
     __SPACETIMEDB__.clientDB.getTable("Player").removeOnDelete(callback);
   }
 }

@@ -2,42 +2,54 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue } from "../../src/index.ts";
+import {
+  __SPACETIMEDB__,
+  AlgebraicType,
+  ProductType,
+  BuiltinType,
+  ProductTypeElement,
+  SumType,
+  SumTypeVariant,
+  IDatabaseTable,
+  AlgebraicValue,
+} from "../../src/index";
 
-export class Point extends IDatabaseTable
-{
-	public static tableName = "Point";
-	public x: number;
-	public y: number;
+export class Point extends IDatabaseTable {
+  public static tableName = "Point";
+  public x: number;
+  public y: number;
 
-	constructor(x: number, y: number) {
-	super();
-		this.x = x;
-		this.y = y;
-	}
+  public static primaryKey: string | undefined = undefined;
 
-	public static serialize(value: Point): object {
-		return [
-		value.x, value.y
-		];
-	}
+  constructor(x: number, y: number) {
+    super();
+    this.x = x;
+    this.y = y;
+  }
 
-	public static getAlgebraicType(): AlgebraicType
-	{
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("x", AlgebraicType.createPrimitiveType(BuiltinType.Type.U16)),
-			new ProductTypeElement("y", AlgebraicType.createPrimitiveType(BuiltinType.Type.U16)),
-		]);
-	}
+  public static serialize(value: Point): object {
+    return [value.x, value.y];
+  }
 
-	public static fromValue(value: AlgebraicValue): Point
-	{
-		let productValue = value.asProductValue();
-		let __x = productValue.elements[0].asNumber();
-		let __y = productValue.elements[1].asNumber();
-		return new this(__x, __y);
-	}
+  public static getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement(
+        "x",
+        AlgebraicType.createPrimitiveType(BuiltinType.Type.F64)
+      ),
+      new ProductTypeElement(
+        "y",
+        AlgebraicType.createPrimitiveType(BuiltinType.Type.F64)
+      ),
+    ]);
+  }
 
+  public static fromValue(value: AlgebraicValue): Point {
+    let productValue = value.asProductValue();
+    let __x = productValue.elements[0].asNumber();
+    let __y = productValue.elements[1].asNumber();
+    return new this(__x, __y);
+  }
 }
 
 export default Point;
