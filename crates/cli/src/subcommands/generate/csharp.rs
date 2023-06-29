@@ -726,16 +726,16 @@ fn autogen_csharp_product_table_common(
 
                 writeln!(
                     output,
-                    "public delegate void InsertEventHandler({name} insertedValue, {namespace}.ReducerEventBase dbEvent);"
+                    "public delegate void InsertEventHandler({name} insertedValue, {namespace}.ReducerEvent dbEvent);"
                 )
                 .unwrap();
-                writeln!(output, "public delegate void UpdateEventHandler({name} oldValue, {name} newValue, {namespace}.ReducerEventBase dbEvent);").unwrap();
+                writeln!(output, "public delegate void UpdateEventHandler({name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
                 writeln!(
                     output,
-                    "public delegate void DeleteEventHandler({name} deletedValue, {namespace}.ReducerEventBase dbEvent);"
+                    "public delegate void DeleteEventHandler({name} deletedValue, {namespace}.ReducerEvent dbEvent);"
                 )
                 .unwrap();
-                writeln!(output, "public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, {name} oldValue, {name} newValue, {namespace}.ReducerEventBase dbEvent);").unwrap();
+                writeln!(output, "public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, {name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
                 writeln!(output, "public static event InsertEventHandler OnInsert;").unwrap();
                 writeln!(output, "public static event UpdateEventHandler OnUpdate;").unwrap();
                 writeln!(output, "public static event DeleteEventHandler OnBeforeDelete;").unwrap();
@@ -755,7 +755,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnInsert?.Invoke(({name})newValue,dbEvent?.FunctionCall.CallInfo);"
+                        "OnInsert?.Invoke(({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -772,7 +772,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnUpdate?.Invoke(({name})oldValue,({name})newValue,dbEvent?.FunctionCall.CallInfo);"
+                        "OnUpdate?.Invoke(({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -789,7 +789,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnBeforeDelete?.Invoke(({name})oldValue,dbEvent?.FunctionCall.CallInfo);"
+                        "OnBeforeDelete?.Invoke(({name})oldValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -806,7 +806,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnDelete?.Invoke(({name})oldValue,dbEvent?.FunctionCall.CallInfo);"
+                        "OnDelete?.Invoke(({name})oldValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -823,7 +823,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnRowUpdate?.Invoke(op, ({name})oldValue,({name})newValue,dbEvent?.FunctionCall.CallInfo);"
+                        "OnRowUpdate?.Invoke(op, ({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -1224,7 +1224,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         };
         writeln!(
             output,
-            "public delegate void {func_name_pascal_case}Handler(ReducerEventBase reducerEvent{delegate_args});"
+            "public delegate void {func_name_pascal_case}Handler(ReducerEvent reducerEvent{delegate_args});"
         )
         .unwrap();
         writeln!(
@@ -1302,7 +1302,11 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                     "var args = ((ReducerEvent)dbEvent.FunctionCall.CallInfo).{func_name_pascal_case}Args;"
                 )
                 .unwrap();
-                writeln!(output, "On{func_name_pascal_case}Event(dbEvent.FunctionCall.CallInfo").unwrap();
+                writeln!(
+                    output,
+                    "On{func_name_pascal_case}Event((ReducerEvent)dbEvent.FunctionCall.CallInfo"
+                )
+                .unwrap();
                 // Write out arguments one per line
                 {
                     indent_scope!(output);
