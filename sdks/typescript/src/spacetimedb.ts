@@ -62,10 +62,23 @@ export type SpacetimeDBEvent = {
   };
 };
 
+type DBOpType = "insert" | "update" | "delete";
+
+class DBOp {
+  public type: DBOpType;
+  public instance: any;
+  public rowPk: string;
+
+  constructor(type: DBOpType, rowPk: string, instance: any) {
+    this.type = type;
+    this.rowPk = rowPk;
+    this.instance = instance;
+  }
+}
+
 class Table {
   // TODO: most of this stuff should be probably private
   public name: string;
-  public entries: Map<string, AlgebraicValue>;
   public instances: Map<string, IDatabaseTable>;
   public emitter: EventEmitter;
   private entityClass: any;
@@ -73,8 +86,6 @@ class Table {
 
   constructor(name: string, pkCol: number | undefined, entityClass: any) {
     this.name = name;
-    // TODO: not sure if it's worth it to keep both rows and entries here 🤔
-    this.entries = new Map();
     this.instances = new Map();
     this.emitter = new EventEmitter();
     this.pkCol = pkCol;
@@ -85,16 +96,12 @@ class Table {
    * @returns number of entries in the table
    */
   public count(): number {
-    return this.entries.size;
+    return this.instances.size;
   }
 
   /**
    * @returns The values of the entries in the table
    */
-  public getEntries(): IterableIterator<AlgebraicValue> {
-    return this.entries.values();
-  }
-
   public getInstances(): IterableIterator<any> {
     return this.instances.values();
   }
@@ -102,71 +109,71 @@ class Table {
   applyOperations = (
     operations: { op: string; row_pk: string; row: any[] }[]
   ) => {
-    if (this.pkCol !== undefined) {
+    let dbOps: DBOp[] = [];
+    for (let operation of operations) {
+      const pk = operation.row_pk;
+      const entry = AlgebraicValue.deserialize(
+        this.entityClass.getAlgebraicType(),
+        operation.row
+      );
+      const instance = this.entityClass.fromValue(entry);
+
+      dbOps.push(new DBOp(operation.op as DBOpType, pk, instance));
+    }
+
+    if (this.entityClass.primaryKey !== undefined) {
+      const pkName = this.entityClass.primaryKey;
       const inserts: any[] = [];
       const deleteMap = new Map();
-      for (const op of operations) {
-        if (op.op === "insert") {
-          inserts.push(op);
+      for (const dbOp of dbOps) {
+        if (dbOp.type === "insert") {
+          inserts.push(dbOp);
         } else {
-          deleteMap.set(op.row[this.pkCol], op);
+          deleteMap.set(dbOp.instance[pkName], dbOp);
         }
       }
-      for (const op of inserts) {
-        const deleteOp = deleteMap.get(op.row[this.pkCol]);
+      for (const dbOp of inserts) {
+        const deleteOp = deleteMap.get(dbOp.instance[pkName]);
         if (deleteOp) {
-          this.update(deleteOp.row_pk, op.row_pk, op.row);
-          deleteMap.delete(op.row[this.pkCol]);
+          // the pk for updates will differ between insert/delete, so we have to
+          // use the instance from delete
+          this.update(dbOp, deleteOp);
+          deleteMap.delete(dbOp.instance[pkName]);
         } else {
-          this.insert(op.row_pk, op.row);
+          this.insert(dbOp);
         }
       }
-      for (const op of deleteMap.values()) {
-        this.delete(op.row_pk);
+      for (const dbOp of deleteMap.values()) {
+        this.delete(dbOp);
       }
     } else {
-      for (const op of operations) {
-        if (op.op === "insert") {
-          this.insert(op.row_pk, op.row);
+      for (const dbOp of dbOps) {
+        if (dbOp.type === "insert") {
+          this.insert(dbOp);
         } else {
-          this.delete(op.row_pk);
+          this.delete(dbOp);
         }
       }
     }
   };
 
-  update = (oldPk: string, pk: string, row: Array<any>) => {
-    let entry = AlgebraicValue.deserialize(
-      this.entityClass.getAlgebraicType(),
-      row
-    );
-    const instance = this.entityClass.fromValue(entry);
-    this.entries.set(pk, entry);
-    this.instances.set(pk, instance);
-    const oldInstance = this.instances.get(oldPk)!;
-    this.entries.delete(oldPk);
-    this.instances.delete(oldPk);
-    this.emitter.emit("update", instance, oldInstance);
+  update = (newDbOp, oldDbOp) => {
+    const newInstance = newDbOp.instance;
+    const oldInstance = oldDbOp.instance;
+    this.instances.delete(oldDbOp.rowPk);
+    this.instances.set(newDbOp.rowPk, newInstance);
+    this.emitter.emit("update", oldInstance, newInstance);
   };
 
-  insert = (pk: string, row: Array<any>) => {
-    let entry = AlgebraicValue.deserialize(
-      this.entityClass.getAlgebraicType(),
-      row
-    );
-    const instance = this.entityClass.fromValue(entry);
-    this.instances.set(pk, instance);
-    this.entries.set(pk, entry);
-    this.emitter.emit("insert", instance);
+  insert = (dbOp) => {
+    this.instances.set(dbOp.rowPk, dbOp.instance);
+    this.emitter.emit("insert", dbOp.instance);
   };
 
-  delete = (pk: string) => {
-    const instance = this.instances.get(pk);
-    this.instances.delete(pk);
-    this.entries.delete(pk);
-    if (instance) {
-      this.emitter.emit("delete", instance);
-    }
+  delete = (dbOp) => {
+    const oldInstance = this.instances.get(dbOp.rowPk);
+    this.instances.delete(dbOp.rowPk);
+    this.emitter.emit("delete", oldInstance, dbOp.instance);
   };
 
   /**
@@ -181,7 +188,7 @@ class Table {
    * Called when a row is deleted
    * @param cb Callback to be called when a row is deleted
    */
-  onDelete = (cb: (value: any) => void) => {
+  onDelete = (cb: (value: any, oldValue: any) => void) => {
     this.emitter.on("delete", cb);
   };
 
@@ -205,7 +212,7 @@ class Table {
    * Removes the event listener for when a row is deleted
    * @param cb Callback to be called when the event listener is removed
    */
-  removeOnDelete = (cb: (value: any) => void) => {
+  removeOnDelete = (cb: (value: any, oldValue: any) => void) => {
     this.emitter.off("delete", cb);
   };
 
@@ -213,7 +220,7 @@ class Table {
    * Removes the event listener for when a row is updated
    * @param cb Callback to be called when the event listener is removed
    */
-  removeOnUpdate = (cb: (value: any, oldRow: any) => void) => {
+  removeOnUpdate = (cb: (value: any, oldValue: any) => void) => {
     this.emitter.off("update", cb);
   };
 }
