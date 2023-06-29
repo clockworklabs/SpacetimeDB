@@ -17,9 +17,11 @@
 
 use crate::{
     client_api_messages,
+    client_cache::ClientCacheView,
+    global_connection::CurrentStateGuard,
     identity::{Credentials, Identity, Token},
     reducer::{Reducer, Status},
-    table::{TableType, TableWithPrimaryKey},
+    table::TableType,
 };
 use anymap::{any::Any, Map};
 use futures::stream::StreamExt;
@@ -199,7 +201,12 @@ where
     ///
     /// The worker will use `OwnedArgs::borrow` to convert `args` into a `Copy`-able tuple
     /// suitable for passing to each of the callbacks.
-    Invoke { args: Args },
+    ///
+    /// The `db_state` should be the `ClientCache` state
+    /// associated with the event that caused this callback to be invoked.
+    /// It will be bound around the callback's invocation with a `CurrentStateGuard`
+    /// in order to give callback a consistent view of that state.
+    Invoke { args: Args, db_state: ClientCacheView },
 }
 
 /// A handle on a background worker which maintains a set of `Callback<Args>` callbacks.
@@ -252,7 +259,11 @@ impl<Args: OwnedArgs> CallbackMap<Args> {
                         log::warn!("Attempt to remove non-registered callback with id {:?}", id);
                     }
                 }
-                CallbackMessage::Invoke { args } => {
+                CallbackMessage::Invoke { args, db_state } => {
+                    // Enter a dynamic context where `CURRENT_STATE`
+                    // is the state which caused this callback invocation.
+                    let _guard = CurrentStateGuard::with_current_state(db_state);
+
                     // We're invoking several callbacks, so none of them may consume `args`.
                     let borrowed = args.borrow();
 
@@ -372,9 +383,9 @@ impl<Args: OwnedArgs> CallbackMap<Args> {
     }
 
     /// Invoke each currently-registered callback in `self` with `args`.
-    fn invoke(&self, args: Args) {
+    fn invoke(&self, args: Args, db_state: ClientCacheView) {
         self.send
-            .unbounded_send(CallbackMessage::Invoke { args })
+            .unbounded_send(CallbackMessage::Invoke { args, db_state })
             // TODO: properly handle this error somehow
             .expect("CallbackMap handler loop panicked");
     }
@@ -480,8 +491,8 @@ where
         self.on_insert.remove(id);
     }
 
-    pub(crate) fn invoke_on_insert(&mut self, inserted: T) {
-        self.on_insert.invoke((inserted,));
+    pub(crate) fn invoke_on_insert(&mut self, inserted: T, db_state: ClientCacheView) {
+        self.on_insert.invoke((inserted,), db_state);
     }
 
     /// Register an `on_delete` callback for when a row is removed from the database.
@@ -503,8 +514,8 @@ where
         self.on_delete.remove(id);
     }
 
-    pub(crate) fn invoke_on_delete(&mut self, deleted: T) {
-        self.on_delete.invoke((deleted,));
+    pub(crate) fn invoke_on_delete(&mut self, deleted: T, db_state: ClientCacheView) {
+        self.on_delete.invoke((deleted,), db_state);
     }
 
     pub(crate) fn new(runtime: &runtime::Handle) -> TableCallbacks<T> {
@@ -514,14 +525,7 @@ where
             on_update: CallbackMap::spawn(runtime),
         }
     }
-}
 
-impl<T> TableCallbacks<T>
-where
-    (T,): for<'a> OwnedArgs<Borrowed<'a> = (&'a T,)>,
-    (T, T): for<'a> OwnedArgs<Borrowed<'a> = (&'a T, &'a T)>,
-    T: TableWithPrimaryKey,
-{
     /// Register an `on_update` callback for when an inserted row overwrites an existing
     /// row.
     ///
@@ -531,6 +535,9 @@ where
     ///
     /// Each call to `register_on_update` will return a fresh `CallbackId` which can later
     /// be passed to `unregister_on_update` to remove the callback.
+    ///
+    /// Update callbacks are only meaningful for tables with primary keys.
+    /// If `T` is not `TableWithPrimaryKey`, the registered callback will never be invoked.
     //
     // TODO: reduce monomorphization by accepting a `Box<Callback>` instead of an `impl
     //       Callback`.
@@ -539,12 +546,14 @@ where
     }
 
     /// Unregister an on-update callback with the given `id`.
+    ///
+    /// Update callbacks are only meaningful for tables with primary keys.
     pub(crate) fn unregister_on_update(&mut self, id: CallbackId<(T, T)>) {
         self.on_update.remove(id);
     }
 
-    pub(crate) fn invoke_on_update(&mut self, old: T, new: T) {
-        self.on_update.invoke((old, new));
+    pub(crate) fn invoke_on_update(&mut self, old: T, new: T, db_state: ClientCacheView) {
+        self.on_update.invoke((old, new), db_state);
     }
 }
 
@@ -564,21 +573,6 @@ impl DbCallbacks {
             .or_insert_with(|| TableCallbacks::new(&self.runtime))
     }
 
-    #[allow(unused)]
-    pub(crate) fn invoke_on_insert<T: TableType>(&mut self, inserted: T) {
-        self.find_table::<T>().invoke_on_insert(inserted);
-    }
-
-    #[allow(unused)]
-    pub(crate) fn invoke_on_delete<T: TableType>(&mut self, deleted: T) {
-        self.find_table::<T>().invoke_on_delete(deleted);
-    }
-
-    #[allow(unused)]
-    pub(crate) fn invoke_on_update<T: TableWithPrimaryKey>(&mut self, old: T, new: T) {
-        self.find_table::<T>().invoke_on_update(old, new);
-    }
-
     pub(crate) fn new(runtime: runtime::Handle) -> DbCallbacks {
         DbCallbacks {
             table_callbacks: Map::new(),
@@ -592,7 +586,7 @@ impl DbCallbacks {
 /// `Event`.
 ///
 /// Users should not interact with this type directly.
-pub type HandleEventFn = fn(client_api_messages::Event, &mut ReducerCallbacks);
+pub type HandleEventFn = fn(client_api_messages::Event, &mut ReducerCallbacks, ClientCacheView);
 
 /// A collection of reducer callbacks.
 ///
@@ -652,7 +646,7 @@ impl ReducerCallbacks {
     /// Calls to this method are autogenerated in the `handle_event` function, which
     /// handles dispatching on the reducer's name to find the appropriate type `R` to
     /// `handle_event_of_type`. Users should not call this method directly.
-    pub fn handle_event_of_type<R: Reducer>(&mut self, event: client_api_messages::Event) {
+    pub fn handle_event_of_type<R: Reducer>(&mut self, event: client_api_messages::Event, state: ClientCacheView) {
         let client_api_messages::Event {
             caller_identity,
             function_call: Some(function_call),
@@ -669,7 +663,7 @@ impl ReducerCallbacks {
         };
         match bsatn::from_slice(&function_call.arg_bytes) {
             Err(e) => log::error!("Error while deserializing reducer args from FunctionCall: {:?}", e),
-            Ok(instance) => self.find_callbacks::<R>().invoke((identity, status, instance)),
+            Ok(instance) => self.find_callbacks::<R>().invoke((identity, status, instance), state),
         }
     }
 
@@ -706,8 +700,8 @@ impl ReducerCallbacks {
     /// Invoke the autogenerated `handle_event` function
     /// to dispatch on the reducer named by `event`,
     /// and invoke `handle_event_of_type` with an appropriate type arg.
-    pub(crate) fn handle_event(&mut self, event: client_api_messages::Event) {
-        (self.handle_event)(event, self);
+    pub(crate) fn handle_event(&mut self, event: client_api_messages::Event, state: ClientCacheView) {
+        (self.handle_event)(event, self, state);
     }
 }
 
@@ -771,7 +765,7 @@ impl CredentialStore {
     /// and log an error if they don't match.
     ///
     /// Either way, invoke any on-connect callbacks with the received credentials.
-    pub(crate) fn handle_identity_token(&mut self, msg: client_api_messages::IdentityToken) {
+    pub(crate) fn handle_identity_token(&mut self, msg: client_api_messages::IdentityToken, state: ClientCacheView) {
         let client_api_messages::IdentityToken { identity, token } = msg;
         if identity.is_empty() || token.is_empty() {
             log::warn!("Received IdentityToken message with emtpy identity and/or empty token");
@@ -783,7 +777,7 @@ impl CredentialStore {
             token: Token { string: token },
         };
 
-        self.callbacks.invoke((creds.clone(),));
+        self.callbacks.invoke((creds.clone(),), state);
 
         if let Some(existing_creds) = &self.credentials {
             // If we already have credentials, make sure that they match. Log an error if

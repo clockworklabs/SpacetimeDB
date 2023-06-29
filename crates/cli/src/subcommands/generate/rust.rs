@@ -162,7 +162,7 @@ fn print_file_header(output: &mut Indenter) {
 //    - Complicated because `HashMap` is not `Hash`.
 // - others?
 
-const ENUM_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq)]"];
+const ENUM_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]"];
 
 fn print_enum_derives(output: &mut Indenter) {
     print_lines(output, ENUM_DERIVES);
@@ -319,7 +319,7 @@ pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDef) -> String {
 //    - Complicated because `HashMap` is not `Hash`.
 // - others?
 
-const STRUCT_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq)]"];
+const STRUCT_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]"];
 
 fn print_struct_derives(output: &mut Indenter) {
     print_lines(output, STRUCT_DERIVES);
@@ -555,10 +555,11 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 
 const DISPATCH_IMPORTS: &[&str] = &[
     "use spacetimedb_client_sdk::client_api_messages::{TableUpdate, Event};",
-    "use spacetimedb_client_sdk::client_cache::{ClientCache};",
+    "use spacetimedb_client_sdk::client_cache::{ClientCache, RowCallbackReminders};",
     "use spacetimedb_client_sdk::background_connection::BackgroundDbConnection;",
     "use spacetimedb_client_sdk::identity::Credentials;",
     "use spacetimedb_client_sdk::callbacks::{DbCallbacks, ReducerCallbacks};",
+    "use std::sync::Arc;",
 ];
 
 fn print_dispatch_imports(out: &mut Indenter) {
@@ -567,6 +568,20 @@ fn print_dispatch_imports(out: &mut Indenter) {
 
 fn is_init(reducer: &ReducerDef) -> bool {
     reducer.name == "__init__"
+}
+
+fn iter_reducer_items(items: &[GenItem]) -> impl Iterator<Item = &ReducerDef> {
+    items.iter().filter_map(|item| match item {
+        GenItem::Reducer(reducer) if !is_init(reducer) => Some(reducer),
+        _ => None,
+    })
+}
+
+fn iter_table_items(items: &[GenItem]) -> impl Iterator<Item = &TableDef> {
+    items.iter().filter_map(|item| match item {
+        GenItem::Table(table) => Some(table),
+        _ => None,
+    })
 }
 
 const CONNECT_DOCSTRING: &[&str] = &[
@@ -626,27 +641,25 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, Str
     // sufficient, and not as confusing.
     writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     out.delimited_block(
-        "fn handle_table_update(table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut DbCallbacks) {",
+        "fn handle_table_update(table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
         |out| {
             writeln!(out, "let table_name = &table_update.table_name[..];").unwrap();
             out.delimited_block(
                 "match table_name {",
                 |out| {
-                    for item in items {
-                        if let GenItem::Table(table) = item {
-                            writeln!(
-                                out,
-                                "{:?} => client_cache.{}::<{}::{}>(callbacks, table_update),",
-                                table.name,
-                                if find_primary_key_column_index(ctx, table).is_some() {
-                                    "handle_table_update_with_primary_key"
-                                } else {
-                                    "handle_table_update_no_primary_key"
-                                },
-                                table.name.to_case(Case::Snake),
-                                table.name.to_case(Case::Pascal),
-                            ).unwrap();
-                        }
+                    for table in iter_table_items(items) {
+                        writeln!(
+                            out,
+                            "{:?} => client_cache.{}::<{}::{}>(callbacks, table_update),",
+                            table.name,
+                            if find_primary_key_column_index(ctx, table).is_some() {
+                                "handle_table_update_with_primary_key"
+                            } else {
+                                "handle_table_update_no_primary_key"
+                            },
+                            table.name.to_case(Case::Snake),
+                            table.name.to_case(Case::Pascal),
+                        ).unwrap();
                     }
                     writeln!(
                         out,
@@ -663,22 +676,38 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, Str
 
     writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     out.delimited_block(
-        "fn handle_resubscribe(new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut DbCallbacks) {",
+        "fn invoke_row_callbacks(reminders: &mut RowCallbackReminders, worker: &mut DbCallbacks, state: &Arc<ClientCache>) {",
+        |out| {
+            for table in iter_table_items(items) {
+                writeln!(
+                    out,
+                    "reminders.invoke_callbacks::<{}::{}>(worker, state);",
+                    table.name.to_case(Case::Snake),
+                    table.name.to_case(Case::Pascal),
+                ).unwrap();
+            }
+        },
+        "}\n"
+    );
+
+    out.newline();
+
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    out.delimited_block(
+        "fn handle_resubscribe(new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
         |out| {
             writeln!(out, "let table_name = &new_subs.table_name[..];").unwrap();
             out.delimited_block(
                 "match table_name {",
                 |out| {
-                    for item in items {
-                        if let GenItem::Table(table) = item {
-                            writeln!(
-                                out,
-                                "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),",
-                                table.name,
-                                table.name.to_case(Case::Snake),
-                                table.name.to_case(Case::Pascal),
-                            ).unwrap();
-                        }
+                    for table in iter_table_items(items) {
+                        writeln!(
+                            out,
+                            "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),",
+                            table.name,
+                            table.name.to_case(Case::Snake),
+                            table.name.to_case(Case::Pascal),
+                        ).unwrap();
                     }
                     writeln!(
                         out,
@@ -696,7 +725,7 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, Str
     // Like `handle_row_update`, muffle unused warning for `handle_event`.
     writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     out.delimited_block(
-        "fn handle_event(event: Event, reducer_callbacks: &mut ReducerCallbacks) {",
+        "fn handle_event(event: Event, reducer_callbacks: &mut ReducerCallbacks, state: Arc<ClientCache>) {",
         |out| {
             out.delimited_block(
                 "let Some(function_call) = &event.function_call else {",
@@ -707,18 +736,14 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, Str
             out.delimited_block(
                 "match &function_call.reducer[..] {",
                 |out| {
-                    for item in items {
-                        if let GenItem::Reducer(reducer) = item {
-                            if !is_init(reducer) {
-                                writeln!(
-                                    out,
-                                    "{:?} => reducer_callbacks.handle_event_of_type::<{}_reducer::{}>(event),",
-                                    reducer.name,
-                                    reducer.name.to_case(Case::Snake),
-                                    reducer.name.to_case(Case::Pascal),
-                                ).unwrap();
-                            }
-                        }
+                    for reducer in iter_reducer_items(items) {
+                        writeln!(
+                            out,
+                            "{:?} => reducer_callbacks.handle_event_of_type::<{}_reducer::{}>(event, state),",
+                            reducer.name,
+                            reducer.name.to_case(Case::Snake),
+                            reducer.name.to_case(Case::Pascal),
+                        ).unwrap();
                     }
                     writeln!(
                         out,
@@ -745,7 +770,7 @@ where
             |out| {
                 writeln!(
                     out,
-                    "*connection = Some(BackgroundDbConnection::connect(host, db_name, credentials, handle_table_update, handle_resubscribe, handle_event)?);"
+                    "*connection = Some(BackgroundDbConnection::connect(host, db_name, credentials, handle_table_update, handle_resubscribe, invoke_row_callbacks, handle_event)?);"
                 ).unwrap();
                 writeln!(out, "Ok(())").unwrap();
             },
