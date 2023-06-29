@@ -93,6 +93,7 @@ fn get_subcommands() -> Vec<Command> {
             .arg(
                 Arg::new("all")
                     .long("all")
+                    .short('a')
                     .help("Remove all identities from your spacetime config")
                     .action(ArgAction::SetTrue)
                     .conflicts_with("identity")
@@ -102,7 +103,6 @@ fn get_subcommands() -> Vec<Command> {
                     .long("force")
                     .help("Removes all identities without prompting (for CI usage)")
                     .action(ArgAction::SetTrue)
-                    .requires("all")
                     .conflicts_with("identity")
                     .required_unless_present("identity"),
             ),
@@ -220,6 +220,15 @@ async fn exec_init_default(mut config: Config, args: &ArgMatches) -> Result<(), 
 async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let identity_or_name = args.get_one::<String>("identity");
     let force = args.get_flag("force");
+    let all = args.get_flag("all");
+
+    if !all && identity_or_name.is_none() {
+        return Err(anyhow::anyhow!("Must provide an identity or name to remove"));
+    }
+
+    if force && !all {
+        return Err(anyhow::anyhow!("The --force flag can only be used with --all"));
+    }
 
     if let Some(identity_or_name) = identity_or_name {
         let ic = if is_hex_identity(identity_or_name) {
