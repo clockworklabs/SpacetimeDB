@@ -33,7 +33,8 @@ namespace SpacetimeDB
     {
         protected void Awake()
         {
-            SpacetimeDBClient.CreateInstance(new UnityDebugLogger());
+            // If you get a compile error on `Reducer`, that means you need to run the SpacetimeDB CLI generate command 
+            SpacetimeDBClient.CreateInstance(new UnityDebugLogger(), typeof(Reducer));
         }
 
         private void OnDestroy()
