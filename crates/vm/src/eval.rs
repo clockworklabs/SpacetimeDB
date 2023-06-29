@@ -124,7 +124,15 @@ fn build_typed<P: ProgramVm>(p: &mut P, node: Expr) -> ExprOpt {
                 table_type,
                 table_access,
             })),
-            CrudExpr::Drop { name, kind } => ExprOpt::Crud(Box::new(CrudExprOpt::Drop { name, kind })),
+            CrudExpr::Drop {
+                name,
+                kind,
+                table_access,
+            } => ExprOpt::Crud(Box::new(CrudExprOpt::Drop {
+                name,
+                kind,
+                table_access,
+            })),
         },
         x => {
             todo!("{:?}", x)
@@ -281,7 +289,15 @@ fn compile<P: ProgramVm>(p: &mut P, node: ExprOpt) -> Result<Code, ErrorVm> {
                     table_type,
                     table_access,
                 }),
-                CrudExprOpt::Drop { name, kind } => Code::Crud(CrudCode::Drop { name, kind }),
+                CrudExprOpt::Drop {
+                    name,
+                    kind,
+                    table_access,
+                } => Code::Crud(CrudCode::Drop {
+                    name,
+                    kind,
+                    table_access,
+                }),
             }
         }
         x => todo!("{}", x),

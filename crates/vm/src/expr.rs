@@ -275,6 +275,7 @@ pub enum CrudExpr {
     Drop {
         name: String,
         kind: DbType,
+        table_access: StAccess,
     },
 }
 
@@ -440,6 +441,7 @@ pub enum CrudExprOpt {
     Drop {
         name: String,
         kind: DbType,
+        table_access: StAccess,
     },
 }
 
@@ -694,6 +696,7 @@ pub enum CrudCode {
     Drop {
         name: String,
         kind: DbType,
+        table_access: StAccess,
     },
 }
 
@@ -720,8 +723,22 @@ impl AuthAccess for CrudCode {
                     })
                 }
             }
-            //TODO: Must check auth on delete!
-            CrudCode::Drop { .. } => Ok(()),
+            CrudCode::Drop {
+                name,
+                kind,
+                table_access,
+            } => {
+                if table_access == &StAccess::Public {
+                    Ok(())
+                } else {
+                    let named = name.to_string();
+                    Err(match kind {
+                        DbType::Table => AuthError::TablePrivate { named },
+                        DbType::Index => AuthError::IndexPrivate { named },
+                        DbType::Sequence => AuthError::SequencePrivate { named },
+                    })
+                }
+            }
         }
     }
 }

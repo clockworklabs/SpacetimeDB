@@ -239,6 +239,7 @@ pub enum SqlAst {
     Drop {
         name: String,
         kind: DbType,
+        table_access: StAccess,
     },
 }
 
@@ -785,8 +786,10 @@ fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError
         }
     };
 
+    let name = name.to_string();
     Ok(SqlAst::Drop {
-        name: name.to_string(),
+        table_access: StAccess::for_name(&name),
+        name,
         kind,
     })
 }

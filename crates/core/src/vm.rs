@@ -302,7 +302,11 @@ impl ProgramVm for DbProgram<'_, '_> {
                 let result = self.create_table(&name, columns, table_type, table_access)?;
                 Ok(result)
             }
-            CrudCode::Drop { name, kind } => {
+            CrudCode::Drop {
+                name,
+                kind,
+                table_access: _,
+            } => {
                 let result = self.drop(&name, kind)?;
                 Ok(result)
             }

@@ -227,8 +227,12 @@ fn compile_create_table(
     })
 }
 
-fn compile_drop(name: String, kind: DbType) -> Result<CrudExpr, PlanError> {
-    Ok(CrudExpr::Drop { name, kind })
+fn compile_drop(name: String, kind: DbType, table_access: StAccess) -> Result<CrudExpr, PlanError> {
+    Ok(CrudExpr::Drop {
+        name,
+        kind,
+        table_access,
+    })
 }
 
 fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
@@ -251,7 +255,11 @@ fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
             table_type,
             table_access: schema,
         } => compile_create_table(table, columns, table_type, schema)?,
-        SqlAst::Drop { name, kind } => compile_drop(name, kind)?,
+        SqlAst::Drop {
+            name,
+            kind,
+            table_access,
+        } => compile_drop(name, kind, table_access)?,
     };
 
     Ok(q)

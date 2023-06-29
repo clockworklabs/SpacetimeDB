@@ -19,6 +19,10 @@ pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
 pub enum AuthError {
     #[error("Table `{named}` is private")]
     TablePrivate { named: String },
+    #[error("Index `{named}` is private")]
+    IndexPrivate { named: String },
+    #[error("Sequence `{named}` is private")]
+    SequencePrivate { named: String },
 }
 
 #[derive(thiserror::Error, Debug)]
