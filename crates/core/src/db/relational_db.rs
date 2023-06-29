@@ -395,7 +395,9 @@ impl RelationalDB {
 
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
-    /// where the column data identified by `col_id` equates to `value`.
+    /// where the column data identified by `col_id` matches `value`.
+    ///
+    /// Matching is defined by `Ord for AlgebraicValue`.
     #[tracing::instrument(skip(self, tx))]
     pub fn seek<'a>(
         &'a self,

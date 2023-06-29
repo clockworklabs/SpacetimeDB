@@ -1,18 +1,18 @@
 /// Error code for "No such table".
-pub const NOTAB: u16 = 1;
+pub const NO_SUCH_TABLE: u16 = 1;
 
 /// Error code for value/range not being found in a table.
-pub const LOOKUP: u16 = 2;
+pub const LOOKUP_NOT_FOUND: u16 = 2;
 
 /// Error code for when a unique constraint is violated.
-pub const EXISTS: u16 = 3;
+pub const UNIQUE_ALREADY_EXISTS: u16 = 3;
 
 macro_rules! errnos {
     ($mac:ident) => {
         $mac! {
-            NOTAB => "No such table",
-            LOOKUP => "Value or range provided not found in table",
-            EXISTS => "Value with given unique identifier already exists",
+            NO_SUCH_TABLE => "No such table",
+            LOOKUP_NOT_FOUND => "Value or range provided not found in table",
+            UNIQUE_ALREADY_EXISTS => "Value with given unique identifier already exists",
         }
     };
 }
