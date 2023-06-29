@@ -90,6 +90,9 @@ pub mod raw {
         /// where the row has a column, identified by `col_id`,
         /// with data matching the byte string, in WASM memory, pointed to at by `val`.
         ///
+        /// Matching is defined by decoding of `value` to an `AlgebraicValue`
+        /// according to the column's schema and then `Ord for AlgebraicValue`.
+        ///
         /// The rows found are bsatn encoded and then concatenated.
         /// The resulting byte string from the concatenation is written
         /// to a fresh buffer with the buffer's identifier written to the WASM pointer `out`.
@@ -101,8 +104,11 @@ pub mod raw {
         pub fn _insert(table_id: u32, row: *mut u8, row_len: usize) -> u16;
 
         /// Deletes all rows in the table identified by `table_id`
-        /// where the column identified by `col_id` equates to the byte string,
+        /// where the column identified by `col_id` matches the byte string,
         /// in WASM memory, pointed to at by `value`.
+        ///
+        /// Matching is defined by decoding of `value` to an `AlgebraicValue`
+        /// according to the column's schema and then `Ord for AlgebraicValue`.
         ///
         /// The number of rows deleted is written to the WASM pointer `out`.
         ///
