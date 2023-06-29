@@ -726,16 +726,16 @@ fn autogen_csharp_product_table_common(
 
                 writeln!(
                     output,
-                    "public delegate void InsertEventHandler({name} insertedValue, {namespace}.ReducerEvent dbEvent);"
+                    "public delegate void InsertEventHandler({name} insertedValue, {namespace}.ReducerEventBase dbEvent);"
                 )
                 .unwrap();
-                writeln!(output, "public delegate void UpdateEventHandler({name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
+                writeln!(output, "public delegate void UpdateEventHandler({name} oldValue, {name} newValue, {namespace}.ReducerEventBase dbEvent);").unwrap();
                 writeln!(
                     output,
-                    "public delegate void DeleteEventHandler({name} deletedValue, {namespace}.ReducerEvent dbEvent);"
+                    "public delegate void DeleteEventHandler({name} deletedValue, {namespace}.ReducerEventBase dbEvent);"
                 )
                 .unwrap();
-                writeln!(output, "public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, {name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
+                writeln!(output, "public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, {name} oldValue, {name} newValue, {namespace}.ReducerEventBase dbEvent);").unwrap();
                 writeln!(output, "public static event InsertEventHandler OnInsert;").unwrap();
                 writeln!(output, "public static event UpdateEventHandler OnUpdate;").unwrap();
                 writeln!(output, "public static event DeleteEventHandler OnBeforeDelete;").unwrap();
@@ -1224,7 +1224,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         };
         writeln!(
             output,
-            "public delegate void {func_name_pascal_case}Handler(ReducerEvent reducerEvent{delegate_args});"
+            "public delegate void {func_name_pascal_case}Handler(ReducerEventBase reducerEvent{delegate_args});"
         )
         .unwrap();
         writeln!(
@@ -1299,7 +1299,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "var args = dbEvent.FunctionCall.CallInfo.{func_name_pascal_case}Args;"
+                    "var args = ((ReducerEvent)dbEvent.FunctionCall.CallInfo).{func_name_pascal_case}Args;"
                 )
                 .unwrap();
                 writeln!(output, "On{func_name_pascal_case}Event(dbEvent.FunctionCall.CallInfo").unwrap();
@@ -1455,33 +1455,25 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
     writeln!(output, "}}").unwrap();
     writeln!(output).unwrap();
 
-    writeln!(output, "public partial class ReducerEvent").unwrap();
+    writeln!(output, "public partial class ReducerEvent : ReducerEventBase").unwrap();
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
         writeln!(output, "public ReducerType Reducer {{ get; private set; }}").unwrap();
-        writeln!(output, "public string ReducerName {{ get; private set; }}").unwrap();
-        writeln!(output, "public ulong Timestamp {{ get; private set; }}").unwrap();
-        writeln!(output, "public SpacetimeDB.Identity Identity {{ get; private set; }}").unwrap();
-        writeln!(output, "public string ErrMessage {{ get; private set; }}").unwrap();
-        writeln!(
-            output,
-            "public ClientApi.Event.Types.Status Status {{ get; private set; }}"
-        )
-        .unwrap();
-        writeln!(output, "private object Args;").unwrap();
         writeln!(output).unwrap();
         writeln!(output, "public ReducerEvent(ReducerType reducer, string reducerName, ulong timestamp, SpacetimeDB.Identity identity, string errMessage, ClientApi.Event.Types.Status status, object args)").unwrap();
+        {
+            indent_scope!(output);
+            writeln!(
+                output,
+                ": base(reducerName, timestamp, identity, errMessage, status, args)"
+            )
+            .unwrap();
+        }
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
             writeln!(output, "Reducer = reducer;").unwrap();
-            writeln!(output, "ReducerName = reducerName;").unwrap();
-            writeln!(output, "Timestamp = timestamp;").unwrap();
-            writeln!(output, "Identity = identity;").unwrap();
-            writeln!(output, "ErrMessage = errMessage;").unwrap();
-            writeln!(output, "Status = status;").unwrap();
-            writeln!(output, "Args = args;").unwrap();
         }
         // Closing brace for ctor
         writeln!(output, "}}").unwrap();
