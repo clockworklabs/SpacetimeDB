@@ -9,6 +9,9 @@ macro_rules! println {
 }
 
 /// Prints the provided arguments as an `INFO` message to the console.
+///
+/// Each print invocation generates a separate `INFO` message.
+/// Unlike `std::print`, a series of `print` invocations will not result in a single unbroken line.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! print {
@@ -23,6 +26,9 @@ macro_rules! eprintln {
 }
 
 /// Prints the provided arguments as an `ERROR` message to the console.
+///
+/// Each print invocation generates a separate `ERROR` message.
+/// Unlike `std::eprint`, a series of `eprint` invocations will not result in a single unbroken line.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! eprint {
