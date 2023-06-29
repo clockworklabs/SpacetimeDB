@@ -261,6 +261,8 @@ export class TestB extends IDatabaseTable
 	public static tableName = "TestB";
 	public foo: string;
 
+	public static primaryKey: string | undefined = undefined;
+
 	constructor(foo: string) {
 	super();
 		this.foo = foo;
@@ -394,6 +396,8 @@ export class TestE extends IDatabaseTable
 	public static tableName = "TestE";
 	public id: number;
 	public name: string;
+
+	public static primaryKey: string | undefined = "id";
 
 	constructor(id: number, name: string) {
 	super();
