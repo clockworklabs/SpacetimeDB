@@ -22,7 +22,11 @@ impl fmt::Display for DecodeError {
         }
     }
 }
-
+impl From<DecodeError> for String {
+    fn from(err: DecodeError) -> Self {
+        err.to_string()
+    }
+}
 impl std::error::Error for DecodeError {}
 
 impl From<Utf8Error> for DecodeError {
