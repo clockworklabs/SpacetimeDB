@@ -1,7 +1,7 @@
 use super::traits::{ColumnSchema, IndexSchema, SequenceId, SequenceSchema, TableId, TableSchema};
 use crate::error::{DBError, TableError};
 use once_cell::sync::Lazy;
-use spacetimedb_lib::{StAccess, StTableType};
+use spacetimedb_sats::auth::*;
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 
 /// The static ID of the table that defines tables

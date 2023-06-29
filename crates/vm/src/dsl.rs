@@ -2,6 +2,7 @@
 use crate::expr::{Expr, QueryExpr, SourceExpr};
 use crate::operator::*;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
+use spacetimedb_sats::auth::{StAccess, StTableType};
 use spacetimedb_sats::product_type::ProductType;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{DbTable, Header, MemTable};
@@ -33,8 +34,24 @@ where
     MemTable::from_iter(&head.into(), iter.into_iter().map(Into::into))
 }
 
+pub fn db_table_raw(
+    head: ProductType,
+    name: &str,
+    table_id: u32,
+    table_type: StTableType,
+    table_access: StAccess,
+) -> DbTable {
+    DbTable::new(
+        &Header::from_product_type(name, head),
+        table_id,
+        table_type,
+        table_access,
+    )
+}
+
+/// Create a [DbTable] of type [StTableType::User] and derive `StAccess::for_name(name)`.
 pub fn db_table(head: ProductType, name: &str, table_id: u32) -> DbTable {
-    DbTable::new(&Header::from_product_type(name, head), table_id)
+    db_table_raw(head, name, table_id, StTableType::User, StAccess::for_name(name))
 }
 
 pub fn bin_op<O, A, B>(op: O, a: A, b: B) -> Expr

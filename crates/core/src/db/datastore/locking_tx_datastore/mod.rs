@@ -39,7 +39,8 @@ use crate::{
     error::{DBError, IndexError, TableError},
 };
 use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
-use spacetimedb_lib::{data_key::ToDataKey, DataKey, StAccess, StTableType};
+use spacetimedb_lib::{data_key::ToDataKey, DataKey};
+use spacetimedb_sats::auth::*;
 use spacetimedb_sats::{
     AlgebraicType, AlgebraicValue, BuiltinType, BuiltinValue, ProductType, ProductTypeElement, ProductValue,
 };
@@ -1941,7 +1942,7 @@ mod tests {
     };
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::{StAccess, StTableType};
+    use spacetimedb_sats::auth::*;
     use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
 
     fn get_datastore() -> super::super::Result<Locking> {

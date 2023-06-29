@@ -156,8 +156,9 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         module.for_each_export(|sym, ty| func_names.update_from_general(sym, ty))?;
         func_names.preinits.sort_unstable();
 
+        let owner_identity = database_instance_context.identity;
         let relational_db = database_instance_context.relational_db.clone();
-        let (subscription, event_tx) = ModuleSubscriptionManager::spawn(relational_db);
+        let (subscription, event_tx) = ModuleSubscriptionManager::spawn(relational_db, owner_identity);
 
         let uninit_instance = module.instantiate_pre()?;
         let mut instance = uninit_instance.instantiate(

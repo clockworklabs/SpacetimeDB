@@ -505,7 +505,8 @@ mod tests {
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::error::{DBError, DatabaseError, IndexError};
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType, StAccess, StTableType};
+    use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType};
+    use spacetimedb_sats::auth::*;
     use spacetimedb_sats::product;
 
     #[test]

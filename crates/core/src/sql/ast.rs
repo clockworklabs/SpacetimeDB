@@ -1,5 +1,6 @@
 use spacetimedb_lib::table::{ColumnDef, ProductTypeMeta};
-use spacetimedb_lib::{ColumnIndexAttribute, StAccess, StTableType};
+use spacetimedb_lib::ColumnIndexAttribute;
+use spacetimedb_sats::auth::*;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
 use sqlparser::ast::{
     Assignment, BinaryOperator, ColumnDef as SqlColumnDef, ColumnOption, ColumnOptionDef, DataType, Expr as SqlExpr,

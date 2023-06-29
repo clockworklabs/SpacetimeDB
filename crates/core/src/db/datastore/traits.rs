@@ -1,7 +1,8 @@
 use crate::db::relational_db::ST_TABLES_ID;
 use core::fmt;
-use spacetimedb_lib::{DataKey, StAccess, StTableType};
+use spacetimedb_lib::DataKey;
 use spacetimedb_sats::{
+    auth::*,
     relation::{DbTable, FieldName, FieldOnly, Header, TableField},
     AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue,
 };
@@ -211,13 +212,15 @@ impl From<&TableSchema> for SourceExpr {
         SourceExpr::DbTable(DbTable::new(
             &Header::from_product_type(&value.table_name, value.into()),
             value.table_id,
+            value.table_type,
+            value.table_access,
         ))
     }
 }
 
 impl From<&TableSchema> for DbTable {
     fn from(value: &TableSchema) -> Self {
-        DbTable::new(&value.into(), value.table_id)
+        DbTable::new(&value.into(), value.table_id, value.table_type, value.table_access)
     }
 }
 

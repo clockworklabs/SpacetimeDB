@@ -1,4 +1,3 @@
-use spacetimedb_lib::{StAccess, StTableType};
 use std::collections::HashMap;
 
 use crate::db::datastore::traits::TableSchema;
@@ -6,9 +5,10 @@ use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
 use spacetimedb_lib::table::ProductTypeMeta;
+use spacetimedb_sats::auth::*;
 use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header};
 use spacetimedb_sats::{relation, ProductType};
-use spacetimedb_vm::dsl::{db_table, query};
+use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
 
@@ -108,10 +108,12 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
         });
     }
 
-    let mut q = query(db_table(
+    let mut q = query(db_table_raw(
         ProductType::from(&table.root),
         &table.root.table_name,
         table.root.table_id,
+        table.root.table_type,
+        table.root.table_access,
     ));
 
     if let Some(ref joins) = table.join {
@@ -148,7 +150,12 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
         }
     }
 
-    DbTable::new(&Header::new(&table.table_name, &new), table.table_id)
+    DbTable::new(
+        &Header::new(&table.table_name, &new),
+        table.table_id,
+        table.table_type,
+        table.table_access,
+    )
 }
 
 fn compile_insert(

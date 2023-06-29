@@ -1,3 +1,4 @@
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{ProductType, ProductValue};
 use spacetimedb_sats::relation::MemTable;
 use spacetimedb_vm::eval::run_ast;
@@ -46,9 +47,9 @@ fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBErr
     Ok(())
 }
 
-pub fn execute_single_sql(db: &RelationalDB, ast: CrudExpr) -> Result<Vec<MemTable>, DBError> {
+pub fn execute_single_sql(db: &RelationalDB, ast: CrudExpr, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     db.with_auto_commit(|tx| {
-        let p = &mut DbProgram::new(db, tx);
+        let p = &mut DbProgram::new(db, tx, auth);
         let q = Expr::Crud(Box::new(ast));
 
         let mut result = Vec::with_capacity(1);
@@ -57,11 +58,11 @@ pub fn execute_single_sql(db: &RelationalDB, ast: CrudExpr) -> Result<Vec<MemTab
     })
 }
 
-pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>) -> Result<Vec<MemTable>, DBError> {
+pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     db.with_auto_commit(|tx| {
         let total = ast.len();
 
-        let p = &mut DbProgram::new(db, tx);
+        let p = &mut DbProgram::new(db, tx, auth);
         let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
 
         let mut result = Vec::with_capacity(total);
@@ -72,7 +73,7 @@ pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>) -> Result<Vec<MemTable
 
 fn run(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
     let ast = compile_sql(db, sql_text)?;
-    execute_sql(db, ast)
+    execute_sql(db, ast, AuthCtx::for_testing())
 }
 
 #[cfg(test)]
@@ -82,7 +83,7 @@ pub(crate) mod tests {
     use crate::db::relational_db::{ST_TABLES_ID, ST_TABLES_NAME};
     use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::{StAccess, StTableType};
+    use spacetimedb_sats::auth::*;
     use spacetimedb_sats::relation::Header;
     use spacetimedb_sats::{product, BuiltinType, ProductType};
     use spacetimedb_vm::dsl::{mem_table, scalar};

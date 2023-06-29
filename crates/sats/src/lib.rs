@@ -13,6 +13,7 @@ pub mod typespace;
 // mod algebraic_type_legacy_encoding;
 mod algebraic_type_ref;
 pub mod algebraic_value;
+pub mod auth;
 pub mod bsatn;
 pub mod buffer;
 pub mod de;

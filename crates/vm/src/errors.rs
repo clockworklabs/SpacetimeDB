@@ -1,6 +1,6 @@
 use crate::operator::{Op, OpLogic};
 use crate::types::Ty;
-use spacetimedb_sats::relation::RelationError;
+use spacetimedb_sats::relation::{AuthError, RelationError};
 use spacetimedb_sats::AlgebraicValue;
 use std::fmt;
 use thiserror::Error;
@@ -31,6 +31,8 @@ pub enum ErrorVm {
     Lang(#[from] ErrorLang),
     #[error("RelationError {0}")]
     Rel(#[from] RelationError),
+    #[error("AuthError {0}")]
+    Auth(#[from] AuthError),
     #[error("Unsupported: {0}")]
     Unsupported(String),
     #[error("{0}")]
@@ -71,10 +73,10 @@ impl ErrorCtx {
 /// Define the main User Error type for the VM
 #[derive(Error, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ErrorLang {
-    kind: ErrorKind,
-    msg: Option<String>,
+    pub kind: ErrorKind,
+    pub msg: Option<String>,
     /// Optional context for the Error: Which record was not found, what value was invalid, etc.
-    context: Option<Vec<ErrorCtx>>,
+    pub context: Option<Vec<ErrorCtx>>,
 }
 
 impl ErrorLang {
@@ -127,6 +129,7 @@ impl From<ErrorVm> for ErrorLang {
             ErrorVm::Rel(err) => ErrorLang::new(ErrorKind::Db, Some(&err.to_string())),
             ErrorVm::Unsupported(err) => ErrorLang::new(ErrorKind::Compiler, Some(&err)),
             ErrorVm::Lang(err) => err,
+            ErrorVm::Auth(err) => ErrorLang::new(ErrorKind::Unauthorized, Some(&err.to_string())),
         }
     }
 }

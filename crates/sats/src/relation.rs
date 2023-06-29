@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 
 use crate::algebraic_type::TypeError;
 use crate::algebraic_value::AlgebraicValue;
+use crate::auth::*;
 use crate::product_value::ProductValue;
 use crate::satn::Satn;
 use crate::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, TypeInSpace, Typespace};
@@ -12,6 +13,12 @@ pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
     let mut s = DefaultHasher::new();
     t.hash(&mut s);
     s.finish()
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum AuthError {
+    #[error("Table `{named}` is private")]
+    TablePrivate { named: String },
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -568,13 +575,17 @@ impl Relation for MemTable {
 pub struct DbTable {
     pub head: Header,
     pub table_id: u32,
+    pub table_type: StTableType,
+    pub table_access: StAccess,
 }
 
 impl DbTable {
-    pub fn new(head: &Header, table_id: u32) -> Self {
+    pub fn new(head: &Header, table_id: u32, table_type: StTableType, table_access: StAccess) -> Self {
         Self {
             head: head.clone(),
             table_id,
+            table_type,
+            table_access,
         }
     }
 }
@@ -593,6 +604,29 @@ impl Relation for DbTable {
 pub enum Table {
     MemTable(MemTable),
     DbTable(DbTable),
+}
+
+impl Table {
+    pub fn table_name(&self) -> &str {
+        match self {
+            Self::MemTable(x) => &x.head.table_name,
+            Self::DbTable(x) => &x.head.table_name,
+        }
+    }
+
+    pub fn table_type(&self) -> StTableType {
+        match self {
+            Self::MemTable(_) => StTableType::User,
+            Self::DbTable(x) => x.table_type,
+        }
+    }
+
+    pub fn table_access(&self) -> StAccess {
+        match self {
+            Self::MemTable(_) => StAccess::Public,
+            Self::DbTable(x) => x.table_access,
+        }
+    }
 }
 
 impl Relation for Table {
