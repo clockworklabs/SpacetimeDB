@@ -2,98 +2,109 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue } from "../../src/index.ts";
+import {
+  __SPACETIMEDB__,
+  AlgebraicType,
+  ProductType,
+  BuiltinType,
+  ProductTypeElement,
+  SumType,
+  SumTypeVariant,
+  IDatabaseTable,
+  AlgebraicValue,
+} from "../../src/index";
 // @ts-ignore
 import { Point } from "./point";
 
-export class Player extends IDatabaseTable
-{
-	public static tableName = "Player";
-	public ownerId: string;
-	public position: Point;
+export class Player extends IDatabaseTable {
+  public static tableName = "Player";
+  public ownerId: string;
+  public name: string;
+  public position: Point;
 
-	constructor(ownerId: string, position: Point) {
-	super();
-		this.ownerId = ownerId;
-		this.position = position;
-	}
+  public static primaryKey: string | undefined = "ownerId";
 
-	public static serialize(value: Player): object {
-		return [
-		value.ownerId, Point.serialize(value.position)
-		];
-	}
+  constructor(ownerId: string, name: string, position: Point) {
+    super();
+    this.ownerId = ownerId;
+    this.name = name;
+    this.position = position;
+  }
 
-	public static getAlgebraicType(): AlgebraicType
-	{
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("owner_id", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
-			new ProductTypeElement("position", Point.getAlgebraicType()),
-		]);
-	}
+  public static serialize(value: Player): object {
+    return [value.ownerId, Point.serialize(value.position)];
+  }
 
-	public static fromValue(value: AlgebraicValue): Player
-	{
-		let productValue = value.asProductValue();
-		let __owner_id = productValue.elements[0].asString();
-		let __position = Point.fromValue(productValue.elements[1]);
-		return new this(__owner_id, __position);
-	}
+  public static getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement(
+        "owner_id",
+        AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
+      ),
+      new ProductTypeElement(
+        "name",
+        AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
+      ),
+      new ProductTypeElement("position", Point.getAlgebraicType()),
+    ]);
+  }
 
-	public static count(): number
-	{
-		return __SPACETIMEDB__.clientDB.getTable("Player").count();
-	}
+  public static fromValue(value: AlgebraicValue): Player {
+    let productValue = value.asProductValue();
+    let __owner_id = productValue.elements[0].asString();
+    let __name = productValue.elements[1].asString();
+    let __position = Point.fromValue(productValue.elements[2]);
+    return new this(__owner_id, __name, __position);
+  }
 
-	public static all(): Player[]
-	{
-		return __SPACETIMEDB__.clientDB.getTable("Player").getInstances() as unknown as Player[];
-	}
+  public static count(): number {
+    return __SPACETIMEDB__.clientDB.getTable("Player").count();
+  }
 
-	public static filterByOwnerId(value: string): Player | null
-	{
-		for(let entry of __SPACETIMEDB__.clientDB.getTable("Player").getEntries())
-		{
-			var productValue = entry.asProductValue();
-			let compareValue = productValue.elements[0].asString() as string;
-			if (compareValue == value) {
-				return Player.fromValue(entry);
-			}
-		}
-		return null;
-	}
+  public static all(): Player[] {
+    return __SPACETIMEDB__.clientDB
+      .getTable("Player")
+      .getInstances() as unknown as Player[];
+  }
 
+  public static filterByOwnerId(value: string): Player | null {
+    for (let instance of __SPACETIMEDB__.clientDB
+      .getTable("Player")
+      .getInstances()) {
+      if (instance.ownerId === value) {
+        return instance;
+      }
+    }
+    return null;
+  }
 
-	public static onInsert(callback: (value: Player) => void)
-	{
-		__SPACETIMEDB__.clientDB.getTable("Player").onInsert(callback);
-	}
+  public static onInsert(callback: (value: Player) => void) {
+    __SPACETIMEDB__.clientDB.getTable("Player").onInsert(callback);
+  }
 
-	public static onUpdate(callback: (oldValue: Player, newValue: Player) => void)
-	{
-		__SPACETIMEDB__.clientDB.getTable("Player").onUpdate(callback);
-	}
+  public static onUpdate(
+    callback: (oldValue: Player, newValue: Player) => void
+  ) {
+    __SPACETIMEDB__.clientDB.getTable("Player").onUpdate(callback);
+  }
 
-	public static onDelete(callback: (value: Player) => void)
-	{
-		__SPACETIMEDB__.clientDB.getTable("Player").onDelete(callback);
-	}
+  public static onDelete(callback: (value: Player) => void) {
+    __SPACETIMEDB__.clientDB.getTable("Player").onDelete(callback);
+  }
 
-	public static removeOnInsert(callback: (value: Player) => void)
-	{
-		__SPACETIMEDB__.clientDB.getTable("Player").removeOnInsert(callback);
-	}
+  public static removeOnInsert(callback: (value: Player) => void) {
+    __SPACETIMEDB__.clientDB.getTable("Player").removeOnInsert(callback);
+  }
 
-	public static removeOnUpdate(callback: (oldValue: Player, newValue: Player) => void)
-	{
-		__SPACETIMEDB__.clientDB.getTable("Player").removeOnUpdate(callback);
-	}
+  public static removeOnUpdate(
+    callback: (oldValue: Player, newValue: Player) => void
+  ) {
+    __SPACETIMEDB__.clientDB.getTable("Player").removeOnUpdate(callback);
+  }
 
-	public static removeOnDelete(callback: (value: Player) => void)
-	{
-		__SPACETIMEDB__.clientDB.getTable("Player").removeOnDelete(callback);
-	}
-
+  public static removeOnDelete(callback: (value: Player) => void) {
+    __SPACETIMEDB__.clientDB.getTable("Player").removeOnDelete(callback);
+  }
 }
 
 export default Player;
