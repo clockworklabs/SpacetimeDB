@@ -1157,7 +1157,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(
@@ -1181,7 +1181,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
             .name
             .as_deref()
             .unwrap_or_else(|| panic!("reducer args should have names: {func_name}"));
-        let arg_name = name.to_case(Case::Camel);
+        let arg_name = format!("_{}", name.to_case(Case::Camel));
         let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, "");
 
         func_arguments.push(format!("{arg_name}: {arg_type_str}"));
@@ -1212,14 +1212,18 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         writeln!(output, "}}").unwrap();
         writeln!(output).unwrap();
 
-        let args: &str = if reducer.args.is_empty() { "" } else { "rawArgs: any[]" };
+        let args: &str = if reducer.args.is_empty() {
+            "_adapter: ReducerArgsAdapter"
+        } else {
+            "adapter: ReducerArgsAdapter"
+        };
         writeln!(output, "public static deserializeArgs({args}): any[] {{").unwrap();
 
         {
             indent_scope!(output);
 
             let mut arg_names = Vec::new();
-            for (i, arg) in reducer.args.iter().enumerate() {
+            for arg in reducer.args.iter() {
                 let ty = &arg.algebraic_type;
                 let name = arg
                     .name
@@ -1230,7 +1234,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
                 writeln!(output, "let {arg_name}Type = {};", convert_algebraic_type(ctx, ty, "")).unwrap();
                 writeln!(
                     output,
-                    "let {arg_name}Value = AlgebraicValue.deserialize({arg_name}Type, rawArgs[{i}])"
+                    "let {arg_name}Value = AlgebraicValue.deserialize({arg_name}Type, adapter.next())"
                 )
                 .unwrap();
                 writeln!(
@@ -1252,7 +1256,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         // OnCreatePlayerEvent(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray()), args[0].ToObject<string>());
         writeln!(
             output,
-            "public static on(callback: (status: string, identity: string, reducerArgs: any[]) => void)"
+            "public static on(callback: (status: string, identity: Uint8Array, reducerArgs: any[]) => void)"
         )
         .unwrap();
         writeln!(output, "{{").unwrap();
