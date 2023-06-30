@@ -669,7 +669,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
 
         Some(quote! {
             // TODO: should we expose spacetimedb::query::FilterByIter ?
-            #vis fn #filter_func_ident<'a>(#column_ident: &'a #column_type) -> impl Iterator<Item = Self> + 'a {
+            #vis fn #filter_func_ident<'a>(#column_ident: &#column_type) -> impl Iterator<Item = Self> {
                 spacetimedb::query::filter_by_field::<Self, #column_type, #column_index>(#column_ident)
             }
         })
