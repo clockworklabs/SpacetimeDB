@@ -10,7 +10,6 @@ use crate::db::db_metrics::{
     RDB_DELETE_IN_TIME, RDB_DELETE_PK_TIME, RDB_DROP_TABLE_TIME, RDB_INSERT_TIME, RDB_SCAN_TIME,
 };
 use crate::db::messages::commit::Commit;
-use crate::db::messages::write::Operation;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::error::{DBError, DatabaseError, TableError};
@@ -96,46 +95,16 @@ impl RelationalDB {
                     // is just to reduce memory usage while inserting. We don't
                     // really care about inserting these transactionally as long
                     // as all of the writes get inserted.
-                    let mut tx = datastore.begin_mut_tx();
-                    for write in &transaction.writes {
-                        let table_id = TableId(write.set_id);
-                        match write.operation {
-                            Operation::Delete => {
-                                datastore
-                                    .delete_row_mut_tx(&mut tx, table_id, RowId(write.data_key))
-                                    .unwrap();
-                            }
-                            Operation::Insert => {
-                                let row_type = datastore.row_type_for_table_mut_tx(&tx, table_id).unwrap();
-                                match write.data_key {
-                                    DataKey::Data(data) => {
-                                        let product_value = ProductValue::decode(&row_type, &mut &data[..])
-                                            .unwrap_or_else(|_| {
-                                                panic!(
-                                                    "Couldn't decode product value to {:?} from message log",
-                                                    row_type
-                                                )
-                                            });
-                                        datastore.insert_row_mut_tx(&mut tx, table_id, product_value).unwrap();
-                                    }
-                                    DataKey::Hash(hash) => {
-                                        let data = odb.lock().unwrap().get(hash).unwrap();
-                                        let product_value = ProductValue::decode(&row_type, &mut &data[..])
-                                            .unwrap_or_else(|_| {
-                                                panic!(
-                                                    "Couldn't decode product value to {:?} from message log",
-                                                    row_type
-                                                )
-                                            });
-                                        datastore.insert_row_mut_tx(&mut tx, table_id, product_value).unwrap();
-                                    }
-                                };
-                            }
-                        }
-                    }
-                    datastore.commit_mut_tx(tx).unwrap();
+                    datastore.replay_transaction(&transaction, odb.clone())?;
                 }
             }
+
+            // The purpose of this is to rebuild the state of the datastore
+            // after having inserted all of rows from the message log.
+            // This is necessary because, for example, inserting a row into `st_table`
+            // is not equivalent to calling `create_table`.
+            // There may eventually be better way to do this, but this will have to do for now.
+            datastore.rebuild_state_after_replay()?;
 
             let commit_offset = if let Some(last_commit_offset) = last_commit_offset {
                 last_commit_offset + 1
