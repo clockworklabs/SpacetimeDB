@@ -1,11 +1,7 @@
 use crate::config::Config;
-use crate::util::get_auth_header;
-use crate::util::spacetime_dns;
+use crate::util::{database_address, get_auth_header_only};
 use anyhow::Error;
-use clap::Arg;
-use clap::ArgAction;
-use clap::ArgMatches;
-use spacetimedb_lib::name::{is_address, DnsLookupResponse};
+use clap::{Arg, ArgAction, ArgMatches};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("call")
@@ -51,16 +47,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     let as_identity = args.get_one::<String>("as_identity");
     let anon_identity = args.get_flag("anon_identity");
 
-    let address = if is_address(database.as_str()) {
-        database.clone()
-    } else {
-        match spacetime_dns(&config, database).await? {
-            DnsLookupResponse::Success { domain: _, address } => address,
-            DnsLookupResponse::Failure { domain } => {
-                return Err(anyhow::anyhow!("The dns resolution of {} failed.", domain));
-            }
-        }
-    };
+    let address = database_address(&config, database).await?;
 
     let client = reqwest::Client::new();
     let mut builder = client.post(format!(
@@ -69,7 +56,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         address,
         reducer_name
     ));
-    if let Some((auth_header, _)) = get_auth_header(&mut config, anon_identity, as_identity.map(|x| x.as_str())).await {
+    if let Some(auth_header) = get_auth_header_only(&mut config, anon_identity, as_identity).await {
         builder = builder.header("Authorization", auth_header);
     }
 

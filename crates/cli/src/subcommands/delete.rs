@@ -1,10 +1,6 @@
 use crate::config::Config;
-use crate::util::get_auth_header;
-use crate::util::spacetime_dns;
-use clap::Arg;
-
-use clap::ArgMatches;
-use spacetimedb_lib::name::{is_address, DnsLookupResponse};
+use crate::util::{database_address, get_auth_header_only};
+use clap::{Arg, ArgMatches};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("delete")
@@ -26,22 +22,11 @@ pub fn cli() -> clap::Command {
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
-
     let identity_or_name = args.get_one::<String>("identity");
-    let auth_header = get_auth_header(&mut config, false, identity_or_name.map(|x| x.as_str()))
-        .await
-        .map(|x| x.0);
 
-    let address = if is_address(database.as_str()) {
-        database.clone()
-    } else {
-        match spacetime_dns(&config, database).await? {
-            DnsLookupResponse::Success { domain: _, address } => address,
-            DnsLookupResponse::Failure { domain } => {
-                return Err(anyhow::anyhow!("The dns resolution of {} failed.", domain));
-            }
-        }
-    };
+    let auth_header = get_auth_header_only(&mut config, false, identity_or_name).await;
+
+    let address = database_address(&config, database).await?;
 
     let client = reqwest::Client::new();
     let mut builder = client.post(format!("{}/database/delete/{}", config.get_host_url(), address));
