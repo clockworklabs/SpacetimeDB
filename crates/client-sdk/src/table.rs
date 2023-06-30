@@ -47,10 +47,7 @@ impl<Table> Iterator for TableIter<Table> {
 
 /// Because `Result::flatten` is unstable as of Rust 1.70.
 fn flatten_result<T>(res: Result<Result<T>>) -> Result<T> {
-    match res {
-        Err(e) => Err(e),
-        Ok(ok) => ok,
-    }
+    res.and_then(|x| x)
 }
 
 fn try_with_table<T: TableType, Res>(f: impl FnOnce(&TableCache<T>) -> Res) -> Result<Res> {

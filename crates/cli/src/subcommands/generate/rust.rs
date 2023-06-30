@@ -659,6 +659,20 @@ fn is_init(reducer: &ReducerDef) -> bool {
     reducer.name == "__init__"
 }
 
+fn iter_reducer_items(items: &[GenItem]) -> impl Iterator<Item = &ReducerDef> {
+    items.iter().filter_map(|item| match item {
+        GenItem::Reducer(reducer) if !is_init(reducer) => Some(reducer),
+        _ => None,
+    })
+}
+
+fn iter_table_items(items: &[GenItem]) -> impl Iterator<Item = &TableDef> {
+    items.iter().filter_map(|item| match item {
+        GenItem::Table(table) => Some(table),
+        _ => None,
+    })
+}
+
 /// Print `pub mod` declarations for all the files that will be generated for `items`.
 fn print_module_decls(out: &mut Indenter, items: &[GenItem]) {
     for item in items {
@@ -692,21 +706,19 @@ fn print_handle_table_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[Gen
             out.delimited_block(
                 "match table_name {",
                 |out| {
-                    for item in items {
-                        if let GenItem::Table(table) = item {
-                            writeln!(
-                                out,
-                                "{:?} => client_cache.{}::<{}::{}>(callbacks, table_update),",
-                                table.name,
-                                if find_primary_key_column_index(ctx, table).is_some() {
-                                    "handle_table_update_with_primary_key"
-                                } else {
-                                    "handle_table_update_no_primary_key"
-                                },
-                                table.name.to_case(Case::Snake),
-                                table.name.to_case(Case::Pascal),
-                            ).unwrap();
-                        }
+                    for table in iter_table_items(items) {
+                        writeln!(
+                            out,
+                            "{:?} => client_cache.{}::<{}::{}>(callbacks, table_update),",
+                            table.name,
+                            if find_primary_key_column_index(ctx, table).is_some() {
+                                "handle_table_update_with_primary_key"
+                            } else {
+                                "handle_table_update_no_primary_key"
+                            },
+                            table.name.to_case(Case::Snake),
+                            table.name.to_case(Case::Pascal),
+                        ).unwrap();
                     }
                     writeln!(
                         out,
@@ -728,18 +740,16 @@ fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
     out.delimited_block(
         "fn invoke_row_callbacks(reminders: &mut RowCallbackReminders, worker: &mut DbCallbacks, reducer_event: Option<Arc<AnyReducerEvent>>, state: &Arc<ClientCache>) {",
         |out| {
-            for item in items {
-                if let GenItem::Table(table) = item {
-                    writeln!(
-                        out,
-                        "reminders.invoke_callbacks::<{}::{}>(worker, &reducer_event, state);",
-                        table.name.to_case(Case::Snake),
-                        table.name.to_case(Case::Pascal),
-                    ).unwrap();
-                }
+            for table in iter_table_items(items) {
+                writeln!(
+                    out,
+                    "reminders.invoke_callbacks::<{}::{}>(worker, &reducer_event, state);",
+                    table.name.to_case(Case::Snake),
+                    table.name.to_case(Case::Pascal),
+                ).unwrap();
             }
         },
-        "}\n"
+        "}\n",
     );
 }
 
@@ -756,16 +766,14 @@ fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
             out.delimited_block(
                 "match table_name {",
                 |out| {
-                    for item in items {
-                        if let GenItem::Table(table) = item {
-                            writeln!(
-                                out,
-                                "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),",
-                                table.name,
-                                table.name.to_case(Case::Snake),
-                                table.name.to_case(Case::Pascal),
-                            ).unwrap();
-                        }
+                    for table in iter_table_items(items) {
+                        writeln!(
+                            out,
+                            "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),",
+                            table.name,
+                            table.name.to_case(Case::Snake),
+                            table.name.to_case(Case::Pascal),
+                        ).unwrap();
                     }
                     writeln!(
                         out,
@@ -797,20 +805,16 @@ fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
             out.delimited_block(
                 "match &function_call.reducer[..] {",
                 |out| {
-                    for item in items {
-                        if let GenItem::Reducer(reducer) = item {
-                            if !is_init(reducer) {
-                                let type_or_variant_name = reducer.name.to_case(Case::Pascal);
-                                writeln!(
-                                    out,
-                                    "{:?} => reducer_callbacks.handle_event_of_type::<{}_reducer::{}, ReducerEvent>(event, state, ReducerEvent::{}),",
-                                    reducer.name,
-                                    reducer.name.to_case(Case::Snake),
-                                    type_or_variant_name,
-                                    type_or_variant_name,
-                                ).unwrap();
-                            }
-                        }
+                    for reducer in iter_reducer_items(items) {
+                        let type_or_variant_name = reducer.name.to_case(Case::Pascal);
+                        writeln!(
+                            out,
+                            "{:?} => reducer_callbacks.handle_event_of_type::<{}_reducer::{}, ReducerEvent>(event, state, ReducerEvent::{}),",
+                            reducer.name,
+                            reducer.name.to_case(Case::Snake),
+                            type_or_variant_name,
+                            type_or_variant_name,
+                        ).unwrap();                    
                     }
                     writeln!(
                         out,

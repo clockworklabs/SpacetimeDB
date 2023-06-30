@@ -93,7 +93,15 @@ fn get_subcommands() -> Vec<Command> {
             .arg(
                 Arg::new("all")
                     .long("all")
+                    .short('a')
                     .help("Remove all identities from your spacetime config")
+                    .action(ArgAction::SetTrue)
+                    .conflicts_with("identity")
+                    .required_unless_present("identity"),
+            ).arg(
+                Arg::new("force")
+                    .long("force")
+                    .help("Removes all identities without prompting (for CI usage)")
                     .action(ArgAction::SetTrue)
                     .conflicts_with("identity")
                     .required_unless_present("identity"),
@@ -211,6 +219,16 @@ async fn exec_init_default(mut config: Config, args: &ArgMatches) -> Result<(), 
 /// Executes the `identity remove` command which removes an identity from the config.
 async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let identity_or_name = args.get_one::<String>("identity");
+    let force = args.get_flag("force");
+    let all = args.get_flag("all");
+
+    if !all && identity_or_name.is_none() {
+        return Err(anyhow::anyhow!("Must provide an identity or name to remove"));
+    }
+
+    if force && !all {
+        return Err(anyhow::anyhow!("The --force flag can only be used with --all"));
+    }
 
     if let Some(identity_or_name) = identity_or_name {
         let ic = if is_hex_identity(identity_or_name) {
@@ -229,23 +247,26 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
             return Ok(());
         }
 
-        print!("Are you sure you want to remove all identities? (y/n) ");
-        std::io::stdout().flush()?;
-
         let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        if input.trim() == "y" {
-            let identity_count = config.identity_configs().len();
-            config.delete_all_identity_configs();
-            config.save();
-            println!(
-                " {} {} removed.",
-                identity_count,
-                if identity_count > 1 { "identities" } else { "identity" }
-            );
-        } else {
-            println!(" Aborted");
+        if !force {
+            print!("Are you sure you want to remove all identities? (y/n) ");
+            std::io::stdout().flush()?;
+            std::io::stdin().read_line(&mut input)?;
+
+            if input.trim() != "y" {
+                println!(" Aborted");
+                return Ok(());
+            }
         }
+
+        let identity_count = config.identity_configs().len();
+        config.delete_all_identity_configs();
+        config.save();
+        println!(
+            " {} {} removed.",
+            identity_count,
+            if identity_count > 1 { "identities" } else { "identity" }
+        );
     }
     Ok(())
 }

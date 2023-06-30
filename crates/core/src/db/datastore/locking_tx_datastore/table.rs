@@ -57,6 +57,8 @@ impl Table {
     /// returns an iterator over the [`BTreeIndex`] that yields all the `RowId`s
     /// that match the specified `value` in the indexed column.
     ///
+    /// Matching is defined by `Ord for AlgebraicValue`.
+    ///
     /// For a unique index this will always yield at most one `RowId`.
     pub(crate) fn index_seek<'a>(
         &'a self,

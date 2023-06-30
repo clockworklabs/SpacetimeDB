@@ -17,7 +17,7 @@
 
 use crate::{
     client_api_messages,
-    client_cache::ClientCache,
+    client_cache::ClientCacheView,
     global_connection::CurrentStateGuard,
     identity::{Credentials, Identity, Token},
     reducer::{AnyReducerEvent, Reducer, Status},
@@ -30,12 +30,9 @@ use spacetimedb_sats::bsatn;
 use std::{
     collections::HashMap,
     marker::PhantomData,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::{Arc, atomic::{AtomicUsize, Ordering}},
 };
-use tokio::{runtime::Runtime, task::JoinHandle};
+use tokio::{runtime, task::JoinHandle};
 
 /// An owned tuple which can be sent to a `CallbackMap` worker,
 /// then converted to a borrowed form to be passed to any number of callbacks.
@@ -222,7 +219,7 @@ where
     /// associated with the event that caused this callback to be invoked.
     /// It will be bound around the callback's invocation with a `CurrentStateGuard`
     /// in order to give callback a consistent view of that state.
-    Invoke { args: Args, db_state: Arc<ClientCache> },
+    Invoke { args: Args, db_state: ClientCacheView },
 }
 
 /// A handle on a background worker which maintains a set of `Callback<Args>` callbacks.
@@ -296,7 +293,7 @@ impl<Args: OwnedArgs> CallbackMap<Args> {
     ///
     /// This will create an unbounded channel, with the returned `CallbackMap` holding
     /// the sender, and the background handler loop holding the receiver.
-    fn spawn(runtime: &Runtime) -> Self {
+    fn spawn(runtime: &runtime::Handle) -> Self {
         let (send, recv) = mpsc::unbounded();
         let handle = runtime.spawn(Self::callback_handler_loop(recv));
         CallbackMap {
@@ -399,7 +396,7 @@ impl<Args: OwnedArgs> CallbackMap<Args> {
     }
 
     /// Invoke each currently-registered callback in `self` with `args`.
-    fn invoke(&self, args: Args, db_state: Arc<ClientCache>) {
+    fn invoke(&self, args: Args, db_state: ClientCacheView) {
         self.send
             .unbounded_send(CallbackMessage::Invoke { args, db_state })
             // TODO: properly handle this error somehow
@@ -511,7 +508,7 @@ where
         &mut self,
         inserted: Table,
         reducer_event: Option<Arc<AnyReducerEvent>>,
-        db_state: Arc<ClientCache>,
+        db_state: ClientCacheView,
     ) {
         self.on_insert.invoke((inserted, reducer_event), db_state);
     }
@@ -542,9 +539,17 @@ where
         &mut self,
         deleted: Table,
         reducer_event: Option<Arc<AnyReducerEvent>>,
-        db_state: Arc<ClientCache>,
+        db_state: ClientCacheView,
     ) {
         self.on_delete.invoke((deleted, reducer_event), db_state);
+    }
+
+    pub(crate) fn new(runtime: &runtime::Handle) -> TableCallbacks<Table> {
+        TableCallbacks {
+            on_insert: CallbackMap::spawn(runtime),
+            on_delete: CallbackMap::spawn(runtime),
+            on_update: CallbackMap::spawn(runtime),
+        }
     }
 
     /// Register an `on_update` callback for when an inserted row overwrites an existing
@@ -581,17 +586,9 @@ where
         old: Table,
         new: Table,
         reducer_event: Option<Arc<AnyReducerEvent>>,
-        db_state: Arc<ClientCache>,
+        db_state: ClientCacheView,
     ) {
         self.on_update.invoke((old, new, reducer_event), db_state);
-    }
-
-    pub(crate) fn new(runtime: &Runtime) -> TableCallbacks<Table> {
-        TableCallbacks {
-            on_insert: CallbackMap::spawn(runtime),
-            on_delete: CallbackMap::spawn(runtime),
-            on_update: CallbackMap::spawn(runtime),
-        }
     }
 }
 
@@ -601,7 +598,7 @@ pub struct DbCallbacks {
 
     /// A handle on the Tokio runtime, used to spawn `CallbackMap` workers
     /// for specific reducer types in `ClientCache::find_table`.
-    runtime: Arc<Runtime>,
+    runtime: runtime::Handle,
 }
 
 impl DbCallbacks {
@@ -611,7 +608,7 @@ impl DbCallbacks {
             .or_insert_with(|| TableCallbacks::new(&self.runtime))
     }
 
-    pub(crate) fn new(runtime: Arc<Runtime>) -> DbCallbacks {
+    pub(crate) fn new(runtime: runtime::Handle) -> DbCallbacks {
         DbCallbacks {
             table_callbacks: Map::new(),
             runtime,
@@ -625,7 +622,7 @@ impl DbCallbacks {
 ///
 /// Users should not interact with this type directly.
 pub type HandleEventFn =
-    fn(client_api_messages::Event, &mut ReducerCallbacks, Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>>;
+    fn(client_api_messages::Event, &mut ReducerCallbacks, ClientCacheView) -> Option<Arc<AnyReducerEvent>>;
 
 /// A collection of reducer callbacks.
 ///
@@ -642,7 +639,7 @@ pub struct ReducerCallbacks {
 
     /// A handle on the Tokio runtime, used to spawn `CallbackMap` workers
     /// for specific reducer types in `ReducerCallbacks::find_callbacks`.
-    runtime: Arc<Runtime>,
+    runtime: runtime::Handle,
 }
 
 // In order to be resilient against future extensions to the protocol,
@@ -664,7 +661,7 @@ fn parse_status(status: i32) -> Option<Status> {
 }
 
 impl ReducerCallbacks {
-    pub(crate) fn new(handle_event: HandleEventFn, runtime: Arc<Runtime>) -> ReducerCallbacks {
+    pub(crate) fn new(handle_event: HandleEventFn, runtime: runtime::Handle) -> ReducerCallbacks {
         ReducerCallbacks {
             callbacks: Map::new(),
             handle_event,
@@ -688,7 +685,7 @@ impl ReducerCallbacks {
     pub fn handle_event_of_type<R: Reducer, ReducerEvent: Any + Send + Sync>(
         &mut self,
         event: client_api_messages::Event,
-        state: Arc<ClientCache>,
+        state: ClientCacheView,
         wrap: fn(R) -> ReducerEvent,
     ) -> Option<Arc<AnyReducerEvent>> {
         let client_api_messages::Event {
@@ -755,7 +752,7 @@ impl ReducerCallbacks {
     pub(crate) fn handle_event(
         &mut self,
         event: client_api_messages::Event,
-        state: Arc<ClientCache>,
+        state: ClientCacheView,
     ) -> Option<Arc<AnyReducerEvent>> {
         (self.handle_event)(event, self, state)
     }
@@ -783,7 +780,7 @@ impl CredentialStore {
     /// where `credentials` were passed to `connect`.
     ///
     /// The background worker for on-connect callbacks will be spawned in `runtime`.
-    pub(crate) fn maybe_with_credentials(credentials: Option<Credentials>, runtime: &Runtime) -> Self {
+    pub(crate) fn maybe_with_credentials(credentials: Option<Credentials>, runtime: &runtime::Handle) -> Self {
         CredentialStore {
             credentials,
             callbacks: CallbackMap::spawn(runtime),
@@ -821,7 +818,7 @@ impl CredentialStore {
     /// and log an error if they don't match.
     ///
     /// Either way, invoke any on-connect callbacks with the received credentials.
-    pub(crate) fn handle_identity_token(&mut self, msg: client_api_messages::IdentityToken, state: Arc<ClientCache>) {
+    pub(crate) fn handle_identity_token(&mut self, msg: client_api_messages::IdentityToken, state: ClientCacheView) {
         let client_api_messages::IdentityToken { identity, token } = msg;
         if identity.is_empty() || token.is_empty() {
             log::warn!("Received IdentityToken message with emtpy identity and/or empty token");

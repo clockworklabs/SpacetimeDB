@@ -366,13 +366,11 @@ pub struct ReverseDNSResponse {
     pub names: Vec<DomainName>,
 }
 
-/// Returns whether a hex string is a valid address. Any string that is a valid address is
-/// an invalid database name
+/// Returns whether a hex string is a valid address.
+///
+/// Any string that is a valid address is an invalid database name.
 pub fn is_address(hex: &str) -> bool {
-    match hex::decode(hex) {
-        Ok(value) => value.len() == 16,
-        Err(_) => false,
-    }
+    hex::decode(hex).map_or(false, |value| value.len() == 16)
 }
 
 #[derive(thiserror::Error, Debug)]

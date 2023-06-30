@@ -8,7 +8,7 @@ use anymap::{
 };
 use im::HashMap;
 use spacetimedb_sats::bsatn;
-use std::collections::HashMap as MutHashMap;
+use std::collections::HashMap as StdHashMap;
 use std::sync::Arc;
 
 /// A local mirror of the subscribed rows of one table in the database.
@@ -193,7 +193,7 @@ impl<T: TableType> TableCache<T> {
 
         let prev_subs = std::mem::take(&mut self.entries);
 
-        let mut diff = MutHashMap::with_capacity(
+        let mut diff = StdHashMap::with_capacity(
             // pre-allocate plenty of space to avoid hash conflicts
             (new_subs.table_row_operations.len() + prev_subs.len()) * 2,
         );
@@ -359,7 +359,7 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
             }
         }
 
-        let mut diff: MutHashMap<T::PrimaryKey, DiffEntry<T>> = MutHashMap::with_capacity(
+        let mut diff: StdHashMap<T::PrimaryKey, DiffEntry<T>> = StdHashMap::with_capacity(
             // Pre-allocate plenty of space to minimize hash collisions.
             table_update.table_row_operations.len() * 2,
         );
@@ -415,6 +415,8 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
     }
 }
 
+/// A single row callback saved in a `RowCallbackReminders`,
+/// to be run after applying all row updates in the transaction.
 enum RowCallback<T> {
     Insert(T),
     Delete(T),
@@ -465,7 +467,7 @@ impl RowCallbackReminders {
         &mut self,
         callbacks: &mut DbCallbacks,
         reducer_event: &Option<Arc<AnyReducerEvent>>,
-        db_state: &Arc<ClientCache>,
+        db_state: &ClientCacheView,
     ) {
         if let Some(callback_reminders) = self.table_row_callbacks.remove::<Vec<RowCallback<T>>>() {
             let table_callbacks = callbacks.find_table::<T>();
@@ -498,7 +500,7 @@ pub type HandleTableUpdateFn = fn(client_api_messages::TableUpdate, &mut ClientC
 ///
 /// Users should not interact with this type directly.
 pub type InvokeCallbacksFn =
-    fn(&mut RowCallbackReminders, &mut DbCallbacks, Option<Arc<AnyReducerEvent>>, &Arc<ClientCache>);
+    fn(&mut RowCallbackReminders, &mut DbCallbacks, Option<Arc<AnyReducerEvent>>, &ClientCacheView);
 
 /// A local mirror of the subscribed subset of the database.
 ///
@@ -628,3 +630,6 @@ impl ClientCache {
         (self.invoke_row_callbacks)(callback_reminders, callback_worker, reducer_event, self);
     }
 }
+
+/// A shared view into a particular state of the `ClientCache`.
+pub(crate) type ClientCacheView = Arc<ClientCache>;

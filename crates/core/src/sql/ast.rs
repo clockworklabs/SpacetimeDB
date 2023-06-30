@@ -389,18 +389,17 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
 }
 
 fn find_table(db: &RelationalDB, t: Table) -> Result<TableSchema, PlanError> {
-    let tx = db.begin_tx();
-    let table_id = db
-        .table_id_from_name(&tx, &t.name)?
-        .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
-    if !db.inner.table_id_exists(&tx, &TableId(table_id)) {
-        return Err(PlanError::UnknownTable { table: t.name });
-    }
-    let schema = db
-        .schema_for_table(&tx, table_id)
-        .map_err(|e| PlanError::DatabaseInternal(Box::new(e)));
-    db.rollback_tx(tx);
-    schema
+    //TODO: We should thread the `tx` from a upper layer instead...
+    db.with_auto_commit(|tx| {
+        let table_id = db
+            .table_id_from_name(tx, &t.name)?
+            .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
+        if !db.inner.table_id_exists(tx, &TableId(table_id)) {
+            return Err(PlanError::UnknownTable { table: t.name });
+        }
+        db.schema_for_table(tx, table_id)
+            .map_err(|e| PlanError::DatabaseInternal(Box::new(e)))
+    })
 }
 
 fn compile_from(db: &RelationalDB, from: &[TableWithJoins]) -> Result<From, PlanError> {
