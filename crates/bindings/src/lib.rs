@@ -559,9 +559,8 @@ pub mod query {
     #[doc(hidden)]
     pub fn filter_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u8>(val: &T) -> FilterByIter<Table> {
         let rows = iter_by_col_eq(Table::table_id(), COL_IDX, val)
-            .expect("seek_eq failed")
+            .expect("iter_by_col_eq failed")
             .read();
-        // In the future, this should instead call seek_eq.
         FilterByIter {
             cursor: Cursor::new(rows),
             _phantom: PhantomData,
