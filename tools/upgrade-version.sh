@@ -10,7 +10,7 @@ fi
 fsed() {
 	if [[ "$OSTYPE" == "darwin"* ]]; then
         sed -i.sed_bak "$@"
-        rm -f ./*.sed_bak
+        rm -f "$2.sed_bak"
 	else
         sed -i "$@"
 	fi

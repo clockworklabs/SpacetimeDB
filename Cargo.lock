@@ -3843,7 +3843,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "bytes",
  "log",
@@ -3857,7 +3857,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bench"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "byte-unit",
@@ -3877,7 +3877,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "humantime",
  "proc-macro2",
@@ -3887,14 +3887,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "getrandom",
 ]
 
 [[package]]
 name = "spacetimedb-cli"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "base64 0.13.1",
@@ -3927,7 +3927,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3952,7 +3952,7 @@ dependencies = [
  "tempdir",
  "tokio",
  "tokio-stream",
- "tokio-tungstenite 0.18.0",
+ "tokio-tungstenite",
 ]
 
 [[package]]
@@ -3966,7 +3966,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-sdk"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "anymap",
@@ -3980,12 +3980,12 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-sats",
  "tokio",
- "tokio-tungstenite 0.19.0",
+ "tokio-tungstenite",
 ]
 
 [[package]]
 name = "spacetimedb-core"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4059,7 +4059,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-lib"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4088,7 +4088,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sats"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "arrayvec",
  "bytes",
@@ -4105,7 +4105,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-standalone"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4633,22 +4633,10 @@ checksum = "54319c93411147bced34cb5609a80e0a8e44c5999c93903a81cd866630ec0bfd"
 dependencies = [
  "futures-util",
  "log",
- "tokio",
- "tungstenite 0.18.0",
-]
-
-[[package]]
-name = "tokio-tungstenite"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec509ac96e9a0c43427c74f003127d953a265737636129424288d27cb5c4b12c"
-dependencies = [
- "futures-util",
- "log",
  "native-tls",
  "tokio",
  "tokio-native-tls",
- "tungstenite 0.19.0",
+ "tungstenite",
 ]
 
 [[package]]
@@ -4834,25 +4822,6 @@ dependencies = [
  "base64 0.13.1",
  "byteorder",
  "bytes",
- "http",
- "httparse",
- "log",
- "rand 0.8.5",
- "sha1",
- "thiserror",
- "url",
- "utf-8",
-]
-
-[[package]]
-name = "tungstenite"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15fba1a6d6bb030745759a9a2a588bfe8490fc8b4751a277db3a0be1c9ebbf67"
-dependencies = [
- "byteorder",
- "bytes",
- "data-encoding",
  "http",
  "httparse",
  "log",
