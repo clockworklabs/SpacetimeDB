@@ -139,7 +139,7 @@ fn find_identified_person(id_number: u64) {
 
 // Ensure that indices on non-unique columns behave as we expect.
 #[spacetimedb(table)]
-#[spacetimedb(index, name="person_surname", surname)]
+#[spacetimedb(index(btree), name="person_surname", surname)]
 struct IndexedPerson {
     #[unique]
     id: i32,
@@ -149,7 +149,7 @@ struct IndexedPerson {
 
 #[spacetimedb(reducer)]
 fn insert_indexed_person(id: i32, given_name: String, surname: String) {
-    IndexedPerson::insert(Person { id, given_name, surname });
+    IndexedPerson::insert(IndexedPerson { id, given_name, surname });
 }
 
 #[spacetimedb(reducer)]
@@ -255,10 +255,10 @@ run_test cargo run call "$IDENT" insert_indexed_person '[100, "Whiskey", "Bond"]
 run_test cargo run call "$IDENT" delete_indexed_person '[100]'
 run_test cargo run call "$IDENT" find_indexed_people '["Bond"]'
 run_test cargo run logs "$IDENT" 100
-[ ' INDEXED FOUND: id 7: Bond, James' == "$(grep 'INDEXED FOUND: id 7: Bond, James' "$TEST_OUT" | tail -n 1 | cut -d: -f4-)" ]
-[ ' INDEXED FOUND: id 79: Bond, Gold' == "$(grep 'INDEXED FOUND: id 79: Bond, Gold' "$TEST_OUT" | tail -n 1 | cut -d: -f4-)" ]
-[ ' INDEXED FOUND: id 1: Bond, Hydrogen' == "$(grep 'INDEXED FOUND: id 1: Bond, Hydrogen' "$TEST_OUT" | tail -n 1 | cut -d: -f4-)" ]
-[ -z "$(grep 'INDEXED FOUND: id 100: Bond, Whiskey' "$TEST_OUT" | tail -n 1 | cut -d: -f4-)" ]
+[ 1 == "$(grep -c 'INDEXED FOUND: id 7: Bond, James' "$TEST_OUT")" ]
+[ 1 == "$(grep -c 'INDEXED FOUND: id 79: Bond, Gold' "$TEST_OUT")" ]
+[ 1 == "$(grep -c 'INDEXED FOUND: id 1: Bond, Hydrogen' "$TEST_OUT")" ]
+[ 0 == "$(grep -c 'INDEXED FOUND: id 100: Bond, Whiskey' "$TEST_OUT")" ]
 
 # Non-unique version; does not work yet, see db_delete codegen in SpacetimeDB\crates\bindings-macro\src\lib.rs
 # run_test cargo run call "$IDENT" insert_nonunique_person '[101, "Fee"]'
