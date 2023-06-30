@@ -175,6 +175,16 @@ impl HostController {
         Ok(module_host)
     }
 
+    /// NOTE: Currently repeating reducers are only restarted when the [ModuleHost] is spawned.
+    /// That means that if SpacetimeDB is restarted, repeating reducers will not be restarted unless
+    /// there is a trigger that causes the [ModuleHost] to be spawned (e.g. a reducer is run).
+    ///
+    /// TODO(cloutiertyler): We need to determine what the correct behavior should be. In my mind,
+    /// the repeating reducers for all [ModuleHost]s should be rescheduled on startup, with the overarching
+    /// theory that SpacetimeDB should make a best effort to be as invisible as possible and not
+    /// impact the logic of applications. The idea being that if SpacetimeDB is a distributed operating
+    /// system, the applications will expect to be called when they are scheduled to be called regardless
+    /// of whether the OS has been restarted.
     pub async fn spawn_module_host(&self, module_host_context: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
         let key = module_host_context.dbic.database_instance_id;
 
