@@ -78,9 +78,9 @@ impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> fo
                 Ok(Self { auth: Some(auth) })
             }
             Err(e) => match e.reason() {
-                // Leave it to handlers to decide on unauthorized requests
+                // Leave it to handlers to decide on unauthorized requests.
                 TypedHeaderRejectionReason::Missing => Ok(Self { auth: None }),
-                _ => Err(AuthorizationRejection {
+                TypedHeaderRejectionReason::Error(_) => Err(AuthorizationRejection {
                     reason: AuthorizationRejectionReason::Header(e),
                 }),
             },
@@ -88,20 +88,23 @@ impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> fo
     }
 }
 
+/// A response by the API signifying that an authorization was rejected with the `reason` for this.
 pub struct AuthorizationRejection {
+    /// The reason the authorization was rejected.
     reason: AuthorizationRejectionReason,
 }
 
 impl IntoResponse for AuthorizationRejection {
     fn into_response(self) -> axum::response::Response {
-        // Most likely, the server key was rotated
+        // Most likely, the server key was rotated.
         const ROTATED: (StatusCode, &str) = (
             StatusCode::UNAUTHORIZED,
             "Authorization failed: token not signed by this instance",
         );
-        // JWT is hard bruh
+        // The JWT is malformed and there's an issue with its representation. We expect:
+        // Basic: base64(token:${hex_token})
         const INVALID: (StatusCode, &str) = (StatusCode::BAD_REQUEST, "Authorization is invalid: malformed token");
-        // Sensible fallback if no auth header is present
+        // Sensible fallback if no auth header is present.
         const REQUIRED: (StatusCode, &str) = (StatusCode::UNAUTHORIZED, "Authorization required");
 
         log::trace!("Authorization rejection: {:?}", self.reason);
@@ -110,7 +113,7 @@ impl IntoResponse for AuthorizationRejection {
             AuthorizationRejectionReason::Jwt(JwtErrorKind::InvalidSignature) => ROTATED.into_response(),
             AuthorizationRejectionReason::Header(rejection) => match rejection.reason() {
                 TypedHeaderRejectionReason::Missing => REQUIRED.into_response(),
-                _ => rejection.into_response(),
+                TypedHeaderRejectionReason::Error(_) => rejection.into_response(),
             },
             _ => INVALID.into_response(),
         }
