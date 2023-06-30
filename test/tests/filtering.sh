@@ -248,7 +248,7 @@ run_test cargo run logs "$IDENT" 100
 [ ' UNIQUE FOUND: id 104: Fum' == "$(grep 'UNIQUE FOUND: id 104: Fum' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
 
 # As above, but for non-unique indices: check for consistency between index and DB
-run_test cargo run call "$IDENT" insert_indexed_person '[007, "James", "Bond"]'
+run_test cargo run call "$IDENT" insert_indexed_person '[7, "James", "Bond"]'
 run_test cargo run call "$IDENT" insert_indexed_person '[79, "Gold", "Bond"]'
 run_test cargo run call "$IDENT" insert_indexed_person '[1, "Hydrogen", "Bond"]'
 run_test cargo run call "$IDENT" insert_indexed_person '[100, "Whiskey", "Bond"]'
