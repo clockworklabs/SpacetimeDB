@@ -256,9 +256,9 @@ run_test cargo run call "$IDENT" delete_indexed_person '[100]'
 run_test cargo run call "$IDENT" find_indexed_people '["Bond"]'
 run_test cargo run logs "$IDENT" 100
 [ ' INDEXED FOUND: id 7: Bond, James' == "$(grep 'INDEXED FOUND: id 7: Bond, James' "$TEST_OUT" | tail -n 1 | cut -d: -f4-)" ]
-[ ' INDEXED FOUND: id 79: Bond, Gold' == "$(grep 'INDEXED FOUND: id 79: Bond, Gold' "$TEST_OUT" | tail -n 1 | cut -d: -f4-)"]
-[ ' INDEXED FOUND: id 1: Bond, Hydrogen' == "$(grep 'INDEXED FOUND: id 1: Bond, Hydrogen' "$TEST_OUT" | tail -n 1 | cut -d: -f4-)"]
-[ -z "$(grep 'INDEXED FOUND: id 100: Bond, Whiskey' "$TEST_OUT" | tail -n 1 | cut -d: -f4-)"]
+[ ' INDEXED FOUND: id 79: Bond, Gold' == "$(grep 'INDEXED FOUND: id 79: Bond, Gold' "$TEST_OUT" | tail -n 1 | cut -d: -f4-)" ]
+[ ' INDEXED FOUND: id 1: Bond, Hydrogen' == "$(grep 'INDEXED FOUND: id 1: Bond, Hydrogen' "$TEST_OUT" | tail -n 1 | cut -d: -f4-)" ]
+[ -z "$(grep 'INDEXED FOUND: id 100: Bond, Whiskey' "$TEST_OUT" | tail -n 1 | cut -d: -f4-)" ]
 
 # Non-unique version; does not work yet, see db_delete codegen in SpacetimeDB\crates\bindings-macro\src\lib.rs
 # run_test cargo run call "$IDENT" insert_nonunique_person '[101, "Fee"]'
