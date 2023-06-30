@@ -32,8 +32,9 @@ use crate::{
         },
         messages::{
             transaction::Transaction,
-            write::{self, Write},
+            write::{self, Operation, Write},
         },
+        ostorage::ObjectDB,
     },
     error::{DBError, IndexError, TableError},
 };
@@ -410,27 +411,53 @@ impl Inner {
         Ok(())
     }
 
+    /// After replaying all old transactions, tables which have rows will
+    /// have been created in memory, but tables with no rows will not have
+    /// been created. This function ensures that they are created.
+    fn build_missing_tables(&mut self) -> super::Result<()> {
+        let st_tables = self.committed_state.tables.get(&ST_TABLES_ID).unwrap();
+        let rows = st_tables.scan_rows().cloned().collect::<Vec<_>>();
+        for row in rows {
+            let table_row = StTableRow::try_from(&row)?;
+            let table_id = TableId(table_row.table_id);
+            let schema = self.schema_for_table(table_id)?;
+            let row_type = self.row_type_for_table(table_id)?;
+            if self.committed_state.get_table(&table_id).is_none() {
+                self.committed_state.tables.insert(
+                    table_id,
+                    Table {
+                        row_type,
+                        schema,
+                        indexes: HashMap::new(),
+                        rows: BTreeMap::new(),
+                    },
+                );
+            }
+        }
+        Ok(())
+    }
+
     fn drop_table_from_st_tables(&mut self, table_id: TableId) -> super::Result<()> {
         const ST_TABLES_TABLE_ID_COL: ColId = ColId(0);
         let value = AlgebraicValue::U32(table_id.0);
-        let rows = self.seek(&ST_TABLES_ID, &ST_TABLES_TABLE_ID_COL, &value)?;
+        let rows = self.iter_by_col_eq(&ST_TABLES_ID, &ST_TABLES_TABLE_ID_COL, &value)?;
         let rows = rows.map(|row| row.view().to_owned()).collect::<Vec<_>>();
         if rows.is_empty() {
             return Err(TableError::IdNotFound(table_id.0).into());
         }
-        self.delete_rows_in(&table_id, rows)?;
+        self.delete_by_rel(&table_id, rows)?;
         Ok(())
     }
 
     fn drop_table_from_st_columns(&mut self, table_id: TableId) -> super::Result<()> {
         const ST_COLUMNS_TABLE_ID_COL: ColId = ColId(0);
         let value = AlgebraicValue::U32(table_id.0);
-        let rows = self.seek(&ST_COLUMNS_ID, &ST_COLUMNS_TABLE_ID_COL, &value)?;
+        let rows = self.iter_by_col_eq(&ST_COLUMNS_ID, &ST_COLUMNS_TABLE_ID_COL, &value)?;
         let rows = rows.map(|row| row.view().to_owned()).collect::<Vec<_>>();
         if rows.is_empty() {
             return Err(TableError::IdNotFound(table_id.0).into());
         }
-        self.delete_rows_in(&table_id, rows)?;
+        self.delete_by_rel(&table_id, rows)?;
         Ok(())
     }
 
@@ -450,7 +477,7 @@ impl Inner {
         // If we're out of allocations, then update the sequence row in st_sequences to allocate a fresh batch of sequences.
         const ST_SEQUENCES_SEQUENCE_ID_COL: ColId = ColId(0);
         let old_seq_row = self
-            .seek(
+            .iter_by_col_eq(
                 &ST_SEQUENCES_ID,
                 &ST_SEQUENCES_SEQUENCE_ID_COL,
                 &AlgebraicValue::U32(seq_id.0),
@@ -470,8 +497,8 @@ impl Inner {
             (seq_row, old_seq_row_id)
         };
 
-        self.delete_row(&ST_SEQUENCES_ID, &old_seq_row_id)?;
-        self.insert_row(ST_SEQUENCES_ID, ProductValue::from(&seq_row))?;
+        self.delete(&ST_SEQUENCES_ID, &old_seq_row_id)?;
+        self.insert(ST_SEQUENCES_ID, ProductValue::from(&seq_row))?;
 
         let Some(sequence) = self.sequence_state.get_sequence_mut(seq_id) else {
             return Err(SequenceError::NotFound(seq_id).into());
@@ -505,7 +532,7 @@ impl Inner {
             max_value: seq.max_value.unwrap_or(i128::MAX),
         };
         let row = (&sequence_row).into();
-        let result = self.insert_row(ST_SEQUENCES_ID, row)?;
+        let result = self.insert(ST_SEQUENCES_ID, row)?;
         let sequence_row = StSequenceRow::try_from(&result)?;
         let sequence_id = SequenceId(sequence_row.sequence_id);
 
@@ -520,7 +547,7 @@ impl Inner {
     fn drop_sequence(&mut self, seq_id: SequenceId) -> super::Result<()> {
         const ST_SEQUENCES_SEQUENCE_ID_COL: ColId = ColId(0);
         let old_seq_row = self
-            .seek(
+            .iter_by_col_eq(
                 &ST_SEQUENCES_ID,
                 &ST_SEQUENCES_SEQUENCE_ID_COL,
                 &AlgebraicValue::U32(seq_id.0),
@@ -529,14 +556,14 @@ impl Inner {
             .unwrap()
             .data;
         let old_seq_row_id = RowId(old_seq_row.to_data_key());
-        self.delete_row(&ST_SEQUENCES_ID, &old_seq_row_id)?;
+        self.delete(&ST_SEQUENCES_ID, &old_seq_row_id)?;
         self.sequence_state.sequences.remove(&seq_id);
         Ok(())
     }
 
     fn sequence_id_from_name(&self, seq_name: &str) -> super::Result<Option<SequenceId>> {
         let seq_name_col: ColId = ColId(1);
-        self.seek(
+        self.iter_by_col_eq(
             &ST_SEQUENCES_ID,
             &seq_name_col,
             &AlgebraicValue::String(seq_name.to_owned()),
@@ -558,7 +585,7 @@ impl Inner {
             table_id: 0,
             table_name,
         };
-        let table_id = StTableRow::try_from(&self.insert_row(ST_TABLES_ID, (&row).into())?)?.table_id;
+        let table_id = StTableRow::try_from(&self.insert(ST_TABLES_ID, (&row).into())?)?.table_id;
 
         // Insert the columns into st_columns
         for (i, col) in table_schema.columns.iter().enumerate() {
@@ -570,7 +597,7 @@ impl Inner {
                 col_type: col.col_type.clone(),
                 is_autoinc: col.is_autoinc,
             };
-            self.insert_row(ST_COLUMNS_ID, (&row).into())?;
+            self.insert(ST_COLUMNS_ID, (&row).into())?;
 
             // Insert create the sequence for the autoinc column
             if col.is_autoinc {
@@ -659,7 +686,7 @@ impl Inner {
         // Look up the table_name for the table in question.
         let table_id_col: ColId = ColId(0);
         let rows = self
-            .seek(&ST_TABLES_ID, &table_id_col, &AlgebraicValue::U32(table_id.0))?
+            .iter_by_col_eq(&ST_TABLES_ID, &table_id_col, &AlgebraicValue::U32(table_id.0))?
             .collect::<Vec<_>>();
         assert!(rows.len() <= 1, "Expected at most one row in st_tables for table_id");
         let row = rows.first().ok_or_else(|| TableError::IdNotFound(table_id.0))?;
@@ -670,7 +697,7 @@ impl Inner {
         // Look up the columns for the table in question.
         let mut columns = Vec::new();
         const TABLE_ID_COL: ColId = ColId(0);
-        for data_ref in self.seek(&ST_COLUMNS_ID, &TABLE_ID_COL, &AlgebraicValue::U32(table_id))? {
+        for data_ref in self.iter_by_col_eq(&ST_COLUMNS_ID, &TABLE_ID_COL, &AlgebraicValue::U32(table_id))? {
             let row = data_ref.view();
 
             let el = StColumnRow::try_from(row)?;
@@ -689,7 +716,7 @@ impl Inner {
         // Look up the indexes for the table in question.
         let mut indexes = Vec::new();
         let table_id_col: ColId = ColId(1);
-        for data_ref in self.seek(&ST_INDEXES_ID, &table_id_col, &AlgebraicValue::U32(table_id))? {
+        for data_ref in self.iter_by_col_eq(&ST_INDEXES_ID, &table_id_col, &AlgebraicValue::U32(table_id))? {
             let row = data_ref.view();
 
             let el = StIndexRow::try_from(row)?;
@@ -715,7 +742,7 @@ impl Inner {
         // First drop the tables indexes.
         const ST_INDEXES_TABLE_ID_COL: ColId = ColId(1);
         let rows = self
-            .seek(
+            .iter_by_col_eq(
                 &ST_INDEXES_ID,
                 &ST_INDEXES_TABLE_ID_COL,
                 &AlgebraicValue::U32(table_id.0),
@@ -730,7 +757,7 @@ impl Inner {
         // Remove the table's sequences from st_sequences.
         const ST_SEQUENCES_TABLE_ID_COL: ColId = ColId(2);
         let rows = self
-            .seek(
+            .iter_by_col_eq(
                 &ST_SEQUENCES_ID,
                 &ST_SEQUENCES_TABLE_ID_COL,
                 &AlgebraicValue::U32(table_id.0),
@@ -759,21 +786,21 @@ impl Inner {
         // Update the table's name in st_tables.
         const ST_TABLES_TABLE_ID_COL: ColId = ColId(0);
         let rows = self
-            .seek(&ST_TABLES_ID, &ST_TABLES_TABLE_ID_COL, &AlgebraicValue::U32(table_id.0))?
+            .iter_by_col_eq(&ST_TABLES_ID, &ST_TABLES_TABLE_ID_COL, &AlgebraicValue::U32(table_id.0))?
             .collect::<Vec<_>>();
         assert!(rows.len() <= 1, "Expected at most one row in st_tables for table_id");
         let row = rows.first().ok_or_else(|| TableError::IdNotFound(table_id.0))?;
         let row_id = RowId(row.view().to_data_key());
         let mut el = StTableRow::try_from(row.view())?;
         el.table_name = new_name;
-        self.delete_row(&ST_TABLES_ID, &row_id)?;
-        self.insert_row(ST_TABLES_ID, (&el).into())?;
+        self.delete(&ST_TABLES_ID, &row_id)?;
+        self.insert(ST_TABLES_ID, (&el).into())?;
         Ok(())
     }
 
     fn table_id_from_name(&self, table_name: &str) -> super::Result<Option<TableId>> {
         let table_name_col: ColId = ColId(1);
-        self.seek(
+        self.iter_by_col_eq(
             &ST_TABLES_ID,
             &table_name_col,
             &AlgebraicValue::String(table_name.to_owned()),
@@ -786,7 +813,7 @@ impl Inner {
 
     fn table_name_from_id(&self, table_id: TableId) -> super::Result<Option<String>> {
         let table_id_col: ColId = ColId(0);
-        self.seek(&ST_TABLES_ID, &table_id_col, &AlgebraicValue::U32(table_id.0))
+        self.iter_by_col_eq(&ST_TABLES_ID, &table_id_col, &AlgebraicValue::U32(table_id.0))
             .map(|mut iter| {
                 iter.next()
                     .map(|row| row.view().elements[1].as_string().unwrap().to_owned())
@@ -811,7 +838,7 @@ impl Inner {
             index_name: &index.name,
             is_unique: index.is_unique,
         };
-        let index_id = StIndexRow::try_from(&self.insert_row(ST_INDEXES_ID, (&row).into())?)?.index_id;
+        let index_id = StIndexRow::try_from(&self.insert(ST_INDEXES_ID, (&row).into())?)?.index_id;
 
         // Create the index in memory
         if !self.table_exists(&TableId(index.table_id)) {
@@ -887,7 +914,7 @@ impl Inner {
         // Remove the index from st_indexes.
         const ST_INDEXES_INDEX_ID_COL: ColId = ColId(0);
         let old_index_row = self
-            .seek(
+            .iter_by_col_eq(
                 &ST_INDEXES_ID,
                 &ST_INDEXES_INDEX_ID_COL,
                 &AlgebraicValue::U32(index_id.0),
@@ -896,7 +923,7 @@ impl Inner {
             .unwrap()
             .data;
         let old_index_row_id = RowId(old_index_row.to_data_key());
-        self.delete_row(&ST_INDEXES_ID, &old_index_row_id)?;
+        self.delete(&ST_INDEXES_ID, &old_index_row_id)?;
 
         self.drop_index_internal(index_id);
 
@@ -938,7 +965,7 @@ impl Inner {
 
     fn index_id_from_name(&self, index_name: &str) -> super::Result<Option<IndexId>> {
         let index_name_col: ColId = ColId(3);
-        self.seek(
+        self.iter_by_col_eq(
             &ST_INDEXES_ID,
             &index_name_col,
             &AlgebraicValue::String(index_name.to_owned()),
@@ -963,7 +990,10 @@ impl Inner {
     }
 
     fn table_exists(&self, table_id: &TableId) -> bool {
-        self.tx_state.as_ref().unwrap().insert_tables.contains_key(table_id)
+        self.tx_state
+            .as_ref()
+            .map(|tx_state| tx_state.insert_tables.contains_key(table_id))
+            .unwrap_or(false)
             || self.committed_state.tables.contains_key(table_id)
     }
 
@@ -1022,7 +1052,7 @@ impl Inner {
     }
 
     #[tracing::instrument(skip_all)]
-    fn insert_row(&mut self, table_id: TableId, mut row: ProductValue) -> super::Result<ProductValue> {
+    fn insert(&mut self, table_id: TableId, mut row: ProductValue) -> super::Result<ProductValue> {
         // TODO: Excuting schema_for_table for every row insert is expensive.
         // We should store the schema in the [Table] struct instead.
         let schema = self.schema_for_table(table_id)?;
@@ -1032,7 +1062,7 @@ impl Inner {
                     continue;
                 }
                 let st_sequences_table_id_col = ColId(2);
-                for seq_row in self.seek(
+                for seq_row in self.iter_by_col_eq(
                     &ST_SEQUENCES_ID,
                     &st_sequences_table_id_col,
                     &AlgebraicValue::U32(table_id.0),
@@ -1182,7 +1212,7 @@ impl Inner {
         Ok(None)
     }
 
-    fn get_row(&self, table_id: &TableId, row_id: &RowId) -> super::Result<Option<DataRef>> {
+    fn get(&self, table_id: &TableId, row_id: &RowId) -> super::Result<Option<DataRef>> {
         if !self.table_exists(table_id) {
             return Err(TableError::IdNotFound(table_id.0).into());
         }
@@ -1191,8 +1221,7 @@ impl Inner {
                 return Ok(self
                     .tx_state
                     .as_ref()
-                    .unwrap()
-                    .get_row(table_id, row_id)
+                    .and_then(|tx_state| tx_state.get_row(table_id, row_id))
                     .map(|row| DataRef::new(row.clone())));
             }
             RowOp::Delete => {
@@ -1212,9 +1241,7 @@ impl Inner {
         if let Some(row_type) = self
             .tx_state
             .as_ref()
-            .unwrap()
-            .insert_tables
-            .get(table_id)
+            .and_then(|tx_state| tx_state.insert_tables.get(table_id))
             .map(|table| table.get_row_type())
         {
             return Some(row_type);
@@ -1229,9 +1256,7 @@ impl Inner {
         if let Some(schema) = self
             .tx_state
             .as_ref()
-            .unwrap()
-            .insert_tables
-            .get(table_id)
+            .and_then(|tx_state| tx_state.insert_tables.get(table_id))
             .map(|table| table.get_schema())
         {
             return Some(schema);
@@ -1242,7 +1267,7 @@ impl Inner {
             .map(|table| table.get_schema())
     }
 
-    fn delete_row(&mut self, table_id: &TableId, row_id: &RowId) -> super::Result<bool> {
+    fn delete(&mut self, table_id: &TableId, row_id: &RowId) -> super::Result<bool> {
         Ok(self.delete_row_internal(table_id, row_id))
     }
 
@@ -1262,7 +1287,7 @@ impl Inner {
         }
     }
 
-    fn delete_rows_in(
+    fn delete_by_rel(
         &mut self,
         table_id: &TableId,
         relation: impl IntoIterator<Item = spacetimedb_sats::ProductValue>,
@@ -1270,29 +1295,29 @@ impl Inner {
         let mut count = 0;
         for tuple in relation {
             let data_key = tuple.to_data_key();
-            if self.delete_row(table_id, &RowId(data_key))? {
+            if self.delete(table_id, &RowId(data_key))? {
                 count += 1;
             }
         }
         Ok(Some(count))
     }
 
-    fn scan(&self, table_id: &TableId) -> super::Result<ScanIter> {
+    fn iter(&self, table_id: &TableId) -> super::Result<Iter> {
         if self.table_exists(table_id) {
-            return Ok(ScanIter::new(*table_id, self));
+            return Ok(Iter::new(*table_id, self));
         }
         Err(TableError::IdNotFound(table_id.0).into())
     }
 
-    fn range_scan<'a, R: std::ops::RangeBounds<spacetimedb_sats::AlgebraicValue>>(
+    fn iter_by_col_range<'a, R: std::ops::RangeBounds<spacetimedb_sats::AlgebraicValue>>(
         &'a self,
         table_id: &TableId,
         col_id: &ColId,
         range: R,
-    ) -> super::Result<RangeScanIter<'a, R>> {
-        Ok(RangeScanIter::Scan(ScanRangeScanIter {
+    ) -> super::Result<IterByColRange<'a, R>> {
+        Ok(IterByColRange::Scan(ScanIterByColRange {
             range,
-            scan_iter: self.scan(table_id)?,
+            scan_iter: self.iter(table_id)?,
             col_id: *col_id,
         }))
     }
@@ -1300,10 +1325,15 @@ impl Inner {
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
     /// where the column data identified by `col_id` equates to `value`.
-    fn seek<'a>(&'a self, table_id: &TableId, col_id: &ColId, value: &'a AlgebraicValue) -> super::Result<SeekIter> {
+    fn iter_by_col_eq<'a>(
+        &'a self,
+        table_id: &TableId,
+        col_id: &ColId,
+        value: &'a AlgebraicValue,
+    ) -> super::Result<IterByColEq> {
         let tx_state = self.tx_state.as_ref().unwrap();
         if let Some(inserted_rows) = tx_state.index_seek(table_id, col_id, value) {
-            Ok(SeekIter::Index(IndexSeekIter {
+            Ok(IterByColEq::Index(IndexIterByColEq {
                 value,
                 col_id: *col_id,
                 iter: IndexSeekIterInner {
@@ -1315,10 +1345,10 @@ impl Inner {
                 },
             }))
         } else {
-            Ok(SeekIter::Scan(ScanSeekIter {
+            Ok(IterByColEq::Scan(ScanIterByColEq {
                 value,
                 col_id: *col_id,
-                scan_iter: self.scan(table_id)?,
+                scan_iter: self.iter(table_id)?,
             }))
         }
     }
@@ -1374,9 +1404,66 @@ impl Locking {
             inner: Arc::new(Mutex::new(datastore)),
         })
     }
+
+    /// The purpose of this is to rebuild the state of the datastore
+    /// after having inserted all of rows from the message log.
+    /// This is necessary because, for example, inserting a row into `st_table`
+    /// is not equivalent to calling `create_table`.
+    /// There may eventually be better way to do this, but this will have to do for now.
+    pub fn rebuild_state_after_replay(&self) -> Result<(), DBError> {
+        let mut inner = self.inner.lock();
+
+        // `build_missing_tables` must be called before indexes.
+        // Honestly this should maybe just be one big procedure.
+        // See John Carmack's philosophy on this.
+        inner.build_missing_tables()?;
+        inner.build_indexes()?;
+        inner.build_sequence_state()?;
+
+        Ok(())
+    }
+
+    pub fn replay_transaction(
+        &self,
+        transaction: &Transaction,
+        odb: Arc<std::sync::Mutex<Box<dyn ObjectDB + Send>>>,
+    ) -> Result<(), DBError> {
+        let mut inner = self.inner.lock();
+        for write in &transaction.writes {
+            let table_id = TableId(write.set_id);
+            let schema = inner.schema_for_table(table_id)?;
+            let row_type = inner.row_type_for_table(table_id)?;
+            let table = inner.committed_state.tables.entry(table_id).or_insert(Table {
+                row_type: row_type.clone(),
+                schema,
+                indexes: HashMap::new(),
+                rows: BTreeMap::new(),
+            });
+            match write.operation {
+                Operation::Delete => {
+                    table.rows.remove(&RowId(write.data_key));
+                }
+                Operation::Insert => {
+                    let product_value = match write.data_key {
+                        DataKey::Data(data) => ProductValue::decode(&row_type, &mut &data[..]).unwrap_or_else(|_| {
+                            panic!("Couldn't decode product value to {:?} from message log", row_type)
+                        }),
+                        DataKey::Hash(hash) => {
+                            let data = odb.lock().unwrap().get(hash).unwrap();
+                            ProductValue::decode(&row_type, &mut &data[..]).unwrap_or_else(|_| {
+                                panic!("Couldn't decode product value to {:?} from message log", row_type)
+                            })
+                        }
+                    };
+                    table.rows.insert(RowId(write.data_key), product_value);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct RowId(pub(crate) DataKey);
 
 impl DataRow for Locking {
@@ -1401,13 +1488,13 @@ impl traits::Tx for Locking {
     }
 }
 
-pub struct ScanIter<'a> {
+pub struct Iter<'a> {
     table_id: TableId,
     inner: &'a Inner,
     stage: ScanStage<'a>,
 }
 
-impl<'a> ScanIter<'a> {
+impl<'a> Iter<'a> {
     fn new(table_id: TableId, inner: &'a Inner) -> Self {
         Self {
             table_id,
@@ -1427,7 +1514,7 @@ enum ScanStage<'a> {
     },
 }
 
-impl Iterator for ScanIter<'_> {
+impl Iterator for Iter<'_> {
     type Item = DataRef;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -1446,15 +1533,28 @@ impl Iterator for ScanIter<'_> {
                 }
                 ScanStage::Committed { iter } => {
                     for (row_id, row) in iter {
-                        match self.inner.tx_state.as_ref().unwrap().get_row_op(&self.table_id, row_id) {
-                            RowOp::Insert => (), // Do nothing, we'll get it in the next stage
-                            RowOp::Delete => (), // Skip it, it's been deleted
-                            RowOp::Absent => {
+                        match self
+                            .inner
+                            .tx_state
+                            .as_ref()
+                            .map(|tx_state| tx_state.get_row_op(&self.table_id, row_id))
+                        {
+                            Some(RowOp::Insert) => (), // Do nothing, we'll get it in the next stage
+                            Some(RowOp::Delete) => (), // Skip it, it's been deleted
+                            Some(RowOp::Absent) => {
+                                return Some(DataRef::new(row.clone()));
+                            }
+                            None => {
                                 return Some(DataRef::new(row.clone()));
                             }
                         }
                     }
-                    if let Some(table) = self.inner.tx_state.as_ref().unwrap().insert_tables.get(&self.table_id) {
+                    if let Some(table) = self
+                        .inner
+                        .tx_state
+                        .as_ref()
+                        .and_then(|tx_state| tx_state.insert_tables.get(&self.table_id))
+                    {
                         self.stage = ScanStage::CurrentTx {
                             iter: table.rows.iter(),
                         };
@@ -1474,29 +1574,29 @@ impl Iterator for ScanIter<'_> {
     }
 }
 
-pub enum SeekIter<'a> {
-    Scan(ScanSeekIter<'a>),
-    Index(IndexSeekIter<'a>),
+pub enum IterByColEq<'a> {
+    Scan(ScanIterByColEq<'a>),
+    Index(IndexIterByColEq<'a>),
 }
 
-impl Iterator for SeekIter<'_> {
+impl Iterator for IterByColEq<'_> {
     type Item = DataRef;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            SeekIter::Scan(seek) => seek.next(),
-            SeekIter::Index(seek) => seek.next(),
+            IterByColEq::Scan(seek) => seek.next(),
+            IterByColEq::Index(seek) => seek.next(),
         }
     }
 }
 
-pub struct ScanSeekIter<'a> {
-    scan_iter: ScanIter<'a>,
+pub struct ScanIterByColEq<'a> {
+    scan_iter: Iter<'a>,
     col_id: ColId,
     value: &'a AlgebraicValue,
 }
 
-impl Iterator for ScanSeekIter<'_> {
+impl Iterator for ScanIterByColEq<'_> {
     type Item = DataRef;
 
     #[tracing::instrument(skip_all)]
@@ -1512,13 +1612,13 @@ impl Iterator for ScanSeekIter<'_> {
     }
 }
 
-pub struct IndexSeekIter<'a> {
+pub struct IndexIterByColEq<'a> {
     iter: IndexSeekIterInner<'a>,
     col_id: ColId,
     value: &'a AlgebraicValue,
 }
 
-impl Iterator for IndexSeekIter<'_> {
+impl Iterator for IndexIterByColEq<'_> {
     type Item = DataRef;
 
     #[tracing::instrument(skip_all)]
@@ -1572,29 +1672,29 @@ impl Iterator for IndexSeekIterInner<'_> {
     }
 }
 
-pub enum RangeScanIter<'a, R: RangeBounds<AlgebraicValue>> {
-    Scan(ScanRangeScanIter<'a, R>),
+pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
+    Scan(ScanIterByColRange<'a, R>),
     // TODO: Index(IndexRangeScanIter<'a>),
 }
 
-impl<R: RangeBounds<AlgebraicValue>> Iterator for RangeScanIter<'_, R> {
+impl<R: RangeBounds<AlgebraicValue>> Iterator for IterByColRange<'_, R> {
     type Item = DataRef;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            RangeScanIter::Scan(range) => range.next(),
+            IterByColRange::Scan(range) => range.next(),
             // TODO: RangeScanIter::Index(range) => range.next(),
         }
     }
 }
 
-pub struct ScanRangeScanIter<'a, R: RangeBounds<AlgebraicValue>> {
-    scan_iter: ScanIter<'a>,
+pub struct ScanIterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
+    scan_iter: Iter<'a>,
     col_id: ColId,
     range: R,
 }
 
-impl<R: RangeBounds<AlgebraicValue>> Iterator for ScanRangeScanIter<'_, R> {
+impl<R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'_, R> {
     type Item = DataRef;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -1610,41 +1710,41 @@ impl<R: RangeBounds<AlgebraicValue>> Iterator for ScanRangeScanIter<'_, R> {
 }
 
 impl TxDatastore for Locking {
-    type ScanIterator<'a> = ScanIter<'a> where Self: 'a;
-    type RangeIterator<'a, R: std::ops::RangeBounds<spacetimedb_sats::AlgebraicValue>> = RangeScanIter<'a, R> where Self: 'a;
-    type SeekIterator<'a> = SeekIter<'a> where Self: 'a;
+    type Iter<'a> = Iter<'a> where Self: 'a;
+    type IterByColRange<'a, R: std::ops::RangeBounds<spacetimedb_sats::AlgebraicValue>> = IterByColRange<'a, R> where Self: 'a;
+    type IterByColEq<'a> = IterByColEq<'a> where Self: 'a;
 
-    fn scan_tx<'a>(&'a self, tx: &'a Self::TxId, table_id: TableId) -> super::Result<Self::ScanIterator<'a>> {
-        self.scan_mut_tx(tx, table_id)
+    fn iter_tx<'a>(&'a self, tx: &'a Self::TxId, table_id: TableId) -> super::Result<Self::Iter<'a>> {
+        self.iter_mut_tx(tx, table_id)
     }
 
-    fn range_scan_tx<'a, R: std::ops::RangeBounds<spacetimedb_sats::AlgebraicValue>>(
+    fn iter_by_col_range_tx<'a, R: std::ops::RangeBounds<spacetimedb_sats::AlgebraicValue>>(
         &'a self,
         tx: &'a Self::TxId,
         table_id: TableId,
         col_id: ColId,
         range: R,
-    ) -> super::Result<Self::RangeIterator<'a, R>> {
-        self.range_scan_mut_tx(tx, table_id, col_id, range)
+    ) -> super::Result<Self::IterByColRange<'a, R>> {
+        self.iter_by_col_range_mut_tx(tx, table_id, col_id, range)
     }
 
-    fn seek_tx<'a>(
+    fn iter_by_col_eq_tx<'a>(
         &'a self,
         tx: &'a Self::TxId,
         table_id: TableId,
         col_id: ColId,
         value: &'a spacetimedb_sats::AlgebraicValue,
-    ) -> super::Result<Self::SeekIterator<'a>> {
-        self.seek_mut_tx(tx, table_id, col_id, value)
+    ) -> super::Result<Self::IterByColEq<'a>> {
+        self.iter_by_col_eq_mut_tx(tx, table_id, col_id, value)
     }
 
-    fn get_row_tx<'a>(
+    fn get_tx<'a>(
         &'a self,
         tx: &'a Self::TxId,
         table_id: TableId,
         row_id: Self::RowId,
     ) -> super::Result<Option<Self::DataRef>> {
-        self.get_row_mut_tx(tx, table_id, row_id)
+        self.get_mut_tx(tx, table_id, row_id)
     }
 }
 
@@ -1756,64 +1856,64 @@ impl MutTxDatastore for Locking {
         tx.lock.sequence_id_from_name(sequence_name)
     }
 
-    fn scan_mut_tx<'a>(&'a self, tx: &'a Self::MutTxId, table_id: TableId) -> super::Result<Self::ScanIterator<'a>> {
-        tx.lock.scan(&table_id)
+    fn iter_mut_tx<'a>(&'a self, tx: &'a Self::MutTxId, table_id: TableId) -> super::Result<Self::Iter<'a>> {
+        tx.lock.iter(&table_id)
     }
 
-    fn range_scan_mut_tx<'a, R: std::ops::RangeBounds<spacetimedb_sats::AlgebraicValue>>(
+    fn iter_by_col_range_mut_tx<'a, R: std::ops::RangeBounds<spacetimedb_sats::AlgebraicValue>>(
         &'a self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
         col_id: ColId,
         range: R,
-    ) -> super::Result<Self::RangeIterator<'a, R>> {
-        tx.lock.range_scan(&table_id, &col_id, range)
+    ) -> super::Result<Self::IterByColRange<'a, R>> {
+        tx.lock.iter_by_col_range(&table_id, &col_id, range)
     }
 
-    fn seek_mut_tx<'a>(
+    fn iter_by_col_eq_mut_tx<'a>(
         &'a self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
         col_id: ColId,
         value: &'a spacetimedb_sats::AlgebraicValue,
-    ) -> super::Result<Self::SeekIterator<'a>> {
-        tx.lock.seek(&table_id, &col_id, value)
+    ) -> super::Result<Self::IterByColEq<'a>> {
+        tx.lock.iter_by_col_eq(&table_id, &col_id, value)
     }
 
-    fn get_row_mut_tx<'a>(
+    fn get_mut_tx<'a>(
         &'a self,
         tx: &'a Self::MutTxId,
         table_id: TableId,
         row_id: Self::RowId,
     ) -> super::Result<Option<Self::DataRef>> {
-        tx.lock.get_row(&table_id, &row_id)
+        tx.lock.get(&table_id, &row_id)
     }
 
-    fn delete_row_mut_tx<'a>(
+    fn delete_mut_tx<'a>(
         &'a self,
         tx: &'a mut Self::MutTxId,
         table_id: TableId,
         row_id: Self::RowId,
     ) -> super::Result<bool> {
-        tx.lock.delete_row(&table_id, &row_id)
+        tx.lock.delete(&table_id, &row_id)
     }
 
-    fn delete_rows_in_mut_tx<R: IntoIterator<Item = spacetimedb_sats::ProductValue>>(
+    fn delete_by_rel_mut_tx<R: IntoIterator<Item = spacetimedb_sats::ProductValue>>(
         &self,
         tx: &mut Self::MutTxId,
         table_id: TableId,
         relation: R,
     ) -> super::Result<Option<u32>> {
-        tx.lock.delete_rows_in(&table_id, relation)
+        tx.lock.delete_by_rel(&table_id, relation)
     }
 
-    fn insert_row_mut_tx<'a>(
+    fn insert_mut_tx<'a>(
         &'a self,
         tx: &'a mut Self::MutTxId,
         table_id: TableId,
         row: spacetimedb_sats::ProductValue,
     ) -> super::Result<ProductValue> {
-        tx.lock.insert_row(table_id, row)
+        tx.lock.insert(table_id, row)
     }
 
     fn resolve_data_key_mut_tx(&self, tx: &Self::MutTxId, data_key: &DataKey) -> super::Result<Option<Arc<Vec<u8>>>> {
@@ -1883,7 +1983,7 @@ mod tests {
         let datastore = get_datastore()?;
         let tx = datastore.begin_mut_tx();
         let table_rows = datastore
-            .scan_mut_tx(&tx, ST_TABLES_ID)?
+            .iter_mut_tx(&tx, ST_TABLES_ID)?
             .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.table_id)
             .collect::<Vec<_>>();
@@ -1898,7 +1998,7 @@ mod tests {
             ]
         );
         let column_rows = datastore
-            .scan_mut_tx(&tx, ST_COLUMNS_ID)?
+            .iter_mut_tx(&tx, ST_COLUMNS_ID)?
             .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| (x.table_id, x.col_id))
             .collect::<Vec<_>>();
@@ -1934,7 +2034,7 @@ mod tests {
             ]
         );
         let index_rows = datastore
-            .scan_mut_tx(&tx, ST_INDEXES_ID)?
+            .iter_mut_tx(&tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.index_id)
             .collect::<Vec<_>>();
@@ -1949,7 +2049,7 @@ mod tests {
             ]
         );
         let sequence_rows = datastore
-            .scan_mut_tx(&tx, ST_SEQUENCES_ID)?
+            .iter_mut_tx(&tx, ST_SEQUENCES_ID)?
             .map(|x| StSequenceRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.sequence_id)
             .collect::<Vec<_>>();
@@ -1973,7 +2073,7 @@ mod tests {
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
         let table_rows = datastore
-            .seek_mut_tx(&tx, ST_TABLES_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
+            .iter_by_col_eq_mut_tx(&tx, ST_TABLES_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
             .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.table_id)
             .collect::<Vec<_>>();
@@ -1985,7 +2085,7 @@ mod tests {
             ]
         );
         let column_rows = datastore
-            .seek_mut_tx(&tx, ST_COLUMNS_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
+            .iter_by_col_eq_mut_tx(&tx, ST_COLUMNS_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
             .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| (x.table_id, x.col_id))
             .collect::<Vec<_>>();
@@ -2010,7 +2110,7 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
         let tx = datastore.begin_mut_tx();
         let table_rows = datastore
-            .seek_mut_tx(&tx, ST_TABLES_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
+            .iter_by_col_eq_mut_tx(&tx, ST_TABLES_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
             .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.table_id)
             .collect::<Vec<_>>();
@@ -2022,7 +2122,7 @@ mod tests {
             ]
         );
         let column_rows = datastore
-            .seek_mut_tx(&tx, ST_COLUMNS_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
+            .iter_by_col_eq_mut_tx(&tx, ST_COLUMNS_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
             .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| (x.table_id, x.col_id))
             .collect::<Vec<_>>();
@@ -2047,13 +2147,13 @@ mod tests {
         datastore.rollback_mut_tx(tx);
         let tx = datastore.begin_mut_tx();
         let table_rows = datastore
-            .seek_mut_tx(&tx, ST_TABLES_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
+            .iter_by_col_eq_mut_tx(&tx, ST_TABLES_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
             .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.table_id)
             .collect::<Vec<_>>();
         assert_eq!(table_rows, vec![]);
         let column_rows = datastore
-            .seek_mut_tx(&tx, ST_COLUMNS_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
+            .iter_by_col_eq_mut_tx(&tx, ST_COLUMNS_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
             .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.table_id)
             .collect::<Vec<_>>();
@@ -2135,9 +2235,9 @@ mod tests {
             AlgebraicValue::String("Foo".to_string()),
             AlgebraicValue::U32(18),
         ]);
-        datastore.insert_row_mut_tx(&mut tx, table_id, row)?;
+        datastore.insert_mut_tx(&mut tx, table_id, row)?;
         let rows = datastore
-            .scan_mut_tx(&tx, table_id)?
+            .iter_mut_tx(&tx, table_id)?
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
@@ -2161,9 +2261,9 @@ mod tests {
             AlgebraicValue::U32(0), // 0 will be ignored.
             AlgebraicValue::String("Foo".to_string()),
         ]);
-        assert!(datastore.insert_row_mut_tx(&mut tx, table_id, row).is_err());
+        assert!(datastore.insert_mut_tx(&mut tx, table_id, row).is_err());
         let rows = datastore
-            .scan_mut_tx(&tx, table_id)?
+            .iter_mut_tx(&tx, table_id)?
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
@@ -2182,11 +2282,11 @@ mod tests {
             AlgebraicValue::String("Foo".to_string()),
             AlgebraicValue::U32(18),
         ]);
-        datastore.insert_row_mut_tx(&mut tx, table_id, row)?;
+        datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx(tx)?;
         let tx = datastore.begin_mut_tx();
         let rows = datastore
-            .scan_mut_tx(&tx, table_id)?
+            .iter_mut_tx(&tx, table_id)?
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
@@ -2213,11 +2313,11 @@ mod tests {
         ]);
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
-        datastore.insert_row_mut_tx(&mut tx, table_id, row)?;
+        datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.rollback_mut_tx(tx);
         let tx = datastore.begin_mut_tx();
         let rows = datastore
-            .scan_mut_tx(&tx, table_id)?
+            .iter_mut_tx(&tx, table_id)?
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
@@ -2236,7 +2336,7 @@ mod tests {
             AlgebraicValue::String("Foo".to_string()),
             AlgebraicValue::U32(18),
         ]);
-        datastore.insert_row_mut_tx(&mut tx, table_id, row)?;
+        datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
         let created_row = ProductValue::from_iter(vec![
@@ -2244,10 +2344,10 @@ mod tests {
             AlgebraicValue::String("Foo".to_string()),
             AlgebraicValue::U32(18),
         ]);
-        let num_deleted = datastore.delete_rows_in_mut_tx(&mut tx, table_id, vec![created_row])?;
+        let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, vec![created_row])?;
         assert_eq!(num_deleted, Some(1));
         let rows = datastore
-            .scan_mut_tx(&tx, table_id)?
+            .iter_mut_tx(&tx, table_id)?
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         assert_eq!(rows.len(), 0);
@@ -2256,9 +2356,9 @@ mod tests {
             AlgebraicValue::String("Foo".to_string()),
             AlgebraicValue::U32(19),
         ]);
-        datastore.insert_row_mut_tx(&mut tx, table_id, created_row)?;
+        datastore.insert_mut_tx(&mut tx, table_id, created_row)?;
         let rows = datastore
-            .scan_mut_tx(&tx, table_id)?
+            .iter_mut_tx(&tx, table_id)?
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
@@ -2283,23 +2383,23 @@ mod tests {
             AlgebraicValue::String("Foo".to_string()),
             AlgebraicValue::U32(18),
         ]);
-        datastore.insert_row_mut_tx(&mut tx, table_id, row)?;
+        datastore.insert_mut_tx(&mut tx, table_id, row)?;
         for _ in 0..2 {
             let created_row = ProductValue::from_iter(vec![
                 AlgebraicValue::U32(1),
                 AlgebraicValue::String("Foo".to_string()),
                 AlgebraicValue::U32(18),
             ]);
-            let num_deleted = datastore.delete_rows_in_mut_tx(&mut tx, table_id, vec![created_row.clone()])?;
+            let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, vec![created_row.clone()])?;
             assert_eq!(num_deleted, Some(1));
             let rows = datastore
-                .scan_mut_tx(&tx, table_id)?
+                .iter_mut_tx(&tx, table_id)?
                 .map(|r| r.view().clone())
                 .collect::<Vec<_>>();
             assert_eq!(rows.len(), 0);
-            datastore.insert_row_mut_tx(&mut tx, table_id, created_row)?;
+            datastore.insert_mut_tx(&mut tx, table_id, created_row)?;
             let rows = datastore
-                .scan_mut_tx(&tx, table_id)?
+                .iter_mut_tx(&tx, table_id)?
                 .map(|r| r.view().clone())
                 .collect::<Vec<_>>();
             #[rustfmt::skip]
@@ -2325,8 +2425,8 @@ mod tests {
             AlgebraicValue::String("Foo".to_string()),
             AlgebraicValue::U32(18),
         ]);
-        datastore.insert_row_mut_tx(&mut tx, table_id, row.clone())?;
-        let result = datastore.insert_row_mut_tx(&mut tx, table_id, row);
+        datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+        let result = datastore.insert_mut_tx(&mut tx, table_id, row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation {
                 constraint_name: _,
@@ -2337,7 +2437,7 @@ mod tests {
             _ => panic!("Expected an unique constraint violation error."),
         }
         let rows = datastore
-            .scan_mut_tx(&tx, table_id)?
+            .iter_mut_tx(&tx, table_id)?
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
@@ -2362,10 +2462,10 @@ mod tests {
             AlgebraicValue::String("Foo".to_string()),
             AlgebraicValue::U32(18),
         ]);
-        datastore.insert_row_mut_tx(&mut tx, table_id, row.clone())?;
+        datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
-        let result = datastore.insert_row_mut_tx(&mut tx, table_id, row);
+        let result = datastore.insert_mut_tx(&mut tx, table_id, row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation {
                 constraint_name: _,
@@ -2376,7 +2476,7 @@ mod tests {
             _ => panic!("Expected an unique constraint violation error."),
         }
         let rows = datastore
-            .scan_mut_tx(&tx, table_id)?
+            .iter_mut_tx(&tx, table_id)?
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
@@ -2403,12 +2503,12 @@ mod tests {
             AlgebraicValue::String("Foo".to_string()),
             AlgebraicValue::U32(18),
         ]);
-        datastore.insert_row_mut_tx(&mut tx, table_id, row.clone())?;
+        datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
         datastore.rollback_mut_tx(tx);
         let mut tx = datastore.begin_mut_tx();
-        datastore.insert_row_mut_tx(&mut tx, table_id, row)?;
+        datastore.insert_mut_tx(&mut tx, table_id, row)?;
         let rows = datastore
-            .scan_mut_tx(&tx, table_id)?
+            .iter_mut_tx(&tx, table_id)?
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
@@ -2435,7 +2535,7 @@ mod tests {
             AlgebraicValue::String("Foo".to_string()),
             AlgebraicValue::U32(18),
         ]);
-        datastore.insert_row_mut_tx(&mut tx, table_id, row)?;
+        datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
         let index_def = IndexDef {
@@ -2446,7 +2546,7 @@ mod tests {
         };
         datastore.create_index_mut_tx(&mut tx, index_def)?;
         let index_rows = datastore
-            .scan_mut_tx(&tx, ST_INDEXES_ID)?
+            .iter_mut_tx(&tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.index_id)
             .collect::<Vec<_>>();
@@ -2465,7 +2565,7 @@ mod tests {
             AlgebraicValue::String("Bar".to_string()),
             AlgebraicValue::U32(18),
         ]);
-        let result = datastore.insert_row_mut_tx(&mut tx, table_id, row);
+        let result = datastore.insert_mut_tx(&mut tx, table_id, row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation {
                 constraint_name: _,
@@ -2476,7 +2576,7 @@ mod tests {
             _ => panic!("Expected an unique constraint violation error."),
         }
         let rows = datastore
-            .scan_mut_tx(&tx, table_id)?
+            .iter_mut_tx(&tx, table_id)?
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
@@ -2501,7 +2601,7 @@ mod tests {
             AlgebraicValue::String("Foo".to_string()),
             AlgebraicValue::U32(18),
         ]);
-        datastore.insert_row_mut_tx(&mut tx, table_id, row)?;
+        datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
         let index_def = IndexDef {
@@ -2514,7 +2614,7 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
         let index_rows = datastore
-            .scan_mut_tx(&tx, ST_INDEXES_ID)?
+            .iter_mut_tx(&tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.index_id)
             .collect::<Vec<_>>();
@@ -2533,7 +2633,7 @@ mod tests {
             AlgebraicValue::String("Bar".to_string()),
             AlgebraicValue::U32(18),
         ]);
-        let result = datastore.insert_row_mut_tx(&mut tx, table_id, row);
+        let result = datastore.insert_mut_tx(&mut tx, table_id, row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation {
                 constraint_name: _,
@@ -2544,7 +2644,7 @@ mod tests {
             _ => panic!("Expected an unique constraint violation error."),
         }
         let rows = datastore
-            .scan_mut_tx(&tx, table_id)?
+            .iter_mut_tx(&tx, table_id)?
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
@@ -2569,7 +2669,7 @@ mod tests {
             AlgebraicValue::String("Foo".to_string()),
             AlgebraicValue::U32(18),
         ]);
-        datastore.insert_row_mut_tx(&mut tx, table_id, row)?;
+        datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
         let index_def = IndexDef {
@@ -2582,7 +2682,7 @@ mod tests {
         datastore.rollback_mut_tx(tx);
         let mut tx = datastore.begin_mut_tx();
         let index_rows = datastore
-            .scan_mut_tx(&tx, ST_INDEXES_ID)?
+            .iter_mut_tx(&tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.index_id)
             .collect::<Vec<_>>();
@@ -2600,9 +2700,9 @@ mod tests {
             AlgebraicValue::String("Bar".to_string()),
             AlgebraicValue::U32(18),
         ]);
-        datastore.insert_row_mut_tx(&mut tx, table_id, row)?;
+        datastore.insert_mut_tx(&mut tx, table_id, row)?;
         let rows = datastore
-            .scan_mut_tx(&tx, table_id)?
+            .iter_mut_tx(&tx, table_id)?
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]

@@ -6,6 +6,7 @@ services:
     image: registry.digitalocean.com/clockwork/spacetimedb${REGISTRY_SUFFIX}:latest
     volumes:
       - /stdb
+      - key_files:/etc/spacetimedb
     command: start
     privileged: true
     environment:
@@ -26,3 +27,5 @@ services:
     image: registry.digitalocean.com/clockwork/spacetimedb_prometheus${REGISTRY_SUFFIX}:latest
   grafana:
     image: registry.digitalocean.com/clockwork/spacetimedb_grafana${REGISTRY_SUFFIX}:latest
+volumes:
+  key_files:

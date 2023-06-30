@@ -19,6 +19,7 @@ services:
       - ./crates/vm:/usr/src/app/crates/vm
       - ./crates/client-api-messages:/usr/src/app/crates/client-api-messages
       - ./flamegraphs:/usr/src/app/flamegraphs
+      - key_files:/etc/spacetimedb
       - /stdb
     ports:
       - "3000:80"
@@ -38,3 +39,5 @@ services:
 networks:
   spacetimedb_default:
      name: spacetimedb_default
+volumes:
+  key_files:
