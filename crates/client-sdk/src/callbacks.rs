@@ -30,7 +30,10 @@ use spacetimedb_sats::bsatn;
 use std::{
     collections::HashMap,
     marker::PhantomData,
-    sync::{Arc, atomic::{AtomicUsize, Ordering}},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 use tokio::{runtime, task::JoinHandle};
 

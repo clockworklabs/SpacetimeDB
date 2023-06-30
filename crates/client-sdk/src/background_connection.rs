@@ -99,7 +99,11 @@ fn process_subscription_update_for_transaction_update(
     }
 }
 
-fn process_event(msg: client_api_messages::Event, reducer_callbacks: &mut ReducerCallbacks, state: ClientCacheView) -> Option<Arc<AnyReducerEvent>> {
+fn process_event(
+    msg: client_api_messages::Event,
+    reducer_callbacks: &mut ReducerCallbacks,
+    state: ClientCacheView,
+) -> Option<Arc<AnyReducerEvent>> {
     reducer_callbacks.handle_event(msg, state)
 }
 

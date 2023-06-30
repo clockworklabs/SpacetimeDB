@@ -814,7 +814,7 @@ fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
                             reducer.name.to_case(Case::Snake),
                             type_or_variant_name,
                             type_or_variant_name,
-                        ).unwrap();                    
+                        ).unwrap();
                     }
                     writeln!(
                         out,
