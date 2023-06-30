@@ -96,9 +96,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", config.get_host_url(), address));
     let builder = add_auth_header_opt(builder, &auth_header);
-    let res = builder.query(&query_parms).send().await?;
-
-    let res = res.error_for_status()?;
+    let res = builder.query(&query_parms).send().await?.error_for_status()?;
 
     let term_color = if std::io::stderr().is_terminal() {
         termcolor::ColorChoice::Auto

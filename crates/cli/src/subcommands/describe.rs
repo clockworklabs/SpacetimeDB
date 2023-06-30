@@ -52,7 +52,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let address = database_address(&config, database).await?;
 
-    let url = match entity_name {
+    let builder = reqwest::Client::new().get(match entity_name {
         None => format!("{}/database/schema/{}", config.get_host_url(), address),
         Some(entity_name) => format!(
             "{}/database/schema/{}/{}/{}",
@@ -61,15 +61,18 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             format!("{}s", entity_type.unwrap()),
             entity_name
         ),
-    };
-    let builder = reqwest::Client::new().get(url);
+    });
     let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity).await;
     let builder = add_auth_header_opt(builder, &auth_header);
-    let res = builder.query(&[("expand", expand)]).send().await?;
 
-    let res = res.error_for_status()?;
-    let body = res.bytes().await?;
-    let str = String::from_utf8(body.to_vec())?;
-    println!("{}", str);
+    let descr = builder
+        .query(&[("expand", expand)])
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    println!("{}", descr);
+
     Ok(())
 }

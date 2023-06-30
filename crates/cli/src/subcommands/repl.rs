@@ -77,8 +77,8 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         "\
 ┌──────────────────────────────────────────────────────────┐
 │ .exit: Exit the REPL                                     │
-│ .clear: Clear the Screen                                 │ 
-│                                                          │ 
+│ .clear: Clear the Screen                                 │
+│                                                          │
 │ Give us feedback in our Discord server:                  │
 │    https://discord.gg/w2DVqNZXdN                         │
 └──────────────────────────────────────────────────────────┘",
@@ -160,10 +160,11 @@ impl Completer for ReplHelper {
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
         let mut name = String::new();
         let mut name_pos = pos;
-        while let Some(char) = line.chars().nth(name_pos.wrapping_sub(1)) {
-            if !char.is_ascii_alphanumeric() && !['_', '.'].contains(&char) {
-                break;
-            }
+        while let Some(char) = line
+            .chars()
+            .nth(name_pos.wrapping_sub(1))
+            .filter(|c| c.is_ascii_alphanumeric() || ['_', '.'].contains(&c))
+        {
             name.push(char);
             name_pos -= 1;
         }
@@ -175,7 +176,7 @@ impl Completer for ReplHelper {
         let mut completions: Vec<_> = AUTO_COMPLETE.split('\n').map(str::to_string).collect();
         completions = completions
             .iter()
-            .filter_map(|it| if it.starts_with(&name) { Some(it.clone()) } else { None })
+            .filter_map(|it| it.starts_with(&name).then(|| it.clone()))
             .collect();
 
         Ok((name_pos, completions))

@@ -55,13 +55,15 @@ pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<C
 }
 
 pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), anyhow::Error> {
-    let res = builder.body(sql.to_owned()).send().await?;
-    let res = res.error_for_status()?;
+    let json = builder
+        .body(sql.to_owned())
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
 
-    let body = res.bytes().await.unwrap();
-    let json = String::from_utf8(body.to_vec()).unwrap();
-
-    let stmt_result_json: Vec<StmtResultJson> = serde_json::from_str(&json).unwrap();
+    let stmt_result_json: Vec<StmtResultJson> = serde_json::from_str(&json)?;
 
     let stmt_result = stmt_result_json.first().context("Invalid sql query.")?;
     let StmtResultJson { schema, rows } = &stmt_result;
