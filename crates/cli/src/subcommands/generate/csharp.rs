@@ -1240,12 +1240,6 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         {
             indent_scope!(output);
 
-            //           SpacetimeDBClient.instance.InternalCallReducer(new SpacetimeDBClient.Message
-            // 			{
-            // 				fn = "create_new_player",
-            // 				args = new object[] { playerId, position },
-            // 			});
-
             // Tell the network manager to send this message
             writeln!(output, "var _argArray = new object[] {{{}}};", json_args).unwrap();
             writeln!(output, "var _message = new SpacetimeDBClient.ReducerCallRequest {{").unwrap();
