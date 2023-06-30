@@ -735,7 +735,7 @@ fn autogen_csharp_product_table_common(
                     "public delegate void DeleteEventHandler({name} deletedValue, {namespace}.ReducerEvent dbEvent);"
                 )
                 .unwrap();
-                writeln!(output, "public delegate void RowUpdateEventHandler(NetworkManager.TableOp op, {name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
+                writeln!(output, "public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, {name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
                 writeln!(output, "public static event InsertEventHandler OnInsert;").unwrap();
                 writeln!(output, "public static event UpdateEventHandler OnUpdate;").unwrap();
                 writeln!(output, "public static event DeleteEventHandler OnBeforeDelete;").unwrap();
@@ -755,7 +755,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnInsert?.Invoke(({name})newValue,dbEvent?.FunctionCall.CallInfo);"
+                        "OnInsert?.Invoke(({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -772,7 +772,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnUpdate?.Invoke(({name})oldValue,({name})newValue,dbEvent?.FunctionCall.CallInfo);"
+                        "OnUpdate?.Invoke(({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -789,7 +789,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnBeforeDelete?.Invoke(({name})oldValue,dbEvent?.FunctionCall.CallInfo);"
+                        "OnBeforeDelete?.Invoke(({name})oldValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -806,7 +806,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnDelete?.Invoke(({name})oldValue,dbEvent?.FunctionCall.CallInfo);"
+                        "OnDelete?.Invoke(({name})oldValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -815,7 +815,7 @@ fn autogen_csharp_product_table_common(
 
                 writeln!(
                     output,
-                    "public static void OnRowUpdateEvent(NetworkManager.TableOp op, object oldValue, object newValue, ClientApi.Event dbEvent)"
+                    "public static void OnRowUpdateEvent(SpacetimeDBClient.TableOp op, object oldValue, object newValue, ClientApi.Event dbEvent)"
                 )
                 .unwrap();
                 writeln!(output, "{{").unwrap();
@@ -823,7 +823,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnRowUpdate?.Invoke(op, ({name})oldValue,({name})newValue,dbEvent?.FunctionCall.CallInfo);"
+                        "OnRowUpdate?.Invoke(op, ({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -921,7 +921,7 @@ fn autogen_csharp_access_funcs_for_struct(
     indented_block(output, |output| {
         writeln!(
             output,
-            "foreach(var entry in NetworkManager.clientDB.GetEntries(\"{table_name}\"))",
+            "foreach(var entry in SpacetimeDBClient.clientDB.GetEntries(\"{table_name}\"))",
         )
         .unwrap();
         indented_block(output, |output| {
@@ -932,7 +932,7 @@ fn autogen_csharp_access_funcs_for_struct(
 
     writeln!(output, "public static int Count()").unwrap();
     indented_block(output, |output| {
-        writeln!(output, "return NetworkManager.clientDB.Count(\"{table_name}\");",).unwrap();
+        writeln!(output, "return SpacetimeDBClient.clientDB.Count(\"{table_name}\");",).unwrap();
     });
     let mut primary_col_idx = None;
 
@@ -1006,7 +1006,7 @@ fn autogen_csharp_access_funcs_for_struct(
             } else {
                 writeln!(
                     output,
-                    "foreach(var entry in NetworkManager.clientDB.GetEntries(\"{}\"))",
+                    "foreach(var entry in SpacetimeDBClient.clientDB.GetEntries(\"{}\"))",
                     table_name
                 )
                 .unwrap();
@@ -1240,15 +1240,9 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         {
             indent_scope!(output);
 
-            //           NetworkManager.instance.InternalCallReducer(new NetworkManager.Message
-            // 			{
-            // 				fn = "create_new_player",
-            // 				args = new object[] { playerId, position },
-            // 			});
-
             // Tell the network manager to send this message
             writeln!(output, "var _argArray = new object[] {{{}}};", json_args).unwrap();
-            writeln!(output, "var _message = new NetworkManager.ReducerCallRequest {{").unwrap();
+            writeln!(output, "var _message = new SpacetimeDBClient.ReducerCallRequest {{").unwrap();
             {
                 indent_scope!(output);
                 writeln!(output, "fn = \"{}\",", reducer.name).unwrap();
@@ -1275,7 +1269,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
             writeln!(
                 output,
-                "NetworkManager.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));"
+                "SpacetimeDBClient.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));"
             )
                 .unwrap();
         }
@@ -1299,10 +1293,14 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "var args = dbEvent.FunctionCall.CallInfo.{func_name_pascal_case}Args;"
+                    "var args = ((ReducerEvent)dbEvent.FunctionCall.CallInfo).{func_name_pascal_case}Args;"
                 )
                 .unwrap();
-                writeln!(output, "On{func_name_pascal_case}Event(dbEvent.FunctionCall.CallInfo").unwrap();
+                writeln!(
+                    output,
+                    "On{func_name_pascal_case}Event((ReducerEvent)dbEvent.FunctionCall.CallInfo"
+                )
+                .unwrap();
                 // Write out arguments one per line
                 {
                     indent_scope!(output);
@@ -1455,33 +1453,25 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
     writeln!(output, "}}").unwrap();
     writeln!(output).unwrap();
 
-    writeln!(output, "public partial class ReducerEvent").unwrap();
+    writeln!(output, "public partial class ReducerEvent : ReducerEventBase").unwrap();
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
         writeln!(output, "public ReducerType Reducer {{ get; private set; }}").unwrap();
-        writeln!(output, "public string ReducerName {{ get; private set; }}").unwrap();
-        writeln!(output, "public ulong Timestamp {{ get; private set; }}").unwrap();
-        writeln!(output, "public SpacetimeDB.Identity Identity {{ get; private set; }}").unwrap();
-        writeln!(output, "public string ErrMessage {{ get; private set; }}").unwrap();
-        writeln!(
-            output,
-            "public ClientApi.Event.Types.Status Status {{ get; private set; }}"
-        )
-        .unwrap();
-        writeln!(output, "private object Args;").unwrap();
         writeln!(output).unwrap();
         writeln!(output, "public ReducerEvent(ReducerType reducer, string reducerName, ulong timestamp, SpacetimeDB.Identity identity, string errMessage, ClientApi.Event.Types.Status status, object args)").unwrap();
+        {
+            indent_scope!(output);
+            writeln!(
+                output,
+                ": base(reducerName, timestamp, identity, errMessage, status, args)"
+            )
+            .unwrap();
+        }
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
             writeln!(output, "Reducer = reducer;").unwrap();
-            writeln!(output, "ReducerName = reducerName;").unwrap();
-            writeln!(output, "Timestamp = timestamp;").unwrap();
-            writeln!(output, "Identity = identity;").unwrap();
-            writeln!(output, "ErrMessage = errMessage;").unwrap();
-            writeln!(output, "Status = status;").unwrap();
-            writeln!(output, "Args = args;").unwrap();
         }
         // Closing brace for ctor
         writeln!(output, "}}").unwrap();
