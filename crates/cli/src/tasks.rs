@@ -31,10 +31,10 @@ pub(crate) fn build(project_path: &Path, skip_clippy: bool, build_debug: bool) -
 
     let mut artifact = None;
     for message in Message::parse_stream(io::BufReader::new(reader)) {
-        if let Ok(Message::CompilerArtifact(art)) = message {
-            artifact = Some(art);
-        } else if let Err(error) = message {
-            return Err(anyhow::anyhow!(error));
+        match message {
+            Ok(Message::CompilerArtifact(art)) => artifact = Some(art),
+            Err(error) => return Err(anyhow::anyhow!(error)),
+            _ => {}
         }
     }
     let artifact = artifact.context("no artifact found?")?;
@@ -108,21 +108,12 @@ fn has_wasm_bindgen(module: &wasmbin::Module) -> bool {
     };
     let check_export = |export: &wasmbin::sections::Export| export.name.starts_with(WBINDGEN_PREFIX);
 
-    if let Some(imports) = module.find_std_section::<wasmbin::sections::payload::Import>() {
-        if let Ok(imports) = imports.try_contents() {
-            if imports.iter().any(check_import) {
-                return true;
-            }
-        }
-    }
-
-    if let Some(exports) = module.find_std_section::<wasmbin::sections::payload::Export>() {
-        if let Ok(exports) = exports.try_contents() {
-            if exports.iter().any(check_export) {
-                return true;
-            }
-        }
-    }
-
-    false
+    module
+        .find_std_section::<wasmbin::sections::payload::Import>()
+        .and_then(|imports| imports.try_contents().ok())
+        .is_some_and(|imports| imports.iter().any(check_import))
+        || module
+            .find_std_section::<wasmbin::sections::payload::Export>()
+            .and_then(|exports| exports.try_contents().ok())
+            .is_some_and(|exports| exports.iter().any(check_export))
 }

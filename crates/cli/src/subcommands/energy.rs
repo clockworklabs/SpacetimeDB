@@ -62,24 +62,15 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
 async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
-    let hex_identity = args.get_one::<String>("identity");
+    let hex_id = args.get_one::<String>("identity");
     let balance = *args.get_one::<u64>("balance").unwrap();
     let quiet = args.get_flag("quiet");
 
-    let hex_identity = if let Some(hex_identity) = hex_identity {
-        hex_identity
-    } else {
-        config.get_default_identity_config().unwrap().identity.as_str()
-    };
-
-    let client = reqwest::Client::new();
-
-    let res = set_balance(&client, &config, hex_identity, balance).await?;
+    let hex_id = hex_id_or_default(hex_id, &config);
+    let res = set_balance(&reqwest::Client::new(), &config, hex_id, balance).await?;
 
     if !quiet {
-        let body = res.bytes().await?;
-        let str = String::from_utf8(body.to_vec())?;
-        println!("{}", str);
+        println!("{}", res.text().await?);
     }
 
     Ok(())
@@ -87,25 +78,24 @@ async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), an
 
 async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
-    let hex_identity = args.get_one::<String>("identity");
+    let hex_id = args.get_one::<String>("identity");
+    let hex_id = hex_id_or_default(hex_id, &config);
 
-    let hex_identity = if let Some(hex_identity) = hex_identity {
-        hex_identity
-    } else {
-        config.get_default_identity_config().unwrap().identity.as_str()
-    };
-
-    let client = reqwest::Client::new();
-    let res = client
-        .get(format!("{}/energy/{}", config.get_host_url(), hex_identity))
+    let status = reqwest::Client::new()
+        .get(format!("{}/energy/{}", config.get_host_url(), hex_id))
         .send()
+        .await?
+        .error_for_status()?
+        .text()
         .await?;
 
-    let res = res.error_for_status()?;
-    let body = res.bytes().await?;
-    let str = String::from_utf8(body.to_vec())?;
-    println!("{}", str);
+    println!("{}", status);
+
     Ok(())
+}
+
+fn hex_id_or_default<'a>(hex_id: Option<&'a String>, config: &'a Config) -> &'a String {
+    hex_id.unwrap_or_else(|| &config.get_default_identity_config().unwrap().identity)
 }
 
 pub(super) async fn set_balance(
@@ -117,8 +107,11 @@ pub(super) async fn set_balance(
     // TODO: this really should be form data in POST body, not query string parameter, but gotham
     // does not support that on the server side without an extension.
     // see https://github.com/gotham-rs/gotham/issues/11
-    let url = format!("{}/energy/{}", config.get_host_url(), hex_identity);
-    let res = client.post(url).query(&[("balance", balance)]).send().await?;
-    let res = res.error_for_status()?;
-    Ok(res)
+    client
+        .post(format!("{}/energy/{}", config.get_host_url(), hex_identity))
+        .query(&[("balance", balance)])
+        .send()
+        .await?
+        .error_for_status()
+        .map_err(|e| e.into())
 }

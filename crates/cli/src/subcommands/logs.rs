@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::io::{self, Write};
 
 use crate::config::Config;
-use crate::util::{database_address, get_auth_header};
+use crate::util::{add_auth_header_opt, database_address, get_auth_header};
 use clap::{Arg, ArgAction, ArgMatches};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use is_terminal::IsTerminal;
@@ -94,14 +94,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // TODO: num_lines should default to like 10 if follow is specified?
     let query_parms = LogsParams { num_lines, follow };
 
-    let client = reqwest::Client::new();
-    let mut builder = client.get(format!("{}/database/logs/{}", config.get_host_url(), address));
-    if let Some(auth_header) = auth_header {
-        builder = builder.header("Authorization", auth_header);
-    }
-    let res = builder.query(&query_parms).send().await?;
-
-    let res = res.error_for_status()?;
+    let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", config.get_host_url(), address));
+    let builder = add_auth_header_opt(builder, &auth_header);
+    let res = builder.query(&query_parms).send().await?.error_for_status()?;
 
     let term_color = if std::io::stderr().is_terminal() {
         termcolor::ColorChoice::Auto

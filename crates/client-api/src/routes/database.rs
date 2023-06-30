@@ -343,7 +343,10 @@ pub async fn catalog(
         .iter()
         .map(|(name, entity)| (name, entity_description_json(entity, expand)))
         .collect();
-    let response_json = json!(response_catalog);
+    let response_json = json!({
+        "entities": response_catalog,
+        "typespace": catalog.typespace().types,
+    });
 
     Ok((
         StatusCode::OK,

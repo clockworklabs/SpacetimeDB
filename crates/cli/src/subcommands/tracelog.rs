@@ -76,9 +76,8 @@ pub async fn exec_stop(config: Config, args: &ArgMatches) -> Result<(), anyhow::
     let res = client
         .post(format!("{}/tracelog/database/{}/stop", config.get_host_url(), address))
         .send()
-        .await?;
-
-    let res = res.error_for_status()?;
+        .await?
+        .error_for_status()?;
     if res.status() == StatusCode::NOT_FOUND {
         println!("Could not find database {}", address);
         return Ok(());
