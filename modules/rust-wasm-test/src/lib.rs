@@ -40,6 +40,8 @@ pub struct TestE {
     name: String,
 }
 
+pub type TestAlias = TestA;
+
 // #[spacetimedb(migrate)]
 // pub fn migrate() {}
 
@@ -60,7 +62,7 @@ pub fn repeating_test(ctx: ReducerContext, prev_time: Timestamp) {
 }
 
 #[spacetimedb(reducer)]
-pub fn test(ctx: ReducerContext, arg: TestA, arg2: TestB, arg3: TestC) -> anyhow::Result<()> {
+pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> anyhow::Result<()> {
     log::info!("BEGIN");
     log::info!("sender: {:?}", ctx.sender);
     log::info!("timestamp: {:?}", ctx.timestamp);
