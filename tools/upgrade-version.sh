@@ -58,11 +58,11 @@ upgrade_version testing --skip-version
 # Upgrade the template that is shipped with the cli
 fsed 's@.*spacetimedb.*=.*".*".*@spacetimedb = "'"${version}"'"@' "crates/cli/src/subcommands/project/Cargo._toml"
 fsed 's@.*spacetimedb-lib.*=.*@spacetimedb-lib = { path = "../lib", default-features = false }@' "crates/bindings/Cargo.toml"
-fsed 's@.*spacetimedb-bindings-macro.*=.*@spacetimedb-bindings-macro = { path = "../bindings-macro", optional = true }@' "crates/bindings/Cargo.toml"
+fsed 's@.*spacetimedb-bindings-macro.*=.*@spacetimedb-bindings-macro = { path = "../bindings-macro" }@' "crates/bindings/Cargo.toml"
 
 # Maintain any other options
 fsed 's@.*spacetimedb-lib.*=.*@spacetimedb-lib = { path = "../lib", default-features = false, version = "'"$version"'"}@' "crates/bindings/Cargo.toml"
-fsed 's@.*spacetimedb-bindings-macro.*=.*@spacetimedb-bindings-macro = { path = "../bindings-macro", optional = true, version = "'"$version"'"}@' "crates/bindings/Cargo.toml"
+fsed 's@.*spacetimedb-bindings-macro.*=.*@spacetimedb-bindings-macro = { path = "../bindings-macro", version = "'"$version"'"}@' "crates/bindings/Cargo.toml"
 
 cargo check
 
