@@ -635,12 +635,7 @@ pub mod query {
 
         fn next(&mut self) -> Option<Self::Item> {
             let mut cursor = &self.cursor;
-            if cursor.remaining() == 0 {
-                None
-            } else {
-                let row = bsatn::from_reader(&mut cursor).unwrap();
-                Some(row)
-            }
+            (cursor.remaining() != 0).then(|| bsatn::from_reader(&mut cursor).unwrap())
         }
     }
 }
