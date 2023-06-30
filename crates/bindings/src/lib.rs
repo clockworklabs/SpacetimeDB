@@ -563,8 +563,7 @@ pub mod query {
             .read();
         // In the future, this should instead call seek_eq.
         FilterByIter {
-            rows,
-            offset: 0,
+            cursor: Cursor::new(rows),
             _phantom: PhantomData,
         }
     }
@@ -615,16 +614,16 @@ pub mod query {
         true
     }
 
-    /// An iterator that finds all rows of `Table` with a column at `COL_IDX` matching `val`.
+    /// An iterator returned by `filter_by_field`,
+    /// which yields all of the rows of a table where a particular column's value
+    /// matches a given target value.
     ///
     /// Matching is defined by decoding to an `AlgebraicValue`
     /// according to the column's schema and then `Ord for AlgebraicValue`.
     #[doc(hidden)]
     pub struct FilterByIter<Table: TableType> {
-        /// The buffer of rows returned by `seek_eq`.
-        rows: Box<[u8]>,
-
-        offset: usize,
+        /// The buffer of rows returned by `iter_by_col_eq`.
+        cursor: Cursor<Box<[u8]>>,
 
         _phantom: PhantomData<Table>,
     }
@@ -636,15 +635,12 @@ pub mod query {
         type Item = Table;
 
         fn next(&mut self) -> Option<Self::Item> {
-            let slice: &mut &[u8] = &mut &self.rows[self.offset..];
-            match slice.remaining() {
-                0 => None,
-                len_before_read => {
-                    let t = bsatn::from_reader(slice).unwrap();
-                    let bytes_consumed = slice.remaining() - len_before_read;
-                    self.offset -= bytes_consumed;
-                    Some(t)
-                }
+            let mut cursor = &self.cursor;
+            if cursor.remaining() == 0 {
+                None
+            } else {
+                let row = bsatn::from_reader(&mut cursor).unwrap();
+                Some(row)
             }
         }
     }
