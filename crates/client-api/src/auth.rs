@@ -102,7 +102,7 @@ impl IntoResponse for AuthorizationRejection {
             "Authorization failed: token not signed by this instance",
         );
         // The JWT is malformed and there's an issue with its representation. We expect:
-        // Basic: base64(token:${hex_token})
+        // Basic base64(token:${hex_token})
         const INVALID: (StatusCode, &str) = (StatusCode::BAD_REQUEST, "Authorization is invalid: malformed token");
         // Sensible fallback if no auth header is present.
         const REQUIRED: (StatusCode, &str) = (StatusCode::UNAUTHORIZED, "Authorization required");
