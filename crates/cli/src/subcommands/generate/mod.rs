@@ -89,7 +89,18 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
 
     let wasm_file = match wasm_file {
         Some(x) => x,
-        None => crate::tasks::build(project_path, skip_clippy, build_debug)?,
+        None => match crate::tasks::build(project_path, skip_clippy, build_debug) {
+            Ok(wasm_file) => wasm_file,
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "{:?}
+
+Failed to compile module {:?}. See cargo errors above for more details.",
+                    e,
+                    project_path,
+                ))
+            }
+        },
     };
 
     if !out_dir.exists() {
