@@ -1157,7 +1157,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(
@@ -1181,7 +1181,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
             .name
             .as_deref()
             .unwrap_or_else(|| panic!("reducer args should have names: {func_name}"));
-        let arg_name = name.to_case(Case::Camel);
+        let arg_name = format!("_{}", name.to_case(Case::Camel));
         let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, "");
 
         func_arguments.push(format!("{arg_name}: {arg_type_str}"));
