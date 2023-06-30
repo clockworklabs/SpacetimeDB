@@ -1,5 +1,5 @@
 use crate::client::ClientConnectionSender;
-use crate::db::datastore::traits::{TxData, TxOp, TableId};
+use crate::db::datastore::traits::{TableId, TxData, TxOp};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::hash::Hash;

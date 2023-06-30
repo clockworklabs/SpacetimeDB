@@ -323,12 +323,7 @@ mod tests {
 
         let result_1 = s.eval(&db)?;
 
-        let s = QuerySet(vec![
-            Query {
-                queries: vec![q_2],
-            },
-            Query { queries: vec![q_1] },
-        ]);
+        let s = QuerySet(vec![Query { queries: vec![q_2] }, Query { queries: vec![q_1] }]);
 
         let result_2 = s.eval(&db)?;
         let to_row = |of: DatabaseUpdate| {
