@@ -1,5 +1,6 @@
 pub mod api;
 mod config;
+mod edit_distance;
 mod subcommands;
 mod tasks;
 pub mod util;

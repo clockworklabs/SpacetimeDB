@@ -144,19 +144,12 @@ fn create_directory(path: &Path) -> Result<(), anyhow::Error> {
     std::fs::create_dir_all(path).context("Failed to create directory")
 }
 
-fn find_executable<P>(exe_name: P) -> Option<std::path::PathBuf>
-where
-    P: AsRef<Path>,
-{
+fn find_executable(exe_name: impl AsRef<Path>) -> Option<std::path::PathBuf> {
     std::env::var_os("PATH").and_then(|paths| {
         std::env::split_paths(&paths)
             .filter_map(|dir| {
                 let full_path = dir.join(&exe_name);
-                if full_path.is_file() {
-                    Some(full_path)
-                } else {
-                    None
-                }
+                full_path.is_file().then_some(full_path)
             })
             .next()
     })

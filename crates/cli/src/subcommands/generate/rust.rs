@@ -61,7 +61,11 @@ fn is_option_type(ty: &SumType) -> bool {
     )
 }
 
-fn write_type(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
+fn write_type_ctx(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
+    write_type(&|r| type_name(ctx, r), out, ty)
+}
+
+pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut W, ty: &AlgebraicType) {
     match ty {
         AlgebraicType::Sum(sum_type) => {
             if is_option_type(sum_type) {
@@ -69,10 +73,23 @@ fn write_type(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
                 write_type(ctx, out, &sum_type.variants[0].algebraic_type);
                 write!(out, ">").unwrap();
             } else {
-                unimplemented!("No way to emit an anonymous sum type other than an Option to Rust currently")
+                write!(out, "enum ").unwrap();
+                print_comma_sep_braced(out, &sum_type.variants, |out: &mut W, elem: &_| {
+                    if let Some(name) = &elem.name {
+                        write!(out, "{}: ", name).unwrap();
+                    }
+                    write_type(ctx, out, &elem.algebraic_type);
+                });
             }
         }
-        AlgebraicType::Product(_) => unimplemented!("No way to emit an anonymous product type to Rust currently"),
+        AlgebraicType::Product(ProductType { elements }) => {
+            print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {
+                if let Some(name) = &elem.name {
+                    write!(out, "{}: ", name).unwrap();
+                }
+                write_type(ctx, out, &elem.algebraic_type);
+            });
+        }
         AlgebraicType::Builtin(b) => match maybe_primitive(b) {
             MaybePrimitive::Primitive(p) => write!(out, "{}", p).unwrap(),
             MaybePrimitive::Array(ArrayType { elem_ty }) => {
@@ -94,10 +111,32 @@ fn write_type(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
             }
         },
         AlgebraicType::Ref(r) => {
-            let name = type_name(ctx, *r);
-            write!(out, "{}", name).unwrap();
+            write!(out, "{}", ctx(*r)).unwrap();
         }
     }
+}
+
+fn print_comma_sep_braced<W: Write, T>(out: &mut W, elems: &[T], on: impl Fn(&mut W, &T)) {
+    write!(out, "{{").unwrap();
+
+    let mut iter = elems.iter();
+
+    // First factor.
+    if let Some(elem) = iter.next() {
+        write!(out, " ").unwrap();
+        on(out, elem);
+    }
+    // Other factors.
+    for elem in iter {
+        write!(out, ", ").unwrap();
+        on(out, elem);
+    }
+
+    if !elems.is_empty() {
+        write!(out, " ").unwrap();
+    }
+
+    write!(out, "}}").unwrap();
 }
 
 // This is (effectively) duplicated in [typescript.rs] as `typescript_typename` and in
@@ -231,7 +270,7 @@ fn write_enum_variant(ctx: &GenCtx, out: &mut Indenter, variant: &SumTypeVariant
             // If the contained type is not a product, i.e. this variant has a single
             // member, write it tuple-style, with parens.
             write!(out, "(").unwrap();
-            write_type(ctx, out, otherwise);
+            write_type_ctx(ctx, out, otherwise);
             write!(out, "),").unwrap();
         }
     }
@@ -248,14 +287,25 @@ fn write_struct_type_fields_in_braces(
 ) {
     out.delimited_block(
         "{",
-        |out| write_arglist_no_delimiters(ctx, out, elements, pub_qualifier.then_some("pub")),
+        |out| write_arglist_no_delimiters_ctx(ctx, out, elements, pub_qualifier.then_some("pub")),
         "}",
     );
 }
 
-fn write_arglist_no_delimiters(
+fn write_arglist_no_delimiters_ctx(
     ctx: &GenCtx,
     out: &mut Indenter,
+    elements: &[ProductTypeElement],
+
+    // Written before each line. Useful for `pub`.
+    prefix: Option<&str>,
+) {
+    write_arglist_no_delimiters(&|r| type_name(ctx, r), out, elements, prefix)
+}
+
+pub fn write_arglist_no_delimiters(
+    ctx: &impl Fn(AlgebraicTypeRef) -> String,
+    out: &mut impl Write,
     elements: &[ProductTypeElement],
 
     // Written before each line. Useful for `pub`.
@@ -406,7 +456,7 @@ fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableDef) {
             "{",
             |out| {
                 write!(out, "type PrimaryKey = ").unwrap();
-                write_type(ctx, out, &pk_field.algebraic_type);
+                write_type_ctx(ctx, out, &pk_field.algebraic_type);
                 writeln!(out, ";").unwrap();
 
                 out.delimited_block(
@@ -455,7 +505,7 @@ fn print_table_filter_methods(
                 //       fields should take &[T]. Determine if integer typeso should be by
                 //       value. Is there a trait for this?
                 //       Look at `Borrow` or Deref or AsRef?
-                write_type(ctx, out, &elt.algebraic_type);
+                write_type_ctx(ctx, out, &elt.algebraic_type);
                 write!(out, ") -> ").unwrap();
                 if attr.is_unique() {
                     write!(out, "Option<Self>").unwrap();
@@ -518,7 +568,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     // TODO: if reducer.args is empty, just write "()" with no newlines
     out.delimited_block(
         "(",
-        |out| write_arglist_no_delimiters(ctx, out, &reducer.args, None),
+        |out| write_arglist_no_delimiters_ctx(ctx, out, &reducer.args, None),
         ") ",
     );
 
