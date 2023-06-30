@@ -57,10 +57,10 @@ impl WasmerModule {
             "spacetime" => {
                 "_schedule_reducer" => Function::new_typed_with_env(store, env, WasmInstanceEnv::schedule_reducer),
                 "_cancel_reducer" => Function::new_typed_with_env(store, env, WasmInstanceEnv::cancel_reducer),
-                "_delete_eq" => Function::new_typed_with_env(
+                "_delete_by_col_eq" => Function::new_typed_with_env(
                     store,
                     env,
-                    WasmInstanceEnv::delete_eq,
+                    WasmInstanceEnv::delete_by_col_eq,
                 ),
                 /*
                 "_delete_pk" => Function::new_typed_with_env(
@@ -101,10 +101,10 @@ impl WasmerModule {
                     env,
                     WasmInstanceEnv::create_index,
                 ),
-                "_seek_eq" => Function::new_typed_with_env(
+                "_iter_by_col_eq" => Function::new_typed_with_env(
                     store,
                     env,
-                    WasmInstanceEnv::seek_eq,
+                    WasmInstanceEnv::iter_by_col_eq,
                 ),
                 "_iter_start" => Function::new_typed_with_env(
                     store,
