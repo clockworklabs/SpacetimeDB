@@ -299,11 +299,11 @@ mod tests {
 
         let head_1 = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
         let row_1 = product!(1u64, "health");
-        let table_id_1 = create_table_from_program(p, "inventory", head_1.clone(), &[row_1.clone()])?;
+        let table_id_1 = create_table_from_program(p, "inventory", head_1, &[row_1])?;
 
         let head_2 = ProductType::from_iter([("player_id", BuiltinType::U64), ("name", BuiltinType::String)]);
         let row_2 = product!(2u64, "jhon doe");
-        let table_id_2 = create_table_from_program(p, "player", head_2, &[row_2.clone()])?;
+        let table_id_2 = create_table_from_program(p, "player", head_2, &[row_2])?;
 
         let schema_1 = db.schema_for_table(&tx, table_id_1).unwrap();
         let schema_2 = db.schema_for_table(&tx, table_id_2).unwrap();
@@ -325,7 +325,7 @@ mod tests {
 
         let s = QuerySet(vec![
             Query {
-                queries: vec![q_2.clone()],
+                queries: vec![q_2],
             },
             Query { queries: vec![q_1] },
         ]);
@@ -334,8 +334,7 @@ mod tests {
         let to_row = |of: DatabaseUpdate| {
             of.tables
                 .iter()
-                .map(|x| x.ops.iter().map(|x| x.row.clone()))
-                .flatten()
+                .flat_map(|x| x.ops.iter().map(|x| x.row.clone()))
                 .sorted()
                 .collect::<Vec<_>>()
         };

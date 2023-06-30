@@ -85,7 +85,7 @@ impl CommitLog {
                 for record in tx_data.records.iter() {
                     match &record.op {
                         TxOp::Insert(bytes) => {
-                            guard.add(Vec::clone(&*bytes));
+                            guard.add(Vec::clone(bytes));
                         }
                         TxOp::Delete => continue,
                     }
