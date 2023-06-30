@@ -2,13 +2,10 @@ use std::borrow::Cow;
 use std::io::{self, Write};
 
 use crate::config::Config;
-use crate::util::get_auth_header;
-use crate::util::spacetime_dns;
-use clap::ArgMatches;
-use clap::{Arg, ArgAction};
+use crate::util::{database_address, get_auth_header};
+use clap::{Arg, ArgAction, ArgMatches};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use is_terminal::IsTerminal;
-use spacetimedb_lib::name::{is_address, DnsLookupResponse};
 use termcolor::{Color, ColorSpec, WriteColor};
 
 pub fn cli() -> clap::Command {
@@ -92,16 +89,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         .await
         .map(|x| x.0);
 
-    let address = if is_address(database.as_str()) {
-        database.clone()
-    } else {
-        match spacetime_dns(&config, database).await? {
-            DnsLookupResponse::Success { domain: _, address } => address,
-            DnsLookupResponse::Failure { domain } => {
-                return Err(anyhow::anyhow!("The dns resolution of {} failed.", domain));
-            }
-        }
-    };
+    let address = database_address(&config, database).await?;
 
     // TODO: num_lines should default to like 10 if follow is specified?
     let query_parms = LogsParams { num_lines, follow };

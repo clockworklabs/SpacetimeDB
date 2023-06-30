@@ -16,12 +16,15 @@ use spacetimedb::{println, spacetimedb};
 
 #[spacetimedb(table)]
 pub struct Person {
+    #[primarykey]
+    #[autoinc]
+    id: u64,
     name: String,
 }
 
 #[spacetimedb(reducer)]
 pub fn add(name: String) {
-    Person::insert(Person { name });
+    Person::insert(Person { id: 0, name });
 }
 
 #[spacetimedb(reducer)]
@@ -57,6 +60,9 @@ use spacetimedb::spacetimedb;
 
 #[spacetimedb(table)]
 pub struct Person {
+    #[primarykey]
+    #[autoinc]
+    id: u64,
     name: String,
     age: u8,
 }
@@ -71,6 +77,9 @@ use spacetimedb::{println, spacetimedb};
 
 #[spacetimedb(table)]
 pub struct Person {
+    #[primarykey]
+    #[autoinc]
+    id: u64,
     name: String,
 }
 

@@ -1,9 +1,6 @@
 use crate::config::Config;
-use crate::util::{get_auth_header, spacetime_dns};
-use clap::Arg;
-use clap::ArgAction::SetTrue;
-use clap::ArgMatches;
-use spacetimedb_lib::name::{is_address, DnsLookupResponse};
+use crate::util::{database_address, get_auth_header_only};
+use clap::{Arg, ArgAction::SetTrue, ArgMatches};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("describe")
@@ -53,20 +50,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let as_identity = args.get_one::<String>("as_identity");
     let anon_identity = args.get_flag("anon_identity");
 
-    let auth_header = get_auth_header(&mut config, anon_identity, as_identity.map(|x| x.as_str()))
-        .await
-        .map(|x| x.0);
+    let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity).await;
 
-    let address = if is_address(database.as_str()) {
-        database.clone()
-    } else {
-        match spacetime_dns(&config, database).await? {
-            DnsLookupResponse::Success { domain: _, address } => address,
-            DnsLookupResponse::Failure { domain } => {
-                return Err(anyhow::anyhow!("The dns resolution of {} failed.", domain));
-            }
-        }
-    };
+    let address = database_address(&config, database).await?;
 
     let res = match entity_name {
         None => {

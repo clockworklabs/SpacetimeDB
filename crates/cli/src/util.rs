@@ -6,7 +6,7 @@ use clap::{
 };
 
 use serde::Deserialize;
-use spacetimedb_lib::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
+use spacetimedb_lib::name::{is_address, DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
 use spacetimedb_lib::Identity;
 
 use crate::config::{Config, IdentityConfig};
@@ -42,6 +42,17 @@ pub fn match_subcommand_or_exit(command: Command) -> (String, ArgMatches) {
     (cmd.to_string(), subcommand_args.clone())
 }
 
+/// Determine the address of the `database`.
+pub async fn database_address(config: &Config, database: &str) -> Result<String, anyhow::Error> {
+    if is_address(database) {
+        return Ok(database.to_string());
+    }
+    match spacetime_dns(config, database).await? {
+        DnsLookupResponse::Success { domain: _, address } => Ok(address),
+        DnsLookupResponse::Failure { domain } => Err(anyhow::anyhow!("The dns resolution of `{}` failed.", domain)),
+    }
+}
+
 /// Converts a name to a database address.
 pub async fn spacetime_dns(config: &Config, domain: &str) -> Result<DnsLookupResponse, anyhow::Error> {
     let client = reqwest::Client::new();
@@ -59,9 +70,7 @@ pub async fn spacetime_register_tld(
     tld: &str,
     identity: Option<&String>,
 ) -> Result<RegisterTldResult, anyhow::Error> {
-    let (auth_header, _) = get_auth_header(config, false, identity.map(|x| x.as_str()))
-        .await
-        .unwrap();
+    let auth_header = get_auth_header_only(config, false, identity).await.unwrap();
 
     // TODO(jdetter): Fix URL encoding on specifying this domain
     let builder = reqwest::Client::new()
@@ -170,6 +179,17 @@ pub async fn select_identity_config(
     }
 }
 
+/// See [`get_auth_header`].
+pub async fn get_auth_header_only(
+    config: &mut Config,
+    anon_identity: bool,
+    identity_or_name: Option<&String>,
+) -> Option<String> {
+    get_auth_header(config, anon_identity, identity_or_name.map(|x| x.as_str()))
+        .await
+        .map(|(ah, _)| ah)
+}
+
 /// Gets the `auth_header` for a request to the server depending on how you want
 /// to identify yourself.  If you specify `anon_identity = true` then no
 /// `auth_header` is returned. If you specify an identity this function will try
@@ -181,7 +201,7 @@ pub async fn select_identity_config(
 /// # Arguments
 ///  * `config` - The config file reference
 ///  * `anon_identity` - Whether or not to just use an anonymous identity (no identity)
-///  * `identity` - The identity to try to lookup, which is typically provided from the command line
+///  * `identity_or_name` - The identity to try to lookup, which is typically provided from the command line
 pub async fn get_auth_header(
     config: &mut Config,
     anon_identity: bool,

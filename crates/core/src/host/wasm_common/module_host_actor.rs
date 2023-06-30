@@ -3,7 +3,7 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
+use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef, TableSchema};
 use crate::host::scheduler::Scheduler;
 use anyhow::Context;
 use bytes::Bytes;
@@ -530,16 +530,23 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
 
         let mut tainted = vec![];
         stdb.with_auto_commit::<_, _, anyhow::Error>(|tx| {
-            let mut known_tables: BTreeMap<String, TableDef> = stdb
+            let mut known_tables: BTreeMap<String, TableSchema> = stdb
                 .get_all_tables(tx)?
                 .into_iter()
-                .map(|schema| (schema.table_name.clone(), schema.into()))
+                .map(|schema| (schema.table_name.clone(), schema))
                 .collect();
 
             let mut new_tables = Vec::new();
             for table in self.info.catalog.values().filter_map(EntityDef::as_table) {
-                let proposed_schema = self.schema_for(table)?;
+                let mut proposed_schema = self.schema_for(table)?;
                 if let Some(known_schema) = known_tables.remove(&table.name) {
+                    // If the table is known, we also know its id. Update the
+                    // index definitions so the `TableDef` of both schemas is
+                    // equivalent.
+                    for index in proposed_schema.indexes.iter_mut() {
+                        index.table_id = known_schema.table_id;
+                    }
+                    let known_schema = TableDef::from(known_schema);
                     if known_schema != proposed_schema {
                         self.system_logger()
                             .warn(&format!("stored and proposed schema of `{}` differ", table.name));
