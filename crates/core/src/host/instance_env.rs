@@ -12,7 +12,7 @@ use crate::db::datastore::traits::{DataRow, IndexDef};
 use crate::error::{IndexError, NodesError};
 use crate::util::prometheus_handle::HistogramVecHandle;
 use crate::util::ResultInspectExt;
-use crate::worker_metrics::{INSTANCE_ENV_DELETE_EQ, INSTANCE_ENV_INSERT};
+use crate::worker_metrics::{INSTANCE_ENV_DELETE_BY_COL_EQ, INSTANCE_ENV_INSERT};
 
 use super::scheduler::{ScheduledReducerId, Scheduler};
 use super::timestamp::Timestamp;
@@ -175,8 +175,8 @@ impl InstanceEnv {
     ///
     /// Returns an error if no columns were deleted or if the column wasn't found.
     #[tracing::instrument(skip_all)]
-    pub fn delete_eq(&self, table_id: u32, col_id: u32, value: &[u8]) -> Result<u32, NodesError> {
-        let measure = self.measure(table_id, &INSTANCE_ENV_DELETE_EQ);
+    pub fn delete_by_col_eq(&self, table_id: u32, col_id: u32, value: &[u8]) -> Result<u32, NodesError> {
+        let measure = self.measure(table_id, &INSTANCE_ENV_DELETE_BY_COL_EQ);
 
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
@@ -185,17 +185,17 @@ impl InstanceEnv {
         let eq_value = stdb.decode_column(tx, table_id, col_id, value)?;
 
         // Find all rows in the table where the column data equates to `value`.
-        let seek = stdb.seek(tx, table_id, col_id, &eq_value)?;
+        let seek = stdb.iter_by_col_eq(tx, table_id, col_id, &eq_value)?;
         let seek = seek.map(|x| stdb.data_to_owned(x).into()).collect::<Vec<_>>();
 
         // Delete them and count how many we deleted and error if none.
         let count = stdb
-            .delete_in(tx, table_id, seek)
-            .inspect_err_(|e| log::error!("delete_eq(table_id: {table_id}): {e}"))?
+            .delete_by_rel(tx, table_id, seek)
+            .inspect_err_(|e| log::error!("delete_by_col_eq(table_id: {table_id}): {e}"))?
             .ok_or(NodesError::ColumnValueNotFound)?;
 
         self.with_trace_log(|l| {
-            l.delete_eq(
+            l.delete_by_col_eq(
                 measure.start_instant.unwrap(),
                 measure.elapsed(),
                 table_id,
@@ -362,7 +362,7 @@ impl InstanceEnv {
     /// Matching is defined by decoding of `value` to an `AlgebraicValue`
     /// according to the column's schema and then `Ord for AlgebraicValue`.
     #[tracing::instrument(skip_all)]
-    pub fn seek_eq(&self, table_id: u32, col_id: u32, value: &[u8]) -> Result<Vec<u8>, NodesError> {
+    pub fn iter_by_col_eq(&self, table_id: u32, col_id: u32, value: &[u8]) -> Result<Vec<u8>, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
@@ -371,7 +371,7 @@ impl InstanceEnv {
 
         // Find all rows in the table where the column data matches `value`.
         // Concatenate and return these rows using bsatn encoding.
-        let results = stdb.seek(tx, table_id, col_id, &value)?;
+        let results = stdb.iter_by_col_eq(tx, table_id, col_id, &value)?;
         let mut bytes = Vec::new();
         for result in results {
             bsatn::to_writer(&mut bytes, result.view()).unwrap();
@@ -404,7 +404,7 @@ impl InstanceEnv {
             yield_!(buf);
 
             let mut buf = Vec::new();
-            for row in stdb.scan(tx, table_id)? {
+            for row in stdb.iter(tx, table_id)? {
                 if should_yield_buf(&buf) {
                     yield_!(buf);
                     buf = Vec::new();

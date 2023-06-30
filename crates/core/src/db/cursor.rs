@@ -2,7 +2,7 @@ use crate::error::DBError;
 use spacetimedb_sats::relation::{DbTable, RowCount};
 use spacetimedb_sats::ProductValue;
 
-use super::datastore::locking_tx_datastore::ScanIter;
+use super::datastore::locking_tx_datastore::Iter;
 
 #[derive(Debug, Clone, Copy)]
 pub enum CatalogKind {
@@ -15,11 +15,11 @@ pub enum CatalogKind {
 /// Common wrapper for relational iterators that work like cursors.
 pub struct TableCursor<'a> {
     pub table: DbTable,
-    pub iter: ScanIter<'a>,
+    pub iter: Iter<'a>,
 }
 
 impl<'a> TableCursor<'a> {
-    pub fn new(table: DbTable, iter: ScanIter<'a>) -> Result<Self, DBError> {
+    pub fn new(table: DbTable, iter: Iter<'a>) -> Result<Self, DBError> {
         Ok(Self { table, iter })
     }
 }
