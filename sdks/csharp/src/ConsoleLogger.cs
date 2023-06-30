@@ -13,9 +13,9 @@ namespace SpacetimeDB
         {
             None = 0,
             Debug = 1,
-            Warning = 4,
-            Error = 8,
-            Exception = 16,
+            Warning = 2,
+            Error = 4,
+            Exception = 8,
             All = Debug | Warning | Error | Exception
         }
         LogLevel _logLevel;
