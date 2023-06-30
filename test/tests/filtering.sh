@@ -137,6 +137,33 @@ fn find_identified_person(id_number: u64) {
     }
 }
 
+// Ensure that indices on non-unique columns behave as we expect.
+#[spacetimedb(table)]
+#[spacetimedb(index(btree), name="person_surname", surname)]
+struct IndexedPerson {
+    #[unique]
+    id: i32,
+    given_name: String,
+    surname: String,
+}
+
+#[spacetimedb(reducer)]
+fn insert_indexed_person(id: i32, given_name: String, surname: String) {
+    IndexedPerson::insert(IndexedPerson { id, given_name, surname });
+}
+
+#[spacetimedb(reducer)]
+fn delete_indexed_person(id: i32) {
+    IndexedPerson::delete_by_id(&id);
+}
+
+#[spacetimedb(reducer)]
+fn find_indexed_people(surname: String) {
+    for person in IndexedPerson::filter_by_surname(&surname) {
+        println!("INDEXED FOUND: id {}: {}, {}", person.id, person.surname, person.given_name);
+    }
+}
+
 EOF
 
 run_test cargo run publish -s -d --project-path "$PROJECT_PATH" --clear-database
@@ -220,6 +247,19 @@ run_test cargo run call "$IDENT" find_person '[104]'
 run_test cargo run logs "$IDENT" 100
 [ ' UNIQUE FOUND: id 104: Fum' == "$(grep 'UNIQUE FOUND: id 104: Fum' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
 
+# As above, but for non-unique indices: check for consistency between index and DB
+run_test cargo run call "$IDENT" insert_indexed_person '[7, "James", "Bond"]'
+run_test cargo run call "$IDENT" insert_indexed_person '[79, "Gold", "Bond"]'
+run_test cargo run call "$IDENT" insert_indexed_person '[1, "Hydrogen", "Bond"]'
+run_test cargo run call "$IDENT" insert_indexed_person '[100, "Whiskey", "Bond"]'
+run_test cargo run call "$IDENT" delete_indexed_person '[100]'
+run_test cargo run call "$IDENT" find_indexed_people '["Bond"]'
+run_test cargo run logs "$IDENT" 100
+[ 1 == "$(grep -c 'INDEXED FOUND: id 7: Bond, James' "$TEST_OUT")" ]
+[ 1 == "$(grep -c 'INDEXED FOUND: id 79: Bond, Gold' "$TEST_OUT")" ]
+[ 1 == "$(grep -c 'INDEXED FOUND: id 1: Bond, Hydrogen' "$TEST_OUT")" ]
+[ 0 == "$(grep -c 'INDEXED FOUND: id 100: Bond, Whiskey' "$TEST_OUT")" ]
+
 # Non-unique version; does not work yet, see db_delete codegen in SpacetimeDB\crates\bindings-macro\src\lib.rs
 # run_test cargo run call "$IDENT" insert_nonunique_person '[101, "Fee"]'
 # run_test cargo run call "$IDENT" insert_nonunique_person '[102, "Fi"]'
@@ -240,3 +280,4 @@ run_test cargo run logs "$IDENT" 100
 run_test cargo run call "$IDENT" insert_person_twice '[23, "Alice", "al"]'
 run_test cargo run logs "$IDENT" 100
 [ ' UNIQUE CONSTRAINT VIOLATION ERROR: id 23: Alice' == "$(grep 'UNIQUE CONSTRAINT VIOLATION ERROR: id 23: Alice' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+
