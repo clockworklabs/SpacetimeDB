@@ -557,13 +557,13 @@ pub mod query {
     /// **NOTE:** Do not use directly.
     /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb(table)]`.
     #[doc(hidden)]
-    pub fn filter_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u8>(
-        val: &T,
-    ) -> FilterByIter<'_, Table, COL_IDX, T> {
-        // In the future, this should instead call seek_eq.
+    pub fn filter_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u8>(val: &T) -> FilterByIter<Table> {
+        let rows = iter_by_col_eq(Table::table_id(), COL_IDX, val)
+            .expect("iter_by_col_eq failed")
+            .read();
         FilterByIter {
-            inner: Table::iter(),
-            val,
+            cursor: Cursor::new(rows),
+            _phantom: PhantomData,
         }
     }
 
@@ -613,26 +613,29 @@ pub mod query {
         true
     }
 
-    /// An iterator that finds all rows of `Table` with a column at `COL_IDX` matching `val`.
+    /// An iterator returned by `filter_by_field`,
+    /// which yields all of the rows of a table where a particular column's value
+    /// matches a given target value.
     ///
     /// Matching is defined by decoding to an `AlgebraicValue`
     /// according to the column's schema and then `Ord for AlgebraicValue`.
     #[doc(hidden)]
-    pub struct FilterByIter<'a, Table: TableType, const COL_IDX: u8, T: FilterableValue> {
-        /// The iterator for some rows to further filter.
-        inner: TableIter<Table>,
-        /// The test to apply to the column at `COL_IDX` in each row.
-        val: &'a T,
+    pub struct FilterByIter<Table: TableType> {
+        /// The buffer of rows returned by `iter_by_col_eq`.
+        cursor: Cursor<Box<[u8]>>,
+
+        _phantom: PhantomData<Table>,
     }
 
-    impl<Table, const COL_IDX: u8, T: FilterableValue> Iterator for FilterByIter<'_, Table, COL_IDX, T>
+    impl<Table> Iterator for FilterByIter<Table>
     where
-        Table: TableType + FieldAccess<COL_IDX, Field = T>,
+        Table: TableType,
     {
         type Item = Table;
 
         fn next(&mut self) -> Option<Self::Item> {
-            self.inner.find(|row| row.get_field() == self.val)
+            let mut cursor = &self.cursor;
+            (cursor.remaining() != 0).then(|| bsatn::from_reader(&mut cursor).unwrap())
         }
     }
 }
