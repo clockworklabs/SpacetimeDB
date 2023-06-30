@@ -78,9 +78,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         let error = Err(e).context(format!("Response text: {}", response_text));
 
         let error_msg = if response_text.starts_with("no such reducer") {
-            no_such_reducer(config, &address, &database, &auth_header, reducer_name).await
+            no_such_reducer(config, &address, database, &auth_header, reducer_name).await
         } else if response_text.starts_with("invalid arguments") {
-            invalid_arguments(config, &address, &database, &auth_header, reducer_name, &response_text).await
+            invalid_arguments(config, &address, database, &auth_header, reducer_name, &response_text).await
         } else {
             return error;
         };
@@ -114,7 +114,7 @@ async fn invalid_arguments(
         .unwrap();
     }
 
-    if let Some(sig) = schema_json(config, &addr, &auth_header, true)
+    if let Some(sig) = schema_json(config, addr, auth_header, true)
         .await
         .and_then(|schema| reducer_signature(schema, reducer))
     {
@@ -138,7 +138,7 @@ fn find_actual_expected(text: &str) -> Option<(usize, usize)> {
 /// Returns a tuple with
 /// - everything after the first `substring`
 /// - and anything before it.
-fn split_at_first_substring<'t, 's>(text: &'t str, substring: &'s str) -> Option<(&'t str, &'t str)> {
+fn split_at_first_substring<'t>(text: &'t str, substring: &str) -> Option<(&'t str, &'t str)> {
     text.find(substring)
         .map(|pos| (&text[..pos], &text[pos + substring.len()..]))
 }
@@ -165,7 +165,7 @@ fn reducer_signature(schema_json: Value, reducer_name: &str) -> Option<String> {
         ty_str
     }
     write_arglist_no_delimiters(&|r| ctx(&typespace, r), &mut args, &params, None);
-    let args = args.trim().trim_end_matches(",").replace("\n", " ");
+    let args = args.trim().trim_end_matches(',').replace('\n', " ");
 
     // Print the full signature to `reducer_fmt`.
     let mut reducer_fmt = String::new();
@@ -180,7 +180,7 @@ async fn no_such_reducer(config: Config, addr: &str, db: &str, auth_header: &Opt
         reducer, db, addr
     );
 
-    if let Some(schema) = schema_json(config, &addr, &auth_header, false).await {
+    if let Some(schema) = schema_json(config, addr, auth_header, false).await {
         add_reducer_ctx_to_err(&mut error, schema, reducer);
     }
 
@@ -199,13 +199,13 @@ fn add_reducer_ctx_to_err(error: &mut String, schema_json: Value, reducer_name: 
     // Hide these pseudo-reducers; they shouldn't be callable.
     reducers.retain(|&c| !matches!(c, "__update__" | "__init__"));
 
-    if let Some(best) = find_best_match_for_name(&reducers, &reducer_name, None) {
+    if let Some(best) = find_best_match_for_name(&reducers, reducer_name, None) {
         write!(error, "\n\nA reducer with a similar name exists: `{}`", best).unwrap();
     } else if reducers.is_empty() {
         write!(error, "\n\nThe database has no reducers.").unwrap();
     } else {
         // Sort reducers by relevance.
-        reducers.sort_by_key(|candidate| edit_distance(&reducer_name, &candidate, usize::MAX));
+        reducers.sort_by_key(|candidate| edit_distance(reducer_name, candidate, usize::MAX));
 
         // Don't spam the user with too many entries.
         let too_many_to_show = reducers.len() > REDUCER_PRINT_LIMIT;
@@ -231,7 +231,7 @@ fn add_reducer_ctx_to_err(error: &mut String, schema_json: Value, reducer_name: 
 /// The value of `expand` determines how detailed information to fetch.
 async fn schema_json(config: Config, address: &str, auth_header: &Option<String>, expand: bool) -> Option<Value> {
     let builder = reqwest::Client::new().get(format!("{}/database/schema/{}", config.get_host_url(), address));
-    let builder = add_auth_header_opt(builder, &auth_header);
+    let builder = add_auth_header_opt(builder, auth_header);
 
     builder
         .query(&[("expand", expand)])
@@ -266,7 +266,7 @@ fn find_of_type_in_schema<'v, 't: 'v>(
 }
 
 /// Returns the `Typespace` in the provided json schema.
-fn typespace<'v>(value: &'v serde_json::Value) -> Option<Typespace> {
+fn typespace(value: &serde_json::Value) -> Option<Typespace> {
     let types = value.as_object()?.get("typespace")?;
     deserialize_from(types).map(Typespace::new).ok()
 }

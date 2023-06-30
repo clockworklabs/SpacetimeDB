@@ -74,8 +74,8 @@ pub async fn spacetime_register_tld(
     let auth_header = get_auth_header_only(config, false, identity).await.unwrap();
 
     // TODO(jdetter): Fix URL encoding on specifying this domain
-    let builder = reqwest::Client::new()
-        .get(format!("{}/database/register_tld?tld={}", config.get_host_url(), tld).as_str());
+    let builder =
+        reqwest::Client::new().get(format!("{}/database/register_tld?tld={}", config.get_host_url(), tld).as_str());
     let builder = add_auth_header_opt(builder, &Some(auth_header));
 
     let res = builder.send().await?.error_for_status()?;

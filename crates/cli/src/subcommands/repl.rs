@@ -163,7 +163,7 @@ impl Completer for ReplHelper {
         while let Some(char) = line
             .chars()
             .nth(name_pos.wrapping_sub(1))
-            .filter(|c| c.is_ascii_alphanumeric() || ['_', '.'].contains(&c))
+            .filter(|c| c.is_ascii_alphanumeric() || ['_', '.'].contains(c))
         {
             name.push(char);
             name_pos -= 1;

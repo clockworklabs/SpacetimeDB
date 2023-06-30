@@ -124,12 +124,12 @@ fn print_comma_sep_braced<W: Write, T>(out: &mut W, elems: &[T], on: impl Fn(&mu
     // First factor.
     if let Some(elem) = iter.next() {
         write!(out, " ").unwrap();
-        on(out, &elem);
+        on(out, elem);
     }
     // Other factors.
     for elem in iter {
         write!(out, ", ").unwrap();
-        on(out, &elem);
+        on(out, elem);
     }
 
     if !elems.is_empty() {

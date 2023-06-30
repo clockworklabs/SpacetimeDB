@@ -79,7 +79,7 @@ pub fn edit_distance(a: &str, b: &str, limit: usize) -> Option<usize> {
 
     // If either string is empty, the distance is the length of the other.
     // We know that `b` is the shorter string, so we don't need to check `a`.
-    if b.len() == 0 {
+    if b.is_empty() {
         return Some(min_dist);
     }
 
@@ -133,11 +133,7 @@ pub fn edit_distance(a: &str, b: &str, limit: usize) -> Option<usize> {
 ///
 /// We use case insensitive comparison to improve accuracy on an edge case with a lower(upper)case
 /// letters mismatch.
-pub fn find_best_match_for_name<'cs, 'c, 'l>(
-    candidates: &'cs [&'c str],
-    lookup: &'l str,
-    dist: Option<usize>,
-) -> Option<&'c str> {
+pub fn find_best_match_for_name<'c>(candidates: &[&'c str], lookup: &str, dist: Option<usize>) -> Option<&'c str> {
     let lookup_uppercase = lookup.to_uppercase();
 
     // Priority of matches:
@@ -169,7 +165,7 @@ pub fn find_best_match_for_name<'cs, 'c, 'l>(
     find_match_by_sorted_words(candidates, lookup)
 }
 
-fn find_match_by_sorted_words<'cs, 'c, 'l>(iter_names: &'cs [&'c str], lookup: &'l str) -> Option<&'c str> {
+fn find_match_by_sorted_words<'c>(iter_names: &[&'c str], lookup: &str) -> Option<&'c str> {
     iter_names.iter().fold(None, |result, candidate| {
         if sort_by_words(candidate) == sort_by_words(lookup) {
             Some(*candidate)
