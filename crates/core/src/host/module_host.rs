@@ -48,7 +48,7 @@ impl DatabaseUpdate {
                 map.get_mut(&record.table_id).unwrap()
             };
 
-            let (row, row_pk) = (record.pv.clone(), record.key.to_bytes());
+            let (row, row_pk) = (record.product_value.clone(), record.key.to_bytes());
 
             vec.push(TableOp {
                 op_type: op,

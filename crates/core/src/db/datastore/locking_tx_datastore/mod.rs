@@ -139,7 +139,7 @@ impl CommittedState {
                     op: TxOp::Insert(bytes),
                     table_id,
                     key: row_id.0,
-                    pv,
+                    product_value: pv,
                 }
             }));
 
@@ -167,7 +167,7 @@ impl CommittedState {
                             op: TxOp::Delete,
                             table_id,
                             key: row_id.0,
-                            pv,
+                            product_value: pv,
                         })
                     }
                 }

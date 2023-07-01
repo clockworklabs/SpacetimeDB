@@ -289,7 +289,7 @@ pub struct TxRecord {
     /// Whether the operation was an insert or a delete.
     pub(crate) op: TxOp,
     /// The value of the modified row.
-    pub(crate) pv: ProductValue,
+    pub(crate) product_value: ProductValue,
     /// The key of the modified row.
     pub(crate) key: DataKey,
     /// The table that was modified.
