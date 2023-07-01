@@ -1,11 +1,9 @@
 use crate::db::relational_db::ST_TABLES_ID;
 use core::fmt;
+use spacetimedb_lib::auth::{StAccess, StTableType};
+use spacetimedb_lib::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
 use spacetimedb_lib::DataKey;
-use spacetimedb_sats::{
-    auth::*,
-    relation::{DbTable, FieldName, FieldOnly, Header, TableField},
-    AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue,
-};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
 use spacetimedb_vm::expr::SourceExpr;
 use std::{ops::RangeBounds, sync::Arc};
 

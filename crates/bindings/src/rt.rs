@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use crate::timestamp::with_timestamp_set;
 use crate::{sys, ReducerContext, ScheduleToken, SpacetimeType, TableType, Timestamp};
+use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
-use spacetimedb_lib::sats::auth::*;
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
 use spacetimedb_lib::ser::{self, Serialize, SerializeSeqProduct};

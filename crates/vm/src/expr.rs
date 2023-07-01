@@ -1,14 +1,15 @@
+use spacetimedb_lib::auth::{StAccess, StTableType};
+use spacetimedb_lib::error::AuthError;
 use spacetimedb_lib::table::ProductTypeMeta;
 use spacetimedb_lib::Identity;
 use std::collections::HashMap;
 use std::fmt;
 
+use spacetimedb_lib::relation::{
+    DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
+};
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::auth::*;
-use spacetimedb_sats::relation::{
-    AuthError, DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
-};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{ProductValue, TypeInSpace, Typespace};
 

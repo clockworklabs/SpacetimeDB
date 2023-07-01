@@ -21,7 +21,7 @@ use crate::vm::DbProgram;
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::operator::OpQuery;
-use spacetimedb_sats::relation::{FieldExpr, FieldName};
+use spacetimedb_lib::relation::{FieldExpr, FieldName};
 use spacetimedb_sats::{ProductType, Typespace};
 use spacetimedb_vm::expr::{Code, ColumnOp};
 

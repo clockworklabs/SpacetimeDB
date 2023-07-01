@@ -1,6 +1,6 @@
 use crate::operator::{Op, OpLogic};
 use crate::types::Ty;
-use spacetimedb_sats::relation::{AuthError, RelationError};
+use spacetimedb_lib::error::{AuthError, RelationError};
 use spacetimedb_sats::AlgebraicValue;
 use std::fmt;
 use thiserror::Error;

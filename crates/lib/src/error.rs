@@ -1,4 +1,6 @@
+use crate::relation::{FieldName, Header};
 use crate::{buffer, AlgebraicType};
+use spacetimedb_sats::algebraic_type::TypeError;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use std::fmt;
 use std::string::FromUtf8Error;
@@ -78,3 +80,23 @@ impl<E: std::error::Error + 'static> From<E> for TestError {
 
 /// A wrapper for using [Result] in tests, so it display nicely
 pub type ResultTest<T> = Result<T, TestError>;
+
+#[derive(thiserror::Error, Debug)]
+pub enum AuthError {
+    #[error("Table `{named}` is private")]
+    TablePrivate { named: String },
+    #[error("Index `{named}` is private")]
+    IndexPrivate { named: String },
+    #[error("Sequence `{named}` is private")]
+    SequencePrivate { named: String },
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum RelationError {
+    #[error("Field `{1}` not found. Must be one of {0}")]
+    FieldNotFound(Header, FieldName),
+    #[error("Field `{0}` fail to infer the type: {1}")]
+    TypeInference(FieldName, TypeError),
+    #[error("Field declaration only support `table.field` or `field`. It gets instead `{0}`")]
+    FieldPathInvalid(String),
+}

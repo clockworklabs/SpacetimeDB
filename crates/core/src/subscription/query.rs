@@ -4,7 +4,7 @@ use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_sats::relation::{Column, FieldName, MemTable};
+use spacetimedb_lib::relation::{Column, FieldName, MemTable};
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
 
@@ -101,11 +101,11 @@ mod tests {
     use crate::vm::tests::create_table_from_program;
     use crate::vm::DbProgram;
     use itertools::Itertools;
+    use spacetimedb_lib::auth::{StAccess, StTableType};
     use spacetimedb_lib::data_key::ToDataKey;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::relation::FieldName;
     use spacetimedb_lib::Identity;
-    use spacetimedb_sats::auth::*;
-    use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, BuiltinType, ProductType};
     use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
@@ -188,7 +188,7 @@ mod tests {
 
         let row = product!(1u64, "health");
         let table = mem_table(head.clone(), [row.clone()]);
-        let table_id = create_table_from_program(p, "_inventory", head.clone(), &[row.clone()])?;
+        let table_id = create_table_from_program(p, "_inventory", head, &[row.clone()])?;
 
         let schema = db.schema_for_table(&tx, table_id).unwrap();
         assert_eq!(schema.table_type, StTableType::User);
@@ -205,7 +205,7 @@ mod tests {
         let data = DatabaseTableUpdate {
             table_id,
             table_name: "_inventory".to_string(),
-            ops: vec![op.clone()],
+            ops: vec![op],
         };
         // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
         let fields = &[

@@ -1,5 +1,4 @@
 use crate::ColumnIndexAttribute;
-use spacetimedb_sats::relation::FieldOnly;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
 
 #[derive(Clone)]
@@ -7,16 +6,6 @@ pub struct ColumnDef {
     pub column: ProductTypeElement,
     pub attr: ColumnIndexAttribute,
     pub pos: usize,
-}
-
-impl ColumnDef {
-    pub fn name(&self) -> FieldOnly {
-        if let Some(name) = &self.column.name {
-            FieldOnly::Name(name)
-        } else {
-            FieldOnly::Pos(self.pos)
-        }
-    }
 }
 
 /// Describe the columns + meta attributes

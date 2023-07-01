@@ -2,37 +2,28 @@ use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use crate::algebraic_type::TypeError;
-use crate::algebraic_value::AlgebraicValue;
-use crate::auth::*;
-use crate::product_value::ProductValue;
-use crate::satn::Satn;
-use crate::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, TypeInSpace, Typespace};
+use spacetimedb_sats::algebraic_value::AlgebraicValue;
+use spacetimedb_sats::product_value::ProductValue;
+use spacetimedb_sats::satn::Satn;
+use crate::auth::{StAccess, StTableType};
+use crate::error::RelationError;
+use crate::table::ColumnDef;
+use spacetimedb_sats::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, TypeInSpace, Typespace};
+
+impl ColumnDef {
+    pub fn name(&self) -> FieldOnly {
+        if let Some(name) = &self.column.name {
+            FieldOnly::Name(name)
+        } else {
+            FieldOnly::Pos(self.pos)
+        }
+    }
+}
 
 pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
     let mut s = DefaultHasher::new();
     t.hash(&mut s);
     s.finish()
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum AuthError {
-    #[error("Table `{named}` is private")]
-    TablePrivate { named: String },
-    #[error("Index `{named}` is private")]
-    IndexPrivate { named: String },
-    #[error("Sequence `{named}` is private")]
-    SequencePrivate { named: String },
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum RelationError {
-    #[error("Field `{1}` not found. Must be one of {0}")]
-    FieldNotFound(Header, FieldName),
-    #[error("Field `{0}` fail to infer the type: {1}")]
-    TypeInference(FieldName, TypeError),
-    #[error("Field declaration only support `table.field` or `field`. It gets instead `{0}`")]
-    FieldPathInvalid(String),
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]

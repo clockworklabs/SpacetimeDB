@@ -1,6 +1,7 @@
+use spacetimedb_lib::auth::{StAccess, StTableType};
+use spacetimedb_lib::error::RelationError;
 use spacetimedb_lib::table::{ColumnDef, ProductTypeMeta};
 use spacetimedb_lib::ColumnIndexAttribute;
-use spacetimedb_sats::auth::*;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
 use sqlparser::ast::{
     Assignment, BinaryOperator, ColumnDef as SqlColumnDef, ColumnOption, ColumnOptionDef, DataType, Expr as SqlExpr,
@@ -14,7 +15,7 @@ use std::collections::HashMap;
 use crate::db::datastore::traits::{MutTxDatastore, TableId, TableSchema};
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
-use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName, RelationError};
+use spacetimedb_lib::relation::{extract_table_field, FieldExpr, FieldName};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{ColumnOp, DbType, Expr};
 use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};

@@ -5,7 +5,7 @@ use spacetimedb::error::DBError;
 use spacetimedb::sql::compiler::compile_sql;
 use spacetimedb::sql::execute::execute_sql;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_sats::relation::MemTable;
+use spacetimedb_lib::relation::MemTable;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, BuiltinType, BuiltinValue};
 use sqllogictest::{AsyncDB, ColumnType, DBOutput};

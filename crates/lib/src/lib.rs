@@ -1,3 +1,5 @@
+use auth::StAccess;
+use auth::StTableType;
 pub use spacetimedb_sats::buffer;
 pub mod address;
 pub mod data_key;
@@ -17,8 +19,10 @@ pub mod type_def {
 pub mod type_value {
     pub use spacetimedb_sats::{AlgebraicValue, ProductValue};
 }
+pub mod auth;
 #[cfg(feature = "serde")]
 pub mod recovery;
+pub mod relation;
 pub mod table;
 pub mod version;
 
@@ -33,7 +37,6 @@ pub use type_def::*;
 pub use type_value::{AlgebraicValue, ProductValue};
 
 pub use spacetimedb_sats as sats;
-use spacetimedb_sats::auth::*;
 
 pub const MODULE_ABI_VERSION: VersionTuple = VersionTuple::new(2, 0);
 

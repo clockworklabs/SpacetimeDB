@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
+use spacetimedb_lib::relation::{FieldExpr, MemTable, RelIter, Relation, Table};
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::builtin_type::BuiltinType;
-use spacetimedb_sats::relation::{FieldExpr, MemTable, RelIter, Relation, Table};
 use spacetimedb_sats::{product, ProductType, ProductValue};
 
 use crate::dsl::{bin_op, call_fn, if_, mem_table, scalar, var};
@@ -537,9 +537,10 @@ mod tests {
     use super::*;
     use crate::dsl::{prefix_op, query, value};
     use crate::program::Program;
+    use spacetimedb_lib::auth::StAccess;
+    use spacetimedb_lib::error::RelationError;
     use spacetimedb_lib::identity::AuthCtx;
-    use spacetimedb_sats::auth::StAccess;
-    use spacetimedb_sats::relation::{FieldName, MemTable, RelationError};
+    use spacetimedb_lib::relation::{FieldName, MemTable};
 
     fn fib(n: u64) -> u64 {
         if n < 2 {
