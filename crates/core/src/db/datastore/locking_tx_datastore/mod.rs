@@ -993,8 +993,7 @@ impl Inner {
             .committed_state
             .tables
             .get(table_id)
-            .map(|table| table.rows.get(row_id))
-            .flatten()
+            .and_then(|table| table.rows.get(row_id))
         {
             Some(pv) => RowOp::Insert(pv.clone()),
             None => RowOp::Absent,
