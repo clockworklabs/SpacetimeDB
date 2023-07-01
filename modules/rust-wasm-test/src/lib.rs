@@ -1,7 +1,6 @@
 #![allow(clippy::disallowed_names)]
 use spacetimedb::{
-    delete_by_col_eq, println, query, spacetimedb, AlgebraicValue, Deserialize, ReducerContext, SpacetimeType,
-    Timestamp,
+    delete_by_col_eq, query, spacetimedb, AlgebraicValue, Deserialize, ReducerContext, SpacetimeType, Timestamp,
 };
 use spacetimedb_lib::bsatn;
 
@@ -145,7 +144,7 @@ pub fn add_private(name: String) {
 #[spacetimedb(reducer)]
 pub fn query_private() {
     for person in _Private::iter() {
-        println!("Private, {}!", person.name);
+        log::info!("Private, {}!", person.name);
     }
-    println!("Private, World!");
+    log::info!("Private, World!");
 }
