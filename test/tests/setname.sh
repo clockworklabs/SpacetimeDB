@@ -11,7 +11,7 @@ source "./test/lib.include"
 
 reset_config
 run_test spacetime identity init-default
-create_project
+reset_project
 run_test spacetime publish -s -d --project-path "$PROJECT_PATH" --clear-database
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 

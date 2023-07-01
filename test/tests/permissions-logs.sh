@@ -10,7 +10,7 @@ set -euox pipefail
 source "./test/lib.include"
 
 run_test spacetime identity new --no-email
-create_project
+reset_project
 run_test spacetime publish -s -d --project-path "$PROJECT_PATH" --clear-database
 sleep 2
 DATABASE="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"

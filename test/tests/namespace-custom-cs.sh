@@ -12,7 +12,7 @@ source "./test/lib.include"
 TMP_DIR=$(mktemp -d)
 NAMESPACE=$(random_string)
 
-create_project
+reset_project
 run_test spacetime generate --out-dir "${TMP_DIR}" --lang cs --namespace "${NAMESPACE}" --project-path "${PROJECT_PATH}"
 
 LINES="$(grep -r -o "namespace ${NAMESPACE}" "${TMP_DIR}" | wc -l | tr -d ' ')"

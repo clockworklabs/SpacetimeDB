@@ -9,7 +9,7 @@ set -euox pipefail
 
 source "./test/lib.include"
 
-create_project
+reset_project
 
 RAND=$(random_string)
 run_test spacetime dns register-tld "$RAND"

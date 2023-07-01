@@ -9,7 +9,7 @@ set -euox pipefail
 
 source "./test/lib.include"
 
-create_project
+reset_project
 run_test spacetime identity new --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
 run_test spacetime identity set-default "$IDENT"

@@ -11,7 +11,7 @@ source "./test/lib.include"
 
 do_test() {
   echo "RUNNING TEST FOR VALUE: $1"
-  create_project
+  reset_project
 
   cat > "${PROJECT_PATH}/src/lib.rs" << EOF
 use spacetimedb::{println, spacetimedb};

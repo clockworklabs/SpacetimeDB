@@ -9,7 +9,7 @@ set -euox pipefail
 
 source "./test/lib.include"
 
-create_project
+reset_project
 
 cd "$PROJECT_PATH"
 run_test cargo clippy -- -D warnings

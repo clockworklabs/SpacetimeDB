@@ -43,8 +43,16 @@ export PATH="$PWD/target/release-fast:$PATH"
 RESET_PROJECT_PATH=$(mktemp -d)
 export RESET_PROJECT_PATH
 spacetime init "$RESET_PROJECT_PATH" --lang rust
-# TODO: Remove this after 0.5.0 is published!
-fsed "s/0.5.0/0.4.1/g" "$RESET_PROJECT_PATH/Cargo.toml"
+# We have to force using the local spacetimedb_bindings otherwise we will download them from crates.io
+if [[ "$OSTYPE" == "darwin"* ]]; then
+	sed -i '' "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${PROJECT_PATH}/Cargo.toml"
+elif [[ "$OSTYPE" == "msys"* ]]; then
+	# Running in git bash; do horrible path conversion; yes we do need all of those
+	WINPATH="$(cygpath -w "${SPACETIME_DIR}/crates/bindings" | sed 's/\\/\\\\\\\\/g')"
+	sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${WINPATH}\" }@g" "${PROJECT_PATH}/Cargo.toml"
+else
+	sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${PROJECT_PATH}/Cargo.toml"
+fi
 
 spacetime build "$RESET_PROJECT_PATH" -s -d
 
