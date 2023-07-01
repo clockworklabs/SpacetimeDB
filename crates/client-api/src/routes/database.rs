@@ -498,9 +498,9 @@ pub async fn sql(
     auth: SpacetimeAuthHeader,
     body: String,
 ) -> axum::response::Result<impl IntoResponse> {
-    // You should not be able to query a database that you do not own
-    // so, unless you are the owner, this will fail, hence not using get_or_create
-    let auth = auth.get().ok_or((StatusCode::BAD_REQUEST, "Invalid credentials."))?;
+    // Anyone is authorized to execute SQL queries. The SQL engine will determine
+    // which queries this identity is allowed to execute against the database.
+    let auth = auth.get_or_create(&*worker_ctx).await?;
 
     let address = name_or_address.resolve(&*worker_ctx).await?;
     let database = worker_ctx
