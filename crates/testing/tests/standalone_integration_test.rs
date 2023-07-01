@@ -10,6 +10,22 @@ fn test_calling_a_reducer() {
         let json = r#"{"call": {"fn": "say_hello", "args": []}}"#.to_string();
         module.send(json).await.unwrap();
 
+        let lines = module.read_log(Some(10)).await;
+        let lines: Vec<&str> = lines.trim().split('\n').collect();
+
+        assert_eq!(lines.len(), 2);
+
+        let json: Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(json["message"], Value::String("Hello, Tyrion!".to_string()));
+        let json: Value = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(json["message"], Value::String("Hello, World!".to_string()));
+    });
+}
+
+#[test]
+fn test_calling_a_reducer_with_private_table() {
+    compile("rust-wasm-test");
+    with_module_async("rust-wasm-test", |module| async move {
         let json = r#"{"call": {"fn": "add_private", "args": ["Tyrion"]}}"#.to_string();
         module.send(json).await.unwrap();
         let json = r#"{"call": {"fn": "query_private", "args": []}}"#.to_string();
@@ -18,12 +34,7 @@ fn test_calling_a_reducer() {
         let lines = module.read_log(Some(10)).await;
         let lines: Vec<&str> = lines.trim().split('\n').collect();
 
-        assert_eq!(lines.len(), 4);
-
-        let json: Value = serde_json::from_str(lines[0]).unwrap();
-        assert_eq!(json["message"], Value::String("Hello, Tyrion!".to_string()));
-        let json: Value = serde_json::from_str(lines[1]).unwrap();
-        assert_eq!(json["message"], Value::String("Hello, World!".to_string()));
+        assert_eq!(lines.len(), 2);
 
         let json: Value = serde_json::from_str(lines[2]).unwrap();
         assert_eq!(json["message"], Value::String("Private, Tyrion!".to_string()));
