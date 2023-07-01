@@ -2,12 +2,12 @@ use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::satn::Satn;
 use crate::auth::{StAccess, StTableType};
 use crate::error::RelationError;
 use crate::table::ColumnDef;
+use spacetimedb_sats::algebraic_value::AlgebraicValue;
+use spacetimedb_sats::product_value::ProductValue;
+use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, TypeInSpace, Typespace};
 
 impl ColumnDef {
