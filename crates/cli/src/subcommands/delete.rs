@@ -23,6 +23,7 @@ pub fn cli() -> clap::Command {
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
     let identity_or_name = args.get_one::<String>("identity");
+
     let address = database_address(&config, database).await?;
 
     let builder = reqwest::Client::new().post(format!("{}/database/delete/{}", config.get_host_url(), address));
