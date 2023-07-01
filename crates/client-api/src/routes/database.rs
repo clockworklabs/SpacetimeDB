@@ -343,7 +343,10 @@ pub async fn catalog(
         .iter()
         .map(|(name, entity)| (name, entity_description_json(entity, expand)))
         .collect();
-    let response_json = json!(response_catalog);
+    let response_json = json!({
+        "entities": response_catalog,
+        "typespace": catalog.typespace().types,
+    });
 
     Ok((
         StatusCode::OK,
@@ -351,6 +354,34 @@ pub async fn catalog(
         TypedHeader(SpacetimeIdentityToken(call_info.auth.creds)),
         axum::Json(response_json),
     ))
+}
+
+#[derive(Deserialize)]
+pub struct InfoParams {
+    name_or_address: NameOrAddress,
+}
+pub async fn info(
+    State(worker_ctx): State<Arc<dyn WorkerCtx>>,
+    Path(InfoParams { name_or_address }): Path<InfoParams>,
+) -> axum::response::Result<impl IntoResponse> {
+    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let database = worker_ctx
+        .get_database_by_address(&address)
+        .await
+        .map_err(log_and_500)?
+        .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
+
+    let host_type = match database.host_type {
+        HostType::Wasmer => "wasmer",
+    };
+    let response_json = json!({
+        "address": database.address.to_hex(),
+        "identity": database.identity,
+        "host_type": host_type,
+        "num_replicas": database.num_replicas,
+        "program_bytes_address": database.program_bytes_address,
+    });
+    Ok((StatusCode::OK, axum::Json(response_json)))
 }
 
 #[derive(Deserialize)]
@@ -962,6 +993,7 @@ where
         .route("/call/:name_or_address/:reducer", post(call))
         .route("/schema/:name_or_address/:entity_type/:entity", get(describe))
         .route("/schema/:name_or_address", get(catalog))
+        .route("/info/:name_or_address", get(info))
         .route("/logs/:name_or_address", get(logs))
         .route("/sql/:name_or_address", post(sql))
 }

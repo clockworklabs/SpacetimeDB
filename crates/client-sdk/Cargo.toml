@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb-client-sdk"
-version = "0.1.0"
+version = "0.5.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -18,3 +18,4 @@ prost = "0.10"
 log = "0.4"
 futures-channel = "0.3"
 anymap = "0.12"
+im = "15.1"

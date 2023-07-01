@@ -655,6 +655,8 @@ fn autogen_typescript_product_table_common(
 ) -> String {
     let mut output = CodeIndenter::new(String::new());
 
+    let is_table = column_attrs.is_some();
+
     let struct_name_pascal_case = name.replace("r#", "").to_case(Case::Pascal);
 
     writeln!(
@@ -666,7 +668,7 @@ fn autogen_typescript_product_table_common(
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(ctx, &product_type.elements, &mut imports, None);
@@ -704,6 +706,35 @@ fn autogen_typescript_product_table_common(
         }
 
         writeln!(output).unwrap();
+
+        if is_table {
+            // if this table has a primary key add it to the codegen
+            if let Some(primary_key) = column_attrs
+                .unwrap()
+                .iter()
+                .enumerate()
+                .find_map(|(idx, attr)| attr.is_primary().then_some(idx))
+                .map(|idx| {
+                    let field_name = product_type.elements[idx]
+                        .name
+                        .as_ref()
+                        .expect("autogen'd tuples should have field names")
+                        .replace("r#", "");
+                    format!("\"{}\"", field_name)
+                })
+            {
+                writeln!(
+                    output,
+                    "public static primaryKey: string | undefined = {};",
+                    primary_key
+                )
+                .unwrap();
+                writeln!(output).unwrap();
+            }
+        } else {
+            writeln!(output, "public static primaryKey: string | undefined = undefined;",).unwrap();
+            writeln!(output).unwrap();
+        }
 
         writeln!(output, "constructor({}) {{", constructor_signature.join(", ")).unwrap();
         writeln!(output, "super();").unwrap();
@@ -784,7 +815,7 @@ fn autogen_typescript_product_table_common(
 
             writeln!(
                 output,
-                "public static onInsert(callback: (value: {struct_name_pascal_case}) => void)"
+                "public static onInsert(callback: (value: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
@@ -799,7 +830,7 @@ fn autogen_typescript_product_table_common(
             writeln!(output, "}}").unwrap();
             writeln!(output).unwrap();
 
-            writeln!(output, "public static onUpdate(callback: (oldValue: {struct_name_pascal_case}, newValue: {struct_name_pascal_case}) => void)").unwrap();
+            writeln!(output, "public static onUpdate(callback: (oldValue: {struct_name_pascal_case}, newValue: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)").unwrap();
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
@@ -814,7 +845,7 @@ fn autogen_typescript_product_table_common(
 
             writeln!(
                 output,
-                "public static onDelete(callback: (value: {struct_name_pascal_case}) => void)"
+                "public static onDelete(callback: (value: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
@@ -831,7 +862,7 @@ fn autogen_typescript_product_table_common(
 
             writeln!(
                 output,
-                "public static removeOnInsert(callback: (value: {struct_name_pascal_case}) => void)"
+                "public static removeOnInsert(callback: (value: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
@@ -846,7 +877,7 @@ fn autogen_typescript_product_table_common(
             writeln!(output, "}}").unwrap();
             writeln!(output).unwrap();
 
-            writeln!(output, "public static removeOnUpdate(callback: (oldValue: {struct_name_pascal_case}, newValue: {struct_name_pascal_case}) => void)").unwrap();
+            writeln!(output, "public static removeOnUpdate(callback: (oldValue: {struct_name_pascal_case}, newValue: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)").unwrap();
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
@@ -861,7 +892,7 @@ fn autogen_typescript_product_table_common(
 
             writeln!(
                 output,
-                "public static removeOnDelete(callback: (value: {struct_name_pascal_case}) => void)"
+                "public static removeOnDelete(callback: (value: {struct_name_pascal_case}, reducerEvent: ReducerEvent | undefined) => void)"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
@@ -981,8 +1012,9 @@ fn autogen_typescript_access_funcs_for_struct(
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
         let field_type = &field.algebraic_type;
         let typescript_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
+        let typescript_field_name_camel = field_name.replace("r#", "").to_case(Case::Camel);
 
-        let (field_type, typescript_field_type) = match field_type {
+        let typescript_field_type = match field_type {
             AlgebraicType::Product(_) | AlgebraicType::Ref(_) => {
                 // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
                 continue;
@@ -992,11 +1024,11 @@ fn autogen_typescript_access_funcs_for_struct(
                 continue;
             }
             AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-                MaybePrimitive::Primitive(ty) => (typescript_as_type(b).to_string(), ty),
+                MaybePrimitive::Primitive(ty) => ty,
                 MaybePrimitive::Array(ArrayType { elem_ty }) => {
                     if let Some(BuiltinType::U8) = elem_ty.as_builtin() {
                         // Do allow filtering for byte arrays
-                        ("Bytes".into(), "Uint8Array")
+                        "Uint8Array"
                     } else {
                         // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
                         continue;
@@ -1011,7 +1043,7 @@ fn autogen_typescript_access_funcs_for_struct(
 
         let filter_return_type = fmt_fn(|f| {
             if is_unique {
-                f.write_str(struct_name_pascal_case)
+                write!(f, "{struct_name_pascal_case} | null")
             } else {
                 write!(f, "{struct_name_pascal_case}[]")
             }
@@ -1019,7 +1051,7 @@ fn autogen_typescript_access_funcs_for_struct(
 
         writeln!(
             output,
-            "public static filterBy{typescript_field_name_pascal}(value: {typescript_field_type}): {filter_return_type} | null"
+            "public static filterBy{typescript_field_name_pascal}(value: {typescript_field_type}): {filter_return_type}"
         )
         .unwrap();
 
@@ -1031,28 +1063,22 @@ fn autogen_typescript_access_funcs_for_struct(
             }
             writeln!(
                 output,
-                "for(let entry of __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").getEntries())"
+                "for(let instance of __SPACETIMEDB__.clientDB.getTable(\"{table_name}\").getInstances())"
             )
             .unwrap();
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
-                writeln!(output, "var productValue = entry.asProductValue();").unwrap();
-                writeln!(
-                    output,
-                    "let compareValue = productValue.elements[{col_i}].as{field_type}() as {typescript_field_type};"
-                )
-                .unwrap();
                 if typescript_field_type == "Uint8Array" {
                     writeln!(
                         output,
                         "let byteArrayCompare = function (a1: Uint8Array, a2: Uint8Array)
 {{
-    if (a1.length != a2.length)
+    if (a1.length !== a2.length)
         return false;
 
     for (let i=0; i<a1.length; i++)
-        if (a1[i]!=a2[i])
+        if (a1[i]!==a2[i])
             return false;
 
     return true;
@@ -1060,24 +1086,28 @@ fn autogen_typescript_access_funcs_for_struct(
                     )
                     .unwrap();
                     writeln!(output).unwrap();
-                    writeln!(output, "if (byteArrayCompare(compareValue, value)) {{").unwrap();
+                    writeln!(
+                        output,
+                        "if (byteArrayCompare(instance.{typescript_field_name_camel}, value)) {{"
+                    )
+                    .unwrap();
                     {
                         indent_scope!(output);
                         if is_unique {
-                            writeln!(output, "return {struct_name_pascal_case}.fromValue(entry);").unwrap();
+                            writeln!(output, "return instance;").unwrap();
                         } else {
-                            writeln!(output, "result.push({struct_name_pascal_case}.fromValue(entry));").unwrap();
+                            writeln!(output, "result.push(instance);").unwrap();
                         }
                     }
                     writeln!(output, "}}").unwrap();
                 } else {
-                    writeln!(output, "if (compareValue == value) {{").unwrap();
+                    writeln!(output, "if (instance.{typescript_field_name_camel} === value) {{").unwrap();
                     {
                         indent_scope!(output);
                         if is_unique {
-                            writeln!(output, "return {struct_name_pascal_case}.fromValue(entry);").unwrap();
+                            writeln!(output, "return instance;").unwrap();
                         } else {
-                            writeln!(output, "result.push({struct_name_pascal_case}.fromValue(entry));").unwrap();
+                            writeln!(output, "result.push(instance);").unwrap();
                         }
                     }
                     writeln!(output, "}}").unwrap();
@@ -1126,7 +1156,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(
@@ -1150,7 +1180,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
             .name
             .as_deref()
             .unwrap_or_else(|| panic!("reducer args should have names: {func_name}"));
-        let arg_name = name.to_case(Case::Camel);
+        let arg_name = format!("_{}", name.to_case(Case::Camel));
         let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, "");
 
         func_arguments.push(format!("{arg_name}: {arg_type_str}"));
@@ -1181,14 +1211,18 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         writeln!(output, "}}").unwrap();
         writeln!(output).unwrap();
 
-        let args: &str = if reducer.args.is_empty() { "" } else { "rawArgs: any[]" };
+        let args: &str = if reducer.args.is_empty() {
+            "_adapter: ReducerArgsAdapter"
+        } else {
+            "adapter: ReducerArgsAdapter"
+        };
         writeln!(output, "public static deserializeArgs({args}): any[] {{").unwrap();
 
         {
             indent_scope!(output);
 
             let mut arg_names = Vec::new();
-            for (i, arg) in reducer.args.iter().enumerate() {
+            for arg in reducer.args.iter() {
                 let ty = &arg.algebraic_type;
                 let name = arg
                     .name
@@ -1199,7 +1233,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
                 writeln!(output, "let {arg_name}Type = {};", convert_algebraic_type(ctx, ty, "")).unwrap();
                 writeln!(
                     output,
-                    "let {arg_name}Value = AlgebraicValue.deserialize({arg_name}Type, rawArgs[{i}])"
+                    "let {arg_name}Value = AlgebraicValue.deserialize({arg_name}Type, adapter.next())"
                 )
                 .unwrap();
                 writeln!(
@@ -1221,7 +1255,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
         // OnCreatePlayerEvent(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray()), args[0].ToObject<string>());
         writeln!(
             output,
-            "public static on(callback: (status: string, identity: string, reducerArgs: any[]) => void)"
+            "public static on(callback: (status: string, identity: Uint8Array, reducerArgs: any[]) => void)"
         )
         .unwrap();
         writeln!(output, "{{").unwrap();

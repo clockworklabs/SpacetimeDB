@@ -252,6 +252,25 @@ fn autogen_python_product_table_common(
         writeln!(output).unwrap();
 
         if is_table {
+            // if this table has a primary key add it to the codegen
+            if let Some(primary_key) = column_attrs
+                .unwrap()
+                .iter()
+                .enumerate()
+                .find_map(|(idx, attr)| attr.is_primary().then_some(idx))
+                .map(|idx| {
+                    let field_name = product_type.elements[idx]
+                        .name
+                        .as_ref()
+                        .expect("autogen'd tuples should have field names")
+                        .replace("r#", "");
+                    format!("\"{}\"", field_name)
+                })
+            {
+                writeln!(output, "primary_key = {}", primary_key).unwrap();
+                writeln!(output).unwrap();
+            }
+
             writeln!(output, "@classmethod").unwrap();
             writeln!(
                 output,

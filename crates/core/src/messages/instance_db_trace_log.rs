@@ -23,7 +23,7 @@ pub struct DeleteValue {
 }
 */
 #[derive(Clone, Serialize, Deserialize)]
-pub struct DeleteEq {
+pub struct DeleteByColEq {
     pub table_id: u32,
     pub col_id: u32,
     pub buffer: Vec<u8>,
@@ -71,7 +71,7 @@ pub struct InstanceEvent {
 #[derive(Clone, Serialize, Deserialize)]
 pub enum InstanceEventType {
     Insert(Insert),
-    DeleteEq(DeleteEq),
+    DeleteByColEq(DeleteByColEq),
     /*
     DeletePk(DeletePk),
     DeleteValue(DeleteValue),

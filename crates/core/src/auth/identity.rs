@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, time::SystemTime};
 
 pub use jsonwebtoken::errors::Error as JwtError;
+pub use jsonwebtoken::errors::ErrorKind as JwtErrorKind;
 pub use jsonwebtoken::{DecodingKey, EncodingKey};
 
 #[serde_with::serde_as]

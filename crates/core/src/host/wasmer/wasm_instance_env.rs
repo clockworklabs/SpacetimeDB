@@ -220,14 +220,17 @@ impl WasmInstanceEnv {
     }
 
     /// Deletes all rows in the table identified by `table_id`
-    /// where the column identified by `col_id` equates to the byte string,
+    /// where the column identified by `col_id` matches the byte string,
     /// in WASM memory, pointed to at by `value`.
+    ///
+    /// Matching is defined by decoding of `value` to an `AlgebraicValue`
+    /// according to the column's schema and then `Ord for AlgebraicValue`.
     ///
     /// The number of rows deleted is written to the WASM pointer `out`.
     ///
     /// Returns an error if no columns were deleted or if the column wasn't found.
     #[tracing::instrument(skip_all)]
-    pub fn delete_eq(
+    pub fn delete_by_col_eq(
         caller: FunctionEnvMut<'_, Self>,
         table_id: u32,
         col_id: u32,
@@ -235,9 +238,9 @@ impl WasmInstanceEnv {
         value_len: u32,
         out: WasmPtr<u32>,
     ) -> RtResult<u16> {
-        Self::cvt_ret(caller, "delete_eq", out, |caller, mem| {
+        Self::cvt_ret(caller, "delete_by_col_eq", out, |caller, mem| {
             let value = mem.read_bytes(&caller, value, value_len)?;
-            Ok(caller.data().instance_env.delete_eq(table_id, col_id, &value)?)
+            Ok(caller.data().instance_env.delete_by_col_eq(table_id, col_id, &value)?)
         })
     }
 
@@ -385,11 +388,14 @@ impl WasmInstanceEnv {
     /// where the row has a column, identified by `col_id`,
     /// with data matching the byte string, in WASM memory, pointed to at by `val`.
     ///
+    /// Matching is defined by decoding of `value` to an `AlgebraicValue`
+    /// according to the column's schema and then `Ord for AlgebraicValue`.
+    ///
     /// The rows found are bsatn encoded and then concatenated.
     /// The resulting byte string from the concatenation is written
     /// to a fresh buffer with the buffer's identifier written to the WASM pointer `out`.
     #[tracing::instrument(skip_all)]
-    pub fn seek_eq(
+    pub fn iter_by_col_eq(
         caller: FunctionEnvMut<'_, Self>,
         table_id: u32,
         col_id: u32,
@@ -397,12 +403,12 @@ impl WasmInstanceEnv {
         val_len: u32,
         out: WasmPtr<BufferIdx>,
     ) -> RtResult<u16> {
-        Self::cvt_ret(caller, "seek_eq", out, |mut caller, mem| {
+        Self::cvt_ret(caller, "iter_by_col_eq", out, |mut caller, mem| {
             // Read the test value from WASM memory.
             let value = mem.read_bytes(&caller, val, val_len)?;
 
             // Find the relevant rows.
-            let data = caller.data().instance_env.seek_eq(table_id, col_id, &value)?;
+            let data = caller.data().instance_env.iter_by_col_eq(table_id, col_id, &value)?;
 
             // Insert the encoded + concatenated rows into a new buffer and return its id.
             Ok(caller.data_mut().buffers.insert(data.into()))

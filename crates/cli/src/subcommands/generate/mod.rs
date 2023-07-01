@@ -89,7 +89,18 @@ pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
 
     let wasm_file = match wasm_file {
         Some(x) => x,
-        None => crate::tasks::build(project_path, skip_clippy, build_debug)?,
+        None => match crate::tasks::build(project_path, skip_clippy, build_debug) {
+            Ok(wasm_file) => wasm_file,
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "{:?}
+
+Failed to compile module {:?}. See cargo errors above for more details.",
+                    e,
+                    project_path,
+                ))
+            }
+        },
     };
 
     if !out_dir.exists() {
@@ -147,7 +158,7 @@ pub fn generate<'a>(wasm_file: &'a Path, lang: Language, namespace: &'a str) -> 
     Ok(files)
 }
 
-fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &Vec<GenItem>) -> Vec<(String, String)> {
+fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenItem]) -> Vec<(String, String)> {
     match lang {
         Language::Csharp => csharp::autogen_csharp_globals(items, namespace),
         Language::TypeScript => typescript::autogen_typescript_globals(ctx, items),

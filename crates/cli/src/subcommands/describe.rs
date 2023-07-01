@@ -1,9 +1,6 @@
 use crate::config::Config;
-use crate::util::{get_auth_header, spacetime_dns};
-use clap::Arg;
-use clap::ArgAction::SetTrue;
-use clap::ArgMatches;
-use spacetimedb_lib::name::{is_address, DnsLookupResponse};
+use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
+use clap::{Arg, ArgAction::SetTrue, ArgMatches};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("describe")
@@ -53,51 +50,29 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let as_identity = args.get_one::<String>("as_identity");
     let anon_identity = args.get_flag("anon_identity");
 
-    let auth_header = get_auth_header(&mut config, anon_identity, as_identity.map(|x| x.as_str()))
-        .await
-        .map(|x| x.0);
+    let address = database_address(&config, database).await?;
 
-    let address = if is_address(database.as_str()) {
-        database.clone()
-    } else {
-        match spacetime_dns(&config, database).await? {
-            DnsLookupResponse::Success { domain: _, address } => address,
-            DnsLookupResponse::Failure { domain } => {
-                return Err(anyhow::anyhow!("The dns resolution of {} failed.", domain));
-            }
-        }
-    };
+    let builder = reqwest::Client::new().get(match entity_name {
+        None => format!("{}/database/schema/{}", config.get_host_url(), address),
+        Some(entity_name) => format!(
+            "{}/database/schema/{}/{}/{}",
+            config.get_host_url(),
+            address,
+            format_args!("{}s", entity_type.unwrap()),
+            entity_name
+        ),
+    });
+    let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity).await;
+    let builder = add_auth_header_opt(builder, &auth_header);
 
-    let res = match entity_name {
-        None => {
-            let client = reqwest::Client::new();
-            let mut builder = client.get(format!("{}/database/schema/{}", config.get_host_url(), address));
-            if let Some(auth_header) = auth_header {
-                builder = builder.header("Authorization", auth_header);
-            }
-            builder.query(&[("expand", expand)]).send().await?
-        }
-        Some(entity_name) => {
-            let entity_type = format!("{}s", entity_type.unwrap());
+    let descr = builder
+        .query(&[("expand", expand)])
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    println!("{}", descr);
 
-            let client = reqwest::Client::new();
-            let mut builder = client.get(format!(
-                "{}/database/schema/{}/{}/{}",
-                config.get_host_url(),
-                address,
-                entity_type,
-                entity_name
-            ));
-            if let Some(auth_header) = auth_header {
-                builder = builder.header("Authorization", auth_header);
-            }
-            builder.query(&[("expand", expand)]).send().await?
-        }
-    };
-
-    let res = res.error_for_status()?;
-    let body = res.bytes().await?;
-    let str = String::from_utf8(body.to_vec())?;
-    println!("{}", str);
     Ok(())
 }

@@ -26,7 +26,7 @@ pub struct Credentials {
 
 #[derive(Copy, Clone)]
 pub struct ConnectCallbackId {
-    id: CallbackId<(Credentials,)>,
+    id: CallbackId<Credentials>,
 }
 
 /// Register a callback to be invoked upon authentication with the database.

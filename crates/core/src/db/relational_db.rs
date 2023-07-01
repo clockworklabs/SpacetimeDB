@@ -1,24 +1,22 @@
 use super::commit_log::CommitLog;
-use super::datastore::locking_tx_datastore::{Data, DataRef, MutTxId, RangeScanIter, RowId, ScanIter, SeekIter};
+use super::datastore::locking_tx_datastore::{Data, DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
 use super::datastore::traits::{
     ColId, DataRow, IndexDef, IndexId, MutTx, MutTxDatastore, SequenceDef, SequenceId, TableDef, TableId, TableSchema,
+    TxData,
 };
 use super::message_log::MessageLog;
-use super::messages::transaction::Transaction;
 use super::relational_operators::Relation;
-use crate::db::db_metrics::{
-    RDB_DELETE_IN_TIME, RDB_DELETE_PK_TIME, RDB_DROP_TABLE_TIME, RDB_INSERT_TIME, RDB_SCAN_TIME,
-};
+use crate::db::db_metrics::{RDB_DELETE_BY_REL_TIME, RDB_DROP_TABLE_TIME, RDB_INSERT_TIME, RDB_ITER_TIME};
 use crate::db::messages::commit::Commit;
-use crate::db::messages::write::Operation;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::hash::Hash;
 use crate::util::prometheus_handle::HistogramVecHandle;
 use fs2::FileExt;
+use prometheus::HistogramVec;
+use spacetimedb_lib::ColumnIndexAttribute;
 use spacetimedb_lib::{data_key::ToDataKey, PrimaryKey};
-use spacetimedb_lib::{ColumnIndexAttribute, DataKey};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use std::fs::File;
 use std::ops::RangeBounds;
@@ -26,6 +24,11 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use super::datastore::locking_tx_datastore::Locking;
+
+/// Starts histogram prometheus measurements for `table_id`.
+fn measure(hist: &'static HistogramVec, table_id: u32) {
+    HistogramVecHandle::new(hist, vec![format!("{}", table_id)]).start();
+}
 
 pub const ST_TABLES_NAME: &str = "st_table";
 pub const ST_COLUMNS_NAME: &str = "st_columns";
@@ -96,46 +99,16 @@ impl RelationalDB {
                     // is just to reduce memory usage while inserting. We don't
                     // really care about inserting these transactionally as long
                     // as all of the writes get inserted.
-                    let mut tx = datastore.begin_mut_tx();
-                    for write in &transaction.writes {
-                        let table_id = TableId(write.set_id);
-                        match write.operation {
-                            Operation::Delete => {
-                                datastore
-                                    .delete_row_mut_tx(&mut tx, table_id, RowId(write.data_key))
-                                    .unwrap();
-                            }
-                            Operation::Insert => {
-                                let row_type = datastore.row_type_for_table_mut_tx(&tx, table_id).unwrap();
-                                match write.data_key {
-                                    DataKey::Data(data) => {
-                                        let product_value = ProductValue::decode(&row_type, &mut &data[..])
-                                            .unwrap_or_else(|_| {
-                                                panic!(
-                                                    "Couldn't decode product value to {:?} from message log",
-                                                    row_type
-                                                )
-                                            });
-                                        datastore.insert_row_mut_tx(&mut tx, table_id, product_value).unwrap();
-                                    }
-                                    DataKey::Hash(hash) => {
-                                        let data = odb.lock().unwrap().get(hash).unwrap();
-                                        let product_value = ProductValue::decode(&row_type, &mut &data[..])
-                                            .unwrap_or_else(|_| {
-                                                panic!(
-                                                    "Couldn't decode product value to {:?} from message log",
-                                                    row_type
-                                                )
-                                            });
-                                        datastore.insert_row_mut_tx(&mut tx, table_id, product_value).unwrap();
-                                    }
-                                };
-                            }
-                        }
-                    }
-                    datastore.commit_mut_tx(tx).unwrap();
+                    datastore.replay_transaction(&transaction, odb.clone())?;
                 }
             }
+
+            // The purpose of this is to rebuild the state of the datastore
+            // after having inserted all of rows from the message log.
+            // This is necessary because, for example, inserting a row into `st_table`
+            // is not equivalent to calling `create_table`.
+            // There may eventually be better way to do this, but this will have to do for now.
+            datastore.rebuild_state_after_replay()?;
 
             let commit_offset = if let Some(last_commit_offset) = last_commit_offset {
                 last_commit_offset + 1
@@ -239,13 +212,13 @@ impl RelationalDB {
         log::trace!("ROLLBACK TX");
         self.inner.rollback_mut_tx(tx)
     }
-    pub fn commit_tx(&self, tx: MutTxId) -> Result<(Option<Arc<Transaction>>, Option<usize>), DBError> {
+    pub fn commit_tx(&self, tx: MutTxId) -> Result<Option<(TxData, Option<usize>)>, DBError> {
         log::trace!("COMMIT TX");
-        if let Some(transaction) = self.inner.commit_mut_tx(tx)? {
-            let bytes_written = self.commit_log.append_tx(transaction.clone(), &self.inner)?;
-            return Ok((Some(transaction), bytes_written));
+        if let Some(tx_data) = self.inner.commit_mut_tx(tx)? {
+            let bytes_written = self.commit_log.append_tx(&tx_data, &self.inner)?;
+            return Ok(Some((tx_data, bytes_written)));
         }
-        Ok((None, None))
+        Ok(None)
     }
 
     /// Run a fallible function in a transaction.
@@ -286,9 +259,9 @@ impl RelationalDB {
         if res.is_err() {
             self.rollback_tx(tx);
         } else {
-            let (transaction, _bytes_written) = self.commit_tx(tx).map_err(E::from)?;
-            if transaction.is_none() {
-                panic!("TODO: retry?");
+            match self.commit_tx(tx).map_err(E::from)? {
+                Some(_) => (),
+                None => panic!("TODO: retry?"),
             }
         }
         res
@@ -301,9 +274,7 @@ impl RelationalDB {
     }
 
     pub fn drop_table(&self, tx: &mut MutTxId, table_id: u32) -> Result<(), DBError> {
-        let mut measure = HistogramVecHandle::new(&RDB_DROP_TABLE_TIME, vec![format!("{}", table_id)]);
-        measure.start();
-
+        measure(&RDB_DROP_TABLE_TIME, table_id);
         self.inner.drop_table_mut_tx(tx, TableId(table_id))
     }
 
@@ -385,45 +356,51 @@ impl RelationalDB {
         self.inner.drop_index_mut_tx(tx, index_id)
     }
 
-    // AKA: iter
+    /// Returns an iterator,
+    /// yielding every row in the table identified by `table_id`.
     #[tracing::instrument(skip(self, tx))]
-    pub fn scan<'a>(&'a self, tx: &'a MutTxId, table_id: u32) -> Result<ScanIter<'a>, DBError> {
-        let mut measure = HistogramVecHandle::new(&RDB_SCAN_TIME, vec![format!("{}", table_id)]);
-        measure.start();
-        self.inner.scan_mut_tx(tx, TableId(table_id))
+    pub fn iter<'a>(&'a self, tx: &'a MutTxId, table_id: u32) -> Result<Iter<'a>, DBError> {
+        measure(&RDB_ITER_TIME, table_id);
+        self.inner.iter_mut_tx(tx, TableId(table_id))
     }
 
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
-    /// where the column data identified by `col_id` equates to `value`.
+    /// where the column data identified by `col_id` matches `value`.
+    ///
+    /// Matching is defined by `Ord for AlgebraicValue`.
     #[tracing::instrument(skip(self, tx))]
-    pub fn seek<'a>(
+    pub fn iter_by_col_eq<'a>(
         &'a self,
         tx: &'a mut MutTxId,
         table_id: u32,
         col_id: u32,
         value: &'a AlgebraicValue,
-    ) -> Result<SeekIter<'a>, DBError> {
-        self.inner.seek_mut_tx(tx, TableId(table_id), ColId(col_id), value)
+    ) -> Result<IterByColEq<'a>, DBError> {
+        self.inner
+            .iter_by_col_eq_mut_tx(tx, TableId(table_id), ColId(col_id), value)
     }
 
-    pub fn range_scan<'a, R: RangeBounds<AlgebraicValue> + 'a>(
+    /// Returns an iterator,
+    /// yielding every row in the table identified by `table_id`,
+    /// where the column data identified by `col_id` matches what is within `range`.
+    ///
+    /// Matching is defined by `Ord for AlgebraicValue`.
+    pub fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue> + 'a>(
         &'a self,
         tx: &'a MutTxId,
         table_id: u32,
         col_id: u32,
         range: R,
-    ) -> Result<RangeScanIter<'a, R>, DBError> {
+    ) -> Result<IterByColRange<'a, R>, DBError> {
         self.inner
-            .range_scan_mut_tx(tx, TableId(table_id), ColId(col_id), range)
+            .iter_by_col_range_mut_tx(tx, TableId(table_id), ColId(col_id), range)
     }
 
     #[tracing::instrument(skip(self, tx))]
     pub fn insert(&self, tx: &mut MutTxId, table_id: u32, row: ProductValue) -> Result<ProductValue, DBError> {
-        let mut measure = HistogramVecHandle::new(&RDB_INSERT_TIME, vec![format!("{}", table_id)]);
-        measure.start();
-
-        self.inner.insert_row_mut_tx(tx, TableId(table_id), row)
+        measure(&RDB_INSERT_TIME, table_id);
+        self.inner.insert_mut_tx(tx, TableId(table_id), row)
     }
 
     #[tracing::instrument(skip_all)]
@@ -438,18 +415,23 @@ impl RelationalDB {
         self.insert(tx, table_id, row)
     }
 
+    /*
     #[tracing::instrument(skip_all)]
     pub fn delete_pk(&self, tx: &mut MutTxId, table_id: u32, row_id: DataKey) -> Result<bool, DBError> {
-        let mut measure = HistogramVecHandle::new(&RDB_DELETE_PK_TIME, vec![format!("{}", table_id)]);
-        measure.start();
+        measure(&RDB_DELETE_PK_TIME, table_id);
         self.inner.delete_row_mut_tx(tx, TableId(table_id), RowId(row_id))
     }
+    */
 
     #[tracing::instrument(skip_all)]
-    pub fn delete_in<R: Relation>(&self, tx: &mut MutTxId, table_id: u32, relation: R) -> Result<Option<u32>, DBError> {
-        let mut measure = HistogramVecHandle::new(&RDB_DELETE_IN_TIME, vec![format!("{}", table_id)]);
-        measure.start();
-        self.inner.delete_rows_in_mut_tx(tx, TableId(table_id), relation)
+    pub fn delete_by_rel<R: Relation>(
+        &self,
+        tx: &mut MutTxId,
+        table_id: u32,
+        relation: R,
+    ) -> Result<Option<u32>, DBError> {
+        measure(&RDB_DELETE_BY_REL_TIME, table_id);
+        self.inner.delete_by_rel_mut_tx(tx, TableId(table_id), relation)
     }
 
     /// Generated the next value for the [SequenceId]
@@ -625,7 +607,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(1)])?;
 
         let mut rows = stdb
-            .scan(&tx, table_id)?
+            .iter(&tx, table_id)?
             .map(|r| *r.view().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
@@ -651,7 +633,7 @@ mod tests {
 
         let tx = stdb.begin_tx();
         let mut rows = stdb
-            .scan(&tx, table_id)?
+            .iter(&tx, table_id)?
             .map(|r| *r.view().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
@@ -675,7 +657,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(1)])?;
 
         let mut rows = stdb
-            .range_scan(&tx, table_id, 0, AlgebraicValue::I32(0)..)?
+            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I32(0)..)?
             .map(|r| *r.view().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
@@ -701,7 +683,7 @@ mod tests {
 
         let tx = stdb.begin_tx();
         let mut rows = stdb
-            .range_scan(&tx, table_id, 0, AlgebraicValue::I32(0)..)?
+            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I32(0)..)?
             .map(|r| *r.view().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
@@ -746,7 +728,7 @@ mod tests {
 
         let tx = stdb.begin_tx();
         let mut rows = stdb
-            .scan(&tx, table_id)?
+            .iter(&tx, table_id)?
             .map(|r| *r.view().elements[0].as_i32().unwrap())
             .collect::<Vec<i32>>();
         rows.sort();
@@ -779,7 +761,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
 
         let mut rows = stdb
-            .range_scan(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
+            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
             .map(|r| *r.view().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
@@ -812,7 +794,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(6)])?;
 
         let mut rows = stdb
-            .range_scan(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
+            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
             .map(|r| *r.view().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
@@ -852,7 +834,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(1)])?;
 
         let mut rows = stdb
-            .range_scan(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
+            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
             .map(|r| *r.view().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
@@ -940,7 +922,7 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
 
         let mut rows = stdb
-            .range_scan(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
+            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
             .map(|r| *r.view().elements[0].as_i64().unwrap())
             .collect::<Vec<i64>>();
         rows.sort();
@@ -1003,14 +985,14 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         let indexes = stdb
-            .scan(&tx, ST_INDEXES_ID.0)?
+            .iter(&tx, ST_INDEXES_ID.0)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 3, "Wrong number of indexes");
 
         let sequences = stdb
-            .scan(&tx, ST_SEQUENCES_ID.0)?
+            .iter(&tx, ST_SEQUENCES_ID.0)?
             .map(|x| StSequenceRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
@@ -1019,14 +1001,14 @@ mod tests {
         stdb.drop_table(&mut tx, table_id)?;
 
         let indexes = stdb
-            .scan(&tx, ST_INDEXES_ID.0)?
+            .iter(&tx, ST_INDEXES_ID.0)?
             .map(|x| StIndexRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 0, "Wrong number of indexes");
 
         let sequences = stdb
-            .scan(&tx, ST_SEQUENCES_ID.0)?
+            .iter(&tx, ST_SEQUENCES_ID.0)?
             .map(|x| StSequenceRow::try_from(x.view()).unwrap().to_owned())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
@@ -1062,7 +1044,7 @@ mod tests {
         assert_eq!(Some("YourTable"), table_name.as_deref());
         // Also make sure we've removed the old ST_TABLES_ID row
         let mut n = 0;
-        for row in stdb.scan(&tx, ST_TABLES_ID)? {
+        for row in stdb.iter(&tx, ST_TABLES_ID)? {
             let table = StTableRow::try_from(row.view())?;
             if table.table_id == table_id {
                 n += 1;

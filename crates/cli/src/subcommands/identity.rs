@@ -93,7 +93,15 @@ fn get_subcommands() -> Vec<Command> {
             .arg(
                 Arg::new("all")
                     .long("all")
+                    .short('a')
                     .help("Remove all identities from your spacetime config")
+                    .action(ArgAction::SetTrue)
+                    .conflicts_with("identity")
+                    .required_unless_present("identity"),
+            ).arg(
+                Arg::new("force")
+                    .long("force")
+                    .help("Removes all identities without prompting (for CI usage)")
                     .action(ArgAction::SetTrue)
                     .conflicts_with("identity")
                     .required_unless_present("identity"),
@@ -211,6 +219,16 @@ async fn exec_init_default(mut config: Config, args: &ArgMatches) -> Result<(), 
 /// Executes the `identity remove` command which removes an identity from the config.
 async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let identity_or_name = args.get_one::<String>("identity");
+    let force = args.get_flag("force");
+    let all = args.get_flag("all");
+
+    if !all && identity_or_name.is_none() {
+        return Err(anyhow::anyhow!("Must provide an identity or name to remove"));
+    }
+
+    if force && !all {
+        return Err(anyhow::anyhow!("The --force flag can only be used with --all"));
+    }
 
     if let Some(identity_or_name) = identity_or_name {
         let ic = if is_hex_identity(identity_or_name) {
@@ -229,23 +247,26 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
             return Ok(());
         }
 
-        print!("Are you sure you want to remove all identities? (y/n) ");
-        std::io::stdout().flush()?;
-
         let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        if input.trim() == "y" {
-            let identity_count = config.identity_configs().len();
-            config.delete_all_identity_configs();
-            config.save();
-            println!(
-                " {} {} removed.",
-                identity_count,
-                if identity_count > 1 { "identities" } else { "identity" }
-            );
-        } else {
-            println!(" Aborted");
+        if !force {
+            print!("Are you sure you want to remove all identities? (y/n) ");
+            std::io::stdout().flush()?;
+            std::io::stdin().read_line(&mut input)?;
+
+            if input.trim() != "y" {
+                println!(" Aborted");
+                return Ok(());
+            }
         }
+
+        let identity_count = config.identity_configs().len();
+        config.delete_all_identity_configs();
+        config.save();
+        println!(
+            " {} {} removed.",
+            identity_count,
+            if identity_count > 1 { "identities" } else { "identity" }
+        );
     }
     Ok(())
 }
@@ -280,8 +301,7 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         query_params.push(("email", email.as_str()))
     }
 
-    let client = reqwest::Client::new();
-    let mut builder = client.post(Url::parse_with_params(
+    let mut builder = reqwest::Client::new().post(Url::parse_with_params(
         format!("{}/identity", config.get_host_url()).as_str(),
         query_params,
     )?);
@@ -290,13 +310,7 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         builder = builder.basic_auth("token", Some(identity_token.token.clone()));
     }
 
-    let res = builder.send().await?;
-    let res = res.error_for_status()?;
-
-    let body = res.bytes().await?;
-    let body = String::from_utf8(body.to_vec())?;
-
-    let identity_token: IdentityTokenJson = serde_json::from_str(&body)?;
+    let identity_token: IdentityTokenJson = builder.send().await?.error_for_status()?.json().await?;
     let identity = identity_token.identity.clone();
 
     if save {
@@ -398,8 +412,7 @@ async fn exec_find(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     let res = builder.send().await?;
 
     if res.status() == StatusCode::OK {
-        let response: GetIdentityResponse =
-            serde_json::from_str(String::from_utf8(res.bytes().await?.to_vec())?.as_str())?;
+        let response: GetIdentityResponse = res.json().await?;
         if response.identities.is_empty() {
             return Err(anyhow::anyhow!("Could not find identity for: {}", email));
         }
@@ -463,8 +476,7 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
         .get_identity_config_by_identity(identity.as_str())
         .unwrap_or_else(|| panic!("Could not find identity: {}", identity));
 
-    let client = reqwest::Client::new();
-    let mut builder = client.post(format!(
+    let mut builder = reqwest::Client::new().post(format!(
         "{}/identity/{}/set-email?email={}",
         config.get_host_url(),
         identity_config.identity,
@@ -478,11 +490,11 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
         std::process::exit(0);
     }
 
-    let res = builder.send().await?;
-    res.error_for_status()?;
+    builder.send().await?.error_for_status()?;
 
     println!(" Associated email with identity");
     print_identity_config(config.get_identity_config_by_identity(identity.as_str()).unwrap());
+    println!(" EMAIL {}", email);
 
     Ok(())
 }

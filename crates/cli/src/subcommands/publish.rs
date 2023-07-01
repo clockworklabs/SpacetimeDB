@@ -9,8 +9,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::util::get_auth_header;
 use crate::util::init_default;
+use crate::util::{add_auth_header_opt, get_auth_header};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("publish")
@@ -130,12 +130,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         query_params.push(("trace_log", "true"));
     }
 
-    let client = reqwest::Client::new();
-
     let path_to_wasm = crate::tasks::build(path_to_project, skip_clippy, build_debug)?;
     let program_bytes = fs::read(path_to_wasm)?;
 
-    let mut builder = client.post(Url::parse_with_params(
+    let mut builder = reqwest::Client::new().post(Url::parse_with_params(
         format!("{}/database/publish", config.get_host_url()).as_str(),
         query_params,
     )?);
@@ -149,14 +147,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             init_default(&mut config, None).await?;
         }
 
-        if let Some((auth_header, chosen_identity)) =
-            get_auth_header(&mut config, anon_identity, identity.as_deref()).await
-        {
-            builder = builder.header("Authorization", auth_header);
-            Some(chosen_identity)
-        } else {
-            None
-        }
+        let (auth_header, chosen_identity) = get_auth_header(&mut config, anon_identity, identity.as_deref())
+            .await
+            .unzip();
+
+        builder = add_auth_header_opt(builder, &auth_header);
+        chosen_identity
     } else {
         None
     };

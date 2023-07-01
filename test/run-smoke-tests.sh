@@ -22,7 +22,7 @@ export SPACETIME_CONFIG_FILE
 RUN_PARALLEL=false
 
 export SPACETIME_SKIP_CLIPPY=1
-CONTAINER_NAME=$(docker ps | grep node | awk '{print $NF}')
+CONTAINER_NAME=$(docker ps | grep "\-node-" | awk '{print $NF}')
 docker logs "$CONTAINER_NAME"
 
 rustup update

@@ -46,9 +46,9 @@ static SPACETIME_ABI_VERSION_IS_ADDR: () = ();
 #[non_exhaustive]
 #[derive(Copy, Clone)]
 pub struct ReducerContext {
-    /// Who called the reducer?
+    /// The `Identity` of the client that invoked the reducer.
     pub sender: Identity,
-    /// When was the reducer called?
+    /// The time at which the reducer was started.
     pub timestamp: Timestamp,
 }
 
@@ -158,31 +158,37 @@ pub fn insert<T: TableType>(table_id: u32, row: T) -> T::InsertResult {
 /// where the row has a column, identified by `col_id`,
 /// with data matching `val` that can be serialized.
 ///
+/// Matching is defined by decoding of `value` to an `AlgebraicValue`
+/// according to the column's schema and then `Ord for AlgebraicValue`.
+///
 /// The rows found are bsatn encoded and then concatenated.
 /// The resulting byte string from the concatenation is written
 /// to a fresh buffer with a handle to it returned as a `Buffer`.
 ///
 /// Panics when serialization fails.
-pub fn seek_eq(table_id: u32, col_id: u8, val: &impl Serialize) -> Result<Buffer> {
+pub fn iter_by_col_eq(table_id: u32, col_id: u8, val: &impl Serialize) -> Result<Buffer> {
     with_row_buf(|bytes| {
         // Encode `val` as bsatn into `bytes` and then use that.
         bsatn::to_writer(bytes, val).unwrap();
-        sys::seek_eq(table_id, col_id as u32, bytes)
+        sys::iter_by_col_eq(table_id, col_id as u32, bytes)
     })
 }
 
 /// Deletes all rows in the table identified by `table_id`
-/// where the column identified by `col_id` equates to a `value` that can be serialized.
+/// where the column identified by `col_id` matches a `value` that can be serialized.
+///
+/// Matching is defined by decoding of `value` to an `AlgebraicValue`
+/// according to the column's schema and then `Ord for AlgebraicValue`.
 ///
 /// Returns the number of rows deleted
 /// or an error if no columns were deleted or if the column wasn't found.
 ///
 /// Panics when serialization fails.
-pub fn delete_eq(table_id: u32, col_id: u8, eq_value: &impl Serialize) -> Result<u32> {
+pub fn delete_by_col_eq(table_id: u32, col_id: u8, eq_value: &impl Serialize) -> Result<u32> {
     with_row_buf(|bytes| {
         // Encode `val` as bsatn into `bytes` and then use that.
         bsatn::to_writer(bytes, eq_value).unwrap();
-        sys::delete_eq(table_id, col_id.into(), bytes)
+        sys::delete_by_col_eq(table_id, col_id.into(), bytes)
     })
 }
 
@@ -320,7 +326,7 @@ impl<T: TableType> BufferDeserialize for TableTypeBufferDeserialize<T> {
 }
 
 /// Iterate over a sequence of `Buffer`s
-/// and deserialize a number of `T`s out of each.
+/// and deserialize a number of `<De as BufferDeserialize>::Item` out of each.
 struct RawTableIter<De> {
     /// The underlying source of our `Buffer`s.
     inner: BufferIter,
@@ -428,6 +434,8 @@ pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
     }
 
     /// Returns an iterator filtered by `filter` over the rows in this table.
+    ///
+    /// **NOTE:** Do not use directly. This is exposed as `query!(...)`.
     #[doc(hidden)]
     fn iter_filtered(filter: spacetimedb_lib::filter::Expr) -> TableIter<Self> {
         table_iter(Self::table_id(), Some(filter)).unwrap()
@@ -460,13 +468,18 @@ impl<T: TableType> fmt::Display for UniqueConstraintViolation<T> {
         )
     }
 }
+impl<T: TableType> From<UniqueConstraintViolation<T>> for String {
+    fn from(err: UniqueConstraintViolation<T>) -> Self {
+        err.to_string()
+    }
+}
 impl<T: TableType> std::error::Error for UniqueConstraintViolation<T> {}
 
 impl<T: TableType> sealed::InsertResult for Result<T, UniqueConstraintViolation<T>> {
     type T = T;
     fn from_res(res: Result<Self::T>) -> Self {
         res.map_err(|e| match e {
-            Errno::EXISTS => UniqueConstraintViolation(PhantomData),
+            Errno::UNIQUE_ALREADY_EXISTS => UniqueConstraintViolation(PhantomData),
             _ => panic!("unexpected error from insert(): {e}"),
         })
     }
@@ -479,19 +492,14 @@ impl<T: TableType> sealed::InsertResult for T {
     }
 }
 
-// Decode exactly 0 or 1 `T`s, leaving the buffer exactly empty.
-fn bsatn_from_reader<'de, T: Deserialize<'de>>(r: &mut impl BufReader<'de>) -> Result<Option<T>, DecodeError> {
-    Ok(match r.remaining() {
-        0 => None,
-        _ => {
-            let t = bsatn::from_reader(r)?;
-            assert_eq!(r.remaining(), 0);
-            Some(t)
-        }
-    })
-}
-
 /// A trait for types that can be serialized and tested for equality.
+///
+/// A type `T` implementing this trait should uphold the invariant:
+/// ```text
+/// ∀ a, b ∈ T. a == b <=> serialize(a) == serialize(b)
+/// ```
+/// That is, if two values `a: T` and `b: T` are equal,
+/// then so are the values in their serialized representation.
 pub trait FilterableValue: Serialize + Eq {}
 
 /// A trait for types that can be converted into primary keys.
@@ -515,7 +523,12 @@ pub mod query {
         fn get_field(&self) -> &Self::Field;
     }
 
-    /// Finds the row of `Table` where the column at `COL_IDX` matches `val`, as defined by `Eq`.
+    /// Finds the row of `Table` where the column at `COL_IDX` matches `val`,
+    /// as defined by decoding to an `AlgebraicValue`
+    /// according to the column's schema and then `Ord for AlgebraicValue`.
+    ///
+    /// **NOTE:** Do not use directly.
+    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb(table)]`.
     #[doc(hidden)]
     pub fn filter_by_unique_field<
         Table: TableType + FieldAccess<COL_IDX, Field = T>,
@@ -525,45 +538,68 @@ pub mod query {
         val: &T,
     ) -> Option<Table> {
         // Find the row with a match.
-        let mut slice: &[u8] = &seek_eq(Table::table_id(), COL_IDX, val).unwrap().read();
+        let slice: &mut &[u8] = &mut &*iter_by_col_eq(Table::table_id(), COL_IDX, val).unwrap().read();
         // We will always find either 0 or 1 rows here due to the unique constraint.
-        bsatn_from_reader(&mut slice).unwrap()
-    }
-
-    /// Finds all rows of `Table` where the column at `COL_IDX` matches `val`, as defined by `Eq`.
-    #[doc(hidden)]
-    pub fn filter_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u8>(
-        val: &T,
-    ) -> FilterByIter<'_, Table, COL_IDX, T> {
-        // In the future, this should instead call seek_eq.
-        FilterByIter {
-            inner: Table::iter(),
-            val,
+        match slice.remaining() {
+            0 => None,
+            _ => {
+                let t = bsatn::from_reader(slice).unwrap();
+                assert_eq!(slice.remaining(), 0);
+                Some(t)
+            }
         }
     }
 
-    /// Deletes the row of `Table` where the column at `COL_IDX` matches `val`, as defined by `Eq`.
+    /// Finds all rows of `Table` where the column at `COL_IDX` matches `val`,
+    /// as defined by decoding to an `AlgebraicValue`
+    /// according to the column's schema and then `Ord for AlgebraicValue`.
     ///
-    /// Returns the number of rows deleted, either `0` or `1`.
+    /// **NOTE:** Do not use directly.
+    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb(table)]`.
+    #[doc(hidden)]
+    pub fn filter_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u8>(val: &T) -> FilterByIter<Table> {
+        let rows = iter_by_col_eq(Table::table_id(), COL_IDX, val)
+            .expect("iter_by_col_eq failed")
+            .read();
+        FilterByIter {
+            cursor: Cursor::new(rows),
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Deletes the row of `Table` where the column at `COL_IDX` matches `val`,
+    /// as defined by decoding to an `AlgebraicValue`
+    /// according to the column's schema and then `Ord for AlgebraicValue`.
+    ///
+    /// Returns whether any rows were deleted.
+    ///
+    /// **NOTE:** Do not use directly.
+    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb(table)]`.
     #[doc(hidden)]
     pub fn delete_by_field<Table: TableType, T: UniqueValue, const COL_IDX: u8>(val: &T) -> bool {
-        let result = delete_eq(Table::table_id(), COL_IDX, val);
+        let result = delete_by_col_eq(Table::table_id(), COL_IDX, val);
         match result {
             Err(_) => {
                 // TODO: Returning here was supposed to signify an error,
-                // but it can also return `Err(_)` when there is nothing to delete.
+                //       but it can also return `Err(_)` when there is nothing to delete.
                 //spacetimedb::println!("Internal server error on equatable type: {}", #primary_key_tuple_type_str);
                 false
             }
             // Should never be `> 1`.
-            Ok(count) => count > 0,
+            Ok(count) => {
+                debug_assert!(count <= 1);
+                count > 0
+            }
         }
     }
 
-    /// Updates the row of `Table`,
-    /// where the column at `COL_IDX` matches `old`,
-    /// as defined by `Eq`,
-    /// to be `new` instead.
+    /// Updates the row of `Table`, where the column at `COL_IDX` matches `old`, to be `new` instead.
+    ///
+    /// Matching is defined by decoding to an `AlgebraicValue`
+    /// according to the column's schema and then `Ord for AlgebraicValue`.
+    ///
+    /// **NOTE:** Do not use directly.
+    /// This is exposed as `update_by_{$field_name}` on types with `#[spacetimedb(table)]`.
     #[doc(hidden)]
     pub fn update_by_field<Table: TableType, T: UniqueValue, const COL_IDX: u8>(old: &T, new: Table) -> bool {
         // Delete the existing row, if any.
@@ -572,28 +608,34 @@ pub mod query {
         // Insert the new row.
         Table::insert(new);
 
-        // For now this is always successful.
+        // TODO: For now this is always successful.
+        //       In the future, this could return what `delete_by_field` returns?
         true
     }
 
-    /// An iterator that finds all rows of `Table` with a column at `COL_IDX` matching `val`,
-    /// as defined by `Eq`.
+    /// An iterator returned by `filter_by_field`,
+    /// which yields all of the rows of a table where a particular column's value
+    /// matches a given target value.
+    ///
+    /// Matching is defined by decoding to an `AlgebraicValue`
+    /// according to the column's schema and then `Ord for AlgebraicValue`.
     #[doc(hidden)]
-    pub struct FilterByIter<'a, Table: TableType, const COL_IDX: u8, T: FilterableValue> {
-        /// The iterator for some rows to further filter.
-        inner: TableIter<Table>,
-        /// The test to apply to the column at `COL_IDX` in each row.
-        val: &'a T,
+    pub struct FilterByIter<Table: TableType> {
+        /// The buffer of rows returned by `iter_by_col_eq`.
+        cursor: Cursor<Box<[u8]>>,
+
+        _phantom: PhantomData<Table>,
     }
 
-    impl<Table, const COL_IDX: u8, T: FilterableValue> Iterator for FilterByIter<'_, Table, COL_IDX, T>
+    impl<Table> Iterator for FilterByIter<Table>
     where
-        Table: TableType + FieldAccess<COL_IDX, Field = T>,
+        Table: TableType,
     {
         type Item = Table;
 
         fn next(&mut self) -> Option<Self::Item> {
-            self.inner.find(|row| row.get_field() == self.val)
+            let mut cursor = &self.cursor;
+            (cursor.remaining() != 0).then(|| bsatn::from_reader(&mut cursor).unwrap())
         }
     }
 }

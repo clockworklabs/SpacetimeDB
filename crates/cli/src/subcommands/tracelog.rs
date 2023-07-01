@@ -1,9 +1,7 @@
 use crate::config::Config;
-use crate::util::spacetime_dns;
-use clap::Arg;
-use clap::ArgMatches;
+use crate::util::database_address;
+use clap::{Arg, ArgMatches};
 use reqwest::StatusCode;
-use spacetimedb_lib::name::{is_address, DnsLookupResponse};
 use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -72,24 +70,14 @@ pub async fn exec_replay(config: Config, args: &ArgMatches) -> Result<(), anyhow
 
 pub async fn exec_stop(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
-    let address = if is_address(database.as_str()) {
-        database.clone()
-    } else {
-        match spacetime_dns(&config, database).await? {
-            DnsLookupResponse::Success { domain: _, address } => address,
-            DnsLookupResponse::Failure { domain } => {
-                return Err(anyhow::anyhow!("The dns resolution of {} failed.", domain));
-            }
-        }
-    };
+    let address = database_address(&config, database).await?;
 
     let client = reqwest::Client::new();
     let res = client
         .post(format!("{}/tracelog/database/{}/stop", config.get_host_url(), address))
         .send()
-        .await?;
-
-    let res = res.error_for_status()?;
+        .await?
+        .error_for_status()?;
     if res.status() == StatusCode::NOT_FOUND {
         println!("Could not find database {}", address);
         return Ok(());
@@ -105,16 +93,7 @@ pub async fn exec_stop(config: Config, args: &ArgMatches) -> Result<(), anyhow::
 
 pub async fn exec_get(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
-    let address = if is_address(database.as_str()) {
-        database.clone()
-    } else {
-        match spacetime_dns(&config, database).await? {
-            DnsLookupResponse::Success { domain: _, address } => address,
-            DnsLookupResponse::Failure { domain } => {
-                return Err(anyhow::anyhow!("The dns resolution of {} failed.", domain));
-            }
-        }
-    };
+    let address = database_address(&config, database).await?;
 
     let client = reqwest::Client::new();
     let res = client

@@ -2,7 +2,7 @@
 
 use crate::host::Timestamp;
 use crate::messages::instance_db_trace_log::{
-    CreateIndex, DeleteEq, GetTableId, Insert, InstanceEvent, InstanceEventType,
+    CreateIndex, DeleteByColEq, GetTableId, Insert, InstanceEvent, InstanceEventType,
 };
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -145,7 +145,7 @@ impl TraceLog {
     }
     */
 
-    pub fn delete_eq(
+    pub fn delete_by_col_eq(
         &mut self,
         start_time: SystemTime,
         duration: Duration,
@@ -154,7 +154,7 @@ impl TraceLog {
         buffer: Vec<u8>,
         deleted_count: u32,
     ) {
-        let event = InstanceEventType::DeleteEq(DeleteEq {
+        let event = InstanceEventType::DeleteByColEq(DeleteByColEq {
             table_id,
             col_id,
             buffer,

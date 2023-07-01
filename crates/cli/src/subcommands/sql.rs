@@ -1,19 +1,14 @@
 use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson};
 use anyhow::Context;
-use clap::Arg;
-use clap::ArgAction;
-use clap::ArgMatches;
+use clap::{Arg, ArgAction, ArgMatches};
 use reqwest::RequestBuilder;
 use spacetimedb_lib::de::serde::SeedWrapper;
-use spacetimedb_lib::name::{is_address, DnsLookupResponse};
-use spacetimedb_lib::sats::satn;
-use spacetimedb_lib::sats::Typespace;
+use spacetimedb_lib::sats::{satn, Typespace};
 use tabled::builder::Builder;
 use tabled::Style;
 
 use crate::config::Config;
-use crate::util::get_auth_header;
-use crate::util::spacetime_dns;
+use crate::util::{database_address, get_auth_header_only};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
@@ -48,43 +43,27 @@ pub fn cli() -> clap::Command {
 
 pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
-
     let as_identity = args.get_one::<String>("as_identity");
     let anon_identity = args.get_flag("anon_identity");
 
-    let auth_header = get_auth_header(&mut config, anon_identity, as_identity.map(|x| x.as_str()))
-        .await
-        .map(|x| x.0);
-
-    let address = if is_address(database.as_str()) {
-        database.clone()
-    } else {
-        match spacetime_dns(&config, database).await? {
-            DnsLookupResponse::Success { domain: _, address } => address,
-            DnsLookupResponse::Failure { domain } => {
-                return Err(anyhow::anyhow!("The dns resolution of {} failed.", domain));
-            }
-        }
-    };
-
-    let con = Connection {
+    Ok(Connection {
         host: config.get_host_url(),
-        address,
+        auth_header: get_auth_header_only(&mut config, anon_identity, as_identity).await,
+        address: database_address(&config, database).await?,
         database: database.to_string(),
-        auth_header,
-    };
-
-    Ok(con)
+    })
 }
 
 pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), anyhow::Error> {
-    let res = builder.body(sql.to_owned()).send().await?;
-    let res = res.error_for_status()?;
+    let json = builder
+        .body(sql.to_owned())
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
 
-    let body = res.bytes().await.unwrap();
-    let json = String::from_utf8(body.to_vec()).unwrap();
-
-    let stmt_result_json: Vec<StmtResultJson> = serde_json::from_str(&json).unwrap();
+    let stmt_result_json: Vec<StmtResultJson> = serde_json::from_str(&json)?;
 
     let stmt_result = stmt_result_json.first().context("Invalid sql query.")?;
     let StmtResultJson { schema, rows } = &stmt_result;

@@ -4,7 +4,7 @@ use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, SumType,
 };
-use spacetimedb_lib::{ColumnIndexAttribute, ReducerDef, TableDef};
+use spacetimedb_lib::{ColumnIndexAttribute, ProductTypeElement, ReducerDef, TableDef};
 
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem, INDENT};
@@ -579,6 +579,7 @@ fn autogen_csharp_product_table_common(
     writeln!(output).unwrap();
 
     writeln!(output, "using System;").unwrap();
+    writeln!(output, "using System.Collections.Generic;").unwrap();
     if namespace != "SpacetimeDB" {
         writeln!(output, "using SpacetimeDB;").unwrap();
     }
@@ -636,6 +637,64 @@ fn autogen_csharp_product_table_common(
 
             writeln!(output).unwrap();
 
+            // If this is a table, we want to generate indexes
+            if let Some(column_attrs) = column_attrs {
+                let indexed_fields: Vec<(&ProductTypeElement, String)> = column_attrs
+                    .iter()
+                    .enumerate()
+                    .filter(|a| a.1.is_unique() || a.1.is_primary())
+                    .map(|a| &product_type.elements[a.0])
+                    .map(|f| (f, f.name.as_ref().unwrap().replace("r#", "").to_case(Case::Pascal)))
+                    .collect();
+                // Declare custom index dictionaries
+                for (field, field_name) in &indexed_fields {
+                    let type_name = ty_fmt(ctx, &field.algebraic_type, namespace);
+                    let comparer = if format!("{}", type_name) == "byte[]" {
+                        ", new SpacetimeDB.ByteArrayComparer()"
+                    } else {
+                        ""
+                    };
+                    writeln!(
+                        output,
+                        "private static Dictionary<{type_name}, {name}> {field_name}_Index = new Dictionary<{type_name}, {name}>(16{comparer});"
+                    )
+                    .unwrap();
+                }
+                writeln!(output).unwrap();
+                // OnInsert method for updating indexes
+                writeln!(
+                    output,
+                    "private static void InternalOnValueInserted(object insertedValue)"
+                )
+                .unwrap();
+                writeln!(output, "{{").unwrap();
+                {
+                    indent_scope!(output);
+                    writeln!(output, "var val = ({name})insertedValue;").unwrap();
+                    for (_, field_name) in &indexed_fields {
+                        writeln!(output, "{field_name}_Index[val.{field_name}] = val;").unwrap();
+                    }
+                }
+                writeln!(output, "}}").unwrap();
+                writeln!(output).unwrap();
+                // OnDelete method for updating indexes
+                writeln!(
+                    output,
+                    "private static void InternalOnValueDeleted(object deletedValue)"
+                )
+                .unwrap();
+                writeln!(output, "{{").unwrap();
+                {
+                    indent_scope!(output);
+                    writeln!(output, "var val = ({name})deletedValue;").unwrap();
+                    for (_, field_name) in &indexed_fields {
+                        writeln!(output, "{field_name}_Index.Remove(val.{field_name});").unwrap();
+                    }
+                }
+                writeln!(output, "}}").unwrap();
+                writeln!(output).unwrap();
+            } // End indexes
+
             writeln!(
                 output,
                 "public static SpacetimeDB.SATS.AlgebraicType GetAlgebraicType()"
@@ -676,7 +735,7 @@ fn autogen_csharp_product_table_common(
                     "public delegate void DeleteEventHandler({name} deletedValue, {namespace}.ReducerEvent dbEvent);"
                 )
                 .unwrap();
-                writeln!(output, "public delegate void RowUpdateEventHandler(NetworkManager.TableOp op, {name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
+                writeln!(output, "public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, {name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
                 writeln!(output, "public static event InsertEventHandler OnInsert;").unwrap();
                 writeln!(output, "public static event UpdateEventHandler OnUpdate;").unwrap();
                 writeln!(output, "public static event DeleteEventHandler OnBeforeDelete;").unwrap();
@@ -696,7 +755,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnInsert?.Invoke(({name})newValue,dbEvent?.FunctionCall.CallInfo);"
+                        "OnInsert?.Invoke(({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -713,7 +772,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnUpdate?.Invoke(({name})oldValue,({name})newValue,dbEvent?.FunctionCall.CallInfo);"
+                        "OnUpdate?.Invoke(({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -730,7 +789,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnBeforeDelete?.Invoke(({name})oldValue,dbEvent?.FunctionCall.CallInfo);"
+                        "OnBeforeDelete?.Invoke(({name})oldValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -747,7 +806,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnDelete?.Invoke(({name})oldValue,dbEvent?.FunctionCall.CallInfo);"
+                        "OnDelete?.Invoke(({name})oldValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -756,7 +815,7 @@ fn autogen_csharp_product_table_common(
 
                 writeln!(
                     output,
-                    "public static void OnRowUpdateEvent(NetworkManager.TableOp op, object oldValue, object newValue, ClientApi.Event dbEvent)"
+                    "public static void OnRowUpdateEvent(SpacetimeDBClient.TableOp op, object oldValue, object newValue, ClientApi.Event dbEvent)"
                 )
                 .unwrap();
                 writeln!(output, "{{").unwrap();
@@ -764,7 +823,7 @@ fn autogen_csharp_product_table_common(
                     indent_scope!(output);
                     writeln!(
                         output,
-                        "OnRowUpdate?.Invoke(op, ({name})oldValue,({name})newValue,dbEvent?.FunctionCall.CallInfo);"
+                        "OnRowUpdate?.Invoke(op, ({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
                     .unwrap();
                 }
@@ -862,7 +921,7 @@ fn autogen_csharp_access_funcs_for_struct(
     indented_block(output, |output| {
         writeln!(
             output,
-            "foreach(var entry in NetworkManager.clientDB.GetEntries(\"{table_name}\"))",
+            "foreach(var entry in SpacetimeDBClient.clientDB.GetEntries(\"{table_name}\"))",
         )
         .unwrap();
         indented_block(output, |output| {
@@ -873,7 +932,7 @@ fn autogen_csharp_access_funcs_for_struct(
 
     writeln!(output, "public static int Count()").unwrap();
     indented_block(output, |output| {
-        writeln!(output, "return NetworkManager.clientDB.Count(\"{table_name}\");",).unwrap();
+        writeln!(output, "return SpacetimeDBClient.clientDB.Count(\"{table_name}\");",).unwrap();
     });
     let mut primary_col_idx = None;
 
@@ -937,67 +996,76 @@ fn autogen_csharp_access_funcs_for_struct(
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
-            writeln!(
-                output,
-                "foreach(var entry in NetworkManager.clientDB.GetEntries(\"{}\"))",
-                table_name
-            )
-            .unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(output, "var productValue = entry.Item1.AsProductValue();").unwrap();
+            if is_unique || is_primary {
                 writeln!(
                     output,
-                    "var compareValue = ({})productValue.elements[{}].As{}();",
-                    csharp_field_type, col_i, field_type
+                    "{csharp_field_name_pascal}_Index.TryGetValue(value, out var r);"
                 )
                 .unwrap();
-                if csharp_field_type == "byte[]" {
+                writeln!(output, "return r;").unwrap();
+            } else {
+                writeln!(
+                    output,
+                    "foreach(var entry in SpacetimeDBClient.clientDB.GetEntries(\"{}\"))",
+                    table_name
+                )
+                .unwrap();
+                writeln!(output, "{{").unwrap();
+                {
+                    indent_scope!(output);
+                    writeln!(output, "var productValue = entry.Item1.AsProductValue();").unwrap();
                     writeln!(
                         output,
-                        "static bool ByteArrayCompare(byte[] a1, byte[] a2)
-{{
-    if (a1.Length != a2.Length)
-        return false;
-
-    for (int i=0; i<a1.Length; i++)
-        if (a1[i]!=a2[i])
-            return false;
-
-    return true;
-}}"
+                        "var compareValue = ({})productValue.elements[{}].As{}();",
+                        csharp_field_type, col_i, field_type
                     )
                     .unwrap();
-                    writeln!(output).unwrap();
-                    writeln!(output, "if (ByteArrayCompare(compareValue, value)) {{").unwrap();
-                    {
-                        indent_scope!(output);
-                        if is_unique {
-                            writeln!(output, "return ({struct_name_pascal_case})entry.Item2;").unwrap();
-                        } else {
-                            writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;").unwrap();
-                        }
-                    }
-                    writeln!(output, "}}").unwrap();
-                } else {
-                    writeln!(output, "if (compareValue == value) {{").unwrap();
-                    {
-                        indent_scope!(output);
-                        if is_unique {
-                            writeln!(output, "return ({struct_name_pascal_case})entry.Item2;").unwrap();
-                        } else {
-                            writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;").unwrap();
-                        }
-                    }
-                    writeln!(output, "}}").unwrap();
-                }
-            }
-            // End foreach
-            writeln!(output, "}}").unwrap();
+                    if csharp_field_type == "byte[]" {
+                        writeln!(
+                            output,
+                            "static bool ByteArrayCompare(byte[] a1, byte[] a2)
+    {{
+        if (a1.Length != a2.Length)
+            return false;
 
-            if is_unique {
-                writeln!(output, "return null;").unwrap();
+        for (int i=0; i<a1.Length; i++)
+            if (a1[i]!=a2[i])
+                return false;
+
+        return true;
+    }}"
+                        )
+                        .unwrap();
+                        writeln!(output).unwrap();
+                        writeln!(output, "if (ByteArrayCompare(compareValue, value)) {{").unwrap();
+                        {
+                            indent_scope!(output);
+                            if is_unique {
+                                writeln!(output, "return ({struct_name_pascal_case})entry.Item2;").unwrap();
+                            } else {
+                                writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;").unwrap();
+                            }
+                        }
+                        writeln!(output, "}}").unwrap();
+                    } else {
+                        writeln!(output, "if (compareValue == value) {{").unwrap();
+                        {
+                            indent_scope!(output);
+                            if is_unique {
+                                writeln!(output, "return ({struct_name_pascal_case})entry.Item2;").unwrap();
+                            } else {
+                                writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;").unwrap();
+                            }
+                        }
+                        writeln!(output, "}}").unwrap();
+                    }
+                }
+                // End foreach
+                writeln!(output, "}}").unwrap();
+
+                if is_unique {
+                    writeln!(output, "return null;").unwrap();
+                }
             }
         }
         // End Func
@@ -1149,11 +1217,21 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             write!(arg_types, "{}", arg_type_str).unwrap();
         }
 
+        let delegate_args = if !reducer.args.is_empty() {
+            format!(", {}", func_arguments.clone())
+        } else {
+            func_arguments.clone()
+        };
         writeln!(
             output,
-            "public static event Action<ClientApi.Event.Types.Status, Identity{arg_types}> On{func_name_pascal_case}Event;"
+            "public delegate void {func_name_pascal_case}Handler(ReducerEvent reducerEvent{delegate_args});"
         )
-            .unwrap();
+        .unwrap();
+        writeln!(
+            output,
+            "public static event {func_name_pascal_case}Handler On{func_name_pascal_case}Event;"
+        )
+        .unwrap();
 
         writeln!(output).unwrap();
 
@@ -1162,15 +1240,9 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         {
             indent_scope!(output);
 
-            //           NetworkManager.instance.InternalCallReducer(new NetworkManager.Message
-            // 			{
-            // 				fn = "create_new_player",
-            // 				args = new object[] { playerId, position },
-            // 			});
-
             // Tell the network manager to send this message
             writeln!(output, "var _argArray = new object[] {{{}}};", json_args).unwrap();
-            writeln!(output, "var _message = new NetworkManager.ReducerCallRequest {{").unwrap();
+            writeln!(output, "var _message = new SpacetimeDBClient.ReducerCallRequest {{").unwrap();
             {
                 indent_scope!(output);
                 writeln!(output, "fn = \"{}\",", reducer.name).unwrap();
@@ -1197,7 +1269,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
             writeln!(
                 output,
-                "NetworkManager.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));"
+                "SpacetimeDBClient.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));"
             )
                 .unwrap();
         }
@@ -1208,7 +1280,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         writeln!(output, "[ReducerCallback(FunctionName = \"{func_name}\")]").unwrap();
         writeln!(
             output,
-            "public static void On{func_name_pascal_case}(ClientApi.Event dbEvent)"
+            "public static bool On{func_name_pascal_case}(ClientApi.Event dbEvent)"
         )
         .unwrap();
         writeln!(output, "{{").unwrap();
@@ -1221,12 +1293,12 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 indent_scope!(output);
                 writeln!(
                     output,
-                    "var args = dbEvent.FunctionCall.CallInfo.{func_name_pascal_case}Args;"
+                    "var args = ((ReducerEvent)dbEvent.FunctionCall.CallInfo).{func_name_pascal_case}Args;"
                 )
                 .unwrap();
                 writeln!(
                     output,
-                    "On{func_name_pascal_case}Event(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray())"
+                    "On{func_name_pascal_case}Event((ReducerEvent)dbEvent.FunctionCall.CallInfo"
                 )
                 .unwrap();
                 // Write out arguments one per line
@@ -1243,13 +1315,15 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                     }
                 }
                 writeln!(output, ");").unwrap();
+                writeln!(output, "return true;").unwrap();
             }
             // Closing brace for if event is registered
             writeln!(output, "}}").unwrap();
+            writeln!(output, "return false;").unwrap();
         }
-
         // Closing brace for Event parsing function
         writeln!(output, "}}").unwrap();
+        writeln!(output).unwrap();
 
         writeln!(output, "[DeserializeEvent(FunctionName = \"{func_name}\")]").unwrap();
         writeln!(
@@ -1284,9 +1358,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 writeln!(output, "args.{arg_name} = {convert};").unwrap();
             }
 
-            writeln!(output, "var argsGeneric = new ReducerArgs();").unwrap();
-            writeln!(output, "argsGeneric.{func_name_pascal_case}Args = args;").unwrap();
-            writeln!(output, "dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.{func_name_pascal_case}, dbEvent.Message, dbEvent.Status, argsGeneric);").unwrap();
+            writeln!(output, "dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.{func_name_pascal_case}, \"{func_name}\", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), dbEvent.Message, dbEvent.Status, args);").unwrap();
         }
 
         // Closing brace for Event parsing function
@@ -1297,7 +1369,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     writeln!(output).unwrap();
 
     //Args struct
-    writeln!(output, "public struct {func_name_pascal_case}ArgsStruct").unwrap();
+    writeln!(output, "public partial class {func_name_pascal_case}ArgsStruct").unwrap();
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
@@ -1315,51 +1387,6 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     writeln!(output, "}}").unwrap();
     writeln!(output).unwrap();
 
-    //ReducerArgs struct
-    writeln!(output, "public partial struct ReducerArgs").unwrap();
-    writeln!(output, "{{").unwrap();
-    {
-        indent_scope!(output);
-        writeln!(output, "[System.Runtime.InteropServices.FieldOffset(0)]").unwrap();
-        writeln!(
-            output,
-            "public {func_name_pascal_case}ArgsStruct {func_name_pascal_case}Args;"
-        )
-        .unwrap();
-    }
-    // Closing brace for struct ReducerArgs
-    writeln!(output, "}}").unwrap();
-    writeln!(output).unwrap();
-
-    //ReducerEvent
-    writeln!(output, "public partial class ReducerEvent").unwrap();
-    writeln!(output, "{{").unwrap();
-    {
-        indent_scope!(output);
-        writeln!(
-            output,
-            "public {func_name_pascal_case}ArgsStruct {func_name_pascal_case}Args"
-        )
-        .unwrap();
-        writeln!(output, "{{").unwrap();
-        {
-            indent_scope!(output);
-            writeln!(output, "get").unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(output, "if (Reducer != ReducerType.{func_name_pascal_case}) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), \"{func_name_pascal_case}\");").unwrap();
-                writeln!(output, "return Args.{func_name_pascal_case}Args;").unwrap();
-            }
-            // Closing brace for struct ReducerArgs
-            writeln!(output, "}}").unwrap();
-        }
-        // Closing brace for struct ReducerArgs
-        writeln!(output, "}}").unwrap();
-    }
-    // Closing brace for struct ReducerArgs
-    writeln!(output, "}}").unwrap();
-
     if use_namespace {
         output.dedent(1);
         writeln!(output, "}}").unwrap();
@@ -1368,23 +1395,23 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     output.into_inner()
 }
 
-pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(String, String)> {
-    let reducer_names: Vec<String> = items
+pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String, String)> {
+    let reducers: Vec<&ReducerDef> = items
         .iter()
-        .filter(|item| {
-            if let GenItem::Reducer(reducer) = item {
-                reducer.name != "__init__"
+        .map(|i| {
+            if let GenItem::Reducer(reducer) = i {
+                Some(reducer)
             } else {
-                false
+                None
             }
         })
-        .map(|item| {
-            if let GenItem::Reducer(reducer) = item {
-                reducer.name.to_case(Case::Pascal)
-            } else {
-                unreachable!()
-            }
-        })
+        .filter(|r| r.is_some())
+        .flatten()
+        .filter(|r| r.name != "__init__")
+        .collect();
+    let reducer_names: Vec<String> = reducers
+        .iter()
+        .map(|reducer| reducer.name.to_case(Case::Pascal))
         .collect();
 
     let use_namespace = true;
@@ -1417,6 +1444,7 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
+        writeln!(output, "None,").unwrap();
         for reducer in reducer_names {
             writeln!(output, "{reducer},").unwrap();
         }
@@ -1425,30 +1453,49 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
     writeln!(output, "}}").unwrap();
     writeln!(output).unwrap();
 
-    writeln!(output, "public partial class ReducerEvent").unwrap();
+    writeln!(output, "public partial class ReducerEvent : ReducerEventBase").unwrap();
     writeln!(output, "{{").unwrap();
     {
         indent_scope!(output);
         writeln!(output, "public ReducerType Reducer {{ get; private set; }}").unwrap();
-        writeln!(output, "public string ErrMessage {{ get; private set; }}").unwrap();
-        writeln!(
-            output,
-            "public ClientApi.Event.Types.Status Status {{ get; private set; }}"
-        )
-        .unwrap();
-        writeln!(output, "private ReducerArgs Args;").unwrap();
         writeln!(output).unwrap();
-        writeln!(output, "public ReducerEvent(ReducerType reducer, string errMessage, ClientApi.Event.Types.Status status, ReducerArgs args)").unwrap();
+        writeln!(output, "public ReducerEvent(ReducerType reducer, string reducerName, ulong timestamp, SpacetimeDB.Identity identity, string errMessage, ClientApi.Event.Types.Status status, object args)").unwrap();
+        {
+            indent_scope!(output);
+            writeln!(
+                output,
+                ": base(reducerName, timestamp, identity, errMessage, status, args)"
+            )
+            .unwrap();
+        }
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
             writeln!(output, "Reducer = reducer;").unwrap();
-            writeln!(output, "ErrMessage = errMessage;").unwrap();
-            writeln!(output, "Status = status;").unwrap();
-            writeln!(output, "Args = args;").unwrap();
         }
         // Closing brace for ctor
         writeln!(output, "}}").unwrap();
+        writeln!(output).unwrap();
+        // Properties for reducer args
+        for reducer in &reducers {
+            let reducer_name = reducer.name.to_case(Case::Pascal);
+            writeln!(output, "public {reducer_name}ArgsStruct {reducer_name}Args").unwrap();
+            writeln!(output, "{{").unwrap();
+            {
+                indent_scope!(output);
+                writeln!(output, "get").unwrap();
+                writeln!(output, "{{").unwrap();
+                {
+                    indent_scope!(output);
+                    writeln!(output, "if (Reducer != ReducerType.{reducer_name}) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), \"{reducer_name}\");").unwrap();
+                    writeln!(output, "return ({reducer_name}ArgsStruct)Args;").unwrap();
+                }
+                // Closing brace for struct ReducerArgs
+                writeln!(output, "}}").unwrap();
+            }
+            // Closing brace for struct ReducerArgs
+            writeln!(output, "}}").unwrap();
+        }
         writeln!(output).unwrap();
         writeln!(output, "public object[] GetArgsAsObjectArray()").unwrap();
         writeln!(output, "{{").unwrap();
@@ -1458,34 +1505,29 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
-                for item in items {
-                    if let GenItem::Reducer(reducer) = item {
-                        if reducer.name == "__init__" {
-                            continue;
-                        }
-                        let reducer_name = reducer.name.to_case(Case::Pascal);
-                        writeln!(output, "case ReducerType.{reducer_name}:").unwrap();
-                        writeln!(output, "{{").unwrap();
+                for reducer in &reducers {
+                    let reducer_name = reducer.name.to_case(Case::Pascal);
+                    writeln!(output, "case ReducerType.{reducer_name}:").unwrap();
+                    writeln!(output, "{{").unwrap();
+                    {
+                        indent_scope!(output);
+                        writeln!(output, "var args = {reducer_name}Args;").unwrap();
+                        writeln!(output, "return new object[] {{").unwrap();
                         {
                             indent_scope!(output);
-                            writeln!(output, "var args = {reducer_name}Args;").unwrap();
-                            writeln!(output, "return new object[] {{").unwrap();
-                            {
-                                indent_scope!(output);
-                                for (i, arg) in reducer.args.iter().enumerate() {
-                                    let arg_name = arg
-                                        .name
-                                        .clone()
-                                        .unwrap_or_else(|| format!("arg_{}", i))
-                                        .to_case(Case::Pascal);
-                                    writeln!(output, "args.{arg_name},").unwrap();
-                                }
+                            for (i, arg) in reducer.args.iter().enumerate() {
+                                let arg_name = arg
+                                    .name
+                                    .clone()
+                                    .unwrap_or_else(|| format!("arg_{}", i))
+                                    .to_case(Case::Pascal);
+                                writeln!(output, "args.{arg_name},").unwrap();
                             }
-                            writeln!(output, "}};").unwrap();
                         }
-                        // Closing brace for switch
-                        writeln!(output, "}}").unwrap();
+                        writeln!(output, "}};").unwrap();
                     }
+                    // Closing brace for switch
+                    writeln!(output, "}}").unwrap();
                 }
                 writeln!(output, "default: throw new System.Exception($\"Unhandled reducer case: {{Reducer}}. Please run SpacetimeDB code generator\");").unwrap();
             }
@@ -1497,13 +1539,6 @@ pub fn autogen_csharp_globals(items: &Vec<GenItem>, namespace: &str) -> Vec<(Str
     }
     // Closing brace for ReducerEvent
     writeln!(output, "}}").unwrap();
-
-    writeln!(
-        output,
-        "[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit)]"
-    )
-    .unwrap();
-    writeln!(output, "public partial struct ReducerArgs {{ }}").unwrap();
 
     if use_namespace {
         output.dedent(1);

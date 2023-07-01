@@ -14,6 +14,7 @@ do_test() {
   create_project
 
   cat > "${PROJECT_PATH}/src/lib.rs" << EOF
+use std::error::Error;
 use spacetimedb::{println, spacetimedb};
 
 #[spacetimedb(table)]
@@ -26,15 +27,16 @@ pub struct Person {
 }
 
 #[spacetimedb(reducer)]
-pub fn add_new(name: String) {
-    let value = Person::insert(Person { key_col: 0, name }).unwrap();
+pub fn add_new(name: String) -> Result<(), Box<dyn Error>> {
+    let value = Person::insert(Person { key_col: 0, name })?;
     println!("Assigned Value: {} -> {}", value.key_col, value.name);
+    Ok(())
 }
 
 #[spacetimedb(reducer)]
 pub fn update(name: String, new_id: REPLACE_VALUE) {
     Person::delete_by_name(&name);
-    let value = Person::insert(Person { key_col: new_id, name });
+    let _value = Person::insert(Person { key_col: new_id, name });
 }
 
 #[spacetimedb(reducer)]

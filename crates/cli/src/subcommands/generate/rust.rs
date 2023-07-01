@@ -61,7 +61,11 @@ fn is_option_type(ty: &SumType) -> bool {
     )
 }
 
-fn write_type(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
+fn write_type_ctx(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
+    write_type(&|r| type_name(ctx, r), out, ty)
+}
+
+pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut W, ty: &AlgebraicType) {
     match ty {
         AlgebraicType::Sum(sum_type) => {
             if is_option_type(sum_type) {
@@ -69,10 +73,23 @@ fn write_type(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
                 write_type(ctx, out, &sum_type.variants[0].algebraic_type);
                 write!(out, ">").unwrap();
             } else {
-                unimplemented!("No way to emit an anonymous sum type other than an Option to Rust currently")
+                write!(out, "enum ").unwrap();
+                print_comma_sep_braced(out, &sum_type.variants, |out: &mut W, elem: &_| {
+                    if let Some(name) = &elem.name {
+                        write!(out, "{}: ", name).unwrap();
+                    }
+                    write_type(ctx, out, &elem.algebraic_type);
+                });
             }
         }
-        AlgebraicType::Product(_) => unimplemented!("No way to emit an anonymous product type to Rust currently"),
+        AlgebraicType::Product(ProductType { elements }) => {
+            print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {
+                if let Some(name) = &elem.name {
+                    write!(out, "{}: ", name).unwrap();
+                }
+                write_type(ctx, out, &elem.algebraic_type);
+            });
+        }
         AlgebraicType::Builtin(b) => match maybe_primitive(b) {
             MaybePrimitive::Primitive(p) => write!(out, "{}", p).unwrap(),
             MaybePrimitive::Array(ArrayType { elem_ty }) => {
@@ -94,10 +111,32 @@ fn write_type(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
             }
         },
         AlgebraicType::Ref(r) => {
-            let name = type_name(ctx, *r);
-            write!(out, "{}", name).unwrap();
+            write!(out, "{}", ctx(*r)).unwrap();
         }
     }
+}
+
+fn print_comma_sep_braced<W: Write, T>(out: &mut W, elems: &[T], on: impl Fn(&mut W, &T)) {
+    write!(out, "{{").unwrap();
+
+    let mut iter = elems.iter();
+
+    // First factor.
+    if let Some(elem) = iter.next() {
+        write!(out, " ").unwrap();
+        on(out, elem);
+    }
+    // Other factors.
+    for elem in iter {
+        write!(out, ", ").unwrap();
+        on(out, elem);
+    }
+
+    if !elems.is_empty() {
+        write!(out, " ").unwrap();
+    }
+
+    write!(out, "}}").unwrap();
 }
 
 // This is (effectively) duplicated in [typescript.rs] as `typescript_typename` and in
@@ -162,7 +201,7 @@ fn print_file_header(output: &mut Indenter) {
 //    - Complicated because `HashMap` is not `Hash`.
 // - others?
 
-const ENUM_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq)]"];
+const ENUM_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]"];
 
 fn print_enum_derives(output: &mut Indenter) {
     print_lines(output, ENUM_DERIVES);
@@ -231,7 +270,7 @@ fn write_enum_variant(ctx: &GenCtx, out: &mut Indenter, variant: &SumTypeVariant
             // If the contained type is not a product, i.e. this variant has a single
             // member, write it tuple-style, with parens.
             write!(out, "(").unwrap();
-            write_type(ctx, out, otherwise);
+            write_type_ctx(ctx, out, otherwise);
             write!(out, "),").unwrap();
         }
     }
@@ -248,14 +287,25 @@ fn write_struct_type_fields_in_braces(
 ) {
     out.delimited_block(
         "{",
-        |out| write_arglist_no_delimiters(ctx, out, elements, pub_qualifier.then_some("pub")),
+        |out| write_arglist_no_delimiters_ctx(ctx, out, elements, pub_qualifier.then_some("pub")),
         "}",
     );
 }
 
-fn write_arglist_no_delimiters(
+fn write_arglist_no_delimiters_ctx(
     ctx: &GenCtx,
     out: &mut Indenter,
+    elements: &[ProductTypeElement],
+
+    // Written before each line. Useful for `pub`.
+    prefix: Option<&str>,
+) {
+    write_arglist_no_delimiters(&|r| type_name(ctx, r), out, elements, prefix)
+}
+
+pub fn write_arglist_no_delimiters(
+    ctx: &impl Fn(AlgebraicTypeRef) -> String,
+    out: &mut impl Write,
     elements: &[ProductTypeElement],
 
     // Written before each line. Useful for `pub`.
@@ -319,7 +369,7 @@ pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDef) -> String {
 //    - Complicated because `HashMap` is not `Hash`.
 // - others?
 
-const STRUCT_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq)]"];
+const STRUCT_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]"];
 
 fn print_struct_derives(output: &mut Indenter) {
     print_lines(output, STRUCT_DERIVES);
@@ -384,7 +434,10 @@ fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableDef) {
 
     out.delimited_block(
         "{",
-        |out| writeln!(out, "const TABLE_NAME: &'static str = {:?};", table.name).unwrap(),
+        |out| {
+            writeln!(out, "const TABLE_NAME: &'static str = {:?};", table.name).unwrap();
+            writeln!(out, "type ReducerEvent = super::ReducerEvent;").unwrap();
+        },
         "}\n",
     );
 
@@ -403,7 +456,7 @@ fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableDef) {
             "{",
             |out| {
                 write!(out, "type PrimaryKey = ").unwrap();
-                write_type(ctx, out, &pk_field.algebraic_type);
+                write_type_ctx(ctx, out, &pk_field.algebraic_type);
                 writeln!(out, ";").unwrap();
 
                 out.delimited_block(
@@ -452,7 +505,7 @@ fn print_table_filter_methods(
                 //       fields should take &[T]. Determine if integer typeso should be by
                 //       value. Is there a trait for this?
                 //       Look at `Borrow` or Deref or AsRef?
-                write_type(ctx, out, &elt.algebraic_type);
+                write_type_ctx(ctx, out, &elt.algebraic_type);
                 write!(out, ") -> ").unwrap();
                 if attr.is_unique() {
                     write!(out, "Option<Self>").unwrap();
@@ -515,7 +568,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     // TODO: if reducer.args is empty, just write "()" with no newlines
     out.delimited_block(
         "(",
-        |out| write_arglist_no_delimiters(ctx, out, &reducer.args, None),
+        |out| write_arglist_no_delimiters_ctx(ctx, out, &reducer.args, None),
         ") ",
     );
 
@@ -553,12 +606,99 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     output.into_inner()
 }
 
+/// Generate a `mod.rs` as the entry point into the autogenerated code.
+///
+/// The `mod.rs` contains several things:
+///
+/// 1. `pub mod` declarations for all the other files generated. Without these, either the
+///    other files wouldn't get compiled, or users would have to `mod`-declare each file
+///    manually.
+///
+/// 2. `enum ReducerEvent`, which has variants for each reducer in the module.
+///    Row callbacks are passed an optional `ReducerEvent` as an additional argument,
+///    so they can know what reducer caused the row to change.
+///
+/// 3. `fn handle_table_update`, which dispatches on table name to find the appropriate type
+///    to parse the rows and insert or remove them into/from the
+///    `spacetimedb_client_sdk::client_cache::ClientCache`. The other SDKs avoid needing
+///    such a dispatch function by dynamically discovering the set of table types,
+///    e.g. using C#'s `AppDomain`. Rust's type system prevents this.
+///
+/// 4. `fn invoke_row_callbacks`, which is invoked after `handle_table_update` and `handle_resubscribe`
+///    to distribute a new client cache state and an optional `ReducerEvent`
+///    to the `DbCallbacks` worker alongside each row callback for the preceding table change.
+///
+/// 5. `fn handle_resubscribe`, which serves the same role as `handle_table_update`, but for
+///    re-subscriptions in a `SubscriptionUpdate` following an outgoing `Subscribe`.
+///
+/// 6. `fn handle_event`, which serves the same role as `handle_table_update`, but for
+///    reducers.
+///
+/// 7. `fn connect`, which invokes
+///    `spacetimedb_client_sdk::background_connection::BackgroundDbConnection::connect`
+///    to connect to a remote database, and passes the `handle_row_update`
+///    and `handle_event` functions so the `BackgroundDbConnection` can spawn workers
+///    which use those functions to dispatch on the content of messages.
+pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, String)> {
+    let mut output = CodeIndenter::new(String::new());
+    let out = &mut output;
+
+    // Warn people not to edit the file by hand.
+    print_auto_generated_file_comment(out);
+
+    // Import everything all the other files import.
+    print_spacetimedb_imports(out);
+
+    // Import some extra stuff, just for the root module.
+    print_dispatch_imports(out);
+
+    out.newline();
+
+    // Declare `pub mod` for each of the files generated.
+    print_module_decls(out, items);
+
+    out.newline();
+
+    // Define `enum ReducerEvent`.
+    print_reducer_event_defn(out, items);
+
+    out.newline();
+
+    // Define `fn handle_table_update`.
+    print_handle_table_update_defn(ctx, out, items);
+
+    out.newline();
+
+    // Define `fn invoke_row_callbacks`.
+    print_invoke_row_callbacks_defn(out, items);
+
+    out.newline();
+
+    // Define `fn handle_resubscribe`.
+    print_handle_resubscribe_defn(out, items);
+
+    out.newline();
+
+    // Define `fn handle_event`.
+    print_handle_event_defn(out, items);
+
+    out.newline();
+
+    // Define `fn connect`.
+    print_connect_defn(out);
+
+    vec![("mod.rs".to_string(), output.into_inner())]
+}
+
+/// Extra imports required by the `mod.rs` file, in addition to the [`SPACETIMEDB_IMPORTS`].
 const DISPATCH_IMPORTS: &[&str] = &[
     "use spacetimedb_client_sdk::client_api_messages::{TableUpdate, Event};",
-    "use spacetimedb_client_sdk::client_cache::{ClientCache};",
+    "use spacetimedb_client_sdk::client_cache::{ClientCache, RowCallbackReminders};",
     "use spacetimedb_client_sdk::background_connection::BackgroundDbConnection;",
     "use spacetimedb_client_sdk::identity::Credentials;",
     "use spacetimedb_client_sdk::callbacks::{DbCallbacks, ReducerCallbacks};",
+    "use spacetimedb_client_sdk::reducer::AnyReducerEvent;",
+    "use std::sync::Arc;",
 ];
 
 fn print_dispatch_imports(out: &mut Indenter) {
@@ -569,194 +709,21 @@ fn is_init(reducer: &ReducerDef) -> bool {
     reducer.name == "__init__"
 }
 
-const CONNECT_DOCSTRING: &[&str] = &[
-    "/// Connect to a database named `db_name` accessible over the internet at the URI `host`.",
-    "///",
-    "/// If `credentials` are supplied, they will be passed to the new connection to",
-    "/// identify and authenticate the user. Otherwise, a set of `Credentials` will be",
-    "/// generated by the server.",
-];
-
-fn print_connect_docstring(out: &mut Indenter) {
-    print_lines(out, CONNECT_DOCSTRING);
+fn iter_reducer_items(items: &[GenItem]) -> impl Iterator<Item = &ReducerDef> {
+    items.iter().filter_map(|item| match item {
+        GenItem::Reducer(reducer) if !is_init(reducer) => Some(reducer),
+        _ => None,
+    })
 }
 
-/// Generate a `mod.rs` as the entry point into the autogenerated code.
-///
-/// The `mod.rs` contains 5 things:
-///
-/// 1. `pub mod` declarations for all the other files generated. Without these, either the
-///    other files wouldn't get compiled, or users would have to `mod`-declare each file
-///    manually.
-///
-/// 2. `handle_table_update`, which dispatches on table name to find the appropriate type
-///    to parse the rows and insert or remove them into/from the
-///    `spacetimedb_client_sdk::client_cache::ClientCache`. The other SDKs avoid needing
-///    such a dispatch function by dynamically discovering the set of table types,
-///    e.g. using C#'s `AppDomain`. Rust's type system prevents this.
-///
-/// 3. `handle_resubscribe`, which serves the same role as `handle_table_update`, but for
-///    re-subscriptions in a `SubscriptionUpdate` following an outgoing `Subscribe`.
-///
-/// 4. `handle_event`, which serves the same role as `handle_table_update`, but for
-///    reducers.
-///
-/// 5. `connect`, which invokes
-///    `spacetimedb_client_sdk::background_connection::BackgroundDbConnection::connect` to
-///    connect to a remote database, and passes the `handle_row_update` and
-///    `handle_event` functions so the `BackgroundDbConnection` can spawn workers
-///    which use those functions to dispatch on the content of messages.
-pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, String)> {
-    let mut output = CodeIndenter::new(String::new());
-    let out = &mut output;
-
-    print_auto_generated_file_comment(out);
-    print_spacetimedb_imports(out);
-
-    print_dispatch_imports(out);
-
-    out.newline();
-
-    print_module_decls(out, items);
-
-    out.newline();
-
-    // Muffle unused warning for handle_row_update, which is not supposed to be visible to
-    // users. It will be used if and only if `connect` is used, so that unused warning is
-    // sufficient, and not as confusing.
-    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
-    out.delimited_block(
-        "fn handle_table_update(table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut DbCallbacks) {",
-        |out| {
-            writeln!(out, "let table_name = &table_update.table_name[..];").unwrap();
-            out.delimited_block(
-                "match table_name {",
-                |out| {
-                    for item in items {
-                        if let GenItem::Table(table) = item {
-                            writeln!(
-                                out,
-                                "{:?} => client_cache.{}::<{}::{}>(callbacks, table_update),",
-                                table.name,
-                                if find_primary_key_column_index(ctx, table).is_some() {
-                                    "handle_table_update_with_primary_key"
-                                } else {
-                                    "handle_table_update_no_primary_key"
-                                },
-                                table.name.to_case(Case::Snake),
-                                table.name.to_case(Case::Pascal),
-                            ).unwrap();
-                        }
-                    }
-                    writeln!(
-                        out,
-                        "_ => spacetimedb_client_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name),",
-                    ).unwrap();
-                },
-                "}\n",
-            )
-        },
-        "}\n",
-    );
-
-    out.newline();
-
-    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
-    out.delimited_block(
-        "fn handle_resubscribe(new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut DbCallbacks) {",
-        |out| {
-            writeln!(out, "let table_name = &new_subs.table_name[..];").unwrap();
-            out.delimited_block(
-                "match table_name {",
-                |out| {
-                    for item in items {
-                        if let GenItem::Table(table) = item {
-                            writeln!(
-                                out,
-                                "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),",
-                                table.name,
-                                table.name.to_case(Case::Snake),
-                                table.name.to_case(Case::Pascal),
-                            ).unwrap();
-                        }
-                    }
-                    writeln!(
-                        out,
-                        "_ => spacetimedb_client_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name)," ,
-                    ).unwrap();
-                },
-                "}\n",
-            );
-        },
-        "}\n"
-    );
-
-    out.newline();
-
-    // Like `handle_row_update`, muffle unused warning for `handle_event`.
-    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
-    out.delimited_block(
-        "fn handle_event(event: Event, reducer_callbacks: &mut ReducerCallbacks) {",
-        |out| {
-            out.delimited_block(
-                "let Some(function_call) = &event.function_call else {",
-                |out| writeln!(out, "spacetimedb_client_sdk::log::warn!(\"Received Event with None function_call\"); return;")
-                    .unwrap(),
-                "};\n",
-            );
-            out.delimited_block(
-                "match &function_call.reducer[..] {",
-                |out| {
-                    for item in items {
-                        if let GenItem::Reducer(reducer) = item {
-                            if !is_init(reducer) {
-                                writeln!(
-                                    out,
-                                    "{:?} => reducer_callbacks.handle_event_of_type::<{}_reducer::{}>(event),",
-                                    reducer.name,
-                                    reducer.name.to_case(Case::Snake),
-                                    reducer.name.to_case(Case::Pascal),
-                                ).unwrap();
-                            }
-                        }
-                    }
-                    writeln!(
-                        out,
-                        "unknown => spacetimedb_client_sdk::log::error!(\"Event on an unknown reducer: {{:?}}\", unknown),",
-                    ).unwrap();
-                },
-                "}\n",
-            );
-        },
-        "}\n",
-    );
-
-    out.newline();
-
-    print_connect_docstring(out);
-    out.delimited_block(
-        "pub fn connect<Host>(host: Host, db_name: &str, credentials: Option<Credentials>) -> Result<()>
-where
-\tHost: TryInto<spacetimedb_client_sdk::http::Uri>,
-\t<Host as TryInto<spacetimedb_client_sdk::http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
-{",
-        |out| out.delimited_block(
-            "with_connection(|connection| {",
-            |out| {
-                writeln!(
-                    out,
-                    "*connection = Some(BackgroundDbConnection::connect(host, db_name, credentials, handle_table_update, handle_resubscribe, handle_event)?);"
-                ).unwrap();
-                writeln!(out, "Ok(())").unwrap();
-            },
-            "})\n",
-        ),
-        "}\n",
-    );
-
-    vec![("mod.rs".to_string(), output.into_inner())]
+fn iter_table_items(items: &[GenItem]) -> impl Iterator<Item = &TableDef> {
+    items.iter().filter_map(|item| match item {
+        GenItem::Table(table) => Some(table),
+        _ => None,
+    })
 }
 
+/// Print `pub mod` declarations for all the files that will be generated for `items`.
 fn print_module_decls(out: &mut Indenter, items: &[GenItem]) {
     for item in items {
         let (name, suffix) = match item {
@@ -772,6 +739,207 @@ fn print_module_decls(out: &mut Indenter, items: &[GenItem]) {
         let module_name = name.to_case(Case::Snake);
         writeln!(out, "pub mod {}{};", module_name, suffix).unwrap();
     }
+}
+
+/// Define the `handle_table_update` function,
+/// which dispatches on the table name in a `TableUpdate` message
+/// to call an appropriate method on the `ClientCache`.
+fn print_handle_table_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
+    // Muffle unused warning for handle_table_update, which is not supposed to be visible to
+    // users. It will be used if and only if `connect` is used, so that unused warning is
+    // sufficient, and not as confusing.
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    out.delimited_block(
+        "fn handle_table_update(table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
+        |out| {
+            writeln!(out, "let table_name = &table_update.table_name[..];").unwrap();
+            out.delimited_block(
+                "match table_name {",
+                |out| {
+                    for table in iter_table_items(items) {
+                        writeln!(
+                            out,
+                            "{:?} => client_cache.{}::<{}::{}>(callbacks, table_update),",
+                            table.name,
+                            if find_primary_key_column_index(ctx, table).is_some() {
+                                "handle_table_update_with_primary_key"
+                            } else {
+                                "handle_table_update_no_primary_key"
+                            },
+                            table.name.to_case(Case::Snake),
+                            table.name.to_case(Case::Pascal),
+                        ).unwrap();
+                    }
+                    writeln!(
+                        out,
+                        "_ => spacetimedb_client_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name),",
+                    ).unwrap();
+                },
+                "}\n",
+            );
+        },
+        "}\n",
+    );
+}
+
+/// Define the `invoke_row_callbacks` function,
+/// which does `RowCallbackReminders::invoke_callbacks` on each table type defined in the `items`.
+fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
+    // Like `handle_table_update`, muffle unused warning for `invoke_row_callbacks`.
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    out.delimited_block(
+        "fn invoke_row_callbacks(reminders: &mut RowCallbackReminders, worker: &mut DbCallbacks, reducer_event: Option<Arc<AnyReducerEvent>>, state: &Arc<ClientCache>) {",
+        |out| {
+            for table in iter_table_items(items) {
+                writeln!(
+                    out,
+                    "reminders.invoke_callbacks::<{}::{}>(worker, &reducer_event, state);",
+                    table.name.to_case(Case::Snake),
+                    table.name.to_case(Case::Pascal),
+                ).unwrap();
+            }
+        },
+        "}\n",
+    );
+}
+
+/// Define the `handle_resubscribe` function,
+/// which dispatches on the table name in a `TableUpdate`
+/// to invoke `ClientCache::handle_resubscribe_for_type` with an appropriate type arg.
+fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
+    // Like `handle_table_update`, muffle unused warning for `handle_resubscribe`.
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    out.delimited_block(
+        "fn handle_resubscribe(new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
+        |out| {
+            writeln!(out, "let table_name = &new_subs.table_name[..];").unwrap();
+            out.delimited_block(
+                "match table_name {",
+                |out| {
+                    for table in iter_table_items(items) {
+                        writeln!(
+                            out,
+                            "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),",
+                            table.name,
+                            table.name.to_case(Case::Snake),
+                            table.name.to_case(Case::Pascal),
+                        ).unwrap();
+                    }
+                    writeln!(
+                        out,
+                        "_ => spacetimedb_client_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name)," ,
+                    ).unwrap();
+                },
+                "}\n",
+            );
+        },
+        "}\n"
+    );
+}
+
+/// Define the `handle_event` function,
+/// which dispatches on the reducer name in an `Event`
+/// to `ReducerCallbacks::handle_event_of_type` with an appropriate type argument.
+fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
+    // Like `handle_table_update`, muffle unused warning for `handle_event`.
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    out.delimited_block(
+        "fn handle_event(event: Event, reducer_callbacks: &mut ReducerCallbacks, state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {",
+        |out| {
+            out.delimited_block(
+                "let Some(function_call) = &event.function_call else {",
+                |out| writeln!(out, "spacetimedb_client_sdk::log::warn!(\"Received Event with None function_call\"); return None;")
+                    .unwrap(),
+                "};\n",
+            );
+            out.delimited_block(
+                "match &function_call.reducer[..] {",
+                |out| {
+                    for reducer in iter_reducer_items(items) {
+                        let type_or_variant_name = reducer.name.to_case(Case::Pascal);
+                        writeln!(
+                            out,
+                            "{:?} => reducer_callbacks.handle_event_of_type::<{}_reducer::{}, ReducerEvent>(event, state, ReducerEvent::{}),",
+                            reducer.name,
+                            reducer.name.to_case(Case::Snake),
+                            type_or_variant_name,
+                            type_or_variant_name,
+                        ).unwrap();
+                    }
+                    writeln!(
+                        out,
+                        "unknown => {{ spacetimedb_client_sdk::log::error!(\"Event on an unknown reducer: {{:?}}\", unknown); None }}",
+                    ).unwrap();
+                },
+                "}\n",
+            );
+        },
+        "}\n",
+    );
+}
+
+const CONNECT_DOCSTRING: &[&str] = &[
+    "/// Connect to a database named `db_name` accessible over the internet at the URI `host`.",
+    "///",
+    "/// If `credentials` are supplied, they will be passed to the new connection to",
+    "/// identify and authenticate the user. Otherwise, a set of `Credentials` will be",
+    "/// generated by the server.",
+];
+
+fn print_connect_docstring(out: &mut Indenter) {
+    print_lines(out, CONNECT_DOCSTRING);
+}
+
+/// Define the `connect` wrapper,
+/// which passes all the autogenerated dispatch functions to `BackgroundDbConnection::connect`.
+fn print_connect_defn(out: &mut Indenter) {
+    print_connect_docstring(out);
+    out.delimited_block(
+        "pub fn connect<Host>(host: Host, db_name: &str, credentials: Option<Credentials>) -> Result<()>
+where
+\tHost: TryInto<spacetimedb_client_sdk::http::Uri>,
+\t<Host as TryInto<spacetimedb_client_sdk::http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
+{",
+        |out| out.delimited_block(
+            "with_connection(|connection| {",
+            |out| {
+                writeln!(
+                    out,
+                    "*connection = Some(BackgroundDbConnection::connect(host, db_name, credentials, handle_table_update, handle_resubscribe, invoke_row_callbacks, handle_event)?);"
+                ).unwrap();
+                writeln!(out, "Ok(())").unwrap();
+            },
+            "})\n",
+        ),
+        "}\n",
+    );
+}
+
+fn print_reducer_event_defn(out: &mut Indenter, items: &[GenItem]) {
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+
+    print_enum_derives(out);
+    out.delimited_block(
+        "pub enum ReducerEvent {",
+        |out| {
+            for item in items {
+                if let GenItem::Reducer(reducer) = item {
+                    if !is_init(reducer) {
+                        let type_name = reducer.name.to_case(Case::Pascal);
+                        writeln!(
+                            out,
+                            "{}({}_reducer::{}),",
+                            type_name,
+                            reducer.name.to_case(Case::Snake),
+                            type_name,
+                        )
+                        .unwrap();
+                    }
+                }
+            }
+        },
+        "}\n",
+    );
 }
 
 fn generate_imports_variants(ctx: &GenCtx, imports: &mut Imports, variants: &[SumTypeVariant]) {

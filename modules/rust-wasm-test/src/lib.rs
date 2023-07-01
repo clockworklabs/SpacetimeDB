@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_names)]
 
 use spacetimedb::{
-    delete_eq, query, spacetimedb, AlgebraicValue, Deserialize, ReducerContext, SpacetimeType, Timestamp,
+    delete_by_col_eq, query, spacetimedb, AlgebraicValue, Deserialize, ReducerContext, SpacetimeType, Timestamp,
 };
 use spacetimedb_lib::bsatn;
 
@@ -40,6 +40,8 @@ pub struct TestE {
     name: String,
 }
 
+pub type TestAlias = TestA;
+
 // #[spacetimedb(migrate)]
 // pub fn migrate() {}
 
@@ -60,7 +62,7 @@ pub fn repeating_test(ctx: ReducerContext, prev_time: Timestamp) {
 }
 
 #[spacetimedb(reducer)]
-pub fn test(ctx: ReducerContext, arg: TestA, arg2: TestB, arg3: TestC) -> anyhow::Result<()> {
+pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> anyhow::Result<()> {
     log::info!("BEGIN");
     log::info!("sender: {:?}", ctx.sender);
     log::info!("timestamp: {:?}", ctx.timestamp);
@@ -80,21 +82,15 @@ pub fn test(ctx: ReducerContext, arg: TestA, arg2: TestB, arg3: TestC) -> anyhow
         });
     }
 
-    let mut row_count = 0;
-    for _row in TestA::iter() {
-        row_count += 1;
-    }
+    let row_count = TestA::iter().count();
 
     log::info!("Row count before delete: {:?}", row_count);
 
     for row in 5..10 {
-        delete_eq(1, 0, &AlgebraicValue::U32(row))?;
+        delete_by_col_eq(1, 0, &AlgebraicValue::U32(row))?;
     }
 
-    let mut row_count = 0;
-    for _row in TestA::iter() {
-        row_count += 1;
-    }
+    let row_count = TestA::iter().count();
 
     match TestE::insert(TestE {
         id: 0,
@@ -106,10 +102,7 @@ pub fn test(ctx: ReducerContext, arg: TestA, arg2: TestB, arg3: TestC) -> anyhow
 
     log::info!("Row count after delete: {:?}", row_count);
 
-    let mut other_row_count = 0;
-    for _row in query!(|row: TestA| row.x >= 0 && row.x <= u32::MAX) {
-        other_row_count += 1;
-    }
+    let other_row_count = query!(|row: TestA| row.x >= 0 && row.x <= u32::MAX).count();
 
     log::info!("Row count filtered by condition: {:?}", other_row_count);
 
@@ -119,7 +112,7 @@ pub fn test(ctx: ReducerContext, arg: TestA, arg2: TestB, arg3: TestC) -> anyhow
 
 #[spacetimedb(reducer)]
 pub fn add_player(name: String) -> Result<(), String> {
-    TestE::insert(TestE { id: 0, name }).map_err(|_| "Duplicate row entry.".to_string())?;
+    TestE::insert(TestE { id: 0, name })?;
     Ok(())
 }
 
