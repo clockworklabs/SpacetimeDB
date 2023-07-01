@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use axum::extract::rejection::TypedHeaderRejectionReason;
+use axum::extract::rejection::{TypedHeaderRejection, TypedHeaderRejectionReason};
 use axum::headers::{self, authorization};
 use axum::response::IntoResponse;
 use axum::TypedHeader;
 use http::{request, HeaderValue, StatusCode};
 use spacetimedb::auth::identity::{
-    decode_token, encode_token, DecodingKey, EncodingKey, JwtError, SpacetimeIdentityClaims,
+    decode_token, encode_token, DecodingKey, EncodingKey, JwtError, JwtErrorKind, SpacetimeIdentityClaims,
 };
 use spacetimedb::host::EnergyDiff;
 use spacetimedb::identity::Identity;
@@ -68,7 +68,9 @@ impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> fo
             Ok(axum::TypedHeader(headers::Authorization(creds @ SpacetimeCreds { .. }))) => {
                 let claims = creds
                     .decode_token(state.public_key())
-                    .map_err(|_| AuthorizationRejection)?;
+                    .map_err(|e| AuthorizationRejection {
+                        reason: AuthorizationRejectionReason::Jwt(e.into_kind()),
+                    })?;
                 let auth = SpacetimeAuth {
                     creds,
                     identity: claims.hex_identity,
@@ -76,18 +78,49 @@ impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> fo
                 Ok(Self { auth: Some(auth) })
             }
             Err(e) => match e.reason() {
+                // Leave it to handlers to decide on unauthorized requests
                 TypedHeaderRejectionReason::Missing => Ok(Self { auth: None }),
-                _ => Err(AuthorizationRejection),
+                _ => Err(AuthorizationRejection {
+                    reason: AuthorizationRejectionReason::Header(e),
+                }),
             },
         }
     }
 }
 
-pub struct AuthorizationRejection;
+pub struct AuthorizationRejection {
+    reason: AuthorizationRejectionReason,
+}
+
 impl IntoResponse for AuthorizationRejection {
     fn into_response(self) -> axum::response::Response {
-        (StatusCode::BAD_REQUEST, "Authorization is invalid - malformed token.").into_response()
+        // Most likely, the server key was rotated
+        const ROTATED: (StatusCode, &str) = (
+            StatusCode::UNAUTHORIZED,
+            "Authorization failed: token not signed by this instance",
+        );
+        // JWT is hard bruh
+        const INVALID: (StatusCode, &str) = (StatusCode::BAD_REQUEST, "Authorization is invalid: malformed token");
+        // Sensible fallback if no auth header is present
+        const REQUIRED: (StatusCode, &str) = (StatusCode::UNAUTHORIZED, "Authorization required");
+
+        log::trace!("Authorization rejection: {:?}", self.reason);
+
+        match self.reason {
+            AuthorizationRejectionReason::Jwt(JwtErrorKind::InvalidSignature) => ROTATED.into_response(),
+            AuthorizationRejectionReason::Header(rejection) => match rejection.reason() {
+                TypedHeaderRejectionReason::Missing => REQUIRED.into_response(),
+                _ => rejection.into_response(),
+            },
+            _ => INVALID.into_response(),
+        }
     }
+}
+
+#[derive(Debug)]
+enum AuthorizationRejectionReason {
+    Jwt(JwtErrorKind),
+    Header(TypedHeaderRejection),
 }
 
 impl SpacetimeAuth {

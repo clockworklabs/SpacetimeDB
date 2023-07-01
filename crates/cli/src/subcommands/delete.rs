@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::util::{database_address, get_auth_header_only};
+use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
 use clap::{Arg, ArgMatches};
 
 pub fn cli() -> clap::Command {
@@ -24,18 +24,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let database = args.get_one::<String>("database").unwrap();
     let identity_or_name = args.get_one::<String>("identity");
 
-    let auth_header = get_auth_header_only(&mut config, false, identity_or_name).await;
-
     let address = database_address(&config, database).await?;
 
-    let client = reqwest::Client::new();
-    let mut builder = client.post(format!("{}/database/delete/{}", config.get_host_url(), address));
-    if let Some(auth_header) = auth_header {
-        builder = builder.header("Authorization", auth_header);
-    }
-    let res = builder.send().await?;
-
-    res.error_for_status()?;
+    let builder = reqwest::Client::new().post(format!("{}/database/delete/{}", config.get_host_url(), address));
+    let auth_header = get_auth_header_only(&mut config, false, identity_or_name).await;
+    let builder = add_auth_header_opt(builder, &auth_header);
+    builder.send().await?.error_for_status()?;
 
     Ok(())
 }

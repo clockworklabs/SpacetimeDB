@@ -2,7 +2,6 @@ use crate::Config;
 use clap::{Arg, ArgMatches, Command};
 use reqwest::StatusCode;
 use serde::Deserialize;
-use serde_json;
 use tabled::object::Columns;
 use tabled::{Alignment, Modify, Style, Table, Tabled};
 
@@ -54,12 +53,12 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         )));
     }
 
-    let res_text = res.text().await?;
-    let result: DatabasesResult = serde_json::from_str(res_text.as_str())?;
-    let mut result_list: Vec<AddressRow> = Vec::<AddressRow>::new();
-    for entry in result.addresses {
-        result_list.push(AddressRow { db_address: entry });
-    }
+    let result: DatabasesResult = res.json().await?;
+    let result_list = result
+        .addresses
+        .into_iter()
+        .map(|db_address| AddressRow { db_address })
+        .collect::<Vec<_>>();
 
     if !result_list.is_empty() {
         let table = Table::new(result_list)

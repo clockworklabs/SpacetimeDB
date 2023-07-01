@@ -513,6 +513,10 @@ impl EntityDef {
 #[derive(Debug)]
 pub struct Catalog(Arc<ModuleInfo>);
 impl Catalog {
+    pub fn typespace(&self) -> &Typespace {
+        &self.0.typespace
+    }
+
     pub fn get(&self, name: &str) -> Option<TypeInSpace<'_, EntityDef>> {
         self.0.catalog.get(name).map(|ty| self.0.typespace.with_type(ty))
     }
