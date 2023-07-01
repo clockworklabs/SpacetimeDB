@@ -21,19 +21,17 @@ use super::{
     },
     traits::{
         self, ColId, DataRow, IndexDef, IndexId, IndexSchema, MutTx, MutTxDatastore, SequenceDef, SequenceId, TableDef,
-        TableId, TableSchema, TxDatastore,
+        TableId, TableSchema, TxData, TxDatastore,
     },
 };
 use crate::{
+    db::datastore::traits::{TxOp, TxRecord},
     db::{
         datastore::{
             system_tables::{st_columns_schema, st_indexes_schema, st_sequences_schema, st_table_schema},
             traits::ColumnSchema,
         },
-        messages::{
-            transaction::Transaction,
-            write::{self, Operation, Write},
-        },
+        messages::{transaction::Transaction, write::Operation},
         ostorage::ObjectDB,
     },
     error::{DBError, IndexError, TableError},
@@ -113,10 +111,10 @@ impl CommittedState {
         Self { tables: HashMap::new() }
     }
 
-    fn get_or_create_table(&mut self, table_id: TableId, row_type: ProductType, schema: TableSchema) -> &mut Table {
+    fn get_or_create_table(&mut self, table_id: TableId, row_type: &ProductType, schema: &TableSchema) -> &mut Table {
         self.tables.entry(table_id).or_insert_with(|| Table {
-            row_type,
-            schema,
+            row_type: row_type.clone(),
+            schema: schema.clone(),
             rows: BTreeMap::new(),
             indexes: HashMap::new(),
         })
@@ -126,18 +124,24 @@ impl CommittedState {
         self.tables.get_mut(table_id)
     }
 
-    fn merge(&mut self, tx_state: TxState) -> Arc<Transaction> {
-        let mut transaction = Transaction { writes: vec![] };
+    fn merge(&mut self, tx_state: TxState, memory: BTreeMap<DataKey, Arc<Vec<u8>>>) -> TxData {
+        let mut tx_data = TxData { records: vec![] };
         for (table_id, table) in tx_state.insert_tables {
-            let commit_table = self.get_or_create_table(table_id, table.row_type, table.schema);
-            for (row_id, row) in table.rows {
-                commit_table.insert(row_id, row);
-                transaction.writes.push(Write {
-                    operation: write::Operation::Insert,
-                    set_id: table_id.0,
-                    data_key: row_id.0,
-                })
-            }
+            let commit_table = self.get_or_create_table(table_id, &table.row_type, &table.schema);
+            tx_data.records.extend(table.rows.into_iter().map(|(row_id, row)| {
+                commit_table.insert(row_id, row.clone());
+                let pv = row;
+                let bytes = match row_id.0 {
+                    DataKey::Data(data) => Arc::new(data.to_vec()),
+                    DataKey::Hash(_) => memory.get(&row_id.0).unwrap().clone(),
+                };
+                TxRecord {
+                    op: TxOp::Insert(bytes),
+                    table_id,
+                    key: row_id.0,
+                    product_value: pv,
+                }
+            }));
 
             // Add all newly created indexes to the committed state
             for (_, index) in table.indexes {
@@ -158,16 +162,18 @@ impl CommittedState {
             // 5. Commit the transaction
             if let Some(table) = self.get_table(&table_id) {
                 for row_id in row_ids {
-                    table.delete(&row_id);
-                    transaction.writes.push(Write {
-                        operation: write::Operation::Delete,
-                        set_id: table_id.0,
-                        data_key: row_id.0,
-                    })
+                    if let Some(pv) = table.delete(&row_id) {
+                        tx_data.records.push(TxRecord {
+                            op: TxOp::Delete,
+                            table_id,
+                            key: row_id.0,
+                            product_value: pv,
+                        })
+                    }
                 }
             }
         }
-        Arc::new(transaction)
+        tx_data
     }
 
     pub fn index_seek<'a>(
@@ -192,7 +198,7 @@ struct TxState {
 /// Represents whether a row has been inserted, deleted, or has not been
 /// alterted in the current transaction.
 enum RowOp {
-    Insert,
+    Insert(ProductValue),
     Delete,
     Absent,
 }
@@ -206,13 +212,16 @@ impl TxState {
     }
 
     pub fn get_row_op(&self, table_id: &TableId, row_id: &RowId) -> RowOp {
-        if Some(true) == self.delete_tables.get(table_id).map(|set| set.contains(row_id)) {
+        if let Some(true) = self.delete_tables.get(table_id).map(|set| set.contains(row_id)) {
             return RowOp::Delete;
         }
         let Some(table) = self.insert_tables.get(table_id) else {
             return RowOp::Absent;
         };
-        table.get_row(row_id).map(|_| RowOp::Insert).unwrap_or(RowOp::Absent)
+        table
+            .get_row(row_id)
+            .map(|pv| RowOp::Insert(pv.clone()))
+            .unwrap_or(RowOp::Absent)
     }
 
     pub fn get_row(&self, table_id: &TableId, row_id: &RowId) -> Option<&ProductValue> {
@@ -272,20 +281,20 @@ impl SequencesState {
 }
 
 struct Inner {
-    // TODO: This horror is brought to you by the fact that in two
-    // place we need to get access to the bytes of large blobs
-    // by looking them up by their `DataKey` when they may have
-    // been deleted from the datastore.
-    ever_growing_waste_of_memory: BTreeMap<DataKey, Arc<Vec<u8>>>,
+    /// All of the byte objects inserted in the current transaction.
+    memory: BTreeMap<DataKey, Arc<Vec<u8>>>,
+    /// The state of the database up to the point of the last committed transaction.
     committed_state: CommittedState,
+    /// The state of all insertions and deletions in this transaction.
     tx_state: Option<TxState>,
+    /// The state of sequence generation in this database.
     sequence_state: SequencesState,
 }
 
 impl Inner {
     pub fn new() -> Self {
         Self {
-            ever_growing_waste_of_memory: BTreeMap::new(),
+            memory: BTreeMap::new(),
             committed_state: CommittedState::new(),
             tx_state: None,
             sequence_state: SequencesState::new(),
@@ -297,9 +306,9 @@ impl Inner {
         let table_name = &schema.table_name;
 
         // Insert the table row into st_tables, creating st_tables if it's missing
-        let st_tables =
-            self.committed_state
-                .get_or_create_table(ST_TABLES_ID, ST_TABLE_ROW_TYPE.clone(), st_table_schema());
+        let st_tables = self
+            .committed_state
+            .get_or_create_table(ST_TABLES_ID, &ST_TABLE_ROW_TYPE, &st_table_schema());
         let row = StTableRow {
             table_id,
             table_name: &table_name,
@@ -320,11 +329,9 @@ impl Inner {
             let row = ProductValue::from(&row);
             let data_key = row.to_data_key();
             {
-                let st_columns = self.committed_state.get_or_create_table(
-                    ST_COLUMNS_ID,
-                    ST_COLUMNS_ROW_TYPE.clone(),
-                    st_columns_schema(),
-                );
+                let st_columns =
+                    self.committed_state
+                        .get_or_create_table(ST_COLUMNS_ID, &ST_COLUMNS_ROW_TYPE, &st_columns_schema());
                 st_columns.rows.insert(RowId(data_key), row);
             }
 
@@ -339,8 +346,8 @@ impl Inner {
                 };
                 let st_sequences = self.committed_state.get_or_create_table(
                     ST_SEQUENCES_ID,
-                    ST_SEQUENCE_ROW_TYPE.clone(),
-                    st_sequences_schema(),
+                    &ST_SEQUENCE_ROW_TYPE,
+                    &st_sequences_schema(),
                 );
                 let row = StSequenceRow {
                     sequence_id: seq_id.0,
@@ -362,7 +369,7 @@ impl Inner {
         // Insert the indexes into st_indexes
         let st_indexes =
             self.committed_state
-                .get_or_create_table(ST_INDEXES_ID, ST_INDEX_ROW_TYPE.clone(), st_indexes_schema());
+                .get_or_create_table(ST_INDEXES_ID, &ST_INDEX_ROW_TYPE, &st_indexes_schema());
         for (_, index) in schema.indexes.iter().enumerate() {
             let row = StIndexRow {
                 index_id: index.index_id,
@@ -976,17 +983,21 @@ impl Inner {
         })
     }
 
-    fn contains_row(&self, table_id: &TableId, row_id: &RowId) -> bool {
+    fn contains_row(&self, table_id: &TableId, row_id: &RowId) -> RowOp {
         match self.tx_state.as_ref().unwrap().get_row_op(table_id, row_id) {
-            RowOp::Insert => return true,
-            RowOp::Delete => return false,
+            RowOp::Insert(pv) => return RowOp::Insert(pv),
+            RowOp::Delete => return RowOp::Delete,
             RowOp::Absent => (),
         }
-        self.committed_state
+        match self
+            .committed_state
             .tables
             .get(table_id)
-            .map(|table| table.rows.contains_key(row_id))
-            .unwrap_or(false)
+            .and_then(|table| table.rows.get(row_id))
+        {
+            Some(pv) => RowOp::Insert(pv.clone()),
+            None => RowOp::Absent,
+        }
     }
 
     fn table_exists(&self, table_id: &TableId) -> bool {
@@ -1190,7 +1201,7 @@ impl Inner {
             match data_key {
                 DataKey::Data(_) => (),
                 DataKey::Hash(_) => {
-                    self.ever_growing_waste_of_memory.insert(data_key, Arc::new(bytes));
+                    self.memory.insert(data_key, Arc::new(bytes));
                 }
             };
         }
@@ -1201,28 +1212,13 @@ impl Inner {
         Ok(())
     }
 
-    fn resolve_data_key(&self, data_key: &DataKey) -> super::Result<Option<Arc<Vec<u8>>>> {
-        match data_key {
-            DataKey::Data(data) => return Ok(Some(Arc::new(data.to_vec()))),
-            DataKey::Hash(_) => (),
-        }
-        if let Some(bytes) = self.ever_growing_waste_of_memory.get(data_key) {
-            return Ok(Some(bytes.clone()));
-        }
-        Ok(None)
-    }
-
     fn get(&self, table_id: &TableId, row_id: &RowId) -> super::Result<Option<DataRef>> {
         if !self.table_exists(table_id) {
             return Err(TableError::IdNotFound(table_id.0).into());
         }
         match self.tx_state.as_ref().unwrap().get_row_op(table_id, row_id) {
-            RowOp::Insert => {
-                return Ok(self
-                    .tx_state
-                    .as_ref()
-                    .and_then(|tx_state| tx_state.get_row(table_id, row_id))
-                    .map(|row| DataRef::new(row.clone())));
+            RowOp::Insert(row) => {
+                return Ok(Some(DataRef::new(row)));
             }
             RowOp::Delete => {
                 return Ok(None);
@@ -1272,14 +1268,14 @@ impl Inner {
     }
 
     fn delete_row_internal(&mut self, table_id: &TableId, row_id: &RowId) -> bool {
-        if self.contains_row(table_id, row_id) {
+        if let RowOp::Insert(_) = self.contains_row(table_id, row_id) {
             self.tx_state
                 .as_mut()
                 .unwrap()
                 .get_or_create_delete_table(*table_id)
                 .insert(*row_id);
             if let Some(table) = self.tx_state.as_mut().unwrap().get_insert_table_mut(table_id) {
-                table.delete(row_id)
+                table.delete(row_id);
             }
             true
         } else {
@@ -1353,9 +1349,11 @@ impl Inner {
         }
     }
 
-    fn commit(&mut self) -> super::Result<Option<Arc<Transaction>>> {
+    fn commit(&mut self) -> super::Result<Option<TxData>> {
         let tx_state = self.tx_state.take().unwrap();
-        Ok(Some(self.committed_state.merge(tx_state)))
+        let memory = std::mem::take(&mut self.memory);
+        let tx_data = self.committed_state.merge(tx_state, memory);
+        Ok(Some(tx_data))
     }
 
     fn rollback(&mut self) {
@@ -1539,8 +1537,8 @@ impl Iterator for Iter<'_> {
                             .as_ref()
                             .map(|tx_state| tx_state.get_row_op(&self.table_id, row_id))
                         {
-                            Some(RowOp::Insert) => (), // Do nothing, we'll get it in the next stage
-                            Some(RowOp::Delete) => (), // Skip it, it's been deleted
+                            Some(RowOp::Insert(_)) => (), // Do nothing, we'll get it in the next stage
+                            Some(RowOp::Delete) => (),    // Skip it, it's been deleted
                             Some(RowOp::Absent) => {
                                 return Some(DataRef::new(row.clone()));
                             }
@@ -1764,10 +1762,7 @@ impl traits::MutTx for Locking {
         tx.lock.rollback();
     }
 
-    fn commit_mut_tx(
-        &self,
-        mut tx: Self::MutTxId,
-    ) -> super::Result<Option<std::sync::Arc<crate::db::messages::transaction::Transaction>>> {
+    fn commit_mut_tx(&self, mut tx: Self::MutTxId) -> super::Result<Option<TxData>> {
         tx.lock.commit()
     }
 }
@@ -1914,10 +1909,6 @@ impl MutTxDatastore for Locking {
         row: spacetimedb_sats::ProductValue,
     ) -> super::Result<ProductValue> {
         tx.lock.insert(table_id, row)
-    }
-
-    fn resolve_data_key_mut_tx(&self, tx: &Self::MutTxId, data_key: &DataKey) -> super::Result<Option<Arc<Vec<u8>>>> {
-        tx.lock.resolve_data_key(data_key)
     }
 }
 

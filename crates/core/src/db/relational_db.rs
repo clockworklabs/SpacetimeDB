@@ -2,9 +2,9 @@ use super::commit_log::CommitLog;
 use super::datastore::locking_tx_datastore::{Data, DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
 use super::datastore::traits::{
     ColId, DataRow, IndexDef, IndexId, MutTx, MutTxDatastore, SequenceDef, SequenceId, TableDef, TableId, TableSchema,
+    TxData,
 };
 use super::message_log::MessageLog;
-use super::messages::transaction::Transaction;
 use super::relational_operators::Relation;
 use crate::db::db_metrics::{RDB_DELETE_BY_REL_TIME, RDB_DROP_TABLE_TIME, RDB_INSERT_TIME, RDB_ITER_TIME};
 use crate::db::messages::commit::Commit;
@@ -212,13 +212,13 @@ impl RelationalDB {
         log::trace!("ROLLBACK TX");
         self.inner.rollback_mut_tx(tx)
     }
-    pub fn commit_tx(&self, tx: MutTxId) -> Result<(Option<Arc<Transaction>>, Option<usize>), DBError> {
+    pub fn commit_tx(&self, tx: MutTxId) -> Result<Option<(TxData, Option<usize>)>, DBError> {
         log::trace!("COMMIT TX");
-        if let Some(transaction) = self.inner.commit_mut_tx(tx)? {
-            let bytes_written = self.commit_log.append_tx(transaction.clone(), &self.inner)?;
-            return Ok((Some(transaction), bytes_written));
+        if let Some(tx_data) = self.inner.commit_mut_tx(tx)? {
+            let bytes_written = self.commit_log.append_tx(&tx_data, &self.inner)?;
+            return Ok(Some((tx_data, bytes_written)));
         }
-        Ok((None, None))
+        Ok(None)
     }
 
     /// Run a fallible function in a transaction.
@@ -259,9 +259,9 @@ impl RelationalDB {
         if res.is_err() {
             self.rollback_tx(tx);
         } else {
-            let (transaction, _bytes_written) = self.commit_tx(tx).map_err(E::from)?;
-            if transaction.is_none() {
-                panic!("TODO: retry?");
+            match self.commit_tx(tx).map_err(E::from)? {
+                Some(_) => (),
+                None => panic!("TODO: retry?"),
             }
         }
         res
