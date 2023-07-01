@@ -1,11 +1,5 @@
 #!/bin/bash
 
-export NO_RSYNC=0
-if ! command -v rsync &> /dev/null ; then
-    echo "Warning: rsync is not installed, this may impact test performance."
-	export NO_RSYNC=1
-fi
-
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -42,29 +36,37 @@ export SPACETIME_HOME=$PWD
 
 # Build our SpacetimeDB executable that we'll use for all tests
 cargo build --profile release-fast
-export PATH="$PWD/target/release:$PATH"
+export PATH="$PWD/target/release-fast:$PATH"
 [[ "$(which spacetime)" == "$PWD/target/release/spacetime" ]]
 
 # Create a project that we can copy to reset our project
 RESET_PROJECT_PATH=$(mktemp -d)
 export RESET_PROJECT_PATH
-spacetime init --project-path "$RESET_PROJECT_PATH" --lang rust
+spacetime init "$RESET_PROJECT_PATH" --lang rust
+# TODO: Remove this after 0.5.0 is published!
+fsed "s/0.5.0/0.4.1/g" "$RESET_PROJECT_PATH/Cargo.toml"
+
+spacetime build "$RESET_PROJECT_PATH" -s -d
 
 execute_test() {
 	reset_test_out
 	reset_config
 	reset_project
-	echo "TEST_OUT=$TEST_OUT PROJECT_PATH=$PROJECT_PATH SPACETIME_CONFIG_FILE=$SPACETIME_CONFIG_FILE"
 	TEST_PATH="test/tests/$1.sh"
 	printf " **************** Running %s... " "$1"
 	RETURN_CODE=0
-	if ! bash -x "$TEST_PATH" > "$OUT_TMP" 2>&1 ; then
+	# if ! bash -x "$TEST_PATH" > "$OUT_TMP" 2>&1 ; then
+	if ! bash -x "$TEST_PATH" ; then
 		printf "${RED}FAIL${CRST}\n"
+		docker logs "$CONTAINER_NAME"
 		cat "$OUT_TMP"
 		echo "Config file:"
 		cat "$SPACETIME_CONFIG_FILE"
-		# docker logs "$CONTAINER_NAME"
+		echo "TEST_OUT=$TEST_OUT PROJECT_PATH=$PROJECT_PATH SPACETIME_CONFIG_FILE=$SPACETIME_CONFIG_FILE"
 		failed_tests+=("$1")
+		bash
+		echo "BASH EXECUTION HAS ENDED"
+		sleep 5
 
 		if [ "$RUN_PARALLEL" == "true" ] ; then
 			RETURN_CODE=1
@@ -121,8 +123,6 @@ TESTS_PID=()
 TESTS_OUT=()
 TESTS_NAME=()
 for smoke_test in "${TESTS[@]}" ; do
-	break;
-
 	if [ ${#EXCLUDE_TESTS[@]} -ne 0 ] && list_contains "$smoke_test" "${EXCLUDE_TESTS[@]}"; then
 		echo "Skipping test $smoke_test"
 		continue

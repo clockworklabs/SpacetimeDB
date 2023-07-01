@@ -51,7 +51,6 @@ reset_test_out() {
 # This creates a new spacetime project that is completely dependent on the local repository.
 create_project() {
 	reset_project
-	run_test spacetime init --lang=rust "$PROJECT_PATH"
 	# We have to force using the local spacetimedb_bindings otherwise we will download them from crates.io
 	if [[ "$OSTYPE" == "darwin"* ]]; then
 		sed -i '' "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${PROJECT_PATH}/Cargo.toml" 
