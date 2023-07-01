@@ -20,6 +20,10 @@ use crate::{log_and_500, ControlNodeDelegate};
 // basic auth, to a `Authorization: Bearer <token>` header
 // https://github.com/whatwg/websockets/issues/16
 // https://github.com/sta/websocket-sharp/pull/22
+//
+// For now, the basic auth header must be in this form:
+// Basic base64(token:$token_str)
+// where $token_str is the JWT that is aquired from SpacetimeDB when creating a new identity.
 pub struct SpacetimeCreds(authorization::Basic);
 
 const TOKEN_USERNAME: &str = "token";
@@ -101,8 +105,7 @@ impl IntoResponse for AuthorizationRejection {
             StatusCode::UNAUTHORIZED,
             "Authorization failed: token not signed by this instance",
         );
-        // The JWT is malformed and there's an issue with its representation. We expect:
-        // Basic base64(token:${hex_token})
+        // The JWT is malformed, see SpacetimeCreds for specifics on the format.
         const INVALID: (StatusCode, &str) = (StatusCode::BAD_REQUEST, "Authorization is invalid: malformed token");
         // Sensible fallback if no auth header is present.
         const REQUIRED: (StatusCode, &str) = (StatusCode::UNAUTHORIZED, "Authorization required");
