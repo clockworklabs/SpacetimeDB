@@ -34,7 +34,7 @@ cp ./config.toml "$RESET_SPACETIME_CONFIG"
 cd ..
 export SPACETIME_HOME=$PWD
 
-# Build our SpacetimeDB executable that we'll use for all tests
+# Build our SpacetimeDB executable that we'll use for all tests.
 cargo build --profile release-fast
 export PATH="$PWD/target/release-fast:$PATH"
 [[ "$(which spacetime)" == "$PWD/target/release/spacetime" ]]
@@ -45,13 +45,13 @@ export RESET_PROJECT_PATH
 spacetime init "$RESET_PROJECT_PATH" --lang rust
 # We have to force using the local spacetimedb_bindings otherwise we will download them from crates.io
 if [[ "$OSTYPE" == "darwin"* ]]; then
-	sed -i '' "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${PROJECT_PATH}/Cargo.toml"
+	sed -i '' "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${RESET_PROJECT_PATH}/Cargo.toml"
 elif [[ "$OSTYPE" == "msys"* ]]; then
 	# Running in git bash; do horrible path conversion; yes we do need all of those
 	WINPATH="$(cygpath -w "${SPACETIME_DIR}/crates/bindings" | sed 's/\\/\\\\\\\\/g')"
-	sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${WINPATH}\" }@g" "${PROJECT_PATH}/Cargo.toml"
+	sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${WINPATH}\" }@g" "${RESET_PROJECT_PATH}/Cargo.toml"
 else
-	sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${PROJECT_PATH}/Cargo.toml"
+	sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${RESET_PROJECT_PATH}/Cargo.toml"
 fi
 
 spacetime build "$RESET_PROJECT_PATH" -s -d
@@ -63,8 +63,8 @@ execute_test() {
 	TEST_PATH="test/tests/$1.sh"
 	printf " **************** Running %s... " "$1"
 	RETURN_CODE=0
-	# if ! bash -x "$TEST_PATH" > "$OUT_TMP" 2>&1 ; then
-	if ! bash -x "$TEST_PATH" ; then
+	if ! bash -x "$TEST_PATH" > "$OUT_TMP" 2>&1 ; then
+	# if ! bash -x "$TEST_PATH" ; then
 		printf "${RED}FAIL${CRST}\n"
 		docker logs "$CONTAINER_NAME"
 		cat "$OUT_TMP"
