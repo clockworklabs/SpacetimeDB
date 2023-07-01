@@ -92,3 +92,8 @@ fsed() {
 	fi
 }
 
+restart_docker() {
+    docker-compose stop node
+    docker-compose start node
+    sleep 10
+}

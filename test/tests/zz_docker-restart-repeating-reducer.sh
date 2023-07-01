@@ -32,12 +32,7 @@ run_test cargo run publish -s -d --project-path "$PROJECT_PATH" --clear-database
 [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
 IDENT="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
-CONTAINER_NAME=$(docker ps | grep "\-node-" | awk '{print $NF}')
-run_test docker kill $CONTAINER_NAME
-run_test cargo build -p spacetimedb-standalone --release
-run_test docker-compose start node
-sleep 10
-
+restart_docker
 run_test cargo run call "$IDENT" dummy
 sleep 4
 

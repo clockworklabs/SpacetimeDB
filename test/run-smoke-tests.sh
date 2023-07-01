@@ -81,33 +81,35 @@ TESTS=(./test/tests/*.sh)
 TESTS=("${TESTS[@]#./test/tests/}")
 TESTS=("${TESTS[@]%.sh}")
 
-# TODO: Remove this!
-# TESTS=("upload-module-1" "upload-module-1")
-
 EXCLUDE_TESTS=()
 
-if [ $# != 0 ] ; then
+while [ $# != 0 ] ; do
 	case $1 in
 		-x)
 			shift
 			EXCLUDE_TESTS+=("$@")
+            break
 		;;
         --parallel)
             shift
             RUN_PARALLEL=true
+            echo "Running tests in parallel."
         ;;
 		*)
 			TESTS=("$@")
+            break
 		;;
 	esac
-fi
-
+done
 
 TESTS_PID=()
 TESTS_OUT=()
 TESTS_NAME=()
 for smoke_test in "${TESTS[@]}" ; do
+    break;
+
 	if [ ${#EXCLUDE_TESTS[@]} -ne 0 ] && list_contains "$smoke_test" "${EXCLUDE_TESTS[@]}"; then
+        echo "Skipping test $smoke_test"
 		continue
 	fi
 	if [ -f "./test/tests/$smoke_test.sh" ]; then
@@ -134,27 +136,42 @@ done
 
 if [ "$RUN_PARALLEL" == "true" ] ; then
     # Wait for all processes to end, and save their exit codes
-    length=${#TESTS_PID[@]}
-    for ((i=0; i<length; i++)) ; do
-        pid=${TESTS_PID[$i]}
-        out_file=${TESTS_OUT[$i]}
-        test_name=${TESTS_NAME[$i]}
-        set +e
-        wait "$pid"
-        RESULT_CODE=$?
-        set -e
-        echo "Process result code: $RESULT_CODE"
-        if [ $RESULT_CODE == 0 ] ; then
-            cat "$out_file"
-		    passed_tests+=("$test_name")
-        else
-            echo "+------------------------------------------+"
-            printf "$RED TEST FAILURE:$CRST $test_name\n"
-            echo
-            cat "$out_file"
-		    failed_tests+=("$test_name")
+    # length=${#TESTS_PID[@]}
+    # for ((i=0; i<length; i++)) ; do
+    #     pid=${TESTS_PID[$i]}
+    #     out_file=${TESTS_OUT[$i]}
+    #     test_name=${TESTS_NAME[$i]}
+    #     set +e
+    #     wait "$pid"
+    #     RESULT_CODE=$?
+    #     set -e
+    #     echo "Process result code: $RESULT_CODE"
+    #     if [ $RESULT_CODE == 0 ] ; then
+	# 	    passed_tests+=("$test_name")
+    #     else
+    #         echo "+------------------------------------------+"
+    #         printf "$RED TEST FAILURE:$CRST $test_name\n"
+    #         echo
+    #         cat "$out_file"
+	# 	    failed_tests+=("$test_name")
+    #     fi
+    # done
+
+    # Now run any tests that cannot be parallelized
+    for smoke_test in "${TESTS[@]}" ; do
+	    if [ ${#EXCLUDE_TESTS[@]} -ne 0 ] && list_contains "$smoke_test" "${EXCLUDE_TESTS[@]}"; then
+		    continue
+	    fi
+
+        if [[ "$smoke_test" == zz_* ]]; then
+	        if [ -f "./test/tests/$smoke_test.sh" ]; then
+		        execute_test "$smoke_test"
+	        else
+		        echo "Unknown test: $smoke_test"
+		        exit 1
+	        fi
         fi
-        echo "Process finished: $pid"
+
     done
 fi
 

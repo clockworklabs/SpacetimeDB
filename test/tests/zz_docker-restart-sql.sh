@@ -48,10 +48,6 @@ run_test cargo run logs "$IDENT" 100
 [ ' INFO: src/lib.rs:16: Hello, Robert!' == "$(grep 'Robert' "$TEST_OUT" | tail -n 4)" ]
 [ ' INFO: src/lib.rs:18: Hello, World!' == "$(grep 'World' "$TEST_OUT" | tail -n 4)" ]
 
-CONTAINER_NAME=$(docker ps | grep node | awk '{print $NF}')
-run_test docker kill $CONTAINER_NAME
-run_test cargo build -p spacetimedb-standalone --release
-run_test docker-compose start node
-sleep 10
+restart_docker
 run_test cargo run sql "${IDENT}" "SELECT * FROM Person"
 [ 'Robert' == "$(grep 'Robert' "$TEST_OUT" | awk '{$1=$1};1')" ]
