@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb-sats"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2021"
 license-file = "LICENSE"
 description = "Spacetime Algebraic Type Notation"
@@ -14,7 +14,7 @@ serde = ["dep:serde", "hex"]
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 enum-as-inner = "0.6"
 serde = { version = "1.0.136", optional = true }
-spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.4.1" }
+spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.5.0" }
 hex = { version = "0.4.3", optional = true }
 itertools = "0.10.5"
 thiserror = "1.0.38"
