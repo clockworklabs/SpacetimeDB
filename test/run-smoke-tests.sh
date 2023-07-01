@@ -168,7 +168,6 @@ if [ "$RUN_PARALLEL" == "true" ] ; then
 		wait "$pid"
 		RESULT_CODE=$?
 		set -e
-		echo "Process result code: $RESULT_CODE"
 		if [ $RESULT_CODE == 0 ] ; then
 			passed_tests+=("$test_name")
 		else
