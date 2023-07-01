@@ -20,6 +20,10 @@ use crate::{log_and_500, ControlNodeDelegate};
 // basic auth, to a `Authorization: Bearer <token>` header
 // https://github.com/whatwg/websockets/issues/16
 // https://github.com/sta/websocket-sharp/pull/22
+//
+// For now, the basic auth header must be in this form:
+// Basic base64(token:$token_str)
+// where $token_str is the JWT that is aquired from SpacetimeDB when creating a new identity.
 pub struct SpacetimeCreds(authorization::Basic);
 
 const TOKEN_USERNAME: &str = "token";
@@ -78,7 +82,7 @@ impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> fo
                 Ok(Self { auth: Some(auth) })
             }
             Err(e) => match e.reason() {
-                // Leave it to handlers to decide on unauthorized requests
+                // Leave it to handlers to decide on unauthorized requests.
                 TypedHeaderRejectionReason::Missing => Ok(Self { auth: None }),
                 _ => Err(AuthorizationRejection {
                     reason: AuthorizationRejectionReason::Header(e),
@@ -88,20 +92,22 @@ impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> fo
     }
 }
 
+/// A response by the API signifying that an authorization was rejected with the `reason` for this.
 pub struct AuthorizationRejection {
+    /// The reason the authorization was rejected.
     reason: AuthorizationRejectionReason,
 }
 
 impl IntoResponse for AuthorizationRejection {
     fn into_response(self) -> axum::response::Response {
-        // Most likely, the server key was rotated
+        // Most likely, the server key was rotated.
         const ROTATED: (StatusCode, &str) = (
             StatusCode::UNAUTHORIZED,
             "Authorization failed: token not signed by this instance",
         );
-        // JWT is hard bruh
+        // The JWT is malformed, see SpacetimeCreds for specifics on the format.
         const INVALID: (StatusCode, &str) = (StatusCode::BAD_REQUEST, "Authorization is invalid: malformed token");
-        // Sensible fallback if no auth header is present
+        // Sensible fallback if no auth header is present.
         const REQUIRED: (StatusCode, &str) = (StatusCode::UNAUTHORIZED, "Authorization required");
 
         log::trace!("Authorization rejection: {:?}", self.reason);
