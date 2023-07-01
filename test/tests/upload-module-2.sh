@@ -25,15 +25,15 @@ pub fn my_repeating_reducer(prev: Timestamp) {
 }
 EOF
 
-run_test cargo run publish -s -d --project-path "$PROJECT_PATH" --clear-database
+run_test spacetime publish -s -d --project-path "$PROJECT_PATH" --clear-database
 [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 sleep 2
 
-run_test cargo run logs "$ADDRESS"
+run_test spacetime logs "$ADDRESS"
 LINES="$(grep -c "Invoked" "$TEST_OUT")"
 
 sleep 4
-run_test cargo run logs "$ADDRESS"
+run_test spacetime logs "$ADDRESS"
 LINES_NEW="$(grep -c "Invoked" "$TEST_OUT")"
 ((LINES < LINES_NEW))

@@ -28,18 +28,18 @@ pub fn my_repeating_reducer(prev: Timestamp) {
 pub fn dummy() {}
 EOF
 
-run_test cargo run publish -s -d --project-path "$PROJECT_PATH" --clear-database
+run_test spacetime publish -s -d --project-path "$PROJECT_PATH" --clear-database
 [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
 IDENT="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 restart_docker
-run_test cargo run call "$IDENT" dummy
+run_test spacetime call "$IDENT" dummy
 sleep 4
 
-run_test cargo run logs "$IDENT"
+run_test spacetime logs "$IDENT"
 LINES="$(grep -c "Invoked" "$TEST_OUT")"
 
 sleep 4
-run_test cargo run logs "$IDENT"
+run_test spacetime logs "$IDENT"
 LINES_NEW="$(grep -c "Invoked" "$TEST_OUT")"
 ((LINES < LINES_NEW))

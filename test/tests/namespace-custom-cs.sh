@@ -13,7 +13,7 @@ TMP_DIR=$(mktemp -d)
 NAMESPACE=$(random_string)
 
 create_project
-run_test cargo run generate --out-dir "${TMP_DIR}" --lang cs --namespace "${NAMESPACE}" --project-path "${PROJECT_PATH}"
+run_test spacetime generate --out-dir "${TMP_DIR}" --lang cs --namespace "${NAMESPACE}" --project-path "${PROJECT_PATH}"
 
 LINES="$(grep -r -o "namespace ${NAMESPACE}" "${TMP_DIR}" | wc -l | tr -d ' ')"
 if [ "${LINES}" != 4 ] ; then

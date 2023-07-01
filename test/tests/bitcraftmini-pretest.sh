@@ -12,8 +12,8 @@ source "./test/lib.include"
 [ -d ../BitCraftMini ]
 
 # 2. Compile the Spacetime Module
-run_test cargo run publish -s -d --project-path "../BitCraftMini/Server" --clear-database
+run_test spacetime publish -s -d --project-path "../BitCraftMini/Server" --clear-database
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 sleep 2
 mkdir -p ../BitCraftMini/Client/Assets/_Project/autogen
-run_test cargo run generate --out-dir ../BitCraftMini/Client/Assets/_Project/autogen --lang=cs --project-path "../BitCraftMini/Server"
+run_test spacetime generate --out-dir ../BitCraftMini/Client/Assets/_Project/autogen --lang=cs --project-path "../BitCraftMini/Server"

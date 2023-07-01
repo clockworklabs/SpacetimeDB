@@ -1,5 +1,11 @@
 #!/bin/bash
 
+export NO_RSYNC=0
+if ! command -v rsync &> /dev/null ; then
+    echo "Warning: rsync is not installed, this may impact test performance."
+	export NO_RSYNC=1
+fi
+
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -32,8 +38,17 @@ source "lib.include"
 cp ./config.toml "$RESET_SPACETIME_CONFIG"
 
 cd ..
-cargo build
 export SPACETIME_HOME=$PWD
+
+# Build our SpacetimeDB executable that we'll use for all tests
+cargo build --profile release-fast
+export PATH="$PWD/target/release:$PATH"
+[[ "$(which spacetime)" == "$PWD/target/release/spacetime" ]]
+
+# Create a project that we can copy to reset our project
+RESET_PROJECT_PATH=$(mktemp -d)
+export RESET_PROJECT_PATH
+spacetime init --project-path "$RESET_PROJECT_PATH" --lang rust
 
 execute_test() {
 	reset_test_out
