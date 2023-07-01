@@ -40,6 +40,11 @@ pub struct TestE {
     name: String,
 }
 
+#[spacetimedb(table)]
+pub struct _Private {
+    name: String,
+}
+
 pub type TestAlias = TestA;
 
 // #[spacetimedb(migrate)]
@@ -130,4 +135,17 @@ impl Foo<'_> {
     pub fn baz(data: &[u8]) -> Foo<'_> {
         bsatn::from_slice(data).unwrap()
     }
+}
+
+#[spacetimedb(reducer)]
+pub fn add_private(name: String) {
+    _Private::insert(_Private { name });
+}
+
+#[spacetimedb(reducer)]
+pub fn query_private() {
+    for person in _Private::iter() {
+        println!("Private, {}!", person.name);
+    }
+    println!("Private, World!");
 }
