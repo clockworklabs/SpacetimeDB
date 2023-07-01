@@ -541,7 +541,13 @@ pub async fn sql(
         Ok(results) => results,
         Err(err) => {
             log::warn!("{}", err);
-            return Err(StatusCode::BAD_REQUEST.into());
+            return if let Some(auth_err) = err.get_auth_error() {
+                let err = format!("{auth_err}");
+                Err((StatusCode::UNAUTHORIZED, err).into())
+            } else {
+                let err = format!("{err}");
+                Err((StatusCode::BAD_REQUEST, err).into())
+            };
         }
     };
 

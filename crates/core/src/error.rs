@@ -8,7 +8,7 @@ use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::relation::{FieldName, RelationError};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::AlgebraicValue;
-use spacetimedb_vm::errors::{ErrorLang, ErrorVm};
+use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorVm};
 use spacetimedb_vm::expr::Crud;
 use std::num::ParseIntError;
 use std::path::PathBuf;
@@ -166,6 +166,17 @@ pub enum DBError {
     Plan { sql: String, error: PlanError },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl DBError {
+    pub fn get_auth_error(&self) -> Option<&ErrorLang> {
+        if let Self::VmUser(err) = self {
+            if err.kind == ErrorKind::Unauthorized {
+                return Some(err);
+            }
+        }
+        None
+    }
 }
 
 impl From<InvalidFieldError> for DBError {

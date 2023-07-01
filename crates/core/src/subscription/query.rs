@@ -108,7 +108,6 @@ mod tests {
     use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, BuiltinType, ProductType};
     use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
-    use spacetimedb_vm::errors::ErrorKind;
     use spacetimedb_vm::operator::OpCmp;
 
     #[test]
@@ -286,10 +285,7 @@ mod tests {
                 panic!("it allows to execute against private table")
             }
             Err(err) => {
-                if let DBError::VmUser(err) = err {
-                    assert_eq!(err.kind, ErrorKind::Unauthorized)
-                    //ok
-                } else {
+                if err.get_auth_error().is_none() {
                     panic!("fail to report an `auth` violation for private table, it gets {err}")
                 }
             }
