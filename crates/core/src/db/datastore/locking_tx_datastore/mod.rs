@@ -128,20 +128,20 @@ impl CommittedState {
         let mut tx_data = TxData { records: vec![] };
         for (table_id, table) in tx_state.insert_tables {
             let commit_table = self.get_or_create_table(table_id, &table.row_type, &table.schema);
-            for (row_id, row) in table.rows {
+            tx_data.records.extend(table.rows.into_iter().map(|(row_id, row)| {
                 commit_table.insert(row_id, row.clone());
                 let pv = row;
                 let bytes = match row_id.0 {
                     DataKey::Data(data) => Arc::new(data.to_vec()),
                     DataKey::Hash(_) => memory.get(&row_id.0).unwrap().clone(),
                 };
-                tx_data.records.push(TxRecord {
+                TxRecord {
                     op: TxOp::Insert(bytes),
                     table_id,
                     key: row_id.0,
                     pv,
-                })
-            }
+                }
+            }));
 
             // Add all newly created indexes to the committed state
             for (_, index) in table.indexes {
@@ -994,9 +994,10 @@ impl Inner {
             .tables
             .get(table_id)
             .map(|table| table.rows.get(row_id))
+            .flatten()
         {
-            Some(Some(pv)) => RowOp::Insert(pv.clone()),
-            Some(None) | None => RowOp::Absent,
+            Some(pv) => RowOp::Insert(pv.clone()),
+            None => RowOp::Absent,
         }
     }
 

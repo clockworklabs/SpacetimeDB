@@ -57,15 +57,12 @@ impl CommitLog {
         }
     }
 
-    fn generate_commit<D>(&self, tx_data: &TxData, datastore: &D) -> Option<Vec<u8>>
-    where
-        D: MutTxDatastore<RowId = RowId>,
-    {
-        // TODO(george) Don't clone the data, just the Arc.
+    fn generate_commit<D: MutTxDatastore<RowId = RowId>>(&self, tx_data: &TxData, datastore: &D) -> Option<Vec<u8>> {
         let mut unwritten_commit = self.unwritten_commit.lock().unwrap();
-        let mut transaction = Transaction { writes: Vec::new() };
-        for record in tx_data.records.iter() {
-            transaction.writes.push(Write {
+        let writes = tx_data
+            .records
+            .iter()
+            .map(|record| Write {
                 operation: match record.op {
                     TxOp::Insert(_) => Operation::Insert,
                     TxOp::Delete => Operation::Delete,
@@ -73,7 +70,8 @@ impl CommitLog {
                 set_id: record.table_id.0,
                 data_key: record.key,
             })
-        }
+            .collect();
+        let transaction = Transaction { writes };
         unwritten_commit.transactions.push(Arc::new(transaction));
 
         const COMMIT_SIZE: usize = 1;
@@ -82,7 +80,7 @@ impl CommitLog {
         if unwritten_commit.transactions.len() >= COMMIT_SIZE {
             {
                 let mut guard = self.odb.lock().unwrap();
-                for record in tx_data.records.iter() {
+                for record in &tx_data.records {
                     match &record.op {
                         TxOp::Insert(bytes) => {
                             guard.add(Vec::clone(bytes));
