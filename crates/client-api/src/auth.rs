@@ -80,7 +80,7 @@ impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> fo
             Err(e) => match e.reason() {
                 // Leave it to handlers to decide on unauthorized requests.
                 TypedHeaderRejectionReason::Missing => Ok(Self { auth: None }),
-                TypedHeaderRejectionReason::Error(_) => Err(AuthorizationRejection {
+                TypedHeaderRejectionReason::Error(_) | _ => Err(AuthorizationRejection {
                     reason: AuthorizationRejectionReason::Header(e),
                 }),
             },
@@ -113,7 +113,7 @@ impl IntoResponse for AuthorizationRejection {
             AuthorizationRejectionReason::Jwt(JwtErrorKind::InvalidSignature) => ROTATED.into_response(),
             AuthorizationRejectionReason::Header(rejection) => match rejection.reason() {
                 TypedHeaderRejectionReason::Missing => REQUIRED.into_response(),
-                TypedHeaderRejectionReason::Error(_) => rejection.into_response(),
+                TypedHeaderRejectionReason::Error(_) | _ => rejection.into_response(),
             },
             _ => INVALID.into_response(),
         }
