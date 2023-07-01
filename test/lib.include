@@ -22,11 +22,11 @@ run_fail_test() {
 
 # This resets the spacetime config for a new test run
 reset_config() {
-    SPACETIME_CONFIG_FILE="$(mktemp)"
-    export SPACETIME_CONFIG_FILE
-    cp "$RESET_SPACETIME_CONFIG" "$SPACETIME_CONFIG_FILE"
-    echo "Using config file: $SPACETIME_CONFIG_FILE"
-    cat "$SPACETIME_CONFIG_FILE"
+	SPACETIME_CONFIG_FILE="$(mktemp)"
+	export SPACETIME_CONFIG_FILE
+	cp "$RESET_SPACETIME_CONFIG" "$SPACETIME_CONFIG_FILE"
+	echo "Using config file: $SPACETIME_CONFIG_FILE"
+	cat "$SPACETIME_CONFIG_FILE"
 }
 
 # This deletes the project from the previous test run
@@ -35,15 +35,15 @@ reset_project() {
 	if [ "$PROJECT_PATH" != "" ] && [ -d "$PROJECT_PATH" ] ; then
 		rm -rf "$PROJECT_PATH"
 	fi
-    PROJECT_PATH="$(mktemp -d)"
-    export PROJECT_PATH
+	PROJECT_PATH="$(mktemp -d)"
+	export PROJECT_PATH
 
 	cd "$RETURN_DIR" || exit 1
 }
 
 reset_test_out() {
-    TEST_OUT="$(mktemp)"   
-    export TEST_OUT
+	TEST_OUT="$(mktemp)"   
+	export TEST_OUT
 }
 
 # This creates a new spacetime project that is completely dependent on the local repository.
@@ -53,9 +53,9 @@ create_project() {
 	# We have to force using the local spacetimedb_bindings otherwise we will download them from crates.io
 	if [[ "$OSTYPE" == "darwin"* ]]; then
 		sed -i '' "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${PROJECT_PATH}/Cargo.toml" 
-    elif [[ "$OSTYPE" == "msys"* ]]; then
-        # Running in git bash; do horrible path conversion; yes we do need all of those
-        WINPATH="$(cygpath -w "${SPACETIME_DIR}/crates/bindings" | sed 's/\\/\\\\\\\\/g')"
+	elif [[ "$OSTYPE" == "msys"* ]]; then
+		# Running in git bash; do horrible path conversion; yes we do need all of those
+		WINPATH="$(cygpath -w "${SPACETIME_DIR}/crates/bindings" | sed 's/\\/\\\\\\\\/g')"
 		sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${WINPATH}\" }@g" "${PROJECT_PATH}/Cargo.toml" 
 	else
 		sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${PROJECT_PATH}/Cargo.toml"
@@ -85,15 +85,17 @@ spacetime_publish() {
 
 fsed() {
 	if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i.sed_bak "$@"
-        rm -f rm *.sed_bak
+		sed -i.sed_bak "$@"
+		rm -f rm *.sed_bak
 	else
-        sed -i "$@"
+		sed -i "$@"
 	fi
 }
 
 restart_docker() {
-    docker-compose stop node
-    docker-compose start node
-    sleep 10
+	docker-compose stop node
+	docker-compose start node
+	sleep 10
 }
+
+# vim: noexpandtab tabstop=4 shiftwidth=4
