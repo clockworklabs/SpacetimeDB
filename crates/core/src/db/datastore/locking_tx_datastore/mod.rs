@@ -1331,8 +1331,12 @@ impl Inner {
         col_id: &ColId,
         value: &'a AlgebraicValue,
     ) -> super::Result<IterByColEq> {
-        let tx_state = self.tx_state.as_ref().unwrap();
-        if let Some(inserted_rows) = tx_state.index_seek(table_id, col_id, value) {
+        if let Some(inserted_rows) = self
+            .tx_state
+            .as_ref()
+            .and_then(|tx_state| tx_state.index_seek(table_id, col_id, value))
+        {
+            let tx_state = self.tx_state.as_ref().unwrap();
             Ok(IterByColEq::Index(IndexIterByColEq {
                 value,
                 col_id: *col_id,
