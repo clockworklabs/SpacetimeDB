@@ -36,8 +36,9 @@ pub fn build_query<'a>(
 
     for q in &mut query.query {
         if let Query::JoinInner(q) = q {
+            let table_access = q.rhs.table_access();
             let rhs = get_table(stdb, tx, q.rhs.clone())?;
-            q.rhs = SourceExpr::MemTable(MemTable::new(&q.rhs.head(), &rhs.collect_vec()?));
+            q.rhs = SourceExpr::MemTable(MemTable::new(&q.rhs.head(), table_access, &rhs.collect_vec()?));
         }
     }
 
@@ -137,11 +138,13 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
     }
 
     fn _eval_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
+        let table_access = query.table.table_access();
+
         let result = build_query(self.db, self.tx, query)?;
         let head = result.head().clone();
         let rows: Vec<_> = result.collect_vec()?;
 
-        Ok(Code::Table(MemTable::new(&head, &rows)))
+        Ok(Code::Table(MemTable::new(&head, table_access, &rows)))
     }
 
     fn _execute_insert(&mut self, table: &Table, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {

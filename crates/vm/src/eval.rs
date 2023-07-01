@@ -538,6 +538,7 @@ mod tests {
     use crate::dsl::{prefix_op, query, value};
     use crate::program::Program;
     use spacetimedb_lib::identity::AuthCtx;
+    use spacetimedb_sats::auth::StAccess;
     use spacetimedb_sats::relation::{FieldName, MemTable, RelationError};
 
     fn fib(n: u64) -> u64 {
@@ -712,7 +713,11 @@ mod tests {
         let head = q.source.head();
 
         let result = run_ast(p, q.into());
-        assert_eq!(result, Code::Table(MemTable::new(&head, &[scalar(1).into()])), "Query");
+        assert_eq!(
+            result,
+            Code::Table(MemTable::new(&head, StAccess::Public, &[scalar(1).into()])),
+            "Query"
+        );
     }
 
     #[test]
@@ -727,7 +732,11 @@ mod tests {
         let head = q.source.head();
 
         let result = run_ast(p, q.into());
-        assert_eq!(result, Code::Table(MemTable::new(&head, &[input.into()])), "Project");
+        assert_eq!(
+            result,
+            Code::Table(MemTable::new(&head, StAccess::Public, &[input.into()])),
+            "Project"
+        );
 
         let field = FieldName::positional(&table.head.table_name, 1);
         let q = source.with_project(&[field.clone().into()]);

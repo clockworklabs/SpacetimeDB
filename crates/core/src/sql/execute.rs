@@ -23,9 +23,10 @@ pub fn execute(
     db_inst_ctx_controller: &DatabaseInstanceContextController,
     database_instance_id: u64,
     sql_text: String,
+    auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
     if let Some((database_instance_context, _)) = db_inst_ctx_controller.get(database_instance_id) {
-        run(&database_instance_context.relational_db, &sql_text)
+        run(&database_instance_context.relational_db, &sql_text, auth)
     } else {
         Err(DatabaseError::NotFound(database_instance_id).into())
     }
@@ -71,9 +72,10 @@ pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Resu
     })
 }
 
-fn run(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
+/// Run the `SQL` string using the `auth` credentials
+fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let ast = compile_sql(db, sql_text)?;
-    execute_sql(db, ast, AuthCtx::for_testing())
+    execute_sql(db, ast, auth)
 }
 
 #[cfg(test)]
@@ -90,6 +92,11 @@ pub(crate) mod tests {
     use spacetimedb_vm::eval::create_game_data;
     use tempdir::TempDir;
 
+    /// Short-cut for simplify test execution
+    fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
+        run(db, sql_text, AuthCtx::for_testing())
+    }
+
     fn create_data(total_rows: u64) -> ResultTest<(RelationalDB, MemTable, TempDir)> {
         let (db, tmp_dir) = make_test_db()?;
 
@@ -105,7 +112,7 @@ pub(crate) mod tests {
     #[test]
     fn test_select_star() -> ResultTest<()> {
         let (db, input, _tmp_dir) = create_data(1)?;
-        let result = run(&db, "SELECT * FROM inventory")?;
+        let result = run_for_testing(&db, "SELECT * FROM inventory")?;
 
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
@@ -122,7 +129,7 @@ pub(crate) mod tests {
     fn test_select_star_table() -> ResultTest<()> {
         let (db, input, _tmp_dir) = create_data(1)?;
 
-        let result = run(&db, "SELECT inventory.* FROM inventory")?;
+        let result = run_for_testing(&db, "SELECT inventory.* FROM inventory")?;
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
 
@@ -132,7 +139,7 @@ pub(crate) mod tests {
             "Inventory"
         );
 
-        let result = run(
+        let result = run_for_testing(
             &db,
             "SELECT inventory.inventory_id FROM inventory WHERE inventory.inventory_id = 1",
         )?;
@@ -155,7 +162,7 @@ pub(crate) mod tests {
     #[test]
     fn test_select_scalar() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
-        let result = run(&db, "SELECT 1 FROM inventory")?;
+        let result = run_for_testing(&db, "SELECT 1 FROM inventory")?;
 
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
@@ -170,7 +177,7 @@ pub(crate) mod tests {
     #[test]
     fn test_select_multiple() -> ResultTest<()> {
         let (db, input, _tmp_dir) = create_data(1)?;
-        let result = run(&db, "SELECT * FROM inventory;\nSELECT * FROM inventory")?;
+        let result = run_for_testing(&db, "SELECT * FROM inventory;\nSELECT * FROM inventory")?;
 
         assert_eq!(result.len(), 2, "Not return results");
 
@@ -187,7 +194,7 @@ pub(crate) mod tests {
         let schema = db.schema_for_table(&tx, ST_TABLES_ID).unwrap();
         db.rollback_tx(tx);
 
-        let result = run(
+        let result = run_for_testing(
             &db,
             &format!("SELECT * FROM {} WHERE table_id = {}", ST_TABLES_NAME, ST_TABLES_ID),
         )?;
@@ -213,7 +220,7 @@ pub(crate) mod tests {
     #[test]
     fn test_select_column() -> ResultTest<()> {
         let (db, table, _tmp_dir) = create_data(1)?;
-        let result = run(&db, "SELECT inventory_id FROM inventory")?;
+        let result = run_for_testing(&db, "SELECT inventory_id FROM inventory")?;
 
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
@@ -235,7 +242,7 @@ pub(crate) mod tests {
     #[test]
     fn test_where() -> ResultTest<()> {
         let (db, table, _tmp_dir) = create_data(1)?;
-        let result = run(&db, "SELECT inventory_id FROM inventory WHERE inventory_id = 1")?;
+        let result = run_for_testing(&db, "SELECT inventory_id FROM inventory WHERE inventory_id = 1")?;
 
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
@@ -259,7 +266,7 @@ pub(crate) mod tests {
     fn test_or() -> ResultTest<()> {
         let (db, table, _tmp_dir) = create_data(2)?;
 
-        let result = run(
+        let result = run_for_testing(
             &db,
             "SELECT inventory_id FROM inventory WHERE inventory_id = 1 OR inventory_id = 2",
         )?;
@@ -285,7 +292,7 @@ pub(crate) mod tests {
     fn test_nested() -> ResultTest<()> {
         let (db, table, _tmp_dir) = create_data(2)?;
 
-        let result = run(
+        let result = run_for_testing(
             &db,
             "SELECT (inventory_id) FROM inventory WHERE (inventory_id = 1 OR inventory_id = 2 AND (1=1))",
         )?;
@@ -319,7 +326,7 @@ pub(crate) mod tests {
         create_table_with_rows(&db, &mut tx, "Location", data.location.head.into(), &data.location.data)?;
         db.commit_tx(tx)?;
 
-        let result = &run(
+        let result = &run_for_testing(
             &db,
             "SELECT
         Player.*
@@ -340,7 +347,7 @@ pub(crate) mod tests {
             "Player JOIN Location"
         );
 
-        let result = &run(
+        let result = &run_for_testing(
             &db,
             "SELECT
         Inventory.*
@@ -368,11 +375,11 @@ pub(crate) mod tests {
     #[test]
     fn test_insert() -> ResultTest<()> {
         let (db, mut input, _tmp_dir) = create_data(1)?;
-        let result = run(&db, "INSERT INTO inventory (inventory_id, name) VALUES (2, 'test')")?;
+        let result = run_for_testing(&db, "INSERT INTO inventory (inventory_id, name) VALUES (2, 'test')")?;
 
         assert_eq!(result.len(), 0, "Return results");
 
-        let result = run(&db, "SELECT * FROM inventory")?;
+        let result = run_for_testing(&db, "SELECT * FROM inventory")?;
 
         assert_eq!(result.len(), 1, "Not return results");
         let mut result = result.first().unwrap().clone();
@@ -394,28 +401,28 @@ pub(crate) mod tests {
     #[test]
     fn test_delete() -> ResultTest<()> {
         let (db, _input, _tmp_dir) = create_data(1)?;
-        run(&db, "INSERT INTO inventory (inventory_id, name) VALUES (2, 't2')")?;
-        run(&db, "INSERT INTO inventory (inventory_id, name) VALUES (3, 't3')")?;
+        run_for_testing(&db, "INSERT INTO inventory (inventory_id, name) VALUES (2, 't2')")?;
+        run_for_testing(&db, "INSERT INTO inventory (inventory_id, name) VALUES (3, 't3')")?;
 
-        let result = run(&db, "SELECT * FROM inventory")?;
+        let result = run_for_testing(&db, "SELECT * FROM inventory")?;
         assert_eq!(
             result.iter().map(|x| x.data.len()).sum::<usize>(),
             3,
             "Not return results"
         );
 
-        run(&db, "DELETE FROM inventory WHERE inventory.inventory_id = 3")?;
+        run_for_testing(&db, "DELETE FROM inventory WHERE inventory.inventory_id = 3")?;
 
-        let result = run(&db, "SELECT * FROM inventory")?;
+        let result = run_for_testing(&db, "SELECT * FROM inventory")?;
         assert_eq!(
             result.iter().map(|x| x.data.len()).sum::<usize>(),
             2,
             "Not delete correct row?"
         );
 
-        run(&db, "DELETE FROM inventory")?;
+        run_for_testing(&db, "DELETE FROM inventory")?;
 
-        let result = run(&db, "SELECT * FROM inventory")?;
+        let result = run_for_testing(&db, "SELECT * FROM inventory")?;
         assert_eq!(
             result.iter().map(|x| x.data.len()).sum::<usize>(),
             0,
@@ -428,12 +435,12 @@ pub(crate) mod tests {
     #[test]
     fn test_update() -> ResultTest<()> {
         let (db, input, _tmp_dir) = create_data(1)?;
-        run(&db, "INSERT INTO inventory (inventory_id, name) VALUES (2, 't2')")?;
-        run(&db, "INSERT INTO inventory (inventory_id, name) VALUES (3, 't3')")?;
+        run_for_testing(&db, "INSERT INTO inventory (inventory_id, name) VALUES (2, 't2')")?;
+        run_for_testing(&db, "INSERT INTO inventory (inventory_id, name) VALUES (3, 't3')")?;
 
-        run(&db, "UPDATE inventory SET name = 'c2' WHERE inventory_id = 2")?;
+        run_for_testing(&db, "UPDATE inventory SET name = 'c2' WHERE inventory_id = 2")?;
 
-        let result = run(&db, "SELECT * FROM inventory WHERE inventory_id = 2")?;
+        let result = run_for_testing(&db, "SELECT * FROM inventory WHERE inventory_id = 2")?;
 
         let result = result.first().unwrap().clone();
         let row = product!(scalar(2u64), scalar("c2"));
@@ -448,9 +455,9 @@ pub(crate) mod tests {
             "Update Inventory 2"
         );
 
-        run(&db, "UPDATE inventory SET name = 'c3'")?;
+        run_for_testing(&db, "UPDATE inventory SET name = 'c3'")?;
 
-        let result = run(&db, "SELECT * FROM inventory")?;
+        let result = run_for_testing(&db, "SELECT * FROM inventory")?;
 
         let updated: Vec<_> = result
             .into_iter()
@@ -469,16 +476,16 @@ pub(crate) mod tests {
     #[test]
     fn test_create_table() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
-        run(&db, "CREATE TABLE inventory2 (inventory_id BIGINT UNSIGNED, name TEXT)")?;
-        run(
+        run_for_testing(&db, "CREATE TABLE inventory2 (inventory_id BIGINT UNSIGNED, name TEXT)")?;
+        run_for_testing(
             &db,
             "INSERT INTO inventory2 (inventory_id, name) VALUES (1, 'health1') ",
         )?;
 
-        let a = run(&db, "SELECT * FROM inventory")?;
+        let a = run_for_testing(&db, "SELECT * FROM inventory")?;
         let a = a.first().unwrap().clone();
 
-        let b = run(&db, "SELECT * FROM inventory2")?;
+        let b = run_for_testing(&db, "SELECT * FROM inventory2")?;
         let b = b.first().unwrap().clone();
 
         assert_eq!(a.as_without_table_name(), b.as_without_table_name(), "Inventory");
@@ -489,9 +496,9 @@ pub(crate) mod tests {
     #[test]
     fn test_drop_table() -> ResultTest<()> {
         let (db, _, _tmp_dir) = create_data(1)?;
-        run(&db, "CREATE TABLE inventory2 (inventory_id BIGINT UNSIGNED, name TEXT)")?;
-        run(&db, "DROP TABLE inventory2")?;
-        match run(&db, "SELECT * FROM inventory2") {
+        run_for_testing(&db, "CREATE TABLE inventory2 (inventory_id BIGINT UNSIGNED, name TEXT)")?;
+        run_for_testing(&db, "DROP TABLE inventory2")?;
+        match run_for_testing(&db, "SELECT * FROM inventory2") {
             Ok(_) => {
                 panic!("Fail to drop table");
             }

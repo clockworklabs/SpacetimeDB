@@ -36,10 +36,11 @@ pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
 //HACK: To recover the `op_type` of this particular row I add a "hidden" column `OP_TYPE_FIELD_NAME`
 pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
     let mut q = of;
+    let table_access = q.source.table_access();
 
     let mut t = match &q.source {
-        SourceExpr::MemTable(x) => MemTable::new(&x.head, &[]),
-        SourceExpr::DbTable(table) => MemTable::new(&table.head, &[]),
+        SourceExpr::MemTable(x) => MemTable::new(&x.head, table_access, &[]),
+        SourceExpr::DbTable(table) => MemTable::new(&table.head, table_access, &[]),
     };
     t.head.fields.push(Column::new(
         FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
@@ -279,7 +280,7 @@ mod tests {
         match run_query(
             &db,
             &q,
-            AuthCtx::new(Identity::from_arr(&[0u8; 32]), Identity::from_arr(&[1u8; 32])),
+            AuthCtx::new(Identity::__dummy(), Identity::from_arr(&[1u8; 32])),
         ) {
             Ok(_) => {
                 panic!("it allows to execute against private table")

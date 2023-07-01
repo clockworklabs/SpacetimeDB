@@ -172,6 +172,7 @@ impl ProgramVm for Program {
             CrudCode::Query(query) => {
                 let head = query.head();
                 let row_count = query.row_count();
+                let table_access = query.table.table_access();
                 let result = match query.table {
                     Table::MemTable(x) => Box::new(RelIter::new(head, row_count, x)) as Box<IterRows<'_>>,
                     Table::DbTable(_) => {
@@ -184,7 +185,7 @@ impl ProgramVm for Program {
                 let head = result.head().clone();
                 let rows: Vec<_> = result.collect_vec()?;
 
-                Ok(Code::Table(MemTable::new(&head, &rows)))
+                Ok(Code::Table(MemTable::new(&head, table_access, &rows)))
             }
             CrudCode::Insert { .. } => {
                 todo!()

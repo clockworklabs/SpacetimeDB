@@ -519,10 +519,11 @@ pub struct MemTableWithoutTableName<'a> {
 pub struct MemTable {
     pub head: Header,
     pub data: Vec<ProductValue>,
+    pub table_access: StAccess,
 }
 
 impl MemTable {
-    pub fn new(head: &Header, data: &[ProductValue]) -> Self {
+    pub fn new(head: &Header, table_access: StAccess, data: &[ProductValue]) -> Self {
         assert_eq!(
             head.fields.len(),
             data.first()
@@ -533,18 +534,20 @@ impl MemTable {
         Self {
             head: head.clone(),
             data: data.into(),
+            table_access,
         }
     }
 
     pub fn from_value(of: AlgebraicValue) -> Self {
         let head = Header::for_mem_table(of.type_of().into());
-        Self::new(&head, &[of.into()])
+        Self::new(&head, StAccess::Public, &[of.into()])
     }
 
     pub fn from_iter(head: &Header, data: impl Iterator<Item = ProductValue>) -> Self {
         Self {
             head: head.clone(),
             data: data.collect(),
+            table_access: StAccess::Public,
         }
     }
 
@@ -627,7 +630,7 @@ impl Table {
 
     pub fn table_access(&self) -> StAccess {
         match self {
-            Self::MemTable(_) => StAccess::Public,
+            Self::MemTable(x) => x.table_access,
             Self::DbTable(x) => x.table_access,
         }
     }

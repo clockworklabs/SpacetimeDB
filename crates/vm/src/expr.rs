@@ -632,7 +632,7 @@ pub struct QueryCode {
 
 impl AuthAccess for Table {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        if owner == caller && self.table_access() == StAccess::Public {
+        if owner == caller || self.table_access() == StAccess::Public {
             return Ok(());
         }
 
