@@ -1,5 +1,4 @@
 #![allow(clippy::disallowed_names)]
-
 use spacetimedb::{
     delete_by_col_eq, query, spacetimedb, AlgebraicValue, Deserialize, ReducerContext, SpacetimeType, Timestamp,
 };
@@ -37,6 +36,11 @@ pub struct TestE {
     #[primarykey]
     #[autoinc]
     id: u64,
+    name: String,
+}
+
+#[spacetimedb(table)]
+pub struct _Private {
     name: String,
 }
 
@@ -130,4 +134,17 @@ impl Foo<'_> {
     pub fn baz(data: &[u8]) -> Foo<'_> {
         bsatn::from_slice(data).unwrap()
     }
+}
+
+#[spacetimedb(reducer)]
+pub fn add_private(name: String) {
+    _Private::insert(_Private { name });
+}
+
+#[spacetimedb(reducer)]
+pub fn query_private() {
+    for person in _Private::iter() {
+        log::info!("Private, {}!", person.name);
+    }
+    log::info!("Private, World!");
 }

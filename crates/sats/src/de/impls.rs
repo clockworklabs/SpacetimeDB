@@ -149,7 +149,7 @@ impl<'de> Deserialize<'de> for &'de [u8] {
     }
 }
 
-struct BorrowedSliceVisitor;
+pub(crate) struct BorrowedSliceVisitor;
 impl<'de, T: ToOwned + ?Sized + 'de> SliceVisitor<'de, T> for BorrowedSliceVisitor {
     type Output = &'de T;
 

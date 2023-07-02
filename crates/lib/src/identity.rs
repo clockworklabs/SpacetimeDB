@@ -2,6 +2,29 @@ use std::fmt;
 
 use crate::sats::{self, de, ser};
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct AuthCtx {
+    pub owner: Identity,
+    pub caller: Identity,
+}
+
+impl AuthCtx {
+    pub fn new(owner: Identity, caller: Identity) -> Self {
+        Self { owner, caller }
+    }
+    /// For when the owner == caller
+    pub fn for_current(owner: Identity) -> Self {
+        Self { owner, caller: owner }
+    }
+    /// WARNING: Use this only for simple test were the `auth` don't matter
+    pub fn for_testing() -> Self {
+        AuthCtx {
+            owner: Identity::__dummy(),
+            caller: Identity::__dummy(),
+        }
+    }
+}
+
 #[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct Identity {
     pub data: [u8; 32],

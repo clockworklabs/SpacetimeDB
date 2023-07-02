@@ -2,8 +2,10 @@ use crate::db::DBRunner;
 use async_trait::async_trait;
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
 use spacetimedb::error::DBError;
-use spacetimedb::sql::execute::{compile_sql, execute_sql};
-use spacetimedb_sats::relation::MemTable;
+use spacetimedb::sql::compiler::compile_sql;
+use spacetimedb::sql::execute::execute_sql;
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::relation::MemTable;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, BuiltinType, BuiltinValue};
 use sqllogictest::{AsyncDB, ColumnType, DBOutput};
@@ -61,18 +63,23 @@ pub struct SpaceDb {
     pub(crate) conn: RelationalDB,
     #[allow(dead_code)]
     tmp_dir: TempDir,
+    auth: AuthCtx,
 }
 
 impl SpaceDb {
     pub fn new() -> anyhow::Result<Self> {
         let tmp_dir = TempDir::new("stdb_test")?;
         let conn = open_db(&tmp_dir)?;
-        Ok(Self { conn, tmp_dir })
+        Ok(Self {
+            conn,
+            tmp_dir,
+            auth: AuthCtx::for_testing(),
+        })
     }
 
     pub(crate) fn run_sql(&self, sql: &str) -> anyhow::Result<Vec<MemTable>> {
         let ast = compile_sql(&self.conn, sql)?;
-        let result = execute_sql(&self.conn, ast)?;
+        let result = execute_sql(&self.conn, ast, self.auth)?;
         //remove comments to see which SQL worked. Can't collect it outside from lack of a hook in the external `sqllogictest` crate... :(
         //append_file(&std::path::PathBuf::from(".ok.sql"), sql)?;
         Ok(result)
