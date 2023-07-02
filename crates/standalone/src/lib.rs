@@ -374,6 +374,8 @@ impl StandaloneEnv {
             old_database.unwrap().id
         };
 
+        log::trace!("Scheduling database {database_id}, new_replicas {new_replicas}, old_replicas {old_replicas}");
+
         if replica_diff > 0 {
             self.schedule_replicas(database_id, replica_diff as u32).await?;
         } else if replica_diff < 0 {

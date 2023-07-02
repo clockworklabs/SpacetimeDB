@@ -23,7 +23,7 @@ tempdir = "0.3.7"
 async-trait = "0.1.60"
 chrono = { version = "0.4.23", features = ["serde"]}
 rand = "0.8.5"
-axum = { version = "0.6.16", features = ["headers", "tracing"] }
+axum = { version = "0.6.16", features = ["headers", "ws", "tracing"] }
 hyper = "0.14"
 http = "0.2"
 mime = "0.3.17"

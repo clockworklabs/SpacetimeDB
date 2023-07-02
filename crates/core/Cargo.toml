@@ -34,6 +34,7 @@ spacetimedb-sats = { path = "../sats" }
 spacetimedb-vm = { path = "../vm" }
 spacetimedb-client-api-messages = { path = "../client-api-messages" }
 log = "0.4.16"
+hyper = "0.14.18"
 tracing = "0.1"
 tracing-log = "0.1"
 # We use the "ondemand" feature to allow connecting after the start,
