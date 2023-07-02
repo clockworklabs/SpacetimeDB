@@ -1,10 +1,9 @@
 use crate::db::relational_db::ST_TABLES_ID;
 use core::fmt;
+use spacetimedb_lib::auth::{StAccess, StTableType};
+use spacetimedb_lib::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
 use spacetimedb_lib::DataKey;
-use spacetimedb_sats::{
-    relation::{DbTable, FieldName, FieldOnly, Header, TableField},
-    AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue,
-};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
 use spacetimedb_vm::expr::SourceExpr;
 use std::{ops::RangeBounds, sync::Arc};
 
@@ -165,6 +164,8 @@ pub struct TableSchema {
     pub(crate) table_name: String,
     pub(crate) columns: Vec<ColumnSchema>,
     pub(crate) indexes: Vec<IndexSchema>,
+    pub(crate) table_type: StTableType,
+    pub(crate) table_access: StAccess,
 }
 
 impl TableSchema {
@@ -209,13 +210,15 @@ impl From<&TableSchema> for SourceExpr {
         SourceExpr::DbTable(DbTable::new(
             &Header::from_product_type(&value.table_name, value.into()),
             value.table_id,
+            value.table_type,
+            value.table_access,
         ))
     }
 }
 
 impl From<&TableSchema> for DbTable {
     fn from(value: &TableSchema) -> Self {
-        DbTable::new(&value.into(), value.table_id)
+        DbTable::new(&value.into(), value.table_id, value.table_type, value.table_access)
     }
 }
 
@@ -245,6 +248,8 @@ pub struct TableDef {
     pub(crate) table_name: String,
     pub(crate) columns: Vec<ColumnDef>,
     pub(crate) indexes: Vec<IndexDef>,
+    pub(crate) table_type: StTableType,
+    pub(crate) table_access: StAccess,
 }
 
 impl From<ProductType> for TableDef {
@@ -262,6 +267,8 @@ impl From<ProductType> for TableDef {
                 })
                 .collect(),
             indexes: vec![],
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
         }
     }
 }
@@ -272,6 +279,8 @@ impl From<TableSchema> for TableDef {
             table_name: value.table_name,
             columns: value.columns.into_iter().map(Into::into).collect(),
             indexes: value.indexes.into_iter().map(Into::into).collect(),
+            table_type: value.table_type,
+            table_access: value.table_access,
         }
     }
 }

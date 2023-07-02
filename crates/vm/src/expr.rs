@@ -1,12 +1,15 @@
+use spacetimedb_lib::auth::{StAccess, StTableType};
+use spacetimedb_lib::error::AuthError;
 use spacetimedb_lib::table::ProductTypeMeta;
+use spacetimedb_lib::Identity;
 use std::collections::HashMap;
 use std::fmt;
 
-use spacetimedb_sats::algebraic_type::AlgebraicType;
-use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::relation::{
+use spacetimedb_lib::relation::{
     DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
 };
+use spacetimedb_sats::algebraic_type::AlgebraicType;
+use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{ProductValue, TypeInSpace, Typespace};
 
@@ -17,6 +20,11 @@ use crate::types::Ty;
 
 /// A `index` into the list of [Fun]
 pub type FunctionId = usize;
+
+/// Trait for checking if the `caller` have access to `Self`
+pub trait AuthAccess {
+    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError>;
+}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TyExpr<T> {
@@ -164,6 +172,27 @@ impl SourceExpr {
             _ => None,
         }
     }
+
+    pub fn table_name(&self) -> &str {
+        match self {
+            SourceExpr::MemTable(x) => &x.head.table_name,
+            SourceExpr::DbTable(x) => &x.head.table_name,
+        }
+    }
+
+    pub fn table_type(&self) -> StTableType {
+        match self {
+            SourceExpr::MemTable(_) => StTableType::User,
+            SourceExpr::DbTable(x) => x.table_type,
+        }
+    }
+
+    pub fn table_access(&self) -> StAccess {
+        match self {
+            SourceExpr::MemTable(_) => StAccess::Public,
+            SourceExpr::DbTable(x) => x.table_access,
+        }
+    }
 }
 
 impl Relation for SourceExpr {
@@ -241,12 +270,33 @@ pub enum CrudExpr {
     CreateTable {
         name: String,
         columns: ProductTypeMeta,
+        table_type: StTableType,
+        table_access: StAccess,
     },
     Drop {
         name: String,
         kind: DbType,
+        table_access: StAccess,
     },
 }
+
+// impl AuthAccess for CrudExpr {
+//     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
+//         if owner == caller {
+//             return Ok(());
+//         };
+//         match self {
+//             CrudExpr::Query(from) => {
+//                 from.source.table_access() == StAccess::Public && from.query.iter().any(|x| x.check_auth(owner, caller))
+//             }
+//             CrudExpr::Insert { source, .. } => source.table_access() == StAccess::Public,
+//             CrudExpr::Update { insert, delete } => insert.check_auth(owner, caller) && delete.check_auth(owner, caller),
+//             CrudExpr::Delete { query, .. } => query.check_auth(owner, caller),
+//             CrudExpr::CreateTable { table_access, .. } => table_access == &StAccess::Public,
+//             CrudExpr::Drop { .. } => Ok(()),
+//         }
+//     }
+// }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Query {
@@ -306,6 +356,30 @@ impl QueryExpr {
     }
 }
 
+impl AuthAccess for Query {
+    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
+        if owner == caller {
+            Ok(())
+        } else if let Query::JoinInner(j) = self {
+            if j.rhs.table_access() == StAccess::Public {
+                Ok(())
+            } else {
+                Err(AuthError::TablePrivate {
+                    named: j.rhs.table_name().to_string(),
+                })
+            }
+        } else {
+            Ok(())
+        }
+    }
+}
+//
+// impl AuthAccess for QueryExpr {
+//     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
+//         self.source.table_access() == StAccess::Public && self.query.iter().any(|x| x.check_auth(owner, caller))
+//     }
+// }
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Expr {
     Value(AlgebraicValue),
@@ -362,10 +436,13 @@ pub enum CrudExprOpt {
     CreateTable {
         name: String,
         columns: ProductTypeMeta,
+        table_type: StTableType,
+        table_access: StAccess,
     },
     Drop {
         name: String,
         kind: DbType,
+        table_access: StAccess,
     },
 }
 
@@ -554,6 +631,39 @@ pub struct QueryCode {
     pub query: Vec<Query>,
 }
 
+impl AuthAccess for Table {
+    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
+        if owner == caller || self.table_access() == StAccess::Public {
+            return Ok(());
+        }
+
+        Err(AuthError::TablePrivate {
+            named: self.table_name().to_string(),
+        })
+    }
+}
+
+impl AuthAccess for QueryCode {
+    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
+        if owner == caller {
+            return Ok(());
+        }
+        self.table.check_auth(owner, caller)?;
+
+        if let Some(err) = self.query.iter().find_map(|x| {
+            if let Err(err) = x.check_auth(owner, caller) {
+                Some(err)
+            } else {
+                None
+            }
+        }) {
+            Err(err)
+        } else {
+            Ok(())
+        }
+    }
+}
+
 impl Relation for QueryCode {
     fn head(&self) -> Header {
         self.table.head()
@@ -567,11 +677,71 @@ impl Relation for QueryCode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CrudCode {
     Query(QueryCode),
-    Insert { table: Table, rows: Vec<ProductValue> },
-    Update { insert: QueryCode, delete: QueryCode },
-    Delete { query: QueryCode },
-    CreateTable { name: String, columns: ProductTypeMeta },
-    Drop { name: String, kind: DbType },
+    Insert {
+        table: Table,
+        rows: Vec<ProductValue>,
+    },
+    Update {
+        insert: QueryCode,
+        delete: QueryCode,
+    },
+    Delete {
+        query: QueryCode,
+    },
+    CreateTable {
+        name: String,
+        columns: ProductTypeMeta,
+        table_type: StTableType,
+        table_access: StAccess,
+    },
+    Drop {
+        name: String,
+        kind: DbType,
+        table_access: StAccess,
+    },
+}
+
+impl AuthAccess for CrudCode {
+    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
+        if owner == caller {
+            return Ok(());
+        }
+        match self {
+            CrudCode::Query(q) => q.check_auth(owner, caller),
+            CrudCode::Insert { table, .. } => table.check_auth(owner, caller),
+            CrudCode::Update { insert, delete } => {
+                insert.check_auth(owner, caller)?;
+                delete.check_auth(owner, caller)
+            }
+            CrudCode::Delete { query, .. } => query.check_auth(owner, caller),
+            //TODO: Must allow to create private tables for `caller`
+            CrudCode::CreateTable { name, table_access, .. } => {
+                if table_access == &StAccess::Public {
+                    Ok(())
+                } else {
+                    Err(AuthError::TablePrivate {
+                        named: name.to_string(),
+                    })
+                }
+            }
+            CrudCode::Drop {
+                name,
+                kind,
+                table_access,
+            } => {
+                if table_access == &StAccess::Public {
+                    Ok(())
+                } else {
+                    let named = name.to_string();
+                    Err(match kind {
+                        DbType::Table => AuthError::TablePrivate { named },
+                        DbType::Index => AuthError::IndexPrivate { named },
+                        DbType::Sequence => AuthError::SequencePrivate { named },
+                    })
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

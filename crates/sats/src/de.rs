@@ -34,6 +34,9 @@ pub trait Deserializer<'de>: Sized {
     fn deserialize_f64(self) -> Result<f64, Self::Error>;
 
     fn deserialize_str<V: SliceVisitor<'de, str>>(self, visitor: V) -> Result<V::Output, Self::Error>;
+    fn deserialize_str_slice(self) -> Result<&'de str, Self::Error> {
+        self.deserialize_str(BorrowedSliceVisitor)
+    }
 
     fn deserialize_bytes<V: SliceVisitor<'de, [u8]>>(self, visitor: V) -> Result<V::Output, Self::Error>;
 
@@ -311,7 +314,9 @@ pub trait DeserializeSeed<'de> {
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error>;
 }
 
+use crate::de::impls::BorrowedSliceVisitor;
 pub use spacetimedb_bindings_macro::Deserialize;
+
 pub trait Deserialize<'de>: Sized {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error>;
 

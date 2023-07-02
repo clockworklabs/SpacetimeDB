@@ -19,8 +19,9 @@ use super::timestamp::Timestamp;
 use super::tracelog::instance_trace::TraceLog;
 use crate::vm::DbProgram;
 use spacetimedb_lib::filter::CmpArgs;
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::operator::OpQuery;
-use spacetimedb_sats::relation::{FieldExpr, FieldName};
+use spacetimedb_lib::relation::{FieldExpr, FieldName};
 use spacetimedb_sats::{ProductType, Typespace};
 use spacetimedb_vm::expr::{Code, ColumnOp};
 
@@ -476,7 +477,8 @@ impl InstanceEnv {
         )
         .map_err(NodesError::DecodeFilter)?;
         let q = spacetimedb_vm::dsl::query(&schema).with_select(filter_to_column_op(&schema.table_name, filter));
-        let p = &mut DbProgram::new(stdb, tx);
+        //TODO: How pass the `caller` here?
+        let p = &mut DbProgram::new(stdb, tx, AuthCtx::for_current(self.dbic.identity));
         let results = match spacetimedb_vm::eval::run_ast(p, q.into()) {
             Code::Table(table) => table,
             _ => unreachable!("query should always return a table"),

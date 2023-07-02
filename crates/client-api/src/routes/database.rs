@@ -161,6 +161,7 @@ use chrono::Utc;
 use rand::Rng;
 use spacetimedb::auth::identity::encode_token;
 use spacetimedb::sql::execute::execute;
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::name::{DnsLookupResponse, InsertDomainResult, PublishResult};
 use spacetimedb_lib::recovery::{RecoveryCode, RecoveryCodeResponse};
 use std::convert::From;
@@ -497,9 +498,9 @@ pub async fn sql(
     auth: SpacetimeAuthHeader,
     body: String,
 ) -> axum::response::Result<impl IntoResponse> {
-    // You should not be able to query a database that you do not own
-    // so, unless you are the owner, this will fail, hence not using get_or_create
-    let auth = auth.get().ok_or((StatusCode::BAD_REQUEST, "Invalid credentials."))?;
+    // Anyone is authorized to execute SQL queries. The SQL engine will determine
+    // which queries this identity is allowed to execute against the database.
+    let auth = auth.get_or_create(&*worker_ctx).await?;
 
     let address = name_or_address.resolve(&*worker_ctx).await?;
     let database = worker_ctx
@@ -508,10 +509,8 @@ pub async fn sql(
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
-    if database.identity != auth.identity {
-        return Err((StatusCode::BAD_REQUEST, "Identity does not own database.").into());
-    }
-
+    let auth = AuthCtx::new(database.identity, auth.identity);
+    log::debug!("auth: {auth:?}");
     let database_instance = worker_ctx
         .get_leader_database_instance_by_database(database.id)
         .await
@@ -533,11 +532,22 @@ pub async fn sql(
         }
     };
 
-    let results = match execute(worker_ctx.database_instance_context_controller(), instance_id, body) {
+    let results = match execute(
+        worker_ctx.database_instance_context_controller(),
+        instance_id,
+        body,
+        auth,
+    ) {
         Ok(results) => results,
         Err(err) => {
             log::warn!("{}", err);
-            return Err(StatusCode::BAD_REQUEST.into());
+            return if let Some(auth_err) = err.get_auth_error() {
+                let err = format!("{auth_err}");
+                Err((StatusCode::UNAUTHORIZED, err).into())
+            } else {
+                let err = format!("{err}");
+                Err((StatusCode::BAD_REQUEST, err).into())
+            };
         }
     };
 

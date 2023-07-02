@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
+use spacetimedb_lib::relation::{FieldExpr, MemTable, RelIter, Relation, Table};
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::builtin_type::BuiltinType;
-use spacetimedb_sats::relation::{FieldExpr, MemTable, RelIter, Relation, Table};
 use spacetimedb_sats::{product, ProductType, ProductValue};
 
 use crate::dsl::{bin_op, call_fn, if_, mem_table, scalar, var};
@@ -113,10 +113,26 @@ fn build_typed<P: ProgramVm>(p: &mut P, node: Expr) -> ExprOpt {
 
                 ExprOpt::Crud(Box::new(CrudExprOpt::Delete { query }))
             }
-            CrudExpr::CreateTable { name, columns } => {
-                ExprOpt::Crud(Box::new(CrudExprOpt::CreateTable { name, columns }))
-            }
-            CrudExpr::Drop { name, kind } => ExprOpt::Crud(Box::new(CrudExprOpt::Drop { name, kind })),
+            CrudExpr::CreateTable {
+                name,
+                columns,
+                table_type,
+                table_access,
+            } => ExprOpt::Crud(Box::new(CrudExprOpt::CreateTable {
+                name,
+                columns,
+                table_type,
+                table_access,
+            })),
+            CrudExpr::Drop {
+                name,
+                kind,
+                table_access,
+            } => ExprOpt::Crud(Box::new(CrudExprOpt::Drop {
+                name,
+                kind,
+                table_access,
+            })),
         },
         x => {
             todo!("{:?}", x)
@@ -262,8 +278,26 @@ fn compile<P: ProgramVm>(p: &mut P, node: ExprOpt) -> Result<Code, ErrorVm> {
                     let query = compile_query(query);
                     Code::Crud(CrudCode::Delete { query })
                 }
-                CrudExprOpt::CreateTable { name, columns } => Code::Crud(CrudCode::CreateTable { name, columns }),
-                CrudExprOpt::Drop { name, kind } => Code::Crud(CrudCode::Drop { name, kind }),
+                CrudExprOpt::CreateTable {
+                    name,
+                    columns,
+                    table_type,
+                    table_access,
+                } => Code::Crud(CrudCode::CreateTable {
+                    name,
+                    columns,
+                    table_type,
+                    table_access,
+                }),
+                CrudExprOpt::Drop {
+                    name,
+                    kind,
+                    table_access,
+                } => Code::Crud(CrudCode::Drop {
+                    name,
+                    kind,
+                    table_access,
+                }),
             }
         }
         x => todo!("{}", x),
@@ -503,7 +537,10 @@ mod tests {
     use super::*;
     use crate::dsl::{prefix_op, query, value};
     use crate::program::Program;
-    use spacetimedb_sats::relation::{FieldName, MemTable, RelationError};
+    use spacetimedb_lib::auth::StAccess;
+    use spacetimedb_lib::error::RelationError;
+    use spacetimedb_lib::identity::AuthCtx;
+    use spacetimedb_lib::relation::{FieldName, MemTable};
 
     fn fib(n: u64) -> u64 {
         if n < 2 {
@@ -532,7 +569,7 @@ mod tests {
 
     #[test]
     fn test_optimize_values() {
-        let p = &mut Program::new();
+        let p = &mut Program::new(AuthCtx::for_testing());
         let zero = scalar(0);
 
         let x = value(zero);
@@ -542,14 +579,14 @@ mod tests {
 
     #[test]
     fn test_eval_scalar() {
-        let p = &mut Program::new();
+        let p = &mut Program::new(AuthCtx::for_testing());
         let zero = scalar(0);
         assert_eq!(run_ast(p, zero.clone().into()), Code::Value(zero));
     }
 
     #[test]
     fn test_optimize_ops() {
-        let p = &mut Program::new();
+        let p = &mut Program::new(AuthCtx::for_testing());
 
         let zero = scalar(0);
         let one = scalar(1);
@@ -562,7 +599,7 @@ mod tests {
 
     #[test]
     fn test_math() {
-        let p = &mut Program::new();
+        let p = &mut Program::new(AuthCtx::for_testing());
         let one = scalar(1);
         let two = scalar(2);
 
@@ -591,7 +628,7 @@ mod tests {
 
     #[test]
     fn test_logic() {
-        let p = &mut Program::new();
+        let p = &mut Program::new(AuthCtx::for_testing());
 
         let a = scalar(true);
         let b = scalar(false);
@@ -626,7 +663,7 @@ mod tests {
 
     #[test]
     fn test_eval_if() {
-        let p = &mut Program::new();
+        let p = &mut Program::new(AuthCtx::for_testing());
 
         let a = scalar(1);
         let b = scalar(2);
@@ -638,7 +675,7 @@ mod tests {
 
     #[test]
     fn test_fun() {
-        let p = &mut Program::new();
+        let p = &mut Program::new(AuthCtx::for_testing());
         let kind = AlgebraicType::Builtin(BuiltinType::U64);
         let f = Function::new(
             "sum",
@@ -657,7 +694,7 @@ mod tests {
 
     #[test]
     fn test_fibonacci() {
-        let p = &mut Program::new();
+        let p = &mut Program::new(AuthCtx::for_testing());
         let input = 2;
         let check = fibo(input);
         let result = run_ast(p, check);
@@ -668,7 +705,7 @@ mod tests {
 
     #[test]
     fn test_select() {
-        let p = &mut Program::new();
+        let p = &mut Program::new(AuthCtx::for_testing());
         let input = MemTable::from_value(scalar(1));
         let field = input.get_field(0).unwrap().clone();
 
@@ -677,12 +714,16 @@ mod tests {
         let head = q.source.head();
 
         let result = run_ast(p, q.into());
-        assert_eq!(result, Code::Table(MemTable::new(&head, &[scalar(1).into()])), "Query");
+        assert_eq!(
+            result,
+            Code::Table(MemTable::new(&head, StAccess::Public, &[scalar(1).into()])),
+            "Query"
+        );
     }
 
     #[test]
     fn test_project() {
-        let p = &mut Program::new();
+        let p = &mut Program::new(AuthCtx::for_testing());
         let input = scalar(1);
         let table = MemTable::from_value(scalar(1));
         let field = table.get_field(0).unwrap().clone();
@@ -692,7 +733,11 @@ mod tests {
         let head = q.source.head();
 
         let result = run_ast(p, q.into());
-        assert_eq!(result, Code::Table(MemTable::new(&head, &[input.into()])), "Project");
+        assert_eq!(
+            result,
+            Code::Table(MemTable::new(&head, StAccess::Public, &[input.into()])),
+            "Project"
+        );
 
         let field = FieldName::positional(&table.head.table_name, 1);
         let q = source.with_project(&[field.clone().into()]);
@@ -707,7 +752,7 @@ mod tests {
 
     #[test]
     fn test_join_inner() {
-        let p = &mut Program::new();
+        let p = &mut Program::new(AuthCtx::for_testing());
         let table = MemTable::from_value(scalar(1));
         let field = table.get_field(0).unwrap().clone();
 
@@ -730,7 +775,7 @@ mod tests {
 
     #[test]
     fn test_query_logic() {
-        let p = &mut Program::new();
+        let p = &mut Program::new(AuthCtx::for_testing());
 
         let inv = ProductType::from_iter([("id", BuiltinType::U64), ("name", BuiltinType::String)]);
 
@@ -756,7 +801,7 @@ mod tests {
     /// Inventory
     /// | id: u64 | name : String |
     fn test_query() {
-        let p = &mut Program::new();
+        let p = &mut Program::new(AuthCtx::for_testing());
 
         let inv = ProductType::from_iter([("id", BuiltinType::U64), ("name", BuiltinType::String)]);
 
@@ -791,7 +836,7 @@ mod tests {
     /// Location
     /// | entity_id: u64 | x : f32 | z : f32 |
     fn test_query_game() {
-        let p = &mut Program::new();
+        let p = &mut Program::new(AuthCtx::for_testing());
 
         let data = create_game_data();
 

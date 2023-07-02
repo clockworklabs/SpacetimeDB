@@ -1,3 +1,5 @@
+use auth::StAccess;
+use auth::StTableType;
 pub use spacetimedb_sats::buffer;
 pub mod address;
 pub mod data_key;
@@ -17,8 +19,10 @@ pub mod type_def {
 pub mod type_value {
     pub use spacetimedb_sats::{AlgebraicValue, ProductValue};
 }
+pub mod auth;
 #[cfg(feature = "serde")]
 pub mod recovery;
+pub mod relation;
 pub mod table;
 pub mod version;
 
@@ -84,13 +88,15 @@ impl std::fmt::Display for VersionTuple {
 
 extern crate self as spacetimedb_lib;
 
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub struct TableDef {
     pub name: String,
     /// data should always point to a ProductType in the typespace
     pub data: sats::AlgebraicTypeRef,
     pub column_attrs: Vec<ColumnIndexAttribute>,
     pub indexes: Vec<IndexDef>,
+    pub table_type: StTableType,
+    pub table_access: StAccess,
 }
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
@@ -184,14 +190,14 @@ pub struct TypeAlias {
     pub ty: sats::AlgebraicTypeRef,
 }
 
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub struct IndexDef {
     pub name: String,
     pub ty: IndexType,
     pub col_ids: Vec<u8>,
 }
 
-#[derive(Debug, Copy, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub enum IndexType {
     BTree,
     Hash,
