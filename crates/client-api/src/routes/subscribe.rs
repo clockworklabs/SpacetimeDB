@@ -86,6 +86,7 @@ pub async fn handle_websocket(
         max_frame_size: None,
         accept_unmasked_frames: false,
     };
+
     tokio::spawn(async move {
         let ws = match ws_upgrade.upgrade(ws_config).await {
             Ok(ws) => ws,

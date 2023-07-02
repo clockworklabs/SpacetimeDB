@@ -806,6 +806,8 @@ pub async fn publish(
         ctx.control_db().alloc_spacetime_address().await.map_err(log_and_500)?
     };
 
+    log::trace!("Publishing to the address: {}", db_address.to_hex());
+
     let host_type = match host_type {
         None => HostType::Wasmer,
         Some(ht) => ht
