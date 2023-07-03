@@ -95,10 +95,10 @@ impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> fo
             (_, Ok(Query(query))) => {
                 let header =
                     HeaderValue::from_str(&format!("Basic {}", query.token)).map_err(|_| AuthorizationRejection {
-                        reason: AuthorizationRejectionReason::Other,
+                        reason: AuthorizationRejectionReason::MalformedTokenQueryString,
                     })?;
                 let creds = SpacetimeCreds(authorization::Basic::decode(&header).ok_or(AuthorizationRejection {
-                    reason: AuthorizationRejectionReason::Other,
+                    reason: AuthorizationRejectionReason::CantDecodeAuthorizationToken,
                 })?);
                 let claims = creds
                     .decode_token(state.public_key())
@@ -157,7 +157,8 @@ impl IntoResponse for AuthorizationRejection {
 enum AuthorizationRejectionReason {
     Jwt(JwtErrorKind),
     Header(TypedHeaderRejection),
-    Other,
+    MalformedTokenQueryString,
+    CantDecodeAuthorizationToken
 }
 
 impl SpacetimeAuth {
