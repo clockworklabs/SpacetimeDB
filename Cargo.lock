@@ -1787,6 +1787,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "http-range-header"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bfe8eed0a9285ef776bb792479ea3834e8b94e13d615c2f66d03dd50a435a29"
+
+[[package]]
 name = "httparse"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4150,6 +4156,7 @@ dependencies = [
  "axum",
  "clap 4.3.10",
  "hostname",
+ "http",
  "log",
  "openssl",
  "prometheus",
@@ -4159,6 +4166,7 @@ dependencies = [
  "spacetimedb-core",
  "spacetimedb-lib",
  "tokio",
+ "tower-http",
 ]
 
 [[package]]
@@ -4728,6 +4736,24 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
+]
+
+[[package]]
+name = "tower-http"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8bd22a874a2d0b70452d5597b12c537331d49060824a95f49f108994f94aa4c"
+dependencies = [
+ "bitflags 2.3.3",
+ "bytes",
+ "futures-core",
+ "futures-util",
+ "http",
+ "http-body",
+ "http-range-header",
+ "pin-project-lite",
+ "tower-layer",
+ "tower-service",
 ]
 
 [[package]]

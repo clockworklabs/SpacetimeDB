@@ -1,10 +1,13 @@
 use std::time::Duration;
 
 use axum::extract::rejection::{TypedHeaderRejection, TypedHeaderRejectionReason};
+use axum::extract::Query;
+use axum::headers::authorization::Credentials;
 use axum::headers::{self, authorization};
 use axum::response::IntoResponse;
 use axum::TypedHeader;
 use http::{request, HeaderValue, StatusCode};
+use serde::Deserialize;
 use spacetimedb::auth::identity::{
     decode_token, encode_token, DecodingKey, EncodingKey, JwtError, JwtErrorKind, SpacetimeIdentityClaims,
 };
@@ -61,15 +64,23 @@ pub struct SpacetimeAuth {
 }
 
 pub struct SpacetimeAuthHeader {
-    auth: Option<SpacetimeAuth>,
+    pub auth: Option<SpacetimeAuth>,
+}
+
+#[derive(Deserialize)]
+pub struct TokenQueryParam {
+    token: String,
 }
 
 #[async_trait::async_trait]
 impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for SpacetimeAuthHeader {
     type Rejection = AuthorizationRejection;
     async fn from_request_parts(parts: &mut request::Parts, state: &S) -> Result<Self, Self::Rejection> {
-        match axum::TypedHeader::from_request_parts(parts, state).await {
-            Ok(axum::TypedHeader(headers::Authorization(creds @ SpacetimeCreds { .. }))) => {
+        match (
+            axum::TypedHeader::from_request_parts(parts, state).await,
+            Query::<TokenQueryParam>::from_request_parts(parts, state).await,
+        ) {
+            (Ok(axum::TypedHeader(headers::Authorization(creds @ SpacetimeCreds { .. }))), _) => {
                 let claims = creds
                     .decode_token(state.public_key())
                     .map_err(|e| AuthorizationRejection {
@@ -81,7 +92,26 @@ impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> fo
                 };
                 Ok(Self { auth: Some(auth) })
             }
-            Err(e) => match e.reason() {
+            (_, Ok(Query(query))) => {
+                let header =
+                    HeaderValue::from_str(&format!("Basic {}", query.token)).map_err(|_| AuthorizationRejection {
+                        reason: AuthorizationRejectionReason::MalformedTokenQueryString,
+                    })?;
+                let creds = SpacetimeCreds(authorization::Basic::decode(&header).ok_or(AuthorizationRejection {
+                    reason: AuthorizationRejectionReason::CantDecodeAuthorizationToken,
+                })?);
+                let claims = creds
+                    .decode_token(state.public_key())
+                    .map_err(|e| AuthorizationRejection {
+                        reason: AuthorizationRejectionReason::Jwt(e.into_kind()),
+                    })?;
+                let auth = SpacetimeAuth {
+                    creds,
+                    identity: claims.hex_identity,
+                };
+                Ok(Self { auth: Some(auth) })
+            }
+            (Err(e), Err(_)) => match e.reason() {
                 // Leave it to handlers to decide on unauthorized requests.
                 TypedHeaderRejectionReason::Missing => Ok(Self { auth: None }),
                 _ => Err(AuthorizationRejection {
@@ -127,6 +157,8 @@ impl IntoResponse for AuthorizationRejection {
 enum AuthorizationRejectionReason {
     Jwt(JwtErrorKind),
     Header(TypedHeaderRejection),
+    MalformedTokenQueryString,
+    CantDecodeAuthorizationToken,
 }
 
 impl SpacetimeAuth {
