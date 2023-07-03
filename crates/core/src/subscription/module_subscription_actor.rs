@@ -15,6 +15,8 @@ use crate::{
 };
 use crate::{db::relational_db::RelationalDB, error::DBError};
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::Identity;
 use tokio::sync::mpsc;
 
 #[derive(Debug)]
@@ -45,11 +47,11 @@ pub struct SubscriptionEventSender {
 }
 
 impl ModuleSubscriptionManager {
-    pub fn spawn(relational_db: Arc<RelationalDB>) -> (Self, SubscriptionEventSender) {
+    pub fn spawn(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> (Self, SubscriptionEventSender) {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let (commit_event_tx, mut commit_event_rx) = mpsc::unbounded_channel();
         tokio::spawn(async move {
-            let mut actor = ModuleSubscriptionActor::new(relational_db);
+            let mut actor = ModuleSubscriptionActor::new(relational_db, owner_identity);
             loop {
                 let command = tokio::select! {
                     event = commit_event_rx.recv() => match event {
@@ -109,13 +111,15 @@ impl SubscriptionEventSender {
 struct ModuleSubscriptionActor {
     relational_db: Arc<RelationalDB>,
     subscriptions: Vec<Subscription>,
+    owner_identity: Identity,
 }
 
 impl ModuleSubscriptionActor {
-    fn new(relational_db: Arc<RelationalDB>) -> Self {
+    fn new(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
         Self {
             relational_db,
             subscriptions: Vec::new(),
+            owner_identity,
         }
     }
 
@@ -138,6 +142,7 @@ impl ModuleSubscriptionActor {
         subscription: Subscribe,
     ) -> Result<(), DBError> {
         self.remove_subscriber(sender.id);
+        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
 
         let queries: QuerySet = subscription
             .query_strings
@@ -158,7 +163,8 @@ impl ModuleSubscriptionActor {
                 self.subscriptions.last_mut().unwrap()
             }
         };
-        let database_update = sub.queries.eval(&self.relational_db)?;
+
+        let database_update = sub.queries.eval(&self.relational_db, auth)?;
 
         let sender = sub.subscribers.last().unwrap();
 
@@ -180,9 +186,12 @@ impl ModuleSubscriptionActor {
 
     async fn broadcast_commit_event(&mut self, mut event: ModuleEvent) -> Result<(), DBError> {
         let futures = FuturesUnordered::new();
+        let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
         for subscription in &mut self.subscriptions {
             let database_update = event.status.database_update().unwrap();
-            let incr = subscription.queries.eval_incr(&self.relational_db, database_update)?;
+            let incr = subscription
+                .queries
+                .eval_incr(&self.relational_db, database_update, auth)?;
 
             if incr.tables.is_empty() {
                 continue;

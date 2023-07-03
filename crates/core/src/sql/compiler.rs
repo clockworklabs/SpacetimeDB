@@ -4,15 +4,16 @@ use crate::db::datastore::traits::TableSchema;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
+use spacetimedb_lib::auth::{StAccess, StTableType};
+use spacetimedb_lib::relation::{self, DbTable, FieldExpr, FieldName, Header};
 use spacetimedb_lib::table::ProductTypeMeta;
-use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header};
-use spacetimedb_sats::{relation, ProductType};
-use spacetimedb_vm::dsl::{db_table, query};
+use spacetimedb_sats::ProductType;
+use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
 
 /// Compile the `SQL` expression into a `ast`
-pub fn compile(db: &RelationalDB, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
+pub fn compile_sql(db: &RelationalDB, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
     let ast = compile_to_ast(db, sql_text)?;
 
     let mut results = Vec::with_capacity(ast.len());
@@ -107,10 +108,12 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
         });
     }
 
-    let mut q = query(db_table(
+    let mut q = query(db_table_raw(
         ProductType::from(&table.root),
         &table.root.table_name,
         table.root.table_id,
+        table.root.table_type,
+        table.root.table_access,
     ));
 
     if let Some(ref joins) = table.join {
@@ -147,7 +150,12 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
         }
     }
 
-    DbTable::new(&Header::new(&table.table_name, &new), table.table_id)
+    DbTable::new(
+        &Header::new(&table.table_name, &new),
+        table.table_id,
+        table.table_type,
+        table.table_access,
+    )
 }
 
 fn compile_insert(
@@ -205,12 +213,26 @@ fn compile_update(
     Ok(CrudExpr::Update { insert, delete })
 }
 
-fn compile_create_table(name: String, columns: ProductTypeMeta) -> Result<CrudExpr, PlanError> {
-    Ok(CrudExpr::CreateTable { name, columns })
+fn compile_create_table(
+    name: String,
+    columns: ProductTypeMeta,
+    table_type: StTableType,
+    table_access: StAccess,
+) -> Result<CrudExpr, PlanError> {
+    Ok(CrudExpr::CreateTable {
+        name,
+        columns,
+        table_type,
+        table_access,
+    })
 }
 
-fn compile_drop(name: String, kind: DbType) -> Result<CrudExpr, PlanError> {
-    Ok(CrudExpr::Drop { name, kind })
+fn compile_drop(name: String, kind: DbType, table_access: StAccess) -> Result<CrudExpr, PlanError> {
+    Ok(CrudExpr::Drop {
+        name,
+        kind,
+        table_access,
+    })
 }
 
 fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
@@ -227,8 +249,17 @@ fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
             selection,
         } => compile_update(table, assignments, selection)?,
         SqlAst::Delete { table, selection } => compile_delete(table, selection)?,
-        SqlAst::CreateTable { table, columns } => compile_create_table(table, columns)?,
-        SqlAst::Drop { name, kind } => compile_drop(name, kind)?,
+        SqlAst::CreateTable {
+            table,
+            columns,
+            table_type,
+            table_access: schema,
+        } => compile_create_table(table, columns, table_type, schema)?,
+        SqlAst::Drop {
+            name,
+            kind,
+            table_access,
+        } => compile_drop(name, kind, table_access)?,
     };
 
     Ok(q)

@@ -2,13 +2,13 @@ use crate::client::ClientActorId;
 use crate::db::datastore::traits::{IndexDef, IndexId};
 use hex::FromHexError;
 use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::error::LibError;
+use spacetimedb_lib::error::{LibError, RelationError};
+use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::{PrimaryKey, ProductValue};
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::relation::{FieldName, RelationError};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::AlgebraicValue;
-use spacetimedb_vm::errors::{ErrorLang, ErrorVm};
+use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorVm};
 use spacetimedb_vm::expr::Crud;
 use std::num::ParseIntError;
 use std::path::PathBuf;
@@ -37,6 +37,19 @@ pub enum TableError {
     DuplicateColumnName(String),
     #[error("Column `{0}` not found")]
     ColumnNotFound(u32),
+    #[error(
+        "DecodeError for field `{0}.{1}`, expect `{2}` but found `{3}`",
+        table,
+        field,
+        expect,
+        found
+    )]
+    DecodeField {
+        table: String,
+        field: String,
+        expect: String,
+        found: String,
+    },
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -153,6 +166,17 @@ pub enum DBError {
     Plan { sql: String, error: PlanError },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl DBError {
+    pub fn get_auth_error(&self) -> Option<&ErrorLang> {
+        if let Self::VmUser(err) = self {
+            if err.kind == ErrorKind::Unauthorized {
+                return Some(err);
+            }
+        }
+        None
+    }
 }
 
 impl From<InvalidFieldError> for DBError {

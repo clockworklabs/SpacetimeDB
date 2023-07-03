@@ -1,8 +1,10 @@
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, SubscriptionError};
 use crate::host::module_host::DatabaseTableUpdate;
-use crate::sql::execute::{compile_sql, execute_single_sql};
-use spacetimedb_sats::relation::{Column, FieldName, MemTable};
+use crate::sql::compiler::compile_sql;
+use crate::sql::execute::execute_single_sql;
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::relation::{Column, FieldName, MemTable};
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
 
@@ -34,10 +36,11 @@ pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
 //HACK: To recover the `op_type` of this particular row I add a "hidden" column `OP_TYPE_FIELD_NAME`
 pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
     let mut q = of;
+    let table_access = q.source.table_access();
 
     let mut t = match &q.source {
-        SourceExpr::MemTable(x) => MemTable::new(&x.head, &[]),
-        SourceExpr::DbTable(table) => MemTable::new(&table.head, &[]),
+        SourceExpr::MemTable(x) => MemTable::new(&x.head, table_access, &[]),
+        SourceExpr::DbTable(table) => MemTable::new(&table.head, table_access, &[]),
     };
     t.head.fields.push(Column::new(
         FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
@@ -56,8 +59,8 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
 }
 
 /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
-pub(crate) fn run_query(db: &RelationalDB, query: &QueryExpr) -> Result<Vec<MemTable>, DBError> {
-    execute_single_sql(db, CrudExpr::Query(query.clone()))
+pub(crate) fn run_query(db: &RelationalDB, query: &QueryExpr, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
+    execute_single_sql(db, CrudExpr::Query(query.clone()), auth)
 }
 
 pub fn compile_query(relational_db: &RelationalDB, input: &str) -> Result<Query, DBError> {
@@ -98,9 +101,11 @@ mod tests {
     use crate::vm::tests::create_table_from_program;
     use crate::vm::DbProgram;
     use itertools::Itertools;
+    use spacetimedb_lib::auth::{StAccess, StTableType};
     use spacetimedb_lib::data_key::ToDataKey;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_sats::relation::FieldName;
+    use spacetimedb_lib::relation::FieldName;
+    use spacetimedb_lib::Identity;
     use spacetimedb_sats::{product, BuiltinType, ProductType};
     use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
@@ -110,7 +115,8 @@ mod tests {
         let (db, _tmp_dir) = make_test_db()?;
 
         let mut tx = db.begin_tx();
-        let p = &mut DbProgram::new(&db, &mut tx);
+
+        let p = &mut DbProgram::new(&db, &mut tx, AuthCtx::for_testing());
 
         let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
 
@@ -141,7 +147,7 @@ mod tests {
         let q = QueryExpr::new(db_table((&schema).into(), "inventory", table_id)).with_project(fields);
 
         let q = to_mem_table(q, &data);
-        let result = run_query(&db, &q)?;
+        let result = run_query(&db, &q, AuthCtx::for_testing())?;
 
         assert_eq!(
             Some(table.as_without_table_name()),
@@ -159,13 +165,131 @@ mod tests {
             .with_project(fields);
 
         let q = to_mem_table(q, &data);
-        let result = run_query(&db, &q)?;
+        let result = run_query(&db, &q, AuthCtx::for_testing())?;
 
         let table = mem_table(head, vec![product!(1u64, "health")]);
         assert_eq!(
             Some(table.as_without_table_name()),
             result.first().map(|x| x.as_without_table_name())
         );
+
+        Ok(())
+    }
+
+    // Check that the `owner` can access private tables (that start with `_`) and that it fails if the `caller` is different
+    #[test]
+    fn test_subscribe_private() -> ResultTest<()> {
+        let (db, _tmp_dir) = make_test_db()?;
+
+        let mut tx = db.begin_tx();
+        let p = &mut DbProgram::new(&db, &mut tx, AuthCtx::for_testing());
+
+        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+
+        let row = product!(1u64, "health");
+        let table = mem_table(head.clone(), [row.clone()]);
+        let table_id = create_table_from_program(p, "_inventory", head, &[row.clone()])?;
+
+        let schema = db.schema_for_table(&tx, table_id).unwrap();
+        assert_eq!(schema.table_type, StTableType::User);
+        assert_eq!(schema.table_access, StAccess::Private);
+
+        db.commit_tx(tx)?;
+
+        let op = TableOp {
+            op_type: 0,
+            row_pk: vec![],
+            row: row.clone(),
+        };
+
+        let data = DatabaseTableUpdate {
+            table_id,
+            table_name: "_inventory".to_string(),
+            ops: vec![op],
+        };
+        // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
+        let fields = &[
+            FieldName::named("_inventory", "inventory_id").into(),
+            FieldName::named("_inventory", "name").into(),
+        ];
+
+        let q = QueryExpr::new(db_table((&schema).into(), "_inventory", table_id)).with_project(fields);
+
+        let q = to_mem_table(q, &data);
+
+        let result = run_query(&db, &q, AuthCtx::for_testing())?;
+
+        assert_eq!(
+            Some(table.as_without_table_name()),
+            result.first().map(|x| x.as_without_table_name())
+        );
+
+        //SELECT * FROM inventory
+        let q_all = QueryExpr::new(db_table((&schema).into(), "_inventory", table_id));
+        //SELECT * FROM inventory WHERE inventory_id = 1
+        let q_id =
+            q_all
+                .clone()
+                .with_select_cmp(OpCmp::Eq, FieldName::named("_inventory", "inventory_id"), scalar(1u64));
+
+        let s = QuerySet(vec![
+            Query {
+                queries: vec![q_all.clone()],
+            },
+            Query {
+                queries: vec![q_all, q_id],
+            },
+        ]);
+
+        let row1 = TableOp {
+            op_type: 0,
+            row_pk: row.to_data_key().to_bytes(),
+            row: row.clone(),
+        };
+
+        let row2 = TableOp {
+            op_type: 1,
+            row_pk: row.to_data_key().to_bytes(),
+            row: row.clone(),
+        };
+
+        let data = DatabaseTableUpdate {
+            table_id,
+            table_name: "_inventory".to_string(),
+            ops: vec![row1, row2],
+        };
+
+        let update = DatabaseUpdate {
+            tables: vec![data.clone()],
+        };
+
+        let result = s.eval_incr(&db, &update, AuthCtx::for_testing())?;
+        assert_eq!(result.tables.len(), 3, "Must return 3 tables");
+        assert_eq!(
+            result.tables.iter().map(|x| x.ops.len()).sum::<usize>(),
+            1,
+            "Must return 1 row"
+        );
+        assert_eq!(result.tables[0].ops[0].row, row, "Must return the correct row");
+
+        let q = QueryExpr::new(db_table((&schema).into(), "_inventory", table_id)).with_project(fields);
+
+        let q = to_mem_table(q, &data);
+        //Try access the private table
+        match run_query(
+            &db,
+            &q,
+            AuthCtx::new(Identity::__dummy(), Identity::from_arr(&[1u8; 32])),
+        ) {
+            Ok(_) => {
+                panic!("it allows to execute against private table")
+            }
+            Err(err) => {
+                if err.get_auth_error().is_none() {
+                    panic!("fail to report an `auth` violation for private table, it gets {err}")
+                }
+            }
+        }
 
         Ok(())
     }
@@ -181,7 +305,7 @@ mod tests {
         let (db, _tmp_dir) = make_test_db()?;
 
         let mut tx = db.begin_tx();
-        let p = &mut DbProgram::new(&db, &mut tx);
+        let p = &mut DbProgram::new(&db, &mut tx, AuthCtx::for_testing());
 
         let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
         let row = product!(1u64, "health");
@@ -207,7 +331,7 @@ mod tests {
             },
         ]);
 
-        let result = s.eval(&db)?;
+        let result = s.eval(&db, AuthCtx::for_testing())?;
         assert_eq!(result.tables.len(), 3, "Must return 3 tables");
         assert_eq!(
             result.tables.iter().map(|x| x.ops.len()).sum::<usize>(),
@@ -224,7 +348,7 @@ mod tests {
         let (db, _tmp_dir) = make_test_db()?;
 
         let mut tx = db.begin_tx();
-        let p = &mut DbProgram::new(&db, &mut tx);
+        let p = &mut DbProgram::new(&db, &mut tx, AuthCtx::for_testing());
 
         let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
         let row = product!(1u64, "health");
@@ -270,7 +394,7 @@ mod tests {
 
         let update = DatabaseUpdate { tables: vec![data] };
 
-        let result = s.eval_incr(&db, &update)?;
+        let result = s.eval_incr(&db, &update, AuthCtx::for_testing())?;
         assert_eq!(result.tables.len(), 3, "Must return 3 tables");
         assert_eq!(
             result.tables.iter().map(|x| x.ops.len()).sum::<usize>(),
@@ -295,7 +419,7 @@ mod tests {
     fn test_subscribe_commutative() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
         let mut tx = db.begin_tx();
-        let p = &mut DbProgram::new(&db, &mut tx);
+        let p = &mut DbProgram::new(&db, &mut tx, AuthCtx::for_testing());
 
         let head_1 = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
         let row_1 = product!(1u64, "health");
@@ -321,11 +445,11 @@ mod tests {
             },
         ]);
 
-        let result_1 = s.eval(&db)?;
+        let result_1 = s.eval(&db, AuthCtx::for_testing())?;
 
         let s = QuerySet(vec![Query { queries: vec![q_2] }, Query { queries: vec![q_1] }]);
 
-        let result_2 = s.eval(&db)?;
+        let result_2 = s.eval(&db, AuthCtx::for_testing())?;
         let to_row = |of: DatabaseUpdate| {
             of.tables
                 .iter()

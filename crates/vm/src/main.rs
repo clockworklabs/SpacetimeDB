@@ -1,11 +1,12 @@
 use spacetimedb_vm::eval::{fibo, run_ast};
 use spacetimedb_vm::program::Program;
 
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_vm::expr::Code;
 use std::env;
 
 fn fib_vm(input: u64) -> Code {
-    let p = &mut Program::new();
+    let p = &mut Program::new(AuthCtx::for_testing());
     let check = fibo(input);
     run_ast(p, check)
 }

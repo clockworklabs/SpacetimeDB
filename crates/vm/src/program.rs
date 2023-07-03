@@ -1,7 +1,8 @@
 //! Definition for a `Program` to run code.
 //!
 //! It carries an [EnvDb] with the functions, idents, types.
-use spacetimedb_sats::relation::{MemTable, RelIter, Relation, Table};
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::relation::{MemTable, RelIter, Relation, Table};
 use std::collections::HashMap;
 
 use crate::env::EnvDb;
@@ -68,7 +69,7 @@ pub trait ProgramVm {
     fn env(&self) -> &EnvDb;
     fn env_mut(&mut self) -> &mut EnvDb;
     fn ctx(&self) -> &dyn ProgramVm;
-
+    fn auth(&self) -> &AuthCtx;
     /// Add a `function` that is defined natively by [Code]
     fn add_lambda(&mut self, f: FunDef, body: Code) {
         if let Some(s) = self.env_mut().child.last_mut() {
@@ -134,21 +135,17 @@ pub struct ProgramRef<'a> {
 pub struct Program {
     pub(crate) env: EnvDb,
     pub(crate) stats: HashMap<String, u64>,
-}
-
-impl Default for Program {
-    fn default() -> Self {
-        Self::new()
-    }
+    pub(crate) auth: AuthCtx,
 }
 
 impl Program {
-    pub fn new() -> Self {
+    pub fn new(auth: AuthCtx) -> Self {
         let mut env = EnvDb::new();
         Self::load_ops(&mut env);
         Self {
             env,
             stats: Default::default(),
+            auth,
         }
     }
 }
@@ -166,11 +163,16 @@ impl ProgramVm for Program {
         self as &dyn ProgramVm
     }
 
+    fn auth(&self) -> &AuthCtx {
+        &self.auth
+    }
+
     fn eval_query(&mut self, query: CrudCode) -> Result<Code, ErrorVm> {
         match query {
             CrudCode::Query(query) => {
                 let head = query.head();
                 let row_count = query.row_count();
+                let table_access = query.table.table_access();
                 let result = match query.table {
                     Table::MemTable(x) => Box::new(RelIter::new(head, row_count, x)) as Box<IterRows<'_>>,
                     Table::DbTable(_) => {
@@ -183,7 +185,7 @@ impl ProgramVm for Program {
                 let head = result.head().clone();
                 let rows: Vec<_> = result.collect_vec()?;
 
-                Ok(Code::Table(MemTable::new(&head, &rows)))
+                Ok(Code::Table(MemTable::new(&head, table_access, &rows)))
             }
             CrudCode::Insert { .. } => {
                 todo!()

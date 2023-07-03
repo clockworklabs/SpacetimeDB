@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use crate::timestamp::with_timestamp_set;
 use crate::{sys, ReducerContext, ScheduleToken, SpacetimeType, TableType, Timestamp};
+use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
@@ -402,6 +403,8 @@ pub fn register_table<T: TableType>() {
             data,
             column_attrs: T::COLUMN_ATTRS.to_owned(),
             indexes: T::INDEXES.iter().copied().map(Into::into).collect(),
+            table_type: StTableType::User,
+            table_access: StAccess::for_name(T::TABLE_NAME),
         };
         module.module.tables.push(schema)
     })

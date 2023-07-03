@@ -5,7 +5,6 @@ pub mod convert;
 pub mod product_type;
 pub mod product_type_element;
 pub mod product_value;
-pub mod relation;
 pub mod sum_type;
 pub mod sum_type_variant;
 pub mod sum_value;

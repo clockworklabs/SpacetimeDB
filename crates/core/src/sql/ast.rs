@@ -1,3 +1,5 @@
+use spacetimedb_lib::auth::{StAccess, StTableType};
+use spacetimedb_lib::error::RelationError;
 use spacetimedb_lib::table::{ColumnDef, ProductTypeMeta};
 use spacetimedb_lib::ColumnIndexAttribute;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
@@ -13,7 +15,7 @@ use std::collections::HashMap;
 use crate::db::datastore::traits::{MutTxDatastore, TableId, TableSchema};
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
-use spacetimedb_sats::relation::{extract_table_field, FieldExpr, FieldName, RelationError};
+use spacetimedb_lib::relation::{extract_table_field, FieldExpr, FieldName};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{ColumnOp, DbType, Expr};
 use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};
@@ -232,10 +234,13 @@ pub enum SqlAst {
     CreateTable {
         table: String,
         columns: ProductTypeMeta,
+        table_type: StTableType,
+        table_access: StAccess,
     },
     Drop {
         name: String,
         kind: DbType,
+        table_access: StAccess,
     },
 }
 
@@ -763,7 +768,12 @@ fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst,
         columns.push(&name, ty, attr);
     }
 
-    Ok(SqlAst::CreateTable { table, columns })
+    Ok(SqlAst::CreateTable {
+        table_access: StAccess::for_name(&table),
+        table,
+        columns,
+        table_type: StTableType::User,
+    })
 }
 
 fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError> {
@@ -777,8 +787,10 @@ fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError
         }
     };
 
+    let name = name.to_string();
     Ok(SqlAst::Drop {
-        name: name.to_string(),
+        table_access: StAccess::for_name(&name),
+        name,
         kind,
     })
 }

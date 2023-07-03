@@ -4,9 +4,11 @@ use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, SequenceId, TableDef};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
+use spacetimedb_lib::auth::{StAccess, StTableType};
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::relation::{FieldExpr, Relation};
+use spacetimedb_lib::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
 use spacetimedb_lib::table::ProductTypeMeta;
-use spacetimedb_sats::relation::{FieldExpr, Relation};
-use spacetimedb_sats::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
 use spacetimedb_sats::ProductValue;
 use spacetimedb_vm::dsl::mem_table;
 use spacetimedb_vm::env::EnvDb;
@@ -16,6 +18,7 @@ use spacetimedb_vm::expr::*;
 use spacetimedb_vm::program::{ProgramRef, ProgramVm};
 use spacetimedb_vm::rel_ops::RelOps;
 use std::collections::HashMap;
+
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
 pub fn build_query<'a>(
@@ -33,8 +36,9 @@ pub fn build_query<'a>(
 
     for q in &mut query.query {
         if let Query::JoinInner(q) = q {
+            let table_access = q.rhs.table_access();
             let rhs = get_table(stdb, tx, q.rhs.clone())?;
-            q.rhs = SourceExpr::MemTable(MemTable::new(&q.rhs.head(), &rhs.collect_vec()?));
+            q.rhs = SourceExpr::MemTable(MemTable::new(&q.rhs.head(), table_access, &rhs.collect_vec()?));
         }
     }
 
@@ -117,10 +121,11 @@ pub struct DbProgram<'db, 'tx> {
     pub(crate) stats: HashMap<String, u64>,
     pub(crate) db: &'db RelationalDB,
     pub(crate) tx: &'tx mut MutTxId,
+    pub(crate) auth: AuthCtx,
 }
 
 impl<'db, 'tx> DbProgram<'db, 'tx> {
-    pub fn new(db: &'db RelationalDB, tx: &'tx mut MutTxId) -> Self {
+    pub fn new(db: &'db RelationalDB, tx: &'tx mut MutTxId, auth: AuthCtx) -> Self {
         let mut env = EnvDb::new();
         Self::load_ops(&mut env);
         Self {
@@ -128,15 +133,18 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             db,
             stats: Default::default(),
             tx,
+            auth,
         }
     }
 
     fn _eval_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
+        let table_access = query.table.table_access();
+
         let result = build_query(self.db, self.tx, query)?;
         let head = result.head().clone();
         let rows: Vec<_> = result.collect_vec()?;
 
-        Ok(Code::Table(MemTable::new(&head, &rows)))
+        Ok(Code::Table(MemTable::new(&head, table_access, &rows)))
     }
 
     fn _execute_insert(&mut self, table: &Table, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
@@ -184,7 +192,13 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    fn create_table(&mut self, table_name: &str, columns: ProductTypeMeta) -> Result<Code, ErrorVm> {
+    fn create_table(
+        &mut self,
+        table_name: &str,
+        columns: ProductTypeMeta,
+        table_type: StTableType,
+        table_access: StAccess,
+    ) -> Result<Code, ErrorVm> {
         let mut cols = Vec::new();
         let mut indexes = Vec::new();
         for (i, column) in columns.columns.elements.iter().enumerate() {
@@ -209,6 +223,8 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
                 table_name: table_name.to_string(),
                 columns: cols,
                 indexes: vec![],
+                table_type,
+                table_access,
             },
         )?;
         Ok(Code::Pass)
@@ -250,7 +266,13 @@ impl ProgramVm for DbProgram<'_, '_> {
         self as &dyn ProgramVm
     }
 
+    fn auth(&self) -> &AuthCtx {
+        &self.auth
+    }
+
     fn eval_query(&mut self, query: CrudCode) -> Result<Code, ErrorVm> {
+        query.check_auth(self.auth.owner, self.auth.caller)?;
+
         match query {
             CrudCode::Query(query) => self._eval_query(query),
             CrudCode::Insert { table, rows } => self._execute_insert(&table, rows),
@@ -274,11 +296,20 @@ impl ProgramVm for DbProgram<'_, '_> {
                 let result = self.delete_query(query)?;
                 Ok(result)
             }
-            CrudCode::CreateTable { name, columns } => {
-                let result = self.create_table(&name, columns)?;
+            CrudCode::CreateTable {
+                name,
+                columns,
+                table_type,
+                table_access,
+            } => {
+                let result = self.create_table(&name, columns, table_type, table_access)?;
                 Ok(result)
             }
-            CrudCode::Drop { name, kind } => {
+            CrudCode::Drop {
+                name,
+                kind,
+                table_access: _,
+            } => {
                 let result = self.drop(&name, kind)?;
                 Ok(result)
             }
@@ -348,7 +379,7 @@ pub(crate) mod tests {
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::db::relational_db::{ST_COLUMNS_NAME, ST_INDEXES_NAME, ST_SEQUENCES_NAME, ST_TABLES_NAME};
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_sats::relation::{DbTable, FieldName};
+    use spacetimedb_lib::relation::{DbTable, FieldName};
     use spacetimedb_sats::{product, AlgebraicType, BuiltinType, ProductType, ProductValue};
     use spacetimedb_vm::dsl::*;
     use spacetimedb_vm::eval::run_ast;
@@ -376,6 +407,8 @@ pub(crate) mod tests {
                     })
                     .collect(),
                 indexes: vec![],
+                table_type: StTableType::User,
+                table_access: StAccess::for_name(table_name),
             },
         )?;
         for row in rows {
@@ -406,7 +439,7 @@ pub(crate) mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let p = &mut DbProgram::new(&stdb, &mut tx);
+        let p = &mut DbProgram::new(&stdb, &mut tx, AuthCtx::for_testing());
 
         let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
         let row = product!(1u64, "health");
@@ -454,7 +487,7 @@ pub(crate) mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let p = &mut DbProgram::new(&stdb, &mut tx);
+        let p = &mut DbProgram::new(&stdb, &mut tx, AuthCtx::for_testing());
 
         let q = query(&st_table_schema()).with_select_cmp(
             OpCmp::Eq,
@@ -467,6 +500,8 @@ pub(crate) mod tests {
             (&StTableRow {
                 table_id: ST_TABLES_ID.0,
                 table_name: ST_TABLES_NAME,
+                table_type: StTableType::System,
+                table_access: StAccess::Public,
             })
                 .into(),
             q,
@@ -483,7 +518,7 @@ pub(crate) mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let p = &mut DbProgram::new(&stdb, &mut tx);
+        let p = &mut DbProgram::new(&stdb, &mut tx, AuthCtx::for_testing());
 
         let q = query(&st_columns_schema())
             .with_select_cmp(
@@ -531,7 +566,7 @@ pub(crate) mod tests {
         let index = IndexDef::new("idx_1".into(), table_id, 0, true);
         let index_id = db.create_index(&mut tx, index)?;
 
-        let p = &mut DbProgram::new(&db, &mut tx);
+        let p = &mut DbProgram::new(&db, &mut tx, AuthCtx::for_testing());
 
         let q = query(&st_indexes_schema()).with_select_cmp(
             OpCmp::Eq,
@@ -563,7 +598,7 @@ pub(crate) mod tests {
         let (db, _tmp_dir) = make_test_db()?;
 
         let mut tx = db.begin_tx();
-        let p = &mut DbProgram::new(&db, &mut tx);
+        let p = &mut DbProgram::new(&db, &mut tx, AuthCtx::for_testing());
 
         let q = query(&st_sequences_schema()).with_select_cmp(
             OpCmp::Eq,

@@ -139,9 +139,7 @@ pub(crate) fn check_types(env: &mut EnvTy, ast: &ExprOpt) -> Result<Ty, ErrorTyp
                 CrudExprOpt::Insert { source, .. } => Ok(ty_source(source)),
                 CrudExprOpt::Update { insert, .. } => Ok(ty_source(&insert.source)),
                 CrudExprOpt::Delete { query } => Ok(ty_source(&query.source)),
-                CrudExprOpt::CreateTable { name: _, columns } => {
-                    Ok(AlgebraicType::Product(columns.columns.clone()).into())
-                }
+                CrudExprOpt::CreateTable { columns, .. } => Ok(AlgebraicType::Product(columns.columns.clone()).into()),
                 CrudExprOpt::Drop { .. } => {
                     //todo: Extract the type from the catalog...
                     Ok(Ty::Unknown)
@@ -156,6 +154,7 @@ pub(crate) fn check_types(env: &mut EnvTy, ast: &ExprOpt) -> Result<Ty, ErrorTyp
 
 #[cfg(test)]
 mod tests {
+    use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_sats::algebraic_type::AlgebraicType;
     use spacetimedb_sats::builtin_type::BuiltinType;
 
@@ -187,7 +186,7 @@ mod tests {
 
     #[test]
     fn ty_op() {
-        let p = &mut Program::new();
+        let p = &mut Program::new(AuthCtx::for_testing());
 
         let ast = bin_op(OpMath::Add, scalar(0), scalar(1));
         _expect_ast(p, ast, BuiltinType::I32.into())

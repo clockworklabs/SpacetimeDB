@@ -1,3 +1,4 @@
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_sats::{AlgebraicValue, BuiltinValue};
 use std::collections::HashSet;
 
@@ -56,6 +57,7 @@ impl QuerySet {
         &self,
         relational_db: &RelationalDB,
         database_update: &DatabaseUpdate,
+        auth: AuthCtx,
     ) -> Result<DatabaseUpdate, DBError> {
         let mut output = DatabaseUpdate { tables: vec![] };
         let mut seen = HashSet::new();
@@ -63,7 +65,10 @@ impl QuerySet {
         for query in &self.0 {
             for table in database_update.tables.iter().cloned() {
                 for q in query.queries_of_table_id(&table) {
-                    if let Some(result) = run_query(relational_db, &q)?.into_iter().find(|x| !x.data.is_empty()) {
+                    if let Some(result) = run_query(relational_db, &q, auth)?
+                        .into_iter()
+                        .find(|x| !x.data.is_empty())
+                    {
                         let mut table_row_operations = table.clone();
                         table_row_operations.ops.clear();
                         for mut row in result.data {
@@ -104,14 +109,14 @@ impl QuerySet {
     /// NOTE: The returned `rows` in [DatabaseUpdate] are **deduplicated** so if 2 queries match the same `row`, only one copy is returned.
     ///
     /// This is a *major* difference with normal query execution, where is expected to return the full result set for each query.
-    pub fn eval(&self, relational_db: &RelationalDB) -> Result<DatabaseUpdate, DBError> {
+    pub fn eval(&self, relational_db: &RelationalDB, auth: AuthCtx) -> Result<DatabaseUpdate, DBError> {
         let mut database_update: DatabaseUpdate = DatabaseUpdate { tables: vec![] };
         let mut seen = HashSet::new();
 
         for query in &self.0 {
             for q in &query.queries {
                 if let Some(t) = q.source.get_db_table() {
-                    for table in run_query(relational_db, q)? {
+                    for table in run_query(relational_db, q, auth)? {
                         {
                             let mut table_row_operations = Vec::new();
 
