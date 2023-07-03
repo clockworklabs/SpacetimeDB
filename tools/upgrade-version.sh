@@ -17,7 +17,7 @@ fsed() {
 }
 
 version="$1"
-declare -a crates=("bench" "bindings" "bindings-macro" "bindings-sys" "client-api-messages" "cli" "client-api" "core" "lib" "sats" "standalone" "testing")
+declare -a crates=("bench" "bindings" "bindings-macro" "bindings-sys" "client-api-messages" "cli" "client-api" "core" "lib" "sats" "standalone" "testing" "client-api-messages" "sdk")
 upgrade_version() {
 	toml=crates/$1/Cargo.toml
 	if [ ! -f "$toml" ] ; then

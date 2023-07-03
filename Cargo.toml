@@ -13,7 +13,7 @@ members = [
   "crates/vm",
   "crates/replay",
   "crates/client-api",
-  "crates/client-sdk",
+  "crates/sdk",
   "crates/client-api-messages",
   "crates/sqltest",
   "modules/rust-wasm-test",
