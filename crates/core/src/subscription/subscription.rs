@@ -1,5 +1,7 @@
+use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_sats::{AlgebraicValue, BuiltinValue};
+use spacetimedb_vm::expr::QueryExpr;
 use std::collections::HashSet;
 
 use super::query::Query;
@@ -49,6 +51,25 @@ impl Subscription {
 }
 
 impl QuerySet {
+    /// Queries all the [`StTableType::User`] tables *right now*
+    /// and turns them into [`QueryExpr`],
+    /// the moral equivalent of `SELECT * FROM table`.
+    pub(crate) fn get_all(relational_db: &RelationalDB, auth: AuthCtx) -> Result<Query, DBError> {
+        relational_db.with_auto_commit(|tx| {
+            let tables = relational_db.get_all_tables(tx)?;
+            let same_owner = auth.owner == auth.caller;
+            let queries = tables
+                .iter()
+                .filter(|t| {
+                    t.table_type == StTableType::User
+                        && (same_owner || t.table_access == StAccess::Public)
+                })
+                .map(QueryExpr::new)
+                .collect();
+            Ok(Query { queries })
+        })
+    }
+
     /// Incremental evaluation of `rows` that matched the [Query] (aka subscriptions)
     ///
     /// This is equivalent to run a `trigger` on `INSERT/UPDATE/DELETE`, run the [Query] and see if the `row` is matched.
