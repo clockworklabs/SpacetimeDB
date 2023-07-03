@@ -158,7 +158,7 @@ enum AuthorizationRejectionReason {
     Jwt(JwtErrorKind),
     Header(TypedHeaderRejection),
     MalformedTokenQueryString,
-    CantDecodeAuthorizationToken
+    CantDecodeAuthorizationToken,
 }
 
 impl SpacetimeAuth {
