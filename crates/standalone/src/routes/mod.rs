@@ -4,6 +4,9 @@ use spacetimedb_client_api::{
     ControlCtx, ControlNodeDelegate, WorkerCtx,
 };
 use std::sync::Arc;
+use tower_http::cors::{Any, CorsLayer};
+use http::header::{AUTHORIZATION, ACCEPT};
+
 
 #[allow(clippy::let_and_return)]
 pub fn router<S>() -> axum::Router<S>
@@ -22,5 +25,10 @@ where
     #[cfg(feature = "tracelogging")]
     let router = router.nest("/tracelog", spacetimedb_client_api::routes::tracelog::router());
 
-    router
+    let cors = CorsLayer::new()
+    .allow_headers([AUTHORIZATION, ACCEPT])
+    .allow_methods(Any)
+    .allow_origin(Any);
+
+    router.layer(cors)
 }
