@@ -4,6 +4,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+SPACETIME_CARGO_PROFILE=debug
 CRST='\033[0m'		 # Text Reset
 GRN='\033[0;32m'	 # Green
 RED='\033[0;31m'	 # Red
@@ -35,9 +36,9 @@ cd ..
 export SPACETIME_HOME=$PWD
 
 # Build our SpacetimeDB executable that we'll use for all tests.
-cargo build --profile release-fast
-export PATH="$PWD/target/release-fast:$PATH"
-[[ "$(which spacetime)" == "$PWD/target/release/spacetime" ]]
+cargo build --profile "$SPACETIME_CARGO_PROFILE"
+export PATH="$PWD/target/$SPACETIME_CARGO_PROFILE:$PATH"
+[[ "$(which spacetime)" == "$PWD/target/$SPACETIME_CARGO_PROFILE/spacetime" ]]
 
 # Create a project that we can copy to reset our project
 RESET_PROJECT_PATH=$(mktemp -d)
