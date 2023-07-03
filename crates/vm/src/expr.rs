@@ -189,7 +189,7 @@ impl SourceExpr {
 
     pub fn table_access(&self) -> StAccess {
         match self {
-            SourceExpr::MemTable(_) => StAccess::Public,
+            SourceExpr::MemTable(x) => x.table_access,
             SourceExpr::DbTable(x) => x.table_access,
         }
     }
