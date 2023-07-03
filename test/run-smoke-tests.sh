@@ -4,7 +4,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-SPACETIME_CARGO_PROFILE=debug
+SPACETIME_CARGO_PROFILE=release-fast
 CRST='\033[0m'		 # Text Reset
 GRN='\033[0;32m'	 # Green
 RED='\033[0;31m'	 # Red
