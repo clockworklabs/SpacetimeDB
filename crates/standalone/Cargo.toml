@@ -29,6 +29,8 @@ async-trait = "0.1.60"
 log = "0.4.16"
 axum = "0.6"
 openssl = "0.10.54"
+http = "0.2.9"
+tower-http = { version = "0.4.1", features = ["cors"]}
 
 [dev-dependencies]
 serde_json = "1.0"
