@@ -22,8 +22,7 @@ fi
 
 BASEDIR=$(pwd)
 FIRST_CRATE=1
-declare -a CRATES=("bindings" "bindings-macro" "bindings-sys" "cli" "lib" "sats")
-
+declare -a CRATES=("bindings-macro" "bindings-sys" "sats" "lib" "bindings" "cli" "client-api-messages" "sdk")
 
 for crate in "${CRATES[@]}" ; do
 	if [ ! -d "${BASEDIR}/crates/${crate}" ] ; then
