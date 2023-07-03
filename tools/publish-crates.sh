@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+cd ..
+
 DRY_RUN=0
 
 if [ "$#" != "0" ]; then
