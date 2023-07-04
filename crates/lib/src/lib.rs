@@ -88,6 +88,7 @@ impl std::fmt::Display for VersionTuple {
 
 extern crate self as spacetimedb_lib;
 
+//WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub struct TableDef {
     pub name: String,
@@ -170,6 +171,7 @@ impl ser::Serialize for ReducerArgsWithSchema<'_> {
     }
 }
 
+//WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Default, de::Deserialize, ser::Serialize)]
 pub struct ModuleDef {
     pub typespace: sats::Typespace,
