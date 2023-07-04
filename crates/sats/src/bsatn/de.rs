@@ -19,7 +19,7 @@ impl<'a, 'de, R: BufReader<'de>> Deserializer<'a, R> {
 
 impl de::Error for DecodeError {
     fn custom(msg: impl std::fmt::Display) -> Self {
-        unreachable!("tried to create error `{msg}` but there shouldn't be any errors")
+        DecodeError::Other(msg.to_string())
     }
 
     fn unknown_variant_tag<'de, T: de::SumVisitor<'de>>(_tag: u8, _expected: &T) -> Self {

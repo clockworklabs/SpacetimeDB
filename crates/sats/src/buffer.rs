@@ -11,6 +11,7 @@ pub enum DecodeError {
     BufferLength,
     InvalidTag,
     InvalidUtf8,
+    Other(String),
 }
 
 impl fmt::Display for DecodeError {
@@ -19,6 +20,7 @@ impl fmt::Display for DecodeError {
             DecodeError::BufferLength => f.write_str("data too short"),
             DecodeError::InvalidTag => f.write_str("invalid tag for enum"),
             DecodeError::InvalidUtf8 => f.write_str("invalid utf8"),
+            DecodeError::Other(err) => f.write_str(err),
         }
     }
 }
