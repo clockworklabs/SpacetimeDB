@@ -1156,7 +1156,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(
@@ -1201,8 +1201,28 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
             writeln!(output, "if (__SPACETIMEDB__.spacetimeDBClient) {{").unwrap();
             writeln!(
                 output,
-                "\t__SPACETIMEDB__.spacetimeDBClient.call(\"{func_name}\", [{}]);",
-                arg_names.join(", ")
+                "const serializer = __SPACETIMEDB__.spacetimeDBClient.getSerializer();"
+            )
+            .unwrap();
+
+            let mut arg_names = Vec::new();
+            for arg in reducer.args.iter() {
+                let ty = &arg.algebraic_type;
+                let name = arg
+                    .name
+                    .as_deref()
+                    .unwrap_or_else(|| panic!("reducer args should have names: {func_name}"));
+                let arg_name = name.to_case(Case::Camel);
+
+                writeln!(output, "let _{arg_name}Type = {};", convert_algebraic_type(ctx, ty, "")).unwrap();
+                writeln!(output, "serializer.write(_{arg_name}Type, _{arg_name});").unwrap();
+
+                arg_names.push(arg_name);
+            }
+
+            writeln!(
+                output,
+                "\t__SPACETIMEDB__.spacetimeDBClient.call(\"{func_name}\", serializer);"
             )
             .unwrap();
             writeln!(output, "}}").unwrap();
