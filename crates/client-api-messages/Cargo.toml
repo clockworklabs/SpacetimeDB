@@ -2,6 +2,8 @@
 name = "spacetimedb-client-api-messages"
 version = "0.5.0"
 edition = "2021"
+license-file = "LICENSE"
+description = "Types for the SpacetimeDB client API messages"
 
 [dependencies]
 strum = { version = "0.24.1", features = ["derive"] }
