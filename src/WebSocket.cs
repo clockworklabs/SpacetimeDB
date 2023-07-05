@@ -126,9 +126,9 @@ class OnSendErrorMessage : MainThreadDispatch
 
         protected ClientWebSocket Ws;
 
-        private ILogger _logger;
+        private ISpacetimeDBLogger _logger;
 
-        public WebSocket(ILogger logger, ConnectOptions options)
+        public WebSocket(ISpacetimeDBLogger logger, ConnectOptions options)
         {
             Ws = new ClientWebSocket();
             _logger = logger;

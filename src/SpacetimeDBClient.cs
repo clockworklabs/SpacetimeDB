@@ -96,10 +96,10 @@ namespace SpacetimeDB
 
         public static SpacetimeDBClient instance;
 
-        public ILogger Logger => logger;
-        private ILogger logger;        
+        public ISpacetimeDBLogger Logger => logger;
+        private ISpacetimeDBLogger logger;        
 
-        public static void CreateInstance(ILogger loggerToUse, Type reducerType)
+        public static void CreateInstance(ISpacetimeDBLogger loggerToUse, Type reducerType)
         {
             if (instance == null)
             {
@@ -111,7 +111,7 @@ namespace SpacetimeDB
             }
         }
 
-        protected SpacetimeDBClient(ILogger loggerToUse, Type reducerType)
+        protected SpacetimeDBClient(ISpacetimeDBLogger loggerToUse, Type reducerType)
         {
             if (instance != null)
             {

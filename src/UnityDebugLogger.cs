@@ -8,7 +8,7 @@ using UnityEngine;
 
 namespace SpacetimeDB
 {
-    public class UnityDebugLogger : ILogger
+    public class UnityDebugLogger : ISpacetimeDBLogger
     {
         public void Log(string message)
         {
