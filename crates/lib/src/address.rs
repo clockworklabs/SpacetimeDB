@@ -60,13 +60,13 @@ impl Address {
 
 impl ser::Serialize for Address {
     fn serialize<S: spacetimedb_sats::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0.to_be_bytes().serialize(serializer)
+        self.0.serialize(serializer)
     }
 }
 
 impl<'de> de::Deserialize<'de> for Address {
     fn deserialize<D: spacetimedb_sats::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        <[u8; 16]>::deserialize(deserializer).map(|v| Self(u128::from_be_bytes(v)))
+        u128::deserialize(deserializer).map(Self)
     }
 }
 
