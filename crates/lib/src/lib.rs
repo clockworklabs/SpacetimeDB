@@ -38,7 +38,7 @@ pub use type_value::{AlgebraicValue, ProductValue};
 
 pub use spacetimedb_sats as sats;
 
-pub const MODULE_ABI_VERSION: VersionTuple = VersionTuple::new(2, 0);
+pub const MODULE_ABI_VERSION: VersionTuple = VersionTuple::new(3, 0);
 
 // if it ends up we need more fields in the future, we can split one of them in two
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
