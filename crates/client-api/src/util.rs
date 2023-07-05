@@ -75,6 +75,22 @@ impl NameOrAddress {
         }
     }
 
+    /// If this [`NameOrAddress`] is a [`NameOrAddress::Name`], try to parse it
+    /// into a [`DomainName`] and then try to find a corresponding [`Address`].
+    /// If it is a [`NameOrAddress::Address`], just return the [`Address`].
+    ///
+    /// An error is returned if parsing the name variant into a [`DomainName`]
+    /// fails, or an I/O error occurs.
+    ///
+    /// An `Ok` result contains another [`Result`], which covers the following
+    /// cases:
+    ///
+    /// * `Ok((address, None))` if we resolved a [`NameOrAddress::Address`].
+    /// * `Ok((address, Some(domain)))` if we successfully resolved a
+    ///   [`NameOrAddress::Name`].
+    /// * `Err(domain)` if we successfully parsed a [`NameOrAddress::Name`], but
+    ///   no corresponding [`Address`] entry was found.
+    ///
     pub async fn try_resolve(
         &self,
         ctx: &(impl ControlStateDelegate + ?Sized),
