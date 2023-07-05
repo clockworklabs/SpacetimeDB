@@ -1,18 +1,15 @@
-use axum::extract::FromRef;
 use http::header::{ACCEPT, AUTHORIZATION};
+use tower_http::cors::{Any, CorsLayer};
+
 use spacetimedb_client_api::{
     routes::{database, energy, identity, metrics, prometheus},
-    ControlCtx, ControlNodeDelegate, WorkerCtx,
+    ControlStateDelegate, NodeDelegate,
 };
-use std::sync::Arc;
-use tower_http::cors::{Any, CorsLayer};
 
 #[allow(clippy::let_and_return)]
 pub fn router<S>() -> axum::Router<S>
 where
-    S: ControlNodeDelegate + Clone + 'static,
-    Arc<dyn ControlCtx>: FromRef<S>,
-    Arc<dyn WorkerCtx>: FromRef<S>,
+    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
     let router = axum::Router::new()
         .nest("/database", database::control_routes().merge(database::worker_routes()))

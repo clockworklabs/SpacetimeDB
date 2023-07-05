@@ -1,6 +1,5 @@
 use std::mem;
 use std::pin::pin;
-use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::{Path, State};
@@ -20,7 +19,7 @@ use crate::util::websocket::{
     CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade,
 };
 use crate::util::{NameOrAddress, XForwardedFor};
-use crate::{log_and_500, WorkerCtx};
+use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 #[allow(clippy::declare_interior_mutable_const)]
 pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static("v1.text.spacetimedb");
@@ -32,14 +31,17 @@ pub struct SubscribeParams {
     pub name_or_address: NameOrAddress,
 }
 
-pub async fn handle_websocket(
-    State(worker_ctx): State<Arc<dyn WorkerCtx>>,
+pub async fn handle_websocket<S>(
+    State(ctx): State<S>,
     Path(SubscribeParams { name_or_address }): Path<SubscribeParams>,
     forwarded_for: Option<TypedHeader<XForwardedFor>>,
     auth: SpacetimeAuthHeader,
     ws: WebSocketUpgrade,
-) -> axum::response::Result<impl IntoResponse> {
-    let auth = auth.get_or_create(&*worker_ctx).await?;
+) -> axum::response::Result<impl IntoResponse>
+where
+    S: NodeDelegate + ControlStateDelegate,
+{
+    let auth = auth.get_or_create(&ctx).await?;
 
     let address = name_or_address.resolve(&*worker_ctx).await?.into();
 
@@ -50,24 +52,24 @@ pub async fn handle_websocket(
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
     // to connect to multiple modules
-    let database = worker_ctx
+    let database = ctx
         .get_database_by_address(&address)
-        .await
         .unwrap()
         .ok_or(StatusCode::BAD_REQUEST)?;
-    let database_instance = worker_ctx
+    let database_instance = ctx
         .get_leader_database_instance_by_database(database.id)
-        .await
         .ok_or(StatusCode::BAD_REQUEST)?;
     let instance_id = database_instance.id;
 
     let identity_token = auth.creds.token().to_owned();
 
-    let host = worker_ctx.host_controller();
+    let host = ctx.host_controller();
     let module = match host.get_module_host(instance_id) {
         Ok(m) => m,
         Err(_) => {
-            let dbic = worker_ctx
+            // TODO(kim): probably wrong -- check if instance node id matches ours
+            log::debug!("creating fresh module host");
+            let dbic = ctx
                 .load_module_host_context(database, instance_id)
                 .await
                 .map_err(log_and_500)?;
@@ -77,7 +79,7 @@ pub async fn handle_websocket(
 
     let client_id = ClientActorId {
         identity: auth.identity,
-        name: worker_ctx.client_actor_index().next_client_name(),
+        name: ctx.client_actor_index().next_client_name(),
     };
 
     let ws_config = WebSocketConfig {

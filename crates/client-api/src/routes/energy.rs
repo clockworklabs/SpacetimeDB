@@ -1,6 +1,4 @@
-use std::sync::Arc;
-
-use axum::extract::{FromRef, Path, Query, State};
+use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use http::StatusCode;
 use serde::Deserialize;
@@ -10,7 +8,7 @@ use spacetimedb::host::EnergyQuanta;
 use spacetimedb_lib::Identity;
 
 use crate::auth::SpacetimeAuthHeader;
-use crate::{log_and_500, ControlCtx, ControlNodeDelegate};
+use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 use super::identity::IdentityForUrl;
 
@@ -19,16 +17,34 @@ pub struct IdentityParams {
     identity: IdentityForUrl,
 }
 
-pub async fn get_energy_balance(
-    State(ctx): State<Arc<dyn ControlCtx>>,
+pub async fn get_energy_balance<S: ControlStateDelegate>(
+    State(ctx): State<S>,
     Path(IdentityParams { identity }): Path<IdentityParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let identity = Identity::from(identity);
+    get_budget_inner(ctx, &identity)
+}
 
-    // Note: Consult the write-through cache on control_budget, not the control_db directly.
-    let balance = ctx
-        .control_db()
-        .get_energy_balance(&identity)
+#[derive(Deserialize)]
+pub struct AddEnergyQueryParams {
+    quanta: Option<u64>,
+}
+pub async fn add_energy<S: ControlStateDelegate>(
+    State(ctx): State<S>,
+    Path(IdentityParams { identity }): Path<IdentityParams>,
+    Query(AddEnergyQueryParams { quanta }): Query<AddEnergyQueryParams>,
+) -> axum::response::Result<impl IntoResponse> {
+    // TODO: we need to do authorization here. For now, just short-circuit. GOD MODE.
+
+    if let Some(satoshi) = quanta {
+        ctx.add_energy(&identity, satoshi).await.map_err(log_and_500)?;
+    }
+    get_budget_inner(ctx, &identity)
+}
+
+fn get_budget_inner(ctx: impl ControlStateDelegate, identity: &Identity) -> axum::response::Result<impl IntoResponse> {
+    let budget = ctx
+        .get_energy_balance(identity)
         .map_err(log_and_500)?
         .unwrap_or(EnergyQuanta(0));
 
@@ -88,11 +104,11 @@ pub async fn set_energy_balance(
 
 pub fn router<S>() -> axum::Router<S>
 where
-    S: ControlNodeDelegate + Clone + 'static,
-    Arc<dyn ControlCtx>: FromRef<S>,
+    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
     use axum::routing::{get, post};
     axum::Router::new()
-        .route("/:identity", get(get_energy_balance))
-        .route("/:identity", post(set_energy_balance))
+        .route("/:identity", get(get_energy_balance::<S>))
+        .route("/:identity", post(set_energy_balance::<S>))
+        .route("/:identity", put(add_energy::<S>))
 }

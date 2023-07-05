@@ -11,7 +11,7 @@ use spacetimedb::db::Storage;
 use spacetimedb::hash::hash_bytes;
 
 use spacetimedb::messages::control_db::HostType;
-use spacetimedb_client_api::{ControlCtx, ControlStateDelegate, WorkerCtx};
+use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
 use spacetimedb_standalone::StandaloneEnv;
 use tokio::runtime::{Builder, Runtime};
 
@@ -144,8 +144,8 @@ pub async fn load_module(name: &str) -> ModuleHandle {
         .await
         .unwrap();
 
-    let database = env.get_database_by_address(&address).await.unwrap().unwrap();
-    let instance = env.get_leader_database_instance_by_database(database.id).await.unwrap();
+    let database = env.get_database_by_address(&address).unwrap().unwrap();
+    let instance = env.get_leader_database_instance_by_database(database.id).unwrap();
 
     let client_id = ClientActorId {
         identity,
