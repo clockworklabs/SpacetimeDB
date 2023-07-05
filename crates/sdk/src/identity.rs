@@ -7,13 +7,13 @@ use anyhow::Result;
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// A unique public identifier for a client connected to a database.
 pub struct Identity {
-    pub(crate) bytes: Vec<u8>,
+    pub bytes: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// A private access token for a client connected to a database.
 pub struct Token {
-    pub(crate) string: String,
+    pub string: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
