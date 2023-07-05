@@ -99,11 +99,11 @@ namespace SpacetimeDB
         public ISpacetimeDBLogger Logger => logger;
         private ISpacetimeDBLogger logger;        
 
-        public static void CreateInstance(ISpacetimeDBLogger loggerToUse, Type reducerType)
+        public static void CreateInstance(ISpacetimeDBLogger loggerToUse)
         {
             if (instance == null)
             {
-                new SpacetimeDBClient(loggerToUse, reducerType);
+                new SpacetimeDBClient(loggerToUse);
             }
             else
             {
@@ -111,7 +111,35 @@ namespace SpacetimeDB
             }
         }
 
-        protected SpacetimeDBClient(ISpacetimeDBLogger loggerToUse, Type reducerType)
+        public Type FindReducerType()
+        {
+            // Get all loaded assemblies
+            Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
+
+            // Iterate over each assembly and search for the type
+            foreach (Assembly assembly in assemblies)
+            {
+                // Get all types in the assembly
+                Type[] types = assembly.GetTypes();
+
+                // Search for the type by name and namespace
+                Type targetType = types.FirstOrDefault(t =>
+                    t.Name == "Reducer" &&
+                    t.Namespace == "SpacetimeDB");
+
+                // If the type is found, return it
+                if (targetType != null)
+                {
+                    return targetType;
+                }
+            }
+
+            // If the type is not found in any assembly, return null or throw an exception
+            return null;
+        }
+
+
+        protected SpacetimeDBClient(ISpacetimeDBLogger loggerToUse)
         {
             if (instance != null)
             {
@@ -159,6 +187,9 @@ namespace SpacetimeDB
                                   a => { return conversionFunc!.Invoke(null, new object[] { a }); });
             }
 
+            var reducerType = FindReducerType();
+            if (reducerType != null)
+            {
             // cache all our reducer events by their function name 
             foreach (var methodInfo in reducerType.GetMethods())
             {
@@ -173,6 +204,11 @@ namespace SpacetimeDB
                 {
                     deserializeEventCache.Add(deserializeEvent.FunctionName, (Action<ClientApi.Event>)methodInfo.CreateDelegate(typeof(Action<ClientApi.Event>)));
                 }
+                }
+            }
+            else
+            {
+                loggerToUse.LogError($"Could not find reducer type. Have you run spacetime generate?");
             }
 
             messageProcessThread = new Thread(ProcessMessages);

@@ -4,11 +4,42 @@
     <TargetFramework>net7.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <PackageId>spacetimedbsdk</PackageId>
+    <Title>SpacetimeDB SDK</Title>
+    <Authors>derek_clockwork</Authors>
+    <Company>Clockwork Labs</Company>
+    <Product>SpacetimeDB</Product>
+    <Description>The SpacetimeDB SDK is a software development kit (SDK) designed to simplify the interaction with SpacetimeDB server modules.</Description>
+    <Copyright>2023</Copyright>
+    <PackageProjectUrl>http://spacetimedb.com</PackageProjectUrl>
+    <PackageIcon>logo.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDBCSharpSDK</RepositoryUrl>
+    <AssemblyVersion>0.5.0</AssemblyVersion>
+    <Version>0.5.0</Version>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Unity\**" />
+    <EmbeddedResource Remove="Unity\**" />
+    <None Remove="Unity\**" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Google.Protobuf" Version="3.23.3" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="logo.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <None Update="README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
   </ItemGroup>
 
 </Project>
