@@ -34,6 +34,8 @@ impl<'de> de::Deserialize<'de> for Hash {
 impl Hash {
     const ABBREVIATION_LEN: usize = 16;
 
+    pub const ZERO: Self = Self { data: [0; HASH_SIZE] };
+
     pub fn from_arr(arr: &[u8; HASH_SIZE]) -> Self {
         Self { data: *arr }
     }

@@ -1,12 +1,20 @@
 use core::fmt;
-use std::{ops::Deref, str::FromStr};
+use std::{iter, ops::Deref, str::FromStr};
 
-use serde::{Deserialize, Serialize};
+use itertools::Itertools;
+
+use spacetimedb_sats::{
+    de::{self, Deserialize, Deserializer},
+    ser::{Serialize, Serializer},
+    typespace::TypespaceBuilder,
+    AlgebraicType, SpacetimeType,
+};
 
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum InsertDomainResult {
     Success {
         domain: DomainName,
@@ -35,14 +43,19 @@ pub enum InsertDomainResult {
     },
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "lowercase")
+)]
 pub enum PublishOp {
     Created,
     Updated,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PublishResult {
     Success {
         /// `Some` if publish was given a domain name to operate on, `None`
@@ -60,6 +73,7 @@ pub enum PublishResult {
         op: PublishOp,
     },
 
+    // TODO: below variants are obsolete with control db module
     /// The top level domain for the database name is not registered. For example:
     ///
     ///  - `clockworklabs/bitcraft`
@@ -78,7 +92,8 @@ pub enum PublishResult {
     PermissionDenied { domain: DomainName },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DnsLookupResponse {
     /// The lookup was successful and the domain and address are returned.
     Success { domain: DomainName, address: String },
@@ -87,7 +102,8 @@ pub enum DnsLookupResponse {
     Failure { domain: DomainName },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum RegisterTldResult {
     Success {
         domain: Tld,
@@ -103,7 +119,8 @@ pub enum RegisterTldResult {
     // TODO(jdetter): Insufficient funds error here
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SetDefaultDomainResult {
     Success {
         domain: DomainName,
@@ -130,62 +147,58 @@ pub enum SetDefaultDomainResult {
 /// preferable, as it can detect some instances of words which contain similar-
 /// looking, but distinct characters. This would, however, require support from
 /// SATS or some other way to allow custom collations in STDB.
-///
-/// Currently, both casings are retained (even if they are the same), as we will
-/// likely need both for storage. This may change in the future.
-#[derive(Debug, Clone)]
-pub struct DomainPart {
-    lower: String,
-    mixed: String,
-}
+#[derive(Debug, Clone, Eq)]
+pub struct DomainPart(String);
 
 impl DomainPart {
-    pub fn as_lowercase(&self) -> &str {
-        &self.lower
+    pub fn to_lowercase(&self) -> String {
+        self.0.to_lowercase()
     }
 
     pub fn as_str(&self) -> &str {
-        &self.mixed
+        &self.0
     }
 
     pub fn is_empty(&self) -> bool {
-        self.mixed.is_empty()
+        self.0.is_empty()
     }
 
     /// Length of the original string, in bytes.
     pub fn len(&self) -> usize {
-        self.mixed.len()
+        self.0.len()
     }
 }
 
 impl PartialEq for DomainPart {
     fn eq(&self, other: &Self) -> bool {
-        self.lower.eq(&other.lower)
+        self.to_lowercase().eq(&other.to_lowercase())
     }
 }
 
-impl Serialize for DomainPart {
+#[cfg(feature = "serde")]
+impl serde::Serialize for DomainPart {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(self.mixed.as_ref())
+        serializer.serialize_str(self.0.as_ref())
     }
 }
 
-impl<'de> Deserialize<'de> for DomainPart {
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for DomainPart {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
+        let s = <String as serde::Deserialize>::deserialize(deserializer)?;
         DomainPart::try_from(s).map_err(serde::de::Error::custom)
     }
 }
 
 impl fmt::Display for DomainPart {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&self.mixed)
+        f.write_str(&self.0)
     }
 }
 
@@ -198,10 +211,7 @@ impl TryFrom<String> for DomainPart {
         } else if value.contains(|c: char| c.is_whitespace()) {
             Err(ParseError::Whitespace { input: value }.into())
         } else {
-            Ok(Self {
-                lower: value.to_lowercase(),
-                mixed: value,
-            })
+            Ok(Self(value))
         }
     }
 }
@@ -214,13 +224,39 @@ impl FromStr for DomainPart {
     }
 }
 
+impl SpacetimeType for DomainPart {
+    fn make_type<S: TypespaceBuilder>(_typespace: &mut S) -> AlgebraicType {
+        AlgebraicType::String
+    }
+}
+
+impl Serialize for DomainPart {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for DomainPart {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = <String as Deserialize>::deserialize(deserializer)?;
+        DomainPart::try_from(s).map_err(de::Error::custom)
+    }
+}
+
 /// The top level domain part of a [`DomainName`].
 ///
 /// This newtype witnesses that the TLD is well-formed as per the parsing rules
 /// of a full [`DomainName`]. A [`Tld`] is also a valid [`DomainPart`] and valid
 /// [`DomainName`], and can be converted to these types.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Tld(DomainPart);
+
+impl Tld {
+    pub fn unique(&self) -> UniqueTld {
+        UniqueTld::from(self)
+    }
+}
 
 impl TryFrom<DomainPart> for Tld {
     type Error = DomainParsingError;
@@ -262,6 +298,66 @@ impl From<Tld> for DomainPart {
     }
 }
 
+impl SpacetimeType for Tld {
+    fn make_type<S: TypespaceBuilder>(_typespace: &mut S) -> AlgebraicType {
+        AlgebraicType::String
+    }
+}
+
+impl Serialize for Tld {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Tld {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let part = DomainPart::deserialize(deserializer)?;
+        Self::try_from(part).map_err(de::Error::custom)
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct UniqueTld(String);
+
+impl UniqueTld {
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl From<&Tld> for UniqueTld {
+    fn from(value: &Tld) -> Self {
+        Self(value.to_lowercase())
+    }
+}
+
+impl SpacetimeType for UniqueTld {
+    fn make_type<S: TypespaceBuilder>(_typespace: &mut S) -> AlgebraicType {
+        AlgebraicType::String
+    }
+}
+
+impl Serialize for UniqueTld {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for UniqueTld {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let tld = Tld::deserialize(deserializer)?;
+        Ok(Self::from(&tld))
+    }
+}
+
+impl fmt::Display for UniqueTld {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// A [`DomainName`] is the name of a database.
 ///
 /// A database name is usually in one of the two following forms:
@@ -293,7 +389,8 @@ impl From<Tld> for DomainPart {
 ///
 /// To construct a valid [`DomainName`], use [`parse_domain_name`] or the
 /// [`FromStr`] impl.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DomainName {
     /// The top level domain for the domain name. For example:
     ///
@@ -310,6 +407,10 @@ pub struct DomainName {
 }
 
 impl DomainName {
+    pub fn unique(&self) -> UniqueDomainName {
+        UniqueDomainName::from(self)
+    }
+
     pub fn tld(&self) -> &Tld {
         &self.tld
     }
@@ -326,15 +427,9 @@ impl DomainName {
     /// Render the name as a lower-case, '/'-separated string, suitable for use
     /// as a unique constrained field in a database.
     pub fn to_lowercase(&self) -> String {
-        let mut s = String::with_capacity(
-            self.tld.lower.len() + self.sub_domain.as_ref().map(|part| part.lower.len() + 1).unwrap_or(0),
-        );
-        s.push_str(&self.tld.lower);
-        if let Some(sub) = &self.sub_domain {
-            s.push('/');
-            s.push_str(&sub.lower);
-        }
-        s
+        iter::once(self.tld.to_lowercase())
+            .chain(self.sub_domain().map(|sub| sub.to_lowercase()))
+            .join("/")
     }
 
     pub fn into_parts(self) -> (Tld, Option<DomainPart>) {
@@ -361,7 +456,62 @@ impl FromStr for DomainName {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl SpacetimeType for DomainName {
+    fn make_type<S: TypespaceBuilder>(_typespace: &mut S) -> AlgebraicType {
+        AlgebraicType::String
+    }
+}
+
+impl Serialize for DomainName {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for DomainName {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s: &str = Deserialize::deserialize(deserializer)?;
+        s.parse().map_err(de::Error::custom)
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct UniqueDomainName(String);
+
+impl UniqueDomainName {
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl From<&DomainName> for UniqueDomainName {
+    fn from(value: &DomainName) -> Self {
+        Self(value.to_lowercase())
+    }
+}
+
+impl SpacetimeType for UniqueDomainName {
+    fn make_type<S: TypespaceBuilder>(_typespace: &mut S) -> AlgebraicType {
+        AlgebraicType::String
+    }
+}
+
+impl Serialize for UniqueDomainName {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for UniqueDomainName {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let domain = DomainName::deserialize(deserializer)?;
+        Ok(domain.unique())
+    }
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ReverseDNSResponse {
     pub names: Vec<DomainName>,
 }

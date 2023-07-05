@@ -41,7 +41,7 @@ pub async fn handle_websocket(
 ) -> axum::response::Result<impl IntoResponse> {
     let auth = auth.get_or_create(&*worker_ctx).await?;
 
-    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let (address, _) = name_or_address.resolve(&*worker_ctx).await?;
 
     let (res, ws_upgrade, protocol) =
         ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
@@ -67,6 +67,8 @@ pub async fn handle_websocket(
     let module = match host.get_module_host(instance_id) {
         Ok(m) => m,
         Err(_) => {
+            // TODO(kim): probably wrong -- check if instance node id matches ours
+            log::debug!("creating fresh module host");
             let dbic = worker_ctx
                 .load_module_host_context(database, instance_id)
                 .await

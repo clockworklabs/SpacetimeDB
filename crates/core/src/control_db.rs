@@ -36,6 +36,10 @@ pub enum Error {
     DomainParsingError(#[from] DomainParsingError),
     #[error(transparent)]
     JSONDeserializationError(#[from] serde_json::Error),
+    #[error(transparent)]
+    Task(#[from] tokio::task::JoinError),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
 
 impl From<sled::Error> for Error {
@@ -164,7 +168,7 @@ impl ControlDb {
     /// * `owner_identity` - The identity that should own this domain name.
     pub async fn spacetime_register_tld(&self, tld: Tld, owner_identity: Identity) -> Result<RegisterTldResult> {
         let tree = self.db.open_tree("top_level_domains")?;
-        let current_owner = tree.get(tld.as_lowercase().as_bytes())?;
+        let current_owner = tree.get(tld.to_lowercase().as_bytes())?;
         match current_owner {
             Some(owner) => {
                 if Identity::from_slice(&owner[..]) == owner_identity {
@@ -174,7 +178,7 @@ impl ControlDb {
                 }
             }
             None => {
-                tree.insert(tld.as_lowercase().as_bytes(), owner_identity.as_slice())?;
+                tree.insert(tld.to_lowercase().as_bytes(), owner_identity.as_slice())?;
                 Ok(RegisterTldResult::Success { domain: tld })
             }
         }
@@ -201,22 +205,25 @@ impl ControlDb {
         Ok(())
     }
 
-    pub async fn spacetime_get_recovery_code(&self, email: &str, code: &str) -> Result<Option<RecoveryCode>> {
+    pub async fn spacetime_get_recovery_codes(&self, email: &str) -> Result<Vec<RecoveryCode>> {
         let tree = self.db.open_tree("recovery_codes")?;
         let current_requests = tree.get(email.as_bytes())?;
-        match current_requests {
-            None => Ok(None),
-            Some(codes_bytes) => {
-                let codes: Vec<RecoveryCode> = serde_json::from_slice(&codes_bytes[..])?;
-                for recovery_code in codes {
-                    if recovery_code.code == code {
-                        return Ok(Some(recovery_code));
-                    }
-                }
+        current_requests
+            .map(|bytes| {
+                let codes: Vec<RecoveryCode> = serde_json::from_slice(&bytes[..])?;
+                Ok(codes)
+            })
+            .unwrap_or(Ok(vec![]))
+    }
 
-                Ok(None)
+    pub async fn spacetime_get_recovery_code(&self, email: &str, code: &str) -> Result<Option<RecoveryCode>> {
+        for recovery_code in self.spacetime_get_recovery_codes(email).await? {
+            if recovery_code.code == code {
+                return Ok(Some(recovery_code));
             }
         }
+
+        Ok(None)
     }
 
     /// Returns the owner (or `None` if there is no owner) of the domain.
@@ -225,7 +232,7 @@ impl ControlDb {
     ///  * `domain` - The domain to lookup
     pub async fn spacetime_lookup_tld(&self, domain: &Tld) -> Result<Option<Identity>> {
         let tree = self.db.open_tree("top_level_domains")?;
-        match tree.get(domain.as_lowercase().as_bytes())? {
+        match tree.get(domain.to_lowercase().as_bytes())? {
             Some(owner) => Ok(Some(Identity::from_slice(&owner[..]))),
             None => Ok(None),
         }

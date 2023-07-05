@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, str::FromStr};
 
 use crate::sats::{self, de, ser};
 
@@ -112,6 +112,14 @@ impl hex::FromHex for Identity {
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
         let data = hex::FromHex::from_hex(hex)?;
         Ok(Identity { data })
+    }
+}
+
+impl FromStr for Identity {
+    type Err = <Self as hex::FromHex>::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_hex(s)
     }
 }
 

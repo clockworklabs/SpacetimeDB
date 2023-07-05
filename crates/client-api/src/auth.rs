@@ -14,7 +14,7 @@ use spacetimedb::auth::identity::{
 use spacetimedb::host::EnergyDiff;
 use spacetimedb::identity::Identity;
 
-use crate::{log_and_500, ControlNodeDelegate};
+use crate::{log_and_500, ControlNodeDelegate, ControlStateDelegate};
 
 // Yes, this is using basic auth. See the below issues.
 // The current form is: Authorization: Basic base64("token:<token>")
@@ -162,8 +162,10 @@ enum AuthorizationRejectionReason {
 }
 
 impl SpacetimeAuth {
-    pub async fn alloc(ctx: &(impl ControlNodeDelegate + ?Sized)) -> axum::response::Result<Self> {
-        let identity = ctx.alloc_spacetime_identity().await.map_err(log_and_500)?;
+    pub async fn alloc(
+        ctx: &(impl ControlNodeDelegate + ControlStateDelegate + ?Sized),
+    ) -> axum::response::Result<Self> {
+        let identity = ctx.create_identity().await.map_err(log_and_500)?;
         let creds = SpacetimeCreds::encode_token(ctx.private_key(), identity).map_err(log_and_500)?;
         Ok(Self { creds, identity })
     }
@@ -186,7 +188,7 @@ impl SpacetimeAuthHeader {
     /// If there is no JWT in the auth header we will create a new identity and token and return it.
     pub async fn get_or_create(
         self,
-        ctx: &(impl ControlNodeDelegate + ?Sized),
+        ctx: &(impl ControlNodeDelegate + ControlStateDelegate + ?Sized),
     ) -> axum::response::Result<SpacetimeAuth> {
         match self.get() {
             Some(auth) => Ok(auth),

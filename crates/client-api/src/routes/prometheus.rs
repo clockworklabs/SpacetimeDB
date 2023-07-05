@@ -14,7 +14,7 @@ struct SDConfig {
 
 pub async fn get_sd_config(State(ctx): State<Arc<dyn ControlCtx>>) -> axum::response::Result<impl IntoResponse> {
     // TODO(cloutiertyler): security
-    let nodes = ctx.control_db().get_nodes().await.map_err(log_and_500)?;
+    let nodes = ctx.get_nodes().await.map_err(log_and_500)?;
 
     let mut targets = Vec::new();
     let labels = HashMap::new();

@@ -10,9 +10,10 @@ use axum::response::IntoResponse;
 use bytestring::ByteString;
 use http::{HeaderName, HeaderValue, Request, StatusCode};
 use spacetimedb::address::Address;
+use spacetimedb_lib::name::DomainName;
 
 use crate::routes::database::DomainParsingRejection;
-use crate::{log_and_500, ControlNodeDelegate};
+use crate::{log_and_500, ControlStateDelegate};
 
 pub struct ByteStringBody(pub ByteString);
 
@@ -60,7 +61,7 @@ impl headers::Header for XForwardedFor {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum NameOrAddress {
     Address(Address),
     Name(String),
@@ -76,18 +77,24 @@ impl NameOrAddress {
 
     pub async fn try_resolve(
         &self,
-        ctx: &(impl ControlNodeDelegate + ?Sized),
-    ) -> axum::response::Result<Result<Address, &str>> {
+        ctx: &(impl ControlStateDelegate + ?Sized),
+    ) -> axum::response::Result<Result<(Address, Option<DomainName>), DomainName>> {
         Ok(match self {
-            NameOrAddress::Address(addr) => Ok(*addr),
+            NameOrAddress::Address(addr) => Ok((*addr, None)),
             NameOrAddress::Name(name) => {
                 let domain = name.parse().map_err(DomainParsingRejection)?;
-                ctx.spacetime_dns(&domain).await.map_err(log_and_500)?.ok_or(name)
+                match ctx.lookup_address(&domain).await.map_err(log_and_500)? {
+                    Some(addr) => Ok((addr, Some(domain))),
+                    None => Err(domain),
+                }
             }
         })
     }
 
-    pub async fn resolve(&self, ctx: &(impl ControlNodeDelegate + ?Sized)) -> axum::response::Result<Address> {
+    pub async fn resolve(
+        &self,
+        ctx: &(impl ControlStateDelegate + ?Sized),
+    ) -> axum::response::Result<(Address, Option<DomainName>)> {
         self.try_resolve(ctx).await?.map_err(|_| StatusCode::BAD_REQUEST.into())
     }
 }

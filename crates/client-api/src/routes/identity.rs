@@ -27,10 +27,7 @@ pub async fn create_identity(
 ) -> axum::response::Result<impl IntoResponse> {
     let auth = SpacetimeAuth::alloc(&*ctx).await?;
     if let Some(email) = email {
-        ctx.control_db()
-            .associate_email_spacetime_identity(auth.identity, email.as_str())
-            .await
-            .unwrap();
+        ctx.add_email(&auth.identity, email.as_str()).await.unwrap();
     }
 
     let identity_response = CreateIdentityResponse {
@@ -63,8 +60,8 @@ pub async fn get_identity(
         None => None,
         Some(email) => {
             let identities = ctx
-                .control_db()
                 .get_identities_for_email(email.as_str())
+                .await
                 .map_err(log_and_500)?;
             if identities.is_empty() {
                 None
@@ -108,11 +105,7 @@ pub async fn set_email(
     if auth.identity != identity {
         return Err(StatusCode::UNAUTHORIZED.into());
     }
-
-    ctx.control_db()
-        .associate_email_spacetime_identity(identity, email.as_str())
-        .await
-        .unwrap();
+    ctx.add_email(&identity, email.as_str()).await.map_err(log_and_500)?;
 
     Ok(())
 }
@@ -132,7 +125,7 @@ pub async fn get_databases(
     Path(GetDatabasesParams { identity }): Path<GetDatabasesParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     // Linear scan for all databases that have this identity, and return their addresses
-    let all_dbs = ctx.control_db().get_databases().await.map_err(|e| {
+    let all_dbs = ctx.get_databases().await.map_err(|e| {
         log::error!("Failure when retrieving databases for search: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;

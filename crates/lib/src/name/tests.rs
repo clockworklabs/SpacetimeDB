@@ -25,6 +25,14 @@ proptest! {
     }
 
     #[test]
+    fn prop_domain_part_inequality(a in "\\S{1,64}", b in "\\S{1,64}") {
+        prop_assume!(a != b);
+        let a = DomainPart::try_from(a).unwrap();
+        let b = DomainPart::try_from(b).unwrap();
+        prop_assert_ne!(a, b);
+    }
+
+    #[test]
     fn prop_domain_name_parser_is_equivalent_to_this_horrifying_regex(
         s in "[\\S&&[^/]]{1,64}(/[\\S&&[^/]]{1,64}){0,255}"
     ) {

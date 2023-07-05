@@ -13,11 +13,9 @@ use spacetimedb::host::EntityDef;
 use spacetimedb::host::ReducerArgs;
 use spacetimedb::host::ReducerCallError;
 use spacetimedb::host::ReducerOutcome;
-use spacetimedb::host::UpdateDatabaseSuccess;
 use spacetimedb_lib::name;
 use spacetimedb_lib::name::DomainName;
 use spacetimedb_lib::name::DomainParsingError;
-use spacetimedb_lib::name::PublishOp;
 use spacetimedb_lib::sats::TypeInSpace;
 
 use crate::auth::{
@@ -29,10 +27,11 @@ use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::DescribedEntityType;
 use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
-use spacetimedb::messages::control_db::{DatabaseInstance, HostType};
+use spacetimedb::messages::control_db::DatabaseInstance;
+use spacetimedb::messages::control_db::HostType;
 
 use crate::util::{ByteStringBody, NameOrAddress};
-use crate::{log_and_500, ControlCtx, ControlNodeDelegate, WorkerCtx};
+use crate::{log_and_500, ControlCtx, ControlNodeDelegate, DatabaseDef, WorkerCtx};
 
 pub(crate) struct DomainParsingRejection(pub(crate) DomainParsingError);
 impl From<DomainParsingError> for DomainParsingRejection {
@@ -68,7 +67,7 @@ pub async fn call(
 
     let args = ReducerArgs::Json(body);
 
-    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let (address, _) = name_or_address.resolve(&*worker_ctx).await?;
     let database = worker_ctx
         .get_database_by_address(&address)
         .await
@@ -162,7 +161,7 @@ use rand::Rng;
 use spacetimedb::auth::identity::encode_token;
 use spacetimedb::sql::execute::execute;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::name::{DnsLookupResponse, InsertDomainResult, PublishResult};
+use spacetimedb_lib::name::{DnsLookupResponse, PublishOp, PublishResult};
 use spacetimedb_lib::recovery::{RecoveryCode, RecoveryCodeResponse};
 use std::convert::From;
 
@@ -261,7 +260,7 @@ pub async fn describe(
     Query(DescribeQueryParams { expand }): Query<DescribeQueryParams>,
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
-    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let (address, _) = name_or_address.resolve(&*worker_ctx).await?;
     let database = worker_ctx
         .get_database_by_address(&address)
         .await
@@ -317,7 +316,7 @@ pub async fn catalog(
     Query(DescribeQueryParams { expand }): Query<DescribeQueryParams>,
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
-    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let (address, _) = name_or_address.resolve(&*worker_ctx).await?;
     let database = worker_ctx
         .get_database_by_address(&address)
         .await
@@ -365,7 +364,7 @@ pub async fn info(
     State(worker_ctx): State<Arc<dyn WorkerCtx>>,
     Path(InfoParams { name_or_address }): Path<InfoParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let (address, _) = name_or_address.resolve(&*worker_ctx).await?;
     let database = worker_ctx
         .get_database_by_address(&address)
         .await
@@ -407,7 +406,7 @@ pub async fn logs(
     // so, unless you are the owner, this will fail, hence using get() and not get_or_create
     let auth = auth.get().ok_or((StatusCode::UNAUTHORIZED, "Invalid credentials."))?;
 
-    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let (address, _) = name_or_address.resolve(&*worker_ctx).await?;
     let database = worker_ctx
         .get_database_by_address(&address)
         .await
@@ -500,9 +499,9 @@ pub async fn sql(
 ) -> axum::response::Result<impl IntoResponse> {
     // Anyone is authorized to execute SQL queries. The SQL engine will determine
     // which queries this identity is allowed to execute against the database.
-    let auth = auth.get_or_create(&*worker_ctx).await?;
+    let auth = auth.get().ok_or((StatusCode::UNAUTHORIZED, "Invalid credentials."))?;
 
-    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let (address, _) = name_or_address.resolve(&*worker_ctx).await?;
     let database = worker_ctx
         .get_database_by_address(&address)
         .await
@@ -581,7 +580,8 @@ pub async fn dns(
     Query(DNSQueryParams {}): Query<DNSQueryParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let domain = database_name.parse().map_err(DomainParsingRejection)?;
-    let address = ctx.control_db().spacetime_dns(&domain).await.map_err(log_and_500)?;
+    log::debug!("dns with `{domain}`");
+    let address = ctx.lookup_address(&domain).await.map_err(log_and_500)?;
     let response = if let Some(address) = address {
         DnsLookupResponse::Success {
             domain,
@@ -598,11 +598,7 @@ pub async fn reverse_dns(
     State(ctx): State<Arc<dyn ControlCtx>>,
     Path(ReverseDNSParams { database_address }): Path<ReverseDNSParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let names = ctx
-        .control_db()
-        .spacetime_reverse_dns(&database_address)
-        .await
-        .map_err(log_and_500)?;
+    let names = ctx.reverse_lookup(&database_address).await.map_err(log_and_500)?;
 
     let response = name::ReverseDNSResponse { names };
     Ok(axum::Json(response))
@@ -623,11 +619,7 @@ pub async fn register_tld(
     let auth = auth.get().ok_or((StatusCode::BAD_REQUEST, "Invalid credentials."))?;
 
     let tld = tld.parse::<DomainName>().map_err(DomainParsingRejection)?.into_tld();
-    let result = ctx
-        .control_db()
-        .spacetime_register_tld(tld, auth.identity)
-        .await
-        .map_err(log_and_500)?;
+    let result = ctx.register_tld(&auth.identity, tld).await.map_err(log_and_500)?;
     Ok(axum::Json(result))
 }
 
@@ -650,8 +642,8 @@ pub async fn request_recovery_code(
     };
 
     if !ctx
-        .control_db()
         .get_identities_for_email(email.as_str())
+        .await
         .map_err(log_and_500)?
         .iter()
         .any(|a| a.identity == identity)
@@ -670,8 +662,7 @@ pub async fn request_recovery_code(
         generation_time: Utc::now(),
         identity: identity.to_hex(),
     };
-    ctx.control_db()
-        .spacetime_insert_recovery_code(email.as_str(), recovery_code)
+    ctx.insert_recovery_code(&identity, email.as_str(), recovery_code)
         .await
         .map_err(log_and_500)?;
 
@@ -697,11 +688,11 @@ pub async fn confirm_recovery_code(
     State(ctx): State<Arc<dyn ControlCtx>>,
     Query(ConfirmRecoveryCodeParams { email, identity, code }): Query<ConfirmRecoveryCodeParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let recovery_code = ctx
-        .control_db()
-        .spacetime_get_recovery_code(email.as_str(), code.as_str())
-        .await
-        .map_err(log_and_500)?
+    let recovery_codes = ctx.get_recovery_codes(email.as_str()).await.map_err(log_and_500)?;
+
+    let recovery_code = recovery_codes
+        .into_iter()
+        .find(|rc| rc.code == code.as_str())
         .ok_or((StatusCode::BAD_REQUEST, "Recovery code not found."))?;
 
     let duration = Utc::now() - recovery_code.generation_time;
@@ -719,8 +710,8 @@ pub async fn confirm_recovery_code(
     }
 
     if !ctx
-        .control_db()
         .get_identities_for_email(email.as_str())
+        .await
         .map_err(log_and_500)?
         .iter()
         .any(|a| a.identity == identity)
@@ -744,13 +735,10 @@ pub struct PublishDatabaseParams {}
 
 #[derive(Deserialize)]
 pub struct PublishDatabaseQueryParams {
-    host_type: Option<String>,
     #[serde(default)]
     clear: bool,
     name_or_address: Option<NameOrAddress>,
     trace_log: Option<bool>,
-    #[serde(default)]
-    register_tld: bool,
 }
 
 #[cfg(not(feature = "tracelogging"))]
@@ -772,153 +760,72 @@ pub async fn publish(
 ) -> axum::response::Result<axum::Json<PublishResult>> {
     let PublishDatabaseQueryParams {
         name_or_address,
-        host_type,
         clear,
         trace_log,
-        register_tld,
     } = query_params;
 
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail, hence not using get_or_create
-    let auth = auth.get().ok_or((StatusCode::BAD_REQUEST, "Invalid credentials."))?;
+    let auth = auth.get().ok_or((StatusCode::UNAUTHORIZED, "Invalid credentials."))?;
 
-    let specified_address = matches!(name_or_address, Some(NameOrAddress::Address(_)));
-
-    // Parse the address or convert the name to a usable address
-    let db_address = if let Some(name_or_address) = name_or_address.clone() {
-        match name_or_address.try_resolve(&*ctx).await? {
-            Ok(address) => address,
-            Err(name) => {
-                let domain = name.parse().map_err(DomainParsingRejection)?;
-                // Client specified a name which doesn't yet exist
-                // Create a new DNS record and a new address to assign to it
-                let address = ctx.control_db().alloc_spacetime_address().await.map_err(log_and_500)?;
-                let result = ctx
-                    .control_db()
-                    .spacetime_insert_domain(&address, domain, auth.identity, register_tld)
+    let (db_addr, db_name) = match name_or_address {
+        Some(noa) => match noa.try_resolve(&*ctx).await? {
+            Ok((addr, maybe_domain)) => (addr, maybe_domain),
+            Err(domain) => {
+                // `name_or_address` was a `NameOrAddress::Name`, but no record
+                // exists yet. Create it now with a fresh address.
+                let addr = ctx.create_address().await.map_err(log_and_500)?;
+                ctx.create_dns_record(&auth.identity, &domain, &addr)
                     .await
                     .map_err(log_and_500)?;
-                match result {
-                    InsertDomainResult::Success { .. } => {}
-                    InsertDomainResult::TldNotRegistered { domain } => {
-                        return Ok(axum::Json(PublishResult::TldNotRegistered { domain }))
-                    }
-                    InsertDomainResult::PermissionDenied { domain } => {
-                        return Ok(axum::Json(PublishResult::PermissionDenied { domain }))
-                    }
-                }
-
-                address
+                (addr, Some(domain))
             }
+        },
+        None => {
+            let addr = ctx.create_address().await.map_err(log_and_500)?;
+            (addr, None)
         }
-    } else {
-        // No domain or address was specified, create a new one
-        ctx.control_db().alloc_spacetime_address().await.map_err(log_and_500)?
     };
 
-    log::trace!("Publishing to the address: {}", db_address.to_hex());
+    log::trace!("Publishing to the address: {}", db_addr.to_hex());
 
-    let host_type = match host_type {
-        None => HostType::Wasmer,
-        Some(ht) => ht
-            .parse()
-            .map_err(|_| (StatusCode::BAD_REQUEST, format!("unknown host type {ht}")))?,
-    };
+    let op = {
+        let exists = ctx
+            .get_database_by_address(&db_addr)
+            .await
+            .map_err(log_and_500)?
+            .is_some();
 
-    let program_bytes_addr = ctx.object_db().insert_object(body.into()).unwrap();
-
-    let num_replicas = 1;
-
-    let trace_log = should_trace(trace_log);
-
-    let op = match ctx
-        .control_db()
-        .get_database_by_address(&db_address)
-        .await
-        .map_err(log_and_500)?
-    {
-        Some(db) => {
-            if Identity::from_slice(db.identity.as_slice()) != auth.identity {
-                return Err((StatusCode::BAD_REQUEST, "Identity does not own this database.").into());
-            }
-
-            if clear {
-                ctx.insert_database(
-                    &db_address,
-                    &auth.identity,
-                    &program_bytes_addr,
-                    host_type,
-                    num_replicas,
-                    clear,
-                    trace_log,
-                )
+        if clear && exists {
+            ctx.delete_database(&auth.identity, &db_addr)
                 .await
                 .map_err(log_and_500)?;
-                PublishOp::Created
-            } else {
-                let res = ctx
-                    .update_database(&db_address, &program_bytes_addr, num_replicas)
-                    .await
-                    .map_err(log_and_500)?;
-                if let Some(res) = res {
-                    let success = match res {
-                        Ok(success) => success,
-                        Err(e) => {
-                            return Err((StatusCode::BAD_REQUEST, format!("Database update rejected: {e}")).into());
-                        }
-                    };
-                    if let UpdateDatabaseSuccess {
-                        update_result: Some(update_result),
-                        migrate_results: _,
-                    } = success
-                    {
-                        match reducer_outcome_response(&auth.identity, "update", update_result.outcome) {
-                            (StatusCode::OK, _) => {}
-                            (status, body) => return Err((status, body).into()),
-                        }
-                    }
-                }
+        }
 
-                log::debug!("Updated database {}", db_address.to_hex());
-                PublishOp::Updated
-            }
-        }
-        None if specified_address => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                format!("Failed to find database at address: {}", db_address.to_hex()),
-            )
-                .into())
-        }
-        None => {
-            ctx.insert_database(
-                &db_address,
-                &auth.identity,
-                &program_bytes_addr,
-                host_type,
-                num_replicas,
-                false,
-                trace_log,
-            )
-            .await
-            .map_err(log_and_500)?;
+        if exists {
+            PublishOp::Updated
+        } else {
             PublishOp::Created
         }
     };
 
-    let response = PublishResult::Success {
-        domain: name_or_address.and_then(|noa| match noa {
-            NameOrAddress::Address(_) => None,
-            NameOrAddress::Name(name) => Some(name),
-        }),
-        address: db_address.to_hex(),
-        op,
-    };
+    ctx.publish_database(
+        &auth.identity,
+        DatabaseDef {
+            address: db_addr,
+            program_bytes: body.into(),
+            num_replicas: 1,
+            trace_log: should_trace(trace_log),
+        },
+    )
+    .await
+    .map_err(log_and_500)?;
 
-    //TODO(tyler): Eventually we want it to be possible to publish a database
-    // which no one has the credentials to. In that case we wouldn't want to
-    // return a token.
-    Ok(axum::Json(response))
+    Ok(axum::Json(PublishResult::Success {
+        domain: db_name.map(|domain| domain.to_string()),
+        address: db_addr.to_hex(),
+        op,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -929,10 +836,14 @@ pub struct DeleteDatabaseParams {
 pub async fn delete_database(
     State(ctx): State<Arc<dyn ControlCtx>>,
     Path(DeleteDatabaseParams { address }): Path<DeleteDatabaseParams>,
+    auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
-    // TODO(cloutiertyler): Validate that the creator has credentials for the identity of this database
-
-    ctx.delete_database(&address).await.map_err(log_and_500)?;
+    // You should not be able to delete a database that you do not own
+    // so, unless you are the owner, this will fail, hence not using get_or_create
+    let auth = auth.get().ok_or((StatusCode::UNAUTHORIZED, "Invalid credentials."))?;
+    ctx.delete_database(&auth.identity, &address)
+        .await
+        .map_err(log_and_500)?;
 
     Ok(())
 }
@@ -941,40 +852,31 @@ pub async fn delete_database(
 pub struct SetNameQueryParams {
     domain: String,
     address: Address,
-    #[serde(default)]
-    register_tld: bool,
 }
 
 pub async fn set_name(
     State(ctx): State<Arc<dyn ControlCtx>>,
-    Query(SetNameQueryParams {
-        domain,
-        address,
-        register_tld,
-    }): Query<SetNameQueryParams>,
+    Query(SetNameQueryParams { domain, address }): Query<SetNameQueryParams>,
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
-    let auth = auth.get().ok_or((StatusCode::BAD_REQUEST, "Invalid credentials."))?;
+    let auth = auth.get().ok_or((StatusCode::UNAUTHORIZED, "Invalid credentials."))?;
 
     let database = ctx
-        .control_db()
         .get_database_by_address(&address)
         .await
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
     if database.identity != auth.identity {
-        return Err((StatusCode::BAD_REQUEST, "Identity does not own database.").into());
+        return Err((StatusCode::UNAUTHORIZED, "Identity does not own database.").into());
     }
 
     let domain = domain.parse().map_err(DomainParsingRejection)?;
-    let response = ctx
-        .control_db()
-        .spacetime_insert_domain(&address, domain, auth.identity, register_tld)
+    ctx.create_dns_record(&auth.identity, &domain, &address)
         .await
         .map_err(log_and_500)?;
 
-    Ok(axum::Json(response))
+    Ok(())
 }
 
 pub fn control_routes<S>() -> axum::Router<S>

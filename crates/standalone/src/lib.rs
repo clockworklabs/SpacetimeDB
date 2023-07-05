@@ -1,7 +1,7 @@
 pub mod routes;
 mod worker_db;
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use openssl::ec::{EcGroup, EcKey};
 use openssl::nid::Nid;
 use openssl::pkey::PKey;
@@ -12,18 +12,19 @@ use spacetimedb::control_db::ControlDb;
 use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::db::db_metrics;
-use spacetimedb::hash::Hash;
 use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::host::UpdateOutcome;
 use spacetimedb::host::{scheduler::Scheduler, HostController};
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, Node};
+use spacetimedb::messages::control_db::{Database, DatabaseInstance, EnergyBalance, HostType, IdentityEmail, Node};
 use spacetimedb::messages::worker_db::DatabaseInstanceState;
 use spacetimedb::module_host_context::ModuleHostContext;
 use spacetimedb::object_db::ObjectDb;
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::{stdb_path, worker_metrics};
-use spacetimedb_lib::name::DomainName;
+use spacetimedb_lib::name::{DomainName, RegisterTldResult, Tld};
+use spacetimedb_lib::recovery::RecoveryCode;
+use spacetimedb_lib::Hash;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -145,7 +146,10 @@ fn get_key_path(env: &str) -> Option<PathBuf> {
 }
 
 #[async_trait::async_trait]
-impl spacetimedb_client_api::WorkerCtx for StandaloneEnv {
+impl spacetimedb_client_api::WorkerCtx for StandaloneEnv {}
+
+#[async_trait::async_trait]
+impl spacetimedb_client_api::WorkerNodeDelegate for StandaloneEnv {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         let mut metric_families = worker_metrics::REGISTRY.gather();
         metric_families.extend(db_metrics::REGISTRY.gather());
@@ -170,8 +174,9 @@ impl spacetimedb_client_api::WorkerCtx for StandaloneEnv {
 
 #[async_trait::async_trait]
 impl spacetimedb_client_api::ControlStateDelegate for StandaloneEnv {
-    async fn get_node_id(&self) -> Result<Option<u64>, anyhow::Error> {
-        Ok(Some(0))
+    // Nodes
+    async fn get_node_id(&self) -> Option<u64> {
+        Some(0)
     }
 
     async fn get_node_by_id(&self, node_id: u64) -> spacetimedb::control_db::Result<Option<Node>> {
@@ -189,13 +194,7 @@ impl spacetimedb_client_api::ControlStateDelegate for StandaloneEnv {
         Ok(vec![self.get_node_by_id(0).await?.unwrap()])
     }
 
-    async fn get_database_instance_state(
-        &self,
-        database_instance_id: u64,
-    ) -> Result<Option<DatabaseInstanceState>, anyhow::Error> {
-        self.worker_db.get_database_instance_state(database_instance_id)
-    }
-
+    // Databases
     async fn get_database_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<Database>> {
         self.control_db.get_database_by_id(id).await
     }
@@ -206,6 +205,83 @@ impl spacetimedb_client_api::ControlStateDelegate for StandaloneEnv {
 
     async fn get_databases(&self) -> spacetimedb::control_db::Result<Vec<Database>> {
         self.control_db.get_databases().await
+    }
+
+    async fn create_address(&self) -> spacetimedb::control_db::Result<Address> {
+        self.control_db.alloc_spacetime_address().await
+    }
+
+    async fn publish_database(
+        &self,
+        identity: &Identity,
+        spec: spacetimedb_client_api::DatabaseDef,
+    ) -> spacetimedb::control_db::Result<()> {
+        let existing_db = self.control_db.get_database_by_address(&spec.address).await?;
+        let mut database = existing_db.clone().unwrap_or(Database {
+            id: 0,
+            address: spec.address,
+            identity: *identity,
+            host_type: HostType::Wasmer,
+            num_replicas: spec.num_replicas,
+            program_bytes_address: Hash::ZERO,
+            trace_log: spec.trace_log,
+        });
+        let addr = self.object_db.insert_object(spec.program_bytes)?;
+        database.program_bytes_address = addr;
+
+        if let Some(existing) = existing_db.as_ref() {
+            if &existing.identity != identity {
+                return Err(anyhow!(
+                    "Permission denied: `{}` does not own database `{}`",
+                    identity.to_hex(),
+                    spec.address.to_abbreviated_hex()
+                )
+                .into());
+            }
+            self.control_db.update_database(database.clone()).await?;
+        } else {
+            let id = self.control_db.insert_database(database.clone()).await?;
+            database.id = id;
+        }
+
+        let database_id = database.id;
+        let should_update_instances = existing_db.is_some();
+
+        self.schedule_database(Some(database), existing_db).await?;
+
+        if should_update_instances {
+            // TODO(kim): cannot return result in cloud nor here
+            let _ = self.update_database_instances(database_id).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn delete_database(&self, identity: &Identity, address: &Address) -> spacetimedb::control_db::Result<()> {
+        let Some(database) = self.control_db.get_database_by_address(address).await? else {
+            return Ok(());
+        };
+        if &database.identity != identity {
+            return Err(anyhow!(
+                "Permission denied: `{}` does not own database `{}`",
+                identity.to_hex(),
+                address.to_abbreviated_hex()
+            )
+            .into());
+        }
+
+        self.control_db.delete_database(database.id).await?;
+        self.schedule_database(None, Some(database)).await?;
+
+        Ok(())
+    }
+
+    // Database instances
+    async fn get_database_instance_state(
+        &self,
+        database_instance_id: u64,
+    ) -> spacetimedb::control_db::Result<Option<DatabaseInstanceState>> {
+        Ok(self.worker_db.get_database_instance_state(database_instance_id)?)
     }
 
     async fn get_database_instance_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<DatabaseInstance>> {
@@ -221,106 +297,84 @@ impl spacetimedb_client_api::ControlStateDelegate for StandaloneEnv {
             .get_leader_database_instance_by_database(database_id)
             .await
     }
-}
 
-#[async_trait::async_trait]
-impl spacetimedb_client_api::ControlCtx for StandaloneEnv {
-    async fn insert_database(
-        &self,
-        address: &Address,
-        identity: &Identity,
-        program_bytes_address: &Hash,
-        host_type: HostType,
-        num_replicas: u32,
-        force: bool,
-        trace_log: bool,
-    ) -> Result<(), anyhow::Error> {
-        let database = Database {
-            id: 0,
-            address: *address,
-            identity: *identity,
-            host_type,
-            num_replicas,
-            program_bytes_address: *program_bytes_address,
-            trace_log,
-        };
-
-        if force {
-            self.delete_database(address).await?;
-        }
-
-        let mut new_database = database.clone();
-        let id = self.control_db.insert_database(database).await?;
-        new_database.id = id;
-
-        self.schedule_database(Some(new_database), None).await?;
-        Ok(())
+    // Identities
+    async fn get_identities_for_email(&self, email: &str) -> spacetimedb::control_db::Result<Vec<IdentityEmail>> {
+        self.control_db.get_identities_for_email(email)
+    }
+    async fn get_recovery_codes(&self, email: &str) -> spacetimedb::control_db::Result<Vec<RecoveryCode>> {
+        self.control_db.spacetime_get_recovery_codes(email).await
     }
 
-    async fn update_database(
-        &self,
-        address: &Address,
-        program_bytes_address: &Hash,
-        num_replicas: u32,
-    ) -> Result<Option<UpdateDatabaseResult>, anyhow::Error> {
-        let database = self.control_db.get_database_by_address(address).await?;
-        let mut database = match database {
-            Some(database) => database,
-            None => return Ok(None),
-        };
-
-        let old_database = database.clone();
-
-        database.program_bytes_address = *program_bytes_address;
-        database.num_replicas = num_replicas;
-        let database_id = database.id;
-        let new_database = database.clone();
-        self.control_db.update_database(database).await?;
-
-        self.schedule_database(Some(new_database), Some(old_database)).await?;
-        self.update_database_instances(database_id)
+    async fn create_identity(&self) -> spacetimedb::control_db::Result<Identity> {
+        self.control_db.alloc_spacetime_identity().await
+    }
+    async fn add_email(&self, identity: &Identity, email: &str) -> spacetimedb::control_db::Result<()> {
+        self.control_db
+            .associate_email_spacetime_identity(*identity, email)
             .await
-            // TODO(kim): this should really only run on the leader instance
-            .map(|mut res| res.pop().flatten())
+    }
+    async fn insert_recovery_code(
+        &self,
+        _identity: &Identity,
+        email: &str,
+        code: RecoveryCode,
+    ) -> spacetimedb::control_db::Result<()> {
+        self.control_db.spacetime_insert_recovery_code(email, code).await
     }
 
-    async fn delete_database(&self, address: &Address) -> Result<(), anyhow::Error> {
-        let Some(database) = self.control_db.get_database_by_address(address).await? else {
-            return Ok(());
-        };
-        self.control_db.delete_database(database.id).await?;
-        self.schedule_database(None, Some(database)).await?;
+    // Energy
+    async fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyBalance>> {
+        self.control_db.get_energy_balance(identity).await
+    }
+    async fn add_energy(&self, identity: &Identity, quanta: u64) -> spacetimedb::control_db::Result<()> {
+        let mut balance = self.get_energy_balance(identity).await?.unwrap_or(EnergyBalance {
+            identity: *identity,
+            balance_quanta: 0,
+        });
+        balance.balance_quanta = balance
+            .balance_quanta
+            .saturating_add(quanta.try_into().unwrap_or(i64::MAX));
+
+        self.control_db.set_energy_balance(identity, &balance)
+    }
+
+    // DNS
+    async fn lookup_address(&self, domain: &DomainName) -> spacetimedb::control_db::Result<Option<Address>> {
+        self.control_db.spacetime_dns(domain).await
+    }
+    async fn reverse_lookup(&self, address: &Address) -> spacetimedb::control_db::Result<Vec<DomainName>> {
+        self.control_db.spacetime_reverse_dns(address).await
+    }
+
+    async fn register_tld(&self, identity: &Identity, tld: Tld) -> spacetimedb::control_db::Result<RegisterTldResult> {
+        self.control_db.spacetime_register_tld(tld, *identity).await
+    }
+    async fn create_dns_record(
+        &self,
+        identity: &Identity,
+        domain: &DomainName,
+        address: &Address,
+    ) -> spacetimedb::control_db::Result<()> {
+        self.control_db
+            .spacetime_insert_domain(address, domain.clone(), *identity, true)
+            .await?;
         Ok(())
-    }
-
-    fn object_db(&self) -> &ObjectDb {
-        &self.object_db
-    }
-
-    fn control_db(&self) -> &ControlDb {
-        &self.control_db
-    }
-
-    fn sendgrid_controller(&self) -> Option<&SendGridController> {
-        self.sendgrid.as_ref()
     }
 }
 
 #[async_trait::async_trait]
 impl spacetimedb_client_api::ControlNodeDelegate for StandaloneEnv {
-    async fn spacetime_dns(&self, domain: &DomainName) -> spacetimedb::control_db::Result<Option<Address>> {
-        self.control_db.spacetime_dns(domain).await
-    }
-
-    async fn alloc_spacetime_identity(&self) -> spacetimedb::control_db::Result<Identity> {
-        self.control_db.alloc_spacetime_identity().await
-    }
-
     fn public_key(&self) -> &DecodingKey {
         &self.public_key
     }
+
     fn private_key(&self) -> &EncodingKey {
         &self.private_key
+    }
+
+    fn sendgrid_controller(&self) -> Option<&SendGridController> {
+        self.sendgrid.as_ref()
     }
 }
 
