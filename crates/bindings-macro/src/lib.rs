@@ -78,6 +78,10 @@ mod sym {
 ///       | reducer [, repeat = Duration]
 ///       | index(btree | hash [, name = string] [, field_name:ident]*)
 /// ```
+///
+/// Note that using `#[autoinc]` on a field
+/// does not also imply `#[primarykey]` or `#[unique]`.
+/// If those semantics are desired, those attributes should also be used.
 #[proc_macro_attribute]
 pub fn spacetimedb(macro_args: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let item: TokenStream = item.into();
@@ -463,6 +467,14 @@ fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
     })
 }
 
+/// Generates code for treating this type as a table.
+///
+/// Among other things, this derives `Serialize`, `Deserialize`,
+/// `SpacetimeType`, and `TableType` for our type.
+///
+/// Note that using `#[autoinc]` on a field
+/// does not also imply `#[primarykey]` or `#[unique]`.
+/// If those semantics are desired, those attributes should also be used.
 #[proc_macro_derive(TableType, attributes(sats, unique, autoinc, primarykey))]
 pub fn spacetimedb_tabletype(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let item = syn::parse_macro_input!(item as syn::DeriveInput);
