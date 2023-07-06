@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-set -x
+# set -x
 
 cd "$(dirname "$0")"
 
@@ -76,6 +76,7 @@ execute_procedural_test() {
 	printf " **************** Running %s... " "$test_name"
 	execute_test "$test_name" "$test_out_file"
 	result_code=$?
+	set -e
 	if [ $result_code == 0 ] ; then
 		printf "${GRN}PASS${CRST}\n"
 	else
@@ -111,6 +112,7 @@ execute_test() {
 
 	rm -f "$TEST_OUT"
 	# if ! bash -x "$test_path" ; then
+	set +e
 	return $result_code
 }
 
