@@ -58,12 +58,12 @@ else
 	sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${RESET_PROJECT_PATH}/Cargo.toml"
 fi
 
-PREVIOUS_WD=$(pwd)
-cd "$RESET_PROJECT_PATH"
-cargo clean
-cargo check
-cd "$PREVIOUS_WD"
-spacetime build "$RESET_PROJECT_PATH" -s -d
+# PREVIOUS_WD=$(pwd)
+# cd "$RESET_PROJECT_PATH"
+# cargo clean
+# cargo check
+# cd "$PREVIOUS_WD"
+spacetime publish --project-path "$RESET_PROJECT_PATH" -s -d
 
 execute_procedural_test() {
 	if [ $# != 1 ] ; then
