@@ -125,22 +125,22 @@ process_test_result() {
 	result_code=$2
 	PROJECT_PATH=$3
 	out_file_path=$4
-	CONFIG_FILE_PATH=$5
+	config_file_path=$5
 
 	if [ "$result_code" == 0 ] ; then
 		passed_tests+=("$test_name")
 
 		# Cleanup the test execution only if the test passed
-		rm -rf "$PROJECT_PATH" "$out_file_path" "$SPACETIME_CONFIG_FILE"
+		rm -rf "$PROJECT_PATH" "$out_file_path" "$config_file_path"
 	else
 		docker logs "$CONTAINER_NAME"
 		cat "$out_file_path"
 		echo "Config file:"
-		cat "$CONFIG_FILE_PATH"
+		cat "$config_file_path"
 		failed_tests+=("$test_name")
 	fi
 
-	echo "PROJECT_PATH=$PROJECT_PATH TEST_OUT=$out_file_path SPACETIME_CONFIG_FILE=$CONFIG_FILE_PATH"
+	echo "PROJECT_PATH=$PROJECT_PATH TEST_OUT=$out_file_path SPACETIME_CONFIG_FILE=$config_file_path"
 
 }
 
@@ -228,7 +228,6 @@ if [ "$RUN_PARALLEL" == "true" ] ; then
 	while true ; do
 		FOUND=0
 		for ((i=0; i<length; i++)) ; do
-			echo "I:$i length:$length"
 			pid=${TESTS_PID[$i]}
 			if [ "$pid" == "" ] ; then
 				continue
@@ -254,7 +253,7 @@ if [ "$RUN_PARALLEL" == "true" ] ; then
 				printf "[${RED}FAIL${CRST}] | $test_name finished\n"
 			fi
 			process_test_result "$test_name" "$result_code" "$project_path" "$out_file" "$config_file"
-			TESTS_PID[$i]=""
+			TESTS_PID[i]=""
 		done
 
 		if [ $FOUND == 0 ] ; then
