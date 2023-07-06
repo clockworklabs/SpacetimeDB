@@ -61,6 +61,7 @@ fi
 PREVIOUS_WD=$(pwd)
 cd "$RESET_PROJECT_PATH"
 cargo clean
+cargo check
 cd "$PREVIOUS_WD"
 spacetime build "$RESET_PROJECT_PATH" -s -d
 
