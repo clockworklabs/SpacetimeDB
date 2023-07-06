@@ -4,6 +4,7 @@ use axum::extract::{FromRef, Path, Query, State};
 use axum::response::IntoResponse;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
+use spacetimedb::auth::identity::encode_token_with_expiry;
 use spacetimedb_lib::Identity;
 
 use crate::auth::{SpacetimeAuth, SpacetimeAuthHeader};
@@ -143,6 +144,24 @@ pub async fn get_databases(
     Ok(axum::Json(response))
 }
 
+#[derive(Debug, Serialize)]
+pub struct WebsocketTokenResponse {
+    token: String,
+}
+
+pub async fn create_websocket_token(
+    State(ctx): State<Arc<dyn ControlCtx>>,
+    auth: SpacetimeAuthHeader,
+) -> axum::response::Result<impl IntoResponse> {
+    match auth.auth {
+        Some(auth) => {
+            let token = encode_token_with_expiry(ctx.private_key(), auth.identity, Some(60)).map_err(log_and_500)?;
+            Ok(axum::Json(WebsocketTokenResponse { token }))
+        }
+        None => Err(StatusCode::UNAUTHORIZED)?,
+    }
+}
+
 pub fn router<S>() -> axum::Router<S>
 where
     S: ControlNodeDelegate + Clone + 'static,
@@ -151,6 +170,7 @@ where
     use axum::routing::{get, post};
     axum::Router::new()
         .route("/", get(get_identity).post(create_identity))
+        .route("/websocket_token", post(create_websocket_token))
         .route("/:identity/set-email", post(set_email))
         .route("/:identity/databases", get(get_databases))
 }

@@ -38,7 +38,7 @@ pub use type_value::{AlgebraicValue, ProductValue};
 
 pub use spacetimedb_sats as sats;
 
-pub const MODULE_ABI_VERSION: VersionTuple = VersionTuple::new(2, 0);
+pub const MODULE_ABI_VERSION: VersionTuple = VersionTuple::new(3, 0);
 
 // if it ends up we need more fields in the future, we can split one of them in two
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
@@ -88,6 +88,7 @@ impl std::fmt::Display for VersionTuple {
 
 extern crate self as spacetimedb_lib;
 
+//WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub struct TableDef {
     pub name: String,
@@ -170,6 +171,7 @@ impl ser::Serialize for ReducerArgsWithSchema<'_> {
     }
 }
 
+//WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Default, de::Deserialize, ser::Serialize)]
 pub struct ModuleDef {
     pub typespace: sats::Typespace,
