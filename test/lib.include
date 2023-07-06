@@ -25,7 +25,6 @@ reset_config() {
 	SPACETIME_CONFIG_FILE="$(mktemp)"
 	export SPACETIME_CONFIG_FILE
 	cp "$RESET_SPACETIME_CONFIG" "$SPACETIME_CONFIG_FILE"
-	cat "$SPACETIME_CONFIG_FILE"
 }
 
 # This deletes the project from the previous test run

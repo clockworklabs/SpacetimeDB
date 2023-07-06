@@ -142,6 +142,7 @@ impl Config {
     }
 
     fn load_raw(config_dir: PathBuf, is_project: bool) -> RawConfig {
+        // If a config file overload has been specified, use that instead
         if !is_project {
             if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
                 return Self::load_from_file(config_path.as_ref());

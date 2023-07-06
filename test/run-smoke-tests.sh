@@ -2,8 +2,6 @@
 
 set -euo pipefail
 
-# set -x
-
 cd "$(dirname "$0")"
 
 SPACETIME_CARGO_PROFILE=release-fast
@@ -37,10 +35,10 @@ export SPACETIME_HOME=$PWD
 
 # Build our SpacetimeDB executable that we'll use for all tests.
 cargo build --profile "$SPACETIME_CARGO_PROFILE"
-SPACETIME_EXE=$(mktemp)
-cp "./target/$SPACETIME_CARGO_PROFILE/spacetime" "$SPACETIME_EXE"
-export PATH="$SPACETIME_EXE:$PATH"
-[[ "$(which spacetime)" == "$SPACETIME_EXE" ]]
+SPACETIME_EXE_DIR=$(mktemp -d)
+cp "./target/$SPACETIME_CARGO_PROFILE/spacetime" "$SPACETIME_EXE_DIR/spacetime"
+export PATH="$SPACETIME_EXE_DIR:$PATH"
+[ "$(which spacetime)" == "$SPACETIME_EXE_DIR/spacetime" ]
 
 # Create a project that we can copy to reset our project
 RESET_PROJECT_PATH=$(mktemp -d)
@@ -68,9 +66,7 @@ execute_procedural_test() {
 	test_name=$1
 
 	reset_config
-	[ -f "$SPACETIME_CONFIG_FILE" ]
 	reset_project
-	[ -d "$PROJECT_PATH" ]
 
 	test_out_file=$(mktemp)
 	printf " **************** Running %s... " "$test_name"
@@ -92,6 +88,8 @@ execute_test() {
 		echo "Usage: execute_test <test-name> <test-out-file>"
 		exit 1
 	fi
+	[ -d "$PROJECT_PATH" ]
+	[ -f "$SPACETIME_CONFIG_FILE" ]
 
 	test_name=$1
 	test_path="test/tests/$test_name.sh"
@@ -132,16 +130,17 @@ process_test_result() {
 	if [ "$result_code" == 0 ] ; then
 		passed_tests+=("$test_name")
 
-		# Cleanup the test execution only if the test passed (TODO: unecho this)
-		echo rm -rf "$PROJECT_PATH" "$TEST_OUT" "$SPACETIME_CONFIG_FILE"
+		# Cleanup the test execution only if the test passed
+		rm -rf "$PROJECT_PATH" "$out_file_path" "$SPACETIME_CONFIG_FILE"
 	else
 		docker logs "$CONTAINER_NAME"
 		cat "$out_file_path"
 		echo "Config file:"
 		cat "$CONFIG_FILE_PATH"
-		echo "PROJECT_PATH=$PROJECT_PATH TEST_OUT=$out_file_path SPACETIME_CONFIG_FILE=$CONFIG_FILE_PATH"
 		failed_tests+=("$test_name")
 	fi
+
+	echo "PROJECT_PATH=$PROJECT_PATH TEST_OUT=$out_file_path SPACETIME_CONFIG_FILE=$CONFIG_FILE_PATH"
 
 }
 
@@ -202,15 +201,13 @@ for smoke_test in "${TESTS[@]}" ; do
 
 			TESTS_NAME+=("$smoke_test")
 			reset_config
-			[ -f "$SPACETIME_CONFIG_FILE" ]
 			TESTS_CONFIG_FILE+=("$SPACETIME_CONFIG_FILE")
 
 			reset_project
-			[ -d "$PROJECT_PATH" ]
 			TESTS_PROJECT_PATH+=("$PROJECT_PATH")
 
 			test_out_file=$(mktemp)
-			TESTS_OUT_FILE+=("$TEST_OUT_FILE")
+			TESTS_OUT_FILE+=("$test_out_file")
 
 			(execute_test "$smoke_test" "$test_out_file") &
 			TESTS_PID+=($!)
@@ -228,17 +225,41 @@ done
 if [ "$RUN_PARALLEL" == "true" ] ; then
 	# Wait for all processes to end, and save their exit codes
 	length=${#TESTS_PID[@]}
-	for ((i=0; i<length; i++)) ; do
-		pid=${TESTS_PID[$i]}
-		out_file=${TESTS_OUT_FILE[$i]}
-		test_name=${TESTS_NAME[$i]}
-		project_path=${TESTS_PROJECT_PATH[$i]}
-		config_file=${TESTS_CONFIG_FILE[$i]}
-		set +e
-		wait "$pid"
-		result_code=$?
-		set -e
-		process_test_result "$test_name" "$result_code" "$project_path" "$test_out_file" "$config_file"
+	while true ; do
+		FOUND=0
+		for ((i=0; i<length; i++)) ; do
+			echo "I:$i length:$length"
+			pid=${TESTS_PID[$i]}
+			if [ "$pid" == "" ] ; then
+				continue
+			fi
+			FOUND=1
+
+			# If the process is still running, skip it
+			if kill -0 "$pid" 2>/dev/null; then
+				continue
+			fi
+
+			out_file=${TESTS_OUT_FILE[$i]}
+			test_name=${TESTS_NAME[$i]}
+			project_path=${TESTS_PROJECT_PATH[$i]}
+			config_file=${TESTS_CONFIG_FILE[$i]}
+			set +e
+			wait "$pid"
+			result_code=$?
+			set -e
+			if [ $result_code == 0 ] ; then
+				printf "[${GRN}PASS${CRST}] | $test_name finished\n"
+			else
+				printf "[${RED}FAIL${CRST}] | $test_name finished\n"
+			fi
+			process_test_result "$test_name" "$result_code" "$project_path" "$out_file" "$config_file"
+			TESTS_PID[$i]=""
+		done
+
+		if [ $FOUND == 0 ] ; then
+			break;
+		fi
 	done
 
 	# Now run any tests that cannot be parallelized
