@@ -472,9 +472,21 @@ fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
 /// Among other things, this derives `Serialize`, `Deserialize`,
 /// `SpacetimeType`, and `TableType` for our type.
 ///
-/// Note that using `#[autoinc]` on a field
-/// does not also imply `#[primarykey]` or `#[unique]`.
-/// If those semantics are desired, those attributes should also be used.
+/// A table type must be a struct, whose fields may be annotated with the following attributes:
+///
+/// * `#[autoinc]`
+///
+///    Creates a database sequence. When a row is inserted with the annotated field 
+///    set to `0` (zero), the sequence is incremented, and this value used instead. 
+///    Can only be used on numeric types, and may be combined with indexes.
+///
+/// * `#[unique]`
+///
+///    Creates an index and unique constraint for the annotated field.
+///
+/// * `#[primarykey]`
+///
+///    Similar to `#[unique]`, but generates additional CRUD methods.
 #[proc_macro_derive(TableType, attributes(sats, unique, autoinc, primarykey))]
 pub fn spacetimedb_tabletype(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let item = syn::parse_macro_input!(item as syn::DeriveInput);
