@@ -29,6 +29,8 @@ docker logs "$CONTAINER_NAME"
 rustup update
 rustup target add wasm32-unknown-unknown
 rustup component add clippy
+rustup target list --installed
+exit 1
 
 source "lib.include"
 cp ./config.toml "$RESET_SPACETIME_CONFIG"
