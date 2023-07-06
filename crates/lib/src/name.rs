@@ -1,7 +1,5 @@
 use core::fmt;
-use std::{iter, ops::Deref, str::FromStr};
-
-use itertools::Itertools;
+use std::str::FromStr;
 
 use spacetimedb_sats::{
     de::{self, Deserialize, Deserializer},
@@ -135,166 +133,63 @@ pub enum SetDefaultDomainResult {
     },
 }
 
-/// A part (component) of a [`DomainName`].
+/// The top level domain part of a [`DomainName`].
 ///
-/// [`DomainPart`]s are compared case-insensitively using their Unicode
-/// lowercase mapping. The original string is used for [`Display`] and
-/// [`Serialize`] purposes.
+/// This newtype witnesses that the TLD is well-formed as per the parsing rules
+/// of a full [`DomainName`]. A [`Tld`] is also a valid [`DomainName`], and can
+/// be converted to this type.
 ///
-/// **Note**: case-insensitive comparison is not the same as unicode case
-/// folding. For example, using case folding, "MASSE" and "Maße" compare as
-/// equal, while lower-casing each doesn't. Using case folding here would be
-/// preferable, as it can detect some instances of words which contain similar-
-/// looking, but distinct characters. This would, however, require support from
-/// SATS or some other way to allow custom collations in STDB.
+/// [`Tld`]s compare char-wise lowercase. **Note** that this does not take into
+/// account any Unicode case folding rules. In particular, the comparison is
+/// **not** equivalent to
+/// `a.as_str().to_lowercase().eq(b.as_str().to_lowercase())`.
 #[derive(Debug, Clone, Eq)]
-pub struct DomainPart(String);
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub struct Tld(String);
 
-impl DomainPart {
-    pub fn to_lowercase(&self) -> String {
-        self.0.to_lowercase()
-    }
-
+impl Tld {
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// Length of the original string, in bytes.
-    pub fn len(&self) -> usize {
-        self.0.len()
+    pub fn to_lowercase(&self) -> String {
+        self.as_str().to_lowercase()
     }
 }
 
-impl PartialEq for DomainPart {
-    fn eq(&self, other: &Self) -> bool {
-        self.to_lowercase().eq(&other.to_lowercase())
-    }
-}
-
-#[cfg(feature = "serde")]
-impl serde::Serialize for DomainPart {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(self.0.as_ref())
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for DomainPart {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = <String as serde::Deserialize>::deserialize(deserializer)?;
-        DomainPart::try_from(s).map_err(serde::de::Error::custom)
-    }
-}
-
-impl fmt::Display for DomainPart {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl TryFrom<String> for DomainPart {
-    type Error = DomainParsingError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        if value.is_empty() {
-            Err(ParseError::Empty.into())
-        } else if value.contains(|c: char| c.is_whitespace()) {
-            Err(ParseError::Whitespace { input: value }.into())
-        } else {
-            Ok(Self(value))
-        }
-    }
-}
-
-impl FromStr for DomainPart {
-    type Err = DomainParsingError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::try_from(s.to_owned())
-    }
-}
-
-impl SpacetimeType for DomainPart {
-    fn make_type<S: TypespaceBuilder>(_typespace: &mut S) -> AlgebraicType {
-        AlgebraicType::String
-    }
-}
-
-impl Serialize for DomainPart {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.0)
-    }
-}
-
-impl<'de> Deserialize<'de> for DomainPart {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let s = <String as Deserialize>::deserialize(deserializer)?;
-        DomainPart::try_from(s).map_err(de::Error::custom)
-    }
-}
-
-/// The top level domain part of a [`DomainName`].
-///
-/// This newtype witnesses that the TLD is well-formed as per the parsing rules
-/// of a full [`DomainName`]. A [`Tld`] is also a valid [`DomainPart`] and valid
-/// [`DomainName`], and can be converted to these types.
-#[derive(Debug, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Tld(DomainPart);
-
-impl Tld {
-    pub fn unique(&self) -> UniqueTld {
-        UniqueTld::from(self)
-    }
-}
-
-impl TryFrom<DomainPart> for Tld {
-    type Error = DomainParsingError;
-
-    fn try_from(part: DomainPart) -> Result<Self, Self::Error> {
-        if part.as_str().chars().count() > MAX_CHARS_PART {
-            Err(ParseError::TooLong { part }.into())
-        } else if is_address(part.as_str()) {
-            Err(ParseError::Address { part }.into())
-        } else {
-            Ok(Self(part))
-        }
-    }
-}
-
-impl Deref for Tld {
-    type Target = DomainPart;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl AsRef<str> for Tld {
+    fn as_ref(&self) -> &str {
+        self.as_str()
     }
 }
 
 impl fmt::Display for Tld {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
+        f.write_str(&self.0)
+    }
+}
+
+impl PartialEq for Tld {
+    fn eq(&self, other: &Self) -> bool {
+        let left = self.0.chars().flat_map(|c| c.to_lowercase());
+        let right = other.0.chars().flat_map(|c| c.to_lowercase());
+
+        for (l, r) in left.zip(right) {
+            if l != r {
+                return false;
+            }
+        }
+        true
     }
 }
 
 impl From<Tld> for DomainName {
     fn from(tld: Tld) -> Self {
-        Self { tld, sub_domain: None }
-    }
-}
-
-impl From<Tld> for DomainPart {
-    fn from(tld: Tld) -> Self {
-        tld.0
+        let domain_name = tld.0;
+        Self {
+            tld_offset: domain_name.len(),
+            domain_name,
+        }
     }
 }
 
@@ -312,49 +207,21 @@ impl Serialize for Tld {
 
 impl<'de> Deserialize<'de> for Tld {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let part = DomainPart::deserialize(deserializer)?;
-        Self::try_from(part).map_err(de::Error::custom)
+        let s = String::deserialize(deserializer)?;
+        parse_domain_tld(&s).map_err(de::Error::custom)?;
+        Ok(Self(s))
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct UniqueTld(String);
-
-impl UniqueTld {
-    pub fn into_string(self) -> String {
-        self.0
-    }
-}
-
-impl From<&Tld> for UniqueTld {
-    fn from(value: &Tld) -> Self {
-        Self(value.to_lowercase())
-    }
-}
-
-impl SpacetimeType for UniqueTld {
-    fn make_type<S: TypespaceBuilder>(_typespace: &mut S) -> AlgebraicType {
-        AlgebraicType::String
-    }
-}
-
-impl Serialize for UniqueTld {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for UniqueTld {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let tld = Tld::deserialize(deserializer)?;
-        Ok(Self::from(&tld))
-    }
-}
-
-impl fmt::Display for UniqueTld {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Tld {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s: String = serde::Deserialize::deserialize(deserializer)?;
+        parse_domain_tld(&s).map_err(serde::de::Error::custom)?;
+        Ok(Self(s))
     }
 }
 
@@ -383,68 +250,63 @@ impl fmt::Display for UniqueTld {
 /// Each segment in a database name can contain any UTF-8 character, except for
 /// whitespace and '/'. The maximum segment length is 64 characters.
 ///
-/// [`DomainName`]s consist of [`DomainPart`]s, and are compared case-
-/// insensitively. Note, however, that the [`fmt::Display`] and [`Serialize`]
-/// impls will use the original, (potentially) mixed-case representation.
+/// [`DomainName`]s compare char-wise lowercase. **Note** that this does not
+/// take into account any Unicode case folding rules. In particular, the
+/// comparison is **not** equivalent to
+/// `a.as_str().to_lowercase().eq(b.as_str().to_lowercase())`.
 ///
 /// To construct a valid [`DomainName`], use [`parse_domain_name`] or the
 /// [`FromStr`] impl.
-#[derive(Debug, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Eq)]
 pub struct DomainName {
-    /// The top level domain for the domain name. For example:
-    ///
-    ///  * `clockworklabs/bitcraft`
-    ///
-    /// Here, `clockworklabs` is the tld.
-    tld: Tld,
-    /// The part after the top level domain, this is not required. For example:
-    ///
-    ///  * `clockworklabs/bitcraft`
-    ///
-    /// Here, `bitcraft` is the subdomain.
-    sub_domain: Option<DomainPart>,
+    // Iff there is a subdomain, next char in `domain_name` is '/'.
+    tld_offset: usize,
+    domain_name: String,
 }
 
 impl DomainName {
-    pub fn unique(&self) -> UniqueDomainName {
-        UniqueDomainName::from(self)
+    pub fn as_str(&self) -> &str {
+        &self.domain_name
     }
 
-    pub fn tld(&self) -> &Tld {
-        &self.tld
+    pub fn tld(&self) -> &str {
+        &self.domain_name[..self.tld_offset]
     }
 
     /// Drop subdomain, if any, and return only the TLD
-    pub fn into_tld(self) -> Tld {
-        self.tld
+    pub fn into_tld(mut self) -> Tld {
+        self.domain_name.truncate(self.tld_offset);
+        Tld(self.domain_name)
     }
 
-    pub fn sub_domain(&self) -> Option<&DomainPart> {
-        self.sub_domain.as_ref()
+    pub fn as_tld(&self) -> Tld {
+        Tld(self.tld().to_owned())
+    }
+
+    pub fn sub_domain(&self) -> Option<&str> {
+        if self.tld_offset + 1 < self.domain_name.len() {
+            Some(&self.domain_name[self.tld_offset + 1..])
+        } else {
+            None
+        }
     }
 
     /// Render the name as a lower-case, '/'-separated string, suitable for use
     /// as a unique constrained field in a database.
     pub fn to_lowercase(&self) -> String {
-        iter::once(self.tld.to_lowercase())
-            .chain(self.sub_domain().map(|sub| sub.to_lowercase()))
-            .join("/")
+        self.as_str().to_lowercase()
     }
+}
 
-    pub fn into_parts(self) -> (Tld, Option<DomainPart>) {
-        (self.tld, self.sub_domain)
+impl AsRef<str> for DomainName {
+    fn as_ref(&self) -> &str {
+        self.as_str()
     }
 }
 
 impl fmt::Display for DomainName {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.tld)?;
-        if let Some(sub) = &self.sub_domain {
-            write!(f, "/{}", sub)?;
-        }
-
-        Ok(())
+        f.write_str(&self.domain_name)
     }
 }
 
@@ -456,6 +318,19 @@ impl FromStr for DomainName {
     }
 }
 
+impl PartialEq for DomainName {
+    fn eq(&self, other: &Self) -> bool {
+        let left = self.domain_name.chars().flat_map(|c| c.to_lowercase());
+        let right = other.domain_name.chars().flat_map(|c| c.to_lowercase());
+        for (l, r) in left.zip(right) {
+            if l != r {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 impl SpacetimeType for DomainName {
     fn make_type<S: TypespaceBuilder>(_typespace: &mut S) -> AlgebraicType {
         AlgebraicType::String
@@ -464,49 +339,35 @@ impl SpacetimeType for DomainName {
 
 impl Serialize for DomainName {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.to_string().serialize(serializer)
+        self.as_str().serialize(serializer)
     }
 }
 
 impl<'de> Deserialize<'de> for DomainName {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let s: &str = Deserialize::deserialize(deserializer)?;
-        s.parse().map_err(de::Error::custom)
+        let s: String = Deserialize::deserialize(deserializer)?;
+        parse_domain_name(s).map_err(de::Error::custom)
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct UniqueDomainName(String);
-
-impl UniqueDomainName {
-    pub fn into_string(self) -> String {
-        self.0
+#[cfg(feature = "serde")]
+impl serde::Serialize for DomainName {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serde::Serialize::serialize(self.as_str(), serializer)
     }
 }
 
-impl From<&DomainName> for UniqueDomainName {
-    fn from(value: &DomainName) -> Self {
-        Self(value.to_lowercase())
-    }
-}
-
-impl SpacetimeType for UniqueDomainName {
-    fn make_type<S: TypespaceBuilder>(_typespace: &mut S) -> AlgebraicType {
-        AlgebraicType::String
-    }
-}
-
-impl Serialize for UniqueDomainName {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.0)
-    }
-}
-
-impl<'de> Deserialize<'de> for UniqueDomainName {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let domain = DomainName::deserialize(deserializer)?;
-        Ok(domain.unique())
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for DomainName {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s: String = serde::Deserialize::deserialize(deserializer)?;
+        parse_domain_name(s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -534,17 +395,19 @@ enum ParseError {
     #[error("Database names cannot be empty")]
     Empty,
     #[error("Addresses cannot be database names: `{part}`")]
-    Address { part: DomainPart },
+    Address { part: String },
     #[error("Database names must not start with a slash: `{input}`")]
     StartsSlash { input: String },
     #[error("Database names must not end with a slash: `{input}`")]
     EndsSlash { input: String },
     #[error("Database names must not have 2 consecutive slashes: `{input}`")]
     SlashSlash { input: String },
+    #[error("Domain name parts must not contain slashes: `{part}`")]
+    ContainsSlash { part: String },
     #[error("Database names must not contain whitespace: `{input}`")]
     Whitespace { input: String },
     #[error("Domain name parts must be shorter than {MAX_CHARS_PART} characters: `{part}`")]
-    TooLong { part: DomainPart },
+    TooLong { part: String },
     #[error("Domains cannot have more the {MAX_SUBDOMAINS} subdomains: `{input}`")]
     TooManySubdomains { input: String },
 }
@@ -558,58 +421,92 @@ pub const MAX_SUBDOMAINS: usize = 256;
 /// Parses a [`DomainName`].
 ///
 /// For more information, see the documentation of [`DomainName`].
-pub fn parse_domain_name(domain: &str) -> Result<DomainName, DomainParsingError> {
-    if domain.is_empty() {
+pub fn parse_domain_name<S>(domain: S) -> Result<DomainName, DomainParsingError>
+where
+    S: AsRef<str> + Into<String>,
+{
+    let input = domain.as_ref();
+    if input.is_empty() {
         return Err(ParseError::Empty.into());
     }
-    let mut parts = domain.split('/');
+    let mut parts = input.split('/');
 
     let tld = parts.next().ok_or(ParseError::Empty)?;
+    // Check len for refined error.
     if tld.is_empty() {
-        return Err(ParseError::StartsSlash {
-            input: domain.to_owned(),
-        }
-        .into());
+        return Err(ParseError::StartsSlash { input: domain.into() }.into());
     }
-    let tld = DomainPart::from_str(tld).and_then(Tld::try_from)?;
+    parse_domain_tld(tld)?;
+    let tld_offset = tld.len();
 
-    let mut sub_domain = String::with_capacity(domain.len() - tld.len());
     let mut parts = parts.peekable();
     for (i, part) in parts.by_ref().enumerate() {
         if i + 1 > MAX_SUBDOMAINS {
-            return Err(ParseError::TooManySubdomains {
-                input: domain.to_owned(),
-            }
-            .into());
+            return Err(ParseError::TooManySubdomains { input: domain.into() }.into());
         }
         if part.is_empty() {
             // no idea why borrowchk accepts this lol
             let err = if parts.peek().is_some() {
-                ParseError::SlashSlash {
-                    input: domain.to_owned(),
-                }
+                ParseError::SlashSlash { input: domain.into() }
             } else {
-                ParseError::EndsSlash {
-                    input: domain.to_owned(),
-                }
+                ParseError::EndsSlash { input: domain.into() }
             };
             return Err(err.into());
         }
-        if part.chars().count() > MAX_CHARS_PART {
-            return Err(ParseError::TooLong { part: tld.into() }.into());
-        }
-
-        if i > 0 {
-            sub_domain.push('/');
-        }
-        sub_domain.push_str(part);
+        parse_domain_segment(part)?;
     }
 
-    let sub_domain = if sub_domain.is_empty() {
-        None
-    } else {
-        Some(DomainPart::try_from(sub_domain)?)
-    };
+    Ok(DomainName {
+        tld_offset,
+        domain_name: domain.into(),
+    })
+}
 
-    Ok(DomainName { tld, sub_domain })
+fn parse_domain_segment(input: &str) -> Result<(), ParseError> {
+    DomainSegment::try_from(input).map(|_| ())
+}
+
+fn parse_domain_tld(input: &str) -> Result<(), ParseError> {
+    DomainTld::try_from(input).map(|_| ())
+}
+
+/// Parsing helper to validate (path) segments of a [`DomainName`], without
+/// consuming the input.
+struct DomainSegment<'a>(&'a str);
+
+impl<'a> TryFrom<&'a str> for DomainSegment<'a> {
+    type Error = ParseError;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        if value.is_empty() {
+            Err(ParseError::Empty)
+        } else if value.chars().count() > MAX_CHARS_PART {
+            Err(ParseError::TooLong { part: value.to_owned() })
+        } else if value.contains(|c: char| c.is_whitespace()) {
+            Err(ParseError::Whitespace {
+                input: value.to_string(),
+            })
+        } else {
+            Ok(Self(value))
+        }
+    }
+}
+
+/// Parsing helper to validate a [`DomainSegment`] is a valid [`Tld`], without
+/// consuming the input.
+struct DomainTld<'a>(&'a str);
+
+impl<'a> TryFrom<&'a str> for DomainTld<'a> {
+    type Error = ParseError;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        let DomainSegment(value) = DomainSegment::try_from(value)?;
+        if value.contains('/') {
+            Err(ParseError::ContainsSlash { part: value.to_owned() })
+        } else if is_address(value) {
+            Err(ParseError::Address { part: value.to_owned() })
+        } else {
+            Ok(Self(value))
+        }
+    }
 }

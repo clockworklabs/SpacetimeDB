@@ -115,7 +115,8 @@ impl ControlDb {
         if self.spacetime_dns(&domain).await?.is_some() {
             return Err(Error::RecordAlreadyExists(domain));
         }
-        match self.spacetime_lookup_tld(domain.tld()).await? {
+        let tld = domain.as_tld();
+        match self.spacetime_lookup_tld(&tld).await? {
             Some(owner) => {
                 if owner != owner_identity {
                     return Ok(InsertDomainResult::PermissionDenied { domain });
@@ -124,9 +125,7 @@ impl ControlDb {
             None => {
                 if try_register_tld {
                     // Let's try to automatically register this TLD for the identity
-                    let result = self
-                        .spacetime_register_tld(domain.tld().clone(), owner_identity)
-                        .await?;
+                    let result = self.spacetime_register_tld(tld, owner_identity).await?;
                     if let RegisterTldResult::Success { .. } = result {
                         // This identity now owns this TLD
                     } else {
