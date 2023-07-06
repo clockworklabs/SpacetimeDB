@@ -7,6 +7,7 @@ services:
       dockerfile: ./crates/standalone/Dockerfile
       args:
         CARGO_PROFILE: dev
+        SPACETIME_CARGO_PROFILE: dev
     volumes:
       - ./crates/standalone:/usr/src/app/crates/standalone
       - ./crates/core:/usr/src/app/crates/core

@@ -5,6 +5,8 @@ services:
     build:
       context: ./
       dockerfile: ./crates/standalone/Dockerfile
+      args:
+        SPACETIME_CARGO_PROFILE: release-fast
     volumes:
       - ./crates/standalone:/usr/src/app/crates/standalone
       - ./crates/core:/usr/src/app/crates/core

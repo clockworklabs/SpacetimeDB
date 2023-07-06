@@ -22,11 +22,12 @@ COPY --from=planner /usr/src/app/recipe.json .
 ENV CARGO_INCREMENTAL=0
 
 ARG CARGO_PROFILE=release
+ARG SPACETIME_CARGO_PROFILE=release
 
-RUN cargo chef cook -p spacetimedb-standalone --profile=${CARGO_PROFILE}
+RUN cargo chef cook -p spacetimedb-standalone --profile=${SPACETIME_CARGO_PROFILE}
 
 COPY . .
-RUN cargo build -p spacetimedb-standalone --profile=${CARGO_PROFILE} --locked
+RUN cargo build -p spacetimedb-standalone --profile=${SPACETIME_CARGO_PROFILE} --locked
 
 FROM builder as env-dev
 ENV SPACETIMEDB_LOG_CONFIG=/usr/src/app/crates/standalone/log.conf
@@ -35,7 +36,8 @@ ENV SPACETIMEDB_JWT_PRIV_KEY=/etc/spacetimedb/id_ecdsa
 ENV PATH="/usr/src/app/target/debug:${PATH}"
 
 FROM debian as env-release
-COPY --from=builder /usr/src/app/target/release/spacetimedb /usr/local/bin/
+ARG SPACETIME_CARGO_PROFILE=release
+COPY --from=builder /usr/src/app/target/${SPACETIME_CARGO_PROFILE}/spacetimedb /usr/local/bin/
 COPY --from=builder /usr/src/app/crates/standalone/log.conf /etc/spacetimedb/
 
 FROM env-${CARGO_PROFILE}
