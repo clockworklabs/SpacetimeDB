@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+set -x
+
 cd "$(dirname "$0")"
 
 SPACETIME_CARGO_PROFILE=release-fast
