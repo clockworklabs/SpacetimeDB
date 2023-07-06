@@ -472,13 +472,15 @@ fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
 /// Among other things, this derives `Serialize`, `Deserialize`,
 /// `SpacetimeType`, and `TableType` for our type.
 ///
-/// A table type must be a struct, whose fields may be annotated with the following attributes:
+/// A table type must be a `struct`, whose fields may be annotated with the following attributes:
 ///
 /// * `#[autoinc]`
 ///
-///    Creates a database sequence. When a row is inserted with the annotated field 
-///    set to `0` (zero), the sequence is incremented, and this value used instead. 
-///    Can only be used on numeric types, and may be combined with indexes.
+///    Creates a database sequence.
+///
+///    When a row is inserted with the annotated field set to `0` (zero),
+///    the sequence is incremented, and this value is used instead.
+///    Can only be used on numeric types and may be combined with indexes.
 ///
 /// * `#[unique]`
 ///
