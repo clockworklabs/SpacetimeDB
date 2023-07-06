@@ -25,6 +25,7 @@ CONTAINER_NAME=$(docker ps | grep "\-node-" | awk '{print $NF}')
 docker logs "$CONTAINER_NAME"
 
 rustup update
+rustup target add wasm32-unknown-unknown
 rustup component add clippy
 
 source "lib.include"
