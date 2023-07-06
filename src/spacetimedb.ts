@@ -119,7 +119,7 @@ class Table {
 
   applyOperations = (
     operations: { op: string; row_pk: string; row: any[] }[],
-    reducerEvent: ReducerEvent | undefined
+    reducerEvent?: ReducerEvent | undefined
   ) => {
     let dbOps: DBOp[] = [];
     for (let operation of operations) {
@@ -168,7 +168,11 @@ class Table {
     }
   };
 
-  update = (newDbOp, oldDbOp, reducerEvent: ReducerEvent | undefined) => {
+  update = (
+    newDbOp: any,
+    oldDbOp: any,
+    reducerEvent: ReducerEvent | undefined
+  ) => {
     const newInstance = newDbOp.instance;
     const oldInstance = oldDbOp.instance;
     this.instances.delete(oldDbOp.rowPk);
@@ -176,12 +180,12 @@ class Table {
     this.emitter.emit("update", oldInstance, newInstance, reducerEvent);
   };
 
-  insert = (dbOp, reducerEvent: ReducerEvent | undefined) => {
+  insert = (dbOp: any, reducerEvent: ReducerEvent | undefined) => {
     this.instances.set(dbOp.rowPk, dbOp.instance);
     this.emitter.emit("insert", dbOp.instance, reducerEvent);
   };
 
-  delete = (dbOp, reducerEvent: ReducerEvent | undefined) => {
+  delete = (dbOp: any, reducerEvent: ReducerEvent | undefined) => {
     this.instances.delete(dbOp.rowPk);
     this.emitter.emit("delete", dbOp.instance, reducerEvent);
   };
@@ -436,13 +440,13 @@ export class SpacetimeDBClient {
       this.emitter.emit("client_error", event);
     }, 5000); // 5000 ms = 5 seconds
 
-    this.ws.onclose = (event) => {
+    this.ws.onclose = (event: any) => {
       console.error("Closed: ", event);
       this.emitter.emit("disconnected");
       this.emitter.emit("client_error", event);
     };
 
-    this.ws.onerror = (event) => {
+    this.ws.onerror = (event: any) => {
       console.error("Error: ", event);
       this.emitter.emit("disconnected");
       this.emitter.emit("client_error", event);
