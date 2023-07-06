@@ -1,6 +1,6 @@
 use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson};
 use anyhow::Context;
-use clap::{Arg, ArgAction, ArgMatches};
+use clap::{Arg, ArgAction, ArgGroup, ArgMatches};
 use reqwest::RequestBuilder;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::sats::{satn, Typespace};
@@ -20,8 +20,21 @@ pub fn cli() -> clap::Command {
         )
         .arg(
             Arg::new("query")
+                .action(ArgAction::Set)
                 .required(true)
+                .conflicts_with("interactive")
                 .help("The SQL query to execute"),
+        )
+        .arg(Arg::new("interactive")
+                 .long("interactive")
+                 .action(ArgAction::SetTrue)
+                 .conflicts_with("query")
+                 .help("Runs an interactive command prompt for `SQL` expressions"),)
+        .group(
+            ArgGroup::new("mode")
+                .args(["interactive","query"])
+                .multiple(false)
+                .required(true)
         )
         .arg(
             Arg::new("as_identity")
@@ -97,12 +110,17 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), an
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let query = args.get_one::<String>("query").unwrap();
+    let interactive = args.get_one::<bool>("interactive").unwrap_or(&false);
 
-    let con = parse_req(config, args).await?;
-    let api = ClientApi::new(con);
+    if *interactive {
+        crate::repl::exec(config, args).await?;
+    } else {
+        let query = args.get_one::<String>("query").unwrap();
 
-    run_sql(api.sql(), query).await?;
+        let con = parse_req(config, args).await?;
+        let api = ClientApi::new(con);
 
+        run_sql(api.sql(), query).await?;
+    }
     Ok(())
 }

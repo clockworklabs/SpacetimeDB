@@ -1,7 +1,7 @@
 use crate::api::ClientApi;
 use crate::sql::{parse_req, run_sql};
 use crate::Config;
-use clap::{Arg, ArgAction, ArgMatches};
+use clap::ArgMatches;
 use colored::*;
 use std::io::Write;
 
@@ -39,31 +39,6 @@ sort by
 .clear
 ";
 
-pub fn cli() -> clap::Command {
-    clap::Command::new("repl").about("Runs an interactive command prompt.")
-    .arg(
-        Arg::new("database")
-            .required(true)
-            .help("The domain or address of the database you would like to query"),
-    )
-    .arg(
-        Arg::new("as_identity")
-            .long("as-identity")
-            .short('i')
-            .conflicts_with("anon_identity")
-            .help("The identity to use for querying the database")
-            .long_help("The identity to use for querying the database. If no identity is provided, the default one will be used."),
-    )
-    .arg(
-        Arg::new("anon_identity")
-            .long("anon-identity")
-            .short('a')
-            .conflicts_with("as_identity")
-            .action(ArgAction::SetTrue)
-            .help("If this flag is present, no identity will be provided when querying the database")
-    )
-}
-
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let con = parse_req(config, args).await?;
     let database = con.database.clone();
@@ -96,14 +71,13 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
                     print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
                     std::io::stdout().flush().ok();
                 }
-                sql => match run_sql(api.sql(), sql).await {
-                    Ok(()) => {
-                        rl.add_history_entry(line).ok();
-                    }
-                    Err(err) => {
+                sql => {
+                    rl.add_history_entry(sql).ok();
+
+                    if let Err(err) = run_sql(api.sql(), sql).await {
                         eprintln!("{}", err.to_string().red())
                     }
-                },
+                }
             },
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
                 println!("\n{}", "Aborted!".red());
