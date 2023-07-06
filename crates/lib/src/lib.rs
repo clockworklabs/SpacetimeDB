@@ -111,18 +111,18 @@ impl ReducerDef {
         bsatn::to_writer(writer, self).unwrap()
     }
 
-    pub fn serialize_args<'a>(ty: sats::TypeInSpace<'a, Self>, value: &'a ProductValue) -> impl ser::Serialize + 'a {
+    pub fn serialize_args<'a>(ty: sats::WithTypespace<'a, Self>, value: &'a ProductValue) -> impl ser::Serialize + 'a {
         ReducerArgsWithSchema { value, ty }
     }
 
     pub fn deserialize(
-        ty: sats::TypeInSpace<'_, Self>,
+        ty: sats::WithTypespace<'_, Self>,
     ) -> impl for<'de> de::DeserializeSeed<'de, Output = ProductValue> + '_ {
         ReducerDeserialize(ty)
     }
 }
 
-struct ReducerDeserialize<'a>(sats::TypeInSpace<'a, ReducerDef>);
+struct ReducerDeserialize<'a>(sats::WithTypespace<'a, ReducerDef>);
 
 impl<'de> de::DeserializeSeed<'de> for ReducerDeserialize<'_> {
     type Output = ProductValue;
@@ -156,7 +156,7 @@ impl<'de> de::ProductVisitor<'de> for ReducerDeserialize<'_> {
 
 struct ReducerArgsWithSchema<'a> {
     value: &'a ProductValue,
-    ty: sats::TypeInSpace<'a, ReducerDef>,
+    ty: sats::WithTypespace<'a, ReducerDef>,
 }
 
 impl ser::Serialize for ReducerArgsWithSchema<'_> {
@@ -254,30 +254,3 @@ impl TryFrom<u8> for ColumnIndexAttribute {
         }
     }
 }
-
-// use std::fmt;
-//
-// #[cfg(feature = "serde")]
-// use serde::de::Expected as SerdeExpected;
-// #[cfg(not(feature = "serde"))]
-// use Sized as SerdeExpected;
-// fn fmt_fn(f: impl Fn(&mut fmt::Formatter) -> fmt::Result) -> impl fmt::Display + fmt::Debug + SerdeExpected {
-//     struct FDisplay<F>(F);
-//     impl<F: Fn(&mut fmt::Formatter) -> fmt::Result> fmt::Display for FDisplay<F> {
-//         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//             (self.0)(f)
-//         }
-//     }
-//     impl<F: Fn(&mut fmt::Formatter) -> fmt::Result> fmt::Debug for FDisplay<F> {
-//         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//             (self.0)(f)
-//         }
-//     }
-//     #[cfg(feature = "serde")]
-//     impl<F: Fn(&mut fmt::Formatter) -> fmt::Result> serde::de::Expected for FDisplay<F> {
-//         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//             (self.0)(f)
-//         }
-//     }
-//     FDisplay(f)
-// }

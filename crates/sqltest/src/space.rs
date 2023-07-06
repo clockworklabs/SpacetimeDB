@@ -6,6 +6,7 @@ use spacetimedb::sql::compiler::compile_sql;
 use spacetimedb::sql::execute::execute_sql;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::MemTable;
+use spacetimedb_sats::meta_type::MetaType;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, BuiltinType, BuiltinValue};
 use sqllogictest::{AsyncDB, ColumnType, DBOutput};
@@ -23,7 +24,7 @@ impl ColumnType for Kind {
             'T' => Some(Kind(AlgebraicType::String)),
             'I' => Some(Kind(AlgebraicType::I64)),
             'R' => Some(Kind(AlgebraicType::F32)),
-            _ => Some(Kind(AlgebraicType::make_meta_type())),
+            _ => Some(Kind(AlgebraicType::meta_type())),
         }
     }
 

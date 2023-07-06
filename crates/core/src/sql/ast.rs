@@ -715,8 +715,8 @@ fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Resul
         DataType::Real => AlgebraicType::F32,
         DataType::Double => AlgebraicType::F64,
         DataType::Boolean => AlgebraicType::Bool,
-        DataType::Array(Some(ty)) => AlgebraicType::make_array_type(column_def_type(named, false, ty)?),
-        DataType::Enum(values) => AlgebraicType::make_simple_enum(values.iter().map(|x| x.as_str())),
+        DataType::Array(Some(ty)) => AlgebraicType::array(column_def_type(named, false, ty)?),
+        DataType::Enum(values) => AlgebraicType::simple_enum(values.iter().map(|x| x.as_str())),
         x => {
             return Err(PlanError::Unsupported {
                 feature: format!("Column {} of type {}", named, x),
@@ -724,11 +724,7 @@ fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Resul
         }
     };
 
-    Ok(if is_null {
-        AlgebraicType::make_option_type(ty)
-    } else {
-        ty
-    })
+    Ok(if is_null { AlgebraicType::option(ty) } else { ty })
 }
 
 fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, ColumnIndexAttribute), PlanError> {

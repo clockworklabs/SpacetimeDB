@@ -1,13 +1,13 @@
 use spacetimedb_lib::de::serde::SerdeDeserializer;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductTypeElement, ProductValue, SumType};
-use spacetimedb_sats::{satn::Satn, ArrayType, BuiltinType::*, SumTypeVariant, TypeInSpace, Typespace};
+use spacetimedb_sats::{satn::Satn, BuiltinType::*, SumTypeVariant, Typespace, WithTypespace};
 
 macro_rules! de_json_snapshot {
     ($schema:expr, $json:expr) => {
         let (schema, json) = (&$schema, &$json);
         let value = de_json(schema, json).unwrap();
-        let value = TypeInSpace::new(&EMPTY_TYPESPACE, schema)
+        let value = WithTypespace::new(&EMPTY_TYPESPACE, schema)
             .with_value(&value)
             .to_satn_pretty();
         let debug_expr = format!("de_json({})", json.trim());
@@ -18,9 +18,9 @@ macro_rules! de_json_snapshot {
 #[test]
 fn test_json_mappings() {
     let schema = tuple([
-        ("foo", AlgebraicType::Builtin(U32)),
+        ("foo", AlgebraicType::U32),
         ("bar", AlgebraicType::bytes()),
-        ("baz", vec(AlgebraicType::Builtin(String))),
+        ("baz", AlgebraicType::array(AlgebraicType::String)),
         (
             "quux",
             AlgebraicType::Sum(enumm([
@@ -28,10 +28,7 @@ fn test_json_mappings() {
                 ("Unit", AlgebraicType::UNIT_TYPE),
             ])),
         ),
-        (
-            "and_peggy",
-            AlgebraicType::make_option_type(AlgebraicType::Builtin(F64)),
-        ),
+        ("and_peggy", AlgebraicType::option(AlgebraicType::Builtin(F64))),
     ]);
     let data = r#"
 {
@@ -59,10 +56,7 @@ fn tuple<'a>(elems: impl IntoIterator<Item = (&'a str, AlgebraicType)>) -> Produ
     ProductType {
         elements: elems
             .into_iter()
-            .map(|(name, algebraic_type)| ProductTypeElement {
-                name: Some(name.into()),
-                algebraic_type,
-            })
+            .map(|(name, ty)| ProductTypeElement::new_named(ty, name))
             .collect(),
     }
 }
@@ -70,22 +64,15 @@ fn enumm<'a>(elems: impl IntoIterator<Item = (&'a str, AlgebraicType)>) -> SumTy
     SumType {
         variants: elems
             .into_iter()
-            .map(|(name, algebraic_type)| SumTypeVariant {
-                name: Some(name.into()),
-                algebraic_type,
-            })
+            .map(|(name, ty)| SumTypeVariant::new_named(ty, name))
             .collect(),
     }
 }
 
-fn vec(ty: AlgebraicType) -> AlgebraicType {
-    AlgebraicType::Builtin(Array(ArrayType { elem_ty: Box::new(ty) }))
-}
-
 static EMPTY_TYPESPACE: Typespace = Typespace::new(Vec::new());
 
-fn in_space<T>(x: &T) -> TypeInSpace<'_, T> {
-    TypeInSpace::new(&EMPTY_TYPESPACE, x)
+fn in_space<T>(x: &T) -> WithTypespace<'_, T> {
+    WithTypespace::new(&EMPTY_TYPESPACE, x)
 }
 
 fn de_json(schema: &ProductType, data: &str) -> serde_json::Result<ProductValue> {

@@ -1,3 +1,5 @@
+use super::util::fmt_fn;
+
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
@@ -225,16 +227,6 @@ fn typescript_filename(ctx: &GenCtx, typeref: AlgebraicTypeRef) -> String {
         .as_deref()
         .expect("tuples should have names")
         .to_case(Case::Snake)
-}
-
-fn fmt_fn(f: impl Fn(&mut fmt::Formatter) -> fmt::Result) -> impl fmt::Display {
-    struct FDisplay<F>(F);
-    impl<F: Fn(&mut fmt::Formatter) -> fmt::Result> fmt::Display for FDisplay<F> {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            (self.0)(f)
-        }
-    }
-    FDisplay(f)
 }
 
 macro_rules! indent_scope {

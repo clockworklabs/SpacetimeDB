@@ -8,7 +8,7 @@ use crate::table::ColumnDef;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, TypeInSpace, Typespace};
+use spacetimedb_sats::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, Typespace, WithTypespace};
 
 impl ColumnDef {
     pub fn name(&self) -> FieldOnly {
@@ -147,7 +147,7 @@ impl fmt::Display for FieldExpr {
             FieldExpr::Value(x) => {
                 let ty = x.type_of();
                 let ts = Typespace::new(vec![]);
-                write!(f, "{}", TypeInSpace::new(&ts, &ty).with_value(x).to_satn())
+                write!(f, "{}", WithTypespace::new(&ts, &ty).with_value(x).to_satn())
             }
         }
     }

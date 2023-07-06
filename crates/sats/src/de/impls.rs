@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use crate::builtin_value::{F32, F64};
 use crate::{
     AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, BuiltinType, BuiltinValue, MapType, MapValue, ProductType,
-    ProductTypeElement, ProductValue, SumType, SumValue, TypeInSpace,
+    ProductTypeElement, ProductValue, SumType, SumValue, WithTypespace,
 };
 
 use super::{
@@ -252,7 +252,7 @@ impl<'de, T: Deserialize<'de>> VariantVisitor for OptionVisitor<T> {
     }
 }
 
-impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, AlgebraicType> {
+impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
     type Output = AlgebraicValue;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
@@ -265,7 +265,7 @@ impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, AlgebraicType> {
     }
 }
 
-impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, BuiltinType> {
+impl<'de> DeserializeSeed<'de> for WithTypespace<'_, BuiltinType> {
     type Output = BuiltinValue;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
@@ -294,7 +294,7 @@ impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, BuiltinType> {
     }
 }
 
-impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, SumType> {
+impl<'de> DeserializeSeed<'de> for WithTypespace<'_, SumType> {
     type Output = SumValue;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
@@ -302,7 +302,7 @@ impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, SumType> {
     }
 }
 
-impl<'de> SumVisitor<'de> for TypeInSpace<'_, SumType> {
+impl<'de> SumVisitor<'de> for WithTypespace<'_, SumType> {
     type Output = SumValue;
 
     fn sum_name(&self) -> Option<&str> {
@@ -319,11 +319,11 @@ impl<'de> SumVisitor<'de> for TypeInSpace<'_, SumType> {
         Ok(SumValue { tag, value })
     }
 }
-impl VariantVisitor for TypeInSpace<'_, SumType> {
+impl VariantVisitor for WithTypespace<'_, SumType> {
     type Output = u8;
 
     fn variant_names(&self, names: &mut dyn super::ValidNames) {
-        names.extend(self.ty().variants.iter().filter_map(|v| v.name.as_deref()))
+        names.extend(self.ty().variants.iter().filter_map(|v| v.name()))
     }
 
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
@@ -338,13 +338,13 @@ impl VariantVisitor for TypeInSpace<'_, SumType> {
         self.ty()
             .variants
             .iter()
-            .position(|var| var.name.as_deref() == Some(name))
+            .position(|var| var.has_name(name))
             .map(|pos| pos as u8)
             .ok_or_else(|| E::unknown_variant_name(name, &self))
     }
 }
 
-impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, ProductType> {
+impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ProductType> {
     type Output = ProductValue;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
@@ -352,7 +352,7 @@ impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, ProductType> {
     }
 }
 
-impl<'de> ProductVisitor<'de> for TypeInSpace<'_, ProductType> {
+impl<'de> ProductVisitor<'de> for WithTypespace<'_, ProductType> {
     type Output = ProductValue;
 
     fn product_name(&self) -> Option<&str> {
@@ -371,7 +371,7 @@ impl<'de> ProductVisitor<'de> for TypeInSpace<'_, ProductType> {
     }
 }
 
-impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, ArrayType> {
+impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
     type Output = ArrayValue;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
@@ -441,7 +441,7 @@ impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, ArrayType> {
     }
 }
 
-impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, MapType> {
+impl<'de> DeserializeSeed<'de> for WithTypespace<'_, MapType> {
     type Output = MapValue;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
@@ -481,7 +481,7 @@ impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, MapType> {
 // }
 
 pub fn visit_seq_product<'de, A: SeqProductAccess<'de>>(
-    elems: TypeInSpace<[ProductTypeElement]>,
+    elems: WithTypespace<[ProductTypeElement]>,
     visitor: &impl ProductVisitor<'de>,
     mut tup: A,
 ) -> Result<ProductValue, A::Error> {
@@ -494,7 +494,7 @@ pub fn visit_seq_product<'de, A: SeqProductAccess<'de>>(
 }
 
 pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
-    elems_tys: TypeInSpace<[ProductTypeElement]>,
+    elems_tys: WithTypespace<[ProductTypeElement]>,
     visitor: &impl ProductVisitor<'de>,
     mut tup: A,
 ) -> Result<ProductValue, A::Error> {
@@ -506,13 +506,13 @@ pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
     while n < elems.len() {
         let tag = tup.get_field_ident(TupleNameVisitor { elems, kind })?.ok_or_else(|| {
             let missing = elements.iter().position(|field| field.is_none()).unwrap();
-            let field_name = elems[missing].name.as_deref();
+            let field_name = elems[missing].name();
             Error::missing_field(missing, field_name, visitor)
         })?;
         let element = &elems[tag];
         let slot = &mut elements[tag];
         if slot.is_some() {
-            return Err(Error::duplicate_field(tag, element.name.as_deref(), visitor));
+            return Err(Error::duplicate_field(tag, element.name(), visitor));
         }
         *slot = Some(tup.get_field_value_seed(elems_tys.with(&element.algebraic_type))?);
         n += 1;
@@ -532,7 +532,7 @@ impl<'de> FieldNameVisitor<'de> for TupleNameVisitor<'_> {
     type Output = usize;
 
     fn field_names(&self, names: &mut dyn super::ValidNames) {
-        names.extend(self.elems.iter().filter_map(|f| f.name.as_deref()))
+        names.extend(self.elems.iter().filter_map(|f| f.name()))
     }
     fn kind(&self) -> ProductKind {
         self.kind
@@ -541,7 +541,7 @@ impl<'de> FieldNameVisitor<'de> for TupleNameVisitor<'_> {
     fn visit<E: Error>(self, name: &str) -> Result<Self::Output, E> {
         self.elems
             .iter()
-            .position(|f| f.name.as_deref() == Some(name))
+            .position(|f| f.has_name(name))
             .ok_or_else(|| Error::unknown_field_name(name, &self))
     }
 }

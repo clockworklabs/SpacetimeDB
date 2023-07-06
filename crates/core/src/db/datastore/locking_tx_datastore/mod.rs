@@ -2028,7 +2028,7 @@ mod tests {
 
                 StColumnRow { table_id: 1, col_id: 0, col_name: "table_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
                 StColumnRow { table_id: 1, col_id: 1, col_name: "col_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
-                StColumnRow { table_id: 1, col_id: 2, col_name: "col_type".to_string(), col_type: AlgebraicType::make_array_type(AlgebraicType::U8), is_autoinc: false },
+                StColumnRow { table_id: 1, col_id: 2, col_name: "col_type".to_string(), col_type: AlgebraicType::array(AlgebraicType::U8), is_autoinc: false },
                 StColumnRow { table_id: 1, col_id: 3, col_name: "col_name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
                 StColumnRow { table_id: 1, col_id: 4, col_name: "is_autoinc".to_string(), col_type: AlgebraicType::Bool, is_autoinc: false },
 

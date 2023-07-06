@@ -4,6 +4,7 @@ use std::ops::{Add, Sub};
 use std::time::Duration;
 
 use spacetimedb_lib::de::Deserialize;
+use spacetimedb_lib::sats::impl_st;
 use spacetimedb_lib::ser::Serialize;
 
 scoped_tls::scoped_thread_local! {
@@ -90,11 +91,7 @@ impl Sub<Duration> for Timestamp {
     }
 }
 
-impl crate::SpacetimeType for Timestamp {
-    fn make_type<S: spacetimedb_lib::sats::typespace::TypespaceBuilder>(_ts: &mut S) -> spacetimedb_lib::AlgebraicType {
-        spacetimedb_lib::AlgebraicType::U64
-    }
-}
+impl_st!([] Timestamp, _ts => spacetimedb_lib::AlgebraicType::U64);
 
 impl<'de> Deserialize<'de> for Timestamp {
     fn deserialize<D: spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {

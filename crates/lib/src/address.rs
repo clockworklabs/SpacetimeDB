@@ -2,6 +2,7 @@ use std::net::Ipv6Addr;
 
 use anyhow::Context as _;
 use hex::FromHex as _;
+use sats::impl_st;
 
 use crate::sats::{self, de, ser};
 
@@ -81,8 +82,4 @@ impl<'de> serde::Deserialize<'de> for Address {
     }
 }
 
-impl sats::SpacetimeType for Address {
-    fn make_type<S: sats::typespace::TypespaceBuilder>(_typespace: &mut S) -> sats::AlgebraicType {
-        crate::AlgebraicType::U128
-    }
-}
+impl_st!([] Address, _ts => sats::AlgebraicType::U128);

@@ -21,7 +21,7 @@ pub fn to_vec<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, ser::BsatnErr
     Ok(v)
 }
 
-pub fn from_reader<'de, R: BufReader<'de>, T: Deserialize<'de>>(r: &mut R) -> Result<T, DecodeError> {
+pub fn from_reader<'de, T: Deserialize<'de>>(r: &mut impl BufReader<'de>) -> Result<T, DecodeError> {
     T::deserialize(Deserializer::new(r))
 }
 
@@ -49,7 +49,7 @@ macro_rules! codec_funcs {
                 algebraic_type: &<Self as crate::Value>::Type,
                 bytes: &mut impl BufReader<'a>,
             ) -> Result<Self, DecodeError> {
-                crate::TypeInSpace::new(&EMPTY_TYPESPACE, algebraic_type).deserialize(Deserializer::new(bytes))
+                crate::WithTypespace::new(&EMPTY_TYPESPACE, algebraic_type).deserialize(Deserializer::new(bytes))
             }
 
             pub fn encode(&self, bytes: &mut impl BufWriter) {

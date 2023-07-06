@@ -131,9 +131,7 @@ impl ser::SerializeMap for SerializeMapValue {
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::Builtin(BuiltinValue::Map {
-            val: self.v.into_iter().collect(),
-        }))
+        Ok(AlgebraicValue::map(self.v.into_iter().collect()))
     }
 }
 

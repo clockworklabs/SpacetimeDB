@@ -1,3 +1,5 @@
+use super::util::fmt_fn;
+
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
@@ -257,16 +259,6 @@ fn convert_type<'a>(
 // can maybe do something fancy with this in the future
 fn csharp_typename(ctx: &GenCtx, typeref: AlgebraicTypeRef) -> &str {
     ctx.names[typeref.idx()].as_deref().expect("tuples should have names")
-}
-
-fn fmt_fn(f: impl Fn(&mut fmt::Formatter) -> fmt::Result) -> impl fmt::Display {
-    struct FDisplay<F>(F);
-    impl<F: Fn(&mut fmt::Formatter) -> fmt::Result> fmt::Display for FDisplay<F> {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            (self.0)(f)
-        }
-    }
-    FDisplay(f)
 }
 
 fn is_option_type(ty: &SumType) -> bool {

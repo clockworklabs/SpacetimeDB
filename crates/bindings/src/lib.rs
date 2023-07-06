@@ -11,6 +11,7 @@ mod timestamp;
 
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
+use spacetimedb_lib::sats::impl_st;
 pub use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::{bsatn, ColumnIndexAttribute, IndexType, PrimaryKey, ProductType, ProductValue};
 use std::cell::RefCell;
@@ -701,11 +702,8 @@ impl<'de, R> Deserialize<'de> for ScheduleToken<R> {
         u64::deserialize(deserializer).map(Self::new)
     }
 }
-impl<R> SpacetimeType for ScheduleToken<R> {
-    fn make_type<S: spacetimedb_lib::sats::typespace::TypespaceBuilder>(_ts: &mut S) -> spacetimedb_lib::AlgebraicType {
-        spacetimedb_lib::AlgebraicType::U64
-    }
-}
+
+impl_st!([R] ScheduleToken<R>, _ts => spacetimedb_lib::AlgebraicType::U64);
 
 impl<R> ScheduleToken<R> {
     /// Wrap the ID under which a reducer is scheduled in a [`ScheduleToken`].

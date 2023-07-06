@@ -241,11 +241,7 @@ impl Serialize for ValueWithType<'_, SumValue> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let &SumValue { tag, ref value } = self.value();
         let var_ty = &self.ty().variants[tag as usize];
-        serializer.serialize_variant(
-            tag,
-            var_ty.name.as_deref(),
-            &self.with(&var_ty.algebraic_type, &**value),
-        )
+        serializer.serialize_variant(tag, var_ty.name(), &self.with(&var_ty.algebraic_type, &**value))
     }
 }
 
@@ -255,7 +251,7 @@ impl Serialize for ValueWithType<'_, ProductValue> {
         assert_eq!(val.len(), self.ty().elements.len());
         let mut prod = serializer.serialize_named_product(val.len())?;
         for (val, el_ty) in val.iter().zip(&self.ty().elements) {
-            prod.serialize_element(el_ty.name.as_deref(), &self.with(&el_ty.algebraic_type, val))?
+            prod.serialize_element(el_ty.name(), &self.with(&el_ty.algebraic_type, val))?
         }
         prod.end()
     }
@@ -266,20 +262,20 @@ impl Serialize for ValueWithType<'_, ArrayValue> {
         match (self.value(), &*self.ty().elem_ty) {
             (ArrayValue::Sum(v), AlgebraicType::Sum(ty)) => self.with(ty, v).serialize(serializer),
             (ArrayValue::Product(v), AlgebraicType::Product(ty)) => self.with(ty, v).serialize(serializer),
-            (ArrayValue::Bool(v), &AlgebraicType::Bool) => v.serialize(serializer),
-            (ArrayValue::I8(v), &AlgebraicType::I8) => v.serialize(serializer),
-            (ArrayValue::U8(v), &AlgebraicType::U8) => v.serialize(serializer),
-            (ArrayValue::I16(v), &AlgebraicType::I16) => v.serialize(serializer),
-            (ArrayValue::U16(v), &AlgebraicType::U16) => v.serialize(serializer),
-            (ArrayValue::I32(v), &AlgebraicType::I32) => v.serialize(serializer),
-            (ArrayValue::U32(v), &AlgebraicType::U32) => v.serialize(serializer),
-            (ArrayValue::I64(v), &AlgebraicType::I64) => v.serialize(serializer),
-            (ArrayValue::U64(v), &AlgebraicType::U64) => v.serialize(serializer),
-            (ArrayValue::I128(v), &AlgebraicType::I128) => v.serialize(serializer),
-            (ArrayValue::U128(v), &AlgebraicType::U128) => v.serialize(serializer),
-            (ArrayValue::F32(v), &AlgebraicType::F32) => v.serialize(serializer),
-            (ArrayValue::F64(v), &AlgebraicType::F64) => v.serialize(serializer),
-            (ArrayValue::String(v), &AlgebraicType::String) => v.serialize(serializer),
+            (ArrayValue::Bool(v), &AlgebraicType::Builtin(BuiltinType::Bool)) => v.serialize(serializer),
+            (ArrayValue::I8(v), &AlgebraicType::Builtin(BuiltinType::I8)) => v.serialize(serializer),
+            (ArrayValue::U8(v), &AlgebraicType::Builtin(BuiltinType::U8)) => v.serialize(serializer),
+            (ArrayValue::I16(v), &AlgebraicType::Builtin(BuiltinType::I16)) => v.serialize(serializer),
+            (ArrayValue::U16(v), &AlgebraicType::Builtin(BuiltinType::U16)) => v.serialize(serializer),
+            (ArrayValue::I32(v), &AlgebraicType::Builtin(BuiltinType::I32)) => v.serialize(serializer),
+            (ArrayValue::U32(v), &AlgebraicType::Builtin(BuiltinType::U32)) => v.serialize(serializer),
+            (ArrayValue::I64(v), &AlgebraicType::Builtin(BuiltinType::I64)) => v.serialize(serializer),
+            (ArrayValue::U64(v), &AlgebraicType::Builtin(BuiltinType::U64)) => v.serialize(serializer),
+            (ArrayValue::I128(v), &AlgebraicType::Builtin(BuiltinType::I128)) => v.serialize(serializer),
+            (ArrayValue::U128(v), &AlgebraicType::Builtin(BuiltinType::U128)) => v.serialize(serializer),
+            (ArrayValue::F32(v), &AlgebraicType::Builtin(BuiltinType::F32)) => v.serialize(serializer),
+            (ArrayValue::F64(v), &AlgebraicType::Builtin(BuiltinType::F64)) => v.serialize(serializer),
+            (ArrayValue::String(v), &AlgebraicType::Builtin(BuiltinType::String)) => v.serialize(serializer),
             (ArrayValue::Array(v), AlgebraicType::Builtin(BuiltinType::Array(ty))) => {
                 self.with(ty, v).serialize(serializer)
             }

@@ -1,10 +1,33 @@
 use crate::relation::{FieldName, Header};
 use crate::{buffer, AlgebraicType};
-use spacetimedb_sats::algebraic_type::TypeError;
 use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::AlgebraicValue;
 use std::fmt;
 use std::string::FromUtf8Error;
 use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum TypeError {
+    #[error("Arrays must be homogeneous. It expects to be `{{expect.to_satns()}}` but `{{value.to_satns()}}` is of type `{{found.to_satns()}}`")]
+    Array {
+        expect: AlgebraicType,
+        found: AlgebraicType,
+        value: AlgebraicValue,
+    },
+    #[error("Arrays must define a type for the elements")]
+    ArrayEmpty,
+    #[error("Maps must be homogeneous. It expects to be `{{key_expect.to_satns()}}:{{value_expect.to_satns()}}` but `{{key.to_satns()}}::{{value.to_satns()}}` is of type `{{key_found.to_satns()}}:{{value_found.to_satns()}}`")]
+    Map {
+        key_expect: AlgebraicType,
+        value_expect: AlgebraicType,
+        key_found: AlgebraicType,
+        value_found: AlgebraicType,
+        key: AlgebraicValue,
+        value: AlgebraicValue,
+    },
+    #[error("Maps must define a type for both key & value")]
+    MapEmpty,
+}
 
 #[derive(Error, Debug, Clone)]
 pub enum DecodeError {

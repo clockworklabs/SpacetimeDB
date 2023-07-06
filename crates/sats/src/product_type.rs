@@ -2,30 +2,41 @@ pub mod satn;
 
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
+use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ArrayType, BuiltinType, ProductTypeElement};
+use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement};
 
+/// A structural product type  of the factors given by `elements`.
+///
+/// This is also known as `struct` and `tuple` in many languages,
+/// but note that unlike most languages, sums in SATs are *structural* and not nominal.
+/// The name "product" comes from category theory.
+///
+/// See also: https://ncatlab.org/nlab/show/product+type.
+///
+/// These structures are known as product types because the number of possible values in product
+/// ```ignore
+/// { N_0: T_0, N_1: T_1, ..., N_n: T_n }
+/// ```
+/// is:
+/// ```ignore
+/// Π (i ∈ 0..n). values(T_i)
+/// ```
+/// so for example, `values({ A: U64, B: Bool }) = values(U64) * values(Bool)`.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[sats(crate = crate)]
 pub struct ProductType {
+    /// The factors of the product type.
+    ///
+    /// These factors can either be named or unnamed.
+    /// When all the factors are unnamed, we can regard this as a plain tuple type.
     pub elements: Vec<ProductTypeElement>,
 }
 
 impl ProductType {
-    pub fn new(elements: Vec<ProductTypeElement>) -> Self {
+    /// Returns a product type with the given `elements` as its factors.
+    pub const fn new(elements: Vec<ProductTypeElement>) -> Self {
         Self { elements }
-    }
-
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            elements: Vec::with_capacity(capacity),
-        }
-    }
-}
-
-impl From<AlgebraicType> for ProductTypeElement {
-    fn from(value: AlgebraicType) -> Self {
-        ProductTypeElement::new(value, None)
     }
 }
 
@@ -50,29 +61,16 @@ impl<'a, I: Into<AlgebraicType>> FromIterator<(Option<&'a str>, I)> for ProductT
     }
 }
 
-impl ProductType {
-    pub fn make_meta_type() -> AlgebraicType {
-        let string = AlgebraicType::Builtin(BuiltinType::String);
-        let option = AlgebraicType::make_option_type(string);
-        let element_type = AlgebraicType::Product(ProductType::new(vec![
-            ProductTypeElement {
-                algebraic_type: option,
-                name: Some("name".into()),
-            },
-            ProductTypeElement {
-                algebraic_type: AlgebraicType::Ref(AlgebraicTypeRef(0)),
-                name: Some("algebraic_type".into()),
-            },
-        ]));
-        let array = AlgebraicType::Builtin(BuiltinType::Array(ArrayType {
-            elem_ty: Box::new(element_type),
-        }));
-        AlgebraicType::Product(ProductType::new(vec![ProductTypeElement {
-            algebraic_type: array,
-            name: Some("elements".into()),
-        }]))
+impl MetaType for ProductType {
+    fn meta_type() -> AlgebraicType {
+        AlgebraicType::product(vec![ProductTypeElement::new_named(
+            AlgebraicType::array(ProductTypeElement::meta_type()),
+            "elements",
+        )])
     }
+}
 
+impl ProductType {
     pub fn as_value(&self) -> AlgebraicValue {
         self.serialize(ValueSerializer).unwrap_or_else(|x| match x {})
     }

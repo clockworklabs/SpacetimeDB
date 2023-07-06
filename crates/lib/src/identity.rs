@@ -1,5 +1,7 @@
 use std::fmt;
 
+use sats::impl_st;
+
 use crate::sats::{self, de, ser};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -37,11 +39,7 @@ impl Identity {
     }
 }
 
-impl sats::SpacetimeType for Identity {
-    fn make_type<S: sats::typespace::TypespaceBuilder>(_ts: &mut S) -> crate::AlgebraicType {
-        crate::AlgebraicType::bytes()
-    }
-}
+impl_st!([] Identity, _ts => sats::AlgebraicType::bytes());
 
 impl ser::Serialize for Identity {
     fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
