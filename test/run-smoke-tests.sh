@@ -17,20 +17,18 @@ export RESET_SPACETIME_CONFIG
 export SPACETIME_DIR="$PWD/.."
 RUN_PARALLEL=false
 
-if [ "$(docker ps | grep "\-node-" -c)" != 1 ] ; then
+if [ "$(docker ps | grep "node" -c)" != 1 ] ; then
 	echo "Docker container not found, is SpacetimeDB running?"
 	exit 1
 fi
 
 export SPACETIME_SKIP_CLIPPY=1
-CONTAINER_NAME=$(docker ps | grep "\-node-" | awk '{print $NF}')
+CONTAINER_NAME=$(docker ps | grep "node" | awk '{print $NF}')
 docker logs "$CONTAINER_NAME"
 
 rustup update
 rustup target add wasm32-unknown-unknown
 rustup component add clippy
-rustup target list --installed
-exit 1
 
 source "lib.include"
 cp ./config.toml "$RESET_SPACETIME_CONFIG"
@@ -60,6 +58,10 @@ else
 	sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${RESET_PROJECT_PATH}/Cargo.toml"
 fi
 
+PREVIOUS_WD=$(pwd)
+cd "$RESET_PROJECT_PATH"
+cargo clean
+cd "$PREVIOUS_WD"
 spacetime build "$RESET_PROJECT_PATH" -s -d
 
 execute_procedural_test() {
