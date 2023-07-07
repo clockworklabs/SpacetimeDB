@@ -123,12 +123,17 @@ pub async fn load_module(name: &str) -> ModuleHandle {
     let address = env.create_address().await.unwrap();
     let program_bytes = read_module(name);
 
-    env.publish_database(&identity, spacetimedb_client_api::DatabaseDef {
-        address,
-        program_bytes,
-        num_replicas: 1,
-        trace_log: false 
-    }).await.unwrap();
+    env.publish_database(
+        &identity,
+        spacetimedb_client_api::DatabaseDef {
+            address,
+            program_bytes,
+            num_replicas: 1,
+            trace_log: false,
+        },
+    )
+    .await
+    .unwrap();
 
     let database = env.get_database_by_address(&address).await.unwrap().unwrap();
     let instance = env.get_leader_database_instance_by_database(database.id).await.unwrap();

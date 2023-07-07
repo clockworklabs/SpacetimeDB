@@ -58,9 +58,7 @@ async fn test_domain() -> anyhow::Result<()> {
     assert!(matches!(res, InsertDomainResult::Success { .. }));
 
     // Check Alice owns TLD
-    let unauthorized = cdb
-        .spacetime_insert_domain(&addr, domain.clone(), *BOB, true)
-        .await?;
+    let unauthorized = cdb.spacetime_insert_domain(&addr, domain.clone(), *BOB, true).await?;
     assert!(matches!(unauthorized, InsertDomainResult::PermissionDenied { .. }));
 
     let already_registered = cdb.spacetime_insert_domain(&addr, domain.clone(), *ALICE, true).await;
