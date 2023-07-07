@@ -6,7 +6,7 @@ use std::process::Command;
 use spacetimedb::address::Address;
 use spacetimedb::client::{ClientActorId, ClientConnection, Protocol};
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb_client_api::{ControlStateDelegate, WorkerNodeDelegate};
+use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
 use tokio::runtime::{Builder, Runtime};
 
 fn start_runtime() -> Runtime {
@@ -135,8 +135,8 @@ pub async fn load_module(name: &str) -> ModuleHandle {
     .await
     .unwrap();
 
-    let database = env.get_database_by_address(&address).await.unwrap().unwrap();
-    let instance = env.get_leader_database_instance_by_database(database.id).await.unwrap();
+    let database = env.get_database_by_address(&address).unwrap().unwrap();
+    let instance = env.get_leader_database_instance_by_database(database.id).unwrap();
 
     let client_id = ClientActorId {
         identity,

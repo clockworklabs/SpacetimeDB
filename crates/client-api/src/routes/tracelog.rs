@@ -1,11 +1,8 @@
-use std::sync::Arc;
-
 use axum::body::Bytes;
-use axum::extract::{FromRef, Path, State};
+use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use http::StatusCode;
 use serde::Deserialize;
-use spacetimedb_lib::Identity;
 use tempdir::TempDir;
 
 use spacetimedb::address::Address;
@@ -14,23 +11,23 @@ use spacetimedb::hash::hash_bytes;
 use spacetimedb::host::instance_env::InstanceEnv;
 use spacetimedb::host::scheduler::Scheduler;
 use spacetimedb::host::tracelog::replay::replay_report;
+use spacetimedb_lib::Identity;
 
-use crate::{log_and_500, ControlNodeDelegate, WorkerCtx};
+use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 #[derive(Deserialize)]
 pub struct GetTraceParams {
     address: Address,
 }
-pub async fn get_tracelog(
-    State(ctx): State<Arc<dyn WorkerCtx>>,
+pub async fn get_tracelog<S: ControlStateDelegate + NodeDelegate>(
+    State(ctx): State<S>,
     Path(GetTraceParams { address }): Path<GetTraceParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let database = ctx
         .get_database_by_address(&address)
-        .await
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
-    let database_instance = ctx.get_leader_database_instance_by_database(database.id).await;
+    let database_instance = ctx.get_leader_database_instance_by_database(database.id);
     let instance_id = database_instance.unwrap().id;
 
     let host = ctx.host_controller();
@@ -48,16 +45,15 @@ pub async fn get_tracelog(
 pub struct StopTraceParams {
     address: Address,
 }
-pub async fn stop_tracelog(
-    State(ctx): State<Arc<dyn WorkerCtx>>,
+pub async fn stop_tracelog<S: ControlStateDelegate + NodeDelegate>(
+    State(ctx): State<S>,
     Path(StopTraceParams { address }): Path<StopTraceParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let database = ctx
         .get_database_by_address(&address)
-        .await
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
-    let database_instance = ctx.get_leader_database_instance_by_database(database.id).await;
+    let database_instance = ctx.get_leader_database_instance_by_database(database.id);
     let instance_id = database_instance.unwrap().id;
 
     let host = ctx.host_controller();
@@ -92,12 +88,11 @@ pub async fn perform_tracelog_replay(body: Bytes) -> axum::response::Result<impl
 
 pub fn router<S>() -> axum::Router<S>
 where
-    S: ControlNodeDelegate + Clone + 'static,
-    Arc<dyn WorkerCtx>: FromRef<S>,
+    S: ControlStateDelegate + NodeDelegate + Clone + 'static,
 {
     use axum::routing::{get, post};
     axum::Router::new()
-        .route("/database/:address", get(get_tracelog))
-        .route("/database/:address/stop", post(stop_tracelog))
+        .route("/database/:address", get(get_tracelog::<S>))
+        .route("/database/:address/stop", post(stop_tracelog::<S>))
         .route("/replay", post(perform_tracelog_replay))
 }

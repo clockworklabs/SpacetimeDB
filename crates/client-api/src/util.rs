@@ -99,7 +99,7 @@ impl NameOrAddress {
             NameOrAddress::Address(addr) => Ok((*addr, None)),
             NameOrAddress::Name(name) => {
                 let domain = name.parse().map_err(DomainParsingRejection)?;
-                match ctx.lookup_address(&domain).await.map_err(log_and_500)? {
+                match ctx.lookup_address(&domain).map_err(log_and_500)? {
                     Some(addr) => Ok((addr, Some(domain))),
                     None => Err(domain),
                 }

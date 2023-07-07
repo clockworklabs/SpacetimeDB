@@ -1,14 +1,13 @@
-use std::sync::Arc;
-
-use axum::extract::{FromRef, Path, Query, State};
+use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
+
 use spacetimedb::auth::identity::encode_token_with_expiry;
 use spacetimedb_lib::Identity;
 
 use crate::auth::{SpacetimeAuth, SpacetimeAuthHeader};
-use crate::{log_and_500, ControlCtx, ControlNodeDelegate};
+use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 #[derive(Deserialize)]
 pub struct CreateIdentityQueryParams {
@@ -21,13 +20,15 @@ pub struct CreateIdentityResponse {
     token: String,
 }
 
-pub async fn create_identity(
-    State(ctx): State<Arc<dyn ControlCtx>>,
+pub async fn create_identity<S: ControlStateDelegate + NodeDelegate>(
+    State(ctx): State<S>,
     Query(CreateIdentityQueryParams { email }): Query<CreateIdentityQueryParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let auth = SpacetimeAuth::alloc(&*ctx).await?;
+    let auth = SpacetimeAuth::alloc(&ctx).await?;
     if let Some(email) = email {
-        ctx.add_email(&auth.identity, email.as_str()).await.unwrap();
+        ctx.add_email(&auth.identity, email.as_str())
+            .await
+            .map_err(log_and_500)?;
     }
 
     let identity_response = CreateIdentityResponse {
@@ -52,17 +53,14 @@ pub struct GetIdentityResponseEntry {
 pub struct GetIdentityQueryParams {
     email: Option<String>,
 }
-pub async fn get_identity(
-    State(ctx): State<Arc<dyn ControlCtx>>,
+pub async fn get_identity<S: ControlStateDelegate>(
+    State(ctx): State<S>,
     Query(GetIdentityQueryParams { email }): Query<GetIdentityQueryParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let lookup = match email {
         None => None,
         Some(email) => {
-            let identities = ctx
-                .get_identities_for_email(email.as_str())
-                .await
-                .map_err(log_and_500)?;
+            let identities = ctx.get_identities_for_email(email.as_str()).map_err(log_and_500)?;
             if identities.is_empty() {
                 None
             } else {
@@ -94,8 +92,8 @@ pub struct SetEmailQueryParams {
     email: email_address::EmailAddress,
 }
 
-pub async fn set_email(
-    State(ctx): State<Arc<dyn ControlCtx>>,
+pub async fn set_email<S: ControlStateDelegate>(
+    State(ctx): State<S>,
     Path(SetEmailParams { identity }): Path<SetEmailParams>,
     Query(SetEmailQueryParams { email }): Query<SetEmailQueryParams>,
     auth: SpacetimeAuthHeader,
@@ -120,12 +118,12 @@ pub struct GetDatabasesResponse {
     addresses: Vec<String>,
 }
 
-pub async fn get_databases(
-    State(ctx): State<Arc<dyn ControlCtx>>,
+pub async fn get_databases<S: ControlStateDelegate>(
+    State(ctx): State<S>,
     Path(GetDatabasesParams { identity }): Path<GetDatabasesParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     // Linear scan for all databases that have this identity, and return their addresses
-    let all_dbs = ctx.get_databases().await.map_err(|e| {
+    let all_dbs = ctx.get_databases().map_err(|e| {
         log::error!("Failure when retrieving databases for search: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -142,8 +140,8 @@ pub struct WebsocketTokenResponse {
     token: String,
 }
 
-pub async fn create_websocket_token(
-    State(ctx): State<Arc<dyn ControlCtx>>,
+pub async fn create_websocket_token<S: NodeDelegate>(
+    State(ctx): State<S>,
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
     match auth.auth {
@@ -157,13 +155,12 @@ pub async fn create_websocket_token(
 
 pub fn router<S>() -> axum::Router<S>
 where
-    S: ControlNodeDelegate + Clone + 'static,
-    Arc<dyn ControlCtx>: FromRef<S>,
+    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
     use axum::routing::{get, post};
     axum::Router::new()
-        .route("/", get(get_identity).post(create_identity))
-        .route("/websocket_token", post(create_websocket_token))
-        .route("/:identity/set-email", post(set_email))
-        .route("/:identity/databases", get(get_databases))
+        .route("/", get(get_identity::<S>).post(create_identity::<S>))
+        .route("/websocket_token", post(create_websocket_token::<S>))
+        .route("/:identity/set-email", post(set_email::<S>))
+        .route("/:identity/databases", get(get_databases::<S>))
 }

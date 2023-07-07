@@ -1,8 +1,7 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, FromRef, Path, Query, State};
+use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::response::{ErrorResponse, IntoResponse};
 use axum::{headers, TypedHeader};
 use futures::StreamExt;
@@ -31,7 +30,7 @@ use spacetimedb::messages::control_db::DatabaseInstance;
 use spacetimedb::messages::control_db::HostType;
 
 use crate::util::{ByteStringBody, NameOrAddress};
-use crate::{log_and_500, ControlCtx, ControlNodeDelegate, DatabaseDef, WorkerCtx};
+use crate::{log_and_500, ControlStateDelegate, DatabaseDef, ModuleHostContextLoader, NodeDelegate};
 
 pub(crate) struct DomainParsingRejection(pub(crate) DomainParsingError);
 impl From<DomainParsingError> for DomainParsingRejection {
@@ -51,8 +50,8 @@ pub struct CallParams {
     reducer: String,
 }
 
-pub async fn call(
-    State(worker_ctx): State<Arc<dyn WorkerCtx>>,
+pub async fn call<S: ControlStateDelegate + NodeDelegate + ModuleHostContextLoader>(
+    State(worker_ctx): State<S>,
     auth: SpacetimeAuthHeader,
     Path(CallParams {
         name_or_address,
@@ -63,14 +62,13 @@ pub async fn call(
     let SpacetimeAuth {
         identity: caller_identity,
         creds: caller_identity_token,
-    } = auth.get_or_create(&*worker_ctx).await?;
+    } = auth.get_or_create(&worker_ctx).await?;
 
     let args = ReducerArgs::Json(body);
 
-    let (address, _) = name_or_address.resolve(&*worker_ctx).await?;
+    let (address, _) = name_or_address.resolve(&worker_ctx).await?;
     let database = worker_ctx
         .get_database_by_address(&address)
-        .await
         .map_err(log_and_500)?
         .ok_or_else(|| {
             log::error!("Could not find database: {}", address.to_hex());
@@ -79,7 +77,6 @@ pub async fn call(
     let identity = database.identity;
     let database_instance = worker_ctx
         .get_leader_database_instance_by_database(database.id)
-        .await
         .ok_or((
             StatusCode::NOT_FOUND,
             "Database instance not scheduled to this node yet.",
@@ -182,7 +179,7 @@ pub struct DatabaseInformation {
 /// where credentials are required (e.g. publish), so for now we're just going to keep this as is, but we're
 /// going to generate a new set of credentials if you don't provide them.
 async fn extract_db_call_info(
-    ctx: &dyn WorkerCtx,
+    ctx: &(impl ControlStateDelegate + NodeDelegate + ?Sized),
     auth: SpacetimeAuthHeader,
     address: &Address,
 ) -> Result<DatabaseInformation, ErrorResponse> {
@@ -190,14 +187,13 @@ async fn extract_db_call_info(
 
     let database = ctx
         .get_database_by_address(address)
-        .await
         .map_err(log_and_500)?
         .ok_or_else(|| {
             log::error!("Could not find database: {}", address.to_hex());
             (StatusCode::NOT_FOUND, "No such database.")
         })?;
 
-    let database_instance = ctx.get_leader_database_instance_by_database(database.id).await.ok_or((
+    let database_instance = ctx.get_leader_database_instance_by_database(database.id).ok_or((
         StatusCode::NOT_FOUND,
         "Database instance not scheduled to this node yet.",
     ))?;
@@ -250,8 +246,8 @@ pub struct DescribeQueryParams {
     expand: Option<bool>,
 }
 
-pub async fn describe(
-    State(worker_ctx): State<Arc<dyn WorkerCtx>>,
+pub async fn describe<S>(
+    State(worker_ctx): State<S>,
     Path(DescribeParams {
         name_or_address,
         entity_type,
@@ -259,15 +255,17 @@ pub async fn describe(
     }): Path<DescribeParams>,
     Query(DescribeQueryParams { expand }): Query<DescribeQueryParams>,
     auth: SpacetimeAuthHeader,
-) -> axum::response::Result<impl IntoResponse> {
-    let (address, _) = name_or_address.resolve(&*worker_ctx).await?;
+) -> axum::response::Result<impl IntoResponse>
+where
+    S: ControlStateDelegate + NodeDelegate + ModuleHostContextLoader,
+{
+    let (address, _) = name_or_address.resolve(&worker_ctx).await?;
     let database = worker_ctx
         .get_database_by_address(&address)
-        .await
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
-    let call_info = extract_db_call_info(&*worker_ctx, auth, &address).await?;
+    let call_info = extract_db_call_info(&worker_ctx, auth, &address).await?;
 
     let instance_id = call_info.database_instance.id;
     let host = worker_ctx.host_controller();
@@ -310,20 +308,22 @@ pub async fn describe(
 pub struct CatalogParams {
     name_or_address: NameOrAddress,
 }
-pub async fn catalog(
-    State(worker_ctx): State<Arc<dyn WorkerCtx>>,
+pub async fn catalog<S>(
+    State(worker_ctx): State<S>,
     Path(CatalogParams { name_or_address }): Path<CatalogParams>,
     Query(DescribeQueryParams { expand }): Query<DescribeQueryParams>,
     auth: SpacetimeAuthHeader,
-) -> axum::response::Result<impl IntoResponse> {
-    let (address, _) = name_or_address.resolve(&*worker_ctx).await?;
+) -> axum::response::Result<impl IntoResponse>
+where
+    S: ControlStateDelegate + NodeDelegate + ModuleHostContextLoader,
+{
+    let (address, _) = name_or_address.resolve(&worker_ctx).await?;
     let database = worker_ctx
         .get_database_by_address(&address)
-        .await
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
-    let call_info = extract_db_call_info(&*worker_ctx, auth, &address).await?;
+    let call_info = extract_db_call_info(&worker_ctx, auth, &address).await?;
 
     let instance_id = call_info.database_instance.id;
     let host = worker_ctx.host_controller();
@@ -360,14 +360,13 @@ pub async fn catalog(
 pub struct InfoParams {
     name_or_address: NameOrAddress,
 }
-pub async fn info(
-    State(worker_ctx): State<Arc<dyn WorkerCtx>>,
+pub async fn info<S: ControlStateDelegate>(
+    State(worker_ctx): State<S>,
     Path(InfoParams { name_or_address }): Path<InfoParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let (address, _) = name_or_address.resolve(&*worker_ctx).await?;
+    let (address, _) = name_or_address.resolve(&worker_ctx).await?;
     let database = worker_ctx
         .get_database_by_address(&address)
-        .await
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -396,20 +395,22 @@ pub struct LogsQuery {
     follow: bool,
 }
 
-pub async fn logs(
-    State(worker_ctx): State<Arc<dyn WorkerCtx>>,
+pub async fn logs<S>(
+    State(worker_ctx): State<S>,
     Path(LogsParams { name_or_address }): Path<LogsParams>,
     Query(LogsQuery { num_lines, follow }): Query<LogsQuery>,
     auth: SpacetimeAuthHeader,
-) -> axum::response::Result<impl IntoResponse> {
+) -> axum::response::Result<impl IntoResponse>
+where
+    S: ControlStateDelegate + NodeDelegate + ModuleHostContextLoader,
+{
     // You should not be able to read the logs from a database that you do not own
     // so, unless you are the owner, this will fail, hence using get() and not get_or_create
     let auth = auth.get().ok_or((StatusCode::UNAUTHORIZED, "Invalid credentials."))?;
 
-    let (address, _) = name_or_address.resolve(&*worker_ctx).await?;
+    let (address, _) = name_or_address.resolve(&worker_ctx).await?;
     let database = worker_ctx
         .get_database_by_address(&address)
-        .await
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -427,7 +428,6 @@ pub async fn logs(
 
     let database_instance = worker_ctx
         .get_leader_database_instance_by_database(database.id)
-        .await
         .ok_or((
             StatusCode::NOT_FOUND,
             "Database instance not scheduled to this node yet.",
@@ -490,21 +490,23 @@ pub struct SqlParams {
 #[derive(Deserialize)]
 pub struct SqlQueryParams {}
 
-pub async fn sql(
-    State(worker_ctx): State<Arc<dyn WorkerCtx>>,
+pub async fn sql<S>(
+    State(worker_ctx): State<S>,
     Path(SqlParams { name_or_address }): Path<SqlParams>,
     Query(SqlQueryParams {}): Query<SqlQueryParams>,
     auth: SpacetimeAuthHeader,
     body: String,
-) -> axum::response::Result<impl IntoResponse> {
+) -> axum::response::Result<impl IntoResponse>
+where
+    S: NodeDelegate + ControlStateDelegate + ModuleHostContextLoader,
+{
     // Anyone is authorized to execute SQL queries. The SQL engine will determine
     // which queries this identity is allowed to execute against the database.
     let auth = auth.get().ok_or((StatusCode::UNAUTHORIZED, "Invalid credentials."))?;
 
-    let (address, _) = name_or_address.resolve(&*worker_ctx).await?;
+    let (address, _) = name_or_address.resolve(&worker_ctx).await?;
     let database = worker_ctx
         .get_database_by_address(&address)
-        .await
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -512,7 +514,6 @@ pub async fn sql(
     log::debug!("auth: {auth:?}");
     let database_instance = worker_ctx
         .get_leader_database_instance_by_database(database.id)
-        .await
         .ok_or((
             StatusCode::NOT_FOUND,
             "Database instance not scheduled to this node yet.",
@@ -574,14 +575,14 @@ pub struct ReverseDNSParams {
 #[derive(Deserialize)]
 pub struct DNSQueryParams {}
 
-pub async fn dns(
-    State(ctx): State<Arc<dyn ControlCtx>>,
+pub async fn dns<S: ControlStateDelegate>(
+    State(ctx): State<S>,
     Path(DNSParams { database_name }): Path<DNSParams>,
     Query(DNSQueryParams {}): Query<DNSQueryParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let domain = database_name.parse().map_err(DomainParsingRejection)?;
     log::debug!("dns with `{domain}`");
-    let address = ctx.lookup_address(&domain).await.map_err(log_and_500)?;
+    let address = ctx.lookup_address(&domain).map_err(log_and_500)?;
     let response = if let Some(address) = address {
         DnsLookupResponse::Success {
             domain,
@@ -594,11 +595,11 @@ pub async fn dns(
     Ok(axum::Json(response))
 }
 
-pub async fn reverse_dns(
-    State(ctx): State<Arc<dyn ControlCtx>>,
+pub async fn reverse_dns<S: ControlStateDelegate>(
+    State(ctx): State<S>,
     Path(ReverseDNSParams { database_address }): Path<ReverseDNSParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let names = ctx.reverse_lookup(&database_address).await.map_err(log_and_500)?;
+    let names = ctx.reverse_lookup(&database_address).map_err(log_and_500)?;
 
     let response = name::ReverseDNSResponse { names };
     Ok(axum::Json(response))
@@ -609,8 +610,8 @@ pub struct RegisterTldParams {
     tld: String,
 }
 
-pub async fn register_tld(
-    State(ctx): State<Arc<dyn ControlCtx>>,
+pub async fn register_tld<S: ControlStateDelegate>(
+    State(ctx): State<S>,
     Query(RegisterTldParams { tld }): Query<RegisterTldParams>,
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
@@ -632,8 +633,8 @@ pub struct RequestRecoveryCodeParams {
     identity: Identity,
 }
 
-pub async fn request_recovery_code(
-    State(ctx): State<Arc<dyn ControlCtx>>,
+pub async fn request_recovery_code<S: NodeDelegate + ControlStateDelegate>(
+    State(ctx): State<S>,
     Query(RequestRecoveryCodeParams { link, email, identity }): Query<RequestRecoveryCodeParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let Some(sendgrid) = ctx.sendgrid_controller() else {
@@ -643,7 +644,6 @@ pub async fn request_recovery_code(
 
     if !ctx
         .get_identities_for_email(email.as_str())
-        .await
         .map_err(log_and_500)?
         .iter()
         .any(|a| a.identity == identity)
@@ -684,11 +684,11 @@ pub struct ConfirmRecoveryCodeParams {
 ///  we are providing a login token to the user initiating the request. We want to make
 ///  sure there aren't any logical issues in here that would allow a user to request a token
 ///  for an identity that they don't have authority over.
-pub async fn confirm_recovery_code(
-    State(ctx): State<Arc<dyn ControlCtx>>,
+pub async fn confirm_recovery_code<S: ControlStateDelegate + NodeDelegate>(
+    State(ctx): State<S>,
     Query(ConfirmRecoveryCodeParams { email, identity, code }): Query<ConfirmRecoveryCodeParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let recovery_codes = ctx.get_recovery_codes(email.as_str()).await.map_err(log_and_500)?;
+    let recovery_codes = ctx.get_recovery_codes(email.as_str()).map_err(log_and_500)?;
 
     let recovery_code = recovery_codes
         .into_iter()
@@ -711,7 +711,6 @@ pub async fn confirm_recovery_code(
 
     if !ctx
         .get_identities_for_email(email.as_str())
-        .await
         .map_err(log_and_500)?
         .iter()
         .any(|a| a.identity == identity)
@@ -751,8 +750,8 @@ fn should_trace(trace_log: Option<bool>) -> bool {
     trace_log.unwrap_or(false)
 }
 
-pub async fn publish(
-    State(ctx): State<Arc<dyn ControlCtx>>,
+pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
+    State(ctx): State<S>,
     Path(PublishDatabaseParams {}): Path<PublishDatabaseParams>,
     Query(query_params): Query<PublishDatabaseQueryParams>,
     auth: SpacetimeAuthHeader,
@@ -769,7 +768,7 @@ pub async fn publish(
     let auth = auth.get().ok_or((StatusCode::UNAUTHORIZED, "Invalid credentials."))?;
 
     let (db_addr, db_name) = match name_or_address {
-        Some(noa) => match noa.try_resolve(&*ctx).await? {
+        Some(noa) => match noa.try_resolve(&ctx).await? {
             Ok((addr, maybe_domain)) => (addr, maybe_domain),
             Err(domain) => {
                 // `name_or_address` was a `NameOrAddress::Name`, but no record
@@ -790,11 +789,7 @@ pub async fn publish(
     log::trace!("Publishing to the address: {}", db_addr.to_hex());
 
     let op = {
-        let exists = ctx
-            .get_database_by_address(&db_addr)
-            .await
-            .map_err(log_and_500)?
-            .is_some();
+        let exists = ctx.get_database_by_address(&db_addr).map_err(log_and_500)?.is_some();
 
         if clear && exists {
             ctx.delete_database(&auth.identity, &db_addr)
@@ -833,8 +828,8 @@ pub struct DeleteDatabaseParams {
     address: Address,
 }
 
-pub async fn delete_database(
-    State(ctx): State<Arc<dyn ControlCtx>>,
+pub async fn delete_database<S: ControlStateDelegate>(
+    State(ctx): State<S>,
     Path(DeleteDatabaseParams { address }): Path<DeleteDatabaseParams>,
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
@@ -854,8 +849,8 @@ pub struct SetNameQueryParams {
     address: Address,
 }
 
-pub async fn set_name(
-    State(ctx): State<Arc<dyn ControlCtx>>,
+pub async fn set_name<S: ControlStateDelegate>(
+    State(ctx): State<S>,
     Query(SetNameQueryParams { domain, address }): Query<SetNameQueryParams>,
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
@@ -863,7 +858,6 @@ pub async fn set_name(
 
     let database = ctx
         .get_database_by_address(&address)
-        .await
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -881,33 +875,34 @@ pub async fn set_name(
 
 pub fn control_routes<S>() -> axum::Router<S>
 where
-    S: ControlNodeDelegate + Clone + 'static,
-    Arc<dyn ControlCtx>: FromRef<S>,
+    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
     use axum::routing::{get, post};
     axum::Router::new()
-        .route("/dns/:database_name", get(dns))
-        .route("/reverse_dns/:database_address", get(reverse_dns))
-        .route("/set_name", get(set_name))
-        .route("/register_tld", get(register_tld))
-        .route("/request_recovery_code", get(request_recovery_code))
-        .route("/confirm_recovery_code", get(confirm_recovery_code))
-        .route("/publish", post(publish).layer(DefaultBodyLimit::disable()))
-        .route("/delete/:address", post(delete_database))
+        .route("/dns/:database_name", get(dns::<S>))
+        .route("/reverse_dns/:database_address", get(reverse_dns::<S>))
+        .route("/set_name", get(set_name::<S>))
+        .route("/register_tld", get(register_tld::<S>))
+        .route("/request_recovery_code", get(request_recovery_code::<S>))
+        .route("/confirm_recovery_code", get(confirm_recovery_code::<S>))
+        .route("/publish", post(publish::<S>).layer(DefaultBodyLimit::disable()))
+        .route("/delete/:address", post(delete_database::<S>))
 }
 
 pub fn worker_routes<S>() -> axum::Router<S>
 where
-    S: ControlNodeDelegate + Clone + 'static,
-    Arc<dyn WorkerCtx>: FromRef<S>,
+    S: NodeDelegate + ControlStateDelegate + ModuleHostContextLoader + Clone + 'static,
 {
     use axum::routing::{get, post};
     axum::Router::new()
-        .route("/subscribe/:name_or_address", get(super::subscribe::handle_websocket))
-        .route("/call/:name_or_address/:reducer", post(call))
-        .route("/schema/:name_or_address/:entity_type/:entity", get(describe))
-        .route("/schema/:name_or_address", get(catalog))
-        .route("/info/:name_or_address", get(info))
-        .route("/logs/:name_or_address", get(logs))
-        .route("/sql/:name_or_address", post(sql))
+        .route(
+            "/subscribe/:name_or_address",
+            get(super::subscribe::handle_websocket::<S>),
+        )
+        .route("/call/:name_or_address/:reducer", post(call::<S>))
+        .route("/schema/:name_or_address/:entity_type/:entity", get(describe::<S>))
+        .route("/schema/:name_or_address", get(catalog::<S>))
+        .route("/info/:name_or_address", get(info::<S>))
+        .route("/logs/:name_or_address", get(logs::<S>))
+        .route("/sql/:name_or_address", post(sql::<S>))
 }
