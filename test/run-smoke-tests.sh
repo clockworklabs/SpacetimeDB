@@ -17,15 +17,6 @@ export RESET_SPACETIME_CONFIG
 export SPACETIME_DIR="$PWD/.."
 RUN_PARALLEL=false
 
-if [ "$(docker ps | grep "node" -c)" != 1 ] ; then
-	echo "Docker container not found, is SpacetimeDB running?"
-	exit 1
-fi
-
-export SPACETIME_SKIP_CLIPPY=1
-CONTAINER_NAME=$(docker ps | grep "node" | awk '{print $NF}')
-docker logs "$CONTAINER_NAME"
-
 rustup update
 rustup component add clippy
 
@@ -61,6 +52,15 @@ cargo install cargo-cache
 cargo cache -a
 spacetime build "$RESET_PROJECT_PATH" -s -d
 exit 1
+
+if [ "$(docker ps | grep "node" -c)" != 1 ] ; then
+	echo "Docker container not found, is SpacetimeDB running?"
+	exit 1
+fi
+
+export SPACETIME_SKIP_CLIPPY=1
+CONTAINER_NAME=$(docker ps | grep "node" | awk '{print $NF}')
+docker logs "$CONTAINER_NAME"
 
 execute_procedural_test() {
 	if [ $# != 1 ] ; then
