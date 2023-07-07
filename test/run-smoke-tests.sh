@@ -27,7 +27,6 @@ CONTAINER_NAME=$(docker ps | grep "node" | awk '{print $NF}')
 docker logs "$CONTAINER_NAME"
 
 rustup update
-rustup target add wasm32-unknown-unknown
 rustup component add clippy
 
 source "lib.include"
@@ -58,12 +57,10 @@ else
 	sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${RESET_PROJECT_PATH}/Cargo.toml"
 fi
 
-# PREVIOUS_WD=$(pwd)
-# cd "$RESET_PROJECT_PATH"
-# cargo clean
-# cargo check
-# cd "$PREVIOUS_WD"
-spacetime publish --project-path "$RESET_PROJECT_PATH" -s -d
+cargo install cargo-cache
+cargo cache -a
+spacetime build "$RESET_PROJECT_PATH" -s -d
+exit 1
 
 execute_procedural_test() {
 	if [ $# != 1 ] ; then
