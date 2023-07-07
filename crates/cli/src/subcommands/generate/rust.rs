@@ -171,7 +171,7 @@ const ALLOW_UNUSED: &str = "#[allow(unused)]";
 
 const SPACETIMEDB_IMPORTS: &[&str] = &[
     ALLOW_UNUSED,
-    "use spacetimedb_client_sdk::{",
+    "use spacetimedb_sdk::{",
     "\tglobal_connection::with_connection,",
     "\tsats::{ser::Serialize, de::Deserialize},",
     "\ttable::{TableType, TableIter, TableWithPrimaryKey},",
@@ -344,7 +344,7 @@ fn find_product_type(ctx: &GenCtx, ty: AlgebraicTypeRef) -> &ProductType {
 }
 
 /// Generate a file which defines a `struct` corresponding to the `table`'s `ProductType`,
-/// and implements `spacetimedb_client_sdk::table::TableType` for it.
+/// and implements `spacetimedb_sdk::table::TableType` for it.
 pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDef) -> String {
     let mut output = CodeIndenter::new(String::new());
     let out = &mut output;
@@ -536,7 +536,7 @@ fn print_table_filter_methods(
 }
 
 /// Generate a file which defines a struct corresponding to the `reducer`'s arguments,
-/// implements `spacetimedb_client_sdk::table::Reducer` for it, and defines a helper
+/// implements `spacetimedb_sdk::table::Reducer` for it, and defines a helper
 /// function which invokes the reducer.
 pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     let func_name = reducer.name.to_case(Case::Snake);
@@ -620,7 +620,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 ///
 /// 3. `fn handle_table_update`, which dispatches on table name to find the appropriate type
 ///    to parse the rows and insert or remove them into/from the
-///    `spacetimedb_client_sdk::client_cache::ClientCache`. The other SDKs avoid needing
+///    `spacetimedb_sdk::client_cache::ClientCache`. The other SDKs avoid needing
 ///    such a dispatch function by dynamically discovering the set of table types,
 ///    e.g. using C#'s `AppDomain`. Rust's type system prevents this.
 ///
@@ -635,7 +635,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 ///    reducers.
 ///
 /// 7. `fn connect`, which invokes
-///    `spacetimedb_client_sdk::background_connection::BackgroundDbConnection::connect`
+///    `spacetimedb_sdk::background_connection::BackgroundDbConnection::connect`
 ///    to connect to a remote database, and passes the `handle_row_update`
 ///    and `handle_event` functions so the `BackgroundDbConnection` can spawn workers
 ///    which use those functions to dispatch on the content of messages.
@@ -692,12 +692,12 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, Str
 
 /// Extra imports required by the `mod.rs` file, in addition to the [`SPACETIMEDB_IMPORTS`].
 const DISPATCH_IMPORTS: &[&str] = &[
-    "use spacetimedb_client_sdk::client_api_messages::{TableUpdate, Event};",
-    "use spacetimedb_client_sdk::client_cache::{ClientCache, RowCallbackReminders};",
-    "use spacetimedb_client_sdk::background_connection::BackgroundDbConnection;",
-    "use spacetimedb_client_sdk::identity::Credentials;",
-    "use spacetimedb_client_sdk::callbacks::{DbCallbacks, ReducerCallbacks};",
-    "use spacetimedb_client_sdk::reducer::AnyReducerEvent;",
+    "use spacetimedb_sdk::client_api_messages::{TableUpdate, Event};",
+    "use spacetimedb_sdk::client_cache::{ClientCache, RowCallbackReminders};",
+    "use spacetimedb_sdk::background_connection::BackgroundDbConnection;",
+    "use spacetimedb_sdk::identity::Credentials;",
+    "use spacetimedb_sdk::callbacks::{DbCallbacks, ReducerCallbacks};",
+    "use spacetimedb_sdk::reducer::AnyReducerEvent;",
     "use std::sync::Arc;",
 ];
 
@@ -772,7 +772,7 @@ fn print_handle_table_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[Gen
                     }
                     writeln!(
                         out,
-                        "_ => spacetimedb_client_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name),",
+                        "_ => spacetimedb_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name),",
                     ).unwrap();
                 },
                 "}\n",
@@ -827,7 +827,7 @@ fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
                     }
                     writeln!(
                         out,
-                        "_ => spacetimedb_client_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name)," ,
+                        "_ => spacetimedb_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name)," ,
                     ).unwrap();
                 },
                 "}\n",
@@ -848,7 +848,7 @@ fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
         |out| {
             out.delimited_block(
                 "let Some(function_call) = &event.function_call else {",
-                |out| writeln!(out, "spacetimedb_client_sdk::log::warn!(\"Received Event with None function_call\"); return None;")
+                |out| writeln!(out, "spacetimedb_sdk::log::warn!(\"Received Event with None function_call\"); return None;")
                     .unwrap(),
                 "};\n",
             );
@@ -868,7 +868,7 @@ fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
                     }
                     writeln!(
                         out,
-                        "unknown => {{ spacetimedb_client_sdk::log::error!(\"Event on an unknown reducer: {{:?}}\", unknown); None }}",
+                        "unknown => {{ spacetimedb_sdk::log::error!(\"Event on an unknown reducer: {{:?}}\", unknown); None }}",
                     ).unwrap();
                 },
                 "}\n",
@@ -897,8 +897,8 @@ fn print_connect_defn(out: &mut Indenter) {
     out.delimited_block(
         "pub fn connect<Host>(host: Host, db_name: &str, credentials: Option<Credentials>) -> Result<()>
 where
-\tHost: TryInto<spacetimedb_client_sdk::http::Uri>,
-\t<Host as TryInto<spacetimedb_client_sdk::http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
+\tHost: TryInto<spacetimedb_sdk::http::Uri>,
+\t<Host as TryInto<spacetimedb_sdk::http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
 {",
         |out| out.delimited_block(
             "with_connection(|connection| {",
