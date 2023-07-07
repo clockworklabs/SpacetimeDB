@@ -48,9 +48,11 @@ else
 	sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${RESET_PROJECT_PATH}/Cargo.toml"
 fi
 
-cargo install cargo-cache
-cargo cache -a
-spacetime build "$RESET_PROJECT_PATH" -s -d
+# spacetime build "$RESET_PROJECT_PATH" -s -d
+
+cd "$RESET_PROJECT_PATH"
+cargo build
+
 exit 1
 
 if [ "$(docker ps | grep "node" -c)" != 1 ] ; then
