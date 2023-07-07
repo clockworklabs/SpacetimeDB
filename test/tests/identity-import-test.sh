@@ -11,10 +11,8 @@ source "./test/lib.include"
 
 run_test "$SPACETIME" identity new --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
-
-# TODO: Fix this!
-run_test "$SPACETIME" identity list
-TOKEN=$(grep token "$HOME/.spacetime/config.toml" | awk '{print $3}' | tr -d \')
+run_test "$SPACETIME" identity token "$IDENT"
+TOKEN=$(cat "$TEST_OUT")
 
 reset_config
 
