@@ -17,6 +17,37 @@ export RESET_SPACETIME_CONFIG
 export SPACETIME_DIR="$PWD/.."
 RUN_PARALLEL=false
 
+TESTS=(./test/tests/*.sh)
+TESTS=("${TESTS[@]#./test/tests/}")
+TESTS=("${TESTS[@]%.sh}")
+
+EXCLUDE_TESTS=()
+github=false
+
+while [ $# != 0 ] ; do
+	case $1 in
+		-x)
+			shift
+			EXCLUDE_TESTS+=("$@")
+			break
+		;;
+		--parallel)
+			shift
+			RUN_PARALLEL=true
+			echo "Running tests in parallel."
+		;;
+		--github)
+			shift
+			GITHUB=true
+			echo "Running in a github runner."
+		;;
+		*)
+			TESTS=("$@")
+			break
+		;;
+	esac
+done
+
 rustup update
 rustup component add clippy
 
@@ -27,12 +58,19 @@ cd ..
 export SPACETIME_HOME=$PWD
 
 # Build our SpacetimeDB executable that we'll use for all tests.
-cargo build --profile "$SPACETIME_CARGO_PROFILE"
-SPACETIME_EXE_DIR=$(mktemp -d)
-cp "./target/$SPACETIME_CARGO_PROFILE/spacetime" "$SPACETIME_EXE_DIR/spacetime"
-export SPACETIME="$SPACETIME_EXE_DIR/spacetime"
-# export PATH="$SPACETIME_EXE_DIR:$PATH"
-# [ "$(which spacetime)" == "$SPACETIME_EXE_DIR/spacetime" ]
+if $GITHUB ; then
+	# Install globally because it seems that the github runner has some issues with changing the path
+	cargo install --profile "$SPACETIME_CARGO_PROFILE"
+	export SPACETIME="spacetime"
+	which spacetime > /dev/null
+else
+	cargo build --profile "$SPACETIME_CARGO_PROFILE"
+	SPACETIME_EXE_DIR=$(mktemp -d)
+	cp "./target/$SPACETIME_CARGO_PROFILE/spacetime" "$SPACETIME_EXE_DIR/spacetime"
+	export SPACETIME="$SPACETIME_EXE_DIR/spacetime"
+	export PATH="$SPACETIME_EXE_DIR:$PATH"
+	[ "$(which spacetime)" == "$SPACETIME_EXE_DIR/spacetime" ]
+fi
 
 # Create a project that we can copy to reset our project
 RESET_PROJECT_PATH=$(mktemp -d)
@@ -156,30 +194,6 @@ list_contains() {
 	return 1
 }
 
-TESTS=(./test/tests/*.sh)
-TESTS=("${TESTS[@]#./test/tests/}")
-TESTS=("${TESTS[@]%.sh}")
-
-EXCLUDE_TESTS=()
-
-while [ $# != 0 ] ; do
-	case $1 in
-		-x)
-			shift
-			EXCLUDE_TESTS+=("$@")
-			break
-		;;
-		--parallel)
-			shift
-			RUN_PARALLEL=true
-			echo "Running tests in parallel."
-		;;
-		*)
-			TESTS=("$@")
-			break
-		;;
-	esac
-done
 
 # Arrays used for running tests procedurally
 TESTS_PID=()
