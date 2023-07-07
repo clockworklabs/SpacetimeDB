@@ -138,11 +138,9 @@ process_test_result() {
 		cat "$out_file_path"
 		echo "Config file:"
 		cat "$config_file_path"
+		echo "PROJECT_PATH=$PROJECT_PATH TEST_OUT=$out_file_path SPACETIME_CONFIG_FILE=$config_file_path"
 		failed_tests+=("$test_name")
 	fi
-
-	echo "PROJECT_PATH=$PROJECT_PATH TEST_OUT=$out_file_path SPACETIME_CONFIG_FILE=$config_file_path"
-
 }
 
 list_contains() {
