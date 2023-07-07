@@ -6,10 +6,7 @@ use std::process::Command;
 use spacetimedb::address::Address;
 use spacetimedb::client::{ClientActorId, ClientConnection, Protocol};
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::hash::hash_bytes;
-
-use spacetimedb::messages::control_db::HostType;
-use spacetimedb_client_api::{ControlCtx, ControlStateDelegate, WorkerCtx};
+use spacetimedb_client_api::{ControlStateDelegate, WorkerNodeDelegate};
 use tokio::runtime::{Builder, Runtime};
 
 fn start_runtime() -> Runtime {
@@ -122,18 +119,16 @@ impl ModuleHandle {
 pub async fn load_module(name: &str) -> ModuleHandle {
     crate::set_key_env_vars();
     let env = &spacetimedb_standalone::StandaloneEnv::init().await.unwrap();
-    let identity = env.control_db().alloc_spacetime_identity().await.unwrap();
-    let address = env.control_db().alloc_spacetime_address().await.unwrap();
+    let identity = env.create_identity().await.unwrap();
+    let address = env.create_address().await.unwrap();
     let program_bytes = read_module(name);
 
-    let program_bytes_addr = hash_bytes(&program_bytes);
-    env.object_db().insert_object(program_bytes).unwrap();
-
-    let host_type = HostType::Wasmer;
-
-    env.insert_database(&address, &identity, &program_bytes_addr, host_type, 1, true, false)
-        .await
-        .unwrap();
+    env.publish_database(&identity, spacetimedb_client_api::DatabaseDef {
+        address,
+        program_bytes,
+        num_replicas: 1,
+        trace_log: false 
+    }).await.unwrap();
 
     let database = env.get_database_by_address(&address).await.unwrap().unwrap();
     let instance = env.get_leader_database_instance_by_database(database.id).await.unwrap();

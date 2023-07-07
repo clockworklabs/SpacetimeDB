@@ -19,19 +19,19 @@ async fn test_register_tld() -> anyhow::Result<()> {
     })
     .await??;
 
-    cdb.spacetime_register_tld(domain.tld().clone(), *ALICE).await?;
-    let owner = cdb.spacetime_lookup_tld(domain.tld()).await?;
+    cdb.spacetime_register_tld(domain.as_tld(), *ALICE).await?;
+    let owner = cdb.spacetime_lookup_tld(&domain.as_tld()).await?;
     assert_eq!(owner, Some(*ALICE));
 
-    let unauthorized = cdb.spacetime_register_tld(domain.tld().clone(), *BOB).await?;
+    let unauthorized = cdb.spacetime_register_tld(domain.as_tld(), *BOB).await?;
     assert!(matches!(unauthorized, RegisterTldResult::Unauthorized { .. }));
-    let already_registered = cdb.spacetime_register_tld(domain.tld().clone(), *ALICE).await?;
+    let already_registered = cdb.spacetime_register_tld(domain.as_tld(), *ALICE).await?;
     assert!(matches!(
         already_registered,
         RegisterTldResult::AlreadyRegistered { .. }
     ));
-    let (mixed, _) = DomainName::from_str("amAZe")?.into_parts();
-    let already_registered = cdb.spacetime_register_tld(mixed, *ALICE).await?;
+    let domain = DomainName::from_str("amAZe")?;
+    let already_registered = cdb.spacetime_register_tld(domain.as_tld(), *ALICE).await?;
     assert!(matches!(
         already_registered,
         RegisterTldResult::AlreadyRegistered { .. }
@@ -59,7 +59,7 @@ async fn test_domain() -> anyhow::Result<()> {
 
     // Check Alice owns TLD
     let unauthorized = cdb
-        .spacetime_insert_domain(&addr, domain.tld().clone().into(), *BOB, true)
+        .spacetime_insert_domain(&addr, domain.clone(), *BOB, true)
         .await?;
     assert!(matches!(unauthorized, InsertDomainResult::PermissionDenied { .. }));
 
@@ -71,7 +71,7 @@ async fn test_domain() -> anyhow::Result<()> {
         .await;
     assert!(matches!(already_registered, Err(Error::RecordAlreadyExists(_))));
 
-    let tld_owner = cdb.spacetime_lookup_tld(domain.tld()).await?;
+    let tld_owner = cdb.spacetime_lookup_tld(&domain.as_tld()).await?;
     assert_eq!(tld_owner, Some(*ALICE));
 
     let registered_addr = cdb.spacetime_dns(&domain).await?;
