@@ -60,7 +60,7 @@ export SPACETIME_HOME=$PWD
 # Build our SpacetimeDB executable that we'll use for all tests.
 if [ "$GITHUB" = "true" ] ; then
 	# Install globally because it seems that the github runner has some issues with changing the path
-	cargo install --profile "$SPACETIME_CARGO_PROFILE"
+	cargo install --profile "$SPACETIME_CARGO_PROFILE" -p spacetimedb-cli
 	export SPACETIME="spacetime"
 	which spacetime > /dev/null
 else
