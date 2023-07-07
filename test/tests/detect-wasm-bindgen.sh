@@ -27,7 +27,7 @@ EOF
 
 printf '\nwasm-bindgen = "0.2"\n' >> "${PROJECT_PATH}/Cargo.toml"
 
-run_fail_test spacetime build "${PROJECT_PATH}"
+run_fail_test "$SPACETIME" build "${PROJECT_PATH}"
 
 [ $(grep "wasm-bindgen detected" "$TEST_OUT" | wc -l ) == 1 ]
 

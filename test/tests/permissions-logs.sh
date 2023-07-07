@@ -9,19 +9,19 @@ set -euox pipefail
 
 source "./test/lib.include"
 
-run_test spacetime identity new --no-email
+run_test "$SPACETIME" identity new --no-email
 reset_project
-run_test spacetime publish -s -d --project-path "$PROJECT_PATH" --clear-database
+run_test "$SPACETIME" publish -s -d --project-path "$PROJECT_PATH" --clear-database
 sleep 2
 DATABASE="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 reset_config
-run_test spacetime identity new --no-email
-run_test spacetime call "$DATABASE" "say_hello"
+run_test "$SPACETIME" identity new --no-email
+run_test "$SPACETIME" call "$DATABASE" "say_hello"
 
 reset_config
-run_test spacetime identity new --no-email
+run_test "$SPACETIME" identity new --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
-run_test spacetime identity set-default "$IDENT"
-if run_test spacetime logs "$DATABASE" 10000 ; then exit 1; fi
+run_test "$SPACETIME" identity set-default "$IDENT"
+if run_test "$SPACETIME" logs "$DATABASE" 10000 ; then exit 1; fi
 if [ "0" != "$(grep -c "World" "$TEST_OUT")" ]; then exit 1; fi

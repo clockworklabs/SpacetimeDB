@@ -9,28 +9,28 @@ set -euox pipefail
 
 source "./test/lib.include"
 
-run_test spacetime identity new --no-domain --no-email
+run_test "$SPACETIME" identity new --no-domain --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
 EMAIL="$(random_string)@clockworklabs.io"
 TOKEN=$(grep token "$HOME/.spacetime/config.toml" | awk '{print $3}' | tr -d \')
 
 reset_config
 
-run_test spacetime identity add "$IDENT" "$TOKEN"
-run_test spacetime identity set-default "$IDENT"
-run_test spacetime identity set-email "$IDENT" "$EMAIL"
+run_test "$SPACETIME" identity add "$IDENT" "$TOKEN"
+run_test "$SPACETIME" identity set-default "$IDENT"
+run_test "$SPACETIME" identity set-email "$IDENT" "$EMAIL"
 [ "$IDENT" == "$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')" ]
 [ "$EMAIL" == "$(grep EMAIL "$TEST_OUT" | awk '{print $2}')" ]
 
 reset_config
 
-run_test spacetime identity find "$EMAIL"
+run_test "$SPACETIME" identity find "$EMAIL"
 [ "$IDENT" == "$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')" ]
 [ "$EMAIL" == "$(grep EMAIL "$TEST_OUT" | awk '{print $2}')" ]
 
-run_test spacetime identity new --email "$EMAIL" --no-domain
-run_test spacetime identity find "$EMAIL"
+run_test "$SPACETIME" identity new --email "$EMAIL" --no-domain
+run_test "$SPACETIME" identity find "$EMAIL"
 [ "2" == "$(grep EMAIL "$TEST_OUT" | wc -l | awk '{print $1}')" ]
 
-run_test spacetime publish
+run_test "$SPACETIME" publish
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"

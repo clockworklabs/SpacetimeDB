@@ -12,14 +12,14 @@ source "./test/lib.include"
 reset_project
 
 RAND=$(random_string)
-run_test spacetime dns register-tld "$RAND"
-run_test spacetime publish -s -d "$RAND" --project-path "$PROJECT_PATH" --clear-database
+run_test "$SPACETIME" dns register-tld "$RAND"
+run_test "$SPACETIME" publish -s -d "$RAND" --project-path "$PROJECT_PATH" --clear-database
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 if [ "$ADDRESS" == "" ] ; then
 	exit 1
 fi
 
-run_test spacetime dns reverse-lookup "$ADDRESS"
+run_test "$SPACETIME" dns reverse-lookup "$ADDRESS"
 if [ "$RAND" != "$(tail -n 1 $TEST_OUT)" ] ; then
 	exit 1
 fi

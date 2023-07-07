@@ -50,21 +50,21 @@ EOF
 
   fsed "s/REPLACE_VALUE/$1/g" "${PROJECT_PATH}/src/lib.rs"
 
-  run_test spacetime publish --project-path "$PROJECT_PATH" --clear-database
+  run_test "$SPACETIME" publish --project-path "$PROJECT_PATH" --clear-database
   [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
   IDENT="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
-  run_test spacetime call "$IDENT" update '["Robert", 2]'
-  run_test spacetime call "$IDENT" add_new '["Success"]'
-  if run_test spacetime call "$IDENT" add_new '["Failure"]' ; then
+  run_test "$SPACETIME" call "$IDENT" update '["Robert", 2]'
+  run_test "$SPACETIME" call "$IDENT" add_new '["Success"]'
+  if run_test "$SPACETIME" call "$IDENT" add_new '["Failure"]' ; then
     # This add_new call should have failed. Its possible there was a duplicate insert
-    spacetime logs "$IDENT"
-    spacetime sql "$IDENT" 'SELECT * FROM Person'
+    "$SPACETIME" logs "$IDENT"
+    "$SPACETIME" sql "$IDENT" 'SELECT * FROM Person'
     exit 1
   fi
 
-  run_test spacetime call "$IDENT" say_hello
-  run_test spacetime logs "$IDENT" 100
+  run_test "$SPACETIME" call "$IDENT" say_hello
+  run_test "$SPACETIME" logs "$IDENT" 100
   [[ "$(grep 'Robert' "$TEST_OUT" | tail -n 4)" =~ .*Hello,\ 2:Robert! ]]
   [[ "$(grep 'Success' "$TEST_OUT" | tail -n 4)" =~ .*Hello,\ 1:Success! ]]
   [[ "$(grep 'World' "$TEST_OUT" | tail -n 4)" =~ .*Hello,\ World! ]]

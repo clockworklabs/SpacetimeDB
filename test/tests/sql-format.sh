@@ -91,15 +91,15 @@ pub fn test() {
 }
 EOF
 
-run_test spacetime publish -s -d --project-path "$PROJECT_PATH" --clear-database
+run_test "$SPACETIME" publish -s -d --project-path "$PROJECT_PATH" --clear-database
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 # We have to give the database some time to setup our instance
 sleep 2
 
 # Calling our database
-run_test spacetime call "$ADDRESS" test
-run_test spacetime sql "$ADDRESS" "SELECT * FROM BuiltIn"
+run_test "$SPACETIME" call "$ADDRESS" test
+run_test "$SPACETIME" sql "$ADDRESS" "SELECT * FROM BuiltIn"
 
 [ "$(cat "$TEST_OUT" | tail -n 3)" == \
 ' a_b  | a_i8 | a_i16 | a_i32  | a_i64    | a_i128        | a_u8 | a_u16 | a_u32 | a_u64    | a_u128        | a_f32     | a_f64              | a_str               | a_bytes               | a_tuple                                                                                                                                                                                                                                                                                             '$'\n'\

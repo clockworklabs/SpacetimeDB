@@ -33,10 +33,10 @@ fn reducer() {
 }
 EOF
 
-run_test spacetime publish -s -d --project-path "$PROJECT_PATH" --clear-database
+run_test "$SPACETIME" publish -s -d --project-path "$PROJECT_PATH" --clear-database
 [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 sleep 2
 
-run_test spacetime logs "$ADDRESS"
+run_test "$SPACETIME" logs "$ADDRESS"
 ! grep -c "the reducer ran" "$TEST_OUT"

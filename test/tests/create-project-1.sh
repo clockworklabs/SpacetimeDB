@@ -9,8 +9,8 @@ set -euo pipefail
 
 source "./test/lib.include"
 
-run_fail_test spacetime init
-run_fail_test spacetime init "$PROJECT_PATH"
+run_fail_test "$SPACETIME" init
+run_fail_test "$SPACETIME" init "$PROJECT_PATH"
 rm -rf "$PROJECT_PATH"
 mkdir -p "$PROJECT_PATH"
-run_test spacetime init "$PROJECT_PATH" --lang rust
+run_test "$SPACETIME" init "$PROJECT_PATH" --lang rust
