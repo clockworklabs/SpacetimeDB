@@ -52,13 +52,6 @@ proptest! {
     }
 
     #[test]
-    fn prop_domain_name_compares_lowercase(s in gen_valid_domain_name()) {
-        let a = parse_domain_name(s.chars().flat_map(|c| c.to_lowercase()).collect::<String>()).unwrap();
-        let b = parse_domain_name(s).unwrap();
-        prop_assert_eq!(a, b);
-    }
-
-    #[test]
     fn prop_domain_name_inequality(a in gen_valid_domain_name(), b in gen_valid_domain_name()) {
         prop_assume!(a != b);
         let a = parse_domain_name(a).unwrap();

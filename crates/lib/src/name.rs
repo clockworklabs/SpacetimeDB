@@ -139,11 +139,10 @@ pub enum SetDefaultDomainResult {
 /// of a full [`DomainName`]. A [`Tld`] is also a valid [`DomainName`], and can
 /// be converted to this type.
 ///
-/// [`Tld`]s compare char-wise lowercase. **Note** that this does not take into
-/// account any Unicode case folding rules. In particular, the comparison is
-/// **not** equivalent to
-/// `a.as_str().to_lowercase().eq(b.as_str().to_lowercase())`.
-#[derive(Debug, Clone, Eq)]
+/// Note that [`PartialEq`] compares the exact string representation of
+/// the [`Tld`], as one would expect, but the SpacetimeDB registry compares the
+/// lowercase representation of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Tld(String);
 
@@ -166,20 +165,6 @@ impl AsRef<str> for Tld {
 impl fmt::Display for Tld {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-impl PartialEq for Tld {
-    fn eq(&self, other: &Self) -> bool {
-        let left = self.0.chars().flat_map(|c| c.to_lowercase());
-        let right = other.0.chars().flat_map(|c| c.to_lowercase());
-
-        for (l, r) in left.zip(right) {
-            if l != r {
-                return false;
-            }
-        }
-        true
     }
 }
 
@@ -250,14 +235,13 @@ impl<'de> serde::Deserialize<'de> for Tld {
 /// Each segment in a database name can contain any UTF-8 character, except for
 /// whitespace and '/'. The maximum segment length is 64 characters.
 ///
-/// [`DomainName`]s compare char-wise lowercase. **Note** that this does not
-/// take into account any Unicode case folding rules. In particular, the
-/// comparison is **not** equivalent to
-/// `a.as_str().to_lowercase().eq(b.as_str().to_lowercase())`.
+/// Note that [`PartialEq`] compares the exact string representation of a
+/// [`DomainName`], as one would expect, but the SpacetimeDB registry compares
+/// the lowercase representation of it.
 ///
 /// To construct a valid [`DomainName`], use [`parse_domain_name`] or the
 /// [`FromStr`] impl.
-#[derive(Debug, Clone, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainName {
     // Iff there is a subdomain, next char in `domain_name` is '/'.
     tld_offset: usize,
@@ -315,19 +299,6 @@ impl FromStr for DomainName {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         parse_domain_name(s)
-    }
-}
-
-impl PartialEq for DomainName {
-    fn eq(&self, other: &Self) -> bool {
-        let left = self.domain_name.chars().flat_map(|c| c.to_lowercase());
-        let right = other.domain_name.chars().flat_map(|c| c.to_lowercase());
-        for (l, r) in left.zip(right) {
-            if l != r {
-                return false;
-            }
-        }
-        true
     }
 }
 
