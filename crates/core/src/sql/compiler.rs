@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::TableSchema;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
@@ -13,8 +14,8 @@ use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceEx
 use spacetimedb_vm::operator::OpCmp;
 
 /// Compile the `SQL` expression into a `ast`
-pub fn compile_sql(db: &RelationalDB, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
-    let ast = compile_to_ast(db, sql_text)?;
+pub fn compile_sql(db: &RelationalDB, tx: &MutTxId, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
+    let ast = compile_to_ast(db, tx, sql_text)?;
 
     let mut results = Vec::with_capacity(ast.len());
 

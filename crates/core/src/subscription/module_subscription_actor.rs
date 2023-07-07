@@ -143,11 +143,12 @@ impl ModuleSubscriptionActor {
     ) -> Result<(), DBError> {
         self.remove_subscriber(sender.id);
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
+        let mut tx = self.relational_db.begin_tx();
 
         let queries: QuerySet = subscription
             .query_strings
             .into_iter()
-            .map(|query| compile_query(&self.relational_db, &query))
+            .map(|query| compile_query(&self.relational_db, &tx, &query))
             .collect::<Result<_, _>>()?;
 
         let sub = match self.subscriptions.iter_mut().find(|s| s.queries == queries) {
@@ -164,7 +165,7 @@ impl ModuleSubscriptionActor {
             }
         };
 
-        let database_update = sub.queries.eval(&self.relational_db, auth)?;
+        let database_update = sub.queries.eval(&self.relational_db, &mut tx, auth)?;
 
         let sender = sub.subscribers.last().unwrap();
 
@@ -187,11 +188,13 @@ impl ModuleSubscriptionActor {
     async fn broadcast_commit_event(&mut self, mut event: ModuleEvent) -> Result<(), DBError> {
         let futures = FuturesUnordered::new();
         let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
+        let mut tx = self.relational_db.begin_tx();
+
         for subscription in &mut self.subscriptions {
             let database_update = event.status.database_update().unwrap();
             let incr = subscription
                 .queries
-                .eval_incr(&self.relational_db, database_update, auth)?;
+                .eval_incr(&self.relational_db, &mut tx, database_update, auth)?;
 
             if incr.tables.is_empty() {
                 continue;
