@@ -31,7 +31,7 @@ cargo build --profile "$SPACETIME_CARGO_PROFILE"
 SPACETIME_EXE_DIR=$(mktemp -d)
 cp "./target/$SPACETIME_CARGO_PROFILE/spacetime" "$SPACETIME_EXE_DIR/spacetime"
 export SPACETIME="$SPACETIME_EXE_DIR/spacetime"
-export PATH="$SPACETIME_EXE_DIR:$PATH"
+# export PATH="$SPACETIME_EXE_DIR:$PATH"
 # [ "$(which spacetime)" == "$SPACETIME_EXE_DIR/spacetime" ]
 
 # Create a project that we can copy to reset our project
