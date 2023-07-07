@@ -334,7 +334,7 @@ export class SpacetimeDBClient {
    * Whether the client is connected via websocket.
    */
   public live: boolean;
-
+  private manualTableSubscriptions: string[] = [];
   private ws!: WS.w3cwebsocket | WebsocketTestAdapter;
   private reducers: Map<string, any>;
   private components: Map<string, any>;
@@ -383,6 +383,45 @@ export class SpacetimeDBClient {
         maxReceivedMessageSize: 100000000,
       });
     };
+  }
+
+  /**
+   * Subscribes to a table without registering it as a component.
+   * @param table The table to subscribe to
+   * @param query The query to subscribe to. If not provided, the default is `SELECT * FROM {table}`
+   */
+  public registerManualTable(table: string, query?: string) {
+    this.manualTableSubscriptions.push(
+      query ? query : `SELECT * FROM ${table}`
+    );
+
+    this.ws.send(
+      JSON.stringify({
+        subscribe: {
+          query_strings: [...this.manualTableSubscriptions],
+        },
+      })
+    );
+  }
+
+  /**
+   * Unsubscribes from a table without unregistering it as a component.
+   * @param table The table to unsubscribe from
+   */
+  public removeManualTable(table: string) {
+    this.manualTableSubscriptions = this.manualTableSubscriptions.filter(
+      (val) => val !== table
+    );
+
+    this.ws.send(
+      JSON.stringify({
+        subscribe: {
+          query_strings: this.manualTableSubscriptions.map(
+            (val) => `SELECT * FROM ${val}`
+          ),
+        },
+      })
+    );
   }
 
   /**
