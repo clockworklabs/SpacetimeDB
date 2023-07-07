@@ -61,7 +61,7 @@ export SPACETIME_HOME=$PWD
 if [ "$GITHUB" = "true" ] ; then
 	# Install globally because it seems that the github runner has some issues with changing the path
 	cargo build -p spacetimedb-cli
-	export SPACETIME=cargo run
+	export SPACETIME=cargo run --
 else
 	cargo build --profile "$SPACETIME_CARGO_PROFILE"
 	SPACETIME_EXE_DIR=$(mktemp -d)
