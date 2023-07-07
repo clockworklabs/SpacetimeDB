@@ -27,16 +27,17 @@ cd ..
 export SPACETIME_HOME=$PWD
 
 # Build our SpacetimeDB executable that we'll use for all tests.
-cargo build --profile "$SPACETIME_CARGO_PROFILE"
-SPACETIME_EXE_DIR=$(mktemp -d)
-cp "./target/$SPACETIME_CARGO_PROFILE/spacetime" "$SPACETIME_EXE_DIR/spacetime"
-export PATH="$SPACETIME_EXE_DIR:$PATH"
-[ "$(which spacetime)" == "$SPACETIME_EXE_DIR/spacetime" ]
+#cargo build --profile "$SPACETIME_CARGO_PROFILE"
+#SPACETIME_EXE_DIR=$(mktemp -d)
+#cp "./target/$SPACETIME_CARGO_PROFILE/spacetime" "$SPACETIME_EXE_DIR/spacetime"
+#export PATH="$SPACETIME_EXE_DIR:$PATH"
+#[ "$(which spacetime)" == "$SPACETIME_EXE_DIR/spacetime" ]
 
 # Create a project that we can copy to reset our project
 RESET_PROJECT_PATH=$(mktemp -d)
 export RESET_PROJECT_PATH
-spacetime init "$RESET_PROJECT_PATH" --lang rust
+# spacetime init "$RESET_PROJECT_PATH" --lang rust
+cargo run -- init "$RESET_PROJECT_PATH" --lang rust
 # We have to force using the local spacetimedb_bindings otherwise we will download them from crates.io
 if [[ "$OSTYPE" == "darwin"* ]]; then
 	sed -i '' "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${RESET_PROJECT_PATH}/Cargo.toml"
@@ -48,7 +49,7 @@ else
 	sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${RESET_PROJECT_PATH}/Cargo.toml"
 fi
 
-spacetime build "$RESET_PROJECT_PATH" -s -d
+cargo run -- build "$RESET_PROJECT_PATH" -s -d
 exit 1
 
 if [ "$(docker ps | grep "node" -c)" != 1 ] ; then
