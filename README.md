@@ -1,5 +1,5 @@
 # SpacetimeDB
-Bringing smart-contracts and data-oriented design to relational database systems
+Multiplayer at the speed of light.
 
 <br>
 
