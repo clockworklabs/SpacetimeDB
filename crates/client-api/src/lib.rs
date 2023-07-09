@@ -13,7 +13,7 @@ use spacetimedb::messages::control_db::{Database, DatabaseInstance, EnergyBalanc
 use spacetimedb::messages::worker_db::DatabaseInstanceState;
 use spacetimedb::module_host_context::ModuleHostContext;
 use spacetimedb::sendgrid_controller::SendGridController;
-use spacetimedb_lib::name::{DomainName, RegisterTldResult, Tld, InsertDomainResult};
+use spacetimedb_lib::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_lib::recovery::RecoveryCode;
 
 pub mod auth;

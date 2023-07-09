@@ -866,13 +866,12 @@ pub async fn set_name<S: ControlStateDelegate>(
     }
 
     let domain = domain.parse().map_err(DomainParsingRejection)?;
-    let response = ctx.create_dns_record(&auth.identity, &domain, &address)
+    let response = ctx
+        .create_dns_record(&auth.identity, &domain, &address)
         .await
-        .map_err(|err| {
-            match err {
-                spacetimedb::control_db::Error::RecordAlreadyExists(_) => StatusCode::CONFLICT,
-                _ => log_and_500(err)
-            }
+        .map_err(|err| match err {
+            spacetimedb::control_db::Error::RecordAlreadyExists(_) => StatusCode::CONFLICT,
+            _ => log_and_500(err),
         })?;
 
     Ok(axum::Json(response))

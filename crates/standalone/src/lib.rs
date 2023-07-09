@@ -23,7 +23,7 @@ use spacetimedb::module_host_context::ModuleHostContext;
 use spacetimedb::object_db::ObjectDb;
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::{stdb_path, worker_metrics};
-use spacetimedb_lib::name::{DomainName, RegisterTldResult, Tld, InsertDomainResult};
+use spacetimedb_lib::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_lib::recovery::RecoveryCode;
 use spacetimedb_lib::Hash;
 use std::fs::File;
