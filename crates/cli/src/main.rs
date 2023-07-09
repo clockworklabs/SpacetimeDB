@@ -55,7 +55,7 @@ fn get_command() -> Command {
 │            888                                                                                        │
 │            888                                                                                        │
 │            888                                                                                        │
-│                                "Smart contracts without the blockchain"                               │
+│                                  "Multiplayer at the speed of light"                                  │
 │                                                                                                       │
 ├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
 │ SpacetimeDB Command Line Tool                                                                         │
