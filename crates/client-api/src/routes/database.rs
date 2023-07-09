@@ -866,11 +866,16 @@ pub async fn set_name<S: ControlStateDelegate>(
     }
 
     let domain = domain.parse().map_err(DomainParsingRejection)?;
-    ctx.create_dns_record(&auth.identity, &domain, &address)
+    let response = ctx.create_dns_record(&auth.identity, &domain, &address)
         .await
-        .map_err(log_and_500)?;
+        .map_err(|err| {
+            match err {
+                spacetimedb::control_db::Error::RecordAlreadyExists(_) => StatusCode::CONFLICT,
+                _ => log_and_500(err)
+            }
+        })?;
 
-    Ok(())
+    Ok(axum::Json(response))
 }
 
 pub fn control_routes<S>() -> axum::Router<S>

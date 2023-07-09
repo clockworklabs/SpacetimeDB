@@ -13,7 +13,7 @@ use spacetimedb::messages::control_db::{Database, DatabaseInstance, EnergyBalanc
 use spacetimedb::messages::worker_db::DatabaseInstanceState;
 use spacetimedb::module_host_context::ModuleHostContext;
 use spacetimedb::sendgrid_controller::SendGridController;
-use spacetimedb_lib::name::{DomainName, RegisterTldResult, Tld};
+use spacetimedb_lib::name::{DomainName, RegisterTldResult, Tld, InsertDomainResult};
 use spacetimedb_lib::recovery::RecoveryCode;
 
 pub mod auth;
@@ -148,7 +148,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
         identity: &Identity,
         domain: &DomainName,
         address: &Address,
-    ) -> spacetimedb::control_db::Result<()>;
+    ) -> spacetimedb::control_db::Result<InsertDomainResult>;
 }
 
 pub struct ArcEnv<T: ?Sized>(pub Arc<T>);
@@ -264,7 +264,7 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for ArcEnv<T> 
         identity: &Identity,
         domain: &DomainName,
         address: &Address,
-    ) -> spacetimedb::control_db::Result<()> {
+    ) -> spacetimedb::control_db::Result<InsertDomainResult> {
         self.0.create_dns_record(identity, domain, address).await
     }
 }

@@ -23,7 +23,7 @@ use spacetimedb::module_host_context::ModuleHostContext;
 use spacetimedb::object_db::ObjectDb;
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::{stdb_path, worker_metrics};
-use spacetimedb_lib::name::{DomainName, RegisterTldResult, Tld};
+use spacetimedb_lib::name::{DomainName, RegisterTldResult, Tld, InsertDomainResult};
 use spacetimedb_lib::recovery::RecoveryCode;
 use spacetimedb_lib::Hash;
 use std::fs::File;
@@ -375,10 +375,9 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         identity: &Identity,
         domain: &DomainName,
         address: &Address,
-    ) -> spacetimedb::control_db::Result<()> {
+    ) -> spacetimedb::control_db::Result<InsertDomainResult> {
         self.control_db
-            .spacetime_insert_domain(address, domain.clone(), *identity, true)?;
-        Ok(())
+            .spacetime_insert_domain(address, domain.clone(), *identity, true)
     }
 }
 
