@@ -16,7 +16,7 @@ jobs:
       - name: Start containers
         run: docker compose up -d
       - name: Run smoketests
-        run: test/run-smoke-tests.sh --github --parallel -x bitcraftmini-pretest
+        run: test/run-smoke-tests.sh --parallel -x bitcraftmini-pretest
       - name: Stop containers 
         if: always()
         run: docker compose down
