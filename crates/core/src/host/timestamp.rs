@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use spacetimedb_sats::impl_serialize;
+use spacetimedb_sats::{impl_serialize, impl_deserialize};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, serde::Serialize)]
 #[serde(transparent)]
@@ -26,9 +26,5 @@ impl Timestamp {
     }
 }
 
-impl<'de> spacetimedb_sats::de::Deserialize<'de> for Timestamp {
-    fn deserialize<D: spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        u64::deserialize(deserializer).map(Self)
-    }
-}
+impl_deserialize!([] Timestamp, de => u64::deserialize(de).map(Self));
 impl_serialize!([] Timestamp, (self, ser) => self.0.serialize(ser));

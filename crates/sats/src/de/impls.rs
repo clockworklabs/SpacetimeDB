@@ -16,21 +16,23 @@ use super::{
     ProductVisitor, SeqProductAccess, SliceVisitor, SumAccess, SumVisitor, VariantAccess, VariantVisitor,
 };
 
-macro_rules! impl_prim {
-    ($(($prim:ty, $method:ident))*) => {
-        $(impl<'de> Deserialize<'de> for $prim {
-            fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-                de.$method()
-            }
-        })*
+#[macro_export]
+macro_rules! impl_deserialize {
+    ([$($generics:tt)*] $(where [$($wc:tt)*])? $typ:ty, $de:ident => $body:expr) => {
+        impl<'de, $($generics)*> $crate::de::Deserialize<'de> for $typ {
+            fn deserialize<D: $crate::de::Deserializer<'de>>($de: D) -> Result<Self, D::Error> { $body }
+        }
     };
 }
 
-impl<'de> Deserialize<'de> for () {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_product(UnitVisitor)
-    }
+macro_rules! impl_prim {
+    ($(($prim:ty, $method:ident))*) => {
+        $(impl_deserialize!([] $prim, de => de.$method());)*
+    };
 }
+
+impl_deserialize!([] (), de => de.deserialize_product(UnitVisitor));
+
 struct UnitVisitor;
 impl<'de> ProductVisitor<'de> for UnitVisitor {
     type Output = ();
@@ -68,46 +70,13 @@ impl<'de> Deserialize<'de> for u8 {
     }
 }
 
-impl<'de> Deserialize<'de> for F32 {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        f32::deserialize(deserializer).map(Into::into)
-    }
-}
-impl<'de> Deserialize<'de> for F64 {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        f64::deserialize(deserializer).map(Into::into)
-    }
-}
-
-impl<'de> Deserialize<'de> for String {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_str(OwnedSliceVisitor)
-    }
-}
-
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Vec<T> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        T::__deserialize_vec(deserializer)
-    }
-}
-
-impl<'de, T: Deserialize<'de>, const N: usize> Deserialize<'de> for [T; N] {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        T::__deserialize_array(deserializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Box<str> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        String::deserialize(deserializer).map(|s| s.into_boxed_str())
-    }
-}
-
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<[T]> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Vec::deserialize(deserializer).map(|s| s.into_boxed_slice())
-    }
-}
+impl_deserialize!([] F32, de => f32::deserialize(de).map(Into::into));
+impl_deserialize!([] F64, de => f64::deserialize(de).map(Into::into));
+impl_deserialize!([] String, de => de.deserialize_str(OwnedSliceVisitor));
+impl_deserialize!([T: Deserialize<'de>] Vec<T>, de => T::__deserialize_vec(de));
+impl_deserialize!([T: Deserialize<'de>, const N: usize] [T; N], de => T::__deserialize_array(de));
+impl_deserialize!([] Box<str>, de => String::deserialize(de).map(|s| s.into_boxed_str()));
+impl_deserialize!([T: Deserialize<'de>] Box<[T]>, de => Vec::deserialize(de).map(|s| s.into_boxed_slice()));
 
 struct OwnedSliceVisitor;
 impl<'de, T: ToOwned + ?Sized> SliceVisitor<'de, T> for OwnedSliceVisitor {
@@ -137,17 +106,8 @@ impl<'de, const N: usize> SliceVisitor<'de, [u8]> for ByteArrayVisitor<N> {
     }
 }
 
-impl<'de> Deserialize<'de> for &'de str {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_str(BorrowedSliceVisitor)
-    }
-}
-
-impl<'de> Deserialize<'de> for &'de [u8] {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_bytes(BorrowedSliceVisitor)
-    }
-}
+impl_deserialize!([] &'de str, de => de.deserialize_str(BorrowedSliceVisitor));
+impl_deserialize!([] &'de [u8], de => de.deserialize_bytes(BorrowedSliceVisitor));
 
 pub(crate) struct BorrowedSliceVisitor;
 impl<'de, T: ToOwned + ?Sized + 'de> SliceVisitor<'de, T> for BorrowedSliceVisitor {
@@ -162,17 +122,8 @@ impl<'de, T: ToOwned + ?Sized + 'de> SliceVisitor<'de, T> for BorrowedSliceVisit
     }
 }
 
-impl<'de> Deserialize<'de> for Cow<'de, str> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_str(CowSliceVisitor)
-    }
-}
-
-impl<'de> Deserialize<'de> for Cow<'de, [u8]> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_bytes(CowSliceVisitor)
-    }
-}
+impl_deserialize!([] Cow<'de, str>, de => de.deserialize_str(CowSliceVisitor));
+impl_deserialize!([] Cow<'de, [u8]>, de => de.deserialize_bytes(CowSliceVisitor));
 
 struct CowSliceVisitor;
 impl<'de, T: ToOwned + ?Sized + 'de> SliceVisitor<'de, T> for CowSliceVisitor {
@@ -191,23 +142,13 @@ impl<'de, T: ToOwned + ?Sized + 'de> SliceVisitor<'de, T> for CowSliceVisitor {
     }
 }
 
-impl<'de, K: Deserialize<'de> + Ord, V: Deserialize<'de>> Deserialize<'de> for BTreeMap<K, V> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_map(BasicMapVisitor)
-    }
-}
+impl_deserialize!(
+    [K: Deserialize<'de> + Ord, V: Deserialize<'de>] BTreeMap<K, V>,
+    de => de.deserialize_map(BasicMapVisitor)
+);
 
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<T> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        T::deserialize(deserializer).map(Box::new)
-    }
-}
-
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Option<T> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_sum(OptionVisitor(PhantomData))
-    }
-}
+impl_deserialize!([T: Deserialize<'de>] Box<T>, de => T::deserialize(de).map(Box::new));
+impl_deserialize!([T: Deserialize<'de>] Option<T>, de => de.deserialize_sum(OptionVisitor(PhantomData)));
 
 struct OptionVisitor<T>(PhantomData<T>);
 impl<'de, T: Deserialize<'de>> SumVisitor<'de> for OptionVisitor<T> {

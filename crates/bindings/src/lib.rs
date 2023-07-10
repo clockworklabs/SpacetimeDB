@@ -11,7 +11,7 @@ mod timestamp;
 
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
-use spacetimedb_lib::sats::{impl_st, impl_serialize};
+use spacetimedb_lib::sats::{impl_st, impl_serialize, impl_deserialize};
 pub use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::{bsatn, ColumnIndexAttribute, IndexType, PrimaryKey, ProductType, ProductValue};
 use std::cell::RefCell;
@@ -693,13 +693,7 @@ impl<R> Clone for ScheduleToken<R> {
 impl<R> Copy for ScheduleToken<R> {}
 
 impl_serialize!([R] ScheduleToken<R>, (self, ser) => self.id.serialize(ser));
-
-impl<'de, R> Deserialize<'de> for ScheduleToken<R> {
-    fn deserialize<D: spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        u64::deserialize(deserializer).map(Self::new)
-    }
-}
-
+impl_deserialize!([R] ScheduleToken<R>, de => u64::deserialize(de).map(Self::new));
 impl_st!([R] ScheduleToken<R>, _ts => spacetimedb_lib::AlgebraicType::U64);
 
 impl<R> ScheduleToken<R> {

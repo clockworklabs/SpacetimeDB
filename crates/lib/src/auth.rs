@@ -1,7 +1,6 @@
-use spacetimedb_sats::impl_serialize;
+use spacetimedb_sats::{impl_deserialize, impl_serialize};
 
-use crate::de;
-use crate::de::{Deserializer, Error};
+use crate::de::Error;
 
 /// Describe the visibility of the table
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -45,17 +44,14 @@ impl<'a> TryFrom<&'a str> for StAccess {
 }
 
 impl_serialize!([] StAccess, (self, ser) => ser.serialize_str(self.as_str()));
-
-impl<'de> de::Deserialize<'de> for StAccess {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = deserializer.deserialize_str_slice()?;
-        StAccess::try_from(value).map_err(|x| {
-            Error::custom(format!(
-                "DecodeError for StAccess: `{x}`. Expected `public` | 'private'"
-            ))
-        })
-    }
-}
+impl_deserialize!([] StAccess, de => {
+    let value = de.deserialize_str_slice()?;
+    StAccess::try_from(value).map_err(|x| {
+        Error::custom(format!(
+            "DecodeError for StAccess: `{x}`. Expected `public` | 'private'"
+        ))
+    })
+});
 
 /// Describe is the table is a `system table` or not.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -90,14 +86,11 @@ impl<'a> TryFrom<&'a str> for StTableType {
 }
 
 impl_serialize!([] StTableType, (self, ser) => ser.serialize_str(self.as_str()));
-
-impl<'de> de::Deserialize<'de> for StTableType {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = deserializer.deserialize_str_slice()?;
-        StTableType::try_from(value).map_err(|x| {
-            Error::custom(format!(
-                "DecodeError for StTableType: `{x}`. Expected 'system' | 'user'"
-            ))
-        })
-    }
-}
+impl_deserialize!([] StTableType, de => {
+    let value = de.deserialize_str_slice()?;
+    StTableType::try_from(value).map_err(|x| {
+        Error::custom(format!(
+            "DecodeError for StTableType: `{x}`. Expected 'system' | 'user'"
+        ))
+    })
+});

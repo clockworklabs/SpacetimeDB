@@ -9,8 +9,8 @@ use super::{Serialize, SerializeArray, SerializeMap, SerializeNamedProduct, Seri
 
 #[macro_export]
 macro_rules! impl_serialize {
-    ([$($generics:tt)*] $(where [$($wc:tt)*])? $prim:ty, ($self:ident, $ser:ident) => $body:expr) => {
-        impl<$($generics)*> $crate::ser::Serialize for $prim $(where $($wc)*)? {
+    ([$($generics:tt)*] $(where [$($wc:tt)*])? $typ:ty, ($self:ident, $ser:ident) => $body:expr) => {
+        impl<$($generics)*> $crate::ser::Serialize for $typ $(where $($wc)*)? {
             fn serialize<S: $crate::ser::Serializer>($self: &Self, $ser: S) -> Result<S::Ok, S::Error> {
                 $body
             }

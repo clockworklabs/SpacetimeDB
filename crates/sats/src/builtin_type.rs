@@ -4,7 +4,7 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, ProductTypeElement, SumTypeVariant, impl_serialize};
+use crate::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, ProductTypeElement, SumTypeVariant, impl_serialize, impl_deserialize};
 use enum_as_inner::EnumAsInner;
 
 /// Represents the built-in types in SATS.
@@ -62,12 +62,7 @@ pub struct ArrayType {
 }
 
 impl_serialize!([] ArrayType, (self, ser) => self.elem_ty.serialize(ser));
-
-impl<'de> Deserialize<'de> for ArrayType {
-    fn deserialize<D: crate::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Deserialize::deserialize(deserializer).map(|elem_ty| Self { elem_ty })
-    }
-}
+impl_deserialize!([] ArrayType, de => Deserialize::deserialize(de).map(|elem_ty| Self { elem_ty }));
 
 /// A map type from keys of type `key_ty` to values of type `ty`.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]

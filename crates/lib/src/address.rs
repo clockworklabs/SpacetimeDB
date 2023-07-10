@@ -2,9 +2,9 @@ use std::net::Ipv6Addr;
 
 use anyhow::Context as _;
 use hex::FromHex as _;
-use sats::{impl_st, impl_serialize};
+use sats::{impl_deserialize, impl_serialize, impl_st};
 
-use crate::sats::{self, de};
+use crate::sats;
 
 /// This is the address for a SpacetimeDB database. It is a unique identifier
 /// for a particular database and once set for a database, does not change.
@@ -60,12 +60,7 @@ impl Address {
 }
 
 impl_serialize!([] Address, (self, ser) =>self.0.to_be_bytes().serialize(ser));
-
-impl<'de> de::Deserialize<'de> for Address {
-    fn deserialize<D: spacetimedb_sats::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        <[u8; 16]>::deserialize(deserializer).map(|v| Self(u128::from_be_bytes(v)))
-    }
-}
+impl_deserialize!([] Address, de => <[u8; 16]>::deserialize(de).map(|v| Self(u128::from_be_bytes(v))));
 
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for Address {
