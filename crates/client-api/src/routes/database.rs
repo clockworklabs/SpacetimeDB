@@ -30,7 +30,7 @@ use spacetimedb::messages::control_db::DatabaseInstance;
 use spacetimedb::messages::control_db::HostType;
 
 use crate::util::{ByteStringBody, NameOrAddress};
-use crate::{log_and_500, ControlStateDelegate, DatabaseDef, ModuleHostContextLoader, NodeDelegate};
+use crate::{log_and_500, ControlStateDelegate, DatabaseDef, NodeDelegate};
 
 pub(crate) struct DomainParsingRejection(pub(crate) DomainParsingError);
 impl From<DomainParsingError> for DomainParsingRejection {
@@ -50,7 +50,7 @@ pub struct CallParams {
     reducer: String,
 }
 
-pub async fn call<S: ControlStateDelegate + NodeDelegate + ModuleHostContextLoader>(
+pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     auth: SpacetimeAuthHeader,
     Path(CallParams {
@@ -257,7 +257,7 @@ pub async fn describe<S>(
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse>
 where
-    S: ControlStateDelegate + NodeDelegate + ModuleHostContextLoader,
+    S: ControlStateDelegate + NodeDelegate,
 {
     let (address, _) = name_or_address.resolve(&worker_ctx).await?;
     let database = worker_ctx
@@ -315,7 +315,7 @@ pub async fn catalog<S>(
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse>
 where
-    S: ControlStateDelegate + NodeDelegate + ModuleHostContextLoader,
+    S: ControlStateDelegate + NodeDelegate,
 {
     let (address, _) = name_or_address.resolve(&worker_ctx).await?;
     let database = worker_ctx
@@ -402,7 +402,7 @@ pub async fn logs<S>(
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse>
 where
-    S: ControlStateDelegate + NodeDelegate + ModuleHostContextLoader,
+    S: ControlStateDelegate + NodeDelegate,
 {
     // You should not be able to read the logs from a database that you do not own
     // so, unless you are the owner, this will fail, hence using get() and not get_or_create
@@ -498,7 +498,7 @@ pub async fn sql<S>(
     body: String,
 ) -> axum::response::Result<impl IntoResponse>
 where
-    S: NodeDelegate + ControlStateDelegate + ModuleHostContextLoader,
+    S: NodeDelegate + ControlStateDelegate,
 {
     // Anyone is authorized to execute SQL queries. The SQL engine will determine
     // which queries this identity is allowed to execute against the database.
@@ -895,7 +895,7 @@ where
 
 pub fn worker_routes<S>() -> axum::Router<S>
 where
-    S: NodeDelegate + ControlStateDelegate + ModuleHostContextLoader + Clone + 'static,
+    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
     use axum::routing::{get, post};
     axum::Router::new()

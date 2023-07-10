@@ -146,6 +146,7 @@ fn get_key_path(env: &str) -> Option<PathBuf> {
     Some(path)
 }
 
+#[async_trait]
 impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         let mut metric_families = worker_metrics::REGISTRY.gather();
@@ -176,10 +177,7 @@ impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
     fn sendgrid_controller(&self) -> Option<&SendGridController> {
         self.sendgrid.as_ref()
     }
-}
 
-#[async_trait]
-impl spacetimedb_client_api::ModuleHostContextLoader for StandaloneEnv {
     async fn load_module_host_context(&self, db: Database, instance_id: u64) -> anyhow::Result<ModuleHostContext> {
         self.load_module_host_context_inner(db, instance_id).await
     }

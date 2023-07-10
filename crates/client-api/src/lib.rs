@@ -25,6 +25,7 @@ pub mod util;
 ///
 /// Types returned here should be considered internal state and **never** be
 /// surfaced to the API.
+#[async_trait]
 pub trait NodeDelegate: Send + Sync {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily>;
     fn database_instance_context_controller(&self) -> &DatabaseInstanceContextController;
@@ -33,11 +34,7 @@ pub trait NodeDelegate: Send + Sync {
     fn public_key(&self) -> &DecodingKey;
     fn private_key(&self) -> &EncodingKey;
     fn sendgrid_controller(&self) -> Option<&SendGridController>;
-}
 
-/// Defines how to load a [`ModuleHostContext`].
-#[async_trait]
-pub trait ModuleHostContextLoader: Send + Sync {
     /// Load the [`ModuleHostContext`] for instance `instance_id` of
     /// [`Database`] `db`.
     ///
@@ -269,6 +266,7 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for ArcEnv<T> 
     }
 }
 
+#[async_trait]
 impl<T: NodeDelegate + ?Sized> NodeDelegate for ArcEnv<T> {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         self.0.gather_metrics()
@@ -297,8 +295,13 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for ArcEnv<T> {
     fn sendgrid_controller(&self) -> Option<&SendGridController> {
         self.0.sendgrid_controller()
     }
+
+    async fn load_module_host_context(&self, db: Database, instance_id: u64) -> anyhow::Result<ModuleHostContext> {
+        self.0.load_module_host_context(db, instance_id).await
+    }
 }
 
+#[async_trait]
 impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         (**self).gather_metrics()
@@ -327,17 +330,7 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
     fn sendgrid_controller(&self) -> Option<&SendGridController> {
         (**self).sendgrid_controller()
     }
-}
 
-#[async_trait]
-impl<T: ModuleHostContextLoader + ?Sized> ModuleHostContextLoader for ArcEnv<T> {
-    async fn load_module_host_context(&self, db: Database, instance_id: u64) -> anyhow::Result<ModuleHostContext> {
-        self.0.load_module_host_context(db, instance_id).await
-    }
-}
-
-#[async_trait]
-impl<T: ModuleHostContextLoader + ?Sized> ModuleHostContextLoader for Arc<T> {
     async fn load_module_host_context(&self, db: Database, instance_id: u64) -> anyhow::Result<ModuleHostContext> {
         (**self).load_module_host_context(db, instance_id).await
     }

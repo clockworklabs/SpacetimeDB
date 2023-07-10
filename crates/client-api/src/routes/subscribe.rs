@@ -19,7 +19,7 @@ use crate::util::websocket::{
     CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade,
 };
 use crate::util::{NameOrAddress, XForwardedFor};
-use crate::{log_and_500, ControlStateDelegate, ModuleHostContextLoader, NodeDelegate};
+use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 #[allow(clippy::declare_interior_mutable_const)]
 pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static("v1.text.spacetimedb");
@@ -39,7 +39,7 @@ pub async fn handle_websocket<S>(
     ws: WebSocketUpgrade,
 ) -> axum::response::Result<impl IntoResponse>
 where
-    S: NodeDelegate + ControlStateDelegate + ModuleHostContextLoader,
+    S: NodeDelegate + ControlStateDelegate,
 {
     let auth = auth.get_or_create(&ctx).await?;
 
