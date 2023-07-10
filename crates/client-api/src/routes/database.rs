@@ -16,6 +16,7 @@ use spacetimedb::host::UpdateDatabaseSuccess;
 use spacetimedb_lib::name;
 use spacetimedb_lib::name::DomainName;
 use spacetimedb_lib::name::DomainParsingError;
+use spacetimedb_lib::name::Tld;
 use spacetimedb_lib::sats::TypeInSpace;
 
 use crate::auth::{
@@ -619,7 +620,7 @@ pub async fn register_tld<S: ControlStateDelegate>(
     // so, unless you are the owner, this will fail, hence not using get_or_create
     let auth = auth.get().ok_or((StatusCode::BAD_REQUEST, "Invalid credentials."))?;
 
-    let tld = tld.parse::<DomainName>().map_err(DomainParsingRejection)?.into_tld();
+    let tld: Tld = tld.parse::<DomainName>().map_err(DomainParsingRejection)?.into();
     let result = ctx.register_tld(&auth.identity, tld).await.map_err(log_and_500)?;
     Ok(axum::Json(result))
 }

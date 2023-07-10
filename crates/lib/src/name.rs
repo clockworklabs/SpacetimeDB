@@ -1,5 +1,5 @@
 use core::fmt;
-use std::str::FromStr;
+use std::{borrow::Borrow, ops::Deref, str::FromStr};
 
 use spacetimedb_sats::{
     de::{self, Deserialize, Deserializer},
@@ -168,13 +168,11 @@ impl fmt::Display for Tld {
     }
 }
 
-impl From<Tld> for DomainName {
-    fn from(tld: Tld) -> Self {
-        let domain_name = tld.0;
-        Self {
-            tld_offset: domain_name.len(),
-            domain_name,
-        }
+impl From<DomainName> for Tld {
+    fn from(value: DomainName) -> Self {
+        let mut name = value.domain_name;
+        name.truncate(value.tld_offset);
+        Self(name)
     }
 }
 
@@ -207,6 +205,47 @@ impl<'de> serde::Deserialize<'de> for Tld {
         let s: String = serde::Deserialize::deserialize(deserializer)?;
         parse_domain_tld(&s).map_err(serde::de::Error::custom)?;
         Ok(Self(s))
+    }
+}
+
+/// A slice of a [`Tld`], akin to [`str`].
+#[derive(Debug, PartialEq, Eq)]
+pub struct TldRef(str);
+
+impl TldRef {
+    // Private to enforce parsing
+    fn new(s: &str) -> &Self {
+        // SAFETY: `TldRef` is just a wrapper around `str`, therefore converting
+        // `&str` to `&TldRef` is safe.
+        unsafe { &*(s as *const str as *const TldRef) }
+    }
+}
+
+impl Deref for TldRef {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Borrow<TldRef> for Tld {
+    fn borrow(&self) -> &TldRef {
+        TldRef::new(&self.0)
+    }
+}
+
+impl ToOwned for TldRef {
+    type Owned = Tld;
+
+    fn to_owned(&self) -> Self::Owned {
+        Tld(self.0.to_owned())
+    }
+}
+
+impl fmt::Display for TldRef {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(&self.0)
     }
 }
 
@@ -253,18 +292,12 @@ impl DomainName {
         &self.domain_name
     }
 
-    pub fn tld(&self) -> &str {
-        &self.domain_name[..self.tld_offset]
-    }
-
-    /// Drop subdomain, if any, and return only the TLD
-    pub fn into_tld(mut self) -> Tld {
-        self.domain_name.truncate(self.tld_offset);
-        Tld(self.domain_name)
+    pub fn tld(&self) -> &TldRef {
+        TldRef::new(&self.domain_name[..self.tld_offset])
     }
 
     pub fn as_tld(&self) -> Tld {
-        Tld(self.tld().to_owned())
+        self.tld().to_owned()
     }
 
     pub fn sub_domain(&self) -> Option<&str> {
@@ -299,6 +332,16 @@ impl FromStr for DomainName {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         parse_domain_name(s)
+    }
+}
+
+impl From<Tld> for DomainName {
+    fn from(tld: Tld) -> Self {
+        let domain_name = tld.0;
+        Self {
+            tld_offset: domain_name.len(),
+            domain_name,
+        }
     }
 }
 
