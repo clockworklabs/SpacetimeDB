@@ -28,7 +28,7 @@ proptest! {
         sub in prop::option::of(gen_valid_domain_name())
     ) {
         let domain = parse_domain_name(iter::once(tld.as_str()).chain(sub.as_deref()).join("/")).unwrap();
-        prop_assert_eq!(&tld, domain.tld().deref());
+        prop_assert_eq!(&tld, domain.tld().as_str());
         prop_assert_eq!(sub.as_deref(), domain.sub_domain());
         let domain_tld = Tld::from(domain);
         prop_assert_eq!(&tld, domain_tld.as_str());
@@ -142,6 +142,6 @@ fn test_tld_is_domain_name() {
     let tld = Tld::from(dom);
     let dom = DomainName::from(tld);
 
-    assert_eq!("spacetimedb", dom.tld().deref());
+    assert_eq!("spacetimedb", dom.tld().as_str());
     assert_eq!(None, dom.sub_domain());
 }

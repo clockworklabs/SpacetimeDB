@@ -219,6 +219,10 @@ impl TldRef {
         // `&str` to `&TldRef` is safe.
         unsafe { &*(s as *const str as *const TldRef) }
     }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl Deref for TldRef {
