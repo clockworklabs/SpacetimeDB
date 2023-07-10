@@ -57,7 +57,7 @@ impl CommitLog {
         }
     }
 
-    fn generate_commit<D: MutTxDatastore<RowId = RowId>>(&self, tx_data: &TxData, datastore: &D) -> Option<Vec<u8>> {
+    fn generate_commit<D: MutTxDatastore<RowId = RowId>>(&self, tx_data: &TxData, _datastore: &D) -> Option<Vec<u8>> {
         let mut unwritten_commit = self.unwritten_commit.lock().unwrap();
         let writes = tx_data
             .records
