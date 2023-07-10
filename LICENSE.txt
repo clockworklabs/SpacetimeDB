@@ -7,9 +7,11 @@ Licensed Work:        SpacetimeDB 0.5.0
                       The Licensed Work is
                       (c) 2023 Clockwork Laboratories, Inc.
                       
-Additional Use Grant: You may make use of the Licensed Work, provided that
-                      you may not use the Licensed Work for a Database
-                      Service.
+Additional Use Grant: You may make use the Licensed Work provided your
+                      application or service uses the Licensed Work with no
+                      more than one server instance in production and
+                      provided that you do not use the Licensed Work for a
+                      Database Service.
 
                       A “Database Service” is a commercial offering that
                       allows third parties (other than your employees and
@@ -17,12 +19,12 @@ Additional Use Grant: You may make use of the Licensed Work, provided that
                       Licensed Work by creating tables whose schemas are
                       controlled by such third parties.
 
-Change Date:          2028-07-31
+Change Date:          2028-08-03
 
 Change License:       Apache License, Version 2.0
 
 For information about alternative licensing arrangements for the Software,
-please visit: https://surrealdb.com
+please visit: https://spacetimedb.com
 
 Notice
 

@@ -76,7 +76,6 @@ impl CommitLog {
 
         const COMMIT_SIZE: usize = 1;
 
-        let tx = datastore.begin_mut_tx();
         if unwritten_commit.transactions.len() >= COMMIT_SIZE {
             {
                 let mut guard = self.odb.lock().unwrap();
@@ -97,8 +96,6 @@ impl CommitLog {
             unwritten_commit.commit_offset += 1;
             unwritten_commit.min_tx_offset += unwritten_commit.transactions.len() as u64;
             unwritten_commit.transactions.clear();
-
-            datastore.rollback_mut_tx(tx);
 
             Some(bytes)
         } else {
