@@ -13,13 +13,13 @@ use spacetimedb::host::scheduler::Scheduler;
 use spacetimedb::host::tracelog::replay::replay_report;
 use spacetimedb_lib::Identity;
 
-use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
+use crate::{log_and_500, ControlStateReadAccess, NodeDelegate};
 
 #[derive(Deserialize)]
 pub struct GetTraceParams {
     address: Address,
 }
-pub async fn get_tracelog<S: ControlStateDelegate + NodeDelegate>(
+pub async fn get_tracelog<S: ControlStateReadAccess + NodeDelegate>(
     State(ctx): State<S>,
     Path(GetTraceParams { address }): Path<GetTraceParams>,
 ) -> axum::response::Result<impl IntoResponse> {
@@ -45,7 +45,7 @@ pub async fn get_tracelog<S: ControlStateDelegate + NodeDelegate>(
 pub struct StopTraceParams {
     address: Address,
 }
-pub async fn stop_tracelog<S: ControlStateDelegate + NodeDelegate>(
+pub async fn stop_tracelog<S: ControlStateReadAccess + NodeDelegate>(
     State(ctx): State<S>,
     Path(StopTraceParams { address }): Path<StopTraceParams>,
 ) -> axum::response::Result<impl IntoResponse> {
@@ -88,7 +88,7 @@ pub async fn perform_tracelog_replay(body: Bytes) -> axum::response::Result<impl
 
 pub fn router<S>() -> axum::Router<S>
 where
-    S: ControlStateDelegate + NodeDelegate + Clone + 'static,
+    S: ControlStateReadAccess + NodeDelegate + Clone + 'static,
 {
     use axum::routing::{get, post};
     axum::Router::new()
