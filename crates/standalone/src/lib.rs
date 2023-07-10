@@ -602,9 +602,18 @@ impl StandaloneEnv {
             if let Some((dbic, scheduler)) = self.db_inst_ctx_controller.get(instance_id) {
                 (dbic, scheduler.new_with_same_db())
             } else {
-                let dbic =
-                    DatabaseInstanceContext::from_database(self.storage, &database, instance_id, root_db_path.clone());
-                let (scheduler, scheduler_starter) = Scheduler::open(dbic.scheduler_db_path(root_db_path))?;
+                // `spawn_blocking` because we're accessing the filesystem
+                let (dbic, (scheduler, scheduler_starter)) = tokio::task::spawn_blocking({
+                    let database = database.clone();
+                    let path = root_db_path.clone();
+                    move || -> anyhow::Result<_> {
+                        let dbic = DatabaseInstanceContext::from_database(&database, instance_id, path);
+                        let sched = Scheduler::open(dbic.scheduler_db_path(root_db_path))?;
+                        Ok((dbic, sched))
+                    }
+                })
+                .await??;
+
                 self.db_inst_ctx_controller.insert(dbic.clone(), scheduler.clone());
                 (dbic, (scheduler, scheduler_starter))
             };
