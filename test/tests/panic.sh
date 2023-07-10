@@ -32,14 +32,14 @@ fn second() {
 }
 EOF
 
-run_test "$SPACETIME" publish -s -d --project-path "$PROJECT_PATH" --clear-database
+run_test cargo run publish -s -d --project-path "$PROJECT_PATH" --clear-database
 [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
 IDENT="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 set +e
-"$SPACETIME" call "$IDENT" first
+cargo run call "$IDENT" first
 set -e
-run_test "$SPACETIME" call "$IDENT" second
+run_test cargo run call "$IDENT" second
 
-run_test "$SPACETIME" logs "$IDENT"
+run_test cargo run logs "$IDENT"
 [ ' Test Passed' == "$(grep 'Test Passed' "$TEST_OUT" | cut -d: -f4-)" ]

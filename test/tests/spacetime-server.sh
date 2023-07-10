@@ -11,24 +11,24 @@ source "./test/lib.include"
 
 echo "CONFIG: $SPACETIME_CONFIG_FILE"
 cat "$SPACETIME_CONFIG_FILE"
-run_test "$SPACETIME" server "https://spacetimedb.com/spacetimedb"
+run_test cargo run server "https://spacetimedb.com/spacetimedb"
 [ "$(grep Host "$TEST_OUT")" == "Host: spacetimedb.com/spacetimedb" ]
 [ "$(grep Protocol "$TEST_OUT")" == "Protocol: https" ]
-[ "$(grep host $SPACETIME_CONFIG_FILE)" == "host = 'spacetimedb.com/spacetimedb'" ]
-[ "$(grep protocol $SPACETIME_CONFIG_FILE)" == "protocol = 'https'" ]
+[ "$(grep host "$SPACETIME_CONFIG_FILE")" == "host = 'spacetimedb.com/spacetimedb'" ]
+[ "$(grep protocol "$SPACETIME_CONFIG_FILE")" == "protocol = 'https'" ]
 
 echo "CONFIG: $SPACETIME_CONFIG_FILE"
 cat "$SPACETIME_CONFIG_FILE"
-run_test "$SPACETIME" server "http://127.0.0.1:3000/spacetimedb"
+run_test cargo run server "http://127.0.0.1:3000/spacetimedb"
 [ "$(grep Host "$TEST_OUT")" == "Host: 127.0.0.1:3000/spacetimedb" ]
 [ "$(grep Protocol "$TEST_OUT")" == "Protocol: http" ]
-[ "$(grep host $SPACETIME_CONFIG_FILE)" == "host = '127.0.0.1:3000/spacetimedb'" ]
-[ "$(grep protocol $SPACETIME_CONFIG_FILE)" == "protocol = 'http'" ]
+[ "$(grep host "$SPACETIME_CONFIG_FILE")" == "host = '127.0.0.1:3000/spacetimedb'" ]
+[ "$(grep protocol "$SPACETIME_CONFIG_FILE")" == "protocol = 'http'" ]
 
 echo "CONFIG: $SPACETIME_CONFIG_FILE"
 cat "$SPACETIME_CONFIG_FILE"
-run_test "$SPACETIME" server "http://127.0.0.1"
+run_test cargo run server "http://127.0.0.1"
 [ "$(grep Host "$TEST_OUT")" == "Host: 127.0.0.1" ]
 [ "$(grep Protocol "$TEST_OUT")" == "Protocol: http" ]
-[ "$(grep host $SPACETIME_CONFIG_FILE)" == "host = '127.0.0.1'" ]
-[ "$(grep protocol $SPACETIME_CONFIG_FILE)" == "protocol = 'http'" ]
+[ "$(grep host "$SPACETIME_CONFIG_FILE")" == "host = '127.0.0.1'" ]
+[ "$(grep protocol "$SPACETIME_CONFIG_FILE")" == "protocol = 'http'" ]

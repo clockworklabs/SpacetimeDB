@@ -10,14 +10,14 @@ set -x
 
 source "./test/lib.include"
 
-run_test "$SPACETIME" identity new --no-email
-run_test "$SPACETIME" identity new --no-email
+run_test cargo run identity new --no-email
+run_test cargo run identity new --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
-run_test "$SPACETIME" identity list
+run_test cargo run identity list
 [ "1" == "$(grep -c "$IDENT" "$TEST_OUT")" ]
 
-run_test "$SPACETIME" identity remove "$IDENT"
-run_test "$SPACETIME" identity list
+run_test cargo run identity remove "$IDENT"
+run_test cargo run identity list
 [ "0" == "$(grep -c "$IDENT" "$TEST_OUT")" ]
 
-run_test "$SPACETIME" identity remove --all --force
+run_test cargo run identity remove --all --force

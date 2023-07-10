@@ -54,13 +54,13 @@ pub fn say_friends() {
 }
 EOF
 
-run_test "$SPACETIME" publish -s -d --project-path "$PROJECT_PATH" --clear-database
+run_test cargo run publish -s -d --project-path "$PROJECT_PATH" --clear-database
 [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
 IDENT="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
-run_test "$SPACETIME" call "$IDENT" create_account '[1, "House"]'
-run_test "$SPACETIME" call "$IDENT" create_account '[2, "Wilson"]'
-run_test "$SPACETIME" call "$IDENT" add_friend '[1, 2]'
-run_test "$SPACETIME" call "$IDENT" say_friends
-run_test "$SPACETIME" logs "$IDENT" 100
+run_test cargo run call "$IDENT" create_account '[1, "House"]'
+run_test cargo run call "$IDENT" create_account '[2, "Wilson"]'
+run_test cargo run call "$IDENT" add_friend '[1, 2]'
+run_test cargo run call "$IDENT" say_friends
+run_test cargo run logs "$IDENT" 100
 [ ' House is friends with Wilson' == "$(grep 'House' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]

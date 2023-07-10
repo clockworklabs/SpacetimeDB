@@ -9,14 +9,14 @@ set -euox pipefail
 
 source "./test/lib.include"
 
-run_test "$SPACETIME" identity new --no-email
+run_test cargo run identity new --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
-run_test "$SPACETIME" identity token "$IDENT"
+run_test cargo run identity token "$IDENT"
 TOKEN=$(cat "$TEST_OUT")
 
 reset_config
 
-run_test "$SPACETIME" identity import "$IDENT" "$TOKEN"
-run_test "$SPACETIME" identity list
+run_test cargo run identity import "$IDENT" "$TOKEN"
+run_test cargo run identity list
 exit 0
 [ "$(grep "$IDENT" "$TEST_OUT" | awk '{print $1}')" == '***' ]

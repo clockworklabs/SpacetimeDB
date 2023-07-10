@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-set -x
+# set -x
 
 cd "$(dirname "$0")"
 
@@ -17,12 +17,13 @@ export RESET_SPACETIME_CONFIG
 export SPACETIME_DIR="$PWD/.."
 RUN_PARALLEL=false
 
-TESTS=(./test/tests/*.sh)
-TESTS=("${TESTS[@]#./test/tests/}")
-TESTS=("${TESTS[@]%.sh}")
+declare -a TESTS
+for test in tests/*.sh ; do
+	file_name="$(basename "$test")"
+	TESTS+=("${file_name%.*}")
+done
 
 EXCLUDE_TESTS=()
-GITHUB=false
 
 while [ $# != 0 ] ; do
 	case $1 in
@@ -35,11 +36,6 @@ while [ $# != 0 ] ; do
 			shift
 			RUN_PARALLEL=true
 			echo "Running tests in parallel."
-		;;
-		--github)
-			shift
-			GITHUB=true
-			echo "Running in a github runner."
 		;;
 		*)
 			TESTS=("$@")
@@ -57,24 +53,10 @@ cp ./config.toml "$RESET_SPACETIME_CONFIG"
 cd ..
 export SPACETIME_HOME=$PWD
 
-# Build our SpacetimeDB executable that we'll use for all tests.
-if [ "$GITHUB" = "true" ] ; then
-	# Install globally because it seems that the github runner has some issues with changing the path
-	cargo build -p spacetimedb-cli
-	export SPACETIME=cargo run --
-else
-	cargo build --profile "$SPACETIME_CARGO_PROFILE"
-	SPACETIME_EXE_DIR=$(mktemp -d)
-	cp "./target/$SPACETIME_CARGO_PROFILE/spacetime" "$SPACETIME_EXE_DIR/spacetime"
-	export SPACETIME="$SPACETIME_EXE_DIR/spacetime"
-	export PATH="$SPACETIME_EXE_DIR:$PATH"
-	[ "$(which spacetime)" == "$SPACETIME_EXE_DIR/spacetime" ]
-fi
-
 # Create a project that we can copy to reset our project
 RESET_PROJECT_PATH=$(mktemp -d)
 export RESET_PROJECT_PATH
-$SPACETIME init "$RESET_PROJECT_PATH" --lang rust
+cargo run init "$RESET_PROJECT_PATH" --lang rust
 # We have to force using the local spacetimedb_bindings otherwise we will download them from crates.io
 if [[ "$OSTYPE" == "darwin"* ]]; then
 	sed -i '' "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${RESET_PROJECT_PATH}/Cargo.toml"
@@ -86,7 +68,7 @@ else
 	sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${RESET_PROJECT_PATH}/Cargo.toml"
 fi
 
-$SPACETIME build "$RESET_PROJECT_PATH" -s -d
+cargo run build "$RESET_PROJECT_PATH" -s -d
 
 if [ "$(docker ps | grep "node" -c)" != 1 ] ; then
 	echo "Docker container not found, is SpacetimeDB running?"
