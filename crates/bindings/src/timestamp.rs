@@ -4,8 +4,7 @@ use std::ops::{Add, Sub};
 use std::time::Duration;
 
 use spacetimedb_lib::de::Deserialize;
-use spacetimedb_lib::sats::impl_st;
-use spacetimedb_lib::ser::Serialize;
+use spacetimedb_lib::sats::{impl_st, impl_serialize};
 
 scoped_tls::scoped_thread_local! {
     static CURRENT_TIMESTAMP: Timestamp
@@ -98,9 +97,4 @@ impl<'de> Deserialize<'de> for Timestamp {
         u64::deserialize(deserializer).map(|micros_since_epoch| Self { micros_since_epoch })
     }
 }
-
-impl Serialize for Timestamp {
-    fn serialize<S: spacetimedb_lib::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.micros_since_epoch.serialize(serializer)
-    }
-}
+impl_serialize!([] Timestamp, (self, ser) => self.micros_since_epoch.serialize(ser));

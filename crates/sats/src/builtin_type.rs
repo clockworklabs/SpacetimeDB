@@ -4,7 +4,7 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, ProductTypeElement, SumTypeVariant};
+use crate::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, ProductTypeElement, SumTypeVariant, impl_serialize};
 use enum_as_inner::EnumAsInner;
 
 /// Represents the built-in types in SATS.
@@ -61,11 +61,8 @@ pub struct ArrayType {
     pub elem_ty: Box<AlgebraicType>,
 }
 
-impl Serialize for ArrayType {
-    fn serialize<S: crate::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.elem_ty.serialize(serializer)
-    }
-}
+impl_serialize!([] ArrayType, (self, ser) => self.elem_ty.serialize(ser));
+
 impl<'de> Deserialize<'de> for ArrayType {
     fn deserialize<D: crate::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         Deserialize::deserialize(deserializer).map(|elem_ty| Self { elem_ty })

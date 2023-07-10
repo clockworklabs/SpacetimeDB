@@ -1,4 +1,4 @@
-use crate::{algebraic_type::AlgebraicType, builtin_type::BuiltinType, meta_type::MetaType};
+use crate::{algebraic_type::AlgebraicType, builtin_type::BuiltinType, meta_type::MetaType, impl_serialize};
 use std::fmt::Display;
 
 /// A reference to an [`AlgebraicType`] within a `Typespace`.
@@ -18,11 +18,7 @@ impl AlgebraicTypeRef {
     }
 }
 
-impl crate::ser::Serialize for AlgebraicTypeRef {
-    fn serialize<S: crate::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0.serialize(serializer)
-    }
-}
+impl_serialize!([] AlgebraicTypeRef, (self, ser) => self.0.serialize(ser));
 
 impl<'de> crate::de::Deserialize<'de> for AlgebraicTypeRef {
     fn deserialize<D: crate::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {

@@ -1,5 +1,6 @@
 use auth::StAccess;
 use auth::StTableType;
+use sats::impl_serialize;
 pub use spacetimedb_sats::buffer;
 pub mod address;
 pub mod data_key;
@@ -158,18 +159,15 @@ struct ReducerArgsWithSchema<'a> {
     value: &'a ProductValue,
     ty: sats::WithTypespace<'a, ReducerDef>,
 }
-
-impl ser::Serialize for ReducerArgsWithSchema<'_> {
-    fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use itertools::Itertools;
-        use ser::SerializeSeqProduct;
-        let mut seq = serializer.serialize_seq_product(self.value.elements.len())?;
-        for (value, elem) in self.value.elements.iter().zip_eq(&self.ty.ty().args) {
-            seq.serialize_element(&self.ty.with(&elem.algebraic_type).with_value(value))?;
-        }
-        seq.end()
+impl_serialize!([] ReducerArgsWithSchema<'_>, (self, ser) => {
+    use itertools::Itertools;
+    use ser::SerializeSeqProduct;
+    let mut seq = ser.serialize_seq_product(self.value.elements.len())?;
+    for (value, elem) in self.value.elements.iter().zip_eq(&self.ty.ty().args) {
+        seq.serialize_element(&self.ty.with(&elem.algebraic_type).with_value(value))?;
     }
-}
+    seq.end()
+});
 
 //WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Default, de::Deserialize, ser::Serialize)]

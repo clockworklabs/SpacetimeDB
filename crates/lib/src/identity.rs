@@ -1,6 +1,6 @@
 use std::fmt;
 
-use sats::impl_st;
+use sats::{impl_st, impl_serialize};
 
 use crate::sats::{self, de, ser};
 
@@ -40,12 +40,7 @@ impl Identity {
 }
 
 impl_st!([] Identity, _ts => sats::AlgebraicType::bytes());
-
-impl ser::Serialize for Identity {
-    fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.data.serialize(serializer)
-    }
-}
+impl_serialize!([] Identity, (self, ser) => self.data.serialize(ser));
 impl<'de> de::Deserialize<'de> for Identity {
     fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         Ok(Self {

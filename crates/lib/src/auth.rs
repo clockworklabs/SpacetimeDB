@@ -1,6 +1,7 @@
+use spacetimedb_sats::impl_serialize;
+
+use crate::de;
 use crate::de::{Deserializer, Error};
-use crate::ser::Serializer;
-use crate::{de, ser};
 
 /// Describe the visibility of the table
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -43,11 +44,7 @@ impl<'a> TryFrom<&'a str> for StAccess {
     }
 }
 
-impl ser::Serialize for StAccess {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
+impl_serialize!([] StAccess, (self, ser) => ser.serialize_str(self.as_str()));
 
 impl<'de> de::Deserialize<'de> for StAccess {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -92,11 +89,7 @@ impl<'a> TryFrom<&'a str> for StTableType {
     }
 }
 
-impl ser::Serialize for StTableType {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
+impl_serialize!([] StTableType, (self, ser) => ser.serialize_str(self.as_str()));
 
 impl<'de> de::Deserialize<'de> for StTableType {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
