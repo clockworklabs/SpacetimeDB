@@ -4,7 +4,7 @@ use axum::extract::State;
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 
-use crate::{log_and_500, ControlStateDelegate};
+use crate::{log_and_500, ControlStateReadAccess};
 
 #[derive(Serialize, Deserialize)]
 struct SDConfig {
@@ -12,7 +12,9 @@ struct SDConfig {
     labels: HashMap<String, String>,
 }
 
-pub async fn get_sd_config<S: ControlStateDelegate>(State(ctx): State<S>) -> axum::response::Result<impl IntoResponse> {
+pub async fn get_sd_config<S: ControlStateReadAccess>(
+    State(ctx): State<S>,
+) -> axum::response::Result<impl IntoResponse> {
     // TODO(cloutiertyler): security
     let nodes = ctx.get_nodes().map_err(log_and_500)?;
 
@@ -30,7 +32,7 @@ pub async fn get_sd_config<S: ControlStateDelegate>(State(ctx): State<S>) -> axu
 
 pub fn router<S>() -> axum::Router<S>
 where
-    S: ControlStateDelegate + Clone + 'static,
+    S: ControlStateReadAccess + Clone + Send + Sync + 'static,
 {
     use axum::routing::get;
     axum::Router::new().route("/sd_config", get(get_sd_config::<S>))
