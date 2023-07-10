@@ -12,6 +12,7 @@ use spacetimedb::host::EntityDef;
 use spacetimedb::host::ReducerArgs;
 use spacetimedb::host::ReducerCallError;
 use spacetimedb::host::ReducerOutcome;
+use spacetimedb::host::UpdateDatabaseSuccess;
 use spacetimedb_lib::name;
 use spacetimedb_lib::name::DomainName;
 use spacetimedb_lib::name::DomainParsingError;
@@ -581,7 +582,6 @@ pub async fn dns<S: ControlStateDelegate>(
     Query(DNSQueryParams {}): Query<DNSQueryParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let domain = database_name.parse().map_err(DomainParsingRejection)?;
-    log::debug!("dns with `{domain}`");
     let address = ctx.lookup_address(&domain).map_err(log_and_500)?;
     let response = if let Some(address) = address {
         DnsLookupResponse::Success {
@@ -804,20 +804,41 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         }
     };
 
-    ctx.publish_database(
-        &auth.identity,
-        DatabaseDef {
-            address: db_addr,
-            program_bytes: body.into(),
-            num_replicas: 1,
-            trace_log: should_trace(trace_log),
-        },
-    )
-    .await
-    .map_err(log_and_500)?;
+    let maybe_updated = ctx
+        .publish_database(
+            &auth.identity,
+            DatabaseDef {
+                address: db_addr,
+                program_bytes: body.into(),
+                num_replicas: 1,
+                trace_log: should_trace(trace_log),
+            },
+        )
+        .await
+        .map_err(log_and_500)?;
+
+    if let Some(updated) = maybe_updated {
+        match updated {
+            Ok(success) => {
+                if let UpdateDatabaseSuccess {
+                    // An update reducer was defined, and it was run
+                    update_result: Some(update_result),
+                    // Not yet implemented
+                    migrate_results: _,
+                } = success
+                {
+                    let ror = reducer_outcome_response(&auth.identity, "update", update_result.outcome);
+                    if !matches!(ror, (StatusCode::OK, _)) {
+                        return Err(ror.into());
+                    }
+                }
+            }
+            Err(e) => return Err((StatusCode::BAD_REQUEST, format!("Database update rejected: {e}")).into()),
+        }
+    }
 
     Ok(axum::Json(PublishResult::Success {
-        domain: db_name.map(|domain| domain.to_string()),
+        domain: db_name.as_ref().map(ToString::to_string),
         address: db_addr.to_hex(),
         op,
     }))

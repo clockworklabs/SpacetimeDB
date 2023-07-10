@@ -7,7 +7,7 @@ use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
-use spacetimedb::host::HostController;
+use spacetimedb::host::{HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
 use spacetimedb::messages::worker_db::DatabaseInstanceState;
@@ -122,7 +122,21 @@ pub trait ControlStateReadAccess {
 pub trait ControlStateWriteAccess: Send + Sync {
     // Databases
     async fn create_address(&self) -> spacetimedb::control_db::Result<Address>;
-    async fn publish_database(&self, identity: &Identity, spec: DatabaseDef) -> spacetimedb::control_db::Result<()>;
+
+    /// Publish a database acc. to [`DatabaseDef`].
+    ///
+    /// If the database with the given address was successfully published before,
+    /// it is updated acc. to the module lifecycle conventions. `Some` result is
+    /// returned in that case.
+    ///
+    /// Otherwise, `None` is returned meaning that the database was freshly
+    /// initialized.
+    async fn publish_database(
+        &self,
+        identity: &Identity,
+        spec: DatabaseDef,
+    ) -> spacetimedb::control_db::Result<Option<UpdateDatabaseResult>>;
+
     async fn delete_database(&self, identity: &Identity, address: &Address) -> spacetimedb::control_db::Result<()>;
 
     // Identities
@@ -224,9 +238,14 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for ArcEnv<T> 
         self.0.create_address().await
     }
 
-    async fn publish_database(&self, identity: &Identity, spec: DatabaseDef) -> spacetimedb::control_db::Result<()> {
+    async fn publish_database(
+        &self,
+        identity: &Identity,
+        spec: DatabaseDef,
+    ) -> spacetimedb::control_db::Result<Option<UpdateDatabaseResult>> {
         self.0.publish_database(identity, spec).await
     }
+
     async fn delete_database(&self, identity: &Identity, address: &Address) -> spacetimedb::control_db::Result<()> {
         self.0.delete_database(identity, address).await
     }

@@ -25,7 +25,6 @@ use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::{stdb_path, worker_metrics};
 use spacetimedb_lib::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_lib::recovery::RecoveryCode;
-use spacetimedb_lib::Hash;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -271,19 +270,27 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         &self,
         identity: &Identity,
         spec: spacetimedb_client_api::DatabaseDef,
-    ) -> spacetimedb::control_db::Result<()> {
+    ) -> spacetimedb::control_db::Result<Option<UpdateDatabaseResult>> {
         let existing_db = self.control_db.get_database_by_address(&spec.address)?;
-        let mut database = existing_db.clone().unwrap_or(Database {
-            id: 0,
-            address: spec.address,
-            identity: *identity,
-            host_type: HostType::Wasmer,
-            num_replicas: spec.num_replicas,
-            program_bytes_address: Hash::ZERO,
-            trace_log: spec.trace_log,
-        });
-        let addr = self.object_db.insert_object(spec.program_bytes)?;
-        database.program_bytes_address = addr;
+        let program_bytes_address = self.object_db.insert_object(spec.program_bytes)?;
+        let mut database = match existing_db.as_ref() {
+            Some(existing) => Database {
+                address: spec.address,
+                num_replicas: spec.num_replicas,
+                program_bytes_address,
+                trace_log: spec.trace_log,
+                ..existing.clone()
+            },
+            None => Database {
+                id: 0,
+                address: spec.address,
+                identity: *identity,
+                host_type: HostType::Wasmer,
+                num_replicas: spec.num_replicas,
+                program_bytes_address,
+                trace_log: spec.trace_log,
+            },
+        };
 
         if let Some(existing) = existing_db.as_ref() {
             if &existing.identity != identity {
@@ -306,11 +313,14 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         self.schedule_database(Some(database), existing_db).await?;
 
         if should_update_instances {
-            // TODO(kim): cannot return result in cloud nor here
-            let _ = self.update_database_instances(database_id).await?;
+            let leader = self
+                .control_db
+                .get_leader_database_instance_by_database(database_id)
+                .ok_or_else(|| anyhow!("Not found: leader instance for database {database_id}"))?;
+            Ok(self.update_database_instance(leader).await?)
+        } else {
+            Ok(None)
         }
-
-        Ok(())
     }
 
     async fn delete_database(&self, identity: &Identity, address: &Address) -> spacetimedb::control_db::Result<()> {
@@ -450,22 +460,6 @@ impl StandaloneEnv {
         }
 
         Ok(())
-    }
-
-    // TODO(kim): update should only run on the leader instance, and this
-    // method should return a single result
-    async fn update_database_instances(
-        &self,
-        database_id: u64,
-    ) -> Result<Vec<Option<UpdateDatabaseResult>>, anyhow::Error> {
-        let instances = self.control_db.get_database_instances_by_database(database_id)?;
-        let mut results = Vec::with_capacity(instances.len());
-        for instance in instances {
-            let res = self.update_database_instance(instance).await?;
-            results.push(res);
-        }
-
-        Ok(results)
     }
 
     async fn deschedule_replicas(&self, database_id: u64, num_replicas: u32) -> Result<(), anyhow::Error> {
