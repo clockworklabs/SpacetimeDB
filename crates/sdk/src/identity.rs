@@ -1,22 +1,30 @@
 use crate::callbacks::CallbackId;
 use crate::global_connection::try_with_credential_store;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use spacetimedb_lib::de::Deserialize;
+use spacetimedb_lib::ser::Serialize;
 // TODO: impl ser/de for `Identity`, `Token`, `Credentials` so that clients can stash them
 //       to disk and use them to re-connect.
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 /// A unique public identifier for a client connected to a database.
 pub struct Identity {
     pub(crate) bytes: Vec<u8>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+impl Identity {
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 /// A private access token for a client connected to a database.
 pub struct Token {
     pub(crate) string: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 /// Credentials, including a private access token, sufficient to authenticate a client
 /// connected to a database.
 pub struct Credentials {
@@ -89,4 +97,35 @@ pub fn once_on_connect(callback: impl FnOnce(&Credentials) + Send + 'static) -> 
 /// nothing.
 pub fn remove_on_connect(id: ConnectCallbackId) -> Result<()> {
     try_with_credential_store(|cred_store| cred_store.unregister_on_connect(id.id))
+}
+
+/// Read the current connection's public `Identity`.
+///
+/// Returns an error if:
+/// - `connect` has not yet been called.
+/// - We connected anonymously, and we have not yet received our credentials.
+pub fn identity() -> Result<Identity> {
+    try_with_credential_store(|cred_store| cred_store.identity().ok_or(anyhow!("Identity not yet received")))
+        .and_then(|inner| inner)
+}
+
+/// Read the current connection's private `Token`.
+///
+/// Returns an error if:
+/// - `connect` has not yet been called.
+/// - We connected anonymously, and we have not yet received our credentials.
+pub fn token() -> Result<Token> {
+    try_with_credential_store(|cred_store| cred_store.token().ok_or(anyhow!("Token not yet received")))
+        .and_then(|inner| inner)
+}
+
+/// Read the current connection's `Credentials`,
+/// including a public `Identity` and a private `Token`.
+///
+/// Returns an error if:
+/// - `connect` has not yet been called.
+/// - We connected anonymously, and we have not yet received our credentials.
+pub fn credentials() -> Result<Credentials> {
+    try_with_credential_store(|cred_store| cred_store.credentials().ok_or(anyhow!("Credentials not yet received")))
+        .and_then(|inner| inner)
 }
