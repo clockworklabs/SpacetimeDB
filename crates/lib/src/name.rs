@@ -39,6 +39,9 @@ pub enum InsertDomainResult {
     PermissionDenied {
         domain: DomainName,
     },
+
+    /// Some unspecified error occurred.
+    OtherError(String),
 }
 
 #[derive(Clone, Copy, Debug)]
