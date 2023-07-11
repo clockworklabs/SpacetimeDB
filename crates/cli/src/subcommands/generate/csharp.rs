@@ -615,12 +615,18 @@ fn autogen_csharp_product_table_common(
                     AlgebraicType::Sum(sum) => {
                         if is_option_type(sum) {
                             writeln!(output, "[SpacetimeDB.Some]").unwrap();
-                        } else if is_enum(sum) {
-                            writeln!(
-                                output,
-                                "[Newtonsoft.Json.JsonConverter(typeof(SpacetimeDB.EnumConverter))]"
-                            )
-                            .unwrap();
+                        } else {
+                            unimplemented!()
+                        }
+                    }
+                    AlgebraicType::Ref(type_ref) => {
+                        let ref_type = &ctx.typespace.types[type_ref.idx()];
+                        if let AlgebraicType::Sum(sum_type) = ref_type {
+                            if is_enum(sum_type) {
+                                writeln!(output, "[SpacetimeDB.Enum]").unwrap();
+                            } else {
+                                unimplemented!()
+                            }
                         }
                     }
                     _ => {}
