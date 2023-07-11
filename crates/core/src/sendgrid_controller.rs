@@ -1,5 +1,6 @@
 use sendgrid::v3::{Email, Personalization, SGMap};
 
+#[derive(Clone)]
 pub struct SendGridController {
     sender: sendgrid::v3::Sender,
     sendgrid_sender: Email,
