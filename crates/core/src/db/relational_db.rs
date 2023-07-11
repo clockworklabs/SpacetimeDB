@@ -256,6 +256,14 @@ impl RelationalDB {
     {
         let mut tx = self.begin_tx();
         let res = f(&mut tx);
+        self.finish_tx(tx, res)
+    }
+
+    /// Perform the transactional logic for the `tx` according to the `res`
+    pub fn finish_tx<A, E>(&self, tx: MutTxId, res: Result<A, E>) -> Result<A, E>
+    where
+        E: From<DBError>,
+    {
         if res.is_err() {
             self.rollback_tx(tx);
         } else {
