@@ -30,7 +30,7 @@ namespace SpacetimeDB
         }
     }
     
-public class EnumConverter : JsonConverter
+    public class EnumConverter : JsonConverter
     {
         public override bool CanConvert(Type objectType) => true;
 
@@ -44,12 +44,12 @@ public class EnumConverter : JsonConverter
         {
             writer.WriteStartObject();
             writer.WritePropertyName(value.ToString());
-            writer.WriteRaw("{}");
+            writer.WriteRawValue("{}");
             writer.WriteEndObject();
         }
     }
     
-public class JsonContractResolver : DefaultContractResolver
+    public class JsonContractResolver : DefaultContractResolver
     {
         protected override JsonProperty CreateProperty(MemberInfo member, MemberSerialization memberSerialization)
         {
