@@ -5,7 +5,7 @@ use spacetimedb::db::relational_db::{open_db, RelationalDB};
 use spacetimedb_lib::sats::product;
 use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType};
 
-type DbResult = (RelationalDB, u32);
+type DbResult = (RelationalDB, TempDir, u32);
 
 fn init_db() -> ResultBench<(TempDir, u32)> {
     let tmp_dir = TempDir::new("stdb_test")?;
@@ -26,7 +26,7 @@ fn init_db() -> ResultBench<(TempDir, u32)> {
 fn build_db() -> ResultBench<DbResult> {
     let (tmp_dir, table_id) = init_db()?;
     let stdb = open_db(&tmp_dir)?;
-    Ok((stdb, table_id))
+    Ok((stdb, tmp_dir, table_id))
 }
 
 fn insert_row(db: &RelationalDB, tx: &mut MutTxId, table_id: u32, run: Runs) -> ResultBench<()> {
@@ -60,7 +60,7 @@ impl BuildDb for DbResult {
 }
 
 pub fn prefill_data(db: &DbResult, run: Runs) -> ResultBench<()> {
-    let (conn, table_id) = db;
+    let (conn, _tmp_dir, table_id) = db;
 
     let mut tx = conn.begin_tx();
     insert_row(conn, &mut tx, *table_id, run)?;
@@ -70,8 +70,8 @@ pub fn prefill_data(db: &DbResult, run: Runs) -> ResultBench<()> {
 }
 
 pub fn insert_tx_per_row(pool: &mut Pool<DbResult>, run: Runs) -> ResultBench<()> {
-    let (conn, table_id) = pool.next()?;
-    //let mut log = log.lock().unwrap();
+    let (conn, _tmp_dir, table_id) = pool.next()?;
+
     for row in run.data() {
         let mut tx = conn.begin_tx();
 
@@ -96,7 +96,7 @@ pub fn insert_tx(pool: &mut Pool<DbResult>, _run: Runs) -> ResultBench<()> {
 }
 
 pub fn select_no_index(pool: &mut Pool<DbResult>, run: Runs) -> ResultBench<()> {
-    let (conn, table_id) = pool.next()?;
+    let (conn, _tmp_dir, table_id) = pool.next()?;
 
     let tx = conn.begin_tx();
 
