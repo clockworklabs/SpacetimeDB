@@ -320,6 +320,122 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for ArcEnv<T> {
     }
 }
 
+impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
+    // Nodes
+    fn get_node_id(&self) -> Option<u64> {
+        (**self).get_node_id()
+    }
+    fn get_node_by_id(&self, node_id: u64) -> spacetimedb::control_db::Result<Option<Node>> {
+        (**self).get_node_by_id(node_id)
+    }
+    fn get_nodes(&self) -> spacetimedb::control_db::Result<Vec<Node>> {
+        (**self).get_nodes()
+    }
+
+    // Databases
+    fn get_database_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<Database>> {
+        (**self).get_database_by_id(id)
+    }
+    fn get_database_by_address(&self, address: &Address) -> spacetimedb::control_db::Result<Option<Database>> {
+        (**self).get_database_by_address(address)
+    }
+    fn get_databases(&self) -> spacetimedb::control_db::Result<Vec<Database>> {
+        (**self).get_databases()
+    }
+
+    // Database instances
+    fn get_database_instance_state(
+        &self,
+        database_instance_id: u64,
+    ) -> spacetimedb::control_db::Result<Option<DatabaseInstanceState>> {
+        (**self).get_database_instance_state(database_instance_id)
+    }
+    fn get_database_instance_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<DatabaseInstance>> {
+        (**self).get_database_instance_by_id(id)
+    }
+    fn get_database_instances(&self) -> spacetimedb::control_db::Result<Vec<DatabaseInstance>> {
+        (**self).get_database_instances()
+    }
+    fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance> {
+        (**self).get_leader_database_instance_by_database(database_id)
+    }
+
+    // Identities
+    fn get_identities_for_email(&self, email: &str) -> spacetimedb::control_db::Result<Vec<IdentityEmail>> {
+        (**self).get_identities_for_email(email)
+    }
+    fn get_recovery_codes(&self, email: &str) -> spacetimedb::control_db::Result<Vec<RecoveryCode>> {
+        (**self).get_recovery_codes(email)
+    }
+
+    // Energy
+    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyBalance>> {
+        (**self).get_energy_balance(identity)
+    }
+
+    // DNS
+    fn lookup_address(&self, domain: &DomainName) -> spacetimedb::control_db::Result<Option<Address>> {
+        (**self).lookup_address(domain)
+    }
+
+    fn reverse_lookup(&self, address: &Address) -> spacetimedb::control_db::Result<Vec<DomainName>> {
+        (**self).reverse_lookup(address)
+    }
+}
+
+#[async_trait]
+impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
+    async fn create_address(&self) -> spacetimedb::control_db::Result<Address> {
+        (**self).create_address().await
+    }
+
+    async fn publish_database(
+        &self,
+        identity: &Identity,
+        spec: DatabaseDef,
+    ) -> spacetimedb::control_db::Result<Option<UpdateDatabaseResult>> {
+        (**self).publish_database(identity, spec).await
+    }
+
+    async fn delete_database(&self, identity: &Identity, address: &Address) -> spacetimedb::control_db::Result<()> {
+        (**self).delete_database(identity, address).await
+    }
+
+    async fn create_identity(&self) -> spacetimedb::control_db::Result<Identity> {
+        (**self).create_identity().await
+    }
+
+    async fn add_email(&self, identity: &Identity, email: &str) -> spacetimedb::control_db::Result<()> {
+        (**self).add_email(identity, email).await
+    }
+
+    async fn insert_recovery_code(
+        &self,
+        identity: &Identity,
+        email: &str,
+        code: RecoveryCode,
+    ) -> spacetimedb::control_db::Result<()> {
+        (**self).insert_recovery_code(identity, email, code).await
+    }
+
+    async fn add_energy(&self, identity: &Identity, quanta: u64) -> spacetimedb::control_db::Result<()> {
+        (**self).add_energy(identity, quanta).await
+    }
+
+    async fn register_tld(&self, identity: &Identity, tld: Tld) -> spacetimedb::control_db::Result<RegisterTldResult> {
+        (**self).register_tld(identity, tld).await
+    }
+
+    async fn create_dns_record(
+        &self,
+        identity: &Identity,
+        domain: &DomainName,
+        address: &Address,
+    ) -> spacetimedb::control_db::Result<InsertDomainResult> {
+        (**self).create_dns_record(identity, domain, address).await
+    }
+}
+
 #[async_trait]
 impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {

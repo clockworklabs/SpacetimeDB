@@ -7,7 +7,7 @@ use spacetimedb::auth::identity::encode_token_with_expiry;
 use spacetimedb_lib::Identity;
 
 use crate::auth::{SpacetimeAuth, SpacetimeAuthHeader};
-use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
+use crate::{log_and_500, ControlStateDelegate, ControlStateWriteAccess, NodeDelegate};
 
 #[derive(Deserialize)]
 pub struct CreateIdentityQueryParams {
@@ -92,7 +92,7 @@ pub struct SetEmailQueryParams {
     email: email_address::EmailAddress,
 }
 
-pub async fn set_email<S: ControlStateDelegate>(
+pub async fn set_email<S: ControlStateWriteAccess>(
     State(ctx): State<S>,
     Path(SetEmailParams { identity }): Path<SetEmailParams>,
     Query(SetEmailQueryParams { email }): Query<SetEmailQueryParams>,

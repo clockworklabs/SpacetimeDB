@@ -13,7 +13,7 @@ use spacetimedb::address::Address;
 use spacetimedb_lib::name::DomainName;
 
 use crate::routes::database::DomainParsingRejection;
-use crate::{log_and_500, ControlStateDelegate};
+use crate::{log_and_500, ControlStateReadAccess};
 
 pub struct ByteStringBody(pub ByteString);
 
@@ -93,7 +93,7 @@ impl NameOrAddress {
     ///
     pub async fn try_resolve(
         &self,
-        ctx: &(impl ControlStateDelegate + ?Sized),
+        ctx: &(impl ControlStateReadAccess + ?Sized),
     ) -> axum::response::Result<Result<(Address, Option<DomainName>), DomainName>> {
         Ok(match self {
             NameOrAddress::Address(addr) => Ok((*addr, None)),
@@ -109,7 +109,7 @@ impl NameOrAddress {
 
     pub async fn resolve(
         &self,
-        ctx: &(impl ControlStateDelegate + ?Sized),
+        ctx: &(impl ControlStateReadAccess + ?Sized),
     ) -> axum::response::Result<(Address, Option<DomainName>)> {
         self.try_resolve(ctx).await?.map_err(|_| StatusCode::BAD_REQUEST.into())
     }
