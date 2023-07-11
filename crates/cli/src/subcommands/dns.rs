@@ -183,6 +183,7 @@ pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), 
                 )),
             };
         }
+        InsertDomainResult::OtherError(e) => return Err(anyhow::anyhow!(e)),
     }
 
     Ok(())
