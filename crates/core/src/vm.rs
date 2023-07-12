@@ -222,7 +222,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             TableDef {
                 table_name: table_name.to_string(),
                 columns: cols,
-                indexes: vec![],
+                indexes,
                 table_type,
                 table_access,
             },
