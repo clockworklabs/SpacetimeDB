@@ -1,7 +1,7 @@
-# Description of Changes
+## Description of Changes
 *Describe what has been changed, any new features or bug fixes*
 
-# API
+## API
 
  - [ ] This is an API breaking change to the SDK
 
