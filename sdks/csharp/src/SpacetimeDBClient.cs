@@ -422,12 +422,7 @@ namespace SpacetimeDB
             isClosing = true;
             connectionClosed = true;
             webSocket.Close();
-            _cancellationTokenSource.Cancel();
-            while (webSocket.IsConnected || messageProcessThread.IsAlive)
-            {
-                Update();
-                Thread.Sleep(100);
-            }
+            _cancellationTokenSource.Cancel();            
             webSocket = null;
         }
 
