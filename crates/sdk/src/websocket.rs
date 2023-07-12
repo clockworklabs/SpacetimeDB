@@ -66,7 +66,6 @@ where
     <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
 {
     let uri = make_uri(host, db_name)?;
-    println!("Uri: {:?}", uri);
     let mut req = IntoClientRequest::into_client_request(uri)?;
     request_insert_protocol_header(&mut req);
     request_insert_auth_header(&mut req, credentials);

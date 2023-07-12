@@ -13,8 +13,27 @@ pub struct Identity {
 }
 
 impl Identity {
+    /// Get a reference to the bytes of this identity.
+    ///
+    /// This may be useful for saving the bytes to disk in order to reconnect
+    /// with the same identity, though client authors are encouraged
+    /// to use the BSATN `Serialize` and `Deserialize` traits
+    /// rather than saving bytes directly.
+    ///
+    /// Due to a current limitation in Spacetime's handling of tables which store identities,
+    /// filter methods for fields defined by the module to have type `Identity`
+    /// accept bytes, rather than an `Identity` structure.
+    /// As such, it is necessary to do e.g.
+    /// `MyTable::filter_by_identity(some_identity.bytes().to_owned())`.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    /// Construct an `Identity` containing the `bytes`.
+    ///
+    /// This method does not verify that `bytes` represents a valid identity.
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        Identity { bytes }
     }
 }
 
@@ -22,6 +41,25 @@ impl Identity {
 /// A private access token for a client connected to a database.
 pub struct Token {
     pub(crate) string: String,
+}
+
+impl Token {
+    /// Get a reference to the string representation of this token.
+    ///
+    /// This may be useful for saving the string to disk in order to reconnect
+    /// with the same token, though client authors are encouraged
+    /// to use the BSATN `Serialize` and `Deserialize` traits
+    /// rather than saving the token string directly.
+    pub fn string(&self) -> &str {
+        &self.string
+    }
+
+    /// Construct a token from its string representation.
+    ///
+    /// This method does not verify that `string` represents a valid token.
+    pub fn from_string(string: String) -> Self {
+        Token { string }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

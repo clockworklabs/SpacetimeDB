@@ -44,6 +44,30 @@ pub use http;
 #[doc(hidden)]
 pub use spacetimedb_sats as sats;
 
+/// Subscribe to a set of queries,
+/// to be notified when rows which match those queries are altered.
+///
+/// The `queries` should be a slice of strings representing SQL queries.
+///
+/// A new call to `subscribe` (or [`subscribe_owned`]) will remove all previous subscriptions
+/// and replace them with the new `queries`.
+/// If any rows matched the previous subscribed queries but do not match the new queries,
+/// those rows will be removed from the client cache,
+/// and `TableType::on_delete` callbacks will be invoked for them.
 pub fn subscribe(queries: &[&str]) -> anyhow::Result<()> {
     try_with_connection(|conn| conn.subscribe(queries))
+}
+
+/// Subscribe to a set of queries,
+/// to be notified when rows which match those queries are altered.
+///
+/// The `queries` should be a `Vec` of `String`s representing SQL queries.
+///
+/// A new call to `subscribe_owned` (or [`subscribe`]) will remove all previous subscriptions
+/// and replace them with the new `queries`.
+/// If any rows matched the previous subscribed queries but do not match the new queries,
+/// those rows will be removed from the client cache,
+/// and `TableType::on_delete` callbacks will be invoked for them.
+pub fn subscribe_owned(queries: Vec<String>) -> anyhow::Result<()> {
+    try_with_connection(|conn| conn.subscribe_owned(queries))
 }
