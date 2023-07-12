@@ -434,6 +434,8 @@ namespace SpacetimeDB
         /// <param name="sslEnabled">Should websocket use SSL</param>
         public void Connect(string token, string host, string addressOrName, bool sslEnabled = true)
         {
+            isClosing = false;
+
             logger.Log($"SpacetimeDBClient: Connecting to {host} {addressOrName}");
             Task.Run(async () =>
             {
