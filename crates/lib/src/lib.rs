@@ -41,7 +41,7 @@ pub use type_value::{AlgebraicValue, ProductValue};
 
 pub use spacetimedb_sats as sats;
 
-pub const MODULE_ABI_VERSION: VersionTuple = VersionTuple::new(3, 0);
+pub const MODULE_ABI_VERSION: VersionTuple = VersionTuple::new(4, 0);
 
 // if it ends up we need more fields in the future, we can split one of them in two
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
@@ -205,36 +205,34 @@ pub enum IndexType {
     Hash,
 }
 
-#[derive(Debug, Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
-pub enum ColumnIndexAttribute {
-    #[default]
-    UnSet = 0,
-    /// Unique + AutoInc
-    Identity = 1,
-    /// Index unique
-    Unique = 2,
-    ///  Index no unique
-    Indexed = 3,
-    /// Generate the next [Sequence]
-    AutoInc = 4,
-    /// Primary key column (implies Unique)
-    PrimaryKey = 5,
-    /// PrimaryKey + AutoInc
-    PrimaryKeyAuto = 6,
+bitflags::bitflags! {
+    #[derive(Debug, Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+    pub struct ColumnIndexAttribute: u8 {
+        const UNSET = Self::empty().bits();
+        ///  Index no unique
+        const INDEXED = 0b0001;
+        /// Generate the next [Sequence]
+        const AUTO_INC = 0b0010;
+        /// Index unique
+        const UNIQUE = Self::INDEXED.bits() | 0b0100;
+        /// Unique + AutoInc
+        const IDENTITY = Self::UNIQUE.bits() | Self::AUTO_INC.bits();
+        /// Primary key column (implies Unique)
+        const PRIMARY_KEY = Self::UNIQUE.bits() | 0b1000;
+        /// PrimaryKey + AutoInc
+        const PRIMARY_KEY_AUTO = Self::PRIMARY_KEY.bits() | Self::AUTO_INC.bits();
+    }
 }
 
 impl ColumnIndexAttribute {
     pub const fn is_unique(self) -> bool {
-        matches!(
-            self,
-            Self::Identity | Self::Unique | Self::PrimaryKey | Self::PrimaryKeyAuto
-        )
+        self.contains(Self::UNIQUE)
     }
     pub const fn is_autoinc(self) -> bool {
-        matches!(self, Self::Identity | Self::AutoInc | Self::PrimaryKeyAuto)
+        self.contains(Self::AUTO_INC)
     }
     pub const fn is_primary(self) -> bool {
-        matches!(self, Self::PrimaryKey | Self::PrimaryKeyAuto)
+        self.contains(Self::PRIMARY_KEY)
     }
 }
 
@@ -242,15 +240,19 @@ impl TryFrom<u8> for ColumnIndexAttribute {
     type Error = ();
 
     fn try_from(v: u8) -> Result<Self, Self::Error> {
-        match v {
-            0 => Ok(Self::UnSet),
-            1 => Ok(Self::Identity),
-            2 => Ok(Self::Unique),
-            3 => Ok(Self::Indexed),
-            4 => Ok(Self::AutoInc),
-            5 => Ok(Self::PrimaryKey),
-            6 => Ok(Self::PrimaryKeyAuto),
-            _ => Err(()),
-        }
+        Self::from_bits(v).ok_or(())
+    }
+}
+
+impl<'de> de::Deserialize<'de> for ColumnIndexAttribute {
+    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::from_bits(deserializer.deserialize_u8()?)
+            .ok_or_else(|| de::Error::custom("invalid bitflags for ColumnIndexAttribute"))
+    }
+}
+
+impl ser::Serialize for ColumnIndexAttribute {
+    fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(self.bits())
     }
 }

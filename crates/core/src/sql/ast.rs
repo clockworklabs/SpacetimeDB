@@ -766,7 +766,7 @@ fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Resul
 
 /// Extract the column attributes into [ColumnIndexAttribute]
 fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, ColumnIndexAttribute), PlanError> {
-    let mut attr = ColumnIndexAttribute::UnSet;
+    let mut attr = ColumnIndexAttribute::UNSET;
     let mut is_null = false;
 
     for x in &col.options {
@@ -778,11 +778,11 @@ fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, ColumnIndexAttribu
                 is_null = false;
             }
             ColumnOption::Unique { is_primary } => {
-                if *is_primary {
-                    attr = ColumnIndexAttribute::PrimaryKey
+                attr = if *is_primary {
+                    ColumnIndexAttribute::PRIMARY_KEY
                 } else {
-                    attr = ColumnIndexAttribute::Unique
-                }
+                    ColumnIndexAttribute::UNIQUE
+                };
             }
             ColumnOption::Generated {
                 generated_as,
@@ -793,11 +793,7 @@ fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, ColumnIndexAttribu
 
                 match generated_as {
                     GeneratedAs::ByDefault => {
-                        if attr == ColumnIndexAttribute::PrimaryKey {
-                            attr = ColumnIndexAttribute::PrimaryKeyAuto
-                        } else {
-                            attr = ColumnIndexAttribute::Identity
-                        }
+                        attr |= ColumnIndexAttribute::IDENTITY;
                     }
                     x => {
                         return Err(PlanError::Unsupported {
