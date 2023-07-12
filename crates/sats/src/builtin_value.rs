@@ -198,33 +198,47 @@ impl ArrayValue {
     }
 
     /// Returns a singleton array with `val` as its only element.
-    fn from_one(val: AlgebraicValue) -> Self {
+    ///
+    /// Optionally allocates the backing `Vec<_>`s with `capacity`.
+    fn from_one_with_capacity(val: AlgebraicValue, capacity: Option<usize>) -> Self {
+        fn vec<T>(e: T, c: Option<usize>) -> Vec<T> {
+            let mut vec = if let Some(c) = c {
+                Vec::with_capacity(c)
+            } else {
+                Vec::new()
+            };
+            vec.push(e);
+            vec
+        }
+
         match val {
-            AlgebraicValue::Sum(x) => vec![x].into(),
-            AlgebraicValue::Product(x) => vec![x].into(),
-            AlgebraicValue::Builtin(BuiltinValue::Bool(x)) => vec![x].into(),
-            AlgebraicValue::Builtin(BuiltinValue::I8(x)) => vec![x].into(),
-            AlgebraicValue::Builtin(BuiltinValue::U8(x)) => vec![x].into(),
-            AlgebraicValue::Builtin(BuiltinValue::I16(x)) => vec![x].into(),
-            AlgebraicValue::Builtin(BuiltinValue::U16(x)) => vec![x].into(),
-            AlgebraicValue::Builtin(BuiltinValue::I32(x)) => vec![x].into(),
-            AlgebraicValue::Builtin(BuiltinValue::U32(x)) => vec![x].into(),
-            AlgebraicValue::Builtin(BuiltinValue::I64(x)) => vec![x].into(),
-            AlgebraicValue::Builtin(BuiltinValue::U64(x)) => vec![x].into(),
-            AlgebraicValue::Builtin(BuiltinValue::I128(x)) => vec![x].into(),
-            AlgebraicValue::Builtin(BuiltinValue::U128(x)) => vec![x].into(),
-            AlgebraicValue::Builtin(BuiltinValue::F32(x)) => vec![x].into(),
-            AlgebraicValue::Builtin(BuiltinValue::F64(x)) => vec![x].into(),
-            AlgebraicValue::Builtin(BuiltinValue::String(x)) => vec![x].into(),
-            AlgebraicValue::Builtin(BuiltinValue::Array { val }) => vec![val].into(),
-            AlgebraicValue::Builtin(BuiltinValue::Map { val }) => vec![val].into(),
+            AlgebraicValue::Sum(x) => vec(x, capacity).into(),
+            AlgebraicValue::Product(x) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::Bool(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::I8(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::U8(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::I16(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::U16(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::I32(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::U32(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::I64(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::U64(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::I128(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::U128(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::F32(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::F64(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::String(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::Array { val }) => vec(val, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::Map { val }) => vec(val, capacity).into(),
         }
     }
 
     /// Pushes the value `val` onto the array `self`
     /// or returns back `Err(val)` if there was a type mismatch
     /// between the base type of the array and `val`.
-    pub fn push(&mut self, val: AlgebraicValue) -> Result<(), AlgebraicValue> {
+    ///
+    /// Optionally allocates the backing `Vec<_>`s with `capacity`.
+    pub fn push(&mut self, val: AlgebraicValue, capacity: Option<usize>) -> Result<(), AlgebraicValue> {
         match (self, val) {
             (ArrayValue::Sum(v), AlgebraicValue::Sum(val)) => v.push(val),
             (ArrayValue::Product(v), AlgebraicValue::Product(val)) => v.push(val),
@@ -244,7 +258,7 @@ impl ArrayValue {
             (ArrayValue::String(v), AlgebraicValue::Builtin(BuiltinValue::String(val))) => v.push(val),
             (ArrayValue::Array(v), AlgebraicValue::Builtin(BuiltinValue::Array { val })) => v.push(val),
             (ArrayValue::Map(v), AlgebraicValue::Builtin(BuiltinValue::Map { val })) => v.push(val),
-            (me, val) if me.is_empty() => *me = Self::from_one(val),
+            (me, val) if me.is_empty() => *me = Self::from_one_with_capacity(val, capacity),
             (_, val) => return Err(val),
         }
         Ok(())
