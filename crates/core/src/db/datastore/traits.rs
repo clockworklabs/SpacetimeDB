@@ -113,9 +113,9 @@ impl From<&ColumnSchema> for spacetimedb_lib::table::ColumnDef {
             // TODO(cloutiertyler): !!! This is not correct !!! We do not have the information regarding constraints here.
             // We should remove this field from the ColumnDef struct.
             attr: if value.is_autoinc {
-                spacetimedb_lib::ColumnIndexAttribute::AutoInc
+                spacetimedb_lib::ColumnIndexAttribute::AUTO_INC
             } else {
-                spacetimedb_lib::ColumnIndexAttribute::UnSet
+                spacetimedb_lib::ColumnIndexAttribute::UNSET
             },
             // if value.is_autoinc && value.is_unique {
             //     spacetimedb_lib::ColumnIndexAttribute::Identity

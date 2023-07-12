@@ -17,3 +17,4 @@ proc-macro2 = "1.0"
 syn = { version = "2", features = ["full", "extra-traits"] }
 quote = "1.0.8"
 humantime = "2.1.0"
+bitflags = "2.3.3"

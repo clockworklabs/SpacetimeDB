@@ -721,7 +721,7 @@ fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Resul
 }
 
 fn compile_column_option(options: &[ColumnOptionDef]) -> Result<(bool, ColumnIndexAttribute), PlanError> {
-    let mut attr = ColumnIndexAttribute::UnSet;
+    let mut attr = ColumnIndexAttribute::UNSET;
     let mut is_null = false;
 
     for x in options {
@@ -733,11 +733,11 @@ fn compile_column_option(options: &[ColumnOptionDef]) -> Result<(bool, ColumnInd
                 is_null = false;
             }
             ColumnOption::Unique { is_primary } => {
-                if *is_primary {
-                    attr = ColumnIndexAttribute::Identity
+                attr = if *is_primary {
+                    ColumnIndexAttribute::IDENTITY
                 } else {
-                    attr = ColumnIndexAttribute::Unique
-                }
+                    ColumnIndexAttribute::UNIQUE
+                };
             }
             ColumnOption::Comment(_) => {}
             x => {

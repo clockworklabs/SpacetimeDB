@@ -20,7 +20,7 @@ pub struct ProductTypeMeta {
 impl ProductTypeMeta {
     pub fn new(columns: ProductType) -> Self {
         Self {
-            attr: vec![ColumnIndexAttribute::UnSet; columns.elements.len()],
+            attr: vec![ColumnIndexAttribute::UNSET; columns.elements.len()],
             columns,
         }
     }
@@ -100,12 +100,9 @@ impl ProductTypeMeta {
         &'a self,
         row: &'a mut ProductValue,
     ) -> impl Iterator<Item = (ColumnDef, &'a mut AlgebraicValue)> + 'a {
-        self.iter().zip(row.elements.iter_mut()).filter(|(col, _)| {
-            matches!(
-                col.attr,
-                ColumnIndexAttribute::Identity | ColumnIndexAttribute::AutoInc | ColumnIndexAttribute::PrimaryKeyAuto
-            )
-        })
+        self.iter()
+            .zip(row.elements.iter_mut())
+            .filter(|(col, _)| col.attr.is_autoinc())
     }
 }
 

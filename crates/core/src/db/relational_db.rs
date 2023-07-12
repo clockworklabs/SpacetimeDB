@@ -317,13 +317,18 @@ impl RelationalDB {
         let table = self.inner.schema_for_table_mut_tx(tx, TableId(table_id))?;
         let Some(column) = table.columns.get(col_id as usize) else { return Ok(None) };
         let unique_index = table.indexes.iter().find(|x| x.col_id == col_id).map(|x| x.is_unique);
-        Ok(Some(match (column.is_autoinc, unique_index) {
-            (true, Some(true)) => ColumnIndexAttribute::Identity,
-            (true, Some(false) | None) => ColumnIndexAttribute::AutoInc,
-            (false, Some(true)) => ColumnIndexAttribute::Unique,
-            (false, Some(false)) => ColumnIndexAttribute::Indexed,
-            (false, None) => ColumnIndexAttribute::UnSet,
-        }))
+        let mut attr = ColumnIndexAttribute::UNSET;
+        if column.is_autoinc {
+            attr |= ColumnIndexAttribute::AUTO_INC;
+        }
+        if let Some(is_unique) = unique_index {
+            attr |= if is_unique {
+                ColumnIndexAttribute::UNIQUE
+            } else {
+                ColumnIndexAttribute::INDEXED
+            };
+        }
+        Ok(Some(attr))
     }
 
     #[tracing::instrument(skip_all)]

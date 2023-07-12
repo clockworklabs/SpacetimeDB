@@ -29,6 +29,7 @@ spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.5.0" }
 spacetimedb-sats = { path = "../sats", version = "0.5.0" }
 serde_with = { version = "2.2.0", optional = true }
 chrono = { version = "0.4.23", optional = true, default-features = false }
+bitflags = "2.3.3"
 
 [dev-dependencies]
 rand = "0.8.5"

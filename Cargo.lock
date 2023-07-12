@@ -3922,6 +3922,7 @@ dependencies = [
 name = "spacetimedb-bindings-macro"
 version = "0.5.0"
 dependencies = [
+ "bitflags 2.3.3",
  "humantime",
  "proc-macro2",
  "quote",
@@ -4087,6 +4088,7 @@ name = "spacetimedb-lib"
 version = "0.5.0"
 dependencies = [
  "anyhow",
+ "bitflags 2.3.3",
  "bytes",
  "chrono",
  "enum-as-inner",
