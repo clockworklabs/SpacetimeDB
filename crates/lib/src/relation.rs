@@ -330,7 +330,7 @@ impl fmt::Display for Header {
                 f,
                 "{}: {}",
                 col.field,
-                algebraic_type::satn::Formatter::new(&col.algebraic_type)
+                algebraic_type::fmt::fmt_algebraic_type(&col.algebraic_type)
             )?;
 
             if pos + 1 < self.fields.len() {

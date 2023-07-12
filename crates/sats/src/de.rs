@@ -199,7 +199,7 @@ pub trait Error: Sized {
 }
 
 /// Turns a closure `impl Fn(&mut Formatter) -> Result` into a `Display`able object.
-struct FDisplay<F>(F);
+pub struct FDisplay<F>(F);
 
 impl<F: Fn(&mut fmt::Formatter) -> fmt::Result> fmt::Display for FDisplay<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -208,7 +208,7 @@ impl<F: Fn(&mut fmt::Formatter) -> fmt::Result> fmt::Display for FDisplay<F> {
 }
 
 /// Turns a closure `F: Fn(&mut Formatter) -> Result` into a `Display`able object.
-fn fmt_fn<F: Fn(&mut fmt::Formatter) -> fmt::Result>(f: F) -> FDisplay<F> {
+pub fn fmt_fn<F: Fn(&mut fmt::Formatter) -> fmt::Result>(f: F) -> FDisplay<F> {
     FDisplay(f)
 }
 

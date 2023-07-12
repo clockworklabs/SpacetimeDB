@@ -1,5 +1,5 @@
 pub mod map_notation;
-pub mod satn;
+pub mod fmt;
 
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
@@ -231,7 +231,7 @@ mod tests {
     use crate::meta_type::MetaType;
     use crate::satn::Satn;
     use crate::{
-        algebraic_type::satn::Formatter, algebraic_type_ref::AlgebraicTypeRef,
+        algebraic_type::fmt::Formatter, algebraic_type_ref::AlgebraicTypeRef,
         product_type_element::ProductTypeElement, sum_type::SumType, typespace::Typespace,
     };
     use crate::{ValueWithType, WithTypespace};
