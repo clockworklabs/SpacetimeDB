@@ -448,7 +448,8 @@ pub trait VariantAccess<'de>: Sized {
     fn deserialize_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error>;
 }
 
-/// A visitor walking through a [`Deserializer`] for slices.
+/// A `SliceVisitor` is provided a slice `T` of some elements by a [`Deserializer`]
+/// and is tasked with translating this slice to the `Output` type.
 pub trait SliceVisitor<'de, T: ToOwned + ?Sized>: Sized {
     /// The output produced by this visitor.
     type Output;
