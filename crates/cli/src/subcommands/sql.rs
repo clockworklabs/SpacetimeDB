@@ -111,9 +111,10 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), an
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let interactive = args.get_one::<bool>("interactive").unwrap_or(&false);
-
     if *interactive {
-        crate::repl::exec(config, args).await?;
+        let con = parse_req(config, args).await?;
+
+        crate::repl::exec(con).await?;
     } else {
         let query = args.get_one::<String>("query").unwrap();
 

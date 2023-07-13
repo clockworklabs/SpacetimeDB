@@ -1,7 +1,5 @@
-use crate::api::ClientApi;
-use crate::sql::{parse_req, run_sql};
-use crate::Config;
-use clap::ArgMatches;
+use crate::api::{ClientApi, Connection};
+use crate::sql::run_sql;
 use colored::*;
 use std::io::Write;
 
@@ -39,8 +37,7 @@ sort by
 .clear
 ";
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let con = parse_req(config, args).await?;
+pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
     let database = con.database.clone();
     let mut rl = Editor::<ReplHelper, DefaultHistory>::new().unwrap();
     if rl.load_history(".history.txt").is_err() {
