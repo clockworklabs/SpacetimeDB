@@ -720,7 +720,7 @@ fn autogen_typescript_product_table_common(
                         .as_ref()
                         .expect("autogen'd tuples should have field names")
                         .replace("r#", "");
-                    format!("\"{}\"", field_name)
+                    format!("\"{}\"", field_name.to_case(Case::Camel))
                 })
             {
                 writeln!(
