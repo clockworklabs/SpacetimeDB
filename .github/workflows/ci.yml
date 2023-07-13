@@ -9,7 +9,7 @@ name: CI
 jobs:
   docker_smoketests:
     name: Smoketests
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-runner
     steps:
       - uses: actions/checkout@v3
 
@@ -23,7 +23,7 @@ jobs:
 
   test:
     name: Test Suite
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-runner
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
@@ -40,7 +40,7 @@ jobs:
 
   lints:
     name: Lints
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-runner
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
@@ -56,7 +56,7 @@ jobs:
 
   wasm_bindings:
     name: Build and test wasm bindings
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-runner
     steps:
       - uses: actions/checkout@v3
 
