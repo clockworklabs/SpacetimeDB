@@ -10,32 +10,29 @@ import {
   ProductTypeElement,
   IDatabaseTable,
   AlgebraicValue,
+  ReducerArgsAdapter,
 } from "../../src/index";
 // @ts-ignore
 import { Point } from "./point";
 
 export class CreatePlayerReducer {
-  public static call(name: string, location: Point) {
-    if (__SPACETIMEDB__.spacetimeDBClient) {
-      __SPACETIMEDB__.spacetimeDBClient.call("create_player", [
-        name,
-        Point.serialize(location),
-      ]);
-    }
-  }
+  public static call(name: string, location: Point) {}
 
-  public static deserializeArgs(rawArgs: any[]): any[] {
+  public static deserializeArgs(adapter: ReducerArgsAdapter): any[] {
     let nameType = AlgebraicType.createPrimitiveType(BuiltinType.Type.String);
-    let nameValue = AlgebraicValue.deserialize(nameType, rawArgs[0]);
+    let nameValue = AlgebraicValue.deserialize(nameType, adapter.next());
     let name = nameValue.asString();
     let locationType = Point.getAlgebraicType();
-    let locationValue = AlgebraicValue.deserialize(locationType, rawArgs[1]);
+    let locationValue = AlgebraicValue.deserialize(
+      locationType,
+      adapter.next()
+    );
     let location = Point.fromValue(locationValue);
     return [name, location];
   }
 
   public static on(
-    callback: (status: string, identity: string, reducerArgs: any[]) => void
+    callback: (status: string, identity: Uint8Array, reducerArgs: any[]) => void
   ) {
     if (__SPACETIMEDB__.spacetimeDBClient) {
       __SPACETIMEDB__.spacetimeDBClient.on("reducer:CreatePlayer", callback);

@@ -8,22 +8,21 @@ describe("SpacetimeDBClient", () => {
   test("auto subscribe on connect", async () => {
     // so that TS doesn't remove the reducer import
     const _foo = CreatePlayerReducer;
-    const client = new SpacetimeDBClient("ws://127.0.0.1:1234", "db");
-    const wsAdapter = new WebsocketTestAdapter();
-    client._setCreateWSFn(
-      (
-        _url: string,
-        _headers: { [key: string]: string },
-        _protocol: string
-      ) => {
-        return wsAdapter;
-      }
+    const client = new SpacetimeDBClient(
+      "ws://127.0.0.1:1234",
+      "db",
+      undefined,
+      "json"
     );
+    const wsAdapter = new WebsocketTestAdapter();
+    client._setCreateWSFn((_url: string, _protocol: string) => {
+      return wsAdapter;
+    });
 
     client.subscribe("SELECT * FROM Player");
     client.subscribe(["SELECT * FROM Position", "SELECT * FROM Coin"]);
 
-    client.connect();
+    await client.connect();
 
     wsAdapter.acceptConnection();
 
@@ -42,24 +41,23 @@ describe("SpacetimeDBClient", () => {
   });
 
   test("call onConnect callback after getting an identity", async () => {
-    const client = new SpacetimeDBClient("ws://127.0.0.1:1234", "db");
-    const wsAdapter = new WebsocketTestAdapter();
-    client._setCreateWSFn(
-      (
-        _url: string,
-        _headers: { [key: string]: string },
-        _protocol: string
-      ) => {
-        return wsAdapter;
-      }
+    const client = new SpacetimeDBClient(
+      "ws://127.0.0.1:1234",
+      "db",
+      undefined,
+      "json"
     );
+    const wsAdapter = new WebsocketTestAdapter();
+    client._setCreateWSFn((_url: string, _protocol: string) => {
+      return wsAdapter;
+    });
 
     let called = false;
     client.onConnect(() => {
       called = true;
     });
 
-    client.connect();
+    await client.connect();
 
     wsAdapter.acceptConnection();
     const tokenMessage = {
@@ -75,25 +73,24 @@ describe("SpacetimeDBClient", () => {
     expect(called).toBeTruthy();
   });
 
-  test("it calls onInsert callback when a record is added with a subscription update and then with a transaction update", () => {
-    const client = new SpacetimeDBClient("ws://127.0.0.1:1234", "db");
-    const wsAdapter = new WebsocketTestAdapter();
-    client._setCreateWSFn(
-      (
-        _url: string,
-        _headers: { [key: string]: string },
-        _protocol: string
-      ) => {
-        return wsAdapter;
-      }
+  test("it calls onInsert callback when a record is added with a subscription update and then with a transaction update", async () => {
+    const client = new SpacetimeDBClient(
+      "ws://127.0.0.1:1234",
+      "db",
+      undefined,
+      "json"
     );
+    const wsAdapter = new WebsocketTestAdapter();
+    client._setCreateWSFn((_url: string, _protocol: string) => {
+      return wsAdapter;
+    });
 
     let called = false;
     client.onConnect(() => {
       called = true;
     });
 
-    client.connect();
+    await client.connect();
     wsAdapter.acceptConnection();
 
     const tokenMessage = {
@@ -114,6 +111,17 @@ describe("SpacetimeDBClient", () => {
       }
     );
 
+    let reducerCallbackLog: {
+      status: string;
+      identity: Uint8Array;
+      reducerArgs: any[];
+    }[] = [];
+    CreatePlayerReducer.on(
+      (status: string, identity: Uint8Array, reducerArgs: any[]) => {
+        reducerCallbackLog.push({ status, identity, reducerArgs });
+      }
+    );
+
     const subscriptionMessage = {
       SubscriptionUpdate: {
         table_updates: [
@@ -124,7 +132,7 @@ describe("SpacetimeDBClient", () => {
               {
                 op: "insert",
                 row_pk: "abcd123",
-                row: ["player-1", "foo", [0, 0]],
+                row: ["player-1", "drogus", [0, 0]],
               },
             ],
           },
@@ -142,7 +150,7 @@ describe("SpacetimeDBClient", () => {
         event: {
           timestamp: 1681391805281203,
           status: "committed",
-          caller_identity: "identity-0",
+          caller_identity: "00FF01",
           function_call: {
             reducer: "create_player",
             args: '["A Player",[0.2, 0.3]]',
@@ -159,7 +167,7 @@ describe("SpacetimeDBClient", () => {
                 {
                   op: "insert",
                   row_pk: "abcdef",
-                  row: ["player-2", "bar", [0, 0]],
+                  row: ["player-2", "drogus", [0, 0]],
                 },
               ],
             },
@@ -174,32 +182,38 @@ describe("SpacetimeDBClient", () => {
     expect(inserts[1].reducerEvent?.reducerName).toBe("create_player");
     expect(inserts[1].reducerEvent?.status).toBe("committed");
     expect(inserts[1].reducerEvent?.message).toBe("a message");
-    expect(inserts[1].reducerEvent?.callerIdentity).toBe("identity-0");
+    expect(inserts[1].reducerEvent?.callerIdentity).toEqual(
+      Uint8Array.from([0, 255, 1])
+    );
     expect(inserts[1].reducerEvent?.args).toEqual([
       "A Player",
       new Point(0.2, 0.3),
     ]);
+
+    expect(reducerCallbackLog).toHaveLength(1);
+    expect(reducerCallbackLog[0]["identity"]).toEqual(
+      Uint8Array.from([0, 255, 1])
+    );
   });
 
-  test("it calls onUpdate callback when a record is added with a subscription update and then with a transaction update", () => {
-    const client = new SpacetimeDBClient("ws://127.0.0.1:1234", "db");
-    const wsAdapter = new WebsocketTestAdapter();
-    client._setCreateWSFn(
-      (
-        _url: string,
-        _headers: { [key: string]: string },
-        _protocol: string
-      ) => {
-        return wsAdapter;
-      }
+  test("it calls onUpdate callback when a record is added with a subscription update and then with a transaction update", async () => {
+    const client = new SpacetimeDBClient(
+      "ws://127.0.0.1:1234",
+      "db",
+      undefined,
+      "json"
     );
+    const wsAdapter = new WebsocketTestAdapter();
+    client._setCreateWSFn((_url: string, _protocol: string) => {
+      return wsAdapter;
+    });
 
     let called = false;
     client.onConnect(() => {
       called = true;
     });
 
-    client.connect();
+    await client.connect();
     wsAdapter.acceptConnection();
 
     const tokenMessage = {
@@ -290,20 +304,19 @@ describe("SpacetimeDBClient", () => {
     expect(updates[1]["newPlayer"].name).toBe("Kingslayer");
   });
 
-  test("a reducer callback should be called after the database callbacks", () => {
-    const client = new SpacetimeDBClient("ws://127.0.0.1:1234", "db");
-    const wsAdapter = new WebsocketTestAdapter();
-    client._setCreateWSFn(
-      (
-        _url: string,
-        _headers: { [key: string]: string },
-        _protocol: string
-      ) => {
-        return wsAdapter;
-      }
+  test("a reducer callback should be called after the database callbacks", async () => {
+    const client = new SpacetimeDBClient(
+      "ws://127.0.0.1:1234",
+      "db",
+      undefined,
+      "json"
     );
+    const wsAdapter = new WebsocketTestAdapter();
+    client._setCreateWSFn((_url: string, _protocol: string) => {
+      return wsAdapter;
+    });
 
-    client.connect();
+    await client.connect();
     wsAdapter.acceptConnection();
 
     let callbackLog: string[] = [];

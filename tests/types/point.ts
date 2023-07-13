@@ -12,6 +12,7 @@ import {
   SumTypeVariant,
   IDatabaseTable,
   AlgebraicValue,
+  ReducerEvent,
 } from "../../src/index";
 
 export class Point extends IDatabaseTable {
@@ -35,11 +36,11 @@ export class Point extends IDatabaseTable {
     return AlgebraicType.createProductType([
       new ProductTypeElement(
         "x",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.F64)
+        AlgebraicType.createPrimitiveType(BuiltinType.Type.U16)
       ),
       new ProductTypeElement(
         "y",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.F64)
+        AlgebraicType.createPrimitiveType(BuiltinType.Type.U16)
       ),
     ]);
   }
