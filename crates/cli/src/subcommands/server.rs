@@ -87,7 +87,13 @@ pub async fn exec_ping(config: Config, args: &ArgMatches) -> Result<(), anyhow::
     };
 
     let builder = reqwest::Client::new().get(format!("{}/database/ping", server).as_str());
-    builder.send().await?.error_for_status()?;
-    println!("Server is online: {}", server);
+    match builder.send().await {
+        Ok(_) => {
+            println!("Server is online: {}", server);
+        }
+        Err(_) => {
+            println!("Server could not be reached: {}", server);
+        }
+    }
     Ok(())
 }
