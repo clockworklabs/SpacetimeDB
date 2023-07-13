@@ -1,9 +1,20 @@
 import { EventEmitter } from "events";
 
-import WS from "websocket";
+import WebSocket from "isomorphic-ws";
+
 import type { WebsocketTestAdapter } from "./websocket_test_adapter";
 
-import { ProductValue, AlgebraicValue } from "./algebraic_value";
+import {
+  ProductValue,
+  AlgebraicValue,
+  BinaryAdapter,
+  JSONAdapter,
+  ValueAdapter,
+  ReducerArgsAdapter,
+  JSONReducerArgsAdapter,
+  BinaryReducerArgsAdapter,
+} from "./algebraic_value";
+import { Serializer, BinarySerializer, JSONSerializer } from "./serializer";
 import {
   AlgebraicType,
   ProductType,
@@ -13,6 +24,12 @@ import {
   BuiltinType,
 } from "./algebraic_type";
 import { EventType } from "./types";
+import {
+  Message as ProtobufMessage,
+  event_StatusToJSON,
+  TableRowOperation_OperationType,
+} from "./client_api";
+import BinaryReader from "./binary_reader";
 
 export {
   ProductValue,
@@ -23,7 +40,11 @@ export {
   SumType,
   SumTypeVariant,
   BuiltinType,
+  ProtobufMessage,
+  BinarySerializer,
 };
+
+export type { ValueAdapter, ReducerArgsAdapter, Serializer };
 
 const g = (typeof window === "undefined" ? global : window)!;
 
@@ -52,14 +73,14 @@ export class Reducer {}
 export class IDatabaseTable {}
 
 export class ReducerEvent {
-  public callerIdentity: string;
+  public callerIdentity: Uint8Array;
   public reducerName: string;
   public status: string;
   public message: string;
   public args: any;
 
   constructor(
-    callerIdentity: string,
+    callerIdentity: Uint8Array,
     reducerName: string,
     status: string,
     message: string,
@@ -73,14 +94,12 @@ export class ReducerEvent {
   }
 }
 
-type DBOpType = "insert" | "update" | "delete";
-
 class DBOp {
-  public type: DBOpType;
+  public type: "insert" | "delete";
   public instance: any;
   public rowPk: string;
 
-  constructor(type: DBOpType, rowPk: string, instance: any) {
+  constructor(type: "insert" | "delete", rowPk: string, instance: any) {
     this.type = type;
     this.rowPk = rowPk;
     this.instance = instance;
@@ -118,18 +137,24 @@ class Table {
   }
 
   applyOperations = (
-    operations: { op: string; row_pk: string; row: any[] }[],
-    reducerEvent?: ReducerEvent | undefined
+    protocol: "binary" | "json",
+    operations: TableOperation[],
+    reducerEvent: ReducerEvent | undefined
   ) => {
     let dbOps: DBOp[] = [];
     for (let operation of operations) {
-      const pk = operation.row_pk;
+      const pk: string = operation.rowPk;
+      const adapter =
+        protocol === "binary"
+          ? new BinaryAdapter(new BinaryReader(operation.row))
+          : new JSONAdapter(operation.row);
       const entry = AlgebraicValue.deserialize(
         this.entityClass.getAlgebraicType(),
-        operation.row
+        adapter
       );
       const instance = this.entityClass.fromValue(entry);
-      dbOps.push(new DBOp(operation.op as DBOpType, pk, instance));
+
+      dbOps.push(new DBOp(operation.type, pk, instance));
     }
 
     if (this.entityClass.primaryKey !== undefined) {
@@ -169,8 +194,8 @@ class Table {
   };
 
   update = (
-    newDbOp: any,
-    oldDbOp: any,
+    newDbOp: DBOp,
+    oldDbOp: DBOp,
     reducerEvent: ReducerEvent | undefined
   ) => {
     const newInstance = newDbOp.instance;
@@ -180,12 +205,12 @@ class Table {
     this.emitter.emit("update", oldInstance, newInstance, reducerEvent);
   };
 
-  insert = (dbOp: any, reducerEvent: ReducerEvent | undefined) => {
+  insert = (dbOp: DBOp, reducerEvent: ReducerEvent | undefined) => {
     this.instances.set(dbOp.rowPk, dbOp.instance);
     this.emitter.emit("insert", dbOp.instance, reducerEvent);
   };
 
-  delete = (dbOp: any, reducerEvent: ReducerEvent | undefined) => {
+  delete = (dbOp: DBOp, reducerEvent: ReducerEvent | undefined) => {
     this.instances.delete(dbOp.rowPk);
     this.emitter.emit("delete", dbOp.instance, reducerEvent);
   };
@@ -301,11 +326,89 @@ export class ClientDB {
   };
 }
 
+class TableOperation {
+  public type: "insert" | "delete";
+  public rowPk: string;
+  public row: Uint8Array | any;
+
+  constructor(type: "insert" | "delete", rowPk: string, row: Uint8Array | any) {
+    this.type = type;
+    this.rowPk = rowPk;
+    this.row = row;
+  }
+}
+
+class TableUpdate {
+  public tableName: string;
+  public operations: TableOperation[];
+
+  constructor(tableName: string, operations: TableOperation[]) {
+    this.tableName = tableName;
+    this.operations = operations;
+  }
+}
+
+class SubscriptionUpdateMessage {
+  public tableUpdates: TableUpdate[];
+
+  constructor(tableUpdates: TableUpdate[]) {
+    this.tableUpdates = tableUpdates;
+  }
+}
+
+class TransactionUpdateEvent {
+  public identity: Uint8Array;
+  public originalReducerName: string;
+  public reducerName: string;
+  public args: any[] | Uint8Array;
+  public status: string;
+  public message: string;
+
+  constructor(
+    identity: Uint8Array,
+    originalReducerName: string,
+    reducerName: string,
+    args: any[] | Uint8Array,
+    status: string,
+    message: string
+  ) {
+    this.identity = identity;
+    this.originalReducerName = originalReducerName;
+    this.reducerName = reducerName;
+    this.args = args;
+    this.status = status;
+    this.message = message;
+  }
+}
+
+class TransactionUpdateMessage {
+  public tableUpdates: TableUpdate[];
+  public event: TransactionUpdateEvent;
+
+  constructor(tableUpdates: TableUpdate[], event: TransactionUpdateEvent) {
+    this.tableUpdates = tableUpdates;
+    this.event = event;
+  }
+}
+
+class IdentityTokenMessage {
+  public identity: Uint8Array;
+  public token: string;
+
+  constructor(identity: Uint8Array, token: string) {
+    this.identity = identity;
+    this.token = token;
+  }
+}
+type Message =
+  | SubscriptionUpdateMessage
+  | TransactionUpdateMessage
+  | IdentityTokenMessage;
+
 type CreateWSFnType = (
   url: string,
-  headers: { [key: string]: string },
   protocol: string
-) => WS.w3cwebsocket | WebsocketTestAdapter;
+) => WebSocket | WebsocketTestAdapter;
 
 let toPascalCase = function (s: string): string {
   const str = s.replace(/([-_][a-z])/gi, ($1) => {
@@ -319,7 +422,7 @@ export class SpacetimeDBClient {
   /**
    * The identity of the user.
    */
-  identity?: string = undefined;
+  identity?: Uint8Array = undefined;
   /**
    * The token of the user.
    */
@@ -334,8 +437,9 @@ export class SpacetimeDBClient {
    * Whether the client is connected via websocket.
    */
   public live: boolean;
+
+  private ws!: WebSocket | WebsocketTestAdapter;
   private manualTableSubscriptions: string[] = [];
-  private ws!: WS.w3cwebsocket | WebsocketTestAdapter;
   private reducers: Map<string, any>;
   private components: Map<string, any>;
   private queriesQueue: string[];
@@ -346,8 +450,16 @@ export class SpacetimeDBClient {
     global: SpacetimeDBGlobals;
   };
   private createWSFn: CreateWSFnType;
+  private protocol: "binary" | "json";
+  private ssl: boolean = false;
 
-  constructor(host: string, name_or_address: string, auth_token?: string) {
+  constructor(
+    host: string,
+    name_or_address: string,
+    auth_token?: string,
+    protocol?: "binary" | "json"
+  ) {
+    this.protocol = protocol || "binary";
     const global = g.__SPACETIMEDB__;
     this.db = global.clientDB;
     // I don't really like it, but it seems like the only way to
@@ -373,16 +485,162 @@ export class SpacetimeDBClient {
       global,
     };
 
-    this.createWSFn = (
-      url: string,
-      headers: { [key: string]: string },
-      protocol: string
-    ) => {
-      return new WS.w3cwebsocket(url, protocol, undefined, headers, undefined, {
+    this.createWSFn = this.defaultCreateWebSocketFn;
+  }
+
+  private async defaultCreateWebSocketFn(
+    url: string,
+    protocol: string
+  ): Promise<WebSocket | WebsocketTestAdapter> {
+    const headers: { [key: string]: string } = {};
+    if (this.runtime.auth_token) {
+      headers["Authorization"] = `Basic ${btoa(
+        "token:" + this.runtime.auth_token
+      )}`;
+    }
+
+    if (typeof window === "undefined" || !this.runtime.auth_token) {
+      // NodeJS environment
+      const ws = new WebSocket(url, protocol, {
         maxReceivedFrameSize: 100000000,
         maxReceivedMessageSize: 100000000,
+        headers,
       });
-    };
+      return ws;
+    } else {
+      // In the browser we first have to get a short lived token and only then connect to the websocket
+      let httpProtocol = this.ssl ? "https://" : "http://";
+      let tokenUrl = `${httpProtocol}${this.runtime.host}/identity/websocket_token`;
+
+      const response = await fetch(tokenUrl, { method: "POST", headers });
+      if (response.ok) {
+        const { token } = await response.json();
+        url += "?token=" + btoa("token:" + token);
+      }
+      return new WebSocket(url, protocol);
+    }
+  }
+
+  /**
+   * Handles WebSocket onClose event.
+   * @param event CloseEvent object.
+   */
+  private handleOnClose(event: CloseEvent) {
+    console.error("Closed: ", event);
+    this.emitter.emit("disconnected");
+    this.emitter.emit("client_error", event);
+  }
+
+  /**
+   * Handles WebSocket onError event.
+   * @param event ErrorEvent object.
+   */
+  private handleOnError(event: ErrorEvent) {
+    console.error("Error: ", event);
+    this.emitter.emit("disconnected");
+    this.emitter.emit("client_error", event);
+  }
+
+  /**
+   * Handles WebSocket onOpen event.
+   */
+  private handleOnOpen() {
+    this.live = true;
+
+    if (this.queriesQueue.length > 0) {
+      this.subscribe(this.queriesQueue);
+      this.queriesQueue = [];
+    }
+  }
+
+  /**
+   * Handles WebSocket onMessage event.
+   * @param wsMessage MessageEvent object.
+   */
+  private handleOnMessage(wsMessage: any) {
+    this.emitter.emit("receiveWSMessage", wsMessage);
+
+    this.processMessage(wsMessage, (message: Message) => {
+      if (message instanceof SubscriptionUpdateMessage) {
+        for (let tableUpdate of message.tableUpdates) {
+          const tableName = tableUpdate.tableName;
+          const entityClass = this.runtime.global.components.get(tableName);
+          const table = this.db.getOrCreateTable(
+            tableUpdate.tableName,
+            undefined,
+            entityClass
+          );
+
+          table.applyOperations(
+            this.protocol,
+            tableUpdate.operations,
+            undefined
+          );
+        }
+
+        if (this.emitter) {
+          this.emitter.emit("initialStateSync");
+        }
+      } else if (message instanceof TransactionUpdateMessage) {
+        const reducerName = message.event.reducerName;
+        const reducer: any | undefined = reducerName
+          ? this.reducers.get(reducerName)
+          : undefined;
+
+        let reducerEvent: ReducerEvent | undefined;
+        let reducerArgs: any;
+        if (reducer && message.event.status === "committed") {
+          let adapter: ReducerArgsAdapter;
+          if (this.protocol === "binary") {
+            adapter = new BinaryReducerArgsAdapter(
+              new BinaryAdapter(
+                new BinaryReader(message.event.args as Uint8Array)
+              )
+            );
+          } else {
+            adapter = new JSONReducerArgsAdapter(message.event.args as any[]);
+          }
+
+          reducerArgs = reducer.deserializeArgs(adapter);
+          reducerEvent = new ReducerEvent(
+            message.event.identity,
+            message.event.originalReducerName,
+            message.event.status,
+            message.event.message,
+            reducerArgs
+          );
+        }
+
+        for (let tableUpdate of message.tableUpdates) {
+          const tableName = tableUpdate.tableName;
+          const entityClass = this.runtime.global.components.get(tableName);
+          const table = this.db.getOrCreateTable(
+            tableUpdate.tableName,
+            undefined,
+            entityClass
+          );
+
+          table.applyOperations(
+            this.protocol,
+            tableUpdate.operations,
+            reducerEvent
+          );
+        }
+
+        if (reducer) {
+          this.emitter.emit(
+            "reducer:" + reducerName,
+            message.event.status,
+            message.event.identity,
+            reducerArgs
+          );
+        }
+      } else if (message instanceof IdentityTokenMessage) {
+        this.identity = message.identity;
+        this.token = message.token;
+        this.emitter.emit("connected", this.token, this.identity);
+      }
+    });
   }
 
   /**
@@ -437,7 +695,11 @@ export class SpacetimeDBClient {
    * @param name_or_address The name or address of the spacetimeDB module
    * @param credentials The credentials to use to connect to the spacetimeDB module
    */
-  public connect(host?: string, name_or_address?: string, auth_token?: string) {
+  public async connect(
+    host?: string,
+    name_or_address?: string,
+    auth_token?: string
+  ) {
     if (this.live) {
       return;
     }
@@ -453,14 +715,13 @@ export class SpacetimeDBClient {
     }
 
     if (auth_token) {
+      // TODO: do we need both of these
       this.runtime.auth_token = auth_token;
+      this.token = auth_token;
     }
 
-    let headers: { [key: string]: string } = {};
-    if (this.runtime.auth_token) {
-      this.token = this.runtime.auth_token;
-      headers["Authorization"] = `Basic ${btoa("token:" + this.token)}`;
-    }
+    // TODO: we should probably just accept a host and an ssl boolean flag in stead of this
+    // whole dance
     let url = `${this.runtime.host}/database/subscribe/${this.runtime.name_or_address}`;
     if (
       !this.runtime.host.startsWith("ws://") &&
@@ -469,138 +730,201 @@ export class SpacetimeDBClient {
       url = "ws://" + url;
     }
 
-    this.ws = this.createWSFn(url, headers, "v1.text.spacetimedb");
+    this.ssl = url.startsWith("wss");
+    this.runtime.host = this.runtime.host
+      .replace("ws://", "")
+      .replace("wss://", "");
 
-    // Create a timeout for the connection to be established
-    var connectionTimeout = setTimeout(() => {
-      this.ws.close();
-      console.error("Connect failed: timeout");
-      this.emitter.emit("disconnected");
-      this.emitter.emit("client_error", event);
-    }, 5000); // 5000 ms = 5 seconds
+    const stdbProtocol = this.protocol === "binary" ? "bin" : "text";
+    this.ws = await this.createWSFn(url, `v1.${stdbProtocol}.spacetimedb`);
 
-    this.ws.onclose = (event: any) => {
-      console.error("Closed: ", event);
-      this.emitter.emit("disconnected");
-      this.emitter.emit("client_error", event);
-    };
+    this.ws.onclose = this.handleOnClose.bind(this);
+    this.ws.onerror = this.handleOnError.bind(this);
+    this.ws.onopen = this.handleOnOpen.bind(this);
+    this.ws.onmessage = this.handleOnMessage.bind(this);
+  }
 
-    this.ws.onerror = (event: any) => {
-      console.error("Error: ", event);
-      this.emitter.emit("disconnected");
-      this.emitter.emit("client_error", event);
-    };
+  private processMessage(wsMessage: any, callback: (message: Message) => void) {
+    if (this.protocol === "binary") {
+      let data = wsMessage.data;
 
-    this.ws.onopen = () => {
-      clearTimeout(connectionTimeout);
-
-      this.live = true;
-
-      if (this.queriesQueue.length > 0) {
-        this.subscribe(this.queriesQueue);
-        this.queriesQueue = [];
+      if (typeof data.arrayBuffer === "undefined") {
+        data = new Blob([data]);
       }
-    };
-
-    this.ws.onmessage = (message: any) => {
-      const data = JSON.parse(message.data);
-
-      if (data) {
-        if (data["SubscriptionUpdate"]) {
-          let subUpdate = data["SubscriptionUpdate"];
-          const tableUpdates = subUpdate["table_updates"];
-          for (const tableUpdate of tableUpdates) {
-            const tableName = tableUpdate["table_name"];
-            const entityClass = this.runtime.global.components.get(tableName);
-            const table = this.db.getOrCreateTable(
-              tableName,
-              undefined,
-              entityClass
-            );
-            table.applyOperations(tableUpdate["table_row_operations"]);
-          }
-
-          if (this.emitter) {
-            this.emitter.emit("initialStateSync");
-          }
-        } else if (data["TransactionUpdate"]) {
-          const txUpdate = data["TransactionUpdate"];
-          const event = txUpdate["event"];
-          const subUpdate = txUpdate["subscription_update"];
-          const tableUpdates = subUpdate["table_updates"];
-
-          let reducerEvent: ReducerEvent | undefined;
-          let reducerName: string | undefined;
-          let status: string | undefined;
-          let reducer: any | undefined;
-          let reducerArgs: any | undefined;
-          let identity: any | string;
-
-          if (event) {
-            const functionCall = event["function_call"];
-            identity = event["caller_identity"];
-            const originalReducerName: string | undefined =
-              functionCall && functionCall["reducer"];
-            reducerName = originalReducerName
-              ? toPascalCase(originalReducerName)
-              : undefined;
-            const args: string | undefined = functionCall?.["args"];
-            status = event["status"];
-            reducer = reducerName ? this.reducers.get(reducerName) : undefined;
-
-            if (
-              reducerName &&
-              args &&
-              identity &&
-              status &&
-              reducer &&
-              originalReducerName
-            ) {
-              const jsonArray = JSON.parse(args);
-              reducerArgs = reducer.deserializeArgs(jsonArray);
-
-              reducerEvent = new ReducerEvent(
-                identity,
-                originalReducerName,
-                status,
-                event.message,
-                reducerArgs
+      data.arrayBuffer().then((data: any) => {
+        const message: ProtobufMessage = ProtobufMessage.decode(
+          new Uint8Array(data)
+        );
+        if (message["subscriptionUpdate"]) {
+          let subUpdate = message["subscriptionUpdate"] as any;
+          const tableUpdates: TableUpdate[] = [];
+          for (const rawTableUpdate of subUpdate["tableUpdates"]) {
+            const tableName = rawTableUpdate["tableName"];
+            const operations: TableOperation[] = [];
+            for (const rawTableOperation of rawTableUpdate[
+              "tableRowOperations"
+            ]) {
+              const type =
+                rawTableOperation["op"] ===
+                TableRowOperation_OperationType.INSERT
+                  ? "insert"
+                  : "delete";
+              const rowPk = new TextDecoder().decode(
+                rawTableOperation["rowPk"]
+              );
+              operations.push(
+                new TableOperation(type, rowPk, rawTableOperation.row)
               );
             }
+            const tableUpdate = new TableUpdate(tableName, operations);
+            tableUpdates.push(tableUpdate);
           }
 
-          for (const tableUpdate of tableUpdates) {
-            const tableName = tableUpdate["table_name"];
-            const entityClass = this.runtime.global.components.get(tableName);
-            const table = this.db.getOrCreateTable(
-              tableName,
-              undefined,
-              entityClass
-            );
-            table.applyOperations(
-              tableUpdate["table_row_operations"],
-              reducerEvent
-            );
+          const subscriptionUpdate = new SubscriptionUpdateMessage(
+            tableUpdates
+          );
+          callback(subscriptionUpdate);
+        } else if (message["transactionUpdate"]) {
+          let txUpdate = (message["transactionUpdate"] as any)[
+            "subscriptionUpdate"
+          ];
+          const tableUpdates: TableUpdate[] = [];
+          for (const rawTableUpdate of txUpdate["tableUpdates"]) {
+            const tableName = rawTableUpdate["tableName"];
+            const operations: TableOperation[] = [];
+            for (const rawTableOperation of rawTableUpdate[
+              "tableRowOperations"
+            ]) {
+              const type =
+                rawTableOperation["op"] ===
+                TableRowOperation_OperationType.INSERT
+                  ? "insert"
+                  : "delete";
+              const rowPk = new TextDecoder().decode(
+                rawTableOperation["rowPk"]
+              );
+              operations.push(
+                new TableOperation(type, rowPk, rawTableOperation.row)
+              );
+            }
+            const tableUpdate = new TableUpdate(tableName, operations);
+            tableUpdates.push(tableUpdate);
           }
 
-          if (reducerName && status && identity && reducerArgs) {
-            this.emitter.emit(
-              "reducer:" + reducerName,
-              status,
+          const event = message["transactionUpdate"]["event"] as any;
+          const functionCall = event["functionCall"] as any;
+          const identity: Uint8Array = event["callerIdentity"];
+          const originalReducerName: string = functionCall["reducer"];
+          const reducerName: string = toPascalCase(originalReducerName);
+          const args = functionCall["argBytes"];
+          const status: string = event_StatusToJSON(event["status"]);
+          const messageStr = event["message"];
+
+          const transactionUpdateEvent: TransactionUpdateEvent =
+            new TransactionUpdateEvent(
               identity,
-              reducerArgs
+              originalReducerName,
+              reducerName,
+              args,
+              status,
+              messageStr
             );
-          }
-        } else if (data["IdentityToken"]) {
-          const identityToken = data["IdentityToken"];
+
+          const transactionUpdate = new TransactionUpdateMessage(
+            tableUpdates,
+            transactionUpdateEvent
+          );
+          callback(transactionUpdate);
+        } else if (message["identityToken"]) {
+          const identityToken = message["identityToken"] as any;
           const identity = identityToken["identity"];
           const token = identityToken["token"];
-          this.identity = identity;
-          this.token = token;
-          this.emitter.emit("connected", token, identity);
+          const identityTokenMessage: IdentityTokenMessage =
+            new IdentityTokenMessage(identity, token);
+          callback(identityTokenMessage);
         }
+      });
+    } else {
+      const data = JSON.parse(wsMessage.data);
+      if (data["SubscriptionUpdate"]) {
+        let subUpdate = data["SubscriptionUpdate"];
+        const tableUpdates: TableUpdate[] = [];
+        for (const rawTableUpdate of subUpdate["table_updates"]) {
+          const tableName = rawTableUpdate["table_name"];
+          const operations: TableOperation[] = [];
+          for (const rawTableOperation of rawTableUpdate[
+            "table_row_operations"
+          ]) {
+            const type = rawTableOperation["op"];
+            const rowPk = rawTableOperation["rowPk"];
+            operations.push(
+              new TableOperation(type, rowPk, rawTableOperation.row)
+            );
+          }
+          const tableUpdate = new TableUpdate(tableName, operations);
+          tableUpdates.push(tableUpdate);
+        }
+
+        const subscriptionUpdate = new SubscriptionUpdateMessage(tableUpdates);
+        callback(subscriptionUpdate);
+      } else if (data["TransactionUpdate"]) {
+        const txUpdate = data["TransactionUpdate"];
+        const tableUpdates: TableUpdate[] = [];
+        for (const rawTableUpdate of txUpdate["subscription_update"][
+          "table_updates"
+        ]) {
+          const tableName = rawTableUpdate["table_name"];
+          const operations: TableOperation[] = [];
+          for (const rawTableOperation of rawTableUpdate[
+            "table_row_operations"
+          ]) {
+            const type = rawTableOperation["op"];
+            const rowPk = rawTableOperation["rowPk"];
+            operations.push(
+              new TableOperation(type, rowPk, rawTableOperation.row)
+            );
+          }
+          const tableUpdate = new TableUpdate(tableName, operations);
+          tableUpdates.push(tableUpdate);
+        }
+
+        const event = txUpdate["event"] as any;
+        const functionCall = event["function_call"] as any;
+        const identity: Uint8Array = Uint8Array.from(
+          event["caller_identity"]
+            .match(/.{1,2}/g)
+            .map((byte: string) => parseInt(byte, 16))
+        );
+        const originalReducerName: string = functionCall["reducer"];
+        const reducerName: string = toPascalCase(originalReducerName);
+        const args = JSON.parse(functionCall["args"]);
+        const status: string = event["status"];
+        const message = event["message"];
+
+        const transactionUpdateEvent: TransactionUpdateEvent =
+          new TransactionUpdateEvent(
+            identity,
+            originalReducerName,
+            reducerName,
+            args,
+            status,
+            message
+          );
+
+        const transactionUpdate = new TransactionUpdateMessage(
+          tableUpdates,
+          transactionUpdateEvent
+        );
+        callback(transactionUpdate);
+      } else if (data["IdentityToken"]) {
+        const identityToken = data["IdentityToken"];
+        const identity = identityToken["identity"];
+        const token = identityToken["token"];
+        const identityTokenMessage: IdentityTokenMessage =
+          new IdentityTokenMessage(identity, token);
+        callback(identityTokenMessage);
       }
-    };
+    }
   }
 
   /**
@@ -644,7 +968,9 @@ export class SpacetimeDBClient {
       typeof queryOrQueries === "string" ? [queryOrQueries] : queryOrQueries;
 
     if (this.live) {
-      this.ws.send(JSON.stringify({ subscribe: { query_strings: queries } }));
+      const message = { subscribe: { query_strings: queries } };
+      this.emitter.emit("sendWSMessage", message);
+      this.ws.send(JSON.stringify(message));
     } else {
       this.queriesQueue = this.queriesQueue.concat(queries);
     }
@@ -655,14 +981,29 @@ export class SpacetimeDBClient {
    * @param reducerName The name of the reducer to call
    * @param args The arguments to pass to the reducer
    */
-  public call(reducerName: String, args: Array<any>) {
-    const msg = `{
-    "call": {
-      "fn": "${reducerName}",
-      "args": ${JSON.stringify(args)}
+  public call(reducerName: String, serializer: Serializer) {
+    let message: any;
+    if (this.protocol === "binary") {
+      const pmessage: ProtobufMessage = {
+        functionCall: {
+          reducer: "create_player",
+          argBytes: serializer.args(),
+        },
+      };
+
+      message = ProtobufMessage.encode(pmessage).finish();
+    } else {
+      message = JSON.stringify({
+        call: {
+          fn: reducerName,
+          args: serializer.args(),
+        },
+      });
     }
-}`;
-    this.ws.send(msg);
+
+    this.emitter.emit("sendWSMessage", message);
+
+    this.ws.send(message);
   }
 
   on(eventName: EventType | string, callback: (...args: any[]) => void) {
@@ -673,7 +1014,7 @@ export class SpacetimeDBClient {
     this.emitter.off(eventName, callback);
   }
 
-  onConnect(callback: (...args: any[]) => void) {
+  onConnect(callback: (token: string, identity: Uint8Array) => void) {
     this.on("connected", callback);
   }
 
@@ -683,6 +1024,14 @@ export class SpacetimeDBClient {
 
   _setCreateWSFn(fn: CreateWSFnType) {
     this.createWSFn = fn;
+  }
+
+  getSerializer(): Serializer {
+    if (this.protocol === "binary") {
+      return new BinarySerializer();
+    } else {
+      return new JSONSerializer();
+    }
   }
 }
 
