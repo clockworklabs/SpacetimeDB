@@ -4,9 +4,9 @@ use spacetimedb_lib::table::{ColumnDef, ProductTypeMeta};
 use spacetimedb_lib::ColumnIndexAttribute;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
 use sqlparser::ast::{
-    Assignment, BinaryOperator, ColumnDef as SqlColumnDef, ColumnOption, ColumnOptionDef, DataType, Expr as SqlExpr,
-    HiveDistributionStyle, Ident, JoinConstraint, JoinOperator, ObjectName, ObjectType, Query, Select, SelectItem,
-    SetExpr, Statement, TableFactor, TableWithJoins, Value, Values,
+    Assignment, BinaryOperator, ColumnDef as SqlColumnDef, ColumnOption, DataType, ExactNumberInfo, Expr as SqlExpr,
+    GeneratedAs, HiveDistributionStyle, Ident, JoinConstraint, JoinOperator, ObjectName, ObjectType, Query, Select,
+    SelectItem, SetExpr, Statement, TableFactor, TableWithJoins, Value, Values,
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
@@ -524,10 +524,10 @@ fn compile_select_item(from: &From, select_item: SelectItem) -> Result<Column, P
         SelectItem::ExprWithAlias { expr: _, alias: _ } => Err(PlanError::Unsupported {
             feature: "ExprWithAlias".into(),
         }),
-        SelectItem::QualifiedWildcard(ident) => Ok(Column::QualifiedWildcard {
+        SelectItem::QualifiedWildcard(ident, _) => Ok(Column::QualifiedWildcard {
             table: ident.to_string(),
         }),
-        SelectItem::Wildcard => Ok(Column::Wildcard),
+        SelectItem::Wildcard(_) => Ok(Column::Wildcard),
     }
 }
 
@@ -556,7 +556,7 @@ fn compile_query(db: &RelationalDB, query: Query) -> Result<SqlAst, PlanError> {
         query.fetch,
         query.limit,
         query.offset,
-        query.lock,
+        query.locks,
         query.with
     );
 
@@ -580,7 +580,7 @@ fn compile_query(db: &RelationalDB, query: Query) -> Result<SqlAst, PlanError> {
         }),
         SetExpr::SetOperation {
             op: _,
-            all: _,
+            set_quantifier: _,
             left: _,
             right: _,
         } => Err(PlanError::Unsupported {
@@ -592,6 +592,12 @@ fn compile_query(db: &RelationalDB, query: Query) -> Result<SqlAst, PlanError> {
         SetExpr::Insert(_) => Err(PlanError::Unsupported {
             feature: "SetExpr::Insert".into(),
         }),
+        SetExpr::Update(_) => Err(PlanError::Unsupported {
+            feature: "SetExpr::Update".into(),
+        }),
+        SetExpr::Table(_) => Err(PlanError::Unsupported {
+            feature: "SetExpr::Table".into(),
+        }),
     }
 }
 
@@ -599,7 +605,7 @@ fn compile_insert(
     db: &RelationalDB,
     table_name: ObjectName,
     columns: Vec<Ident>,
-    data: Values,
+    data: &Values,
 ) -> Result<SqlAst, PlanError> {
     let table = find_table(db, Table::new(table_name))?;
 
@@ -610,13 +616,13 @@ fn compile_insert(
 
     let table = From::new(table);
 
-    let mut values = Vec::with_capacity(data.0.len());
+    let mut values = Vec::with_capacity(data.rows.len());
 
-    for x in data.0 {
+    for x in &data.rows {
         let mut row = Vec::with_capacity(x.len());
-        for (pos, v) in x.into_iter().enumerate() {
+        for (pos, v) in x.iter().enumerate() {
             let field = table.root.get_column(pos).map(ProductTypeElement::from);
-            row.push(compile_expr_field(&table, field.as_ref(), v)?);
+            row.push(compile_expr_field(&table, field.as_ref(), v.clone())?);
         }
 
         values.push(row);
@@ -666,8 +672,8 @@ fn compile_delete(db: &RelationalDB, table: Table, selection: Option<SqlExpr>) -
 
 fn column_size(column: &SqlColumnDef) -> Option<u64> {
     match column.data_type {
-        DataType::Char(x) => x,
-        DataType::Varchar(x) => x,
+        DataType::Char(x) => x.map(|x| x.length),
+        DataType::Varchar(x) => x.map(|x| x.length),
         DataType::Nvarchar(x) => x,
         DataType::Float(x) => x,
         DataType::TinyInt(x) => x,
@@ -680,11 +686,16 @@ fn column_size(column: &SqlColumnDef) -> Option<u64> {
         DataType::UnsignedInteger(x) => x,
         DataType::BigInt(x) => x,
         DataType::UnsignedBigInt(x) => x,
-        DataType::Decimal(x, _) => x,
+        DataType::Decimal(x) => match x {
+            ExactNumberInfo::None => None,
+            ExactNumberInfo::Precision(x) => Some(x),
+            ExactNumberInfo::PrecisionAndScale(x, _) => Some(x),
+        },
         _ => None,
     }
 }
 
+//NOTE: We don't support `SERIAL` as recommended in https://wiki.postgresql.org/wiki/Don%27t_Do_This#Don.27t_use_serial
 fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Result<AlgebraicType, PlanError> {
     let ty = match data_type {
         DataType::Char(_) | DataType::Varchar(_) | DataType::Nvarchar(_) | DataType::Text | DataType::String => {
@@ -704,7 +715,7 @@ fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Resul
         DataType::Real => AlgebraicType::F32,
         DataType::Double => AlgebraicType::F64,
         DataType::Boolean => AlgebraicType::Bool,
-        DataType::Array(ty) => AlgebraicType::make_array_type(column_def_type(named, false, ty)?),
+        DataType::Array(Some(ty)) => AlgebraicType::make_array_type(column_def_type(named, false, ty)?),
         DataType::Enum(values) => AlgebraicType::make_simple_enum(values.iter().map(|x| x.as_str())),
         x => {
             return Err(PlanError::Unsupported {
@@ -720,11 +731,11 @@ fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Resul
     })
 }
 
-fn compile_column_option(options: &[ColumnOptionDef]) -> Result<(bool, ColumnIndexAttribute), PlanError> {
+fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, ColumnIndexAttribute), PlanError> {
     let mut attr = ColumnIndexAttribute::UnSet;
     let mut is_null = false;
 
-    for x in options {
+    for x in &col.options {
         match &x.option {
             ColumnOption::Null => {
                 is_null = true;
@@ -734,9 +745,31 @@ fn compile_column_option(options: &[ColumnOptionDef]) -> Result<(bool, ColumnInd
             }
             ColumnOption::Unique { is_primary } => {
                 if *is_primary {
-                    attr = ColumnIndexAttribute::Identity
+                    attr = ColumnIndexAttribute::PrimaryKey
                 } else {
                     attr = ColumnIndexAttribute::Unique
+                }
+            }
+            ColumnOption::Generated {
+                generated_as,
+                sequence_options: _,
+                generation_expr,
+            } => {
+                unsupported!("IDENTITY options", generation_expr);
+
+                match generated_as {
+                    GeneratedAs::ByDefault => {
+                        if attr == ColumnIndexAttribute::PrimaryKey {
+                            attr = ColumnIndexAttribute::PrimaryKeyAuto
+                        } else {
+                            attr = ColumnIndexAttribute::Identity
+                        }
+                    }
+                    x => {
+                        return Err(PlanError::Unsupported {
+                            feature: format!("IDENTITY option {x:?}"),
+                        })
+                    }
                 }
             }
             ColumnOption::Comment(_) => {}
@@ -762,7 +795,7 @@ fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst,
         }
 
         let name = col.name.to_string();
-        let (is_null, attr) = compile_column_option(&col.options)?;
+        let (is_null, attr) = compile_column_option(&col)?;
         let ty = column_def_type(&name, is_null, &col.data_type)?;
 
         columns.push(&name, ty, attr);
@@ -809,10 +842,20 @@ fn compile_statement(db: &RelationalDB, statement: Statement) -> Result<SqlAst, 
             after_columns,
             table,
             on,
+            returning,
         } => {
-            unsupported!("INSERT", or, overwrite, partitioned, after_columns, table, on);
+            unsupported!(
+                "INSERT",
+                or,
+                overwrite,
+                partitioned,
+                after_columns,
+                table,
+                on,
+                returning
+            );
             if into {
-                let values = match *source.body {
+                let values = match &*source.body {
                     SetExpr::Values(values) => values,
                     _ => {
                         return Err(PlanError::Unsupported {
@@ -833,23 +876,31 @@ fn compile_statement(db: &RelationalDB, statement: Statement) -> Result<SqlAst, 
             assignments,
             from,
             selection,
+            returning,
         } => {
-            unsupported!("UPDATE", from);
+            unsupported!("UPDATE", from, returning);
 
             let table_name = compile_table_factor(table.relation)?;
             compile_update(db, table_name, assignments, selection)
         }
         Statement::Delete {
-            table_name,
+            tables,
+            from,
             using,
             selection,
+            returning,
         } => {
-            unsupported!("DELETE", using);
+            unsupported!("DELETE", using, returning, tables);
+            if from.len() != 1 {
+                unsupported!("DELETE (multiple tables)", tables);
+            }
 
-            let table_name = compile_table_factor(table_name)?;
+            let table = from.first().unwrap().clone();
+            let table_name = compile_table_factor(table.relation)?;
             compile_delete(db, table_name, selection)
         }
         Statement::CreateTable {
+            transient,
             columns,
             constraints,
             //not supported
@@ -874,6 +925,7 @@ fn compile_statement(db: &RelationalDB, statement: Statement) -> Result<SqlAst, 
             collation,
             on_commit,
             on_cluster,
+            order_by,
         } => {
             if let Some(x) = &hive_formats {
                 if x.row_format
@@ -887,6 +939,7 @@ fn compile_statement(db: &RelationalDB, statement: Statement) -> Result<SqlAst, 
             }
             unsupported!(
                 "CREATE TABLE",
+                transient,
                 or_replace,
                 temporary,
                 external,
@@ -906,7 +959,8 @@ fn compile_statement(db: &RelationalDB, statement: Statement) -> Result<SqlAst, 
                 default_charset,
                 collation,
                 on_commit,
-                on_cluster
+                on_cluster,
+                order_by
             );
             let table = Table::new(name);
             compile_create_table(table, columns)
@@ -916,9 +970,10 @@ fn compile_statement(db: &RelationalDB, statement: Statement) -> Result<SqlAst, 
             if_exists,
             names,
             cascade,
+            restrict,
             purge,
         } => {
-            unsupported!("DROP", if_exists, cascade, purge);
+            unsupported!("DROP", if_exists, cascade, purge, restrict);
 
             if names.len() > 1 {
                 return Err(PlanError::Unsupported {
@@ -934,265 +989,8 @@ fn compile_statement(db: &RelationalDB, statement: Statement) -> Result<SqlAst, 
             };
             compile_drop(name, object_type)
         }
-        Statement::Analyze {
-            table_name: _,
-            partitions: _,
-            for_columns: _,
-            columns: _,
-            cache_metadata: _,
-            noscan: _,
-            compute_statistics: _,
-        } => Err(PlanError::Unsupported {
-            feature: "Analyze".into(),
-        }),
-        Statement::Truncate {
-            table_name: _,
-            partitions: _,
-        } => Err(PlanError::Unsupported {
-            feature: "Truncate".into(),
-        }),
-        Statement::Msck {
-            table_name: _,
-            repair: _,
-            partition_action: _,
-        } => Err(PlanError::Unsupported { feature: "Msck".into() }),
-
-        Statement::Directory {
-            overwrite: _,
-            local: _,
-            path: _,
-            file_format: _,
-            source: _,
-        } => Err(PlanError::Unsupported {
-            feature: "Directory".into(),
-        }),
-        Statement::Copy {
-            table_name: _,
-            columns: _,
-            to: _,
-            target: _,
-            options: _,
-            legacy_options: _,
-            values: _,
-        } => Err(PlanError::Unsupported { feature: "Copy".into() }),
-        Statement::Close { cursor: _ } => Err(PlanError::Unsupported {
-            feature: "Close".into(),
-        }),
-        Statement::CreateView {
-            or_replace: _,
-            materialized: _,
-            name: _,
-            columns: _,
-            query: _,
-            with_options: _,
-        } => Err(PlanError::Unsupported {
-            feature: "CreateView".into(),
-        }),
-
-        Statement::CreateVirtualTable {
-            name: _,
-            if_not_exists: _,
-            module_name: _,
-            module_args: _,
-        } => Err(PlanError::Unsupported {
-            feature: "CreateVirtualTable".into(),
-        }),
-        Statement::CreateIndex {
-            name: _,
-            table_name: _,
-            columns: _,
-            unique: _,
-            if_not_exists: _,
-        } => Err(PlanError::Unsupported {
-            feature: "CreateIndex".into(),
-        }),
-        Statement::AlterTable { name: _, operation: _ } => Err(PlanError::Unsupported {
-            feature: "AlterTable".into(),
-        }),
-        Statement::Declare {
-            name: _,
-            binary: _,
-            sensitive: _,
-            scroll: _,
-            hold: _,
-            query: _,
-        } => Err(PlanError::Unsupported {
-            feature: "Declare".into(),
-        }),
-        Statement::Fetch {
-            name: _,
-            direction: _,
-            into: _,
-        } => Err(PlanError::Unsupported {
-            feature: "Fetch".into(),
-        }),
-        Statement::Discard { object_type: _ } => Err(PlanError::Unsupported {
-            feature: "Discard".into(),
-        }),
-        Statement::SetRole {
-            local: _,
-            session: _,
-            role_name: _,
-        } => Err(PlanError::Unsupported {
-            feature: "SetRole".into(),
-        }),
-        Statement::SetVariable {
-            local: _,
-            hivevar: _,
-            variable: _,
-            value: _,
-        } => Err(PlanError::Unsupported {
-            feature: "SetVariable".into(),
-        }),
-        Statement::SetNames {
-            charset_name: _,
-            collation_name: _,
-        } => Err(PlanError::Unsupported {
-            feature: "SetNames".into(),
-        }),
-        Statement::SetNamesDefault {} => Err(PlanError::Unsupported {
-            feature: "SetNamesDefault".into(),
-        }),
-        Statement::ShowVariable { variable: _ } => Err(PlanError::Unsupported {
-            feature: "ShowVariable".into(),
-        }),
-        Statement::ShowVariables { filter: _ } => Err(PlanError::Unsupported {
-            feature: "ShowVariables".into(),
-        }),
-        Statement::ShowCreate {
-            obj_type: _,
-            obj_name: _,
-        } => Err(PlanError::Unsupported {
-            feature: "ShowCreate".into(),
-        }),
-        Statement::ShowColumns {
-            extended: _,
-            full: _,
-            table_name: _,
-            filter: _,
-        } => Err(PlanError::Unsupported {
-            feature: "ShowColumns".into(),
-        }),
-        Statement::ShowTables {
-            extended: _,
-            full: _,
-            db_name: _,
-            filter: _,
-        } => Err(PlanError::Unsupported {
-            feature: "ShowTables".into(),
-        }),
-        Statement::ShowCollation { filter: _ } => Err(PlanError::Unsupported {
-            feature: "ShowCollation".into(),
-        }),
-        Statement::Use { db_name: _ } => Err(PlanError::Unsupported { feature: "Use".into() }),
-        Statement::StartTransaction { modes: _ } => Err(PlanError::Unsupported {
-            feature: "StartTransaction".into(),
-        }),
-        Statement::SetTransaction {
-            modes: _,
-            snapshot: _,
-            session: _,
-        } => Err(PlanError::Unsupported {
-            feature: "SetTransaction".into(),
-        }),
-        Statement::Comment {
-            object_type: _,
-            object_name: _,
-            comment: _,
-        } => Err(PlanError::Unsupported {
-            feature: "Comment".into(),
-        }),
-        Statement::Commit { chain: _ } => Err(PlanError::Unsupported {
-            feature: "Commit".into(),
-        }),
-        Statement::Rollback { chain: _ } => Err(PlanError::Unsupported {
-            feature: "Rollback".into(),
-        }),
-        Statement::CreateSchema {
-            schema_name: _,
-            if_not_exists: _,
-        } => Err(PlanError::Unsupported {
-            feature: "CreateSchema".into(),
-        }),
-        Statement::CreateDatabase {
-            db_name: _,
-            if_not_exists: _,
-            location: _,
-            managed_location: _,
-        } => Err(PlanError::Unsupported {
-            feature: "CreateDatabase".into(),
-        }),
-        Statement::CreateFunction {
-            temporary: _,
-            name: _,
-            class_name: _,
-            using: _,
-        } => Err(PlanError::Unsupported {
-            feature: "CreateFunction".into(),
-        }),
-        Statement::Assert {
-            condition: _,
-            message: _,
-        } => Err(PlanError::Unsupported {
-            feature: "Assert".into(),
-        }),
-        Statement::Grant {
-            privileges: _,
-            objects: _,
-            grantees: _,
-            with_grant_option: _,
-            granted_by: _,
-        } => Err(PlanError::Unsupported {
-            feature: "Grant".into(),
-        }),
-        Statement::Revoke {
-            privileges: _,
-            objects: _,
-            grantees: _,
-            granted_by: _,
-            cascade: _,
-        } => Err(PlanError::Unsupported {
-            feature: "Revoke".into(),
-        }),
-        Statement::Deallocate { name: _, prepare: _ } => Err(PlanError::Unsupported {
-            feature: "Deallocate".into(),
-        }),
-        Statement::Execute { name: _, parameters: _ } => Err(PlanError::Unsupported {
-            feature: "Execute".into(),
-        }),
-        Statement::Prepare {
-            name: _,
-            data_types: _,
-            statement: _,
-        } => Err(PlanError::Unsupported {
-            feature: "Prepare".into(),
-        }),
-        Statement::Kill { modifier: _, id: _ } => Err(PlanError::Unsupported { feature: "Kill".into() }),
-        Statement::ExplainTable {
-            describe_alias: _,
-            table_name: _,
-        } => Err(PlanError::Unsupported {
-            feature: "ExplainTable".into(),
-        }),
-        Statement::Explain {
-            describe_alias: _,
-            analyze: _,
-            verbose: _,
-            statement: _,
-        } => Err(PlanError::Unsupported {
-            feature: "Explain".into(),
-        }),
-        Statement::Savepoint { name: _ } => Err(PlanError::Unsupported {
-            feature: "Savepoint".into(),
-        }),
-        Statement::Merge {
-            into: _,
-            table: _,
-            source: _,
-            on: _,
-            clauses: _,
-        } => Err(PlanError::Unsupported {
-            feature: "Merge".into(),
+        x => Err(PlanError::Unsupported {
+            feature: format!("Syntax {x}"),
         }),
     }
 }
