@@ -630,9 +630,9 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 ///
 /// The `mod.rs` contains several things:
 ///
-/// 1. `pub mod` declarations for all the other files generated. Without these, either the
-///    other files wouldn't get compiled, or users would have to `mod`-declare each file
-///    manually.
+/// 1. `pub mod` and `pub use` declarations for all the other files generated.
+///    Without these, either the other files wouldn't get compiled,
+///    or users would have to `mod`-declare each file manually.
 ///
 /// 2. `enum ReducerEvent`, which has variants for each reducer in the module.
 ///    Row callbacks are passed an optional `ReducerEvent` as an additional argument,
@@ -676,6 +676,11 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, Str
 
     // Declare `pub mod` for each of the files generated.
     print_module_decls(out, items);
+
+    out.newline();
+
+    // Re-export all the modules for the generated files.
+    print_module_reexports(out, items);
 
     out.newline();
 
@@ -743,21 +748,25 @@ fn iter_table_items(items: &[GenItem]) -> impl Iterator<Item = &TableDef> {
     })
 }
 
+fn iter_module_names(items: &[GenItem]) -> impl Iterator<Item = String> + '_ {
+    items.iter().filter_map(|item| match item {
+        GenItem::Table(table) => Some(table.name.to_case(Case::Snake)),
+        GenItem::TypeAlias(ty) => Some(ty.name.to_case(Case::Snake)),
+        GenItem::Reducer(reducer) => (!is_init(reducer)).then_some(reducer_module_name(reducer)),
+    })
+}
+
 /// Print `pub mod` declarations for all the files that will be generated for `items`.
 fn print_module_decls(out: &mut Indenter, items: &[GenItem]) {
-    for item in items {
-        let (name, suffix) = match item {
-            GenItem::Table(table) => (&table.name, ""),
-            GenItem::TypeAlias(ty) => (&ty.name, ""),
-            GenItem::Reducer(reducer) => {
-                if is_init(reducer) {
-                    continue;
-                }
-                (&reducer.name, "_reducer")
-            }
-        };
-        let module_name = name.to_case(Case::Snake);
-        writeln!(out, "pub mod {}{};", module_name, suffix).unwrap();
+    for module_name in iter_module_names(items) {
+        writeln!(out, "pub mod {};", module_name).unwrap();
+    }
+}
+
+/// Print `pub use *` declarations for all the files that will be generated for `items`.
+fn print_module_reexports(out: &mut Indenter, items: &[GenItem]) {
+    for module_name in iter_module_names(items) {
+        writeln!(out, "pub use {}::*;", module_name).unwrap();
     }
 }
 
