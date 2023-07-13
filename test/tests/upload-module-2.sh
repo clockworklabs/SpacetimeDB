@@ -23,21 +23,15 @@ pub fn my_repeating_reducer(prev: Timestamp) {
 }
 EOF
 
-echo "CONFIG: $SPACETIME_CONFIG_FILE"
-cat "$SPACETIME_CONFIG_FILE"
 run_test cargo run publish -s -d --project-path "$PROJECT_PATH" --clear-database
 [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 sleep 2
 
-echo "CONFIG: $SPACETIME_CONFIG_FILE"
-cat "$SPACETIME_CONFIG_FILE"
 run_test cargo run logs "$ADDRESS"
 LINES="$(grep -c "Invoked" "$TEST_OUT")"
 
 sleep 4
-echo "CONFIG: $SPACETIME_CONFIG_FILE"
-cat "$SPACETIME_CONFIG_FILE"
 run_test cargo run logs "$ADDRESS"
 LINES_NEW="$(grep -c "Invoked" "$TEST_OUT")"
 ((LINES < LINES_NEW))
