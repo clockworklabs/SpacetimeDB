@@ -5,7 +5,7 @@ use futures::{
     SinkExt, StreamExt,
 };
 use futures_channel::mpsc;
-use http::uri::{Parts, Uri};
+use http::uri::{Parts, Scheme, Uri};
 use prost::Message as ProtobufMessage;
 use spacetimedb_client_api_messages::client_api::Message;
 use tokio::{net::TcpStream, runtime, task::JoinHandle};
@@ -19,6 +19,18 @@ pub(crate) struct DbConnection {
     pub(crate) write: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, WebSocketMessage>,
 }
 
+fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme> {
+    Ok(match scheme {
+        Some(s) => match s.as_str() {
+            "ws" | "wss" => s,
+            "http" => "ws".parse()?,
+            "https" => "wss".parse()?,
+            unknown_scheme => bail!("Unknown URI scheme {}", unknown_scheme),
+        },
+        None => "ws".parse()?,
+    })
+}
+
 fn make_uri<Host>(host: Host, db_name: &str) -> Result<Uri>
 where
     Host: TryInto<Uri>,
@@ -26,13 +38,8 @@ where
 {
     let host: Uri = host.try_into()?;
     let mut parts = Parts::try_from(host)?;
-    match &parts.scheme {
-        Some(s) => match s.as_str() {
-            "ws" | "wss" => (),
-            unknown_scheme => bail!("Unknown URI scheme {}", unknown_scheme),
-        },
-        None => parts.scheme = Some("ws".parse()?),
-    }
+    let scheme = parse_scheme(parts.scheme.take())?;
+    parts.scheme = Some(scheme);
     let mut path = if let Some(path_and_query) = parts.path_and_query {
         if let Some(query) = path_and_query.query() {
             bail!("Unexpected query {}", query);
