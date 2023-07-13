@@ -9,8 +9,6 @@ set -euox pipefail
 
 source "./test/lib.include"
 
-reset_project
-
 RAND=$(random_string)
 run_test cargo run dns register-tld "$RAND"
 run_test cargo run publish -s -d "$RAND" --project-path "$PROJECT_PATH" --clear-database

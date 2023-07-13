@@ -9,7 +9,6 @@ set -euox pipefail
 
 source "./test/lib.include"
 RAND_DOMAIN=$(random_string)
-reset_project
 
 
 run_test cargo run identity new --no-email

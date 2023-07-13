@@ -12,7 +12,6 @@ source "./test/lib.include"
 run_test cargo run identity new --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
 TOKEN="$(cargo run identity token "$IDENT")"
-reset_project
 run_test cargo run publish -s -d --project-path "$PROJECT_PATH" --clear-database
 sleep 2
 DATABASE="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"

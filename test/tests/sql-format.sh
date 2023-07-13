@@ -9,7 +9,6 @@ set -euox pipefail
 
 source "./test/lib.include"
 
-reset_project
 cat > "${PROJECT_PATH}/src/lib.rs" <<EOF
 use spacetimedb::{spacetimedb, Identity};
 
