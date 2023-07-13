@@ -9,8 +9,6 @@ set -euox pipefail
 
 source "./test/lib.include"
 
-create_project
-
 cat > "${PROJECT_PATH}/src/lib.rs" << EOF
 use spacetimedb::{log, spacetimedb};
 
@@ -27,7 +25,7 @@ EOF
 
 printf '\nwasm-bindgen = "0.2"\n' >> "${PROJECT_PATH}/Cargo.toml"
 
-run_fail_test cargo run -p spacetimedb-cli -- build "${PROJECT_PATH}"
+run_fail_test cargo run build "${PROJECT_PATH}"
 
 [ $(grep "wasm-bindgen detected" "$TEST_OUT" | wc -l ) == 1 ]
 

@@ -31,19 +31,5 @@ services:
       core:
         soft: -1
         hard: -1
-
-  prometheus:
-    build:
-      context: ./packages/prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./packages/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-
-  grafana:
-    build:
-      context: ./packages/grafana
-    ports:
-      - "3001:3000"
 volumes:
   key_files:

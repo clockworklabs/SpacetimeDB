@@ -141,9 +141,12 @@ impl Config {
         config_filename
     }
 
-    fn load_raw(config_dir: PathBuf) -> RawConfig {
-        if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
-            return Self::load_from_file(config_path.as_ref());
+    fn load_raw(config_dir: PathBuf, is_project: bool) -> RawConfig {
+        // If a config file overload has been specified, use that instead
+        if !is_project {
+            if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
+                return Self::load_from_file(config_path.as_ref());
+            }
         }
         if !config_dir.exists() {
             fs::create_dir_all(&config_dir).unwrap();
@@ -174,7 +177,7 @@ impl Config {
 
     pub fn load() -> Self {
         let home_dir = dirs::home_dir().unwrap();
-        let mut home_config = Self::load_raw(home_dir.join(HOME_CONFIG_DIR));
+        let mut home_config = Self::load_raw(home_dir.join(HOME_CONFIG_DIR), false);
 
         // Ensure there is always an identity config. Simplifies other code.
         home_config.identity_configs.get_or_insert(vec![]);
@@ -184,7 +187,7 @@ impl Config {
         // search parent directories above the current directory to find
         // spacetime.toml files like a .gitignore file
         let cur_dir = std::env::current_dir().expect("No current working directory!");
-        let cur_config = Self::load_raw(cur_dir);
+        let cur_config = Self::load_raw(cur_dir, true);
 
         Self {
             home: home_config,
@@ -193,15 +196,19 @@ impl Config {
     }
 
     pub fn save(&self) {
-        let home_dir = dirs::home_dir().unwrap();
-        let config_dir = home_dir.join(HOME_CONFIG_DIR);
-        if !config_dir.exists() {
-            fs::create_dir_all(&config_dir).unwrap();
-        }
+        let config_path = if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
+            PathBuf::from(&config_path)
+        } else {
+            let home_dir = dirs::home_dir().unwrap();
+            let config_dir = home_dir.join(HOME_CONFIG_DIR);
+            if !config_dir.exists() {
+                fs::create_dir_all(&config_dir).unwrap();
+            }
 
-        let config_filename = Self::find_config_filename(&config_dir).unwrap_or(CONFIG_FILENAME);
+            let config_filename = Self::find_config_filename(&config_dir).unwrap_or(CONFIG_FILENAME);
+            config_dir.join(config_filename)
+        };
 
-        let config_path = config_dir.join(config_filename);
         let mut file = fs::OpenOptions::new()
             .create(true)
             .write(true)

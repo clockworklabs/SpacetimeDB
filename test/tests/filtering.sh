@@ -9,8 +9,6 @@ set -euox pipefail
 
 source "./test/lib.include"
 
-create_project
-
 cat > "${PROJECT_PATH}/src/lib.rs" << EOF
 use spacetimedb::{println, spacetimedb, Identity};
 
@@ -276,7 +274,7 @@ run_test cargo run call "$IDENT" find_identified_person '[23]'
 run_test cargo run logs "$IDENT" 100
 [ ' IDENTIFIED FOUND: Alice' == "$(grep 'IDENTIFIED FOUND: Alice' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
 
-# Insert row with unique columns twice should fail 
+# Insert row with unique columns twice should fail
 run_test cargo run call "$IDENT" insert_person_twice '[23, "Alice", "al"]'
 run_test cargo run logs "$IDENT" 100
 [ ' UNIQUE CONSTRAINT VIOLATION ERROR: id 23: Alice' == "$(grep 'UNIQUE CONSTRAINT VIOLATION ERROR: id 23: Alice' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]

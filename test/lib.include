@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Runs a test with the assumption that it will return a zero result code
 run_test() {
 	set +e
 	"$@" > "$TEST_OUT" 2>&1
@@ -9,6 +10,7 @@ run_test() {
 	return "$RESULT"
 }
 
+# Runs a test with the assumption that it will return a non-zero result code
 run_fail_test() {
 	if "$@" > "$TEST_OUT" 2>&1 ; then
 		cat "$TEST_OUT"
@@ -18,39 +20,19 @@ run_fail_test() {
 	return 0
 }
 
+# This resets the spacetime config for a new test run
 reset_config() {
-	RETURN_DIR=$PWD
-	cd "$SPACETIME_HOME" || exit 1
-	cp "./test/config.toml" "$HOME/.spacetime/config.toml"
-	cd "$RETURN_DIR" || exit 1
+	SPACETIME_CONFIG_FILE="$(mktemp)"
+	export SPACETIME_CONFIG_FILE
+	cp "$RESET_SPACETIME_CONFIG" "$SPACETIME_CONFIG_FILE"
 }
 
 # This deletes the project from the previous test run
 reset_project() {
-	RETURN_DIR=$PWD
-	if [ -d "$PROJECT_PATH" ] ; then
-		rm -rf "$PROJECT_PATH"
-	fi
-
-	cd "$RETURN_DIR" || exit 1
-}
-
-# This creates a new spacetime project that is completely dependent on the local repository.
-create_project() {
-	reset_project
-	run_test cargo run init --lang=rust "$PROJECT_PATH"
-	# We have to force using the local spacetimedb_bindings otherwise we will download them from crates.io
-	if [[ "$OSTYPE" == "darwin"* ]]; then
-		sed -i '' "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${PROJECT_PATH}/Cargo.toml" 
-    elif [[ "$OSTYPE" == "msys"* ]]; then
-        # Running in git bash; do horrible path conversion; yes we do need all of those
-        WINPATH="$(cygpath -w "${SPACETIME_DIR}/crates/bindings" | sed 's/\\/\\\\\\\\/g')"
-		sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${WINPATH}\" }@g" "${PROJECT_PATH}/Cargo.toml" 
-	else
-		sed -i "s@.*spacetimedb.*=.*@spacetimedb = { path = \"${SPACETIME_DIR}/crates/bindings\" }@g" "${PROJECT_PATH}/Cargo.toml"
-	fi
-
-
+	PROJECT_PATH="$(mktemp -d)"
+	rmdir "$PROJECT_PATH"
+	cp -rp "$RESET_PROJECT_PATH" "$PROJECT_PATH"
+	export PROJECT_PATH
 }
 
 random_string() {
@@ -65,7 +47,7 @@ spacetime_publish() {
 	RETURN_DIR=$PWD
 	cd "$SPACETIME_DIR"
 	set +e
-	run_test cargo run publish "$@"
+	run_test spacetime publish "$@"
 	RESULT_CODE=$?
 	cd "$RETURN_DIR" || exit 1
 	set -e
@@ -74,10 +56,17 @@ spacetime_publish() {
 
 fsed() {
 	if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i.sed_bak "$@"
-        rm -f rm *.sed_bak
+		sed -i.sed_bak "$@"
+		rm -f rm *.sed_bak
 	else
-        sed -i "$@"
+		sed -i "$@"
 	fi
 }
 
+restart_docker() {
+	docker-compose stop node
+	docker-compose start node
+	sleep 10
+}
+
+# vim: noexpandtab tabstop=4 shiftwidth=4

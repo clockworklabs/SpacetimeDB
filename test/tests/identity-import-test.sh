@@ -11,7 +11,8 @@ source "./test/lib.include"
 
 run_test cargo run identity new --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
-TOKEN=$(grep token "$HOME/.spacetime/config.toml" | awk '{print $3}' | tr -d \')
+run_test cargo run identity token "$IDENT"
+TOKEN=$(cat "$TEST_OUT")
 
 reset_config
 

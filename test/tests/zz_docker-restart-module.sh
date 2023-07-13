@@ -9,8 +9,6 @@ set -euox pipefail
 
 source "./test/lib.include"
 
-create_project
-
 cat > "${PROJECT_PATH}/src/lib.rs" << EOF
 use spacetimedb::{println, spacetimedb};
 
@@ -38,11 +36,7 @@ run_test cargo run publish -s -d --project-path "$PROJECT_PATH" --clear-database
 IDENT="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 run_test cargo run call "$IDENT" add '["Robert"]'
 
-CONTAINER_NAME=$(docker ps | grep node | awk '{print $NF}')
-run_test docker kill $CONTAINER_NAME
-run_test cargo build -p spacetimedb-standalone --release
-run_test docker-compose start node
-sleep 10
+restart_docker
 run_test cargo run call "$IDENT" add '["Julie"]'
 run_test cargo run call "$IDENT" add '["Samantha"]'
 run_test cargo run call "$IDENT" say_hello

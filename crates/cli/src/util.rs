@@ -110,7 +110,7 @@ pub struct InitDefaultResult {
 
 pub async fn init_default(config: &mut Config, nickname: Option<String>) -> Result<InitDefaultResult, anyhow::Error> {
     if config.name_exists(nickname.as_ref().unwrap_or(&"".to_string())) {
-        return Err(anyhow::anyhow!("An identity with that name already exists."));
+        return Err(anyhow::anyhow!("A default identity already exists."));
     }
 
     let client = reqwest::Client::new();
