@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::Arg;
 use clap::ArgAction::SetTrue;
 use convert_case::{Case, Casing};
+use duct::cmd;
 use spacetimedb_lib::sats::{AlgebraicType, Typespace};
 use spacetimedb_lib::{bsatn, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias};
 use wasmtime::{AsContext, Caller, ExternType};
@@ -110,9 +111,14 @@ Failed to compile module {:?}. See cargo errors above for more details.",
         ));
     }
 
+    let mut paths = vec![];
     for (fname, code) in generate(&wasm_file, lang, namespace.as_str())?.into_iter() {
-        fs::write(out_dir.join(fname), code)?;
+        let path = out_dir.join(fname);
+        paths.push(path.clone());
+        fs::write(path, code)?;
     }
+
+    format_files(paths, lang)?;
 
     println!("Generate finished successfully.");
     Ok(())
@@ -432,4 +438,18 @@ impl Memory {
             .get(offset as usize..)?
             .get(..len as usize)
     }
+}
+
+fn format_files(generated_files: Vec<PathBuf>, lang: Language) -> anyhow::Result<()> {
+    match lang {
+        Language::Rust => {
+            cmd!("rustup", "component", "add", "rustfmt").run()?;
+            for path in generated_files {
+                cmd!("rustfmt", path.to_str().unwrap()).run()?;
+            }
+        }
+        _ => {}
+    }
+
+    Ok(())
 }
