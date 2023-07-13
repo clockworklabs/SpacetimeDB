@@ -2,7 +2,7 @@ use std::convert::Infallible;
 
 use super::AlgebraicValue;
 use crate::ser::{self, ForwardNamedToSeqProduct};
-use crate::{ArrayValue, ProductValue};
+use crate::ArrayValue;
 
 /// An implementation of [`Serializer`](ser::Serializer)
 /// where the output of serialization is an `AlgebraicValue`.
@@ -55,7 +55,7 @@ impl ser::Serializer for ValueSerializer {
 
     fn serialize_map(self, len: usize) -> Result<Self::SerializeMap, Self::Error> {
         Ok(SerializeMapValue {
-            v: Vec::with_capacity(len),
+            entries: Vec::with_capacity(len),
         })
     }
 
@@ -144,6 +144,6 @@ impl ser::SerializeSeqProduct for SerializeProductValue {
         Ok(())
     }
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::Product(ProductValue { elements: self.elements }))
+        Ok(AlgebraicValue::product(self.elements))
     }
 }

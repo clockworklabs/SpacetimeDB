@@ -33,10 +33,27 @@ pub trait Deserializer<'de>: Sized {
     /// The error type that can be returned if some error occurs during deserialization.
     type Error: Error;
 
-    /// Hint that the `Deserialize` type is expecting a product value.
+    /// Deserializes a product value from the input.
     fn deserialize_product<V: ProductVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error>;
 
-    /// Hint that the `Deserialize` type is expecting a sum value.
+    /// Deserializes a sum value from the input.
+    ///
+    /// This is typically called from a [`Deserialize`] implementation
+    /// which provides the [`V: SumVisitor<'de>`](SumVisitor) object.
+    /// A deserializer should then switch back control to [`SumVisitor::visit_sum`],
+    /// providing it with a [`A: SumAccess<'de>`](SumAccess) object with the necessary input embedded.
+    /// The former, [`SumVisitor::visit_sum`],
+    /// will then in turn switch back via [`SumAccess::variant`],
+    /// providing it with a [`V: VariantVisitor<'de>`](VariantVisitor),
+    /// which the latter uses to identify the variant to deserialize.
+    /// Once control returns to [`SumVisitor::visit_sum`],
+    /// it has been passed by [`SumAccess::variant`] an [`A: VariantAccess<'de>`](VariantAccess) object
+    /// which it then uses to deserialize the data of the selected variant.
+    ///
+    /// This back and forth between the [`Deserialize`] and [`Deserializer`] sides is rather complex here.
+    /// To simplify, we note that, typically:
+    /// - [`Deserialize`] provides: [`SumVisitor`] and [`VariantVisitor`]
+    /// - [`Deserializer`] provides: [`SumAccess`] and [`VariantAccess`]
     fn deserialize_sum<V: SumVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error>;
 
     /// Deserializes a `bool` value from the input.
@@ -78,18 +95,18 @@ pub trait Deserializer<'de>: Sized {
     /// Deserializes an `f64 value from the input.
     fn deserialize_f64(self) -> Result<f64, Self::Error>;
 
-    /// Hint that the `Deserialize` type is expecting a string value.
+    /// Deserializes a string-like object the input.
     fn deserialize_str<V: SliceVisitor<'de, str>>(self, visitor: V) -> Result<V::Output, Self::Error>;
 
-    /// Deserialize an `&str` string value.
+    /// Deserializes an `&str` string value.
     fn deserialize_str_slice(self) -> Result<&'de str, Self::Error> {
         self.deserialize_str(BorrowedSliceVisitor)
     }
 
-    /// Hint that the `Deserialize` type is expecting a byte slice value.
+    /// Deserializes a byte slice-like value.
     fn deserialize_bytes<V: SliceVisitor<'de, [u8]>>(self, visitor: V) -> Result<V::Output, Self::Error>;
 
-    /// Hint that the `Deserialize` type is expecting an array value.
+    /// Deserializes an array value.
     ///
     /// This is typically the same as [`deserialize_array_seed`](Deserializer::deserialize_array_seed)
     /// with an uninteresting `seed` value.
@@ -100,7 +117,7 @@ pub trait Deserializer<'de>: Sized {
         self.deserialize_array_seed(visitor, PhantomData)
     }
 
-    /// Hint that the `Deserialize` type is expecting an array value.
+    /// Deserializes an array value.
     ///
     /// The deserialization is provided with a `seed` value.
     fn deserialize_array_seed<V: ArrayVisitor<'de, T::Output>, T: DeserializeSeed<'de> + Clone>(
@@ -109,7 +126,7 @@ pub trait Deserializer<'de>: Sized {
         seed: T,
     ) -> Result<V::Output, Self::Error>;
 
-    /// Hint that the `Deserialize` type is expecting a map value.
+    /// Deserializes a map value.
     ///
     /// This is typically the same as [`deserialize_map_seed`](Deserializer::deserialize_map_seed)
     /// with an uninteresting `seed` value.
@@ -120,7 +137,7 @@ pub trait Deserializer<'de>: Sized {
         self.deserialize_map_seed(visitor, PhantomData, PhantomData)
     }
 
-    /// Hint that the `Deserialize` type is expecting an map value.
+    /// Deserializes a map value.
     ///
     /// The deserialization is provided with `kseed` and `vseed` for keys and values respectively.
     fn deserialize_map_seed<
@@ -381,6 +398,9 @@ impl dyn ValidNames + '_ {
 }
 
 /// A visitor walking through a [`Deserializer`] for sums.
+///
+/// This side is provided by a [`Deserialize`] implementation
+/// when calling [`Deserializer::deserialize_sum`].
 pub trait SumVisitor<'de> {
     /// The resulting sum.
     type Output;
@@ -401,9 +421,9 @@ pub trait SumVisitor<'de> {
 
 /// Provides a [`SumVisitor`] access to the data of a sum in the input.
 ///
-/// `SumAccess` is created by the [`Deserializer`]
-/// and is passed to the Visitor to identify
-/// which variant of a sum to deserialize.
+/// An `A: SumAccess` object is created by the [`D: Deserializer`]
+/// which passes `A` to a [`V: SumVisitor`] that `D` in turn was passed.
+/// `A` is then used by `V` to split tag and value input apart.
 pub trait SumAccess<'de> {
     /// The error type that can be returned if some error occurs during deserialization.
     type Error: Error;
@@ -412,12 +432,17 @@ pub trait SumAccess<'de> {
     type Variant: VariantAccess<'de, Error = Self::Error>;
 
     /// Called to identify which variant to deserialize.
+    /// Returns a tuple with the result of identification (`V::Output`)
+    /// and the input to variant data deserialization.
     ///
     /// The `visitor` is provided by the [`Deserializer`].
+    /// This method is typically called from [`SumVisitor::visit_sum`]
+    /// which will provide the [`V: VariantVisitor`](VariantVisitor).
     fn variant<V: VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error>;
 }
 
-/// A visitor used in [`SumAccess::variant`] to decide what variant to deserialize.
+/// A visitor passed from [`SumVisitor`] to [`SumAccess::variant`]
+/// which the latter uses to decide what variant to deserialize.
 pub trait VariantVisitor {
     /// The result of identifying a variant, e.g., some index type.
     type Output;
@@ -426,14 +451,16 @@ pub trait VariantVisitor {
     fn variant_names(&self, names: &mut dyn ValidNames);
 
     /// Identify the variant based on the `tag`.
+    ///
+    /// This is one way to identify
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E>;
 
     /// Identify the variant based on the `name`.
     fn visit_name<E: Error>(self, name: &str) -> Result<Self::Output, E>;
 }
 
-/// `VariantAccess` is a visitor created by the [`Deserializer`]
-/// and passed to [`Deserialize`] to deserialize the content of a particular sum variant.
+/// A visitor passed from [`SumAccess`] to [`SumVisitor::visit_sum`]
+/// which the latter uses to deserialize the data of a selected variant.
 pub trait VariantAccess<'de>: Sized {
     type Error: Error;
 
