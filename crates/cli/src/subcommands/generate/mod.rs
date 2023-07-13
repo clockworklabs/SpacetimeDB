@@ -448,7 +448,9 @@ fn format_files(generated_files: Vec<PathBuf>, lang: Language) -> anyhow::Result
                 cmd!("rustfmt", path.to_str().unwrap()).run()?;
             }
         }
-        _ => {}
+        Language::Csharp => {}
+        Language::TypeScript => {}
+        Language::Python => {}
     }
 
     Ok(())
