@@ -14,7 +14,7 @@ use crate::util::prometheus_handle::HistogramVecHandle;
 use crate::util::ResultInspectExt;
 use crate::worker_metrics::{INSTANCE_ENV_DELETE_BY_COL_EQ, INSTANCE_ENV_INSERT};
 
-use super::scheduler::{ScheduledReducerId, Scheduler};
+use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
 use super::timestamp::Timestamp;
 use super::tracelog::instance_trace::TraceLog;
 use crate::vm::DbProgram;
@@ -54,7 +54,12 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn schedule(&self, reducer: String, args: Vec<u8>, time: Timestamp) -> ScheduledReducerId {
+    pub fn schedule(
+        &self,
+        reducer: String,
+        args: Vec<u8>,
+        time: Timestamp,
+    ) -> Result<ScheduledReducerId, ScheduleError> {
         self.scheduler.schedule(reducer, args, time)
     }
 
