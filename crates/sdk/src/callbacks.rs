@@ -852,4 +852,19 @@ impl CredentialStore {
             self.credentials = Some(creds);
         }
     }
+
+    /// Return the current connection's `Identity`, if one is stored.
+    pub(crate) fn identity(&self) -> Option<Identity> {
+        self.credentials.as_ref().map(|creds| creds.identity.clone())
+    }
+
+    /// Return the current connection's private `Token`, if one is stored.
+    pub(crate) fn token(&self) -> Option<Token> {
+        self.credentials.as_ref().map(|creds| creds.token.clone())
+    }
+
+    /// Return the current connection's `Credentials`, if they are stored.
+    pub(crate) fn credentials(&self) -> Option<Credentials> {
+        self.credentials.clone()
+    }
 }

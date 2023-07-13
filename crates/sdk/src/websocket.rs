@@ -66,7 +66,6 @@ where
     <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
 {
     let uri = make_uri(host, db_name)?;
-    println!("Uri: {:?}", uri);
     let mut req = IntoClientRequest::into_client_request(uri)?;
     request_insert_protocol_header(&mut req);
     request_insert_auth_header(&mut req, credentials);
@@ -94,12 +93,15 @@ const AUTH_HEADER_KEY: &str = "Authorization";
 fn request_insert_auth_header(req: &mut http::Request<()>, credentials: Option<&Credentials>) {
     // TODO: figure out how the token is supposed to be encoded in the request
     if let Some(Credentials { token, .. }) = credentials {
+        use base64::Engine;
+
+        let auth_bytes = format!("token:{}", token.string);
+        let encoded = base64::prelude::BASE64_STANDARD.encode(auth_bytes);
+        let auth_header_val = format!("Basic {}", encoded);
         request_add_header(
             req,
             AUTH_HEADER_KEY,
-            token
-                .string
-                .clone()
+            auth_header_val
                 .try_into()
                 .expect("Failed to convert token to http HeaderValue"),
         )

@@ -4134,6 +4134,7 @@ version = "0.5.0"
 dependencies = [
  "anyhow",
  "anymap",
+ "base64 0.21.2",
  "futures",
  "futures-channel",
  "http",

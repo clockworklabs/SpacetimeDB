@@ -303,11 +303,13 @@ impl BackgroundDbConnection {
     }
 
     pub fn subscribe(&self, queries: &[&str]) {
+        self.subscribe_owned(queries.iter().map(|&s| s.into()).collect());
+    }
+
+    pub fn subscribe_owned(&self, queries: Vec<String>) {
         if let Err(e) = self.send_chan.unbounded_send(client_api_messages::Message {
             r#type: Some(client_api_messages::message::Type::Subscribe(
-                client_api_messages::Subscribe {
-                    query_strings: queries.iter().map(|&s| s.into()).collect(),
-                },
+                client_api_messages::Subscribe { query_strings: queries },
             )),
         }) {
             // TODO: decide how to handle this error. Panic? Log? Return result? The only
