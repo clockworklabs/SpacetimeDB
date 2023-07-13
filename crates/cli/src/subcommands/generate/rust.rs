@@ -535,12 +535,32 @@ fn print_table_filter_methods(
     )
 }
 
+fn reducer_type_name(reducer: &ReducerDef) -> String {
+    let mut name = reducer.name.to_case(Case::Pascal);
+    name.push_str("Args");
+    name
+}
+
+fn reducer_variant_name(reducer: &ReducerDef) -> String {
+    reducer.name.to_case(Case::Pascal)
+}
+
+fn reducer_module_name(reducer: &ReducerDef) -> String {
+    let mut name = reducer.name.to_case(Case::Snake);
+    name.push_str("_reducer");
+    name
+}
+
+fn reducer_function_name(reducer: &ReducerDef) -> String {
+    reducer.name.to_case(Case::Snake)
+}
+
 /// Generate a file which defines a struct corresponding to the `reducer`'s arguments,
 /// implements `spacetimedb_sdk::table::Reducer` for it, and defines a helper
 /// function which invokes the reducer.
 pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
-    let func_name = reducer.name.to_case(Case::Snake);
-    let type_name = reducer.name.to_case(Case::Pascal);
+    let func_name = reducer_function_name(reducer);
+    let type_name = reducer_type_name(reducer);
 
     let mut output = CodeIndenter::new(String::new());
     let out = &mut output;
@@ -856,14 +876,13 @@ fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
                 "match &function_call.reducer[..] {",
                 |out| {
                     for reducer in iter_reducer_items(items) {
-                        let type_or_variant_name = reducer.name.to_case(Case::Pascal);
                         writeln!(
                             out,
-                            "{:?} => reducer_callbacks.handle_event_of_type::<{}_reducer::{}, ReducerEvent>(event, state, ReducerEvent::{}),",
+                            "{:?} => reducer_callbacks.handle_event_of_type::<{}::{}, ReducerEvent>(event, state, ReducerEvent::{}),",
                             reducer.name,
-                            reducer.name.to_case(Case::Snake),
-                            type_or_variant_name,
-                            type_or_variant_name,
+                            reducer_module_name(reducer),
+                            reducer_type_name(reducer),
+                            reducer_variant_name(reducer),
                         ).unwrap();
                     }
                     writeln!(
@@ -925,13 +944,12 @@ fn print_reducer_event_defn(out: &mut Indenter, items: &[GenItem]) {
             for item in items {
                 if let GenItem::Reducer(reducer) = item {
                     if !is_init(reducer) {
-                        let type_name = reducer.name.to_case(Case::Pascal);
                         writeln!(
                             out,
-                            "{}({}_reducer::{}),",
-                            type_name,
-                            reducer.name.to_case(Case::Snake),
-                            type_name,
+                            "{}({}::{}),",
+                            reducer_variant_name(reducer),
+                            reducer_module_name(reducer),
+                            reducer_type_name(reducer),
                         )
                         .unwrap();
                     }
