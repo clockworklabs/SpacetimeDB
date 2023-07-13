@@ -1,5 +1,4 @@
 use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson};
-use anyhow::Context;
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches};
 use reqwest::RequestBuilder;
 use spacetimedb_lib::de::serde::SeedWrapper;
@@ -78,33 +77,44 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), an
 
     let stmt_result_json: Vec<StmtResultJson> = serde_json::from_str(&json)?;
 
-    let stmt_result = stmt_result_json.first().context("Invalid sql query.")?;
-    let StmtResultJson { schema, rows } = &stmt_result;
+    //If you get a table, print the results, if return empty is likely a command like `INSERT`
+    if stmt_result_json.is_empty() {
+        println!("OK");
+        return Ok(());
+    };
 
-    let mut builder = Builder::default();
-    builder.set_columns(
-        schema
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}"))),
-    );
+    for (i, stmt_result) in stmt_result_json.iter().enumerate() {
+        let StmtResultJson { schema, rows } = &stmt_result;
 
-    let typespace = Typespace::default();
-    let ty = typespace.with_type(schema);
-    for row in rows {
-        let row = from_json_seed(row.get(), SeedWrapper(ty))?;
-        builder.add_record(
-            row.elements
+        let mut builder = Builder::default();
+        builder.set_columns(
+            schema
+                .elements
                 .iter()
-                .zip(&schema.elements)
-                .map(|(v, e)| satn::PsqlWrapper(ty.with(&e.algebraic_type).with_value(v))),
+                .enumerate()
+                .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}"))),
         );
+
+        let typespace = Typespace::default();
+        let ty = typespace.with_type(schema);
+        for row in rows {
+            let row = from_json_seed(row.get(), SeedWrapper(ty))?;
+            builder.add_record(
+                row.elements
+                    .iter()
+                    .zip(&schema.elements)
+                    .map(|(v, e)| satn::PsqlWrapper(ty.with(&e.algebraic_type).with_value(v))),
+            );
+        }
+
+        let table = builder.build().with(Style::psql());
+
+        if i > 0 {
+            println!("\n{}", table);
+        } else {
+            println!("{}", table);
+        }
     }
-
-    let table = builder.build().with(Style::psql());
-
-    println!("{}", table);
 
     Ok(())
 }
