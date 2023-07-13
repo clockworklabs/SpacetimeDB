@@ -16,7 +16,7 @@ use spacetimedb::{println, spacetimedb, ScheduleToken};
 
 #[spacetimedb(init)]
 fn init() {
-    let token = spacetimedb::schedule!("0ms", reducer(1));
+    let token = spacetimedb::schedule!("10ms", reducer(1));
     token.cancel();
     let token = spacetimedb::schedule!("100ms", reducer(2));
     spacetimedb::schedule!("50ms", do_cancel(token));
