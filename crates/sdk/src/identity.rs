@@ -1,22 +1,68 @@
 use crate::callbacks::CallbackId;
 use crate::global_connection::try_with_credential_store;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use spacetimedb_lib::de::Deserialize;
+use spacetimedb_lib::ser::Serialize;
 // TODO: impl ser/de for `Identity`, `Token`, `Credentials` so that clients can stash them
 //       to disk and use them to re-connect.
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 /// A unique public identifier for a client connected to a database.
 pub struct Identity {
     pub(crate) bytes: Vec<u8>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+impl Identity {
+    /// Get a reference to the bytes of this identity.
+    ///
+    /// This may be useful for saving the bytes to disk in order to reconnect
+    /// with the same identity, though client authors are encouraged
+    /// to use the BSATN `Serialize` and `Deserialize` traits
+    /// rather than saving bytes directly.
+    ///
+    /// Due to a current limitation in Spacetime's handling of tables which store identities,
+    /// filter methods for fields defined by the module to have type `Identity`
+    /// accept bytes, rather than an `Identity` structure.
+    /// As such, it is necessary to do e.g.
+    /// `MyTable::filter_by_identity(some_identity.bytes().to_owned())`.
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Construct an `Identity` containing the `bytes`.
+    ///
+    /// This method does not verify that `bytes` represents a valid identity.
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        Identity { bytes }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 /// A private access token for a client connected to a database.
 pub struct Token {
     pub(crate) string: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+impl Token {
+    /// Get a reference to the string representation of this token.
+    ///
+    /// This may be useful for saving the string to disk in order to reconnect
+    /// with the same token, though client authors are encouraged
+    /// to use the BSATN `Serialize` and `Deserialize` traits
+    /// rather than saving the token string directly.
+    pub fn string(&self) -> &str {
+        &self.string
+    }
+
+    /// Construct a token from its string representation.
+    ///
+    /// This method does not verify that `string` represents a valid token.
+    pub fn from_string(string: String) -> Self {
+        Token { string }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 /// Credentials, including a private access token, sufficient to authenticate a client
 /// connected to a database.
 pub struct Credentials {
@@ -89,4 +135,35 @@ pub fn once_on_connect(callback: impl FnOnce(&Credentials) + Send + 'static) -> 
 /// nothing.
 pub fn remove_on_connect(id: ConnectCallbackId) -> Result<()> {
     try_with_credential_store(|cred_store| cred_store.unregister_on_connect(id.id))
+}
+
+/// Read the current connection's public `Identity`.
+///
+/// Returns an error if:
+/// - `connect` has not yet been called.
+/// - We connected anonymously, and we have not yet received our credentials.
+pub fn identity() -> Result<Identity> {
+    try_with_credential_store(|cred_store| cred_store.identity().ok_or(anyhow!("Identity not yet received")))
+        .and_then(|inner| inner)
+}
+
+/// Read the current connection's private `Token`.
+///
+/// Returns an error if:
+/// - `connect` has not yet been called.
+/// - We connected anonymously, and we have not yet received our credentials.
+pub fn token() -> Result<Token> {
+    try_with_credential_store(|cred_store| cred_store.token().ok_or(anyhow!("Token not yet received")))
+        .and_then(|inner| inner)
+}
+
+/// Read the current connection's `Credentials`,
+/// including a public `Identity` and a private `Token`.
+///
+/// Returns an error if:
+/// - `connect` has not yet been called.
+/// - We connected anonymously, and we have not yet received our credentials.
+pub fn credentials() -> Result<Credentials> {
+    try_with_credential_store(|cred_store| cred_store.credentials().ok_or(anyhow!("Credentials not yet received")))
+        .and_then(|inner| inner)
 }

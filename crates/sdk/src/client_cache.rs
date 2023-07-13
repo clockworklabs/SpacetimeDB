@@ -107,7 +107,11 @@ impl<T: TableType> TableCache<T> {
         let client_api_messages::TableRowOperation { op, row_pk, row } = row_op;
         match bsatn::from_slice(&row) {
             Err(e) => {
-                log::error!("Error while deserializing row from TableRowOperation: {:?}", e);
+                log::error!(
+                    "Error while deserializing row from TableRowOperation: {:?}. Row is {:?}",
+                    e,
+                    row
+                );
             }
             Ok(value) => {
                 if op_is_delete(op) {
@@ -227,7 +231,11 @@ impl<T: TableType> TableCache<T> {
             match diff.remove(&row_pk) {
                 None => match bsatn::from_slice(&row) {
                     Err(e) => {
-                        log::error!("Error while deserializing row from `TableRowOperation`: {:?}", e);
+                        log::error!(
+                            "Error while deserializing row from `TableRowOperation`: {:?}. Row is {:?}",
+                            e,
+                            row
+                        );
                     }
                     Ok(row) => {
                         log::info!("Initializing table {:?}: got new row {:?}", T::TABLE_NAME, row);
@@ -333,7 +341,11 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
         ) -> Option<DiffEntry<T>> {
             match bsatn::from_slice(&row) {
                 Err(e) => {
-                    log::error!("Error while deserializing row from `TableRowOperation`: {:?}", e);
+                    log::error!(
+                        "Error while deserializing row from `TableRowOperation`: {:?}. Row is {:?}",
+                        e,
+                        row
+                    );
                     None
                 }
                 Ok(row) => {

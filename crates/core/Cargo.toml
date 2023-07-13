@@ -59,7 +59,7 @@ hostname = "^0.3"
 clap = { version = "4.2.4", features = ["derive"] }
 sled = "0.34.7"
 email_address = "0.2.3"
-sqlparser = "0.21.0"
+sqlparser = "0.34.0"
 backtrace = "0.3.66"
 # pprof = { version = "0.10", features = ["flamegraph"] }
 # perf_monitor = "0.2"

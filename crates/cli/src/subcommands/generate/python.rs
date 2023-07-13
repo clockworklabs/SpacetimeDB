@@ -224,7 +224,7 @@ fn autogen_python_product_table_common(
         writeln!(output).unwrap();
         writeln!(
             output,
-            "from spacetimedb_python_sdk.spacetimedb_client import SpacetimeDBClient"
+            "from spacetimedb_sdk.spacetimedb_client import SpacetimeDBClient"
         )
         .unwrap();
     } else {
@@ -545,7 +545,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 
     writeln!(
         output,
-        "from spacetimedb_python_sdk.spacetimedb_client import SpacetimeDBClient"
+        "from spacetimedb_sdk.spacetimedb_client import SpacetimeDBClient"
     )
     .unwrap();
     writeln!(output).unwrap();
