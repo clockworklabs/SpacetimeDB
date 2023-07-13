@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
-use crate::host::scheduler::ScheduledReducerId;
+use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::{err_to_errno, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers};
 use bytes::Bytes;
@@ -124,7 +124,16 @@ impl WasmInstanceEnv {
             // Noa: This would be nice but I think the eventual goal/desire is to switch to wasmtime,
             //      which doesn't allow user types to impl ValueType.
             //      Probably the correct API choice, but makes things a bit less ergonomic sometimes.
-            let ScheduledReducerId(id) = caller.data().instance_env.schedule(name, args, Timestamp(time));
+            let ScheduledReducerId(id) = caller
+                .data()
+                .instance_env
+                .schedule(name, args, Timestamp(time))
+                .map_err(|e| match e {
+                    ScheduleError::DelayTooLong(_) => RuntimeError::new("requested delay is too long"),
+                    ScheduleError::IdTransactionError(_) => {
+                        RuntimeError::new("transaction to acquire ScheduleReducerId failed")
+                    }
+                })?;
             Ok(id)
         })
         .map(|_| ())
