@@ -11,12 +11,12 @@ jobs:
     name: Smoketests
     runs-on: spacetimedb-runner
     steps:
-      - uses: actions/checkout@v3
-
+      - name: Checkout sources
+        uses: actions/checkout@v3
       - name: Start containers
         run: docker compose up -d
       - name: Run smoketests
-        run: test/run-smoke-tests.sh -x bitcraftmini-pretest
+        run: test/run-smoke-tests.sh --parallel -x bitcraftmini-pretest
       - name: Stop containers 
         if: always()
         run: docker compose down

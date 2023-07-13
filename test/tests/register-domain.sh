@@ -9,13 +9,12 @@ set -euox pipefail
 
 source "./test/lib.include"
 RAND_DOMAIN=$(random_string)
-create_project
 
 
 run_test cargo run identity new --no-email
 IDENT=$(grep IDENTITY "$TEST_OUT" | awk '{print $2}')
-run_test cargo run dns register-tld "$RAND_DOMAIN" 
-create_project
+run_test cargo run dns register-tld "$RAND_DOMAIN"
+reset_project
 run_test cargo run publish -s -d "$RAND_DOMAIN" --project-path "$PROJECT_PATH" --clear-database
 run_test cargo run publish -s -d "$RAND_DOMAIN/test" --project-path "$PROJECT_PATH" --clear-database
 run_test cargo run publish -s -d "$RAND_DOMAIN/test/test2" --project-path "$PROJECT_PATH" --clear-database

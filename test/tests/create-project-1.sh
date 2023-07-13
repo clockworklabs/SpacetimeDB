@@ -11,4 +11,6 @@ source "./test/lib.include"
 
 run_fail_test cargo run init
 run_fail_test cargo run init "$PROJECT_PATH"
+rm -rf "$PROJECT_PATH"
+mkdir -p "$PROJECT_PATH"
 run_test cargo run init "$PROJECT_PATH" --lang rust
