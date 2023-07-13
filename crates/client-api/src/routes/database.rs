@@ -977,6 +977,15 @@ pub async fn set_name(
     Ok(axum::Json(response))
 }
 
+/// This API call is just designed to allow clients to determine whether or not they can
+/// establish a connection to SpacetimeDB. This API call doesn't actually do anything.
+pub async fn ping(
+    State(_ctx): State<Arc<dyn ControlCtx>>,
+    _auth: SpacetimeAuthHeader,
+) -> axum::response::Result<impl IntoResponse> {
+    Ok(())
+}
+
 pub fn control_routes<S>() -> axum::Router<S>
 where
     S: ControlNodeDelegate + Clone + 'static,
@@ -987,6 +996,7 @@ where
         .route("/dns/:database_name", get(dns))
         .route("/reverse_dns/:database_address", get(reverse_dns))
         .route("/set_name", get(set_name))
+        .route("/ping", get(ping))
         .route("/register_tld", get(register_tld))
         .route("/request_recovery_code", get(request_recovery_code))
         .route("/confirm_recovery_code", get(confirm_recovery_code))
