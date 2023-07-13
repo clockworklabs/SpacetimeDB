@@ -16,9 +16,9 @@ use spacetimedb::{println, spacetimedb, ScheduleToken};
 
 #[spacetimedb(init)]
 fn init() {
-    let token = spacetimedb::schedule!("0ms", reducer());
+    let token = spacetimedb::schedule!("0ms", reducer(1));
     token.cancel();
-    let token = spacetimedb::schedule!("100ms", reducer());
+    let token = spacetimedb::schedule!("100ms", reducer(2));
     spacetimedb::schedule!("50ms", do_cancel(token));
 }
 
@@ -28,8 +28,8 @@ fn do_cancel(token: ScheduleToken<reducer>) {
 }
 
 #[spacetimedb(reducer)]
-fn reducer() {
-    println!("the reducer ran")
+fn reducer(num: i32) {
+    println!("the reducer ran: {}", num)
 }
 EOF
 
