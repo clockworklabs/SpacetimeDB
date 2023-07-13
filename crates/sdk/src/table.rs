@@ -1,6 +1,6 @@
 use crate::callbacks::{CallbackId, TableCallbacks};
 use crate::client_cache::TableCache;
-use crate::global_connection::{try_with_client_cache, try_with_db_callbacks};
+use crate::global_connection::{try_with_client_cache, with_db_callbacks};
 use crate::reducer::AnyReducerEvent;
 use anyhow::{anyhow, Result};
 use spacetimedb_sats::{de::DeserializeOwned, ser::Serialize};
@@ -59,8 +59,8 @@ fn try_with_table<T: TableType, Res>(f: impl FnOnce(&TableCache<T>) -> Res) -> R
     }))
 }
 
-fn try_with_callbacks<T: TableType, Res>(f: impl FnOnce(&mut TableCallbacks<T>) -> Res) -> Result<Res> {
-    try_with_db_callbacks(|db_callbacks| f(db_callbacks.find_table::<T>()))
+fn with_callbacks<T: TableType, Res>(f: impl FnOnce(&mut TableCallbacks<T>) -> Res) -> Res {
+    with_db_callbacks(|db_callbacks| f(db_callbacks.find_table::<T>()))
 }
 
 // Any bound so these can go into an `AnyMap` in the `ClientCache`.
@@ -149,28 +149,17 @@ pub trait TableType: DeserializeOwned + Serialize + Any + Send + Sync + Clone + 
     ///
     /// The returned `InsertCallbackId` can be passed to `remove_on_insert` to remove the
     /// callback.
-    ///
-    /// `on_insert` will return an error if called without an active database
-    /// connection. In that case, the callback is not registered.
-    // TODO: Should it be possible to register callbacks before connecting? This would
-    //       require `CONNECTION` to always be a `BackgroundDbConnection` and to hold some
-    //       of its internal state in `Option`s.
-    fn on_insert(
-        callback: impl FnMut(&Self, Option<&Self::ReducerEvent>) + Send + 'static,
-    ) -> Result<InsertCallbackId<Self>> {
-        try_with_callbacks::<Self, _>(|table_callbacks| table_callbacks.register_on_insert(callback))
-            .map(|id| InsertCallbackId { id })
+    fn on_insert(callback: impl FnMut(&Self, Option<&Self::ReducerEvent>) + Send + 'static) -> InsertCallbackId<Self> {
+        let id = with_callbacks::<Self, _>(|table_callbacks| table_callbacks.register_on_insert(callback));
+        InsertCallbackId { id }
     }
 
     /// Unregister a previously-registered `on_insert` callback.
     ///
-    /// `remove_on_insert` will return an error if called without an active database
-    /// connection.
-    ///
     /// If `id` does not refer to a currently-registered callback, this operation does
     /// nothing.
-    fn remove_on_insert(id: InsertCallbackId<Self>) -> Result<()> {
-        try_with_callbacks::<Self, _>(|table_callbacks| table_callbacks.unregister_on_insert(id.id))
+    fn remove_on_insert(id: InsertCallbackId<Self>) {
+        with_callbacks::<Self, _>(|table_callbacks| table_callbacks.unregister_on_insert(id.id));
     }
 
     /// Register an `on_delete` callback for when a row is removed from the database.
@@ -180,25 +169,17 @@ pub trait TableType: DeserializeOwned + Serialize + Any + Send + Sync + Clone + 
     ///
     /// The returned `DeleteCallbackId` can be passed to `remove_on_delete` to remove the
     /// callback.
-    ///
-    /// `on_delete` will return an error if called without an active database
-    /// connection. In that case, the callback is not registered.
-    fn on_delete(
-        callback: impl FnMut(&Self, Option<&Self::ReducerEvent>) + Send + 'static,
-    ) -> Result<DeleteCallbackId<Self>> {
-        try_with_callbacks::<Self, _>(|table_callbacks| table_callbacks.register_on_delete(callback))
-            .map(|id| DeleteCallbackId { id })
+    fn on_delete(callback: impl FnMut(&Self, Option<&Self::ReducerEvent>) + Send + 'static) -> DeleteCallbackId<Self> {
+        let id = with_callbacks::<Self, _>(|table_callbacks| table_callbacks.register_on_delete(callback));
+        DeleteCallbackId { id }
     }
 
     /// Unregister a previously-registered `on_delete` callback.
     ///
-    /// `remove_on_delete` will return an error if called without an active database
-    /// connection.
-    ///
     /// If `id` does not refer to a currently-registered callback, this operation does
     /// nothing.
-    fn remove_on_delete(id: DeleteCallbackId<Self>) -> Result<()> {
-        try_with_callbacks::<Self, _>(|table_callbacks| table_callbacks.unregister_on_delete(id.id))
+    fn remove_on_delete(id: DeleteCallbackId<Self>) {
+        with_callbacks::<Self, _>(|table_callbacks| table_callbacks.unregister_on_delete(id.id));
     }
 }
 
@@ -225,24 +206,18 @@ pub trait TableWithPrimaryKey: TableType {
     ///
     /// The returned `UpdateCallbackId` can be passed to `remove_on_update` to remove the
     /// callback.
-    ///
-    /// `on_update` will return an error if called without an active database
-    /// connection. In that case, the callback is not registered.
     fn on_update(
         callback: impl FnMut(&Self, &Self, Option<&Self::ReducerEvent>) + Send + 'static,
-    ) -> Result<UpdateCallbackId<Self>> {
-        try_with_callbacks::<Self, _>(|table_callbacks| table_callbacks.register_on_update(callback))
-            .map(|id| UpdateCallbackId { id })
+    ) -> UpdateCallbackId<Self> {
+        let id = with_callbacks::<Self, _>(|table_callbacks| table_callbacks.register_on_update(callback));
+        UpdateCallbackId { id }
     }
 
     /// Unregister a previously-registered `on_update` callback.
     ///
-    /// `remove_on_update` will return an error if called without an active database
-    /// connection.
-    ///
     /// If `id` does not refer to a currently-registered callback, this operation does
     /// nothing.
-    fn remove_on_update(id: UpdateCallbackId<Self>) -> Result<()> {
-        try_with_callbacks::<Self, _>(|table_callbacks| table_callbacks.unregister_on_update(id.id))
+    fn remove_on_update(id: UpdateCallbackId<Self>) {
+        with_callbacks::<Self, _>(|table_callbacks| table_callbacks.unregister_on_update(id.id));
     }
 }
