@@ -9,7 +9,6 @@ set -euox pipefail
 
 source "./test/lib.include"
 
-## Create a new spacetimedb rust project
 cargo run identity new --no-email
 
 ## Write a spacetimedb rust module

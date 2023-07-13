@@ -9,7 +9,6 @@ set -euox pipefail
 
 source "./test/lib.include"
 
-reset_config
 run_test cargo run identity init-default
 run_test cargo run publish -s -d --project-path "$PROJECT_PATH" --clear-database
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
