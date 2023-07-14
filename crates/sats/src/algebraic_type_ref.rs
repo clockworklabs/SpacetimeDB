@@ -32,6 +32,6 @@ impl Display for AlgebraicTypeRef {
 
 impl MetaType for AlgebraicTypeRef {
     fn meta_type() -> AlgebraicType {
-        AlgebraicType::Builtin(BuiltinType::U32)
+        AlgebraicType::U32
     }
 }

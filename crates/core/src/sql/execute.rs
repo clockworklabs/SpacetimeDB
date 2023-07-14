@@ -536,7 +536,7 @@ pub(crate) mod tests {
             if is_null {
                 assert_eq!(
                     col.col_type,
-                    AlgebraicType::make_option_type(AlgebraicType::I64),
+                    AlgebraicType::option(AlgebraicType::I64),
                     "Null type {}.{}",
                     table_name,
                     col.col_name

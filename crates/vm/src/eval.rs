@@ -477,7 +477,7 @@ pub fn run_ast<P: ProgramVm>(p: &mut P, ast: Expr) -> Code {
 // Used internally for testing recursion
 #[doc(hidden)]
 pub fn fibo(input: u64) -> Expr {
-    let kind = AlgebraicType::Builtin(BuiltinType::U64);
+    let kind = AlgebraicType::U64;
 
     let less = |val: u64| bin_op(OpMath::Minus, var("n"), scalar(val));
 
@@ -676,7 +676,7 @@ mod tests {
     #[test]
     fn test_fun() {
         let p = &mut Program::new(AuthCtx::for_testing());
-        let kind = AlgebraicType::Builtin(BuiltinType::U64);
+        let kind = AlgebraicType::U64;
         let f = Function::new(
             "sum",
             &[Param::new("a", kind.clone()), Param::new("b", kind.clone())],

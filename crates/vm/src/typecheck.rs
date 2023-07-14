@@ -58,7 +58,7 @@ pub(crate) fn check_types(env: &mut EnvTy, ast: &ExprOpt) -> Result<Ty, ErrorTyp
     match ast {
         ExprOpt::Op(op, args) => {
             if op.of.is_logical() {
-                return Ok(Ty::Val(AlgebraicType::Builtin(BuiltinType::Bool)));
+                return Ok(Ty::Val(AlgebraicType::Bool));
             }
 
             let expects = match &op.ty {
