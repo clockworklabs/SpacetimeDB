@@ -29,7 +29,6 @@ pub fn get_subcommands() -> Vec<Command> {
         #[cfg(feature = "tracelogging")]
         tracelog::cli(),
         server::cli(),
-        repl::cli(),
     ]
 }
 
@@ -50,7 +49,6 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "init" => init::exec(config, args).await,
         "build" => build::exec(config, args).await,
         "server" => server::exec(config, args).await,
-        "repl" => repl::exec(config, args).await,
         #[cfg(feature = "tracelogging")]
         "tracelog" => tracelog::exec(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
