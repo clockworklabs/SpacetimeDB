@@ -1,4 +1,6 @@
-use crate::{algebraic_type::AlgebraicType, builtin_type::BuiltinType, meta_type::MetaType, impl_serialize, impl_deserialize};
+use crate::{
+    algebraic_type::AlgebraicType, builtin_type::BuiltinType, impl_deserialize, impl_serialize, meta_type::MetaType,
+};
 use std::fmt::Display;
 
 /// A reference to an [`AlgebraicType`] within a `Typespace`.

@@ -2,7 +2,7 @@ use crate::{de, ser};
 use core::fmt;
 
 use sha3::{Digest, Keccak256};
-use spacetimedb_sats::{AlgebraicType, impl_st, impl_serialize, impl_deserialize};
+use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 
 pub const HASH_SIZE: usize = 32;
 

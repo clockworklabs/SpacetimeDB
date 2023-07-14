@@ -33,7 +33,6 @@ impl fmt::Display for BsatnError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.custom)
     }
-
 }
 impl std::error::Error for BsatnError {}
 

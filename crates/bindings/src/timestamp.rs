@@ -3,7 +3,7 @@
 use std::ops::{Add, Sub};
 use std::time::Duration;
 
-use spacetimedb_lib::sats::{impl_st, impl_serialize, impl_deserialize};
+use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, impl_st};
 
 scoped_tls::scoped_thread_local! {
     static CURRENT_TIMESTAMP: Timestamp

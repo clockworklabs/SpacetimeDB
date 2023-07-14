@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use spacetimedb_sats::{impl_serialize, impl_deserialize};
+use spacetimedb_sats::{impl_deserialize, impl_serialize};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, serde::Serialize)]
 #[serde(transparent)]

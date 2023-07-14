@@ -2,7 +2,10 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, ProductTypeElement, SumTypeVariant, impl_serialize, impl_deserialize};
+use crate::{
+    impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, ProductTypeElement,
+    SumTypeVariant,
+};
 use enum_as_inner::EnumAsInner;
 
 /// Represents the built-in types in SATS.

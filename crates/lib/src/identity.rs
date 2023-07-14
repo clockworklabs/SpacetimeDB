@@ -1,6 +1,6 @@
 use std::fmt;
 
-use sats::{impl_st, impl_serialize, impl_deserialize};
+use sats::{impl_deserialize, impl_serialize, impl_st};
 
 use crate::sats::{self, de, ser};
 

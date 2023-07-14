@@ -11,7 +11,7 @@ mod timestamp;
 
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
-use spacetimedb_lib::sats::{impl_st, impl_serialize, impl_deserialize};
+use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, impl_st};
 pub use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::{bsatn, ColumnIndexAttribute, IndexType, PrimaryKey, ProductType, ProductValue};
 use std::cell::RefCell;
