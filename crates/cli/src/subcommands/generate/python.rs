@@ -227,6 +227,7 @@ fn autogen_python_product_table_common(
             "from spacetimedb_sdk.spacetimedb_client import SpacetimeDBClient"
         )
         .unwrap();
+        writeln!(output, "from spacetimedb_sdk.spacetimedb_client import ReducerEvent").unwrap();
     } else {
         writeln!(output, "from typing import List").unwrap();
     }
@@ -274,7 +275,7 @@ fn autogen_python_product_table_common(
             writeln!(output, "@classmethod").unwrap();
             writeln!(
                 output,
-                "def register_row_update(cls, callback: Callable[[str,{name},{name}], None]):"
+                "def register_row_update(cls, callback: Callable[[str,{name},{name},ReducerEvent], None]):"
             )
             .unwrap();
             {
@@ -548,6 +549,8 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
         "from spacetimedb_sdk.spacetimedb_client import SpacetimeDBClient"
     )
     .unwrap();
+    writeln!(output, "from spacetimedb_sdk.spacetimedb_client import Identity").unwrap();
+
     writeln!(output).unwrap();
 
     let mut imports = Vec::new();
@@ -622,22 +625,12 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 
     writeln!(
         output,
-        "def register_on_{}(callback: Callable[[bytes, str, str{}], None]):",
+        "def register_on_{}(callback: Callable[[Identity, str, str{}], None]):",
         reducer.name, callback_sig_str
     )
     .unwrap();
     {
         indent_scope!(output);
-        writeln!(output, "if not _check_callback_signature(callback):").unwrap();
-        {
-            indent_scope!(output);
-            writeln!(
-                output,
-                "raise ValueError(\"Callback signature does not match expected arguments\")"
-            )
-            .unwrap();
-        }
-        writeln!(output).unwrap();
 
         writeln!(
             output,
@@ -662,16 +655,6 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
         }
 
         writeln!(output, "return [{}]", decode_strs.join(", ")).unwrap();
-    }
-    writeln!(output).unwrap();
-
-    writeln!(output, "def _check_callback_signature(callback: Callable) -> bool:").unwrap();
-    {
-        indent_scope!(output);
-        writeln!(output, "expected_arguments = [bytes, str, str{}]", callback_sig_str).unwrap();
-        writeln!(output, "callback_arguments = callback.__annotations__.values()").unwrap();
-        writeln!(output).unwrap();
-        writeln!(output, "return list(callback_arguments) == expected_arguments").unwrap();
     }
 
     output.into_inner()
