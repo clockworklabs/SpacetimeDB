@@ -446,8 +446,7 @@ mod tests {
 
     use crate::satn::Satn;
     use crate::{
-        AlgebraicType, AlgebraicValue, ArrayValue, BuiltinValue, ProductTypeElement, Typespace, ValueWithType,
-        WithTypespace,
+        AlgebraicType, AlgebraicValue, ArrayValue, ProductTypeElement, Typespace, ValueWithType, WithTypespace,
     };
 
     fn in_space<'a, T: crate::Value>(ts: &'a Typespace, ty: &'a T::Type, val: &'a T) -> ValueWithType<'a, T> {

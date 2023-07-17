@@ -227,58 +227,48 @@ impl AlgebraicType {
 #[cfg(test)]
 mod tests {
     use super::AlgebraicType;
-    use crate::algebraic_type::map_notation;
     use crate::meta_type::MetaType;
     use crate::satn::Satn;
     use crate::{
-        algebraic_type::fmt::Formatter, algebraic_type_ref::AlgebraicTypeRef, product_type_element::ProductTypeElement,
-        sum_type::SumType, typespace::Typespace,
+        algebraic_type::fmt::fmt_algebraic_type, algebraic_type::map_notation::fmt_algebraic_type as fmt_map,
+        algebraic_type_ref::AlgebraicTypeRef, product_type_element::ProductTypeElement, typespace::Typespace,
     };
     use crate::{ValueWithType, WithTypespace};
 
     #[test]
     fn never() {
-        assert_eq!("(|)", Formatter::new(&AlgebraicType::NEVER_TYPE).to_string());
+        assert_eq!("(|)", fmt_algebraic_type(&AlgebraicType::NEVER_TYPE).to_string());
     }
 
     #[test]
     fn never_map() {
-        assert_eq!(
-            "{ ty_: Sum }",
-            map_notation::Formatter::new(&AlgebraicType::NEVER_TYPE).to_string()
-        );
+        assert_eq!("{ ty_: Sum }", fmt_map(&AlgebraicType::NEVER_TYPE).to_string());
     }
 
     #[test]
     fn unit() {
-        assert_eq!("()", Formatter::new(&AlgebraicType::UNIT_TYPE).to_string());
+        assert_eq!("()", fmt_algebraic_type(&AlgebraicType::UNIT_TYPE).to_string());
     }
 
     #[test]
     fn unit_map() {
-        assert_eq!(
-            "{ ty_: Product }",
-            map_notation::Formatter::new(&AlgebraicType::UNIT_TYPE).to_string()
-        );
+        assert_eq!("{ ty_: Product }", fmt_map(&AlgebraicType::UNIT_TYPE).to_string());
     }
 
     #[test]
     fn primitive() {
-        assert_eq!("U8", Formatter::new(&AlgebraicType::U8).to_string());
+        assert_eq!("U8", fmt_algebraic_type(&AlgebraicType::U8).to_string());
     }
 
     #[test]
     fn primitive_map() {
-        assert_eq!(
-            "{ ty_: Builtin, 0: U8 }",
-            map_notation::Formatter::new(&AlgebraicType::U8).to_string()
-        );
+        assert_eq!("{ ty_: Builtin, 0: U8 }", fmt_map(&AlgebraicType::U8).to_string());
     }
 
     #[test]
     fn option() {
         let option = AlgebraicType::option(AlgebraicType::NEVER_TYPE);
-        assert_eq!("(some: (|) | none: ())", Formatter::new(&option).to_string());
+        assert_eq!("(some: (|) | none: ())", fmt_algebraic_type(&option).to_string());
     }
 
     #[test]
@@ -286,20 +276,26 @@ mod tests {
         let option = AlgebraicType::option(AlgebraicType::NEVER_TYPE);
         assert_eq!(
             "{ ty_: Sum, some: { ty_: Sum }, none: { ty_: Product } }",
-            map_notation::Formatter::new(&option).to_string()
+            fmt_map(&option).to_string()
         );
     }
 
     #[test]
     fn algebraic_type() {
         let algebraic_type = AlgebraicType::meta_type();
-        assert_eq!("(sum: (variants: Array<(name: (some: String | none: ()), algebraic_type: &0)>) | product: (elements: Array<(name: (some: String | none: ()), algebraic_type: &0)>) | builtin: (bool: () | i8: () | u8: () | i16: () | u16: () | i32: () | u32: () | i64: () | u64: () | i128: () | u128: () | f32: () | f64: () | string: () | array: &0 | map: (key_ty: &0, ty: &0)) | ref: U32)", Formatter::new(&algebraic_type).to_string());
+        assert_eq!(
+            "(sum: (variants: Array<(name: (some: String | none: ()), algebraic_type: &0)>) | product: (elements: Array<(name: (some: String | none: ()), algebraic_type: &0)>) | builtin: (bool: () | i8: () | u8: () | i16: () | u16: () | i32: () | u32: () | i64: () | u64: () | i128: () | u128: () | f32: () | f64: () | string: () | array: &0 | map: (key_ty: &0, ty: &0)) | ref: U32)",
+            fmt_algebraic_type(&algebraic_type).to_string()
+        );
     }
 
     #[test]
     fn algebraic_type_map() {
         let algebraic_type = AlgebraicType::meta_type();
-        assert_eq!("{ ty_: Sum, sum: { ty_: Product, variants: { ty_: Builtin, 0: Array, 1: { ty_: Product, name: { ty_: Sum, some: { ty_: Builtin, 0: String }, none: { ty_: Product } }, algebraic_type: { ty_: Ref, 0: 0 } } } }, product: { ty_: Product, elements: { ty_: Builtin, 0: Array, 1: { ty_: Product, name: { ty_: Sum, some: { ty_: Builtin, 0: String }, none: { ty_: Product } }, algebraic_type: { ty_: Ref, 0: 0 } } } }, builtin: { ty_: Sum, bool: { ty_: Product }, i8: { ty_: Product }, u8: { ty_: Product }, i16: { ty_: Product }, u16: { ty_: Product }, i32: { ty_: Product }, u32: { ty_: Product }, i64: { ty_: Product }, u64: { ty_: Product }, i128: { ty_: Product }, u128: { ty_: Product }, f32: { ty_: Product }, f64: { ty_: Product }, string: { ty_: Product }, array: { ty_: Ref, 0: 0 }, map: { ty_: Product, key_ty: { ty_: Ref, 0: 0 }, ty: { ty_: Ref, 0: 0 } } }, ref: { ty_: Builtin, 0: U32 } }", map_notation::Formatter::new(&algebraic_type).to_string());
+        assert_eq!(
+            "{ ty_: Sum, sum: { ty_: Product, variants: { ty_: Builtin, 0: Array, 1: { ty_: Product, name: { ty_: Sum, some: { ty_: Builtin, 0: String }, none: { ty_: Product } }, algebraic_type: { ty_: Ref, 0: 0 } } } }, product: { ty_: Product, elements: { ty_: Builtin, 0: Array, 1: { ty_: Product, name: { ty_: Sum, some: { ty_: Builtin, 0: String }, none: { ty_: Product } }, algebraic_type: { ty_: Ref, 0: 0 } } } }, builtin: { ty_: Sum, bool: { ty_: Product }, i8: { ty_: Product }, u8: { ty_: Product }, i16: { ty_: Product }, u16: { ty_: Product }, i32: { ty_: Product }, u32: { ty_: Product }, i64: { ty_: Product }, u64: { ty_: Product }, i128: { ty_: Product }, u128: { ty_: Product }, f32: { ty_: Product }, f64: { ty_: Product }, string: { ty_: Product }, array: { ty_: Ref, 0: 0 }, map: { ty_: Product, key_ty: { ty_: Ref, 0: 0 }, ty: { ty_: Ref, 0: 0 } } }, ref: { ty_: Builtin, 0: U32 } }",
+            fmt_map(&algebraic_type).to_string()
+        );
     }
 
     #[test]
@@ -324,7 +320,7 @@ mod tests {
         ]);
         assert_eq!(
             "(test: U8, 1: (U8 | U8 | (thing: U8)), 2: U8, never: (|))",
-            Formatter::new(&next).to_string()
+            fmt_algebraic_type(&next).to_string()
         );
     }
 
