@@ -3,6 +3,7 @@ use crate::global_connection::with_credential_store;
 use anyhow::{anyhow, Context, Result};
 use spacetimedb_lib::de::Deserialize;
 use spacetimedb_lib::ser::Serialize;
+use spacetimedb_sats::bsatn;
 // TODO: impl ser/de for `Identity`, `Token`, `Credentials` so that clients can stash them
 //       to disk and use them to re-connect.
 
