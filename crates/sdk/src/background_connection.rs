@@ -1,4 +1,4 @@
-use crate::callbacks::{CredentialStore, DbCallbacks, ReducerCallbacks};
+use crate::callbacks::{CredentialStore, DbCallbacks, ReducerCallbacks, SubscriptionAppliedCallbacks};
 use crate::client_api_messages;
 use crate::client_cache::{ClientCache, ClientCacheView, RowCallbackReminders};
 use crate::identity::Credentials;
@@ -56,6 +56,7 @@ pub struct BackgroundDbConnection {
 
     pub(crate) db_callbacks: SharedCell<DbCallbacks>,
     pub(crate) reducer_callbacks: SharedCell<ReducerCallbacks>,
+    pub(crate) subscription_callbacks: SharedCell<SubscriptionAppliedCallbacks>,
 }
 
 // When called from within an async context, return a handle to it (and no
@@ -191,6 +192,7 @@ async fn receiver_loop(
     db_callbacks: SharedCell<DbCallbacks>,
     reducer_callbacks: SharedCell<ReducerCallbacks>,
     credentials: SharedCell<CredentialStore>,
+    subscription_callbacks: SharedCell<SubscriptionAppliedCallbacks>,
 ) {
     while let Some(msg) = recv.next().await {
         match msg {
@@ -203,6 +205,11 @@ async fn receiver_loop(
                 let new_state = update_client_cache(&client_cache, |client_cache| {
                     process_subscription_update_for_new_subscribed_set(update, client_cache, &mut callback_reminders);
                 });
+
+                subscription_callbacks
+                    .lock()
+                    .expect("SubscriptionAppliedCallbacks Mutex is poisoned")
+                    .handle_subscription_applied(new_state.clone());
 
                 let mut db_callbacks_lock = db_callbacks.lock().expect("DbCallbacks Mutex is poisoned");
                 new_state.invoke_row_callbacks(&mut callback_reminders, &mut db_callbacks_lock, None);
@@ -237,6 +244,7 @@ impl BackgroundDbConnection {
         let db_callbacks = Arc::new(Mutex::new(DbCallbacks::new(handle.clone())));
         let reducer_callbacks = Arc::new(Mutex::new(ReducerCallbacks::without_handle_event(handle.clone())));
         let credentials = Arc::new(Mutex::new(CredentialStore::without_credentials(&handle)));
+        let subscription_callbacks = Arc::new(Mutex::new(SubscriptionAppliedCallbacks::new(&handle)));
 
         Ok(BackgroundDbConnection {
             runtime,
@@ -248,23 +256,22 @@ impl BackgroundDbConnection {
             client_cache: None,
             db_callbacks,
             reducer_callbacks,
+            subscription_callbacks,
         })
     }
 
     fn spawn_receiver(
+        &self,
         recv: mpsc::UnboundedReceiver<client_api_messages::Message>,
-        runtime: &runtime::Handle,
         client_cache: SharedCell<ClientCacheView>,
-        db_callbacks: SharedCell<DbCallbacks>,
-        reducer_callbacks: SharedCell<ReducerCallbacks>,
-        credentials: SharedCell<CredentialStore>,
     ) -> JoinHandle<()> {
-        runtime.spawn(receiver_loop(
+        self.handle.spawn(receiver_loop(
             recv,
             client_cache,
-            db_callbacks,
-            reducer_callbacks,
-            credentials,
+            self.db_callbacks.clone(),
+            self.reducer_callbacks.clone(),
+            self.credentials.clone(),
+            self.subscription_callbacks.clone(),
         ))
     }
 
@@ -312,14 +319,7 @@ impl BackgroundDbConnection {
             invoke_row_callbacks,
         ))));
         let (websocket_loop_handle, recv_chan, send_chan) = connection.spawn_message_loop(&self.handle);
-        let recv_handle = Self::spawn_receiver(
-            recv_chan,
-            &self.handle,
-            client_cache.clone(),
-            self.db_callbacks.clone(),
-            self.reducer_callbacks.clone(),
-            self.credentials.clone(),
-        );
+        let recv_handle = self.spawn_receiver(recv_chan, client_cache.clone());
 
         self.send_chan = Some(send_chan);
         self.websocket_loop_handle = Some(websocket_loop_handle);
