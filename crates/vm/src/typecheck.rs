@@ -3,7 +3,6 @@ use crate::errors::ErrorType;
 use crate::expr::{CrudExprOpt, ExprOpt, SourceExprOpt};
 use crate::types::Ty;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
-use spacetimedb_sats::builtin_type::BuiltinType;
 
 fn get_type<'a>(_env: &'a mut EnvTy, node: &'a ExprOpt) -> &'a Ty {
     match node {
@@ -91,7 +90,7 @@ pub(crate) fn check_types(env: &mut EnvTy, ast: &ExprOpt) -> Result<Ty, ErrorTyp
         }
         ExprOpt::If(inner) => {
             let (test, if_true, if_false) = &**inner;
-            let expect = Ty::Val(AlgebraicType::Builtin(BuiltinType::Bool));
+            let expect = Ty::Val(AlgebraicType::Bool);
             let found = check_types(env, test)?;
             if check_types(env, test)? == expect {
                 let lhs = check_types(env, if_true)?;

@@ -8,7 +8,6 @@ pub mod serde;
 #[doc(hidden)]
 pub use impls::{visit_named_product, visit_seq_product};
 
-use ::serde::de::Expected;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -253,7 +252,9 @@ fn error_on_field<'a, 'de>(
 }
 
 /// Returns an error message for invalid product type lengths.
-fn fmt_invalid_len<'de>(expected: &impl ProductVisitor<'de>) -> impl '_ + fmt::Display + Expected {
+fn fmt_invalid_len<'de>(
+    expected: &impl ProductVisitor<'de>,
+) -> FDisplay<impl '_ + Fn(&mut fmt::Formatter) -> fmt::Result> {
     fmt_fn(|f| {
         let ty = match expected.product_kind() {
             ProductKind::Normal => "product type",
