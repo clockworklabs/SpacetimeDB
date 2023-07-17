@@ -172,7 +172,6 @@ const ALLOW_UNUSED: &str = "#[allow(unused)]";
 const SPACETIMEDB_IMPORTS: &[&str] = &[
     ALLOW_UNUSED,
     "use spacetimedb_sdk::{",
-    "\tglobal_connection::with_connection,",
     "\tsats::{ser::Serialize, de::Deserialize},",
     "\ttable::{TableType, TableIter, TableWithPrimaryKey},",
     "\treducer::{Reducer},",
@@ -719,10 +718,10 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, Str
 const DISPATCH_IMPORTS: &[&str] = &[
     "use spacetimedb_sdk::client_api_messages::{TableUpdate, Event};",
     "use spacetimedb_sdk::client_cache::{ClientCache, RowCallbackReminders};",
-    "use spacetimedb_sdk::background_connection::BackgroundDbConnection;",
     "use spacetimedb_sdk::identity::Credentials;",
     "use spacetimedb_sdk::callbacks::{DbCallbacks, ReducerCallbacks};",
     "use spacetimedb_sdk::reducer::AnyReducerEvent;",
+    "use spacetimedb_sdk::global_connection::with_connection_mut;",
     "use std::sync::Arc;",
 ];
 
@@ -929,11 +928,11 @@ where
 \t<Host as TryInto<spacetimedb_sdk::http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
 {",
         |out| out.delimited_block(
-            "with_connection(|connection| {",
+            "with_connection_mut(|connection| {",
             |out| {
                 writeln!(
                     out,
-                    "*connection = Some(BackgroundDbConnection::connect(host, db_name, credentials, handle_table_update, handle_resubscribe, invoke_row_callbacks, handle_event)?);"
+                    "connection.connect(host, db_name, credentials, handle_table_update, handle_resubscribe, invoke_row_callbacks, handle_event)?;"
                 ).unwrap();
                 writeln!(out, "Ok(())").unwrap();
             },
