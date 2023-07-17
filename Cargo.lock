@@ -4139,6 +4139,7 @@ dependencies = [
  "futures-channel",
  "http",
  "im",
+ "lazy_static",
  "log",
  "prost",
  "spacetimedb-client-api-messages",

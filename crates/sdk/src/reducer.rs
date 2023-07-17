@@ -1,5 +1,5 @@
 use crate::callbacks::CallbackId;
-use crate::global_connection::{try_with_connection, try_with_reducer_callbacks};
+use crate::global_connection::{with_connection, with_reducer_callbacks};
 use crate::identity::Identity;
 use anyhow::Result;
 use spacetimedb_sats::{de::DeserializeOwned, ser::Serialize};
@@ -26,7 +26,7 @@ pub trait Reducer: DeserializeOwned + Serialize + Any + Send + Sync + Clone {
     const REDUCER_NAME: &'static str;
 
     fn invoke(self) -> Result<()> {
-        try_with_connection(|conn| conn.invoke_reducer(self))
+        with_connection(|conn| conn.invoke_reducer(self))
     }
 
     /// Register a callback to run after the reducer runs.
@@ -39,13 +39,9 @@ pub trait Reducer: DeserializeOwned + Serialize + Any + Send + Sync + Clone {
     //
     /// The returned `ReducerCallbackId` can be passed to `remove_on_reducer` to
     /// unregister the callback.
-    ///
-    /// `on_reducer` will return an error if called
-    /// without an active database connection.
-    /// In that case, the callback is not registered.
-    fn on_reducer(callback: impl FnMut(&Identity, Status, &Self) + Send + 'static) -> Result<ReducerCallbackId<Self>> {
-        try_with_reducer_callbacks(|callbacks| callbacks.register_on_reducer::<Self>(callback))
-            .map(|id| ReducerCallbackId { id })
+    fn on_reducer(callback: impl FnMut(&Identity, Status, &Self) + Send + 'static) -> ReducerCallbackId<Self> {
+        let id = with_reducer_callbacks(|callbacks| callbacks.register_on_reducer::<Self>(callback));
+        ReducerCallbackId { id }
     }
 
     /// Register a callback to run once after the reducer runs.
@@ -53,26 +49,17 @@ pub trait Reducer: DeserializeOwned + Serialize + Any + Send + Sync + Clone {
     /// The `callback` will run at most once, then unregister itself.
     /// It can also be unregistered by passing the returned `ReducerCallbackId`
     /// to `remove_on_reducer`.
-    ///
-    /// `once_on_reducer` will return an error if called
-    /// without an active database connection.
-    /// In that case, the callback is not registered.
-    fn once_on_reducer(
-        callback: impl FnOnce(&Identity, Status, &Self) + Send + 'static,
-    ) -> Result<ReducerCallbackId<Self>> {
-        try_with_reducer_callbacks(|callbacks| callbacks.register_on_reducer_oneshot::<Self>(callback))
-            .map(|id| ReducerCallbackId { id })
+    fn once_on_reducer(callback: impl FnOnce(&Identity, Status, &Self) + Send + 'static) -> ReducerCallbackId<Self> {
+        let id = with_reducer_callbacks(|callbacks| callbacks.register_on_reducer_oneshot::<Self>(callback));
+        ReducerCallbackId { id }
     }
 
     /// Unregister a previously-registered `on_reducer` callback.
     ///
-    /// `remove_on_reducer` will return an error if called without an active database
-    /// connection.
-    ///
     /// If `id` does not refer to a currently-registered callback, this operation will do
     /// nothing.
-    fn remove_on_reducer(id: ReducerCallbackId<Self>) -> Result<()> {
-        try_with_reducer_callbacks(|callbacks| callbacks.unregister_on_reducer::<Self>(id.id))
+    fn remove_on_reducer(id: ReducerCallbackId<Self>) {
+        with_reducer_callbacks(|callbacks| callbacks.unregister_on_reducer::<Self>(id.id));
     }
 }
 
