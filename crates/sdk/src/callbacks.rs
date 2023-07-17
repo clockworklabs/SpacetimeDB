@@ -134,6 +134,7 @@ impl<Args> std::fmt::Debug for CallbackId<Args> {
 //
 // - `(T, U)` -> `(&T, &U)`, for `TableType::on_insert` and `TableType::on_delete`.
 // - `Credentials` -> `&Credentials`, for `on_connect`.
+// - `()` -> `()`, for `on_subscription_applied`.
 // - `(T, T, U)` -> `(&T, &T, U)`, for `TableWithPrimaryKey::on_update`.
 // - `(Identity, Status, R)` -> `(&Identity, Status, &R)`, for `Reducer::on_reducer`.
 //                           Note that `Status` is `Copy`.
@@ -143,6 +144,11 @@ impl OwnedArgs for Credentials {
     fn borrow(&self) -> &Credentials {
         self
     }
+}
+
+impl OwnedArgs for () {
+    type Borrowed<'_a> = ();
+    fn borrow(&self) {}
 }
 
 impl<T: TableType> OwnedArgs for (T, Option<Arc<AnyReducerEvent>>) {
@@ -883,5 +889,51 @@ impl CredentialStore {
     /// Return the current connection's `Credentials`, if they are stored.
     pub(crate) fn credentials(&self) -> Option<Credentials> {
         self.credentials.clone()
+    }
+}
+
+/// Manages running `on_subscription_applied` callbacks after `subscribe` calls.
+pub(crate) struct SubscriptionAppliedCallbacks {
+    /// Any `on_subscription_applied` callbacks to run after a successful `subscribe` call.
+    callbacks: CallbackMap<()>,
+}
+
+impl SubscriptionAppliedCallbacks {
+    /// Construct a `SubscriptionAppliedCallbacks` for a connection.
+    ///
+    /// The background worker will be spawned in `runtime`.
+    pub(crate) fn new(runtime: &runtime::Handle) -> Self {
+        SubscriptionAppliedCallbacks {
+            callbacks: CallbackMap::spawn(runtime),
+        }
+    }
+
+    /// Register an on-subscription-applied callback
+    /// to run when the initial rows matching a subscription become available.
+    pub(crate) fn register_on_subscription_applied(
+        &mut self,
+        mut callback: impl FnMut() + Send + 'static,
+    ) -> CallbackId<()> {
+        self.callbacks.insert(Box::new(move |()| callback()))
+    }
+
+    /// Register an on-subscription-applied callback which will run at most once,
+    /// then unregister itself.
+    pub(crate) fn register_on_subscription_applied_oneshot(
+        &mut self,
+        callback: impl FnOnce() + Send + 'static,
+    ) -> CallbackId<()> {
+        self.callbacks.insert_oneshot(move |()| callback())
+    }
+
+    /// Unregister a previously-registered on-subscription-applied callback identified by `id`.
+    pub(crate) fn unregister_on_subscription_applied(&mut self, id: CallbackId<()>) {
+        self.callbacks.remove(id);
+    }
+
+    /// Invoke any on-subscription-applied callbacks within the cache state
+    /// upon receiving the initial matching rows for a subscription.
+    pub(crate) fn handle_subscription_applied(&mut self, state: ClientCacheView) {
+        self.callbacks.invoke((), state);
     }
 }

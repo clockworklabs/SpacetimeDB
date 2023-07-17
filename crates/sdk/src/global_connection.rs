@@ -1,5 +1,5 @@
 use crate::background_connection::BackgroundDbConnection;
-use crate::callbacks::{CredentialStore, DbCallbacks, ReducerCallbacks};
+use crate::callbacks::{CredentialStore, DbCallbacks, ReducerCallbacks, SubscriptionAppliedCallbacks};
 use crate::client_cache::{ClientCache, ClientCacheView};
 use anyhow::{anyhow, Result};
 use std::{
@@ -65,6 +65,16 @@ pub(crate) fn with_db_callbacks<Res>(f: impl FnOnce(&mut DbCallbacks) -> Res) ->
     with_connection(|connection| {
         let mut db_callbacks = connection.db_callbacks.lock().expect("DbCallbacks Mutex is poisoned");
         f(&mut db_callbacks)
+    })
+}
+
+pub(crate) fn with_subscription_callbacks<Res>(f: impl FnOnce(&mut SubscriptionAppliedCallbacks) -> Res) -> Res {
+    with_connection(|connection| {
+        let mut subscription_callbacks = connection
+            .subscription_callbacks
+            .lock()
+            .expect("SubscriptionAppliedCallbacks Mutex is poisoned");
+        f(&mut subscription_callbacks)
     })
 }
 
