@@ -1,16 +1,16 @@
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.IO;
 using System.Linq;
+using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Reflection;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using ClientApi;
 using Newtonsoft.Json;
 using SpacetimeDB.SATS;
+using System.Threading;
+using System.IO;
+using System.Threading.Tasks;
 
 namespace SpacetimeDB
 {
@@ -54,7 +54,7 @@ namespace SpacetimeDB
         /// <summary>
         /// Called when a connection attempt fails.
         /// </summary>
-        public event Action<WebSocketError?> onConnectError;
+        public event Action<WebSocketError?, string?> onConnectError;
 
         /// <summary>
         /// Called when an exception occurs when sending a message.
@@ -92,6 +92,7 @@ namespace SpacetimeDB
         public static Dictionary<string, Func<ClientApi.Event, bool>> reducerEventCache = new Dictionary<string, Func<ClientApi.Event, bool>>();
         public static Dictionary<string, Action<ClientApi.Event>> deserializeEventCache = new Dictionary<string, Action<ClientApi.Event>>();
 
+        private bool isClosing;
         private Thread messageProcessThread;
 
         public static SpacetimeDBClient instance;
@@ -161,7 +162,7 @@ namespace SpacetimeDB
             webSocket.OnMessage += OnMessageReceived;
             webSocket.OnClose += (code, error) => onDisconnect?.Invoke(code, error);
             webSocket.OnConnect += () => onConnect?.Invoke();
-            webSocket.OnConnectError += a => onConnectError?.Invoke(a);
+            webSocket.OnConnectError += (a,b) => onConnectError?.Invoke(a,b);
             webSocket.OnSendError += a => onSendError?.Invoke(a);
 
             clientDB = new ClientCache();
@@ -211,6 +212,8 @@ namespace SpacetimeDB
                 loggerToUse.LogError($"Could not find reducer type. Have you run spacetime generate?");
             }
 
+            _cancellationToken = _cancellationTokenSource.Token;
+
             messageProcessThread = new Thread(ProcessMessages);
             messageProcessThread.Start();
         }
@@ -224,19 +227,30 @@ namespace SpacetimeDB
         private readonly BlockingCollection<byte[]> _messageQueue = new BlockingCollection<byte[]>(new ConcurrentQueue<byte[]>());
         private readonly BlockingCollection<ProcessedMessage> _nextMessageQueue = new BlockingCollection<ProcessedMessage>(new ConcurrentQueue<ProcessedMessage>());
 
+        CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
+        CancellationToken _cancellationToken;
+
         void ProcessMessages()
         {
-            while (true)
+            while (!isClosing)
             {
-                var bytes = _messageQueue.Take();
-
-                var (m, events) = PreProcessMessage(bytes);
-                var processedMessage = new ProcessedMessage
+                try
                 {
-                    message = m,
-                    events = events,
-                };
-                _nextMessageQueue.Add(processedMessage);
+                    var bytes = _messageQueue.Take(_cancellationToken);
+
+                    var (m, events) = PreProcessMessage(bytes);
+                    var processedMessage = new ProcessedMessage
+                    {
+                        message = m,
+                        events = events,
+                    };
+                    _nextMessageQueue.Add(processedMessage);
+                }
+                catch(OperationCanceledException)
+                {
+                    // Normal shutdown
+                    return;
+                }
             }
 
             (Message, List<DbEvent>) PreProcessMessage(byte[] bytes)
@@ -405,8 +419,10 @@ namespace SpacetimeDB
 
         public void Close()
         {
+            isClosing = true;
             connectionClosed = true;
             webSocket.Close();
+            _cancellationTokenSource.Cancel();            
             webSocket = null;
         }
 
@@ -418,6 +434,8 @@ namespace SpacetimeDB
         /// <param name="sslEnabled">Should websocket use SSL</param>
         public void Connect(string token, string host, string addressOrName, bool sslEnabled = true)
         {
+            isClosing = false;
+
             logger.Log($"SpacetimeDBClient: Connecting to {host} {addressOrName}");
             Task.Run(async () =>
             {

@@ -52,16 +52,18 @@ namespace SpacetimeDB
     {
         private WebSocketConnectErrorEventHandler receiver;
         private WebSocketError? error;
+        private string? errorMsg;
 
-        public OnConnectErrorMessage(WebSocketConnectErrorEventHandler receiver, WebSocketError? error)
+        public OnConnectErrorMessage(WebSocketConnectErrorEventHandler receiver, WebSocketError? error, string? errorMsg)
         {
             this.receiver = receiver;
             this.error = error;
+            this.errorMsg = errorMsg;
         }
 
         public override void Execute()
         {
-            receiver.Invoke(error);
+            receiver.Invoke(error, errorMsg);
         }
     }
     
@@ -105,7 +107,7 @@ class OnSendErrorMessage : MainThreadDispatch
 
     public delegate void WebSocketCloseEventHandler(WebSocketCloseStatus? code, WebSocketError? error);
 
-    public delegate void WebSocketConnectErrorEventHandler(WebSocketError? error);
+    public delegate void WebSocketConnectErrorEventHandler(WebSocketError? error, string? message);
     public delegate void WebSocketSendErrorEventHandler(Exception e);
 
     public struct ConnectOptions
@@ -141,7 +143,7 @@ class OnSendErrorMessage : MainThreadDispatch
         public event WebSocketMessageEventHandler OnMessage;
         public event WebSocketCloseEventHandler OnClose;
 
-        public bool IsConnected => Ws.State == WebSocketState.Open;
+        public bool IsConnected { get { return Ws != null && Ws.State == WebSocketState.Open; } }
 
         public async Task Connect(string auth, string host, string nameOrAddress, bool sslEnabled)
         {
@@ -168,13 +170,19 @@ class OnSendErrorMessage : MainThreadDispatch
             }
             catch (WebSocketException ex)
             {
-                dispatchQueue.Enqueue(new OnConnectErrorMessage(OnConnectError, ex.WebSocketErrorCode));
+                string message = ex.Message;
+                if(ex.WebSocketErrorCode == WebSocketError.NotAWebSocket)
+                {
+                    // not a websocket happens when there is no module published under the address specified
+                    message = $"{message} Did you forget to publish your module?";
+                }
+                dispatchQueue.Enqueue(new OnConnectErrorMessage(OnConnectError, ex.WebSocketErrorCode, message));
                 return;
             }
             catch (Exception e)
             {
                 _logger.LogException(e);
-                dispatchQueue.Enqueue(new OnConnectErrorMessage(OnConnectError, null));
+                dispatchQueue.Enqueue(new OnConnectErrorMessage(OnConnectError, null, e.Message));
                 return;
             }
 
@@ -186,8 +194,11 @@ class OnSendErrorMessage : MainThreadDispatch
                         CancellationToken.None);
                     if (receiveResult.MessageType == WebSocketMessageType.Close)
                     {
-                        await Ws.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty,
+                        if (Ws.State != WebSocketState.Closed)
+                        {
+                            await Ws.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty,
                             CancellationToken.None);
+                        }
                         dispatchQueue.Enqueue(new OnDisconnectMessage(OnClose, receiveResult.CloseStatus, null));
                         return;
                     }
@@ -227,7 +238,6 @@ class OnSendErrorMessage : MainThreadDispatch
         public Task Close(WebSocketCloseStatus code = WebSocketCloseStatus.NormalClosure, string reason = null)
         {
             Ws?.CloseAsync(code, "Disconnecting normally.", CancellationToken.None);
-            Ws = null;
 
             return Task.CompletedTask;
         }
