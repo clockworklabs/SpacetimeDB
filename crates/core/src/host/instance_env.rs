@@ -1,5 +1,7 @@
+use genawaiter::GeneratorState;
 use parking_lot::{Mutex, MutexGuard};
 use spacetimedb_lib::{bsatn, ProductValue};
+use std::future::Future;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
@@ -326,56 +328,54 @@ impl InstanceEnv {
 
     #[tracing::instrument(skip_all)]
     pub fn iter(&self, table_id: u32) -> impl Iterator<Item = Result<Vec<u8>, NodesError>> {
-        use genawaiter::{sync::gen, yield_, GeneratorState};
+        use genawaiter::{
+            sync::{gen, Gen},
+            yield_,
+        };
 
         // Cheap Arc clones to untie the returned iterator from our own lifetime.
         let relational_db = self.dbic.relational_db.clone();
         let tx = self.tx.clone();
 
-        // For now, just send buffers over a certain fixed size.
-        fn should_yield_buf(buf: &Vec<u8>) -> bool {
-            const SIZE: usize = 64 * 1024;
-            buf.len() >= SIZE
-        }
-
-        let mut generator = Some(gen!({
+        // TODO(jgilles): replace this with a proper iterator struct for the mild perf gain
+        // (you will need to use Pin)
+        let generator = gen!({
             let stdb = &*relational_db;
-            let tx = &mut *tx.get()?;
+            let mut tx = &mut *tx.get()?;
 
-            let mut buf = Vec::new();
             let schema = stdb.row_schema_for_table(tx, table_id)?;
-            schema.encode(&mut buf);
-            yield_!(buf);
+            yield_!(IterItem::Header(schema));
 
-            let mut buf = Vec::new();
             for row in stdb.iter(tx, table_id)? {
-                if should_yield_buf(&buf) {
-                    yield_!(buf);
-                    buf = Vec::new();
-                }
-                row.view().encode(&mut buf);
-            }
-            if !buf.is_empty() {
-                yield_!(buf)
+                yield_!(IterItem::Row(row.view().clone()));
             }
 
             Ok(())
-        }));
+        });
 
-        std::iter::from_fn(move || match generator.as_mut()?.resume() {
-            GeneratorState::Yielded(bytes) => Some(Ok(bytes)),
-            GeneratorState::Complete(res) => {
-                generator = None;
-                match res {
-                    Ok(()) => None,
-                    Err(err) => Some(Err(err)),
+        struct AsIterator<F: Future<Output = Result<(), NodesError>>>(Gen<IterItem, (), F>);
+        impl<F: Future<Output = Result<(), NodesError>>> Iterator for AsIterator<F> {
+            type Item = Result<IterItem, NodesError>;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                match self.0.resume() {
+                    GeneratorState::Yielded(item) => Some(Ok(item)),
+                    GeneratorState::Complete(Err(e)) => Some(Err(e)),
+                    GeneratorState::Complete(Ok(())) => None,
                 }
             }
-        })
+        }
+
+        BSatnCompactor::new(AsIterator(generator))
     }
 
+    // jgilles: This signature is mildly unwieldy...
     #[tracing::instrument(skip_all)]
-    pub fn iter_filtered(&self, table_id: u32, filter: &[u8]) -> Result<impl Iterator<Item = Vec<u8>>, NodesError> {
+    pub fn iter_filtered(
+        &self,
+        table_id: u32,
+        filter: &[u8],
+    ) -> Result<impl Iterator<Item = Result<Vec<u8>, NodesError>>, NodesError> {
         use spacetimedb_lib::filter;
 
         fn filter_to_column_op(table_name: &str, filter: filter::Expr) -> ColumnOp {
@@ -426,9 +426,104 @@ impl InstanceEnv {
             Code::Table(table) => table,
             _ => unreachable!("query should always return a table"),
         };
-        Ok(std::iter::once(bsatn::to_vec(&row_type))
-            .chain(results.data.into_iter().map(|row| bsatn::to_vec(&row)))
-            .map(|bytes| bytes.expect("encoding algebraic values should never fail")))
+        Ok(BSatnCompactor::new(
+            std::iter::once(Ok(IterItem::Header(row_type)))
+                .chain(results.data.into_iter().map(|row| Ok(IterItem::Row(row)))),
+        ))
+    }
+}
+
+/// An item yielded by a table iterator, either a header describing the type of the table
+/// or a row with data. Iterators yielding this type should return exactly one header
+/// at the beginning of iteration.
+enum IterItem {
+    Header(ProductType),
+    Row(ProductValue),
+}
+#[derive(Copy, Clone)]
+enum BSatnCompactorState {
+    Start,
+    Iterating,
+    Complete,
+}
+/// Pack bsatns into buffers. No delimiters or length metadata. Wraps an iterator,
+/// which should produce a single `IterItem::Header` and then as many `IterItem::Row`s as
+/// needed.
+struct BSatnCompactor<I: Iterator<Item = Result<IterItem, NodesError>>> {
+    iter: I,
+    buf: Vec<u8>,
+    state: BSatnCompactorState,
+}
+impl<I: Iterator<Item = Result<IterItem, NodesError>>> BSatnCompactor<I> {
+    fn new(iter: I) -> Self {
+        BSatnCompactor {
+            iter,
+            buf: Vec::new(),
+            state: BSatnCompactorState::Start,
+        }
+    }
+}
+impl<I: Iterator<Item = Result<IterItem, NodesError>>> Iterator for BSatnCompactor<I> {
+    type Item = Result<Vec<u8>, NodesError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // For now, just send buffers over a certain fixed size.
+        fn should_yield_buf(buf: &Vec<u8>) -> bool {
+            const SIZE: usize = 64 * 1024;
+            buf.len() >= SIZE
+        }
+
+        let BSatnCompactor {
+            ref mut iter,
+            ref mut buf,
+            ref mut state,
+        } = self;
+
+        if let BSatnCompactorState::Complete = state {
+            return None;
+        }
+
+        loop {
+            match (*state, iter.next()) {
+                (BSatnCompactorState::Start, Some(Ok(IterItem::Header(header)))) => {
+                    *state = BSatnCompactorState::Iterating;
+                    header.encode(buf);
+                    let mut next = Vec::new();
+                    std::mem::swap(&mut next, buf);
+
+                    // header gets a buffer by itself
+                    return Some(Ok(next));
+                }
+                (BSatnCompactorState::Iterating, Some(Ok(IterItem::Row(row)))) => {
+                    row.encode(buf);
+                    if should_yield_buf(&*buf) {
+                        let mut next = Vec::new();
+                        std::mem::swap(&mut next, buf);
+                        return Some(Ok(next));
+                    }
+                }
+                (BSatnCompactorState::Iterating, None) => {
+                    *state = BSatnCompactorState::Complete;
+                    if !buf.is_empty() {
+                        // empty vecs don't allocate :^)
+                        let mut next = Vec::new();
+                        std::mem::swap(&mut next, buf);
+                        return Some(Ok(next));
+                    } else {
+                        return None;
+                    }
+                }
+                (_, Some(Err(err))) => {
+                    *state = BSatnCompactorState::Complete;
+                    return Some(Err(err));
+                }
+                (BSatnCompactorState::Start, _) => 
+                    panic!("{}: Wrapped iterator did not produce a starting header!", std::any::type_name::<Self>()),
+                (BSatnCompactorState::Iterating, Some(Ok(IterItem::Header(_)))) => 
+                    panic!("{}: Wrapped iterator produced too many headers!", std::any::type_name::<Self>()),
+                (BSatnCompactorState::Complete, _) => unreachable!()
+            }
+        }
     }
 }
 

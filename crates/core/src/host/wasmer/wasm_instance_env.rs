@@ -467,7 +467,10 @@ impl WasmInstanceEnv {
             // Construct the iterator.
             let iter = caller.data().instance_env.iter_filtered(table_id, &filter)?;
             // TODO: make it so the above iterator doesn't lock the database for its whole lifetime
-            let iter = iter.map(Bytes::from).map(Ok).collect::<Vec<_>>().into_iter();
+            let iter = iter
+                .map(|result| result.map(Bytes::from))
+                .collect::<Vec<_>>()
+                .into_iter();
 
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
