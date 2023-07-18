@@ -676,7 +676,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     out.newline();
 
     // Function definition for conveinent once_on callback function.
-    write!(out, "{}", ALLOW_UNUSED).unwrap();
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     write!(
         out,
         "pub fn once_on_{}(__callback: impl FnOnce(&Identity, Status",
@@ -712,6 +712,24 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
                 },
                 "})\n",
             )
+        },
+        "}\n",
+    );
+
+    out.newline();
+
+    // Function definition for callback-canceling `remove_on_{reducer}` function.
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    write!(
+        out,
+        "pub fn remove_on_{}(id: ReducerCallbackId<{}>) ",
+        func_name, type_name,
+    )
+    .unwrap();
+    out.delimited_block(
+        "{",
+        |out| {
+            writeln!(out, "{}::remove_on_reducer(id);", type_name,).unwrap();
         },
         "}\n",
     );
