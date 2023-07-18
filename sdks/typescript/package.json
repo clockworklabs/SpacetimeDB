@@ -1,6 +1,6 @@
 {
   "name": "@clockworklabs/spacetimedb-sdk",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "SDK for SpacetimeDB",
   "author": {
     "name": "Clockwork Labs",
@@ -19,8 +19,9 @@
   "publishConfig": {
     "registry": "https://npm.pkg.github.com/clockworklabs"
   },
-  "main": "./src/index.js",
-  "module": "./src/index.ts",
+  "types": "./dist/index.d.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
   "devDependencies": {
     "@types/jest": "^29.4.0",
     "@types/node": "^18.14.6",
