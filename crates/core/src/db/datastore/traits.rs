@@ -1,8 +1,8 @@
 use crate::db::relational_db::ST_TABLES_ID;
 use core::fmt;
 use spacetimedb_lib::auth::{StAccess, StTableType};
-use spacetimedb_lib::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
-use spacetimedb_lib::{ColumnIndexAttribute, DataKey};
+use spacetimedb_lib::relation::{calculate_hash, DbTable, FieldName, FieldOnly, Header, TableField};
+use spacetimedb_lib::DataKey;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
 use spacetimedb_vm::expr::SourceExpr;
 use std::{ops::RangeBounds, sync::Arc};
@@ -280,7 +280,7 @@ pub struct TableDef {
 impl From<ProductType> for TableDef {
     fn from(value: ProductType) -> Self {
         Self {
-            table_name: "".to_string(),
+            table_name: format!("t_{:x}", calculate_hash(&value)),
             columns: value
                 .elements
                 .iter()
@@ -474,6 +474,13 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         relation: R,
     ) -> Result<Option<u32>>;
     fn insert_mut_tx<'a>(
+        &'a self,
+        tx: &'a mut Self::MutTxId,
+        table_id: TableId,
+        row: ProductValue,
+    ) -> Result<ProductValue>;
+
+    fn insert_batch_mut_tx<'a>(
         &'a self,
         tx: &'a mut Self::MutTxId,
         table_id: TableId,

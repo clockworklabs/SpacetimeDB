@@ -439,6 +439,12 @@ impl RelationalDB {
         self.inner.insert_mut_tx(tx, TableId(table_id), row)
     }
 
+    #[tracing::instrument(skip(self, tx))]
+    pub fn insert_raw(&self, tx: &mut MutTxId, table_id: u32, row: ProductValue) -> Result<ProductValue, DBError> {
+        measure(&RDB_INSERT_TIME, table_id);
+        self.inner.insert_batch_mut_tx(tx, TableId(table_id), row)
+    }
+
     #[tracing::instrument(skip_all)]
     pub fn insert_bytes_as_row(
         &self,

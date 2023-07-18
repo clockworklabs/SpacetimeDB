@@ -2154,6 +2154,17 @@ impl MutTxDatastore for Locking {
     ) -> super::Result<ProductValue> {
         tx.lock.insert(table_id, row)
     }
+
+    fn insert_batch_mut_tx<'a>(
+        &'a self,
+        tx: &'a mut Self::MutTxId,
+        table_id: TableId,
+        row: ProductValue,
+    ) -> crate::db::datastore::Result<ProductValue> {
+        // tx.lock.insert(table_id, row)
+        tx.lock.insert_row_internal(table_id, row.clone())?;
+        Ok(row)
+    }
 }
 
 #[cfg(test)]

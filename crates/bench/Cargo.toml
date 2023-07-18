@@ -23,12 +23,11 @@ spacetimedb-standalone = { path = "../standalone" }
 spacetimedb-client-api = { path = "../client-api" }
 spacetimedb-testing = { path = "../testing" }
 
-clap.workspace = true
-rusqlite.workspace = true
-criterion.workspace = true
-tempdir.workspace = true
-rand.workspace = true
-tokio.workspace = true
-serde_json.workspace = true
 anyhow.workspace = true
-byte-unit.workspace = true
+clap.workspace = true
+criterion.workspace = true
+rand.workspace = true
+rusqlite.workspace = true
+serde_json.workspace = true
+tempdir.workspace = true
+tokio.workspace = true
