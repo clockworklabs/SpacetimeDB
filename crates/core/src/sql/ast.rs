@@ -902,7 +902,7 @@ fn compile_statement(db: &RelationalDB, tx: &MutTxId, statement: Statement) -> R
 
             let table = from.first().unwrap().clone();
             let table_name = compile_table_factor(table.relation)?;
-            compile_delete(db, table_name, selection)
+            compile_delete(db, tx, table_name, selection)
         }
         Statement::CreateTable {
             transient,
