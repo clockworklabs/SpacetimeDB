@@ -1,4 +1,4 @@
-# SpaceTimeDB SDK for C#
+# SpacetimeDB SDK for C#
 
 The SpacetimeDB SDK is a software development kit (SDK) designed to simplify the interaction with SpacetimeDB server modules.
 
