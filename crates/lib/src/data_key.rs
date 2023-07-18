@@ -12,13 +12,13 @@ pub enum DataKey {
 
 impl DataKey {
     /// The minimum possible value for a DataKey, used for sorting DataKeys
-    pub fn min_datakey() -> Self {
+    pub const fn min_datakey() -> Self {
         DataKey::Data(InlineData { len: 0, buf: [0; 31] })
     }
 
     /// The maximum possible value for a DataKey, used for sorting DataKeys
-    pub fn max_datakey() -> Self {
-        DataKey::Hash(super::Hash::from_slice(&[255; 32]))
+    pub const fn max_datakey() -> Self {
+        DataKey::Hash(super::Hash { data: [255; 32] })
     }
 }
 

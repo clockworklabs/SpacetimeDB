@@ -976,6 +976,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "criterion"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2b12d017a929603d80db1831cd3a24082f8137ce19c69e6447f54f5fc8d692f"
+dependencies = [
+ "anes",
+ "cast",
+ "ciborium",
+ "clap 4.3.10",
+ "criterion-plot",
+ "futures",
+ "is-terminal",
+ "itertools",
+ "num-traits",
+ "once_cell",
+ "oorandom",
+ "plotters",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "tinytemplate",
+ "tokio",
+ "walkdir",
+]
+
+[[package]]
 name = "criterion-plot"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3914,7 +3942,7 @@ dependencies = [
  "anyhow",
  "byte-unit",
  "clap 4.3.10",
- "criterion",
+ "criterion 0.5.1",
  "rand 0.8.5",
  "rusqlite",
  "serde_json",
@@ -3924,6 +3952,7 @@ dependencies = [
  "spacetimedb-standalone",
  "spacetimedb-testing",
  "tempdir",
+ "tempfile",
  "tokio",
 ]
 
@@ -4027,7 +4056,7 @@ dependencies = [
  "bytes",
  "bytestring",
  "clap 4.3.10",
- "criterion",
+ "criterion 0.4.0",
  "crossbeam-channel",
  "email_address",
  "flate2",

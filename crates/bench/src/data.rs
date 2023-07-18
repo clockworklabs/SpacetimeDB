@@ -10,7 +10,7 @@ pub trait BuildDb {
 }
 
 pub struct Pool<T> {
-    instance: u8,
+    pub(crate) instance: u8,
     pub(crate) prefill: bool,
     _x: PhantomData<T>,
 }
