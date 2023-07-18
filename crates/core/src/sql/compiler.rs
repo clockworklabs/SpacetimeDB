@@ -55,6 +55,7 @@ fn check_field_column(table: &From, field: &ColumnOp) -> Result<(), PlanError> {
     Ok(())
 }
 
+/// Verify the `fields` inside the `expr` are valid
 fn check_cmp_expr(table: &From, expr: &ColumnOp) -> Result<(), PlanError> {
     match expr {
         ColumnOp::Field(field) => check_field(table, field)?,
@@ -67,6 +68,7 @@ fn check_cmp_expr(table: &From, expr: &ColumnOp) -> Result<(), PlanError> {
     Ok(())
 }
 
+/// Compiles a `WHERE ...` clause
 fn compile_where(q: QueryExpr, table: &From, filter: Selection) -> Result<QueryExpr, PlanError> {
     let mut q = q;
 
@@ -78,6 +80,7 @@ fn compile_where(q: QueryExpr, table: &From, filter: Selection) -> Result<QueryE
     Ok(q)
 }
 
+/// Compiles a `SELECT ...` clause
 fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection>) -> Result<QueryExpr, PlanError> {
     let mut not_found = Vec::with_capacity(project.len());
     let mut col_ids = Vec::new();
@@ -141,6 +144,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
     Ok(q)
 }
 
+/// Builds the schema description [DbTable] from the [TableSchema] and their list of columns
 fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
     let mut new = Vec::with_capacity(columns.len());
 
@@ -159,6 +163,7 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
     )
 }
 
+/// Compiles a `INSERT ...` clause
 fn compile_insert(
     table: TableSchema,
     columns: Vec<FieldName>,
@@ -172,6 +177,7 @@ fn compile_insert(
     })
 }
 
+/// Compiles a `DELETE ...` clause
 fn compile_delete(table: TableSchema, selection: Option<Selection>) -> Result<CrudExpr, PlanError> {
     let query = if let Some(filter) = selection {
         let query = QueryExpr::new(&table);
@@ -182,6 +188,7 @@ fn compile_delete(table: TableSchema, selection: Option<Selection>) -> Result<Cr
     Ok(CrudExpr::Delete { query })
 }
 
+/// Compiles a `UPDATE ...` clause
 fn compile_update(
     table: TableSchema,
     assignments: HashMap<FieldName, FieldExpr>,
@@ -214,6 +221,7 @@ fn compile_update(
     Ok(CrudExpr::Update { insert, delete })
 }
 
+/// Compiles a `CREATE TABLE ...` clause
 fn compile_create_table(
     name: String,
     columns: ProductTypeMeta,
@@ -228,6 +236,7 @@ fn compile_create_table(
     })
 }
 
+/// Compiles a `DROP ...` clause
 fn compile_drop(name: String, kind: DbType, table_access: StAccess) -> Result<CrudExpr, PlanError> {
     Ok(CrudExpr::Drop {
         name,
@@ -236,6 +245,7 @@ fn compile_drop(name: String, kind: DbType, table_access: StAccess) -> Result<Cr
     })
 }
 
+/// Compiles a `SQL` clause
 fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
     let q = match statement {
         SqlAst::Select {

@@ -65,6 +65,7 @@ pub fn execute_single_sql(
     Ok(result)
 }
 
+/// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
 pub fn execute_sql(
     db: &RelationalDB,
     tx: &mut MutTxId,

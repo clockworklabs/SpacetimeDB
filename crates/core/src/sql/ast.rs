@@ -77,6 +77,7 @@ macro_rules! unsupported{
     }
 }
 
+/// A convenient wrapper for a table name (that comes from a `ObjectName`)
 pub struct Table {
     pub(crate) name: String,
 }
@@ -97,6 +98,7 @@ pub enum Column {
     Wildcard,
 }
 
+/// The list of expressions for `SELECT expr1, expr2...`
 #[derive(Debug, Clone)]
 pub struct Selection {
     pub(crate) clauses: Vec<ColumnOp>,
@@ -127,6 +129,7 @@ pub struct OnExpr {
     pub rhs: FieldName,
 }
 
+/// The `JOIN [INNER] ON join_expr OpCmp join_expr` clause
 pub enum Join {
     Inner { rhs: TableSchema, on: OnExpr },
 }
@@ -137,6 +140,7 @@ pub struct FromField {
     pub column: ColumnDef,
 }
 
+/// The list of tables in `... FROM table1 [JOIN table2] ...`
 pub struct From {
     pub root: TableSchema,
     pub join: Option<Vec<Join>>,
@@ -170,6 +174,7 @@ impl From {
         x
     }
 
+    /// Returns all the tables, including the ones inside the joins
     pub fn iter_tables(&self) -> impl Iterator<Item = &TableSchema> {
         [&self.root].into_iter().chain(self.join.iter().flat_map(|x| {
             x.iter().map(|t| match t {
@@ -178,10 +183,12 @@ impl From {
         }))
     }
 
+    /// Returns all the tables names into the `Vec<String>`, including the ones inside the joins
     pub fn table_names(&self) -> Vec<String> {
         self.iter_tables().map(|x| x.table_name.clone()).collect()
     }
 
+    /// Returns all the fields that match `f` into the `Vec<FromField>`, including the ones inside the joins
     pub fn find_field(&self, f: &str) -> Result<Vec<FromField>, RelationError> {
         let field = extract_table_field(f)?;
         let fields = self.iter_tables().filter_map(|t| {
@@ -195,6 +202,7 @@ impl From {
         Ok(fields.collect())
     }
 
+    /// Checks if the field `named` match exactly once on all the tables including the ones inside the joins
     pub fn resolve_field(&self, named: &str) -> Result<FromField, PlanError> {
         let fields = self.find_field(named)?;
 
@@ -212,6 +220,7 @@ impl From {
     }
 }
 
+/// Describe the portions of the `SQL` standard that we support
 pub enum SqlAst {
     Select {
         from: From,
@@ -260,6 +269,7 @@ fn extract_field(table: &From, of: &SqlExpr) -> Result<Option<ProductTypeElement
     }
 }
 
+/// Infers a numeric variation of [AlgebraicValue] for the `value` and the supplied `Option<&ProductTypeElement>`
 fn infer_number(field: Option<&ProductTypeElement>, value: &str, is_long: bool) -> Result<AlgebraicValue, ErrorVm> {
     match field {
         None => {
@@ -279,6 +289,7 @@ fn infer_number(field: Option<&ProductTypeElement>, value: &str, is_long: bool) 
     }
 }
 
+/// Compiles a [SqlExpr] expression into a [ColumnOp]
 fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlExpr) -> Result<ColumnOp, PlanError> {
     Ok(ColumnOp::Field(match of {
         SqlExpr::Identifier(name) => FieldExpr::Name(table.resolve_field(&name.value)?.field),
@@ -321,6 +332,7 @@ fn compile_expr_field(table: &From, field: Option<&ProductTypeElement>, of: SqlE
     }
 }
 
+/// Compiles the [Table] from a section of `SQL` that describe a table clause
 fn compile_table_factor(table: TableFactor) -> Result<Table, PlanError> {
     match table {
         TableFactor::Table {
@@ -339,6 +351,7 @@ fn compile_table_factor(table: TableFactor) -> Result<Table, PlanError> {
     }
 }
 
+/// Compiles a binary operation like `field > 1`
 fn compile_bin_op(
     table: &From,
     op: BinaryOperator,
@@ -385,6 +398,7 @@ fn _compile_where(table: &From, filter: SqlExpr, selection: Selection) -> Result
     }
 }
 
+/// Compiles the `WHERE` clause
 fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selection>, PlanError> {
     if let Some(filter) = filter {
         let selection = Selection::new();
@@ -394,6 +408,9 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
     }
 }
 
+/// Retrieves the [TableSchema] for the [Table]
+///
+/// Fails if the table `name` and/or `table_id` is not found
 fn find_table(db: &RelationalDB, tx: &MutTxId, t: Table) -> Result<TableSchema, PlanError> {
     let table_id = db
         .table_id_from_name(tx, &t.name)?
@@ -405,6 +422,7 @@ fn find_table(db: &RelationalDB, tx: &MutTxId, t: Table) -> Result<TableSchema, 
         .map_err(|e| PlanError::DatabaseInternal(Box::new(e)))
 }
 
+/// Compiles the `FROM` clause
 fn compile_from(db: &RelationalDB, tx: &MutTxId, from: &[TableWithJoins]) -> Result<From, PlanError> {
     if from.len() > 1 {
         return Err(PlanError::Unsupported {
@@ -462,15 +480,6 @@ fn compile_from(db: &RelationalDB, tx: &MutTxId, from: &[TableWithJoins]) -> Res
                         });
                     }
                 }
-
-                // base.with_inner_join(
-                //     rhs,
-                //     OnExpr {
-                //         op: OpCmp::Eq,
-                //         lhs: (),
-                //         rhs: (),
-                //     },
-                // )
             }
             x => {
                 return Err(PlanError::Unsupported {
@@ -529,6 +538,7 @@ fn compile_select_item(from: &From, select_item: SelectItem) -> Result<Column, P
     }
 }
 
+/// Compiles the `SELECT ...` clause
 fn compile_select(db: &RelationalDB, tx: &MutTxId, select: Select) -> Result<SqlAst, PlanError> {
     let from = compile_from(db, tx, &select.from)?;
     // SELECT ...
@@ -547,6 +557,7 @@ fn compile_select(db: &RelationalDB, tx: &MutTxId, select: Select) -> Result<Sql
     })
 }
 
+/// Compiles any `query` clause (currently only `SELECT...`)
 fn compile_query(db: &RelationalDB, tx: &MutTxId, query: Query) -> Result<SqlAst, PlanError> {
     unsupported!(
         "SELECT",
@@ -599,6 +610,7 @@ fn compile_query(db: &RelationalDB, tx: &MutTxId, query: Query) -> Result<SqlAst
     }
 }
 
+/// Compiles the `INSERT ...` clause
 fn compile_insert(
     db: &RelationalDB,
     tx: &MutTxId,
@@ -633,6 +645,7 @@ fn compile_insert(
     })
 }
 
+/// Compiles the `UPDATE ...` clause
 fn compile_update(
     db: &RelationalDB,
     tx: &MutTxId,
@@ -660,6 +673,7 @@ fn compile_update(
     })
 }
 
+/// Compiles the `DELETE ...` clause
 fn compile_delete(
     db: &RelationalDB,
     tx: &MutTxId,
@@ -675,6 +689,7 @@ fn compile_delete(
     })
 }
 
+/// Infer the column `size` from the [SqlColumnDef]
 fn column_size(column: &SqlColumnDef) -> Option<u64> {
     match column.data_type {
         DataType::Char(x) => x.map(|x| x.length),
@@ -700,6 +715,7 @@ fn column_size(column: &SqlColumnDef) -> Option<u64> {
     }
 }
 
+/// Infer the column [AlgebraicType] from the [DataType] + `is_null` definition
 //NOTE: We don't support `SERIAL` as recommended in https://wiki.postgresql.org/wiki/Don%27t_Do_This#Don.27t_use_serial
 fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Result<AlgebraicType, PlanError> {
     let ty = match data_type {
@@ -736,6 +752,7 @@ fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Resul
     })
 }
 
+/// Extract the column attributes into [ColumnIndexAttribute]
 fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, ColumnIndexAttribute), PlanError> {
     let mut attr = ColumnIndexAttribute::UnSet;
     let mut is_null = false;
@@ -788,6 +805,7 @@ fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, ColumnIndexAttribu
     Ok((is_null, attr))
 }
 
+/// Compiles the `CREATE TABLE ...` clause
 fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst, PlanError> {
     let table = table.name;
     let mut columns = ProductTypeMeta::with_capacity(cols.len());
@@ -814,6 +832,7 @@ fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst,
     })
 }
 
+/// Compiles the `DROP ...` clause
 fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError> {
     let kind = match kind {
         ObjectType::Table => DbType::Table,
@@ -833,6 +852,7 @@ fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError
     })
 }
 
+/// Compiles a `SQL` clause
 fn compile_statement(db: &RelationalDB, tx: &MutTxId, statement: Statement) -> Result<SqlAst, PlanError> {
     match statement {
         Statement::Query(query) => Ok(compile_query(db, tx, *query)?),
@@ -1000,6 +1020,7 @@ fn compile_statement(db: &RelationalDB, tx: &MutTxId, statement: Statement) -> R
     }
 }
 
+/// Compiles a `sql` string into a `Vec<SqlAst>` using a SQL parser with [PostgreSqlDialect]
 pub(crate) fn compile_to_ast(db: &RelationalDB, tx: &MutTxId, sql_text: &str) -> Result<Vec<SqlAst>, DBError> {
     let dialect = PostgreSqlDialect {};
     let ast = Parser::parse_sql(&dialect, sql_text).map_err(|error| DBError::SqlParser {
