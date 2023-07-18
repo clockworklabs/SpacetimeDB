@@ -1,8 +1,9 @@
 use crate::callbacks::CallbackId;
 use crate::global_connection::with_credential_store;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use spacetimedb_lib::de::Deserialize;
 use spacetimedb_lib::ser::Serialize;
+use spacetimedb_sats::bsatn;
 // TODO: impl ser/de for `Identity`, `Token`, `Credentials` so that clients can stash them
 //       to disk and use them to re-connect.
 
@@ -161,4 +162,48 @@ pub fn token() -> Result<Token> {
 /// - We connected anonymously, and we have not yet received our credentials.
 pub fn credentials() -> Result<Credentials> {
     with_credential_store(|cred_store| cred_store.credentials().ok_or(anyhow!("Credentials not yet received")))
+}
+
+const CREDS_FILE: &str = "credentials";
+
+/// Load a saved `Credentials` from a file within `~/dirname`, if one exists.
+///
+/// `dirname` is treated as a directory in the user's home directory.
+/// If it contains a file named `credentials`,
+/// that file is treated as a BSATN-encoded `Credentials`, deserialized and returned.
+///
+/// Returns `Ok(None)` if the directory or the credentials file does not exist.
+/// Returns `Err` when IO or deserialization fails.
+pub fn load_credentials(dirname: &str) -> Result<Option<Credentials>> {
+    let mut path = home::home_dir().with_context(|| "Determining user home directory to compute credentials path")?;
+    path.push(dirname);
+    path.push(CREDS_FILE);
+
+    match std::fs::read(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).with_context(|| "Reading BSATN-encoded credentials from file")?,
+        Ok(file_contents) => bsatn::from_slice::<Credentials>(&file_contents)
+            .with_context(|| "Deserializing credentials")
+            .map(Some),
+    }
+}
+
+/// Stores a `Credentials` to a file within `~/dirname`, to be later loaded with [`load_credentials`].
+///
+/// `dirname` is treated as a directory in the user's home directory.
+/// The directory is created if it does not already exists.
+/// A file within it named `credentials` is created or replaced,
+/// containing `creds` encoded as BSATN.
+///
+/// Returns `Err` when IO or serialization fails.
+pub fn save_credentials(dirname: &str, creds: &Credentials) -> Result<()> {
+    let creds_bytes = bsatn::to_vec(creds).with_context(|| "Serializing credentials")?;
+
+    let mut path = home::home_dir().with_context(|| "Determining user home directory to compute credentials path")?;
+    path.push(dirname);
+
+    std::fs::create_dir_all(&path).with_context(|| "Creating credentials directory")?;
+
+    path.push(CREDS_FILE);
+    std::fs::write(&path, creds_bytes).with_context(|| "Writing credentials to file")
 }
