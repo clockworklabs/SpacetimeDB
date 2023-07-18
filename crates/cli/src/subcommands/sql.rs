@@ -77,7 +77,7 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), an
 
     let stmt_result_json: Vec<StmtResultJson> = serde_json::from_str(&json)?;
 
-    //If you get a table, print the results, if return empty is likely a command like `INSERT`
+    // Print only `OK for empty tables as it's likely a command like `INSERT`.
     if stmt_result_json.is_empty() {
         println!("OK");
         return Ok(());
