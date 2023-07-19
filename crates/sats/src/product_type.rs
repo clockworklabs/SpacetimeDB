@@ -7,7 +7,11 @@ use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement};
 /// A structural product type  of the factors given by `elements`.
 ///
 /// This is also known as `struct` and `tuple` in many languages,
-/// but note that unlike most languages, sums in SATs are *structural* and not nominal.
+/// but note that unlike most languages, products in SATs are *[structural]* and not nominal.
+/// When checking whether two nominal types are the same,
+/// their names and/or declaration sites (e.g., module / namespace) are considered.
+/// Meanwhile, a structural type system would only check the structure of the type itself,
+/// e.g., the names of its fields and their types in the case of a record.
 /// The name "product" comes from category theory.
 ///
 /// See also: https://ncatlab.org/nlab/show/product+type.
@@ -21,6 +25,8 @@ use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement};
 /// Π (i ∈ 0..n). values(T_i)
 /// ```
 /// so for example, `values({ A: U64, B: Bool }) = values(U64) * values(Bool)`.
+///
+/// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[sats(crate = crate)]
 pub struct ProductType {

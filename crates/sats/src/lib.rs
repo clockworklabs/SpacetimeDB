@@ -41,6 +41,7 @@ pub trait Value {
 }
 
 impl<T: Value> Value for Vec<T> {
+    // TODO(centril/phoebe): This looks weird; shouldn't it be ArrayType?
     type Type = T::Type;
 }
 

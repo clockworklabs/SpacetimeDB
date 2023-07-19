@@ -671,7 +671,7 @@ pub fn deserialize_from<'de, T: super::Deserialize<'de>, D: serde::Deserializer<
     T::deserialize(SerdeDeserializer::new(deserializer)).map_err(unwrap_error)
 }
 
-/// Turns a type deserializable in SAT into one deserializiable in Serde.
+/// Turns a type deserializable in SATS into one deserializiable in Serde.
 ///
 /// That is, `T: sats::Deserialize<'de> => DeserializeWrapper<T>: serde::Deserialize`.
 pub struct DeserializeWrapper<T>(pub T);

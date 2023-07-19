@@ -38,15 +38,22 @@ pub enum BuiltinValue {
     U128(u128),
     /// A totally ordered [`F32`] value.
     F32(F32),
-    /// An [`i8`] value.
+    /// A totally ordered [`F64`] value.
     F64(F64),
     /// A UTF-8 string value.
     ///
     /// Uses Rust's standard representation of strings.
     String(String),
-    /// An array value of other `AlgebraicValue`s but in monomorphized form.
+    /// A homogeneous array of `AlgebraicValue`s.
+    ///
+    /// The contained values are stored packed in a representation appropriate for their type.
+    /// See [`ArrayValue`] for details on the representation.
     Array { val: ArrayValue },
-    /// A map value of `key: AlgebraicValue`s mapped to `value: AlgebraicValue`s.
+    /// An ordered map value of `key: AlgebraicValue`s mapped to `value: AlgebraicValue`s.
+    /// Each `key` must be of the same [`AlgebraicType`] as all the others
+    /// and the same applies to each `value`.
+    ///
+    /// Maps are implemented internally as `BTreeMap<AlgebraicValue, AlgebraicValue>`.
     Map { val: MapValue },
 }
 
@@ -136,7 +143,7 @@ impl crate::Value for ArrayValue {
 }
 
 impl ArrayValue {
-    /// Infers the type of the `ArrayValue` `self`.
+    /// Determines (infers / synthesises) the type of the value.
     pub(crate) fn type_of(&self) -> ArrayType {
         let elem_ty = Box::new(match self {
             ArrayValue::Sum(v) => Self::first_type_of(v, AlgebraicValue::type_of_sum),
@@ -202,11 +209,7 @@ impl ArrayValue {
     /// Optionally allocates the backing `Vec<_>`s with `capacity`.
     fn from_one_with_capacity(val: AlgebraicValue, capacity: Option<usize>) -> Self {
         fn vec<T>(e: T, c: Option<usize>) -> Vec<T> {
-            let mut vec = if let Some(c) = c {
-                Vec::with_capacity(c)
-            } else {
-                Vec::new()
-            };
+            let mut vec = c.map_or(Vec::new(), Vec::with_capacity);
             vec.push(e);
             vec
         }

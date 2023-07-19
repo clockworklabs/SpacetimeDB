@@ -2,17 +2,20 @@
 
 use crate::AlgebraicType;
 
-/// A trait for those types which can represent their own type structure as an `AlgebraicType`.
+/// Rust types which represent components of the SATS type system
+/// and can themselves be represented as algebraic objects will implement [`MetaType`].
+///
+/// A type's meta-type is an [`AlgebraicType`]
+/// which can store the data associated with a definition of that type.
+///
+/// For example, the `MetaType` of [`ProductType`](crate::ProductType) is
+/// ```ignore
+/// AlgebraicType::product(vec![ProductTypeElement::new_named(
+///     AlgebraicType::array(ProductTypeElement::meta_type()),
+///     "elements",
+/// )])
+/// ```
 pub trait MetaType {
     /// Returns the type structure of this type as an `AlgebraicType`.
-    ///
-    /// For example, if we have:
-    /// ```ignore
-    /// struct Foo(u32);
-    /// ```
-    /// then the meta type would be:
-    /// ```ignore
-    /// AlgebraicType::Builtin(BuiltinType::U32)
-    /// ```
     fn meta_type() -> AlgebraicType;
 }

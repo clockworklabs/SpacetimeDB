@@ -15,7 +15,7 @@ pub struct ProductTypeElement {
     ///
     /// As our type system is structural,
     /// a type like `{ foo: U8 }`, where `foo: U8` is the `ProductTypeElement`,
-    /// is inequal to `{ bar: U8 }`, although their `algebraic_type`s match.
+    /// is inequal to `{ bar: U8 }`, although their `algebraic_type`s (`U8`) match.
     pub name: Option<String>,
     /// The type of the element.
     ///

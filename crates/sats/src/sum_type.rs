@@ -2,11 +2,15 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductTypeElement, SumTypeVariant};
+use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SumTypeVariant};
 
 /// A structural sum type.
 ///
-/// Unlike most languages, sums in SATs are *structural* and not nominal.
+/// Unlike most languages, sums in SATS are *[structural]* and not nominal.
+/// When checking whether two nominal types are the same,
+/// their names and/or declaration sites (e.g., module / namespace) are considered.
+/// Meanwhile, a structural type system would only check the structure of the type itself,
+/// e.g., the names of its variants and their inner data types in the case of a sum.
 ///
 /// This is also known as a discriminated union (implementation) or disjoint union.
 /// Another name is [coproduct (category theory)](https://ncatlab.org/nlab/show/coproduct).
@@ -22,6 +26,8 @@ use crate::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductTypeElement,
 /// so for example, `values({ A(U64), B(Bool) }) = values(U64) + values(Bool)`.
 ///
 /// See also: https://ncatlab.org/nlab/show/sum+type.
+///
+/// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[sats(crate = crate)]
 pub struct SumType {
@@ -65,10 +71,7 @@ impl SumType {
 impl MetaType for SumType {
     fn meta_type() -> AlgebraicType {
         AlgebraicType::product(vec![ProductTypeElement::new_named(
-            AlgebraicType::array(AlgebraicType::product(vec![
-                ProductTypeElement::new_named(AlgebraicType::option(AlgebraicType::String), "name"),
-                ProductTypeElement::new_named(AlgebraicType::Ref(AlgebraicTypeRef(0)), "algebraic_type"),
-            ])),
+            AlgebraicType::array(SumTypeVariant::meta_type()),
             "variants",
         )])
     }

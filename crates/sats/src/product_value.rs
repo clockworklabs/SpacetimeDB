@@ -4,7 +4,7 @@ use crate::product_type::ProductType;
 /// A product value is made of a a list of
 /// "elements" / "fields" / "factors" of other `AlgebraicValue`s.
 ///
-/// The type of a product value is a product type.
+/// The type of a product value is a [product type](`ProductType`).
 #[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct ProductValue {
     /// The values that make up this product value.

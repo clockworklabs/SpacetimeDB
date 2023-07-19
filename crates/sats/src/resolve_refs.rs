@@ -6,7 +6,9 @@ use crate::{
 /// Resolver for [`AlgebraicTypeRef`]s within a structure.
 #[derive(Default)]
 pub struct ResolveRefState {
-    /// The stack used to handle cycle detection for recursive μ-types.
+    /// The stack used to handle cycle detection for [recursive types] (`μα. T`).
+    ///
+    /// [recursive types]: https://en.wikipedia.org/wiki/Recursive_data_type#Theory
     stack: Vec<AlgebraicTypeRef>,
 }
 

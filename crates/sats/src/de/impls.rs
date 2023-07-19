@@ -16,6 +16,20 @@ use super::{
     ProductVisitor, SeqProductAccess, SliceVisitor, SumAccess, SumVisitor, VariantAccess, VariantVisitor,
 };
 
+/// Implements [`Deserialize`] for a type in a simplified manner.
+///
+/// An example:
+/// ```ignore
+/// impl_deserialize!(
+/// //     Type parameters  Optional where  Impl type
+/// //            v               v             v
+/// //   ----------------  --------------- ----------
+///     [T: Deserialize<'de>] where [T: Copy] std::rc::Rc<T>,
+/// //  The `deserialize` implementation where `de`
+/// //  and the expression right of `=>` is the body of `deserialize`.
+///     de => T::deserialize(de).map(std::rc::Rc::new)
+/// );
+/// ```
 #[macro_export]
 macro_rules! impl_deserialize {
     ([$($generics:tt)*] $(where [$($wc:tt)*])? $typ:ty, $de:ident => $body:expr) => {
@@ -25,10 +39,20 @@ macro_rules! impl_deserialize {
     };
 }
 
+/// Implements [`Deserialize`] for a primitive type.
+///
+/// The `$method` is a parameterless method on `deserializer` to call.
 macro_rules! impl_prim {
     ($(($prim:ty, $method:ident))*) => {
         $(impl_deserialize!([] $prim, de => de.$method());)*
     };
+}
+
+impl_prim! {
+    (bool, deserialize_bool) /*(u8, deserialize_u8)*/ (u16, deserialize_u16)
+    (u32, deserialize_u32) (u64, deserialize_u64) (u128, deserialize_u128) (i8, deserialize_i8)
+    (i16, deserialize_i16) (i32, deserialize_i32) (i64, deserialize_i64) (i128, deserialize_i128)
+    (f32, deserialize_f32) (f64, deserialize_f64)
 }
 
 impl_deserialize!([] (), de => de.deserialize_product(UnitVisitor));
@@ -56,19 +80,13 @@ impl<'de> ProductVisitor<'de> for UnitVisitor {
     }
 }
 
-impl_prim! {
-    (bool, deserialize_bool) /*(u8, deserialize_u8)*/ (u16, deserialize_u16)
-    (u32, deserialize_u32) (u64, deserialize_u64) (u128, deserialize_u128) (i8, deserialize_i8)
-    (i16, deserialize_i16) (i32, deserialize_i32) (i64, deserialize_i64) (i128, deserialize_i128)
-    (f32, deserialize_f32) (f64, deserialize_f64)
-}
-
 impl<'de> Deserialize<'de> for u8 {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         deserializer.deserialize_u8()
     }
 
     // Specialize `Vec<u8>` deserialization.
+    // This is more likely to compile down to a `memcpy`.
     fn __deserialize_vec<D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Self>, D::Error> {
         deserializer.deserialize_bytes(OwnedSliceVisitor)
     }
@@ -351,10 +369,18 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
     type Output = ArrayValue;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
+        /// Deserialize a vector and `map` it to the appropriate `ArrayValue` variant.
+        fn de_array<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+            de: D,
+            map: impl FnOnce(Vec<T>) -> ArrayValue,
+        ) -> Result<ArrayValue, D::Error> {
+            de.deserialize_array(BasicVecVisitor).map(map)
+        }
+
         let mut ty = &*self.ty().elem_ty;
 
+        // Loop, resolving `Ref`s, until we reach a non-`Ref` type.
         loop {
-            // We're doing this because of `Ref`s.
             break match ty {
                 AlgebraicType::Ref(r) => {
                     // The only arm that will loop.
@@ -367,48 +393,20 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                 AlgebraicType::Product(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(ArrayValue::Product),
-                AlgebraicType::Builtin(BuiltinType::Bool) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::Bool)
-                }
-                AlgebraicType::Builtin(BuiltinType::I8) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::I8)
-                }
-                AlgebraicType::Builtin(BuiltinType::U8) => {
-                    deserializer.deserialize_bytes(OwnedSliceVisitor).map(ArrayValue::U8)
-                }
-                AlgebraicType::Builtin(BuiltinType::I16) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::I16)
-                }
-                AlgebraicType::Builtin(BuiltinType::U16) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::U16)
-                }
-                AlgebraicType::Builtin(BuiltinType::I32) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::I32)
-                }
-                AlgebraicType::Builtin(BuiltinType::U32) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::U32)
-                }
-                AlgebraicType::Builtin(BuiltinType::I64) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::I64)
-                }
-                AlgebraicType::Builtin(BuiltinType::U64) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::U64)
-                }
-                AlgebraicType::Builtin(BuiltinType::I128) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::I128)
-                }
-                AlgebraicType::Builtin(BuiltinType::U128) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::U128)
-                }
-                AlgebraicType::Builtin(BuiltinType::F32) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::F32)
-                }
-                AlgebraicType::Builtin(BuiltinType::F64) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::F64)
-                }
-                AlgebraicType::Builtin(BuiltinType::String) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::String)
-                }
+                AlgebraicType::Builtin(BuiltinType::Bool) => de_array(deserializer, ArrayValue::Bool),
+                AlgebraicType::Builtin(BuiltinType::I8) => de_array(deserializer, ArrayValue::I8),
+                AlgebraicType::Builtin(BuiltinType::U8) => de_array(deserializer, ArrayValue::U8),
+                AlgebraicType::Builtin(BuiltinType::I16) => de_array(deserializer, ArrayValue::I16),
+                AlgebraicType::Builtin(BuiltinType::U16) => de_array(deserializer, ArrayValue::U16),
+                AlgebraicType::Builtin(BuiltinType::I32) => de_array(deserializer, ArrayValue::I32),
+                AlgebraicType::Builtin(BuiltinType::U32) => de_array(deserializer, ArrayValue::U32),
+                AlgebraicType::Builtin(BuiltinType::I64) => de_array(deserializer, ArrayValue::I64),
+                AlgebraicType::Builtin(BuiltinType::U64) => de_array(deserializer, ArrayValue::U64),
+                AlgebraicType::Builtin(BuiltinType::I128) => de_array(deserializer, ArrayValue::I128),
+                AlgebraicType::Builtin(BuiltinType::U128) => de_array(deserializer, ArrayValue::U128),
+                AlgebraicType::Builtin(BuiltinType::F32) => de_array(deserializer, ArrayValue::F32),
+                AlgebraicType::Builtin(BuiltinType::F64) => de_array(deserializer, ArrayValue::F64),
+                AlgebraicType::Builtin(BuiltinType::String) => de_array(deserializer, ArrayValue::String),
                 AlgebraicType::Builtin(BuiltinType::Array(ty)) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(ArrayValue::Array),
@@ -459,7 +457,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, MapType> {
 //     }
 // }
 
-/// Deserialize a product with unnamed fields value provided the element types.
+/// Deserialize, provided the fields' types, a product value with unnamed fields.
 pub fn visit_seq_product<'de, A: SeqProductAccess<'de>>(
     elems: WithTypespace<[ProductTypeElement]>,
     visitor: &impl ProductVisitor<'de>,
@@ -473,7 +471,7 @@ pub fn visit_seq_product<'de, A: SeqProductAccess<'de>>(
     Ok(ProductValue { elements })
 }
 
-/// Deserialize a product with named fields value provided the element types.
+/// Deserialize, provided the fields' types, a product value with named fields.
 pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
     elems_tys: WithTypespace<[ProductTypeElement]>,
     visitor: &impl ProductVisitor<'de>,

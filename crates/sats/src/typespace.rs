@@ -10,7 +10,7 @@ use crate::{de::Deserialize, ser::Serialize};
 ///
 /// That is, this is the `Δ` or `Γ` you'll see in type theory litterature.
 ///
-/// We use (srt of) [deBrujin indices](https://en.wikipedia.org/wiki/De_Bruijn_index)
+/// We use (sort of) [deBrujin indices](https://en.wikipedia.org/wiki/De_Bruijn_index)
 /// to represent our type variables,
 /// but notably, these are given for the entire module
 /// and there are no universal quantifiers (i.e., `Δ, α ⊢ τ | Δ ⊢ ∀ α. τ`)
@@ -105,6 +105,21 @@ pub trait TypespaceBuilder {
     ) -> AlgebraicType;
 }
 
+/// Implements [`SpacetimeType`] for a type in a simplified manner.
+///
+/// An example:
+/// ```ignore
+/// struct Foo<'a, T>(&'a T, u8);
+/// impl_st!(
+/// //     Type parameters      Impl type
+/// //            v                 v
+/// //   --------------------  ----------
+///     ['a, T: SpacetimeType] Foo<'a, T>,
+/// //  The `make_type` implementation where `ts: impl TypespaceBuilder`
+/// //  and the expression right of `=>` is an `AlgebraicType`.
+///     ts => AlgebraicType::product(vec![T::make_type(ts).into(), AlgebraicType::U8.into()])
+/// );
+/// ```
 #[macro_export]
 macro_rules! impl_st {
     ([ $($rgenerics:tt)* ] $rty:ty, $ts:ident => $stty:expr) => {

@@ -37,22 +37,35 @@ pub trait Deserializer<'de>: Sized {
 
     /// Deserializes a sum value from the input.
     ///
-    /// This is typically called from a [`Deserialize`] implementation
-    /// which provides the [`V: SumVisitor<'de>`](SumVisitor) object.
-    /// A deserializer should then switch back control to [`SumVisitor::visit_sum`],
-    /// providing it with a [`A: SumAccess<'de>`](SumAccess) object with the necessary input embedded.
-    /// The former, [`SumVisitor::visit_sum`],
-    /// will then in turn switch back via [`SumAccess::variant`],
-    /// providing it with a [`V: VariantVisitor<'de>`](VariantVisitor),
-    /// which the latter uses to identify the variant to deserialize.
-    /// Once control returns to [`SumVisitor::visit_sum`],
-    /// it has been passed by [`SumAccess::variant`] an [`A: VariantAccess<'de>`](VariantAccess) object
-    /// which it then uses to deserialize the data of the selected variant.
+    /// The entire process of deserializing a sum, starting from `deserialize(args...)`, is roughly:
     ///
-    /// This back and forth between the [`Deserialize`] and [`Deserializer`] sides is rather complex here.
-    /// To simplify, we note that, typically:
-    /// - [`Deserialize`] provides: [`SumVisitor`] and [`VariantVisitor`]
-    /// - [`Deserializer`] provides: [`SumAccess`] and [`VariantAccess`]
+    /// - [`deserialize`][Deserialize::deserialize] calls this method,
+    ///   [`deserialize_sum(sum_visitor)`](Deserializer::deserialize_sum),
+    ///   providing us with a [`sum_visitor`](SumVisitor).
+    ///
+    /// - This method calls [`sum_visitor.visit_sum(sum_access)`](SumVisitor::visit_sum),
+    ///   where [`sum_access`](SumAccess) deals with extracting the tag and the variant data,
+    ///   with the latter provided as [`VariantAccess`]).
+    ///   The `SumVisitor` will then assemble these into the representation of a sum value
+    ///   that the [`Deserialize`] implementation wants.
+    ///
+    /// - [`visit_sum`](SumVisitor::visit_sum) then calls
+    ///   [`sum_access.variant(variant_visitor)`](SumAccess::variant),
+    ///   and uses the provided `variant_visitor` to translate extracted variant names / tags
+    ///   into something that is meaningful for `visit_sum`, e.g., an index.
+    ///
+    ///   The call to `variant` will also return [`variant_access`](VariantAccess)
+    ///   that can deserialize the contents of the variant.
+    ///
+    /// - Finally, after `variant` returns,
+    ///   `visit_sum` deserializes the variant data using
+    ///   [`variant_access.deserialize_seed(seed)`](VariantAccess::deserialize_seed)
+    ///   or [`variant_access.deserialize()`](VariantAccess::deserialize).
+    ///   This part may require some conditional logic depending on the identified variant.
+    ///
+    ///
+    /// The data format will also return an object ([`VariantAccess`])
+    /// that can deserialize the contents of the variant.
     fn deserialize_sum<V: SumVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error>;
 
     /// Deserializes a `bool` value from the input.
@@ -416,7 +429,15 @@ pub trait SumVisitor<'de> {
         false
     }
 
-    /// The input contains a sum.
+    /// Drives the deserialization of a sum value.
+    ///
+    /// This method will ask the data format ([`A: SumAccess`][SumAccess])
+    /// which variant of the sum to select in terms of a variant name / tag.
+    /// `A` will use a [`VariantVisitor`], that `SumVisitor` has provided,
+    /// to translate into something that is meaningful for `visit_sum`, e.g., an index.
+    ///
+    /// The data format will also return an object ([`VariantAccess`])
+    /// that can deserialize the contents of the variant.
     fn visit_sum<A: SumAccess<'de>>(self, data: A) -> Result<Self::Output, A::Error>;
 }
 
@@ -451,12 +472,10 @@ pub trait VariantVisitor {
     /// Provides the visitor the chance to add valid names into `names`.
     fn variant_names(&self, names: &mut dyn ValidNames);
 
-    /// Identify the variant based on the `tag`.
-    ///
-    /// This is one way to identify
+    /// Identify the variant based on `tag`.
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E>;
 
-    /// Identify the variant based on the `name`.
+    /// Identify the variant based on `name`.
     fn visit_name<E: Error>(self, name: &str) -> Result<Self::Output, E>;
 }
 
@@ -539,7 +558,7 @@ pub trait MapVisitor<'de, K, V> {
 
 /// Provides a [`MapVisitor`] with access to each element of the array in the input.
 ///
-/// This is a trait that a [`Deserializer`] passes to an [`ArrayVisitor`] implementation.
+/// This is a trait that a [`Deserializer`] passes to a [`MapVisitor`] implementation.
 pub trait MapAccess<'de> {
     /// The key type of the map.
     type Key;
@@ -663,9 +682,10 @@ impl<'de, T, const N: usize> ArrayVisitor<'de, T> for BasicArrayVisitor<N> {
 }
 
 /// Provided a function `names` that is allowed to store a name into a valid set,
-/// optionally returns a description a human readable list of all the names.
+/// returns a human readable list of all the names,
+/// or `None` in the case of an empty list of names.
 fn one_of_names(names: impl Fn(&mut dyn ValidNames)) -> Option<impl fmt::Display> {
-    /// An implementation of `ValidNames` that just registers how many valid names there added.
+    /// An implementation of `ValidNames` that just counts how many valid names are pushed into it.
     struct CountNames(usize);
 
     impl ValidNames for CountNames {
@@ -719,7 +739,7 @@ fn one_of_names(names: impl Fn(&mut dyn ValidNames)) -> Option<impl fmt::Display
         }
     }
 
-    // Count how many `names` added.
+    // Count how many names have been pushed.
     let count = CountNames(0).run(&names).0;
 
     // There was at least one name; render those names.

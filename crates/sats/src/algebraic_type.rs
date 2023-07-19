@@ -58,7 +58,11 @@ use enum_as_inner::EnumAsInner;
 pub enum AlgebraicType {
     /// A structural sum type.
     ///
-    /// Unlike most languages, sums in SATs are *structural* and not nominal.
+    /// Unlike most languages, sums in SATs are *[structural]* and not nominal.
+    /// When checking whether two nominal types are the same,
+    /// their names and/or declaration sites (e.g., module / namespace) are considered.
+    /// Meanwhile, a structural type system would only check the structure of the type itself,
+    /// e.g., the names of its variants and their inner data types in the case of a sum.
     ///
     /// This is also known as a discriminated union (implementation) or disjoint union.
     /// Another name is [coproduct (category theory)](https://ncatlab.org/nlab/show/coproduct).
@@ -74,11 +78,17 @@ pub enum AlgebraicType {
     /// so for example, `values({ A(U64), B(Bool) }) = values(U64) + values(Bool)`.
     ///
     /// See also: https://ncatlab.org/nlab/show/sum+type.
+    ///
+    /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
     Sum(SumType),
     /// A structural product type.
     ///
     /// This is also known as `struct` and `tuple` in many languages,
-    /// but note that unlike most languages, sums in SATs are *structural* and not nominal.
+    /// but note that unlike most languages, sums in SATs are *[structural]* and not nominal.
+    /// When checking whether two nominal types are the same,
+    /// their names and/or declaration sites (e.g., module / namespace) are considered.
+    /// Meanwhile, a structural type system would only check the structure of the type itself,
+    /// e.g., the names of its fields and their types in the case of a record.
     /// The name "product" comes from category theory.
     ///
     /// See also: https://ncatlab.org/nlab/show/product+type.
@@ -92,6 +102,8 @@ pub enum AlgebraicType {
     /// Π (i ∈ 0..n). values(T_i)
     /// ```
     /// so for example, `values({ A: U64, B: Bool }) = values(U64) * values(Bool)`.
+    ///
+    /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
     Product(ProductType),
     /// A bulltin type, e.g., `bool`.
     Builtin(BuiltinType),

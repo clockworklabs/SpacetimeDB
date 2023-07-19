@@ -7,6 +7,26 @@ use crate::{
 
 use super::{Serialize, SerializeArray, SerializeMap, SerializeNamedProduct, SerializeSeqProduct, Serializer};
 
+/// Implements [`Serialize`] for a type in a simplified manner.
+///
+/// An example:
+/// ```ignore
+/// struct Foo<'a, T: Copy>(&'a T, u8);
+/// impl_serialize!(
+/// //     Type parameters  Optional where  Impl type
+/// //            v               v             v
+/// //   ----------------  --------------- ----------
+///     ['a, T: Serialize] where [T: Copy] Foo<'a, T>,
+/// //  The `serialize` implementation where `self` is serialized into `ser`
+/// //  and the expression right of `=>` is the body of `serialize`.
+///     (self, ser) => {
+///         let mut prod = ser.serialize_seq_product(2)?;
+///         prod.serialize_element(&self.0)?;
+///         prod.serialize_element(&self.1)?;
+///         prod.end()
+///     }
+/// );
+/// ```
 #[macro_export]
 macro_rules! impl_serialize {
     ([$($generics:tt)*] $(where [$($wc:tt)*])? $typ:ty, ($self:ident, $ser:ident) => $body:expr) => {
