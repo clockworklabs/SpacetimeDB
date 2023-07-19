@@ -2,6 +2,10 @@
 
 namespace SpacetimeDB
 {
+    public class ReducerClassAttribute : Attribute
+    {
+    }
+
     public class ReducerCallbackAttribute : Attribute
     {
         public string FunctionName { get; set; }
