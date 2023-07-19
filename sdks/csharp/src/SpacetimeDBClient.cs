@@ -126,7 +126,7 @@ namespace SpacetimeDB
                 // Search for the type by name and namespace
                 Type targetType = types.FirstOrDefault(t =>
                     t.Name == "Reducer" &&
-                    t.Namespace == "SpacetimeDB");
+                    t.Namespace == "SpacetimeDB.Types");
 
                 // If the type is found, return it
                 if (targetType != null)
