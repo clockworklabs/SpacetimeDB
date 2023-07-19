@@ -164,11 +164,6 @@ impl AlgebraicType {
 
     /// The canonical 0-variant "never" / "absurd" / "void" type.
     pub const NEVER_TYPE: Self = Self::sum(Vec::new());
-
-    /// A type representing an array of `U8`s.
-    pub fn bytes() -> Self {
-        Self::array(Self::U8)
-    }
 }
 
 impl MetaType for AlgebraicType {
@@ -188,6 +183,18 @@ impl MetaType for AlgebraicType {
 }
 
 impl AlgebraicType {
+    /// A type representing an array of `U8`s.
+    pub fn bytes() -> Self {
+        Self::array(Self::U8)
+    }
+
+    /// Returns whether this type is `AlgebraicType::bytes()`.
+    pub fn is_bytes(&self) -> bool {
+        matches!(self, AlgebraicType::Builtin(BuiltinType::Array(ArrayType { elem_ty }))
+            if **elem_ty == AlgebraicType::U8
+        )
+    }
+
     /// Returns a sum type with the given `variants`.
     pub const fn sum(variants: Vec<SumTypeVariant>) -> Self {
         AlgebraicType::Sum(SumType { variants })

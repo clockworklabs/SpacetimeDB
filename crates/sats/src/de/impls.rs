@@ -296,7 +296,7 @@ impl<'de> SumVisitor<'de> for WithTypespace<'_, SumType> {
     }
 
     fn is_option(&self) -> bool {
-        self.ty().looks_like_option().is_some()
+        self.ty().as_option().is_some()
     }
 
     fn visit_sum<A: SumAccess<'de>>(self, data: A) -> Result<Self::Output, A::Error> {

@@ -21,51 +21,28 @@ enum MaybePrimitive<'a> {
 fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
     MaybePrimitive::Primitive(match b {
         BuiltinType::Bool => "boolean",
-        BuiltinType::I8 => "number",
-        BuiltinType::U8 => "number",
-        BuiltinType::I16 => "number",
-        BuiltinType::U16 => "number",
-        BuiltinType::I32 => "number",
-        BuiltinType::U32 => "number",
-        BuiltinType::I64 => "number",
-        BuiltinType::U64 => "number",
-        BuiltinType::I128 => "BigInt",
-        BuiltinType::U128 => "BigInt",
+        BuiltinType::I8
+        | BuiltinType::U8
+        | BuiltinType::I16
+        | BuiltinType::U16
+        | BuiltinType::I32
+        | BuiltinType::U32
+        | BuiltinType::I64
+        | BuiltinType::U64
+        | BuiltinType::F32
+        | BuiltinType::F64 => "number",
+        BuiltinType::I128 | BuiltinType::U128 => "BigInt",
         BuiltinType::String => "string",
-        BuiltinType::F32 => "number",
-        BuiltinType::F64 => "number",
         BuiltinType::Array(ty) => return MaybePrimitive::Array(ty),
         BuiltinType::Map(m) => return MaybePrimitive::Map(m),
     })
 }
 
-fn is_option_type(ty: &SumType) -> bool {
-    if ty.variants.len() != 2 {
-        return false;
-    }
-
-    if ty.variants[0].name.clone().expect("Variants should have names!") != "some"
-        || ty.variants[1].name.clone().expect("Variants should have names!") != "none"
-    {
-        return false;
-    }
-
-    if let AlgebraicType::Product(none_type) = &ty.variants[1].algebraic_type {
-        none_type.elements.is_empty()
-    } else {
-        false
-    }
-}
-
 fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix: &'a str) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
         AlgebraicType::Sum(sum_type) => {
-            if is_option_type(sum_type) {
-                write!(
-                    f,
-                    "{} | null",
-                    ty_fmt(ctx, &sum_type.variants[0].algebraic_type, ref_prefix)
-                )
+            if let Some(inner_ty) = sum_type.as_option() {
+                write!(f, "{} | null", ty_fmt(ctx, inner_ty, ref_prefix))
             } else {
                 unimplemented!()
             }
@@ -146,8 +123,8 @@ fn convert_type<'a>(
     fmt_fn(move |f| match ty {
         AlgebraicType::Product(_) => unreachable!(),
         AlgebraicType::Sum(sum_type) => {
-            if is_option_type(sum_type) {
-                match &sum_type.variants[0].algebraic_type {
+            if let Some(inner_ty) = sum_type.as_option() {
+                match inner_ty {
                     Builtin(ty) => match ty {
                         BuiltinType::Bool
                         | BuiltinType::I8
@@ -166,13 +143,13 @@ fn convert_type<'a>(
                             "{}.asSumValue().tag == 1 ? null : {}.asSumValue().value{}",
                             value,
                             value,
-                            &convert_type(ctx, vecnest, &sum_type.variants[0].algebraic_type, "", ref_prefix),
+                            &convert_type(ctx, vecnest, inner_ty, "", ref_prefix),
                         ),
                         _ => fmt::Display::fmt(
                             &convert_type(
                                 ctx,
                                 vecnest,
-                                &sum_type.variants[0].algebraic_type,
+                                inner_ty,
                                 format_args!("{value}.asSumValue().tag == 1 ? null : {value}.asSumValue().value"),
                                 ref_prefix
                             ),
@@ -187,7 +164,7 @@ fn convert_type<'a>(
                             convert_type(
                                 ctx,
                                 vecnest,
-                                &sum_type.variants[0].algebraic_type,
+                                inner_ty,
                                 "value",
                                 ref_prefix
                             )
@@ -198,7 +175,7 @@ fn convert_type<'a>(
                         &convert_type(
                             ctx,
                             vecnest,
-                            &sum_type.variants[0].algebraic_type,
+                            inner_ty,
                             format_args!("{value}.asSumValue().tag == 1 ? null : {value}.asSumValue().value"),
                             ref_prefix
                         ),
@@ -294,21 +271,6 @@ fn convert_sum_type<'a>(ctx: &'a GenCtx, sum_type: &'a SumType, ref_prefix: &'a 
     })
 }
 
-pub fn is_enum(sum_type: &SumType) -> bool {
-    for variant in sum_type.clone().variants {
-        match variant.algebraic_type {
-            AlgebraicType::Product(product) => {
-                if product.elements.is_empty() {
-                    continue;
-                }
-            }
-            _ => return false,
-        }
-    }
-
-    true
-}
-
 fn serialize_type<'a>(
     ctx: &'a GenCtx,
     ty: &'a AlgebraicType,
@@ -318,11 +280,11 @@ fn serialize_type<'a>(
     fmt_fn(move |f| match ty {
         AlgebraicType::Product(_) => unreachable!(),
         AlgebraicType::Sum(sum_type) => {
-            if is_option_type(sum_type) {
+            if let Some(inner_ty) = sum_type.as_option() {
                 write!(
                     f,
                     "{value} ? {{ \"some\": {} }} : {{ \"none\": [] }}",
-                    serialize_type(ctx, &sum_type.variants[0].algebraic_type, value, prefix)
+                    serialize_type(ctx, inner_ty, value, prefix)
                 )
             } else {
                 unimplemented!()
@@ -392,7 +354,7 @@ pub fn autogen_typescript_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> S
         {
             indent_scope!(output);
 
-            if is_enum(sum_type) {
+            if sum_type.is_simple_enum() {
                 // for a simple enum we can simplify the fromValue function
                 writeln!(output, "const result: {{[key: string]: any}} = {{}};").unwrap();
                 writeln!(output, "result[value.tag] = [];").unwrap();
@@ -467,7 +429,7 @@ pub fn autogen_typescript_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> S
 
             writeln!(output, "let sumValue = value.asSumValue();").unwrap();
 
-            if is_enum(sum_type) {
+            if sum_type.is_simple_enum() {
                 // for a simple enum we can simplify the fromValue function
                 writeln!(output, "let tag = sumValue.tag;").unwrap();
                 writeln!(

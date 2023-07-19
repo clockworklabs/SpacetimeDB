@@ -286,7 +286,7 @@ mod tests {
             &db,
             &mut tx,
             &q,
-            AuthCtx::new(Identity::__dummy(), Identity::from_arr(&[1u8; 32])),
+            AuthCtx::new(Identity::__dummy(), Identity::from_byte_array([1u8; 32])),
         ) {
             Ok(_) => {
                 panic!("it allows to execute against private table")

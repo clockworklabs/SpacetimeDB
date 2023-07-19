@@ -67,20 +67,14 @@ fn convert_type<'a>(
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
         AlgebraicType::Product(_) => unreachable!(),
-        AlgebraicType::Sum(sum_type) if is_option_type(sum_type) => {
-            write!(
+        AlgebraicType::Sum(sum_type) => match sum_type.as_option() {
+            Some(inner_ty) => write!(
                 f,
                 "{} if '0' in {value} else None",
-                convert_type(
-                    ctx,
-                    vecnest,
-                    &sum_type.variants[0].algebraic_type,
-                    format!("{value}['0']"),
-                    ref_prefix
-                )
-            )
-        }
-        AlgebraicType::Sum(_sum_type) => unimplemented!(),
+                convert_type(ctx, vecnest, inner_ty, format!("{value}['0']"), ref_prefix),
+            ),
+            None => unimplemented!(),
+        },
         AlgebraicType::Builtin(b) => fmt::Display::fmt(&convert_builtintype(ctx, vecnest, b, &value, ref_prefix), f),
         AlgebraicType::Ref(r) => {
             let name = python_typename(ctx, *r);
@@ -139,24 +133,6 @@ fn python_filename(ctx: &GenCtx, typeref: AlgebraicTypeRef) -> String {
         .to_case(Case::Snake)
 }
 
-fn is_option_type(ty: &SumType) -> bool {
-    if ty.variants.len() != 2 {
-        return false;
-    }
-
-    if ty.variants[0].name.clone().expect("Variants should have names!") != "some"
-        || ty.variants[1].name.clone().expect("Variants should have names!") != "none"
-    {
-        return false;
-    }
-
-    if let AlgebraicType::Product(none_type) = &ty.variants[1].algebraic_type {
-        none_type.elements.is_empty()
-    } else {
-        false
-    }
-}
-
 pub fn autogen_python_table(ctx: &GenCtx, table: &TableDef) -> String {
     let tuple = ctx.typespace[table.data].as_product().unwrap();
     autogen_python_product_table_common(ctx, &table.name, tuple, Some(&table.column_attrs))
@@ -176,10 +152,12 @@ fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>
                 _generate_imports(ctx, &map_type.key_ty, imports);
                 _generate_imports(ctx, &map_type.ty, imports);
             }
-            _ => (),
+            _ => {}
         },
-        AlgebraicType::Sum(sum_type) if is_option_type(sum_type) => {
-            _generate_imports(ctx, &sum_type.variants[0].algebraic_type, imports);
+        AlgebraicType::Sum(sum_type) => {
+            if let Some(inner_ty) = sum_type.as_option() {
+                _generate_imports(ctx, inner_ty, imports)
+            }
         }
         AlgebraicType::Ref(r) => {
             let class_name = python_typename(ctx, *r).to_string();
@@ -188,7 +166,7 @@ fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>
             let import = format!("from .{filename} import {class_name}");
             imports.push(import);
         }
-        _ => (),
+        _ => {}
     }
 }
 
@@ -302,7 +280,7 @@ fn autogen_python_product_table_common(
                         continue;
                     }
                     AlgebraicType::Sum(ty) => {
-                        if !is_option_type(ty) {
+                        if ty.as_option().is_none() {
                             // TODO: We don't allow filtering on enums right now, its possible we may consider it for the future.
                             continue;
                         }
@@ -381,7 +359,7 @@ fn autogen_python_product_table_common(
 
                 let python_field_name = field_name.to_string().replace("r#", "");
                 match &field.algebraic_type {
-                    AlgebraicType::Sum(sum_type) if is_option_type(sum_type) => {
+                    AlgebraicType::Sum(sum_type) if sum_type.as_option().is_some() => {
                         reducer_args.push(format!("{{'0': [self.{}]}}", python_field_name))
                     }
                     AlgebraicType::Sum(_) => unimplemented!(),
@@ -494,20 +472,14 @@ pub fn encode_type<'a>(
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
         AlgebraicType::Product(_) => unreachable!(),
-        AlgebraicType::Sum(sum_type) if is_option_type(sum_type) => {
-            write!(
+        AlgebraicType::Sum(sum_type) => match sum_type.as_option() {
+            Some(inner_ty) => write!(
                 f,
                 "{{'0': {}}} if value is not None else {{}}",
-                encode_type(
-                    ctx,
-                    vecnest,
-                    &sum_type.variants[0].algebraic_type,
-                    format!("{value}"),
-                    ref_prefix
-                )
-            )
-        }
-        AlgebraicType::Sum(_sum_type) => unimplemented!(),
+                encode_type(ctx, vecnest, inner_ty, format!("{value}"), ref_prefix),
+            ),
+            None => unimplemented!(),
+        },
         AlgebraicType::Builtin(b) => fmt::Display::fmt(&encode_builtintype(ctx, vecnest, b, &value, ref_prefix), f),
         AlgebraicType::Ref(r) => {
             let algebraic_type = &ctx.typespace.types[r.idx()];
