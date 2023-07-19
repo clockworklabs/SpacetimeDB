@@ -24,10 +24,8 @@ pub fn main() {
     let logger_path = tmp_dir.path();
     let scheduler_path = tmp_dir.path().join("scheduler");
 
-    let identity = Identity {
-        data: hash_bytes(b"This is a fake identity.").data,
-    };
-    let address = Address::from_slice(&identity.as_slice()[0..16]);
+    let identity = Identity::from_byte_array(hash_bytes(b"This is a fake identity.").data);
+    let address = Address::from_slice(&identity.as_bytes()[..16]);
 
     let dbic = DatabaseInstanceContext::new(0, 0, false, identity, address, db_path.to_path_buf(), logger_path);
 

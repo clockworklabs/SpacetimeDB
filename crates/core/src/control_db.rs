@@ -174,7 +174,7 @@ impl ControlDb {
                 }
             }
             None => {
-                tree.insert(tld.as_lowercase().as_bytes(), owner_identity.as_slice())?;
+                tree.insert(tld.as_lowercase().as_bytes(), owner_identity.as_bytes())?;
                 Ok(RegisterTldResult::Success { domain: tld })
             }
         }
@@ -251,7 +251,7 @@ impl ControlDb {
         let name = b"clockworklabs:";
         let bytes = [name, bytes].concat();
         let hash = hash_bytes(bytes);
-        let address = Address::from_slice(&hash.as_slice()[0..16]);
+        let address = Address::from_slice(&hash.as_slice()[..16]);
         Ok(address)
     }
 
@@ -262,7 +262,7 @@ impl ControlDb {
         let tree = self.db.open_tree("email")?;
         let identity_email = IdentityEmail { identity, email };
         let buf = bsatn::to_vec(&identity_email).unwrap();
-        tree.insert(identity.as_slice(), buf)?;
+        tree.insert(identity.as_bytes(), buf)?;
         Ok(())
     }
 
