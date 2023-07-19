@@ -700,7 +700,7 @@ impl ReducerCallbacks {
             log::warn!("Received Event with function_call of None");
             return None;
         };
-        let identity = Identity { bytes: caller_identity };
+        let identity = Identity::from_bytes(caller_identity);
         let Some(status) = parse_status(status) else {
             log::warn!("Received Event with unknown status {:?}", status);
             return None;
@@ -829,7 +829,7 @@ impl CredentialStore {
         }
 
         let creds = Credentials {
-            identity: Identity { bytes: identity },
+            identity: Identity::from_bytes(identity),
             token: Token { string: token },
         };
 

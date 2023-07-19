@@ -838,7 +838,7 @@ pub async fn publish(
         .map_err(log_and_500)?
     {
         Some(db) => {
-            if Identity::from_slice(db.identity.as_slice()) != auth.identity {
+            if db.identity != auth.identity {
                 return Err((StatusCode::BAD_REQUEST, "Identity does not own this database.").into());
             }
 

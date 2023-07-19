@@ -44,8 +44,8 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
     fmt_fn(move |f| match ty {
         AlgebraicType::Sum(sum_type) => {
             // This better be an option type
-            if is_option_type(sum_type) {
-                match &sum_type.variants[0].algebraic_type {
+            if let Some(inner_ty) = sum_type.as_option() {
+                match inner_ty {
                     Builtin(b) => match b {
                         BuiltinType::Bool
                         | BuiltinType::I8
@@ -60,15 +60,15 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
                         | BuiltinType::U128
                         | BuiltinType::F32
                         | BuiltinType::F64 => {
-                            // This has to be a nullable type
-                            write!(f, "{}?", ty_fmt(ctx, &sum_type.variants[0].algebraic_type, namespace))
+                            // This has to be a nullable type.
+                            write!(f, "{}?", ty_fmt(ctx, inner_ty, namespace))
                         }
                         _ => {
-                            write!(f, "{}", ty_fmt(ctx, &sum_type.variants[0].algebraic_type, namespace))
+                            write!(f, "{}", ty_fmt(ctx, inner_ty, namespace))
                         }
                     },
                     _ => {
-                        write!(f, "{}", ty_fmt(ctx, &sum_type.variants[0].algebraic_type, namespace))
+                        write!(f, "{}", ty_fmt(ctx, inner_ty, namespace))
                     }
                 }
             } else {
@@ -171,8 +171,8 @@ fn convert_type<'a>(
     fmt_fn(move |f| match ty {
         AlgebraicType::Product(_) => unimplemented!(),
         AlgebraicType::Sum(sum_type) => {
-            if is_option_type(sum_type) {
-                match &sum_type.variants[0].algebraic_type {
+            if let Some(inner_ty) = sum_type.as_option() {
+                match inner_ty {
                     Builtin(ty) => match ty {
                         BuiltinType::Bool
                         | BuiltinType::I8
@@ -190,15 +190,15 @@ fn convert_type<'a>(
                             f,
                             "{}.AsSumValue().tag == 1 ? null : new {}?({}.AsSumValue().value{})",
                             value,
-                            ty_fmt(ctx, &sum_type.variants[0].algebraic_type, namespace),
+                            ty_fmt(ctx, inner_ty, namespace),
                             value,
-                            &convert_type(ctx, vecnest, &sum_type.variants[0].algebraic_type, "", namespace),
+                            &convert_type(ctx, vecnest, inner_ty, "", namespace),
                         ),
                         _ => fmt::Display::fmt(
                             &convert_type(
                                 ctx,
                                 vecnest,
-                                &sum_type.variants[0].algebraic_type,
+                                inner_ty,
                                 format_args!("{}.AsSumValue().tag == 1 ? null : {}.AsSumValue().value", value, value),
                                 namespace,
                             ),
@@ -209,7 +209,7 @@ fn convert_type<'a>(
                         &convert_type(
                             ctx,
                             vecnest,
-                            &sum_type.variants[0].algebraic_type,
+                            inner_ty,
                             format_args!("{}.AsSumValue().tag == 1 ? null : {}.AsSumValue().value", value, value),
                             namespace,
                         ),
@@ -259,24 +259,6 @@ fn convert_type<'a>(
 // can maybe do something fancy with this in the future
 fn csharp_typename(ctx: &GenCtx, typeref: AlgebraicTypeRef) -> &str {
     ctx.names[typeref.idx()].as_deref().expect("tuples should have names")
-}
-
-fn is_option_type(ty: &SumType) -> bool {
-    if ty.variants.len() != 2 {
-        return false;
-    }
-
-    if ty.variants[0].name.clone().expect("Variants should have names!") != "some"
-        || ty.variants[1].name.clone().expect("Variants should have names!") != "none"
-    {
-        return false;
-    }
-
-    if let AlgebraicType::Product(none_type) = &ty.variants[1].algebraic_type {
-        none_type.elements.is_empty()
-    } else {
-        false
-    }
 }
 
 macro_rules! indent_scope {
@@ -605,7 +587,7 @@ fn autogen_csharp_product_table_common(
                         }
                     }
                     AlgebraicType::Sum(sum) => {
-                        if is_option_type(sum) {
+                        if sum.as_option().is_some() {
                             writeln!(output, "[SpacetimeDB.Some]").unwrap();
                         } else {
                             unimplemented!()
@@ -1180,10 +1162,10 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
             match &arg.algebraic_type {
                 AlgebraicType::Sum(sum_type) => {
-                    if is_option_type(sum_type) {
-                        json_args.push_str(format!("new SomeWrapper({})", arg_name).as_str());
+                    if sum_type.as_option().is_some() {
+                        json_args.push_str(&format!("new SomeWrapper({})", arg_name));
                     } else {
-                        json_args.push_str(arg_name.as_str());
+                        json_args.push_str(&arg_name);
                     }
                 }
                 AlgebraicType::Product(_) => {

@@ -728,14 +728,14 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
                 arg_bytes,
             } => self
                 .instance
-                .call_reducer(id, budget, &sender.data, timestamp, arg_bytes),
+                .call_reducer(id, budget, sender.as_bytes(), timestamp, arg_bytes),
             InstanceOp::ConnDisconn {
                 conn,
                 sender,
                 timestamp,
             } => self
                 .instance
-                .call_connect_disconnect(conn, budget, &sender.data, timestamp),
+                .call_connect_disconnect(conn, budget, sender.as_bytes(), timestamp),
         });
 
         let ExecuteResult {

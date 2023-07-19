@@ -81,8 +81,7 @@ pub fn invoke_connection_func<R: ReducerResult>(
 
 /// Creates a reducer context from the given `sender` and `timestamp`.
 fn assemble_context(sender: Buffer, timestamp: u64) -> ReducerContext {
-    let sender = sender.read_array::<32>();
-    let sender = Identity { data: sender };
+    let sender = Identity::from_byte_array(sender.read_array::<32>());
 
     let timestamp = Timestamp::UNIX_EPOCH + Duration::from_micros(timestamp);
 
