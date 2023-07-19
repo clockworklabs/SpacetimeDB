@@ -25,7 +25,7 @@ use super::{
 /// //            v               v             v
 /// //   ----------------  --------------- ----------
 ///     [T: Deserialize<'de>] where [T: Copy] std::rc::Rc<T>,
-/// //  The `deserialize` implementation where `de`
+/// //  The `deserialize` implementation where `de` is the `Deserializer<'de>`
 /// //  and the expression right of `=>` is the body of `deserialize`.
 ///     de => T::deserialize(de).map(std::rc::Rc::new)
 /// );
