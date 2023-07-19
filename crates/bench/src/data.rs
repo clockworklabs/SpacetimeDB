@@ -1,35 +1,6 @@
-use crate::utils::{encode, ResultBench, START_B};
+use crate::utils::{encode, START_B};
 use clap::ValueEnum;
-use std::marker::PhantomData;
 use std::ops::Range;
-
-pub trait BuildDb {
-    fn build(prefill: bool) -> ResultBench<Self>
-    where
-        Self: Sized;
-}
-
-pub struct Pool<T> {
-    pub(crate) instance: u8,
-    pub(crate) prefill: bool,
-    _x: PhantomData<T>,
-}
-
-impl<T: BuildDb> Pool<T> {
-    pub fn new(prefill: bool) -> ResultBench<Self> {
-        Ok(Self {
-            instance: 0,
-            prefill,
-            _x: Default::default(),
-        })
-    }
-
-    #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> ResultBench<T> {
-        self.instance += 1;
-        T::build(self.prefill)
-    }
-}
 
 #[derive(Debug)]
 pub struct Data {
