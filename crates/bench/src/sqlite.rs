@@ -45,6 +45,34 @@ pub fn create_db(db_instance: usize) -> ResultBench<PathBuf> {
     Ok(path)
 }
 
+pub fn create_dbs(total_dbs: usize) -> ResultBench<()> {
+    let path = db_path();
+
+    if path.exists() {
+        std::fs::remove_dir_all(&path)?;
+    }
+
+    for i in 0..total_dbs {
+        create_db(i)?;
+    }
+    set_counter(0)?;
+
+    Ok(())
+}
+
+pub fn get_counter() -> ResultBench<usize> {
+    let x = std::fs::read_to_string(db_path().join("counter"))?;
+    let counter = x.parse::<usize>()?;
+
+    Ok(counter)
+}
+
+//This is a hack to be able to select which pre-create db to use
+pub fn set_counter(count: usize) -> ResultBench<()> {
+    std::fs::write(db_path().join("counter"), count.to_string())?;
+    Ok(())
+}
+
 pub fn insert_tx_per_row(conn: &mut Connection, run: Runs) -> ResultBench<()> {
     for row in run.data() {
         conn.execute(
@@ -54,37 +82,47 @@ pub fn insert_tx_per_row(conn: &mut Connection, run: Runs) -> ResultBench<()> {
     }
     Ok(())
 }
-//
-// pub fn insert_tx(pool: &mut Pool<Connection>, _run: Runs) -> ResultBench<()> {
-//     Ok(())
-// }
-//
-// pub fn select_no_index(pool: &mut Pool<Connection>, run: Runs) -> ResultBench<()> {
-//     // let db = pool.next()?;
-//     // for i in run.range().skip(1) {
-//     //     let i = i as u64;
-//     //     let sql = &format!(
-//     //         "SELECT * FROM data WHERE b >= {} AND b < {}",
-//     //         i * START_B,
-//     //         START_B + (i * START_B)
-//     //     );
-//     //
-//     //     //dbg!(sql);
-//     //     let mut stmt = db.prepare(sql)?;
-//     //     let _r = stmt
-//     //         .query_map([], |row| {
-//     //             Ok(Data {
-//     //                 a: row.get(0)?,
-//     //                 b: row.get(1)?,
-//     //                 c: row.get(2)?,
-//     //             })
-//     //         })?
-//     //         .collect::<Vec<_>>();
-//     //     assert_eq!(_r.len() as u64, START_B);
-//     //     //dbg!(_r.len());
-//     // }
-//     Ok(())
-// }
+
+pub fn insert_tx(conn: &mut Connection, run: Runs) -> ResultBench<()> {
+    let tx = conn.transaction()?;
+
+    for row in run.data() {
+        tx.execute(
+            &format!("INSERT INTO data VALUES({} ,{}, '{}');", row.a, row.b, row.c),
+            (),
+        )?;
+    }
+
+    tx.commit()?;
+
+    Ok(())
+}
+
+pub fn select_no_index(conn: &mut Connection, run: Runs) -> ResultBench<()> {
+    for i in run.range().skip(1) {
+        let i = i as u64;
+        let sql = &format!(
+            "SELECT * FROM data WHERE b >= {} AND b < {}",
+            i * START_B,
+            START_B + (i * START_B)
+        );
+
+        //dbg!(sql);
+        let mut stmt = conn.prepare(sql)?;
+        let _r = stmt
+            .query_map([], |row| {
+                Ok(Data {
+                    a: row.get(0)?,
+                    b: row.get(1)?,
+                    c: row.get(2)?,
+                })
+            })?
+            .collect::<Vec<_>>();
+        assert_eq!(_r.len() as u64, START_B);
+        //dbg!(_r.len());
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

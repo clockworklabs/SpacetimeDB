@@ -9,11 +9,12 @@ use std::path::PathBuf;
 
 type DbResult = (RelationalDB, PathBuf, u32);
 
+fn base_path() -> PathBuf {
+    temp_dir().join("stdb_bench")
+}
+
 pub fn db_path(db_instance: usize) -> PathBuf {
-    let mut tmp_dir = temp_dir();
-    tmp_dir.push("stdb_bench");
-    tmp_dir.push(db_instance.to_string());
-    tmp_dir
+    base_path().join(db_instance.to_string())
 }
 
 pub fn open_conn(path: &PathBuf) -> ResultBench<DbResult> {
@@ -26,14 +27,14 @@ pub fn open_conn(path: &PathBuf) -> ResultBench<DbResult> {
         .iter()
         .find(|x| x.table_type == StTableType::User)
         .map(|x| x.table_id)
-        .unwrap();
+        .expect("Not find table Inventory");
 
     stdb.rollback_tx(tx);
 
     Ok((stdb, path.clone(), table_id))
 }
 
-pub fn create_db(db_instance: usize) -> ResultBench<()> {
+pub fn create_db(db_instance: usize) -> ResultBench<PathBuf> {
     let path = db_path(db_instance);
     if path.exists() {
         std::fs::remove_dir_all(&path)?;
@@ -53,37 +54,58 @@ pub fn create_db(db_instance: usize) -> ResultBench<()> {
 
     stdb.commit_tx(tx)?;
 
+    Ok(path)
+}
+
+pub fn create_dbs(total_dbs: usize) -> ResultBench<()> {
+    let path = base_path();
+
+    if path.exists() {
+        std::fs::remove_dir_all(&path)?;
+    }
+
+    for i in 0..total_dbs {
+        create_db(i)?;
+    }
+
+    set_counter(0)?;
+
     Ok(())
 }
-//
-// fn insert_row(db: &RelationalDB, tx: &mut MutTxId, table_id: u32, run: Runs) -> ResultBench<()> {
-//     for row in run.data() {
-//         db.insert_raw(
-//             tx,
-//             table_id,
-//             product![
-//                 AlgebraicValue::I32(row.a),
-//                 AlgebraicValue::U64(row.b),
-//                 AlgebraicValue::String(row.c),
-//             ],
-//         )?;
-//     }
-//
-//     Ok(())
-// }
-//
-// impl BuildDb for DbResult {
-//     fn build(prefill: bool) -> ResultBench<Self>
-//     where
-//         Self: Sized,
-//     {
-//         let db = init_db("test", prefill)?;
-//
-//         Ok(db)
-//     }
-// }
+
+pub fn get_counter() -> ResultBench<usize> {
+    let x = std::fs::read_to_string(base_path().join("counter"))?;
+    let counter = x.parse::<usize>()?;
+
+    Ok(counter)
+}
+
+//This is a hack to be able to select which pre-create db to use
+pub fn set_counter(count: usize) -> ResultBench<()> {
+    std::fs::write(base_path().join("counter"), count.to_string())?;
+    Ok(())
+}
 
 pub fn insert_tx_per_row(conn: &RelationalDB, table_id: u32, run: Runs) -> ResultBench<()> {
+    for row in run.data() {
+        let mut tx = conn.begin_tx();
+
+        conn.insert(
+            &mut tx,
+            table_id,
+            product![
+                AlgebraicValue::I32(row.a),
+                AlgebraicValue::U64(row.b),
+                AlgebraicValue::String(row.c),
+            ],
+        )?;
+
+        conn.commit_tx(tx)?;
+    }
+    Ok(())
+}
+
+pub fn insert_tx(conn: &RelationalDB, table_id: u32, run: Runs) -> ResultBench<()> {
     let mut tx = conn.begin_tx();
 
     for row in run.data() {
@@ -97,35 +119,29 @@ pub fn insert_tx_per_row(conn: &RelationalDB, table_id: u32, run: Runs) -> Resul
             ],
         )?;
     }
+
     conn.commit_tx(tx)?;
+
     Ok(())
 }
-//
-// pub fn insert_tx(pool: &mut Pool<DbResult>, _run: Runs) -> ResultBench<()> {
-//     pool.prefill = true;
-//     pool.next()?;
-//     Ok(())
-// }
-//
-// pub fn select_no_index(pool: &mut Pool<DbResult>, run: Runs) -> ResultBench<()> {
-//     let (conn, _tmp_dir, table_id) = pool.next()?;
-//
-//     let tx = conn.begin_tx();
-//
-//     for i in run.range().skip(1) {
-//         let i = i as u64;
-//         let _r = conn
-//             .iter(&tx, table_id)?
-//             .map(|r| Data {
-//                 a: *r.view().elements[0].as_i32().unwrap(),
-//                 b: *r.view().elements[1].as_u64().unwrap(),
-//                 c: r.view().elements[2].as_string().unwrap().clone(),
-//             })
-//             .filter(|x| x.b >= i * START_B && x.b < (START_B + (i * START_B)))
-//             .collect::<Vec<_>>();
-//
-//         assert_eq!(_r.len() as u64, START_B);
-//         //dbg!(_r.len());
-//     }
-//     Ok(())
-// }
+
+pub fn select_no_index(conn: &RelationalDB, table_id: u32, run: Runs) -> ResultBench<()> {
+    let tx = conn.begin_tx();
+
+    for i in run.range().skip(1) {
+        let i = i as u64;
+        let _r = conn
+            .iter(&tx, table_id)?
+            .map(|r| Data {
+                a: *r.view().elements[0].as_i32().unwrap(),
+                b: *r.view().elements[1].as_u64().unwrap(),
+                c: r.view().elements[2].as_string().unwrap().clone(),
+            })
+            .filter(|x| x.b >= i * START_B && x.b < (START_B + (i * START_B)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(_r.len() as u64, START_B);
+        //dbg!(_r.len());
+    }
+    Ok(())
+}
