@@ -981,12 +981,12 @@ export class SpacetimeDBClient {
    * @param reducerName The name of the reducer to call
    * @param args The arguments to pass to the reducer
    */
-  public call(reducerName: String, serializer: Serializer) {
+  public call(reducerName: string, serializer: Serializer) {
     let message: any;
     if (this.protocol === "binary") {
       const pmessage: ProtobufMessage = {
         functionCall: {
-          reducer: "create_player",
+          reducer: reducerName,
           argBytes: serializer.args(),
         },
       };
