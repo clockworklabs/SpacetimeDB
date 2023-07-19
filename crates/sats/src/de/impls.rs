@@ -395,7 +395,9 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                     .map(ArrayValue::Product),
                 AlgebraicType::Builtin(BuiltinType::Bool) => de_array(deserializer, ArrayValue::Bool),
                 AlgebraicType::Builtin(BuiltinType::I8) => de_array(deserializer, ArrayValue::I8),
-                AlgebraicType::Builtin(BuiltinType::U8) => de_array(deserializer, ArrayValue::U8),
+                AlgebraicType::Builtin(BuiltinType::U8) => {
+                    deserializer.deserialize_bytes(OwnedSliceVisitor).map(ArrayValue::U8)
+                }
                 AlgebraicType::Builtin(BuiltinType::I16) => de_array(deserializer, ArrayValue::I16),
                 AlgebraicType::Builtin(BuiltinType::U16) => de_array(deserializer, ArrayValue::U16),
                 AlgebraicType::Builtin(BuiltinType::I32) => de_array(deserializer, ArrayValue::I32),

@@ -28,7 +28,7 @@ fn test_json_mappings() {
                 ("Unit", AlgebraicType::UNIT_TYPE),
             ])),
         ),
-        ("and_peggy", AlgebraicType::option(AlgebraicType::Builtin(F64))),
+        ("and_peggy", AlgebraicType::option(AlgebraicType::F64)),
     ]);
     let data = r#"
 {
