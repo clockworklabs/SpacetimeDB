@@ -1401,7 +1401,9 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     output.into_inner()
 }
 
-pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String, String)> {
+pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(String, String)>> {
+    let mut result = Vec::new();
+
     let reducers: Vec<&ReducerDef> = items
         .iter()
         .map(|i| {
@@ -1551,5 +1553,29 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
         writeln!(output, "}}").unwrap();
     }
 
-    vec![("ReducerEvent.cs".into(), output.into_inner())]
+    result.push(vec![("ReducerEvent.cs".into(), output.into_inner())]);
+
+    output = CodeIndenter::new(String::new());
+
+    writeln!(output, "using SpacetimeDB;").unwrap();
+
+    writeln!(output).unwrap();
+
+    if use_namespace {
+        writeln!(output, "namespace {}", namespace).unwrap();
+        writeln!(output, "{{").unwrap();
+        output.indent(1);
+    }
+
+    writeln!(output, "[ReducerClass]").unwrap();
+    writeln!(output, "public partial class Reducer {{ }}").unwrap();
+
+    if use_namespace {
+        output.dedent(1);
+        writeln!(output, "}}").unwrap();
+    }
+
+    result.push(vec![("Reducer.cs".into(), output.into_inner())]);
+
+    result
 }

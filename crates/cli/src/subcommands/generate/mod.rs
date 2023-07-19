@@ -159,12 +159,14 @@ pub fn generate<'a>(wasm_file: &'a Path, lang: Language, namespace: &'a str) -> 
         .filter_map(|item| item.generate(&ctx, lang, namespace))
         .collect();
     for global in generate_globals(&ctx, lang, namespace, &items) {
-        files.push(global);
+        for file in global.iter() {
+            files.push((file.0.clone(), file.1.clone()));
+        }
     }
     Ok(files)
 }
 
-fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenItem]) -> Vec<(String, String)> {
+fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenItem]) -> Vec<Vec<(String, String)>> {
     match lang {
         Language::Csharp => csharp::autogen_csharp_globals(items, namespace),
         Language::TypeScript => typescript::autogen_typescript_globals(ctx, items),
