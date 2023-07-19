@@ -24,10 +24,9 @@ default-members = ["crates/cli"]
 
 [profile.release]
 opt-level = 3
-debug = true
 debug-assertions = false
 overflow-checks = false
-lto = true
+lto = "thin"
 panic = 'unwind'
 incremental = false
 codegen-units = 16
