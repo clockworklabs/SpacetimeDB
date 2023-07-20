@@ -79,9 +79,8 @@ mod sym {
 ///       | index(btree | hash [, name = string] [, field_name:ident]*)
 /// ```
 ///
-/// Note that using `#[autoinc]` on a field
-/// does not also imply `#[primarykey]` or `#[unique]`.
-/// If those semantics are desired, those attributes should also be used.
+/// For description of the field attributes on `#[spacetimedb(table)]` structs,
+/// see [`TableType`](spacetimedb_tabletype).
 #[proc_macro_attribute]
 pub fn spacetimedb(macro_args: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let item: TokenStream = item.into();
@@ -481,6 +480,9 @@ fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
 ///    When a row is inserted with the annotated field set to `0` (zero),
 ///    the sequence is incremented, and this value is used instead.
 ///    Can only be used on numeric types and may be combined with indexes.
+///
+///    Note that using `#[autoinc]` on a field does not also imply `#[primarykey]` or `#[unique]`.
+///    If those semantics are desired, those attributes should also be used.
 ///
 /// * `#[unique]`
 ///
