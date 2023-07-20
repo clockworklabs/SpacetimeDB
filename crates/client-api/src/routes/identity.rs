@@ -5,6 +5,7 @@ use axum::response::IntoResponse;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 use spacetimedb::auth::identity::encode_token_with_expiry;
+use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::Identity;
 
 use crate::auth::{SpacetimeAuth, SpacetimeAuthHeader};
@@ -98,10 +99,8 @@ impl From<IdentityForUrl> for Identity {
 }
 
 impl<'de> serde::Deserialize<'de> for IdentityForUrl {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        <_>::deserialize(deserializer)
-            .map(Identity::from_byte_array)
-            .map(IdentityForUrl)
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        <_>::deserialize(de).map(|DeserializeWrapper(b)| IdentityForUrl(Identity::from_byte_array(b)))
     }
 }
 
