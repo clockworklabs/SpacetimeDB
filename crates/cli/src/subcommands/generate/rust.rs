@@ -636,7 +636,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     write!(
         out,
-        "pub fn on_{}(mut __callback: impl FnMut(&Identity, Status",
+        "pub fn on_{}(mut __callback: impl FnMut(&Identity, &Status",
         func_name
     )
     .unwrap();
@@ -679,7 +679,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     write!(
         out,
-        "pub fn once_on_{}(__callback: impl FnOnce(&Identity, Status",
+        "pub fn once_on_{}(__callback: impl FnOnce(&Identity, &Status",
         func_name
     )
     .unwrap();
