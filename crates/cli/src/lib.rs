@@ -4,11 +4,11 @@ mod edit_distance;
 mod subcommands;
 mod tasks;
 pub mod util;
-
 use clap::{ArgMatches, Command};
 
 pub use config::Config;
 pub use subcommands::*;
+use spacetimedb_standalone::subcommands::start;
 
 pub fn get_subcommands() -> Vec<Command> {
     vec![
@@ -29,6 +29,7 @@ pub fn get_subcommands() -> Vec<Command> {
         #[cfg(feature = "tracelogging")]
         tracelog::cli(),
         server::cli(),
+        start::cli(false),
     ]
 }
 

@@ -3967,6 +3967,7 @@ dependencies = [
  "serde_json",
  "slab",
  "spacetimedb-lib",
+ "spacetimedb-standalone",
  "syntect",
  "tabled",
  "tempfile",
