@@ -15,7 +15,6 @@ pub fn cli(is_standalone: bool) -> clap::Command {
             Arg::new("listen_addr")
                 .long("listen-addr")
                 .short('l')
-                .required(false)
                 .default_value(if is_standalone {
                     "0.0.0.0:80"
                 } else {
@@ -26,12 +25,11 @@ pub fn cli(is_standalone: bool) -> clap::Command {
         .arg(
             Arg::new("log_conf_path")
                 .long("log-conf-path")
-                .required(false)
                 .help("The path of the file that contains the log configuration for SpacetimeDB")
         )
         .arg(
             Arg::new("log_dir_path")
-                .long("log_dir_path")
+                .long("log-dir-path")
                 .help("The path to the directory that should contain logs for SpacetimeDB")
         )
         .arg(
@@ -43,26 +41,22 @@ pub fn cli(is_standalone: bool) -> clap::Command {
             Arg::new("allow_create")
                 .long("allow-create")
                 .action(SetTrue)
-                .required(false)
-                .help("The address and port where SpacetimeDB should listen for connections"),
+                .help("Allows for the creation of files and directories that don't exist")
         )
         .arg(
             Arg::new("enable_tracy")
                 .long("enable-tracy")
                 .action(SetTrue)
-                .required(false)
                 .help("Enable Tracy profiling"),
         )
         .arg(
             Arg::new("jwt_pub_key_path")
                 .long("jwt-pub-key-path")
-                .required(false)
                 .help("The path to the public jwt key for verifying identities"),
         )
         .arg(
             Arg::new("jwt_priv_key_path")
                 .long("jwt-priv-key-path")
-                .required(false)
                 .help("The path to the private jwt key for issuing identities"),
         )
         // We still want to keep the executable name `spacetimedb` when we're executing as a standalone, but
