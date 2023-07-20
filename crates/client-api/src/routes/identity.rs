@@ -87,9 +87,27 @@ pub async fn get_identity(
     Ok(axum::Json(identity_response))
 }
 
+/// A version of `Identity` appropriate for URL de/encoding.
+pub struct IdentityForUrl(Identity);
+
+impl From<IdentityForUrl> for Identity {
+    /// Consumes `self` returning the backing `Identity`.
+    fn from(IdentityForUrl(id): IdentityForUrl) -> Identity {
+        id
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for IdentityForUrl {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        <_>::deserialize(deserializer)
+            .map(Identity::from_byte_array)
+            .map(IdentityForUrl)
+    }
+}
+
 #[derive(Deserialize)]
 pub struct SetEmailParams {
-    identity: Identity,
+    identity: IdentityForUrl,
 }
 
 #[derive(Deserialize)]
@@ -103,6 +121,7 @@ pub async fn set_email(
     Query(SetEmailQueryParams { email }): Query<SetEmailQueryParams>,
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
+    let identity = identity.into();
     let auth = auth.get().ok_or(StatusCode::BAD_REQUEST)?;
 
     if auth.identity != identity {
@@ -119,7 +138,7 @@ pub async fn set_email(
 
 #[derive(Deserialize)]
 pub struct GetDatabasesParams {
-    identity: Identity,
+    identity: IdentityForUrl,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,6 +150,7 @@ pub async fn get_databases(
     State(ctx): State<Arc<dyn ControlCtx>>,
     Path(GetDatabasesParams { identity }): Path<GetDatabasesParams>,
 ) -> axum::response::Result<impl IntoResponse> {
+    let identity = identity.into();
     // Linear scan for all databases that have this identity, and return their addresses
     let all_dbs = ctx.control_db().get_databases().await.map_err(|e| {
         log::error!("Failure when retrieving databases for search: {}", e);
