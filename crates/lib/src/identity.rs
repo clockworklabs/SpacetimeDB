@@ -106,12 +106,12 @@ impl hex::FromHex for Identity {
 #[cfg(feature = "serde")]
 impl serde::Serialize for Identity {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        ser::serde::serialize_to(self, serializer)
+        spacetimedb_sats::ser::serde::serialize_to(self, serializer)
     }
 }
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for Identity {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        de::serde::deserialize_from(deserializer)
+        spacetimedb_sats::de::serde::deserialize_from(deserializer)
     }
 }
