@@ -1,4 +1,4 @@
-use clap::{ArgMatches, Command, Parser};
+use clap::Command;
 use tokio::runtime::Builder;
 
 use std::panic;
@@ -7,7 +7,7 @@ use spacetimedb_standalone::*;
 
 async fn async_main() -> anyhow::Result<()> {
     let (cmd, subcommand_args) = util::match_subcommand_or_exit(get_command());
-    exec_subcommand(&cmd, &subcommand_args).await?;
+    exec_subcommand(&cmd, &subcommand_args, true).await?;
     Ok(())
 }
 
@@ -28,7 +28,7 @@ fn get_command() -> Command {
 └──────────────────────────────────────────────────────────┘
 Example usage:
 ┌──────────────────────────────────────────────────────────┐
-│ # spacetimedb start                                      │
+│ machine# spacetimedb start                               │
 └──────────────────────────────────────────────────────────┘
 "#,
         )

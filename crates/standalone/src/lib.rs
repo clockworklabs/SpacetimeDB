@@ -34,34 +34,6 @@ use clap::{ArgMatches, Command};
 use worker_db::WorkerDb;
 use crate::subcommands::{start, version};
 
-#[derive(Debug, Clone)]
-pub struct Config {
-    pub listen_addr: String,
-    pub advertise_addr: String,
-}
-
-impl Config {
-    const DEFAULT_ADDR: &str = "0.0.0.0:80";
-    pub async fn new(listen_addr: String, advertise_addr: Option<String>) -> anyhow::Result<Self> {
-        let advertise_addr = match advertise_addr {
-            Some(a) => a,
-            None if listen_addr == Self::DEFAULT_ADDR => {
-                let hostname = hostname::get().unwrap().into_string().unwrap();
-                let addr = hostname + ":80";
-                let _ = tokio::net::lookup_host(&addr)
-                    .await
-                    .context("failed to resolve hostname")?;
-                addr
-            }
-            None => listen_addr.clone(),
-        };
-        Ok(Self {
-            listen_addr,
-            advertise_addr,
-        })
-    }
-}
-
 pub struct StandaloneEnv {
     worker_db: WorkerDb,
     control_db: ControlDb,
@@ -594,9 +566,9 @@ impl StandaloneEnv {
 }
 
 
-pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec_subcommand(cmd: &str, args: &ArgMatches, is_standalone: bool) -> Result<(), anyhow::Error> {
     match cmd {
-        "start" => start::exec(args).await,
+        "start" => start::exec(args, is_standalone).await,
         "version" => version::exec().await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }

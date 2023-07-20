@@ -52,6 +52,7 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "server" => server::exec(config, args).await,
         #[cfg(feature = "tracelogging")]
         "tracelog" => tracelog::exec(config, args).await,
+        "start" => start::exec(args, false).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
