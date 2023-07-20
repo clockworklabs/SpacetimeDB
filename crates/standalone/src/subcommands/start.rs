@@ -73,15 +73,15 @@ pub async fn exec(args: &ArgMatches, is_standalone: bool) -> anyhow::Result<()> 
     let home_dir = std::env::var("HOME")?;
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
     let allow_create = args.get_flag("allow_create");
-    let log_conf_path = args.get_one::<String>("log_conf_path").map(|a|a.clone()).or(
+    let log_conf_path = args.get_one::<String>("log_conf_path").cloned().or(
         if is_standalone { None } else { Some(format!("{}/.spacetime/log.conf", home_dir)) });
-    let log_dir_path = args.get_one::<String>("log_dir_path").map(|a|a.clone()).or(
+    let log_dir_path = args.get_one::<String>("log_dir_path").cloned().or(
     if is_standalone { None } else { Some(format!("{}/.spacetime", home_dir)) });
-    let stdb_path = args.get_one::<String>("database_path").map(|a|a.clone()).or(
+    let stdb_path = args.get_one::<String>("database_path").cloned().or(
         if is_standalone { None } else { Some(format!("{}/.spacetime/stdb", home_dir)) });
-    let jwt_pub_key_path = args.get_one::<String>("jwt_pub_key_path").map(|a|a.clone()).or(
+    let jwt_pub_key_path = args.get_one::<String>("jwt_pub_key_path").cloned().or(
         if is_standalone { None } else { Some(format!("{}/.spacetime/id_ecdsa.pub", home_dir)) });
-    let jwt_priv_key_path = args.get_one::<String>("jwt_pub_key_path").map(|a|a.clone()).or(
+    let jwt_priv_key_path = args.get_one::<String>("jwt_pub_key_path").cloned().or(
         if is_standalone { None } else { Some(format!("{}/.spacetime/id_ecdsa", home_dir)) });
     let enable_tracy = args.get_flag("enable_tracy");
 
