@@ -1,9 +1,6 @@
-use std::fmt;
-
-use sats::{impl_st, ProductTypeElement};
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
-
-use crate::sats::{self, de, ser, AlgebraicType};
+use spacetimedb_sats::{impl_st, AlgebraicType, ProductTypeElement};
+use std::fmt;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuthCtx {
@@ -42,7 +39,9 @@ impl Identity {
 
     /// Returns an `Identity` defined as the given `bytes` byte array.
     pub fn from_byte_array(bytes: [u8; 32]) -> Self {
-        Self { __identity_bytes: bytes }
+        Self {
+            __identity_bytes: bytes,
+        }
     }
 
     /// Returns an `Identity` defined as the given byte `slice`.
@@ -105,12 +104,12 @@ impl hex::FromHex for Identity {
 #[cfg(feature = "serde")]
 impl serde::Serialize for Identity {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        ser::serde::serialize_to(self, serializer)
+        spacetimedb_sats::ser::serde::serialize_to(self, serializer)
     }
 }
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for Identity {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        de::serde::deserialize_from(deserializer)
+        spacetimedb_sats::de::serde::deserialize_from(deserializer)
     }
 }
