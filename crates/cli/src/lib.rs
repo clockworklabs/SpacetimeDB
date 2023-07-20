@@ -7,8 +7,8 @@ pub mod util;
 use clap::{ArgMatches, Command};
 
 pub use config::Config;
-pub use subcommands::*;
 use spacetimedb_standalone::subcommands::start;
+pub use subcommands::*;
 
 pub fn get_subcommands() -> Vec<Command> {
     vec![

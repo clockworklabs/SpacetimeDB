@@ -3,7 +3,9 @@ pub mod subcommands;
 pub mod util;
 mod worker_db;
 
+use crate::subcommands::{start, version};
 use anyhow::Context;
+use clap::{ArgMatches, Command};
 use openssl::ec::{EcGroup, EcKey};
 use openssl::nid::Nid;
 use openssl::pkey::PKey;
@@ -30,9 +32,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use clap::{ArgMatches, Command};
 use worker_db::WorkerDb;
-use crate::subcommands::{start, version};
 
 pub struct StandaloneEnv {
     worker_db: WorkerDb,
@@ -565,7 +565,6 @@ impl StandaloneEnv {
     }
 }
 
-
 pub async fn exec_subcommand(cmd: &str, args: &ArgMatches, is_standalone: bool) -> Result<(), anyhow::Error> {
     match cmd {
         "start" => start::exec(args, is_standalone).await,
@@ -575,8 +574,5 @@ pub async fn exec_subcommand(cmd: &str, args: &ArgMatches, is_standalone: bool) 
 }
 
 pub fn get_subcommands() -> Vec<Command> {
-    vec![
-        start::cli(true),
-        version::cli(),
-    ]
+    vec![start::cli(true), version::cli()]
 }

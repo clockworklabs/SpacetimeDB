@@ -1,12 +1,12 @@
+use crate::routes::router;
+use crate::util::{create_dir_or_err, create_file_with_contents};
+use crate::StandaloneEnv;
+use clap::ArgAction::SetTrue;
+use clap::{Arg, ArgMatches};
+use spacetimedb::db::db_metrics;
+use spacetimedb::{startup, worker_metrics};
 use std::net::TcpListener;
 use std::sync::Arc;
-use clap::{Arg, ArgMatches};
-use clap::ArgAction::SetTrue;
-use spacetimedb::{startup, worker_metrics};
-use spacetimedb::db::db_metrics;
-use crate::routes::router;
-use crate::StandaloneEnv;
-use crate::util::{create_dir_or_err, create_file_with_contents};
 
 pub fn cli(is_standalone: bool) -> clap::Command {
     clap::Command::new("start")
@@ -15,33 +15,29 @@ pub fn cli(is_standalone: bool) -> clap::Command {
             Arg::new("listen_addr")
                 .long("listen-addr")
                 .short('l')
-                .default_value(if is_standalone {
-                    "0.0.0.0:80"
-                } else {
-                    "127.0.0.1:3000"
-                })
+                .default_value(if is_standalone { "0.0.0.0:80" } else { "127.0.0.1:3000" })
                 .help("The address and port where SpacetimeDB should listen for connections"),
         )
         .arg(
             Arg::new("log_conf_path")
                 .long("log-conf-path")
-                .help("The path of the file that contains the log configuration for SpacetimeDB")
+                .help("The path of the file that contains the log configuration for SpacetimeDB"),
         )
         .arg(
             Arg::new("log_dir_path")
                 .long("log-dir-path")
-                .help("The path to the directory that should contain logs for SpacetimeDB")
+                .help("The path to the directory that should contain logs for SpacetimeDB"),
         )
         .arg(
             Arg::new("database_path")
                 .long("database-path")
-                .help("The path to the directory that should contain the database files for SpacetimeDB")
+                .help("The path to the directory that should contain the database files for SpacetimeDB"),
         )
         .arg(
             Arg::new("allow_create")
                 .long("allow-create")
                 .action(SetTrue)
-                .help("Allows for the creation of files and directories that don't exist")
+                .help("Allows for the creation of files and directories that don't exist"),
         )
         .arg(
             Arg::new("enable_tracy")
@@ -73,20 +69,45 @@ pub async fn exec(args: &ArgMatches, is_standalone: bool) -> anyhow::Result<()> 
     let home_dir = std::env::var("HOME")?;
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
     let allow_create = args.get_flag("allow_create");
-    let log_conf_path = args.get_one::<String>("log_conf_path").cloned().or(
-        if is_standalone { None } else { Some(format!("{}/.spacetime/log.conf", home_dir)) });
-    let log_dir_path = args.get_one::<String>("log_dir_path").cloned().or(
-    if is_standalone { None } else { Some(format!("{}/.spacetime", home_dir)) });
-    let stdb_path = args.get_one::<String>("database_path").cloned().or(
-        if is_standalone { None } else { Some(format!("{}/.spacetime/stdb", home_dir)) });
-    let jwt_pub_key_path = args.get_one::<String>("jwt_pub_key_path").cloned().or(
-        if is_standalone { None } else { Some(format!("{}/.spacetime/id_ecdsa.pub", home_dir)) });
-    let jwt_priv_key_path = args.get_one::<String>("jwt_pub_key_path").cloned().or(
-        if is_standalone { None } else { Some(format!("{}/.spacetime/id_ecdsa", home_dir)) });
+    let log_conf_path = args.get_one::<String>("log_conf_path").cloned().or(if is_standalone {
+        None
+    } else {
+        Some(format!("{}/.spacetime/log.conf", home_dir))
+    });
+    let log_dir_path = args.get_one::<String>("log_dir_path").cloned().or(if is_standalone {
+        None
+    } else {
+        Some(format!("{}/.spacetime", home_dir))
+    });
+    let stdb_path = args.get_one::<String>("database_path").cloned().or(if is_standalone {
+        None
+    } else {
+        Some(format!("{}/.spacetime/stdb", home_dir))
+    });
+    let jwt_pub_key_path = args
+        .get_one::<String>("jwt_pub_key_path")
+        .cloned()
+        .or(if is_standalone {
+            None
+        } else {
+            Some(format!("{}/.spacetime/id_ecdsa.pub", home_dir))
+        });
+    let jwt_priv_key_path = args
+        .get_one::<String>("jwt_pub_key_path")
+        .cloned()
+        .or(if is_standalone {
+            None
+        } else {
+            Some(format!("{}/.spacetime/id_ecdsa", home_dir))
+        });
     let enable_tracy = args.get_flag("enable_tracy");
 
     if let Some(log_conf_path) = log_conf_path {
-        create_file_with_contents(allow_create, &log_conf_path, include_str!("../../../../crates/standalone/log.conf"))?;
+        create_file_with_contents(
+            allow_create,
+            &log_conf_path,
+            include_str!("../../../../crates/standalone/log.conf"),
+        )?;
         std::env::set_var("SPACETIMEDB_LOG_CONFIG", log_conf_path);
     }
 

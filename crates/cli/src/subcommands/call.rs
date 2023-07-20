@@ -246,21 +246,23 @@ async fn schema_json(config: Config, address: &str, auth_header: &Option<String>
 /// Returns all the names of items in `value` that match `type`.
 ///
 /// For example, `type` can be `"reducer"`.
-fn find_of_type_in_schema<'v, 't: 'v>(
-    value: &'v Value,
-    ty: &'t str,
-) -> impl Iterator<Item = (&'v str, &'v Value)> {
-    let entities = match value.as_object()
+fn find_of_type_in_schema<'v, 't: 'v>(value: &'v Value, ty: &'t str) -> impl Iterator<Item = (&'v str, &'v Value)> {
+    let entities = match value
+        .as_object()
         .and_then(|o| o.get("entities"))
-        .and_then(|e| e.as_object()) {
+        .and_then(|e| e.as_object())
+    {
         Some(e) => e,
-        None => return Either::Left(iter::empty())
+        None => return Either::Left(iter::empty()),
     };
 
     let iter = entities
         .into_iter()
         .filter(move |(_, value)| {
-            let obj = match value.as_object() { Some(o) => o, None => return false };
+            let obj = match value.as_object() {
+                Some(o) => o,
+                None => return false,
+            };
             obj.get("type").filter(|x| x.as_str() == Some(ty)).is_some()
         })
         .map(|(key, value)| (key.as_str(), value));

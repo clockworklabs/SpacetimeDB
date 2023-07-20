@@ -1,8 +1,8 @@
-use std::process::exit;
 use reqwest::RequestBuilder;
 use serde::Deserialize;
 use spacetimedb_lib::name::{is_address, DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
 use spacetimedb_lib::Identity;
+use std::process::exit;
 
 use crate::config::{Config, IdentityConfig};
 

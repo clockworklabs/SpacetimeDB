@@ -1,9 +1,9 @@
 use clap::Command;
 use tokio::runtime::Builder;
 
+use spacetimedb_standalone::*;
 use std::panic;
 use std::process;
-use spacetimedb_standalone::*;
 
 async fn async_main() -> anyhow::Result<()> {
     let (cmd, subcommand_args) = util::match_subcommand_or_exit(get_command());
