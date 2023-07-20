@@ -174,7 +174,8 @@ const SPACETIMEDB_IMPORTS: &[&str] = &[
     "use spacetimedb_sdk::{",
     "\tsats::{ser::Serialize, de::Deserialize},",
     "\ttable::{TableType, TableIter, TableWithPrimaryKey},",
-    "\treducer::{Reducer},",
+    "\treducer::{Reducer, ReducerCallbackId, Status},",
+    "\tidentity::Identity,",
     // The `Serialize` and `Deserialize` macros depend on `spacetimedb_lib` existing in
     // the root namespace.
     "\tspacetimedb_lib,",
@@ -554,6 +555,32 @@ fn reducer_function_name(reducer: &ReducerDef) -> String {
     reducer.name.to_case(Case::Snake)
 }
 
+fn iter_reducer_arg_names(reducer: &ReducerDef) -> impl Iterator<Item = Option<String>> + '_ {
+    reducer
+        .args
+        .iter()
+        .map(|elt| elt.name.as_ref().map(|name| name.to_case(Case::Snake)))
+}
+
+fn iter_reducer_arg_types(reducer: &'_ ReducerDef) -> impl Iterator<Item = &'_ AlgebraicType> {
+    reducer.args.iter().map(|elt| &elt.algebraic_type)
+}
+
+fn print_reducer_struct_literal(out: &mut Indenter, reducer: &ReducerDef) {
+    write!(out, "{} ", reducer_type_name(reducer)).unwrap();
+    // TODO: if reducer.args is empty, write a unit struct.
+    out.delimited_block(
+        "{",
+        |out| {
+            for arg_name in iter_reducer_arg_names(reducer) {
+                let name = arg_name.unwrap();
+                writeln!(out, "{},", name).unwrap();
+            }
+        },
+        "}",
+    );
+}
+
 /// Generate a file which defines a struct corresponding to the `reducer`'s arguments,
 /// implements `spacetimedb_sdk::table::Reducer` for it, and defines a helper
 /// function which invokes the reducer.
@@ -580,7 +607,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 
     // Function definition for the convenient caller, which takes normal args, constructs
     // an instance of the struct, and calls `invoke` on it.
-    write!(out, "{}", ALLOW_UNUSED).unwrap();
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     write!(out, "pub fn {}", func_name).unwrap();
 
     // arglist
@@ -595,32 +622,117 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     out.delimited_block(
         "{",
         |out| {
-            // This is a struct literal.
-            write!(out, "{} ", type_name).unwrap();
-            // TODO: if reducer.args is empty, write a unit struct.
+            print_reducer_struct_literal(out, reducer);
+            writeln!(out, ".invoke();").unwrap();
+        },
+        "}\n",
+    );
+
+    out.newline();
+
+    // Function definition for convenient callback function,
+    // which takes a closure fromunpacked args,
+    // and wraps it in a closure from the args struct.
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    write!(
+        out,
+        "pub fn on_{}(mut __callback: impl FnMut(&Identity, Status",
+        func_name
+    )
+    .unwrap();
+    for arg_type in iter_reducer_arg_types(reducer) {
+        write!(out, ", &").unwrap();
+        write_type_ctx(ctx, out, arg_type);
+    }
+    writeln!(out, ") + Send + 'static) -> ReducerCallbackId<{}> ", type_name).unwrap();
+    out.delimited_block(
+        "{",
+        |out| {
+            write!(out, "{}", type_name).unwrap();
             out.delimited_block(
-                "{",
+                "::on_reducer(move |__identity, __status, __args| {",
                 |out| {
-                    for arg in &reducer.args {
-                        let Some(name) = &arg.name else {
-                        panic!("Reducer {} arg has no name: {:?}", reducer.name, arg);
-                    };
-                        let name = name.to_case(Case::Snake);
-                        writeln!(out, "{},", name).unwrap();
-                    }
+                    write!(out, "let ").unwrap();
+                    print_reducer_struct_literal(out, reducer);
+                    writeln!(out, " = __args;").unwrap();
+                    out.delimited_block(
+                        "__callback(",
+                        |out| {
+                            writeln!(out, "__identity,").unwrap();
+                            writeln!(out, "__status,").unwrap();
+                            for arg_name in iter_reducer_arg_names(reducer) {
+                                writeln!(out, "{},", arg_name.unwrap()).unwrap();
+                            }
+                        },
+                        ");\n",
+                    );
                 },
-                "}.invoke();\n",
+                "})\n",
             );
         },
         "}\n",
     );
 
-    // TODO: generate `pub fn on_{REDUCER_NAME}` function which calls
-    //       `Reducer::on_reducer` to register a callback. Like the relationship between
-    //       `pub fn {REDUCER_NAME}` and `Reducer::invoke`, the callback passed to
-    //       `on_{REDUCER_NAME}` should take an arglist, not an instance of the reducer
-    //       struct. The fn should wrap the passed callback in a closure of the
-    //       appropriate type for `Reducer::on_reducer` and unpacks the instance.
+    out.newline();
+
+    // Function definition for conveinent once_on callback function.
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    write!(
+        out,
+        "pub fn once_on_{}(__callback: impl FnOnce(&Identity, Status",
+        func_name
+    )
+    .unwrap();
+    for arg_type in iter_reducer_arg_types(reducer) {
+        write!(out, ", &").unwrap();
+        write_type_ctx(ctx, out, arg_type);
+    }
+    writeln!(out, ") + Send + 'static) -> ReducerCallbackId<{}> ", type_name).unwrap();
+    out.delimited_block(
+        "{",
+        |out| {
+            write!(out, "{}", type_name).unwrap();
+            out.delimited_block(
+                "::once_on_reducer(move |__identity, __status, __args| {",
+                |out| {
+                    write!(out, "let ").unwrap();
+                    print_reducer_struct_literal(out, reducer);
+                    writeln!(out, " = __args;").unwrap();
+                    out.delimited_block(
+                        "__callback(",
+                        |out| {
+                            writeln!(out, "__identity,").unwrap();
+                            writeln!(out, "__status,").unwrap();
+                            for arg_name in iter_reducer_arg_names(reducer) {
+                                writeln!(out, "{},", arg_name.unwrap()).unwrap();
+                            }
+                        },
+                        ");\n",
+                    );
+                },
+                "})\n",
+            )
+        },
+        "}\n",
+    );
+
+    out.newline();
+
+    // Function definition for callback-canceling `remove_on_{reducer}` function.
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    write!(
+        out,
+        "pub fn remove_on_{}(id: ReducerCallbackId<{}>) ",
+        func_name, type_name,
+    )
+    .unwrap();
+    out.delimited_block(
+        "{",
+        |out| {
+            writeln!(out, "{}::remove_on_reducer(id);", type_name,).unwrap();
+        },
+        "}\n",
+    );
 
     output.into_inner()
 }
