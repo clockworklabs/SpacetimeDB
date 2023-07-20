@@ -115,9 +115,9 @@ struct IdentifiedPerson {
 }
 
 fn identify(id_number: u64) -> Identity {
-    let mut identity = Identity { identity_bytes: [0u8; 32] };
-    identity.identity_bytes[0..8].clone_from_slice(&id_number.to_le_bytes());
-    identity
+    let mut bytes = [0u8; 32];
+    bytes[..8].clone_from_slice(&id_number.to_le_bytes());
+    Identity::from_byte_array(bytes)
 }
 
 #[spacetimedb(reducer)]

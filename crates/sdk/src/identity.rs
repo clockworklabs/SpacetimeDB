@@ -33,7 +33,9 @@ impl Identity {
     ///
     /// This method does not verify that `bytes` represents a valid identity.
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        Self { __identity_bytes: bytes }
+        Self {
+            __identity_bytes: bytes,
+        }
     }
 }
 
