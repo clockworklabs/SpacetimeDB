@@ -12,10 +12,10 @@ pub fn set_key_env_vars() {
 
     set_if_not_exist("STDB_PATH", PathBuf::from("/stdb"));
     set_if_not_exist("SPACETIMEDB_LOGS_PATH", PathBuf::from("/var/log"));
-    set_if_not_exist("SPACETIMEDB_LOG_CONFIG", PathBuf::from("/etc/spacetimedb/log.conf"));
+    set_if_not_exist("SPACETIMEDB_LOG_CONFIG", PathBuf::from("/stdb/log.conf"));
     set_if_not_exist(
         "SPACETIMEDB_JWT_PUB_KEY",
-        PathBuf::from("/etc/spacetimedb/id_ecdsa.pub"),
+        PathBuf::from("/stdb/id_ecdsa.pub"),
     );
-    set_if_not_exist("SPACETIMEDB_JWT_PRIV_KEY", PathBuf::from("/etc/spacetimedb/id_ecdsa"));
+    set_if_not_exist("SPACETIMEDB_JWT_PRIV_KEY", PathBuf::from("/stdb/id_ecdsa"));
 }
