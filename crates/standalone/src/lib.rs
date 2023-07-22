@@ -76,9 +76,9 @@ impl StandaloneEnv {
 
 fn get_or_create_keys() -> anyhow::Result<(DecodingKey, EncodingKey)> {
     let public_key_path =
-        get_key_path("SPACETIMEDB_JWT_PUB_KEY").unwrap_or(PathBuf::from("/etc/spacetimedb/id_ecdsa.pub"));
+        get_key_path("SPACETIMEDB_JWT_PUB_KEY").expect("SPACETIMEDB_JWT_PUB_KEY must be set to a valid path");
     let private_key_path =
-        get_key_path("SPACETIMEDB_JWT_PRIV_KEY").unwrap_or(PathBuf::from("/etc/spacetimedb/id_ecdsa"));
+        get_key_path("SPACETIMEDB_JWT_PRIV_KEY").expect("SPACETIMEDB_JWT_PRIV_KEY must be set to a valid path");
 
     let mut public_key_bytes = read_key(&public_key_path).ok();
     let mut private_key_bytes = read_key(&private_key_path).ok();

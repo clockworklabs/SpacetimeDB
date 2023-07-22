@@ -15,15 +15,9 @@ pub fn configure_tracing() {
     // once you are done.
     let conf_file = std::env::var_os("SPACETIMEDB_LOG_CONFIG")
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let local = Path::new("log.conf");
-            if local.exists() {
-                local.to_owned()
-            } else {
-                "/etc/spacetimedb/log.conf".into()
-            }
-        });
-    let logs_path: String = std::env::var("SPACETIMEDB_LOGS_PATH").unwrap_or("/var/log".into());
+        .expect("SPACETIMEDB_LOG_CONFIG must be set to a valid path to a log config file");
+    let logs_path: String = std::env::var("SPACETIMEDB_LOGS_PATH")
+        .expect("SPACETIMEDB_LOGS_PATH must be set to a valid path to a log directory");
 
     let timer = tracing_subscriber::fmt::time();
     let format = tracing_subscriber::fmt::format::Format::default()

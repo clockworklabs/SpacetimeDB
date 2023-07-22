@@ -10,7 +10,7 @@ pub mod json;
 pub mod sql;
 
 pub static STDB_PATH: Lazy<PathBuf> =
-    Lazy::new(|| PathBuf::from(std::env::var_os("STDB_PATH").unwrap_or_else(|| "/stdb".into())));
+    Lazy::new(|| PathBuf::from(std::env::var_os("STDB_PATH").expect("STDB_PATH must be set")));
 
 pub fn stdb_path<S>(s: &S) -> PathBuf
 where

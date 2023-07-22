@@ -38,6 +38,13 @@ pub fn cli(is_standalone: bool) -> clap::Command {
         database_path_arg = database_path_arg.default_value(format!("{}/.spacetime/stdb", std::env::var("HOME").unwrap()));
         jwt_pub_key_path_arg = jwt_pub_key_path_arg.default_value(format!("{}/.spacetime/id_ecdsa.pub", std::env::var("HOME").unwrap()));
         jwt_priv_key_path_arg = jwt_priv_key_path_arg.default_value(format!("{}/.spacetime/id_ecdsa", std::env::var("HOME").unwrap()));
+    } else {
+        log_conf_path_arg = log_conf_path_arg.default_value("/etc/spacetimedb/log.conf");
+        log_dir_path_arg = log_dir_path_arg.default_value("/var/log");
+        database_path_arg = database_path_arg.default_value("/stdb");
+        jwt_pub_key_path_arg = jwt_pub_key_path_arg.default_value("/etc/spacetimedb/id_ecdsa.pub");
+        jwt_priv_key_path_arg = jwt_priv_key_path_arg.default_value("/etc/spacetimedb/id_ecdsa");
+
     }
 
     clap::Command::new("start")
@@ -84,14 +91,35 @@ pub fn cli(is_standalone: bool) -> clap::Command {
         })
 }
 
+/// Sets an environment variable, but it was already set then print a warning.
+fn set_env_with_warning(env_name: &str, env_value: &str) {
+    if let Ok(_) = std::env::var(env_name) {
+        println!("Warning: {} is set in the environment, but was also passed on the command line. The value passed on the command line will be used.", env_name);
+    }
+    std::env::set_var(env_name, env_value);
+}
+
+/// Reads an argument from the `ArgMatches`. If the argument is a default argument, but the environment variable
+/// is already set, then we don't want to use the default value. This function will return `None` in that case.
+fn read_argument<'a>(args: &'a ArgMatches, arg_name: &str, env_name: &str) -> Option<&'a String> {
+    let env_is_set = std::env::var(env_name).is_ok();
+    let is_default = args.value_source(arg_name) == Some(clap::parser::ValueSource::DefaultValue);
+
+    if env_is_set && is_default {
+        None
+    } else {
+        args.get_one::<String>(arg_name)
+    }
+}
+
 pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
     let allow_create = args.get_flag("allow_create");
-    let log_conf_path = args.get_one::<String>("log_conf_path");
-    let log_dir_path = args.get_one::<String>("log_dir_path");
-    let stdb_path = args.get_one::<String>("database_path");
-    let jwt_pub_key_path = args.get_one::<String>("jwt_pub_key_path");
-    let jwt_priv_key_path = args.get_one::<String>("jwt_priv_key_path");
+    let log_conf_path = read_argument(args, "log_conf_path", "SPACETIMEDB_LOG_CONFIG");
+    let log_dir_path = read_argument(args, "log_dir_path", "SPACETIMEDB_LOGS_PATH");
+    let stdb_path = read_argument(args, "database_path", "STDB_PATH");
+    let jwt_pub_key_path = read_argument(args, "jwt_pub_key_path", "SPACETIMEDB_JWT_PUB_KEY");
+    let jwt_priv_key_path = read_argument(args, "jwt_priv_key_path", "SPACETIMEDB_JWT_PRIV_KEY");
     let enable_tracy = args.get_flag("enable_tracy");
 
     if let Some(log_conf_path) = log_conf_path {
@@ -100,31 +128,31 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
             &log_conf_path,
             include_str!("../../../../crates/standalone/log.conf"),
         )?;
-        std::env::set_var("SPACETIMEDB_LOG_CONFIG", log_conf_path);
+        set_env_with_warning("SPACETIMEDB_LOG_CONFIG", &log_conf_path);
     }
 
     if let Some(log_dir_path) = log_dir_path {
         create_dir_or_err(allow_create, &log_dir_path)?;
-        std::env::set_var("SPACETIMEDB_LOGS_PATH", log_dir_path);
+        set_env_with_warning("SPACETIMEDB_LOGS_PATH", &log_dir_path);
     }
 
     if let Some(stdb_path) = stdb_path {
         create_dir_or_err(allow_create, &stdb_path)?;
-        std::env::set_var("STDB_PATH", stdb_path);
+        set_env_with_warning("STDB_PATH", &stdb_path);
     }
 
     // If this doesn't exist, we will create it later, just set the env variable for now
     if let Some(jwt_pub_key_path) = jwt_pub_key_path {
-        std::env::set_var("SPACETIMEDB_JWT_PUB_KEY", jwt_pub_key_path);
+        set_env_with_warning("SPACETIMEDB_JWT_PUB_KEY", &jwt_pub_key_path);
     }
 
     // If this doesn't exist, we will create it later, just set the env variable for now
     if let Some(jwt_priv_key_path) = jwt_priv_key_path {
-        std::env::set_var("SPACETIMEDB_JWT_PRIV_KEY", jwt_priv_key_path);
+        set_env_with_warning("SPACETIMEDB_JWT_PRIV_KEY", &jwt_priv_key_path);
     }
 
     if enable_tracy {
-        std::env::set_var("SPACETIMEDB_TRACY", "1");
+        set_env_with_warning("SPACETIMEDB_TRACY", "1");
     }
 
     startup::configure_tracing();
