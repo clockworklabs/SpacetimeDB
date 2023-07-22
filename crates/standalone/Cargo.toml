@@ -23,7 +23,7 @@ tokio = { version = "1.2", features = ["full"] }
 anyhow = { version = "1.0.57", features = ["backtrace"] }
 prometheus = "0.13.0"
 hostname = "^0.3"
-clap = { version = "4.2.4", features = ["derive"] }
+clap = { version = "4.2.4", features = ["derive", "string"] }
 sled = "0.34.7"
 async-trait = "0.1.60"
 log = "0.4.16"
