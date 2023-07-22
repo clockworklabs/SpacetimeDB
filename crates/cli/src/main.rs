@@ -1,5 +1,6 @@
 use clap::Command;
 use spacetimedb_cli::*;
+use spacetimedb_lib::util;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -7,7 +8,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // Save a default version to disk
     config.save();
 
-    let (cmd, subcommand_args) = spacetimedb_standalone::util::match_subcommand_or_exit(get_command());
+    let (cmd, subcommand_args) = util::match_subcommand_or_exit(get_command());
     exec_subcommand(config, &cmd, &subcommand_args).await?;
 
     Ok(())

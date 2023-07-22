@@ -26,8 +26,8 @@ serde_json = { version = "1.0", features = ["raw_value", "preserve_order"] }
 toml = "0.5"
 dirs = "4.0"
 tabled = "0.8.0"
-spacetimedb-lib = { path = "../lib", version = "0.5.0" }
-spacetimedb-standalone = { path = "../standalone", version = "0.5.0" }
+spacetimedb-lib = { path = "../lib", version = "0.5.0", features = ["cli"] }
+spacetimedb-standalone = { path = "../standalone", version = "0.5.0", optional = true }
 convert_case = "0.6.0"
 wasmtime = { version = "7", default-features = false, features = ["cranelift"] }
 colored = "2.0.0"

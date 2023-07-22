@@ -4099,6 +4099,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "chrono",
+ "clap 4.3.10",
  "enum-as-inner",
  "hex",
  "insta",

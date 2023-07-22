@@ -17,7 +17,7 @@ required-features = [] # Features required to build this target (N/A for lib)
 
 [dependencies]
 spacetimedb-core = { path = "../core" }
-spacetimedb-lib = { path = "../lib" }
+spacetimedb-lib = { path = "../lib", features = ["cli"] }
 spacetimedb-client-api = { path = "../client-api" }
 tokio = { version = "1.2", features = ["full"] }
 anyhow = { version = "1.0.57", features = ["backtrace"] }

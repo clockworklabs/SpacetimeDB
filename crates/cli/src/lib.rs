@@ -7,8 +7,10 @@ pub mod util;
 use clap::{ArgMatches, Command};
 
 pub use config::Config;
-use spacetimedb_standalone::subcommands::start;
 pub use subcommands::*;
+
+#[cfg(feature = "standalone")]
+use spacetimedb_standalone::subcommands::start;
 
 pub fn get_subcommands() -> Vec<Command> {
     vec![
@@ -53,7 +55,8 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "server" => server::exec(config, args).await,
         #[cfg(feature = "tracelogging")]
         "tracelog" => tracelog::exec(config, args).await,
-        "start" => start::exec(args, false).await,
+        #[cfg(feature = "standalone")]
+        "start" => start::exec(args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
