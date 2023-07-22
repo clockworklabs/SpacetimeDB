@@ -29,6 +29,7 @@ pub fn get_subcommands() -> Vec<Command> {
         #[cfg(feature = "tracelogging")]
         tracelog::cli(),
         server::cli(),
+        #[cfg(feature = "standalone")]
         start::cli(false),
     ]
 }
