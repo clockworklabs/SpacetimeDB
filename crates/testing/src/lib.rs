@@ -1,4 +1,4 @@
-use spacetimedb::stdb_path;
+
 use std::env;
 use std::path::{Path, PathBuf};
 

@@ -93,7 +93,7 @@ pub fn cli(is_standalone: bool) -> clap::Command {
 
 /// Sets an environment variable, but it was already set then print a warning.
 fn set_env_with_warning(env_name: &str, env_value: &str) {
-    if let Ok(_) = std::env::var(env_name) {
+    if std::env::var(env_name).is_ok() {
         println!("Warning: {} is set in the environment, but was also passed on the command line. The value passed on the command line will be used.", env_name);
     }
     std::env::set_var(env_name, env_value);
@@ -125,30 +125,30 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     if let Some(log_conf_path) = log_conf_path {
         create_file_with_contents(
             allow_create,
-            &log_conf_path,
+            log_conf_path,
             include_str!("../../../../crates/standalone/log.conf"),
         )?;
-        set_env_with_warning("SPACETIMEDB_LOG_CONFIG", &log_conf_path);
+        set_env_with_warning("SPACETIMEDB_LOG_CONFIG", log_conf_path);
     }
 
     if let Some(log_dir_path) = log_dir_path {
-        create_dir_or_err(allow_create, &log_dir_path)?;
-        set_env_with_warning("SPACETIMEDB_LOGS_PATH", &log_dir_path);
+        create_dir_or_err(allow_create, log_dir_path)?;
+        set_env_with_warning("SPACETIMEDB_LOGS_PATH", log_dir_path);
     }
 
     if let Some(stdb_path) = stdb_path {
-        create_dir_or_err(allow_create, &stdb_path)?;
-        set_env_with_warning("STDB_PATH", &stdb_path);
+        create_dir_or_err(allow_create, stdb_path)?;
+        set_env_with_warning("STDB_PATH", stdb_path);
     }
 
     // If this doesn't exist, we will create it later, just set the env variable for now
     if let Some(jwt_pub_key_path) = jwt_pub_key_path {
-        set_env_with_warning("SPACETIMEDB_JWT_PUB_KEY", &jwt_pub_key_path);
+        set_env_with_warning("SPACETIMEDB_JWT_PUB_KEY", jwt_pub_key_path);
     }
 
     // If this doesn't exist, we will create it later, just set the env variable for now
     if let Some(jwt_priv_key_path) = jwt_priv_key_path {
-        set_env_with_warning("SPACETIMEDB_JWT_PRIV_KEY", &jwt_priv_key_path);
+        set_env_with_warning("SPACETIMEDB_JWT_PRIV_KEY", jwt_priv_key_path);
     }
 
     if enable_tracy {
