@@ -1,8 +1,8 @@
 use clap::Command;
 use tokio::runtime::Builder;
 
-use spacetimedb_standalone::*;
 use spacetimedb_lib::util;
+use spacetimedb_standalone::*;
 use std::panic;
 use std::process;
 

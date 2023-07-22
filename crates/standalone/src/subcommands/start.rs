@@ -33,18 +33,21 @@ pub fn cli(is_standalone: bool) -> clap::Command {
 
     // If this isn't standalone, we provide default values
     if !is_standalone {
-        log_conf_path_arg = log_conf_path_arg.default_value(format!("{}/.spacetime/log.conf", std::env::var("HOME").unwrap()));
+        log_conf_path_arg =
+            log_conf_path_arg.default_value(format!("{}/.spacetime/log.conf", std::env::var("HOME").unwrap()));
         log_dir_path_arg = log_dir_path_arg.default_value(format!("{}/.spacetime", std::env::var("HOME").unwrap()));
-        database_path_arg = database_path_arg.default_value(format!("{}/.spacetime/stdb", std::env::var("HOME").unwrap()));
-        jwt_pub_key_path_arg = jwt_pub_key_path_arg.default_value(format!("{}/.spacetime/id_ecdsa.pub", std::env::var("HOME").unwrap()));
-        jwt_priv_key_path_arg = jwt_priv_key_path_arg.default_value(format!("{}/.spacetime/id_ecdsa", std::env::var("HOME").unwrap()));
+        database_path_arg =
+            database_path_arg.default_value(format!("{}/.spacetime/stdb", std::env::var("HOME").unwrap()));
+        jwt_pub_key_path_arg =
+            jwt_pub_key_path_arg.default_value(format!("{}/.spacetime/id_ecdsa.pub", std::env::var("HOME").unwrap()));
+        jwt_priv_key_path_arg =
+            jwt_priv_key_path_arg.default_value(format!("{}/.spacetime/id_ecdsa", std::env::var("HOME").unwrap()));
     } else {
         log_conf_path_arg = log_conf_path_arg.default_value("/etc/spacetimedb/log.conf");
         log_dir_path_arg = log_dir_path_arg.default_value("/var/log");
         database_path_arg = database_path_arg.default_value("/stdb");
         jwt_pub_key_path_arg = jwt_pub_key_path_arg.default_value("/etc/spacetimedb/id_ecdsa.pub");
         jwt_priv_key_path_arg = jwt_priv_key_path_arg.default_value("/etc/spacetimedb/id_ecdsa");
-
     }
 
     clap::Command::new("start")

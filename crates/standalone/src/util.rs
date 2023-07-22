@@ -36,7 +36,6 @@ pub fn create_file_with_contents(allow_create: bool, path: &str, contents: &str)
     Ok(())
 }
 
-
 pub fn get_exe_name() -> String {
     let exe_path = env::current_exe().expect("Failed to get executable path");
     let executable_name = Path::new(&exe_path)

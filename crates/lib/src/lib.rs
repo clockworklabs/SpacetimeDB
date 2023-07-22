@@ -24,9 +24,9 @@ pub mod auth;
 pub mod recovery;
 pub mod relation;
 pub mod table;
-pub mod version;
 #[cfg(feature = "cli")]
 pub mod util;
+pub mod version;
 
 pub use spacetimedb_sats::bsatn;
 
