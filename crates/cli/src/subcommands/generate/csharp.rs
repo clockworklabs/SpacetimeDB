@@ -1,6 +1,7 @@
 use super::util::fmt_fn;
 
 use std::fmt::{self, Write};
+use std::ops::Deref;
 
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::{
@@ -75,7 +76,27 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
                 unimplemented!()
             }
         }
-        AlgebraicType::Product(_) => unimplemented!(),
+        AlgebraicType::Product(prod) => {
+            // The only type that is allowed here is the identity type. All other types should fail.
+            if prod.elements.len() == 1 {
+                if let Some(name) = &prod.elements[0].name {
+                    if name == "__identity_bytes" {
+                        if let Builtin(builtin) = &prod.elements[0].algebraic_type {
+                            if let BuiltinType::Array(array_type) = builtin {
+                                let ArrayType { elem_ty: array } = array_type;
+                                if let Builtin(builtin) = array.deref() {
+                                    if let BuiltinType::U8 = builtin {
+                                        return write!(f, "SpacetimeDB.Identity");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            unimplemented!()
+        }
         AlgebraicType::Builtin(b) => match maybe_primitive(b) {
             MaybePrimitive::Primitive(p) => f.write_str(p),
             MaybePrimitive::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => f.write_str("byte[]"),
@@ -638,7 +659,7 @@ fn autogen_csharp_product_table_common(
                         output,
                         "private static Dictionary<{type_name}, {name}> {field_name}_Index = new Dictionary<{type_name}, {name}>(16{comparer});"
                     )
-                    .unwrap();
+                        .unwrap();
                 }
                 writeln!(output).unwrap();
                 // OnInsert method for updating indexes
@@ -754,7 +775,7 @@ fn autogen_csharp_product_table_common(
                         output,
                         "OnUpdate?.Invoke(({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
-                    .unwrap();
+                        .unwrap();
                 }
                 writeln!(output, "}}").unwrap();
                 writeln!(output).unwrap();
@@ -797,7 +818,7 @@ fn autogen_csharp_product_table_common(
                     output,
                     "public static void OnRowUpdateEvent(SpacetimeDBClient.TableOp op, object oldValue, object newValue, ClientApi.Event dbEvent)"
                 )
-                .unwrap();
+                    .unwrap();
                 writeln!(output, "{{").unwrap();
                 {
                     indent_scope!(output);
@@ -805,7 +826,7 @@ fn autogen_csharp_product_table_common(
                         output,
                         "OnRowUpdate?.Invoke(op, ({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
-                    .unwrap();
+                        .unwrap();
                 }
                 writeln!(output, "}}").unwrap();
             }
@@ -859,7 +880,7 @@ fn autogen_csharp_product_value_to_struct(
                 0,
                 field_type,
                 format_args!("productValue.elements[{idx}]"),
-                namespace
+                namespace,
             )
         )
         .unwrap();
@@ -1058,7 +1079,7 @@ fn autogen_csharp_access_funcs_for_struct(
             output,
             "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue v1, SpacetimeDB.SATS.AlgebraicValue v2)"
         )
-        .unwrap();
+            .unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
@@ -1078,7 +1099,7 @@ fn autogen_csharp_access_funcs_for_struct(
                 output,
                 "return SpacetimeDB.SATS.AlgebraicValue.Compare(t.product.elements[0].algebraicType, primaryColumnValue1, primaryColumnValue2);"
             )
-            .unwrap();
+                .unwrap();
         }
         writeln!(output, "}}").unwrap();
     } else {
@@ -1086,7 +1107,7 @@ fn autogen_csharp_access_funcs_for_struct(
             output,
             "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue _v1, SpacetimeDB.SATS.AlgebraicValue _v2)"
         )
-        .unwrap();
+            .unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
