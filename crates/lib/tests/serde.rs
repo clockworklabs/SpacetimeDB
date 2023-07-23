@@ -1,7 +1,7 @@
 use spacetimedb_lib::de::serde::SerdeDeserializer;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductTypeElement, ProductValue, SumType};
-use spacetimedb_sats::{satn::Satn, BuiltinType::*, SumTypeVariant, Typespace, WithTypespace};
+use spacetimedb_sats::{satn::Satn, SumTypeVariant, Typespace, WithTypespace};
 
 macro_rules! de_json_snapshot {
     ($schema:expr, $json:expr) => {
