@@ -134,7 +134,7 @@ pub fn find_unique_location(id: u64) {
 }
 
 #[spacetimedb(table)]
-#[spacetimedb(index(btree), name = "id", id)]
+#[spacetimedb(index(btree, name = "id", id))]
 pub struct NonuniqueLocation {
     id: u64,
     x: u64,
