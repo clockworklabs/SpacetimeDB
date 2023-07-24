@@ -933,17 +933,23 @@ pub async fn delete_database(
 ) -> axum::response::Result<impl IntoResponse> {
     let auth = auth.get().ok_or((StatusCode::BAD_REQUEST, "Invalid credentials."))?;
 
-    match ctx.control_db().get_database_by_address(&address).await.map_err(log_and_500)? {
+    match ctx
+        .control_db()
+        .get_database_by_address(&address)
+        .await
+        .map_err(log_and_500)?
+    {
         Some(db) => {
             if db.identity != auth.identity {
                 Err((StatusCode::BAD_REQUEST, "Identity does not own this database.").into())
             } else {
-                ctx.delete_database(&address).await.map_err(log_and_500).map_err(Into::into)
+                ctx.delete_database(&address)
+                    .await
+                    .map_err(log_and_500)
+                    .map_err(Into::into)
             }
         }
-        None => {
-            Ok(())
-        }
+        None => Ok(()),
     }
 }
 
