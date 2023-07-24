@@ -54,7 +54,9 @@ where
             if !me.fut.is_terminated() {
                 return me.fut.poll(cx).map(Some);
             }
-            let Some(item) = me.queue.pop_front() else { return Poll::Ready(None) };
+            let Some(item) = me.queue.pop_front() else {
+                return Poll::Ready(None);
+            };
             let fut = (me.f)(item);
             me.fut.as_mut().set(fut.fuse());
         }

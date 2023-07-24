@@ -70,11 +70,17 @@ pub fn determine_spacetime_abi(wasm_module: &[u8]) -> Result<VersionTuple, AbiVe
     let ver = if export_is_addr {
         let mut datas = datas.ok_or(AbiVersionError::Malformed)?;
         let data = datas.read().unwrap();
-        let wasmparser::DataKind::Active { memory_index: 0, offset_expr } = data.kind else {
+        let wasmparser::DataKind::Active {
+            memory_index: 0,
+            offset_expr,
+        } = data.kind
+        else {
             return Err(AbiVersionError::Malformed);
         };
         let offset_op = offset_expr.get_operators_reader().read().unwrap();
-        let wasmparser::Operator::I32Const { value: offset } = offset_op else { unreachable!("determine_spacetime_abi:I32Const?") };
+        let wasmparser::Operator::I32Const { value: offset } = offset_op else {
+            unreachable!("determine_spacetime_abi:I32Const?")
+        };
         let slice = value
             .checked_sub(offset)
             .and_then(|idx| data.data.get(idx as usize..)?.get(..4))

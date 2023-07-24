@@ -259,8 +259,12 @@ impl SchedulerActor {
     }
 
     async fn handle_queued(&self, id: ScheduledReducerId) {
-        let Some(module_host) = self.module_host.upgrade() else { return };
-        let Some(scheduled) = self.db.get(id.0.to_le_bytes()).unwrap() else { return };
+        let Some(module_host) = self.module_host.upgrade() else {
+            return;
+        };
+        let Some(scheduled) = self.db.get(id.0.to_le_bytes()).unwrap() else {
+            return;
+        };
         let scheduled: ScheduledReducer = bsatn::from_slice(&scheduled).unwrap();
         let db = self.db.clone();
         tokio::spawn(async move {

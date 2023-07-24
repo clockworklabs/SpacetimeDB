@@ -843,7 +843,9 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
         for (col_id, col) in columns.iter().enumerate() {
             let mut index_for_column = None;
             for index in table.indexes.iter() {
-                let [index_col_id] = *index.col_ids else { anyhow::bail!("multi-column indexes not yet supported") };
+                let [index_col_id] = *index.col_ids else {
+                    anyhow::bail!("multi-column indexes not yet supported")
+                };
                 if index_col_id as usize != col_id {
                     continue;
                 }

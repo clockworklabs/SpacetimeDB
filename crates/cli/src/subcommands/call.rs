@@ -250,15 +250,20 @@ fn find_of_type_in_schema<'v, 't: 'v>(
     value: &'v serde_json::Value,
     ty: &'t str,
 ) -> impl Iterator<Item = (&'v str, &'v Value)> {
-    let Some(entities) = value.as_object()
+    let Some(entities) = value
+        .as_object()
         .and_then(|o| o.get("entities"))
         .and_then(|e| e.as_object())
-    else { return Either::Left(iter::empty()) };
+    else {
+        return Either::Left(iter::empty());
+    };
 
     let iter = entities
         .into_iter()
         .filter(|(_, value)| {
-            let Some(obj) = value.as_object() else { return false; };
+            let Some(obj) = value.as_object() else {
+                return false;
+            };
             obj.get("type").filter(|x| x.as_str() == Some(ty)).is_some()
         })
         .map(|(key, value)| (key.as_str(), value));
