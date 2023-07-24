@@ -5,7 +5,7 @@ use spacetimedb::{
 use spacetimedb_lib::bsatn;
 
 #[spacetimedb(table)]
-#[spacetimedb(index(btree), name = "foo", x)]
+#[spacetimedb(index(btree, name = "foo", x))]
 pub struct TestA {
     pub x: u32,
     pub y: u32,

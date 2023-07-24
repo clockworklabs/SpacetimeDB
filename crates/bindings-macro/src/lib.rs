@@ -198,6 +198,7 @@ impl syn::parse::Parse for MacroInput {
                 // Extract stuff in parens.
                 let in_parens;
                 syn::parenthesized!(in_parens in input);
+                let in_parens = &in_parens;
 
                 // Parse `btree` or `hash`.
                 let ty: IndexType = in_parens.parse()?;
@@ -206,11 +207,11 @@ impl syn::parse::Parse for MacroInput {
                 // Also find plain identifiers that become field names to index.
                 let mut name = None;
                 let mut field_names = Vec::new();
-                comma_then_comma_delimited(input, || {
-                    match_tok!(match input {
+                comma_then_comma_delimited(in_parens, || {
+                    match_tok!(match in_parens {
                         (tok, _) @ (kw::name, Token![=]) => {
                             check_duplicate(&name, tok.span)?;
-                            let v = input.parse::<syn::LitStr>()?;
+                            let v = in_parens.parse::<syn::LitStr>()?;
                             name = Some(v.value())
                         }
                         ident @ Ident => field_names.push(ident),
