@@ -113,7 +113,7 @@ impl DecodedMessage<'_> {
 
 /// An error that arises from
 #[derive(thiserror::Error, Debug)]
-#[error("error executing message (reducer: {reducer:?})")]
+#[error("error executing message (reducer: {reducer:?}) (err: {err:?})")]
 pub struct MessageExecutionError {
     pub reducer: Option<String>,
     pub caller_identity: Identity,
