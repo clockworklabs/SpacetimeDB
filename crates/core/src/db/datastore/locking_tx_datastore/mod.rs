@@ -1717,7 +1717,7 @@ impl Iterator for IndexSeekIterInner<'_> {
                     .map_or(false, |table| table.contains(row_id))
             })
         }) {
-            return Some(get_committed_row(&self.committed_state, &self.table_id, &row_id));
+            return Some(get_committed_row(self.committed_state, &self.table_id, &row_id));
         }
 
         None
@@ -1742,7 +1742,7 @@ impl Iterator for CommittedIndexIterByColEq<'_> {
                 .get(&self.table_id)
                 .map_or(false, |table| table.contains(row_id))
         }) {
-            return Some(get_committed_row(&self.committed_state, &self.table_id, &row_id));
+            return Some(get_committed_row(self.committed_state, &self.table_id, &row_id));
         }
 
         None
