@@ -408,7 +408,11 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
     }
 
     fn inject_logs(&self, respond_to: oneshot::Sender<()>, log_level: LogLevel, message: String) {
-        self.instances.send(InstanceMessage::InjectLogs { respond_to, log_level, message })
+        self.instances.send(InstanceMessage::InjectLogs {
+            respond_to,
+            log_level,
+            message,
+        })
     }
 
     fn close(self) {
@@ -488,7 +492,11 @@ impl<T: WasmInstance> JobRunner for WasmInstanceActor<T> {
             InstanceMessage::UpdateDatabase { respond_to } => {
                 let _ = respond_to.send(self.update_database());
             }
-            InstanceMessage::InjectLogs { respond_to, log_level, message } => {
+            InstanceMessage::InjectLogs {
+                respond_to,
+                log_level,
+                message,
+            } => {
                 let _ = respond_to.send(self.instance.instance_env().console_log(
                     log_level,
                     &Record {
@@ -499,7 +507,7 @@ impl<T: WasmInstance> JobRunner for WasmInstanceActor<T> {
                     },
                     &(),
                 ));
-            },
+            }
         }
         if self.trapped {
             ControlFlow::Break(())

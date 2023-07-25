@@ -248,7 +248,11 @@ impl ModuleHostCommand {
             ModuleHostCommand::StopTrace { respond_to } => {
                 let _ = respond_to.send(actor.stop_trace());
             }
-            ModuleHostCommand::InjectLogs { respond_to, log_level, message } => actor.inject_logs(respond_to, log_level, message),
+            ModuleHostCommand::InjectLogs {
+                respond_to,
+                log_level,
+                message,
+            } => actor.inject_logs(respond_to, log_level, message),
         }
     }
 }
@@ -503,8 +507,12 @@ impl ModuleHost {
     }
 
     pub async fn inject_logs(&self, log_level: LogLevel, message: String) -> Result<(), NoSuchModule> {
-        self.call(|respond_to| ModuleHostCommand::InjectLogs { respond_to, log_level, message })
-            .await
+        self.call(|respond_to| ModuleHostCommand::InjectLogs {
+            respond_to,
+            log_level,
+            message,
+        })
+        .await
     }
 
     pub fn downgrade(&self) -> WeakModuleHost {
