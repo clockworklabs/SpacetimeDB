@@ -78,24 +78,11 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
         }
         AlgebraicType::Product(prod) => {
             // The only type that is allowed here is the identity type. All other types should fail.
-            if prod.elements.len() == 1 {
-                if let Some(name) = &prod.elements[0].name {
-                    if name == "__identity_bytes" {
-                        if let Builtin(builtin) = &prod.elements[0].algebraic_type {
-                            if let BuiltinType::Array(array_type) = builtin {
-                                let ArrayType { elem_ty: array } = array_type;
-                                if let Builtin(builtin) = array.deref() {
-                                    if let BuiltinType::U8 = builtin {
-                                        return write!(f, "SpacetimeDB.Identity");
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            if is_identity(prod) {
+                write!(f, "SpacetimeDB.Identity")
+            } else {
+                unimplemented!()
             }
-
-            unimplemented!()
         }
         AlgebraicType::Builtin(b) => match maybe_primitive(b) {
             MaybePrimitive::Primitive(p) => f.write_str(p),
@@ -190,7 +177,17 @@ fn convert_type<'a>(
     namespace: &'a str,
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Product(_) => unimplemented!(),
+        AlgebraicType::Product(product) => {
+            if is_identity(product) {
+                write!(
+                    f,
+                    "SpacetimeDB.Identity.From({}.AsProductValue().elements[0].AsBytes())",
+                    value
+                )
+            } else {
+                unimplemented!()
+            }
+        }
         AlgebraicType::Sum(sum_type) => {
             if let Some(inner_ty) = sum_type.as_option() {
                 match inner_ty {
@@ -378,6 +375,26 @@ fn convert_sum_type<'a>(ctx: &'a GenCtx, sum_type: &'a SumType, namespace: &'a s
         }
         write!(f, "}})")
     })
+}
+
+pub fn is_identity(ty: &ProductType) -> bool {
+    if ty.elements.len() == 1 {
+        if let Some(name) = &ty.elements[0].name {
+            if name == "__identity_bytes" {
+                if let Builtin(builtin) = &ty.elements[0].algebraic_type {
+                    if let BuiltinType::Array(array_type) = builtin {
+                        let ArrayType { elem_ty: array } = array_type;
+                        if let Builtin(builtin) = array.deref() {
+                            if let BuiltinType::U8 = builtin {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return false;
 }
 
 pub fn is_enum(sum_type: &SumType) -> bool {
@@ -953,12 +970,15 @@ fn autogen_csharp_access_funcs_for_struct(
         let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
 
         let (field_type, csharp_field_type) = match field_type {
-            AlgebraicType::Product(_) | AlgebraicType::Ref(_) => {
-                // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
-                continue;
+            AlgebraicType::Product(product) => {
+                if is_identity(product) {
+                    ("Identity".into(), "SpacetimeDB.Identity")
+                } else {
+                    continue;
+                }
             }
-            AlgebraicType::Sum(_) => {
-                // TODO: We don't allow filtering on enums right now, its possible we may consider it for the future.
+            AlgebraicType::Ref(_) | AlgebraicType::Sum(_) => {
+                // TODO: We don't allow filtering on enums or tuples right now, its possible we may consider it for the future.
                 continue;
             }
             AlgebraicType::Builtin(b) => match maybe_primitive(b) {
@@ -1015,12 +1035,21 @@ fn autogen_csharp_access_funcs_for_struct(
                 {
                     indent_scope!(output);
                     writeln!(output, "var productValue = entry.Item1.AsProductValue();").unwrap();
-                    writeln!(
-                        output,
-                        "var compareValue = ({})productValue.elements[{}].As{}();",
-                        csharp_field_type, col_i, field_type
-                    )
-                    .unwrap();
+                    if field_type == "Identity" {
+                        writeln!(
+                            output,
+                            "var compareValue = Identity.From(productValue.elements[{}];",
+                            col_i
+                        )
+                        .unwrap();
+                    } else {
+                        writeln!(
+                            output,
+                            "var compareValue = ({})productValue.elements[{}].As{}();",
+                            csharp_field_type, col_i, field_type
+                        )
+                        .unwrap();
+                    }
                     if csharp_field_type == "byte[]" {
                         writeln!(
                             output,
