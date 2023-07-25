@@ -497,7 +497,7 @@ impl<T: WasmInstance> JobRunner for WasmInstanceActor<T> {
                 log_level,
                 message,
             } => {
-                let _ = respond_to.send(self.instance.instance_env().console_log(
+                self.instance.instance_env().console_log(
                     log_level,
                     &Record {
                         target: None,
@@ -506,7 +506,8 @@ impl<T: WasmInstance> JobRunner for WasmInstanceActor<T> {
                         message: &message,
                     },
                     &(),
-                ));
+                );
+                let _ = respond_to.send(());
             }
         }
         if self.trapped {
