@@ -97,7 +97,9 @@ pub async fn handle_websocket(
         };
 
         match forwarded_for {
-            Some(TypedHeader(XForwardedFor(ip))) => log::debug!("New client connected from ip {}", ip),
+            Some(TypedHeader(XForwardedFor(ip))) => {
+                log::debug!("New client connected from ip {}", ip)
+            }
             None => log::debug!("New client connected from unknown ip"),
         }
 
