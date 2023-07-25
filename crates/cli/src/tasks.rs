@@ -83,8 +83,12 @@ disallowed-macros = [
 
 fn check_for_wasm_bindgen(artifact: &Path) -> anyhow::Result<()> {
     // if this fails for some reason, just let it fail elsewhere
-    let Ok(file) = fs::File::open(artifact) else { return Ok(()) };
-    let Ok(module) = wasmbin::Module::decode_from(&mut io::BufReader::new(file)) else { return Ok(()) };
+    let Ok(file) = fs::File::open(artifact) else {
+        return Ok(());
+    };
+    let Ok(module) = wasmbin::Module::decode_from(&mut io::BufReader::new(file)) else {
+        return Ok(());
+    };
     if has_wasm_bindgen(&module) {
         anyhow::bail!(
             "wasm-bindgen detected.\n\
