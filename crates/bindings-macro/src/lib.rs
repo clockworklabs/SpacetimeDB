@@ -508,7 +508,9 @@ enum ColumnAttr {
 
 impl ColumnAttr {
     fn parse(attr: &syn::Attribute) -> syn::Result<Option<Self>> {
-        let Some(ident) = attr.path().get_ident() else { return Ok(None) };
+        let Some(ident) = attr.path().get_ident() else {
+            return Ok(None);
+        };
         Ok(if ident == sym::UNIQUE {
             attr.meta.require_path_only()?;
             Some(ColumnAttr::Unique(ident.span()))
@@ -530,7 +532,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     let original_struct_ident = sats_ty.ident;
     let table_name = &sats_ty.name;
     let module::SatsTypeData::Product(fields) = &sats_ty.data else {
-        return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"))
+        return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
     };
 
     let mut columns = Vec::<Column>::new();
@@ -608,7 +610,9 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
             continue;
         }
         let args = attr.parse_args::<MacroInput>()?;
-        let MacroInput::Index { ty, name, field_names } = args else { continue };
+        let MacroInput::Index { ty, name, field_names } = args else {
+            continue;
+        };
         let col_ids = field_names
             .iter()
             .map(|ident| {

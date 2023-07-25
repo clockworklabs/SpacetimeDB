@@ -710,7 +710,8 @@ impl ReducerCallbacks {
             status,
             message,
             ..
-        } = event else {
+        } = event
+        else {
             log::warn!("Received Event with function_call of None");
             return None;
         };
