@@ -299,8 +299,8 @@ impl Header {
         Ok(Self::new(&self.table_name, &p))
     }
 
-    /// Add the fields from `right` to this [Header],
-    /// renaming the duplicated fields with a counter like `a, a == a, a0`.
+    /// Adds the fields from `right` to this [`Header`],
+    /// renaming duplicated fields with a counter like `a, a => a, a0`.
     pub fn extend(&self, right: &Self) -> Self {
         let count = self.fields.len() + right.fields.len();
         let mut fields = Vec::with_capacity(count);
