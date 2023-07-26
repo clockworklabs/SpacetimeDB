@@ -130,7 +130,7 @@ fn convert_type<'a>(
     fmt_fn(move |f| match ty {
         AlgebraicType::Product(product) => {
             if product.is_identity() {
-                write!(f, "new Identity({}.asBytes())", value)
+                write!(f, "new Identity({}.asProductValue().elements[0].asBytes())", value)
             } else {
                 unimplemented!()
             }
@@ -1046,7 +1046,18 @@ fn autogen_typescript_access_funcs_for_struct(
             writeln!(output, "{{").unwrap();
             {
                 indent_scope!(output);
-                if typescript_field_type == "Uint8Array" {
+                if typescript_field_type == "Identity" {
+                    writeln!(output, "if (instance.{typescript_field_name_camel}.isEqual(value)) {{",).unwrap();
+                    {
+                        indent_scope!(output);
+                        if is_unique {
+                            writeln!(output, "return instance;").unwrap();
+                        } else {
+                            writeln!(output, "result.push(instance);").unwrap();
+                        }
+                    }
+                    writeln!(output, "}}").unwrap();
+                } else if typescript_field_type == "Uint8Array" {
                     writeln!(
                         output,
                         "let byteArrayCompare = function (a1: Uint8Array, a2: Uint8Array)
