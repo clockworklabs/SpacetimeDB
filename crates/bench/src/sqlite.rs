@@ -48,6 +48,7 @@ pub fn create_db(db_instance: usize) -> ResultBench<PathBuf> {
     Ok(path)
 }
 
+/// Creates `total_dbs` number of databases.
 pub fn create_dbs(total_dbs: usize) -> ResultBench<()> {
     let path = db_path();
 
