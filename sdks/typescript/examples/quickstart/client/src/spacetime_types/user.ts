@@ -13,17 +13,18 @@ import {
   IDatabaseTable,
   AlgebraicValue,
   ReducerEvent,
+  Identity,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export class User extends IDatabaseTable {
   public static tableName = "User";
-  public identity: Uint8Array;
+  public identity: Identity;
   public name: string | null;
   public online: boolean;
 
   public static primaryKey: string | undefined = "identity";
 
-  constructor(identity: Uint8Array, name: string | null, online: boolean) {
+  constructor(identity: Identity, name: string | null, online: boolean) {
     super();
     this.identity = identity;
     this.name = name;
@@ -32,7 +33,7 @@ export class User extends IDatabaseTable {
 
   public static serialize(value: User): object {
     return [
-      Array.from(value.identity),
+      Array.from(value.identity.toUint8Array()),
       value.name ? { some: value.name } : { none: [] },
       value.online,
     ];
@@ -42,9 +43,14 @@ export class User extends IDatabaseTable {
     return AlgebraicType.createProductType([
       new ProductTypeElement(
         "identity",
-        AlgebraicType.createArrayType(
-          AlgebraicType.createPrimitiveType(BuiltinType.Type.U8)
-        )
+        AlgebraicType.createProductType([
+          new ProductTypeElement(
+            "__identity_bytes",
+            AlgebraicType.createArrayType(
+              AlgebraicType.createPrimitiveType(BuiltinType.Type.U8)
+            )
+          ),
+        ])
       ),
       new ProductTypeElement(
         "name",
@@ -65,7 +71,9 @@ export class User extends IDatabaseTable {
 
   public static fromValue(value: AlgebraicValue): User {
     let productValue = value.asProductValue();
-    let __identity = productValue.elements[0].asBytes();
+    let __identity = new Identity(
+      productValue.elements[0].asProductValue().elements[0].asBytes()
+    );
     let __name =
       productValue.elements[1].asSumValue().tag == 1
         ? null
@@ -84,19 +92,11 @@ export class User extends IDatabaseTable {
       .getInstances() as unknown as User[];
   }
 
-  public static filterByIdentity(value: Uint8Array): User | null {
+  public static filterByIdentity(value: Identity): User | null {
     for (let instance of __SPACETIMEDB__.clientDB
       .getTable("User")
       .getInstances()) {
-      let byteArrayCompare = function (a1: Uint8Array, a2: Uint8Array) {
-        if (a1.length !== a2.length) return false;
-
-        for (let i = 0; i < a1.length; i++) if (a1[i] !== a2[i]) return false;
-
-        return true;
-      };
-
-      if (byteArrayCompare(instance.identity, value)) {
+      if (instance.identity.isEqual(value)) {
         return instance;
       }
     }

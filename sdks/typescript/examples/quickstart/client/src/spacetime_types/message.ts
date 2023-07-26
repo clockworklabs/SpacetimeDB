@@ -13,15 +13,16 @@ import {
   IDatabaseTable,
   AlgebraicValue,
   ReducerEvent,
+  Identity,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export class Message extends IDatabaseTable {
   public static tableName = "Message";
-  public sender: Uint8Array;
+  public sender: Identity;
   public sent: number;
   public text: string;
 
-  constructor(sender: Uint8Array, sent: number, text: string) {
+  constructor(sender: Identity, sent: number, text: string) {
     super();
     this.sender = sender;
     this.sent = sent;
@@ -29,16 +30,21 @@ export class Message extends IDatabaseTable {
   }
 
   public static serialize(value: Message): object {
-    return [Array.from(value.sender), value.sent, value.text];
+    return [Array.from(value.sender.toUint8Array()), value.sent, value.text];
   }
 
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement(
         "sender",
-        AlgebraicType.createArrayType(
-          AlgebraicType.createPrimitiveType(BuiltinType.Type.U8)
-        )
+        AlgebraicType.createProductType([
+          new ProductTypeElement(
+            "__identity_bytes",
+            AlgebraicType.createArrayType(
+              AlgebraicType.createPrimitiveType(BuiltinType.Type.U8)
+            )
+          ),
+        ])
       ),
       new ProductTypeElement(
         "sent",
@@ -53,7 +59,9 @@ export class Message extends IDatabaseTable {
 
   public static fromValue(value: AlgebraicValue): Message {
     let productValue = value.asProductValue();
-    let __sender = productValue.elements[0].asBytes();
+    let __sender = new Identity(
+      productValue.elements[0].asProductValue().elements[0].asBytes()
+    );
     let __sent = productValue.elements[1].asNumber();
     let __text = productValue.elements[2].asString();
     return new this(__sender, __sent, __text);
@@ -69,20 +77,12 @@ export class Message extends IDatabaseTable {
       .getInstances() as unknown as Message[];
   }
 
-  public static filterBySender(value: Uint8Array): Message[] {
+  public static filterBySender(value: Identity): Message[] {
     let result: Message[] = [];
     for (let instance of __SPACETIMEDB__.clientDB
       .getTable("Message")
       .getInstances()) {
-      let byteArrayCompare = function (a1: Uint8Array, a2: Uint8Array) {
-        if (a1.length !== a2.length) return false;
-
-        for (let i = 0; i < a1.length; i++) if (a1[i] !== a2[i]) return false;
-
-        return true;
-      };
-
-      if (byteArrayCompare(instance.sender, value)) {
+      if (instance.sender.equals(value)) {
         result.push(instance);
       }
     }
