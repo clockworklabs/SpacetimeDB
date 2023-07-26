@@ -98,7 +98,7 @@ pub enum Column {
     Wildcard,
 }
 
-/// The list of expressions for `SELECT expr1, expr2...`
+/// The list of expressions for `SELECT expr1, expr2...` determining what data to extract.
 #[derive(Debug, Clone)]
 pub struct Selection {
     pub(crate) clauses: Vec<ColumnOp>,
