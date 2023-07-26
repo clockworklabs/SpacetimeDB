@@ -73,7 +73,7 @@ where
 /// - Run `--db ENGINE create-db $total_create` to create dbs like `0.db, 1.db...$total_create` in advance.
 /// - Execute a benchmark `NAME` with `--db spacetime NAME`
 ///
-/// For picking which db to use, this hack is implemented:
+/// To pick which db to use, this hack is implemented:
 ///
 /// - Save with `set_counter(0)` a file with the start of the "iteration"
 /// - Load with `get_counter()` the file with the current `db id`
