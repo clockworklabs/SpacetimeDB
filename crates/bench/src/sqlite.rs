@@ -112,7 +112,6 @@ pub fn select_no_index(conn: &mut Connection, run: Runs) -> ResultBench<()> {
             START_B + (i * START_B)
         );
 
-        //dbg!(sql);
         let mut stmt = conn.prepare(sql)?;
         let _r = stmt
             .query_map([], |row| {
