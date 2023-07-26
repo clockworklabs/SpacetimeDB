@@ -260,6 +260,11 @@ impl Header {
         }
     }
 
+    pub fn find_pos_by_name(&self, field_name: &str) -> Option<usize> {
+        let field = FieldName::named(&self.table_name, field_name);
+        self.column_pos(&field)
+    }
+
     pub fn column<'a>(&'a self, col: &'a FieldName) -> Option<&Column> {
         self.fields.iter().find(|f| &f.field == col)
     }
@@ -294,6 +299,8 @@ impl Header {
         Ok(Self::new(&self.table_name, &p))
     }
 
+    /// Add the fields from `right` to this [Header],
+    /// renaming the duplicated fields with a counter like `a, a == a, a0`.
     pub fn extend(&self, right: &Self) -> Self {
         let count = self.fields.len() + right.fields.len();
         let mut fields = Vec::with_capacity(count);
@@ -318,7 +325,7 @@ impl Header {
             }
         }
 
-        Self::new(&format!("{} | {}", self.table_name, right.table_name), &fields)
+        Self::new(&self.table_name, &fields)
     }
 }
 
@@ -426,11 +433,11 @@ impl<'a> RelValueRef<'a> {
                     if let Some(v) = self.data.elements.get(pos) {
                         v
                     } else {
-                        unreachable!("Field {col} at pos {pos} not found on row {:?}", self.data.elements)
+                        unreachable!("Field `{col}` at pos {pos} not found on row: {:?}", self.data.elements)
                     }
                 } else {
                     unreachable!(
-                        "Field {col} not found on {}. Fields:{}",
+                        "Field `{col}` not found on `{}`. Fields:{}",
                         self.head.table_name, self.head
                     )
                 }
