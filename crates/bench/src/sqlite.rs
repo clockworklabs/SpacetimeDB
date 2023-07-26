@@ -64,6 +64,7 @@ pub fn create_dbs(total_dbs: usize) -> ResultBench<()> {
     Ok(())
 }
 
+/// Returns which pre-created database we are using now.
 pub fn get_counter() -> ResultBench<usize> {
     let x = std::fs::read_to_string(db_path().join("counter"))?;
     let counter = x.parse::<usize>()?;
