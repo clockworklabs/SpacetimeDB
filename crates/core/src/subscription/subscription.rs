@@ -85,7 +85,7 @@ impl QuerySet {
                         //let op_type = result.get_field_named(OP_TYPE_FIELD_NAME)
                         for mut row in result.data {
                             //Hack: remove the hidden field OP_TYPE_FIELD_NAME. see `to_mem_table`
-                            //needs to be done before calculate the PK
+                            // Needs to be done before calculating the PK.
                             let op_type = if let AlgebraicValue::Builtin(BuiltinValue::U8(op)) =
                                 row.elements.remove(pos_op_type)
                             {
