@@ -72,7 +72,7 @@ pub fn get_counter() -> ResultBench<usize> {
     Ok(counter)
 }
 
-//This is a hack to be able to select which pre-create db to use
+/// Selects which pre-created database to use.
 pub fn set_counter(count: usize) -> ResultBench<()> {
     std::fs::write(db_path().join("counter"), count.to_string())?;
     Ok(())
