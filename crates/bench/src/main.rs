@@ -71,7 +71,7 @@ where
 /// To avoid this interference, the workflow for running the benchmarks is:
 ///
 /// - Run `--db ENGINE create-db $total_create` for pre-create the dbs like `0.db, 1.db...$total_create`
-/// - Execute the bench with `--db spacetime NAME`
+/// - Execute a benchmark `NAME` with `--db spacetime NAME`
 ///
 /// For picking which db to use, this hack is implemented:
 ///
