@@ -276,22 +276,24 @@ fn extract_field(table: &From, of: &SqlExpr) -> Result<Option<ProductTypeElement
 /// When `field` is `None`, the type is inferred to an integer or float depending on if a `.` separator is present.
 /// The `is_long` parameter decides whether to parse as a 64-bit type or a 32-bit one.
 fn infer_number(field: Option<&ProductTypeElement>, value: &str, is_long: bool) -> Result<AlgebraicValue, ErrorVm> {
-    match field {
+    let ty = match field {
         None => {
             if value.contains('.') {
                 if is_long {
-                    parse(value, &AlgebraicType::F64)
+                    &AlgebraicType::F64
                 } else {
-                    parse(value, &AlgebraicType::F32)
+                    &AlgebraicType::F32
                 }
             } else if is_long {
-                parse(value, &AlgebraicType::I64)
+                &AlgebraicType::I64
             } else {
-                parse(value, &AlgebraicType::I32)
+                &AlgebraicType::I32
             }
         }
-        Some(f) => parse(value, &f.algebraic_type),
-    }
+        Some(f) => &f.algebraic_type,
+    };
+
+    parse(value, ty)
 }
 
 /// Compiles a [SqlExpr] expression into a [ColumnOp]
