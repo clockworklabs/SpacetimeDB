@@ -74,7 +74,7 @@ impl QuerySet {
                     {
                         let pos_op_type = result.head.find_pos_by_name(OP_TYPE_FIELD_NAME).unwrap_or_else(|| {
                             panic!(
-                                "Fail to locate `{OP_TYPE_FIELD_NAME}` on `{}`. Fields: {:?}",
+                                "failed to locate `{OP_TYPE_FIELD_NAME}` on `{}`. fields: {:?}",
                                 result.head.table_name,
                                 result.head.fields.iter().map(|x| &x.field).collect::<Vec<_>>()
                             )
