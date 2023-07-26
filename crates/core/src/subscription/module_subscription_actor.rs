@@ -4,6 +4,7 @@ use super::{
     query::compile_query,
     subscription::{QuerySet, Subscription},
 };
+use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::protobuf::client_api::Subscribe;
 use crate::{
@@ -136,10 +137,11 @@ impl ModuleSubscriptionActor {
         Ok(())
     }
 
-    async fn add_subscription(
+    async fn _add_subscription(
         &mut self,
         sender: ClientConnectionSender,
         subscription: Subscribe,
+        tx: &mut MutTxId,
     ) -> Result<(), DBError> {
         self.remove_subscriber(sender.id);
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
@@ -147,7 +149,7 @@ impl ModuleSubscriptionActor {
         let queries: QuerySet = subscription
             .query_strings
             .into_iter()
-            .map(|query| compile_query(&self.relational_db, &query))
+            .map(|query| compile_query(&self.relational_db, tx, &query))
             .collect::<Result<_, _>>()?;
 
         let sub = match self.subscriptions.iter_mut().find(|s| s.queries == queries) {
@@ -164,7 +166,7 @@ impl ModuleSubscriptionActor {
             }
         };
 
-        let database_update = sub.queries.eval(&self.relational_db, auth)?;
+        let database_update = sub.queries.eval(&self.relational_db, tx, auth)?;
 
         let sender = sub.subscribers.last().unwrap();
 
@@ -177,6 +179,17 @@ impl ModuleSubscriptionActor {
         Ok(())
     }
 
+    async fn add_subscription(
+        &mut self,
+        sender: ClientConnectionSender,
+        subscription: Subscribe,
+    ) -> Result<(), DBError> {
+        //Split logic to properly handle `Error` + `Tx`
+        let mut tx = self.relational_db.begin_tx();
+        let result = self._add_subscription(sender, subscription, &mut tx).await;
+        self.relational_db.finish_tx(tx, result)
+    }
+
     fn remove_subscriber(&mut self, client_id: ClientActorId) {
         self.subscriptions.retain_mut(|sub| {
             sub.remove_subscriber(client_id);
@@ -184,14 +197,15 @@ impl ModuleSubscriptionActor {
         })
     }
 
-    async fn broadcast_commit_event(&mut self, mut event: ModuleEvent) -> Result<(), DBError> {
+    async fn _broadcast_commit_event(&mut self, mut event: ModuleEvent, tx: &mut MutTxId) -> Result<(), DBError> {
         let futures = FuturesUnordered::new();
         let auth = AuthCtx::new(self.owner_identity, event.caller_identity);
+
         for subscription in &mut self.subscriptions {
             let database_update = event.status.database_update().unwrap();
             let incr = subscription
                 .queries
-                .eval_incr(&self.relational_db, database_update, auth)?;
+                .eval_incr(&self.relational_db, tx, database_update, auth)?;
 
             if incr.tables.is_empty() {
                 continue;
@@ -214,5 +228,12 @@ impl ModuleSubscriptionActor {
         futures.collect::<()>().await;
 
         Ok(())
+    }
+
+    async fn broadcast_commit_event(&mut self, event: ModuleEvent) -> Result<(), DBError> {
+        //Split logic to properly handle `Error` + `Tx`
+        let mut tx = self.relational_db.begin_tx();
+        let result = self._broadcast_commit_event(event, &mut tx).await;
+        self.relational_db.finish_tx(tx, result)
     }
 }

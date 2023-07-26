@@ -39,7 +39,7 @@ termcolor = "1.2.0"
 is-terminal = "0.4"
 futures = "0.3"
 tempfile = "3.3"
-rustyline =  { version = "11.0.0", features = [] }
+rustyline =  { version = "12.0.0", features = [] }
 syntect = { version = "5.0.0", default-features = false, features = ["default-fancy"]}
 wasmbin = "0.6"
 itertools = "0.10"

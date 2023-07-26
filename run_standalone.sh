@@ -22,6 +22,7 @@ sed 's/spacetimedb=debug/spacetimedb=trace/g' "$STDB_PATH/log.conf" > "$STDB_PAT
 
 export SPACETIMEDB_LOG_CONFIG="$STDB_PATH/log.conf"
 export SPACETIMEDB_LOGS_PATH="$STDB_PATH/logs"
+export SPACETIMEDB_TRACY=1
 
 echo "DATABASE AT ${STDB_PATH}"
 echo "LOGS AT $STDB_PATH/logs"

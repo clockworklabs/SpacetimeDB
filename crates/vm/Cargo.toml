@@ -7,10 +7,11 @@ description = "A VM for SpacetimeDB"
 publish = false
 
 [dependencies]
+anyhow = { version = "1.0.57", features = ["backtrace"] }
 spacetimedb-sats= { path = "../sats" }
 spacetimedb-lib = { path = "../lib" }
 thiserror = "1.0.37"
-anyhow = { version = "1.0.57", features = ["backtrace"] }
+tracing = "0.1"
 
 [dev-dependencies]
 tempdir = "0.3.7"

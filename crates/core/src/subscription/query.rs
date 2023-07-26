@@ -1,3 +1,4 @@
+use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, SubscriptionError};
 use crate::host::module_host::DatabaseTableUpdate;
@@ -59,18 +60,23 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
 }
 
 /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
-pub(crate) fn run_query(db: &RelationalDB, query: &QueryExpr, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    execute_single_sql(db, CrudExpr::Query(query.clone()), auth)
+pub(crate) fn run_query(
+    db: &RelationalDB,
+    tx: &mut MutTxId,
+    query: &QueryExpr,
+    auth: AuthCtx,
+) -> Result<Vec<MemTable>, DBError> {
+    execute_single_sql(db, tx, CrudExpr::Query(query.clone()), auth)
 }
 
-pub fn compile_query(relational_db: &RelationalDB, input: &str) -> Result<Query, DBError> {
+pub fn compile_query(relational_db: &RelationalDB, tx: &MutTxId, input: &str) -> Result<Query, DBError> {
     let input = input.trim();
     if input.is_empty() {
         return Err(SubscriptionError::Empty.into());
     }
 
     let mut queries = Vec::new();
-    for q in compile_sql(relational_db, input)? {
+    for q in compile_sql(relational_db, tx, input)? {
         match q {
             CrudExpr::Query(x) => queries.push(x),
             CrudExpr::Insert { .. } => {
@@ -125,7 +131,7 @@ mod tests {
         let table_id = create_table_from_program(p, "inventory", head.clone(), &[row.clone()])?;
 
         let schema = db.schema_for_table(&tx, table_id).unwrap();
-        db.commit_tx(tx)?;
+        // db.commit_tx(tx)?;
 
         let op = TableOp {
             op_type: 1,
@@ -147,7 +153,7 @@ mod tests {
         let q = QueryExpr::new(db_table((&schema).into(), "inventory", table_id)).with_project(fields);
 
         let q = to_mem_table(q, &data);
-        let result = run_query(&db, &q, AuthCtx::for_testing())?;
+        let result = run_query(&db, &mut tx, &q, AuthCtx::for_testing())?;
 
         assert_eq!(
             Some(table.as_without_table_name()),
@@ -165,7 +171,7 @@ mod tests {
             .with_project(fields);
 
         let q = to_mem_table(q, &data);
-        let result = run_query(&db, &q, AuthCtx::for_testing())?;
+        let result = run_query(&db, &mut tx, &q, AuthCtx::for_testing())?;
 
         let table = mem_table(head, vec![product!(1u64, "health")]);
         assert_eq!(
@@ -194,7 +200,7 @@ mod tests {
         assert_eq!(schema.table_type, StTableType::User);
         assert_eq!(schema.table_access, StAccess::Private);
 
-        db.commit_tx(tx)?;
+        //db.commit_tx(tx)?;
 
         let op = TableOp {
             op_type: 0,
@@ -217,7 +223,7 @@ mod tests {
 
         let q = to_mem_table(q, &data);
 
-        let result = run_query(&db, &q, AuthCtx::for_testing())?;
+        let result = run_query(&db, &mut tx, &q, AuthCtx::for_testing())?;
 
         assert_eq!(
             Some(table.as_without_table_name()),
@@ -263,7 +269,7 @@ mod tests {
             tables: vec![data.clone()],
         };
 
-        let result = s.eval_incr(&db, &update, AuthCtx::for_testing())?;
+        let result = s.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
         assert_eq!(result.tables.len(), 3, "Must return 3 tables");
         assert_eq!(
             result.tables.iter().map(|x| x.ops.len()).sum::<usize>(),
@@ -278,6 +284,7 @@ mod tests {
         //Try access the private table
         match run_query(
             &db,
+            &mut tx,
             &q,
             AuthCtx::new(Identity::__dummy(), Identity::from_arr(&[1u8; 32])),
         ) {
@@ -312,7 +319,7 @@ mod tests {
         let table_id = create_table_from_program(p, "inventory", head, &[row.clone()])?;
 
         let schema = db.schema_for_table(&tx, table_id).unwrap();
-        db.commit_tx(tx)?;
+        //db.commit_tx(tx)?;
 
         //SELECT * FROM inventory
         let q_all = QueryExpr::new(db_table((&schema).into(), "inventory", table_id));
@@ -331,7 +338,7 @@ mod tests {
             },
         ]);
 
-        let result = s.eval(&db, AuthCtx::for_testing())?;
+        let result = s.eval(&db, &mut tx, AuthCtx::for_testing())?;
         assert_eq!(result.tables.len(), 3, "Must return 3 tables");
         assert_eq!(
             result.tables.iter().map(|x| x.ops.len()).sum::<usize>(),
@@ -355,7 +362,7 @@ mod tests {
         let table_id = create_table_from_program(p, "inventory", head, &[row.clone()])?;
 
         let schema = db.schema_for_table(&tx, table_id).unwrap();
-        db.commit_tx(tx)?;
+        //db.commit_tx(tx)?;
 
         //SELECT * FROM inventory
         let q_all = QueryExpr::new(db_table((&schema).into(), "inventory", table_id));
@@ -394,7 +401,7 @@ mod tests {
 
         let update = DatabaseUpdate { tables: vec![data] };
 
-        let result = s.eval_incr(&db, &update, AuthCtx::for_testing())?;
+        let result = s.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
         assert_eq!(result.tables.len(), 3, "Must return 3 tables");
         assert_eq!(
             result.tables.iter().map(|x| x.ops.len()).sum::<usize>(),
@@ -431,7 +438,7 @@ mod tests {
 
         let schema_1 = db.schema_for_table(&tx, table_id_1).unwrap();
         let schema_2 = db.schema_for_table(&tx, table_id_2).unwrap();
-        db.commit_tx(tx)?;
+        //db.commit_tx(tx)?;
 
         let q_1 = QueryExpr::new(db_table((&schema_1).into(), "inventory", table_id_1));
         let q_2 = QueryExpr::new(db_table((&schema_2).into(), "player", table_id_2));
@@ -445,11 +452,11 @@ mod tests {
             },
         ]);
 
-        let result_1 = s.eval(&db, AuthCtx::for_testing())?;
+        let result_1 = s.eval(&db, &mut tx, AuthCtx::for_testing())?;
 
         let s = QuerySet(vec![Query { queries: vec![q_2] }, Query { queries: vec![q_1] }]);
 
-        let result_2 = s.eval(&db, AuthCtx::for_testing())?;
+        let result_2 = s.eval(&db, &mut tx, AuthCtx::for_testing())?;
         let to_row = |of: DatabaseUpdate| {
             of.tables
                 .iter()
