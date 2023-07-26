@@ -202,7 +202,8 @@ impl From {
         Ok(fields.collect())
     }
 
-    /// Checks if the field `named` match exactly once on all the tables including the ones inside the joins
+    /// Checks if the field `named` matches exactly once in all the tables
+    /// including the ones inside the joins
     pub fn resolve_field(&self, named: &str) -> Result<FromField, PlanError> {
         let fields = self.find_field(named)?;
 
