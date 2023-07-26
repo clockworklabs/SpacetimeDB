@@ -183,7 +183,7 @@ impl From {
         }))
     }
 
-    /// Returns all the tables names into the `Vec<String>`, including the ones inside the joins
+    /// Returns all the table names as a `Vec<String>`, including the ones inside the joins.
     pub fn table_names(&self) -> Vec<String> {
         self.iter_tables().map(|x| x.table_name.clone()).collect()
     }
