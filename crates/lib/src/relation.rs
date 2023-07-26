@@ -260,8 +260,9 @@ impl Header {
         }
     }
 
-    pub fn find_pos_by_name(&self, field_name: &str) -> Option<usize> {
-        let field = FieldName::named(&self.table_name, field_name);
+    /// Finds the position of a field with `name`.
+    pub fn find_pos_by_name(&self, name: &str) -> Option<usize> {
+        let field = FieldName::named(&self.table_name, name);
         self.column_pos(&field)
     }
 
