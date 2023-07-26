@@ -77,7 +77,7 @@ macro_rules! unsupported{
     }
 }
 
-/// A convenient wrapper for a table name (that comes from a `ObjectName`)
+/// A convenient wrapper for a table name (that comes from an `ObjectName`).
 pub struct Table {
     pub(crate) name: String,
 }
