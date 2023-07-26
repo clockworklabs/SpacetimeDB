@@ -1,4 +1,5 @@
 import { SpacetimeDBClient, ReducerEvent } from "../src/spacetimedb";
+import { Identity } from "../src/identity";
 import WebsocketTestAdapter from "../src/websocket_test_adapter";
 import Player from "./types/player";
 import Point from "./types/point";
@@ -112,15 +113,12 @@ describe("SpacetimeDBClient", () => {
     );
 
     let reducerCallbackLog: {
-      status: string;
-      identity: Uint8Array;
+      reducerEvent: ReducerEvent;
       reducerArgs: any[];
     }[] = [];
-    CreatePlayerReducer.on(
-      (status: string, identity: Uint8Array, reducerArgs: any[]) => {
-        reducerCallbackLog.push({ status, identity, reducerArgs });
-      }
-    );
+    CreatePlayerReducer.on((reducerEvent: ReducerEvent, reducerArgs: any[]) => {
+      reducerCallbackLog.push({ reducerEvent, reducerArgs });
+    });
 
     const subscriptionMessage = {
       SubscriptionUpdate: {
@@ -183,7 +181,7 @@ describe("SpacetimeDBClient", () => {
     expect(inserts[1].reducerEvent?.status).toBe("committed");
     expect(inserts[1].reducerEvent?.message).toBe("a message");
     expect(inserts[1].reducerEvent?.callerIdentity).toEqual(
-      Uint8Array.from([0, 255, 1])
+      Identity.fromString("00FF01")
     );
     expect(inserts[1].reducerEvent?.args).toEqual([
       "A Player",
@@ -191,8 +189,9 @@ describe("SpacetimeDBClient", () => {
     ]);
 
     expect(reducerCallbackLog).toHaveLength(1);
-    expect(reducerCallbackLog[0]["identity"]).toEqual(
-      Uint8Array.from([0, 255, 1])
+
+    expect(reducerCallbackLog[0]["reducerEvent"]["callerIdentity"]).toEqual(
+      Identity.fromString("00FF01")
     );
   });
 
