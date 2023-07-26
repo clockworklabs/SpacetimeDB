@@ -1402,8 +1402,6 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 }
 
 pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(String, String)>> {
-    let mut result = Vec::new();
-
     let reducers: Vec<&ReducerDef> = items
         .iter()
         .map(|i| {
@@ -1553,9 +1551,9 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         writeln!(output, "}}").unwrap();
     }
 
-    result.push(vec![("ReducerEvent.cs".into(), output.into_inner())]);
+    let mut result = vec![vec![("ReducerEvent.cs".to_string(), output.into_inner())]];
 
-    output = CodeIndenter::new(String::new());
+    let mut output = CodeIndenter::new(String::new());
 
     writeln!(output, "using SpacetimeDB;").unwrap();
 

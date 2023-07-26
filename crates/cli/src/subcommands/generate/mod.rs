@@ -158,11 +158,8 @@ pub fn generate<'a>(wasm_file: &'a Path, lang: Language, namespace: &'a str) -> 
         .iter()
         .filter_map(|item| item.generate(&ctx, lang, namespace))
         .collect();
-    for global in generate_globals(&ctx, lang, namespace, &items) {
-        for file in global.iter() {
-            files.push((file.0.clone(), file.1.clone()));
-        }
-    }
+    files.extend(generate_globals(&ctx, lang, namespace, &items).into_iter().flatten());
+
     Ok(files)
 }
 
