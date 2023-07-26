@@ -307,6 +307,7 @@ fn compile<P: ProgramVm>(p: &mut P, node: ExprOpt) -> Result<Code, ErrorVm> {
 /// Third pass:
 ///
 /// Execute the code
+#[tracing::instrument(skip_all)]
 pub fn eval<P: ProgramVm>(p: &mut P, code: Code) -> Code {
     match code {
         Code::Value(_) => code.clone(),
@@ -461,12 +462,14 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
 }
 
 /// Optimize & compile the [Expr] for late execution
+#[tracing::instrument(skip_all)]
 pub fn build_ast<P: ProgramVm>(p: &mut P, ast: Expr) -> Result<Code, ErrorVm> {
     let ast = optimize(p, ast)?;
     compile(p, ast)
 }
 
 /// Optimize, compile & run the [Expr]
+#[tracing::instrument(skip_all)]
 pub fn run_ast<P: ProgramVm>(p: &mut P, ast: Expr) -> Code {
     match build_ast(p, ast) {
         Ok(code) => eval(p, code),
