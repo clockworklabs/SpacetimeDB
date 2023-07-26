@@ -386,7 +386,6 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(skip_all)]
-    #[allow(clippy::let_with_type_underscore)] // I have no idea why clippy is issuing this warning
     pub fn iter(&self, table_id: u32) -> impl Iterator<Item = Result<Vec<u8>, NodesError>> {
         use genawaiter::{sync::gen, yield_, GeneratorState};
 
