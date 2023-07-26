@@ -1,7 +1,6 @@
 use super::util::fmt_fn;
 
 use std::fmt::{self, Write};
-use std::ops::Deref;
 
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::{
@@ -78,7 +77,7 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
         }
         AlgebraicType::Product(prod) => {
             // The only type that is allowed here is the identity type. All other types should fail.
-            if is_identity(prod) {
+            if prod.is_identity() {
                 write!(f, "SpacetimeDB.Identity")
             } else {
                 unimplemented!()
@@ -178,7 +177,7 @@ fn convert_type<'a>(
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
         AlgebraicType::Product(product) => {
-            if is_identity(product) {
+            if product.is_identity() {
                 write!(
                     f,
                     "SpacetimeDB.Identity.From({}.AsProductValue().elements[0].AsBytes())",
@@ -375,26 +374,6 @@ fn convert_sum_type<'a>(ctx: &'a GenCtx, sum_type: &'a SumType, namespace: &'a s
         }
         write!(f, "}})")
     })
-}
-
-pub fn is_identity(ty: &ProductType) -> bool {
-    if ty.elements.len() == 1 {
-        if let Some(name) = &ty.elements[0].name {
-            if name == "__identity_bytes" {
-                if let Builtin(builtin) = &ty.elements[0].algebraic_type {
-                    if let BuiltinType::Array(array_type) = builtin {
-                        let ArrayType { elem_ty: array } = array_type;
-                        if let Builtin(builtin) = array.deref() {
-                            if let BuiltinType::U8 = builtin {
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return false;
 }
 
 pub fn is_enum(sum_type: &SumType) -> bool {
@@ -971,7 +950,7 @@ fn autogen_csharp_access_funcs_for_struct(
 
         let (field_type, csharp_field_type) = match field_type {
             AlgebraicType::Product(product) => {
-                if is_identity(product) {
+                if product.is_identity() {
                     ("Identity".into(), "SpacetimeDB.Identity")
                 } else {
                     continue;
