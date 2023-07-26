@@ -66,8 +66,9 @@ where
     }
 }
 
-/// The workflow for running the bench without interference of creation of the database on disk
-/// that is expensive and generate noise specially in the case of spacetime that create many folder/files is:
+/// Database creation on disk is expensive and generates noise,
+/// especially in the case of spacetime which creates folder/files.
+/// To avoid this interference, the workflow for running the benchmarks is:
 ///
 /// - Run `--db ENGINE create-db $total_create` for pre-create the dbs like `0.db, 1.db...$total_create`
 /// - Execute the bench with `--db spacetime NAME`
