@@ -66,7 +66,13 @@ fn convert_type<'a>(
     ref_prefix: &'a str,
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Product(_) => unreachable!(),
+        AlgebraicType::Product(product) => {
+            if product.is_identity() {
+                write!(f, "Identity.from_string(bytes.fromhex({}))", value)
+            } else {
+                unimplemented!()
+            }
+        }
         AlgebraicType::Sum(sum_type) => match sum_type.as_option() {
             Some(inner_ty) => write!(
                 f,
@@ -100,7 +106,14 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix: &'a str) -> im
         AlgebraicType::Sum(_sum_type) => {
             unimplemented!()
         }
-        AlgebraicType::Product(_) => unimplemented!(),
+        AlgebraicType::Product(prod) => {
+            // The only type that is allowed here is the identity type. All other types should fail.
+            if prod.is_identity() {
+                write!(f, "Identity")
+            } else {
+                unimplemented!()
+            }
+        }
         AlgebraicType::Builtin(b) => match maybe_primitive(b) {
             MaybePrimitive::Primitive(p) => f.write_str(p),
             MaybePrimitive::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => f.write_str("bytes"),
@@ -194,7 +207,7 @@ fn autogen_python_product_table_common(
         writeln!(output).unwrap();
         writeln!(
             output,
-            "from spacetimedb_sdk.spacetimedb_client import SpacetimeDBClient"
+            "from spacetimedb_sdk.spacetimedb_client import SpacetimeDBClient, Identity"
         )
         .unwrap();
         writeln!(output, "from spacetimedb_sdk.spacetimedb_client import ReducerEvent").unwrap();
@@ -275,20 +288,21 @@ fn autogen_python_product_table_common(
                 let field_type = &field.algebraic_type;
 
                 match field_type {
-                    AlgebraicType::Product(_) | AlgebraicType::Ref(_) => {
-                        // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
-                        continue;
-                    }
-                    AlgebraicType::Sum(ty) => {
-                        if ty.as_option().is_none() {
-                            // TODO: We don't allow filtering on enums right now, its possible we may consider it for the future.
+                    AlgebraicType::Product(product) => {
+                        if !product.is_identity() {
                             continue;
                         }
                     }
+                    AlgebraicType::Ref(_) | AlgebraicType::Sum(_) => {
+                        // TODO: We don't allow filtering on enums or tuples right now, its possible we may consider it for the future.
+                        continue;
+                    }
                     AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-                        MaybePrimitive::Array(ArrayType { elem_ty }) if **elem_ty != AlgebraicType::U8 => {
-                            // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
-                            continue;
+                        MaybePrimitive::Array(ArrayType { elem_ty }) => {
+                            if elem_ty.as_builtin().is_none() {
+                                // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
+                                continue;
+                            }
                         }
                         MaybePrimitive::Map(_) => {
                             // TODO: It would be nice to be able to say, give me all entries where this vec contains this value, which we can do.
@@ -471,7 +485,13 @@ pub fn encode_type<'a>(
     ref_prefix: &'a str,
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Product(_) => unreachable!(),
+        AlgebraicType::Product(product) => {
+            if product.is_identity() {
+                write!(f, "Identity.from_string({value})")
+            } else {
+                unimplemented!()
+            }
+        }
         AlgebraicType::Sum(sum_type) => match sum_type.as_option() {
             Some(inner_ty) => write!(
                 f,
