@@ -188,7 +188,8 @@ impl From {
         self.iter_tables().map(|x| x.table_name.clone()).collect()
     }
 
-    /// Returns all the fields that match `f` into the `Vec<FromField>`, including the ones inside the joins
+    /// Returns all the fields matching `f` as a `Vec<FromField>`,
+    /// including the ones inside the joins.
     pub fn find_field(&self, f: &str) -> Result<Vec<FromField>, RelationError> {
         let field = extract_table_field(f)?;
         let fields = self.iter_tables().filter_map(|t| {
