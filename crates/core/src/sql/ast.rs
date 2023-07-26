@@ -271,7 +271,10 @@ fn extract_field(table: &From, of: &SqlExpr) -> Result<Option<ProductTypeElement
     }
 }
 
-/// Infers a numeric variation of [AlgebraicValue] for the `value` and the supplied `Option<&ProductTypeElement>`
+/// Parses `value` according to the type of the field, as provided by `field`.
+///
+/// When `field` is `None`, the type is inferred to an integer or float depending on if a `.` separator is present.
+/// The `is_long` parameter decides whether to parse as a 64-bit type or a 32-bit one.
 fn infer_number(field: Option<&ProductTypeElement>, value: &str, is_long: bool) -> Result<AlgebraicValue, ErrorVm> {
     match field {
         None => {
