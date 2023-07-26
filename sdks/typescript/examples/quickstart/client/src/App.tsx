@@ -2,8 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import logo from "./logo.svg";
 import "./App.css";
 
-import { SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
-import { Identity } from "@clockworklabs/spacetimedb-sdk";
+import { SpacetimeDBClient, Identity } from "@clockworklabs/spacetimedb-sdk";
 
 import Message from "./spacetime_types/message";
 import User from "./spacetime_types/user";
