@@ -45,11 +45,11 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
     };
 
     if let Some(pos) = t.head.find_pos_by_name(OP_TYPE_FIELD_NAME) {
-        for row in &data.ops {
+        t.data.extend(data.ops.iter().map(|row| {
             let mut new = row.row.clone();
             new.elements[pos] = row.op_type.into();
-            t.data.push(new);
-        }
+            new
+        });
     } else {
         t.head.fields.push(Column::new(
             FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
