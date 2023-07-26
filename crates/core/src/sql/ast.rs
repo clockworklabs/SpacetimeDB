@@ -222,7 +222,7 @@ impl From {
     }
 }
 
-/// Describe the portions of the `SQL` standard that we support
+/// Defines the portions of the `SQL` standard that we support.
 pub enum SqlAst {
     Select {
         from: From,
