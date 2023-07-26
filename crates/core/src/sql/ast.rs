@@ -337,7 +337,7 @@ fn compile_expr_field(table: &From, field: Option<&ProductTypeElement>, of: SqlE
     }
 }
 
-/// Compiles the [Table] from a section of `SQL` that describe a table clause
+/// Compiles the [Table] from a section of `SQL` that describes a table clause.
 fn compile_table_factor(table: TableFactor) -> Result<Table, PlanError> {
     match table {
         TableFactor::Table {
