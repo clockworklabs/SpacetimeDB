@@ -26,8 +26,12 @@ message Message {
 
 /// Received by database from client to inform of user's identity and token.
 ///
-/// Do you receive this if you provide a token when connecting, or only if you connect
-/// anonymously? Find out and document - pgoldman 2023-06-06.
+/// The database will always send an `IdentityToken` message
+/// as the first message for a new WebSocket connection.
+/// If the client is re-connecting with existing credentials,
+/// the message will include those credentials.
+/// If the client connected anonymously,
+/// the database will generate new credentials to identify it.
 message IdentityToken {
     bytes identity = 1;
     string token = 2;
@@ -40,15 +44,11 @@ message IdentityToken {
 ///
 /// `reducer` is the string name of a reducer to run.
 ///
-/// `argBytes` is the arguments to the reducer, encoded as BSATN. (Possibly as SATN if
-///            you're in the text API? Find out and document - pgoldman 2023-06-05)
+/// `argBytes` is the arguments to the reducer, encoded as BSATN.
 ///
 /// SpacetimeDB models reducers as taking a single `AlgebraicValue` as an argument, which
 /// generally will be a `ProductValue` containing all of the args (except the
 /// `ReducerContext`, which is injected by the host, not provided in this API).
-///
-/// I don't think clients will ever receive a `FunctionCall` from the database, except
-/// wrapped in an `Event` - pgoldman 2023-06-05.
 message FunctionCall {
     // TODO: Maybe this should be replaced with an int identifier for performance?
     string reducer = 1;
@@ -71,21 +71,17 @@ message FunctionCall {
 /// will be subscribed to `B` but not `A`. In this case, the client will receive a
 /// `SubscriptionUpdate` containing every existing row that matches `B`, even if some were
 /// already in `A`.
-///
-/// I don't think clients will ever receive a `Subscribe` from the database - pgoldman
-/// 2023-06-05.
 message Subscribe {
     repeated string query_strings = 1;
 }
 
 /// Part of a `TransactionUpdate` received by client from database upon a reducer run.
 ///
-/// `timestamp` is the time when the reducer ran (started? finished? Find out and document
-///             - pgoldman 2023-06-05), as microseconds since the Unix epoch.
+/// `timestamp` is the time when the reducer started, as microseconds since the Unix epoch.
 ///
-/// `callerIdentity` is the identity token of the user who requested the reducer
-///                  run. (What if it's run by the database without a client request? Is
-///                  `callerIdentity` empty? Find out and document - pgoldman 2023-06-05).
+/// `callerIdentity` is the identity of the user who requested the reducer run.
+///                  For event-driven and scheduled reducers,
+///                  it is the identity of the database owner.
 ///
 /// `functionCall` contains the name of the reducer which ran and the arguments it
 ///                received.
@@ -98,22 +94,17 @@ message Subscribe {
 /// `status` of `failed` means that the reducer panicked, and any changes it attempted to
 ///                      make were rolled back.
 ///
-/// `status` of `failed` means that the reducer was interrupted due to insufficient
-///                      energy/funds, and any changes it attempted to make were rolled
-///                      back. (Verify this - pgoldman 2023-06-05).
+/// `status` of `out_of_energy` means that the reducer was interrupted
+///                             due to insufficient energy/funds,
+///                             and any changes it attempted to make were rolled back.
 ///
-/// `message` what does it do? Find out and document - pgoldman 2023-06-05.
+/// `message` is the error message with which the reducer failed.
+///           For `committed` or `out_of_energy` statuses,
+///           it is the empty string.
 ///
 /// `energy_quanta_used` and `host_execution_duration_micros` seem self-explanatory; they
 /// describe the amount of energy credits consumed by running the reducer, and how long it
 /// took to run.
-///
-/// Do clients receive `TransactionUpdate`s / `Event`s for reducer runs which don't touch
-/// any of the client's subscribed rows? Find out and document - pgoldman 2023-06-05.
-///
-/// Will a client ever receive an `Event` not wrapped in a `TransactionUpdate`? Possibly
-/// when `status = failed` or `status = out_of_energy`? Find out and document - pgoldman
-/// 2023-06-05.
 message Event {
     enum Status {
         committed = 0;
@@ -154,9 +145,6 @@ message SubscriptionUpdate {
 ///                           or may not change between runs.
 ///
 /// `tableRowOperations` are actual modified rows.
-///
-/// Can a client send `TableUpdate`s to the database to alter the database? I don't think
-/// so, but would be good to know for sure - pgoldman 2023-06-05.
 message TableUpdate {
     uint32 tableId = 1;
     string tableName = 2;
@@ -178,8 +166,7 @@ message TableUpdate {
 ///          tables with a `#[primarykey]` annotation on one column, the `row_pk` is not
 ///          that primary key.
 ///
-/// `row` is the row itself, encoded as BSATN (or possibly SATN for the text api? Find out
-///       and document - pgoldman 2023-06-05).
+/// `row` is the row itself, encoded as BSATN.
 message TableRowOperation {
     enum OperationType {
         DELETE = 0;
@@ -192,8 +179,9 @@ message TableRowOperation {
 
 /// Received by client from database upon a reducer run.
 ///
-/// Do clients receive `TransactionUpdate`s for reducer runs which do not alter any of the
-/// client's subscribed rows? Find out and document - pgoldman 2023-06-05.
+/// Clients receive `TransactionUpdate`s only for reducers
+/// which update at least one of their subscribed rows,
+/// or for their own `failed` or `out_of_energy` reducer invocations.
 ///
 /// `event` contains information about the reducer.
 ///
