@@ -23,6 +23,9 @@ pub fn open_conn(path: &PathBuf) -> ResultBench<Connection> {
     Ok(db)
 }
 
+/// Creates a database for the database with number `db_instance`,
+/// removing the existing one if any.
+/// Returns the path to the database.
 pub fn create_db(db_instance: usize) -> ResultBench<PathBuf> {
     let path = db_path();
     if !path.exists() {
