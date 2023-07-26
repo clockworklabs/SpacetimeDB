@@ -80,7 +80,7 @@ fn bench_select_no_index(c: &mut Criterion) {
     let run = Runs::Tiny;
     let mut group = build_group(c, "select_index_no", run);
 
-    // Factor out the db creation because is IO that generate noise
+    // Factor out the db creation as it is IO that generates noise.
     group.bench_function(BenchmarkId::new(SQLITE, 3), |b| {
         b.iter_batched(
             || sqlite::create_db(0).unwrap(),
