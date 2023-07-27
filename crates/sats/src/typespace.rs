@@ -11,14 +11,17 @@ use crate::{de::Deserialize, ser::Serialize};
 /// That is, this is the `Δ` or `Γ` you'll see in type theory litterature.
 ///
 /// We use (sort of) [deBrujin indices](https://en.wikipedia.org/wiki/De_Bruijn_index)
-/// to represent our type variables,
-/// but notably, these are given for the entire module
+/// to represent our type variables.
+/// Notably however, these are given for the entire module
 /// and there are no universal quantifiers (i.e., `Δ, α ⊢ τ | Δ ⊢ ∀ α. τ`)
 /// nor are there type lambdas (i.e., `Λτ. v`).
+/// See [System F], the second-order lambda calculus, for more on `∀` and `Λ`.
 ///
 /// There are however recursive types in SATs,
 /// e.g., `&0 = { Cons({ v: U8, t: &0 }), Nil }` represents a basic cons list
 /// where `&0` is the type reference at index `0`.
+///
+/// [System F]: https://en.wikipedia.org/wiki/System_F
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[sats(crate = crate)]
 pub struct Typespace {

@@ -202,7 +202,7 @@ impl AlgebraicType {
     pub fn option(some_type: Self) -> Self {
         Self::sum(vec![
             SumTypeVariant::new_named(some_type, "some"),
-            SumTypeVariant::new_named(AlgebraicType::UNIT_TYPE, "none"),
+            SumTypeVariant::unit("none"),
         ])
     }
 
@@ -219,12 +219,7 @@ impl AlgebraicType {
 
     /// Returns a sum type of unit variants with names taken from `var_names`.
     pub fn simple_enum<'a>(var_names: impl Iterator<Item = &'a str>) -> Self {
-        Self::sum(
-            var_names
-                .into_iter()
-                .map(|x| SumTypeVariant::new_named(AlgebraicType::UNIT_TYPE, x))
-                .collect(),
-        )
+        Self::sum(var_names.into_iter().map(SumTypeVariant::unit).collect())
     }
 
     pub fn as_value(&self) -> AlgebraicValue {
