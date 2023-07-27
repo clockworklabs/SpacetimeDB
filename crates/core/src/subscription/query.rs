@@ -482,10 +482,11 @@ mod tests {
     #[test]
     fn test_subscribe_sql() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
+        let mut tx = db.begin_tx();
 
         let sql_create = "CREATE TABLE MobileEntityState (entity_id BIGINT UNSIGNED, location_x INTEGER, location_z INTEGER, destination_x INTEGER, destination_z INTEGER, is_running BOOLEAN, timestamp  BIGINT UNSIGNED, dimension INTEGER UNSIGNED);\
         CREATE TABLE EnemyState (entity_id BIGINT UNSIGNED, herd_id INTEGER, status INTEGER, type INTEGER, direction INTEGER);";
-        run(&db, sql_create, AuthCtx::for_testing())?;
+        run(&db, &mut tx, sql_create, AuthCtx::for_testing())?;
 
         let sql_create = "\
         insert into MobileEntityState (entity_id, location_x, location_z, destination_x, destination_z, is_running, timestamp, dimension) values (1, 96001, 96001, 96001, 1867045146, false, 17167179743690094247, 3926297397);\
@@ -493,14 +494,14 @@ mod tests {
         
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (1, 1181485940, 1633678837, 1158301365, 132191327);
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (2, 2017368418, 194072456, 34423057, 1296770410);";
-        run(&db, sql_create, AuthCtx::for_testing())?;
+        run(&db, &mut tx, sql_create, AuthCtx::for_testing())?;
 
         let sql_query = "SELECT * FROM MobileEntityState JOIN EnemyState ON MobileEntityState.entity_id = EnemyState.entity_id WHERE location_x > 96000 AND MobileEntityState.location_x < 192000 AND MobileEntityState.location_z > 96000 AND MobileEntityState.location_z < 192000";
-        let q = compile_query(&db, sql_query)?;
+        let q = compile_query(&db, &mut tx, sql_query)?;
 
         for q in q.queries {
             assert_eq!(
-                run_query(&db, &q, AuthCtx::for_testing())?.len(),
+                run_query(&db, &mut tx, &q, AuthCtx::for_testing())?.len(),
                 1,
                 "Not return results"
             );
