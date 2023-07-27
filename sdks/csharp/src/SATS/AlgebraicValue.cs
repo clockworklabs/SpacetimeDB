@@ -246,6 +246,28 @@ namespace SpacetimeDB.SATS
                 case BuiltinType.Type.String:
                     return v1.AsString() == v2.AsString();
                 case BuiltinType.Type.Array:
+                    if (t.arrayType.type == AlgebraicType.Type.Builtin &&
+                        t.arrayType.builtin.type == BuiltinType.Type.U8)
+                    {
+                        var arr1 = v1.AsBytes();
+                        var arr2 = v2.AsBytes();
+
+                        if (arr1.Length != arr2.Length)
+                        {
+                            return false;
+                        }
+
+                        for (var i = 0; i < arr1.Length; i++)
+                        {
+                            if (arr1[i] != arr2[i])
+                            {
+                                return false;
+                            }
+                        }
+
+                        return true;
+                    }
+
                     var list1 = v1.AsArray();
                     var list2 = v2.AsArray();
                     if (list1.Count != list2.Count)
