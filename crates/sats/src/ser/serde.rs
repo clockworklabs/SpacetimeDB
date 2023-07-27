@@ -4,21 +4,22 @@ use ::serde::ser as serde;
 
 use crate::ser::{self, Serializer};
 
+/// Converts any [`serde::Serializer`] to a SATS [`Serializer`]
+/// so that Serde's data formats can be reused.
 pub struct SerdeSerializer<S> {
+    /// A serialization data format in Serde.
     ser: S,
 }
 
-impl<S> SerdeSerializer<S> {
+impl<S: serde::Serializer> SerdeSerializer<S> {
+    /// Returns a wrapped serializer.
     pub fn new(ser: S) -> Self {
         Self { ser }
     }
 }
 
+/// An error that occured when serializing SATS to a Serde data format.
 pub struct SerdeError<E>(pub E);
-fn unwrap_error<E>(err: SerdeError<E>) -> E {
-    let SerdeError(err) = err;
-    err
-}
 
 impl<E: serde::Error> ser::Error for SerdeError<E> {
     fn custom<T: fmt::Display>(msg: T) -> Self {
@@ -121,7 +122,9 @@ impl<S: serde::Serializer> Serializer for SerdeSerializer<S> {
     }
 }
 
+/// Serializes array elements by forwarding to `S: serde::SerializeSeq`.
 pub struct SerializeArray<S> {
+    /// An implementation of `serde::SerializeSeq`.
     seq: S,
 }
 
@@ -140,7 +143,9 @@ impl<S: serde::SerializeSeq> ser::SerializeArray for SerializeArray<S> {
     }
 }
 
+/// Serializes map entries by forwarding to `S: serde::SerializeMap`.
 pub struct SerializeMap<S> {
+    /// An implementation of `serde::SerializeMap`.
     map: S,
 }
 
@@ -163,7 +168,9 @@ impl<S: serde::SerializeMap> ser::SerializeMap for SerializeMap<S> {
     }
 }
 
+/// Serializes unnamed product elements by forwarding to `S: serde::SerializeTuple`.
 pub struct SerializeSeqProduct<S> {
+    /// An implementation of `serde::SerializeTuple`.
     tup: S,
 }
 
@@ -182,7 +189,9 @@ impl<S: serde::SerializeTuple> ser::SerializeSeqProduct for SerializeSeqProduct<
     }
 }
 
+/// Serializes named product elements by forwarding to `S: serde::SerializeMap`.
 pub struct SerializeNamedProduct<S> {
+    /// An implementation of `serde::SerializeMap`.
     map: S,
 }
 
@@ -206,31 +215,41 @@ impl<S: serde::SerializeMap> ser::SerializeNamedProduct for SerializeNamedProduc
     }
 }
 
+/// Serializes `T` as a SATS object into `serializer: S`
+/// where `S` is a serde data format.
 pub fn serialize_to<T: super::Serialize + ?Sized, S: serde::Serializer>(
     value: &T,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    value.serialize(SerdeSerializer::new(serializer)).map_err(unwrap_error)
+    value
+        .serialize(SerdeSerializer::new(serializer))
+        .map_err(|SerdeError(e)| e)
 }
 
+/// Turns a type serializable in SATS into one serializable in serde.
+///
+/// That is, `T: sats::Serialize => SerializeWrapper<T>: serde::Serialize`.
 #[repr(transparent)]
 pub struct SerializeWrapper<T: ?Sized>(T);
+
 impl<T: ?Sized> SerializeWrapper<T> {
+    /// Wraps an object serializable in SATS so that it's serializable in Serde.
     pub fn new(t: T) -> Self
     where
         T: Sized,
     {
         Self(t)
     }
+
+    /// Converts `&T` to `&SerializeWrapper<T>`.
     pub fn from_ref(t: &T) -> &Self {
+        // SAFETY: OK because of `repr(transparent)`.
         unsafe { &*(t as *const T as *const SerializeWrapper<T>) }
     }
 }
+
 impl<T: ser::Serialize + ?Sized> serde::Serialize for SerializeWrapper<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serialize_to(&self.0, serializer)
     }
 }

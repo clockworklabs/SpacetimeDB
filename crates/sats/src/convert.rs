@@ -34,15 +34,13 @@ impl From<AlgebraicValue> for ProductValue {
 
 impl From<&AlgebraicValue> for ProductValue {
     fn from(x: &AlgebraicValue) -> Self {
-        Self {
-            elements: vec![x.clone()],
-        }
+        x.clone().into()
     }
 }
 
 impl From<AlgebraicType> for ProductType {
     fn from(x: AlgebraicType) -> Self {
-        Self::new(vec![ProductTypeElement::new(x, None)])
+        Self::new(vec![x.into()])
     }
 }
 

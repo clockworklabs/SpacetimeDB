@@ -3,12 +3,13 @@ use proptest::proptest;
 use spacetimedb_sats::buffer::DecodeError;
 use spacetimedb_sats::builtin_value::{F32, F64};
 use spacetimedb_sats::{
-    product, AlgebraicType, AlgebraicValue, BuiltinValue, ProductType, ProductTypeElement, ProductValue,
+    meta_type::MetaType, product, AlgebraicType, AlgebraicValue, BuiltinValue, ProductType, ProductTypeElement,
+    ProductValue,
 };
 
 #[test]
 fn type_to_binary_equivalent() {
-    check_type(&AlgebraicType::make_meta_type());
+    check_type(&AlgebraicType::meta_type());
 }
 
 #[track_caller]

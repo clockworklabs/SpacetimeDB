@@ -135,11 +135,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
                     algebraic_type: <#ty as spacetimedb::SpacetimeType>::make_type(__typespace),
                 })
             });
-            quote!(spacetimedb::sats::AlgebraicType::Product(
-                spacetimedb::sats::ProductType {
-                    elements: vec![#(#fields),*],
-                }
-            ))
+            quote!(spacetimedb::sats::AlgebraicType::product(vec![#(#fields),*]))
         }
         SatsTypeData::Sum(variants) => {
             let unit = syn::Type::Tuple(syn::TypeTuple {
@@ -154,9 +150,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
                     algebraic_type: <#ty as spacetimedb::SpacetimeType>::make_type(__typespace),
                 })
             });
-            quote!(spacetimedb::sats::AlgebraicType::Sum(spacetimedb::sats::SumType {
-                variants: vec![#(#variants),*],
-            }))
+            quote!(spacetimedb::sats::AlgebraicType::sum(vec![#(#variants),*]))
             // todo!()
         } // syn::Data::Union(u) => return Err(syn::Error::new(u.union_token.span, "unions not supported")),
     };

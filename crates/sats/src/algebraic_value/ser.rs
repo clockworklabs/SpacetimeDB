@@ -2,9 +2,19 @@ use std::convert::Infallible;
 
 use super::AlgebraicValue;
 use crate::ser::{self, ForwardNamedToSeqProduct};
-use crate::{ArrayValue, BuiltinValue, ProductValue, SumValue};
+use crate::ArrayValue;
 
+/// An implementation of [`Serializer`](ser::Serializer)
+/// where the output of serialization is an `AlgebraicValue`.
 pub struct ValueSerializer;
+
+macro_rules! method {
+    ($name:ident -> $t:ty) => {
+        fn $name(self, v: $t) -> Result<Self::Ok, Self::Error> {
+            Ok(v.into())
+        }
+    };
+}
 
 impl ser::Serializer for ValueSerializer {
     type Ok = AlgebraicValue;
@@ -15,45 +25,20 @@ impl ser::Serializer for ValueSerializer {
     type SerializeSeqProduct = SerializeProductValue;
     type SerializeNamedProduct = ForwardNamedToSeqProduct<SerializeProductValue>;
 
-    fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::Bool(v))
-    }
-    fn serialize_u8(self, v: u8) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::U8(v))
-    }
-    fn serialize_u16(self, v: u16) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::U16(v))
-    }
-    fn serialize_u32(self, v: u32) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::U32(v))
-    }
-    fn serialize_u64(self, v: u64) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::U64(v))
-    }
-    fn serialize_u128(self, v: u128) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::U128(v))
-    }
-    fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::I8(v))
-    }
-    fn serialize_i16(self, v: i16) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::I16(v))
-    }
-    fn serialize_i32(self, v: i32) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::I32(v))
-    }
-    fn serialize_i64(self, v: i64) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::I64(v))
-    }
-    fn serialize_i128(self, v: i128) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::I128(v))
-    }
-    fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::F32(v.into()))
-    }
-    fn serialize_f64(self, v: f64) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::F64(v.into()))
-    }
+    method!(serialize_bool -> bool);
+    method!(serialize_u8 -> u8);
+    method!(serialize_u16 -> u16);
+    method!(serialize_u32 -> u32);
+    method!(serialize_u64 -> u64);
+    method!(serialize_u128 -> u128);
+    method!(serialize_i8 -> i8);
+    method!(serialize_i16 -> i16);
+    method!(serialize_i32 -> i32);
+    method!(serialize_i64 -> i64);
+    method!(serialize_i128 -> i128);
+    method!(serialize_f32 -> f32);
+    method!(serialize_f64 -> f64);
+
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
         Ok(AlgebraicValue::String(v.to_owned()))
     }
@@ -61,19 +46,22 @@ impl ser::Serializer for ValueSerializer {
         Ok(AlgebraicValue::Bytes(v.to_owned()))
     }
 
-    fn serialize_array(self, _len: usize) -> Result<Self::SerializeArray, Self::Error> {
-        Ok(SerializeArrayValue { v: Default::default() })
+    fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error> {
+        Ok(SerializeArrayValue {
+            len: Some(len),
+            array: Default::default(),
+        })
     }
 
     fn serialize_map(self, len: usize) -> Result<Self::SerializeMap, Self::Error> {
         Ok(SerializeMapValue {
-            v: Vec::with_capacity(len),
+            entries: Vec::with_capacity(len),
         })
     }
 
     fn serialize_seq_product(self, len: usize) -> Result<Self::SerializeSeqProduct, Self::Error> {
         Ok(SerializeProductValue {
-            v: Vec::with_capacity(len),
+            elements: Vec::with_capacity(len),
         })
     }
 
@@ -87,13 +75,17 @@ impl ser::Serializer for ValueSerializer {
         _name: Option<&str>,
         value: &T,
     ) -> Result<Self::Ok, Self::Error> {
-        let value = Box::new(value.serialize(self)?);
-        Ok(AlgebraicValue::Sum(SumValue { tag, value }))
+        value.serialize(self).map(|v| AlgebraicValue::sum(tag, v))
     }
 }
 
+/// Continuation for serializing an array.
 pub struct SerializeArrayValue {
-    v: ArrayValue,
+    /// For efficiency, the first time `serialize_element` is done,
+    /// this is used to allocate with capacity.
+    len: Option<usize>,
+    /// The array being built.
+    array: ArrayValue,
 }
 
 impl ser::SerializeArray for SerializeArrayValue {
@@ -101,19 +93,21 @@ impl ser::SerializeArray for SerializeArrayValue {
     type Error = Infallible;
 
     fn serialize_element<T: ser::Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
-        // TODO: this can be more efficient
-        self.v
-            .push(elem.serialize(ValueSerializer)?)
+        self.array
+            .push(elem.serialize(ValueSerializer)?, self.len.take())
             .expect("heterogeneous array");
         Ok(())
     }
+
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::Builtin(BuiltinValue::Array { val: self.v }))
+        Ok(AlgebraicValue::ArrayOf(self.array))
     }
 }
 
+/// Continuation for serializing a map value.
 pub struct SerializeMapValue {
-    v: Vec<(AlgebraicValue, AlgebraicValue)>,
+    /// The entry pairs to collect and convert into a map.
+    entries: Vec<(AlgebraicValue, AlgebraicValue)>,
 }
 
 impl ser::SerializeMap for SerializeMapValue {
@@ -125,20 +119,20 @@ impl ser::SerializeMap for SerializeMapValue {
         key: &K,
         value: &V,
     ) -> Result<(), Self::Error> {
-        self.v
+        self.entries
             .push((key.serialize(ValueSerializer)?, value.serialize(ValueSerializer)?));
         Ok(())
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::Builtin(BuiltinValue::Map {
-            val: self.v.into_iter().collect(),
-        }))
+        Ok(AlgebraicValue::map(self.entries.into_iter().collect()))
     }
 }
 
+/// Continuation for serializing a map value.
 pub struct SerializeProductValue {
-    v: Vec<AlgebraicValue>,
+    /// The elements serialized so far.
+    elements: Vec<AlgebraicValue>,
 }
 
 impl ser::SerializeSeqProduct for SerializeProductValue {
@@ -146,10 +140,10 @@ impl ser::SerializeSeqProduct for SerializeProductValue {
     type Error = Infallible;
 
     fn serialize_element<T: ser::Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
-        self.v.push(elem.serialize(ValueSerializer)?);
+        self.elements.push(elem.serialize(ValueSerializer)?);
         Ok(())
     }
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::Product(ProductValue { elements: self.v }))
+        Ok(AlgebraicValue::product(self.elements))
     }
 }

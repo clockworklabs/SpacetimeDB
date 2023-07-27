@@ -11,7 +11,7 @@ use spacetimedb_lib::relation::{
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{ProductValue, TypeInSpace, Typespace};
+use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
 
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::functions::{FunDef, Param};
@@ -466,7 +466,7 @@ pub enum ExprOpt {
 
 pub(crate) fn fmt_value(ty: &AlgebraicType, val: &AlgebraicValue) -> String {
     let ts = Typespace::new(vec![]);
-    TypeInSpace::new(&ts, ty).with_value(val).to_satn()
+    WithTypespace::new(&ts, ty).with_value(val).to_satn()
 }
 
 impl fmt::Display for SourceExpr {

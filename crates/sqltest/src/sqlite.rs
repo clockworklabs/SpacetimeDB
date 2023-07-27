@@ -2,7 +2,7 @@ use crate::db::DBRunner;
 use crate::space::Kind;
 use async_trait::async_trait;
 use rusqlite::types::Value;
-use spacetimedb_sats::AlgebraicType;
+use spacetimedb_sats::{meta_type::MetaType, AlgebraicType};
 use sqllogictest::{AsyncDB, DBOutput};
 use std::path::PathBuf;
 use tempdir::TempDir;
@@ -31,7 +31,7 @@ fn columns(stmt: &mut rusqlite::Statement) -> Vec<(String, AlgebraicType)> {
     stmt.columns()
         .iter()
         .map(|col| {
-            let kind = col.decl_type().map(kind).unwrap_or_else(AlgebraicType::make_meta_type);
+            let kind = col.decl_type().map(kind).unwrap_or_else(AlgebraicType::meta_type);
 
             (col.name().to_string(), kind)
         })
@@ -83,7 +83,7 @@ impl AsyncDB for Sqlite {
         let mut columns = columns(&mut stmt);
         let mut rows = stmt.query([])?;
         let mut data = Vec::new();
-        let mut meta = AlgebraicType::make_meta_type();
+        let mut meta = AlgebraicType::meta_type();
 
         while let Some(row) = rows.next()? {
             let mut new = Vec::with_capacity(columns.len());
@@ -91,7 +91,7 @@ impl AsyncDB for Sqlite {
             for (name, dectype) in &mut columns {
                 let value = row.get::<_, Value>(name.as_str())?;
                 let (value, kind) = match value {
-                    Value::Null => ("null".into(), AlgebraicType::make_never_type()),
+                    Value::Null => ("null".into(), AlgebraicType::NEVER_TYPE),
                     Value::Integer(x) => (x.to_string(), AlgebraicType::I64),
                     Value::Real(x) => (format!("{:?}", x), AlgebraicType::F64),
                     Value::Text(x) => (format!("'{}'", x), AlgebraicType::String),
