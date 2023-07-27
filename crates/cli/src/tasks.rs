@@ -115,9 +115,11 @@ fn has_wasm_bindgen(module: &wasmbin::Module) -> bool {
     module
         .find_std_section::<wasmbin::sections::payload::Import>()
         .and_then(|imports| imports.try_contents().ok())
-        .is_some_and(|imports| imports.iter().any(check_import))
+        .map(|imports| imports.iter().any(check_import))
+        .unwrap_or(false)
         || module
             .find_std_section::<wasmbin::sections::payload::Export>()
             .and_then(|exports| exports.try_contents().ok())
-            .is_some_and(|exports| exports.iter().any(check_export))
+            .map(|exports| exports.iter().any(check_export))
+            .unwrap_or(false)
 }
