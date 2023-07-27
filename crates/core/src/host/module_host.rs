@@ -1,4 +1,5 @@
 use crate::client::ClientConnectionSender;
+use crate::database_logger::LogLevel;
 use crate::db::datastore::traits::{TableId, TxData, TxOp};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
@@ -215,6 +216,11 @@ enum ModuleHostCommand {
     StopTrace {
         respond_to: oneshot::Sender<anyhow::Result<()>>,
     },
+    InjectLogs {
+        respond_to: oneshot::Sender<()>,
+        log_level: LogLevel,
+        message: String,
+    },
 }
 
 impl ModuleHostCommand {
@@ -242,6 +248,11 @@ impl ModuleHostCommand {
             ModuleHostCommand::StopTrace { respond_to } => {
                 let _ = respond_to.send(actor.stop_trace());
             }
+            ModuleHostCommand::InjectLogs {
+                respond_to,
+                log_level,
+                message,
+            } => actor.inject_logs(respond_to, log_level, message),
         }
     }
 }
@@ -280,6 +291,7 @@ pub trait ModuleHostActor: Send + 'static {
     fn get_trace(&self) -> Option<bytes::Bytes>;
     #[cfg(feature = "tracelogging")]
     fn stop_trace(&mut self) -> Result<(), anyhow::Error>;
+    fn inject_logs(&self, respond_to: oneshot::Sender<()>, log_level: LogLevel, message: String);
     fn close(self);
 }
 
@@ -409,12 +421,34 @@ impl ModuleHost {
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let (reducer_id, _, schema) = self
+        let found_reducer = self
             .info
             .reducers
             .get_full(reducer_name)
-            .ok_or(ReducerCallError::NoSuchReducer)?;
-        let args = args.into_tuple(self.info.typespace.with_type(schema))?;
+            .ok_or(ReducerCallError::NoSuchReducer);
+        let (reducer_id, _, schema) = match found_reducer {
+            Ok(ok) => ok,
+            Err(err) => {
+                let _ = self.inject_logs(LogLevel::Error, format!(
+                    "External attempt to call nonexistent reducer \"{}\" failed. Have you run `spacetime generate` recently?",
+                    reducer_name
+                )).await;
+                Err(err)?
+            }
+        };
+
+        let args = args.into_tuple(self.info.typespace.with_type(schema));
+        let args = match args {
+            Ok(ok) => ok,
+            Err(err) => {
+                let _ = self.inject_logs(LogLevel::Error, format!(
+                    "External attempt to call reducer \"{}\" failed, invalid arguments.\nThis is likely due to a mismatched client schema, have you run `spacetime generate` recently?",
+                    reducer_name,
+                )).await;
+                Err(err)?
+            }
+        };
+
         self.call(|respond_to| ModuleHostCommand::CallReducer {
             caller_identity,
             client,
@@ -470,6 +504,15 @@ impl ModuleHost {
     pub async fn stop_trace(&self) -> Result<(), anyhow::Error> {
         self.call(|respond_to| ModuleHostCommand::StopTrace { respond_to })
             .await?
+    }
+
+    pub async fn inject_logs(&self, log_level: LogLevel, message: String) -> Result<(), NoSuchModule> {
+        self.call(|respond_to| ModuleHostCommand::InjectLogs {
+            respond_to,
+            log_level,
+            message,
+        })
+        .await
     }
 
     pub fn downgrade(&self) -> WeakModuleHost {

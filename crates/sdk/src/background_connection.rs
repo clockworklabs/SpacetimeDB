@@ -1,10 +1,10 @@
-use crate::callbacks::{CredentialStore, DbCallbacks, ReducerCallbacks};
+use crate::callbacks::{CredentialStore, DbCallbacks, ReducerCallbacks, SubscriptionAppliedCallbacks};
 use crate::client_api_messages;
 use crate::client_cache::{ClientCache, ClientCacheView, RowCallbackReminders};
 use crate::identity::Credentials;
 use crate::reducer::{AnyReducerEvent, Reducer};
 use crate::websocket::DbConnection;
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use futures::stream::StreamExt;
 use futures_channel::mpsc;
 use spacetimedb_sats::bsatn;
@@ -18,15 +18,20 @@ use tokio::{
 type SharedCell<T> = Arc<Mutex<T>>;
 
 pub struct BackgroundDbConnection {
-    // `Some` if not within the context of an outer runtime. The `Runtime` must
-    // then live as long as `Self`.
+    /// `Some` if not within the context of an outer runtime. The `Runtime` must
+    /// then live as long as `Self`.
     #[allow(unused)]
     runtime: Option<Runtime>,
-    send_chan: mpsc::UnboundedSender<client_api_messages::Message>,
+
+    handle: runtime::Handle,
+    /// None if not yet connected.
+    send_chan: Option<mpsc::UnboundedSender<client_api_messages::Message>>,
     #[allow(unused)]
-    websocket_loop_handle: JoinHandle<()>,
+    /// None if not yet connected.
+    websocket_loop_handle: Option<JoinHandle<()>>,
     #[allow(unused)]
-    recv_handle: JoinHandle<()>,
+    /// None if not yet connected.
+    recv_handle: Option<JoinHandle<()>>,
     #[allow(unused)]
     pub(crate) credentials: SharedCell<CredentialStore>,
 
@@ -45,10 +50,13 @@ pub struct BackgroundDbConnection {
     /// cheaply extract a snapshot of the `ClientCache`
     /// without holding a lock for the lifetime of that snapshot,
     /// and without changes to the state invalidating or altering the snapshot.
-    pub(crate) client_cache: SharedCell<ClientCacheView>,
+    ///
+    /// None if not yet connected.
+    pub(crate) client_cache: Option<SharedCell<ClientCacheView>>,
 
     pub(crate) db_callbacks: SharedCell<DbCallbacks>,
     pub(crate) reducer_callbacks: SharedCell<ReducerCallbacks>,
+    pub(crate) subscription_callbacks: SharedCell<SubscriptionAppliedCallbacks>,
 }
 
 // When called from within an async context, return a handle to it (and no
@@ -184,6 +192,7 @@ async fn receiver_loop(
     db_callbacks: SharedCell<DbCallbacks>,
     reducer_callbacks: SharedCell<ReducerCallbacks>,
     credentials: SharedCell<CredentialStore>,
+    subscription_callbacks: SharedCell<SubscriptionAppliedCallbacks>,
 ) {
     while let Some(msg) = recv.next().await {
         match msg {
@@ -196,6 +205,11 @@ async fn receiver_loop(
                 let new_state = update_client_cache(&client_cache, |client_cache| {
                     process_subscription_update_for_new_subscribed_set(update, client_cache, &mut callback_reminders);
                 });
+
+                subscription_callbacks
+                    .lock()
+                    .expect("SubscriptionAppliedCallbacks Mutex is poisoned")
+                    .handle_subscription_applied(new_state.clone());
 
                 let mut db_callbacks_lock = db_callbacks.lock().expect("DbCallbacks Mutex is poisoned");
                 new_state.invoke_row_callbacks(&mut callback_reminders, &mut db_callbacks_lock, None);
@@ -221,22 +235,46 @@ async fn receiver_loop(
 }
 
 impl BackgroundDbConnection {
-    fn spawn_receiver(
-        recv: mpsc::UnboundedReceiver<client_api_messages::Message>,
-        runtime: &runtime::Handle,
-        client_cache: SharedCell<ClientCacheView>,
-        db_callbacks: SharedCell<DbCallbacks>,
-        reducer_callbacks: SharedCell<ReducerCallbacks>,
-        credentials: SharedCell<CredentialStore>,
-    ) -> JoinHandle<()> {
-        runtime.spawn(receiver_loop(
-            recv,
-            client_cache,
+    /// Construct a partially-initialized `BackgroundDbConnection`
+    /// which can register callbacks, but not handle events.
+    ///
+    /// The `BackgroundDbConnection` will be fully initialized upon calling `connect`.
+    pub(crate) fn unconnected() -> Result<Self> {
+        let (runtime, handle) = enter_or_create_runtime()?;
+        let db_callbacks = Arc::new(Mutex::new(DbCallbacks::new(handle.clone())));
+        let reducer_callbacks = Arc::new(Mutex::new(ReducerCallbacks::without_handle_event(handle.clone())));
+        let credentials = Arc::new(Mutex::new(CredentialStore::without_credentials(&handle)));
+        let subscription_callbacks = Arc::new(Mutex::new(SubscriptionAppliedCallbacks::new(&handle)));
+
+        Ok(BackgroundDbConnection {
+            runtime,
+            handle,
+            send_chan: None,
+            websocket_loop_handle: None,
+            recv_handle: None,
+            credentials,
+            client_cache: None,
             db_callbacks,
             reducer_callbacks,
-            credentials,
+            subscription_callbacks,
+        })
+    }
+
+    fn spawn_receiver(
+        &self,
+        recv: mpsc::UnboundedReceiver<client_api_messages::Message>,
+        client_cache: SharedCell<ClientCacheView>,
+    ) -> JoinHandle<()> {
+        self.handle.spawn(receiver_loop(
+            recv,
+            client_cache,
+            self.db_callbacks.clone(),
+            self.reducer_callbacks.clone(),
+            self.credentials.clone(),
+            self.subscription_callbacks.clone(),
         ))
     }
+
     /// Connect to a database named `db_name` accessible over the internet at the URI `host`.
     ///
     /// If `credentials` are supplied, they will be passed to the new connection to
@@ -249,9 +287,14 @@ impl BackgroundDbConnection {
     /// generate and export a function `connect` from the `mod.rs` which wraps this
     /// function and passes these arguments automatically.
     ///
-    /// Users should not call `BackgroundDbConnection` directly; instead, call the
-    /// `connect` function generated by the SpaceTime CLI.
+    /// Users should not call `BackgroundDbConnection::connect` directly;
+    /// instead, call the `connect` function generated by the SpaceTime CLI.
+    // Ignoring this lint because this is not a user-facing function;
+    // calls are autogenerated by the CLI,
+    // with a wrapper that takes only 3 arguments.
+    #[allow(clippy::too_many_arguments)]
     pub fn connect<Host>(
+        &mut self,
         host: Host,
         db_name: &str,
         credentials: Option<Credentials>,
@@ -259,83 +302,72 @@ impl BackgroundDbConnection {
         handle_resubscribe: crate::client_cache::HandleTableUpdateFn,
         invoke_row_callbacks: crate::client_cache::InvokeCallbacksFn,
         handle_event: crate::callbacks::HandleEventFn,
-    ) -> Result<Self>
+    ) -> Result<()>
     where
         Host: TryInto<http::Uri>,
         <Host as TryInto<http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
     {
-        let (runtime, handle) = enter_or_create_runtime()?;
         // `block_in_place` is required here, as tokio won't allow us to call
         // `block_on` if it would block the current thread of an outer runtime
         let connection = tokio::task::block_in_place(|| {
-            handle.block_on(DbConnection::connect(host, db_name, credentials.as_ref()))
+            self.handle
+                .block_on(DbConnection::connect(host, db_name, credentials.as_ref()))
         })?;
         let client_cache = Arc::new(Mutex::new(Arc::new(ClientCache::new(
             handle_table_update,
             handle_resubscribe,
             invoke_row_callbacks,
         ))));
-        let db_callbacks = Arc::new(Mutex::new(DbCallbacks::new(handle.clone())));
-        let reducer_callbacks = Arc::new(Mutex::new(ReducerCallbacks::new(handle_event, handle.clone())));
-        let credentials = Arc::new(Mutex::new(CredentialStore::maybe_with_credentials(
-            credentials,
-            &handle,
-        )));
-        let (websocket_loop_handle, recv_chan, send_chan) = connection.spawn_message_loop(&handle);
-        let recv_handle = Self::spawn_receiver(
-            recv_chan,
-            &handle,
-            client_cache.clone(),
-            db_callbacks.clone(),
-            reducer_callbacks.clone(),
-            credentials.clone(),
-        );
-        Ok(BackgroundDbConnection {
-            runtime,
-            send_chan,
-            websocket_loop_handle,
-            recv_handle,
-            client_cache,
-            db_callbacks,
-            reducer_callbacks,
-            credentials,
-        })
+        let (websocket_loop_handle, recv_chan, send_chan) = connection.spawn_message_loop(&self.handle);
+        let recv_handle = self.spawn_receiver(recv_chan, client_cache.clone());
+
+        self.send_chan = Some(send_chan);
+        self.websocket_loop_handle = Some(websocket_loop_handle);
+        self.recv_handle = Some(recv_handle);
+        self.client_cache = Some(client_cache);
+
+        self.reducer_callbacks
+            .lock()
+            .expect("ReducerCallbacks Mutex is poisoned")
+            .set_handle_event(handle_event);
+        self.credentials
+            .lock()
+            .expect("CredentialStore Mutex is poisoned")
+            .maybe_set_credentials(credentials);
+
+        Ok(())
     }
 
-    pub fn subscribe(&self, queries: &[&str]) {
-        self.subscribe_owned(queries.iter().map(|&s| s.into()).collect());
+    fn send_message(&self, message: client_api_messages::Message) -> Result<()> {
+        self.send_chan
+            .as_ref()
+            .ok_or(anyhow!("Cannot send message before connecting"))?
+            .unbounded_send(message)
+            .with_context(|| "Sending message to remote DB")
     }
 
-    pub fn subscribe_owned(&self, queries: Vec<String>) {
-        if let Err(e) = self.send_chan.unbounded_send(client_api_messages::Message {
+    pub(crate) fn subscribe(&self, queries: &[&str]) -> Result<()> {
+        self.subscribe_owned(queries.iter().map(|&s| s.into()).collect())
+    }
+
+    pub(crate) fn subscribe_owned(&self, queries: Vec<String>) -> Result<()> {
+        self.send_message(client_api_messages::Message {
             r#type: Some(client_api_messages::message::Type::Subscribe(
                 client_api_messages::Subscribe { query_strings: queries },
             )),
-        }) {
-            // TODO: decide how to handle this error. Panic? Log? Return result? The only
-            //       error here is that the channel is closed (it can't be full because
-            //       it's unbounded), which means the sender loop has panicked. That
-            //       suggests that on Err, we should join the sender's `JoinHandle` to get
-            //       an error.
-            panic!("Sender has closed: {:?}", e);
-        };
+        })
+        .with_context(|| "Subscribing to new queries")
     }
 
-    pub fn invoke_reducer<R: Reducer>(&self, reducer: R) {
-        if let Err(e) = self.send_chan.unbounded_send(client_api_messages::Message {
+    pub(crate) fn invoke_reducer<R: Reducer>(&self, reducer: R) -> Result<()> {
+        self.send_message(client_api_messages::Message {
             r#type: Some(client_api_messages::message::Type::FunctionCall(
                 client_api_messages::FunctionCall {
                     reducer: R::REDUCER_NAME.to_string(),
                     arg_bytes: bsatn::to_vec(&reducer).expect("Serializing reducer failed"),
                 },
             )),
-        }) {
-            // TODO: decide how to handle this error. Panic? Log? Return result? The only
-            //       error here is that the channel is closed (it can't be full because
-            //       it's unbounded), which means the sender loop has panicked. That
-            //       suggests that on Err, we should join the sender's `JoinHandle` to get
-            //       an error.
-            panic!("Sender has closed: {:?}", e);
-        }
+        })
+        .with_context(|| format!("Invoking reducer {}", R::REDUCER_NAME))
     }
 }

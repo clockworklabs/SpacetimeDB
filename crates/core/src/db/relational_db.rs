@@ -256,6 +256,14 @@ impl RelationalDB {
     {
         let mut tx = self.begin_tx();
         let res = f(&mut tx);
+        self.finish_tx(tx, res)
+    }
+
+    /// Perform the transactional logic for the `tx` according to the `res`
+    pub fn finish_tx<A, E>(&self, tx: MutTxId, res: Result<A, E>) -> Result<A, E>
+    where
+        E: From<DBError>,
+    {
         if res.is_err() {
             self.rollback_tx(tx);
         } else {
@@ -315,7 +323,9 @@ impl RelationalDB {
         col_id: u32,
     ) -> Result<Option<ColumnIndexAttribute>, DBError> {
         let table = self.inner.schema_for_table_mut_tx(tx, TableId(table_id))?;
-        let Some(column) = table.columns.get(col_id as usize) else { return Ok(None) };
+        let Some(column) = table.columns.get(col_id as usize) else {
+            return Ok(None);
+        };
         let unique_index = table.indexes.iter().find(|x| x.col_id == col_id).map(|x| x.is_unique);
         Ok(Some(match (column.is_autoinc, unique_index) {
             (true, Some(true)) => ColumnIndexAttribute::Identity,

@@ -1,7 +1,6 @@
 use crate::api::{ClientApi, Connection};
 use crate::sql::run_sql;
 use colored::*;
-use std::io::Write;
 
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
@@ -64,9 +63,7 @@ pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
             Ok(line) => match line.as_str() {
                 ".exit" => break,
                 ".clear" => {
-                    //todo: this could not work on windows
-                    print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
-                    std::io::stdout().flush().ok();
+                    rl.clear_screen().ok();
                 }
                 sql => {
                     rl.add_history_entry(sql).ok();

@@ -78,6 +78,9 @@ mod sym {
 ///       | reducer [, repeat = Duration]
 ///       | index(btree | hash [, name = string] [, field_name:ident]*)
 /// ```
+///
+/// For description of the field attributes on `#[spacetimedb(table)]` structs,
+/// see [`TableType`](spacetimedb_tabletype).
 #[proc_macro_attribute]
 pub fn spacetimedb(macro_args: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let item: TokenStream = item.into();
@@ -195,6 +198,7 @@ impl syn::parse::Parse for MacroInput {
                 // Extract stuff in parens.
                 let in_parens;
                 syn::parenthesized!(in_parens in input);
+                let in_parens = &in_parens;
 
                 // Parse `btree` or `hash`.
                 let ty: IndexType = in_parens.parse()?;
@@ -203,11 +207,11 @@ impl syn::parse::Parse for MacroInput {
                 // Also find plain identifiers that become field names to index.
                 let mut name = None;
                 let mut field_names = Vec::new();
-                comma_then_comma_delimited(input, || {
-                    match_tok!(match input {
+                comma_then_comma_delimited(in_parens, || {
+                    match_tok!(match in_parens {
                         (tok, _) @ (kw::name, Token![=]) => {
                             check_duplicate(&name, tok.span)?;
-                            let v = input.parse::<syn::LitStr>()?;
+                            let v = in_parens.parse::<syn::LitStr>()?;
                             name = Some(v.value())
                         }
                         ident @ Ident => field_names.push(ident),
@@ -463,6 +467,31 @@ fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
     })
 }
 
+/// Generates code for treating this type as a table.
+///
+/// Among other things, this derives `Serialize`, `Deserialize`,
+/// `SpacetimeType`, and `TableType` for our type.
+///
+/// A table type must be a `struct`, whose fields may be annotated with the following attributes:
+///
+/// * `#[autoinc]`
+///
+///    Creates a database sequence.
+///
+///    When a row is inserted with the annotated field set to `0` (zero),
+///    the sequence is incremented, and this value is used instead.
+///    Can only be used on numeric types and may be combined with indexes.
+///
+///    Note that using `#[autoinc]` on a field does not also imply `#[primarykey]` or `#[unique]`.
+///    If those semantics are desired, those attributes should also be used.
+///
+/// * `#[unique]`
+///
+///    Creates an index and unique constraint for the annotated field.
+///
+/// * `#[primarykey]`
+///
+///    Similar to `#[unique]`, but generates additional CRUD methods.
 #[proc_macro_derive(TableType, attributes(sats, unique, autoinc, primarykey))]
 pub fn spacetimedb_tabletype(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let item = syn::parse_macro_input!(item as syn::DeriveInput);
@@ -479,7 +508,9 @@ enum ColumnAttr {
 
 impl ColumnAttr {
     fn parse(attr: &syn::Attribute) -> syn::Result<Option<Self>> {
-        let Some(ident) = attr.path().get_ident() else { return Ok(None) };
+        let Some(ident) = attr.path().get_ident() else {
+            return Ok(None);
+        };
         Ok(if ident == sym::UNIQUE {
             attr.meta.require_path_only()?;
             Some(ColumnAttr::Unique(ident.span()))
@@ -501,7 +532,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     let original_struct_ident = sats_ty.ident;
     let table_name = &sats_ty.name;
     let module::SatsTypeData::Product(fields) = &sats_ty.data else {
-        return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"))
+        return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
     };
 
     let mut columns = Vec::<Column>::new();
@@ -579,7 +610,9 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
             continue;
         }
         let args = attr.parse_args::<MacroInput>()?;
-        let MacroInput::Index { ty, name, field_names } = args else { continue };
+        let MacroInput::Index { ty, name, field_names } = args else {
+            continue;
+        };
         let col_ids = field_names
             .iter()
             .map(|ident| {

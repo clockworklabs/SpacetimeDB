@@ -67,7 +67,7 @@ pub fn find_person_by_nick(nick: String) {
 }
 
 #[spacetimedb(table)]
-#[spacetimedb(index(btree), name = "by_id", id)]
+#[spacetimedb(index(btree, name = "by_id", id))]
 pub struct NonuniquePerson {
     id: i32,
     name: String,
@@ -137,7 +137,7 @@ fn find_identified_person(id_number: u64) {
 
 // Ensure that indices on non-unique columns behave as we expect.
 #[spacetimedb(table)]
-#[spacetimedb(index(btree), name="person_surname", surname)]
+#[spacetimedb(index(btree, name="person_surname", surname))]
 struct IndexedPerson {
     #[unique]
     id: i32,

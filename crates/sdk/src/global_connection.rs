@@ -1,5 +1,5 @@
 use crate::background_connection::BackgroundDbConnection;
-use crate::callbacks::{CredentialStore, DbCallbacks, ReducerCallbacks};
+use crate::callbacks::{CredentialStore, DbCallbacks, ReducerCallbacks, SubscriptionAppliedCallbacks};
 use crate::client_cache::{ClientCache, ClientCacheView};
 use anyhow::{anyhow, Result};
 use std::{
@@ -8,25 +8,25 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-pub(crate) static CONNECTION: RwLock<Option<BackgroundDbConnection>> = RwLock::new(None);
+lazy_static::lazy_static! {
+    pub(crate) static ref CONNECTION: RwLock<BackgroundDbConnection> = RwLock::new(
+        BackgroundDbConnection::unconnected().expect("Could not create BackgroundDbConnection"),
+    );
+}
 
 /// Invoke `f` with `CONNECTION` locked.
 ///
 /// Calls to this function are generated in the `connect` function in `mod.rs` generated
 /// by the Spacetime CLI. Users should not call this function directly.
-pub fn with_connection<Res>(f: impl FnOnce(&mut Option<BackgroundDbConnection>) -> Res) -> Res {
+pub fn with_connection_mut<Res>(f: impl FnOnce(&mut BackgroundDbConnection) -> Res) -> Res {
     let mut connection = CONNECTION.write().expect("CONNECTION RwLock is poisoned");
     f(&mut connection)
 }
 
 /// If currently connected, invoke `f` with `CONNECTION` locked. If not connected, return an error.
-pub(crate) fn try_with_connection<Res>(f: impl FnOnce(&BackgroundDbConnection) -> Res) -> Result<Res> {
+pub(crate) fn with_connection<Res>(f: impl FnOnce(&BackgroundDbConnection) -> Res) -> Res {
     let connection = CONNECTION.read().expect("CONNECTION RwLock is poisoned");
-    if let Some(connection) = &*connection {
-        Ok(f(connection))
-    } else {
-        Err(anyhow!("Not connected"))
-    }
+    f(&connection)
 }
 
 /// If `CURRENT_STATE` is bound in this thread, invoke `f` with the current state.
@@ -39,8 +39,8 @@ pub(crate) fn try_with_client_cache<Res>(f: impl FnOnce(&ClientCache) -> Res) ->
 
 /// If currently connected, invoke `f` with the current connection's `ReducerCallbacks`. If not
 /// connected, return an error.
-pub(crate) fn try_with_reducer_callbacks<Res>(f: impl FnOnce(&mut ReducerCallbacks) -> Res) -> Result<Res> {
-    try_with_connection(|connection| {
+pub(crate) fn with_reducer_callbacks<Res>(f: impl FnOnce(&mut ReducerCallbacks) -> Res) -> Res {
+    with_connection(|connection| {
         let mut callbacks = connection
             .reducer_callbacks
             .lock()
@@ -51,8 +51,8 @@ pub(crate) fn try_with_reducer_callbacks<Res>(f: impl FnOnce(&mut ReducerCallbac
 
 /// If currently connected, invoke `f` with the current connection's `CredentialStore`. If not
 /// connected, return an error.
-pub(crate) fn try_with_credential_store<Res>(f: impl FnOnce(&mut CredentialStore) -> Res) -> Result<Res> {
-    try_with_connection(|connection| {
+pub(crate) fn with_credential_store<Res>(f: impl FnOnce(&mut CredentialStore) -> Res) -> Res {
+    with_connection(|connection| {
         let mut credentials = connection
             .credentials
             .lock()
@@ -61,10 +61,20 @@ pub(crate) fn try_with_credential_store<Res>(f: impl FnOnce(&mut CredentialStore
     })
 }
 
-pub(crate) fn try_with_db_callbacks<Res>(f: impl FnOnce(&mut DbCallbacks) -> Res) -> Result<Res> {
-    try_with_connection(|connection| {
+pub(crate) fn with_db_callbacks<Res>(f: impl FnOnce(&mut DbCallbacks) -> Res) -> Res {
+    with_connection(|connection| {
         let mut db_callbacks = connection.db_callbacks.lock().expect("DbCallbacks Mutex is poisoned");
         f(&mut db_callbacks)
+    })
+}
+
+pub(crate) fn with_subscription_callbacks<Res>(f: impl FnOnce(&mut SubscriptionAppliedCallbacks) -> Res) -> Res {
+    with_connection(|connection| {
+        let mut subscription_callbacks = connection
+            .subscription_callbacks
+            .lock()
+            .expect("SubscriptionAppliedCallbacks Mutex is poisoned");
+        f(&mut subscription_callbacks)
     })
 }
 
@@ -94,11 +104,15 @@ pub(crate) fn try_current_state() -> Option<ClientCacheView> {
 /// attempt to extract the most recent client cache state from `CONNECTION`.
 /// Return an error if both `CURRENT_STATE` and `CONNECTION` are unbound.
 pub(crate) fn current_or_global_state() -> Result<ClientCacheView> {
-    if let Some(curr) = try_current_state() {
-        Ok(curr)
-    } else {
-        try_with_connection(|conn| conn.client_cache.lock().expect("ClientCache Mutex is poisoned").clone())
-    }
+    try_current_state()
+        .or_else(|| {
+            with_connection(|conn| {
+                conn.client_cache
+                    .as_ref()
+                    .map(|client_cache| client_cache.lock().expect("ClientCache Mutex is poisoned").clone())
+            })
+        })
+        .ok_or(anyhow!("Cannot access ClientCache before connecting"))
 }
 
 /// An RAII-style guard for a binding of `CURRENT_STATE`.
