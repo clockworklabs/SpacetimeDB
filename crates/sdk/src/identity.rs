@@ -7,7 +7,7 @@ use spacetimedb_sats::bsatn;
 // TODO: impl ser/de for `Identity`, `Token`, `Credentials` so that clients can stash them
 //       to disk and use them to re-connect.
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 /// A unique public identifier for a client connected to a database.
 pub struct Identity {
     __identity_bytes: Vec<u8>,
