@@ -15,13 +15,13 @@ NAMESPACE=$(random_string)
 run_test cargo run generate --out-dir "${TMP_DIR}" --lang cs --namespace "${NAMESPACE}" --project-path "${PROJECT_PATH}"
 
 LINES="$(grep -r -o "namespace ${NAMESPACE}" "${TMP_DIR}" | wc -l | tr -d ' ')"
-if [ "${LINES}" != 4 ] ; then
+if [ "${LINES}" != 5 ] ; then
 	echo "FOUND: ${LINES} EXPECTED: "
 	exit 1
 fi
 
 LINES="$(grep -r -o "using SpacetimeDB;" "${TMP_DIR}" | wc -l | tr -d ' ')"
-if [ "${LINES}" != 4 ] ; then
+if [ "${LINES}" != 5 ] ; then
 	echo "FOUND: ${LINES} EXPECTED: "
 	exit 1
 fi
