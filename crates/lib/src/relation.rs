@@ -304,26 +304,22 @@ impl Header {
     /// renaming duplicated fields with a counter like `a, a => a, a0`.
     pub fn extend(&self, right: &Self) -> Self {
         let count = self.fields.len() + right.fields.len();
-        let mut fields = Vec::with_capacity(count);
-        let mut left = self.fields.clone();
-        let mut _right = right.fields.clone();
-
-        fields.append(&mut left);
+        let mut fields = self.fields.clone();
+        fields.reserve(count - fields.len());
 
         let mut cont = 0;
         //Avoid duplicated field names...
-        for mut f in _right.into_iter() {
+        for mut f in right.fields.iter().cloned() {
             if f.field.table() == self.table_name && self.column_pos(&f.field).is_some() {
                 let name = format!("{}_{}", f.field.field(), cont);
                 f.field = FieldName::Name {
                     table: f.field.table().into(),
                     field: name,
                 };
-                fields.push(f);
+
                 cont += 1;
-            } else {
-                fields.push(f);
             }
+            fields.push(f);
         }
 
         Self::new(&self.table_name, &fields)

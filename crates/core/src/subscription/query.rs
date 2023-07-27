@@ -49,7 +49,7 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
             let mut new = row.row.clone();
             new.elements[pos] = row.op_type.into();
             new
-        });
+        }));
     } else {
         t.head.fields.push(Column::new(
             FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
@@ -495,7 +495,7 @@ mod tests {
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (2, 2017368418, 194072456, 34423057, 1296770410);";
         run(&db, sql_create, AuthCtx::for_testing())?;
 
-        let sql_query = "SELECT MobileEntityState.entity_id, EnemyState.entity_id, location_x,type, direction FROM MobileEntityState JOIN EnemyState ON MobileEntityState.entity_id = EnemyState.entity_id WHERE location_x > 96000 AND MobileEntityState.location_x < 192000 AND MobileEntityState.location_z > 96000 AND MobileEntityState.location_z < 192000";
+        let sql_query = "SELECT * FROM MobileEntityState JOIN EnemyState ON MobileEntityState.entity_id = EnemyState.entity_id WHERE location_x > 96000 AND MobileEntityState.location_x < 192000 AND MobileEntityState.location_z > 96000 AND MobileEntityState.location_z < 192000";
         let q = compile_query(&db, sql_query)?;
 
         for q in q.queries {

@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::error::RelationError;
 use spacetimedb_lib::table::{ColumnDef, ProductTypeMeta};
@@ -193,16 +192,13 @@ impl From {
     /// including the ones inside the joins.
     pub fn find_field(&self, f: &str) -> Result<Vec<FromField>, RelationError> {
         let field = extract_table_field(f)?;
-        let fields = self
-            .iter_tables()
-            .filter_map(|t| {
-                let f = t.normalize_field(&field);
-                t.get_column_by_field(&f).map(|column| FromField {
-                    field: f,
-                    column: column.into(),
-                })
+        let fields = self.iter_tables().filter_map(|t| {
+            let f = t.normalize_field(&field);
+            t.get_column_by_field(&f).map(|column| FromField {
+                field: f,
+                column: column.into(),
             })
-            .unique_by(|p| p.field.clone());
+        });
 
         Ok(fields.collect())
     }
@@ -213,10 +209,14 @@ impl From {
         let fields = self.find_field(named)?;
 
         match fields.len() {
-            0 => Err(PlanError::UnknownField {
-                field: FieldName::named("?", named),
-                tables: self.table_names(),
-            }),
+            0 => {
+                let field = extract_table_field(named)?;
+
+                Err(PlanError::UnknownField {
+                    field: FieldName::named(field.table.unwrap_or("?"), field.field),
+                    tables: self.table_names(),
+                })
+            }
             1 => Ok(fields[0].clone()),
             _ => Err(PlanError::AmbiguousField {
                 field: named.into(),
