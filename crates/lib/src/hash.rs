@@ -1,4 +1,6 @@
+#[cfg(feature = "serde")]
 use crate::{de, ser};
+
 use core::fmt;
 
 use sha3::{Digest, Keccak256};

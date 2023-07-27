@@ -1,8 +1,11 @@
+#[cfg(feature = "serde")]
+use crate::{de, ser};
+
 use std::fmt;
 
 use sats::{impl_deserialize, impl_serialize, impl_st};
 
-use crate::sats::{self, de, ser};
+use crate::sats;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuthCtx {
