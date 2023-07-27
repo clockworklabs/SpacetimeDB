@@ -63,7 +63,7 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
             }
         }
         AlgebraicType::Product(p) if p.is_identity() => {
-            write!(out, "spacetimedb_sdk::identity::Identity").unwrap();
+            write!(out, "Identity").unwrap();
         }
         AlgebraicType::Product(ProductType { elements }) => {
             print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {
