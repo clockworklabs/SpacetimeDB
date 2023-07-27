@@ -18,7 +18,7 @@ use spacetimedb_lib::name;
 use spacetimedb_lib::name::DomainName;
 use spacetimedb_lib::name::DomainParsingError;
 use spacetimedb_lib::name::PublishOp;
-use spacetimedb_lib::sats::TypeInSpace;
+use spacetimedb_lib::sats::WithTypespace;
 
 use crate::auth::{
     SpacetimeAuth, SpacetimeAuthHeader, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros, SpacetimeIdentity,
@@ -201,7 +201,7 @@ async fn extract_db_call_info(
     })
 }
 
-fn entity_description_json(description: TypeInSpace<EntityDef>, expand: bool) -> Option<Value> {
+fn entity_description_json(description: WithTypespace<EntityDef>, expand: bool) -> Option<Value> {
     let typ = DescribedEntityType::from_entitydef(description.ty()).as_str();
     let len = match description.ty() {
         EntityDef::Table(t) => description.resolve(t.data).ty().as_product()?.elements.len(),

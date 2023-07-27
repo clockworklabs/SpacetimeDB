@@ -1,16 +1,21 @@
+//! Minimal utility for reading & writing the types we need to internal storage,
+//! without relying on types in third party libraries like `bytes::Bytes`, etc.
+//! Meant to be kept slim and trim for use across both native and WASM.
+
 use std::cell::Cell;
 use std::fmt;
 use std::str::Utf8Error;
 
-/// Minimal utility for reading & writing the types we need to internal storage, without relying
-/// on third party libraries like bytes::Bytes, etc.
-/// Meant to be kept slim and trim for use across both native and wasm.
-
+/// An error that occurred when decoding.
 #[derive(Debug, Clone)]
 pub enum DecodeError {
+    /// Not enough data was provided in the input.
     BufferLength,
+    /// The tag does not exist for the sum.
     InvalidTag,
+    /// Expected data to be UTF-8 but it wasn't.
     InvalidUtf8,
+    /// Custom error not in the other variants of `DecodeError`.
     Other(String),
 }
 
@@ -18,7 +23,7 @@ impl fmt::Display for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DecodeError::BufferLength => f.write_str("data too short"),
-            DecodeError::InvalidTag => f.write_str("invalid tag for enum"),
+            DecodeError::InvalidTag => f.write_str("invalid tag for sum"),
             DecodeError::InvalidUtf8 => f.write_str("invalid utf8"),
             DecodeError::Other(err) => f.write_str(err),
         }
@@ -37,85 +42,160 @@ impl From<Utf8Error> for DecodeError {
     }
 }
 
+/// A buffered writer of some kind.
 pub trait BufWriter {
+    /// Writes the `slice` to the buffer.
+    ///
+    /// This is the only method implementations are required to define.
+    /// All other methods are provided.
     fn put_slice(&mut self, slice: &[u8]);
+
+    /// Writes a `u8` to the buffer in little-endian (LE) encoding.
     fn put_u8(&mut self, val: u8) {
         self.put_slice(&val.to_le_bytes())
     }
+
+    /// Writes a `u16` to the buffer in little-endian (LE) encoding.
     fn put_u16(&mut self, val: u16) {
         self.put_slice(&val.to_le_bytes())
     }
+
+    /// Writes a `u32` to the buffer in little-endian (LE) encoding.
     fn put_u32(&mut self, val: u32) {
         self.put_slice(&val.to_le_bytes())
     }
+
+    /// Writes a `u64` to the buffer in little-endian (LE) encoding.
     fn put_u64(&mut self, val: u64) {
         self.put_slice(&val.to_le_bytes())
     }
+
+    /// Writes a `u128` to the buffer in little-endian (LE) encoding.
     fn put_u128(&mut self, val: u128) {
         self.put_slice(&val.to_le_bytes())
     }
+
+    /// Writes an `i8` to the buffer in little-endian (LE) encoding.
     fn put_i8(&mut self, val: i8) {
         self.put_slice(&val.to_le_bytes())
     }
+
+    /// Writes an `i16` to the buffer in little-endian (LE) encoding.
     fn put_i16(&mut self, val: i16) {
         self.put_slice(&val.to_le_bytes())
     }
+
+    /// Writes an `i32` to the buffer in little-endian (LE) encoding.
     fn put_i32(&mut self, val: i32) {
         self.put_slice(&val.to_le_bytes())
     }
+
+    /// Writes an `i64` to the buffer in little-endian (LE) encoding.
     fn put_i64(&mut self, val: i64) {
         self.put_slice(&val.to_le_bytes())
     }
+
+    /// Writes an `i128` to the buffer in little-endian (LE) encoding.
     fn put_i128(&mut self, val: i128) {
         self.put_slice(&val.to_le_bytes())
     }
 }
 
+/// A buffered reader of some kind.
+///
+/// The lifetime `'de` allows the output of deserialization to borrow from the input.
 pub trait BufReader<'de> {
+    /// Reads and returns a byte slice of `.len() = size` advancing the cursor.
     fn get_slice(&mut self, size: usize) -> Result<&'de [u8], DecodeError>;
+
+    /// Returns the number of bytes left to read in the input.
     fn remaining(&self) -> usize;
 
+    /// Reads a `u8` in little endian (LE) encoding from the input.
+    ///
+    /// This method is provided for convenience
+    /// and is derived from [`get_slice`](BufReader::get_slice)'s definition.
     fn get_u8(&mut self) -> Result<u8, DecodeError> {
         self.get_array().map(u8::from_le_bytes)
     }
+
+    /// Reads a `u16` in little endian (LE) encoding from the input.
+    ///
+    /// This method is provided for convenience
+    /// and is derived from [`get_slice`](BufReader::get_slice)'s definition.
     fn get_u16(&mut self) -> Result<u16, DecodeError> {
         self.get_array().map(u16::from_le_bytes)
     }
+
+    /// Reads a `u32` in little endian (LE) encoding from the input.
+    ///
+    /// This method is provided for convenience
+    /// and is derived from [`get_slice`](BufReader::get_slice)'s definition.
     fn get_u32(&mut self) -> Result<u32, DecodeError> {
         self.get_array().map(u32::from_le_bytes)
     }
+
+    /// Reads a `u64` in little endian (LE) encoding from the input.
+    ///
+    /// This method is provided for convenience
+    /// and is derived from [`get_slice`](BufReader::get_slice)'s definition.
     fn get_u64(&mut self) -> Result<u64, DecodeError> {
         self.get_array().map(u64::from_le_bytes)
     }
+
+    /// Reads a `u128` in little endian (LE) encoding from the input.
+    ///
+    /// This method is provided for convenience
+    /// and is derived from [`get_slice`](BufReader::get_slice)'s definition.
     fn get_u128(&mut self) -> Result<u128, DecodeError> {
         self.get_array().map(u128::from_le_bytes)
     }
+
+    /// Reads an `i8` in little endian (LE) encoding from the input.
+    ///
+    /// This method is provided for convenience
+    /// and is derived from [`get_slice`](BufReader::get_slice)'s definition.
     fn get_i8(&mut self) -> Result<i8, DecodeError> {
         self.get_array().map(i8::from_le_bytes)
     }
+
+    /// Reads an `i16` in little endian (LE) encoding from the input.
+    ///
+    /// This method is provided for convenience
+    /// and is derived from [`get_slice`](BufReader::get_slice)'s definition.
     fn get_i16(&mut self) -> Result<i16, DecodeError> {
         self.get_array().map(i16::from_le_bytes)
     }
+
+    /// Reads an `i32` in little endian (LE) encoding from the input.
+    ///
+    /// This method is provided for convenience
+    /// and is derived from [`get_slice`](BufReader::get_slice)'s definition.
     fn get_i32(&mut self) -> Result<i32, DecodeError> {
         self.get_array().map(i32::from_le_bytes)
     }
+
+    /// Reads an `i64` in little endian (LE) encoding from the input.
+    ///
+    /// This method is provided for convenience
+    /// and is derived from [`get_slice`](BufReader::get_slice)'s definition.
     fn get_i64(&mut self) -> Result<i64, DecodeError> {
         self.get_array().map(i64::from_le_bytes)
     }
+
+    /// Reads an `i128` in little endian (LE) encoding from the input.
+    ///
+    /// This method is provided for convenience
+    /// and is derived from [`get_slice`](BufReader::get_slice)'s definition.
     fn get_i128(&mut self) -> Result<i128, DecodeError> {
         self.get_array().map(i128::from_le_bytes)
     }
 
+    /// Reads an array of type `[u8; C]` from the input.
     fn get_array<const C: usize>(&mut self) -> Result<[u8; C], DecodeError> {
         let mut buf: [u8; C] = [0; C];
-        self.get_into_array(&mut buf, C)?;
+        buf.copy_from_slice(self.get_slice(C)?);
         Ok(buf)
-    }
-
-    fn get_into_array<const C: usize>(&mut self, buf: &mut [u8; C], amount: usize) -> Result<(), DecodeError> {
-        let bytes = self.get_slice(amount)?;
-        buf.copy_from_slice(bytes);
-        Ok(())
     }
 }
 
@@ -151,21 +231,33 @@ impl<'de> BufReader<'de> for &'de [u8] {
     }
 }
 
-pub struct Cursor<B> {
-    pub buf: B,
+/// A cursor based [`BufReader<'de>`] implementation.
+pub struct Cursor<I> {
+    /// The underlying input read from.
+    pub buf: I,
+    /// The position within the reader.
     pub pos: Cell<usize>,
 }
-impl<B> Cursor<B> {
-    pub fn new(buf: B) -> Self {
+
+impl<I> Cursor<I> {
+    /// Returns a new cursor on the provided `buf` input.
+    ///
+    /// The cursor starts at the beginning of `buf`.
+    pub fn new(buf: I) -> Self {
         Self { buf, pos: 0.into() }
     }
 }
-impl<'de, B: AsRef<[u8]>> BufReader<'de> for &'de Cursor<B> {
+
+impl<'de, I: AsRef<[u8]>> BufReader<'de> for &'de Cursor<I> {
     fn get_slice(&mut self, size: usize) -> Result<&'de [u8], DecodeError> {
+        // "Read" the slice `buf[pos..size]`.
         let ret = self.buf.as_ref()[self.pos.get()..]
             .get(..size)
             .ok_or(DecodeError::BufferLength)?;
+
+        // Advance the cursor by `size` bytes.
         self.pos.set(self.pos.get() + size);
+
         Ok(ret)
     }
 

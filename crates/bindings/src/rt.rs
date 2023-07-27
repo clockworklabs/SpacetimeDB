@@ -12,8 +12,8 @@ use crate::{sys, ReducerContext, ScheduleToken, SpacetimeType, TableType, Timest
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
-use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
-use spacetimedb_lib::ser::{self, Serialize, SerializeSeqProduct};
+use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
+use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
 use spacetimedb_lib::{bsatn, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias};
 use sys::Buffer;
 
@@ -319,20 +319,15 @@ impl_reducer!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, 
 
 /// Provides deserialization and serialization for any type `A: Args`.
 struct SerDeArgs<A>(A);
-impl<'de, A: Args<'de>> Deserialize<'de> for SerDeArgs<A> {
-    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer
-            .deserialize_product(ArgsVisitor { _marker: PhantomData })
-            .map(Self)
-    }
-}
-impl<'de, A: Args<'de>> Serialize for SerDeArgs<A> {
-    fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut prod = serializer.serialize_seq_product(A::LEN)?;
-        self.0.serialize_seq_product(&mut prod)?;
-        prod.end()
-    }
-}
+impl_deserialize!(
+    [A: Args<'de>] SerDeArgs<A>,
+    de => de.deserialize_product(ArgsVisitor { _marker: PhantomData }).map(Self)
+);
+impl_serialize!(['de, A: Args<'de>] SerDeArgs<A>, (self, ser) => {
+    let mut prod = ser.serialize_seq_product(A::LEN)?;
+    self.0.serialize_seq_product(&mut prod)?;
+    prod.end()
+});
 
 /// Returns a timestamp that is `duration` from now.
 #[track_caller]

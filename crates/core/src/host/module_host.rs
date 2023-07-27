@@ -10,7 +10,7 @@ use crate::protobuf::client_api::{table_row_operation, SubscriptionUpdate, Table
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use indexmap::IndexMap;
 use spacetimedb_lib::{ReducerDef, TableDef};
-use spacetimedb_sats::{ProductValue, TypeInSpace, Typespace};
+use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -560,18 +560,18 @@ impl Catalog {
         &self.0.typespace
     }
 
-    pub fn get(&self, name: &str) -> Option<TypeInSpace<'_, EntityDef>> {
+    pub fn get(&self, name: &str) -> Option<WithTypespace<'_, EntityDef>> {
         self.0.catalog.get(name).map(|ty| self.0.typespace.with_type(ty))
     }
-    pub fn get_reducer(&self, name: &str) -> Option<TypeInSpace<'_, ReducerDef>> {
+    pub fn get_reducer(&self, name: &str) -> Option<WithTypespace<'_, ReducerDef>> {
         let schema = self.get(name)?;
         Some(schema.with(schema.ty().as_reducer()?))
     }
-    pub fn get_table(&self, name: &str) -> Option<TypeInSpace<'_, TableDef>> {
+    pub fn get_table(&self, name: &str) -> Option<WithTypespace<'_, TableDef>> {
         let schema = self.get(name)?;
         Some(schema.with(schema.ty().as_table()?))
     }
-    pub fn iter(&self) -> impl Iterator<Item = (&str, TypeInSpace<'_, EntityDef>)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (&str, WithTypespace<'_, EntityDef>)> + '_ {
         self.0
             .catalog
             .iter()

@@ -3,8 +3,7 @@
 use std::ops::{Add, Sub};
 use std::time::Duration;
 
-use spacetimedb_lib::de::Deserialize;
-use spacetimedb_lib::ser::Serialize;
+use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, impl_st};
 
 scoped_tls::scoped_thread_local! {
     static CURRENT_TIMESTAMP: Timestamp
@@ -90,20 +89,6 @@ impl Sub<Duration> for Timestamp {
     }
 }
 
-impl crate::SpacetimeType for Timestamp {
-    fn make_type<S: spacetimedb_lib::sats::typespace::TypespaceBuilder>(_ts: &mut S) -> spacetimedb_lib::AlgebraicType {
-        spacetimedb_lib::AlgebraicType::U64
-    }
-}
-
-impl<'de> Deserialize<'de> for Timestamp {
-    fn deserialize<D: spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        u64::deserialize(deserializer).map(|micros_since_epoch| Self { micros_since_epoch })
-    }
-}
-
-impl Serialize for Timestamp {
-    fn serialize<S: spacetimedb_lib::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.micros_since_epoch.serialize(serializer)
-    }
-}
+impl_st!([] Timestamp, _ts => spacetimedb_lib::AlgebraicType::U64);
+impl_deserialize!([] Timestamp, de => u64::deserialize(de).map(|m| Self { micros_since_epoch: m }));
+impl_serialize!([] Timestamp, (self, ser) => self.micros_since_epoch.serialize(ser));

@@ -7,7 +7,7 @@ use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{bsatn, Hash, Identity};
 use spacetimedb_lib::{ProductValue, ReducerDef};
-use spacetimedb_sats::TypeInSpace;
+use spacetimedb_sats::WithTypespace;
 
 mod host_controller;
 pub(crate) mod module_host;
@@ -35,13 +35,13 @@ pub enum ReducerArgs {
 }
 
 impl ReducerArgs {
-    fn into_tuple(self, schema: TypeInSpace<'_, ReducerDef>) -> Result<ArgsTuple, InvalidReducerArguments> {
+    fn into_tuple(self, schema: WithTypespace<'_, ReducerDef>) -> Result<ArgsTuple, InvalidReducerArguments> {
         self._into_tuple(schema).map_err(|err| InvalidReducerArguments {
             err,
             reducer: schema.ty().name.clone(),
         })
     }
-    fn _into_tuple(self, schema: TypeInSpace<'_, ReducerDef>) -> anyhow::Result<ArgsTuple> {
+    fn _into_tuple(self, schema: WithTypespace<'_, ReducerDef>) -> anyhow::Result<ArgsTuple> {
         Ok(match self {
             ReducerArgs::Json(json) => ArgsTuple {
                 tuple: from_json_seed(&json, SeedWrapper(ReducerDef::deserialize(schema)))?,

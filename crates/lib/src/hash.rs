@@ -2,8 +2,7 @@ use crate::{de, ser};
 use core::fmt;
 
 use sha3::{Digest, Keccak256};
-use spacetimedb_sats::typespace::SpacetimeType;
-use spacetimedb_sats::AlgebraicType;
+use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 
 pub const HASH_SIZE: usize = 32;
 
@@ -12,24 +11,9 @@ pub struct Hash {
     pub data: [u8; HASH_SIZE],
 }
 
-impl SpacetimeType for Hash {
-    fn make_type<S: spacetimedb_sats::typespace::TypespaceBuilder>(_ts: &mut S) -> AlgebraicType {
-        AlgebraicType::bytes()
-    }
-}
-
-impl ser::Serialize for Hash {
-    fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.data.serialize(serializer)
-    }
-}
-impl<'de> de::Deserialize<'de> for Hash {
-    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(Self {
-            data: <_>::deserialize(deserializer)?,
-        })
-    }
-}
+impl_st!([] Hash, _ts => AlgebraicType::bytes());
+impl_serialize!([] Hash, (self, ser) => self.data.serialize(ser));
+impl_deserialize!([] Hash, de => Ok(Self { data: <_>::deserialize(de)? }));
 
 impl Hash {
     const ABBREVIATION_LEN: usize = 16;

@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use crate::builtin_value::{F32, F64};
 use crate::{
     AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, BuiltinType, BuiltinValue, MapType, MapValue, ProductType,
-    ProductTypeElement, ProductValue, SumType, SumValue, TypeInSpace,
+    ProductTypeElement, ProductValue, SumType, SumValue, WithTypespace,
 };
 
 use super::{
@@ -16,36 +16,36 @@ use super::{
     ProductVisitor, SeqProductAccess, SliceVisitor, SumAccess, SumVisitor, VariantAccess, VariantVisitor,
 };
 
-macro_rules! impl_prim {
-    ($(($prim:ty, $method:ident))*) => {
-        $(impl<'de> Deserialize<'de> for $prim {
-            fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-                de.$method()
-            }
-        })*
+/// Implements [`Deserialize`] for a type in a simplified manner.
+///
+/// An example:
+/// ```ignore
+/// impl_deserialize!(
+/// //     Type parameters  Optional where  Impl type
+/// //            v               v             v
+/// //   ----------------  --------------- ----------
+///     [T: Deserialize<'de>] where [T: Copy] std::rc::Rc<T>,
+/// //  The `deserialize` implementation where `de` is the `Deserializer<'de>`
+/// //  and the expression right of `=>` is the body of `deserialize`.
+///     de => T::deserialize(de).map(std::rc::Rc::new)
+/// );
+/// ```
+#[macro_export]
+macro_rules! impl_deserialize {
+    ([$($generics:tt)*] $(where [$($wc:tt)*])? $typ:ty, $de:ident => $body:expr) => {
+        impl<'de, $($generics)*> $crate::de::Deserialize<'de> for $typ {
+            fn deserialize<D: $crate::de::Deserializer<'de>>($de: D) -> Result<Self, D::Error> { $body }
+        }
     };
 }
 
-impl<'de> Deserialize<'de> for () {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_product(UnitVisitor)
-    }
-}
-struct UnitVisitor;
-impl<'de> ProductVisitor<'de> for UnitVisitor {
-    type Output = ();
-    fn product_name(&self) -> Option<&str> {
-        None
-    }
-    fn product_len(&self) -> usize {
-        0
-    }
-    fn visit_seq_product<A: SeqProductAccess<'de>>(self, _prod: A) -> Result<Self::Output, A::Error> {
-        Ok(())
-    }
-    fn visit_named_product<A: super::NamedProductAccess<'de>>(self, _prod: A) -> Result<Self::Output, A::Error> {
-        Ok(())
-    }
+/// Implements [`Deserialize`] for a primitive type.
+///
+/// The `$method` is a parameterless method on `deserializer` to call.
+macro_rules! impl_prim {
+    ($(($prim:ty, $method:ident))*) => {
+        $(impl_deserialize!([] $prim, de => de.$method());)*
+    };
 }
 
 impl_prim! {
@@ -55,62 +55,59 @@ impl_prim! {
     (f32, deserialize_f32) (f64, deserialize_f64)
 }
 
+impl_deserialize!([] (), de => de.deserialize_product(UnitVisitor));
+
+/// The `UnitVisitor` looks for a unit product.
+/// That is, it consumes nothing from the input.
+struct UnitVisitor;
+impl<'de> ProductVisitor<'de> for UnitVisitor {
+    type Output = ();
+
+    fn product_name(&self) -> Option<&str> {
+        None
+    }
+
+    fn product_len(&self) -> usize {
+        0
+    }
+
+    fn visit_seq_product<A: SeqProductAccess<'de>>(self, _prod: A) -> Result<Self::Output, A::Error> {
+        Ok(())
+    }
+
+    fn visit_named_product<A: super::NamedProductAccess<'de>>(self, _prod: A) -> Result<Self::Output, A::Error> {
+        Ok(())
+    }
+}
+
 impl<'de> Deserialize<'de> for u8 {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         deserializer.deserialize_u8()
     }
-    // specialize Vec<u8> deserialization
+
+    // Specialize `Vec<u8>` deserialization.
+    // This is more likely to compile down to a `memcpy`.
     fn __deserialize_vec<D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Self>, D::Error> {
         deserializer.deserialize_bytes(OwnedSliceVisitor)
     }
+
     fn __deserialize_array<D: Deserializer<'de>, const N: usize>(deserializer: D) -> Result<[Self; N], D::Error> {
         deserializer.deserialize_bytes(ByteArrayVisitor)
     }
 }
 
-impl<'de> Deserialize<'de> for F32 {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        f32::deserialize(deserializer).map(Into::into)
-    }
-}
-impl<'de> Deserialize<'de> for F64 {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        f64::deserialize(deserializer).map(Into::into)
-    }
-}
+impl_deserialize!([] F32, de => f32::deserialize(de).map(Into::into));
+impl_deserialize!([] F64, de => f64::deserialize(de).map(Into::into));
+impl_deserialize!([] String, de => de.deserialize_str(OwnedSliceVisitor));
+impl_deserialize!([T: Deserialize<'de>] Vec<T>, de => T::__deserialize_vec(de));
+impl_deserialize!([T: Deserialize<'de>, const N: usize] [T; N], de => T::__deserialize_array(de));
+impl_deserialize!([] Box<str>, de => String::deserialize(de).map(|s| s.into_boxed_str()));
+impl_deserialize!([T: Deserialize<'de>] Box<[T]>, de => Vec::deserialize(de).map(|s| s.into_boxed_slice()));
 
-impl<'de> Deserialize<'de> for String {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_str(OwnedSliceVisitor)
-    }
-}
-
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Vec<T> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        T::__deserialize_vec(deserializer)
-    }
-}
-
-impl<'de, T: Deserialize<'de>, const N: usize> Deserialize<'de> for [T; N] {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        T::__deserialize_array(deserializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Box<str> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        String::deserialize(deserializer).map(|s| s.into_boxed_str())
-    }
-}
-
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<[T]> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Vec::deserialize(deserializer).map(|s| s.into_boxed_slice())
-    }
-}
-
+/// The visitor converts the slice to its owned version.
 struct OwnedSliceVisitor;
-impl<'de, T: ToOwned + ?Sized> SliceVisitor<'de, T> for OwnedSliceVisitor {
+
+impl<T: ToOwned + ?Sized> SliceVisitor<'_, T> for OwnedSliceVisitor {
     type Output = T::Owned;
 
     fn visit<E: Error>(self, slice: &T) -> Result<Self::Output, E> {
@@ -122,8 +119,12 @@ impl<'de, T: ToOwned + ?Sized> SliceVisitor<'de, T> for OwnedSliceVisitor {
     }
 }
 
+/// The visitor will convert the byte slice to `[u8; N]`.
+///
+/// When `slice.len() != N` an error will be raised.
 struct ByteArrayVisitor<const N: usize>;
-impl<'de, const N: usize> SliceVisitor<'de, [u8]> for ByteArrayVisitor<N> {
+
+impl<const N: usize> SliceVisitor<'_, [u8]> for ByteArrayVisitor<N> {
     type Output = [u8; N];
 
     fn visit<E: Error>(self, slice: &[u8]) -> Result<Self::Output, E> {
@@ -137,19 +138,12 @@ impl<'de, const N: usize> SliceVisitor<'de, [u8]> for ByteArrayVisitor<N> {
     }
 }
 
-impl<'de> Deserialize<'de> for &'de str {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_str(BorrowedSliceVisitor)
-    }
-}
+impl_deserialize!([] &'de str, de => de.deserialize_str(BorrowedSliceVisitor));
+impl_deserialize!([] &'de [u8], de => de.deserialize_bytes(BorrowedSliceVisitor));
 
-impl<'de> Deserialize<'de> for &'de [u8] {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_bytes(BorrowedSliceVisitor)
-    }
-}
-
+/// The visitor returns the slice as-is and borrowed.
 pub(crate) struct BorrowedSliceVisitor;
+
 impl<'de, T: ToOwned + ?Sized + 'de> SliceVisitor<'de, T> for BorrowedSliceVisitor {
     type Output = &'de T;
 
@@ -162,19 +156,12 @@ impl<'de, T: ToOwned + ?Sized + 'de> SliceVisitor<'de, T> for BorrowedSliceVisit
     }
 }
 
-impl<'de> Deserialize<'de> for Cow<'de, str> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_str(CowSliceVisitor)
-    }
-}
+impl_deserialize!([] Cow<'de, str>, de => de.deserialize_str(CowSliceVisitor));
+impl_deserialize!([] Cow<'de, [u8]>, de => de.deserialize_bytes(CowSliceVisitor));
 
-impl<'de> Deserialize<'de> for Cow<'de, [u8]> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_bytes(CowSliceVisitor)
-    }
-}
-
+/// The visitor works with either owned or borrowed versions to produce `Cow<'de, T>`.
 struct CowSliceVisitor;
+
 impl<'de, T: ToOwned + ?Sized + 'de> SliceVisitor<'de, T> for CowSliceVisitor {
     type Output = Cow<'de, T>;
 
@@ -191,35 +178,33 @@ impl<'de, T: ToOwned + ?Sized + 'de> SliceVisitor<'de, T> for CowSliceVisitor {
     }
 }
 
-impl<'de, K: Deserialize<'de> + Ord, V: Deserialize<'de>> Deserialize<'de> for BTreeMap<K, V> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_map(BasicMapVisitor)
-    }
-}
+impl_deserialize!(
+    [K: Deserialize<'de> + Ord, V: Deserialize<'de>] BTreeMap<K, V>,
+    de => de.deserialize_map(BasicMapVisitor)
+);
 
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Box<T> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        T::deserialize(deserializer).map(Box::new)
-    }
-}
+impl_deserialize!([T: Deserialize<'de>] Box<T>, de => T::deserialize(de).map(Box::new));
+impl_deserialize!([T: Deserialize<'de>] Option<T>, de => de.deserialize_sum(OptionVisitor(PhantomData)));
 
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Option<T> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_sum(OptionVisitor(PhantomData))
-    }
-}
-
+/// The visitor deserializes an `Option<T>`.
 struct OptionVisitor<T>(PhantomData<T>);
+
 impl<'de, T: Deserialize<'de>> SumVisitor<'de> for OptionVisitor<T> {
     type Output = Option<T>;
+
     fn sum_name(&self) -> Option<&str> {
         Some("option")
     }
+
     fn is_option(&self) -> bool {
         true
     }
+
     fn visit_sum<A: SumAccess<'de>>(self, data: A) -> Result<Self::Output, A::Error> {
+        // Determine the variant.
         let (some, data) = data.variant(self)?;
+
+        // Deserialize contents for it.
         Ok(if some {
             Some(data.deserialize()?)
         } else {
@@ -228,6 +213,7 @@ impl<'de, T: Deserialize<'de>> SumVisitor<'de> for OptionVisitor<T> {
         })
     }
 }
+
 impl<'de, T: Deserialize<'de>> VariantVisitor for OptionVisitor<T> {
     type Output = bool;
 
@@ -252,7 +238,7 @@ impl<'de, T: Deserialize<'de>> VariantVisitor for OptionVisitor<T> {
     }
 }
 
-impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, AlgebraicType> {
+impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
     type Output = AlgebraicValue;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
@@ -265,7 +251,7 @@ impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, AlgebraicType> {
     }
 }
 
-impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, BuiltinType> {
+impl<'de> DeserializeSeed<'de> for WithTypespace<'_, BuiltinType> {
     type Output = BuiltinValue;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
@@ -294,7 +280,7 @@ impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, BuiltinType> {
     }
 }
 
-impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, SumType> {
+impl<'de> DeserializeSeed<'de> for WithTypespace<'_, SumType> {
     type Output = SumValue;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
@@ -302,49 +288,57 @@ impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, SumType> {
     }
 }
 
-impl<'de> SumVisitor<'de> for TypeInSpace<'_, SumType> {
+impl<'de> SumVisitor<'de> for WithTypespace<'_, SumType> {
     type Output = SumValue;
 
     fn sum_name(&self) -> Option<&str> {
         None
     }
+
     fn is_option(&self) -> bool {
         self.ty().looks_like_option().is_some()
     }
 
     fn visit_sum<A: SumAccess<'de>>(self, data: A) -> Result<Self::Output, A::Error> {
         let (tag, data) = data.variant(self)?;
+        // Find the variant type by `tag`.
         let variant_ty = self.map(|ty| &ty.variants[tag as usize].algebraic_type);
+
         let value = Box::new(data.deserialize_seed(variant_ty)?);
         Ok(SumValue { tag, value })
     }
 }
-impl VariantVisitor for TypeInSpace<'_, SumType> {
+
+impl VariantVisitor for WithTypespace<'_, SumType> {
     type Output = u8;
 
     fn variant_names(&self, names: &mut dyn super::ValidNames) {
-        names.extend(self.ty().variants.iter().filter_map(|v| v.name.as_deref()))
+        // Provide the names known from the `SumType`.
+        names.extend(self.ty().variants.iter().filter_map(|v| v.name()))
     }
 
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
+        // Verify that tag identifies a valid variant in `SumType`.
         self.ty()
             .variants
             .get(tag as usize)
             .ok_or_else(|| E::unknown_variant_tag(tag, &self))?;
+
         Ok(tag)
     }
 
     fn visit_name<E: Error>(self, name: &str) -> Result<Self::Output, E> {
+        // Translate the variant `name` to its tag.
         self.ty()
             .variants
             .iter()
-            .position(|var| var.name.as_deref() == Some(name))
+            .position(|var| var.has_name(name))
             .map(|pos| pos as u8)
             .ok_or_else(|| E::unknown_variant_name(name, &self))
     }
 }
 
-impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, ProductType> {
+impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ProductType> {
     type Output = ProductValue;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
@@ -352,7 +346,7 @@ impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, ProductType> {
     }
 }
 
-impl<'de> ProductVisitor<'de> for TypeInSpace<'_, ProductType> {
+impl<'de> ProductVisitor<'de> for WithTypespace<'_, ProductType> {
     type Output = ProductValue;
 
     fn product_name(&self) -> Option<&str> {
@@ -371,77 +365,62 @@ impl<'de> ProductVisitor<'de> for TypeInSpace<'_, ProductType> {
     }
 }
 
-impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, ArrayType> {
+impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
     type Output = ArrayValue;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
+        /// Deserialize a vector and `map` it to the appropriate `ArrayValue` variant.
+        fn de_array<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+            de: D,
+            map: impl FnOnce(Vec<T>) -> ArrayValue,
+        ) -> Result<ArrayValue, D::Error> {
+            de.deserialize_array(BasicVecVisitor).map(map)
+        }
+
         let mut ty = &*self.ty().elem_ty;
+
+        // Loop, resolving `Ref`s, until we reach a non-`Ref` type.
         loop {
             break match ty {
+                AlgebraicType::Ref(r) => {
+                    // The only arm that will loop.
+                    ty = self.resolve(*r).ty();
+                    continue;
+                }
                 AlgebraicType::Sum(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(ArrayValue::Sum),
                 AlgebraicType::Product(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(ArrayValue::Product),
-                AlgebraicType::Builtin(BuiltinType::Bool) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::Bool)
-                }
-                AlgebraicType::Builtin(BuiltinType::I8) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::I8)
-                }
+                AlgebraicType::Builtin(BuiltinType::Bool) => de_array(deserializer, ArrayValue::Bool),
+                AlgebraicType::Builtin(BuiltinType::I8) => de_array(deserializer, ArrayValue::I8),
                 AlgebraicType::Builtin(BuiltinType::U8) => {
                     deserializer.deserialize_bytes(OwnedSliceVisitor).map(ArrayValue::U8)
                 }
-                AlgebraicType::Builtin(BuiltinType::I16) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::I16)
-                }
-                AlgebraicType::Builtin(BuiltinType::U16) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::U16)
-                }
-                AlgebraicType::Builtin(BuiltinType::I32) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::I32)
-                }
-                AlgebraicType::Builtin(BuiltinType::U32) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::U32)
-                }
-                AlgebraicType::Builtin(BuiltinType::I64) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::I64)
-                }
-                AlgebraicType::Builtin(BuiltinType::U64) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::U64)
-                }
-                AlgebraicType::Builtin(BuiltinType::I128) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::I128)
-                }
-                AlgebraicType::Builtin(BuiltinType::U128) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::U128)
-                }
-                AlgebraicType::Builtin(BuiltinType::F32) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::F32)
-                }
-                AlgebraicType::Builtin(BuiltinType::F64) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::F64)
-                }
-                AlgebraicType::Builtin(BuiltinType::String) => {
-                    deserializer.deserialize_array(BasicVecVisitor).map(ArrayValue::String)
-                }
+                AlgebraicType::Builtin(BuiltinType::I16) => de_array(deserializer, ArrayValue::I16),
+                AlgebraicType::Builtin(BuiltinType::U16) => de_array(deserializer, ArrayValue::U16),
+                AlgebraicType::Builtin(BuiltinType::I32) => de_array(deserializer, ArrayValue::I32),
+                AlgebraicType::Builtin(BuiltinType::U32) => de_array(deserializer, ArrayValue::U32),
+                AlgebraicType::Builtin(BuiltinType::I64) => de_array(deserializer, ArrayValue::I64),
+                AlgebraicType::Builtin(BuiltinType::U64) => de_array(deserializer, ArrayValue::U64),
+                AlgebraicType::Builtin(BuiltinType::I128) => de_array(deserializer, ArrayValue::I128),
+                AlgebraicType::Builtin(BuiltinType::U128) => de_array(deserializer, ArrayValue::U128),
+                AlgebraicType::Builtin(BuiltinType::F32) => de_array(deserializer, ArrayValue::F32),
+                AlgebraicType::Builtin(BuiltinType::F64) => de_array(deserializer, ArrayValue::F64),
+                AlgebraicType::Builtin(BuiltinType::String) => de_array(deserializer, ArrayValue::String),
                 AlgebraicType::Builtin(BuiltinType::Array(ty)) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(ArrayValue::Array),
                 AlgebraicType::Builtin(BuiltinType::Map(ty)) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(ArrayValue::Map),
-                AlgebraicType::Ref(r) => {
-                    ty = self.resolve(*r).ty();
-                    continue;
-                }
             };
         }
     }
 }
 
-impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, MapType> {
+impl<'de> DeserializeSeed<'de> for WithTypespace<'_, MapType> {
     type Output = MapValue;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
@@ -480,8 +459,9 @@ impl<'de> DeserializeSeed<'de> for TypeInSpace<'_, MapType> {
 //     }
 // }
 
+/// Deserialize, provided the fields' types, a product value with unnamed fields.
 pub fn visit_seq_product<'de, A: SeqProductAccess<'de>>(
-    elems: TypeInSpace<[ProductTypeElement]>,
+    elems: WithTypespace<[ProductTypeElement]>,
     visitor: &impl ProductVisitor<'de>,
     mut tup: A,
 ) -> Result<ProductValue, A::Error> {
@@ -493,55 +473,76 @@ pub fn visit_seq_product<'de, A: SeqProductAccess<'de>>(
     Ok(ProductValue { elements })
 }
 
+/// Deserialize, provided the fields' types, a product value with named fields.
 pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
-    elems_tys: TypeInSpace<[ProductTypeElement]>,
+    elems_tys: WithTypespace<[ProductTypeElement]>,
     visitor: &impl ProductVisitor<'de>,
     mut tup: A,
 ) -> Result<ProductValue, A::Error> {
     let elems = elems_tys.ty();
     let mut elements = vec![None; elems.len()];
-    let mut n = 0;
     let kind = visitor.product_kind();
-    // under a certain threshold, just do linear searches
-    while n < elems.len() {
-        let tag = tup.get_field_ident(TupleNameVisitor { elems, kind })?.ok_or_else(|| {
+
+    // Deserialize a product value corresponding to each product type field.
+    // This is worst case quadratic in complexity
+    // as fields can be specified out of order (value side) compared to `elems` (type side).
+    for _ in 0..elems.len() {
+        // Deserialize a field name, match against the element types, .
+        let index = tup.get_field_ident(TupleNameVisitor { elems, kind })?.ok_or_else(|| {
+            // Couldn't deserialize a field name.
+            // Find the first field name we haven't filled an element for.
             let missing = elements.iter().position(|field| field.is_none()).unwrap();
-            let field_name = elems[missing].name.as_deref();
+            let field_name = elems[missing].name();
             Error::missing_field(missing, field_name, visitor)
         })?;
-        let element = &elems[tag];
-        let slot = &mut elements[tag];
+
+        let element = &elems[index];
+
+        // By index we can select which element to deserialize a value for.
+        let slot = &mut elements[index];
         if slot.is_some() {
-            return Err(Error::duplicate_field(tag, element.name.as_deref(), visitor));
+            return Err(Error::duplicate_field(index, element.name(), visitor));
         }
+
+        // Deserialize the value for this field's type.
         *slot = Some(tup.get_field_value_seed(elems_tys.with(&element.algebraic_type))?);
-        n += 1;
     }
+
+    // Get rid of the `Option<_>` layer.
     let elements = elements
         .into_iter()
+        // We reached here, so we know nothing was missing, i.e., `None`.
         .map(|x| x.unwrap_or_else(|| unreachable!("visit_named_product")))
         .collect();
+
     Ok(ProductValue { elements })
 }
 
+/// A visitor for extracting indices of field names in the elements of a [`ProductType`].
 struct TupleNameVisitor<'a> {
+    /// The elements of a product type, in order.
     elems: &'a [ProductTypeElement],
+    /// The kind of product this is.
     kind: ProductKind,
 }
-impl<'de> FieldNameVisitor<'de> for TupleNameVisitor<'_> {
+
+impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
+    // The index of the field name.
     type Output = usize;
 
     fn field_names(&self, names: &mut dyn super::ValidNames) {
-        names.extend(self.elems.iter().filter_map(|f| f.name.as_deref()))
+        names.extend(self.elems.iter().filter_map(|f| f.name()))
     }
+
     fn kind(&self) -> ProductKind {
         self.kind
     }
 
     fn visit<E: Error>(self, name: &str) -> Result<Self::Output, E> {
+        // Finds the index of a field with `name`.
         self.elems
             .iter()
-            .position(|f| f.name.as_deref() == Some(name))
+            .position(|f| f.has_name(name))
             .ok_or_else(|| Error::unknown_field_name(name, &self))
     }
 }

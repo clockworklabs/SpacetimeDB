@@ -276,24 +276,23 @@ fn extract_field(table: &From, of: &SqlExpr) -> Result<Option<ProductTypeElement
 /// When `field` is `None`, the type is inferred to an integer or float depending on if a `.` separator is present.
 /// The `is_long` parameter decides whether to parse as a 64-bit type or a 32-bit one.
 fn infer_number(field: Option<&ProductTypeElement>, value: &str, is_long: bool) -> Result<AlgebraicValue, ErrorVm> {
-    let ty = match field {
+    match field {
         None => {
-            if value.contains('.') {
+            let ty = if value.contains('.') {
                 if is_long {
-                    &AlgebraicType::F64
+                    AlgebraicType::F64
                 } else {
-                    &AlgebraicType::F32
+                    AlgebraicType::F32
                 }
             } else if is_long {
-                &AlgebraicType::I64
+                AlgebraicType::I64
             } else {
-                &AlgebraicType::I32
-            }
+                AlgebraicType::I32
+            };
+            parse(value, &ty)
         }
-        Some(f) => &f.algebraic_type,
-    };
-
-    parse(value, ty)
+        Some(f) => parse(value, &f.algebraic_type),
+    }
 }
 
 /// Compiles a [SqlExpr] expression into a [ColumnOp]
@@ -743,8 +742,8 @@ fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Resul
         DataType::Real => AlgebraicType::F32,
         DataType::Double => AlgebraicType::F64,
         DataType::Boolean => AlgebraicType::Bool,
-        DataType::Array(Some(ty)) => AlgebraicType::make_array_type(column_def_type(named, false, ty)?),
-        DataType::Enum(values) => AlgebraicType::make_simple_enum(values.iter().map(|x| x.as_str())),
+        DataType::Array(Some(ty)) => AlgebraicType::array(column_def_type(named, false, ty)?),
+        DataType::Enum(values) => AlgebraicType::simple_enum(values.iter().map(|x| x.as_str())),
         x => {
             return Err(PlanError::Unsupported {
                 feature: format!("Column {} of type {}", named, x),
@@ -752,11 +751,7 @@ fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Resul
         }
     };
 
-    Ok(if is_null {
-        AlgebraicType::make_option_type(ty)
-    } else {
-        ty
-    })
+    Ok(if is_null { AlgebraicType::option(ty) } else { ty })
 }
 
 /// Extract the column attributes into [ColumnIndexAttribute]
