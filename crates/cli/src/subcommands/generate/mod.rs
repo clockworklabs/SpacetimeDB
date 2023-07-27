@@ -48,10 +48,10 @@ pub fn cli() -> clap::Command {
         )
         .arg(
             Arg::new("namespace")
-                .default_value("SpacetimeDB")
+                .default_value("SpacetimeDB.Types")
                 .long("namespace")
                 .short('n')
-                .help("The namespace that should be used (default is 'SpacetimeDB')"),
+                .help("The namespace that should be used (default is 'SpacetimeDB.Types')"),
         )
         .arg(
             Arg::new("lang")
@@ -159,13 +159,12 @@ pub fn generate<'a>(wasm_file: &'a Path, lang: Language, namespace: &'a str) -> 
         .iter()
         .filter_map(|item| item.generate(&ctx, lang, namespace))
         .collect();
-    for global in generate_globals(&ctx, lang, namespace, &items) {
-        files.push(global);
-    }
+    files.extend(generate_globals(&ctx, lang, namespace, &items).into_iter().flatten());
+
     Ok(files)
 }
 
-fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenItem]) -> Vec<(String, String)> {
+fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenItem]) -> Vec<Vec<(String, String)>> {
     match lang {
         Language::Csharp => csharp::autogen_csharp_globals(items, namespace),
         Language::TypeScript => typescript::autogen_typescript_globals(ctx, items),
