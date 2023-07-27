@@ -75,7 +75,14 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
                 unimplemented!()
             }
         }
-        AlgebraicType::Product(_) => unimplemented!(),
+        AlgebraicType::Product(prod) => {
+            // The only type that is allowed here is the identity type. All other types should fail.
+            if prod.is_identity() {
+                write!(f, "SpacetimeDB.Identity")
+            } else {
+                unimplemented!()
+            }
+        }
         AlgebraicType::Builtin(b) => match maybe_primitive(b) {
             MaybePrimitive::Primitive(p) => f.write_str(p),
             MaybePrimitive::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => f.write_str("byte[]"),
@@ -169,7 +176,17 @@ fn convert_type<'a>(
     namespace: &'a str,
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Product(_) => unimplemented!(),
+        AlgebraicType::Product(product) => {
+            if product.is_identity() {
+                write!(
+                    f,
+                    "SpacetimeDB.Identity.From({}.AsProductValue().elements[0].AsBytes())",
+                    value
+                )
+            } else {
+                unimplemented!()
+            }
+        }
         AlgebraicType::Sum(sum_type) => {
             if let Some(inner_ty) = sum_type.as_option() {
                 match inner_ty {
@@ -638,7 +655,7 @@ fn autogen_csharp_product_table_common(
                         output,
                         "private static Dictionary<{type_name}, {name}> {field_name}_Index = new Dictionary<{type_name}, {name}>(16{comparer});"
                     )
-                    .unwrap();
+                        .unwrap();
                 }
                 writeln!(output).unwrap();
                 // OnInsert method for updating indexes
@@ -754,7 +771,7 @@ fn autogen_csharp_product_table_common(
                         output,
                         "OnUpdate?.Invoke(({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
-                    .unwrap();
+                        .unwrap();
                 }
                 writeln!(output, "}}").unwrap();
                 writeln!(output).unwrap();
@@ -797,7 +814,7 @@ fn autogen_csharp_product_table_common(
                     output,
                     "public static void OnRowUpdateEvent(SpacetimeDBClient.TableOp op, object oldValue, object newValue, ClientApi.Event dbEvent)"
                 )
-                .unwrap();
+                    .unwrap();
                 writeln!(output, "{{").unwrap();
                 {
                     indent_scope!(output);
@@ -805,7 +822,7 @@ fn autogen_csharp_product_table_common(
                         output,
                         "OnRowUpdate?.Invoke(op, ({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
-                    .unwrap();
+                        .unwrap();
                 }
                 writeln!(output, "}}").unwrap();
             }
@@ -859,7 +876,7 @@ fn autogen_csharp_product_value_to_struct(
                 0,
                 field_type,
                 format_args!("productValue.elements[{idx}]"),
-                namespace
+                namespace,
             )
         )
         .unwrap();
@@ -932,12 +949,15 @@ fn autogen_csharp_access_funcs_for_struct(
         let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
 
         let (field_type, csharp_field_type) = match field_type {
-            AlgebraicType::Product(_) | AlgebraicType::Ref(_) => {
-                // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
-                continue;
+            AlgebraicType::Product(product) => {
+                if product.is_identity() {
+                    ("Identity".into(), "SpacetimeDB.Identity")
+                } else {
+                    continue;
+                }
             }
-            AlgebraicType::Sum(_) => {
-                // TODO: We don't allow filtering on enums right now, its possible we may consider it for the future.
+            AlgebraicType::Ref(_) | AlgebraicType::Sum(_) => {
+                // TODO: We don't allow filtering on enums or tuples right now, its possible we may consider it for the future.
                 continue;
             }
             AlgebraicType::Builtin(b) => match maybe_primitive(b) {
@@ -994,12 +1014,21 @@ fn autogen_csharp_access_funcs_for_struct(
                 {
                     indent_scope!(output);
                     writeln!(output, "var productValue = entry.Item1.AsProductValue();").unwrap();
-                    writeln!(
-                        output,
-                        "var compareValue = ({})productValue.elements[{}].As{}();",
-                        csharp_field_type, col_i, field_type
-                    )
-                    .unwrap();
+                    if field_type == "Identity" {
+                        writeln!(
+                            output,
+                            "var compareValue = Identity.From(productValue.elements[{}];",
+                            col_i
+                        )
+                        .unwrap();
+                    } else {
+                        writeln!(
+                            output,
+                            "var compareValue = ({})productValue.elements[{}].As{}();",
+                            csharp_field_type, col_i, field_type
+                        )
+                        .unwrap();
+                    }
                     if csharp_field_type == "byte[]" {
                         writeln!(
                             output,
@@ -1058,7 +1087,7 @@ fn autogen_csharp_access_funcs_for_struct(
             output,
             "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue v1, SpacetimeDB.SATS.AlgebraicValue v2)"
         )
-        .unwrap();
+            .unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
@@ -1078,7 +1107,7 @@ fn autogen_csharp_access_funcs_for_struct(
                 output,
                 "return SpacetimeDB.SATS.AlgebraicValue.Compare(t.product.elements[0].algebraicType, primaryColumnValue1, primaryColumnValue2);"
             )
-            .unwrap();
+                .unwrap();
         }
         writeln!(output, "}}").unwrap();
     } else {
@@ -1086,7 +1115,7 @@ fn autogen_csharp_access_funcs_for_struct(
             output,
             "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue _v1, SpacetimeDB.SATS.AlgebraicValue _v2)"
         )
-        .unwrap();
+            .unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
