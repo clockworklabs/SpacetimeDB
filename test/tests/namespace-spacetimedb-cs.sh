@@ -10,7 +10,7 @@ set -euox pipefail
 source "./test/lib.include"
 
 TMP_DIR=$(mktemp -d)
-NAMESPACE=SpacetimeDB
+NAMESPACE=SpacetimeDB.Types
 
 run_test cargo run generate --out-dir "${TMP_DIR}" --lang cs --project-path "${PROJECT_PATH}"
 
