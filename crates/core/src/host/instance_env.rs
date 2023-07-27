@@ -502,12 +502,14 @@ enum IterItem {
     Header(ProductType),
     Row(ProductValue),
 }
+
 #[derive(Copy, Clone)]
 enum BSatnCompactorState {
     Start,
     Iterating,
     Complete,
 }
+
 /// Pack bsatns into buffers. No delimiters or length metadata. Wraps an iterator,
 /// which should produce a single `IterItem::Header` and then as many `IterItem::Row`s as
 /// needed.
@@ -535,45 +537,33 @@ impl<I: Iterator<Item = Result<IterItem, NodesError>>> Iterator for BSatnCompact
             buf.len() >= SIZE
         }
 
-        let BSatnCompactor {
-            ref mut iter,
-            ref mut buf,
-            ref mut state,
-        } = self;
+        let BSatnCompactor { iter, buf, state } = self;
 
         if let BSatnCompactorState::Complete = state {
             return None;
         }
+
+        // Swap a new buffer in for buf, returning the current one.
+        let take = |buf| Some(Ok(std::mem::take(buf)));
 
         loop {
             match (*state, iter.next()) {
                 (BSatnCompactorState::Start, Some(Ok(IterItem::Header(header)))) => {
                     *state = BSatnCompactorState::Iterating;
                     header.encode(buf);
-                    let mut next = Vec::new();
-                    std::mem::swap(&mut next, buf);
 
                     // header gets a buffer by itself
-                    return Some(Ok(next));
+                    return take(buf);
                 }
                 (BSatnCompactorState::Iterating, Some(Ok(IterItem::Row(row)))) => {
                     row.encode(buf);
                     if should_yield_buf(&*buf) {
-                        let mut next = Vec::new();
-                        std::mem::swap(&mut next, buf);
-                        return Some(Ok(next));
+                        return take(buf);
                     }
                 }
                 (BSatnCompactorState::Iterating, None) => {
                     *state = BSatnCompactorState::Complete;
-                    if !buf.is_empty() {
-                        // empty vecs don't allocate :^)
-                        let mut next = Vec::new();
-                        std::mem::swap(&mut next, buf);
-                        return Some(Ok(next));
-                    } else {
-                        return None;
-                    }
+                    return if buf.is_empty() { None } else { take(buf) };
                 }
                 (_, Some(Err(err))) => {
                     *state = BSatnCompactorState::Complete;
