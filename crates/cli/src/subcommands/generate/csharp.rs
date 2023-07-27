@@ -1017,7 +1017,7 @@ fn autogen_csharp_access_funcs_for_struct(
                     if field_type == "Identity" {
                         writeln!(
                             output,
-                            "var compareValue = Identity.From(productValue.elements[{}];",
+                            "var compareValue = Identity.From(productValue.elements[{}].AsProductValue().elements[0].AsBytes());",
                             col_i
                         )
                         .unwrap();
