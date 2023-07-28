@@ -1,8 +1,4 @@
-#[cfg(feature = "serde")]
-use crate::{de, ser};
-
 use core::fmt;
-
 use sha3::{Digest, Keccak256};
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 
@@ -80,19 +76,13 @@ impl hex::FromHex for Hash {
 
 #[cfg(feature = "serde")]
 impl serde::Serialize for Hash {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        ser::serde::serialize_to(self, serializer)
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        spacetimedb_sats::ser::serde::serialize_to(self, serializer)
     }
 }
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for Hash {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        de::serde::deserialize_from(deserializer)
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        spacetimedb_sats::de::serde::deserialize_from(deserializer)
     }
 }

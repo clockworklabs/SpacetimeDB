@@ -7,10 +7,10 @@ use spacetimedb_sats::bsatn;
 // TODO: impl ser/de for `Identity`, `Token`, `Credentials` so that clients can stash them
 //       to disk and use them to re-connect.
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 /// A unique public identifier for a client connected to a database.
 pub struct Identity {
-    pub(crate) bytes: Vec<u8>,
+    __identity_bytes: Vec<u8>,
 }
 
 impl Identity {
@@ -27,14 +27,16 @@ impl Identity {
     /// As such, it is necessary to do e.g.
     /// `MyTable::filter_by_identity(some_identity.bytes().to_owned())`.
     pub fn bytes(&self) -> &[u8] {
-        &self.bytes
+        &self.__identity_bytes
     }
 
     /// Construct an `Identity` containing the `bytes`.
     ///
     /// This method does not verify that `bytes` represents a valid identity.
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        Identity { bytes }
+        Self {
+            __identity_bytes: bytes,
+        }
     }
 }
 

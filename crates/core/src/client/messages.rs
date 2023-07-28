@@ -35,7 +35,7 @@ impl ServerMessage for IdentityTokenMessage {
     fn serialize_binary(self) -> Message {
         Message {
             r#type: Some(message::Type::IdentityToken(IdentityToken {
-                identity: self.identity.as_slice().to_vec(),
+                identity: self.identity.as_bytes().to_vec(),
                 token: self.identity_token,
             })),
         }
@@ -86,7 +86,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
         let event = Event {
             timestamp: event.timestamp.0,
             status: status.into(),
-            caller_identity: event.caller_identity.data.to_vec(),
+            caller_identity: event.caller_identity.to_vec(),
             function_call: Some(FunctionCall {
                 reducer: event.function_call.reducer.to_owned(),
                 arg_bytes: event.function_call.args.get_bsatn().clone().into(),
