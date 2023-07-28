@@ -48,9 +48,9 @@
     &nbsp;
     <a href="https://www.linkedin.com/company/clockworklabs/"><img height="25" src="./img/social/linkedin.svg" alt="LinkedIn"></a>
     &nbsp;
-    <a href="https://twitter.com/spacetimedb"><img height="25" src="./img/social/twitter.svg" alt="Twitter"></a>
+    <a href="https://twitter.com/spacetime_db"><img height="25" src="./img/social/twitter.svg" alt="Twitter"></a>
     &nbsp;
-    <a href="https://spacetimedb.com/discord"><img height="25" src="./img/social/discord.svg" alt="Discord"></a>
+    <a href="https://discord.gg/spacetimedb"><img height="25" src="./img/social/discord.svg" alt="Discord"></a>
     &nbsp;
     <a href="https://stackoverflow.com/questions/tagged/spacetimedb"><img height="25" src="./img/social/stack-overflow.svg" alt="StackOverflow"></a>
 </p>
