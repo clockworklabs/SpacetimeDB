@@ -217,7 +217,18 @@ class Table {
   };
 
   /**
-   * Called when a new row is inserted
+   * Register a callback for when a row is newly inserted into the database.
+   * 
+   * ```ts
+   * User.onInsert((user, reducerEvent) => {
+   *   if (reducerEvent in ReducerEvent) {
+   *      console.log("New user on reducer", reducer_event, user);
+   *   } else {
+   *      console.log("New user received during subscription update", user);
+   *  }
+   * });
+   * ```
+   * 
    * @param cb Callback to be called when a new row is inserted
    */
   onInsert = (
@@ -227,8 +238,19 @@ class Table {
   };
 
   /**
-   * Called when a row is deleted
-   * @param cb Callback to be called when a row is deleted
+   * Register a callback for when a row is deleted from the database.
+   * 
+   * ```ts
+   * User.onDelete((user, reducerEvent) => {
+   *   if (reducerEvent in ReducerEvent) {
+   *      console.log("Deleted user on reducer", reducer_event, user);
+   *   } else {
+   *      console.log("Deleted user received during subscription update", user);
+   *  }
+   * });
+   * ```
+   * 
+   * @param cb Callback to be called when a new row is inserted
    */
   onDelete = (
     cb: (value: any, reducerEvent: ReducerEvent | undefined) => void
@@ -237,8 +259,19 @@ class Table {
   };
 
   /**
-   * Called when a row is updated
-   * @param cb Callback to be called when a row is updated
+   * Register a callback for when a row is updated into the database.
+   * 
+   * ```ts
+   * User.onInsert((user, reducerEvent) => {
+   *   if (reducerEvent in ReducerEvent) {
+   *      console.log("Updated user on reducer", reducer_event, user);
+   *   } else {
+   *      console.log("Updated user received during subscription update", user);
+   *  }
+   * });
+   * ```
+   * 
+   * @param cb Callback to be called when a new row is inserted
    */
   onUpdate = (
     cb: (
@@ -328,6 +361,11 @@ export class ClientDB {
 }
 
 class TableOperation {
+  /**
+   * The type of CRUD operation.
+   * 
+   * NOTE: An update is a `delete` followed by a 'insert' internally.
+   */  
   public type: "insert" | "delete";
   public rowPk: string;
   public row: Uint8Array | any;
@@ -419,6 +457,9 @@ let toPascalCase = function (s: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
 };
 
+/**
+ * The database client connection to a SpacetimeDB server.
+ */
 export class SpacetimeDBClient {
   /**
    * The identity of the user.
@@ -454,6 +495,23 @@ export class SpacetimeDBClient {
   private protocol: "binary" | "json";
   private ssl: boolean = false;
 
+  /**
+   * Creates a new `SpacetimeDBClient` database client and set the initial parameters.
+   * 
+   * ```ts
+   * const host = "ws://localhost:3000";
+   * const name_or_address = "database_name"
+   * const auth_token = undefined;
+   * const protocol = "binary"
+   * var spacetimeDBClient = new SpacetimeDBClient(host, name_or_address, auth_token, protocol);
+   * ```
+   * 
+   * @param host The host of the spacetimeDB server
+   * @param name_or_address The name or address of the spacetimeDB module
+   * @param auth_token The credentials to use to connect to the spacetimeDB module
+   * @param protocol Define how encode the messages: "binary" | "json". `binary` is more eficient and compact.
+   * 
+  */
   constructor(
     host: string,
     name_or_address: string,
@@ -684,6 +742,11 @@ export class SpacetimeDBClient {
 
   /**
    * Disconnect from The SpacetimeDB Websocket For Your Module.
+   * ```ts
+   * var spacetimeDBClient = new SpacetimeDBClient("ws://localhost:3000", "database_name");
+   * 
+   * spacetimeDBClient.disconnect()
+   * ```
    */
   public disconnect() {
     this.ws.close();
@@ -691,10 +754,23 @@ export class SpacetimeDBClient {
 
   /**
    * Connect to The SpacetimeDB Websocket For Your Module. By default, this will use a secure websocket connection. The parameters are optional, and if not provided, will use the values provided on construction of the client.
+   * ```ts
+   * const host = "ws://localhost:3000";
+   * const name_or_address = "database_name"
+   * const auth_token = undefined;
+   * 
+   * var spacetimeDBClient = new SpacetimeDBClient(host, name_or_address, auth_token);
+   * // Connect with the initial parameters
+   * spacetimeDBClient.connect();
+   * //Set the `auth_token`
+   * spacetimeDBClient.connect(undefined, undefined, NEW_TOKEN);
+   * ```
+   * 
    * @param host The host of the spacetimeDB server
    * @param name_or_address The name or address of the spacetimeDB module
-   * @param credentials The credentials to use to connect to the spacetimeDB module
-   */
+   * @param auth_token The credentials to use to connect to the spacetimeDB module
+   * 
+  */
   public async connect(
     host?: string,
     name_or_address?: string,
@@ -958,7 +1034,16 @@ export class SpacetimeDBClient {
   }
 
   /**
-   * Subscribes to a query or multiple queries
+   * Subscribe to a set of queries, to be notified when rows which match those queries are altered.
+   * 
+   * NOTE: A new call to `subscribe` will remove all previous subscriptions and replace them with the new `queries`. 
+   * If any rows matched the previous subscribed queries but do not match the new queries, 
+   * those rows will be removed from the client cache, and [`TableType::on_delete`](#method-on_delete) callbacks will be invoked for them.
+   * 
+   * ```ts
+   * spacetimeDBClient.subscribe(["SELECT * FROM User","SELECT * FROM Message"]);
+   * ```
+   * 
    * @param queries Can be either a string for one query or an array for multiple queries
    */
   public subscribe(queryOrQueries: string | string[]) {
@@ -1012,10 +1097,32 @@ export class SpacetimeDBClient {
     this.emitter.off(eventName, callback);
   }
 
+  /**
+   * Register a callback to be invoked upon authentication with the database.
+   * 
+   * ```ts
+   * spacetimeDBClient.onConnect((token, identity) => {
+   *  console.log("Connected to SpacetimeDB");
+   *  console.log("Token", token);
+   *  console.log("Identity", identity);
+   * });
+   * ```
+   * @param token A private access token for a client connected to a database.
+   * @param identity A unique public identifier for a client connected to a database.
+   */
   onConnect(callback: (token: string, identity: Identity) => void) {
     this.on("connected", callback);
   }
 
+  /**
+   * Register a callback to be invoked upon a error.
+   * 
+   * ```ts
+   * spacetimeDBClient.onError((...args: any[]) => {
+   *  console.error("ERROR", args);
+   * });
+   * ```
+   */
   onError(callback: (...args: any[]) => void) {
     this.on("client_error", callback);
   }
