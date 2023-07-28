@@ -14,11 +14,11 @@
     <a href="https://spacetimedb.com#gh-light-mode-only" target="_blank">
         <img width="300" src="./images/light/logo-text.svg" alt="SpacetimeDB">
     </a>
+    <h3 align="center">
+        Multiplayer at the speed of light.
+    </h3>
 </p>
-
-<h3 align="center">
-    Multiplayer at the speed of light.
-</h3>
+<br>
 
 <p align="center">
     <a href="https://github.com/clockworklabs/spacetimedb"><img src="https://img.shields.io/github/v/release/clockworklabs/spacetimedb?color=%23ff00a0&include_prereleases&label=version&sort=semver&style=flat-square"></a>
