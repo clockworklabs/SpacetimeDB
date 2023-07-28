@@ -1,6 +1,4 @@
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
-#[cfg(feature = "serde")]
-use spacetimedb_sats::{de, ser};
 use spacetimedb_sats::{impl_st, AlgebraicType, ProductTypeElement};
 use std::fmt;
 

@@ -1,7 +1,5 @@
 use core::fmt;
 use sha3::{Digest, Keccak256};
-#[cfg(feature = "serde")]
-use spacetimedb_sats::{de, ser};
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 
 pub const HASH_SIZE: usize = 32;
