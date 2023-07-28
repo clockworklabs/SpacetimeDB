@@ -47,7 +47,14 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix: &'a str) -> im
                 unimplemented!()
             }
         }
-        AlgebraicType::Product(_) => unimplemented!(),
+        AlgebraicType::Product(prod) => {
+            // The only type that is allowed here is the identity type. All other types should fail.
+            if prod.is_identity() {
+                write!(f, "Identity")
+            } else {
+                unimplemented!()
+            }
+        }
         AlgebraicType::Builtin(b) => match maybe_primitive(b) {
             MaybePrimitive::Primitive(p) => f.write_str(p),
             MaybePrimitive::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => f.write_str("Uint8Array"),
@@ -121,7 +128,13 @@ fn convert_type<'a>(
     ref_prefix: &'a str,
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Product(_) => unreachable!(),
+        AlgebraicType::Product(product) => {
+            if product.is_identity() {
+                write!(f, "new Identity({}.asBytes())", value)
+            } else {
+                unimplemented!()
+            }
+        }
         AlgebraicType::Sum(sum_type) => {
             if let Some(inner_ty) = sum_type.as_option() {
                 match inner_ty {
@@ -278,7 +291,13 @@ fn serialize_type<'a>(
     prefix: &'a str,
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Product(_) => unreachable!(),
+        AlgebraicType::Product(prod) => {
+            if prod.is_identity() {
+                write!(f, "Array.from({value}.toUint8Array())")
+            } else {
+                unimplemented!()
+            }
+        }
         AlgebraicType::Sum(sum_type) => {
             if let Some(inner_ty) = sum_type.as_option() {
                 write!(
@@ -622,7 +641,7 @@ fn autogen_typescript_product_table_common(
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent, Identity }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(ctx, &product_type.elements, &mut imports, None);
@@ -969,12 +988,16 @@ fn autogen_typescript_access_funcs_for_struct(
         let typescript_field_name_camel = field_name.replace("r#", "").to_case(Case::Camel);
 
         let typescript_field_type = match field_type {
-            AlgebraicType::Product(_) | AlgebraicType::Ref(_) => {
+            AlgebraicType::Product(product) => {
+                if product.is_identity() {
+                    "Identity"
+                } else {
                 // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
                 continue;
             }
-            AlgebraicType::Sum(_) => {
-                // TODO: We don't allow filtering on enums right now, its possible we may consider it for the future.
+            }
+            AlgebraicType::Ref(_) | AlgebraicType::Sum(_) => {
+                // TODO: We don't allow filtering on enums or tuples right now, its possible we may consider it for the future.
                 continue;
             }
             AlgebraicType::Builtin(b) => match maybe_primitive(b) {
