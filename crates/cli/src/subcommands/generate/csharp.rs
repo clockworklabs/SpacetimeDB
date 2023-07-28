@@ -953,11 +953,14 @@ fn autogen_csharp_access_funcs_for_struct(
                 if product.is_identity() {
                     ("Identity".into(), "SpacetimeDB.Identity")
                 } else {
+                    // TODO: We don't allow filtering on tuples right now,
+                    //       it's possible we may consider it for the future.
                     continue;
                 }
             }
             AlgebraicType::Ref(_) | AlgebraicType::Sum(_) => {
-                // TODO: We don't allow filtering on enums or tuples right now, its possible we may consider it for the future.
+                // TODO: We don't allow filtering on enums or tuples right now;
+                //       it's possible we may consider it for the future.
                 continue;
             }
             AlgebraicType::Builtin(b) => match maybe_primitive(b) {

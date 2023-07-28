@@ -89,6 +89,16 @@ pub async fn get_identity(
 }
 
 /// A version of `Identity` appropriate for URL de/encoding.
+///
+/// Because `Identity` is represented in SATS as a `ProductValue`,
+/// its serialized format is somewhat gnarly.
+/// When URL-encoding identities, we want to use only the hex string,
+/// without wrapping it in a `ProductValue`.
+/// This keeps our routes pretty, like `/identity/<64 hex chars>/set-email`.
+///
+/// This newtype around `Identity` implements `Deserialize`
+/// directly from the inner identity bytes,
+/// without the enclosing `ProductValue` wrapper.
 pub struct IdentityForUrl(Identity);
 
 impl From<IdentityForUrl> for Identity {
