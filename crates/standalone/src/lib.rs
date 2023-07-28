@@ -37,7 +37,6 @@ pub struct StandaloneEnv {
     object_db: ObjectDb,
     host_controller: Arc<HostController>,
     client_actor_index: ClientActorIndex,
-    sendgrid: Option<SendGridController>,
     public_key: DecodingKey,
     private_key: EncodingKey,
 }
@@ -54,7 +53,6 @@ impl StandaloneEnv {
         let energy_monitor = Arc::new(StandaloneEnergyMonitor::default());
         let host_controller = Arc::new(HostController::new(energy_monitor));
         let client_actor_index = ClientActorIndex::new();
-        let sendgrid = SendGridController::new();
         let (public_key, private_key) = get_or_create_keys()?;
         Ok(Self {
             worker_db,
@@ -63,7 +61,6 @@ impl StandaloneEnv {
             object_db,
             host_controller,
             client_actor_index,
-            sendgrid,
             public_key,
             private_key,
         })
@@ -301,8 +298,10 @@ impl spacetimedb_client_api::ControlCtx for StandaloneEnv {
         &self.control_db
     }
 
+    /// Standalone SpacetimeDB does not support SendGrid as a means to
+    /// reissue authentication tokens.
     fn sendgrid_controller(&self) -> Option<&SendGridController> {
-        self.sendgrid.as_ref()
+        None
     }
 }
 
