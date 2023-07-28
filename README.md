@@ -1,14 +1,12 @@
-# SpacetimeDB
-Multiplayer at the speed of light.
-
-<br>
-
 <p align="center">
-    <img width="300" src="./img/icon.png" alt="SpacetimeDB Icon">
+    <a href="https://spacetimedb.com#gh-dark-mode-only" target="_blank">
+	<img width="300" src="https://github.com/clockworklabs/SpacetimeDB/assets/6432361/f82d599e-1558-4d6a-bd5e-d4786873ce1f" alt="SpacetimeDB Logo">
+    </a>
+    <a href="https://spacetimedb.com#gh-light-mode-only" target="_blank">
+	<img width="300" src="https://github.com/clockworklabs/SpacetimeDB/assets/6432361/a83aa3b1-4299-4612-9afb-8b40f94f7569" alt="SpacetimeDB Logo">
+    </a>
 </p>
-
 <br>
-
 <p align="center">
     <a href="https://spacetimedb.com#gh-dark-mode-only" target="_blank">
         <img width="300" src="./img/white/logo.svg" alt="SpacetimeDB Logo">
@@ -31,6 +29,9 @@ Multiplayer at the speed of light.
 <h3 align="center">SERVERLESS. &nbsp; RELATIONAL. &nbsp; BUILT FOR MASSIVE GAMES.</h3>
 
 <br>
+
+# SpacetimeDB
+Multiplayer at the speed of light.
 
 <p align="center">
     <a href="https://github.com/clockworklabs/spacetimedb"><img src="https://img.shields.io/github/v/release/clockworklabs/spacetimedb?color=%23ff00a0&include_prereleases&label=version&sort=semver&style=flat-square"></a>
