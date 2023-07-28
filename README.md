@@ -9,29 +9,16 @@
 <br>
 <p align="center">
     <a href="https://spacetimedb.com#gh-dark-mode-only" target="_blank">
-        <img width="300" src="./img/white/logo.svg" alt="SpacetimeDB Logo">
+        <img width="300" src="./img/dark/logo-text.svg" alt="SpacetimeDB">
     </a>
     <a href="https://spacetimedb.com#gh-light-mode-only" target="_blank">
-        <img width="300" src="./img/black/logo.svg" alt="SpacetimeDB Logo">
+        <img width="300" src="./img/light/logo-text.svg" alt="SpacetimeDB">
     </a>
 </p>
 
 <h3 align="center">
-    <a href="https://spacetimedb.com#gh-dark-mode-only" target="_blank">
-        <img src="./img/white/text.svg" height="15" alt="SpacetimeDB">
-    </a>
-    <a href="https://spacetimedb.com#gh-light-mode-only" target="_blank">
-        <img src="./img/black/text.svg" height="15" alt="SpacetimeDB">
-    </a>
-    is a smart-contract relation database designed for data-oriented applications.
+    Multiplayer at the speed of light.
 </h3>
-
-<h3 align="center">SERVERLESS. &nbsp; RELATIONAL. &nbsp; BUILT FOR MASSIVE GAMES.</h3>
-
-<br>
-
-# SpacetimeDB
-Multiplayer at the speed of light.
 
 <p align="center">
     <a href="https://github.com/clockworklabs/spacetimedb"><img src="https://img.shields.io/github/v/release/clockworklabs/spacetimedb?color=%23ff00a0&include_prereleases&label=version&sort=semver&style=flat-square"></a>
