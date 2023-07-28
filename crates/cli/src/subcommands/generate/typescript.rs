@@ -992,9 +992,9 @@ fn autogen_typescript_access_funcs_for_struct(
                 if product.is_identity() {
                     "Identity"
                 } else {
-                // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
-                continue;
-            }
+                    // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
+                    continue;
+                }
             }
             AlgebraicType::Ref(_) | AlgebraicType::Sum(_) => {
                 // TODO: We don't allow filtering on enums or tuples right now, its possible we may consider it for the future.
