@@ -1,9 +1,9 @@
 <p align="center">
     <a href="https://spacetimedb.com#gh-dark-mode-only" target="_blank">
-	<img width="300" src="https://github.com/clockworklabs/SpacetimeDB/assets/6432361/f82d599e-1558-4d6a-bd5e-d4786873ce1f" alt="SpacetimeDB Logo">
+	<img width="300" src="./images/dark/logo.svg" alt="SpacetimeDB Logo">
     </a>
     <a href="https://spacetimedb.com#gh-light-mode-only" target="_blank">
-	<img width="300" src="https://github.com/clockworklabs/SpacetimeDB/assets/6432361/a83aa3b1-4299-4612-9afb-8b40f94f7569" alt="SpacetimeDB Logo">
+	<img width="300" src="./images/light/logo.svg" alt="SpacetimeDB Logo">
     </a>
 </p>
 <br>
