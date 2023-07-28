@@ -68,7 +68,7 @@ fn convert_type<'a>(
     fmt_fn(move |f| match ty {
         AlgebraicType::Product(product) => {
             if product.is_identity() {
-                write!(f, "Identity.from_string({value})")
+                write!(f, "Identity.from_string({value}[0])")
             } else {
                 unimplemented!()
             }
