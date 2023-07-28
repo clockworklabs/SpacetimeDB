@@ -42,6 +42,17 @@ impl ProductType {
     pub const fn new(elements: Vec<ProductTypeElement>) -> Self {
         Self { elements }
     }
+
+    /// Returns whether this is the special case of `spacetimedb_lib::Identity`.
+    pub fn is_identity(&self) -> bool {
+        match &*self.elements {
+            [ProductTypeElement {
+                name: Some(name),
+                algebraic_type,
+            }] => name == "__identity_bytes" && algebraic_type.is_bytes(),
+            _ => false,
+        }
+    }
 }
 
 impl<I: Into<ProductTypeElement>> FromIterator<I> for ProductType {

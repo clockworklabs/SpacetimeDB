@@ -115,9 +115,9 @@ struct IdentifiedPerson {
 }
 
 fn identify(id_number: u64) -> Identity {
-    let mut identity = Identity { data: [0u8; 32] };
-    identity.data[0..8].clone_from_slice(&id_number.to_le_bytes());
-    identity
+    let mut bytes = [0u8; 32];
+    bytes[..8].clone_from_slice(&id_number.to_le_bytes());
+    Identity::from_byte_array(bytes)
 }
 
 #[spacetimedb(reducer)]
@@ -278,4 +278,3 @@ run_test cargo run logs "$IDENT" 100
 run_test cargo run call "$IDENT" insert_person_twice '[23, "Alice", "al"]'
 run_test cargo run logs "$IDENT" 100
 [ ' UNIQUE CONSTRAINT VIOLATION ERROR: id 23: Alice' == "$(grep 'UNIQUE CONSTRAINT VIOLATION ERROR: id 23: Alice' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
-

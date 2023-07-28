@@ -843,7 +843,7 @@ pub async fn publish(
 
     let op = match control_ctx_find_database(&*ctx, &db_address).await? {
         Some(db) => {
-            if Identity::from_slice(db.identity.as_slice()) != auth.identity {
+            if db.identity != auth.identity {
                 return Err((StatusCode::BAD_REQUEST, "Identity does not own this database.").into());
             }
 

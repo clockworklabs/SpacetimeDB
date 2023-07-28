@@ -53,11 +53,10 @@ impl SumType {
     ///
     /// An option type has `some(T)` as its first variant and `none` as its second.
     /// That is, `{ some(T), none }` or `some: T | none` depending on your notation.
-    pub fn looks_like_option(&self) -> Option<&AlgebraicType> {
+    pub fn as_option(&self) -> Option<&AlgebraicType> {
         match &*self.variants {
             [first, second]
-                if second.algebraic_type == AlgebraicType::UNIT_TYPE
-                    // ^-- Done first to avoid pointer indirection when it doesn't matter.
+                if second.is_unit() // Done first to avoid pointer indirection when it doesn't matter.
                     && first.has_name("some")
                     && second.has_name("none") =>
             {
@@ -65,6 +64,11 @@ impl SumType {
             }
             _ => None,
         }
+    }
+
+    /// Returns whether this sum type is like on in C without data attached to the variants.
+    pub fn is_simple_enum(&self) -> bool {
+        self.variants.iter().all(SumTypeVariant::is_unit)
     }
 }
 

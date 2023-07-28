@@ -41,26 +41,6 @@ fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
     })
 }
 
-fn is_empty_product(ty: &AlgebraicType) -> bool {
-    if let AlgebraicType::Product(none_type) = ty {
-        none_type.elements.is_empty()
-    } else {
-        false
-    }
-}
-
-// This function is duplicated in [typescript.rs] and [csharp.rs], and should maybe be
-// lifted into a module, or be a part of SATS itself.
-fn is_option_type(ty: &SumType) -> bool {
-    let name_is = |variant: &SumTypeVariant, name| variant.name.as_ref().expect("Variants should have names!") == name;
-    matches!(
-        &ty.variants[..],
-        [a, b] if name_is(a, "some")
-            && name_is(b, "none")
-            && is_empty_product(&b.algebraic_type)
-    )
-}
-
 fn write_type_ctx(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
     write_type(&|r| type_name(ctx, r), out, ty)
 }
@@ -68,9 +48,9 @@ fn write_type_ctx(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
 pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut W, ty: &AlgebraicType) {
     match ty {
         AlgebraicType::Sum(sum_type) => {
-            if is_option_type(sum_type) {
+            if let Some(inner_ty) = sum_type.as_option() {
                 write!(out, "Option::<").unwrap();
-                write_type(ctx, out, &sum_type.variants[0].algebraic_type);
+                write_type(ctx, out, inner_ty);
                 write!(out, ">").unwrap();
             } else {
                 write!(out, "enum ").unwrap();
@@ -81,6 +61,9 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
                     write_type(ctx, out, &elem.algebraic_type);
                 });
             }
+        }
+        AlgebraicType::Product(p) if p.is_identity() => {
+            write!(out, "Identity").unwrap();
         }
         AlgebraicType::Product(ProductType { elements }) => {
             print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {

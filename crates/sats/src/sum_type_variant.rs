@@ -45,6 +45,11 @@ impl SumTypeVariant {
     pub fn has_name(&self, name: &str) -> bool {
         self.name() == Some(name)
     }
+
+    /// Returns whether this is a unit variant.
+    pub fn is_unit(&self) -> bool {
+        self.algebraic_type == AlgebraicType::UNIT_TYPE
+    }
 }
 
 impl MetaType for SumTypeVariant {
