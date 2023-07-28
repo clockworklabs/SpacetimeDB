@@ -9,10 +9,10 @@
 <br>
 <p align="center">
     <a href="https://spacetimedb.com#gh-dark-mode-only" target="_blank">
-        <img width="300" src="./img/dark/logo-text.svg" alt="SpacetimeDB">
+        <img width="300" src="./images/dark/logo-text.svg" alt="SpacetimeDB">
     </a>
     <a href="https://spacetimedb.com#gh-light-mode-only" target="_blank">
-        <img width="300" src="./img/light/logo-text.svg" alt="SpacetimeDB">
+        <img width="300" src="./images/light/logo-text.svg" alt="SpacetimeDB">
     </a>
 </p>
 
