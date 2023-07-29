@@ -11,9 +11,11 @@ use spacetimedb_lib::Identity;
 
 use crate::{log_and_500, ControlCtx, ControlNodeDelegate};
 
+use super::identity::IdentityForUrl;
+
 #[derive(Deserialize)]
 pub struct IdentityParams {
-    identity: Identity,
+    identity: IdentityForUrl,
 }
 
 pub async fn get_budget(
@@ -21,6 +23,8 @@ pub async fn get_budget(
     Path(IdentityParams { identity }): Path<IdentityParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     // TODO: we need to do authorization here. For now, just short-circuit.
+
+    let identity = Identity::from(identity);
 
     // Note: Consult the write-through cache on control_budget, not the control_db directly.
     let budget = ctx
@@ -47,6 +51,8 @@ pub async fn set_energy_balance(
     Query(SetEnergyBalanceQueryParams { balance }): Query<SetEnergyBalanceQueryParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     // TODO: we need to do authorization here. For now, just short-circuit. GOD MODE.
+
+    let identity = Identity::from(identity);
 
     // We're only updating part of the budget, so we need to retrieve first and alter only the
     // parts we're updating
