@@ -6,9 +6,9 @@ use http::StatusCode;
 use serde::Deserialize;
 use serde_json::json;
 
-use spacetimedb::messages::control_db::EnergyBalance;
 use spacetimedb_lib::Identity;
 
+use crate::auth::SpacetimeAuthHeader;
 use crate::{log_and_500, ControlCtx, ControlNodeDelegate};
 
 use super::identity::IdentityForUrl;
@@ -18,16 +18,14 @@ pub struct IdentityParams {
     identity: IdentityForUrl,
 }
 
-pub async fn get_budget(
+pub async fn get_energy_balance(
     State(ctx): State<Arc<dyn ControlCtx>>,
     Path(IdentityParams { identity }): Path<IdentityParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    // TODO: we need to do authorization here. For now, just short-circuit.
-
     let identity = Identity::from(identity);
 
     // Note: Consult the write-through cache on control_budget, not the control_db directly.
-    let budget = ctx
+    let balance = ctx
         .control_db()
         .get_energy_balance(&identity)
         .await
@@ -35,7 +33,7 @@ pub async fn get_budget(
         .ok_or((StatusCode::NOT_FOUND, "No budget for identity"))?;
 
     let response_json = json!({
-        "balance": budget.balance_quanta
+        "balance": balance
     });
 
     Ok(axum::Json(response_json))
@@ -49,35 +47,31 @@ pub async fn set_energy_balance(
     State(ctx): State<Arc<dyn ControlCtx>>,
     Path(IdentityParams { identity }): Path<IdentityParams>,
     Query(SetEnergyBalanceQueryParams { balance }): Query<SetEnergyBalanceQueryParams>,
+    auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
-    // TODO: we need to do authorization here. For now, just short-circuit. GOD MODE.
+    // TODO(cloutiertyler): For the Testnet no one shall be authorized to set the energy balance
+    // of an identity. Each identity will begin with a default balance and they cannot be refilled.
+    // This will be a natural rate limiter until we can begin to sell energy.
+    let Some(auth) = auth.auth else {
+        return Err(StatusCode::UNAUTHORIZED.into());
+    };
+
+    // No one is able to be the dummy identity so this always returns unauthorized.
+    if auth.identity != Identity::__dummy() {
+        return Err(StatusCode::UNAUTHORIZED.into());
+    }
 
     let identity = Identity::from(identity);
 
-    // We're only updating part of the budget, so we need to retrieve first and alter only the
-    // parts we're updating
-    // If there's no existing budget, create new with sensible defaults.
-    let budget = ctx
-        .control_db()
-        .get_energy_balance(&identity)
-        .await
-        .map_err(log_and_500)?;
-    let mut budget = budget.unwrap_or(EnergyBalance {
-        identity,
-        balance_quanta: 0,
-    });
-
-    if let Some(balance) = balance {
-        budget.balance_quanta = balance
-    }
+    let balance = balance.unwrap_or(0);
 
     ctx.control_db()
-        .set_energy_balance(&identity, &budget)
+        .set_energy_balance(identity, balance)
         .map_err(log_and_500)?;
 
     // Return the modified budget.
     let response_json = json!({
-        "balance": budget.balance_quanta,
+        "balance": balance,
     });
 
     Ok(axum::Json(response_json))
@@ -90,6 +84,6 @@ where
 {
     use axum::routing::{get, post};
     axum::Router::new()
-        .route("/:identity", get(get_budget))
+        .route("/:identity", get(get_energy_balance))
         .route("/:identity", post(set_energy_balance))
 }
