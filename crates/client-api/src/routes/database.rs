@@ -363,7 +363,7 @@ pub async fn info(
     };
     let response_json = json!({
         "address": database.address.to_hex(),
-        "identity": database.identity,
+        "identity": database.identity.to_hex(),
         "host_type": host_type,
         "num_replicas": database.num_replicas,
         "program_bytes_address": database.program_bytes_address,
