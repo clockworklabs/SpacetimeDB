@@ -41,7 +41,7 @@ pub async fn get_energy_balance(
 
 #[derive(Deserialize)]
 pub struct SetEnergyBalanceQueryParams {
-    balance: Option<i128>,
+    balance: Option<String>,
 }
 pub async fn set_energy_balance(
     State(ctx): State<Arc<dyn ControlCtx>>,
@@ -63,6 +63,13 @@ pub async fn set_energy_balance(
 
     let identity = Identity::from(identity);
 
+    let balance = balance
+        .map(|balance| balance.parse::<i128>())
+        .transpose()
+        .map_err(|err| {
+            log::error!("Failed to parse balance: {:?}", err);
+            StatusCode::BAD_REQUEST
+        })?;
     let balance = EnergyQuanta(balance.unwrap_or(0));
 
     ctx.control_db()
