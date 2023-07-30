@@ -7,7 +7,7 @@ use spacetimedb::client::ClientActorIndex;
 use spacetimedb::control_db::ControlDb;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::hash::Hash;
-use spacetimedb::host::HostController;
+use spacetimedb::host::{HostController, EnergyQuanta};
 use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, Node};
@@ -90,6 +90,8 @@ pub trait ControlNodeDelegate: Send + Sync {
 
     async fn alloc_spacetime_identity(&self) -> spacetimedb::control_db::Result<Identity>;
 
+    async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()>;
+
     fn public_key(&self) -> &DecodingKey;
     fn private_key(&self) -> &EncodingKey;
 }
@@ -122,6 +124,10 @@ impl<T: ControlNodeDelegate + ?Sized> ControlNodeDelegate for ArcEnv<T> {
     async fn alloc_spacetime_identity(&self) -> spacetimedb::control_db::Result<Identity> {
         self.0.alloc_spacetime_identity().await
     }
+    
+    async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
+        self.0.withdraw_energy(identity, amount).await
+    }
 
     fn public_key(&self) -> &DecodingKey {
         self.0.public_key()
@@ -139,6 +145,10 @@ impl<T: ControlNodeDelegate + ?Sized> ControlNodeDelegate for Arc<T> {
 
     async fn alloc_spacetime_identity(&self) -> spacetimedb::control_db::Result<Identity> {
         (**self).alloc_spacetime_identity().await
+    }
+    
+    async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
+        (**self).withdraw_energy(identity, amount).await
     }
 
     fn public_key(&self) -> &DecodingKey {

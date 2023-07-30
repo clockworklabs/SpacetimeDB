@@ -14,7 +14,7 @@ pub struct IdentityEmail {
 pub struct EnergyBalance {
     pub identity: Identity,
     /// How much budget is remaining for this identity.
-    pub balance: i64,
+    pub balance: i128,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

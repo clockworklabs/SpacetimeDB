@@ -14,13 +14,13 @@ use wasmer_middlewares::metering as wasmer_metering;
 fn get_remaining_energy(ctx: &mut impl AsStoreMut, instance: &Instance) -> EnergyQuanta {
     let remaining_points = wasmer_metering::get_remaining_points(ctx, instance);
     match remaining_points {
-        wasmer_metering::MeteringPoints::Remaining(x) => EnergyQuanta(x),
+        wasmer_metering::MeteringPoints::Remaining(x) => EnergyQuanta::from_points(x),
         wasmer_metering::MeteringPoints::Exhausted => EnergyQuanta::ZERO,
     }
 }
 
 fn set_remaining_energy(ctx: &mut impl AsStoreMut, instance: &Instance, energy: EnergyQuanta) {
-    wasmer_metering::set_remaining_points(ctx, instance, energy.0)
+    wasmer_metering::set_remaining_points(ctx, instance, energy.as_points())
 }
 
 fn log_traceback(func_type: &str, func: &str, e: &RuntimeError) {
