@@ -11,16 +11,12 @@ use wasmer::{
 };
 use wasmer_middlewares::metering as wasmer_metering;
 
-fn get_remaining_energy(ctx: &mut impl AsStoreMut, instance: &Instance) -> EnergyQuanta {
+fn get_remaining_points(ctx: &mut impl AsStoreMut, instance: &Instance) -> u64 {
     let remaining_points = wasmer_metering::get_remaining_points(ctx, instance);
     match remaining_points {
-        wasmer_metering::MeteringPoints::Remaining(x) => EnergyQuanta::from_points(x),
-        wasmer_metering::MeteringPoints::Exhausted => EnergyQuanta::ZERO,
+        wasmer_metering::MeteringPoints::Remaining(x) => x,
+        wasmer_metering::MeteringPoints::Exhausted => 0,
     }
-}
-
-fn set_remaining_energy(ctx: &mut impl AsStoreMut, instance: &Instance, energy: EnergyQuanta) {
-    wasmer_metering::set_remaining_points(ctx, instance, energy.as_points())
 }
 
 fn log_traceback(func_type: &str, func: &str, e: &RuntimeError) {
@@ -181,8 +177,8 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
         env.as_mut(&mut store).mem = Some(mem);
 
         // Note: this budget is just for initializers
-        let budget = EnergyQuanta::DEFAULT_BUDGET;
-        set_remaining_energy(&mut store, &instance, budget);
+        let budget = EnergyQuanta::DEFAULT_BUDGET.as_points();
+        wasmer_metering::set_remaining_points(&mut store, &instance, budget);
 
         for preinit in &func_names.preinits {
             let func = instance.exports.get_typed_function::<(), ()>(&store, preinit).unwrap();
@@ -316,7 +312,8 @@ impl WasmerInstance {
     ) -> module_host_actor::ExecuteResult<RuntimeError> {
         let store = &mut self.store;
         let instance = &self.instance;
-        set_remaining_energy(store, instance, budget);
+        let budget = budget.as_points();
+        wasmer_metering::set_remaining_points(store, instance, budget);
 
         let reduce = instance
             .exports
@@ -348,10 +345,10 @@ impl WasmerInstance {
         // .call(store, sender_buf.ptr.cast(), timestamp, args_buf.ptr, args_buf.len)
         // .and_then(|_| {});
         let duration = start.elapsed();
-        let remaining = get_remaining_energy(store, instance);
+        let remaining = get_remaining_points(store, instance);
         let energy = module_host_actor::EnergyStats {
-            used: budget - remaining,
-            remaining,
+            used: EnergyQuanta::from_points(budget) - EnergyQuanta::from_points(remaining),
+            remaining: EnergyQuanta::from_points(remaining),
         };
         module_host_actor::ExecuteResult {
             energy,

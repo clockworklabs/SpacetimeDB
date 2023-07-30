@@ -33,7 +33,8 @@ pub async fn get_energy_balance(
         .unwrap_or(EnergyQuanta(0));
 
     let response_json = json!({
-        "balance": balance.0
+        // Note: balance must be returned as a string to avoid truncation.
+        "balance": balance.0.to_string(),
     });
 
     Ok(axum::Json(response_json))
@@ -77,9 +78,9 @@ pub async fn set_energy_balance(
         .await
         .map_err(log_and_500)?;
 
-    // Return the modified budget.
     let response_json = json!({
-        "balance": balance.0,
+        // Note: balance must be returned as a string to avoid truncation.
+        "balance": balance.0.to_string(),
     });
 
     Ok(axum::Json(response_json))
