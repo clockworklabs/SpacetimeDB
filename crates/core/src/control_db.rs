@@ -2,7 +2,7 @@ use crate::address::Address;
 
 use crate::hash::hash_bytes;
 use crate::identity::Identity;
-use crate::messages::control_db::{Database, DatabaseInstance, IdentityEmail, Node, EnergyBalance};
+use crate::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
 use crate::stdb_path;
 
 use spacetimedb_lib::name::{DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld};
