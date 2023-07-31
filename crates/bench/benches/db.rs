@@ -22,7 +22,7 @@ fn bench_insert_tx_per_row(c: &mut Criterion) {
     let run = Runs::Tiny;
     let mut group = build_group(c, "insert_row", run);
 
-    // Factor out the db creation because is IO that generate noise
+    // Factor out the db creation as it is IO that generates noise.
     group.bench_function(BenchmarkId::new(SQLITE, 1), |b| {
         b.iter_batched(
             || sqlite::create_db(0).unwrap(),
