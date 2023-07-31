@@ -33,7 +33,7 @@ const CONFIG_FILENAME: &str = "config.toml";
 const SPACETIME_FILENAME: &str = "spacetime.toml";
 const DOT_SPACETIME_FILENAME: &str = ".spacetime.toml";
 
-const DEFAULT_HOST: &str = "spacetimedb.com/spacetimedb";
+const DEFAULT_HOST: &str = "testnet.spacetimedb.com";
 const DEFAULT_PROTOCOL: &str = "https";
 
 impl Config {
