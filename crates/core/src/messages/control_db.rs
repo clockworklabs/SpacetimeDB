@@ -13,7 +13,10 @@ pub struct IdentityEmail {
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EnergyBalance {
     pub identity: Identity,
-    /// How much budget is remaining for this identity.
+    /// The balance for this identity this identity.
+    /// NOTE: This is a signed integer, because it is possible
+    /// for a user's balance to go negative. This is allowable
+    /// for reasons of eventual consistency motivated by performance.
     pub balance: i128,
 }
 

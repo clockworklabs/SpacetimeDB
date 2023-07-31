@@ -58,6 +58,13 @@ impl fmt::Display for DescribedEntityType {
     }
 }
 
+/// [EnergyQuanta] represents an amount of energy in a canonical unit.
+/// It represents the smallest unit of energy that can be used to pay for
+/// a reducer invocation. We will likely refer to this unit as an "eV".
+/// 
+/// NOTE: This is represented by a signed integer, because it is possible
+/// for a user's balance to go negative. This is allowable
+/// for reasons of eventual consistency motivated by performance.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EnergyQuanta(pub i128);
 
@@ -66,6 +73,8 @@ impl EnergyQuanta {
 
     pub const DEFAULT_BUDGET: Self = EnergyQuanta(1_000_000_000_000_000_000);
 
+    /// A conversion function to convert from the canonical unit to points used
+    /// by Wasmer to track energy usage.
     pub fn as_points(&self) -> u64 {
         if self.0 < 0 {
             return 0;
@@ -75,6 +84,8 @@ impl EnergyQuanta {
         self.0 as u64
     }
 
+    /// A conversion function to convert from point used
+    /// by Wasmer to track energy usage, to our canonical unit.
     pub fn from_points(points: u64) -> Self {
         Self(points as i128)
     }
