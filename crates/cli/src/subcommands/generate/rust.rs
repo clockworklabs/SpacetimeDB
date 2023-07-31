@@ -1001,7 +1001,7 @@ fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
 }
 
 const CONNECT_DOCSTRING: &[&str] = &[
-    "/// Connect to a database named `db_name` accessible over the internet at the URI `host`.",
+    "/// Connect to a database named `db_name` accessible over the internet at the URI `spacetimedb_uri`.",
     "///",
     "/// If `credentials` are supplied, they will be passed to the new connection to",
     "/// identify and authenticate the user. Otherwise, a set of `Credentials` will be",
@@ -1017,17 +1017,17 @@ fn print_connect_docstring(out: &mut Indenter) {
 fn print_connect_defn(out: &mut Indenter) {
     print_connect_docstring(out);
     out.delimited_block(
-        "pub fn connect<Host>(host: Host, db_name: &str, credentials: Option<Credentials>) -> Result<()>
+        "pub fn connect<IntoUri>(spacetimedb_uri: IntoUri, db_name: &str, credentials: Option<Credentials>) -> Result<()>
 where
-\tHost: TryInto<spacetimedb_sdk::http::Uri>,
-\t<Host as TryInto<spacetimedb_sdk::http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
+\tIntoUri: TryInto<spacetimedb_sdk::http::Uri>,
+\t<IntoUri as TryInto<spacetimedb_sdk::http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
 {",
         |out| out.delimited_block(
             "with_connection_mut(|connection| {",
             |out| {
                 writeln!(
                     out,
-                    "connection.connect(host, db_name, credentials, handle_table_update, handle_resubscribe, invoke_row_callbacks, handle_event)?;"
+                    "connection.connect(spacetimedb_uri, db_name, credentials, handle_table_update, handle_resubscribe, invoke_row_callbacks, handle_event)?;"
                 ).unwrap();
                 writeln!(out, "Ok(())").unwrap();
             },
