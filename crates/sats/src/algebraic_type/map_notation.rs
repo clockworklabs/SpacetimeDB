@@ -4,7 +4,7 @@ use crate::de::fmt_fn;
 use crate::{ArrayType, MapType};
 use std::fmt::{self, Formatter};
 
-/// Wraps an algebraic `ty` in a `Display` impl using a map notation.
+/// Wraps an algebraic `ty` in a `Display` impl using a object/map JSON-like notation.
 pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + fmt::Display {
     use fmt_algebraic_type as fmt;
 

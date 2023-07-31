@@ -36,6 +36,11 @@ impl SumTypeVariant {
         }
     }
 
+    /// Returns a unit variant with `name`.
+    pub fn unit(name: impl AsRef<str>) -> Self {
+        Self::new_named(AlgebraicType::UNIT_TYPE, name)
+    }
+
     /// Returns the name of the variant.
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
