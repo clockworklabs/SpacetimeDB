@@ -4125,6 +4125,7 @@ dependencies = [
  "base64 0.21.2",
  "futures",
  "futures-channel",
+ "hex",
  "home",
  "http",
  "im",

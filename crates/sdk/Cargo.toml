@@ -24,3 +24,7 @@ im = "15.1"
 base64 = "0.21"
 home = "0.5"
 lazy_static = "1.4"
+
+[dev-dependencies]
+# for quickstart-chat example
+hex = "0.4"
