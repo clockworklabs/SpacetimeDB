@@ -43,15 +43,23 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
         SourceExpr::MemTable(x) => MemTable::new(&x.head, table_access, &[]),
         SourceExpr::DbTable(table) => MemTable::new(&table.head, table_access, &[]),
     };
-    t.head.fields.push(Column::new(
-        FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
-        AlgebraicType::U8,
-    ));
 
-    for row in &data.ops {
-        let mut new = row.row.clone();
-        new.elements.push(row.op_type.into());
-        t.data.push(new);
+    if let Some(pos) = t.head.find_pos_by_name(OP_TYPE_FIELD_NAME) {
+        t.data.extend(data.ops.iter().map(|row| {
+            let mut new = row.row.clone();
+            new.elements[pos] = row.op_type.into();
+            new
+        }));
+    } else {
+        t.head.fields.push(Column::new(
+            FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
+            AlgebraicType::U8,
+        ));
+        for row in &data.ops {
+            let mut new = row.row.clone();
+            new.elements.push(row.op_type.into());
+            t.data.push(new);
+        }
     }
 
     q.source = SourceExpr::MemTable(t);
@@ -103,6 +111,7 @@ mod tests {
     use super::*;
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
+    use crate::sql::execute::run;
     use crate::subscription::subscription::QuerySet;
     use crate::vm::tests::create_table_from_program;
     use crate::vm::DbProgram;
@@ -467,6 +476,36 @@ mod tests {
 
         assert_eq!(to_row(result_1), to_row(result_2));
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_subscribe_sql() -> ResultTest<()> {
+        let (db, _tmp_dir) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        let sql_create = "CREATE TABLE MobileEntityState (entity_id BIGINT UNSIGNED, location_x INTEGER, location_z INTEGER, destination_x INTEGER, destination_z INTEGER, is_running BOOLEAN, timestamp  BIGINT UNSIGNED, dimension INTEGER UNSIGNED);\
+        CREATE TABLE EnemyState (entity_id BIGINT UNSIGNED, herd_id INTEGER, status INTEGER, type INTEGER, direction INTEGER);";
+        run(&db, &mut tx, sql_create, AuthCtx::for_testing())?;
+
+        let sql_create = "\
+        insert into MobileEntityState (entity_id, location_x, location_z, destination_x, destination_z, is_running, timestamp, dimension) values (1, 96001, 96001, 96001, 1867045146, false, 17167179743690094247, 3926297397);\
+        insert into MobileEntityState (entity_id, location_x, location_z, destination_x, destination_z, is_running, timestamp, dimension) values (2, 96001, 191000, 191000, 1560020888, true, 2947537077064292621, 445019304);
+        
+        insert into EnemyState (entity_id, herd_id, status, type, direction) values (1, 1181485940, 1633678837, 1158301365, 132191327);
+        insert into EnemyState (entity_id, herd_id, status, type, direction) values (2, 2017368418, 194072456, 34423057, 1296770410);";
+        run(&db, &mut tx, sql_create, AuthCtx::for_testing())?;
+
+        let sql_query = "SELECT * FROM MobileEntityState JOIN EnemyState ON MobileEntityState.entity_id = EnemyState.entity_id WHERE location_x > 96000 AND MobileEntityState.location_x < 192000 AND MobileEntityState.location_z > 96000 AND MobileEntityState.location_z < 192000";
+        let q = compile_query(&db, &mut tx, sql_query)?;
+
+        for q in q.queries {
+            assert_eq!(
+                run_query(&db, &mut tx, &q, AuthCtx::for_testing())?.len(),
+                1,
+                "Not return results"
+            );
+        }
         Ok(())
     }
 }
