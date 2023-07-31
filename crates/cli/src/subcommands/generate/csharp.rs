@@ -1113,6 +1113,37 @@ fn autogen_csharp_access_funcs_for_struct(
                 .unwrap();
         }
         writeln!(output, "}}").unwrap();
+        writeln!(output).unwrap();
+
+        writeln!(
+            output,
+            "public static SpacetimeDB.SATS.AlgebraicValue GetPrimaryKeyValue(SpacetimeDB.SATS.AlgebraicValue v)"
+        )
+        .unwrap();
+        writeln!(output, "{{").unwrap();
+        {
+            indent_scope!(output);
+            writeln!(output, "return v.AsProductValue().elements[{}];", primary_col_index).unwrap();
+        }
+        writeln!(output, "}}").unwrap();
+        writeln!(output).unwrap();
+
+        writeln!(
+            output,
+            "public static SpacetimeDB.SATS.AlgebraicType GetPrimaryKeyType(SpacetimeDB.SATS.AlgebraicType t)"
+        )
+        .unwrap();
+        writeln!(output, "{{").unwrap();
+        {
+            indent_scope!(output);
+            writeln!(
+                output,
+                "return t.product.elements[{}].algebraicType;",
+                primary_col_index
+            )
+            .unwrap();
+        }
+        writeln!(output, "}}").unwrap();
     } else {
         writeln!(
             output,

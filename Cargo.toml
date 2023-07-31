@@ -19,6 +19,7 @@ members = [
   "modules/rust-wasm-test",
   "modules/benchmarks",
   "modules/spacetimedb-quickstart",
+  "modules/quickstart-chat",
 ]
 default-members = ["crates/cli"]
 

@@ -95,7 +95,7 @@ pub enum PlanError {
     TableNotFoundQualified { expect: String },
     #[error("Unknown field: `{field}` not found in the table(s): `{tables:?}`")]
     UnknownField { field: FieldName, tables: Vec<String> },
-    #[error("Field: `{fields:?}` not found in the table(s): `{tables:?}`")]
+    #[error("Field(s): `{fields:?}` not found in the table(s): `{tables:?}`")]
     UnknownFields {
         fields: Vec<FieldName>,
         tables: Vec<String>,

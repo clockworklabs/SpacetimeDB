@@ -209,10 +209,14 @@ impl From {
         let fields = self.find_field(named)?;
 
         match fields.len() {
-            0 => Err(PlanError::UnknownField {
-                field: FieldName::named("?", named),
-                tables: self.table_names(),
-            }),
+            0 => {
+                let field = extract_table_field(named)?;
+
+                Err(PlanError::UnknownField {
+                    field: FieldName::named(field.table.unwrap_or("?"), field.field),
+                    tables: self.table_names(),
+                })
+            }
             1 => Ok(fields[0].clone()),
             _ => Err(PlanError::AmbiguousField {
                 field: named.into(),
