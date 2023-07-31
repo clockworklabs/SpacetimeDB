@@ -43,11 +43,8 @@ fn handle_table_update(
 ) {
     let table_name = &table_update.table_name[..];
     match table_name {
-        "Message" => client_cache
-            .handle_table_update_no_primary_key::<message::Message>(callbacks, table_update),
-        "User" => {
-            client_cache.handle_table_update_with_primary_key::<user::User>(callbacks, table_update)
-        }
+        "Message" => client_cache.handle_table_update_no_primary_key::<message::Message>(callbacks, table_update),
+        "User" => client_cache.handle_table_update_with_primary_key::<user::User>(callbacks, table_update),
         _ => spacetimedb_sdk::log::error!("TableRowOperation on unknown table {:?}", table_name),
     }
 }
@@ -64,16 +61,10 @@ fn invoke_row_callbacks(
 }
 
 #[allow(unused)]
-fn handle_resubscribe(
-    new_subs: TableUpdate,
-    client_cache: &mut ClientCache,
-    callbacks: &mut RowCallbackReminders,
-) {
+fn handle_resubscribe(new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {
     let table_name = &new_subs.table_name[..];
     match table_name {
-        "Message" => {
-            client_cache.handle_resubscribe_for_type::<message::Message>(callbacks, new_subs)
-        }
+        "Message" => client_cache.handle_resubscribe_for_type::<message::Message>(callbacks, new_subs),
         "User" => client_cache.handle_resubscribe_for_type::<user::User>(callbacks, new_subs),
         _ => spacetimedb_sdk::log::error!("TableRowOperation on unknown table {:?}", table_name),
     }
@@ -95,12 +86,11 @@ fn handle_event(
                 state,
                 ReducerEvent::SendMessage,
             ),
-        "set_name" => reducer_callbacks
-            .handle_event_of_type::<set_name_reducer::SetNameArgs, ReducerEvent>(
-                event,
-                state,
-                ReducerEvent::SetName,
-            ),
+        "set_name" => reducer_callbacks.handle_event_of_type::<set_name_reducer::SetNameArgs, ReducerEvent>(
+            event,
+            state,
+            ReducerEvent::SetName,
+        ),
         unknown => {
             spacetimedb_sdk::log::error!("Event on an unknown reducer: {:?}", unknown);
             None
