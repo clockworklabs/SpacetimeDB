@@ -5,7 +5,7 @@ use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkGroup, Benc
 use spacetimedb_bench::prelude::*;
 use std::time::Duration;
 
-// IMPORTANT!: It needs this option to run the setup once per `.iter`!
+// IMPORTANT!: We must run the setup once per `.iter`!
 const SIZE: BatchSize = BatchSize::PerIteration;
 
 fn build_group<'a>(c: &'a mut Criterion, named: &str, run: Runs) -> BenchmarkGroup<'a, WallTime> {
