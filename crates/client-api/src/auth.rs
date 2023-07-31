@@ -90,7 +90,7 @@ impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> fo
                     creds,
                     identity: Identity::from_hex(claims.hex_identity).map_err(|_| AuthorizationRejection {
                         reason: AuthorizationRejectionReason::CantDecodeAuthorizationToken,
-                    })?
+                    })?,
                 };
                 Ok(Self { auth: Some(auth) })
             }
@@ -111,7 +111,7 @@ impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> fo
                     creds,
                     identity: Identity::from_hex(claims.hex_identity).map_err(|_| AuthorizationRejection {
                         reason: AuthorizationRejectionReason::CantDecodeAuthorizationToken,
-                    })?
+                    })?,
                 };
                 Ok(Self { auth: Some(auth) })
             }

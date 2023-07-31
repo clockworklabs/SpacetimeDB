@@ -32,9 +32,7 @@ pub async fn get_energy_balance(
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No budget for identity"))?;
 
-    let response_json = json!({
-        "balance": balance
-    });
+    let response_json = json!({ "balance": balance });
 
     Ok(axum::Json(response_json))
 }
