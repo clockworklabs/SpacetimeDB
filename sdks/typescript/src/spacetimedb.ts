@@ -107,6 +107,9 @@ class DBOp {
   }
 }
 
+/**
+ * Builder to generate calls to query a `table` in the database
+ */
 class Table {
   // TODO: most of this stuff should be probably private
   public name: string;
@@ -115,6 +118,11 @@ class Table {
   private entityClass: any;
   pkCol?: number;
 
+  /**
+   * @param name the table name
+   * @param pkCol column designated as `#[primarykey]`
+   * @param entityClass the entityClass 
+   */
   constructor(name: string, pkCol: number | undefined, entityClass: any) {
     this.name = name;
     this.instances = new Map();
