@@ -3036,6 +3036,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickstart-chat-module"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4125,6 +4133,7 @@ dependencies = [
  "base64 0.21.2",
  "futures",
  "futures-channel",
+ "hex",
  "home",
  "http",
  "im",
