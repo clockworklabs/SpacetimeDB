@@ -169,6 +169,9 @@ pub struct TableSchema {
 }
 
 impl TableSchema {
+    /// Check if the `name` of the [FieldName] exist on this [TableSchema]
+    ///
+    /// Warning: It ignores the `table_name`
     pub fn get_column_by_field(&self, field: &FieldName) -> Option<&ColumnSchema> {
         match field.field() {
             FieldOnly::Name(x) => self.get_column_by_name(x),
@@ -180,13 +183,16 @@ impl TableSchema {
         self.columns.get(pos)
     }
 
-    pub fn get_column_by_name(&self, name: &str) -> Option<&ColumnSchema> {
-        self.columns.iter().find(|x| x.col_name == name)
+    /// Check if the `col_name` exist on this [TableSchema]
+    ///
+    /// Warning: It ignores the `table_name`
+    pub fn get_column_by_name(&self, col_name: &str) -> Option<&ColumnSchema> {
+        self.columns.iter().find(|x| x.col_name == col_name)
     }
 
     /// Turn a [TableField] that could be an unqualified field `id` into `table.id`
-    pub fn normalize_field(&self, name: &TableField) -> FieldName {
-        FieldName::named(name.table.unwrap_or(&self.table_name), name.field)
+    pub fn normalize_field(&self, or_use: &TableField) -> FieldName {
+        FieldName::named(or_use.table.unwrap_or(&self.table_name), or_use.field)
     }
 }
 

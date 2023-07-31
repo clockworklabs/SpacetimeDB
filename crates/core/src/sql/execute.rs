@@ -83,7 +83,12 @@ pub fn execute_sql(
 }
 
 /// Run the `SQL` string using the `auth` credentials
-fn run(db: &RelationalDB, tx: &mut MutTxId, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
+pub(crate) fn run(
+    db: &RelationalDB,
+    tx: &mut MutTxId,
+    sql_text: &str,
+    auth: AuthCtx,
+) -> Result<Vec<MemTable>, DBError> {
     let ast = compile_sql(db, tx, sql_text)?;
     execute_sql(db, tx, ast, auth)
 }

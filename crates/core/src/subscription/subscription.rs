@@ -72,17 +72,26 @@ impl QuerySet {
                         .into_iter()
                         .find(|x| !x.data.is_empty())
                     {
+                        let pos_op_type = result.head.find_pos_by_name(OP_TYPE_FIELD_NAME).unwrap_or_else(|| {
+                            panic!(
+                                "failed to locate `{OP_TYPE_FIELD_NAME}` on `{}`. fields: {:?}",
+                                result.head.table_name,
+                                result.head.fields.iter().map(|x| &x.field).collect::<Vec<_>>()
+                            )
+                        });
+
                         let mut table_row_operations = table.clone();
                         table_row_operations.ops.clear();
                         for mut row in result.data {
                             //Hack: remove the hidden field OP_TYPE_FIELD_NAME. see `to_mem_table`
-                            // needs to be done before calculate the PK
-                            let op_type =
-                                if let Some(AlgebraicValue::Builtin(BuiltinValue::U8(op))) = row.elements.pop() {
-                                    op
-                                } else {
-                                    panic!("Fail to extract {OP_TYPE_FIELD_NAME}")
-                                };
+                            // Needs to be done before calculating the PK.
+                            let op_type = if let AlgebraicValue::Builtin(BuiltinValue::U8(op)) =
+                                row.elements.remove(pos_op_type)
+                            {
+                                op
+                            } else {
+                                panic!("Fail to extract `{OP_TYPE_FIELD_NAME}` on `{}`", result.head.table_name)
+                            };
 
                             let row_pk = RelationalDB::pk_for_row(&row);
 
@@ -145,10 +154,6 @@ impl QuerySet {
                                     row,
                                 });
                             }
-
-                            // if table_row_operations.is_empty() {
-                            //     continue;
-                            // }
 
                             database_update.tables.push(DatabaseTableUpdate {
                                 table_id: t.table_id,
