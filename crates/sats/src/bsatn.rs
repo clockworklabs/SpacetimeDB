@@ -23,12 +23,12 @@ pub fn to_vec<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, ser::BsatnErr
     Ok(v)
 }
 
-/// Deserialize a `T` from the BSATM format in the buffered `reader`.
+/// Deserialize a `T` from the BSATN format in the buffered `reader`.
 pub fn from_reader<'de, T: Deserialize<'de>>(reader: &mut impl BufReader<'de>) -> Result<T, DecodeError> {
     T::deserialize(Deserializer::new(reader))
 }
 
-/// Deserialize a `T` from the BSATM format in `bytes`.
+/// Deserialize a `T` from the BSATN format in `bytes`.
 pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, DecodeError> {
     from_reader(&mut &*bytes)
 }

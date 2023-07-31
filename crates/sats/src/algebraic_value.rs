@@ -6,9 +6,15 @@ use crate::builtin_value::{F32, F64};
 use crate::{AlgebraicType, ArrayValue, BuiltinType, BuiltinValue, ProductValue, SumValue};
 use enum_as_inner::EnumAsInner;
 
-/// A value in SATS.
+/// A value in SATS typed at some [`AlgebraicType`].
 ///
-/// These values are fully evaluated.
+/// Values are type erased, so they do not store their type.
+/// This is important mainly for space efficiency,
+/// including network latency and bandwidth.
+///
+/// These are only values and not expressions.
+/// That is, they are canonical and cannot be simplified further by some evaluation.
+/// So forms like `42 + 24` are not represented in an `AlgebraicValue`.
 #[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum AlgebraicValue {
     /// A structural sum value.
@@ -372,7 +378,7 @@ impl AlgebraicValue {
 
     /// Returns the [`AlgebraicType`] of the sum value `x`.
     pub(crate) fn type_of_sum(x: &SumValue) -> AlgebraicType {
-        // TODO(centril): This is unsound!
+        // TODO(centril, #104): This is unsound!
         //
         //   The type of a sum value must be a sum type and *not* a product type.
         //   Suppose `x.tag` is for the variant `VarName(VarType)`.
