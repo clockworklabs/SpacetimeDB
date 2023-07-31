@@ -1010,7 +1010,8 @@ export class SpacetimeDBClient {
   }
 
   /**
-   * Register a reducer to be used with your SpacetimeDB module
+   * Register a reducer to be used with your SpacetimeDB module.
+   * 
    * @param name The name of the reducer to register
    * @param reducer The reducer to register
    */
@@ -1068,7 +1069,7 @@ export class SpacetimeDBClient {
   }
 
   /**
-   * Call a reducer on your SpacetimeDB module
+   * Call a reducer on your SpacetimeDB module.
    * @param reducerName The name of the reducer to call
    * @param args The arguments to pass to the reducer
    */
