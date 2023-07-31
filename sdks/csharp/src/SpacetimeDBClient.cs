@@ -141,19 +141,6 @@ namespace SpacetimeDB
             return null;
         }
 
-
-        public static void CreateInstance(ISpacetimeDBLogger loggerToUse, Type reducerType)
-        {
-            if (instance == null)
-            {
-                new SpacetimeDBClient(loggerToUse, reducerType);
-            }
-            else
-            {
-                loggerToUse.LogError($"Instance already created.");
-            }
-        }
-
         protected SpacetimeDBClient(ISpacetimeDBLogger loggerToUse, Type reducerType)
         {
             if (instance != null)
@@ -743,5 +730,4 @@ namespace SpacetimeDB
                 OnMessageProcessComplete(nextMessage.message, nextMessage.events);
             }
         }
-    }
-}
+    
