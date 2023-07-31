@@ -232,7 +232,7 @@ class Table {
    *   if (reducerEvent in ReducerEvent) {
    *      console.log("New user on reducer", reducer_event, user);
    *   } else {
-   *      console.log("New user received during subscription update", user);
+   *      console.log("New user received during subscription update on insert", user);
    *  }
    * });
    * ```
@@ -253,7 +253,7 @@ class Table {
    *   if (reducerEvent in ReducerEvent) {
    *      console.log("Deleted user on reducer", reducer_event, user);
    *   } else {
-   *      console.log("Deleted user received during subscription update", user);
+   *      console.log("Deleted user received during subscription update on update", user);
    *  }
    * });
    * ```
@@ -274,7 +274,7 @@ class Table {
    *   if (reducerEvent in ReducerEvent) {
    *      console.log("Updated user on reducer", reducer_event, user);
    *   } else {
-   *      console.log("Updated user received during subscription update", user);
+   *      console.log("Updated user received during subscription update on delete", user);
    *  }
    * });
    * ```
