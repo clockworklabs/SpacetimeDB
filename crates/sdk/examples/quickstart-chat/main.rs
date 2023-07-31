@@ -180,4 +180,3 @@ fn user_input_loop() {
         }
     }
 }
-
