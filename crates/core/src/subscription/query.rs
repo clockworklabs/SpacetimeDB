@@ -50,7 +50,7 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
     if let Some(pos) = t.head.find_pos_by_name(OP_TYPE_FIELD_NAME) {
         t.data.extend(data.ops.iter().map(|row| {
             let mut new = row.row.clone();
-            new.elements[pos] = row.op_type.into();
+            new.elements.insert(pos, row.op_type.into());
             new
         }));
     } else {
@@ -94,7 +94,7 @@ pub(crate) fn run_query(
 /// }
 /// ```
 ///
-/// WARNING: If [SUBSCRIBE_TO_ALL_QUERY] is only valid to repeated calls as long there is not change on database schema, and the clients must `unsubscribe` before modify it.
+/// WARNING: WARNING: [`SUBSCRIBE_TO_ALL_QUERY`] is only valid for repeated calls as long there is not change on database schema, and the clients must `unsubscribe` before modify it.
 pub fn compile_query(
     relational_db: &RelationalDB,
     tx: &MutTxId,
@@ -107,7 +107,7 @@ pub fn compile_query(
     }
 
     if input == SUBSCRIBE_TO_ALL_QUERY {
-        return QuerySet::get_all(relational_db, *auth);
+        return QuerySet::get_all(relational_db, tx, auth);
     }
 
     let mut queries = Vec::new();
@@ -154,16 +154,15 @@ mod tests {
 
     fn make_data(
         db: &RelationalDB,
+        tx: &mut MutTxId,
         table_name: &str,
         head: &ProductType,
         row: &ProductValue,
     ) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr)> {
-        let mut tx = db.begin_tx();
         let table = mem_table(head.clone(), [row.clone()]);
-        let table_id = create_table_with_rows(db, &mut tx, table_name, head.clone(), &[row.clone()])?;
+        let table_id = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()])?;
 
-        let schema = db.schema_for_table(&tx, table_id).unwrap();
-        // db.commit_tx(tx)?;
+        let schema = db.schema_for_table(tx, table_id).unwrap();
 
         let op = TableOp {
             op_type: 1,
@@ -184,6 +183,7 @@ mod tests {
 
     fn make_inv(
         db: &RelationalDB,
+        tx: &mut MutTxId,
         access: StAccess,
     ) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr)> {
         let table_name = if access == StAccess::Public {
@@ -195,7 +195,7 @@ mod tests {
         let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
         let row = product!(1u64, "health");
 
-        let (schema, table, data, q) = make_data(db, table_name, &head, &row)?;
+        let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
 
         // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
         let fields = &[
@@ -208,12 +208,15 @@ mod tests {
         Ok((schema, table, data, q))
     }
 
-    fn make_player(db: &RelationalDB) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr)> {
+    fn make_player(
+        db: &RelationalDB,
+        tx: &mut MutTxId,
+    ) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr)> {
         let table_name = "player";
         let head = ProductType::from_iter([("player_id", BuiltinType::U64), ("name", BuiltinType::String)]);
         let row = product!(2u64, "jhon doe");
 
-        let (schema, table, data, q) = make_data(db, table_name, &head, &row)?;
+        let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
 
         // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
         let fields = &[
@@ -226,9 +229,15 @@ mod tests {
         Ok((schema, table, data, q))
     }
 
-    fn check_query(db: &RelationalDB, table: &MemTable, q: &QueryExpr, data: &DatabaseTableUpdate) -> ResultTest<()> {
+    fn check_query(
+        db: &RelationalDB,
+        table: &MemTable,
+        tx: &mut MutTxId,
+        q: &QueryExpr,
+        data: &DatabaseTableUpdate,
+    ) -> ResultTest<()> {
         let q = to_mem_table(q.clone(), &data);
-        let result = run_query(&db, &q, AuthCtx::for_testing())?;
+        let result = run_query(&db, tx, &q, AuthCtx::for_testing())?;
 
         assert_eq!(
             Some(table.as_without_table_name()),
@@ -238,48 +247,53 @@ mod tests {
         Ok(())
     }
 
+    fn get_result(result: DatabaseUpdate) -> Vec<ProductValue> {
+        result
+            .tables
+            .iter()
+            .map(|x| x.ops.iter().map(|x| x.row.clone()))
+            .flatten()
+            .sorted()
+            .collect::<Vec<_>>()
+    }
+
     fn check_query_incr(
         db: &RelationalDB,
+        tx: &mut MutTxId,
         s: &QuerySet,
         update: &DatabaseUpdate,
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval_incr(&db, &update, AuthCtx::for_testing())?;
+        let result = s.eval_incr(&db, tx, &update, AuthCtx::for_testing())?;
         assert_eq!(
             result.tables.len(),
             total_tables,
             "Must return the correct number of tables"
         );
 
-        let result = result
-            .tables
-            .iter()
-            .map(|x| x.ops.iter().map(|x| x.row.clone()))
-            .flatten()
-            .sorted()
-            .collect::<Vec<_>>();
+        let result = get_result(result);
 
         assert_eq!(result, rows, "Must return the correct row(s)");
 
         Ok(())
     }
 
-    fn check_query_eval(db: &RelationalDB, s: &QuerySet, total_tables: usize, rows: &[ProductValue]) -> ResultTest<()> {
-        let result = s.eval(&db, AuthCtx::for_testing())?;
+    fn check_query_eval(
+        db: &RelationalDB,
+        tx: &mut MutTxId,
+        s: &QuerySet,
+        total_tables: usize,
+        rows: &[ProductValue],
+    ) -> ResultTest<()> {
+        let result = s.eval(&db, tx, AuthCtx::for_testing())?;
         assert_eq!(
             result.tables.len(),
             total_tables,
             "Must return the correct number of tables"
         );
 
-        let result = result
-            .tables
-            .iter()
-            .map(|x| x.ops.iter().map(|x| x.row.clone()))
-            .flatten()
-            .sorted()
-            .collect::<Vec<_>>();
+        let result = get_result(result);
 
         assert_eq!(result, rows, "Must return the correct row(s)");
 
@@ -289,16 +303,17 @@ mod tests {
     #[test]
     fn test_subscribe() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
+        let mut tx = db.begin_tx();
 
-        let (schema, table, data, q) = make_inv(&db, StAccess::Public)?;
+        let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Public)?;
         assert_eq!(schema.table_type, StTableType::User);
         assert_eq!(schema.table_access, StAccess::Public);
 
         let q_1 = to_mem_table(q.clone(), &data);
-        check_query(&db, &table, &q_1, &data)?;
+        check_query(&db, &table, &mut tx, &q_1, &data)?;
 
         let q_2 = q.with_select_cmp(OpCmp::Eq, FieldName::named("inventory", "inventory_id"), scalar(1u64));
-        check_query(&db, &table, &q_2, &data)?;
+        check_query(&db, &table, &mut tx, &q_2, &data)?;
 
         Ok(())
     }
@@ -307,13 +322,14 @@ mod tests {
     #[test]
     fn test_subscribe_private() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
+        let mut tx = db.begin_tx();
 
-        let (schema, table, data, q) = make_inv(&db, StAccess::Private)?;
+        let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Private)?;
         assert_eq!(schema.table_type, StTableType::User);
         assert_eq!(schema.table_access, StAccess::Private);
 
         let row = product!(1u64, "health");
-        check_query(&db, &table, &q, &data)?;
+        check_query(&db, &table, &mut tx, &q, &data)?;
 
         //SELECT * FROM inventory
         let q_all = QueryExpr::new(db_table((&schema).into(), "_inventory", schema.table_id));
@@ -354,7 +370,7 @@ mod tests {
             tables: vec![data.clone()],
         };
 
-        check_query_incr(&db, &s, &update, 3, &[row])?;
+        check_query_incr(&db, &mut tx, &s, &update, 3, &[row])?;
 
         let q = QueryExpr::new(db_table((&schema).into(), "_inventory", schema.table_id));
 
@@ -388,8 +404,9 @@ mod tests {
     #[test]
     fn test_subscribe_dedup() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
+        let mut tx = db.begin_tx();
 
-        let (schema, _table, _data, _q) = make_inv(&db, StAccess::Private)?;
+        let (schema, _table, _data, _q) = make_inv(&db, &mut tx, StAccess::Private)?;
 
         //SELECT * FROM inventory
         let q_all = QueryExpr::new(db_table((&schema).into(), "inventory", schema.table_id));
@@ -408,7 +425,7 @@ mod tests {
             },
         ]);
 
-        check_query_eval(&db, &s, 3, &[product!(1u64, "health")])?;
+        check_query_eval(&db, &mut tx, &s, 3, &[product!(1u64, "health")])?;
 
         let row = product!(1u64, "health");
 
@@ -432,7 +449,7 @@ mod tests {
 
         let update = DatabaseUpdate { tables: vec![data] };
 
-        check_query_incr(&db, &s, &update, 3, &[row])?;
+        check_query_incr(&db, &mut tx, &s, &update, 3, &[row])?;
 
         Ok(())
     }
@@ -449,9 +466,10 @@ mod tests {
     #[test]
     fn test_subscribe_commutative() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
+        let mut tx = db.begin_tx();
 
-        let (_, _, _, q_1) = make_inv(&db, StAccess::Public)?;
-        let (_, _, _, q_2) = make_player(&db)?;
+        let (_, _, _, q_1) = make_inv(&db, &mut tx, StAccess::Public)?;
+        let (_, _, _, q_2) = make_player(&db, &mut tx)?;
 
         let s = QuerySet(vec![
             Query {
@@ -498,7 +516,7 @@ mod tests {
         run(&db, &mut tx, sql_create, AuthCtx::for_testing())?;
 
         let sql_query = "SELECT * FROM MobileEntityState JOIN EnemyState ON MobileEntityState.entity_id = EnemyState.entity_id WHERE location_x > 96000 AND MobileEntityState.location_x < 192000 AND MobileEntityState.location_z > 96000 AND MobileEntityState.location_z < 192000";
-        let q = compile_query(&db, &mut tx, sql_query)?;
+        let q = compile_query(&db, &mut tx, &AuthCtx::for_testing(), sql_query)?;
 
         for q in q.queries {
             assert_eq!(
@@ -514,18 +532,21 @@ mod tests {
     #[test]
     fn test_subscribe_all() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
-        let (schema_1, _, _, _) = make_inv(&db, StAccess::Public)?;
-        let (schema_2, _, _, _) = make_player(&db)?;
+        let mut tx = db.begin_tx();
+
+        let (schema_1, _, _, _) = make_inv(&db, &mut tx, StAccess::Public)?;
+        let (schema_2, _, _, _) = make_player(&db, &mut tx)?;
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
 
         let s = QuerySet(vec![compile_query(
             &db,
+            &mut tx,
+            &AuthCtx::for_testing(),
             SUBSCRIBE_TO_ALL_QUERY,
-            AuthCtx::for_testing(),
         )?]);
 
-        check_query_eval(&db, &s, 2, &[row_1.clone(), row_2.clone()])?;
+        check_query_eval(&db, &mut tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
         let row1 = TableOp {
             op_type: 0,
@@ -557,7 +578,7 @@ mod tests {
 
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
-        check_query_incr(&db, &s, &update, 2, &[row_1, row_2])?;
+        check_query_incr(&db, &mut tx, &s, &update, 2, &[row_1, row_2])?;
 
         Ok(())
     }

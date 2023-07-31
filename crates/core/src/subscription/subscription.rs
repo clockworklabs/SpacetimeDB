@@ -54,20 +54,16 @@ impl QuerySet {
     /// Queries all the [`StTableType::User`] tables *right now*
     /// and turns them into [`QueryExpr`],
     /// the moral equivalent of `SELECT * FROM table`.
-    pub(crate) fn get_all(relational_db: &RelationalDB, auth: AuthCtx) -> Result<Query, DBError> {
-        relational_db.with_auto_commit(|tx| {
-            let tables = relational_db.get_all_tables(tx)?;
-            let same_owner = auth.owner == auth.caller;
-            let queries = tables
-                .iter()
-                .filter(|t| {
-                    t.table_type == StTableType::User
-                        && (same_owner || t.table_access == StAccess::Public)
-                })
-                .map(QueryExpr::new)
-                .collect();
-            Ok(Query { queries })
-        })
+    pub(crate) fn get_all(relational_db: &RelationalDB, tx: &MutTxId, auth: &AuthCtx) -> Result<Query, DBError> {
+        let tables = relational_db.get_all_tables(tx)?;
+        let same_owner = auth.owner == auth.caller;
+        let queries = tables
+            .iter()
+            .filter(|t| t.table_type == StTableType::User && (same_owner || t.table_access == StAccess::Public))
+            .map(QueryExpr::new)
+            .collect();
+
+        Ok(Query { queries })
     }
 
     /// Incremental evaluation of `rows` that matched the [Query] (aka subscriptions)
