@@ -80,9 +80,10 @@ pub(crate) fn run_query(
     execute_single_sql(db, tx, CrudExpr::Query(query.clone()), auth)
 }
 
-//TODO: Is certainly semantically wrong to [SUBSCRIBE_TO_ALL_QUERY] because it only can return back
-//the changes that are valid for the tables in scope *right now* instead of **continuously update** the changes
-//of the database, with system table modifications (add/remove tables, indexes, ...).
+// TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
+// as it only can return back the changes valid for the tables in scope *right now*
+// instead of **continuously updating** the db changes
+// with system table modifications (add/remove tables, indexes, ...).
 /// Compile from `SQL` into a [`Query`].
 ///
 /// NOTE: When the `input` query is equal to [`SUBSCRIBE_TO_ALL_QUERY`],
