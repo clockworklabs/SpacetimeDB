@@ -42,12 +42,12 @@ impl Commit {
 
         let mut dst = [0u8; 8];
         dst.copy_from_slice(&bytes[read_count..read_count + 8]);
-        let min_tx_offset = u64::from_le_bytes(dst);
+        let commit_offset = u64::from_le_bytes(dst);
         read_count += 8;
 
         let mut dst = [0u8; 8];
         dst.copy_from_slice(&bytes[read_count..read_count + 8]);
-        let commit_offset = u64::from_le_bytes(dst);
+        let min_tx_offset = u64::from_le_bytes(dst);
         read_count += 8;
 
         let mut transactions: Vec<Arc<Transaction>> = Vec::new();
