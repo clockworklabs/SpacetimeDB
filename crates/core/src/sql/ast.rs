@@ -338,7 +338,9 @@ fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlE
 fn compile_expr_field(table: &From, field: Option<&ProductTypeElement>, of: SqlExpr) -> Result<FieldExpr, PlanError> {
     match compile_expr_value(table, field, of)? {
         ColumnOp::Field(field) => Ok(field),
-        x => todo!("Complex expression {x} on insert..."),
+        x => Err(PlanError::Unsupported {
+            feature: format!("Complex expression {x} on insert..."),
+        }),
     }
 }
 
@@ -475,8 +477,12 @@ fn compile_from(db: &RelationalDB, tx: &MutTxId, from: &[TableWithJoins]) -> Res
                                     (ColumnOp::Field(FieldExpr::Name(lhs)), ColumnOp::Field(FieldExpr::Name(rhs))) => {
                                         (lhs, rhs)
                                     }
-                                    _ => {
-                                        todo!()
+                                    (lhs, rhs) => {
+                                        return Err(PlanError::Unsupported {
+                                            feature: format!(
+                                                "Can't compare non-field expressions {lhs} and {rhs} in JOIN clause"
+                                            ),
+                                        });
                                     }
                                 };
 
@@ -523,14 +529,14 @@ fn compile_select_item(from: &From, select_item: SelectItem) -> Result<Column, P
                 let value = compile_expr_value(from, None, expr)?;
                 match value {
                     ColumnOp::Field(value) => match value {
-                        FieldExpr::Name(_) => {
-                            unreachable!("Should not be an identifier in Expr::Value")
-                        }
+                        FieldExpr::Name(_) => Err(PlanError::Unsupported {
+                            feature: "Should not be an identifier in Expr::Value".to_string(),
+                        }),
                         FieldExpr::Value(x) => Ok(Column::UnnamedExpr(Expr::Value(x))),
                     },
-                    x => {
-                        unreachable!("Should not be an {} in Expr::Value", x)
-                    }
+                    x => Err(PlanError::Unsupported {
+                        feature: format!("Should not be an {x} in Expr::Value"),
+                    }),
                 }
             }
             sqlparser::ast::Expr::Nested(x) => compile_select_item(from, SelectItem::UnnamedExpr(*x)),
