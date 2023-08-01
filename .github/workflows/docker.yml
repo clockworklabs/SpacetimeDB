@@ -15,8 +15,8 @@ jobs:
           images: |
             clockworklabs/spacetimedb
           tags: |
-            type=ref,event=branch
-            type=sha
+            type=ref,event=branch,prefix=branch-
+            type=sha,prefix=commit-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
       - name: Cache Docker layers
