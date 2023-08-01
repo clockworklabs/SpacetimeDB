@@ -65,7 +65,12 @@ pub fn cli(is_standalone: bool) -> clap::Command {
                 .long("listen-addr")
                 .short('l')
                 .default_value(if is_standalone { "0.0.0.0:80" } else { "127.0.0.1:3000" })
-                .help("The address and port where SpacetimeDB should listen for connections."),
+                .help(if is_standalone
+                {
+                    "The address and port where SpacetimeDB should listen for connections. This defaults to to listen on all IP addresses on port 80."
+                } else {
+                    "The address and port where SpacetimeDB should listen for connections. This defaults to local connections only on port 3000. Use an IP address or 0.0.0.0 in order to allow remote connections to SpacetimeDB."
+                }),
         )
         .arg(log_conf_path_arg)
         .arg(log_dir_path_arg)
