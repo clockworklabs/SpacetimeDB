@@ -1,0 +1,6 @@
+# E131: Null value support (nulls in lieu of values)
+
+query T
+SELECT NULL
+----
+null

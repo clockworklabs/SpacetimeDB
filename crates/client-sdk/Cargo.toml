@@ -1,0 +1,20 @@
+[package]
+name = "spacetimedb-client-sdk"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+spacetimedb-sats = { path = "../sats" }
+spacetimedb-lib = { path = "../lib" }
+spacetimedb-client-api-messages = { path = "../client-api-messages" }
+tokio-tungstenite = { version = "*", features = ["native-tls"] }
+tokio = { version = "1.2", features = ["full"] }
+http = "0.2"
+anyhow = "1.0"
+futures = "0.3"
+prost = "0.10"
+log = "0.4"
+futures-channel = "0.3"
+anymap = "0.12"

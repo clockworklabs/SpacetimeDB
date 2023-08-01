@@ -1,0 +1,34 @@
+[package]
+name = "spacetimedb-client-api"
+version = "0.4.1"
+edition = "2021"
+publish = false
+
+[features]
+tracelogging = ["spacetimedb-core/tracelogging"]
+
+[dependencies]
+spacetimedb-core = { path = "../core" }
+tokio = { version = "1.2", features = ["full"] }
+lazy_static = "1.4.0"
+spacetimedb-lib = { path = "../lib" }
+log = "0.4.4"
+serde = "1.0.136"
+serde_json = { version = "1.0", features = ["raw_value"] }
+anyhow = { version = "1.0.57", features = ["backtrace"] }
+regex = "1"
+prometheus = "0.13.0"
+email_address = "0.2.3"
+tempdir = "0.3.7"
+async-trait = "0.1.60"
+chrono = { version = "0.4.23", features = ["serde"]}
+rand = "0.8.5"
+axum = { version = "0.6.16", features = ["headers", "tracing"] }
+hyper = "0.14"
+http = "0.2"
+mime = "0.3.17"
+tokio-stream = { version = "0.1.12", features = ["sync"] }
+futures = "0.3"
+bytes = "1"
+bytestring = "1"
+tokio-tungstenite = "0.18.0"

@@ -1,0 +1,48 @@
+[workspace]
+members = [
+  "crates/standalone",
+  "crates/lib",
+  "crates/core",
+  "crates/bindings-sys",
+  "crates/bindings",
+  "crates/bench",
+  "crates/bindings-macro",
+  "crates/cli",
+  "crates/sats",
+  "crates/testing",
+  "crates/vm",
+  "crates/replay",
+  "crates/client-api",
+  "crates/client-sdk",
+  "crates/client-api-messages",
+  "crates/sqltest",
+  "modules/rust-wasm-test",
+  "modules/benchmarks",
+  "modules/spacetimedb_quickstart",
+]
+default-members = ["crates/cli"]
+
+[profile.release]
+opt-level = 3
+debug = true
+debug-assertions = false
+overflow-checks = false
+lto = true
+panic = 'unwind'
+incremental = false
+codegen-units = 16
+rpath = false
+
+[profile.dev]
+opt-level = 0
+debug = true
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = 'unwind'
+incremental = true
+codegen-units = 256
+rpath = false
+
+[profile.bench]
+debug = true

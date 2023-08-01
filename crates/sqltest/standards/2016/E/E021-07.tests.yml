@@ -1,0 +1,3 @@
+feature: E021-07
+id: e021_07_01_01
+sql: SELECT 'foo' || 'bar'

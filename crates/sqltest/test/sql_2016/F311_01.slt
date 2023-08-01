@@ -1,0 +1,5 @@
+# F311-01: CREATE SCHEMA
+
+onlyif Postgres
+statement ok
+CREATE SCHEMA TABLE_F311_01_01_01

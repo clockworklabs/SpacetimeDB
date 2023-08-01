@@ -1,0 +1,9 @@
+# F051-02: TIME data type (including support of TIME literal) with fractional seconds precision of at least 0
+
+statement ok
+CREATE TABLE TABLE_F051_02_01_011 ( A TIME )
+
+query T
+SELECT TIME '01:02:03'
+----
+01:02:03

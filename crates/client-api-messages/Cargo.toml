@@ -1,0 +1,11 @@
+[package]
+name = "spacetimedb-client-api-messages"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+strum = { version = "0.24.1", features = ["derive"] }
+prost = "0.10"
+
+[build-dependencies]
+prost-build = { version = "0.10" }

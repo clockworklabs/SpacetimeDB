@@ -1,0 +1,5 @@
+# E061-11: Subqueries in IN predicate
+
+statement ok
+CREATE TABLE TABLE_E061_11_01_01 ( A INT );
+SELECT A FROM TABLE_E061_11_01_01 WHERE A IN ( SELECT 1 )

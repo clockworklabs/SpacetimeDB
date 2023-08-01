@@ -1,0 +1,9 @@
+# F051-03: TIMESTAMP data type (including support of TIMESTAMP literal) with fractional seconds precision of at least 0 and 6
+
+statement ok
+CREATE TABLE TABLE_F051_03_01_011 ( A TIMESTAMP )
+
+query T
+SELECT TIMESTAMP '2016-03-26 01:02:03'
+----
+2016-03-25T20:02:03-05:00

@@ -1,0 +1,922 @@
+use std::collections::BTreeMap;
+use std::ops::ControlFlow;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
+use crate::host::scheduler::Scheduler;
+use anyhow::Context;
+use bytes::Bytes;
+use parking_lot::{Condvar, Mutex};
+use spacetimedb_lib::buffer::DecodeError;
+use spacetimedb_lib::{bsatn, IndexType, ModuleDef};
+use tokio::sync::oneshot;
+
+use crate::client::ClientConnectionSender;
+use crate::database_instance_context::DatabaseInstanceContext;
+use crate::database_logger::{DatabaseLogger, Record};
+use crate::hash::Hash;
+use crate::host::instance_env::InstanceEnv;
+use crate::host::module_host::{
+    DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHostActor, ModuleInfo, UpdateDatabaseError,
+    UpdateDatabaseResult, UpdateDatabaseSuccess,
+};
+use crate::host::tracelog::instance_trace::TraceLog;
+use crate::host::{
+    ArgsTuple, EnergyDiff, EnergyMonitor, EnergyMonitorFingerprint, EnergyQuanta, EntityDef, ReducerCallResult,
+    ReducerOutcome, Timestamp,
+};
+use crate::identity::Identity;
+use crate::subscription::module_subscription_actor::{ModuleSubscriptionManager, SubscriptionEventSender};
+use crate::worker_metrics::{REDUCER_COMPUTE_TIME, REDUCER_COUNT, REDUCER_WRITE_SIZE};
+
+use super::*;
+
+const MSG_CHANNEL_CAP: usize = 8;
+const MSG_CHANNEL_TIMEOUT: Duration = Duration::from_millis(500);
+
+pub trait WasmModule: Send + 'static {
+    type Instance: WasmInstance;
+    type InstancePre: WasmInstancePre<Instance = Self::Instance>;
+
+    type ExternType: FuncSigLike;
+    fn get_export(&self, s: &str) -> Option<Self::ExternType>;
+    fn for_each_export<E>(&self, f: impl FnMut(&str, &Self::ExternType) -> Result<(), E>) -> Result<(), E>;
+
+    fn instantiate_pre(&self) -> Result<Self::InstancePre, InitializationError>;
+}
+
+pub trait WasmInstancePre: Send + Sync + 'static {
+    type Instance: WasmInstance;
+    fn instantiate(&self, env: InstanceEnv, func_name: &FuncNames) -> Result<Self::Instance, InitializationError>;
+}
+
+pub trait WasmInstance: Send + 'static {
+    fn extract_descriptions(&mut self) -> Result<Bytes, DescribeError>;
+
+    fn instance_env(&self) -> &InstanceEnv;
+
+    type Trap;
+
+    fn call_reducer(
+        &mut self,
+        reducer_id: usize,
+        budget: EnergyQuanta,
+        sender: &[u8; 32],
+        timestamp: Timestamp,
+        arg_bytes: Bytes,
+    ) -> ExecuteResult<Self::Trap>;
+
+    fn call_connect_disconnect(
+        &mut self,
+        connect: bool,
+        budget: EnergyQuanta,
+        sender: &[u8; 32],
+        timestamp: Timestamp,
+    ) -> ExecuteResult<Self::Trap>;
+
+    fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap);
+}
+
+pub struct EnergyStats {
+    pub used: EnergyDiff,
+    pub remaining: EnergyQuanta,
+}
+
+pub struct ExecuteResult<E> {
+    pub energy: EnergyStats,
+    pub execution_duration: Duration,
+    pub call_result: Result<Result<(), Box<str>>, E>,
+}
+
+pub(crate) struct WasmModuleHostActor<T: WasmModule> {
+    instances: JobPool<InstanceSeed<T::InstancePre>>,
+}
+
+struct InstanceSeed<T: WasmInstancePre> {
+    module: T,
+    worker_database_instance: Arc<DatabaseInstanceContext>,
+    event_tx: SubscriptionEventSender,
+    #[allow(dead_code)]
+    // Don't warn about 'trace_log' below when tracelogging feature isn't enabled.
+    trace_log: Option<Arc<Mutex<TraceLog>>>,
+    scheduler: Scheduler,
+    func_names: Arc<FuncNames>,
+    info: Arc<ModuleInfo>,
+    energy_monitor: Arc<dyn EnergyMonitor>,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum InitializationError {
+    #[error(transparent)]
+    Validation(#[from] ValidationError),
+    #[error("setup function returned an error: {0}")]
+    Setup(Box<str>),
+    #[error("wasm trap while calling {func:?}")]
+    RuntimeError {
+        #[source]
+        err: anyhow::Error,
+        func: String,
+    },
+    #[error(transparent)]
+    Instantiation(anyhow::Error),
+    #[error("error getting module description: {0}")]
+    Describe(#[from] DescribeError),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum DescribeError {
+    #[error("bad signature for descriptor function")]
+    Signature,
+    #[error("error decoding module description: {0}")]
+    Decode(#[from] DecodeError),
+    #[error(transparent)]
+    RuntimeError(anyhow::Error),
+    #[error("invalid buffer")]
+    BadBuffer,
+}
+
+impl<T: WasmModule> WasmModuleHostActor<T> {
+    pub fn new(
+        database_instance_context: Arc<DatabaseInstanceContext>,
+        module_hash: Hash,
+        module: T,
+        scheduler: Scheduler,
+        energy_monitor: Arc<dyn EnergyMonitor>,
+    ) -> Result<Self, InitializationError> {
+        let trace_log = if database_instance_context.trace_log {
+            Some(Arc::new(Mutex::new(TraceLog::new().unwrap())))
+        } else {
+            None
+        };
+        let log_tx = database_instance_context.logger.lock().unwrap().tx.clone();
+
+        FuncNames::check_required(|name| module.get_export(name))?;
+        let mut func_names = FuncNames::default();
+        module.for_each_export(|sym, ty| func_names.update_from_general(sym, ty))?;
+        func_names.preinits.sort_unstable();
+
+        let relational_db = database_instance_context.relational_db.clone();
+        let (subscription, event_tx) = ModuleSubscriptionManager::spawn(relational_db);
+
+        let uninit_instance = module.instantiate_pre()?;
+        let mut instance = uninit_instance.instantiate(
+            InstanceEnv::new(database_instance_context.clone(), scheduler.clone(), trace_log.clone()),
+            &func_names,
+        )?;
+
+        let desc = instance.extract_descriptions()?;
+        let desc = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
+        let ModuleDef {
+            typespace,
+            tables,
+            reducers,
+            misc_exports: _,
+        } = desc;
+        let catalog = itertools::chain(
+            tables.into_iter().map(|x| (x.name.clone(), EntityDef::Table(x))),
+            reducers.iter().map(|x| (x.name.clone(), EntityDef::Reducer(x.clone()))),
+        )
+        .collect();
+        let reducers = reducers.into_iter().map(|x| (x.name.clone(), x)).collect();
+
+        let info = Arc::new(ModuleInfo {
+            identity: database_instance_context.identity,
+            module_hash,
+            typespace,
+            reducers,
+            catalog,
+            log_tx,
+            subscription,
+        });
+
+        let func_names = Arc::new(func_names);
+        let instance_seed = InstanceSeed {
+            module: uninit_instance,
+            func_names,
+            info,
+            event_tx,
+            worker_database_instance: database_instance_context,
+            trace_log,
+            scheduler,
+            energy_monitor,
+        };
+        let instance = instance_seed.make_from_instance(instance);
+        let instances = JobPool::new(instance_seed, MSG_CHANNEL_CAP);
+        instances.spawn_from_runner(instance);
+
+        Ok(Self { instances })
+    }
+
+    fn seed(&self) -> &InstanceSeed<T::InstancePre> {
+        self.instances.seed()
+    }
+}
+
+impl<T: WasmInstancePre> JobRunnerSeed for InstanceSeed<T> {
+    type Runner = WasmInstanceActor<T::Instance>;
+    type Job = InstanceMessage;
+    fn make_runner(&self) -> Self::Runner {
+        let env = InstanceEnv::new(
+            self.worker_database_instance.clone(),
+            self.scheduler.clone(),
+            self.trace_log.clone(),
+        );
+        // this shouldn't fail, since we already called module.create_instance()
+        // before and it didn't error, and ideally they should be deterministic
+        let mut instance = self
+            .module
+            .instantiate(env, &self.func_names)
+            .expect("failed to initialize instance");
+        let _ = instance.extract_descriptions();
+        self.make_from_instance(instance)
+    }
+}
+impl<T: WasmInstancePre> InstanceSeed<T> {
+    fn make_from_instance(&self, instance: T::Instance) -> WasmInstanceActor<T::Instance> {
+        WasmInstanceActor {
+            instance,
+            func_names: self.func_names.clone(),
+            info: self.info.clone(),
+            event_tx: self.event_tx.clone(),
+            energy_monitor: self.energy_monitor.clone(),
+            trapped: false,
+        }
+    }
+}
+
+trait JobRunnerSeed: Send + Sync + 'static {
+    type Runner: JobRunner<Job = Self::Job> + Send;
+    type Job: Send + 'static;
+    fn make_runner(&self) -> Self::Runner;
+}
+trait JobRunner {
+    type Job;
+    fn run(&mut self, job: Self::Job) -> ControlFlow<()>;
+}
+struct JobPool<S: JobRunnerSeed> {
+    shared: Arc<JobPoolData<S>>,
+    rx: crossbeam_channel::Receiver<S::Job>,
+    tx: crossbeam_channel::Sender<S::Job>,
+}
+
+struct JobPoolData<S> {
+    seed: S,
+    nthreads: Mutex<usize>,
+    cvar: Condvar,
+}
+
+impl<S: JobRunnerSeed> JobPool<S> {
+    fn new(seed: S, cap: usize) -> Self {
+        let (tx, rx) = crossbeam_channel::bounded(cap);
+        let nthreads = Mutex::new(0);
+        let cvar = Condvar::new();
+        JobPool {
+            shared: Arc::new(JobPoolData { seed, nthreads, cvar }),
+            rx,
+            tx,
+        }
+    }
+
+    fn seed(&self) -> &S {
+        &self.shared.seed
+    }
+
+    fn spawn_from_runner(&self, mut runner: S::Runner) {
+        let shared = self.shared.clone();
+        let rx = self.rx.clone();
+        *shared.nthreads.lock() += 1;
+        tokio::task::spawn_blocking(move || {
+            scopeguard::defer! {
+                let mut nthreads = shared.nthreads.lock();
+                *nthreads -= 1;
+                if *nthreads == 0 {
+                    shared.cvar.notify_one();
+                }
+            }
+            while let Ok(job) = rx.recv() {
+                match runner.run(job) {
+                    ControlFlow::Continue(()) => {}
+                    ControlFlow::Break(()) => runner = shared.seed.make_runner(),
+                }
+            }
+        });
+    }
+    fn spawn(&self) {
+        self.spawn_from_runner(self.seed().make_runner())
+    }
+
+    fn send(&self, mut job: S::Job) {
+        if true {
+            // this can never actually be a SendError, since we're holding
+            // onto a msg_rx ourselves, so the channel won't close
+            let _ = self.tx.send(job);
+        } else {
+            // TODO: implement reducer retries and have multiple instance threads
+            loop {
+                match self.tx.send_timeout(job, MSG_CHANNEL_TIMEOUT) {
+                    Ok(()) => break,
+                    // this can never actually be a SendTimeoutError::Disconnected, since we're holding
+                    // onto a msg_rx ourselves, so the channel won't close
+                    Err(err) => {
+                        job = err.into_inner();
+                        let instance_count = *self.shared.nthreads.lock();
+                        // TODO: better heuristics
+                        // e.g. figure out when we should cull instances due to lack of use
+                        if instance_count < 8 {
+                            self.spawn()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn join(self) {
+        let Self { shared, rx, tx } = self;
+        drop((tx, rx));
+        let mut nthreads = shared.nthreads.lock();
+        if *nthreads != 0 {
+            shared.cvar.wait(&mut nthreads)
+        }
+    }
+}
+
+impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
+    fn info(&self) -> Arc<ModuleInfo> {
+        self.seed().info.clone()
+    }
+
+    fn init_database(&mut self, args: ArgsTuple, respond_to: oneshot::Sender<anyhow::Result<ReducerCallResult>>) {
+        self.instances.send(InstanceMessage::InitDatabase { args, respond_to })
+    }
+
+    fn update_database(&mut self, respond_to: oneshot::Sender<Result<UpdateDatabaseResult, anyhow::Error>>) {
+        self.instances.send(InstanceMessage::UpdateDatabase { respond_to })
+    }
+
+    #[cfg(feature = "tracelogging")]
+    fn get_trace(&self) -> Option<bytes::Bytes> {
+        match &self.seed().trace_log {
+            None => None,
+            Some(tl) => {
+                let results = tl.lock().retrieve();
+                match results {
+                    Ok(tl) => Some(tl),
+                    Err(e) => {
+                        log::error!("Unable to retrieve trace log: {}", e);
+                        None
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "tracelogging")]
+    fn stop_trace(&mut self) -> Result<(), anyhow::Error> {
+        // TODO: figure out if this is necessary
+        // // TODO: figure out if we need to communicate this to all of our instances too
+        // self.trace_log = None;
+        Ok(())
+    }
+
+    fn call_connect_disconnect(&mut self, caller_identity: Identity, connected: bool, respond_to: oneshot::Sender<()>) {
+        self.instances.send(InstanceMessage::CallConnectDisconnect {
+            caller_identity,
+            connected,
+            respond_to,
+        });
+    }
+
+    fn call_reducer(
+        &mut self,
+        caller_identity: Identity,
+        client: Option<ClientConnectionSender>,
+        reducer_id: usize,
+
+        args: ArgsTuple,
+        respond_to: oneshot::Sender<ReducerCallResult>,
+    ) {
+        self.instances.send(InstanceMessage::CallReducer {
+            caller_identity,
+            client,
+            reducer_id,
+            args,
+            respond_to,
+        })
+    }
+
+    fn close(self) {
+        self.instances.seed().scheduler.close();
+        self.instances.join()
+    }
+}
+
+/// Somewhat ad-hoc wrapper around [`DatabaseLogger`] which allows to inject
+/// "system messages" into the user-retrievable database / module log
+struct SystemLogger<'a> {
+    inner: std::sync::MutexGuard<'a, DatabaseLogger>,
+}
+
+impl SystemLogger<'_> {
+    fn warn(&mut self, msg: &str) {
+        self.inner
+            .write(crate::database_logger::LogLevel::Warn, &Self::record(msg), &())
+    }
+
+    fn error(&mut self, msg: &str) {
+        self.inner
+            .write(crate::database_logger::LogLevel::Error, &Self::record(msg), &())
+    }
+
+    fn record(message: &str) -> Record {
+        Record {
+            target: None,
+            filename: Some("spacetimedb"),
+            line_number: None,
+            message,
+        }
+    }
+}
+
+struct WasmInstanceActor<T: WasmInstance> {
+    instance: T,
+    func_names: Arc<FuncNames>,
+    info: Arc<ModuleInfo>,
+    event_tx: SubscriptionEventSender,
+    energy_monitor: Arc<dyn EnergyMonitor>,
+    trapped: bool,
+}
+
+impl<T: WasmInstance> std::fmt::Debug for WasmInstanceActor<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WasmInstanceActor")
+            .field("trapped", &self.trapped)
+            .finish()
+    }
+}
+
+impl<T: WasmInstance> JobRunner for WasmInstanceActor<T> {
+    type Job = InstanceMessage;
+    fn run(&mut self, msg: InstanceMessage) -> ControlFlow<()> {
+        match msg {
+            InstanceMessage::InitDatabase { args, respond_to } => {
+                let _ = respond_to.send(self.init_database(args));
+            }
+            InstanceMessage::CallConnectDisconnect {
+                caller_identity,
+                connected,
+                respond_to,
+            } => {
+                self.call_connect_disconnect(caller_identity, connected);
+                let _ = respond_to.send(());
+            }
+            InstanceMessage::CallReducer {
+                caller_identity,
+                client,
+                reducer_id,
+                args,
+                respond_to,
+            } => {
+                let _ = respond_to.send(self.call_reducer(caller_identity, client, reducer_id, args));
+            }
+            InstanceMessage::UpdateDatabase { respond_to } => {
+                let _ = respond_to.send(self.update_database());
+            }
+        }
+        if self.trapped {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    }
+}
+
+impl<T: WasmInstance> WasmInstanceActor<T> {
+    fn database_instance_context(&self) -> &DatabaseInstanceContext {
+        &self.instance.instance_env().dbic
+    }
+
+    #[tracing::instrument(skip(args))]
+    fn init_database(&mut self, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
+        let stdb = &*self.database_instance_context().relational_db;
+        stdb.with_auto_commit::<_, _, anyhow::Error>(|tx| {
+            for table in self.info.catalog.values().filter_map(EntityDef::as_table) {
+                let schema = self.schema_for(table)?;
+                stdb.create_table(tx, schema)
+                    .with_context(|| format!("failed to create table {}", table.name))?;
+            }
+
+            Ok(())
+        })?;
+
+        let rcr = self
+            .info
+            .reducers
+            .get_index_of(INIT_DUNDER)
+            .map(|id| self.call_reducer(self.database_instance_context().identity, None, id, args))
+            .unwrap_or(ReducerCallResult {
+                outcome: ReducerOutcome::Committed,
+                energy_used: EnergyDiff::ZERO,
+                execution_duration: Duration::ZERO,
+            });
+
+        Ok(rcr)
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn update_database(&mut self) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        let stdb = &*self.database_instance_context().relational_db;
+
+        let mut tainted = vec![];
+        stdb.with_auto_commit::<_, _, anyhow::Error>(|tx| {
+            let mut known_tables: BTreeMap<String, TableDef> = stdb
+                .get_all_tables(tx)?
+                .into_iter()
+                .map(|schema| (schema.table_name.clone(), schema.into()))
+                .collect();
+
+            let mut new_tables = Vec::new();
+            for table in self.info.catalog.values().filter_map(EntityDef::as_table) {
+                let proposed_schema = self.schema_for(table)?;
+                if let Some(known_schema) = known_tables.remove(&table.name) {
+                    if known_schema != proposed_schema {
+                        self.system_logger()
+                            .warn(&format!("stored and proposed schema of `{}` differ", table.name));
+                        tainted.push(table.name.to_owned());
+                    } else {
+                        // Table unchanged
+                    }
+                } else {
+                    new_tables.push((table, proposed_schema));
+                }
+            }
+            // We may at some point decide to drop orphaned tables automatically,
+            // but for now it's an incompatible schema change
+            for orphan in known_tables.into_keys() {
+                if !orphan.starts_with("st_") {
+                    tainted.push(orphan);
+                }
+            }
+            if tainted.is_empty() {
+                for (table, schema) in new_tables {
+                    stdb.create_table(tx, schema)
+                        .with_context(|| format!("failed to create table {}", table.name))?;
+                }
+            }
+
+            Ok(())
+        })?;
+        if !tainted.is_empty() {
+            self.system_logger()
+                .error("module update rejected due to schema mismatch");
+            return Ok(Err(UpdateDatabaseError::IncompatibleSchema { tables: tainted }));
+        }
+
+        let update_result = self.info.reducers.get_index_of(UPDATE_DUNDER).map(|id| {
+            self.call_reducer(
+                self.database_instance_context().identity,
+                None,
+                id,
+                ArgsTuple::default(),
+            )
+        });
+
+        Ok(Ok(UpdateDatabaseSuccess {
+            update_result,
+            migrate_results: vec![],
+        }))
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn call_reducer(
+        &mut self,
+        caller_identity: Identity,
+        client: Option<ClientConnectionSender>,
+        reducer_id: usize,
+        mut args: ArgsTuple,
+    ) -> ReducerCallResult {
+        let start_instant = Instant::now();
+
+        let timestamp = Timestamp::now();
+
+        let reducerdef = &self.info.reducers[reducer_id];
+
+        log::trace!("Calling reducer {}", reducerdef.name);
+
+        let (status, energy) = self.execute(InstanceOp::Reducer {
+            id: reducer_id,
+            sender: &caller_identity,
+            timestamp,
+            arg_bytes: args.get_bsatn().clone(),
+        });
+
+        let execution_duration = start_instant.elapsed();
+
+        let outcome = ReducerOutcome::from(&status);
+
+        let reducerdef = &self.info.reducers[reducer_id];
+        let event = ModuleEvent {
+            timestamp,
+            caller_identity,
+            function_call: ModuleFunctionCall {
+                reducer: reducerdef.name.clone(),
+                args,
+            },
+            status,
+            energy_quanta_used: energy.used,
+            host_execution_duration: execution_duration,
+        };
+        self.event_tx.broadcast_event_blocking(client.as_ref(), event);
+
+        ReducerCallResult {
+            outcome,
+            energy_used: energy.used,
+            execution_duration,
+        }
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn call_connect_disconnect(&mut self, identity: Identity, connected: bool) {
+        let has_function = if connected {
+            self.func_names.conn
+        } else {
+            self.func_names.disconn
+        };
+        if !has_function {
+            return;
+        }
+
+        let start_instant = Instant::now();
+
+        let timestamp = Timestamp::now();
+
+        let (status, energy) = self.execute(InstanceOp::ConnDisconn {
+            conn: connected,
+            sender: &identity,
+            timestamp,
+        });
+
+        let reducer_symbol = if connected {
+            IDENTITY_CONNECTED_DUNDER
+        } else {
+            IDENTITY_DISCONNECTED_DUNDER
+        };
+
+        // TODO(cloutiertyler): We need to think about how to handle this special
+        // function. Is this just an autogenerated reducer? In the future if I call
+        // a reducer from within a reducer should that generate a module event?
+        // Good question, Tyler, good question.
+        let event = ModuleEvent {
+            timestamp,
+            function_call: ModuleFunctionCall {
+                reducer: reducer_symbol.to_string(),
+                args: ArgsTuple::default(),
+            },
+            status,
+            caller_identity: identity,
+            energy_quanta_used: energy.used,
+            host_execution_duration: start_instant.elapsed(),
+        };
+        self.event_tx.broadcast_event_blocking(None, event);
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn execute(&mut self, op: InstanceOp<'_>) -> (EventStatus, EnergyStats) {
+        let address = &self.database_instance_context().address.to_abbreviated_hex();
+        let func_ident = match op {
+            InstanceOp::Reducer { id, .. } => &*self.info.reducers[id].name,
+            InstanceOp::ConnDisconn { conn, .. } => {
+                if conn {
+                    IDENTITY_CONNECTED_DUNDER
+                } else {
+                    IDENTITY_DISCONNECTED_DUNDER
+                }
+            }
+        };
+        REDUCER_COUNT.with_label_values(&[address, func_ident]).inc();
+
+        let energy_fingerprint = EnergyMonitorFingerprint {
+            module_hash: self.info.module_hash,
+            module_identity: self.info.identity,
+            caller_identity: match op {
+                InstanceOp::Reducer { sender, .. } | InstanceOp::ConnDisconn { sender, .. } => *sender,
+            },
+            reducer_name: func_ident,
+        };
+
+        let budget = self.energy_monitor.reducer_budget(&energy_fingerprint);
+
+        let tx = self.database_instance_context().relational_db.begin_tx();
+
+        let tx_slot = self.instance.instance_env().tx.clone();
+        let (tx, result) = tx_slot.set(tx, || match op {
+            InstanceOp::Reducer {
+                id,
+                sender,
+                timestamp,
+                arg_bytes,
+            } => self
+                .instance
+                .call_reducer(id, budget, &sender.data, timestamp, arg_bytes),
+            InstanceOp::ConnDisconn {
+                conn,
+                sender,
+                timestamp,
+            } => self
+                .instance
+                .call_connect_disconnect(conn, budget, &sender.data, timestamp),
+        });
+
+        let ExecuteResult {
+            energy,
+            execution_duration,
+            call_result,
+        } = result;
+
+        self.energy_monitor
+            .record(&energy_fingerprint, energy.used, execution_duration);
+
+        const FRAME_LEN_60FPS: Duration = match Duration::from_secs(1).checked_div(60) {
+            Some(d) => d,
+            None => unreachable!(),
+        };
+        if execution_duration > FRAME_LEN_60FPS {
+            // If we can't get your reducer done in a single frame
+            // we should debug it.
+            log::debug!("Long running reducer {func_ident:?} took {execution_duration:?} to execute");
+        } else {
+            log::trace!("Reducer {func_ident:?} ran: {execution_duration:?}, {:?}", energy.used);
+        }
+
+        REDUCER_COMPUTE_TIME
+            .with_label_values(&[address, func_ident])
+            .observe(execution_duration.as_secs_f64());
+
+        // If you can afford to take 500 ms for a transaction
+        // you can afford to generate a flamegraph. Fix your stuff.
+        // if duration.as_millis() > 500 {
+        //     if let Ok(report) = guard.report().build() {
+        //         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+        //         let file = std::fs::File::create(format!("flamegraphs/flamegraph-{}.svg", now.as_millis())).unwrap();
+        //         report.flamegraph(file).unwrap();
+        //     };
+        // }
+
+        let stdb = &*self.database_instance_context().relational_db;
+        let status = match call_result {
+            Err(err) => {
+                stdb.rollback_tx(tx);
+
+                T::log_traceback("reducer", func_ident, &err);
+
+                // discard this instance
+                self.trapped = true;
+
+                if energy.remaining == EnergyQuanta::ZERO {
+                    EventStatus::OutOfEnergy
+                } else {
+                    EventStatus::Failed("The Wasm instance encountered a fatal error.".into())
+                }
+            }
+            Ok(Err(errmsg)) => {
+                stdb.rollback_tx(tx);
+
+                log::info!("reducer returned error: {errmsg}");
+
+                EventStatus::Failed(errmsg.into())
+            }
+            Ok(Ok(())) => {
+                let (transaction, bytes_written) = stdb.commit_tx(tx).unwrap();
+                if let Some(transaction) = transaction {
+                    // TODO(cloutiertyler): This tracking doesn't really belong here if we want to write transactions to disk
+                    // in batches. This is because it's possible for a tiny reducer call to trigger a whole commit to be written to disk.
+                    // We should track the commit sizes instead internally to the CommitLog probably.
+                    if let Some(bytes_written) = bytes_written {
+                        REDUCER_WRITE_SIZE
+                            .with_label_values(&[address, func_ident])
+                            .observe(bytes_written as f64);
+                    }
+                    EventStatus::Committed(DatabaseUpdate::from_writes(stdb, &transaction.writes))
+                } else {
+                    todo!("Write skew, you need to implement retries my man, T-dawg.");
+                }
+            }
+        };
+        (status, energy)
+    }
+
+    // Helpers - NOT API
+
+    fn schema_for(&self, table: &spacetimedb_lib::TableDef) -> anyhow::Result<TableDef> {
+        let schema = self
+            .info
+            .typespace
+            .with_type(&table.data)
+            .resolve_refs()
+            .context("recursive types not yet supported")?;
+        let schema = schema.into_product().ok().context("table not a product type?")?;
+        anyhow::ensure!(
+            table.column_attrs.len() == schema.elements.len(),
+            "mismatched number of columns"
+        );
+        let columns: Vec<ColumnDef> = std::iter::zip(&schema.elements, &table.column_attrs)
+            .map(|(ty, attr)| {
+                Ok(ColumnDef {
+                    col_name: ty.name.clone().context("column without name")?,
+                    col_type: ty.algebraic_type.clone(),
+                    is_autoinc: attr.is_autoinc(),
+                })
+            })
+            .collect::<anyhow::Result<_>>()?;
+
+        let mut indexes = Vec::new();
+        for (col_id, col) in columns.iter().enumerate() {
+            let mut index_for_column = None;
+            for index in table.indexes.iter() {
+                let [index_col_id] = *index.col_ids else { anyhow::bail!("multi-column indexes not yet supported") };
+                if index_col_id as usize != col_id {
+                    continue;
+                }
+                index_for_column = Some(index);
+                break;
+            }
+
+            let col_attr = table.column_attrs.get(col_id).context("invalid column id")?;
+            // If there's an index defined for this column already, use it
+            // making sure that it is unique if the column has a unique constraint
+            if let Some(index) = index_for_column {
+                match index.ty {
+                    IndexType::BTree => {}
+                    // TODO
+                    IndexType::Hash => anyhow::bail!("hash indexes not yet supported"),
+                }
+                let index = IndexDef {
+                    table_id: 0, // Will be ignored
+                    col_id: col_id as u32,
+                    name: index.name.clone(),
+                    is_unique: col_attr.is_unique(),
+                };
+                indexes.push(index);
+            } else if col_attr.is_unique() {
+                // If you didn't find an index, but the column is unique then create a unique btree index
+                // anyway.
+                let index = IndexDef {
+                    table_id: 0, // Will be ignored
+                    col_id: col_id as u32,
+                    name: format!("{}_{}_unique", table.name, col.col_name),
+                    is_unique: true,
+                };
+                indexes.push(index);
+            }
+        }
+
+        Ok(TableDef {
+            table_name: table.name.clone(),
+            columns,
+            indexes,
+        })
+    }
+
+    fn system_logger(&self) -> SystemLogger {
+        let inner = self.database_instance_context().logger.lock().unwrap();
+        SystemLogger { inner }
+    }
+}
+
+#[derive(Debug)]
+enum InstanceOp<'a> {
+    Reducer {
+        id: usize,
+        sender: &'a Identity,
+        timestamp: Timestamp,
+        arg_bytes: Bytes,
+    },
+    ConnDisconn {
+        conn: bool,
+        sender: &'a Identity,
+        timestamp: Timestamp,
+    },
+}
+
+enum InstanceMessage {
+    InitDatabase {
+        args: ArgsTuple,
+        respond_to: oneshot::Sender<anyhow::Result<ReducerCallResult>>,
+    },
+    CallConnectDisconnect {
+        caller_identity: Identity,
+        connected: bool,
+        respond_to: oneshot::Sender<()>,
+    },
+    CallReducer {
+        caller_identity: Identity,
+        client: Option<ClientConnectionSender>,
+        reducer_id: usize,
+        args: ArgsTuple,
+        respond_to: oneshot::Sender<ReducerCallResult>,
+    },
+    UpdateDatabase {
+        respond_to: oneshot::Sender<Result<UpdateDatabaseResult, anyhow::Error>>,
+    },
+}

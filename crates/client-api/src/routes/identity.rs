@@ -1,0 +1,142 @@
+use std::sync::Arc;
+
+use axum::extract::{FromRef, Path, Query, State};
+use axum::response::IntoResponse;
+use http::StatusCode;
+use serde::{Deserialize, Serialize};
+use spacetimedb_lib::Identity;
+
+use crate::auth::{SpacetimeAuth, SpacetimeAuthHeader};
+use crate::{log_and_500, ControlCtx, ControlNodeDelegate};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateIdentityResponse {
+    identity: String,
+    token: String,
+}
+
+pub async fn create_identity(State(ctx): State<Arc<dyn ControlCtx>>) -> axum::response::Result<impl IntoResponse> {
+    let auth = SpacetimeAuth::alloc(&*ctx).await?;
+
+    let identity_response = CreateIdentityResponse {
+        identity: auth.identity.to_hex(),
+        token: auth.creds.token().to_owned(),
+    };
+    Ok(axum::Json(identity_response))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GetIdentityResponse {
+    identities: Vec<GetIdentityResponseEntry>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GetIdentityResponseEntry {
+    identity: String,
+    email: String,
+}
+
+#[derive(Deserialize)]
+pub struct GetIdentityQueryParams {
+    email: Option<String>,
+}
+pub async fn get_identity(
+    State(ctx): State<Arc<dyn ControlCtx>>,
+    Query(GetIdentityQueryParams { email }): Query<GetIdentityQueryParams>,
+) -> axum::response::Result<impl IntoResponse> {
+    let lookup = match email {
+        None => None,
+        Some(email) => {
+            let identities = ctx
+                .control_db()
+                .get_identities_for_email(email.as_str())
+                .map_err(log_and_500)?;
+            if identities.is_empty() {
+                None
+            } else {
+                let mut response = GetIdentityResponse {
+                    identities: Vec::<GetIdentityResponseEntry>::new(),
+                };
+
+                for identity_email in identities {
+                    response.identities.push(GetIdentityResponseEntry {
+                        identity: identity_email.identity.to_hex(),
+                        email: identity_email.email,
+                    })
+                }
+                Some(response)
+            }
+        }
+    };
+    let identity_response = lookup.ok_or(StatusCode::NOT_FOUND)?;
+    Ok(axum::Json(identity_response))
+}
+
+#[derive(Deserialize)]
+pub struct SetEmailParams {
+    identity: Identity,
+}
+
+#[derive(Deserialize)]
+pub struct SetEmailQueryParams {
+    email: email_address::EmailAddress,
+}
+
+pub async fn set_email(
+    State(ctx): State<Arc<dyn ControlCtx>>,
+    Path(SetEmailParams { identity }): Path<SetEmailParams>,
+    Query(SetEmailQueryParams { email }): Query<SetEmailQueryParams>,
+    auth: SpacetimeAuthHeader,
+) -> axum::response::Result<impl IntoResponse> {
+    let auth = auth.get().ok_or(StatusCode::BAD_REQUEST)?;
+
+    if auth.identity != identity {
+        return Err(StatusCode::UNAUTHORIZED.into());
+    }
+
+    ctx.control_db()
+        .associate_email_spacetime_identity(identity, email.as_str())
+        .await
+        .unwrap();
+
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct GetDatabasesParams {
+    identity: Identity,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetDatabasesResponse {
+    addresses: Vec<String>,
+}
+
+pub async fn get_databases(
+    State(ctx): State<Arc<dyn ControlCtx>>,
+    Path(GetDatabasesParams { identity }): Path<GetDatabasesParams>,
+) -> axum::response::Result<impl IntoResponse> {
+    // Linear scan for all databases that have this identity, and return their addresses
+    let all_dbs = ctx.control_db().get_databases().await.map_err(|e| {
+        log::error!("Failure when retrieving databases for search: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let matching_dbs = all_dbs.into_iter().filter(|db| db.identity == identity);
+    let addresses = matching_dbs.map(|db| db.address.to_hex());
+    let response = GetDatabasesResponse {
+        addresses: addresses.collect(),
+    };
+    Ok(axum::Json(response))
+}
+
+pub fn router<S>() -> axum::Router<S>
+where
+    S: ControlNodeDelegate + Clone + 'static,
+    Arc<dyn ControlCtx>: FromRef<S>,
+{
+    use axum::routing::{get, post};
+    axum::Router::new()
+        .route("/", get(get_identity).post(create_identity))
+        .route("/:identity/set-email", post(set_email))
+        .route("/:identity/databases", get(get_databases))
+}

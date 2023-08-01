@@ -1,0 +1,93 @@
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull Request Number'
+        required: false
+        default: ''
+
+name: Benchmarks
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  benchmark:
+    name: run benchmarks
+    runs-on: self-hosted
+    steps:
+      - name: Checkout sources for a PR
+        if: ${{ github.event.inputs.ref }}
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.inputs.ref }}
+          fetch-depth: 0
+
+      - name: Checkout sources
+        if: github.event.inputs.ref == ''
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 10
+
+      - name: Set up for PR context
+        if: github.event.inputs.pr_number
+        run: |
+          echo "PR_NUMBER=${{ github.event.inputs.pr_number }}" >> $GITHUB_ENV
+          PR_DATA=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.inputs.pr_number }} --jq '{ baseRefName: .base.ref, headRefName: .head.ref }')
+          echo "PR_BASE_REF=$(echo $PR_DATA | jq -r '.baseRefName')" >> $GITHUB_ENV
+          echo "PR_HEAD_REF=$(echo $PR_DATA | jq -r '.headRefName')" >> $GITHUB_ENV
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+
+      - name: ⚡ Cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build
+        working-directory: crates/bench/
+        run: |
+          cargo build --release
+
+      - name: Criterion compare base branch
+        if: ${{ env.PR_BASE_REF }}
+        uses: clockworklabs/criterion-compare-action@main
+        with:
+          cwd: "crates/bench"
+          branchName: ${{ env.PR_BASE_REF }}
+          benchName: modules
+
+      - name: Criterion compare previous commit
+        if: env.PR_BASE_REF == ''
+        uses: clockworklabs/criterion-compare-action@main
+        with:
+          cwd: "crates/bench"
+          branchName: "HEAD~1"
+          benchName: modules
+
+      - name: Benchmark Vs Sqlite
+        working-directory: crates/bench/
+        run: |
+          python3 hyper_cmp.py versus > out.report
+          cat out.report >> $GITHUB_STEP_SUMMARY
+
+      - name: Clean up
+        if: always()
+        run: |
+          rm -fr /stdb/*
+
+
