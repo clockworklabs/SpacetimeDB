@@ -497,7 +497,7 @@ mod tests {
         run(&db, &mut tx, sql_create, AuthCtx::for_testing())?;
 
         let sql_query = "SELECT * FROM MobileEntityState JOIN EnemyState ON MobileEntityState.entity_id = EnemyState.entity_id WHERE location_x > 96000 AND MobileEntityState.location_x < 192000 AND MobileEntityState.location_z > 96000 AND MobileEntityState.location_z < 192000";
-        let q = compile_query(&db, &mut tx, sql_query)?;
+        let q = compile_query(&db, &tx, sql_query)?;
 
         for q in q.queries {
             assert_eq!(
