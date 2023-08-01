@@ -1,3 +1,6 @@
+/**
+ * A unique public identifier for a client connected to a database.
+ */
 export class Identity {
   private data: Uint8Array;
 
@@ -5,7 +8,9 @@ export class Identity {
     this.data = data;
   }
 
-  // Method to compare two identities
+  /** 
+   * Method to compare two identities
+  */
   isEqual(other: Identity): boolean {
     if (this.data.length !== other.data.length) {
       return false;
@@ -18,7 +23,9 @@ export class Identity {
     return true;
   }
 
-  // Method to convert the Uint8Array to a hex string
+  /** 
+   * Method to convert the Uint8Array to a hex string
+  */
   toHexString(): string {
     return Array.prototype.map
       .call(this.data, (x) => ("00" + x.toString(16)).slice(-2))
@@ -29,7 +36,9 @@ export class Identity {
     return this.data;
   }
 
-  // Static method to create an Identity from a hex string
+  /** 
+   * Static method to create an Identity from a hex string
+   */
   static fromString(str: string): Identity {
     let matches = str.match(/.{1,2}/g) || [];
     let data = Uint8Array.from(
