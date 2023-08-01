@@ -11,7 +11,6 @@ using System.Threading.Tasks;
 using ClientApi;
 using Newtonsoft.Json;
 using SpacetimeDB.SATS;
-using UnityEngine;
 
 namespace SpacetimeDB
 {
@@ -163,7 +162,7 @@ namespace SpacetimeDB
             webSocket.OnMessage += OnMessageReceived;
             webSocket.OnClose += (code, error) => onDisconnect?.Invoke(code, error);
             webSocket.OnConnect += () => onConnect?.Invoke();
-            webSocket.OnConnectError += (a,b) => onConnectError?.Invoke(a,b);
+            webSocket.OnConnectError += (a, b) => onConnectError?.Invoke(a, b);
             webSocket.OnSendError += a => onSendError?.Invoke(a);
 
             clientDB = new ClientCache();
@@ -246,7 +245,7 @@ namespace SpacetimeDB
                     };
                     _nextMessageQueue.Add(processedMessage);
                 }
-                catch(OperationCanceledException)
+                catch (OperationCanceledException)
                 {
                     // Normal shutdown
                     return;
@@ -443,7 +442,7 @@ namespace SpacetimeDB
             isClosing = true;
             connectionClosed = true;
             webSocket.Close();
-            _cancellationTokenSource.Cancel();            
+            _cancellationTokenSource.Cancel();
             webSocket = null;
         }
 
@@ -702,7 +701,7 @@ namespace SpacetimeDB
 
         public void InternalCallReducer(string json)
         {
-            if(!webSocket.IsConnected)
+            if (!webSocket.IsConnected)
             {
                 logger.LogError("Cannot call reducer, not connected to server!");
                 return;
@@ -712,7 +711,7 @@ namespace SpacetimeDB
 
         public void Subscribe(List<string> queries)
         {
-            if(!webSocket.IsConnected)
+            if (!webSocket.IsConnected)
             {
                 logger.LogError("Cannot subscribe, not connected to server!");
                 return;
@@ -730,4 +729,5 @@ namespace SpacetimeDB
                 OnMessageProcessComplete(nextMessage.message, nextMessage.events);
             }
         }
-    
+    }
+}

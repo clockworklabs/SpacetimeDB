@@ -22,10 +22,13 @@
 
   <ItemGroup>
     <Compile Remove="examples\**" />
+    <Compile Remove="SpacetimeDB Unity Tutorial\**" />
     <Compile Remove="Unity\**" />
     <EmbeddedResource Remove="examples\**" />
+    <EmbeddedResource Remove="SpacetimeDB Unity Tutorial\**" />
     <EmbeddedResource Remove="Unity\**" />
     <None Remove="examples\**" />
+    <None Remove="SpacetimeDB Unity Tutorial\**" />
     <None Remove="Unity\**" />
   </ItemGroup>
 
