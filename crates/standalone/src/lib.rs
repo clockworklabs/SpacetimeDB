@@ -1,6 +1,6 @@
+mod energy_monitor;
 pub mod routes;
 mod worker_db;
-mod energy_monitor;
 
 use anyhow::Context;
 use energy_monitor::StandaloneEnergyMonitor;
@@ -15,9 +15,9 @@ use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::db::db_metrics;
 use spacetimedb::hash::Hash;
-use spacetimedb::host::{UpdateDatabaseResult, EnergyQuanta};
 use spacetimedb::host::UpdateOutcome;
 use spacetimedb::host::{scheduler::Scheduler, HostController};
+use spacetimedb::host::{EnergyQuanta, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, Node};
 use spacetimedb::messages::worker_db::DatabaseInstanceState;
@@ -323,7 +323,9 @@ impl spacetimedb_client_api::ControlNodeDelegate for StandaloneEnv {
         println!("Withdrawing {} energy from {}", amount.0, identity);
         println!("Old balance: {}", energy_balance.0);
         let new_balance = energy_balance - amount;
-        self.control_db.set_energy_balance(*identity, new_balance.as_quanta()).await
+        self.control_db
+            .set_energy_balance(*identity, new_balance.as_quanta())
+            .await
     }
 
     fn public_key(&self) -> &DecodingKey {

@@ -61,7 +61,7 @@ impl fmt::Display for DescribedEntityType {
 /// [EnergyQuanta] represents an amount of energy in a canonical unit.
 /// It represents the smallest unit of energy that can be used to pay for
 /// a reducer invocation. We will likely refer to this unit as an "eV".
-/// 
+///
 /// NOTE: This is represented by a signed integer, because it is possible
 /// for a user's balance to go negative. This is allowable
 /// for reasons of eventual consistency motivated by performance.

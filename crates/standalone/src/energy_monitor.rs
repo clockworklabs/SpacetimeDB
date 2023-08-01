@@ -1,7 +1,10 @@
+use crate::StandaloneEnv;
 use spacetimedb::host::{EnergyDiff, EnergyMonitor, EnergyMonitorFingerprint, EnergyQuanta};
 use spacetimedb_client_api::ControlNodeDelegate;
-use std::{time::Duration, sync::{Arc, Weak, Mutex}};
-use crate::StandaloneEnv;
+use std::{
+    sync::{Arc, Mutex, Weak},
+    time::Duration,
+};
 
 pub(crate) struct StandaloneEnergyMonitor {
     inner: Arc<Mutex<Inner>>,
@@ -11,8 +14,8 @@ impl StandaloneEnergyMonitor {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(Inner {
-                standalone_env: Weak::new()
-            }))
+                standalone_env: Weak::new(),
+            })),
         }
     }
 
@@ -37,9 +40,19 @@ impl EnergyMonitor for StandaloneEnergyMonitor {
             return;
         }
         let module_identity = fingerprint.module_identity;
-        let standalone_env = { self.inner.lock().unwrap().standalone_env.upgrade().expect("Worker env was dropped.") };
+        let standalone_env = {
+            self.inner
+                .lock()
+                .unwrap()
+                .standalone_env
+                .upgrade()
+                .expect("Worker env was dropped.")
+        };
         tokio::spawn(async move {
-            standalone_env.withdraw_energy(&module_identity, energy_used.as_quanta()).await.unwrap();
+            standalone_env
+                .withdraw_energy(&module_identity, energy_used.as_quanta())
+                .await
+                .unwrap();
         });
     }
 }
@@ -56,8 +69,11 @@ impl Inner {
     /// To be used if we ever want to enable reducer budgets in Standalone
     fn _reducer_budget(&self, fingerprint: &EnergyMonitorFingerprint<'_>) -> EnergyQuanta {
         let standalone_env = self.standalone_env.upgrade().expect("Standalone env was dropped.");
-        let balance = standalone_env.control_db.get_energy_balance(&fingerprint.module_identity).unwrap().unwrap_or(EnergyQuanta(0));
+        let balance = standalone_env
+            .control_db
+            .get_energy_balance(&fingerprint.module_identity)
+            .unwrap()
+            .unwrap_or(EnergyQuanta(0));
         EnergyQuanta(i128::max(balance.0, 0))
     }
 }
-

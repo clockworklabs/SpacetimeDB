@@ -246,7 +246,7 @@ impl headers::Header for SpacetimeEnergyUsed {
 
     fn encode<E: Extend<HeaderValue>>(&self, values: &mut E) {
         let mut buf = BytesMut::new();
-        let _ = buf.write_str(itoa::Buffer::new().format(self.0.0));
+        let _ = buf.write_str(itoa::Buffer::new().format(self.0 .0));
         values.extend([HeaderValue::from_bytes(&buf).unwrap()]);
     }
 }
