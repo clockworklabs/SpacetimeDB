@@ -8,7 +8,6 @@ use spacetimedb::worker_metrics;
 use spacetimedb_standalone::routes::router;
 use spacetimedb_standalone::StandaloneEnv;
 use std::net::TcpListener;
-use std::sync::Arc;
 use tokio::runtime::Builder;
 
 use std::panic;
@@ -51,7 +50,7 @@ async fn start(config: Config) -> anyhow::Result<()> {
     // Metrics for our use of db/.
     db_metrics::register_custom_metrics();
 
-    let ctx = spacetimedb_client_api::ArcEnv(Arc::new(StandaloneEnv::init().await?));
+    let ctx = spacetimedb_client_api::ArcEnv(StandaloneEnv::init().await?);
 
     let service = router().with_state(ctx).into_make_service();
 

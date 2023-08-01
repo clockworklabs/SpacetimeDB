@@ -27,7 +27,7 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
             .arg(
                 Arg::new("balance")
                     .required(true)
-                    .value_parser(value_parser!(u64))
+                    .value_parser(value_parser!(i128))
                     .help("The balance value to set"),
             )
             .arg(
@@ -63,7 +63,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
     let hex_id = args.get_one::<String>("identity");
-    let balance = *args.get_one::<u64>("balance").unwrap();
+    let balance = *args.get_one::<i128>("balance").unwrap();
     let quiet = args.get_flag("quiet");
 
     let hex_id = hex_id_or_default(hex_id, &config);
@@ -102,7 +102,7 @@ pub(super) async fn set_balance(
     client: &reqwest::Client,
     config: &Config,
     hex_identity: &str,
-    balance: u64,
+    balance: i128,
 ) -> anyhow::Result<reqwest::Response> {
     // TODO: this really should be form data in POST body, not query string parameter, but gotham
     // does not support that on the server side without an extension.

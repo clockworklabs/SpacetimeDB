@@ -51,7 +51,7 @@ pub enum DeleteOperation {
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EnergyBalanceUpdate {
     pub identity: Identity,
-    pub energy_balance: i64,
+    pub energy_balance: i128,
 }
 // A message to syncronize energy balances from control node to worker node.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -66,5 +66,5 @@ pub struct EnergyWithdrawals {
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EnergyWithdrawal {
     pub identity: Identity,
-    pub amount: i64,
+    pub amount: i128,
 }
