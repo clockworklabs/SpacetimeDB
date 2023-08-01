@@ -717,7 +717,8 @@ fn autogen_csharp_product_table_common(
             // If this is a table, we want to include functions for accessing the table data
             if let Some(column_attrs) = column_attrs {
                 // Insert the funcs for accessing this struct
-                autogen_csharp_access_funcs_for_struct(&mut output, name, product_type, name, column_attrs);
+                let has_primary_key =
+                    autogen_csharp_access_funcs_for_struct(&mut output, name, product_type, name, column_attrs);
 
                 writeln!(output).unwrap();
 
@@ -726,7 +727,9 @@ fn autogen_csharp_product_table_common(
                     "public delegate void InsertEventHandler({name} insertedValue, {namespace}.ReducerEvent dbEvent);"
                 )
                 .unwrap();
-                writeln!(output, "public delegate void UpdateEventHandler({name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
+                if has_primary_key {
+                    writeln!(output, "public delegate void UpdateEventHandler({name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
+                }
                 writeln!(
                     output,
                     "public delegate void DeleteEventHandler({name} deletedValue, {namespace}.ReducerEvent dbEvent);"
@@ -734,7 +737,9 @@ fn autogen_csharp_product_table_common(
                 .unwrap();
                 writeln!(output, "public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, {name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
                 writeln!(output, "public static event InsertEventHandler OnInsert;").unwrap();
-                writeln!(output, "public static event UpdateEventHandler OnUpdate;").unwrap();
+                if has_primary_key {
+                    writeln!(output, "public static event UpdateEventHandler OnUpdate;").unwrap();
+                }
                 writeln!(output, "public static event DeleteEventHandler OnBeforeDelete;").unwrap();
                 writeln!(output, "public static event DeleteEventHandler OnDelete;").unwrap();
 
@@ -759,22 +764,24 @@ fn autogen_csharp_product_table_common(
                 writeln!(output, "}}").unwrap();
                 writeln!(output).unwrap();
 
-                writeln!(
-                    output,
-                    "public static void OnUpdateEvent(object oldValue, object newValue, ClientApi.Event dbEvent)"
-                )
-                .unwrap();
-                writeln!(output, "{{").unwrap();
-                {
-                    indent_scope!(output);
+                if has_primary_key {
                     writeln!(
                         output,
-                        "OnUpdate?.Invoke(({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
+                        "public static void OnUpdateEvent(object oldValue, object newValue, ClientApi.Event dbEvent)"
                     )
-                        .unwrap();
+                    .unwrap();
+                    writeln!(output, "{{").unwrap();
+                    {
+                        indent_scope!(output);
+                        writeln!(
+                            output,
+                            "OnUpdate?.Invoke(({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
+                        )
+                            .unwrap();
+                    }
+                    writeln!(output, "}}").unwrap();
+                    writeln!(output).unwrap();
                 }
-                writeln!(output, "}}").unwrap();
-                writeln!(output).unwrap();
 
                 writeln!(
                     output,
@@ -903,7 +910,7 @@ fn autogen_csharp_access_funcs_for_struct(
     product_type: &ProductType,
     table_name: &str,
     column_attrs: &[ColumnIndexAttribute],
-) {
+) -> bool {
     let (unique, nonunique) = column_attrs
         .iter()
         .copied()
@@ -1157,6 +1164,8 @@ fn autogen_csharp_access_funcs_for_struct(
         }
         writeln!(output, "}}").unwrap();
     }
+
+    primary_col_idx.is_some()
 }
 
 // fn convert_enumdef(tuple: &SumType) -> impl fmt::Display + '_ {
