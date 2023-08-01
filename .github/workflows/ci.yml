@@ -52,7 +52,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run cargo clippy
-        run: cargo clippy --all --features odb_rocksdb,odb_sled,tracelogging -- -D warnings
+        run: cargo clippy --all --tests --features odb_rocksdb,odb_sled,tracelogging -- -D warnings
 
   wasm_bindings:
     name: Build and test wasm bindings
