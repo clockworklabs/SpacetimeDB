@@ -139,7 +139,7 @@ namespace SpacetimeDB
             return null;
         }
 
-        protected SpacetimeDBClient(ISpacetimeDBLogger loggerToUse, Type reducerType)
+        protected SpacetimeDBClient(ISpacetimeDBLogger loggerToUse)
         {
             if (instance != null)
             {
@@ -240,7 +240,7 @@ namespace SpacetimeDB
                     var processedMessage = new ProcessedMessage
                     {
                         message = m,
-                        events = events,
+                        dbOps = events,
                     };
                     _nextMessageQueue.Add(processedMessage);
                 }
@@ -725,7 +725,7 @@ namespace SpacetimeDB
 
             while (_nextMessageQueue.TryTake(out var nextMessage))
             {
-                OnMessageProcessComplete(nextMessage.message, nextMessage.events);
+                OnMessageProcessComplete(nextMessage.message, nextMessage.dbOps);
             }
         }
     }

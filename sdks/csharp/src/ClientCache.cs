@@ -220,12 +220,12 @@ namespace SpacetimeDB
 
             public AlgebraicValue GetPrimaryKeyValue(AlgebraicValue row)
             {
-                return GetPrimaryKeyValueFunc.Invoke(row);
+                return GetPrimaryKeyValueFunc != null ? GetPrimaryKeyValueFunc.Invoke(row) : null;
             }
 
             public AlgebraicType GetPrimaryKeyType(AlgebraicType row)
             {
-                return GetPrimaryKeyTypeFunc.Invoke(row);
+                return GetPrimaryKeyTypeFunc != null ? GetPrimaryKeyTypeFunc.Invoke(row) : null;
             }
 
             public bool ComparePrimaryKey(byte[] rowPk1, byte[] rowPk2)
