@@ -24,6 +24,7 @@ import {
   BuiltinType,
 } from "./algebraic_type";
 import { EventType } from "./types";
+import { Identity } from "./identity";
 import {
   Message as ProtobufMessage,
   event_StatusToJSON,
@@ -73,14 +74,14 @@ export class Reducer {}
 export class IDatabaseTable {}
 
 export class ReducerEvent {
-  public callerIdentity: Uint8Array;
+  public callerIdentity: Identity;
   public reducerName: string;
   public status: string;
   public message: string;
   public args: any;
 
   constructor(
-    callerIdentity: Uint8Array,
+    callerIdentity: Identity,
     reducerName: string,
     status: string,
     message: string,
@@ -357,7 +358,7 @@ class SubscriptionUpdateMessage {
 }
 
 class TransactionUpdateEvent {
-  public identity: Uint8Array;
+  public identity: Identity;
   public originalReducerName: string;
   public reducerName: string;
   public args: any[] | Uint8Array;
@@ -365,7 +366,7 @@ class TransactionUpdateEvent {
   public message: string;
 
   constructor(
-    identity: Uint8Array,
+    identity: Identity,
     originalReducerName: string,
     reducerName: string,
     args: any[] | Uint8Array,
@@ -392,10 +393,10 @@ class TransactionUpdateMessage {
 }
 
 class IdentityTokenMessage {
-  public identity: Uint8Array;
+  public identity: Identity;
   public token: string;
 
-  constructor(identity: Uint8Array, token: string) {
+  constructor(identity: Identity, token: string) {
     this.identity = identity;
     this.token = token;
   }
@@ -422,7 +423,7 @@ export class SpacetimeDBClient {
   /**
    * The identity of the user.
    */
-  identity?: Uint8Array = undefined;
+  identity?: Identity = undefined;
   /**
    * The token of the user.
    */
@@ -630,8 +631,7 @@ export class SpacetimeDBClient {
         if (reducer) {
           this.emitter.emit(
             "reducer:" + reducerName,
-            message.event.status,
-            message.event.identity,
+            reducerEvent,
             reducerArgs
           );
         }
@@ -813,7 +813,7 @@ export class SpacetimeDBClient {
 
           const event = message["transactionUpdate"]["event"] as any;
           const functionCall = event["functionCall"] as any;
-          const identity: Uint8Array = event["callerIdentity"];
+          const identity: Identity = new Identity(event["callerIdentity"]);
           const originalReducerName: string = functionCall["reducer"];
           const reducerName: string = toPascalCase(originalReducerName);
           const args = functionCall["argBytes"];
@@ -837,7 +837,7 @@ export class SpacetimeDBClient {
           callback(transactionUpdate);
         } else if (message["identityToken"]) {
           const identityToken = message["identityToken"] as any;
-          const identity = identityToken["identity"];
+          const identity = new Identity(identityToken["identity"]);
           const token = identityToken["token"];
           const identityTokenMessage: IdentityTokenMessage =
             new IdentityTokenMessage(identity, token);
@@ -890,10 +890,8 @@ export class SpacetimeDBClient {
 
         const event = txUpdate["event"] as any;
         const functionCall = event["function_call"] as any;
-        const identity: Uint8Array = Uint8Array.from(
+        const identity: Identity = Identity.fromString(
           event["caller_identity"]
-            .match(/.{1,2}/g)
-            .map((byte: string) => parseInt(byte, 16))
         );
         const originalReducerName: string = functionCall["reducer"];
         const reducerName: string = toPascalCase(originalReducerName);
@@ -918,7 +916,7 @@ export class SpacetimeDBClient {
         callback(transactionUpdate);
       } else if (data["IdentityToken"]) {
         const identityToken = data["IdentityToken"];
-        const identity = identityToken["identity"];
+        const identity = new Identity(identityToken["identity"]);
         const token = identityToken["token"];
         const identityTokenMessage: IdentityTokenMessage =
           new IdentityTokenMessage(identity, token);
@@ -1014,7 +1012,7 @@ export class SpacetimeDBClient {
     this.emitter.off(eventName, callback);
   }
 
-  onConnect(callback: (token: string, identity: Uint8Array) => void) {
+  onConnect(callback: (token: string, identity: Identity) => void) {
     this.on("connected", callback);
   }
 
