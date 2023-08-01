@@ -11,25 +11,27 @@ pub use ser::Serializer;
 
 pub use crate::buffer::DecodeError;
 
+/// Serialize `value` into the buffered writer `w` in the BSATN format.
 pub fn to_writer<W: BufWriter, T: Serialize + ?Sized>(w: &mut W, value: &T) -> Result<(), ser::BsatnError> {
     value.serialize(Serializer::new(w))
 }
 
+/// Serialize `value` into a `Vec<u8>` in the BSATN format.
 pub fn to_vec<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, ser::BsatnError> {
     let mut v = Vec::new();
     to_writer(&mut v, value)?;
     Ok(v)
 }
 
-pub fn from_reader<'de, R: BufReader<'de>, T: Deserialize<'de>>(r: &mut R) -> Result<T, DecodeError> {
-    T::deserialize(Deserializer::new(r))
+/// Deserialize a `T` from the BSATN format in the buffered `reader`.
+pub fn from_reader<'de, T: Deserialize<'de>>(reader: &mut impl BufReader<'de>) -> Result<T, DecodeError> {
+    T::deserialize(Deserializer::new(reader))
 }
 
-pub fn from_slice<'de, T: Deserialize<'de>>(b: &'de [u8]) -> Result<T, DecodeError> {
-    from_reader(&mut &b[..])
+/// Deserialize a `T` from the BSATN format in `bytes`.
+pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, DecodeError> {
+    from_reader(&mut &*bytes)
 }
-
-static EMPTY_TYPESPACE: Typespace = Typespace::new(Vec::new());
 
 macro_rules! codec_funcs {
     ($ty:ty) => {
@@ -49,7 +51,8 @@ macro_rules! codec_funcs {
                 algebraic_type: &<Self as crate::Value>::Type,
                 bytes: &mut impl BufReader<'a>,
             ) -> Result<Self, DecodeError> {
-                crate::TypeInSpace::new(&EMPTY_TYPESPACE, algebraic_type).deserialize(Deserializer::new(bytes))
+                crate::WithTypespace::new(&Typespace::new(Vec::new()), algebraic_type)
+                    .deserialize(Deserializer::new(bytes))
             }
 
             pub fn encode(&self, bytes: &mut impl BufWriter) {

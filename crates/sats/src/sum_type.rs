@@ -1,68 +1,87 @@
-pub mod satn;
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
+use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{
-    AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ArrayType, BuiltinType, ProductType, ProductTypeElement,
-    SumTypeVariant,
-};
+use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SumTypeVariant};
 
+/// A structural sum type.
+///
+/// Unlike most languages, sums in SATS are *[structural]* and not nominal.
+/// When checking whether two nominal types are the same,
+/// their names and/or declaration sites (e.g., module / namespace) are considered.
+/// Meanwhile, a structural type system would only check the structure of the type itself,
+/// e.g., the names of its variants and their inner data types in the case of a sum.
+///
+/// This is also known as a discriminated union (implementation) or disjoint union.
+/// Another name is [coproduct (category theory)](https://ncatlab.org/nlab/show/coproduct).
+///
+/// These structures are known as sum types because the number of possible values a sum
+/// ```ignore
+/// { N_0(T_0), N_1(T_1), ..., N_n(T_n) }
+/// ```
+/// is:
+/// ```ignore
+/// Σ (i ∈ 0..n). values(T_i)
+/// ```
+/// so for example, `values({ A(U64), B(Bool) }) = values(U64) + values(Bool)`.
+///
+/// See also: https://ncatlab.org/nlab/show/sum+type.
+///
+/// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[sats(crate = crate)]
 pub struct SumType {
+    /// The possible variants of the sum type.
+    ///
+    /// The order is relevant as it defines the tags of the variants at runtime.
     pub variants: Vec<SumTypeVariant>,
 }
 
 impl SumType {
-    pub fn new(variants: Vec<SumTypeVariant>) -> Self {
+    /// Returns a sum type with these possible `variants`.
+    pub const fn new(variants: Vec<SumTypeVariant>) -> Self {
         Self { variants }
     }
 
+    /// Returns a sum type of unnamed variants taken from `types`.
     pub fn new_unnamed(types: Vec<AlgebraicType>) -> Self {
-        let variants = types
-            .iter()
-            .map(|ty| SumTypeVariant::new(ty.clone(), None))
-            .collect::<Vec<_>>();
+        let variants = types.into_iter().map(|ty| ty.into()).collect::<Vec<_>>();
         Self { variants }
     }
 
-    pub fn looks_like_option(&self) -> Option<&AlgebraicType> {
+    /// Returns whether this sum type looks like an option type.
+    ///
+    /// An option type has `some(T)` as its first variant and `none` as its second.
+    /// That is, `{ some(T), none }` or `some: T | none` depending on your notation.
+    pub fn as_option(&self) -> Option<&AlgebraicType> {
         match &*self.variants {
             [first, second]
-                if first.name.as_deref() == Some("some")
-                    && second.name.as_deref() == Some("none")
-                    && second.algebraic_type == AlgebraicType::UNIT_TYPE =>
+                if second.is_unit() // Done first to avoid pointer indirection when it doesn't matter.
+                    && first.has_name("some")
+                    && second.has_name("none") =>
             {
                 Some(&first.algebraic_type)
             }
             _ => None,
         }
     }
+
+    /// Returns whether this sum type is like on in C without data attached to the variants.
+    pub fn is_simple_enum(&self) -> bool {
+        self.variants.iter().all(SumTypeVariant::is_unit)
+    }
+}
+
+impl MetaType for SumType {
+    fn meta_type() -> AlgebraicType {
+        AlgebraicType::product(vec![ProductTypeElement::new_named(
+            AlgebraicType::array(SumTypeVariant::meta_type()),
+            "variants",
+        )])
+    }
 }
 
 impl SumType {
-    pub fn make_meta_type() -> AlgebraicType {
-        let string = AlgebraicType::Builtin(BuiltinType::String);
-        let option = AlgebraicType::make_option_type(string);
-        let variant_type = AlgebraicType::Product(ProductType::new(vec![
-            ProductTypeElement {
-                algebraic_type: option,
-                name: Some("name".into()),
-            },
-            ProductTypeElement {
-                algebraic_type: AlgebraicType::Ref(AlgebraicTypeRef(0)),
-                name: Some("algebraic_type".into()),
-            },
-        ]));
-        let array = AlgebraicType::Builtin(BuiltinType::Array(ArrayType {
-            elem_ty: Box::new(variant_type),
-        }));
-        AlgebraicType::Product(ProductType::new(vec![ProductTypeElement {
-            algebraic_type: array,
-            name: Some("variants".into()),
-        }]))
-    }
-
     pub fn as_value(&self) -> AlgebraicValue {
         self.serialize(ValueSerializer).unwrap_or_else(|x| match x {})
     }

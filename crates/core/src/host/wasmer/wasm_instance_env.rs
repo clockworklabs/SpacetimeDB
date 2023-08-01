@@ -52,7 +52,9 @@ impl WasmInstanceEnv {
         // Call `f` with the caller and a handle to the memory.
         // Bail if there were no errors.
         let mem = caller.data().mem();
-        let Err(err) = f(caller.as_mut(), &mem) else { return Ok(0) };
+        let Err(err) = f(caller.as_mut(), &mem) else {
+            return Ok(0);
+        };
 
         // Handle any errors.
         Err(match err {

@@ -1,3 +1,5 @@
+use super::util::fmt_fn;
+
 use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
@@ -42,8 +44,8 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
     fmt_fn(move |f| match ty {
         AlgebraicType::Sum(sum_type) => {
             // This better be an option type
-            if is_option_type(sum_type) {
-                match &sum_type.variants[0].algebraic_type {
+            if let Some(inner_ty) = sum_type.as_option() {
+                match inner_ty {
                     Builtin(b) => match b {
                         BuiltinType::Bool
                         | BuiltinType::I8
@@ -58,22 +60,29 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
                         | BuiltinType::U128
                         | BuiltinType::F32
                         | BuiltinType::F64 => {
-                            // This has to be a nullable type
-                            write!(f, "{}?", ty_fmt(ctx, &sum_type.variants[0].algebraic_type, namespace))
+                            // This has to be a nullable type.
+                            write!(f, "{}?", ty_fmt(ctx, inner_ty, namespace))
                         }
                         _ => {
-                            write!(f, "{}", ty_fmt(ctx, &sum_type.variants[0].algebraic_type, namespace))
+                            write!(f, "{}", ty_fmt(ctx, inner_ty, namespace))
                         }
                     },
                     _ => {
-                        write!(f, "{}", ty_fmt(ctx, &sum_type.variants[0].algebraic_type, namespace))
+                        write!(f, "{}", ty_fmt(ctx, inner_ty, namespace))
                     }
                 }
             } else {
                 unimplemented!()
             }
         }
-        AlgebraicType::Product(_) => unimplemented!(),
+        AlgebraicType::Product(prod) => {
+            // The only type that is allowed here is the identity type. All other types should fail.
+            if prod.is_identity() {
+                write!(f, "SpacetimeDB.Identity")
+            } else {
+                unimplemented!()
+            }
+        }
         AlgebraicType::Builtin(b) => match maybe_primitive(b) {
             MaybePrimitive::Primitive(p) => f.write_str(p),
             MaybePrimitive::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => f.write_str("byte[]"),
@@ -167,10 +176,20 @@ fn convert_type<'a>(
     namespace: &'a str,
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Product(_) => unimplemented!(),
+        AlgebraicType::Product(product) => {
+            if product.is_identity() {
+                write!(
+                    f,
+                    "SpacetimeDB.Identity.From({}.AsProductValue().elements[0].AsBytes())",
+                    value
+                )
+            } else {
+                unimplemented!()
+            }
+        }
         AlgebraicType::Sum(sum_type) => {
-            if is_option_type(sum_type) {
-                match &sum_type.variants[0].algebraic_type {
+            if let Some(inner_ty) = sum_type.as_option() {
+                match inner_ty {
                     Builtin(ty) => match ty {
                         BuiltinType::Bool
                         | BuiltinType::I8
@@ -188,15 +207,15 @@ fn convert_type<'a>(
                             f,
                             "{}.AsSumValue().tag == 1 ? null : new {}?({}.AsSumValue().value{})",
                             value,
-                            ty_fmt(ctx, &sum_type.variants[0].algebraic_type, namespace),
+                            ty_fmt(ctx, inner_ty, namespace),
                             value,
-                            &convert_type(ctx, vecnest, &sum_type.variants[0].algebraic_type, "", namespace),
+                            &convert_type(ctx, vecnest, inner_ty, "", namespace),
                         ),
                         _ => fmt::Display::fmt(
                             &convert_type(
                                 ctx,
                                 vecnest,
-                                &sum_type.variants[0].algebraic_type,
+                                inner_ty,
                                 format_args!("{}.AsSumValue().tag == 1 ? null : {}.AsSumValue().value", value, value),
                                 namespace,
                             ),
@@ -207,7 +226,7 @@ fn convert_type<'a>(
                         &convert_type(
                             ctx,
                             vecnest,
-                            &sum_type.variants[0].algebraic_type,
+                            inner_ty,
                             format_args!("{}.AsSumValue().tag == 1 ? null : {}.AsSumValue().value", value, value),
                             namespace,
                         ),
@@ -257,34 +276,6 @@ fn convert_type<'a>(
 // can maybe do something fancy with this in the future
 fn csharp_typename(ctx: &GenCtx, typeref: AlgebraicTypeRef) -> &str {
     ctx.names[typeref.idx()].as_deref().expect("tuples should have names")
-}
-
-fn fmt_fn(f: impl Fn(&mut fmt::Formatter) -> fmt::Result) -> impl fmt::Display {
-    struct FDisplay<F>(F);
-    impl<F: Fn(&mut fmt::Formatter) -> fmt::Result> fmt::Display for FDisplay<F> {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            (self.0)(f)
-        }
-    }
-    FDisplay(f)
-}
-
-fn is_option_type(ty: &SumType) -> bool {
-    if ty.variants.len() != 2 {
-        return false;
-    }
-
-    if ty.variants[0].name.clone().expect("Variants should have names!") != "some"
-        || ty.variants[1].name.clone().expect("Variants should have names!") != "none"
-    {
-        return false;
-    }
-
-    if let AlgebraicType::Product(none_type) = &ty.variants[1].algebraic_type {
-        none_type.elements.is_empty()
-    } else {
-        false
-    }
 }
 
 macro_rules! indent_scope {
@@ -613,7 +604,7 @@ fn autogen_csharp_product_table_common(
                         }
                     }
                     AlgebraicType::Sum(sum) => {
-                        if is_option_type(sum) {
+                        if sum.as_option().is_some() {
                             writeln!(output, "[SpacetimeDB.Some]").unwrap();
                         } else {
                             unimplemented!()
@@ -664,7 +655,7 @@ fn autogen_csharp_product_table_common(
                         output,
                         "private static Dictionary<{type_name}, {name}> {field_name}_Index = new Dictionary<{type_name}, {name}>(16{comparer});"
                     )
-                    .unwrap();
+                        .unwrap();
                 }
                 writeln!(output).unwrap();
                 // OnInsert method for updating indexes
@@ -726,7 +717,8 @@ fn autogen_csharp_product_table_common(
             // If this is a table, we want to include functions for accessing the table data
             if let Some(column_attrs) = column_attrs {
                 // Insert the funcs for accessing this struct
-                autogen_csharp_access_funcs_for_struct(&mut output, name, product_type, name, column_attrs);
+                let has_primary_key =
+                    autogen_csharp_access_funcs_for_struct(&mut output, name, product_type, name, column_attrs);
 
                 writeln!(output).unwrap();
 
@@ -735,7 +727,9 @@ fn autogen_csharp_product_table_common(
                     "public delegate void InsertEventHandler({name} insertedValue, {namespace}.ReducerEvent dbEvent);"
                 )
                 .unwrap();
-                writeln!(output, "public delegate void UpdateEventHandler({name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
+                if has_primary_key {
+                    writeln!(output, "public delegate void UpdateEventHandler({name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
+                }
                 writeln!(
                     output,
                     "public delegate void DeleteEventHandler({name} deletedValue, {namespace}.ReducerEvent dbEvent);"
@@ -743,7 +737,9 @@ fn autogen_csharp_product_table_common(
                 .unwrap();
                 writeln!(output, "public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, {name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);").unwrap();
                 writeln!(output, "public static event InsertEventHandler OnInsert;").unwrap();
-                writeln!(output, "public static event UpdateEventHandler OnUpdate;").unwrap();
+                if has_primary_key {
+                    writeln!(output, "public static event UpdateEventHandler OnUpdate;").unwrap();
+                }
                 writeln!(output, "public static event DeleteEventHandler OnBeforeDelete;").unwrap();
                 writeln!(output, "public static event DeleteEventHandler OnDelete;").unwrap();
 
@@ -768,22 +764,24 @@ fn autogen_csharp_product_table_common(
                 writeln!(output, "}}").unwrap();
                 writeln!(output).unwrap();
 
-                writeln!(
-                    output,
-                    "public static void OnUpdateEvent(object oldValue, object newValue, ClientApi.Event dbEvent)"
-                )
-                .unwrap();
-                writeln!(output, "{{").unwrap();
-                {
-                    indent_scope!(output);
+                if has_primary_key {
                     writeln!(
                         output,
-                        "OnUpdate?.Invoke(({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
+                        "public static void OnUpdateEvent(object oldValue, object newValue, ClientApi.Event dbEvent)"
                     )
                     .unwrap();
+                    writeln!(output, "{{").unwrap();
+                    {
+                        indent_scope!(output);
+                        writeln!(
+                            output,
+                            "OnUpdate?.Invoke(({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
+                        )
+                            .unwrap();
+                    }
+                    writeln!(output, "}}").unwrap();
+                    writeln!(output).unwrap();
                 }
-                writeln!(output, "}}").unwrap();
-                writeln!(output).unwrap();
 
                 writeln!(
                     output,
@@ -823,7 +821,7 @@ fn autogen_csharp_product_table_common(
                     output,
                     "public static void OnRowUpdateEvent(SpacetimeDBClient.TableOp op, object oldValue, object newValue, ClientApi.Event dbEvent)"
                 )
-                .unwrap();
+                    .unwrap();
                 writeln!(output, "{{").unwrap();
                 {
                     indent_scope!(output);
@@ -831,7 +829,7 @@ fn autogen_csharp_product_table_common(
                         output,
                         "OnRowUpdate?.Invoke(op, ({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                     )
-                    .unwrap();
+                        .unwrap();
                 }
                 writeln!(output, "}}").unwrap();
             }
@@ -885,7 +883,7 @@ fn autogen_csharp_product_value_to_struct(
                 0,
                 field_type,
                 format_args!("productValue.elements[{idx}]"),
-                namespace
+                namespace,
             )
         )
         .unwrap();
@@ -912,7 +910,7 @@ fn autogen_csharp_access_funcs_for_struct(
     product_type: &ProductType,
     table_name: &str,
     column_attrs: &[ColumnIndexAttribute],
-) {
+) -> bool {
     let (unique, nonunique) = column_attrs
         .iter()
         .copied()
@@ -958,12 +956,18 @@ fn autogen_csharp_access_funcs_for_struct(
         let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
 
         let (field_type, csharp_field_type) = match field_type {
-            AlgebraicType::Product(_) | AlgebraicType::Ref(_) => {
-                // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
-                continue;
+            AlgebraicType::Product(product) => {
+                if product.is_identity() {
+                    ("Identity".into(), "SpacetimeDB.Identity")
+                } else {
+                    // TODO: We don't allow filtering on tuples right now,
+                    //       it's possible we may consider it for the future.
+                    continue;
+                }
             }
-            AlgebraicType::Sum(_) => {
-                // TODO: We don't allow filtering on enums right now, its possible we may consider it for the future.
+            AlgebraicType::Ref(_) | AlgebraicType::Sum(_) => {
+                // TODO: We don't allow filtering on enums or tuples right now;
+                //       it's possible we may consider it for the future.
                 continue;
             }
             AlgebraicType::Builtin(b) => match maybe_primitive(b) {
@@ -1020,12 +1024,21 @@ fn autogen_csharp_access_funcs_for_struct(
                 {
                     indent_scope!(output);
                     writeln!(output, "var productValue = entry.Item1.AsProductValue();").unwrap();
-                    writeln!(
-                        output,
-                        "var compareValue = ({})productValue.elements[{}].As{}();",
-                        csharp_field_type, col_i, field_type
-                    )
-                    .unwrap();
+                    if field_type == "Identity" {
+                        writeln!(
+                            output,
+                            "var compareValue = Identity.From(productValue.elements[{}].AsProductValue().elements[0].AsBytes());",
+                            col_i
+                        )
+                        .unwrap();
+                    } else {
+                        writeln!(
+                            output,
+                            "var compareValue = ({})productValue.elements[{}].As{}();",
+                            csharp_field_type, col_i, field_type
+                        )
+                        .unwrap();
+                    }
                     if csharp_field_type == "byte[]" {
                         writeln!(
                             output,
@@ -1084,7 +1097,7 @@ fn autogen_csharp_access_funcs_for_struct(
             output,
             "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue v1, SpacetimeDB.SATS.AlgebraicValue v2)"
         )
-        .unwrap();
+            .unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
@@ -1104,6 +1117,37 @@ fn autogen_csharp_access_funcs_for_struct(
                 output,
                 "return SpacetimeDB.SATS.AlgebraicValue.Compare(t.product.elements[0].algebraicType, primaryColumnValue1, primaryColumnValue2);"
             )
+                .unwrap();
+        }
+        writeln!(output, "}}").unwrap();
+        writeln!(output).unwrap();
+
+        writeln!(
+            output,
+            "public static SpacetimeDB.SATS.AlgebraicValue GetPrimaryKeyValue(SpacetimeDB.SATS.AlgebraicValue v)"
+        )
+        .unwrap();
+        writeln!(output, "{{").unwrap();
+        {
+            indent_scope!(output);
+            writeln!(output, "return v.AsProductValue().elements[{}];", primary_col_index).unwrap();
+        }
+        writeln!(output, "}}").unwrap();
+        writeln!(output).unwrap();
+
+        writeln!(
+            output,
+            "public static SpacetimeDB.SATS.AlgebraicType GetPrimaryKeyType(SpacetimeDB.SATS.AlgebraicType t)"
+        )
+        .unwrap();
+        writeln!(output, "{{").unwrap();
+        {
+            indent_scope!(output);
+            writeln!(
+                output,
+                "return t.product.elements[{}].algebraicType;",
+                primary_col_index
+            )
             .unwrap();
         }
         writeln!(output, "}}").unwrap();
@@ -1112,7 +1156,7 @@ fn autogen_csharp_access_funcs_for_struct(
             output,
             "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue _v1, SpacetimeDB.SATS.AlgebraicValue _v2)"
         )
-        .unwrap();
+            .unwrap();
         writeln!(output, "{{").unwrap();
         {
             indent_scope!(output);
@@ -1120,6 +1164,8 @@ fn autogen_csharp_access_funcs_for_struct(
         }
         writeln!(output, "}}").unwrap();
     }
+
+    primary_col_idx.is_some()
 }
 
 // fn convert_enumdef(tuple: &SumType) -> impl fmt::Display + '_ {
@@ -1188,10 +1234,10 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
             match &arg.algebraic_type {
                 AlgebraicType::Sum(sum_type) => {
-                    if is_option_type(sum_type) {
-                        json_args.push_str(format!("new SomeWrapper({})", arg_name).as_str());
+                    if sum_type.as_option().is_some() {
+                        json_args.push_str(&format!("new SomeWrapper({})", arg_name));
                     } else {
-                        json_args.push_str(arg_name.as_str());
+                        json_args.push_str(&arg_name);
                     }
                 }
                 AlgebraicType::Product(_) => {
@@ -1401,7 +1447,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     output.into_inner()
 }
 
-pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String, String)> {
+pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(String, String)>> {
     let reducers: Vec<&ReducerDef> = items
         .iter()
         .map(|i| {
@@ -1551,5 +1597,29 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
         writeln!(output, "}}").unwrap();
     }
 
-    vec![("ReducerEvent.cs".into(), output.into_inner())]
+    let mut result = vec![vec![("ReducerEvent.cs".to_string(), output.into_inner())]];
+
+    let mut output = CodeIndenter::new(String::new());
+
+    writeln!(output, "using SpacetimeDB;").unwrap();
+
+    writeln!(output).unwrap();
+
+    if use_namespace {
+        writeln!(output, "namespace {}", namespace).unwrap();
+        writeln!(output, "{{").unwrap();
+        output.indent(1);
+    }
+
+    writeln!(output, "[ReducerClass]").unwrap();
+    writeln!(output, "public partial class Reducer {{ }}").unwrap();
+
+    if use_namespace {
+        output.dedent(1);
+        writeln!(output, "}}").unwrap();
+    }
+
+    result.push(vec![("Reducer.cs".into(), output.into_inner())]);
+
+    result
 }

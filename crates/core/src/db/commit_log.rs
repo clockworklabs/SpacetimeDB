@@ -58,6 +58,13 @@ impl CommitLog {
     }
 
     fn generate_commit<D: MutTxDatastore<RowId = RowId>>(&self, tx_data: &TxData, _datastore: &D) -> Option<Vec<u8>> {
+        // We are not creating a commit for empty transactions.
+        // The reason for this is that empty transactions get encoded as 0 bytes,
+        // so a commit containing an empty transaction contains no useful information.
+        if tx_data.records.is_empty() {
+            return None;
+        }
+
         let mut unwritten_commit = self.unwritten_commit.lock().unwrap();
         let writes = tx_data
             .records

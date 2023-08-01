@@ -136,8 +136,7 @@ impl<Args> std::fmt::Debug for CallbackId<Args> {
 // - `Credentials` -> `&Credentials`, for `on_connect`.
 // - `()` -> `()`, for `on_subscription_applied`.
 // - `(T, T, U)` -> `(&T, &T, U)`, for `TableWithPrimaryKey::on_update`.
-// - `(Identity, Status, R)` -> `(&Identity, Status, &R)`, for `Reducer::on_reducer`.
-//                           Note that `Status` is `Copy`.
+// - `(Identity, Status, R)` -> `(&Identity, &Status, &R)`, for `Reducer::on_reducer`.
 
 impl OwnedArgs for Credentials {
     type Borrowed<'a> = &'a Credentials;
@@ -182,9 +181,9 @@ impl<R> OwnedArgs for (Identity, Status, R)
 where
     R: Send + 'static,
 {
-    type Borrowed<'a> = (&'a Identity, Status, &'a R);
-    fn borrow(&self) -> (&Identity, Status, &R) {
-        (&self.0, self.1, &self.2)
+    type Borrowed<'a> = (&'a Identity, &'a Status, &'a R);
+    fn borrow(&self) -> (&Identity, &Status, &R) {
+        (&self.0, &self.1, &self.2)
     }
 }
 
@@ -450,8 +449,8 @@ fn uncurry_update_callback<Row, ReducerEvent>(
 ///
 /// This function is intended specifically for `Reducer::on_reducer` callbacks.
 fn uncurry_reducer_callback<R>(
-    mut f: impl for<'a> FnMut(&'a Identity, Status, &'a R) + Send + 'static,
-) -> impl for<'a> FnMut((&'a Identity, Status, &'a R)) + Send + 'static {
+    mut f: impl for<'a> FnMut(&'a Identity, &'a Status, &'a R) + Send + 'static,
+) -> impl for<'a> FnMut((&'a Identity, &'a Status, &'a R)) + Send + 'static {
     move |(identity, status, reducer)| f(identity, status, reducer)
 }
 
@@ -659,12 +658,14 @@ pub struct ReducerCallbacks {
 // which we must then compare against the enum variants.
 // This helper function does that comparison.
 
-fn parse_status(status: i32) -> Option<Status> {
+fn parse_status(status: i32, message: String) -> Option<Status> {
     if status == client_api_messages::event::Status::Committed as i32 {
+        debug_assert!(message.is_empty());
         Some(Status::Committed)
     } else if status == client_api_messages::event::Status::Failed as i32 {
-        Some(Status::Failed)
+        Some(Status::Failed(message))
     } else if status == client_api_messages::event::Status::OutOfEnergy as i32 {
+        debug_assert!(message.is_empty());
         Some(Status::OutOfEnergy)
     } else {
         None
@@ -707,13 +708,15 @@ impl ReducerCallbacks {
             caller_identity,
             function_call: Some(function_call),
             status,
+            message,
             ..
-        } = event else {
+        } = event
+        else {
             log::warn!("Received Event with function_call of None");
             return None;
         };
-        let identity = Identity { bytes: caller_identity };
-        let Some(status) = parse_status(status) else {
+        let identity = Identity::from_bytes(caller_identity);
+        let Some(status) = parse_status(status, message) else {
             log::warn!("Received Event with unknown status {:?}", status);
             return None;
         };
@@ -736,7 +739,7 @@ impl ReducerCallbacks {
     // TODO: reduce monomorphization by accepting `Box<Callback>` instead of `impl Callback`
     pub(crate) fn register_on_reducer<R: Reducer>(
         &mut self,
-        callback: impl FnMut(&Identity, Status, &R) + Send + 'static,
+        callback: impl FnMut(&Identity, &Status, &R) + Send + 'static,
     ) -> CallbackId<(Identity, Status, R)> {
         self.find_callbacks::<R>()
             .insert(Box::new(uncurry_reducer_callback(callback)))
@@ -750,7 +753,7 @@ impl ReducerCallbacks {
     // since [`CallbackMap::insert_oneshot`] boxes its wrapper callback.
     pub(crate) fn register_on_reducer_oneshot<R: Reducer>(
         &mut self,
-        callback: impl FnOnce(&Identity, Status, &R) + Send + 'static,
+        callback: impl FnOnce(&Identity, &Status, &R) + Send + 'static,
     ) -> CallbackId<(Identity, Status, R)> {
         self.find_callbacks::<R>()
             .insert_oneshot(move |(identity, status, args)| callback(identity, status, args))
@@ -852,7 +855,7 @@ impl CredentialStore {
         }
 
         let creds = Credentials {
-            identity: Identity { bytes: identity },
+            identity: Identity::from_bytes(identity),
             token: Token { string: token },
         };
 

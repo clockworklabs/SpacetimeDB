@@ -705,10 +705,20 @@ impl Inner {
 
         // Look up the table_name for the table in question.
         let table_id_col: ColId = ColId(0);
-        let rows = self
-            .iter_by_col_eq(&ST_TABLES_ID, &table_id_col, &AlgebraicValue::U32(table_id.0))?
-            .collect::<Vec<_>>();
+
+        // TODO(george): As part of the bootstrapping process, we add a bunch of rows
+        // and only at very end do we patch things up and create table metadata, indexes,
+        // and so on. Early parts of that process insert rows, and need the schema to do
+        // so. We can't just call iter_by_col_eq here as that would attempt to use the
+        // index which we haven't created yet. So instead we just manually Scan here.
+        let rows = IterByColEq::Scan(ScanIterByColEq {
+            value: &AlgebraicValue::U32(table_id.0),
+            col_id: table_id_col,
+            scan_iter: self.iter(&ST_TABLES_ID)?,
+        })
+        .collect::<Vec<_>>();
         assert!(rows.len() <= 1, "Expected at most one row in st_tables for table_id");
+
         let row = rows.first().ok_or_else(|| TableError::IdNotFound(table_id.0))?;
         let el = StTableRow::try_from(row.view())?;
         let table_name = el.table_name.to_owned();
@@ -1342,11 +1352,23 @@ impl Inner {
         col_id: &ColId,
         value: &'a AlgebraicValue,
     ) -> super::Result<IterByColEq> {
+        // We have to index_seek in both the committed state and the current tx state.
+        // First, we will check modifications in the current tx. It may be that the table
+        // has not been modified yet in the current tx, in which case we will only search
+        // the committed state. Finally, the table may not be indexed at all, in which case
+        // we fall back to iterating the entire table.
+
+        // We need to check the tx_state first. In particular, it may be that the index
+        // was only added in the current transaction.
+        // TODO(george): It's unclear that we truly support dynamically creating an index
+        // yet. In particular, I don't know if creating an index in a transaction and
+        // rolling it back will leave the index in place.
         if let Some(inserted_rows) = self
             .tx_state
             .as_ref()
             .and_then(|tx_state| tx_state.index_seek(table_id, col_id, value))
         {
+            // The current transaction has modified this table, and the table is indexed.
             let tx_state = self.tx_state.as_ref().unwrap();
             Ok(IterByColEq::Index(IndexIterByColEq {
                 value,
@@ -1360,11 +1382,21 @@ impl Inner {
                 },
             }))
         } else {
-            Ok(IterByColEq::Scan(ScanIterByColEq {
-                value,
-                col_id: *col_id,
-                scan_iter: self.iter(table_id)?,
-            }))
+            // Either the current transaction has not modified this table, or the table is not
+            // indexed.
+            match self.committed_state.index_seek(table_id, col_id, value) {
+                Some(committed_rows) => Ok(IterByColEq::CommittedIndex(CommittedIndexIterByColEq {
+                    table_id: *table_id,
+                    tx_state: self.tx_state.as_ref().unwrap(),
+                    committed_state: &self.committed_state,
+                    committed_rows,
+                })),
+                None => Ok(IterByColEq::Scan(ScanIterByColEq {
+                    value,
+                    col_id: *col_id,
+                    scan_iter: self.iter(table_id)?,
+                })),
+            }
         }
     }
 
@@ -1591,9 +1623,19 @@ impl Iterator for Iter<'_> {
     }
 }
 
+/// An iterator returned from `iter_by_col_eq`. This yields up all
+/// rows in a table which have a column with a particular value.
 pub enum IterByColEq<'a> {
+    /// When the column in question does not have an index.
     Scan(ScanIterByColEq<'a>),
+
+    /// When the column has an index, and the table
+    /// has been modified this transaction.
     Index(IndexIterByColEq<'a>),
+
+    /// When the column has an index, and the table
+    /// has not been modified in this transaction.
+    CommittedIndex(CommittedIndexIterByColEq<'a>),
 }
 
 impl Iterator for IterByColEq<'_> {
@@ -1603,6 +1645,7 @@ impl Iterator for IterByColEq<'_> {
         match self {
             IterByColEq::Scan(seek) => seek.next(),
             IterByColEq::Index(seek) => seek.next(),
+            IterByColEq::CommittedIndex(seek) => seek.next(),
         }
     }
 }
@@ -1674,19 +1717,42 @@ impl Iterator for IndexSeekIterInner<'_> {
                     .map_or(false, |table| table.contains(row_id))
             })
         }) {
-            return Some(DataRef::new(
-                self.committed_state
-                    .tables
-                    .get(&self.table_id)
-                    .unwrap()
-                    .get_row(&row_id)
-                    .unwrap()
-                    .clone(),
-            ));
+            return Some(get_committed_row(self.committed_state, &self.table_id, &row_id));
         }
 
         None
     }
+}
+
+pub struct CommittedIndexIterByColEq<'a> {
+    table_id: TableId,
+    tx_state: &'a TxState,
+    committed_state: &'a CommittedState,
+    committed_rows: BTreeIndexRangeIter<'a>,
+}
+
+impl Iterator for CommittedIndexIterByColEq<'_> {
+    type Item = DataRef;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(row_id) = self.committed_rows.find(|row_id| {
+            !self
+                .tx_state
+                .delete_tables
+                .get(&self.table_id)
+                .map_or(false, |table| table.contains(row_id))
+        }) {
+            return Some(get_committed_row(self.committed_state, &self.table_id, &row_id));
+        }
+
+        None
+    }
+}
+
+/// Retrieve a commited row. Panics if `table_id` and `row_id` do not identify an actually
+/// present row.
+fn get_committed_row(state: &CommittedState, table_id: &TableId, row_id: &RowId) -> DataRef {
+    DataRef::new(state.tables.get(table_id).unwrap().get_row(row_id).unwrap().clone())
 }
 
 pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
@@ -2028,7 +2094,7 @@ mod tests {
 
                 StColumnRow { table_id: 1, col_id: 0, col_name: "table_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
                 StColumnRow { table_id: 1, col_id: 1, col_name: "col_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
-                StColumnRow { table_id: 1, col_id: 2, col_name: "col_type".to_string(), col_type: AlgebraicType::make_array_type(AlgebraicType::U8), is_autoinc: false },
+                StColumnRow { table_id: 1, col_id: 2, col_name: "col_type".to_string(), col_type: AlgebraicType::array(AlgebraicType::U8), is_autoinc: false },
                 StColumnRow { table_id: 1, col_id: 3, col_name: "col_name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
                 StColumnRow { table_id: 1, col_id: 4, col_name: "is_autoinc".to_string(), col_type: AlgebraicType::Bool, is_autoinc: false },
 

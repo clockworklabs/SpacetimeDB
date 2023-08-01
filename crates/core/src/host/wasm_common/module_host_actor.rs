@@ -14,7 +14,7 @@ use tokio::sync::oneshot;
 
 use crate::client::ClientConnectionSender;
 use crate::database_instance_context::DatabaseInstanceContext;
-use crate::database_logger::{DatabaseLogger, Record};
+use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::hash::Hash;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
@@ -407,6 +407,14 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
         })
     }
 
+    fn inject_logs(&self, respond_to: oneshot::Sender<()>, log_level: LogLevel, message: String) {
+        self.instances.send(InstanceMessage::InjectLogs {
+            respond_to,
+            log_level,
+            message,
+        })
+    }
+
     fn close(self) {
         self.instances.seed().scheduler.close();
         self.instances.join()
@@ -483,6 +491,23 @@ impl<T: WasmInstance> JobRunner for WasmInstanceActor<T> {
             }
             InstanceMessage::UpdateDatabase { respond_to } => {
                 let _ = respond_to.send(self.update_database());
+            }
+            InstanceMessage::InjectLogs {
+                respond_to,
+                log_level,
+                message,
+            } => {
+                self.instance.instance_env().console_log(
+                    log_level,
+                    &Record {
+                        target: None,
+                        filename: Some("external"),
+                        line_number: None,
+                        message: &message,
+                    },
+                    &(),
+                );
+                let _ = respond_to.send(());
             }
         }
         if self.trapped {
@@ -728,14 +753,14 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
                 arg_bytes,
             } => self
                 .instance
-                .call_reducer(id, budget, &sender.data, timestamp, arg_bytes),
+                .call_reducer(id, budget, sender.as_bytes(), timestamp, arg_bytes),
             InstanceOp::ConnDisconn {
                 conn,
                 sender,
                 timestamp,
             } => self
                 .instance
-                .call_connect_disconnect(conn, budget, &sender.data, timestamp),
+                .call_connect_disconnect(conn, budget, sender.as_bytes(), timestamp),
         });
 
         let ExecuteResult {
@@ -843,7 +868,9 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
         for (col_id, col) in columns.iter().enumerate() {
             let mut index_for_column = None;
             for index in table.indexes.iter() {
-                let [index_col_id] = *index.col_ids else { anyhow::bail!("multi-column indexes not yet supported") };
+                let [index_col_id] = *index.col_ids else {
+                    anyhow::bail!("multi-column indexes not yet supported")
+                };
                 if index_col_id as usize != col_id {
                     continue;
                 }
@@ -929,5 +956,10 @@ enum InstanceMessage {
     },
     UpdateDatabase {
         respond_to: oneshot::Sender<Result<UpdateDatabaseResult, anyhow::Error>>,
+    },
+    InjectLogs {
+        respond_to: oneshot::Sender<()>,
+        log_level: LogLevel,
+        message: String,
     },
 }

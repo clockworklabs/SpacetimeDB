@@ -2,6 +2,7 @@ use std::future::Future;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Arc;
 
 use spacetimedb::address::Address;
 use spacetimedb::client::{ClientActorId, ClientConnection, Protocol};
@@ -10,6 +11,7 @@ use spacetimedb::hash::hash_bytes;
 
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb_client_api::{ControlCtx, ControlStateDelegate, WorkerCtx};
+use spacetimedb_standalone::StandaloneEnv;
 use tokio::runtime::{Builder, Runtime};
 
 fn start_runtime() -> Runtime {
@@ -95,6 +97,8 @@ pub fn compile(path: &str) {
 
 #[derive(Clone)]
 pub struct ModuleHandle {
+    // Needs to hold a reference to the standalone env.
+    _env: Arc<StandaloneEnv>,
     pub client: ClientConnection,
     pub db_address: Address,
 }
@@ -121,7 +125,7 @@ impl ModuleHandle {
 
 pub async fn load_module(name: &str) -> ModuleHandle {
     crate::set_key_env_vars();
-    let env = &spacetimedb_standalone::StandaloneEnv::init().await.unwrap();
+    let env = spacetimedb_standalone::StandaloneEnv::init().await.unwrap();
     let identity = env.control_db().alloc_spacetime_identity().await.unwrap();
     let address = env.control_db().alloc_spacetime_address().await.unwrap();
     let program_bytes = read_module(name);
@@ -150,6 +154,7 @@ pub async fn load_module(name: &str) -> ModuleHandle {
     // the runtime on which a module was created and then we could add impl
     // for stuff like "get logs" or "get message log"
     ModuleHandle {
+        _env: env,
         client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module),
         db_address: address,
     }

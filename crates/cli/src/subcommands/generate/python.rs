@@ -1,3 +1,5 @@
+use super::util::fmt_fn;
+
 use convert_case::{Case, Casing};
 use spacetimedb_lib::{
     sats::{AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType},
@@ -64,21 +66,21 @@ fn convert_type<'a>(
     ref_prefix: &'a str,
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Product(_) => unreachable!(),
-        AlgebraicType::Sum(sum_type) if is_option_type(sum_type) => {
-            write!(
+        AlgebraicType::Product(product) => {
+            if product.is_identity() {
+                write!(f, "Identity.from_string({value}[0])")
+            } else {
+                unimplemented!()
+            }
+        }
+        AlgebraicType::Sum(sum_type) => match sum_type.as_option() {
+            Some(inner_ty) => write!(
                 f,
                 "{} if '0' in {value} else None",
-                convert_type(
-                    ctx,
-                    vecnest,
-                    &sum_type.variants[0].algebraic_type,
-                    format!("{value}['0']"),
-                    ref_prefix
-                )
-            )
-        }
-        AlgebraicType::Sum(_sum_type) => unimplemented!(),
+                convert_type(ctx, vecnest, inner_ty, format!("{value}['0']"), ref_prefix),
+            ),
+            None => unimplemented!(),
+        },
         AlgebraicType::Builtin(b) => fmt::Display::fmt(&convert_builtintype(ctx, vecnest, b, &value, ref_prefix), f),
         AlgebraicType::Ref(r) => {
             let name = python_typename(ctx, *r);
@@ -104,7 +106,14 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix: &'a str) -> im
         AlgebraicType::Sum(_sum_type) => {
             unimplemented!()
         }
-        AlgebraicType::Product(_) => unimplemented!(),
+        AlgebraicType::Product(prod) => {
+            // The only type that is allowed here is the identity type. All other types should fail.
+            if prod.is_identity() {
+                write!(f, "Identity")
+            } else {
+                unimplemented!()
+            }
+        }
         AlgebraicType::Builtin(b) => match maybe_primitive(b) {
             MaybePrimitive::Primitive(p) => f.write_str(p),
             MaybePrimitive::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => f.write_str("bytes"),
@@ -137,34 +146,6 @@ fn python_filename(ctx: &GenCtx, typeref: AlgebraicTypeRef) -> String {
         .to_case(Case::Snake)
 }
 
-fn fmt_fn(f: impl Fn(&mut fmt::Formatter) -> fmt::Result) -> impl fmt::Display {
-    struct FDisplay<F>(F);
-    impl<F: Fn(&mut fmt::Formatter) -> fmt::Result> fmt::Display for FDisplay<F> {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            (self.0)(f)
-        }
-    }
-    FDisplay(f)
-}
-
-fn is_option_type(ty: &SumType) -> bool {
-    if ty.variants.len() != 2 {
-        return false;
-    }
-
-    if ty.variants[0].name.clone().expect("Variants should have names!") != "some"
-        || ty.variants[1].name.clone().expect("Variants should have names!") != "none"
-    {
-        return false;
-    }
-
-    if let AlgebraicType::Product(none_type) = &ty.variants[1].algebraic_type {
-        none_type.elements.is_empty()
-    } else {
-        false
-    }
-}
-
 pub fn autogen_python_table(ctx: &GenCtx, table: &TableDef) -> String {
     let tuple = ctx.typespace[table.data].as_product().unwrap();
     autogen_python_product_table_common(ctx, &table.name, tuple, Some(&table.column_attrs))
@@ -184,10 +165,12 @@ fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>
                 _generate_imports(ctx, &map_type.key_ty, imports);
                 _generate_imports(ctx, &map_type.ty, imports);
             }
-            _ => (),
+            _ => {}
         },
-        AlgebraicType::Sum(sum_type) if is_option_type(sum_type) => {
-            _generate_imports(ctx, &sum_type.variants[0].algebraic_type, imports);
+        AlgebraicType::Sum(sum_type) => {
+            if let Some(inner_ty) = sum_type.as_option() {
+                _generate_imports(ctx, inner_ty, imports)
+            }
         }
         AlgebraicType::Ref(r) => {
             let class_name = python_typename(ctx, *r).to_string();
@@ -196,7 +179,7 @@ fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>
             let import = format!("from .{filename} import {class_name}");
             imports.push(import);
         }
-        _ => (),
+        _ => {}
     }
 }
 
@@ -224,9 +207,10 @@ fn autogen_python_product_table_common(
         writeln!(output).unwrap();
         writeln!(
             output,
-            "from spacetimedb_sdk.spacetimedb_client import SpacetimeDBClient"
+            "from spacetimedb_sdk.spacetimedb_client import SpacetimeDBClient, Identity"
         )
         .unwrap();
+        writeln!(output, "from spacetimedb_sdk.spacetimedb_client import ReducerEvent").unwrap();
     } else {
         writeln!(output, "from typing import List").unwrap();
     }
@@ -274,7 +258,7 @@ fn autogen_python_product_table_common(
             writeln!(output, "@classmethod").unwrap();
             writeln!(
                 output,
-                "def register_row_update(cls, callback: Callable[[str,{name},{name}], None]):"
+                "def register_row_update(cls, callback: Callable[[str,{name},{name},ReducerEvent], None]):"
             )
             .unwrap();
             {
@@ -304,20 +288,21 @@ fn autogen_python_product_table_common(
                 let field_type = &field.algebraic_type;
 
                 match field_type {
-                    AlgebraicType::Product(_) | AlgebraicType::Ref(_) => {
-                        // TODO: We don't allow filtering on tuples right now, its possible we may consider it for the future.
-                        continue;
-                    }
-                    AlgebraicType::Sum(ty) => {
-                        if !is_option_type(ty) {
-                            // TODO: We don't allow filtering on enums right now, its possible we may consider it for the future.
+                    AlgebraicType::Product(product) => {
+                        if !product.is_identity() {
                             continue;
                         }
                     }
+                    AlgebraicType::Ref(_) | AlgebraicType::Sum(_) => {
+                        // TODO: We don't allow filtering on enums or tuples right now, its possible we may consider it for the future.
+                        continue;
+                    }
                     AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-                        MaybePrimitive::Array(ArrayType { elem_ty }) if **elem_ty != AlgebraicType::U8 => {
-                            // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
-                            continue;
+                        MaybePrimitive::Array(ArrayType { elem_ty }) => {
+                            if elem_ty.as_builtin().is_none() {
+                                // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
+                                continue;
+                            }
                         }
                         MaybePrimitive::Map(_) => {
                             // TODO: It would be nice to be able to say, give me all entries where this vec contains this value, which we can do.
@@ -388,7 +373,7 @@ fn autogen_python_product_table_common(
 
                 let python_field_name = field_name.to_string().replace("r#", "");
                 match &field.algebraic_type {
-                    AlgebraicType::Sum(sum_type) if is_option_type(sum_type) => {
+                    AlgebraicType::Sum(sum_type) if sum_type.as_option().is_some() => {
                         reducer_args.push(format!("{{'0': [self.{}]}}", python_field_name))
                     }
                     AlgebraicType::Sum(_) => unimplemented!(),
@@ -500,21 +485,21 @@ pub fn encode_type<'a>(
     ref_prefix: &'a str,
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Product(_) => unreachable!(),
-        AlgebraicType::Sum(sum_type) if is_option_type(sum_type) => {
-            write!(
+        AlgebraicType::Product(product) => {
+            if product.is_identity() {
+                write!(f, "Identity.from_string({value})")
+            } else {
+                unimplemented!()
+            }
+        }
+        AlgebraicType::Sum(sum_type) => match sum_type.as_option() {
+            Some(inner_ty) => write!(
                 f,
                 "{{'0': {}}} if value is not None else {{}}",
-                encode_type(
-                    ctx,
-                    vecnest,
-                    &sum_type.variants[0].algebraic_type,
-                    format!("{value}"),
-                    ref_prefix
-                )
-            )
-        }
-        AlgebraicType::Sum(_sum_type) => unimplemented!(),
+                encode_type(ctx, vecnest, inner_ty, format!("{value}"), ref_prefix),
+            ),
+            None => unimplemented!(),
+        },
         AlgebraicType::Builtin(b) => fmt::Display::fmt(&encode_builtintype(ctx, vecnest, b, &value, ref_prefix), f),
         AlgebraicType::Ref(r) => {
             let algebraic_type = &ctx.typespace.types[r.idx()];
@@ -548,6 +533,8 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
         "from spacetimedb_sdk.spacetimedb_client import SpacetimeDBClient"
     )
     .unwrap();
+    writeln!(output, "from spacetimedb_sdk.spacetimedb_client import Identity").unwrap();
+
     writeln!(output).unwrap();
 
     let mut imports = Vec::new();
@@ -622,22 +609,12 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 
     writeln!(
         output,
-        "def register_on_{}(callback: Callable[[bytes, str, str{}], None]):",
+        "def register_on_{}(callback: Callable[[Identity, str, str{}], None]):",
         reducer.name, callback_sig_str
     )
     .unwrap();
     {
         indent_scope!(output);
-        writeln!(output, "if not _check_callback_signature(callback):").unwrap();
-        {
-            indent_scope!(output);
-            writeln!(
-                output,
-                "raise ValueError(\"Callback signature does not match expected arguments\")"
-            )
-            .unwrap();
-        }
-        writeln!(output).unwrap();
 
         writeln!(
             output,
@@ -663,20 +640,10 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 
         writeln!(output, "return [{}]", decode_strs.join(", ")).unwrap();
     }
-    writeln!(output).unwrap();
-
-    writeln!(output, "def _check_callback_signature(callback: Callable) -> bool:").unwrap();
-    {
-        indent_scope!(output);
-        writeln!(output, "expected_arguments = [bytes, str, str{}]", callback_sig_str).unwrap();
-        writeln!(output, "callback_arguments = callback.__annotations__.values()").unwrap();
-        writeln!(output).unwrap();
-        writeln!(output, "return list(callback_arguments) == expected_arguments").unwrap();
-    }
 
     output.into_inner()
 }
 
-pub fn autogen_python_globals(_ctx: &GenCtx, _items: &[GenItem]) -> Vec<(String, String)> {
+pub fn autogen_python_globals(_ctx: &GenCtx, _items: &[GenItem]) -> Vec<Vec<(String, String)>> {
     vec![] //TODO
 }

@@ -307,6 +307,7 @@ fn compile<P: ProgramVm>(p: &mut P, node: ExprOpt) -> Result<Code, ErrorVm> {
 /// Third pass:
 ///
 /// Execute the code
+#[tracing::instrument(skip_all)]
 pub fn eval<P: ProgramVm>(p: &mut P, code: Code) -> Code {
     match code {
         Code::Value(_) => code.clone(),
@@ -461,12 +462,14 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
 }
 
 /// Optimize & compile the [Expr] for late execution
+#[tracing::instrument(skip_all)]
 pub fn build_ast<P: ProgramVm>(p: &mut P, ast: Expr) -> Result<Code, ErrorVm> {
     let ast = optimize(p, ast)?;
     compile(p, ast)
 }
 
 /// Optimize, compile & run the [Expr]
+#[tracing::instrument(skip_all)]
 pub fn run_ast<P: ProgramVm>(p: &mut P, ast: Expr) -> Code {
     match build_ast(p, ast) {
         Ok(code) => eval(p, code),
@@ -477,14 +480,14 @@ pub fn run_ast<P: ProgramVm>(p: &mut P, ast: Expr) -> Code {
 // Used internally for testing recursion
 #[doc(hidden)]
 pub fn fibo(input: u64) -> Expr {
-    let kind = AlgebraicType::Builtin(BuiltinType::U64);
+    let ty = AlgebraicType::U64;
 
     let less = |val: u64| bin_op(OpMath::Minus, var("n"), scalar(val));
 
     let f = Function::new(
         "fib",
-        &[Param::new("n", kind.clone())],
-        kind,
+        &[Param::new("n", ty.clone())],
+        ty,
         &[if_(
             bin_op(OpCmp::Lt, var("n"), scalar(2u64)),
             var("n"),
@@ -676,11 +679,11 @@ mod tests {
     #[test]
     fn test_fun() {
         let p = &mut Program::new(AuthCtx::for_testing());
-        let kind = AlgebraicType::Builtin(BuiltinType::U64);
+        let ty = AlgebraicType::U64;
         let f = Function::new(
             "sum",
-            &[Param::new("a", kind.clone()), Param::new("b", kind.clone())],
-            kind,
+            &[Param::new("a", ty.clone()), Param::new("b", ty.clone())],
+            ty,
             &[bin_op(OpMath::Add, var("a"), var("b"))],
         );
 

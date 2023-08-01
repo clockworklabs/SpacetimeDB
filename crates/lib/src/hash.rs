@@ -1,9 +1,6 @@
-use crate::{de, ser};
 use core::fmt;
-
 use sha3::{Digest, Keccak256};
-use spacetimedb_sats::typespace::SpacetimeType;
-use spacetimedb_sats::AlgebraicType;
+use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 
 pub const HASH_SIZE: usize = 32;
 
@@ -12,24 +9,9 @@ pub struct Hash {
     pub data: [u8; HASH_SIZE],
 }
 
-impl SpacetimeType for Hash {
-    fn make_type<S: spacetimedb_sats::typespace::TypespaceBuilder>(_ts: &mut S) -> AlgebraicType {
-        AlgebraicType::bytes()
-    }
-}
-
-impl ser::Serialize for Hash {
-    fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.data.serialize(serializer)
-    }
-}
-impl<'de> de::Deserialize<'de> for Hash {
-    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(Self {
-            data: <_>::deserialize(deserializer)?,
-        })
-    }
-}
+impl_st!([] Hash, _ts => AlgebraicType::bytes());
+impl_serialize!([] Hash, (self, ser) => self.data.serialize(ser));
+impl_deserialize!([] Hash, de => Ok(Self { data: <_>::deserialize(de)? }));
 
 impl Hash {
     const ABBREVIATION_LEN: usize = 16;
@@ -94,19 +76,13 @@ impl hex::FromHex for Hash {
 
 #[cfg(feature = "serde")]
 impl serde::Serialize for Hash {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        ser::serde::serialize_to(self, serializer)
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        spacetimedb_sats::ser::serde::serialize_to(self, serializer)
     }
 }
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for Hash {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        de::serde::deserialize_from(deserializer)
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        spacetimedb_sats::de::serde::deserialize_from(deserializer)
     }
 }

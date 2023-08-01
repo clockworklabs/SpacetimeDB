@@ -18,7 +18,7 @@ use spacetimedb_lib::name;
 use spacetimedb_lib::name::DomainName;
 use spacetimedb_lib::name::DomainParsingError;
 use spacetimedb_lib::name::PublishOp;
-use spacetimedb_lib::sats::TypeInSpace;
+use spacetimedb_lib::sats::WithTypespace;
 
 use crate::auth::{
     SpacetimeAuth, SpacetimeAuthHeader, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros, SpacetimeIdentity,
@@ -29,7 +29,7 @@ use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::DescribedEntityType;
 use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
-use spacetimedb::messages::control_db::{DatabaseInstance, HostType};
+use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType};
 
 use crate::util::{ByteStringBody, NameOrAddress};
 use crate::{log_and_500, ControlCtx, ControlNodeDelegate, WorkerCtx};
@@ -69,14 +69,10 @@ pub async fn call(
     let args = ReducerArgs::Json(body);
 
     let address = name_or_address.resolve(&*worker_ctx).await?;
-    let database = worker_ctx
-        .get_database_by_address(&address)
-        .await
-        .map_err(log_and_500)?
-        .ok_or_else(|| {
-            log::error!("Could not find database: {}", address.to_hex());
-            (StatusCode::NOT_FOUND, "No such database.")
-        })?;
+    let database = worker_ctx_find_database(&*worker_ctx, &address).await?.ok_or_else(|| {
+        log::error!("Could not find database: {}", address.to_hex());
+        (StatusCode::NOT_FOUND, "No such database.")
+    })?;
     let identity = database.identity;
     let database_instance = worker_ctx
         .get_leader_database_instance_by_database(database.id)
@@ -189,14 +185,10 @@ async fn extract_db_call_info(
 ) -> Result<DatabaseInformation, ErrorResponse> {
     let auth = auth.get_or_create(ctx).await?;
 
-    let database = ctx
-        .get_database_by_address(address)
-        .await
-        .map_err(log_and_500)?
-        .ok_or_else(|| {
-            log::error!("Could not find database: {}", address.to_hex());
-            (StatusCode::NOT_FOUND, "No such database.")
-        })?;
+    let database = worker_ctx_find_database(ctx, address).await?.ok_or_else(|| {
+        log::error!("Could not find database: {}", address.to_hex());
+        (StatusCode::NOT_FOUND, "No such database.")
+    })?;
 
     let database_instance = ctx.get_leader_database_instance_by_database(database.id).await.ok_or((
         StatusCode::NOT_FOUND,
@@ -209,7 +201,7 @@ async fn extract_db_call_info(
     })
 }
 
-fn entity_description_json(description: TypeInSpace<EntityDef>, expand: bool) -> Option<Value> {
+fn entity_description_json(description: WithTypespace<EntityDef>, expand: bool) -> Option<Value> {
     let typ = DescribedEntityType::from_entitydef(description.ty()).as_str();
     let len = match description.ty() {
         EntityDef::Table(t) => description.resolve(t.data).ty().as_product()?.elements.len(),
@@ -262,10 +254,8 @@ pub async fn describe(
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
     let address = name_or_address.resolve(&*worker_ctx).await?;
-    let database = worker_ctx
-        .get_database_by_address(&address)
-        .await
-        .map_err(log_and_500)?
+    let database = worker_ctx_find_database(&*worker_ctx, &address)
+        .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
     let call_info = extract_db_call_info(&*worker_ctx, auth, &address).await?;
@@ -318,10 +308,8 @@ pub async fn catalog(
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
     let address = name_or_address.resolve(&*worker_ctx).await?;
-    let database = worker_ctx
-        .get_database_by_address(&address)
-        .await
-        .map_err(log_and_500)?
+    let database = worker_ctx_find_database(&*worker_ctx, &address)
+        .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
     let call_info = extract_db_call_info(&*worker_ctx, auth, &address).await?;
@@ -366,10 +354,8 @@ pub async fn info(
     Path(InfoParams { name_or_address }): Path<InfoParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let address = name_or_address.resolve(&*worker_ctx).await?;
-    let database = worker_ctx
-        .get_database_by_address(&address)
-        .await
-        .map_err(log_and_500)?
+    let database = worker_ctx_find_database(&*worker_ctx, &address)
+        .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
     let host_type = match database.host_type {
@@ -377,7 +363,7 @@ pub async fn info(
     };
     let response_json = json!({
         "address": database.address.to_hex(),
-        "identity": database.identity,
+        "identity": database.identity.to_hex(),
         "host_type": host_type,
         "num_replicas": database.num_replicas,
         "program_bytes_address": database.program_bytes_address,
@@ -397,6 +383,11 @@ pub struct LogsQuery {
     follow: bool,
 }
 
+fn auth_or_unauth(auth: SpacetimeAuthHeader) -> axum::response::Result<SpacetimeAuth> {
+    auth.get()
+        .ok_or((StatusCode::UNAUTHORIZED, "Invalid credentials").into())
+}
+
 pub async fn logs(
     State(worker_ctx): State<Arc<dyn WorkerCtx>>,
     Path(LogsParams { name_or_address }): Path<LogsParams>,
@@ -404,14 +395,16 @@ pub async fn logs(
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
     // You should not be able to read the logs from a database that you do not own
-    // so, unless you are the owner, this will fail, hence using get() and not get_or_create
-    let auth = auth.get().ok_or((StatusCode::UNAUTHORIZED, "Invalid credentials."))?;
+    // so, unless you are the owner, this will fail.
+    // TODO: This returns `UNAUTHORIZED` on failure,
+    //       while everywhere else we return `BAD_REQUEST`.
+    //       Is this special in some way? Should this change?
+    //       Should all the others change?
+    let auth = auth_or_unauth(auth)?;
 
     let address = name_or_address.resolve(&*worker_ctx).await?;
-    let database = worker_ctx
-        .get_database_by_address(&address)
-        .await
-        .map_err(log_and_500)?
+    let database = worker_ctx_find_database(&*worker_ctx, &address)
+        .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
     if database.identity != auth.identity {
@@ -483,6 +476,13 @@ fn mime_ndjson() -> mime::Mime {
     "application/x-ndjson".parse().unwrap()
 }
 
+async fn worker_ctx_find_database(
+    worker_ctx: &dyn WorkerCtx,
+    address: &Address,
+) -> Result<Option<Database>, StatusCode> {
+    worker_ctx.get_database_by_address(address).await.map_err(log_and_500)
+}
+
 #[derive(Deserialize)]
 pub struct SqlParams {
     name_or_address: NameOrAddress,
@@ -503,10 +503,8 @@ pub async fn sql(
     let auth = auth.get_or_create(&*worker_ctx).await?;
 
     let address = name_or_address.resolve(&*worker_ctx).await?;
-    let database = worker_ctx
-        .get_database_by_address(&address)
-        .await
-        .map_err(log_and_500)?
+    let database = worker_ctx_find_database(&*worker_ctx, &address)
+        .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
     let auth = AuthCtx::new(database.identity, auth.identity);
@@ -613,6 +611,11 @@ pub struct RegisterTldParams {
     tld: String,
 }
 
+fn auth_or_bad_request(auth: SpacetimeAuthHeader) -> axum::response::Result<SpacetimeAuth> {
+    auth.get()
+        .ok_or((StatusCode::BAD_REQUEST, "Invalid credentials.").into())
+}
+
 pub async fn register_tld(
     State(ctx): State<Arc<dyn ControlCtx>>,
     Query(RegisterTldParams { tld }): Query<RegisterTldParams>,
@@ -620,7 +623,7 @@ pub async fn register_tld(
 ) -> axum::response::Result<impl IntoResponse> {
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail, hence not using get_or_create
-    let auth = auth.get().ok_or((StatusCode::BAD_REQUEST, "Invalid credentials."))?;
+    let auth = auth_or_bad_request(auth)?;
 
     let tld = tld.parse::<DomainName>().map_err(DomainParsingRejection)?.into_tld();
     let result = ctx
@@ -739,6 +742,13 @@ pub async fn confirm_recovery_code(
     Ok(axum::Json(result))
 }
 
+async fn control_ctx_find_database(ctx: &dyn ControlCtx, address: &Address) -> Result<Option<Database>, StatusCode> {
+    ctx.control_db()
+        .get_database_by_address(address)
+        .await
+        .map_err(log_and_500)
+}
+
 #[derive(Deserialize)]
 pub struct PublishDatabaseParams {}
 
@@ -779,8 +789,8 @@ pub async fn publish(
     } = query_params;
 
     // You should not be able to publish to a database that you do not own
-    // so, unless you are the owner, this will fail, hence not using get_or_create
-    let auth = auth.get().ok_or((StatusCode::BAD_REQUEST, "Invalid credentials."))?;
+    // so, unless you are the owner, this will fail.
+    let auth = auth_or_bad_request(auth)?;
 
     let specified_address = matches!(name_or_address, Some(NameOrAddress::Address(_)));
 
@@ -831,14 +841,9 @@ pub async fn publish(
 
     let trace_log = should_trace(trace_log);
 
-    let op = match ctx
-        .control_db()
-        .get_database_by_address(&db_address)
-        .await
-        .map_err(log_and_500)?
-    {
+    let op = match control_ctx_find_database(&*ctx, &db_address).await? {
         Some(db) => {
-            if Identity::from_slice(db.identity.as_slice()) != auth.identity {
+            if db.identity != auth.identity {
                 return Err((StatusCode::BAD_REQUEST, "Identity does not own this database.").into());
             }
 
@@ -929,12 +934,23 @@ pub struct DeleteDatabaseParams {
 pub async fn delete_database(
     State(ctx): State<Arc<dyn ControlCtx>>,
     Path(DeleteDatabaseParams { address }): Path<DeleteDatabaseParams>,
+    auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
-    // TODO(cloutiertyler): Validate that the creator has credentials for the identity of this database
+    let auth = auth_or_bad_request(auth)?;
 
-    ctx.delete_database(&address).await.map_err(log_and_500)?;
-
-    Ok(())
+    match control_ctx_find_database(&*ctx, &address).await? {
+        Some(db) => {
+            if db.identity != auth.identity {
+                Err((StatusCode::BAD_REQUEST, "Identity does not own this database.").into())
+            } else {
+                ctx.delete_database(&address)
+                    .await
+                    .map_err(log_and_500)
+                    .map_err(Into::into)
+            }
+        }
+        None => Ok(()),
+    }
 }
 
 #[derive(Deserialize)]
@@ -954,7 +970,7 @@ pub async fn set_name(
     }): Query<SetNameQueryParams>,
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
-    let auth = auth.get().ok_or((StatusCode::BAD_REQUEST, "Invalid credentials."))?;
+    let auth = auth_or_bad_request(auth)?;
 
     let database = ctx
         .control_db()

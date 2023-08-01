@@ -5,10 +5,10 @@ use anyhow::Result;
 use spacetimedb_sats::{de::DeserializeOwned, ser::Serialize};
 use std::any::Any;
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Status {
     Committed,
-    Failed,
+    Failed(String),
     OutOfEnergy,
 }
 
@@ -39,7 +39,7 @@ pub trait Reducer: DeserializeOwned + Serialize + Any + Send + Sync + Clone {
     //
     /// The returned `ReducerCallbackId` can be passed to `remove_on_reducer` to
     /// unregister the callback.
-    fn on_reducer(callback: impl FnMut(&Identity, Status, &Self) + Send + 'static) -> ReducerCallbackId<Self> {
+    fn on_reducer(callback: impl FnMut(&Identity, &Status, &Self) + Send + 'static) -> ReducerCallbackId<Self> {
         let id = with_reducer_callbacks(|callbacks| callbacks.register_on_reducer::<Self>(callback));
         ReducerCallbackId { id }
     }
@@ -49,7 +49,7 @@ pub trait Reducer: DeserializeOwned + Serialize + Any + Send + Sync + Clone {
     /// The `callback` will run at most once, then unregister itself.
     /// It can also be unregistered by passing the returned `ReducerCallbackId`
     /// to `remove_on_reducer`.
-    fn once_on_reducer(callback: impl FnOnce(&Identity, Status, &Self) + Send + 'static) -> ReducerCallbackId<Self> {
+    fn once_on_reducer(callback: impl FnOnce(&Identity, &Status, &Self) + Send + 'static) -> ReducerCallbackId<Self> {
         let id = with_reducer_callbacks(|callbacks| callbacks.register_on_reducer_oneshot::<Self>(callback));
         ReducerCallbackId { id }
     }

@@ -2,15 +2,19 @@ use crate::buffer::{BufReader, DecodeError};
 
 use crate::de::{self, SeqProductAccess, SumAccess, VariantAccess};
 
+/// Deserializer from the BSATN data format.
 pub struct Deserializer<'a, R> {
+    // The input to deserialize.
     reader: &'a mut R,
 }
 
 impl<'a, 'de, R: BufReader<'de>> Deserializer<'a, R> {
+    /// Returns a deserializer using the given `reader`.
     pub fn new(reader: &'a mut R) -> Self {
         Self { reader }
     }
 
+    /// Reborrows the deserializer.
     #[inline]
     fn reborrow(&mut self) -> Deserializer<'_, R> {
         Deserializer { reader: self.reader }
@@ -27,8 +31,15 @@ impl de::Error for DecodeError {
     }
 }
 
+/// Read a length as a `u32` then converted to `usize`.
 fn get_len<'de>(reader: &mut impl BufReader<'de>) -> Result<usize, DecodeError> {
     Ok(reader.get_u32()? as usize)
+}
+
+/// Read a byte slice from the `reader`.
+fn read_bytes<'a, 'de: 'a>(reader: &'a mut impl BufReader<'de>) -> Result<&'de [u8], DecodeError> {
+    let len = get_len(reader)?;
+    reader.get_slice(len)
 }
 
 impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
@@ -83,15 +94,13 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
     }
 
     fn deserialize_str<V: de::SliceVisitor<'de, str>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        let len = get_len(self.reader)?;
-        let slice = self.reader.get_slice(len)?;
+        let slice = read_bytes(self.reader)?;
         let slice = core::str::from_utf8(slice)?;
         visitor.visit_borrowed(slice)
     }
 
     fn deserialize_bytes<V: de::SliceVisitor<'de, [u8]>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        let len = get_len(self.reader)?;
-        let slice = self.reader.get_slice(len)?;
+        let slice = read_bytes(self.reader)?;
         visitor.visit_borrowed(slice)
     }
 
@@ -146,6 +155,7 @@ impl<'de, 'a, R: BufReader<'de>> VariantAccess<'de> for Deserializer<'a, R> {
     }
 }
 
+/// Deserializer for array elements.
 pub struct ArrayAccess<'a, R, T> {
     de: Deserializer<'a, R>,
     seeds: itertools::RepeatN<T>,
@@ -167,6 +177,7 @@ impl<'de, 'a, R: BufReader<'de>, T: de::DeserializeSeed<'de> + Clone> de::ArrayA
     }
 }
 
+/// Deserializer for map elements.
 pub struct MapAccess<'a, R, K, V> {
     de: Deserializer<'a, R>,
     seeds: itertools::RepeatN<(K, V)>,

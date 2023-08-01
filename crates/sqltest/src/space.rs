@@ -6,6 +6,7 @@ use spacetimedb::sql::compiler::compile_sql;
 use spacetimedb::sql::execute::execute_sql;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::MemTable;
+use spacetimedb_sats::meta_type::MetaType;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, BuiltinType, BuiltinValue};
 use sqllogictest::{AsyncDB, ColumnType, DBOutput};
@@ -23,7 +24,7 @@ impl ColumnType for Kind {
             'T' => Some(Kind(AlgebraicType::String)),
             'I' => Some(Kind(AlgebraicType::I64)),
             'R' => Some(Kind(AlgebraicType::F32)),
-            _ => Some(Kind(AlgebraicType::make_meta_type())),
+            _ => Some(Kind(AlgebraicType::meta_type())),
         }
     }
 
@@ -78,11 +79,13 @@ impl SpaceDb {
     }
 
     pub(crate) fn run_sql(&self, sql: &str) -> anyhow::Result<Vec<MemTable>> {
-        let ast = compile_sql(&self.conn, sql)?;
-        let result = execute_sql(&self.conn, ast, self.auth)?;
-        //remove comments to see which SQL worked. Can't collect it outside from lack of a hook in the external `sqllogictest` crate... :(
-        //append_file(&std::path::PathBuf::from(".ok.sql"), sql)?;
-        Ok(result)
+        self.conn.with_auto_commit(|tx| {
+            let ast = compile_sql(&self.conn, tx, sql)?;
+            let result = execute_sql(&self.conn, tx, ast, self.auth)?;
+            //remove comments to see which SQL worked. Can't collect it outside from lack of a hook in the external `sqllogictest` crate... :(
+            //append_file(&std::path::PathBuf::from(".ok.sql"), sql)?;
+            Ok(result)
+        })
     }
 
     pub fn into_db(self) -> DBRunner {

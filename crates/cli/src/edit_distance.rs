@@ -1,6 +1,7 @@
 /*
-Copyright, The Rust project developers.
+Some parts copyright, The Rust project developers.
 See https://github.com/rust-lang/rust/blob/8882507bc7dbad0cc0548204eb8777e51ac92332/COPYRIGHT
+for the parts where MIT / Apache-2.0 applies.
 
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated

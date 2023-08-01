@@ -2,7 +2,7 @@
 use std::fmt;
 
 use crate::operator::*;
-use spacetimedb_sats::algebraic_type::map_notation::Formatter;
+use spacetimedb_sats::algebraic_type::map_notation::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::builtin_type::BuiltinType;
@@ -20,19 +20,9 @@ pub enum Ty {
 impl fmt::Display for Ty {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Ty::Unknown => {
-                write!(f, "{self:?}")
-            }
-            Ty::Val(x) => {
-                let x = Formatter::new(x);
-                write!(f, "{x}")
-            }
-            Ty::Multi(options) => {
-                for x in options {
-                    write!(f, "{x}")?;
-                }
-                Ok(())
-            }
+            Ty::Unknown => write!(f, "{self:?}"),
+            Ty::Val(ty) => write!(f, "{}", fmt_algebraic_type(ty)),
+            Ty::Multi(options) => options.iter().try_for_each(|x| write!(f, "{x}")),
             Ty::Fun { params, result } => {
                 write!(f, "(")?;
                 for (pos, x) in params.iter().enumerate() {

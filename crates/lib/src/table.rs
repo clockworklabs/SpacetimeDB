@@ -28,7 +28,7 @@ impl ProductTypeMeta {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             attr: Vec::with_capacity(capacity),
-            columns: ProductType::with_capacity(capacity),
+            columns: ProductType::new(Vec::with_capacity(capacity)),
         }
     }
 

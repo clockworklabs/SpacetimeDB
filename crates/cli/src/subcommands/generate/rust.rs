@@ -41,26 +41,6 @@ fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
     })
 }
 
-fn is_empty_product(ty: &AlgebraicType) -> bool {
-    if let AlgebraicType::Product(none_type) = ty {
-        none_type.elements.is_empty()
-    } else {
-        false
-    }
-}
-
-// This function is duplicated in [typescript.rs] and [csharp.rs], and should maybe be
-// lifted into a module, or be a part of SATS itself.
-fn is_option_type(ty: &SumType) -> bool {
-    let name_is = |variant: &SumTypeVariant, name| variant.name.as_ref().expect("Variants should have names!") == name;
-    matches!(
-        &ty.variants[..],
-        [a, b] if name_is(a, "some")
-            && name_is(b, "none")
-            && is_empty_product(&b.algebraic_type)
-    )
-}
-
 fn write_type_ctx(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
     write_type(&|r| type_name(ctx, r), out, ty)
 }
@@ -68,9 +48,9 @@ fn write_type_ctx(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
 pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut W, ty: &AlgebraicType) {
     match ty {
         AlgebraicType::Sum(sum_type) => {
-            if is_option_type(sum_type) {
+            if let Some(inner_ty) = sum_type.as_option() {
                 write!(out, "Option::<").unwrap();
-                write_type(ctx, out, &sum_type.variants[0].algebraic_type);
+                write_type(ctx, out, inner_ty);
                 write!(out, ">").unwrap();
             } else {
                 write!(out, "enum ").unwrap();
@@ -81,6 +61,9 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
                     write_type(ctx, out, &elem.algebraic_type);
                 });
             }
+        }
+        AlgebraicType::Product(p) if p.is_identity() => {
+            write!(out, "Identity").unwrap();
         }
         AlgebraicType::Product(ProductType { elements }) => {
             print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {
@@ -174,7 +157,8 @@ const SPACETIMEDB_IMPORTS: &[&str] = &[
     "use spacetimedb_sdk::{",
     "\tsats::{ser::Serialize, de::Deserialize},",
     "\ttable::{TableType, TableIter, TableWithPrimaryKey},",
-    "\treducer::{Reducer},",
+    "\treducer::{Reducer, ReducerCallbackId, Status},",
+    "\tidentity::Identity,",
     // The `Serialize` and `Deserialize` macros depend on `spacetimedb_lib` existing in
     // the root namespace.
     "\tspacetimedb_lib,",
@@ -554,6 +538,32 @@ fn reducer_function_name(reducer: &ReducerDef) -> String {
     reducer.name.to_case(Case::Snake)
 }
 
+fn iter_reducer_arg_names(reducer: &ReducerDef) -> impl Iterator<Item = Option<String>> + '_ {
+    reducer
+        .args
+        .iter()
+        .map(|elt| elt.name.as_ref().map(|name| name.to_case(Case::Snake)))
+}
+
+fn iter_reducer_arg_types(reducer: &'_ ReducerDef) -> impl Iterator<Item = &'_ AlgebraicType> {
+    reducer.args.iter().map(|elt| &elt.algebraic_type)
+}
+
+fn print_reducer_struct_literal(out: &mut Indenter, reducer: &ReducerDef) {
+    write!(out, "{} ", reducer_type_name(reducer)).unwrap();
+    // TODO: if reducer.args is empty, write a unit struct.
+    out.delimited_block(
+        "{",
+        |out| {
+            for arg_name in iter_reducer_arg_names(reducer) {
+                let name = arg_name.unwrap();
+                writeln!(out, "{},", name).unwrap();
+            }
+        },
+        "}",
+    );
+}
+
 /// Generate a file which defines a struct corresponding to the `reducer`'s arguments,
 /// implements `spacetimedb_sdk::table::Reducer` for it, and defines a helper
 /// function which invokes the reducer.
@@ -580,7 +590,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 
     // Function definition for the convenient caller, which takes normal args, constructs
     // an instance of the struct, and calls `invoke` on it.
-    write!(out, "{}", ALLOW_UNUSED).unwrap();
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     write!(out, "pub fn {}", func_name).unwrap();
 
     // arglist
@@ -595,32 +605,117 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     out.delimited_block(
         "{",
         |out| {
-            // This is a struct literal.
-            write!(out, "{} ", type_name).unwrap();
-            // TODO: if reducer.args is empty, write a unit struct.
+            print_reducer_struct_literal(out, reducer);
+            writeln!(out, ".invoke();").unwrap();
+        },
+        "}\n",
+    );
+
+    out.newline();
+
+    // Function definition for convenient callback function,
+    // which takes a closure fromunpacked args,
+    // and wraps it in a closure from the args struct.
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    write!(
+        out,
+        "pub fn on_{}(mut __callback: impl FnMut(&Identity, &Status",
+        func_name
+    )
+    .unwrap();
+    for arg_type in iter_reducer_arg_types(reducer) {
+        write!(out, ", &").unwrap();
+        write_type_ctx(ctx, out, arg_type);
+    }
+    writeln!(out, ") + Send + 'static) -> ReducerCallbackId<{}> ", type_name).unwrap();
+    out.delimited_block(
+        "{",
+        |out| {
+            write!(out, "{}", type_name).unwrap();
             out.delimited_block(
-                "{",
+                "::on_reducer(move |__identity, __status, __args| {",
                 |out| {
-                    for arg in &reducer.args {
-                        let Some(name) = &arg.name else {
-                        panic!("Reducer {} arg has no name: {:?}", reducer.name, arg);
-                    };
-                        let name = name.to_case(Case::Snake);
-                        writeln!(out, "{},", name).unwrap();
-                    }
+                    write!(out, "let ").unwrap();
+                    print_reducer_struct_literal(out, reducer);
+                    writeln!(out, " = __args;").unwrap();
+                    out.delimited_block(
+                        "__callback(",
+                        |out| {
+                            writeln!(out, "__identity,").unwrap();
+                            writeln!(out, "__status,").unwrap();
+                            for arg_name in iter_reducer_arg_names(reducer) {
+                                writeln!(out, "{},", arg_name.unwrap()).unwrap();
+                            }
+                        },
+                        ");\n",
+                    );
                 },
-                "}.invoke();\n",
+                "})\n",
             );
         },
         "}\n",
     );
 
-    // TODO: generate `pub fn on_{REDUCER_NAME}` function which calls
-    //       `Reducer::on_reducer` to register a callback. Like the relationship between
-    //       `pub fn {REDUCER_NAME}` and `Reducer::invoke`, the callback passed to
-    //       `on_{REDUCER_NAME}` should take an arglist, not an instance of the reducer
-    //       struct. The fn should wrap the passed callback in a closure of the
-    //       appropriate type for `Reducer::on_reducer` and unpacks the instance.
+    out.newline();
+
+    // Function definition for conveinent once_on callback function.
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    write!(
+        out,
+        "pub fn once_on_{}(__callback: impl FnOnce(&Identity, &Status",
+        func_name
+    )
+    .unwrap();
+    for arg_type in iter_reducer_arg_types(reducer) {
+        write!(out, ", &").unwrap();
+        write_type_ctx(ctx, out, arg_type);
+    }
+    writeln!(out, ") + Send + 'static) -> ReducerCallbackId<{}> ", type_name).unwrap();
+    out.delimited_block(
+        "{",
+        |out| {
+            write!(out, "{}", type_name).unwrap();
+            out.delimited_block(
+                "::once_on_reducer(move |__identity, __status, __args| {",
+                |out| {
+                    write!(out, "let ").unwrap();
+                    print_reducer_struct_literal(out, reducer);
+                    writeln!(out, " = __args;").unwrap();
+                    out.delimited_block(
+                        "__callback(",
+                        |out| {
+                            writeln!(out, "__identity,").unwrap();
+                            writeln!(out, "__status,").unwrap();
+                            for arg_name in iter_reducer_arg_names(reducer) {
+                                writeln!(out, "{},", arg_name.unwrap()).unwrap();
+                            }
+                        },
+                        ");\n",
+                    );
+                },
+                "})\n",
+            )
+        },
+        "}\n",
+    );
+
+    out.newline();
+
+    // Function definition for callback-canceling `remove_on_{reducer}` function.
+    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    write!(
+        out,
+        "pub fn remove_on_{}(id: ReducerCallbackId<{}>) ",
+        func_name, type_name,
+    )
+    .unwrap();
+    out.delimited_block(
+        "{",
+        |out| {
+            writeln!(out, "{}::remove_on_reducer(id);", type_name,).unwrap();
+        },
+        "}\n",
+    );
 
     output.into_inner()
 }
@@ -658,7 +753,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 ///    to connect to a remote database, and passes the `handle_row_update`
 ///    and `handle_event` functions so the `BackgroundDbConnection` can spawn workers
 ///    which use those functions to dispatch on the content of messages.
-pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, String)> {
+pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<Vec<(String, String)>> {
     let mut output = CodeIndenter::new(String::new());
     let out = &mut output;
 
@@ -711,7 +806,7 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, Str
     // Define `fn connect`.
     print_connect_defn(out);
 
-    vec![("mod.rs".to_string(), output.into_inner())]
+    vec![vec![("mod.rs".to_string(), output.into_inner())]]
 }
 
 /// Extra imports required by the `mod.rs` file, in addition to the [`SPACETIMEDB_IMPORTS`].
@@ -906,7 +1001,7 @@ fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
 }
 
 const CONNECT_DOCSTRING: &[&str] = &[
-    "/// Connect to a database named `db_name` accessible over the internet at the URI `host`.",
+    "/// Connect to a database named `db_name` accessible over the internet at the URI `spacetimedb_uri`.",
     "///",
     "/// If `credentials` are supplied, they will be passed to the new connection to",
     "/// identify and authenticate the user. Otherwise, a set of `Credentials` will be",
@@ -922,17 +1017,17 @@ fn print_connect_docstring(out: &mut Indenter) {
 fn print_connect_defn(out: &mut Indenter) {
     print_connect_docstring(out);
     out.delimited_block(
-        "pub fn connect<Host>(host: Host, db_name: &str, credentials: Option<Credentials>) -> Result<()>
+        "pub fn connect<IntoUri>(spacetimedb_uri: IntoUri, db_name: &str, credentials: Option<Credentials>) -> Result<()>
 where
-\tHost: TryInto<spacetimedb_sdk::http::Uri>,
-\t<Host as TryInto<spacetimedb_sdk::http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
+\tIntoUri: TryInto<spacetimedb_sdk::http::Uri>,
+\t<IntoUri as TryInto<spacetimedb_sdk::http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
 {",
         |out| out.delimited_block(
             "with_connection_mut(|connection| {",
             |out| {
                 writeln!(
                     out,
-                    "connection.connect(host, db_name, credentials, handle_table_update, handle_resubscribe, invoke_row_callbacks, handle_event)?;"
+                    "connection.connect(spacetimedb_uri, db_name, credentials, handle_table_update, handle_resubscribe, invoke_row_callbacks, handle_event)?;"
                 ).unwrap();
                 writeln!(out, "Ok(())").unwrap();
             },

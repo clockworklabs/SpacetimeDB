@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::time::Duration;
 
 use axum::extract::rejection::{TypedHeaderRejection, TypedHeaderRejectionReason};
@@ -6,6 +7,7 @@ use axum::headers::authorization::Credentials;
 use axum::headers::{self, authorization};
 use axum::response::IntoResponse;
 use axum::TypedHeader;
+use bytes::BytesMut;
 use http::{request, HeaderValue, StatusCode};
 use serde::Deserialize;
 use spacetimedb::auth::identity::{
@@ -88,7 +90,9 @@ impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> fo
                     })?;
                 let auth = SpacetimeAuth {
                     creds,
-                    identity: claims.hex_identity,
+                    identity: Identity::from_hex(claims.hex_identity).map_err(|_| AuthorizationRejection {
+                        reason: AuthorizationRejectionReason::CantDecodeAuthorizationToken,
+                    })?,
                 };
                 Ok(Self { auth: Some(auth) })
             }
@@ -107,7 +111,9 @@ impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> fo
                     })?;
                 let auth = SpacetimeAuth {
                     creds,
-                    identity: claims.hex_identity,
+                    identity: Identity::from_hex(claims.hex_identity).map_err(|_| AuthorizationRejection {
+                        reason: AuthorizationRejectionReason::CantDecodeAuthorizationToken,
+                    })?,
                 };
                 Ok(Self { auth: Some(auth) })
             }
@@ -239,7 +245,9 @@ impl headers::Header for SpacetimeEnergyUsed {
     }
 
     fn encode<E: Extend<HeaderValue>>(&self, values: &mut E) {
-        values.extend([self.0 .0.into()])
+        let mut buf = BytesMut::new();
+        let _ = buf.write_str(itoa::Buffer::new().format(self.0 .0));
+        values.extend([HeaderValue::from_bytes(&buf).unwrap()]);
     }
 }
 

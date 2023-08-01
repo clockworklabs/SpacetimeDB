@@ -8,7 +8,7 @@ use crate::table::ColumnDef;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, TypeInSpace, Typespace};
+use spacetimedb_sats::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, Typespace, WithTypespace};
 
 impl ColumnDef {
     pub fn name(&self) -> FieldOnly {
@@ -147,7 +147,7 @@ impl fmt::Display for FieldExpr {
             FieldExpr::Value(x) => {
                 let ty = x.type_of();
                 let ts = Typespace::new(vec![]);
-                write!(f, "{}", TypeInSpace::new(&ts, &ty).with_value(x).to_satn())
+                write!(f, "{}", WithTypespace::new(&ts, &ty).with_value(x).to_satn())
             }
         }
     }
@@ -260,6 +260,12 @@ impl Header {
         }
     }
 
+    /// Finds the position of a field with `name`.
+    pub fn find_pos_by_name(&self, name: &str) -> Option<usize> {
+        let field = FieldName::named(&self.table_name, name);
+        self.column_pos(&field)
+    }
+
     pub fn column<'a>(&'a self, col: &'a FieldName) -> Option<&Column> {
         self.fields.iter().find(|f| &f.field == col)
     }
@@ -294,31 +300,29 @@ impl Header {
         Ok(Self::new(&self.table_name, &p))
     }
 
+    /// Adds the fields from `right` to this [`Header`],
+    /// renaming duplicated fields with a counter like `a, a => a, a0`.
     pub fn extend(&self, right: &Self) -> Self {
         let count = self.fields.len() + right.fields.len();
-        let mut fields = Vec::with_capacity(count);
-        let mut left = self.fields.clone();
-        let mut _right = right.fields.clone();
-
-        fields.append(&mut left);
+        let mut fields = self.fields.clone();
+        fields.reserve(count - fields.len());
 
         let mut cont = 0;
         //Avoid duplicated field names...
-        for mut f in _right.into_iter() {
+        for mut f in right.fields.iter().cloned() {
             if f.field.table() == self.table_name && self.column_pos(&f.field).is_some() {
                 let name = format!("{}_{}", f.field.field(), cont);
                 f.field = FieldName::Name {
                     table: f.field.table().into(),
                     field: name,
                 };
-                fields.push(f);
+
                 cont += 1;
-            } else {
-                fields.push(f);
             }
+            fields.push(f);
         }
 
-        Self::new(&format!("{} | {}", self.table_name, right.table_name), &fields)
+        Self::new(&self.table_name, &fields)
     }
 }
 
@@ -330,7 +334,7 @@ impl fmt::Display for Header {
                 f,
                 "{}: {}",
                 col.field,
-                algebraic_type::satn::Formatter::new(&col.algebraic_type)
+                algebraic_type::fmt::fmt_algebraic_type(&col.algebraic_type)
             )?;
 
             if pos + 1 < self.fields.len() {
@@ -426,11 +430,11 @@ impl<'a> RelValueRef<'a> {
                     if let Some(v) = self.data.elements.get(pos) {
                         v
                     } else {
-                        unreachable!("Field {col} at pos {pos} not found on row {:?}", self.data.elements)
+                        unreachable!("Field `{col}` at pos {pos} not found on row: {:?}", self.data.elements)
                     }
                 } else {
                     unreachable!(
-                        "Field {col} not found on {}. Fields:{}",
+                        "Field `{col}` not found on `{}`. Fields:{}",
                         self.head.table_name, self.head
                     )
                 }

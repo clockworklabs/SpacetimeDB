@@ -1,6 +1,7 @@
 use crate::address::Address;
 
 use crate::hash::hash_bytes;
+use crate::host::EnergyQuanta;
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
 use crate::stdb_path;
@@ -34,6 +35,8 @@ pub enum Error {
     DecodingError(#[from] bsatn::DecodeError),
     #[error(transparent)]
     DomainParsingError(#[from] DomainParsingError),
+    #[error("connection error")]
+    ConnectionError(),
     #[error(transparent)]
     JSONDeserializationError(#[from] serde_json::Error),
 }
@@ -174,7 +177,7 @@ impl ControlDb {
                 }
             }
             None => {
-                tree.insert(tld.as_lowercase().as_bytes(), owner_identity.as_slice())?;
+                tree.insert(tld.as_lowercase().as_bytes(), owner_identity.as_bytes())?;
                 Ok(RegisterTldResult::Success { domain: tld })
             }
         }
@@ -251,7 +254,7 @@ impl ControlDb {
         let name = b"clockworklabs:";
         let bytes = [name, bytes].concat();
         let hash = hash_bytes(bytes);
-        let address = Address::from_slice(&hash.as_slice()[0..16]);
+        let address = Address::from_slice(&hash.as_slice()[..16]);
         Ok(address)
     }
 
@@ -262,7 +265,7 @@ impl ControlDb {
         let tree = self.db.open_tree("email")?;
         let identity_email = IdentityEmail { identity, email };
         let buf = bsatn::to_vec(&identity_email).unwrap();
-        tree.insert(identity.as_slice(), buf)?;
+        tree.insert(identity.as_bytes(), buf)?;
         Ok(())
     }
 
@@ -505,38 +508,42 @@ impl ControlDb {
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
     pub async fn get_energy_balances(&self) -> Result<Vec<EnergyBalance>> {
-        let mut budgets = vec![];
+        let mut balances = vec![];
         let tree = self.db.open_tree("energy_budget")?;
-        for budget_entry in tree.iter() {
-            let budget_entry = match budget_entry {
-                Ok(budget_entry) => budget_entry,
+        for balance_entry in tree.iter() {
+            let balance_entry = match balance_entry {
+                Ok(e) => e,
                 Err(e) => {
                     log::error!("Invalid iteration in energy_budget control_db tree: {}", e);
                     continue;
                 }
             };
-            let energy_budget = match bsatn::from_slice(&budget_entry.1[..]) {
-                Ok(balance) => balance,
-                Err(e) => {
-                    log::error!("Invalid value in energy_balance control_db tree: {}", e);
-                    continue;
-                }
+            let Ok(arr) = <[u8; 16]>::try_from(balance_entry.1.as_ref()) else {
+                return Err(Error::DecodingError(bsatn::DecodeError::BufferLength));
             };
-            budgets.push(energy_budget);
+            let balance = i128::from_ne_bytes(arr);
+            let energy_balance = EnergyBalance {
+                identity: Identity::from_slice(balance_entry.0.iter().as_slice()),
+                balance,
+            };
+            balances.push(energy_balance);
         }
-        Ok(budgets)
+        Ok(balances)
     }
 
     /// Return the current budget for a given identity as stored in the db.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-    pub async fn get_energy_balance(&self, identity: &Identity) -> Result<Option<EnergyBalance>> {
+    pub fn get_energy_balance(&self, identity: &Identity) -> Result<Option<EnergyQuanta>> {
         let tree = self.db.open_tree("energy_budget")?;
         let key = identity.to_hex();
         let value = tree.get(key.as_bytes())?;
         if let Some(value) = value {
-            let budget = bsatn::from_slice(&value[..]).unwrap();
-            Ok(Some(budget))
+            let Ok(arr) = <[u8; 16]>::try_from(value.as_ref()) else {
+                return Err(Error::DecodingError(bsatn::DecodeError::BufferLength));
+            };
+            let balance = i128::from_be_bytes(arr);
+            Ok(Some(EnergyQuanta(balance)))
         } else {
             Ok(None)
         }
@@ -545,11 +552,10 @@ impl ControlDb {
     /// Update the stored current budget for a identity.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-    pub fn set_energy_balance(&self, identity: &Identity, budget: &EnergyBalance) -> Result<()> {
+    pub async fn set_energy_balance(&self, identity: Identity, energy_balance: EnergyQuanta) -> Result<()> {
         let tree = self.db.open_tree("energy_budget")?;
         let key = identity.to_hex();
-        let buf = bsatn::to_vec(&budget).unwrap();
-        tree.insert(key, buf)?;
+        tree.insert(key, &energy_balance.0.to_be_bytes())?;
 
         Ok(())
     }

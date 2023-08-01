@@ -5,6 +5,7 @@ use axum::response::IntoResponse;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 use spacetimedb::auth::identity::encode_token_with_expiry;
+use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::Identity;
 
 use crate::auth::{SpacetimeAuth, SpacetimeAuthHeader};
@@ -87,9 +88,35 @@ pub async fn get_identity(
     Ok(axum::Json(identity_response))
 }
 
+/// A version of `Identity` appropriate for URL de/encoding.
+///
+/// Because `Identity` is represented in SATS as a `ProductValue`,
+/// its serialized format is somewhat gnarly.
+/// When URL-encoding identities, we want to use only the hex string,
+/// without wrapping it in a `ProductValue`.
+/// This keeps our routes pretty, like `/identity/<64 hex chars>/set-email`.
+///
+/// This newtype around `Identity` implements `Deserialize`
+/// directly from the inner identity bytes,
+/// without the enclosing `ProductValue` wrapper.
+pub struct IdentityForUrl(Identity);
+
+impl From<IdentityForUrl> for Identity {
+    /// Consumes `self` returning the backing `Identity`.
+    fn from(IdentityForUrl(id): IdentityForUrl) -> Identity {
+        id
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for IdentityForUrl {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        <_>::deserialize(de).map(|DeserializeWrapper(b)| IdentityForUrl(Identity::from_byte_array(b)))
+    }
+}
+
 #[derive(Deserialize)]
 pub struct SetEmailParams {
-    identity: Identity,
+    identity: IdentityForUrl,
 }
 
 #[derive(Deserialize)]
@@ -103,6 +130,7 @@ pub async fn set_email(
     Query(SetEmailQueryParams { email }): Query<SetEmailQueryParams>,
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
+    let identity = identity.into();
     let auth = auth.get().ok_or(StatusCode::BAD_REQUEST)?;
 
     if auth.identity != identity {
@@ -119,7 +147,7 @@ pub async fn set_email(
 
 #[derive(Deserialize)]
 pub struct GetDatabasesParams {
-    identity: Identity,
+    identity: IdentityForUrl,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,6 +159,7 @@ pub async fn get_databases(
     State(ctx): State<Arc<dyn ControlCtx>>,
     Path(GetDatabasesParams { identity }): Path<GetDatabasesParams>,
 ) -> axum::response::Result<impl IntoResponse> {
+    let identity = identity.into();
     // Linear scan for all databases that have this identity, and return their addresses
     let all_dbs = ctx.control_db().get_databases().await.map_err(|e| {
         log::error!("Failure when retrieving databases for search: {}", e);

@@ -1,3 +1,4 @@
+mod energy_monitor;
 pub mod routes;
 pub mod subcommands;
 pub mod util;
@@ -6,6 +7,7 @@ mod worker_db;
 use crate::subcommands::{start, version};
 use anyhow::Context;
 use clap::{ArgMatches, Command};
+use energy_monitor::StandaloneEnergyMonitor;
 use openssl::ec::{EcGroup, EcKey};
 use openssl::nid::Nid;
 use openssl::pkey::PKey;
@@ -17,9 +19,9 @@ use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::db::db_metrics;
 use spacetimedb::hash::Hash;
-use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::host::UpdateOutcome;
 use spacetimedb::host::{scheduler::Scheduler, HostController};
+use spacetimedb::host::{EnergyQuanta, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, Node};
 use spacetimedb::messages::worker_db::DatabaseInstanceState;
@@ -46,21 +48,18 @@ pub struct StandaloneEnv {
     private_key: EncodingKey,
 }
 
-// TODO: what kind of energy monitoring do we want standalone to have?
-type StandaloneEnergyMonitor = spacetimedb::host::NullEnergyMonitor;
-
 impl StandaloneEnv {
-    pub async fn init() -> anyhow::Result<Self> {
+    pub async fn init() -> anyhow::Result<Arc<Self>> {
         let worker_db = WorkerDb::init()?;
         let object_db = ObjectDb::init()?;
         let db_inst_ctx_controller = DatabaseInstanceContextController::new();
         let control_db = ControlDb::new()?;
-        let energy_monitor = Arc::new(StandaloneEnergyMonitor::default());
-        let host_controller = Arc::new(HostController::new(energy_monitor));
+        let energy_monitor = Arc::new(StandaloneEnergyMonitor::new());
+        let host_controller = Arc::new(HostController::new(energy_monitor.clone()));
         let client_actor_index = ClientActorIndex::new();
         let sendgrid = SendGridController::new();
         let (public_key, private_key) = get_or_create_keys()?;
-        Ok(Self {
+        let this = Arc::new(Self {
             worker_db,
             control_db,
             db_inst_ctx_controller,
@@ -70,7 +69,9 @@ impl StandaloneEnv {
             sendgrid,
             public_key,
             private_key,
-        })
+        });
+        energy_monitor.set_standalone_env(this.clone());
+        Ok(this)
     }
 }
 
@@ -318,6 +319,17 @@ impl spacetimedb_client_api::ControlNodeDelegate for StandaloneEnv {
 
     async fn alloc_spacetime_identity(&self) -> spacetimedb::control_db::Result<Identity> {
         self.control_db.alloc_spacetime_identity().await
+    }
+
+    async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
+        let energy_balance = self.control_db.get_energy_balance(identity)?;
+        let energy_balance = energy_balance.unwrap_or(EnergyQuanta(0));
+        println!("Withdrawing {} energy from {}", amount.0, identity);
+        println!("Old balance: {}", energy_balance.0);
+        let new_balance = energy_balance - amount;
+        self.control_db
+            .set_energy_balance(*identity, new_balance.as_quanta())
+            .await
     }
 
     fn public_key(&self) -> &DecodingKey {

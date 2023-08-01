@@ -36,8 +36,8 @@ pub fn make_actor(
     // before calling reducer?
     // I believe we can just set this to be zero and it's already being set by reducers
     // but I don't want to break things, so I'm going to leave it.
-    let initial_points = EnergyQuanta::DEFAULT_BUDGET;
-    let metering = Arc::new(Metering::new(initial_points.0, cost_function));
+    let initial_points = EnergyQuanta::DEFAULT_BUDGET.as_points();
+    let metering = Arc::new(Metering::new(initial_points, cost_function));
 
     // let mut compiler_config = wasmer_compiler_llvm::LLVM::default();
     // compiler_config.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);

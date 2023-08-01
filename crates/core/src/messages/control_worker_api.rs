@@ -9,12 +9,13 @@ use super::control_db::*;
 pub enum WorkerBoundMessage {
     ScheduleState(ScheduleState),
     ScheduleUpdate(ScheduleUpdate),
-    BudgetUpdate(BudgetUpdate),
+    EnergyBalanceState(EnergyBalanceState),
+    EnergyBalanceUpdate(EnergyBalanceUpdate),
 }
 /// Messages from worker node to control node.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum ControlBoundMessage {
-    WorkerBudgetSpend(WorkerBudgetSpend),
+    EnergyWithdrawals(EnergyWithdrawals),
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScheduleState {
@@ -46,19 +47,24 @@ pub enum DeleteOperation {
     DatabaseId(u64),
     NodeId(u64),
 }
-/// Budget allocation update from control node to worker node.
+/// An energy balance update from control node to worker node.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct BudgetUpdate {
+pub struct EnergyBalanceUpdate {
     pub identity: Identity,
-    pub allocation_delta: i64,
+    pub energy_balance: i128,
+}
+// A message to syncronize energy balances from control node to worker node.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnergyBalanceState {
+    pub balances: Vec<EnergyBalance>,
 }
 /// Budget spend update from worker up to control node.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct WorkerBudgetSpend {
-    pub identity_spend: Vec<WorkerModuleBudgetSpend>,
+pub struct EnergyWithdrawals {
+    pub withdrawals: Vec<EnergyWithdrawal>,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct WorkerModuleBudgetSpend {
+pub struct EnergyWithdrawal {
     pub identity: Identity,
-    pub spend: i64,
+    pub amount: i128,
 }

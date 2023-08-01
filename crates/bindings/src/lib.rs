@@ -11,6 +11,7 @@ mod timestamp;
 
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
+use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, impl_st};
 pub use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::{bsatn, ColumnIndexAttribute, IndexType, PrimaryKey, ProductType, ProductValue};
 use std::cell::RefCell;
@@ -691,21 +692,9 @@ impl<R> Clone for ScheduleToken<R> {
 }
 impl<R> Copy for ScheduleToken<R> {}
 
-impl<R> Serialize for ScheduleToken<R> {
-    fn serialize<S: spacetimedb_lib::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.id.serialize(serializer)
-    }
-}
-impl<'de, R> Deserialize<'de> for ScheduleToken<R> {
-    fn deserialize<D: spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        u64::deserialize(deserializer).map(Self::new)
-    }
-}
-impl<R> SpacetimeType for ScheduleToken<R> {
-    fn make_type<S: spacetimedb_lib::sats::typespace::TypespaceBuilder>(_ts: &mut S) -> spacetimedb_lib::AlgebraicType {
-        spacetimedb_lib::AlgebraicType::U64
-    }
-}
+impl_serialize!([R] ScheduleToken<R>, (self, ser) => self.id.serialize(ser));
+impl_deserialize!([R] ScheduleToken<R>, de => u64::deserialize(de).map(Self::new));
+impl_st!([R] ScheduleToken<R>, _ts => spacetimedb_lib::AlgebraicType::U64);
 
 impl<R> ScheduleToken<R> {
     /// Wrap the ID under which a reducer is scheduled in a [`ScheduleToken`].

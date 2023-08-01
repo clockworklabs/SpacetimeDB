@@ -11,7 +11,7 @@ pub struct DatabaseLogger {
     pub tx: broadcast::Sender<bytes::Bytes>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum LogLevel {
     Error,
     Warn,

@@ -3,6 +3,7 @@ use spacetimedb_sats::{AlgebraicValue, BuiltinValue};
 use std::collections::HashSet;
 
 use super::query::Query;
+use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::error::DBError;
 use crate::subscription::query::{run_query, OP_TYPE_FIELD_NAME};
 use crate::{
@@ -53,9 +54,11 @@ impl QuerySet {
     /// This is equivalent to run a `trigger` on `INSERT/UPDATE/DELETE`, run the [Query] and see if the `row` is matched.
     ///
     /// NOTE: The returned `rows` in [DatabaseUpdate] are **deduplicated** so if 2 queries match the same `row`, only one copy is returned.
+    #[tracing::instrument(skip_all)]
     pub fn eval_incr(
         &self,
         relational_db: &RelationalDB,
+        tx: &mut MutTxId,
         database_update: &DatabaseUpdate,
         auth: AuthCtx,
     ) -> Result<DatabaseUpdate, DBError> {
@@ -65,21 +68,30 @@ impl QuerySet {
         for query in &self.0 {
             for table in database_update.tables.iter().cloned() {
                 for q in query.queries_of_table_id(&table) {
-                    if let Some(result) = run_query(relational_db, &q, auth)?
+                    if let Some(result) = run_query(relational_db, tx, &q, auth)?
                         .into_iter()
                         .find(|x| !x.data.is_empty())
                     {
+                        let pos_op_type = result.head.find_pos_by_name(OP_TYPE_FIELD_NAME).unwrap_or_else(|| {
+                            panic!(
+                                "failed to locate `{OP_TYPE_FIELD_NAME}` on `{}`. fields: {:?}",
+                                result.head.table_name,
+                                result.head.fields.iter().map(|x| &x.field).collect::<Vec<_>>()
+                            )
+                        });
+
                         let mut table_row_operations = table.clone();
                         table_row_operations.ops.clear();
                         for mut row in result.data {
                             //Hack: remove the hidden field OP_TYPE_FIELD_NAME. see `to_mem_table`
-                            // needs to be done before calculate the PK
-                            let op_type =
-                                if let Some(AlgebraicValue::Builtin(BuiltinValue::U8(op))) = row.elements.pop() {
-                                    op
-                                } else {
-                                    panic!("Fail to extract {OP_TYPE_FIELD_NAME}")
-                                };
+                            // Needs to be done before calculating the PK.
+                            let op_type = if let AlgebraicValue::Builtin(BuiltinValue::U8(op)) =
+                                row.elements.remove(pos_op_type)
+                            {
+                                op
+                            } else {
+                                panic!("Fail to extract `{OP_TYPE_FIELD_NAME}` on `{}`", result.head.table_name)
+                            };
 
                             let row_pk = RelationalDB::pk_for_row(&row);
 
@@ -109,14 +121,20 @@ impl QuerySet {
     /// NOTE: The returned `rows` in [DatabaseUpdate] are **deduplicated** so if 2 queries match the same `row`, only one copy is returned.
     ///
     /// This is a *major* difference with normal query execution, where is expected to return the full result set for each query.
-    pub fn eval(&self, relational_db: &RelationalDB, auth: AuthCtx) -> Result<DatabaseUpdate, DBError> {
+    #[tracing::instrument(skip_all)]
+    pub fn eval(
+        &self,
+        relational_db: &RelationalDB,
+        tx: &mut MutTxId,
+        auth: AuthCtx,
+    ) -> Result<DatabaseUpdate, DBError> {
         let mut database_update: DatabaseUpdate = DatabaseUpdate { tables: vec![] };
         let mut seen = HashSet::new();
 
         for query in &self.0 {
             for q in &query.queries {
                 if let Some(t) = q.source.get_db_table() {
-                    for table in run_query(relational_db, q, auth)? {
+                    for table in run_query(relational_db, tx, q, auth)? {
                         {
                             let mut table_row_operations = Vec::new();
 
@@ -136,10 +154,6 @@ impl QuerySet {
                                     row,
                                 });
                             }
-
-                            // if table_row_operations.is_empty() {
-                            //     continue;
-                            // }
 
                             database_update.tables.push(DatabaseTableUpdate {
                                 table_id: t.table_id,

@@ -1,5 +1,3 @@
-#![allow(clippy::let_with_type_underscore)] // can remove once tokio-rs/tracing#2609 mereges
-
 use std::path::{Path, PathBuf};
 
 use once_cell::sync::Lazy;
