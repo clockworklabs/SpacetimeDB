@@ -162,6 +162,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 
     fn _execute_delete(&mut self, table: &Table, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
         match table {
+            // TODO: How do we deal with mutating values?
             Table::MemTable(_) => Err(ErrorVm::Other(anyhow::anyhow!("How deal with mutating values?"))),
             Table::DbTable(t) => {
                 let count = self.db.delete_by_rel(self.tx, t.table_id, rows)?;
