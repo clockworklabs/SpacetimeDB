@@ -94,7 +94,7 @@ pub fn cli(is_standalone: bool) -> clap::Command {
         })
 }
 
-/// Sets an environment variable, but it was already set then print a warning.
+/// Sets an environment variable. Print a warning if already set.
 fn set_env_with_warning(env_name: &str, env_value: &str) {
     if std::env::var(env_name).is_ok() {
         println!("Warning: {} is set in the environment, but was also passed on the command line. The value passed on the command line will be used.", env_name);
@@ -102,8 +102,11 @@ fn set_env_with_warning(env_name: &str, env_value: &str) {
     std::env::set_var(env_name, env_value);
 }
 
-/// Reads an argument from the `ArgMatches`. If the argument is a default argument, but the environment variable
-/// is already set, then we don't want to use the default value. This function will return `None` in that case.
+/// Reads an argument from the `ArgMatches`.
+///
+/// If the argument is the default and the environment variable is already set,
+/// then we don't want to use the default value.
+/// This function will return `None` in that case.
 fn read_argument<'a>(args: &'a ArgMatches, arg_name: &str, env_name: &str) -> Option<&'a String> {
     let env_is_set = std::env::var(env_name).is_ok();
     let is_default = args.value_source(arg_name) == Some(clap::parser::ValueSource::DefaultValue);

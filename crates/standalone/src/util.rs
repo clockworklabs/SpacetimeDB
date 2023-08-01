@@ -1,8 +1,9 @@
 use std::env;
 use std::path::Path;
 
-/// If allow_create is set to true and the directory is missing, create it. Otherwise
-/// if allow_create is set to false and the directory is missing an error is returned.
+/// If `allow_create` is set to true and the directory is missing, create it.
+/// Otherwise, if `allow_create` is set to false
+/// and the directory is missing an error is returned.
 /// Otherwise if the directory does exist, do nothing.
 pub fn create_dir_or_err(allow_create: bool, path: &str) -> anyhow::Result<()> {
     if !Path::new(path).is_dir() {
@@ -36,6 +37,7 @@ pub fn create_file_with_contents(allow_create: bool, path: &str, contents: &str)
     Ok(())
 }
 
+/// Returns the name of the current executable without the tail extension and the path.
 pub fn get_exe_name() -> String {
     let exe_path = env::current_exe().expect("Failed to get executable path");
     let executable_name = Path::new(&exe_path)
