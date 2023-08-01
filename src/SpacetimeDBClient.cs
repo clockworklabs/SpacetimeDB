@@ -123,16 +123,15 @@ namespace SpacetimeDB
                 // Get all types in the assembly
                 Type[] types = assembly.GetTypes();
 
-                // Search for the type by name and namespace
-                Type targetType = types.FirstOrDefault(t =>
-                    t.Name == "Reducer" &&
-                    t.Namespace == "SpacetimeDB");
-
-                // If the type is found, return it
-                if (targetType != null)
+                // Search for the class with the attribute ReducerClass
+                foreach (Type type in types)
                 {
-                    return targetType;
+                    if (type.GetCustomAttribute<ReducerClassAttribute>() != null)
+                    {
+                        return type;
+                    }
                 }
+
             }
 
             // If the type is not found in any assembly, return null or throw an exception
