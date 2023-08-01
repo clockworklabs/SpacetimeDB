@@ -149,6 +149,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 
     fn _execute_insert(&mut self, table: &Table, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
         match table {
+            // TODO: How do we deal with mutating values?
             Table::MemTable(_) => Err(ErrorVm::Other(anyhow::anyhow!("How deal with mutating values?"))),
             Table::DbTable(x) => {
                 for row in rows {
