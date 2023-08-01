@@ -31,17 +31,24 @@ pub fn cli(is_standalone: bool) -> clap::Command {
         .long("jwt-priv-key-path")
         .help("The path to the private jwt key for issuing identities (SPACETIMEDB_JWT_PRIV_KEY)");
 
+    // the default root for files, this *should* be the home directory unless it cannot be determined.
+    let default_root = if let Some(dir) = dirs::home_dir() {
+        dir
+    } else {
+        println!("Warning: home directory not found, using current directory.");
+        std::env::current_dir().unwrap()
+    }
+    .to_str()
+    .unwrap()
+    .to_string();
+
     // If this isn't standalone, we provide default values
     if !is_standalone {
-        log_conf_path_arg =
-            log_conf_path_arg.default_value(format!("{}/.spacetime/log.conf", std::env::var("HOME").unwrap()));
-        log_dir_path_arg = log_dir_path_arg.default_value(format!("{}/.spacetime", std::env::var("HOME").unwrap()));
-        database_path_arg =
-            database_path_arg.default_value(format!("{}/.spacetime/stdb", std::env::var("HOME").unwrap()));
-        jwt_pub_key_path_arg =
-            jwt_pub_key_path_arg.default_value(format!("{}/.spacetime/id_ecdsa.pub", std::env::var("HOME").unwrap()));
-        jwt_priv_key_path_arg =
-            jwt_priv_key_path_arg.default_value(format!("{}/.spacetime/id_ecdsa", std::env::var("HOME").unwrap()));
+        log_conf_path_arg = log_conf_path_arg.default_value(format!("{}/.spacetime/log.conf", default_root));
+        log_dir_path_arg = log_dir_path_arg.default_value(format!("{}/.spacetime", default_root));
+        database_path_arg = database_path_arg.default_value(format!("{}/.spacetime/stdb", default_root));
+        jwt_pub_key_path_arg = jwt_pub_key_path_arg.default_value(format!("{}/.spacetime/id_ecdsa.pub", default_root));
+        jwt_priv_key_path_arg = jwt_priv_key_path_arg.default_value(format!("{}/.spacetime/id_ecdsa", default_root));
     } else {
         log_conf_path_arg = log_conf_path_arg.default_value("/etc/spacetimedb/log.conf");
         log_dir_path_arg = log_dir_path_arg.default_value("/var/log");

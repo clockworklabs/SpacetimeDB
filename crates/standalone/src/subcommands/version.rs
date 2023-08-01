@@ -5,7 +5,7 @@ const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub fn cli() -> clap::Command {
     clap::Command::new("version")
         .about("Print the version of the command line tool")
-        .after_help("Run `spacetime help version` for more detailed information.\n")
+        .after_help("Run `spacetimedb help version` for more detailed information.\n")
         .arg(
             Arg::new("cli")
                 .short('c')

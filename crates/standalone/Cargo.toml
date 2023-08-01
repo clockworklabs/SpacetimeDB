@@ -31,6 +31,7 @@ axum = "0.6"
 openssl = "0.10.54"
 http = "0.2.9"
 tower-http = { version = "0.4.1", features = ["cors"]}
+dirs = "5.0.1"
 
 [dev-dependencies]
 serde_json = "1.0"
