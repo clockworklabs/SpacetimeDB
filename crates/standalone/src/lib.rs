@@ -568,7 +568,7 @@ impl StandaloneEnv {
 pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     match cmd {
         "start" => start::exec(args).await,
-        "version" => version::exec().await,
+        "version" => version::exec(args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
