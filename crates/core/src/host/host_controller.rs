@@ -18,7 +18,7 @@ use super::{EnergyMonitor, NullEnergyMonitor, ReducerArgs};
 
 pub struct HostController {
     modules: Mutex<HashMap<u64, ModuleHost>>,
-    energy_monitor: Arc<dyn EnergyMonitor>,
+    pub energy_monitor: Arc<dyn EnergyMonitor>,
 }
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Serialize, Debug)]
@@ -58,20 +58,48 @@ impl fmt::Display for DescribedEntityType {
     }
 }
 
+/// [EnergyQuanta] represents an amount of energy in a canonical unit.
+/// It represents the smallest unit of energy that can be used to pay for
+/// a reducer invocation. We will likely refer to this unit as an "eV".
+///
+/// NOTE: This is represented by a signed integer, because it is possible
+/// for a user's balance to go negative. This is allowable
+/// for reasons of eventual consistency motivated by performance.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct EnergyQuanta(pub u64);
+pub struct EnergyQuanta(pub i128);
 
 impl EnergyQuanta {
     pub const ZERO: Self = EnergyQuanta(0);
 
     pub const DEFAULT_BUDGET: Self = EnergyQuanta(1_000_000_000_000_000_000);
+
+    /// A conversion function to convert from the canonical unit to points used
+    /// by Wasmer to track energy usage.
+    pub fn as_points(&self) -> u64 {
+        if self.0 < 0 {
+            return 0;
+        } else if self.0 > u64::MAX as i128 {
+            return u64::MAX;
+        }
+        self.0 as u64
+    }
+
+    /// A conversion function to convert from point used
+    /// by Wasmer to track energy usage, to our canonical unit.
+    pub fn from_points(points: u64) -> Self {
+        Self(points as i128)
+    }
 }
 
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct EnergyDiff(pub u64);
+pub struct EnergyDiff(pub i128);
 
 impl EnergyDiff {
     pub const ZERO: Self = EnergyDiff(0);
+
+    pub fn as_quanta(self) -> EnergyQuanta {
+        EnergyQuanta(self.0)
+    }
 }
 
 impl Sub for EnergyQuanta {

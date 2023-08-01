@@ -1,6 +1,7 @@
 use crate::address::Address;
 
 use crate::hash::hash_bytes;
+use crate::host::EnergyQuanta;
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
 use crate::stdb_path;
@@ -34,6 +35,8 @@ pub enum Error {
     DecodingError(#[from] bsatn::DecodeError),
     #[error(transparent)]
     DomainParsingError(#[from] DomainParsingError),
+    #[error("connection error")]
+    ConnectionError(),
     #[error(transparent)]
     JSONDeserializationError(#[from] serde_json::Error),
 }
@@ -515,10 +518,10 @@ impl ControlDb {
                     continue;
                 }
             };
-            let Ok(arr) = <[u8; 8]>::try_from(balance_entry.1.as_ref()) else {
+            let Ok(arr) = <[u8; 16]>::try_from(balance_entry.1.as_ref()) else {
                 return Err(Error::DecodingError(bsatn::DecodeError::BufferLength));
             };
-            let balance = i64::from_ne_bytes(arr);
+            let balance = i128::from_ne_bytes(arr);
             let energy_balance = EnergyBalance {
                 identity: Identity::from_slice(balance_entry.0.iter().as_slice()),
                 balance,
@@ -531,16 +534,16 @@ impl ControlDb {
     /// Return the current budget for a given identity as stored in the db.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-    pub async fn get_energy_balance(&self, identity: &Identity) -> Result<Option<i64>> {
+    pub fn get_energy_balance(&self, identity: &Identity) -> Result<Option<EnergyQuanta>> {
         let tree = self.db.open_tree("energy_budget")?;
         let key = identity.to_hex();
         let value = tree.get(key.as_bytes())?;
         if let Some(value) = value {
-            let Ok(arr) = <[u8; 8]>::try_from(value.as_ref()) else {
+            let Ok(arr) = <[u8; 16]>::try_from(value.as_ref()) else {
                 return Err(Error::DecodingError(bsatn::DecodeError::BufferLength));
             };
-            let balance = i64::from_ne_bytes(arr);
-            Ok(Some(balance))
+            let balance = i128::from_be_bytes(arr);
+            Ok(Some(EnergyQuanta(balance)))
         } else {
             Ok(None)
         }
@@ -549,10 +552,10 @@ impl ControlDb {
     /// Update the stored current budget for a identity.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-    pub fn set_energy_balance(&self, identity: Identity, energy_balance: i64) -> Result<()> {
+    pub async fn set_energy_balance(&self, identity: Identity, energy_balance: EnergyQuanta) -> Result<()> {
         let tree = self.db.open_tree("energy_budget")?;
         let key = identity.to_hex();
-        tree.insert(key, &energy_balance.to_be_bytes())?;
+        tree.insert(key, &energy_balance.0.to_be_bytes())?;
 
         Ok(())
     }

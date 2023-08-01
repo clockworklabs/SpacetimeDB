@@ -6,6 +6,7 @@ use http::StatusCode;
 use serde::Deserialize;
 use serde_json::json;
 
+use spacetimedb::host::EnergyQuanta;
 use spacetimedb_lib::Identity;
 
 use crate::auth::SpacetimeAuthHeader;
@@ -28,18 +29,20 @@ pub async fn get_energy_balance(
     let balance = ctx
         .control_db()
         .get_energy_balance(&identity)
-        .await
         .map_err(log_and_500)?
-        .ok_or((StatusCode::NOT_FOUND, "No budget for identity"))?;
+        .unwrap_or(EnergyQuanta(0));
 
-    let response_json = json!({ "balance": balance });
+    let response_json = json!({
+        // Note: balance must be returned as a string to avoid truncation.
+        "balance": balance.0.to_string(),
+    });
 
     Ok(axum::Json(response_json))
 }
 
 #[derive(Deserialize)]
 pub struct SetEnergyBalanceQueryParams {
-    balance: Option<i64>,
+    balance: Option<String>,
 }
 pub async fn set_energy_balance(
     State(ctx): State<Arc<dyn ControlCtx>>,
@@ -61,15 +64,23 @@ pub async fn set_energy_balance(
 
     let identity = Identity::from(identity);
 
-    let balance = balance.unwrap_or(0);
+    let balance = balance
+        .map(|balance| balance.parse::<i128>())
+        .transpose()
+        .map_err(|err| {
+            log::error!("Failed to parse balance: {:?}", err);
+            StatusCode::BAD_REQUEST
+        })?;
+    let balance = EnergyQuanta(balance.unwrap_or(0));
 
     ctx.control_db()
         .set_energy_balance(identity, balance)
+        .await
         .map_err(log_and_500)?;
 
-    // Return the modified budget.
     let response_json = json!({
-        "balance": balance,
+        // Note: balance must be returned as a string to avoid truncation.
+        "balance": balance.0.to_string(),
     });
 
     Ok(axum::Json(response_json))
