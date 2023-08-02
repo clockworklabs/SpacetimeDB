@@ -1,3 +1,0 @@
-[submodule "api/module_templates/cs/SpacetimeSharpSATS"]
-	path = SpacetimeSharpSATS
-	url = ssh://git@github.com/clockworklabs/SpacetimeSharpSATS
