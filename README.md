@@ -54,7 +54,7 @@
     &nbsp;
     <a href="https://www.linkedin.com/company/clockwork-labs/"><img height="25" src="./images/social/linkedin.svg" alt="LinkedIn"></a>
     &nbsp;
-    <a href="https://stackoverflow.com/questions/tagged/spacetimedb"><img height="25" src="./images/social/stack-overflow.svg" alt="StackOverflow"></a>
+    <a href="https://stackoverflow.com/questions/tagged/spacetimedb"><img height="25" src="./images/social/stackoverflow.svg" alt="StackOverflow"></a>
 </p>
 
 <br>
