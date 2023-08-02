@@ -2,7 +2,7 @@
 name = "spacetimedb-standalone"
 version = "0.6.0"
 edition = "2021"
-publish = false
+publish = true
 
 [[bin]]
 name = "spacetimedb"   # The name of the target.

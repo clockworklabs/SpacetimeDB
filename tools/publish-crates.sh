@@ -23,8 +23,7 @@ if [ $DRY_RUN != 1 ] ; then
 fi
 
 BASEDIR=$(pwd)
-FIRST_CRATE=1
-declare -a CRATES=("bindings-macro" "bindings-sys" "sats" "lib" "bindings" "cli" "client-api-messages" "sdk")
+declare -a CRATES=("bindings-macro" "bindings-sys" "sats" "lib" "bindings" "standalone" "cli" "client-api-messages" "sdk")
 
 for crate in "${CRATES[@]}" ; do
 	if [ ! -d "${BASEDIR}/crates/${crate}" ] ; then
@@ -34,18 +33,12 @@ for crate in "${CRATES[@]}" ; do
 done
 
 for crate in "${CRATES[@]}" ; do
-	if [ $FIRST_CRATE != 1 ] ; then
-		echo "Waiting 60 seconds for crates.io to update..."
-		sleep 60
-	fi
-
 	cd "${BASEDIR}/crates/${crate}"
 	if [ $DRY_RUN == 1 ] ; then
 		cargo publish --dry-run
 	else
 		cargo publish
 	fi
-	FIRST_CRATE=0
 done
 
 echo "Doing a test install."
