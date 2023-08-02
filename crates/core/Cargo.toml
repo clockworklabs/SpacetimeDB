@@ -108,7 +108,7 @@ features = ["lz4"] # if we link bzip, we get multiple defs
 odb_rocksdb = ["dep:rocksdb"]
 odb_sled = []
 tracelogging = []
-default = ["tracelogging"]
+default = ["tracelogging", "odb_sled"]
 
 [dev-dependencies]
 rusqlite = {version = "0.29.0", features = ["bundled", "column_decltype"]}
