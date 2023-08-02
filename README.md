@@ -48,7 +48,7 @@
     &nbsp;
     <a href="https://github.com/clockworklabs/spacetimedb"><img height="25" src="./images/social/github.svg" alt="Github	"></a>
     &nbsp;
-    <a href="https://spacetimedb.com/blog"><img height="25" src="./images/social/blog.svg" alt="Blog"></a>
+    <a href="https://twitch.tv/SpacetimeDB"><img height="25" src="./images/social/twitch.svg" alt="Twitch"></a>
     &nbsp;
     <a href="https://www.linkedin.com/company/clockworklabs/"><img height="25" src="./images/social/linkedin.svg" alt="LinkedIn"></a>
     &nbsp;
