@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.IO;
 
@@ -25,7 +26,7 @@ namespace SpacetimeDB.SATS
         public string AsString() => (string)value;
         public List<AlgebraicValue> AsArray() => (List<AlgebraicValue>)value;
         public Dictionary<AlgebraicValue, AlgebraicValue> AsMap() => (Dictionary<AlgebraicValue, AlgebraicValue>)value;
-        
+
         public static BuiltinValue CreateBool(bool value) => new BuiltinValue { value = value };
         public static BuiltinValue CreateI8(sbyte value) => new BuiltinValue { value = value };
         public static BuiltinValue CreateU8(byte value) => new BuiltinValue { value = value };
@@ -198,18 +199,18 @@ namespace SpacetimeDB.SATS
 
                     return CreateArray(arrayResult);
                 case BuiltinType.Type.Map:
-                {
-                    var len = reader.ReadUInt32();
-                    var mapResult = new Dictionary<AlgebraicValue, AlgebraicValue>();
-                    for (var x = 0; x < len; x++)
                     {
-                        var key = AlgebraicValue.Deserialize(type.mapType.keyType, reader);
-                        var value = AlgebraicValue.Deserialize(type.mapType.valueType, reader);
-                        mapResult.Add(key, value);
-                    }
+                        var len = reader.ReadUInt32();
+                        var mapResult = new Dictionary<AlgebraicValue, AlgebraicValue>();
+                        for (var x = 0; x < len; x++)
+                        {
+                            var key = AlgebraicValue.Deserialize(type.mapType.keyType, reader);
+                            var value = AlgebraicValue.Deserialize(type.mapType.valueType, reader);
+                            mapResult.Add(key, value);
+                        }
 
-                    return CreateMap(mapResult);
-                }
+                        return CreateMap(mapResult);
+                    }
                 default:
                     throw new NotImplementedException();
             }
@@ -246,6 +247,28 @@ namespace SpacetimeDB.SATS
                 case BuiltinType.Type.String:
                     return v1.AsString() == v2.AsString();
                 case BuiltinType.Type.Array:
+                    if (t.arrayType.type == AlgebraicType.Type.Builtin &&
+                        t.arrayType.builtin.type == BuiltinType.Type.U8)
+                    {
+                        var arr1 = v1.AsBytes();
+                        var arr2 = v2.AsBytes();
+
+                        if (arr1.Length != arr2.Length)
+                        {
+                            return false;
+                        }
+
+                        for (var i = 0; i < arr1.Length; i++)
+                        {
+                            if (arr1[i] != arr2[i])
+                            {
+                                return false;
+                            }
+                        }
+
+                        return true;
+                    }
+
                     var list1 = v1.AsArray();
                     var list2 = v2.AsArray();
                     if (list1.Count != list2.Count)
@@ -345,7 +368,7 @@ namespace SpacetimeDB.SATS
 
             for (var i = 0; i < type.elements.Count; i++)
             {
-                if(!AlgebraicValue.Compare(type.elements[i].algebraicType, v1.elements[i], v2.elements[i]))
+                if (!AlgebraicValue.Compare(type.elements[i].algebraicType, v1.elements[i], v2.elements[i]))
                 {
                     return false;
                 }
@@ -420,7 +443,7 @@ namespace SpacetimeDB.SATS
                     throw new NotImplementedException();
             }
         }
-        
+
         public static AlgebraicValue Deserialize(AlgebraicType type, BinaryReader reader)
         {
             switch (type.type)
@@ -453,5 +476,33 @@ namespace SpacetimeDB.SATS
                     throw new NotImplementedException();
             }
         }
+
+        public class AlgebraicValueComparer : IEqualityComparer<AlgebraicValue>
+        {
+            private AlgebraicType type;
+            public AlgebraicValueComparer(AlgebraicType type)
+            {
+                this.type = type;
+            }
+
+            public bool Equals(AlgebraicValue l, AlgebraicValue r)
+            {
+                return AlgebraicValue.Compare(type, l, r);
+            }
+
+            public int GetHashCode(AlgebraicValue value)
+            {
+                var stream = new MemoryStream();
+                var writer = new BinaryWriter(stream);
+                value.Serialize(type, writer);
+                var s = stream.ToArray();
+                if (s.Length >= 4)
+                {
+                    return BitConverter.ToInt32(s, 0);
+                }
+                return s.Sum(b => b);
+            }
+        }
+
     }
 }

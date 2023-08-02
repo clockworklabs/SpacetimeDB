@@ -68,12 +68,11 @@ namespace SpacetimeDB
                 throw new InvalidOperationException("Cannot hash on null bytes.");
             }
 
-            return bytes.Aggregate(0, (acc, b) => acc ^ b);
+            return BitConverter.ToInt32(bytes, 0);
         }
 
         public override string ToString()
         {
-            // lowercase hex string
             return string.Concat(bytes.Select(b => b.ToString("x2")));
         }
     }
