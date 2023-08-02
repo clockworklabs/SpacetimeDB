@@ -51,12 +51,12 @@ upgrade_version bindings-sys
 upgrade_version cli
 upgrade_version lib
 upgrade_version sats
-upgrade_version client-sdk
+upgrade_version sdk
 
 upgrade_version testing --skip-version
 
 # Upgrade the template that is shipped with the cli
-fsed 's@.*spacetimedb.*=.*".*".*@spacetimedb = "'"${version}"'"@' "crates/cli/src/subcommands/project/Cargo._toml"
+fsed 's@.*spacetimedb.*=.*".*".*@spacetimedb = "'"${version}"'"@' "crates/cli/src/subcommands/project/rust/Cargo._toml"
 fsed 's@.*spacetimedb-lib.*=.*@spacetimedb-lib = { path = "../lib", default-features = false }@' "crates/bindings/Cargo.toml"
 fsed 's@.*spacetimedb-bindings-macro.*=.*@spacetimedb-bindings-macro = { path = "../bindings-macro" }@' "crates/bindings/Cargo.toml"
 
