@@ -59,7 +59,7 @@
 
 ## What is SpacetimeDB?
 
-SpacetimeDB is an all-in-one database and server.
+You can think of SpacetimeDB as both a database and server combined into one.
 
 It is a relational database system that lets you upload your application logic directly into the database by way of fancy stored procedures called "modules."
 
