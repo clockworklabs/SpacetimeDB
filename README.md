@@ -59,9 +59,9 @@
 
 ## What is SpacetimeDB?
 
-You can think of SpacetimeDB as a database that is also a server.
+SpacetimeDB is an all-in-one database and server.
 
-It is a relational database system that lets you upload your application logic directly into the database by way of very fancy stored procedures called "modules".
+It is a relational database system that lets you upload your application logic directly into the database by way of fancy stored procedures called "modules."
 
 Instead of deploying a web or game server that sits in between your clients and your database, your clients connect directly to the database and execute your application logic inside the database itself. You can write all of your permission and authorization logic right inside your module just as you would in a normal server.
 
@@ -75,9 +75,9 @@ This means that you can write your entire application in a single language, Rust
     </figcaption>
 </figure>
 
-It's actually similar to the idea of smart contracts, except that SpacetimeDB is a database, has nothing to do with blockchain, and it's a lot faster than any smart contract system.
+It's actually similar to the idea of smart contracts, except that SpacetimeDB is a database, has nothing to do with blockchain, and is orders of magnitude faster than any smart contract system.
 
-So fast, in fact, that the entire backend our MMORPG [BitCraft Online](https://bitcraftonline.com) is just a SpacetimeDB module. We don't have any other servers or services running, which means that everything in the game, all of the chat messages, items, resources, terrain, and even the locations of the players are stored and processed by the database before being synchronized out to all of the clients in real-time.
+So fast, in fact, that the entire backend of our MMORPG [BitCraft Online](https://bitcraftonline.com) is just a SpacetimeDB module. We don't have any other servers or services running, which means that everything in the game, all of the chat messages, items, resources, terrain, and even the locations of the players are stored and processed by the database before being synchronized out to all of the clients in real-time.
 
 SpacetimeDB is optimized for maximum speed and minimum latency rather than batch processing or OLAP workloads. It is designed to be used for real-time applications like games, chat, and collaboration tools.
 
@@ -171,6 +171,6 @@ You can write SpacetimeDB modules in a bunch of popular languages, with many mor
 
 ## License
 
-SpacetimeDB is licensed under the BSL 1.1 license. This is not an open source or free software license, however it converts to the AGPL v3.0 license with a linking exception after a few years.
+SpacetimeDB is licensed under the BSL 1.1 license. This is not an open source or free software license, however, it converts to the AGPL v3.0 license with a linking exception after a few years.
 
-Note that the AGPL v3.0 does not typically include a linking exception, however we have added a custom one to the AGPL license for SpacetimeDB. Our motivation for choosing a free software license is to ensure that contributions made to SpacetimeDB are propogated back to the community. We are expressly not interested in forcing users of SpacetimeDB to open source their own code if they link with SpacetimeDB, therefore we needed to include a linking exception.
+Note that the AGPL v3.0 does not typically include a linking exception. We have added a custom linking exception to the AGPL license for SpacetimeDB. Our motivation for choosing a free software license is to ensure that contributions made to SpacetimeDB are propogated back to the community. We are expressly not interested in forcing users of SpacetimeDB to open source their own code if they link with SpacetimeDB, so we needed to include a linking exception.
