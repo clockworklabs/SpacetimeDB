@@ -62,6 +62,8 @@ namespace SpacetimeDB
             // TODO: Consider renaming this one, this kind of implies that its a callback for the Update operation
             public Action<SpacetimeDBClient.TableOp, object, object, ClientApi.Event> RowUpdatedCallback;
             public Func<AlgebraicType, AlgebraicValue, AlgebraicValue, bool> ComparePrimaryKeyFunc;
+            public Func<AlgebraicValue, AlgebraicValue> GetPrimaryKeyValueFunc;
+            public Func<AlgebraicType, AlgebraicType> GetPrimaryKeyTypeFunc;
 
             public string Name
             {
@@ -90,6 +92,10 @@ namespace SpacetimeDB
                     ?.CreateDelegate(typeof(Action<SpacetimeDBClient.TableOp, object, object, ClientApi.Event>));
                 ComparePrimaryKeyFunc = (Func<AlgebraicType, AlgebraicValue, AlgebraicValue, bool>)clientTableType.GetMethod("ComparePrimaryKey", BindingFlags.Static | BindingFlags.Public)
                     ?.CreateDelegate(typeof(Func<AlgebraicType, AlgebraicValue, AlgebraicValue, bool>));
+                GetPrimaryKeyValueFunc = (Func<AlgebraicValue, AlgebraicValue>)clientTableType.GetMethod("GetPrimaryKeyValue", BindingFlags.Static | BindingFlags.Public)
+                    ?.CreateDelegate(typeof(Func<AlgebraicValue, AlgebraicValue>));
+                GetPrimaryKeyTypeFunc = (Func<AlgebraicType, AlgebraicType>)clientTableType.GetMethod("GetPrimaryKeyType", BindingFlags.Static | BindingFlags.Public)
+                    ?.CreateDelegate(typeof(Func<AlgebraicType, AlgebraicType>));
                 entries = new Dictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
                 decodedValues = new ConcurrentDictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
             }
@@ -210,6 +216,16 @@ namespace SpacetimeDB
             public bool ComparePrimaryKey(AlgebraicValue v1, AlgebraicValue v2)
             {
                 return (bool)ComparePrimaryKeyFunc.Invoke(rowSchema, v1, v2);
+            }
+
+            public AlgebraicValue GetPrimaryKeyValue(AlgebraicValue row)
+            {
+                return GetPrimaryKeyValueFunc != null ? GetPrimaryKeyValueFunc.Invoke(row) : null;
+            }
+
+            public AlgebraicType GetPrimaryKeyType(AlgebraicType row)
+            {
+                return GetPrimaryKeyTypeFunc != null ? GetPrimaryKeyTypeFunc.Invoke(row) : null;
             }
 
             public bool ComparePrimaryKey(byte[] rowPk1, byte[] rowPk2)
