@@ -784,11 +784,11 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     };
 
     let filter_impl = quote! {
-        #[allow(non_camel_case_types)]
         const _: () = {
             #[derive(Debug, spacetimedb::Serialize, spacetimedb::Deserialize)]
             #[sats(crate = spacetimedb::spacetimedb_lib)]
             #[repr(u8)]
+            #[allow(non_camel_case_types)]
             pub enum FieldIndex {
                 #(#field_names),*
             }
