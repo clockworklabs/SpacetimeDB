@@ -28,7 +28,7 @@
     &nbsp;
     <a href="https://hub.docker.com/repository/docker/clockworklabs/spacetimedb"><img src="https://img.shields.io/docker/pulls/clockworklabs/spacetimedb?style=flat-square"></a>
     &nbsp;
-    <a href="https://github.com/clockworklabs/spacetimedb/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSL_1.1-00bfff.svg?style=flat-square"></a>
+    <a href="https://github.com/clockworklabs/spacetimedb/blob/main/LICENSE.txt"><img src="https://img.shields.io/badge/license-BSL_1.1-00bfff.svg?style=flat-square"></a>
 </p>
 
 <p align="center">
