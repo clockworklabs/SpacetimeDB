@@ -68,11 +68,11 @@ Instead of deploying a web or game server that sits in between your clients and 
 This means that you can write your entire application in a single language, Rust, and deploy it as a single binary. No more microservices, no more serverless, no more containers, no more Kubernetes, no more Docker, no more VMs, no more DevOps, no more infrastructure, no more ops, no more servers.
 
 <figure>
-<img src="./images/basic-architecture-diagram.png" alt="SpacetimeDB Architecture" style="width:100%">
-<figcaption align = "center">
-<b>SpacetimeDB application architecture</b>
-<p><sup><sub>(elements in white are provided by SpacetimeDB)</sub></sup></p>
-</figcaption>
+    <img src="./images/basic-architecture-diagram.png" alt="SpacetimeDB Architecture" style="width:100%">
+    <figcaption align="center">
+        <b>SpacetimeDB application architecture</b>
+        <p><sup><sub>(elements in white are provided by SpacetimeDB)</sub></sup></p>
+    </figcaption>
 </figure>
 
 It's actually similar to the idea of smart contracts, except that SpacetimeDB is a database, has nothing to do with blockchain, and it's a lot faster than any smart contract system.
