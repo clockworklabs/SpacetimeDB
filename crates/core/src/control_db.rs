@@ -536,8 +536,7 @@ impl ControlDb {
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
     pub fn get_energy_balance(&self, identity: &Identity) -> Result<Option<EnergyQuanta>> {
         let tree = self.db.open_tree("energy_budget")?;
-        let key = identity.to_hex();
-        let value = tree.get(key.as_bytes())?;
+        let value = tree.get(identity.as_bytes())?;
         if let Some(value) = value {
             let Ok(arr) = <[u8; 16]>::try_from(value.as_ref()) else {
                 return Err(Error::DecodingError(bsatn::DecodeError::BufferLength));
@@ -554,8 +553,7 @@ impl ControlDb {
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
     pub async fn set_energy_balance(&self, identity: Identity, energy_balance: EnergyQuanta) -> Result<()> {
         let tree = self.db.open_tree("energy_budget")?;
-        let key = identity.to_hex();
-        tree.insert(key, &energy_balance.0.to_be_bytes())?;
+        tree.insert(identity.as_bytes(), &energy_balance.0.to_be_bytes())?;
 
         Ok(())
     }
