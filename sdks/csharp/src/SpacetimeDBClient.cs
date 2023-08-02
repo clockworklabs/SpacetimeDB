@@ -130,9 +130,8 @@ namespace SpacetimeDB
                     if (type.GetCustomAttribute<ReducerClassAttribute>() != null)
                     {
                         return type;
+                    }
                 }
-            }
-
             }
 
             // If the type is not found in any assembly, return null or throw an exception
