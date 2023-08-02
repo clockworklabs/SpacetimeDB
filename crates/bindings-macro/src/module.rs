@@ -277,6 +277,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                         }
                     }
 
+                    #[allow(non_camel_case_types)]
                     enum __ProductFieldIdent {
                         #(#field_names,)*
                     }
@@ -332,6 +333,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                         }
                     }
 
+                    #[allow(non_camel_case_types)]
                     enum __Variant {
                         #(#variant_idents,)*
                     }
