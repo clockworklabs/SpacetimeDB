@@ -1,5 +1,6 @@
 use clap::Command;
 use spacetimedb_cli::*;
+use spacetimedb_lib::util;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
