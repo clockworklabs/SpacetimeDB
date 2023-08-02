@@ -82,12 +82,6 @@ pub fn cli(is_standalone: bool) -> clap::Command {
         .arg(log_dir_path_arg)
         .arg(database_path_arg)
         .arg(
-            Arg::new("allow_create")
-                .long("allow-create")
-                .action(SetTrue)
-                .help("Allows for the creation of files and directories that don't exist"),
-        )
-        .arg(
             Arg::new("enable_tracy")
                 .long("enable-tracy")
                 .action(SetTrue)
@@ -131,7 +125,6 @@ fn read_argument<'a>(args: &'a ArgMatches, arg_name: &str, env_name: &str) -> Op
 
 pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
-    let allow_create = args.get_flag("allow_create");
     let log_conf_path = read_argument(args, "log_conf_path", "SPACETIMEDB_LOG_CONFIG");
     let log_dir_path = read_argument(args, "log_dir_path", "SPACETIMEDB_LOGS_PATH");
     let stdb_path = read_argument(args, "database_path", "STDB_PATH");
@@ -140,21 +133,17 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let enable_tracy = args.get_flag("enable_tracy");
 
     if let Some(log_conf_path) = log_conf_path {
-        create_file_with_contents(
-            allow_create,
-            log_conf_path,
-            include_str!("../../../../crates/standalone/log.conf"),
-        )?;
+        create_file_with_contents(log_conf_path, include_str!("../../../../crates/standalone/log.conf"))?;
         set_env_with_warning("SPACETIMEDB_LOG_CONFIG", log_conf_path);
     }
 
     if let Some(log_dir_path) = log_dir_path {
-        create_dir_or_err(allow_create, log_dir_path)?;
+        create_dir_or_err(log_dir_path)?;
         set_env_with_warning("SPACETIMEDB_LOGS_PATH", log_dir_path);
     }
 
     if let Some(stdb_path) = stdb_path {
-        create_dir_or_err(allow_create, stdb_path)?;
+        create_dir_or_err(stdb_path)?;
         set_env_with_warning("STDB_PATH", stdb_path);
     }
 
