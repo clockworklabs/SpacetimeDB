@@ -1,7 +1,7 @@
 using SpacetimeDB.Module;
 using static SpacetimeDB.Runtime;
 
-static partial class Program
+static partial class Module
 {
     [SpacetimeDB.Table]
     public partial struct Person
