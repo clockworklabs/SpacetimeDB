@@ -1,6 +1,7 @@
 use super::database_logger::DatabaseLogger;
 use crate::address::Address;
 use crate::db::message_log::MessageLog;
+use crate::db::ostorage::memory_object_db::MemoryObjectDB;
 use crate::db::ostorage::sled_object_db::SledObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::db::relational_db::RelationalDB;
@@ -21,7 +22,7 @@ pub struct DatabaseInstanceContext {
 }
 
 impl DatabaseInstanceContext {
-    pub fn from_database(database: &Database, instance_id: u64, root_db_path: PathBuf) -> Arc<Self> {
+    pub fn from_database(in_memory: bool, database: &Database, instance_id: u64, root_db_path: PathBuf) -> Arc<Self> {
         let mut db_path = root_db_path;
         db_path.extend([database.address.to_hex(), instance_id.to_string()]);
         db_path.push("database");
@@ -29,6 +30,7 @@ impl DatabaseInstanceContext {
         let log_path = DatabaseLogger::filepath(&database.address, instance_id);
 
         Self::new(
+            in_memory,
             instance_id,
             database.id,
             database.trace_log,
@@ -48,6 +50,7 @@ impl DatabaseInstanceContext {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        in_memory: bool,
         database_instance_id: u64,
         database_id: u64,
         trace_log: bool,
@@ -56,11 +59,21 @@ impl DatabaseInstanceContext {
         db_path: PathBuf,
         log_path: &Path,
     ) -> Arc<Self> {
-        let mlog_path = db_path.join("mlog");
-        let odb_path = db_path.join("odb");
+        let message_log = if in_memory {
+            None
+        } else {
+            let mlog_path = db_path.join("mlog");
+            Some(Arc::new(Mutex::new(MessageLog::open(mlog_path).unwrap())))
+        };
 
-        let message_log = Arc::new(Mutex::new(MessageLog::open(mlog_path).unwrap()));
-        let odb = Arc::new(Mutex::new(DatabaseInstanceContext::make_default_ostorage(odb_path)));
+        let odb = if in_memory {
+            Box::new(MemoryObjectDB::new())
+        } else {
+            let odb_path = db_path.join("odb");
+            DatabaseInstanceContext::make_default_ostorage(odb_path)
+        };
+        let odb = Arc::new(Mutex::new(odb));
+
         Arc::new(Self {
             database_instance_id,
             database_id,

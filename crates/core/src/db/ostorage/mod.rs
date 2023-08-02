@@ -3,6 +3,8 @@ use bytes;
 
 use crate::hash::Hash;
 
+pub mod memory_object_db;
+
 pub mod hashmap_object_db;
 
 #[cfg(feature = "odb_rocksdb")]

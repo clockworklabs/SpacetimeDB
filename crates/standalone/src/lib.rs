@@ -4,6 +4,7 @@ pub mod subcommands;
 pub mod util;
 mod worker_db;
 
+use crate::subcommands::start::ProgramKind;
 use crate::subcommands::{start, version};
 use anyhow::Context;
 use clap::{ArgMatches, Command};
@@ -46,10 +47,16 @@ pub struct StandaloneEnv {
     sendgrid: Option<SendGridController>,
     public_key: DecodingKey,
     private_key: EncodingKey,
+    /// Whether databases in this environment will be created entirely in memory
+    /// or otherwise persist their message log and object store to disk.
+    ///
+    /// Note that this does not apply to the StandaloneEnv's own control_db
+    /// or object_db.
+    in_memory: bool,
 }
 
 impl StandaloneEnv {
-    pub async fn init() -> anyhow::Result<Arc<Self>> {
+    pub async fn init(in_memory: bool) -> anyhow::Result<Arc<Self>> {
         let worker_db = WorkerDb::init()?;
         let object_db = ObjectDb::init()?;
         let db_inst_ctx_controller = DatabaseInstanceContextController::new();
@@ -69,6 +76,7 @@ impl StandaloneEnv {
             sendgrid,
             public_key,
             private_key,
+            in_memory,
         });
         energy_monitor.set_standalone_env(this.clone());
         Ok(this)
@@ -529,15 +537,17 @@ impl StandaloneEnv {
 
         let root_db_path = stdb_path("worker_node/database_instances");
 
-        let (dbic, (scheduler, scheduler_starter)) =
-            if let Some((dbic, scheduler)) = self.db_inst_ctx_controller.get(instance_id) {
-                (dbic, scheduler.new_with_same_db())
-            } else {
-                let dbic = DatabaseInstanceContext::from_database(&database, instance_id, root_db_path.clone());
-                let (scheduler, scheduler_starter) = Scheduler::open(dbic.scheduler_db_path(root_db_path))?;
-                self.db_inst_ctx_controller.insert(dbic.clone(), scheduler.clone());
-                (dbic, (scheduler, scheduler_starter))
-            };
+        let (dbic, (scheduler, scheduler_starter)) = if let Some((dbic, scheduler)) =
+            self.db_inst_ctx_controller.get(instance_id)
+        {
+            (dbic, scheduler.new_with_same_db())
+        } else {
+            let dbic =
+                DatabaseInstanceContext::from_database(self.in_memory, &database, instance_id, root_db_path.clone());
+            let (scheduler, scheduler_starter) = Scheduler::open(dbic.scheduler_db_path(root_db_path))?;
+            self.db_inst_ctx_controller.insert(dbic.clone(), scheduler.clone());
+            (dbic, (scheduler, scheduler_starter))
+        };
 
         let mhc = ModuleHostContext {
             dbic,
@@ -586,5 +596,5 @@ pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow:
 }
 
 pub fn get_subcommands() -> Vec<Command> {
-    vec![start::cli(true), version::cli()]
+    vec![start::cli(ProgramKind::Standalone), version::cli()]
 }

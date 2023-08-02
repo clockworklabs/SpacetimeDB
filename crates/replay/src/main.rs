@@ -27,7 +27,18 @@ pub fn main() {
     let identity = Identity::from_byte_array(hash_bytes(b"This is a fake identity.").data);
     let address = Address::from_slice(&identity.as_bytes()[..16]);
 
-    let dbic = DatabaseInstanceContext::new(0, 0, false, identity, address, db_path.to_path_buf(), logger_path);
+    let in_memory = false;
+
+    let dbic = DatabaseInstanceContext::new(
+        in_memory,
+        0,
+        0,
+        false,
+        identity,
+        address,
+        db_path.to_path_buf(),
+        logger_path,
+    );
 
     let iv = InstanceEnv::new(dbic, Scheduler::dummy(&scheduler_path), None);
 

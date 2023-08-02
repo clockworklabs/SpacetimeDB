@@ -124,8 +124,11 @@ impl ModuleHandle {
 }
 
 pub async fn load_module(name: &str) -> ModuleHandle {
+    // For testing, run in memory by default.
+    let in_memory = true;
+
     crate::set_key_env_vars();
-    let env = spacetimedb_standalone::StandaloneEnv::init().await.unwrap();
+    let env = spacetimedb_standalone::StandaloneEnv::init(in_memory).await.unwrap();
     let identity = env.control_db().alloc_spacetime_identity().await.unwrap();
     let address = env.control_db().alloc_spacetime_address().await.unwrap();
     let program_bytes = read_module(name);

@@ -5,6 +5,7 @@ use super::datastore::traits::{
     TxData,
 };
 use super::message_log::MessageLog;
+use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
 use crate::db::db_metrics::{RDB_DELETE_BY_REL_TIME, RDB_DROP_TABLE_TIME, RDB_INSERT_TIME, RDB_ITER_TIME};
 use crate::db::messages::commit::Commit;
@@ -69,7 +70,7 @@ impl std::fmt::Debug for RelationalDB {
 impl RelationalDB {
     pub fn open(
         root: impl AsRef<Path>,
-        message_log: Arc<Mutex<MessageLog>>,
+        message_log: Option<Arc<Mutex<MessageLog>>>,
         odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
     ) -> Result<Self, DBError> {
         log::trace!("DATABASE: OPENING");
@@ -84,31 +85,34 @@ impl RelationalDB {
 
         let datastore = Locking::bootstrap()?;
         let unwritten_commit = {
-            let message_log = message_log.lock().unwrap();
             let mut transaction_offset = 0;
             let mut last_commit_offset = None;
             let mut last_hash: Option<Hash> = None;
-            for message in message_log.iter() {
-                let (commit, _) = Commit::decode(message);
-                last_hash = commit.parent_commit_hash;
-                last_commit_offset = Some(commit.commit_offset);
-                for transaction in commit.transactions {
-                    transaction_offset += 1;
-                    // NOTE: Although I am creating a blobstore transaction in a
-                    // one to one fashion for each message log transaction, this
-                    // is just to reduce memory usage while inserting. We don't
-                    // really care about inserting these transactionally as long
-                    // as all of the writes get inserted.
-                    datastore.replay_transaction(&transaction, odb.clone())?;
-                }
-            }
 
-            // The purpose of this is to rebuild the state of the datastore
-            // after having inserted all of rows from the message log.
-            // This is necessary because, for example, inserting a row into `st_table`
-            // is not equivalent to calling `create_table`.
-            // There may eventually be better way to do this, but this will have to do for now.
-            datastore.rebuild_state_after_replay()?;
+            if let Some(message_log) = &message_log {
+                let message_log = message_log.lock().unwrap();
+                for message in message_log.iter() {
+                    let (commit, _) = Commit::decode(message);
+                    last_hash = commit.parent_commit_hash;
+                    last_commit_offset = Some(commit.commit_offset);
+                    for transaction in commit.transactions {
+                        transaction_offset += 1;
+                        // NOTE: Although I am creating a blobstore transaction in a
+                        // one to one fashion for each message log transaction, this
+                        // is just to reduce memory usage while inserting. We don't
+                        // really care about inserting these transactionally as long
+                        // as all of the writes get inserted.
+                        datastore.replay_transaction(&transaction, odb.clone())?;
+                    }
+                }
+
+                // The purpose of this is to rebuild the state of the datastore
+                // after having inserted all of rows from the message log.
+                // This is necessary because, for example, inserting a row into `st_table`
+                // is not equivalent to calling `create_table`.
+                // There may eventually be better way to do this, but this will have to do for now.
+                datastore.rebuild_state_after_replay()?;
+            }
 
             let commit_offset = if let Some(last_commit_offset) = last_commit_offset {
                 last_commit_offset + 1
@@ -463,14 +467,22 @@ impl RelationalDB {
     }
 }
 
-pub fn make_default_ostorage(path: impl AsRef<Path>) -> Result<Box<dyn ObjectDB + Send>, DBError> {
-    Ok(Box::new(HashMapObjectDB::open(path)?))
+fn make_default_ostorage(in_memory: bool, path: impl AsRef<Path>) -> Result<Box<dyn ObjectDB + Send>, DBError> {
+    Ok(if in_memory {
+        Box::new(MemoryObjectDB::new())
+    } else {
+        Box::new(HashMapObjectDB::open(path)?)
+    })
 }
 
-pub fn open_db(path: impl AsRef<Path>) -> Result<RelationalDB, DBError> {
+pub fn open_db(path: impl AsRef<Path>, in_memory: bool) -> Result<RelationalDB, DBError> {
     let path = path.as_ref();
-    let mlog = Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?));
-    let odb = Arc::new(Mutex::new(make_default_ostorage(path.join("odb"))?));
+    let mlog = if in_memory {
+        None
+    } else {
+        Some(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
+    };
+    let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, path.join("odb"))?));
     let stdb = RelationalDB::open(path, mlog, odb)?;
 
     Ok(stdb)
@@ -486,10 +498,11 @@ pub(crate) mod tests_utils {
     use super::*;
     use tempdir::TempDir;
 
-    //Utility for creating a database on a TempDir
+    // Utility for creating a database on a TempDir
     pub(crate) fn make_test_db() -> Result<(RelationalDB, TempDir), DBError> {
         let tmp_dir = TempDir::new("stdb_test")?;
-        let stdb = open_db(&tmp_dir)?;
+        let in_memory = false;
+        let stdb = open_db(&tmp_dir, in_memory)?;
         Ok((stdb, tmp_dir))
     }
 }
@@ -545,8 +558,9 @@ mod tests {
 
         stdb.commit_tx(tx)?;
 
-        let mlog = Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?));
-        let odb = Arc::new(Mutex::new(make_default_ostorage(tmp_dir.path().join("odb"))?));
+        let mlog = Some(Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?)));
+        let in_memory = false;
+        let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, tmp_dir.path().join("odb"))?));
 
         match RelationalDB::open(tmp_dir.path(), mlog, odb) {
             Ok(_) => {
