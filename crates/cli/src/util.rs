@@ -235,8 +235,8 @@ impl clap::ValueEnum for ModuleLanguage {
     }
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self {
-            Self::Csharp => Some(clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"])),
-            Self::Rust => Some(clap::builder::PossibleValue::new("rust").aliases(["rs"])),
+            Self::Csharp => Some(clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs", "C#", "CSharp"])),
+            Self::Rust => Some(clap::builder::PossibleValue::new("rust").aliases(["rs", "Rust"])),
         }
     }
 }
