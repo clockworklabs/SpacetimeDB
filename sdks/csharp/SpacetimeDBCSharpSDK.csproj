@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-    <PackageId>spacetimedbsdk</PackageId>
+    <PackageId>SpacetimeDB.ClientSDK</PackageId>
     <Title>SpacetimeDB SDK</Title>
     <Authors>derek_clockwork</Authors>
     <Company>Clockwork Labs</Company>
