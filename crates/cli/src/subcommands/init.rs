@@ -1,3 +1,4 @@
+use crate::util::ModuleLanguage;
 use crate::Config;
 use anyhow::Context;
 use clap::{Arg, ArgMatches};
@@ -19,14 +20,8 @@ pub fn cli() -> clap::Command {
                 .short('l')
                 .long("lang")
                 .help("The spacetime module language.")
-                .value_parser(clap::value_parser!(ProjectLang)),
+                .value_parser(clap::value_parser!(ModuleLanguage)),
         )
-}
-
-#[derive(clap::ValueEnum, Clone, Copy)]
-enum ProjectLang {
-    Rust,
-    Csharp,
 }
 
 fn check_for_cargo() -> bool {
@@ -119,7 +114,7 @@ fn check_for_git() -> bool {
 
 pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
-    let project_lang = *args.get_one::<ProjectLang>("lang").unwrap();
+    let project_lang = *args.get_one::<ModuleLanguage>("lang").unwrap();
 
     // Create the project path, or make sure the target project path is empty.
     if project_path.exists() {
@@ -141,8 +136,8 @@ pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     }
 
     match project_lang {
-        ProjectLang::Rust => exec_init_rust(args).await,
-        ProjectLang::Csharp => exec_init_csharp(args).await,
+        ModuleLanguage::Rust => exec_init_rust(args).await,
+        ModuleLanguage::Csharp => exec_init_csharp(args).await,
     }
 }
 
