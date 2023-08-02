@@ -52,7 +52,7 @@
     &nbsp;
     <a href="https://youtube.com/@SpacetimeDB"><img height="25" src="./images/social/youtube.svg" alt="YouTube"></a>
     &nbsp;
-    <a href="https://www.linkedin.com/company/clockworklabs/"><img height="25" src="./images/social/linkedin.svg" alt="LinkedIn"></a>
+    <a href="https://www.linkedin.com/company/clockwork-labs/"><img height="25" src="./images/social/linkedin.svg" alt="LinkedIn"></a>
     &nbsp;
     <a href="https://stackoverflow.com/questions/tagged/spacetimedb"><img height="25" src="./images/social/stack-overflow.svg" alt="StackOverflow"></a>
 </p>
