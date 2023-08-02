@@ -1,7 +1,7 @@
 use super::database_logger::DatabaseLogger;
 use crate::address::Address;
 use crate::db::message_log::MessageLog;
-use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
+use crate::db::ostorage::sled_object_db::SledObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::db::relational_db::RelationalDB;
 use crate::identity::Identity;
@@ -73,6 +73,6 @@ impl DatabaseInstanceContext {
     }
 
     pub(crate) fn make_default_ostorage(path: impl AsRef<Path>) -> Box<dyn ObjectDB + Send> {
-        Box::new(HashMapObjectDB::open(path).unwrap())
+        Box::new(SledObjectDB::open(path).unwrap())
     }
 }

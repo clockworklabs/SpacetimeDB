@@ -35,9 +35,9 @@ fn generate_random_sized_value() -> Vec<u8> {
 #[derive(Clone, Copy)]
 pub enum ODBFlavor {
     HashMap,
-    #[cfg(feature = "odb_rocksdb")]
-    Sled,
     #[cfg(feature = "odb_sled")]
+    Sled,
+    #[cfg(feature = "odb_rocksdb")]
     Rocks,
 }
 impl Display for ODBFlavor {
