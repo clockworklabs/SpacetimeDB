@@ -245,8 +245,8 @@ pub fn detect_module_language(path_to_project: &Path) -> ModuleLanguage {
     // TODO: Possible add a config file during spacetime init with the language
     // check for Cargo.toml
     if path_to_project.join("Cargo.toml").exists() {
-        return ModuleLanguage::Rust;
+        ModuleLanguage::Rust
     } else {
-        return ModuleLanguage::Csharp;
+        ModuleLanguage::Csharp
     }
 }

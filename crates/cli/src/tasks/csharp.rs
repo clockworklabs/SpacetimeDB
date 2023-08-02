@@ -29,5 +29,5 @@ pub(crate) fn build_csharp(project_path: &Path, _build_debug: bool) -> anyhow::R
         anyhow::bail!("Failed to build project");
     }
 
-    return Ok(PathBuf::from(output_path));
+    Ok(output_path)
 }
