@@ -16,17 +16,14 @@
     <PackageIcon>logo.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDBCSharpSDK</RepositoryUrl>
-    <AssemblyVersion>0.5.0</AssemblyVersion>
-    <Version>0.5.0</Version>
+    <AssemblyVersion>0.6.0</AssemblyVersion>
+    <Version>0.6.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Remove="examples\**" />
-    <Compile Remove="Unity\**" />
     <EmbeddedResource Remove="examples\**" />
-    <EmbeddedResource Remove="Unity\**" />
     <None Remove="examples\**" />
-    <None Remove="Unity\**" />
   </ItemGroup>
 
   <ItemGroup>
