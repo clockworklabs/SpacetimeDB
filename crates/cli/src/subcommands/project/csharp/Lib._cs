@@ -4,10 +4,9 @@ using static SpacetimeDB.Runtime;
 static partial class Program
 {
     [SpacetimeDB.Table]
-    [SpacetimeDB.Type]
     public partial struct Person
     {
-        [SpacetimeDB.ColumnIndex(ColumnIndexKind.Identity)]
+        [SpacetimeDB.Column(ColumnAttrs.Unique | ColumnAttrs.AutoInc)]
         public int Id;
         public string Name;
         public int Age;
@@ -16,16 +15,18 @@ static partial class Program
     [SpacetimeDB.Reducer]
     public static void Add(string name, int age)
     {
-        new Person { Name = name, Age = age }.Insert();
+        var person = new Person { Name = name, Age = age };
+        person.Insert();
+        Log($"Inserted {person.Name} under #{person.Id}");
     }
 
     [SpacetimeDB.Reducer]
     public static void SayHello()
     {
-        Log("Hello from C#!");
         foreach (var person in Person.Iter())
         {
             Log($"Hello, {person.Name}!");
         }
+        Log("Hello, World!");
     }
 }
