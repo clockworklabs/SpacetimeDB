@@ -196,16 +196,6 @@ pub async fn exec_init_csharp(args: &ArgMatches) -> anyhow::Result<()> {
         std::fs::write(path, data_file.0)?;
     }
 
-    anyhow::ensure!(
-        std::process::Command::new("git")
-            .current_dir(&project_path)
-            .args(&["submodule", "update", "--init", "--recursive"])
-            .status()
-            .unwrap()
-            .success(),
-        "Failed to initialize git submodules"
-    );
-
     println!(
         "{}",
         format!("Project successfully created at path: {}", project_path.display()).green()
