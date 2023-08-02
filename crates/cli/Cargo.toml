@@ -17,7 +17,7 @@ bench = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = { version = "4.2.4", features = ["derive", "env"] }
+clap = { version = "4.2.4", features = ["derive", "env", "string"] }
 reqwest = { version = "0.11.10", features = ["stream", "json"] }
 tokio = { version = "1", features = ["full"] }
 anyhow = { version = "1.0.57", features = ["backtrace"] }
@@ -26,7 +26,8 @@ serde_json = { version = "1.0", features = ["raw_value", "preserve_order"] }
 toml = "0.5"
 dirs = "4.0"
 tabled = "0.8.0"
-spacetimedb-lib = { path = "../lib", version = "0.5.0" }
+spacetimedb-lib = { path = "../lib", version = "0.5.0", features = ["cli"] }
+spacetimedb-standalone = { path = "../standalone", version = "0.5.0", optional = true }
 convert_case = "0.6.0"
 wasmtime = { version = "7", default-features = false, features = ["cranelift"] }
 colored = "2.0.0"
@@ -49,3 +50,5 @@ insta = { version = "1.21.0", features = ["toml"] }
 
 [features]
 tracelogging = []
+standalone = ["spacetimedb-standalone"]
+default = ["standalone"]

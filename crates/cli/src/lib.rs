@@ -4,11 +4,13 @@ mod edit_distance;
 mod subcommands;
 mod tasks;
 pub mod util;
-
 use clap::{ArgMatches, Command};
 
 pub use config::Config;
 pub use subcommands::*;
+
+#[cfg(feature = "standalone")]
+use spacetimedb_standalone::subcommands::start;
 
 pub fn get_subcommands() -> Vec<Command> {
     vec![
@@ -29,6 +31,8 @@ pub fn get_subcommands() -> Vec<Command> {
         #[cfg(feature = "tracelogging")]
         tracelog::cli(),
         server::cli(),
+        #[cfg(feature = "standalone")]
+        start::cli(false),
     ]
 }
 
@@ -51,6 +55,8 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "server" => server::exec(config, args).await,
         #[cfg(feature = "tracelogging")]
         "tracelog" => tracelog::exec(config, args).await,
+        #[cfg(feature = "standalone")]
+        "start" => start::exec(args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
