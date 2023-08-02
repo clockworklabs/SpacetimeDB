@@ -20,7 +20,7 @@ services:
     ports:
       - "3000:80"
     privileged: true
-    command: start
+    command: start --allow-create
     environment:
       RUST_BACKTRACE: 1
       ENV: release
