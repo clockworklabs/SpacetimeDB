@@ -7,7 +7,7 @@ services:
     volumes:
       - /stdb
       - key_files:/etc/spacetimedb
-    command: start
+    command: start --allow-create
     privileged: true
     environment:
       ENV: live
