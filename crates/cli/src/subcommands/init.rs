@@ -1,3 +1,4 @@
+use crate::util::ModuleLanguage;
 use crate::Config;
 use anyhow::Context;
 use clap::{Arg, ArgMatches};
@@ -19,13 +20,8 @@ pub fn cli() -> clap::Command {
                 .short('l')
                 .long("lang")
                 .help("The spacetime module language.")
-                .value_parser(clap::value_parser!(ProjectLang)),
+                .value_parser(clap::value_parser!(ModuleLanguage)),
         )
-}
-
-#[derive(clap::ValueEnum, Clone, Copy)]
-enum ProjectLang {
-    Rust,
 }
 
 fn check_for_cargo() -> bool {
@@ -46,6 +42,39 @@ fn check_for_cargo() -> bool {
             println!("{}", format!("This OS may be unsupported: {}", unsupported_os).yellow());
         }
     }
+    false
+}
+
+fn check_for_dotnet() -> bool {
+    use std::fmt::Write;
+
+    let subpage = match std::env::consts::OS {
+        "windows" => {
+            if find_executable("dotnet.exe").is_some() {
+                return true;
+            }
+            Some("windows")
+        }
+        os => {
+            if find_executable("dotnet").is_some() {
+                return true;
+            }
+            match os {
+                "linux" | "macos" => Some(os),
+                // can't give any hint for those other OS
+                _ => None,
+            }
+        }
+    };
+    let mut msg = "Warning: You have created a C# project, but you are missing dotnet CLI.".to_owned();
+    if let Some(subpage) = subpage {
+        write!(
+            msg,
+            " Check out https://docs.microsoft.com/en-us/dotnet/core/install/{subpage}/ for installation instructions."
+        )
+        .unwrap();
+    }
+    println!("{}", msg.yellow());
     false
 }
 
@@ -85,7 +114,7 @@ fn check_for_git() -> bool {
 
 pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
-    let project_lang = *args.get_one::<ProjectLang>("lang").unwrap();
+    let project_lang = *args.get_one::<ModuleLanguage>("lang").unwrap();
 
     // Create the project path, or make sure the target project path is empty.
     if project_path.exists() {
@@ -107,7 +136,8 @@ pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     }
 
     match project_lang {
-        ProjectLang::Rust => exec_init_rust(args).await,
+        ModuleLanguage::Rust => exec_init_rust(args).await,
+        ModuleLanguage::Csharp => exec_init_csharp(args).await,
     }
 }
 
@@ -115,9 +145,9 @@ pub async fn exec_init_rust(args: &ArgMatches) -> Result<(), anyhow::Error> {
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
 
     let export_files = vec![
-        (include_str!("project/Cargo._toml"), "Cargo.toml"),
-        (include_str!("project/lib._rs"), "src/lib.rs"),
-        (include_str!("project/rust_gitignore"), ".gitignore"),
+        (include_str!("project/rust/Cargo._toml"), "Cargo.toml"),
+        (include_str!("project/rust/lib._rs"), "src/lib.rs"),
+        (include_str!("project/rust/_gitignore"), ".gitignore"),
     ];
 
     for data_file in export_files {
@@ -131,6 +161,35 @@ pub async fn exec_init_rust(args: &ArgMatches) -> Result<(), anyhow::Error> {
     // Check all dependencies
     check_for_cargo();
     check_for_git();
+
+    println!(
+        "{}",
+        format!("Project successfully created at path: {}", project_path.display()).green()
+    );
+
+    Ok(())
+}
+
+pub async fn exec_init_csharp(args: &ArgMatches) -> anyhow::Result<()> {
+    let project_path = args.get_one::<PathBuf>("project-path").unwrap();
+
+    let export_files = vec![
+        (include_str!("project/csharp/StdbModule._csproj"), "StdbModule.csproj"),
+        (include_str!("project/csharp/Lib._cs"), "Lib.cs"),
+        (include_str!("project/csharp/_gitignore"), ".gitignore"),
+    ];
+
+    // Check all dependencies
+    check_for_dotnet();
+    check_for_git();
+
+    for data_file in export_files {
+        let path = project_path.join(data_file.1);
+
+        create_directory(path.parent().unwrap())?;
+
+        std::fs::write(path, data_file.0)?;
+    }
 
     println!(
         "{}",

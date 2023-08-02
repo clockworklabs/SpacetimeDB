@@ -5,7 +5,7 @@ use anyhow::Context;
 use cargo_metadata::Message;
 use duct::cmd;
 
-pub(crate) fn build(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
+pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
     // Make sure that we have the wasm target installed (ok to run if its already installed)
     cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run()?;
     let reader = if build_debug {
