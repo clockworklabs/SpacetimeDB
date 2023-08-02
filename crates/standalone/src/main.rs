@@ -1,14 +1,5 @@
-use anyhow::Context;
 use clap::Command;
-use clap::Parser;
-use clap::Subcommand;
 
-use spacetimedb::db::db_metrics;
-use spacetimedb::startup;
-use spacetimedb::worker_metrics;
-use spacetimedb_standalone::routes::router;
-use spacetimedb_standalone::StandaloneEnv;
-use std::net::TcpListener;
 use tokio::runtime::Builder;
 
 use spacetimedb_lib::util;
