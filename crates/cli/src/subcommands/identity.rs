@@ -236,7 +236,7 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
         } else {
             config.delete_identity_config_by_name(identity_or_name.as_str())
         }
-        .unwrap_or_else(|| panic!("No such identity or name: {}", identity_or_name));
+        .ok_or(anyhow::anyhow!("No such identity or name: {}", identity_or_name))?;
         config.update_default_identity();
         config.save();
         println!(" Removed identity");
