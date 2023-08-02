@@ -26,6 +26,7 @@ pub fn cli() -> clap::Command {
 #[derive(clap::ValueEnum, Clone, Copy)]
 enum ProjectLang {
     Rust,
+    Csharp,
 }
 
 fn check_for_cargo() -> bool {
@@ -141,6 +142,7 @@ pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
 
     match project_lang {
         ProjectLang::Rust => exec_init_rust(args).await,
+        ProjectLang::Csharp => exec_init_csharp(args).await,
     }
 }
 
