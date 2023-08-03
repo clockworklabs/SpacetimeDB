@@ -289,7 +289,28 @@ decl_index!(BufferIterIdx => Box<dyn Iterator<Item = Result<bytes::Bytes, NodesE
 pub(super) type BufferIters = ResourceSlab<BufferIterIdx>;
 
 pub mod errnos {
-    include!("../../../bindings-sys/src/errno.rs");
+    /// NOTE! This is copied from the bindings-sys crate.
+    /// The include! macro does not work when publishing to crates.io
+    /// TODO(noa): Figure out a way to do this without include!
+    /// 
+    /// Error code for "No such table".
+    pub const NO_SUCH_TABLE: u16 = 1;
+
+    /// Error code for value/range not being found in a table.
+    pub const LOOKUP_NOT_FOUND: u16 = 2;
+
+    /// Error code for when a unique constraint is violated.
+    pub const UNIQUE_ALREADY_EXISTS: u16 = 3;
+
+    macro_rules! errnos {
+        ($mac:ident) => {
+            $mac! {
+                NO_SUCH_TABLE => "No such table",
+                LOOKUP_NOT_FOUND => "Value or range provided not found in table",
+                UNIQUE_ALREADY_EXISTS => "Value with given unique identifier already exists",
+            }
+        };
+    }
 
     macro_rules! nothing {
         ($($tt:tt)*) => {};
