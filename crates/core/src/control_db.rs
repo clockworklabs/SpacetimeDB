@@ -521,7 +521,7 @@ impl ControlDb {
             let Ok(arr) = <[u8; 16]>::try_from(balance_entry.1.as_ref()) else {
                 return Err(Error::DecodingError(bsatn::DecodeError::BufferLength));
             };
-            let balance = i128::from_ne_bytes(arr);
+            let balance = i128::from_be_bytes(arr);
             let energy_balance = EnergyBalance {
                 identity: Identity::from_slice(balance_entry.0.iter().as_slice()),
                 balance,
