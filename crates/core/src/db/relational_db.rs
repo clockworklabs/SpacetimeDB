@@ -19,7 +19,7 @@ use prometheus::HistogramVec;
 use spacetimedb_lib::ColumnIndexAttribute;
 use spacetimedb_lib::{data_key::ToDataKey, PrimaryKey};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
-use std::fs::File;
+use std::fs::{create_dir_all, File};
 use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -74,6 +74,9 @@ impl RelationalDB {
         odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
     ) -> Result<Self, DBError> {
         log::trace!("DATABASE: OPENING");
+
+        // Ensure that the `root` directory the database is running in exists.
+        create_dir_all(&root)?;
 
         // NOTE: This prevents accidentally opening the same database twice
         // which could potentially cause corruption if commits were interleaved
