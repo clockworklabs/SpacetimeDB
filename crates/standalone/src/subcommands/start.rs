@@ -133,7 +133,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let enable_tracy = args.get_flag("enable_tracy");
 
     if let Some(log_conf_path) = log_conf_path {
-        create_file_with_contents(log_conf_path, include_str!("../../../../crates/standalone/log.conf"))?;
+        create_file_with_contents(log_conf_path, include_str!("../../log.conf"))?;
         set_env_with_warning("SPACETIMEDB_LOG_CONFIG", log_conf_path);
     }
 
