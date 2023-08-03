@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
+use spacetimedb::db::Storage;
 use spacetimedb::host::scheduler::Scheduler;
 use spacetimedb::Identity;
 use tempdir::TempDir;
@@ -27,10 +28,8 @@ pub fn main() {
     let identity = Identity::from_byte_array(hash_bytes(b"This is a fake identity.").data);
     let address = Address::from_slice(&identity.as_bytes()[..16]);
 
-    let in_memory = false;
-
     let dbic = DatabaseInstanceContext::new(
-        in_memory,
+        Storage::Disk,
         0,
         0,
         false,

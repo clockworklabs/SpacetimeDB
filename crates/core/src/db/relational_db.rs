@@ -469,7 +469,7 @@ impl RelationalDB {
 
 fn make_default_ostorage(in_memory: bool, path: impl AsRef<Path>) -> Result<Box<dyn ObjectDB + Send>, DBError> {
     Ok(if in_memory {
-        Box::new(MemoryObjectDB::new())
+        Box::<MemoryObjectDB>::default()
     } else {
         Box::new(HashMapObjectDB::open(path)?)
     })
@@ -560,7 +560,10 @@ mod tests {
 
         let mlog = Some(Arc::new(Mutex::new(MessageLog::open(tmp_dir.path().join("mlog"))?)));
         let in_memory = false;
-        let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, tmp_dir.path().join("odb"))?));
+        let odb = Arc::new(Mutex::new(make_default_ostorage(
+            in_memory,
+            tmp_dir.path().join("odb"),
+        )?));
 
         match RelationalDB::open(tmp_dir.path(), mlog, odb) {
             Ok(_) => {

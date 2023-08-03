@@ -6,22 +6,9 @@ use spacetimedb_lib::{hash::hash_bytes, Hash};
 use crate::db::ostorage::ObjectDB;
 
 /// A simple in-memory object store, mapping hashes to their contents.
+#[derive(Default)]
 pub struct MemoryObjectDB {
     objects: HashMap<Hash, Bytes>,
-}
-
-impl MemoryObjectDB {
-    pub fn new() -> Self {
-        eprintln!("GGKK in memory");
-        let objects = HashMap::new();
-        Self { objects }
-    }
-}
-
-impl Default for MemoryObjectDB {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl ObjectDB for MemoryObjectDB {

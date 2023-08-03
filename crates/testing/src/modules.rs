@@ -7,6 +7,7 @@ use std::sync::Arc;
 use spacetimedb::address::Address;
 use spacetimedb::client::{ClientActorId, ClientConnection, Protocol};
 use spacetimedb::database_logger::DatabaseLogger;
+use spacetimedb::db::Storage;
 use spacetimedb::hash::hash_bytes;
 
 use spacetimedb::messages::control_db::HostType;
@@ -124,11 +125,12 @@ impl ModuleHandle {
 }
 
 pub async fn load_module(name: &str) -> ModuleHandle {
-    // For testing, run in memory by default.
-    let in_memory = true;
+    // For testing, persist to disk by default, as many tests
+    // exercise functionality like restarting the database.
+    let storage = Storage::Disk;
 
     crate::set_key_env_vars();
-    let env = spacetimedb_standalone::StandaloneEnv::init(in_memory).await.unwrap();
+    let env = spacetimedb_standalone::StandaloneEnv::init(storage).await.unwrap();
     let identity = env.control_db().alloc_spacetime_identity().await.unwrap();
     let address = env.control_db().alloc_spacetime_address().await.unwrap();
     let program_bytes = read_module(name);

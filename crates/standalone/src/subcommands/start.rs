@@ -3,7 +3,7 @@ use crate::util::{create_dir_or_err, create_file_with_contents};
 use crate::StandaloneEnv;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
-use spacetimedb::db::db_metrics;
+use spacetimedb::db::{db_metrics, Storage};
 use spacetimedb::{startup, worker_metrics};
 use std::net::TcpListener;
 
@@ -14,23 +14,27 @@ impl From<std::string::String> for OsStr {
     }
 }
 
-pub enum ProgramKind {
+pub enum ProgramMode {
     Standalone,
     CLI,
 }
 
-impl ProgramKind {
+impl ProgramMode {
+    /// The address mask and port to listen on
+    /// based on the mode we're running the program in.
     fn listen_addr(&self) -> &'static str {
         match self {
-            ProgramKind::Standalone => "0.0.0.0:80",
-            ProgramKind::CLI => "127.0.0.1:3000",
+            ProgramMode::Standalone => "0.0.0.0:80",
+            ProgramMode::CLI => "127.0.0.1:3000",
         }
     }
 
+    /// Help string for the address mask and port option,
+    /// based on the mode we're running the program in.
     fn listen_addr_help(&self) -> &'static str {
         match self {
-            ProgramKind::Standalone => "The address and port where SpacetimeDB should listen for connections. This defaults to to listen on all IP addresses on port 80.",
-            ProgramKind::CLI => "The address and port where SpacetimeDB should listen for connections. This defaults to local connections only on port 3000. Use an IP address or 0.0.0.0 in order to allow remote connections to SpacetimeDB.",
+            ProgramMode::Standalone => "The address and port where SpacetimeDB should listen for connections. This defaults to to listen on all IP addresses on port 80.",
+            ProgramMode::CLI => "The address and port where SpacetimeDB should listen for connections. This defaults to local connections only on port 3000. Use an IP address or 0.0.0.0 in order to allow remote connections to SpacetimeDB.",
         }
     }
 
@@ -39,13 +43,13 @@ impl ProgramKind {
     // pass these strings with static lifetimes so we can't do any dynamic string manipulation here.
     fn after_help(&self) -> &'static str {
         match self {
-            ProgramKind::Standalone => "Run `spacetimedb help start` for more detailed information.",
-            ProgramKind::CLI => "Run `spacetime help start` for more information.",
+            ProgramMode::Standalone => "Run `spacetimedb help start` for more detailed information.",
+            ProgramMode::CLI => "Run `spacetime help start` for more information.",
         }
     }
 }
 
-pub fn cli(kind: ProgramKind) -> clap::Command {
+pub fn cli(mode: ProgramMode) -> clap::Command {
     let mut log_conf_path_arg = Arg::new("log_conf_path")
         .long("log-conf-path")
         .help("The path of the file that contains the log configuration for SpacetimeDB (SPACETIMEDB_LOG_CONFIG)");
@@ -73,8 +77,8 @@ pub fn cli(kind: ProgramKind) -> clap::Command {
     .to_string();
 
     // If this isn't standalone, we provide default values
-    match kind {
-        ProgramKind::Standalone => {
+    match mode {
+        ProgramMode::Standalone => {
             log_conf_path_arg = log_conf_path_arg.default_value(format!("{}/.spacetime/log.conf", default_root));
             log_dir_path_arg = log_dir_path_arg.default_value(format!("{}/.spacetime", default_root));
             database_path_arg = database_path_arg.default_value(format!("{}/.spacetime/stdb", default_root));
@@ -83,7 +87,7 @@ pub fn cli(kind: ProgramKind) -> clap::Command {
             jwt_priv_key_path_arg =
                 jwt_priv_key_path_arg.default_value(format!("{}/.spacetime/id_ecdsa", default_root));
         }
-        ProgramKind::CLI => {
+        ProgramMode::CLI => {
             log_conf_path_arg = log_conf_path_arg.default_value("/etc/spacetimedb/log.conf");
             log_dir_path_arg = log_dir_path_arg.default_value("/var/log");
             database_path_arg = database_path_arg.default_value("/stdb");
@@ -106,8 +110,8 @@ pub fn cli(kind: ProgramKind) -> clap::Command {
             Arg::new("listen_addr")
                 .long("listen-addr")
                 .short('l')
-                .default_value(kind.listen_addr())
-                .help(kind.listen_addr_help())
+                .default_value(mode.listen_addr())
+                .help(mode.listen_addr_help())
         )
         .arg(log_conf_path_arg)
         .arg(log_dir_path_arg)
@@ -122,18 +126,18 @@ pub fn cli(kind: ProgramKind) -> clap::Command {
         .arg(jwt_priv_key_path_arg);
 
     // Standalone databases have the option to run entirely in memory.
-    match kind {
-        ProgramKind::Standalone => {
+    match mode {
+        ProgramMode::Standalone => {
             let in_memory_arg = Arg::new("in_memory")
                 .long("in-memory")
                 .action(SetTrue)
                 .help("Whether to run the database entirely in memory");
             command = command.arg(in_memory_arg);
         }
-        ProgramKind::CLI => (),
+        ProgramMode::CLI => (),
     };
 
-    command.after_help(kind.after_help())
+    command.after_help(mode.after_help())
 }
 
 /// Sets an environment variable. Print a warning if already set.
@@ -168,7 +172,11 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let jwt_pub_key_path = read_argument(args, "jwt_pub_key_path", "SPACETIMEDB_JWT_PUB_KEY");
     let jwt_priv_key_path = read_argument(args, "jwt_priv_key_path", "SPACETIMEDB_JWT_PRIV_KEY");
     let enable_tracy = args.get_flag("enable_tracy");
-    let in_memory = args.get_flag("in_memory");
+    let storage = if args.get_flag("in_memory") {
+        Storage::Memory
+    } else {
+        Storage::Disk
+    };
 
     banner();
 
@@ -209,7 +217,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     // Metrics for our use of db/.
     db_metrics::register_custom_metrics();
 
-    let ctx = spacetimedb_client_api::ArcEnv(StandaloneEnv::init(in_memory).await?);
+    let ctx = spacetimedb_client_api::ArcEnv(StandaloneEnv::init(storage).await?);
 
     let service = router().with_state(ctx).into_make_service();
 

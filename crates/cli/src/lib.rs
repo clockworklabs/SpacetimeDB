@@ -7,7 +7,7 @@ pub mod util;
 use clap::{ArgMatches, Command};
 
 pub use config::Config;
-use spacetimedb_standalone::subcommands::start::ProgramKind;
+use spacetimedb_standalone::subcommands::start::ProgramMode;
 pub use subcommands::*;
 
 #[cfg(feature = "standalone")]
@@ -33,7 +33,7 @@ pub fn get_subcommands() -> Vec<Command> {
         tracelog::cli(),
         server::cli(),
         #[cfg(feature = "standalone")]
-        start::cli(ProgramKind::CLI),
+        start::cli(ProgramMode::CLI),
     ]
 }
 
