@@ -90,8 +90,8 @@ fn check_for_wasm_bindgen(artifact: &Path) -> anyhow::Result<()> {
         return Ok(());
     };
     if has_wasm_bindgen(&module) {
-        anyhow::bail!(
-            "wasm-bindgen detected.\n\
+        eprintln!(
+            "WARNING: wasm-bindgen detected.\n\
              \n\
              It seems like either you or a crate in your dependency tree is depending on\n\
              wasm-bindgen. wasm-bindgen is only for webassembly modules that target the web\n\
