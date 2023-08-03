@@ -69,13 +69,13 @@ fn get_command() -> Command {
 │    https://discord.gg/spacetimedb                                                                     │
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 Usage:
-{{usage}}
+{usage}
 
 Options:
-{{options}}
+{options}
 
 Commands:
-{{subcommands}}
+{subcommands}
 "#,
         )
 }
