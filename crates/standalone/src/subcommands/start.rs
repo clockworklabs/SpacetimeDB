@@ -1,6 +1,6 @@
 use crate::routes::router;
 use crate::util::{create_dir_or_err, create_file_with_contents};
-use crate::{banner, StandaloneEnv};
+use crate::StandaloneEnv;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::db::db_metrics;
@@ -131,7 +131,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let jwt_pub_key_path = read_argument(args, "jwt_pub_key_path", "SPACETIMEDB_JWT_PUB_KEY");
     let jwt_priv_key_path = read_argument(args, "jwt_priv_key_path", "SPACETIMEDB_JWT_PRIV_KEY");
     let enable_tracy = args.get_flag("enable_tracy");
-    println!("{}", banner());
+    banner();
 
     if let Some(log_conf_path) = log_conf_path {
         create_file_with_contents(log_conf_path, include_str!("../../log.conf"))?;
@@ -178,4 +178,51 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr().unwrap());
     axum::Server::from_tcp(tcp)?.serve(service).await?;
     Ok(())
+}
+
+fn banner() {
+    println!(
+        "{}",
+        r#"
+┌───────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                                       │
+│                                                                                                       │
+│                                                                              ⢀⠔⠁                      │
+│                                                                            ⣠⡞⠁                        │
+│                                              ⣀⣀⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣀⣀⣀⣀⣀⣀⣀⣤⣤⡴⠒    ⢀⣠⡾⠋                          │
+│                                         ⢀⣤⣶⣾88888888888888888888⠿⠋    ⢀⣴8⡟⠁                           │
+│                                      ⢀⣤⣾88888⡿⠿⠛⠛⠛⠛⠛⠛⠛⠛⠻⠿88888⠟⠁    ⣠⣾88⡟                             │
+│                                    ⢀⣴88888⠟⠋⠁ ⣀⣤⠤⠶⠶⠶⠶⠶⠤⣤⣀ ⠉⠉⠉    ⢀⣴⣾888⡟                              │
+│                                   ⣠88888⠋  ⣠⠶⠋⠉         ⠉⠙⠶⣄   ⢀⣴888888⠃                              │
+│                                  ⣰8888⡟⠁ ⣰⠟⠁               ⠈⠻⣆ ⠈⢿888888                               │
+│                                 ⢠8888⡟  ⡼⠁                   ⠈⢧ ⠈⢿8888⡿                               │
+│                                 ⣼8888⠁ ⢸⠇                     ⠸⡇ ⠘8888⣷                               │
+│                                 88888  8                       8  88888                               │
+│                                 ⢿8888⡄ ⢸⡆                     ⢰⡇ ⢀8888⡟                               │
+│                                 ⣾8888⣷⡀ ⢳⡀                   ⢀⡞  ⣼8888⠃                               │
+│                                 888888⣷⡀ ⠹⣦⡀               ⢀⣴⠏ ⢀⣼8888⠏                                │
+│                                ⢠888888⠟⠁   ⠙⠶⣄⣀         ⣀⣠⠶⠋  ⣠88888⠋                                 │
+│                                ⣼888⡿⠟⠁    ⣀⣀⣀ ⠉⠛⠒⠶⠶⠶⠶⠶⠒⠛⠉ ⢀⣠⣴88888⠟⠁                                  │
+│                               ⣼88⡿⠋    ⢀⣴88888⣶⣦⣤⣤⣤⣤⣤⣤⣤⣤⣶⣾88888⡿⠛⠁                                    │
+│                             ⢀⣼8⠟⠁    ⣠⣶88888888888888888888⡿⠿⠛⠁                                       │
+│                            ⣠⡾⠋⠁    ⠤⠞⠛⠛⠉⠉⠉⠉⠉⠉⠉⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠉⠉                                            │
+│                          ⢀⡼⠋                                                                          │
+│                        ⢀⠔⠁                                                                            │
+│                                                                                                       │
+│                                                                                                       │
+│  .d8888b.                                     888    d8b                        8888888b.  888888b.   │
+│ d88P  Y88b                                    888    Y8P                        888  "Y88b 888  "88b  │
+│ Y88b.                                         888                               888    888 888  .88P  │
+│  "Y888b.   88888b.   8888b.   .d8888b .d88b.  888888 888 88888b.d88b.   .d88b.  888    888 8888888K.  │
+│     "Y88b. 888 "88b     "88b d88P"   d8P  Y8b 888    888 888 "888 "88b d8P  Y8b 888    888 888  "Y88b │
+│       "888 888  888 .d888888 888     88888888 888    888 888  888  888 88888888 888    888 888    888 │
+│ Y88b  d88P 888 d88P 888  888 Y88b.   Y8b.     Y88b.  888 888  888  888 Y8b.     888  .d88P 888   d88P │
+│  "Y8888P"  88888P"  "Y888888  "Y8888P "Y8888   "Y888 888 888  888  888  "Y8888  8888888P"  8888888P"  │
+│            888                                                                                        │
+│            888                                                                                        │
+│            888                                                                                        │
+│                                  "Multiplayer at the speed of light"                                  │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────┘
+    "#
+    )
 }
