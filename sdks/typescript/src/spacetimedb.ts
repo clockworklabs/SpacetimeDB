@@ -470,11 +470,11 @@ let toPascalCase = function (s: string): string {
  */
 export class SpacetimeDBClient {
   /**
-   * The identity of the user.
+   * The user's public identity.
    */
   identity?: Identity = undefined;
   /**
-   * The token of the user.
+   * The user's private authentication token.
    */
   token?: string = undefined;
   /**
@@ -484,7 +484,7 @@ export class SpacetimeDBClient {
   public emitter!: EventEmitter;
 
   /**
-   * Whether the client is connected via websocket.
+   * Whether the client is connected.
    */
   public live: boolean;
 
@@ -506,19 +506,21 @@ export class SpacetimeDBClient {
   /**
    * Creates a new `SpacetimeDBClient` database client and set the initial parameters.
    *
+   * @param host The host of the SpacetimeDB server.
+   * @param name_or_address The name or address of the SpacetimeDB module.
+   * @param auth_token The credentials to use to connect to authenticate with SpacetimeDB.
+   * @param protocol Define how encode the messages: `"binary" | "json"`. Binary is more efficient and compact, but JSON provides human-readable debug information.
+   *
+   * @example
+   *
    * ```ts
    * const host = "ws://localhost:3000";
    * const name_or_address = "database_name"
    * const auth_token = undefined;
    * const protocol = "binary"
+   *
    * var spacetimeDBClient = new SpacetimeDBClient(host, name_or_address, auth_token, protocol);
    * ```
-   *
-   * @param host The host of the spacetimeDB server
-   * @param name_or_address The name or address of the spacetimeDB module
-   * @param auth_token The credentials to use to connect to the spacetimeDB module
-   * @param protocol Define how encode the messages: "binary" | "json". `binary` is more eficient and compact.
-   *
    */
   constructor(
     host: string,
@@ -711,6 +713,7 @@ export class SpacetimeDBClient {
 
   /**
    * Subscribes to a table without registering it as a component.
+   *
    * @param table The table to subscribe to
    * @param query The query to subscribe to. If not provided, the default is `SELECT * FROM {table}`
    */
@@ -730,6 +733,7 @@ export class SpacetimeDBClient {
 
   /**
    * Unsubscribes from a table without unregistering it as a component.
+   *
    * @param table The table to unsubscribe from
    */
   public removeManualTable(table: string) {
@@ -749,7 +753,10 @@ export class SpacetimeDBClient {
   }
 
   /**
-   * Disconnect from The SpacetimeDB Websocket For Your Module.
+   * Close the current connection.
+   *
+   * @example
+   *
    * ```ts
    * var spacetimeDBClient = new SpacetimeDBClient("ws://localhost:3000", "database_name");
    *
@@ -762,6 +769,13 @@ export class SpacetimeDBClient {
 
   /**
    * Connect to The SpacetimeDB Websocket For Your Module. By default, this will use a secure websocket connection. The parameters are optional, and if not provided, will use the values provided on construction of the client.
+   *
+   * @param host The hostname of the SpacetimeDB server. Defaults to the value passed to the `constructor`.
+   * @param name_or_address The name or address of the SpacetimeDB module. Defaults to the value passed to the `constructor`.
+   * @param auth_token The credentials to use to authenticate with SpacetimeDB. Defaults to the value passed to the `constructor`.
+   *
+   * @example
+   *
    * ```ts
    * const host = "ws://localhost:3000";
    * const name_or_address = "database_name"
@@ -773,11 +787,6 @@ export class SpacetimeDBClient {
    * //Set the `auth_token`
    * spacetimeDBClient.connect(undefined, undefined, NEW_TOKEN);
    * ```
-   *
-   * @param host The host of the spacetimeDB server
-   * @param name_or_address The name or address of the spacetimeDB module
-   * @param auth_token The credentials to use to connect to the spacetimeDB module
-   *
    */
   public async connect(
     host?: string,
@@ -1021,6 +1030,7 @@ export class SpacetimeDBClient {
 
   /**
    * Register a component to be used with your SpacetimeDB module. If the websocket is already connected it will add it to the list of subscribed components
+   *
    * @param name The name of the component to register
    * @param component The component to register
    */
@@ -1046,14 +1056,17 @@ export class SpacetimeDBClient {
    * Subscribe to a set of queries, to be notified when rows which match those queries are altered.
    *
    * NOTE: A new call to `subscribe` will remove all previous subscriptions and replace them with the new `queries`.
+   *
    * If any rows matched the previous subscribed queries but do not match the new queries,
-   * those rows will be removed from the client cache, and [`TableType::on_delete`](#method-on_delete) callbacks will be invoked for them.
+   * those rows will be removed from the client cache, and `{Table}.on_delete` callbacks will be invoked for them.
+   *
+   * @param queries A `SQL` query or list of queries.
+   *
+   * @example
    *
    * ```ts
    * spacetimeDBClient.subscribe(["SELECT * FROM User","SELECT * FROM Message"]);
    * ```
-   *
-   * @param queries Can be either a string for one query or an array for multiple queries
    */
   public subscribe(queryOrQueries: string | string[]) {
     const queries =
@@ -1070,6 +1083,7 @@ export class SpacetimeDBClient {
 
   /**
    * Call a reducer on your SpacetimeDB module.
+   *
    * @param reducerName The name of the reducer to call
    * @param args The arguments to pass to the reducer
    */
@@ -1109,6 +1123,19 @@ export class SpacetimeDBClient {
   /**
    * Register a callback to be invoked upon authentication with the database.
    *
+   * @param token The credentials to use to authenticate with SpacetimeDB.
+   * @param identity A unique public identifier for a client connected to a database.
+   *
+   * The callback will be invoked with the public `Identity` and private authentication `token` provided by the database to identify this connection.
+   *
+   * If credentials were supplied to connect, those passed to the callback will be equivalent to the ones used to connect.
+   *
+   * If the initial connection was anonymous, a new set of credentials will be generated by the database to identify this user.
+   *
+   * The credentials passed to the callback can be saved and used to authenticate the same user in future connections.
+   *
+   * @example
+   *
    * ```ts
    * spacetimeDBClient.onConnect((token, identity) => {
    *  console.log("Connected to SpacetimeDB");
@@ -1116,15 +1143,15 @@ export class SpacetimeDBClient {
    *  console.log("Identity", identity);
    * });
    * ```
-   * @param token A private access token for a client connected to a database.
-   * @param identity A unique public identifier for a client connected to a database.
    */
   onConnect(callback: (token: string, identity: Identity) => void) {
     this.on("connected", callback);
   }
 
   /**
-   * Register a callback to be invoked upon a error.
+   * Register a callback to be invoked upon an error.
+   *
+   * @example
    *
    * ```ts
    * spacetimeDBClient.onError((...args: any[]) => {

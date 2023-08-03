@@ -4,13 +4,16 @@
 export class Identity {
   private data: Uint8Array;
 
+  /**
+   * Creates a new `Identity`.
+   */
   constructor(data: Uint8Array) {
     this.data = data;
   }
 
-  /** 
-   * Method to compare two identities
-  */
+  /**
+   * Compare two identities for equality.
+   */
   isEqual(other: Identity): boolean {
     if (this.data.length !== other.data.length) {
       return false;
@@ -23,9 +26,9 @@ export class Identity {
     return true;
   }
 
-  /** 
-   * Method to convert the Uint8Array to a hex string
-  */
+  /**
+   * Print the identity as a hexadecimal string.
+   */
   toHexString(): string {
     return Array.prototype.map
       .call(this.data, (x) => ("00" + x.toString(16)).slice(-2))
@@ -36,8 +39,8 @@ export class Identity {
     return this.data;
   }
 
-  /** 
-   * Static method to create an Identity from a hex string
+  /**
+   * Parse an Identity from a hexadecimal string.
    */
   static fromString(str: string): Identity {
     let matches = str.match(/.{1,2}/g) || [];
