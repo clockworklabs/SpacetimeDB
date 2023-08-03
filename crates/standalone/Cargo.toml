@@ -2,7 +2,8 @@
 name = "spacetimedb-standalone"
 version = "0.6.0"
 edition = "2021"
-publish = true
+license-file = "LICENSE"
+description = "An executable for running a single SpacetimeDB standalone instance"
 
 [[bin]]
 name = "spacetimedb"   # The name of the target.
