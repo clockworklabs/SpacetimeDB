@@ -50,3 +50,8 @@ rpath = false
 
 [profile.bench]
 debug = true
+
+[workspace.dependencies]
+# Vendor the openssl we rely on, rather than depend on a
+# potentially very old system version.
+openssl = { version = "0.10", features = ["vendored"] }

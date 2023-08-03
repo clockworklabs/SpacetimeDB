@@ -18,9 +18,7 @@ name = "odb_flavor_bench"
 harness = false
 
 [dependencies]
-# Vendor the openssl we rely on, rather than depend on a
-# potentially very old system version.
-openssl = { version = "0.10", features = ["vendored"] }
+openssl.workspace = true
 
 tokio = { version = "1.2", features = ["full"] }
 wasmer = "3.1.*"
