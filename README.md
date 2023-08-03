@@ -72,8 +72,7 @@ This means that you can write your entire application in a single language, Rust
 <figure>
     <img src="./images/basic-architecture-diagram.png" alt="SpacetimeDB Architecture" style="width:100%">
     <figcaption align="center">
-        <b>SpacetimeDB application architecture</b>
-        <p><sup><sub>(elements in white are provided by SpacetimeDB)</sub></sup></p>
+        <p align="center"><b>SpacetimeDB application architecture</b><br /><sup><sub>(elements in white are provided by SpacetimeDB)</sub></sup></p>
     </figcaption>
 </figure>
 
