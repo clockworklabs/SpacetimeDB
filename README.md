@@ -144,7 +144,7 @@ In summary there are only 4 steps to getting started with SpacetimeDB.
 
 1. Install the `spacetime` CLI tool.
 2. Start a SpacetimeDB standalone node with `spacetime start`.
-3. Write and upload a module in our one our supported languages.
+3. Write and upload a module in one of our supported module languages.
 4. Connect to the database with one of our client libraries.
 
 You can see a summary of the supported languages below with a link to the getting started guide for each.
