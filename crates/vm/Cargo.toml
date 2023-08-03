@@ -4,12 +4,11 @@ version = "0.6.0"
 edition = "2021"
 license-file = "LICENSE"
 description = "A VM for SpacetimeDB"
-publish = false
 
 [dependencies]
 anyhow = { version = "1.0.57", features = ["backtrace"] }
-spacetimedb-sats= { path = "../sats" }
-spacetimedb-lib = { path = "../lib" }
+spacetimedb-sats= { path = "../sats", version = "0.6.0" }
+spacetimedb-lib = { path = "../lib", version = "0.6.0" }
 thiserror = "1.0.37"
 tracing = "0.1"
 
