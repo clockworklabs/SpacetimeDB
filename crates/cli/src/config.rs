@@ -264,26 +264,27 @@ impl Config {
     /// then if its an identity then its just returned. If its not an identity it is assumed to be
     /// a name and it is looked up as an identity nickname. If the identity exists it is returned,
     /// otherwise we panic.
-    pub fn resolve_name_to_identity(&self, identity_or_name: Option<&str>) -> Option<String> {
-        identity_or_name
-            .map(|identity_or_name| {
-                if is_hex_identity(identity_or_name) {
-                    &self
-                        .identity_configs()
-                        .iter()
-                        .find(|c| c.identity == *identity_or_name)
-                        .unwrap_or_else(|| panic!("No such identity: {}", identity_or_name))
-                        .identity
-                } else {
-                    &self
-                        .identity_configs()
-                        .iter()
-                        .find(|c| c.nickname == Some(identity_or_name.to_string()))
-                        .unwrap_or_else(|| panic!("No such identity: {}", identity_or_name))
-                        .identity
-                }
-            })
-            .cloned()
+    pub fn resolve_name_to_identity(&self, identity_or_name: Option<&str>) -> anyhow::Result<Option<String>> {
+        Ok(if let Some(identity_or_name) = identity_or_name {
+            let x = if is_hex_identity(identity_or_name) {
+                &self
+                    .identity_configs()
+                    .iter()
+                    .find(|c| c.identity == *identity_or_name)
+                    .ok_or_else(|| anyhow::anyhow!("No such identity: {}", identity_or_name))?
+                    .identity
+            } else {
+                &self
+                    .identity_configs()
+                    .iter()
+                    .find(|c| c.nickname == Some(identity_or_name.to_string()))
+                    .ok_or_else(|| anyhow::anyhow!("No such identity: {}", identity_or_name))?
+                    .identity
+            };
+            Some(x.clone())
+        } else {
+            None
+        })
     }
 
     /// Converts some given `identity_or_name` into a mutable `IdentityConfig`.

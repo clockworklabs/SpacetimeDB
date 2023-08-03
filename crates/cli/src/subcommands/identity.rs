@@ -180,7 +180,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
 /// Executes the `identity set-default` command which sets the default identity.
 async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let identity = config
-        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))
+        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))?
         .unwrap();
     config.set_default_identity(identity);
     config.save();
@@ -433,7 +433,7 @@ async fn exec_find(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
 /// Executes the `identity token` command which prints the token for an identity.
 async fn exec_token(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let identity_or_name = config
-        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()))
+        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()))?
         .unwrap();
     let ic = config
         .get_identity_config_by_identity(identity_or_name.as_str())
@@ -446,7 +446,7 @@ async fn exec_token(config: Config, args: &ArgMatches) -> Result<(), anyhow::Err
 async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let cloned_config = config.clone();
     let identity_or_name = cloned_config
-        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))
+        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))?
         .unwrap();
     let new_name = args.get_one::<String>("name").unwrap().as_ref();
     let old_nickname = config.set_identity_nickname(identity_or_name.as_ref(), new_name)?;
@@ -470,7 +470,7 @@ async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyh
 async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let email = args.get_one::<String>("email").unwrap().clone();
     let identity = config
-        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))
+        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))?
         .unwrap();
     let identity_config = config
         .get_identity_config_by_identity(identity.as_str())
@@ -503,7 +503,7 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
 async fn exec_recover(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let email = args.get_one::<String>("email").unwrap();
     let identity = config
-        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()))
+        .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()))?
         .unwrap();
 
     let query_params = vec![
