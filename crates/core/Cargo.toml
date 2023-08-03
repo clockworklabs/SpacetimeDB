@@ -2,7 +2,7 @@
 name = "spacetimedb-core"
 version = "0.6.0"
 edition = "2021"
-license = "LICENSE"
+license-file = "LICENSE"
 description = "The core library for SpacetimeDB"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

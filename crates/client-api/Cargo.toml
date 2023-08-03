@@ -2,7 +2,7 @@
 name = "spacetimedb-client-api"
 version = "0.6.0"
 edition = "2021"
-license = "LICENSE"
+license-file = "LICENSE"
 description = "The HTTP API for SpacetimeDB"
 
 [features]
