@@ -29,7 +29,7 @@ sled = "0.34.7"
 async-trait = "0.1.60"
 log = "0.4.16"
 axum = "0.6"
-openssl = "0.10.54"
+openssl.workspace = true
 http = "0.2.9"
 tower-http = { version = "0.4.1", features = ["cors"]}
 dirs = "5.0.1"
