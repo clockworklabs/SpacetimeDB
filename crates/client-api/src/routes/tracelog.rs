@@ -10,6 +10,7 @@ use tempdir::TempDir;
 
 use spacetimedb::address::Address;
 use spacetimedb::database_instance_context::DatabaseInstanceContext;
+use spacetimedb::db::Storage;
 use spacetimedb::hash::hash_bytes;
 use spacetimedb::host::instance_env::InstanceEnv;
 use spacetimedb::host::scheduler::Scheduler;
@@ -71,12 +72,22 @@ pub async fn stop_tracelog(
 
 pub async fn perform_tracelog_replay(body: Bytes) -> axum::response::Result<impl IntoResponse> {
     // Build out a temporary database
+    let storage = Storage::Disk;
     let tmp_dir = TempDir::new("stdb_test").expect("establish tmpdir");
     let db_path = tmp_dir.path();
     let logger_path = tmp_dir.path();
     let identity = Identity::from_byte_array(hash_bytes(b"This is a fake identity.").data);
     let address = Address::from_slice(&identity.as_bytes()[0..16]);
-    let dbic = DatabaseInstanceContext::new(0, 0, false, identity, address, db_path.to_path_buf(), logger_path);
+    let dbic = DatabaseInstanceContext::new(
+        storage,
+        0,
+        0,
+        false,
+        identity,
+        address,
+        db_path.to_path_buf(),
+        logger_path,
+    );
     let iv = InstanceEnv::new(dbic, Scheduler::dummy(&tmp_dir.path().join("scheduler")), None);
 
     let tx = iv.dbic.relational_db.begin_tx();
