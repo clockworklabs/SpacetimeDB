@@ -31,6 +31,7 @@ use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType};
 
+use super::identity::IdentityForUrl;
 use crate::util::{ByteStringBody, NameOrAddress};
 use crate::{log_and_500, ControlCtx, ControlNodeDelegate, WorkerCtx};
 
@@ -640,13 +641,14 @@ pub struct RequestRecoveryCodeParams {
     #[serde(default)]
     link: bool,
     email: String,
-    identity: Identity,
+    identity: IdentityForUrl,
 }
 
 pub async fn request_recovery_code(
     State(ctx): State<Arc<dyn ControlCtx>>,
     Query(RequestRecoveryCodeParams { link, email, identity }): Query<RequestRecoveryCodeParams>,
 ) -> axum::response::Result<impl IntoResponse> {
+    let identity = Identity::from(identity);
     let Some(sendgrid) = ctx.sendgrid_controller() else {
         log::error!("A recovery code was requested, but SendGrid is disabled.");
         return Err((StatusCode::INTERNAL_SERVER_ERROR, "SendGrid is disabled.").into());
@@ -688,7 +690,7 @@ pub async fn request_recovery_code(
 #[derive(Deserialize)]
 pub struct ConfirmRecoveryCodeParams {
     pub email: String,
-    pub identity: Identity,
+    pub identity: IdentityForUrl,
     pub code: String,
 }
 
@@ -700,6 +702,7 @@ pub async fn confirm_recovery_code(
     State(ctx): State<Arc<dyn ControlCtx>>,
     Query(ConfirmRecoveryCodeParams { email, identity, code }): Query<ConfirmRecoveryCodeParams>,
 ) -> axum::response::Result<impl IntoResponse> {
+    let identity = Identity::from(identity);
     let recovery_code = ctx
         .control_db()
         .spacetime_get_recovery_code(email.as_str(), code.as_str())
