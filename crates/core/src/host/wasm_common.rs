@@ -292,7 +292,7 @@ pub mod errnos {
     /// NOTE! This is copied from the bindings-sys crate.
     /// The include! macro does not work when publishing to crates.io
     /// TODO(noa): Figure out a way to do this without include!
-    /// 
+    ///
     /// Error code for "No such table".
     pub const NO_SUCH_TABLE: u16 = 1;
 
