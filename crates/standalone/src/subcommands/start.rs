@@ -1,6 +1,6 @@
 use crate::routes::router;
 use crate::util::{create_dir_or_err, create_file_with_contents};
-use crate::StandaloneEnv;
+use crate::{banner, StandaloneEnv};
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::db::db_metrics;
@@ -131,6 +131,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let jwt_pub_key_path = read_argument(args, "jwt_pub_key_path", "SPACETIMEDB_JWT_PUB_KEY");
     let jwt_priv_key_path = read_argument(args, "jwt_priv_key_path", "SPACETIMEDB_JWT_PRIV_KEY");
     let enable_tracy = args.get_flag("enable_tracy");
+    println!("{}", banner());
 
     if let Some(log_conf_path) = log_conf_path {
         create_file_with_contents(log_conf_path, include_str!("../../log.conf"))?;
