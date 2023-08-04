@@ -134,7 +134,7 @@ pub async fn select_identity_config(
             resolve_identity_to_identity_config(identity_or_name)
         } else {
             // First check to see if we can convert the name to an identity, then return the config for that identity
-            match config.resolve_name_to_identity(Some(identity_or_name)) {
+            match config.resolve_name_to_identity(Some(identity_or_name))? {
                 None => Err(anyhow::anyhow!("No such identity for name: {}", identity_or_name,)),
                 Some(identity) => resolve_identity_to_identity_config(&identity),
             }

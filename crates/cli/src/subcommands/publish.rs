@@ -92,7 +92,7 @@ pub fn cli() -> clap::Command {
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let cloned_config = config.clone();
-    let identity = cloned_config.resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()));
+    let identity = cloned_config.resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()))?;
     let name_or_address = args.get_one::<String>("name|address");
     let path_to_project = args.get_one::<PathBuf>("path_to_project").unwrap();
     let host_type = args.get_one::<String>("host_type").unwrap();
