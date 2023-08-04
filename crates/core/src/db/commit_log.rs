@@ -20,14 +20,14 @@ use std::sync::Mutex;
 
 #[derive(Clone)]
 pub struct CommitLog {
-    mlog: Arc<Mutex<MessageLog>>,
+    mlog: Option<Arc<Mutex<MessageLog>>>,
     odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
     unwritten_commit: Arc<Mutex<Commit>>,
 }
 
 impl CommitLog {
     pub fn new(
-        mlog: Arc<Mutex<MessageLog>>,
+        mlog: Option<Arc<Mutex<MessageLog>>>,
         odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
         unwritten_commit: Commit,
     ) -> Self {
@@ -47,10 +47,12 @@ impl CommitLog {
         D: MutTxDatastore<RowId = RowId>,
     {
         if let Some(bytes) = self.generate_commit(tx_data, datastore) {
-            let mut mlog = self.mlog.lock().unwrap();
-            mlog.append(&bytes)?;
-            mlog.sync_all()?;
-            log::trace!("DATABASE: FSYNC");
+            if let Some(mlog) = &self.mlog {
+                let mut mlog = mlog.lock().unwrap();
+                mlog.append(&bytes)?;
+                mlog.sync_all()?;
+                log::trace!("DATABASE: FSYNC");
+            }
             Ok(Some(bytes.len()))
         } else {
             Ok(None)
