@@ -61,7 +61,11 @@ pub mod raw {
         ///
         /// The table id is written into the `out` pointer.
         ///
-        /// Returns an error if the table does not exist.
+        /// Returns an error if
+        /// - a table with the provided `table_id` doesn't exist
+        /// - the slice `(name, name_len)` is not valid UTF-8
+        /// - `name + name_len` overflows a 64-bit address.
+        /// - writing to `out` overflows a 64-bit integer
         pub fn _get_table_id(name: *const u8, name_len: usize, out: *mut u32) -> u16;
 
         /// Creates an index with the name `index_name` and type `index_type`,
@@ -73,10 +77,14 @@ pub mod raw {
         ///
         /// Currently only single-column-indices are supported
         /// and they may only be of the btree index type.
-        /// In the former case, the function will panic,
-        /// and in latter, an error is returned.
         ///
-        /// Returns an error when a table with the provided `table_id` doesn't exist.
+        /// Returns an error if
+        /// - a table with the provided `table_id` doesn't exist
+        /// - the slice `(index_name, index_name_len)` is not valid UTF-8
+        /// - `index_name + index_name_len` or `col_ids + col_len` overflow a 64-bit integer
+        /// - `index_type > 1`
+        ///
+        /// Traps if `index_type == 1` or `col_ids.len() != 1`.
         pub fn _create_index(
             index_name: *const u8,
             index_name_len: usize,
@@ -90,30 +98,55 @@ pub mod raw {
         /// where the row has a column, identified by `col_id`,
         /// with data matching the byte string, in WASM memory, pointed to at by `val`.
         ///
-        /// Matching is defined by decoding of `value` to an `AlgebraicValue`
+        /// Matching is defined BSATN-decoding `val` to an `AlgebraicValue`
         /// according to the column's schema and then `Ord for AlgebraicValue`.
         ///
-        /// The rows found are bsatn encoded and then concatenated.
+        /// The rows found are BSATN encoded and then concatenated.
         /// The resulting byte string from the concatenation is written
         /// to a fresh buffer with the buffer's identifier written to the WASM pointer `out`.
-        pub fn _iter_by_col_eq(table_id: u32, col_id: u32, value: *const u8, value_len: usize, out: *mut Buffer)
-            -> u16;
+        ///
+        /// Returns an error if
+        /// - a table with the provided `table_id` doesn't exist
+        /// - `col_id` does not identify a column of the table,
+        /// - `(val, val_len)` cannot be decoded to an `AlgebraicValue`
+        ///   typed at the `AlgebraicType` of the column,
+        /// - `val + val_len` overflows a 64-bit integer
+        pub fn _iter_by_col_eq(table_id: u32, col_id: u32, val: *const u8, val_len: usize, out: *mut Buffer) -> u16;
 
-        /// Insert a row into the table identified by `table_id`,
-        /// where the row is read from the byte slice `row_ptr` in WASM memory,
+        /// Inserts a row into the table identified by `table_id`,
+        /// where the row is read from the byte slice `row` in WASM memory,
         /// lasting `row_len` bytes.
+        ///
+        /// The `(row, row_len)` slice must be a BSATN-encoded `ProductValue`
+        /// matching the table's `ProductType` row-schema.
+        /// The `row` pointer is written to with the inserted row re-encoded.
+        /// This is due to auto-incrementing columns.
+        ///
+        /// Returns an error if
+        /// - a table with the provided `table_id` doesn't exist
+        /// - there were unique constraint violations
+        /// - `row + row_len` overflows a 64-bit integer
+        /// - `(row, row_len)` doesn't decode from BSATN to a `ProductValue`
+        ///   according to the `ProductType` that the table's schema specifies.
         pub fn _insert(table_id: u32, row: *mut u8, row_len: usize) -> u16;
 
         /// Deletes all rows in the table identified by `table_id`
         /// where the column identified by `col_id` matches the byte string,
         /// in WASM memory, pointed to at by `value`.
         ///
-        /// Matching is defined by decoding of `value` to an `AlgebraicValue`
+        /// Matching is defined by BSATN-decoding `value` to an `AlgebraicValue`
         /// according to the column's schema and then `Ord for AlgebraicValue`.
         ///
         /// The number of rows deleted is written to the WASM pointer `out`.
         ///
-        /// Returns an error if no columns were deleted or if the column wasn't found.
+        /// Returns an error if
+        /// - a table with the provided `table_id` doesn't exist
+        /// - no columns were deleted
+        /// - `col_id` does not identify a column of the table,
+        /// - `(value, value_len)` doesn't decode from BSATN to an `AlgebraicValue`
+        ///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
+        /// - `value + value_len` overflows a 64-bit integer
+        /// - writing to `out` would overflow a 64-bit integer
         pub fn _delete_by_col_eq(table_id: u32, col_id: u32, value: *const u8, value_len: usize, out: *mut u32) -> u16;
 
         /*
@@ -135,6 +168,10 @@ pub mod raw {
         ///
         /// The iterator is registered in the host environment
         /// under an assigned index which is written to the `out` pointer provided.
+        ///
+        /// Returns an error if
+        /// - a table with the provided `table_id` doesn't exist
+        /// - writing to `out` overflows an 64-bit integer
         pub fn _iter_start(table_id: u32, out: *mut BufferIter) -> u16;
 
         /// Like [`_iter_start`], start iteration on each row,
@@ -145,6 +182,12 @@ pub mod raw {
         ///
         /// The iterator is registered in the host environment
         /// under an assigned index which is written to the `out` pointer provided.
+        ///
+        /// Returns an error if
+        /// - a table with the provided `table_id` doesn't exist
+        /// - `(filter, filter_len)` doesn't decode to a filter expression
+        /// - `filter + filter_len` overflows a 64-bit integer
+        /// - writing to `out` overflows a 64-bit integer
         pub fn _iter_start_filtered(table_id: u32, filter: *const u8, filter_len: usize, out: *mut BufferIter) -> u16;
 
         /// Advances the registered iterator with the index given by `iter_key`.
@@ -153,6 +196,11 @@ pub mod raw {
         /// The buffer's index is returned and written to the `out` pointer.
         /// If there are no elements left, an invalid buffer index is written to `out`.
         /// On failure however, the error is returned.
+        ///
+        /// Returns an error if
+        /// - `iter` does not identify a registered `BufferIter`
+        /// - writing to `out` would overflow a 64-bit integer
+        /// - advancing the iterator resulted in an error
         pub fn _iter_next(iter: ManuallyDrop<BufferIter>, out: *mut Buffer) -> u16;
 
         /// Drops the entire registered iterator with the index given by `iter_key`.
@@ -161,10 +209,18 @@ pub mod raw {
         /// Returns an error if the iterator does not exist.
         pub fn _iter_drop(iter: ManuallyDrop<BufferIter>) -> u16;
 
-        /// Log at `level` a `text` message occuring in `filename:line_number`
+        /// Log at `level` a `message` message occuring in `filename:line_number`
         /// with [`target`] being the module path at the `log!` invocation site.
         ///
         /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.
+        ///
+        /// The `target` and `filename` pointers are ignored by passing `NULL`.
+        /// The line number is ignored if `line_number == u32::MAX`.
+        ///
+        /// No message is logged if
+        /// - `target != NULL && target + target_len > u64::MAX`
+        /// - `filename != NULL && filename + filename_len > u64::MAX`
+        /// - `message + message_len > u64::MAX`
         ///
         /// [`target`]: https://docs.rs/log/latest/log/struct.Record.html#method.target
         pub fn _console_log(
@@ -174,17 +230,23 @@ pub mod raw {
             filename: *const u8,
             filename_len: usize,
             line_number: u32,
-            text: *const u8,
-            text_len: usize,
+            message: *const u8,
+            message_len: usize,
         );
 
-        /// Schedule a reducer to be called asynchronously at `time`.
+        /// Schedules a reducer to be called asynchronously at `time`.
         ///
-        /// The reducer is named as the UTF-8 slice `(name, name_len)`,
+        /// The reducer is named as the valid UTF-8 slice `(name, name_len)`,
         /// and is passed the slice `(args, args_len)` as its argument.
         ///
         /// A generated schedule id is assigned to the reducer.
         /// This id is written to the pointer `out`.
+        ///
+        /// Traps if
+        /// - the `time` delay exceeds `64^6 - 1` milliseconds from now
+        /// - `name` does not point to valid UTF-8
+        /// - `name + name_len` or `args + args_len` overflow a 64-bit integer
+        /// - writing to `out` overflows a 64-bit integer
         pub fn _schedule_reducer(
             name: *const u8,
             name_len: usize,
@@ -199,18 +261,31 @@ pub mod raw {
         /// This assumes that the reducer hasn't already been executed.
         pub fn _cancel_reducer(id: u64);
 
-        /// Returns the length of buffer `bufh` without consuming the buffer handle.
+        /// Returns the length (number of bytes) of buffer `bufh` without
+        /// transferring ownership of the data into the function.
         ///
-        /// Returns an error if the buffer does not exist.
+        /// The `bufh` must have previously been allocating using `_buffer_alloc`.
+        ///
+        /// Traps if the buffer does not exist.
         pub fn _buffer_len(bufh: ManuallyDrop<Buffer>) -> usize;
 
-        /// Consumes the buffer `bufh`, moving its contents to the slice `(into, len)`.
+        /// Consumes the `buffer`,
+        /// moving its contents to the slice `(dst, dst_len)`.
         ///
-        /// Returns an error if the buffer does not exist.
-        pub fn _buffer_consume(bufh: Buffer, into: *mut u8, len: usize);
+        /// Traps if
+        /// - the buffer does not exist
+        /// - `dst + dst_len` overflows a 64-bit integer
+        pub fn _buffer_consume(buffer: Buffer, dst: *mut u8, dst_len: usize);
 
         /// Creates a buffer of size `data_len` in the host environment.
-        /// The buffer is initialized with the contents at the `data` WASM pointer.
+        ///
+        /// The contents of the byte slice pointed to by `data`
+        /// and lasting `data_len` bytes
+        /// is written into the newly initialized buffer.
+        ///
+        /// The buffer is registered in the host environment and is indexed by the returned `u32`.
+        ///
+        /// Traps if `data + data_len` overflows a 64-bit integer.
         pub fn _buffer_alloc(data: *const u8, data_len: usize) -> Buffer;
 
         /// Begin a timing span.
@@ -291,6 +366,7 @@ pub mod raw {
     /// Represents table iterators, with a similar API to [`Buffer`].
     #[repr(transparent)]
     pub struct BufferIter {
+        /// The actual handle. A key into a `ResourceSlab`.
         raw: u32,
     }
 
@@ -457,10 +533,12 @@ pub fn get_table_id(name: &str) -> Result<u32, Errno> {
 ///
 /// Currently only single-column-indices are supported
 /// and they may only be of the btree index type.
-/// In the former case, the function will panic,
-/// and in latter, an error is returned.
 ///
-/// Returns an error when a table with the provided `table_id` doesn't exist.
+/// Returns an error if
+/// - a table with the provided `table_id` doesn't exist
+/// - `index_type > 1`
+///
+/// Traps if `index_type == 1` or `col_ids.len() != 1`.
 #[inline]
 pub fn create_index(index_name: &str, table_id: u32, index_type: u8, col_ids: &[u8]) -> Result<(), Errno> {
     cvt(unsafe {
@@ -477,27 +555,54 @@ pub fn create_index(index_name: &str, table_id: u32, index_type: u8, col_ids: &[
 
 /// Finds all rows in the table identified by `table_id`,
 /// where the row has a column, identified by `col_id`,
-/// with data matching `val`.
+/// with data matching the byte string `val`.
 ///
-/// The rows found are bsatn encoded and then concatenated.
+/// Matching is defined BSATN-decoding `val` to an `AlgebraicValue`
+/// according to the column's schema and then `Ord for AlgebraicValue`.
+///
+/// The rows found are BSATN encoded and then concatenated.
 /// The resulting byte string from the concatenation is written
 /// to a fresh buffer with a handle to it returned as a `Buffer`.
+///
+/// Returns an error if
+/// - a table with the provided `table_id` doesn't exist
+/// - `col_id` does not identify a column of the table
+/// - `val` cannot be BSATN-decoded to an `AlgebraicValue`
+///   typed at the `AlgebraicType` of the column
 #[inline]
 pub fn iter_by_col_eq(table_id: u32, col_id: u32, val: &[u8]) -> Result<Buffer, Errno> {
     unsafe { call(|out| raw::_iter_by_col_eq(table_id, col_id, val.as_ptr(), val.len(), out)) }
 }
 
-/// Insert `row`, provided as a byte slice, into the table identified by `table_id`.
+/// Inserts a row into the table identified by `table_id`,
+/// where the row is a BSATN-encoded `ProductValue`
+/// matching the table's `ProductType` row-schema.
+///
+/// The `row` is `&mut` due to auto-incrementing columns.
+/// So `row` is written to with the inserted row re-encoded.
+///
+/// Returns an error if
+/// - a table with the provided `table_id` doesn't exist
+/// - there were unique constraint violations
+/// - `row` doesn't decode from BSATN to a `ProductValue`
+///   according to the `ProductType` that the table's schema specifies.
 #[inline]
 pub fn insert(table_id: u32, row: &mut [u8]) -> Result<(), Errno> {
     cvt(unsafe { raw::_insert(table_id, row.as_mut_ptr(), row.len()) })
 }
 
 /// Deletes all rows in the table identified by `table_id`
-/// where the column identified by `col_id` equates to `value`.
+/// where the column identified by `col_id` matches `value`.
 ///
-/// Returns the number of rows deleted
-/// or an error if no columns were deleted or if the column wasn't found.
+/// Matching is defined by BSATN-decoding `value` to an `AlgebraicValue`
+/// according to the column's schema and then `Ord for AlgebraicValue`.
+///
+/// Returns the number of rows deleted.
+///
+/// Returns an error if
+/// - a table with the provided `table_id` doesn't exist
+/// - no columns were deleted
+/// - `col_id` does not identify a column of the table
 #[inline]
 pub fn delete_by_col_eq(table_id: u32, col_id: u32, value: &[u8]) -> Result<u32, Errno> {
     unsafe { call(|out| raw::_delete_by_col_eq(table_id, col_id, value.as_ptr(), value.len(), out)) }
@@ -536,6 +641,11 @@ pub fn delete_range(table_id: u32, col_id: u32, range_start: &[u8], range_end: &
 ///
 /// The actual return value is a handle to an iterator registered with the host environment,
 /// but [`BufferIter`] can be used directly as an `Iterator`.
+///
+/// Returns an error if
+///
+/// - a table with the provided `table_id` doesn't exist
+/// - `Some(filter)` doesn't decode to a filter expression
 #[inline]
 pub fn iter(table_id: u32, filter: Option<&[u8]>) -> Result<BufferIter, Errno> {
     unsafe {
@@ -599,6 +709,8 @@ pub fn console_log(
 /// The reducer is assigned `name` and is provided `args` as its argument.
 ///
 /// A generated schedule id is assigned to the reducer which is returned.
+///
+/// Returns an error if the `time` delay exceeds `64^6 - 1` milliseconds from now.
 ///
 /// TODO: not fully implemented yet
 /// TODO(Centril): Unsure what is unimplemented; perhaps it refers to a new
