@@ -68,7 +68,7 @@ pub fn cli(mode: ProgramMode) -> clap::Command {
     let in_memory_arg = Arg::new("in_memory")
         .long("in-memory")
         .action(SetTrue)
-        .help("Whether to run the database entirely in memory");
+        .help("If specified the database will run entirely in memory. After the process exits all data will be lost.");
 
     // the default root for files, this *should* be the home directory unless it cannot be determined.
     let default_root = if let Some(dir) = dirs::home_dir() {
