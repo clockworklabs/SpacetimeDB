@@ -198,23 +198,30 @@ impl Header {
     }
 
     pub fn from_product_type(table_name: &str, fields: ProductType) -> Self {
-        let mut cols = Vec::with_capacity(fields.elements.len());
+        let cols = fields
+            .elements
+            .into_vec()
+            .into_iter()
+            .enumerate()
+            .map(|(pos, f)| {
+                let name = match f.name {
+                    None => FieldName::Pos {
+                        table: table_name.into(),
+                        field: pos,
+                    },
+                    Some(x) => FieldName::Name {
+                        table: table_name.into(),
+                        field: x,
+                    },
+                };
+                Column::new(name, f.algebraic_type)
+            })
+            .collect();
 
-        for (pos, f) in fields.elements.into_iter().enumerate() {
-            let name = match f.name {
-                None => FieldName::Pos {
-                    table: table_name.into(),
-                    field: pos,
-                },
-                Some(x) => FieldName::Name {
-                    table: table_name.into(),
-                    field: x,
-                },
-            };
-            cols.push(Column::new(name, f.algebraic_type));
+        Self {
+            table_name: table_name.into(),
+            fields: cols,
         }
-
-        Self::new(table_name, &cols)
     }
 
     pub fn for_mem_table(fields: ProductType) -> Self {

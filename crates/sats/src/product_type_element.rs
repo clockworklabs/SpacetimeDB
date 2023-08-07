@@ -47,10 +47,11 @@ impl ProductTypeElement {
 
 impl MetaType for ProductTypeElement {
     fn meta_type() -> AlgebraicType {
-        AlgebraicType::product(vec![
+        let fs = [
             Self::new_named(AlgebraicType::option(AlgebraicType::String), "name"),
             Self::new_named(AlgebraicType::Ref(AlgebraicTypeRef(0)), "algebraic_type"),
-        ])
+        ];
+        AlgebraicType::product(fs.into())
     }
 }
 

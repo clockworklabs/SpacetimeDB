@@ -570,7 +570,7 @@ pub fn autogen_typescript_table(ctx: &GenCtx, table: &TableDef) -> String {
     autogen_typescript_product_table_common(ctx, &table.name, tuple, Some(&table.column_attrs))
 }
 
-fn generate_imports(ctx: &GenCtx, elements: &Vec<ProductTypeElement>, imports: &mut Vec<String>, prefix: Option<&str>) {
+fn generate_imports(ctx: &GenCtx, elements: &[ProductTypeElement], imports: &mut Vec<String>, prefix: Option<&str>) {
     for field in elements {
         _generate_imports(ctx, &field.algebraic_type, imports, prefix);
     }
@@ -662,7 +662,7 @@ fn autogen_typescript_product_table_common(
 
         let mut constructor_signature = Vec::new();
         let mut constructor_assignments = Vec::new();
-        for field in &product_type.elements {
+        for field in &*product_type.elements {
             let field_name = field
                 .name
                 .as_ref()
@@ -735,7 +735,7 @@ fn autogen_typescript_product_table_common(
             writeln!(output, "return [").unwrap();
 
             let mut args = Vec::new();
-            for field in &product_type.elements {
+            for field in &*product_type.elements {
                 let field_name = field
                     .name
                     .as_ref()

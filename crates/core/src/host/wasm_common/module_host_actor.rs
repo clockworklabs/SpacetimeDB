@@ -706,7 +706,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             table.column_attrs.len() == schema.elements.len(),
             "mismatched number of columns"
         );
-        let columns: Vec<ColumnDef> = std::iter::zip(&schema.elements, &table.column_attrs)
+        let columns: Vec<ColumnDef> = std::iter::zip(schema.elements.iter(), &table.column_attrs)
             .map(|(ty, attr)| {
                 Ok(ColumnDef {
                     col_name: ty.name.clone().context("column without name")?,

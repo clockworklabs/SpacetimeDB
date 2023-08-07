@@ -2,7 +2,7 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement};
+use crate::{static_assert_size, AlgebraicType, AlgebraicValue, ProductTypeElement};
 
 /// A structural product type  of the factors given by `elements`.
 ///
@@ -34,12 +34,14 @@ pub struct ProductType {
     ///
     /// These factors can either be named or unnamed.
     /// When all the factors are unnamed, we can regard this as a plain tuple type.
-    pub elements: Vec<ProductTypeElement>,
+    pub elements: Box<[ProductTypeElement]>,
 }
+
+static_assert_size!(ProductType, 16);
 
 impl ProductType {
     /// Returns a product type with the given `elements` as its factors.
-    pub const fn new(elements: Vec<ProductTypeElement>) -> Self {
+    pub const fn new(elements: Box<[ProductTypeElement]>) -> Self {
         Self { elements }
     }
 
@@ -78,10 +80,8 @@ impl<'a, I: Into<AlgebraicType>> FromIterator<(Option<&'a str>, I)> for ProductT
 
 impl MetaType for ProductType {
     fn meta_type() -> AlgebraicType {
-        AlgebraicType::product(vec![ProductTypeElement::new_named(
-            AlgebraicType::array(ProductTypeElement::meta_type()),
-            "elements",
-        )])
+        let elems = ProductTypeElement::new_named(AlgebraicType::array(ProductTypeElement::meta_type()), "elements");
+        AlgebraicType::product([elems].into())
     }
 }
 

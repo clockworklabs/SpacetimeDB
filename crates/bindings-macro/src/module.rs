@@ -135,7 +135,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
                     algebraic_type: <#ty as spacetimedb::SpacetimeType>::make_type(__typespace),
                 })
             });
-            quote!(spacetimedb::sats::AlgebraicType::product(vec![#(#fields),*]))
+            quote!(spacetimedb::sats::AlgebraicType::product([#(#fields),*].into()))
         }
         SatsTypeData::Sum(variants) => {
             let unit = syn::Type::Tuple(syn::TypeTuple {

@@ -151,7 +151,7 @@ pub fn autogen_python_table(ctx: &GenCtx, table: &TableDef) -> String {
     autogen_python_product_table_common(ctx, &table.name, tuple, Some(&table.column_attrs))
 }
 
-fn generate_imports(ctx: &GenCtx, elements: &Vec<ProductTypeElement>, imports: &mut Vec<String>) {
+fn generate_imports(ctx: &GenCtx, elements: &[ProductTypeElement], imports: &mut Vec<String>) {
     for field in elements {
         _generate_imports(ctx, &field.algebraic_type, imports);
     }

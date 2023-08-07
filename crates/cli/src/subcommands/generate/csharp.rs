@@ -586,7 +586,7 @@ fn autogen_csharp_product_table_common(
         {
             indent_scope!(output);
 
-            for field in &product_type.elements {
+            for field in &*product_type.elements {
                 let field_name = field
                     .name
                     .as_ref()

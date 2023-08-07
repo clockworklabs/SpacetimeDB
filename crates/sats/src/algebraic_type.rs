@@ -159,9 +159,6 @@ impl AlgebraicType {
     /// The built-in string type.
     pub const String: Self = Self::Builtin(BuiltinType::String);
 
-    /// The canonical 0-element unit type.
-    pub const UNIT_TYPE: Self = Self::product(Vec::new());
-
     /// The canonical 0-variant "never" / "absurd" / "void" type.
     pub const NEVER_TYPE: Self = Self::sum(Vec::new());
 }
@@ -183,6 +180,11 @@ impl MetaType for AlgebraicType {
 }
 
 impl AlgebraicType {
+    /// The canonical 0-element unit type.
+    pub fn unit() -> Self {
+        Self::product(Vec::new().into_boxed_slice())
+    }
+
     /// A type representing an array of `U8`s.
     pub fn bytes() -> Self {
         Self::array(Self::U8)
@@ -201,7 +203,7 @@ impl AlgebraicType {
     }
 
     /// Returns a product type with the given `factors`.
-    pub const fn product(factors: Vec<ProductTypeElement>) -> Self {
+    pub const fn product(factors: Box<[ProductTypeElement]>) -> Self {
         AlgebraicType::Product(ProductType::new(factors))
     }
 
@@ -261,12 +263,12 @@ mod tests {
 
     #[test]
     fn unit() {
-        assert_eq!("()", fmt_algebraic_type(&AlgebraicType::UNIT_TYPE).to_string());
+        assert_eq!("()", fmt_algebraic_type(&AlgebraicType::unit()).to_string());
     }
 
     #[test]
     fn unit_map() {
-        assert_eq!("{ ty_: Product }", fmt_map(&AlgebraicType::UNIT_TYPE).to_string());
+        assert_eq!("{ ty_: Product }", fmt_map(&AlgebraicType::unit()).to_string());
     }
 
     #[test]
@@ -315,23 +317,29 @@ mod tests {
     #[test]
     fn nested_products_and_sums() {
         let builtin = AlgebraicType::U8;
-        let product = AlgebraicType::product(vec![ProductTypeElement {
-            name: Some("thing".into()),
-            algebraic_type: AlgebraicType::U8,
-        }]);
+        let product = AlgebraicType::product(
+            [ProductTypeElement {
+                name: Some("thing".into()),
+                algebraic_type: AlgebraicType::U8,
+            }]
+            .into(),
+        );
         let next = AlgebraicType::sum(vec![builtin.clone().into(), builtin.clone().into(), product.into()]);
-        let next = AlgebraicType::product(vec![
-            ProductTypeElement {
-                algebraic_type: builtin.clone(),
-                name: Some("test".into()),
-            },
-            next.into(),
-            builtin.into(),
-            ProductTypeElement {
-                algebraic_type: AlgebraicType::NEVER_TYPE,
-                name: Some("never".into()),
-            },
-        ]);
+        let next = AlgebraicType::product(
+            [
+                ProductTypeElement {
+                    algebraic_type: builtin.clone(),
+                    name: Some("test".into()),
+                },
+                next.into(),
+                builtin.into(),
+                ProductTypeElement {
+                    algebraic_type: AlgebraicType::NEVER_TYPE,
+                    name: Some("never".into()),
+                },
+            ]
+            .into(),
+        );
         assert_eq!(
             "(test: U8, 1: (U8 | U8 | (thing: U8)), 2: U8, never: (|))",
             fmt_algebraic_type(&next).to_string()

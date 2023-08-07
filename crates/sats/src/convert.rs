@@ -40,7 +40,7 @@ impl From<&AlgebraicValue> for ProductValue {
 
 impl From<AlgebraicType> for ProductType {
     fn from(x: AlgebraicType) -> Self {
-        Self::new(vec![x.into()])
+        Self::new([x.into()].into())
     }
 }
 

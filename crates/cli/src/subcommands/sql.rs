@@ -109,7 +109,7 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), an
             builder.add_record(
                 row.elements
                     .iter()
-                    .zip(&schema.elements)
+                    .zip(&*schema.elements)
                     .map(|(v, e)| satn::PsqlWrapper(ty.with(&e.algebraic_type).with_value(v))),
             );
         }

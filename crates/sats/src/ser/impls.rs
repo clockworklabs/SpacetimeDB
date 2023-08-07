@@ -195,7 +195,7 @@ impl_serialize!([] ValueWithType<'_, ProductValue>, (self, ser) => {
     let val = &self.value().elements;
     assert_eq!(val.len(), self.ty().elements.len());
     let mut prod = ser.serialize_named_product(val.len())?;
-    for (val, el_ty) in val.iter().zip(&self.ty().elements) {
+    for (val, el_ty) in val.iter().zip(&*self.ty().elements) {
         prod.serialize_element(el_ty.name(), &self.with(&el_ty.algebraic_type, val))?
     }
     prod.end()

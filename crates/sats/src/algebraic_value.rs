@@ -389,7 +389,7 @@ impl AlgebraicValue {
         //   To assign this a correct type we either have to store the type with the value
         //   or alternatively, we must have polymorphic variants (see row polymorphism)
         //   *and* derive the correct variant name.
-        AlgebraicType::product(vec![x.value.type_of().into()])
+        AlgebraicType::product([x.value.type_of().into()].into())
     }
 
     /// Returns the [`AlgebraicType`] of the product value `x`.
@@ -400,13 +400,13 @@ impl AlgebraicValue {
     /// Returns the [`AlgebraicType`] of the map with key type `k` and value type `v`.
     pub(crate) fn type_of_map(val: &BTreeMap<Self, Self>) -> AlgebraicType {
         AlgebraicType::product(if let Some((k, v)) = val.first_key_value() {
-            vec![k.type_of().into(), v.type_of().into()]
+            [k.type_of().into(), v.type_of().into()].into()
         } else {
             // TODO(centril): What is the motivation for this?
             //   I think this requires a soundness argument.
             //   I could see that it is OK with the argument that this is an empty map
             //   under the requirement that we cannot insert elements into the map.
-            vec![AlgebraicType::NEVER_TYPE.into(); 2]
+            vec![AlgebraicType::NEVER_TYPE.into(); 2].into()
         })
     }
 
@@ -474,14 +474,14 @@ mod tests {
     #[test]
     fn unit() {
         let val = AlgebraicValue::UNIT;
-        let unit = AlgebraicType::UNIT_TYPE;
+        let unit = AlgebraicType::unit();
         let typespace = Typespace::new(vec![]);
         assert_eq!(in_space(&typespace, &unit, &val).to_satn(), "()");
     }
 
     #[test]
     fn product_value() {
-        let product_type = AlgebraicType::product(vec![ProductTypeElement::new_named(AlgebraicType::I32, "foo")]);
+        let product_type = AlgebraicType::product([ProductTypeElement::new_named(AlgebraicType::I32, "foo")].into());
         let typespace = Typespace::new(vec![]);
         let product_value = AlgebraicValue::product(vec![AlgebraicValue::I32(42)]);
         assert_eq!(

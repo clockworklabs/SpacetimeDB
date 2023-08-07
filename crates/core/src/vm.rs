@@ -220,9 +220,9 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         table_type: StTableType,
         table_access: StAccess,
     ) -> Result<Code, ErrorVm> {
-        let mut cols = Vec::new();
+        let mut cols = Vec::with_capacity(columns.columns.len());
         let mut indexes = Vec::new();
-        for (i, column) in columns.columns.elements.iter().enumerate() {
+        for (i, column) in columns.columns.iter().enumerate() {
             let meta = columns.attr[i];
             if meta.is_unique() {
                 indexes.push(IndexDef {

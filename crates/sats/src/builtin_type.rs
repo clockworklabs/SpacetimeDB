@@ -110,10 +110,13 @@ impl MetaType for BuiltinType {
             SumTypeVariant::unit("string"),
             SumTypeVariant::new_named(zero_ref(), "array"),
             SumTypeVariant::new_named(
-                AlgebraicType::product(vec![
-                    ProductTypeElement::new_named(zero_ref(), "key_ty"),
-                    ProductTypeElement::new_named(zero_ref(), "ty"),
-                ]),
+                AlgebraicType::product(
+                    [
+                        ProductTypeElement::new_named(zero_ref(), "key_ty"),
+                        ProductTypeElement::new_named(zero_ref(), "ty"),
+                    ]
+                    .into(),
+                ),
                 "map",
             ),
         ])

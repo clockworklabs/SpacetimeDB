@@ -18,6 +18,7 @@ pub mod sum_type;
 pub mod sum_type_variant;
 pub mod sum_value;
 pub mod typespace;
+mod util;
 
 pub use algebraic_type::AlgebraicType;
 pub use algebraic_type_ref::AlgebraicTypeRef;

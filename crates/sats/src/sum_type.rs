@@ -74,10 +74,8 @@ impl SumType {
 
 impl MetaType for SumType {
     fn meta_type() -> AlgebraicType {
-        AlgebraicType::product(vec![ProductTypeElement::new_named(
-            AlgebraicType::array(SumTypeVariant::meta_type()),
-            "variants",
-        )])
+        let variants = ProductTypeElement::new_named(AlgebraicType::array(SumTypeVariant::meta_type()), "variants");
+        AlgebraicType::product([variants].into())
     }
 }
 

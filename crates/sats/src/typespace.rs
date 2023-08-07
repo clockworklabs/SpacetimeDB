@@ -157,7 +157,7 @@ impl_primitives! {
     String => String,
 }
 
-impl_st!([] (), _ts => AlgebraicType::UNIT_TYPE);
+impl_st!([] (), _ts => AlgebraicType::unit());
 impl_st!([] &str, _ts => AlgebraicType::String);
 impl_st!([T: SpacetimeType] Vec<T>, ts => AlgebraicType::array(T::make_type(ts)));
 impl_st!([T: SpacetimeType] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
