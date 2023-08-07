@@ -52,6 +52,9 @@ rpath = false
 debug = true
 
 [workspace.dependencies]
+chrono = { version = "0.4.26", features = ["serde"] }
+imara-diff = "0.1.5"
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.
 openssl = { version = "0.10", features = ["vendored"] }
+tempdir = "0.3.7"

@@ -29,7 +29,7 @@ anyhow = "1.0.68"
 spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.6.0" }
 spacetimedb-sats = { path = "../sats", version = "0.6.0" }
 serde_with = { version = "2.2.0", optional = true }
-chrono = { version = "0.4.23", optional = true, default-features = false }
+chrono = {workspace = true, optional = true}
 clap = { version = "4.2.4", optional = true }
 
 [dev-dependencies]

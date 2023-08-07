@@ -13,4 +13,4 @@ thiserror = "1.0.37"
 tracing = "0.1"
 
 [dev-dependencies]
-tempdir = "0.3.7"
+tempdir.workspace = true

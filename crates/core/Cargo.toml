@@ -80,8 +80,8 @@ uuid = { version = "1.2.1", features = ["v4"]}
 crossbeam-channel = "0.5"
 
 # Used for tracelog
-imara-diff = "0.1.3"
-tempdir = "0.3.7"
+imara-diff.workspace = true
+tempdir.workspace = true
 flate2 = "1.0.24"
 wasmparser = "0.92.0"
 tokio-util = { version = "0.7.4", features = ["time"] }
