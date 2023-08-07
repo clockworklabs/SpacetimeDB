@@ -20,7 +20,7 @@ fs-err = "2.9.0"
 futures = { version = "0.3", default-features = false }
 quick-junit = { version = "0.3.2" }
 postgres-types = "0.2.5"
-rust_decimal = {version ="1.29.1", features = ["db-tokio-postgres"]}
+rust_decimal = {version ="1.31.0", features = ["db-tokio-postgres"]}
 rusqlite = {version = "0.29.0", features = ["bundled", "column_decltype"]}
 sqllogictest="0.13.2"
 sqllogictest-engines = "0.13.0"
