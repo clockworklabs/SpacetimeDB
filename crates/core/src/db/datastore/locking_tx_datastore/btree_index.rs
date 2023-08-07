@@ -1,11 +1,10 @@
-use super::RowId;
+use super::{project_not_empty, RowId};
 use crate::{
-    db::datastore::traits::{IndexId, IndexSchema},
+    db::datastore::traits::{ColId, IndexId, IndexSchema},
     error::DBError,
 };
-use nonempty::NonEmpty;
 use spacetimedb_lib::{data_key::ToDataKey, DataKey};
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_sats::{AlgebraicValue, ProductValue, SatsNonEmpty, SatsString};
 use std::{
     collections::{btree_set, BTreeSet},
     ops::{Bound, RangeBounds},
@@ -78,14 +77,20 @@ impl Iterator for BTreeIndexRangeIter<'_> {
 pub(crate) struct BTreeIndex {
     pub(crate) index_id: IndexId,
     pub(crate) table_id: u32,
-    pub(crate) cols: NonEmpty<u32>,
-    pub(crate) name: String,
+    pub(crate) cols: SatsNonEmpty<ColId>,
+    pub(crate) name: SatsString,
     pub(crate) is_unique: bool,
     idx: BTreeSet<IndexKey>,
 }
 
 impl BTreeIndex {
-    pub(crate) fn new(index_id: IndexId, table_id: u32, cols: NonEmpty<u32>, name: String, is_unique: bool) -> Self {
+    pub(crate) fn new(
+        index_id: IndexId,
+        table_id: u32,
+        cols: SatsNonEmpty<ColId>,
+        name: SatsString,
+        is_unique: bool,
+    ) -> Self {
         Self {
             index_id,
             table_id,
@@ -97,7 +102,7 @@ impl BTreeIndex {
     }
 
     pub(crate) fn get_fields(&self, row: &ProductValue) -> Result<AlgebraicValue, DBError> {
-        let fields = row.project_not_empty(&self.cols)?;
+        let fields = project_not_empty(row, &self.cols)?;
         Ok(fields)
     }
 

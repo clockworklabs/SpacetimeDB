@@ -20,9 +20,9 @@ pub struct Address {
     __address_bytes: [u8; 16],
 }
 
-impl_st!([] Address, _ts => AlgebraicType::product(vec![
+impl_st!([] Address, _ts => AlgebraicType::product([
     ProductTypeElement::new_named(AlgebraicType::bytes(), "__address_bytes")
-]));
+].into()));
 
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

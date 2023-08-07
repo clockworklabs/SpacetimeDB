@@ -1,33 +1,32 @@
+use anyhow::Context;
+use bytes::Bytes;
+use spacetimedb_lib::buffer::DecodeError;
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::{bsatn, Address, IndexType, ModuleDef, VersionTuple};
+use spacetimedb_sats::SatsString;
+use spacetimedb_vm::expr::CrudExpr;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef, TableSchema};
-use crate::host::scheduler::Scheduler;
-use crate::sql;
-use anyhow::Context;
-use bytes::Bytes;
-use nonempty::NonEmpty;
-use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, Address, IndexType, ModuleDef, VersionTuple};
-use spacetimedb_vm::expr::CrudExpr;
-
 use crate::client::ClientConnectionSender;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
+use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::traits::{ColId, ColumnDef, IndexDef, IndexId, TableDef};
 use crate::hash::Hash;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
     DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo, ModuleInstance,
     UpdateDatabaseError, UpdateDatabaseResult, UpdateDatabaseSuccess,
 };
+use crate::host::scheduler::Scheduler;
 use crate::host::{
     ArgsTuple, EnergyDiff, EnergyMonitor, EnergyMonitorFingerprint, EnergyQuanta, EntityDef, ReducerCallResult,
     ReducerOutcome, Timestamp,
 };
 use crate::identity::Identity;
+use crate::sql;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptionManager, SubscriptionEventSender};
 use crate::worker_metrics::{REDUCER_COMPUTE_TIME, REDUCER_COUNT, REDUCER_WRITE_SIZE};
 
@@ -77,7 +76,7 @@ pub struct EnergyStats {
 pub struct ExecuteResult<E> {
     pub energy: EnergyStats,
     pub execution_duration: Duration,
-    pub call_result: Result<Result<(), Box<str>>, E>,
+    pub call_result: Result<Result<(), String>, E>,
 }
 
 pub(crate) struct WasmModuleHostActor<T: WasmModule> {
@@ -108,7 +107,7 @@ pub enum InitializationError {
     #[error(transparent)]
     Validation(#[from] ValidationError),
     #[error("setup function returned an error: {0}")]
-    Setup(Box<str>),
+    Setup(String),
     #[error("wasm trap while calling {func:?}")]
     RuntimeError {
         #[source]
@@ -672,7 +671,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
                 log::info!("reducer returned error: {errmsg}");
 
-                EventStatus::Failed(errmsg.into())
+                EventStatus::Failed(errmsg)
             }
             Ok(Ok(())) => {
                 if let Some((tx_data, bytes_written)) = stdb.commit_tx(tx).unwrap() {
@@ -707,7 +706,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             table.column_attrs.len() == schema.elements.len(),
             "mismatched number of columns"
         );
-        let columns: Vec<ColumnDef> = std::iter::zip(&schema.elements, &table.column_attrs)
+        let columns: Box<[ColumnDef]> = std::iter::zip(schema.elements.iter(), &*table.column_attrs)
             .map(|(ty, attr)| {
                 Ok(ColumnDef {
                     col_name: ty.name.clone().context("column without name")?,
@@ -741,22 +740,25 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                     // TODO
                     IndexType::Hash => anyhow::bail!("hash indexes not yet supported"),
                 }
-                let index = IndexDef {
-                    table_id: 0, // Will be ignored
-                    cols: NonEmpty::new(col_id as u32),
-                    name: index.name.clone(),
-                    is_unique: col_attr.is_unique(),
-                };
+                let index = IndexDef::new(
+                    index.name.clone(),
+                    0, // Will be ignored
+                    ColId(col_id as u32),
+                    col_attr.is_unique(),
+                );
                 indexes.push(index);
             } else if col_attr.is_unique() {
-                // If you didn't find an index, but the column is unique then create a unique btree index
-                // anyway.
-                let index = IndexDef {
-                    table_id: 0, // Will be ignored
-                    cols: NonEmpty::new(col_id as u32),
-                    name: format!("{}_{}_unique", table.name, col.col_name),
-                    is_unique: true,
-                };
+                // If you didn't find an index,
+                // but the column is unique then create a unique btree index anyway.
+                let name = format!("{}_{}_unique", table.name, col.col_name)
+                    .try_into()
+                    .map_err(|e| anyhow::anyhow!("unique index name too long for `{e}`"))?;
+                let index = IndexDef::new(
+                    name,
+                    0, // Will be ignored
+                    ColId(col_id as u32),
+                    true,
+                );
                 indexes.push(index);
             }
         }
@@ -803,7 +805,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let mut indexes_to_create = Vec::new();
         let mut indexes_to_drop = Vec::new();
 
-        let mut known_tables: BTreeMap<String, TableSchema> = stdb
+        let mut known_tables: BTreeMap<_, _> = stdb
             .get_all_tables(tx)?
             .into_iter()
             .map(|schema| (schema.table_name.clone(), schema))
@@ -819,7 +821,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 if Equiv(&known_schema_def) != Equiv(&proposed_schema_def) {
                     self.system_logger()
                         .warn(&format!("stored and proposed schema of `{}` differ", table.name));
-                    tainted_tables.push(table.name.to_owned());
+                    tainted_tables.push(table.name.clone());
                 } else {
                     // The schema is unchanged, but maybe the indexes are.
                     let mut known_indexes = known_schema
@@ -852,7 +854,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                     }
                 }
             } else {
-                new_tables.insert(table.name.to_owned(), proposed_schema_def);
+                new_tables.insert(table.name.clone(), proposed_schema_def);
             }
         }
         // We may at some point decide to drop orphaned tables automatically,
@@ -876,9 +878,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
 struct SchemaUpdates {
     /// Tables to create.
-    new_tables: HashMap<String, TableDef>,
+    new_tables: HashMap<SatsString, TableDef>,
     /// Names of tables with incompatible schema updates.
-    tainted_tables: Vec<String>,
+    tainted_tables: Vec<SatsString>,
     /// Indexes to drop.
     ///
     /// Should be processed _before_ `indexes_to_create`, as we might be

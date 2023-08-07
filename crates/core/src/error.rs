@@ -7,7 +7,8 @@ use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::{PrimaryKey, ProductValue};
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_sats::slim_slice::LenTooLong;
+use spacetimedb_sats::{AlgebraicValue, SatsString};
 use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorVm};
 use spacetimedb_vm::expr::Crud;
 use std::num::ParseIntError;
@@ -62,13 +63,13 @@ pub enum IndexError {
     ColumnNotFound(IndexDef),
     #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, col_names, value.to_satn())]
     UniqueConstraintViolation {
-        constraint_name: String,
-        table_name: String,
-        col_names: Vec<String>,
+        constraint_name: SatsString,
+        table_name: SatsString,
+        col_names: Box<[SatsString]>,
         value: AlgebraicValue,
     },
     #[error("Attempt to define a index with more than 1 auto_inc column: Table: {0:?}, Columns: {1:?}")]
-    OneAutoInc(TableId, Vec<String>),
+    OneAutoInc(TableId, Vec<SatsString>),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -112,6 +113,8 @@ pub enum PlanError {
     Relation(#[from] RelationError),
     #[error("{0}")]
     VmError(#[from] ErrorVm),
+    #[error(transparent)]
+    LenTooLong(#[from] LenTooLong),
 }
 
 #[derive(Error, Debug)]
@@ -166,6 +169,8 @@ pub enum DBError {
     },
     #[error("SqlError: {error}, executing: `{sql}`")]
     Plan { sql: String, error: PlanError },
+    #[error(transparent)]
+    LenTooLong(#[from] LenTooLong),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

@@ -1,8 +1,9 @@
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
+use crate::slim_slice::SlimSliceBoxCollected;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement};
+use crate::{static_assert_size, string, AlgebraicType, AlgebraicValue, ProductTypeElement, SatsString, SatsVec};
 
 /// A structural product type  of the factors given by `elements`.
 ///
@@ -34,35 +35,39 @@ pub struct ProductType {
     ///
     /// These factors can either be named or unnamed.
     /// When all the factors are unnamed, we can regard this as a plain tuple type.
-    pub elements: Vec<ProductTypeElement>,
+    pub elements: SatsVec<ProductTypeElement>,
 }
+
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(ProductType, 8);
+#[cfg(not(target_arch = "wasm32"))]
+static_assert_size!(ProductType, 12);
 
 impl ProductType {
     /// Returns a product type with the given `elements` as its factors.
-    pub const fn new(elements: Vec<ProductTypeElement>) -> Self {
+    pub const fn new(elements: SatsVec<ProductTypeElement>) -> Self {
         Self { elements }
+    }
+
+    /// Returns whether this is a "newtype" over bytes.
+    fn is_bytes_newtype(&self, check: &str) -> bool {
+        match &*self.elements {
+            [ProductTypeElement {
+                name: Some(name),
+                algebraic_type,
+            }] => name == &check && algebraic_type.is_bytes(),
+            _ => false,
+        }
     }
 
     /// Returns whether this is the special case of `spacetimedb_lib::Identity`.
     pub fn is_identity(&self) -> bool {
-        match &*self.elements {
-            [ProductTypeElement {
-                name: Some(name),
-                algebraic_type,
-            }] => name == "__identity_bytes" && algebraic_type.is_bytes(),
-            _ => false,
-        }
+        self.is_bytes_newtype("__identity_bytes")
     }
 
     /// Returns whether this is the special case of `spacetimedb_lib::Address`.
     pub fn is_address(&self) -> bool {
-        match &*self.elements {
-            [ProductTypeElement {
-                name: Some(name),
-                algebraic_type,
-            }] => name == "__address_bytes" && algebraic_type.is_bytes(),
-            _ => false,
-        }
+        self.is_bytes_newtype("__address_bytes")
     }
 
     /// Returns whether this is a special known type, currently `Address` or `Identity`.
@@ -73,37 +78,50 @@ impl ProductType {
 
 impl<I: Into<ProductTypeElement>> FromIterator<I> for ProductType {
     fn from_iter<T: IntoIterator<Item = I>>(iter: T) -> Self {
-        Self::new(iter.into_iter().map(Into::into).collect())
+        Self::new(
+            iter.into_iter()
+                .map(Into::into)
+                .collect::<SlimSliceBoxCollected<_>>()
+                .unwrap(),
+        )
     }
 }
-impl<'a, I: Into<AlgebraicType>> FromIterator<(&'a str, I)> for ProductType {
-    fn from_iter<T: IntoIterator<Item = (&'a str, I)>>(iter: T) -> Self {
+impl<I: Into<AlgebraicType>> FromIterator<(SatsString, I)> for ProductType {
+    fn from_iter<T: IntoIterator<Item = (SatsString, I)>>(iter: T) -> Self {
+        iter.into_iter().map(|(name, ty)| (Some(name), ty.into())).collect()
+    }
+}
+
+impl<I: Into<AlgebraicType>> FromIterator<(Option<SatsString>, I)> for ProductType {
+    fn from_iter<T: IntoIterator<Item = (Option<SatsString>, I)>>(iter: T) -> Self {
         iter.into_iter()
-            .map(|(name, ty)| ProductTypeElement::new_named(ty.into(), name))
+            .map(|(name, ty)| ProductTypeElement::new(ty.into(), name))
             .collect()
     }
 }
 
+impl<'a, I: Into<AlgebraicType>> FromIterator<(&'a str, I)> for ProductType {
+    fn from_iter<T: IntoIterator<Item = (&'a str, I)>>(iter: T) -> ProductType {
+        iter.into_iter().map(|(s, t)| (Some(s), t.into())).collect()
+    }
+}
+
 impl<'a, I: Into<AlgebraicType>> FromIterator<(Option<&'a str>, I)> for ProductType {
-    fn from_iter<T: IntoIterator<Item = (Option<&'a str>, I)>>(iter: T) -> Self {
-        iter.into_iter()
-            .map(|(name, ty)| ProductTypeElement::new(ty.into(), name.map(str::to_string)))
-            .collect()
+    fn from_iter<T: IntoIterator<Item = (Option<&'a str>, I)>>(iter: T) -> ProductType {
+        iter.into_iter().map(|(s, t)| (s.map(string), t.into())).collect()
     }
 }
 
 impl MetaType for ProductType {
     fn meta_type() -> AlgebraicType {
-        AlgebraicType::product(vec![ProductTypeElement::new_named(
-            AlgebraicType::array(ProductTypeElement::meta_type()),
-            "elements",
-        )])
+        let elems = ProductTypeElement::new_named(AlgebraicType::array(ProductTypeElement::meta_type()), "elements");
+        AlgebraicType::product([elems].into())
     }
 }
 
 impl ProductType {
     pub fn as_value(&self) -> AlgebraicValue {
-        self.serialize(ValueSerializer).unwrap_or_else(|x| match x {})
+        self.serialize(ValueSerializer).expect("unexpected `len >= u32::MAX`")
     }
 
     pub fn from_value(value: &AlgebraicValue) -> Result<ProductType, ValueDeserializeError> {

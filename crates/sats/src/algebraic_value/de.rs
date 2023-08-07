@@ -1,4 +1,4 @@
-use crate::builtin_value::{ArrayValueIntoIter, ArrayValueIterCloned};
+use crate::array_value::{ArrayValueIntoIter, ArrayValueIterCloned};
 use crate::{de, AlgebraicValue, SumValue};
 
 use derive_more::From;
@@ -84,7 +84,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
     }
 
     fn deserialize_u128(self) -> Result<u128, Self::Error> {
-        map_err(self.val.into_u128())
+        map_err(self.val.into_u128().map(|x| *x))
     }
 
     fn deserialize_i8(self) -> Result<i8, Self::Error> {
@@ -104,7 +104,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
     }
 
     fn deserialize_i128(self) -> Result<i128, Self::Error> {
-        map_err(self.val.into_i128())
+        map_err(self.val.into_i128().map(|x| *x))
     }
 
     fn deserialize_f32(self) -> Result<f32, Self::Error> {
@@ -116,11 +116,11 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
     }
 
     fn deserialize_str<V: de::SliceVisitor<'de, str>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        visitor.visit_owned(map_err(self.val.into_string())?)
+        visitor.visit_owned(map_err(self.val.into_string().map(|s| s.into()))?)
     }
 
     fn deserialize_bytes<V: de::SliceVisitor<'de, [u8]>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        visitor.visit_owned(map_err(self.val.into_bytes())?)
+        visitor.visit_owned(map_err(self.val.into_bytes().map(Into::into))?)
     }
 
     fn deserialize_array_seed<V: de::ArrayVisitor<'de, T::Output>, T: de::DeserializeSeed<'de> + Clone>(
@@ -281,7 +281,7 @@ impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
         ok_or(self.val.as_u64().copied())
     }
     fn deserialize_u128(self) -> Result<u128, Self::Error> {
-        ok_or(self.val.as_u128().copied())
+        ok_or(self.val.as_u128().map(|x| **x))
     }
     fn deserialize_i8(self) -> Result<i8, Self::Error> {
         ok_or(self.val.as_i8().copied())
@@ -296,7 +296,7 @@ impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
         ok_or(self.val.as_i64().copied())
     }
     fn deserialize_i128(self) -> Result<i128, Self::Error> {
-        ok_or(self.val.as_i128().copied())
+        ok_or(self.val.as_i128().map(|x| **x))
     }
     fn deserialize_f32(self) -> Result<f32, Self::Error> {
         ok_or(self.val.as_f32().copied().map(f32::from))
@@ -360,8 +360,9 @@ impl<'de> de::SumAccess<'de> for &'de SumAccess {
     type Variant = &'de ValueDeserializer;
 
     fn variant<V: de::VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
-        let tag = visitor.visit_tag(self.sum.tag)?;
-        Ok((tag, ValueDeserializer::from_ref(&self.sum.value)))
+        let (tag, val) = self.sum.parts();
+        let tag = visitor.visit_tag(tag)?;
+        Ok((tag, ValueDeserializer::from_ref(val)))
     }
 }
 

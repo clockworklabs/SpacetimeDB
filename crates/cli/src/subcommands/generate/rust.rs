@@ -2,44 +2,17 @@ use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem};
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::{
-    AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
-    SumTypeVariant,
+    AlgebraicType, AlgebraicTypeRef, ArrayType, ProductType, ProductTypeElement, SumType, SumTypeVariant,
 };
 use spacetimedb_lib::{ColumnIndexAttribute, ReducerDef, TableDef};
 use std::collections::HashSet;
 use std::fmt::Write;
+use std::ops::Deref;
 
 type Indenter = CodeIndenter<String>;
 
 /// Pairs of (module_name, TypeName).
 type Imports = HashSet<(String, String)>;
-
-enum MaybePrimitive<'a> {
-    Primitive(&'a str),
-    Array(&'a ArrayType),
-    Map(&'a MapType),
-}
-
-fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
-    MaybePrimitive::Primitive(match b {
-        BuiltinType::Bool => "bool",
-        BuiltinType::I8 => "i8",
-        BuiltinType::U8 => "u8",
-        BuiltinType::I16 => "i16",
-        BuiltinType::U16 => "u16",
-        BuiltinType::I32 => "i32",
-        BuiltinType::U32 => "u32",
-        BuiltinType::I64 => "i64",
-        BuiltinType::U64 => "u64",
-        BuiltinType::I128 => "i128",
-        BuiltinType::U128 => "u128",
-        BuiltinType::String => "String",
-        BuiltinType::F32 => "f32",
-        BuiltinType::F64 => "f64",
-        BuiltinType::Array(ty) => return MaybePrimitive::Array(ty),
-        BuiltinType::Map(m) => return MaybePrimitive::Map(m),
-    })
-}
 
 fn write_type_ctx(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
     write_type(&|r| type_name(ctx, r), out, ty)
@@ -62,12 +35,8 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
                 });
             }
         }
-        AlgebraicType::Product(p) if p.is_identity() => {
-            write!(out, "Identity").unwrap();
-        }
-        AlgebraicType::Product(p) if p.is_address() => {
-            write!(out, "Address").unwrap();
-        }
+        ty if ty.is_identity() => write!(out, "Identity").unwrap(),
+        ty if ty.is_address() => write!(out, "Address").unwrap(),
         AlgebraicType::Product(ProductType { elements }) => {
             print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {
                 if let Some(name) = &elem.name {
@@ -76,29 +45,40 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
                 write_type(ctx, out, &elem.algebraic_type);
             });
         }
-        AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-            MaybePrimitive::Primitive(p) => write!(out, "{}", p).unwrap(),
-            MaybePrimitive::Array(ArrayType { elem_ty }) => {
-                write!(out, "Vec::<").unwrap();
-                write_type(ctx, out, elem_ty);
-                write!(out, ">").unwrap();
-            }
-            MaybePrimitive::Map(ty) => {
-                // TODO: Should `BuiltinType::Map` translate to `HashMap`? This requires
-                //       that any map-key type implement `Hash`. We'll have to derive hash
-                //       on generated types, and notably, `HashMap` is not itself `Hash`,
-                //       so any type that holds a `Map` cannot derive `Hash` and cannot
-                //       key a `Map`.
-                // UPDATE: No, `AlgebraicType::Map` is supposed to be `BTreeMap`. Fix this.
-                //         This will require deriving `Ord` for generated types,
-                //         and is likely to be a big headache.
-                write!(out, "HashMap::<").unwrap();
-                write_type(ctx, out, &ty.key_ty);
-                write!(out, ", ").unwrap();
-                write_type(ctx, out, &ty.ty);
-                write!(out, ">").unwrap();
-            }
-        },
+        AlgebraicType::Array(ArrayType { elem_ty }) => {
+            write!(out, "Vec::<").unwrap();
+            write_type(ctx, out, elem_ty);
+            write!(out, ">").unwrap();
+        }
+        AlgebraicType::Map(ty) => {
+            // TODO: Should `AlgebraicType::Map` translate to `HashMap`? This requires
+            //       that any map-key type implement `Hash`. We'll have to derive hash
+            //       on generated types, and notably, `HashMap` is not itself `Hash`,
+            //       so any type that holds a `Map` cannot derive `Hash` and cannot
+            //       key a `Map`.
+            // UPDATE: No, `AlgebraicType::Map` is supposed to be `BTreeMap`. Fix this.
+            //         This will require deriving `Ord` for generated types,
+            //         and is likely to be a big headache.
+            write!(out, "HashMap::<").unwrap();
+            write_type(ctx, out, &ty.key_ty);
+            write!(out, ", ").unwrap();
+            write_type(ctx, out, &ty.ty);
+            write!(out, ">").unwrap();
+        }
+        AlgebraicType::Bool => write!(out, "bool").unwrap(),
+        AlgebraicType::I8 => write!(out, "i8").unwrap(),
+        AlgebraicType::U8 => write!(out, "u8").unwrap(),
+        AlgebraicType::I16 => write!(out, "i16").unwrap(),
+        AlgebraicType::U16 => write!(out, "u16").unwrap(),
+        AlgebraicType::I32 => write!(out, "i32").unwrap(),
+        AlgebraicType::U32 => write!(out, "u32").unwrap(),
+        AlgebraicType::I64 => write!(out, "i64").unwrap(),
+        AlgebraicType::U64 => write!(out, "u64").unwrap(),
+        AlgebraicType::I128 => write!(out, "i128").unwrap(),
+        AlgebraicType::U128 => write!(out, "u128").unwrap(),
+        AlgebraicType::String => write!(out, "String").unwrap(),
+        AlgebraicType::F32 => write!(out, "f32").unwrap(),
+        AlgebraicType::F64 => write!(out, "f64").unwrap(),
         AlgebraicType::Ref(r) => {
             write!(out, "{}", ctx(*r)).unwrap();
         }
@@ -225,7 +205,7 @@ pub fn autogen_rust_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> String 
     out.delimited_block(
         "{",
         |out| {
-            for variant in &sum_type.variants {
+            for variant in &*sum_type.variants {
                 write_enum_variant(ctx, out, variant);
                 out.newline();
             }
@@ -240,7 +220,7 @@ fn write_enum_variant(ctx: &GenCtx, out: &mut Indenter, variant: &SumTypeVariant
     let Some(name) = &variant.name else {
         panic!("Sum type variant has no name: {:?}", variant);
     };
-    let name = name.to_case(Case::Pascal);
+    let name = name.deref().to_case(Case::Pascal);
     write!(out, "{}", name).unwrap();
     match &variant.algebraic_type {
         AlgebraicType::Product(ProductType { elements }) if elements.is_empty() => {
@@ -304,7 +284,7 @@ pub fn write_arglist_no_delimiters(
         let Some(name) = &elt.name else {
             panic!("Product type element has no name: {:?}", elt);
         };
-        let name = name.to_case(Case::Snake);
+        let name = name.deref().to_case(Case::Snake);
 
         write!(out, "{}: ", name).unwrap();
         write_type(ctx, out, &elt.algebraic_type);
@@ -334,7 +314,7 @@ pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDef) -> String {
     let mut output = CodeIndenter::new(String::new());
     let out = &mut output;
 
-    let type_name = table.name.to_case(Case::Pascal);
+    let type_name = table.name.deref().to_case(Case::Pascal);
 
     begin_rust_struct_def_shared(ctx, out, &type_name, &find_product_type(ctx, table.data).elements);
 
@@ -431,7 +411,7 @@ fn find_primary_key_column_index(ctx: &GenCtx, table: &TableDef) -> Option<usize
 }
 
 fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableDef) {
-    let type_name = table.name.to_case(Case::Pascal);
+    let type_name = table.name.deref().to_case(Case::Pascal);
 
     write!(out, "impl TableType for {} ", type_name).unwrap();
 
@@ -450,7 +430,7 @@ fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableDef) {
         let pk_field = &find_product_type(ctx, table.data).elements[primary_column_index];
         let pk_field_name = pk_field
             .name
-            .as_ref()
+            .as_deref()
             .expect("Fields designated as primary key should have names!")
             .to_case(Case::Snake);
         // TODO: ensure that primary key types are always `Eq`, `Hash`, `Clone`.
@@ -497,7 +477,7 @@ fn print_table_filter_methods(
             for (elt, attr) in elements.iter().zip(attrs) {
                 let field_name = elt
                     .name
-                    .as_ref()
+                    .as_deref()
                     .expect("Table columns should have names!")
                     .to_case(Case::Snake);
                 // TODO: ensure that fields are PartialEq
@@ -539,30 +519,30 @@ fn print_table_filter_methods(
 }
 
 fn reducer_type_name(reducer: &ReducerDef) -> String {
-    let mut name = reducer.name.to_case(Case::Pascal);
+    let mut name = reducer.name.deref().to_case(Case::Pascal);
     name.push_str("Args");
     name
 }
 
 fn reducer_variant_name(reducer: &ReducerDef) -> String {
-    reducer.name.to_case(Case::Pascal)
+    reducer.name.deref().to_case(Case::Pascal)
 }
 
 fn reducer_module_name(reducer: &ReducerDef) -> String {
-    let mut name = reducer.name.to_case(Case::Snake);
+    let mut name = reducer.name.deref().to_case(Case::Snake);
     name.push_str("_reducer");
     name
 }
 
 fn reducer_function_name(reducer: &ReducerDef) -> String {
-    reducer.name.to_case(Case::Snake)
+    reducer.name.deref().to_case(Case::Snake)
 }
 
 fn iter_reducer_arg_names(reducer: &ReducerDef) -> impl Iterator<Item = Option<String>> + '_ {
     reducer
         .args
         .iter()
-        .map(|elt| elt.name.as_ref().map(|name| name.to_case(Case::Snake)))
+        .map(|elt| elt.name.as_deref().map(|name| name.to_case(Case::Snake)))
 }
 
 fn iter_reducer_arg_types(reducer: &'_ ReducerDef) -> impl Iterator<Item = &'_ AlgebraicType> {
@@ -835,8 +815,8 @@ fn iter_table_items(items: &[GenItem]) -> impl Iterator<Item = &TableDef> {
 
 fn iter_module_names(items: &[GenItem]) -> impl Iterator<Item = String> + '_ {
     items.iter().map(|item| match item {
-        GenItem::Table(table) => table.name.to_case(Case::Snake),
-        GenItem::TypeAlias(ty) => ty.name.to_case(Case::Snake),
+        GenItem::Table(table) => table.name.deref().to_case(Case::Snake),
+        GenItem::TypeAlias(ty) => ty.name.deref().to_case(Case::Snake),
         GenItem::Reducer(reducer) => reducer_module_name(reducer),
     })
 }
@@ -914,8 +894,8 @@ fn print_handle_table_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[Gen
                             } else {
                                 "handle_table_update_no_primary_key"
                             },
-                            table.name.to_case(Case::Snake),
-                            table.name.to_case(Case::Pascal),
+                            table.name.deref().to_case(Case::Snake),
+                            table.name.deref().to_case(Case::Pascal),
                         ).unwrap();
                     }
                     writeln!(
@@ -940,8 +920,8 @@ fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
                 writeln!(
                     out,
                     "reminders.invoke_callbacks::<{}::{}>(worker, &reducer_event, state);",
-                    table.name.to_case(Case::Snake),
-                    table.name.to_case(Case::Pascal),
+                    table.name.deref().to_case(Case::Snake),
+                    table.name.deref().to_case(Case::Pascal),
                 ).unwrap();
             }
         },
@@ -965,8 +945,8 @@ fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
                             out,
                             "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),",
                             table.name,
-                            table.name.to_case(Case::Snake),
-                            table.name.to_case(Case::Pascal),
+                            table.name.deref().to_case(Case::Snake),
+                            table.name.deref().to_case(Case::Pascal),
                         ).unwrap();
                     }
                     writeln!(
@@ -1104,12 +1084,11 @@ fn module_name(name: &str) -> String {
 
 fn generate_imports(ctx: &GenCtx, imports: &mut Imports, ty: &AlgebraicType) {
     match ty {
-        AlgebraicType::Builtin(BuiltinType::Array(ArrayType { elem_ty })) => generate_imports(ctx, imports, elem_ty),
-        AlgebraicType::Builtin(BuiltinType::Map(map_type)) => {
+        AlgebraicType::Array(ArrayType { elem_ty }) => generate_imports(ctx, imports, elem_ty),
+        AlgebraicType::Map(map_type) => {
             generate_imports(ctx, imports, &map_type.key_ty);
             generate_imports(ctx, imports, &map_type.ty);
         }
-        AlgebraicType::Builtin(_) => (),
         AlgebraicType::Ref(r) => {
             let type_name = type_name(ctx, *r);
             let module_name = module_name(&type_name);
@@ -1117,8 +1096,9 @@ fn generate_imports(ctx: &GenCtx, imports: &mut Imports, ty: &AlgebraicType) {
         }
         // Recurse into variants of anonymous sum types, e.g. for `Option<T>`, import `T`.
         AlgebraicType::Sum(s) => generate_imports_variants(ctx, imports, &s.variants),
+        // Products, scalars, and strings.
         // Do we need to generate imports for fields of anonymous product types?
-        _ => (),
+        _ => {}
     }
 }
 

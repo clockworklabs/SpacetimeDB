@@ -8,10 +8,7 @@ use ahash::AHashMap;
 use lazy_static::lazy_static;
 use rusqlite::Connection;
 use spacetimedb::db::datastore::traits::TableSchema;
-use spacetimedb_lib::{
-    sats::{self},
-    AlgebraicType, AlgebraicValue, ProductType,
-};
+use spacetimedb_lib::sats::{AlgebraicType, AlgebraicValue, ProductType, SatsString};
 use std::{
     fmt::Write,
     hint::black_box,
@@ -31,7 +28,7 @@ impl BenchDatabase for SQLite {
         "sqlite"
     }
 
-    type TableId = String;
+    type TableId = SatsString;
 
     fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
     where
@@ -68,9 +65,8 @@ impl BenchDatabase for SQLite {
         for (i, column) in T::product_type().elements.iter().enumerate() {
             let column_name = column.name.clone().unwrap();
             let type_ = match column.algebraic_type {
-                AlgebraicType::Builtin(sats::BuiltinType::U32) => "INTEGER",
-                AlgebraicType::Builtin(sats::BuiltinType::U64) => "INTEGER",
-                AlgebraicType::Builtin(sats::BuiltinType::String) => "TEXT",
+                AlgebraicType::U32 | AlgebraicType::U64 => "INTEGER",
+                AlgebraicType::String => "TEXT",
                 _ => unimplemented!(),
             };
             let extra = if index_strategy == IndexStrategy::Unique && i == 0 {
@@ -97,7 +93,7 @@ impl BenchDatabase for SQLite {
         log::info!("SQLITE: `{statement}`");
         self.db.execute_batch(&statement)?;
 
-        Ok(table_name)
+        Ok(SatsString::from_string(table_name))
     }
 
     fn get_table<T: BenchTable>(&mut self, table_id: &Self::TableId) -> ResultBench<TableSchema> {
@@ -192,19 +188,19 @@ impl BenchDatabase for SQLite {
 
         begin.execute(())?;
         match value {
-            AlgebraicValue::Builtin(sats::BuiltinValue::String(value)) => {
+            AlgebraicValue::String(value) => {
+                for _ in stmt.query_map((&*value,), |row| {
+                    black_box(row);
+                    Ok(())
+                })? {}
+            }
+            AlgebraicValue::U32(value) => {
                 for _ in stmt.query_map((value,), |row| {
                     black_box(row);
                     Ok(())
                 })? {}
             }
-            AlgebraicValue::Builtin(sats::BuiltinValue::U32(value)) => {
-                for _ in stmt.query_map((value,), |row| {
-                    black_box(row);
-                    Ok(())
-                })? {}
-            }
-            AlgebraicValue::Builtin(sats::BuiltinValue::U64(value)) => {
+            AlgebraicValue::U64(value) => {
                 for _ in stmt.query_map((value,), |row| {
                     black_box(row);
                     Ok(())

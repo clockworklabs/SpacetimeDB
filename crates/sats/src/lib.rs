@@ -1,12 +1,14 @@
 pub mod algebraic_type;
 mod algebraic_type_ref;
 pub mod algebraic_value;
+pub mod array_type;
+pub mod array_value;
 pub mod bsatn;
 pub mod buffer;
-pub mod builtin_type;
-pub mod builtin_value;
 pub mod convert;
 pub mod de;
+pub mod map_type;
+pub mod map_value;
 pub mod meta_type;
 pub mod product_type;
 pub mod product_type_element;
@@ -14,16 +16,20 @@ pub mod product_value;
 mod resolve_refs;
 pub mod satn;
 pub mod ser;
+pub mod slim_slice;
 pub mod sum_type;
 pub mod sum_type_variant;
 pub mod sum_value;
 pub mod typespace;
+mod util;
 
 pub use algebraic_type::AlgebraicType;
 pub use algebraic_type_ref::AlgebraicTypeRef;
-pub use algebraic_value::AlgebraicValue;
-pub use builtin_type::{ArrayType, BuiltinType, MapType};
-pub use builtin_value::{ArrayValue, BuiltinValue, MapValue};
+pub use algebraic_value::{AlgebraicValue, F32, F64};
+pub use array_type::ArrayType;
+pub use array_value::ArrayValue;
+pub use map_type::MapType;
+pub use map_value::MapValue;
 pub use product_type::ProductType;
 pub use product_type_element::ProductTypeElement;
 pub use product_value::ProductValue;
@@ -31,6 +37,11 @@ pub use sum_type::SumType;
 pub use sum_type_variant::SumTypeVariant;
 pub use sum_value::SumValue;
 pub use typespace::{SpacetimeType, Typespace};
+
+pub use slim_slice::SlimNonEmpty as SatsNonEmpty;
+pub use slim_slice::{slice, slice_mut, str, str_mut, string};
+pub use slim_slice::{SlimSlice as SatsSlice, SlimSliceBox as SatsVec, SlimSliceMut as SatsSliceMut};
+pub use slim_slice::{SlimStr as SatsStr, SlimStrBox as SatsString, SlimStrMut as SatsStrMut};
 
 /// The `Value` trait provides an abstract notion of a value.
 ///
@@ -40,7 +51,7 @@ pub trait Value {
     type Type;
 }
 
-impl<T: Value> Value for Vec<T> {
+impl<T: Value> Value for SatsVec<T> {
     // TODO(centril/phoebe): This looks weird; shouldn't it be ArrayType?
     type Type = T::Type;
 }
@@ -93,7 +104,7 @@ impl<'a, T: Value> ValueWithType<'a, T> {
     }
 }
 
-impl<'a, T: Value> ValueWithType<'a, Vec<T>> {
+impl<'a, T: Value> ValueWithType<'a, SatsVec<T>> {
     pub fn iter(&self) -> impl Iterator<Item = ValueWithType<'_, T>> {
         self.value().iter().map(|val| ValueWithType { ty: self.ty, val })
     }

@@ -5,6 +5,7 @@ use crate::protobuf::client_api::Subscribe;
 use crate::worker_metrics::{CONNECTED_CLIENTS, WEBSOCKET_SENT, WEBSOCKET_SENT_MSG_SIZE};
 use derive_more::From;
 use futures::prelude::*;
+use spacetimedb_sats::SatsStr;
 use tokio::sync::mpsc;
 
 use super::messages::{OneOffQueryResponseMessage, ServerMessage};
@@ -150,7 +151,11 @@ impl ClientConnection {
         message_handlers::handle(self, message.into())
     }
 
-    pub async fn call_reducer(&self, reducer: &str, args: ReducerArgs) -> Result<ReducerCallResult, ReducerCallError> {
+    pub async fn call_reducer(
+        &self,
+        reducer: &SatsStr<'_>,
+        args: ReducerArgs,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
         self.module
             .call_reducer(
                 self.id.identity,

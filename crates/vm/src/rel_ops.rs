@@ -75,7 +75,7 @@ pub trait RelOps {
     /// The left iterator can be arbitrarily long.
     ///
     /// It is therefore asymmetric (you can't flip the iterators to get a right_outer join).
-    ///    
+    ///
     /// Note:
     ///
     /// It is the equivalent of a `INNER JOIN` clause on SQL.
@@ -92,7 +92,7 @@ pub trait RelOps {
     where
         Self: Sized,
         Pred: FnMut(RelValueRef, RelValueRef) -> Result<bool, ErrorVm>,
-        Proj: FnMut(RelValue, RelValue) -> RelValue,
+        Proj: FnMut(RelValue, RelValue) -> Result<RelValue, ErrorVm>,
         KeyLhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
         KeyRhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
         Rhs: RelOps,
@@ -267,7 +267,7 @@ where
     KeyLhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
     KeyRhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
     Pred: FnMut(RelValueRef, RelValueRef) -> Result<bool, ErrorVm>,
-    Proj: FnMut(RelValue, RelValue) -> RelValue,
+    Proj: FnMut(RelValue, RelValue) -> Result<RelValue, ErrorVm>,
 {
     fn head(&self) -> &Header {
         &self.head
@@ -306,7 +306,7 @@ where
                 if let Some(rhs) = rvv.pop() {
                     if (self.predicate)(lhs.as_val_ref(), rhs.as_val_ref())? {
                         self.count.add_exact(1);
-                        return Ok(Some((self.projection)(lhs, rhs)));
+                        return Ok(Some((self.projection)(lhs, rhs)?));
                     }
                 }
             }

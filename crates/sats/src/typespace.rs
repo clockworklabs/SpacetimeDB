@@ -3,8 +3,8 @@ use std::ops::{Index, IndexMut};
 
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_type_ref::AlgebraicTypeRef;
-use crate::WithTypespace;
 use crate::{de::Deserialize, ser::Serialize};
+use crate::{SatsStr, WithTypespace};
 
 /// A `Typespace` represents the typing context in SATS.
 ///
@@ -103,7 +103,7 @@ pub trait TypespaceBuilder {
     fn add(
         &mut self,
         typeid: TypeId,
-        name: Option<&'static str>,
+        name: Option<&'static SatsStr<'static>>,
         make_ty: impl FnOnce(&mut Self) -> AlgebraicType,
     ) -> AlgebraicType;
 }
@@ -157,7 +157,7 @@ impl_primitives! {
     String => String,
 }
 
-impl_st!([] (), _ts => AlgebraicType::UNIT_TYPE);
+impl_st!([] (), _ts => AlgebraicType::unit());
 impl_st!([] &str, _ts => AlgebraicType::String);
 impl_st!([T: SpacetimeType] Vec<T>, ts => AlgebraicType::array(T::make_type(ts)));
 impl_st!([T: SpacetimeType] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));

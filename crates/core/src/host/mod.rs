@@ -7,7 +7,7 @@ use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{bsatn, Hash, Identity};
 use spacetimedb_lib::{ProductValue, ReducerDef};
-use spacetimedb_sats::WithTypespace;
+use spacetimedb_sats::{SatsString, WithTypespace};
 
 mod host_controller;
 pub(crate) mod module_host;
@@ -97,7 +97,7 @@ impl Default for ArgsTuple {
 pub struct InvalidReducerArguments {
     #[source]
     err: anyhow::Error,
-    reducer: String,
+    reducer: SatsString,
 }
 
 pub use module_host::{EntityDef, ReducerCallError};

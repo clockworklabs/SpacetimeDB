@@ -1,6 +1,7 @@
 use spacetimedb_lib::de::serde::SerdeDeserializer;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductTypeElement, ProductValue, SumType};
+use spacetimedb_sats::slim_slice::SlimSliceBoxCollected;
 use spacetimedb_sats::{satn::Satn, SumTypeVariant, Typespace, WithTypespace};
 
 macro_rules! de_json_snapshot {
@@ -25,7 +26,7 @@ fn test_json_mappings() {
             "quux",
             AlgebraicType::Sum(enumm([
                 ("Hash", AlgebraicType::bytes()),
-                ("Unit", AlgebraicType::UNIT_TYPE),
+                ("Unit", AlgebraicType::unit()),
             ])),
         ),
         ("and_peggy", AlgebraicType::option(AlgebraicType::F64)),
@@ -57,7 +58,8 @@ fn tuple<'a>(elems: impl IntoIterator<Item = (&'a str, AlgebraicType)>) -> Produ
         elements: elems
             .into_iter()
             .map(|(name, ty)| ProductTypeElement::new_named(ty, name))
-            .collect(),
+            .collect::<SlimSliceBoxCollected<_>>()
+            .unwrap(),
     }
 }
 fn enumm<'a>(elems: impl IntoIterator<Item = (&'a str, AlgebraicType)>) -> SumType {
@@ -65,7 +67,8 @@ fn enumm<'a>(elems: impl IntoIterator<Item = (&'a str, AlgebraicType)>) -> SumTy
         variants: elems
             .into_iter()
             .map(|(name, ty)| SumTypeVariant::new_named(ty, name))
-            .collect(),
+            .collect::<SlimSliceBoxCollected<_>>()
+            .unwrap(),
     }
 }
 
