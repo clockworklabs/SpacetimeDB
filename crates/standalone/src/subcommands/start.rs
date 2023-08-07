@@ -81,9 +81,10 @@ pub fn cli(mode: ProgramMode) -> clap::Command {
     .unwrap()
     .to_string();
 
-    // If this isn't standalone, we provide default values
+    // The CLI defaults to starting in, and getting configuration from, the user's home directory.
+    // The standalone mode instead uses global directories.
     match mode {
-        ProgramMode::Standalone => {
+        ProgramMode::CLI => {
             log_conf_path_arg = log_conf_path_arg.default_value(format!("{}/.spacetime/log.conf", default_root));
             log_dir_path_arg = log_dir_path_arg.default_value(format!("{}/.spacetime", default_root));
             database_path_arg = database_path_arg.default_value(format!("{}/.spacetime/stdb", default_root));
@@ -92,7 +93,7 @@ pub fn cli(mode: ProgramMode) -> clap::Command {
             jwt_priv_key_path_arg =
                 jwt_priv_key_path_arg.default_value(format!("{}/.spacetime/id_ecdsa", default_root));
         }
-        ProgramMode::CLI => {
+        ProgramMode::Standalone => {
             log_conf_path_arg = log_conf_path_arg.default_value("/etc/spacetimedb/log.conf");
             log_dir_path_arg = log_dir_path_arg.default_value("/var/log");
             database_path_arg = database_path_arg.default_value("/stdb");
