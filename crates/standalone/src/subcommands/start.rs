@@ -65,6 +65,11 @@ pub fn cli(mode: ProgramMode) -> clap::Command {
         .long("jwt-priv-key-path")
         .help("The path to the private jwt key for issuing identities (SPACETIMEDB_JWT_PRIV_KEY)");
 
+    let in_memory_arg = Arg::new("in_memory")
+        .long("in-memory")
+        .action(SetTrue)
+        .help("Whether to run the database entirely in memory");
+
     // the default root for files, this *should* be the home directory unless it cannot be determined.
     let default_root = if let Some(dir) = dirs::home_dir() {
         dir
@@ -96,7 +101,7 @@ pub fn cli(mode: ProgramMode) -> clap::Command {
         }
     }
 
-    let mut command = clap::Command::new("start")
+    clap::Command::new("start")
         .about("Starts a standalone SpacetimeDB instance")
         .long_about("Starts a standalone SpacetimeDB instance. This command recognizes the following environment variables: \
                 \n\tSPACETIMEDB_LOG_CONFIG: The path to the log configuration file. \
@@ -123,21 +128,9 @@ pub fn cli(mode: ProgramMode) -> clap::Command {
                 .help("Enable Tracy profiling (SPACETIMEDB_TRACY)"),
         )
         .arg(jwt_pub_key_path_arg)
-        .arg(jwt_priv_key_path_arg);
-
-    // Standalone databases have the option to run entirely in memory.
-    match mode {
-        ProgramMode::Standalone => {
-            let in_memory_arg = Arg::new("in_memory")
-                .long("in-memory")
-                .action(SetTrue)
-                .help("Whether to run the database entirely in memory");
-            command = command.arg(in_memory_arg);
-        }
-        ProgramMode::CLI => (),
-    };
-
-    command.after_help(mode.after_help())
+        .arg(jwt_priv_key_path_arg)
+        .arg(in_memory_arg)
+        .after_help(mode.after_help())
 }
 
 /// Sets an environment variable. Print a warning if already set.
