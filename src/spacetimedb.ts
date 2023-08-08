@@ -671,14 +671,15 @@ export class SpacetimeDBClient {
           }
 
           reducerArgs = reducer.deserializeArgs(adapter);
-          reducerEvent = new ReducerEvent(
-            message.event.identity,
-            message.event.originalReducerName,
-            message.event.status,
-            message.event.message,
-            reducerArgs
-          );
         }
+
+        reducerEvent = new ReducerEvent(
+          message.event.identity,
+          message.event.originalReducerName,
+          message.event.status,
+          message.event.message,
+          reducerArgs
+        );
 
         for (let tableUpdate of message.tableUpdates) {
           const tableName = tableUpdate.tableName;
