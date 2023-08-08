@@ -107,7 +107,7 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
             let name = csharp_typename(ctx, *r);
             match &ctx.typespace.types[r.idx()] {
                 AlgebraicType::Sum(sum_type) => {
-                    if is_enum(sum_type) {
+                    if sum_type.is_simple_enum() {
                         let parts: Vec<&str> = name.split('.').collect();
                         if parts.len() >= 2 {
                             let enum_namespace = parts[0];
@@ -244,7 +244,7 @@ fn convert_type<'a>(
             let algebraic_type = &ctx.typespace.types[r.idx()];
             match algebraic_type {
                 AlgebraicType::Sum(sum) => {
-                    if is_enum(sum) {
+                    if sum.is_simple_enum() {
                         let split: Vec<&str> = name.split('.').collect();
                         if split.len() >= 2 {
                             assert_eq!(
@@ -308,7 +308,7 @@ fn convert_algebraic_type<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace:
             let name = csharp_typename(ctx, *r);
             match &ctx.typespace.types[r.idx()] {
                 AlgebraicType::Sum(sum_type) => {
-                    if is_enum(sum_type) {
+                    if sum_type.is_simple_enum() {
                         let parts: Vec<&str> = name.split('.').collect();
                         if parts.len() >= 2 {
                             let enum_namespace = parts[0];
@@ -377,23 +377,8 @@ fn convert_sum_type<'a>(ctx: &'a GenCtx, sum_type: &'a SumType, namespace: &'a s
     })
 }
 
-pub fn is_enum(sum_type: &SumType) -> bool {
-    for variant in sum_type.clone().variants {
-        match variant.algebraic_type {
-            AlgebraicType::Product(product) => {
-                if product.elements.is_empty() {
-                    continue;
-                }
-            }
-            _ => return false,
-        }
-    }
-
-    true
-}
-
 pub fn autogen_csharp_sum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespace: &str) -> String {
-    if is_enum(sum_type) {
+    if sum_type.is_simple_enum() {
         autogen_csharp_enum(ctx, name, sum_type, namespace)
     } else {
         unimplemented!();
@@ -458,7 +443,7 @@ pub fn autogen_csharp_enum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespa
                         writeln!(output, "{{").unwrap();
                         {
                             indent_scope!(output);
-                            for variant in &sum_type.variants {
+                            for variant in &*sum_type.variants {
                                 let variant_name = variant
                                     .name
                                     .as_ref()
@@ -491,7 +476,7 @@ pub fn autogen_csharp_enum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespa
                     .unwrap();
                 }
                 None => {
-                    for variant in &sum_type.variants {
+                    for variant in &*sum_type.variants {
                         let variant_name = variant
                             .name
                             .as_ref()
@@ -614,7 +599,7 @@ fn autogen_csharp_product_table_common(
                     AlgebraicType::Ref(type_ref) => {
                         let ref_type = &ctx.typespace.types[type_ref.idx()];
                         if let AlgebraicType::Sum(sum_type) = ref_type {
-                            if is_enum(sum_type) {
+                            if sum_type.is_simple_enum() {
                                 writeln!(output, "[SpacetimeDB.Enum]").unwrap();
                             } else {
                                 unimplemented!()
@@ -1248,9 +1233,9 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                     json_args.push_str(arg_name.as_str());
                 }
                 AlgebraicType::Ref(type_ref) => {
-                    let ref_type = &ctx.typespace.types[type_ref.idx()];
+                    let ref_type = &ctx.typespace.types[*type_ref];
                     if let AlgebraicType::Sum(sum_type) = ref_type {
-                        if is_enum(sum_type) {
+                        if sum_type.is_simple_enum() {
                             json_args.push_str(
                                 format!("new SpacetimeDB.EnumWrapper<{}>({})", arg_type_str, arg_name).as_str(),
                             );

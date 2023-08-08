@@ -194,7 +194,7 @@ impl ArrayValue {
     /// Helper for `type_of` above.
     /// Infers the `AlgebraicType` from the first element by running `then` on it.
     fn first_type_of<T>(arr: &[T], then: impl FnOnce(&T) -> AlgebraicType) -> AlgebraicType {
-        arr.first().map(then).unwrap_or_else(|| AlgebraicType::NEVER_TYPE)
+        arr.first().map(then).unwrap_or_else(AlgebraicType::never)
     }
 
     /// Returns the length of the array.

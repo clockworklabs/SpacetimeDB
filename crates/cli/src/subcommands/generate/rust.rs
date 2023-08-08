@@ -219,7 +219,7 @@ pub fn autogen_rust_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> String 
     out.delimited_block(
         "{",
         |out| {
-            for variant in &sum_type.variants {
+            for variant in &*sum_type.variants {
                 write_enum_variant(ctx, out, variant);
                 out.newline();
             }

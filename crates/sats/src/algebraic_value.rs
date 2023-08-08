@@ -406,7 +406,7 @@ impl AlgebraicValue {
             //   I think this requires a soundness argument.
             //   I could see that it is OK with the argument that this is an empty map
             //   under the requirement that we cannot insert elements into the map.
-            vec![AlgebraicType::NEVER_TYPE.into(); 2].into()
+            vec![AlgebraicType::never().into(); 2].into()
         })
     }
 
@@ -492,7 +492,7 @@ mod tests {
 
     #[test]
     fn option_some() {
-        let option = AlgebraicType::option(AlgebraicType::NEVER_TYPE);
+        let option = AlgebraicType::option(AlgebraicType::never());
         let sum_value = AlgebraicValue::OptionNone();
         let typespace = Typespace::new(vec![]);
         assert_eq!("(none = ())", in_space(&typespace, &option, &sum_value).to_satn(),);

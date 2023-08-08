@@ -158,9 +158,6 @@ impl AlgebraicType {
 
     /// The built-in string type.
     pub const String: Self = Self::Builtin(BuiltinType::String);
-
-    /// The canonical 0-variant "never" / "absurd" / "void" type.
-    pub const NEVER_TYPE: Self = Self::sum(Vec::new());
 }
 
 impl MetaType for AlgebraicType {
@@ -170,12 +167,15 @@ impl MetaType for AlgebraicType {
     /// This could alternatively be implemented
     /// as a regular AlgebraicValue or as a static variable.
     fn meta_type() -> Self {
-        AlgebraicType::sum(vec![
-            SumTypeVariant::new_named(SumType::meta_type(), "sum"),
-            SumTypeVariant::new_named(ProductType::meta_type(), "product"),
-            SumTypeVariant::new_named(BuiltinType::meta_type(), "builtin"),
-            SumTypeVariant::new_named(AlgebraicTypeRef::meta_type(), "ref"),
-        ])
+        AlgebraicType::sum(
+            [
+                SumTypeVariant::new_named(SumType::meta_type(), "sum"),
+                SumTypeVariant::new_named(ProductType::meta_type(), "product"),
+                SumTypeVariant::new_named(BuiltinType::meta_type(), "builtin"),
+                SumTypeVariant::new_named(AlgebraicTypeRef::meta_type(), "ref"),
+            ]
+            .into(),
+        )
     }
 }
 
@@ -183,6 +183,11 @@ impl AlgebraicType {
     /// The canonical 0-element unit type.
     pub fn unit() -> Self {
         Self::product(Vec::new().into_boxed_slice())
+    }
+
+    /// The canonical 0-variant "never" / "absurd" / "void" type.
+    pub fn never() -> Self {
+        Self::sum([].into())
     }
 
     /// A type representing an array of `U8`s.
@@ -198,7 +203,7 @@ impl AlgebraicType {
     }
 
     /// Returns a sum type with the given `variants`.
-    pub const fn sum(variants: Vec<SumTypeVariant>) -> Self {
+    pub const fn sum(variants: Box<[SumTypeVariant]>) -> Self {
         AlgebraicType::Sum(SumType { variants })
     }
 
@@ -209,10 +214,13 @@ impl AlgebraicType {
 
     /// Returns a structural option type where `some_type` is the type for the `some` variant.
     pub fn option(some_type: Self) -> Self {
-        Self::sum(vec![
-            SumTypeVariant::new_named(some_type, "some"),
-            SumTypeVariant::unit("none"),
-        ])
+        Self::sum(
+            [
+                SumTypeVariant::new_named(some_type, "some"),
+                SumTypeVariant::unit("none"),
+            ]
+            .into(),
+        )
     }
 
     /// Returns an unsized array type where the element type is `ty`.
@@ -253,12 +261,12 @@ mod tests {
 
     #[test]
     fn never() {
-        assert_eq!("(|)", fmt_algebraic_type(&AlgebraicType::NEVER_TYPE).to_string());
+        assert_eq!("(|)", fmt_algebraic_type(&AlgebraicType::never()).to_string());
     }
 
     #[test]
     fn never_map() {
-        assert_eq!("{ ty_: Sum }", fmt_map(&AlgebraicType::NEVER_TYPE).to_string());
+        assert_eq!("{ ty_: Sum }", fmt_map(&AlgebraicType::never()).to_string());
     }
 
     #[test]
@@ -283,13 +291,13 @@ mod tests {
 
     #[test]
     fn option() {
-        let option = AlgebraicType::option(AlgebraicType::NEVER_TYPE);
+        let option = AlgebraicType::option(AlgebraicType::never());
         assert_eq!("(some: (|) | none: ())", fmt_algebraic_type(&option).to_string());
     }
 
     #[test]
     fn option_map() {
-        let option = AlgebraicType::option(AlgebraicType::NEVER_TYPE);
+        let option = AlgebraicType::option(AlgebraicType::never());
         assert_eq!(
             "{ ty_: Sum, some: { ty_: Sum }, none: { ty_: Product } }",
             fmt_map(&option).to_string()
@@ -324,7 +332,7 @@ mod tests {
             }]
             .into(),
         );
-        let next = AlgebraicType::sum(vec![builtin.clone().into(), builtin.clone().into(), product.into()]);
+        let next = AlgebraicType::sum([builtin.clone().into(), builtin.clone().into(), product.into()].into());
         let next = AlgebraicType::product(
             [
                 ProductTypeElement {
@@ -334,7 +342,7 @@ mod tests {
                 next.into(),
                 builtin.into(),
                 ProductTypeElement {
-                    algebraic_type: AlgebraicType::NEVER_TYPE,
+                    algebraic_type: AlgebraicType::never(),
                     name: Some("never".into()),
                 },
             ]
@@ -352,7 +360,7 @@ mod tests {
 
     #[test]
     fn option_as_value() {
-        let option = AlgebraicType::option(AlgebraicType::NEVER_TYPE);
+        let option = AlgebraicType::option(AlgebraicType::never());
         let algebraic_type = AlgebraicType::meta_type();
         let typespace = Typespace::new(vec![algebraic_type]);
         let at_ref = AlgebraicType::Ref(AlgebraicTypeRef(0));
@@ -387,7 +395,7 @@ mod tests {
 
     #[test]
     fn option_from_value() {
-        let option = AlgebraicType::option(AlgebraicType::NEVER_TYPE);
+        let option = AlgebraicType::option(AlgebraicType::never());
         AlgebraicType::from_value(&option.as_value()).expect("No errors.");
     }
 

@@ -415,7 +415,7 @@ pub fn autogen_typescript_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> S
 
         writeln!(output).unwrap();
 
-        for variant in &sum_type.variants {
+        for variant in &*sum_type.variants {
             let variant_name = variant
                 .name
                 .as_ref()
@@ -579,7 +579,7 @@ fn generate_imports(ctx: &GenCtx, elements: &[ProductTypeElement], imports: &mut
 // TODO: refactor to allow passing both elements and variants
 fn generate_imports_variants(
     ctx: &GenCtx,
-    variants: &Vec<SumTypeVariant>,
+    variants: &[SumTypeVariant],
     imports: &mut Vec<String>,
     prefix: Option<&str>,
 ) {
@@ -611,7 +611,7 @@ fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>
         }
         // Generate imports for the fields of anonymous sum types like `Option<T>`.
         AlgebraicType::Sum(s) => {
-            for variant in &s.variants {
+            for variant in &*s.variants {
                 _generate_imports(ctx, &variant.algebraic_type, imports, prefix);
             }
         }
