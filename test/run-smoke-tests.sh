@@ -183,6 +183,12 @@ TESTS_NAME=()
 TESTS_PROJECT_PATH=()
 TESTS_CONFIG_FILE=()
 
+if [ "$RUN_PARALLEL" == "true" ] ; then
+	# Make sure background tests are torn down even if we don't get to `wait`
+	# for them (e.g. on ^C).
+	trap 'x="$(jobs -pr)"; [ -n "$x"] && kill "$x"' SIGINT SIGTERM EXIT
+fi
+
 for smoke_test in "${TESTS[@]}" ; do
 	if [ ${#EXCLUDE_TESTS[@]} -ne 0 ] && list_contains "$smoke_test" "${EXCLUDE_TESTS[@]}"; then
 		echo "Skipping test $smoke_test"
