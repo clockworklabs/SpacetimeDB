@@ -43,6 +43,7 @@ export class BinaryReducerArgsAdapter {
   }
 }
 
+/** Defines the interface for deserialize `AlgebraicValue`s*/
 export interface ValueAdapter {
   readUInt8Array: () => Uint8Array;
   readArray: (type: AlgebraicType) => AlgebraicValue[];
@@ -300,8 +301,14 @@ export class JSONAdapter implements ValueAdapter {
   }
 }
 
+/** A value of a sum type choosing a specific variant of the type. */
 export class SumValue {
+  /** A tag representing the choice of one variant of the sum type's variants. */
   public tag: number;
+  /** 
+  * Given a variant `Var(Ty)` in a sum type `{ Var(Ty), ... }`,
+  * this provides the `value` for `Ty`.
+  */
   public value: AlgebraicValue;
 
   constructor(tag: number, value: AlgebraicValue) {
@@ -322,6 +329,12 @@ export class SumValue {
   }
 }
 
+/** 
+* A product value is made of a list of
+* "elements" / "fields" / "factors" of other `AlgebraicValue`s.
+*
+* The type of product value is a [product type](`ProductType`).
+*/
 export class ProductValue {
   elements: AlgebraicValue[];
 
@@ -341,6 +354,7 @@ export class ProductValue {
   }
 }
 
+/** A built-in value of a [`BuiltinType`]. */
 type BuiltinValueType =
   | boolean
   | string
@@ -431,9 +445,13 @@ export class BuiltinValue {
 
 type AnyValue = SumValue | ProductValue | BuiltinValue;
 
+/** A value in SATS. */
 export class AlgebraicValue {
+  /** A structural sum value. */
   sum: SumValue | undefined;
+  /** A structural product value. */
   product: ProductValue | undefined;
+  /** A builtin value that has a builtin type */
   builtin: BuiltinValue | undefined;
 
   constructor(value: AnyValue | undefined) {

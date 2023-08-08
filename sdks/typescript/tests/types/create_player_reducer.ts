@@ -11,6 +11,8 @@ import {
   IDatabaseTable,
   AlgebraicValue,
   ReducerArgsAdapter,
+  ReducerEvent,
+  Identity,
 } from "../../src/index";
 // @ts-ignore
 import { Point } from "./point";
@@ -32,7 +34,7 @@ export class CreatePlayerReducer {
   }
 
   public static on(
-    callback: (status: string, identity: Uint8Array, reducerArgs: any[]) => void
+    callback: (reducerEvent: ReducerEvent, reducerArgs: any[]) => void
   ) {
     if (__SPACETIMEDB__.spacetimeDBClient) {
       __SPACETIMEDB__.spacetimeDBClient.on("reducer:CreatePlayer", callback);
