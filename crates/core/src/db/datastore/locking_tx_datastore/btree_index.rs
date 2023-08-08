@@ -79,7 +79,7 @@ pub(crate) struct BTreeIndex {
     pub(crate) index_id: IndexId,
     pub(crate) table_id: u32,
     pub(crate) cols: NonEmpty<u32>,
-    pub(crate) name: String,
+    pub(crate) name: Box<str>,
     pub(crate) is_unique: bool,
     idx: BTreeSet<IndexKey>,
 }

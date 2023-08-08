@@ -228,12 +228,12 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
                 indexes.push(IndexDef {
                     table_id: 0, // Ignored
                     cols: NonEmpty::new(i as u32),
-                    name: format!("{}_{}_idx", table_name, i),
+                    name: format!("{}_{}_idx", table_name, i).into(),
                     is_unique: true,
                 });
             }
             cols.push(ColumnDef {
-                col_name: column.name.clone().unwrap_or(i.to_string()),
+                col_name: column.name.clone().unwrap_or_else(|| i.to_string().into()),
                 col_type: column.algebraic_type.clone(),
                 is_autoinc: meta.is_autoinc(),
             })
@@ -241,8 +241,8 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         self.db.create_table(
             self.tx,
             TableDef {
-                table_name: table_name.to_string(),
-                columns: cols,
+                table_name: table_name.into(),
+                columns: cols.into(),
                 indexes,
                 table_type,
                 table_access,
@@ -427,13 +427,13 @@ pub(crate) mod tests {
         let table_id = db.create_table(
             tx,
             TableDef {
-                table_name: table_name.to_string(),
+                table_name: table_name.into(),
                 columns: schema
                     .elements
                     .iter()
                     .enumerate()
                     .map(|(i, e)| ColumnDef {
-                        col_name: e.name.clone().unwrap_or(i.to_string()),
+                        col_name: e.name.clone().unwrap_or_else(|| i.to_string().into()),
                         col_type: e.algebraic_type.clone(),
                         is_autoinc: false,
                     })

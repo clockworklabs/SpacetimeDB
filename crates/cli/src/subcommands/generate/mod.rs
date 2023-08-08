@@ -1,4 +1,5 @@
 use std::fs;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 use clap::Arg;
@@ -182,13 +183,13 @@ pub fn extract_from_moduledef(module: ModuleDef) -> (GenCtx, impl Iterator<Item 
     } = module;
     let mut names = vec![None; typespace.types.len()];
     let name_info = itertools::chain!(
-        tables.iter().map(|t| (t.data, &t.name)),
+        tables.iter().map(|t| (t.data, &*t.name)),
         misc_exports
             .iter()
-            .map(|MiscModuleExport::TypeAlias(a)| (a.ty, &a.name)),
+            .map(|MiscModuleExport::TypeAlias(a)| (a.ty, &*a.name)),
     );
     for (typeref, name) in name_info {
-        names[typeref.idx()] = Some(name.clone())
+        names[typeref.idx()] = Some(name.to_owned())
     }
 
     let ctx = GenCtx { typespace, names };
@@ -236,7 +237,7 @@ impl GenItem {
                 };
                 Some((rust::rust_type_file_name(name), code))
             }
-            GenItem::Reducer(reducer) if reducer.name == "__init__" => None,
+            GenItem::Reducer(reducer) if &*reducer.name == "__init__" => None,
             GenItem::Reducer(reducer) => {
                 let code = rust::autogen_rust_reducer(ctx, reducer);
                 Some((rust::rust_reducer_file_name(&reducer.name), code))
@@ -248,7 +249,7 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = python::autogen_python_table(ctx, table);
-                let name = table.name.to_case(Case::Snake);
+                let name = table.name.deref().to_case(Case::Snake);
                 Some((name + ".py", code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
@@ -259,17 +260,17 @@ impl GenItem {
                 }
                 AlgebraicType::Product(prod) => {
                     let code = python::autogen_python_tuple(ctx, name, prod);
-                    let name = name.to_case(Case::Snake);
+                    let name = name.deref().to_case(Case::Snake);
                     Some((name + ".py", code))
                 }
                 AlgebraicType::Builtin(_) => todo!(),
                 AlgebraicType::Ref(_) => todo!(),
             },
             // I'm not sure exactly how this should work; when does init_database get called with csharp?
-            GenItem::Reducer(reducer) if reducer.name == "__init__" => None,
+            GenItem::Reducer(reducer) if &*reducer.name == "__init__" => None,
             GenItem::Reducer(reducer) => {
                 let code = python::autogen_python_reducer(ctx, reducer);
-                let name = reducer.name.to_case(Case::Snake);
+                let name = reducer.name.deref().to_case(Case::Snake);
                 Some((name + "_reducer.py", code))
             }
         }
@@ -279,7 +280,7 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = typescript::autogen_typescript_table(ctx, table);
-                let name = table.name.to_case(Case::Snake);
+                let name = table.name.deref().to_case(Case::Snake);
                 Some((name + ".ts", code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
@@ -290,17 +291,17 @@ impl GenItem {
                 }
                 AlgebraicType::Product(prod) => {
                     let code = typescript::autogen_typescript_tuple(ctx, name, prod);
-                    let name = name.to_case(Case::Snake);
+                    let name = name.deref().to_case(Case::Snake);
                     Some((name + ".ts", code))
                 }
                 AlgebraicType::Builtin(_) => todo!(),
                 AlgebraicType::Ref(_) => todo!(),
             },
             // I'm not sure exactly how this should work; when does init_database get called with csharp?
-            GenItem::Reducer(reducer) if reducer.name == "__init__" => None,
+            GenItem::Reducer(reducer) if &*reducer.name == "__init__" => None,
             GenItem::Reducer(reducer) => {
                 let code = typescript::autogen_typescript_reducer(ctx, reducer);
-                let name = reducer.name.to_case(Case::Snake);
+                let name = reducer.name.deref().to_case(Case::Snake);
                 Some((name + "_reducer.ts", code))
             }
         }
@@ -310,7 +311,7 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = csharp::autogen_csharp_table(ctx, table, namespace);
-                Some((table.name.clone() + ".cs", code))
+                Some((table.name.to_string() + ".cs", code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
                 AlgebraicType::Sum(sum) => {
@@ -320,16 +321,16 @@ impl GenItem {
                 }
                 AlgebraicType::Product(prod) => {
                     let code = csharp::autogen_csharp_tuple(ctx, name, prod, namespace);
-                    Some((name.clone() + ".cs", code))
+                    Some((name.to_string() + ".cs", code))
                 }
                 AlgebraicType::Builtin(_) => todo!(),
                 AlgebraicType::Ref(_) => todo!(),
             },
             // I'm not sure exactly how this should work; when does init_database get called with csharp?
-            GenItem::Reducer(reducer) if reducer.name == "__init__" => None,
+            GenItem::Reducer(reducer) if &*reducer.name == "__init__" => None,
             GenItem::Reducer(reducer) => {
                 let code = csharp::autogen_csharp_reducer(ctx, reducer, namespace);
-                let pascalcase = reducer.name.to_case(Case::Pascal);
+                let pascalcase = reducer.name.deref().to_case(Case::Pascal);
                 Some((pascalcase + "Reducer.cs", code))
             }
         }

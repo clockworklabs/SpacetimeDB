@@ -630,7 +630,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        schema.table_name = "MyTable".into();
         stdb.create_table(&mut tx, schema)?;
         stdb.commit_tx(tx)?;
 
@@ -644,7 +644,7 @@ mod tests {
         let mut tx = stdb.begin_tx();
 
         let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        schema.table_name = "MyTable".into();
         stdb.create_table(&mut tx, schema)?;
 
         stdb.commit_tx(tx)?;
@@ -677,7 +677,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        schema.table_name = "MyTable".into();
         let table_id = stdb.create_table(&mut tx, schema)?;
         let t_id = stdb.table_id_from_name(&tx, "MyTable")?;
         assert_eq!(t_id, Some(table_id));
@@ -690,11 +690,11 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        schema.table_name = "MyTable".into();
         stdb.create_table(&mut tx, schema)?;
         let table_id = stdb.table_id_from_name(&tx, "MyTable")?.unwrap();
         let schema = stdb.schema_for_table(&tx, table_id)?;
-        let col = schema.columns.iter().find(|x| x.col_name == "my_col").unwrap();
+        let col = schema.columns.iter().find(|x| &*x.col_name == "my_col").unwrap();
         assert_eq!(col.col_id, 0);
         Ok(())
     }
@@ -705,7 +705,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        schema.table_name = "MyTable".into();
         stdb.create_table(&mut tx, schema.clone())?;
         let result = stdb.create_table(&mut tx, schema);
         result.expect_err("create_table should error when called twice");
@@ -719,7 +719,7 @@ mod tests {
         let mut tx = stdb.begin_tx();
 
         let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        schema.table_name = "MyTable".into();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(-1)])?;
@@ -743,7 +743,7 @@ mod tests {
         let mut tx = stdb.begin_tx();
 
         let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        schema.table_name = "MyTable".into();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(-1)])?;
@@ -769,7 +769,7 @@ mod tests {
         let mut tx = stdb.begin_tx();
 
         let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        schema.table_name = "MyTable".into();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(-1)])?;
@@ -793,7 +793,7 @@ mod tests {
         let mut tx = stdb.begin_tx();
 
         let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        schema.table_name = "MyTable".into();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I32(-1)])?;
@@ -819,7 +819,7 @@ mod tests {
         let mut tx = stdb.begin_tx();
 
         let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        schema.table_name = "MyTable".into();
         let table_id = stdb.create_table(&mut tx, schema)?;
         stdb.rollback_tx(tx);
 
@@ -836,7 +836,7 @@ mod tests {
         let mut tx = stdb.begin_tx();
 
         let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
-        schema.table_name = "MyTable".to_string();
+        schema.table_name = "MyTable".into();
         let table_id = stdb.create_table(&mut tx, schema)?;
         stdb.commit_tx(tx)?;
 
@@ -864,12 +864,13 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![ColumnDef {
-                col_name: "my_col".to_string(),
+            table_name: "MyTable".into(),
+            columns: [ColumnDef {
+                col_name: "my_col".into(),
                 col_type: AlgebraicType::I64,
                 is_autoinc: true,
-            }],
+            }]
+            .into(),
             indexes: vec![],
             table_type: StTableType::User,
             table_access: StAccess::Public,
@@ -899,12 +900,13 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![ColumnDef {
-                col_name: "my_col".to_string(),
+            table_name: "MyTable".into(),
+            columns: [ColumnDef {
+                col_name: "my_col".into(),
                 col_type: AlgebraicType::I64,
                 is_autoinc: true,
-            }],
+            }]
+            .into(),
             indexes: vec![],
             table_type: StTableType::User,
             table_access: StAccess::Public,
@@ -986,16 +988,17 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![ColumnDef {
-                col_name: "my_col".to_string(),
+            table_name: "MyTable".into(),
+            columns: [ColumnDef {
+                col_name: "my_col".into(),
                 col_type: AlgebraicType::I64,
                 is_autoinc: false,
-            }],
+            }]
+            .into(),
             indexes: vec![IndexDef {
                 table_id: 0,
                 cols: NonEmpty::new(0),
-                name: "MyTable_my_col_idx".to_string(),
+                name: "MyTable_my_col_idx".into(),
                 is_unique: false,
             }],
             table_type: StTableType::User,
@@ -1028,16 +1031,17 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![ColumnDef {
-                col_name: "my_col".to_string(),
+            table_name: "MyTable".into(),
+            columns: [ColumnDef {
+                col_name: "my_col".into(),
                 col_type: AlgebraicType::I64,
                 is_autoinc: false,
-            }],
+            }]
+            .into(),
             indexes: vec![IndexDef {
                 table_id: 0,
                 cols: NonEmpty::new(0),
-                name: "MyTable_my_col_idx".to_string(),
+                name: "MyTable_my_col_idx".into(),
                 is_unique: true,
             }],
             table_type: StTableType::User,
@@ -1075,16 +1079,17 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![ColumnDef {
-                col_name: "my_col".to_string(),
+            table_name: "MyTable".into(),
+            columns: [ColumnDef {
+                col_name: "my_col".into(),
                 col_type: AlgebraicType::I64,
                 is_autoinc: true,
-            }],
+            }]
+            .into(),
             indexes: vec![IndexDef {
                 table_id: 0,
                 cols: NonEmpty::new(0),
-                name: "MyTable_my_col_idx".to_string(),
+                name: "MyTable_my_col_idx".into(),
                 is_unique: true,
             }],
             table_type: StTableType::User,
@@ -1120,46 +1125,47 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![
+            table_name: "MyTable".into(),
+            columns: [
                 ColumnDef {
-                    col_name: "col1".to_string(),
+                    col_name: "col1".into(),
                     col_type: AlgebraicType::I64,
                     is_autoinc: false,
                 },
                 ColumnDef {
-                    col_name: "col2".to_string(),
+                    col_name: "col2".into(),
                     col_type: AlgebraicType::I64,
                     is_autoinc: true,
                 },
                 ColumnDef {
-                    col_name: "col3".to_string(),
+                    col_name: "col3".into(),
                     col_type: AlgebraicType::I64,
                     is_autoinc: false,
                 },
                 ColumnDef {
-                    col_name: "col4".to_string(),
+                    col_name: "col4".into(),
                     col_type: AlgebraicType::I64,
                     is_autoinc: true,
                 },
-            ],
+            ]
+            .into(),
             indexes: vec![
                 IndexDef {
                     table_id: 0,
                     cols: NonEmpty::new(0),
-                    name: "MyTable_col1_idx".to_string(),
+                    name: "MyTable_col1_idx".into(),
                     is_unique: true,
                 },
                 IndexDef {
                     table_id: 0,
                     cols: NonEmpty::new(2),
-                    name: "MyTable_col3_idx".to_string(),
+                    name: "MyTable_col3_idx".into(),
                     is_unique: false,
                 },
                 IndexDef {
                     table_id: 0,
                     cols: NonEmpty::new(3),
-                    name: "MyTable_col4_idx".to_string(),
+                    name: "MyTable_col4_idx".into(),
                     is_unique: true,
                 },
             ],
@@ -1208,16 +1214,17 @@ mod tests {
         let mut tx = stdb.begin_tx();
 
         let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![ColumnDef {
-                col_name: "my_col".to_string(),
+            table_name: "MyTable".into(),
+            columns: [ColumnDef {
+                col_name: "my_col".into(),
                 col_type: AlgebraicType::I64,
                 is_autoinc: true,
-            }],
+            }]
+            .into(),
             indexes: vec![IndexDef {
                 table_id: 0,
                 cols: NonEmpty::new(0),
-                name: "MyTable_my_col_idx".to_string(),
+                name: "MyTable_my_col_idx".into(),
                 is_unique: true,
             }],
             table_type: StTableType::User,

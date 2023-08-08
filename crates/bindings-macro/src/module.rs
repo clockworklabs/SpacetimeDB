@@ -126,7 +126,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
         SatsTypeData::Product(fields) => {
             let fields = fields.iter().map(|field| {
                 let field_name = match &field.name {
-                    Some(name) => quote!(Some(#name.to_owned())),
+                    Some(name) => quote!(Some(#name.into())),
                     None => quote!(None),
                 };
                 let ty = field.ty;

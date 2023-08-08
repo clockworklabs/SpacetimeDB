@@ -1,6 +1,7 @@
 use super::util::fmt_fn;
 
 use std::fmt::{self, Write};
+use std::ops::Deref;
 
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::{
@@ -411,8 +412,8 @@ pub fn autogen_csharp_enum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespa
             panic!("Enum names cannot contain more than one namespace prefix. Example: MyNamespace.MyEnum");
         }
 
-        sum_namespace = Some(split[0].to_string().to_case(Case::Pascal));
-        sum_type_name = split[1].to_string().to_case(Case::Pascal);
+        sum_namespace = Some(split[0].to_case(Case::Pascal));
+        sum_type_name = split[1].to_case(Case::Pascal);
         sum_full_enum_type_name = format!("{}.Types.{}", sum_namespace.clone().unwrap(), sum_type_name);
     }
 
@@ -1344,7 +1345,8 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                     for (i, arg) in reducer.args.iter().enumerate() {
                         let arg_name = arg
                             .name
-                            .clone()
+                            .as_deref()
+                            .map(|n| n.to_string())
                             .unwrap_or_else(|| format!("arg_{}", i))
                             .to_case(Case::Pascal);
                         let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, namespace);
@@ -1382,7 +1384,8 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             for (i, arg) in reducer.args.iter().enumerate() {
                 let arg_name = arg
                     .name
-                    .clone()
+                    .as_deref()
+                    .map(|n| n.to_string())
                     .unwrap_or_else(|| format!("arg_{}", i))
                     .to_case(Case::Pascal);
                 let algebraic_type = convert_algebraic_type(ctx, &arg.algebraic_type, namespace);
@@ -1413,7 +1416,8 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         for (i, arg) in reducer.args.iter().enumerate() {
             let arg_name = arg
                 .name
-                .clone()
+                .as_deref()
+                .map(|n| n.to_string())
                 .unwrap_or_else(|| format!("arg_{}", i))
                 .to_case(Case::Pascal);
             let cs_type = ty_fmt(ctx, &arg.algebraic_type, namespace);
@@ -1444,11 +1448,11 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         })
         .filter(|r| r.is_some())
         .flatten()
-        .filter(|r| r.name != "__init__")
+        .filter(|r| &*r.name != "__init__")
         .collect();
     let reducer_names: Vec<String> = reducers
         .iter()
-        .map(|reducer| reducer.name.to_case(Case::Pascal))
+        .map(|reducer| reducer.name.deref().to_case(Case::Pascal))
         .collect();
 
     let use_namespace = true;
@@ -1515,7 +1519,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         writeln!(output).unwrap();
         // Properties for reducer args
         for reducer in &reducers {
-            let reducer_name = reducer.name.to_case(Case::Pascal);
+            let reducer_name = reducer.name.deref().to_case(Case::Pascal);
             writeln!(output, "public {reducer_name}ArgsStruct {reducer_name}Args").unwrap();
             writeln!(output, "{{").unwrap();
             {
@@ -1543,7 +1547,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
             {
                 indent_scope!(output);
                 for reducer in &reducers {
-                    let reducer_name = reducer.name.to_case(Case::Pascal);
+                    let reducer_name = reducer.name.deref().to_case(Case::Pascal);
                     writeln!(output, "case ReducerType.{reducer_name}:").unwrap();
                     writeln!(output, "{{").unwrap();
                     {
@@ -1555,7 +1559,8 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
                             for (i, arg) in reducer.args.iter().enumerate() {
                                 let arg_name = arg
                                     .name
-                                    .clone()
+                                    .as_deref()
+                                    .map(|n| n.to_string())
                                     .unwrap_or_else(|| format!("arg_{}", i))
                                     .to_case(Case::Pascal);
                                 writeln!(output, "args.{arg_name},").unwrap();

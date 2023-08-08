@@ -541,11 +541,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(output).unwrap();
 
     let mut imports = Vec::new();
-    generate_imports(
-        ctx,
-        &reducer.args.clone().into_iter().collect::<Vec<ProductTypeElement>>(),
-        &mut imports,
-    );
+    generate_imports(ctx, &reducer.args, &mut imports);
 
     for import in imports {
         writeln!(output, "{import}").unwrap();

@@ -51,7 +51,7 @@ impl ProductType {
             [ProductTypeElement {
                 name: Some(name),
                 algebraic_type,
-            }] => name == "__identity_bytes" && algebraic_type.is_bytes(),
+            }] => name.as_ref() == "__identity_bytes" && algebraic_type.is_bytes(),
             _ => false,
         }
     }
@@ -73,7 +73,7 @@ impl<'a, I: Into<AlgebraicType>> FromIterator<(&'a str, I)> for ProductType {
 impl<'a, I: Into<AlgebraicType>> FromIterator<(Option<&'a str>, I)> for ProductType {
     fn from_iter<T: IntoIterator<Item = (Option<&'a str>, I)>>(iter: T) -> Self {
         iter.into_iter()
-            .map(|(name, ty)| ProductTypeElement::new(ty.into(), name.map(str::to_string)))
+            .map(|(name, ty)| ProductTypeElement::new(ty.into(), name.map(|n| n.into())))
             .collect()
     }
 }

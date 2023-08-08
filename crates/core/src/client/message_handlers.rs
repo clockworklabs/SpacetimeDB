@@ -145,7 +145,7 @@ impl DecodedMessage<'_> {
             } => client.one_off_query(query, message_id).await.map_err(|err| (None, err)),
         };
         res.map_err(|(reducer, err)| MessageExecutionError {
-            reducer: reducer.map(str::to_owned),
+            reducer: reducer.map(Into::into),
             caller_identity: client.id.identity,
             err,
         })
@@ -156,7 +156,7 @@ impl DecodedMessage<'_> {
 #[derive(thiserror::Error, Debug)]
 #[error("error executing message (reducer: {reducer:?}) (err: {err:?})")]
 pub struct MessageExecutionError {
-    pub reducer: Option<String>,
+    pub reducer: Option<Box<str>>,
     pub caller_identity: Identity,
     #[source]
     pub err: anyhow::Error,
@@ -168,7 +168,7 @@ impl MessageExecutionError {
             timestamp: Timestamp::now(),
             caller_identity: self.caller_identity,
             function_call: ModuleFunctionCall {
-                reducer: self.reducer.unwrap_or_else(|| "<none>".to_owned()),
+                reducer: self.reducer.unwrap_or_else(|| "<none>".into()),
                 args: Default::default(),
             },
             status: EventStatus::Failed(format!("{:#}", self.err)),

@@ -285,7 +285,7 @@ impl InstanceEnv {
         let index = IndexDef {
             table_id,
             cols,
-            name: index_name,
+            name: (&*index_name).into(),
             is_unique,
         };
 

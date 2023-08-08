@@ -706,7 +706,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             table.column_attrs.len() == schema.elements.len(),
             "mismatched number of columns"
         );
-        let columns: Vec<ColumnDef> = std::iter::zip(schema.elements.iter(), &table.column_attrs)
+        let columns: Box<[ColumnDef]> = std::iter::zip(schema.elements.iter(), &*table.column_attrs)
             .map(|(ty, attr)| {
                 Ok(ColumnDef {
                     col_name: ty.name.clone().context("column without name")?,
@@ -753,7 +753,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 let index = IndexDef {
                     table_id: 0, // Will be ignored
                     cols: NonEmpty::new(col_id as u32),
-                    name: format!("{}_{}_unique", table.name, col.col_name),
+                    name: format!("{}_{}_unique", table.name, col.col_name).into(),
                     is_unique: true,
                 };
                 indexes.push(index);

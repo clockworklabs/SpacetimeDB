@@ -67,7 +67,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
             status: status_str.to_string(),
             caller_identity: event.caller_identity.to_hex(),
             function_call: FunctionCallJson {
-                reducer: event.function_call.reducer.to_owned(),
+                reducer: event.function_call.reducer.clone().into(),
                 args: event.function_call.args.get_json().clone(),
             },
             energy_quanta_used: event.energy_quanta_used.0,
@@ -94,7 +94,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
             status: status.into(),
             caller_identity: event.caller_identity.to_vec(),
             function_call: Some(FunctionCall {
-                reducer: event.function_call.reducer.to_owned(),
+                reducer: event.function_call.reducer.clone().into(),
                 arg_bytes: event.function_call.args.get_bsatn().clone().into(),
             }),
             message: errmsg,

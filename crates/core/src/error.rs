@@ -62,9 +62,9 @@ pub enum IndexError {
     ColumnNotFound(IndexDef),
     #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, col_names, value.to_satn())]
     UniqueConstraintViolation {
-        constraint_name: String,
-        table_name: String,
-        col_names: Vec<String>,
+        constraint_name: Box<str>,
+        table_name: Box<str>,
+        col_names: Box<[Box<str>]>,
         value: AlgebraicValue,
     },
     #[error("Attempt to define a index with more than 1 auto_inc column: Table: {0:?}, Columns: {1:?}")]

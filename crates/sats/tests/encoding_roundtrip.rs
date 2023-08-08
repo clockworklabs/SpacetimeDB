@@ -106,7 +106,7 @@ fn algebraic_values() -> impl Strategy<Value = AlgebraicValue> {
 
 fn round_trip(value: AlgebraicValue) -> Result<(ProductValue, ProductValue), DecodeError> {
     let ty = value.type_of();
-    let schema = ProductType::new([ProductTypeElement::new(ty, Some("x".to_string()))].into());
+    let schema = ProductType::new([ProductTypeElement::new(ty, Some("x".into()))].into());
 
     let row = product!(value);
 

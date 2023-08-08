@@ -19,7 +19,7 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + fmt::Display {
             write!(f, "{{ ty_: Sum")?;
             for (i, e_ty) in ty.variants.iter().enumerate() {
                 write!(f, ", ")?;
-                fmt_name_ty(f, i, e_ty.name.as_ref(), &e_ty.algebraic_type)?;
+                fmt_name_ty(f, i, e_ty.name.as_deref(), &e_ty.algebraic_type)?;
             }
             write!(f, " }}")
         }
@@ -27,7 +27,7 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + fmt::Display {
             write!(f, "{{ ty_: Product")?;
             for (i, e_ty) in ty.elements.iter().enumerate() {
                 write!(f, ", ")?;
-                fmt_name_ty(f, i, e_ty.name.as_ref(), &e_ty.algebraic_type)?;
+                fmt_name_ty(f, i, e_ty.name.as_deref(), &e_ty.algebraic_type)?;
             }
             write!(f, " }}")
         }

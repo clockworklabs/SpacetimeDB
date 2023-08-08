@@ -211,10 +211,12 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
                 Err(err) => return Err(err),
             },
             Column::QualifiedWildcard { table: name } => {
-                if let Some(t) = table.iter_tables().find(|x| x.table_name == name) {
-                    for c in t.columns.iter() {
-                        col_ids.push(FieldName::named(&t.table_name, &c.col_name).into());
-                    }
+                if let Some(t) = table.iter_tables().find(|x| x.table_name.as_ref() == name) {
+                    col_ids.extend(
+                        t.columns
+                            .iter()
+                            .map(|c| FieldName::named(&t.table_name, &c.col_name).into()),
+                    );
                 } else {
                     return Err(PlanError::TableNotFoundQualified { expect: name });
                 }
@@ -226,7 +228,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
     if !not_found.is_empty() {
         return Err(PlanError::UnknownFields {
             fields: not_found,
-            tables: table.table_names(),
+            tables: table.table_names().map(|n| n.to_owned()).collect(),
         });
     }
 

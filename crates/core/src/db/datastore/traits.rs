@@ -81,7 +81,7 @@ pub struct SequenceDef {
 pub struct IndexSchema {
     pub(crate) index_id: u32,
     pub(crate) table_id: u32,
-    pub(crate) index_name: String,
+    pub(crate) index_name: Box<str>,
     pub(crate) is_unique: bool,
     pub(crate) cols: NonEmpty<u32>,
 }
@@ -91,12 +91,12 @@ pub struct IndexSchema {
 pub struct IndexDef {
     pub(crate) table_id: u32,
     pub(crate) cols: NonEmpty<u32>,
-    pub(crate) name: String,
+    pub(crate) name: Box<str>,
     pub(crate) is_unique: bool,
 }
 
 impl IndexDef {
-    pub fn new(name: String, table_id: u32, col_id: u32, is_unique: bool) -> Self {
+    pub fn new(name: Box<str>, table_id: u32, col_id: u32, is_unique: bool) -> Self {
         Self {
             cols: NonEmpty::new(col_id),
             name,
@@ -121,7 +121,7 @@ impl From<IndexSchema> for IndexDef {
 pub struct ColumnSchema {
     pub(crate) table_id: u32,
     pub(crate) col_id: u32,
-    pub(crate) col_name: String,
+    pub(crate) col_name: Box<str>,
     pub(crate) col_type: AlgebraicType,
     pub(crate) is_autoinc: bool,
 }
@@ -163,7 +163,7 @@ impl From<&ColumnSchema> for ProductTypeElement {
 /// This type is just the [ColumnSchema] without the autoinc fields
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColumnDef {
-    pub(crate) col_name: String,
+    pub(crate) col_name: Box<str>,
     pub(crate) col_type: AlgebraicType,
     pub(crate) is_autoinc: bool,
 }
@@ -199,8 +199,8 @@ pub struct ConstraintDef {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableSchema {
     pub(crate) table_id: u32,
-    pub(crate) table_name: String,
-    pub(crate) columns: Vec<ColumnSchema>,
+    pub(crate) table_name: Box<str>,
+    pub(crate) columns: Box<[ColumnSchema]>,
     pub(crate) indexes: Vec<IndexSchema>,
     pub(crate) constraints: Vec<ConstraintSchema>,
     pub(crate) table_type: StTableType,
@@ -226,7 +226,7 @@ impl TableSchema {
     ///
     /// Warning: It ignores the `table_name`
     pub fn get_column_by_name(&self, col_name: &str) -> Option<&ColumnSchema> {
-        self.columns.iter().find(|x| x.col_name == col_name)
+        self.columns.iter().find(|x| &*x.col_name == col_name)
     }
 
     /// Turn a [TableField] that could be an unqualified field `id` into `table.id`
@@ -311,8 +311,8 @@ impl TableDef {
 /// This type is just the [TableSchema] without the autoinc fields
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableDef {
-    pub(crate) table_name: String,
-    pub(crate) columns: Vec<ColumnDef>,
+    pub(crate) table_name: Box<str>,
+    pub(crate) columns: Box<[ColumnDef]>,
     pub(crate) indexes: Vec<IndexDef>,
     pub(crate) table_type: StTableType,
     pub(crate) table_access: StAccess,
@@ -321,13 +321,13 @@ pub struct TableDef {
 impl From<ProductType> for TableDef {
     fn from(value: ProductType) -> Self {
         Self {
-            table_name: "".to_string(),
+            table_name: "".into(),
             columns: value
                 .elements
                 .iter()
                 .enumerate()
                 .map(|(i, e)| ColumnDef {
-                    col_name: e.name.to_owned().unwrap_or_else(|| i.to_string()),
+                    col_name: e.name.to_owned().unwrap_or_else(|| i.to_string().into()),
                     col_type: e.algebraic_type.clone(),
                     is_autoinc: false,
                 })
@@ -343,7 +343,7 @@ impl From<TableSchema> for TableDef {
     fn from(value: TableSchema) -> Self {
         Self {
             table_name: value.table_name,
-            columns: value.columns.into_iter().map(Into::into).collect(),
+            columns: value.columns.into_vec().into_iter().map(Into::into).collect(),
             indexes: value.indexes.into_iter().map(Into::into).collect(),
             table_type: value.table_type,
             table_access: value.table_access,

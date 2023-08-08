@@ -222,7 +222,7 @@ pub fn st_table_schema() -> TableSchema {
                 is_unique: true,
             },
         ],
-        columns: vec![
+        columns: [
             ColumnSchema {
                 table_id: ST_TABLES_ID.0,
                 col_id: StTableFields::TableId as u32,
@@ -251,7 +251,8 @@ pub fn st_table_schema() -> TableSchema {
                 col_type: AlgebraicType::String,
                 is_autoinc: false,
             },
-        ],
+        ]
+        .into(),
         constraints: vec![],
         table_type: StTableType::System,
         table_access: StAccess::Public,
@@ -271,7 +272,7 @@ pub fn st_columns_schema() -> TableSchema {
         table_id: ST_COLUMNS_ID.0,
         table_name: ST_COLUMNS_NAME.into(),
         indexes: vec![],
-        columns: vec![
+        columns: [
             // TODO(cloutiertyler): (table_id, col_id) should be have a unique constraint
             ColumnSchema {
                 table_id: ST_COLUMNS_ID.0,
@@ -308,7 +309,8 @@ pub fn st_columns_schema() -> TableSchema {
                 col_type: AlgebraicType::Bool,
                 is_autoinc: false,
             },
-        ],
+        ]
+        .into(),
         constraints: vec![ConstraintSchema {
             constraint_id: ST_CONSTRAINT_ID_INDEX_HACK,
             constraint_name: "ct_columns_table_id".to_string(),
@@ -342,7 +344,7 @@ pub fn st_indexes_schema() -> TableSchema {
             index_name: "index_id_idx".into(),
             is_unique: true,
         }],
-        columns: vec![
+        columns: [
             ColumnSchema {
                 table_id: ST_INDEXES_ID.0,
                 col_id: 0,
@@ -378,7 +380,8 @@ pub fn st_indexes_schema() -> TableSchema {
                 col_type: AlgebraicType::Bool,
                 is_autoinc: false,
             },
-        ],
+        ]
+        .into(),
         constraints: vec![],
         table_type: StTableType::System,
         table_access: StAccess::Public,
@@ -405,7 +408,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
             index_name: "sequences_id_idx".into(),
             is_unique: true,
         }],
-        columns: vec![
+        columns: [
             ColumnSchema {
                 table_id: ST_SEQUENCES_ID.0,
                 col_id: 0,
@@ -469,7 +472,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
                 col_type: AlgebraicType::I128,
                 is_autoinc: false,
             },
-        ],
+        ].into(),
         constraints: vec![],
         table_type: StTableType::System,
         table_access: StAccess::Public,

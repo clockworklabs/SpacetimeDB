@@ -69,30 +69,28 @@ impl fmt::Display for FieldOnly<'_> {
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum FieldName {
-    Name { table: String, field: String },
-    Pos { table: String, field: usize },
+    Name { table: Box<str>, field: Box<str> },
+    Pos { table: Box<str>, field: usize },
 }
 
 impl FieldName {
     pub fn named(table: &str, field: &str) -> Self {
         Self::Name {
-            table: table.to_string(),
-            field: field.to_string(),
+            table: table.into(),
+            field: field.into(),
         }
     }
 
     pub fn positional(table: &str, field: usize) -> Self {
         Self::Pos {
-            table: table.to_string(),
+            table: table.into(),
             field,
         }
     }
 
     pub fn table(&self) -> &str {
-        match self {
-            FieldName::Name { table, .. } => table,
-            FieldName::Pos { table, .. } => table,
-        }
+        let (Self::Name { table, .. } | Self::Pos { table, .. }) = self;
+        table
     }
 
     pub fn field(&self) -> FieldOnly {
@@ -176,14 +174,14 @@ pub struct HeaderOnlyField<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Header {
-    pub table_name: String,
+    pub table_name: Box<str>,
     pub fields: Vec<Column>,
 }
 
 impl From<Header> for ProductType {
     fn from(value: Header) -> Self {
         ProductType::from_iter(value.fields.iter().map(|x| match &x.field {
-            FieldName::Name { field, .. } => ProductTypeElement::new_named(x.algebraic_type.clone(), field),
+            FieldName::Name { field, .. } => ProductTypeElement::new_named(x.algebraic_type.clone(), field.clone()),
             FieldName::Pos { .. } => ProductTypeElement::new(x.algebraic_type.clone(), None),
         }))
     }
@@ -308,12 +306,10 @@ impl Header {
         let mut cont = 0;
         //Avoid duplicated field names...
         for mut f in right.fields.iter().cloned() {
-            if f.field.table() == self.table_name && self.column_pos(&f.field).is_some() {
-                let name = format!("{}_{}", f.field.field(), cont);
-                f.field = FieldName::Name {
-                    table: f.field.table().into(),
-                    field: name,
-                };
+            if f.field.table() == self.table_name.as_ref() && self.column_pos(&f.field).is_some() {
+                let field = format!("{}_{}", f.field.field(), cont).into();
+                let table = f.field.table().into();
+                f.field = FieldName::Name { table, field };
 
                 cont += 1;
             }

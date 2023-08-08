@@ -144,7 +144,7 @@ impl From {
 
         // Check if the field are inverted:
         // FROM t1 JOIN t2 ON t2.id = t1.id
-        let on = if on.rhs.table() == x.root.table_name && x.root.get_column_by_field(&on.rhs).is_some() {
+        let on = if on.rhs.table() == &*x.root.table_name && x.root.get_column_by_field(&on.rhs).is_some() {
             OnExpr {
                 op: on.op.reverse(),
                 lhs: on.rhs,
@@ -171,9 +171,10 @@ impl From {
         }))
     }
 
-    /// Returns all the table names as a `Vec<String>`, including the ones inside the joins.
-    pub fn table_names(&self) -> Vec<String> {
-        self.iter_tables().map(|x| x.table_name.clone()).collect()
+    /// Returns all the table names as a `Vec<String>`,
+    /// including the ones inside the joins.
+    pub fn table_names(&self) -> impl Iterator<Item = &str> {
+        self.iter_tables().map(|x| &*x.table_name)
     }
 
     /// Returns all the fields matching `f` as a `Vec<FromField>`,
@@ -202,7 +203,7 @@ impl From {
 
                 Err(PlanError::UnknownField {
                     field: FieldName::named(field.table.unwrap_or("?"), field.field),
-                    tables: self.table_names(),
+                    tables: self.table_names().map(|n| n.to_owned()).collect(),
                 })
             }
             1 => Ok(fields[0].clone()),
@@ -720,7 +721,7 @@ fn column_size(column: &SqlColumnDef) -> Option<u64> {
 
 /// Infer the column [AlgebraicType] from the [DataType] + `is_null` definition
 //NOTE: We don't support `SERIAL` as recommended in https://wiki.postgresql.org/wiki/Don%27t_Do_This#Don.27t_use_serial
-fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Result<AlgebraicType, PlanError> {
+fn column_def_type(named: &str, is_null: bool, data_type: &DataType) -> Result<AlgebraicType, PlanError> {
     let ty = match data_type {
         DataType::Char(_) | DataType::Varchar(_) | DataType::Nvarchar(_) | DataType::Text | DataType::String => {
             AlgebraicType::String
@@ -812,11 +813,11 @@ fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst,
             });
         }
 
-        let name = col.name.to_string();
+        let name: Box<str> = col.name.to_string().into();
         let (is_null, attr) = compile_column_option(&col)?;
         let ty = column_def_type(&name, is_null, &col.data_type)?;
 
-        columns.push(&name, ty, attr);
+        columns.push(name, ty, attr);
     }
 
     Ok(SqlAst::CreateTable {

@@ -260,12 +260,12 @@ macro_rules! impl_reducer {
                 let [.., $($T),*] = Info::ARG_NAMES else { panic!() };
                 ReducerDef {
                     name: Info::NAME.into(),
-                    args: vec![
+                    args: [
                         $(ProductTypeElement {
-                            name: $T.map(str::to_owned),
+                            name: $T.map(Into::into),
                             algebraic_type: <$T>::make_type(_typespace),
                         }),*
-                    ],
+                    ].into(),
                 }
             }
         }
@@ -395,7 +395,7 @@ pub fn register_table<T: TableType>() {
         let schema = TableDef {
             name: T::TABLE_NAME.into(),
             data,
-            column_attrs: T::COLUMN_ATTRS.to_owned(),
+            column_attrs: T::COLUMN_ATTRS.into(),
             indexes: T::INDEXES.iter().copied().map(Into::into).collect(),
             table_type: StTableType::User,
             table_access: StAccess::for_name(T::TABLE_NAME),
@@ -407,9 +407,9 @@ pub fn register_table<T: TableType>() {
 impl From<crate::IndexDef<'_>> for spacetimedb_lib::IndexDef {
     fn from(index: crate::IndexDef<'_>) -> spacetimedb_lib::IndexDef {
         spacetimedb_lib::IndexDef {
-            name: index.name.to_owned(),
+            name: index.name.into(),
             ty: index.ty,
-            col_ids: index.col_ids.to_owned(),
+            col_ids: index.col_ids.into(),
         }
     }
 }
@@ -452,7 +452,7 @@ impl TypespaceBuilder for ModuleBuilder {
                 // Alias provided? Relate `name -> slot_ref`.
                 if let Some(name) = name {
                     self.module.misc_exports.push(MiscModuleExport::TypeAlias(TypeAlias {
-                        name: name.to_owned(),
+                        name: name.into(),
                         ty: slot_ref,
                     }));
                 }

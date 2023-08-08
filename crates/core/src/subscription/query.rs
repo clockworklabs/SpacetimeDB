@@ -62,7 +62,7 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
             FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
             AlgebraicType::U8,
         ));
-        for row in &data.ops {
+        t.data.extend(data.ops.iter().map(|row| {
             let mut new = row.row.clone();
             new.elements.push(row.op_type.into());
             let mut bytes: &[u8] = row.row_pk.as_ref();
@@ -183,7 +183,7 @@ mod tests {
         let data = DatabaseTableUpdate {
             table_id,
             table_name: table_name.to_string(),
-            ops: vec![op],
+            ops: [op].into(),
         };
 
         let q = QueryExpr::new(db_table((&schema).into(), table_name, table_id));
@@ -397,22 +397,24 @@ mod tests {
             },
         ]);
 
+        let row_pk: Box<[u8]> = row.to_data_key().to_bytes().into();
+
         let row1 = TableOp {
             op_type: 0,
-            row_pk: row.to_data_key().to_bytes(),
+            row_pk: row_pk.clone(),
             row: row.clone(),
         };
 
         let row2 = TableOp {
             op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
+            row_pk,
             row: row.clone(),
         };
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
             table_name: "_inventory".to_string(),
-            ops: vec![row1, row2],
+            ops: [row1, row2].into(),
         };
 
         let update = DatabaseUpdate {
@@ -478,22 +480,23 @@ mod tests {
 
         let row = product!(1u64, "health");
 
+        let row_pk: Box<[u8]> = row.to_data_key().to_bytes().into();
         let row1 = TableOp {
             op_type: 0,
-            row_pk: row.to_data_key().to_bytes(),
+            row_pk: row_pk.clone(),
             row: row.clone(),
         };
 
         let row2 = TableOp {
             op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
+            row_pk,
             row: row.clone(),
         };
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
             table_name: "inventory".to_string(),
-            ops: vec![row1, row2],
+            ops: [row1, row2].into(),
         };
 
         let update = DatabaseUpdate { tables: vec![data] };

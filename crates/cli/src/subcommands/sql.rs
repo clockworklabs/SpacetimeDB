@@ -99,7 +99,7 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), an
                 .elements
                 .iter()
                 .enumerate()
-                .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}"))),
+                .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}").into())),
         );
 
         let typespace = Typespace::default();

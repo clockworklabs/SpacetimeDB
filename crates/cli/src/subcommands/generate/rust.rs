@@ -8,6 +8,7 @@ use spacetimedb_lib::sats::{
 use spacetimedb_lib::{ColumnIndexAttribute, ReducerDef, TableDef};
 use std::collections::HashSet;
 use std::fmt::Write;
+use std::ops::Deref;
 
 type Indenter = CodeIndenter<String>;
 
@@ -297,7 +298,7 @@ pub fn write_arglist_no_delimiters(
         let Some(name) = &elt.name else {
             panic!("Product type element has no name: {:?}", elt);
         };
-        let name = name.to_case(Case::Snake);
+        let name = name.deref().to_case(Case::Snake);
 
         write!(out, "{}: ", name).unwrap();
         write_type(ctx, out, &elt.algebraic_type);
@@ -327,7 +328,7 @@ pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDef) -> String {
     let mut output = CodeIndenter::new(String::new());
     let out = &mut output;
 
-    let type_name = table.name.to_case(Case::Pascal);
+    let type_name = table.name.deref().to_case(Case::Pascal);
 
     begin_rust_struct_def_shared(ctx, out, &type_name, &find_product_type(ctx, table.data).elements);
 
@@ -424,7 +425,7 @@ fn find_primary_key_column_index(ctx: &GenCtx, table: &TableDef) -> Option<usize
 }
 
 fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableDef) {
-    let type_name = table.name.to_case(Case::Pascal);
+    let type_name = table.name.deref().to_case(Case::Pascal);
 
     write!(out, "impl TableType for {} ", type_name).unwrap();
 
@@ -443,7 +444,7 @@ fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableDef) {
         let pk_field = &find_product_type(ctx, table.data).elements[primary_column_index];
         let pk_field_name = pk_field
             .name
-            .as_ref()
+            .as_deref()
             .expect("Fields designated as primary key should have names!")
             .to_case(Case::Snake);
         // TODO: ensure that primary key types are always `Eq`, `Hash`, `Clone`.
@@ -490,7 +491,7 @@ fn print_table_filter_methods(
             for (elt, attr) in elements.iter().zip(attrs) {
                 let field_name = elt
                     .name
-                    .as_ref()
+                    .as_deref()
                     .expect("Table columns should have names!")
                     .to_case(Case::Snake);
                 // TODO: ensure that fields are PartialEq
@@ -532,30 +533,30 @@ fn print_table_filter_methods(
 }
 
 fn reducer_type_name(reducer: &ReducerDef) -> String {
-    let mut name = reducer.name.to_case(Case::Pascal);
+    let mut name = reducer.name.deref().to_case(Case::Pascal);
     name.push_str("Args");
     name
 }
 
 fn reducer_variant_name(reducer: &ReducerDef) -> String {
-    reducer.name.to_case(Case::Pascal)
+    reducer.name.deref().to_case(Case::Pascal)
 }
 
 fn reducer_module_name(reducer: &ReducerDef) -> String {
-    let mut name = reducer.name.to_case(Case::Snake);
+    let mut name = reducer.name.deref().to_case(Case::Snake);
     name.push_str("_reducer");
     name
 }
 
 fn reducer_function_name(reducer: &ReducerDef) -> String {
-    reducer.name.to_case(Case::Snake)
+    reducer.name.deref().to_case(Case::Snake)
 }
 
 fn iter_reducer_arg_names(reducer: &ReducerDef) -> impl Iterator<Item = Option<String>> + '_ {
     reducer
         .args
         .iter()
-        .map(|elt| elt.name.as_ref().map(|name| name.to_case(Case::Snake)))
+        .map(|elt| elt.name.as_deref().map(|name| name.to_case(Case::Snake)))
 }
 
 fn iter_reducer_arg_types(reducer: &'_ ReducerDef) -> impl Iterator<Item = &'_ AlgebraicType> {
@@ -838,7 +839,7 @@ fn print_dispatch_imports(out: &mut Indenter) {
 }
 
 fn is_init(reducer: &ReducerDef) -> bool {
-    reducer.name == "__init__"
+    &*reducer.name == "__init__"
 }
 
 fn iter_reducer_items(items: &[GenItem]) -> impl Iterator<Item = &ReducerDef> {
@@ -857,8 +858,8 @@ fn iter_table_items(items: &[GenItem]) -> impl Iterator<Item = &TableDef> {
 
 fn iter_module_names(items: &[GenItem]) -> impl Iterator<Item = String> + '_ {
     items.iter().filter_map(|item| match item {
-        GenItem::Table(table) => Some(table.name.to_case(Case::Snake)),
-        GenItem::TypeAlias(ty) => Some(ty.name.to_case(Case::Snake)),
+        GenItem::Table(table) => Some(table.name.deref().to_case(Case::Snake)),
+        GenItem::TypeAlias(ty) => Some(ty.name.deref().to_case(Case::Snake)),
         GenItem::Reducer(reducer) => (!is_init(reducer)).then_some(reducer_module_name(reducer)),
     })
 }
@@ -902,8 +903,8 @@ fn print_handle_table_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[Gen
                             } else {
                                 "handle_table_update_no_primary_key"
                             },
-                            table.name.to_case(Case::Snake),
-                            table.name.to_case(Case::Pascal),
+                            table.name.deref().to_case(Case::Snake),
+                            table.name.deref().to_case(Case::Pascal),
                         ).unwrap();
                     }
                     writeln!(
@@ -930,8 +931,8 @@ fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
                 writeln!(
                     out,
                     "reminders.invoke_callbacks::<{}::{}>(worker, &reducer_event, state);",
-                    table.name.to_case(Case::Snake),
-                    table.name.to_case(Case::Pascal),
+                    table.name.deref().to_case(Case::Snake),
+                    table.name.deref().to_case(Case::Pascal),
                 ).unwrap();
             }
         },
@@ -957,8 +958,8 @@ fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
                             out,
                             "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),",
                             table.name,
-                            table.name.to_case(Case::Snake),
-                            table.name.to_case(Case::Pascal),
+                            table.name.deref().to_case(Case::Snake),
+                            table.name.deref().to_case(Case::Pascal),
                         ).unwrap();
                     }
                     writeln!(

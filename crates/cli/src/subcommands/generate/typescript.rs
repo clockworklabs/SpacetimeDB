@@ -1147,12 +1147,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, ReducerEvent }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
-    generate_imports(
-        ctx,
-        &reducer.args.clone().into_iter().collect::<Vec<ProductTypeElement>>(),
-        &mut imports,
-        None,
-    );
+    generate_imports(ctx, &reducer.args, &mut imports, None);
 
     for import in imports {
         writeln!(output, "// @ts-ignore").unwrap();

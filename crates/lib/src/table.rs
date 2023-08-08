@@ -37,8 +37,8 @@ impl ProductTypeMeta {
         self.attr.clear();
     }
 
-    pub fn push(&mut self, name: &str, ty: AlgebraicType, attr: ColumnIndexAttribute) {
-        self.columns.push(ProductTypeElement::new(ty, Some(name.to_string())));
+    pub fn push(&mut self, name: Box<str>, ty: AlgebraicType, attr: ColumnIndexAttribute) {
+        self.columns.push(ProductTypeElement::new(ty, Some(name)));
         self.attr.push(attr);
     }
 

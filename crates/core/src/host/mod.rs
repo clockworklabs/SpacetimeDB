@@ -97,7 +97,7 @@ impl Default for ArgsTuple {
 pub struct InvalidReducerArguments {
     #[source]
     err: anyhow::Error,
-    reducer: String,
+    reducer: Box<str>,
 }
 
 pub use module_host::{EntityDef, ReducerCallError};

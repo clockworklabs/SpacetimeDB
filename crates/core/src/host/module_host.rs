@@ -54,29 +54,27 @@ impl DatabaseUpdate {
                 map.get_mut(&record.table_id).unwrap()
             };
 
-            let (row, row_pk) = (record.product_value.clone(), record.key.to_bytes());
-
             vec.push(TableOp {
                 op_type: op,
-                row_pk,
-                row,
+                row_pk: record.key.to_bytes().into(),
+                row: record.product_value.clone(),
             });
         }
 
-        let mut table_name_map: HashMap<TableId, String> = HashMap::new();
+        let mut table_name_map: HashMap<TableId, Box<str>> = HashMap::new();
         let mut table_updates = Vec::new();
         for (table_id, table_row_operations) in map.drain() {
             let table_name = if let Some(name) = table_name_map.get(&table_id) {
                 name.clone()
             } else {
-                let table_name = stdb.table_name_from_id(&tx, table_id.0).unwrap().unwrap();
+                let table_name: Box<str> = stdb.table_name_from_id(&tx, table_id.0).unwrap().unwrap().into();
                 table_name_map.insert(table_id, table_name.clone());
                 table_name
             };
             table_updates.push(DatabaseTableUpdate {
                 table_id: table_id.0,
                 table_name,
-                ops: table_row_operations,
+                ops: table_row_operations.into(),
             });
         }
         stdb.rollback_tx(tx);
@@ -91,9 +89,10 @@ impl DatabaseUpdate {
                 .into_iter()
                 .map(|table| TableUpdate {
                     table_id: table.table_id,
-                    table_name: table.table_name,
+                    table_name: table.table_name.into(),
                     table_row_operations: table
                         .ops
+                        .into_vec()
                         .into_iter()
                         .map(|op| {
                             let mut row_bytes = Vec::new();
@@ -104,7 +103,7 @@ impl DatabaseUpdate {
                                 } else {
                                     table_row_operation::OperationType::Delete.into()
                                 },
-                                row_pk: op.row_pk,
+                                row_pk: op.row_pk.into(),
                                 row: row_bytes,
                             }
                         })
@@ -123,9 +122,10 @@ impl DatabaseUpdate {
                 .into_iter()
                 .map(|table| TableUpdateJson {
                     table_id: table.table_id,
-                    table_name: table.table_name,
+                    table_name: table.table_name.into(),
                     table_row_operations: table
                         .ops
+                        .into_vec()
                         .into_iter()
                         .map(|op| {
                             let row_pk = BASE_64_STD.encode(&op.row_pk);
@@ -149,14 +149,14 @@ impl DatabaseUpdate {
 #[derive(Debug, Clone)]
 pub struct DatabaseTableUpdate {
     pub table_id: u32,
-    pub table_name: String,
-    pub ops: Vec<TableOp>,
+    pub table_name: Box<str>,
+    pub ops: Box<[TableOp]>,
 }
 
 #[derive(Debug, Clone)]
 pub struct TableOp {
     pub op_type: u8,
-    pub row_pk: Vec<u8>,
+    pub row_pk: Box<[u8]>,
     pub row: ProductValue,
 }
 
@@ -178,7 +178,7 @@ impl EventStatus {
 
 #[derive(Debug, Clone)]
 pub struct ModuleFunctionCall {
-    pub reducer: String,
+    pub reducer: Box<str>,
     pub args: ArgsTuple,
 }
 
@@ -197,8 +197,8 @@ pub struct ModuleInfo {
     pub identity: Identity,
     pub module_hash: Hash,
     pub typespace: Typespace,
-    pub reducers: IndexMap<String, ReducerDef>,
-    pub catalog: HashMap<String, EntityDef>,
+    pub reducers: IndexMap<Box<str>, ReducerDef>,
+    pub catalog: HashMap<Box<str>, EntityDef>,
     pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
     pub subscription: ModuleSubscriptionManager,
 }
@@ -418,7 +418,7 @@ pub struct UpdateDatabaseSuccess {
 #[derive(thiserror::Error, Debug)]
 pub enum UpdateDatabaseError {
     #[error("incompatible schema changes for: {tables:?}")]
-    IncompatibleSchema { tables: Vec<String> },
+    IncompatibleSchema { tables: Vec<Box<str>> },
     #[error(transparent)]
     Database(#[from] DBError),
 }
