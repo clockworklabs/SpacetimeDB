@@ -122,7 +122,9 @@ pub(crate) mod tests {
 
         let mut tx = db.begin_tx();
         let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
-        let rows: Vec<_> = (1..=total_rows).map(|i| product!(i, format!("health{i}"))).collect();
+        let rows: Vec<_> = (1..=total_rows)
+            .map(|i| product!(i, format!("health{i}").into_boxed_str()))
+            .collect();
         create_table_with_rows(&db, &mut tx, "inventory", head.clone(), &rows)?;
         db.commit_tx(tx)?;
 

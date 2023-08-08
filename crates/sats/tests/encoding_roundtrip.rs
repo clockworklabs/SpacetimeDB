@@ -39,7 +39,7 @@ fn array_values() -> impl Strategy<Value = AlgebraicValue> {
             AlgebraicValue::ArrayOf(bools)
         }),
         prop::collection::vec(0i32..10, 0..10).prop_map(|x| {
-            let strs: Vec<_> = x.into_iter().map(|x| x.to_string()).collect();
+            let strs: Vec<Box<str>> = x.into_iter().map(|x| x.to_string().into()).collect();
             AlgebraicValue::ArrayOf(strs)
         }),
         prop::collection::vec(0i32..10, 0..10).prop_map(|x| {
@@ -72,7 +72,7 @@ fn builtin_values() -> impl Strategy<Value = AlgebraicValue> {
             let x = x.into_bytes();
             AlgebraicValue::Bytes(x)
         }),
-        ".*".prop_map(AlgebraicValue::String),
+        ".*".prop_map(|x| AlgebraicValue::String(x.into())),
     ]
 }
 

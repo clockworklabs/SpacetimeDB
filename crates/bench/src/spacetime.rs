@@ -109,7 +109,7 @@ pub fn select_no_index(pool: &mut Pool<DbResult>, run: Runs) -> ResultBench<()> 
             .map(|r| Data {
                 a: *r.view().elements[0].as_i32().unwrap(),
                 b: *r.view().elements[1].as_u64().unwrap(),
-                c: r.view().elements[2].as_string().unwrap().clone(),
+                c: r.view().elements[2].as_string().unwrap().into(),
             })
             .filter(|x| x.b >= i * START_B && x.b < (START_B + (i * START_B)))
             .collect::<Vec<_>>();

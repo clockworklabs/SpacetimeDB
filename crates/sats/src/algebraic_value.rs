@@ -1,7 +1,7 @@
 pub mod de;
 pub mod ser;
 use std::collections::BTreeMap;
-use std::ops::{Bound, RangeBounds};
+use std::ops::{Bound, Deref, RangeBounds};
 
 use crate::builtin_value::{F32, F64};
 use crate::{AlgebraicType, ArrayValue, BuiltinType, BuiltinValue, ProductValue, SumValue};
@@ -125,8 +125,8 @@ impl AlgebraicValue {
 
     /// Interpret the value as a `String` or `None` if it isn't a `String` value.
     #[inline]
-    pub fn as_string(&self) -> Option<&String> {
-        self.as_builtin()?.as_string()
+    pub fn as_string(&self) -> Option<&str> {
+        self.as_builtin()?.as_string().map(|x| x.deref())
     }
 
     /// Interpret the value as a `Vec<u8>` or `None` if it isn't a `Vec<u8>` value.
@@ -225,9 +225,9 @@ impl AlgebraicValue {
         self.into_builtin()?.into_f64().map_err(Self::Builtin)
     }
 
-    /// Convert the value into a `String` or `Err(self)` if it isn't a `String` value.
+    /// Convert the value into a string or `Err(self)` if it isn't a string value.
     #[inline]
-    pub fn into_string(self) -> Result<String, Self> {
+    pub fn into_string(self) -> Result<Box<str>, Self> {
         self.into_builtin()?.into_string().map_err(Self::Builtin)
     }
 
@@ -329,7 +329,7 @@ impl AlgebraicValue {
 
     /// Returns an [`AlgebraicValue`] representing `v: String`.
     #[inline]
-    pub const fn String(v: String) -> Self {
+    pub const fn String(v: Box<str>) -> Self {
         Self::Builtin(BuiltinValue::String(v))
     }
 

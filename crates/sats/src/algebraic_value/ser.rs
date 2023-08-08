@@ -40,7 +40,7 @@ impl ser::Serializer for ValueSerializer {
     method!(serialize_f64 -> f64);
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::String(v.to_owned()))
+        Ok(AlgebraicValue::String(v.into()))
     }
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
         Ok(AlgebraicValue::Bytes(v.to_owned()))

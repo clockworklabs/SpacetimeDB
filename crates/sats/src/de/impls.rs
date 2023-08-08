@@ -326,7 +326,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, BuiltinType> {
             BuiltinType::U128 => BuiltinValue::U128(u128::deserialize(deserializer)?),
             BuiltinType::F32 => BuiltinValue::F32(f32::deserialize(deserializer)?.into()),
             BuiltinType::F64 => BuiltinValue::F64(f64::deserialize(deserializer)?.into()),
-            BuiltinType::String => BuiltinValue::String(String::deserialize(deserializer)?),
+            BuiltinType::String => BuiltinValue::String(<Box<str>>::deserialize(deserializer)?),
             BuiltinType::Array(ty) => BuiltinValue::Array {
                 val: self.with(ty).deserialize(deserializer)?,
             },

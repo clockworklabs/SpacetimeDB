@@ -95,6 +95,6 @@ built_in!(i128, I128);
 built_in!(u128, U128);
 built_in_into!(f32, F32);
 built_in_into!(f64, F64);
-built_in!(String, String);
+built_in!(Box<str>, String);
 built_in_into!(&str, String);
 built_in_into!(&[u8], Bytes);
