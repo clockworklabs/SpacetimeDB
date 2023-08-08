@@ -332,8 +332,8 @@ impl spacetimedb_client_api::ControlNodeDelegate for StandaloneEnv {
     async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
         let energy_balance = self.control_db.get_energy_balance(identity)?;
         let energy_balance = energy_balance.unwrap_or(EnergyQuanta(0));
-        println!("Withdrawing {} energy from {}", amount.0, identity);
-        println!("Old balance: {}", energy_balance.0);
+        log::trace!("Withdrawing {} energy from {}", amount.0, identity);
+        log::trace!("Old balance: {}", energy_balance.0);
         let new_balance = energy_balance - amount;
         self.control_db
             .set_energy_balance(*identity, new_balance.as_quanta())
