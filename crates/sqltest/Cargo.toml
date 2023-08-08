@@ -9,21 +9,21 @@ spacetimedb-lib = { path = "../lib" }
 spacetimedb-core = { path = "../core" }
 spacetimedb-sats = { path = "../sats" }
 
-anyhow = { version = "1" }
-async-trait = "0.1.68"
-clap = { version = "4.2.4", features = ["derive"] }
-chrono = { version = "0.4.24" }
-console = { version = "0.15.6" }
-itertools = "0.10.5"
-glob = "0.3.1"
-fs-err = "2.9.0"
-futures = { version = "0.3", default-features = false }
-quick-junit = { version = "0.3.2" }
-postgres-types = "0.2.5"
-rust_decimal = {version ="1.29.1", features = ["db-tokio-postgres"]}
-rusqlite = {version = "0.29.0", features = ["bundled", "column_decltype"]}
-sqllogictest="0.13.2"
-sqllogictest-engines = "0.13.0"
-tempdir = "*"
-tokio = { version = "1.2", features = ["full"] }
-tokio-postgres = { version = "0.7.8" , features = ["with-chrono-0_4"] }
+anyhow.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+clap.workspace = true
+console.workspace = true
+fs-err.workspace = true
+futures.workspace = true
+glob.workspace = true
+itertools.workspace = true
+postgres-types.workspace = true
+quick-junit.workspace = true
+rusqlite.workspace = true
+rust_decimal.workspace = true
+sqllogictest-engines.workspace = true
+sqllogictest.workspace = true
+tempdir.workspace = true
+tokio.workspace = true
+tokio-postgres.workspace = true

@@ -10,4 +10,4 @@ description = "Easy support for interacting between SpacetimeDB and Rust."
 bench = false
 
 [dependencies]
-getrandom = { version = "0.2.7", features = ["custom"], optional = true }
+getrandom = {workspace = true, optional = true}

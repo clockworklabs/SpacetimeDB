@@ -19,10 +19,11 @@ getrandom = ["spacetimedb-bindings-sys/getrandom"]
 spacetimedb-bindings-sys = { path = "../bindings-sys", version = "0.6.0" }
 spacetimedb-lib = { path = "../lib", default-features = false, version = "0.6.0"}
 spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.6.0"}
-once_cell = "1.15.0"
-scoped-tls = "1.0.1"
-log = "0.4.17"
+
+log.workspace = true
+once_cell.workspace = true
+scoped-tls.workspace = true
 
 [dev-dependencies]
-rand = "0.8.5"
-bytes = "1.2.1"
+rand.workspace = true
+bytes.workspace = true
