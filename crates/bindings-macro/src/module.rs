@@ -146,7 +146,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
                 let variant_name = &var.name;
                 let ty = var.ty.unwrap_or(&unit);
                 quote!(spacetimedb::sats::SumTypeVariant {
-                    name: Some(#variant_name.to_owned()),
+                    name: Some(#variant_name.into()),
                     algebraic_type: <#ty as spacetimedb::SpacetimeType>::make_type(__typespace),
                 })
             });

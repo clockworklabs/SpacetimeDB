@@ -234,7 +234,7 @@ fn write_enum_variant(ctx: &GenCtx, out: &mut Indenter, variant: &SumTypeVariant
     let Some(name) = &variant.name else {
         panic!("Sum type variant has no name: {:?}", variant);
     };
-    let name = name.to_case(Case::Pascal);
+    let name = name.deref().to_case(Case::Pascal);
     write!(out, "{}", name).unwrap();
     match &variant.algebraic_type {
         AlgebraicType::Product(ProductType { elements }) if elements.is_empty() => {

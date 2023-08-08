@@ -1,7 +1,7 @@
 use crate::algebraic_type::AlgebraicType;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicTypeRef, ProductTypeElement};
+use crate::{AlgebraicTypeRef, ProductTypeElement, static_assert_size};
 
 /// A variant of a sum type.
 ///
@@ -11,7 +11,7 @@ use crate::{AlgebraicTypeRef, ProductTypeElement};
 #[sats(crate = crate)]
 pub struct SumTypeVariant {
     /// The name of the variant, if any.
-    pub name: Option<String>,
+    pub name: Option<Box<str>>,
     /// The type of the variant.
     ///
     /// Unlike a language like Rust,
@@ -22,9 +22,11 @@ pub struct SumTypeVariant {
     pub algebraic_type: AlgebraicType,
 }
 
+static_assert_size!(SumTypeVariant, 40);
+
 impl SumTypeVariant {
     /// Returns a sum type variant with an optional `name` and `algebraic_type`.
-    pub const fn new(algebraic_type: AlgebraicType, name: Option<String>) -> Self {
+    pub const fn new(algebraic_type: AlgebraicType, name: Option<Box<str>>) -> Self {
         Self { algebraic_type, name }
     }
 
@@ -32,7 +34,7 @@ impl SumTypeVariant {
     pub fn new_named(algebraic_type: AlgebraicType, name: impl AsRef<str>) -> Self {
         Self {
             algebraic_type,
-            name: Some(name.as_ref().to_owned()),
+            name: Some(name.as_ref().into()),
         }
     }
 

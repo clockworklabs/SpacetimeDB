@@ -2,7 +2,7 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SumTypeVariant};
+use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SumTypeVariant, static_assert_size};
 
 /// A structural sum type.
 ///
@@ -27,7 +27,7 @@ use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SumTypeVariant};
 ///
 /// See also: https://ncatlab.org/nlab/show/sum+type.
 ///
-/// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
+/// [structural]: https://en.wikipedia.org/wiki/Structural_type_systemw
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[sats(crate = crate)]
 pub struct SumType {
@@ -36,6 +36,8 @@ pub struct SumType {
     /// The order is relevant as it defines the tags of the variants at runtime.
     pub variants: Box<[SumTypeVariant]>,
 }
+
+static_assert_size!(SumType, 16);
 
 impl SumType {
     /// Returns a sum type with these possible `variants`.
