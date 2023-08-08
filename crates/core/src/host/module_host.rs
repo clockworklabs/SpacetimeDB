@@ -208,14 +208,6 @@ enum ModuleHostCommand {
     UpdateDatabase {
         respond_to: oneshot::Sender<Result<UpdateDatabaseResult, anyhow::Error>>,
     },
-    #[cfg(feature = "tracelogging")]
-    GetTrace {
-        respond_to: oneshot::Sender<Option<bytes::Bytes>>,
-    },
-    #[cfg(feature = "tracelogging")]
-    StopTrace {
-        respond_to: oneshot::Sender<anyhow::Result<()>>,
-    },
     InjectLogs {
         respond_to: oneshot::Sender<()>,
         log_level: LogLevel,
@@ -240,14 +232,6 @@ impl ModuleHostCommand {
             } => actor.call_reducer(caller_identity, client, reducer_id, args, respond_to),
             ModuleHostCommand::InitDatabase { args, respond_to } => actor.init_database(args, respond_to),
             ModuleHostCommand::UpdateDatabase { respond_to } => actor.update_database(respond_to),
-            #[cfg(feature = "tracelogging")]
-            ModuleHostCommand::GetTrace { respond_to } => {
-                let _ = respond_to.send(actor.get_trace());
-            }
-            #[cfg(feature = "tracelogging")]
-            ModuleHostCommand::StopTrace { respond_to } => {
-                let _ = respond_to.send(actor.stop_trace());
-            }
             ModuleHostCommand::InjectLogs {
                 respond_to,
                 log_level,
@@ -287,10 +271,6 @@ pub trait ModuleHostActor: Send + 'static {
     );
     fn init_database(&mut self, args: ArgsTuple, respond_to: oneshot::Sender<Result<ReducerCallResult, anyhow::Error>>);
     fn update_database(&mut self, respond_to: oneshot::Sender<Result<UpdateDatabaseResult, anyhow::Error>>);
-    #[cfg(feature = "tracelogging")]
-    fn get_trace(&self) -> Option<bytes::Bytes>;
-    #[cfg(feature = "tracelogging")]
-    fn stop_trace(&mut self) -> Result<(), anyhow::Error>;
     fn inject_logs(&self, respond_to: oneshot::Sender<()>, log_level: LogLevel, message: String);
     fn close(self);
 }
@@ -493,17 +473,6 @@ impl ModuleHost {
 
     pub async fn exited(&self) {
         self.tx.closed().await
-    }
-
-    #[cfg(feature = "tracelogging")]
-    pub async fn get_trace(&self) -> Result<Option<bytes::Bytes>, NoSuchModule> {
-        self.call(|respond_to| ModuleHostCommand::GetTrace { respond_to }).await
-    }
-
-    #[cfg(feature = "tracelogging")]
-    pub async fn stop_trace(&self) -> Result<(), anyhow::Error> {
-        self.call(|respond_to| ModuleHostCommand::StopTrace { respond_to })
-            .await?
     }
 
     pub async fn inject_logs(&self, log_level: LogLevel, message: String) -> Result<(), NoSuchModule> {

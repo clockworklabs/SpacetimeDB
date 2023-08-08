@@ -21,7 +21,6 @@ use crate::host::module_host::{
     DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHostActor, ModuleInfo, UpdateDatabaseError,
     UpdateDatabaseResult, UpdateDatabaseSuccess,
 };
-use crate::host::tracelog::instance_trace::TraceLog;
 use crate::host::{
     ArgsTuple, EnergyDiff, EnergyMonitor, EnergyMonitorFingerprint, EnergyQuanta, EntityDef, ReducerCallResult,
     ReducerOutcome, Timestamp,
@@ -97,9 +96,6 @@ struct InstanceSeed<T: WasmInstancePre> {
     module: T,
     worker_database_instance: Arc<DatabaseInstanceContext>,
     event_tx: SubscriptionEventSender,
-    #[allow(dead_code)]
-    // Don't warn about 'trace_log' below when tracelogging feature isn't enabled.
-    trace_log: Option<Arc<Mutex<TraceLog>>>,
     scheduler: Scheduler,
     func_names: Arc<FuncNames>,
     info: Arc<ModuleInfo>,
@@ -144,11 +140,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         scheduler: Scheduler,
         energy_monitor: Arc<dyn EnergyMonitor>,
     ) -> Result<Self, InitializationError> {
-        let trace_log = if database_instance_context.trace_log {
-            Some(Arc::new(Mutex::new(TraceLog::new().unwrap())))
-        } else {
-            None
-        };
         let log_tx = database_instance_context.logger.lock().unwrap().tx.clone();
 
         FuncNames::check_required(|name| module.get_export(name))?;
@@ -162,7 +153,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         let uninit_instance = module.instantiate_pre()?;
         let mut instance = uninit_instance.instantiate(
-            InstanceEnv::new(database_instance_context.clone(), scheduler.clone(), trace_log.clone()),
+            InstanceEnv::new(database_instance_context.clone(), scheduler.clone()),
             &func_names,
         )?;
 
@@ -198,7 +189,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             info,
             event_tx,
             worker_database_instance: database_instance_context,
-            trace_log,
             scheduler,
             energy_monitor,
         };
@@ -221,7 +211,6 @@ impl<T: WasmInstancePre> JobRunnerSeed for InstanceSeed<T> {
         let env = InstanceEnv::new(
             self.worker_database_instance.clone(),
             self.scheduler.clone(),
-            self.trace_log.clone(),
         );
         // this shouldn't fail, since we already called module.create_instance()
         // before and it didn't error, and ideally they should be deterministic
@@ -354,31 +343,6 @@ impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
 
     fn update_database(&mut self, respond_to: oneshot::Sender<Result<UpdateDatabaseResult, anyhow::Error>>) {
         self.instances.send(InstanceMessage::UpdateDatabase { respond_to })
-    }
-
-    #[cfg(feature = "tracelogging")]
-    fn get_trace(&self) -> Option<bytes::Bytes> {
-        match &self.seed().trace_log {
-            None => None,
-            Some(tl) => {
-                let results = tl.lock().retrieve();
-                match results {
-                    Ok(tl) => Some(tl),
-                    Err(e) => {
-                        log::error!("Unable to retrieve trace log: {}", e);
-                        None
-                    }
-                }
-            }
-        }
-    }
-
-    #[cfg(feature = "tracelogging")]
-    fn stop_trace(&mut self) -> Result<(), anyhow::Error> {
-        // TODO: figure out if this is necessary
-        // // TODO: figure out if we need to communicate this to all of our instances too
-        // self.trace_log = None;
-        Ok(())
     }
 
     fn call_connect_disconnect(&mut self, caller_identity: Identity, connected: bool, respond_to: oneshot::Sender<()>) {

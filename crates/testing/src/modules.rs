@@ -140,7 +140,7 @@ pub async fn load_module(name: &str) -> ModuleHandle {
 
     let host_type = HostType::Wasmer;
 
-    env.insert_database(&address, &identity, &program_bytes_addr, host_type, 1, true, false)
+    env.insert_database(&address, &identity, &program_bytes_addr, host_type, 1, true)
         .await
         .unwrap();
 

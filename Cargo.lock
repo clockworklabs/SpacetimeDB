@@ -4028,16 +4028,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "spacetime-replay"
-version = "0.1.0"
-dependencies = [
- "imara-diff",
- "serde_json",
- "spacetimedb-core",
- "tempdir",
-]
-
-[[package]]
 name = "spacetimedb"
 version = "0.6.1"
 dependencies = [

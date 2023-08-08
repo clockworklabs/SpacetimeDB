@@ -90,8 +90,7 @@ rocksdb = {workspace = true, optional = true}
 # Optional storage engines.
 odb_rocksdb = ["dep:rocksdb"]
 odb_sled = []
-tracelogging = []
-default = ["tracelogging", "odb_sled"]
+default = ["odb_sled"]
 
 [dev-dependencies]
 rusqlite.workspace = true

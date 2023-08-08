@@ -1,22 +1,17 @@
 use parking_lot::{Mutex, MutexGuard};
-use prometheus::HistogramVec;
 use spacetimedb_lib::{bsatn, ProductValue};
 use std::ops::DerefMut;
 use std::sync::Arc;
-use std::time::SystemTime;
 
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{DataRow, IndexDef};
 use crate::error::{IndexError, NodesError};
-use crate::util::prometheus_handle::HistogramVecHandle;
 use crate::util::ResultInspectExt;
-use crate::worker_metrics::{INSTANCE_ENV_DELETE_BY_COL_EQ, INSTANCE_ENV_INSERT};
 
 use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
 use super::timestamp::Timestamp;
-use super::tracelog::instance_trace::TraceLog;
 use crate::vm::DbProgram;
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::identity::AuthCtx;
@@ -30,7 +25,6 @@ pub struct InstanceEnv {
     pub dbic: Arc<DatabaseInstanceContext>,
     pub scheduler: Scheduler,
     pub tx: TxSlot,
-    pub trace_log: Option<Arc<Mutex<TraceLog>>>,
 }
 
 #[derive(Clone, Default)]
@@ -43,13 +37,11 @@ impl InstanceEnv {
     pub fn new(
         dbic: Arc<DatabaseInstanceContext>,
         scheduler: Scheduler,
-        trace_log: Option<Arc<Mutex<TraceLog>>>,
     ) -> Self {
         Self {
             dbic,
             scheduler,
             tx: TxSlot::default(),
-            trace_log,
         }
     }
 
@@ -78,25 +70,7 @@ impl InstanceEnv {
         log::trace!("MOD({}): {}", self.dbic.address.to_abbreviated_hex(), record.message);
     }
 
-    /// Starts histogram prometheus measurements for `table_id`.
-    fn measure(&self, table_id: u32, hist: &'static HistogramVec) -> HistogramVecHandle {
-        let values = vec![self.dbic.address.to_hex(), format!("{}", table_id)];
-        let mut measure = HistogramVecHandle::new(hist, values);
-        measure.start();
-        measure
-    }
-
-    /// When we have a `TraceLog` available,
-    /// run the provided `logic` on it.
-    fn with_trace_log(&self, logic: impl FnOnce(&mut TraceLog)) {
-        if let Some(trace_log) = &self.trace_log {
-            logic(&mut trace_log.lock());
-        }
-    }
-
     pub fn insert(&self, table_id: u32, buffer: &[u8]) -> Result<ProductValue, NodesError> {
-        let measure = self.measure(table_id, &INSTANCE_ENV_INSERT);
-
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
@@ -118,15 +92,6 @@ impl InstanceEnv {
                     }
                 }
             })?;
-
-        self.with_trace_log(|l| {
-            l.insert(
-                measure.start_instant.unwrap(),
-                measure.elapsed(),
-                table_id,
-                buffer.into(),
-            )
-        });
 
         Ok(ret)
     }
@@ -182,8 +147,6 @@ impl InstanceEnv {
     /// Returns an error if no columns were deleted or if the column wasn't found.
     #[tracing::instrument(skip_all)]
     pub fn delete_by_col_eq(&self, table_id: u32, col_id: u32, value: &[u8]) -> Result<u32, NodesError> {
-        let measure = self.measure(table_id, &INSTANCE_ENV_DELETE_BY_COL_EQ);
-
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
@@ -199,17 +162,6 @@ impl InstanceEnv {
             .delete_by_rel(tx, table_id, seek)
             .inspect_err_(|e| log::error!("delete_by_col_eq(table_id: {table_id}): {e}"))?
             .ok_or(NodesError::ColumnValueNotFound)?;
-
-        self.with_trace_log(|l| {
-            l.delete_by_col_eq(
-                measure.start_instant.unwrap(),
-                measure.elapsed(),
-                table_id,
-                col_id,
-                value.into(),
-                count,
-            )
-        });
 
         Ok(count)
     }
@@ -285,8 +237,6 @@ impl InstanceEnv {
     /// Errors with `TableNotFound` if the table does not exist.
     #[tracing::instrument(skip_all)]
     pub fn get_table_id(&self, table_name: String) -> Result<u32, NodesError> {
-        let now = SystemTime::now();
-
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
@@ -294,8 +244,6 @@ impl InstanceEnv {
         let table_id = stdb
             .table_id_from_name(tx, &table_name)?
             .ok_or(NodesError::TableNotFound)?;
-
-        self.with_trace_log(|l| l.get_table_id(now, now.elapsed().unwrap(), table_name, table_id));
 
         Ok(table_id)
     }
@@ -318,8 +266,6 @@ impl InstanceEnv {
         index_type: u8,
         col_ids: Vec<u8>,
     ) -> Result<(), NodesError> {
-        let now = SystemTime::now();
-
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
@@ -352,10 +298,6 @@ impl InstanceEnv {
         };
 
         stdb.create_index(tx, index)?;
-
-        self.with_trace_log(|l| {
-            l.create_index(now, now.elapsed().unwrap(), index_name, table_id, index_type, &col_ids)
-        });
 
         Ok(())
     }
