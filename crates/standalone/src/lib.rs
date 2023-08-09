@@ -72,7 +72,6 @@ impl StandaloneEnv {
             public_key,
             private_key,
             public_key_bytes,
-
             config,
         });
         energy_monitor.set_standalone_env(this.clone());
