@@ -100,7 +100,7 @@ impl RelationalDB {
                     last_commit_offset = Some(commit.commit_offset);
                     for transaction in commit.transactions {
                         transaction_offset += 1;
-                        // NOTE: Although I am creating a blobstore transaction in a
+                        // NOTE: Although I am creating a datastore transaction in a
                         // one to one fashion for each message log transaction, this
                         // is just to reduce memory usage while inserting. We don't
                         // really care about inserting these transactionally as long

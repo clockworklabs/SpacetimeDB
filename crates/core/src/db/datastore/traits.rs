@@ -316,22 +316,8 @@ pub struct TxData {
     pub(crate) records: Vec<TxRecord>,
 }
 
-pub trait Blob {
-    fn view(&self) -> &[u8];
-}
-
 pub trait Data: Into<ProductValue> {
     fn view(&self) -> &ProductValue;
-}
-
-pub trait BlobRow: Send + Sync {
-    type TableId: Copy;
-    type RowId: Copy;
-
-    type Blob: Blob;
-    type BlobRef: Clone;
-
-    fn blob_to_owned(&self, blob_ref: Self::BlobRef) -> Self::Blob;
 }
 
 pub trait DataRow: Send + Sync {
@@ -356,100 +342,6 @@ pub trait MutTx {
     fn begin_mut_tx(&self) -> Self::MutTxId;
     fn rollback_mut_tx(&self, tx: Self::MutTxId);
     fn commit_mut_tx(&self, tx: Self::MutTxId) -> Result<Option<TxData>>;
-}
-
-pub trait Blobstore: BlobRow {
-    type Iter<'a>: Iterator<Item = Self::BlobRef>
-    where
-        Self: 'a;
-
-    fn iter_blobs(&self, table_id: TableId) -> Result<Self::Iter<'_>>;
-
-    fn get_blob(&self, table_id: TableId, row_id: Self::RowId) -> Result<Option<Self::BlobRef>>;
-}
-
-pub trait MutBlobstore: Blobstore {
-    fn delete_blob(&self, table_id: TableId, row_id: Self::RowId) -> Result<()>;
-
-    fn insert_blob(&self, table_id: TableId, row: &[u8]) -> Result<Self::RowId>;
-}
-
-pub trait Datastore: DataRow {
-    type Iter<'a>: Iterator<Item = Self::DataRef>
-    where
-        Self: 'a;
-
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::DataRef>
-    where
-        Self: 'a;
-
-    type IterByColEq<'a>: Iterator<Item = Self::DataRef>
-    where
-        Self: 'a;
-
-    fn iter(&self, table_id: TableId) -> Result<Self::Iter<'_>>;
-
-    fn iter_by_col_range<R: RangeBounds<AlgebraicValue>>(
-        &self,
-        table_id: TableId,
-        col_id: ColId,
-        range: R,
-    ) -> Result<Self::IterByColRange<'_, R>>;
-
-    fn iter_by_col_eq<'a>(
-        &'a self,
-        table_id: TableId,
-        col_id: ColId,
-        value: &'a AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a>>;
-
-    fn get(&self, table_id: TableId, row_id: Self::RowId) -> Result<Option<Self::DataRef>>;
-}
-
-pub trait MutDatastore: Datastore {
-    fn delete(&self, table_id: TableId, row_id: Self::RowId) -> Result<()>;
-
-    fn insert(&self, table_id: TableId, row: ProductValue) -> Result<Self::RowId>;
-}
-
-pub trait TxBlobstore: BlobRow + Tx {
-    type Iter<'a>: Iterator<Item = Self::BlobRef>
-    where
-        Self: 'a;
-
-    fn iter_blobs_tx<'a>(&'a self, tx: &'a Self::TxId, table_id: TableId) -> Result<Self::Iter<'a>>;
-
-    fn get_blob_tx<'a>(
-        &'a self,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-        row_id: Self::RowId,
-    ) -> Result<Option<Self::BlobRef>>;
-}
-
-pub trait MutTxBlobstore: TxBlobstore + MutTx {
-    fn iter_blobs_mut_tx<'a>(&'a self, tx: &'a Self::MutTxId, table_id: TableId) -> Result<Self::Iter<'a>>;
-
-    fn get_blob_mut_tx<'a>(
-        &'a self,
-        tx: &'a Self::MutTxId,
-        table_id: TableId,
-        row_id: Self::RowId,
-    ) -> Result<Option<Self::BlobRef>>;
-
-    fn delete_blob_mut_tx<'a>(
-        &'a self,
-        tx: &'a mut Self::MutTxId,
-        table_id: TableId,
-        row_id: Self::RowId,
-    ) -> Result<()>;
-
-    fn insert_blob_mut_tx<'a>(
-        &'a self,
-        tx: &'a mut Self::MutTxId,
-        table_id: TableId,
-        row: &[u8],
-    ) -> Result<Self::RowId>;
 }
 
 pub trait TxDatastore: DataRow + Tx {
