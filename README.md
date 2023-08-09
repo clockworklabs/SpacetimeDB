@@ -59,7 +59,7 @@
 
 <br>
 
-## What is SpacetimeDB?
+## What is [SpacetimeDB](https://spacetimedb.com)?
 
 You can think of SpacetimeDB as both a database and server combined into one.
 
