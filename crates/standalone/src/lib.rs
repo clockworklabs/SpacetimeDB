@@ -46,6 +46,7 @@ pub struct StandaloneEnv {
     client_actor_index: ClientActorIndex,
     public_key: DecodingKey,
     private_key: EncodingKey,
+    public_key_bytes: Box<[u8]>,
 
     /// The following config applies to the whole environment minus the control_db and object_db.
     config: Config,
@@ -60,7 +61,7 @@ impl StandaloneEnv {
         let energy_monitor = Arc::new(StandaloneEnergyMonitor::new());
         let host_controller = Arc::new(HostController::new(energy_monitor.clone()));
         let client_actor_index = ClientActorIndex::new();
-        let (public_key, private_key) = get_or_create_keys()?;
+        let (public_key, private_key, public_key_bytes) = get_or_create_keys()?;
         let this = Arc::new(Self {
             worker_db,
             control_db,
@@ -70,6 +71,8 @@ impl StandaloneEnv {
             client_actor_index,
             public_key,
             private_key,
+            public_key_bytes,
+
             config,
         });
         energy_monitor.set_standalone_env(this.clone());
@@ -77,7 +80,7 @@ impl StandaloneEnv {
     }
 }
 
-fn get_or_create_keys() -> anyhow::Result<(DecodingKey, EncodingKey)> {
+fn get_or_create_keys() -> anyhow::Result<(DecodingKey, EncodingKey, Box<[u8]>)> {
     let public_key_path =
         get_key_path("SPACETIMEDB_JWT_PUB_KEY").expect("SPACETIMEDB_JWT_PUB_KEY must be set to a valid path");
     let private_key_path =
@@ -101,10 +104,12 @@ fn get_or_create_keys() -> anyhow::Result<(DecodingKey, EncodingKey)> {
         anyhow::bail!("Unable to read private key for JWT token signing");
     }
 
-    let encoding_key = EncodingKey::from_ec_pem(&private_key_bytes.unwrap())?;
-    let decoding_key = DecodingKey::from_ec_pem(&public_key_bytes.unwrap())?;
+    let public_key_bytes = Box::<[u8]>::from(public_key_bytes.unwrap());
 
-    Ok((decoding_key, encoding_key))
+    let encoding_key = EncodingKey::from_ec_pem(&private_key_bytes.unwrap())?;
+    let decoding_key = DecodingKey::from_ec_pem(&public_key_bytes)?;
+
+    Ok((decoding_key, encoding_key, public_key_bytes))
 }
 
 fn read_key(path: &Path) -> anyhow::Result<Vec<u8>> {
@@ -339,6 +344,9 @@ impl spacetimedb_client_api::ControlNodeDelegate for StandaloneEnv {
     }
     fn private_key(&self) -> &EncodingKey {
         &self.private_key
+    }
+    fn public_key_bytes(&self) -> &[u8] {
+        &self.public_key_bytes
     }
 }
 

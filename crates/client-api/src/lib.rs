@@ -93,6 +93,8 @@ pub trait ControlNodeDelegate: Send + Sync {
 
     fn public_key(&self) -> &DecodingKey;
     fn private_key(&self) -> &EncodingKey;
+
+    fn public_key_bytes(&self) -> &[u8];
 }
 
 pub struct ArcEnv<T: ?Sized>(pub Arc<T>);
@@ -134,6 +136,9 @@ impl<T: ControlNodeDelegate + ?Sized> ControlNodeDelegate for ArcEnv<T> {
     fn private_key(&self) -> &EncodingKey {
         self.0.private_key()
     }
+    fn public_key_bytes(&self) -> &[u8] {
+        self.0.public_key_bytes()
+    }
 }
 
 #[async_trait]
@@ -155,6 +160,9 @@ impl<T: ControlNodeDelegate + ?Sized> ControlNodeDelegate for Arc<T> {
     }
     fn private_key(&self) -> &EncodingKey {
         (**self).private_key()
+    }
+    fn public_key_bytes(&self) -> &[u8] {
+        (**self).public_key_bytes()
     }
 }
 
