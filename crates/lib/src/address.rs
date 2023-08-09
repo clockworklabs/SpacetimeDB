@@ -13,7 +13,6 @@ use crate::sats;
 /// TODO: Evaluate replacing this with a literal Ipv6Address which is assigned
 /// permanently to a database.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Address(u128);
 
 impl Address {
@@ -63,6 +62,16 @@ impl_serialize!([] Address, (self, ser) =>self.0.to_be_bytes().serialize(ser));
 impl_deserialize!([] Address, de => <[u8; 16]>::deserialize(de).map(|v| Self(u128::from_be_bytes(v))));
 
 #[cfg(feature = "serde")]
+impl serde::Serialize for Address {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_hex().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for Address {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -74,3 +83,51 @@ impl<'de> serde::Deserialize<'de> for Address {
 }
 
 impl_st!([] Address, _ts => sats::AlgebraicType::U128);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bsatn_roundtrip() {
+        let addr = Address(rand::random());
+        let ser = sats::bsatn::to_vec(&addr).unwrap();
+        let de = sats::bsatn::from_slice(&ser).unwrap();
+        assert_eq!(addr, de);
+    }
+
+    #[cfg(feature = "serde")]
+    mod serde {
+        use super::*;
+
+        #[test]
+        fn test_serde_roundtrip() {
+            let addr = Address(rand::random());
+            let ser = serde_json::to_vec(&addr).unwrap();
+            let de = serde_json::from_slice(&ser).unwrap();
+            assert_eq!(addr, de);
+        }
+    }
+
+    // At some point, using `Address` in a spacetimedb table was not working
+    // (buffer length errors were thrown when deserializing). This test exists
+    // to guard against a regression.
+    #[test]
+    fn test_addr_column_rountrip() {
+        use spacetimedb_bindings_macro::{Deserialize, Serialize};
+
+        #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+        struct MyTable {
+            name: String,
+            addr: Address,
+        }
+
+        let val = MyTable {
+            name: "example.com".into(),
+            addr: Address(rand::random()),
+        };
+        let ser = sats::bsatn::to_vec(&val).unwrap();
+        let de = sats::bsatn::from_slice(&ser).unwrap();
+        assert_eq!(val, de);
+    }
+}
