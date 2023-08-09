@@ -280,6 +280,7 @@ pub struct DomainName {
 }
 
 impl DomainName {
+    /// Returns a string slice with the domain name.
     pub fn as_str(&self) -> &str {
         &self.domain_name
     }
@@ -456,11 +457,11 @@ where
     })
 }
 
-fn parse_domain_segment(input: &str) -> Result<(), ParseError> {
+fn ensure_domain_segment(input: &str) -> Result<(), ParseError> {
     DomainSegment::try_from(input).map(|_| ())
 }
 
-fn parse_domain_tld(input: &str) -> Result<(), ParseError> {
+fn ensure_domain_tld(input: &str) -> Result<(), ParseError> {
     DomainTld::try_from(input).map(|_| ())
 }
 
@@ -486,8 +487,8 @@ impl<'a> TryFrom<&'a str> for DomainSegment<'a> {
     }
 }
 
-/// Parsing helper to validate a [`DomainSegment`] is a valid [`Tld`], without
-/// consuming the input.
+/// Parsing helper to validate that a [`DomainSegment`] is a valid [`Tld`],
+/// without consuming the input.
 struct DomainTld<'a>(&'a str);
 
 impl<'a> TryFrom<&'a str> for DomainTld<'a> {

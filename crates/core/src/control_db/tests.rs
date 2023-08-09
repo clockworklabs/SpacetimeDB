@@ -19,19 +19,19 @@ async fn test_register_tld() -> anyhow::Result<()> {
     })
     .await??;
 
-    cdb.spacetime_register_tld(domain.tld().to_owned(), *ALICE).await?;
+    cdb.spacetime_register_tld(domain.into_tld(), *ALICE).await?;
     let owner = cdb.spacetime_lookup_tld(domain.tld()).await?;
     assert_eq!(owner, Some(*ALICE));
 
-    let unauthorized = cdb.spacetime_register_tld(domain.tld().to_owned(), *BOB).await?;
+    let unauthorized = cdb.spacetime_register_tld(domain.into_tld(), *BOB).await?;
     assert!(matches!(unauthorized, RegisterTldResult::Unauthorized { .. }));
-    let already_registered = cdb.spacetime_register_tld(domain.tld().to_owned(), *ALICE).await?;
+    let already_registered = cdb.spacetime_register_tld(domain.into_tld(), *ALICE).await?;
     assert!(matches!(
         already_registered,
         RegisterTldResult::AlreadyRegistered { .. }
     ));
     let domain = DomainName::from_str("amAZe")?;
-    let already_registered = cdb.spacetime_register_tld(domain.tld().to_owned(), *ALICE).await?;
+    let already_registered = cdb.spacetime_register_tld(domain.into_tld(), *ALICE).await?;
     assert!(matches!(
         already_registered,
         RegisterTldResult::AlreadyRegistered { .. }
@@ -59,7 +59,7 @@ async fn test_domain() -> anyhow::Result<()> {
 
     // Check Alice owns TLD
     let unauthorized = cdb
-        .spacetime_insert_domain(&addr, domain.tld().to_owned().into(), *BOB, true)
+        .spacetime_insert_domain(&addr, domain.into_tld().into(), *BOB, true)
         .await?;
     assert!(matches!(unauthorized, InsertDomainResult::PermissionDenied { .. }));
 
