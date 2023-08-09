@@ -626,7 +626,7 @@ pub async fn register_tld(
     // so, unless you are the owner, this will fail, hence not using get_or_create
     let auth = auth_or_bad_request(auth)?;
 
-    let tld = tld.parse::<DomainName>().map_err(DomainParsingRejection)?.into_tld();
+    let tld = tld.parse::<DomainName>().map_err(DomainParsingRejection)?.into();
     let result = ctx
         .control_db()
         .spacetime_register_tld(tld, auth.identity)
