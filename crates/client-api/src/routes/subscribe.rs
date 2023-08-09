@@ -41,7 +41,7 @@ pub async fn handle_websocket(
 ) -> axum::response::Result<impl IntoResponse> {
     let auth = auth.get_or_create(&*worker_ctx).await?;
 
-    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let address = name_or_address.resolve(&*worker_ctx).await?.into();
 
     let (res, ws_upgrade, protocol) =
         ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);

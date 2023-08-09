@@ -10,7 +10,9 @@ use axum::headers;
 use axum::response::IntoResponse;
 use bytestring::ByteString;
 use http::{HeaderName, HeaderValue, Request, StatusCode};
+
 use spacetimedb::address::Address;
+use spacetimedb_lib::name::DomainName;
 
 use crate::routes::database::DomainParsingRejection;
 use crate::{log_and_500, ControlNodeDelegate};
@@ -75,20 +77,50 @@ impl NameOrAddress {
         }
     }
 
+    /// Resolve this [`NameOrAddress`].
+    ///
+    /// If `self` is a [`NameOrAddress::Address`], the returned
+    /// [`ResolvedAddress`] contains only an [`Address`] and a `None`
+    /// [`DomainName`].
+    ///
+    /// Otherwise, if `self` is a [`NameOrAddress::Name`], the [`Address`] is
+    /// looked up by that name in the SpacetimeDB DNS and the returned
+    /// [`ResolvedAddress`] contains both an [`Address`] and `Some`
+    /// [`DomainName`].
+    ///
+    /// Errors are returned if [`NameOrAddress::Name`] cannot be parsed into a
+    /// [`DomainName`], or the DNS lookup fails.
+    ///
+    /// An `Ok` result is itself a [`Result`], which is `Err(DomainName)` if the
+    /// given [`NameOrAddress::Name`] is not registered in the SpacetimeDB DNS,
+    /// i.e. no corresponding [`Address`] exists.
     pub async fn try_resolve(
         &self,
         ctx: &(impl ControlNodeDelegate + ?Sized),
-    ) -> axum::response::Result<Result<Address, &str>> {
+    ) -> axum::response::Result<Result<ResolvedAddress, DomainName>> {
         Ok(match self {
-            NameOrAddress::Address(addr) => Ok(*addr),
-            NameOrAddress::Name(name) => {
+            Self::Address(addr) => Ok(ResolvedAddress {
+                address: *addr,
+                domain: None,
+            }),
+            Self::Name(name) => {
                 let domain = name.parse().map_err(DomainParsingRejection)?;
-                ctx.spacetime_dns(&domain).await.map_err(log_and_500)?.ok_or(name)
+                let address = ctx.spacetime_dns(&domain).await.map_err(log_and_500)?;
+                match address {
+                    Some(address) => Ok(ResolvedAddress {
+                        address,
+                        domain: Some(domain),
+                    }),
+                    None => Err(domain),
+                }
             }
         })
     }
 
-    pub async fn resolve(&self, ctx: &(impl ControlNodeDelegate + ?Sized)) -> axum::response::Result<Address> {
+    /// A variant of [`Self::try_resolve()`] which maps to a 400 (Bad Request)
+    /// response if `self` is a [`NameOrAddress::Name`] for which no
+    /// corresponding [`Address`] is found in the SpacetimeDB DNS.
+    pub async fn resolve(&self, ctx: &(impl ControlNodeDelegate + ?Sized)) -> axum::response::Result<ResolvedAddress> {
         self.try_resolve(ctx).await?.map_err(|_| StatusCode::BAD_REQUEST.into())
     }
 }
@@ -114,5 +146,29 @@ impl fmt::Display for NameOrAddress {
             Self::Address(addr) => f.write_str(&addr.to_hex()),
             Self::Name(name) => f.write_str(name),
         }
+    }
+}
+
+/// A resolved [`NameOrAddress`].
+///
+/// Constructed by [`NameOrAddress::try_resolve()`].
+pub struct ResolvedAddress {
+    address: Address,
+    domain: Option<DomainName>,
+}
+
+impl ResolvedAddress {
+    pub fn address(&self) -> &Address {
+        &self.address
+    }
+
+    pub fn domain(&self) -> Option<&DomainName> {
+        self.domain.as_ref()
+    }
+}
+
+impl From<ResolvedAddress> for Address {
+    fn from(value: ResolvedAddress) -> Self {
+        value.address
     }
 }
