@@ -190,8 +190,6 @@ terminate_jobs() {
 	running="$(jobs -pr)"
 	if [ -n "$running" ]; then
 		kill "$running"
-	else
-		echo "no running jobs"
 	fi
 }
 trap 'terminate_jobs' SIGINT SIGTERM EXIT
