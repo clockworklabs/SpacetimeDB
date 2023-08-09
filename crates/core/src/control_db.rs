@@ -123,9 +123,7 @@ impl ControlDb {
             None => {
                 if try_register_tld {
                     // Let's try to automatically register this TLD for the identity
-                    let result = self
-                        .spacetime_register_tld(domain.into_tld(), owner_identity)
-                        .await?;
+                    let result = self.spacetime_register_tld(domain.to_tld(), owner_identity).await?;
                     if let RegisterTldResult::Success { .. } = result {
                         // This identity now owns this TLD
                     } else {
@@ -229,7 +227,7 @@ impl ControlDb {
     ///  * `domain` - The domain to lookup
     pub async fn spacetime_lookup_tld(&self, domain: impl AsRef<TldRef>) -> Result<Option<Identity>> {
         let tree = self.db.open_tree("top_level_domains")?;
-        match tree.get(domain.as_str().to_lowercase().as_bytes())? {
+        match tree.get(domain.as_ref().to_lowercase().as_bytes())? {
             Some(owner) => Ok(Some(Identity::from_slice(&owner[..]))),
             None => Ok(None),
         }

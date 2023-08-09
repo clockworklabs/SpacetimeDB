@@ -172,7 +172,7 @@ impl_st!([] Tld, _ts => spacetimedb_lib::AlgebraicType::String);
 impl_serialize!([] Tld, (self, ser) => spacetimedb_sats::ser::Serialize::serialize(&self.0, ser));
 impl_deserialize!([] Tld, de => {
     let s: String = spacetimedb_sats::de::Deserialize::deserialize(de)?;
-    parse_domain_tld(&s).map_err(spacetimedb_sats::de::Error::custom)?;
+    ensure_domain_tld(&s).map_err(spacetimedb_sats::de::Error::custom)?;
     Ok(Self(s))
 });
 
@@ -183,7 +183,7 @@ impl<'de> serde::Deserialize<'de> for Tld {
         D: serde::Deserializer<'de>,
     {
         let s: String = serde::Deserialize::deserialize(deserializer)?;
-        parse_domain_tld(&s).map_err(serde::de::Error::custom)?;
+        ensure_domain_tld(&s).map_err(serde::de::Error::custom)?;
         Ok(Self(s))
     }
 }
@@ -266,6 +266,10 @@ impl fmt::Display for TldRef {
 /// Each segment in a database name can contain any UTF-8 character, except for
 /// whitespace and '/'. The maximum segment length is 64 characters.
 ///
+/// The first path segment is also referred to as the "top-level domain", or
+/// [`Tld`]. The concatenation of all segments after the first '/' is also
+/// referred as the "subdomain".
+///
 /// Note that [`PartialEq`] compares the exact string representation of a
 /// [`DomainName`], as one would expect, but the SpacetimeDB registry compares
 /// the lowercase representation of it.
@@ -285,14 +289,17 @@ impl DomainName {
         &self.domain_name
     }
 
+    /// Get the top-level domain, as a reference.
     pub fn tld(&self) -> &TldRef {
         TldRef::new(&self.domain_name[..self.tld_offset])
     }
 
-    pub fn as_tld(&self) -> Tld {
+    /// Get the top-level domain, as an owned [`Tld`].
+    pub fn to_tld(&self) -> Tld {
         self.tld().to_owned()
     }
 
+    /// Get the subdomain, if any.
     pub fn sub_domain(&self) -> Option<&str> {
         if self.tld_offset + 1 < self.domain_name.len() {
             Some(&self.domain_name[self.tld_offset + 1..])
@@ -431,7 +438,7 @@ where
     if tld.is_empty() {
         return Err(ParseError::StartsSlash { input: domain.into() }.into());
     }
-    parse_domain_tld(tld)?;
+    ensure_domain_tld(tld)?;
     let tld_offset = tld.len();
 
     let mut parts = parts.peekable();
@@ -448,7 +455,7 @@ where
             };
             return Err(err.into());
         }
-        parse_domain_segment(part)?;
+        ensure_domain_segment(part)?;
     }
 
     Ok(DomainName {
