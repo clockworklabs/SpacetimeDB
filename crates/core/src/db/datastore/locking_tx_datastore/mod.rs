@@ -298,6 +298,97 @@ struct Inner {
 }
 
 impl Inner {
+    fn validate(&self) {
+        #[derive(Default)]
+        struct State {
+            committed: bool,
+            inserted: bool,
+            deleted: bool,
+        }
+
+        impl State {
+            fn validate(&self) {
+                match self {
+                    State {
+                        committed: false,
+                        inserted: false,
+                        deleted: false,
+                    } => (),
+                    State {
+                        committed: false,
+                        inserted: false,
+                        deleted: true,
+                    } => panic!("Row is deleted but not present"),
+                    State {
+                        committed: false,
+                        inserted: true,
+                        deleted: false,
+                    } => (),
+                    State {
+                        committed: false,
+                        inserted: true,
+                        deleted: true,
+                    } => panic!("Row is both deleted and inserted"),
+                    State {
+                        committed: true,
+                        inserted: false,
+                        deleted: false,
+                    } => (),
+                    State {
+                        committed: true,
+                        inserted: false,
+                        deleted: true,
+                    } => (),
+                    State {
+                        committed: true,
+                        inserted: true,
+                        deleted: false,
+                    } => panic!("Row is both inserted and committed"),
+                    State {
+                        committed: true,
+                        inserted: true,
+                        deleted: true,
+                    } => panic!("Row is both inserted and deleted, and both inserted and committed"),
+                }
+            }
+        }
+
+        if false {
+            let mut row_state: HashMap<TableId, HashMap<RowId, State>> = HashMap::new();
+
+            for (table_id, table) in self.committed_state.tables.iter() {
+                let table_state = row_state.entry(*table_id).or_default();
+                for (row_id, _) in table.rows.iter() {
+                    table_state.entry(*row_id).or_default().committed = true;
+                }
+            }
+
+            if let Some(tx_state) = self.tx_state.as_ref() {
+                for (table_id, table) in tx_state.insert_tables.iter() {
+                    let table_state = row_state.entry(*table_id).or_default();
+                    for (row_id, _) in table.rows.iter() {
+                        table_state.entry(*row_id).or_default().inserted = true;
+                    }
+                }
+
+                for (table_id, rows) in tx_state.delete_tables.iter() {
+                    let table_state = row_state.entry(*table_id).or_default();
+                    for row_id in rows.iter() {
+                        table_state.entry(*row_id).or_default().deleted = true;
+                    }
+                }
+            }
+
+            for (_, table_state) in row_state.iter() {
+                for (_, state) in table_state.iter() {
+                    state.validate()
+                }
+            }
+        }
+    }
+}
+
+impl Inner {
     pub fn new() -> Self {
         Self {
             memory: BTreeMap::new(),
@@ -390,6 +481,8 @@ impl Inner {
             let data_key = row.to_data_key();
             st_indexes.rows.insert(RowId(data_key), row);
         }
+
+        self.validate();
 
         Ok(())
     }
@@ -650,6 +743,8 @@ impl Inner {
         }
 
         log::trace!("TABLE CREATED: {table_name}, table_id:{table_id}");
+
+        self.validate();
 
         Ok(TableId(table_id))
     }
@@ -1120,6 +1215,9 @@ impl Inner {
             }
         }
         self.insert_row_internal(table_id, row.clone())?;
+
+        self.validate();
+
         Ok(row)
     }
 
@@ -1210,29 +1308,36 @@ impl Inner {
 
         {
             let tx_state = self.tx_state.as_mut().unwrap();
-            let insert_table = tx_state.get_insert_table_mut(&table_id).unwrap();
 
-            // TODO(cloutiertyler): should probably also check that all the columns are correct? Perf considerations.
-            if insert_table.row_type.elements.len() != row.elements.len() {
-                return Err(TableError::RowInvalidType {
-                    table_id: table_id.0,
-                    row,
+            let delete_table = tx_state.get_or_create_delete_table(table_id);
+            let row_was_previously_deleted = delete_table.remove(&row_id);
+
+            // If the row was just deleted in this transaction and we are re-inserting it now,
+            // we're done. Otherwise we have to add the row to the insert table, and into our memory.
+            if !row_was_previously_deleted {
+                let insert_table = tx_state.get_insert_table_mut(&table_id).unwrap();
+
+                // TODO(cloutiertyler): should probably also check that all the columns are correct? Perf considerations.
+                if insert_table.row_type.elements.len() != row.elements.len() {
+                    return Err(TableError::RowInvalidType {
+                        table_id: table_id.0,
+                        row,
+                    }
+                    .into());
                 }
-                .into());
+
+                insert_table.insert(row_id, row);
+
+                match data_key {
+                    DataKey::Data(_) => (),
+                    DataKey::Hash(_) => {
+                        self.memory.insert(data_key, Arc::new(bytes));
+                    }
+                };
             }
-
-            insert_table.insert(row_id, row);
-
-            match data_key {
-                DataKey::Data(_) => (),
-                DataKey::Hash(_) => {
-                    self.memory.insert(data_key, Arc::new(bytes));
-                }
-            };
         }
 
-        let delete_table = self.tx_state.as_mut().unwrap().get_or_create_delete_table(table_id);
-        delete_table.remove(&row_id);
+        self.validate();
 
         Ok(())
     }
@@ -1294,14 +1399,16 @@ impl Inner {
 
     fn delete_row_internal(&mut self, table_id: &TableId, row_id: &RowId) -> bool {
         if let RowOp::Insert(_) = self.contains_row(table_id, row_id) {
-            self.tx_state
-                .as_mut()
-                .unwrap()
-                .get_or_create_delete_table(*table_id)
-                .insert(*row_id);
             if let Some(table) = self.tx_state.as_mut().unwrap().get_insert_table_mut(table_id) {
                 table.delete(row_id);
+            } else {
+                self.tx_state
+                    .as_mut()
+                    .unwrap()
+                    .get_or_create_delete_table(*table_id)
+                    .insert(*row_id);
             }
+            self.validate();
             true
         } else {
             false
@@ -1320,6 +1427,7 @@ impl Inner {
                 count += 1;
             }
         }
+        self.validate();
         Ok(Some(count))
     }
 
@@ -1404,10 +1512,12 @@ impl Inner {
         let tx_state = self.tx_state.take().unwrap();
         let memory = std::mem::take(&mut self.memory);
         let tx_data = self.committed_state.merge(tx_state, memory);
+        self.validate();
         Ok(Some(tx_data))
     }
 
     fn rollback(&mut self) {
+        self.validate();
         self.tx_state = None;
         // TODO: Check that no sequences exceed their allocation after the rollback.
     }
@@ -2005,7 +2115,9 @@ mod tests {
             locking_tx_datastore::{
                 StColumnRow, StIndexRow, StSequenceRow, ST_COLUMNS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
             },
-            traits::{ColumnDef, ColumnSchema, IndexDef, IndexSchema, MutTx, MutTxDatastore, TableDef, TableSchema},
+            traits::{
+                ColumnDef, ColumnSchema, DataRow, IndexDef, IndexSchema, MutTx, MutTxDatastore, TableDef, TableSchema,
+            },
         },
         error::{DBError, IndexError},
     };
@@ -2804,6 +2916,62 @@ mod tests {
                 AlgebraicValue::U32(18),
             ])
         ]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_update_reinsert() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // Insert a row and commit the tx.
+        let mut tx = datastore.begin_mut_tx();
+        let schema = basic_table_schema();
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let row = ProductValue::from_iter(vec![
+            AlgebraicValue::U32(0), // 0 will be ignored.
+            AlgebraicValue::String("Foo".to_string()),
+            AlgebraicValue::U32(18),
+        ]);
+        // Because of autoinc columns, we will get a slightly different
+        // value than the one we inserted.
+        let row = datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        datastore.commit_mut_tx(tx)?;
+
+        // Update the db with the same actual value for that row, in a new tx.
+        let mut tx = datastore.begin_mut_tx();
+        // Iterate over all rows with the value 1 (from the autoinc) in column 0.
+        let rows = datastore
+            .iter_by_col_eq_mut_tx(&mut tx, table_id, ColId(0), &AlgebraicValue::U32(1))?
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 1);
+        let rows: Vec<ProductValue> = rows
+            .into_iter()
+            .map(|row| datastore.data_to_owned(row).into())
+            .collect();
+        assert_eq!(row, rows[0]);
+        // Delete the row.
+        let count_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, rows)?;
+        assert_eq!(count_deleted, Some(1));
+
+        // We shouldn't see the row when iterating now that it's deleted.
+        let rows = datastore
+            .iter_by_col_eq_mut_tx(&mut tx, table_id, ColId(0), &AlgebraicValue::U32(1))?
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 0);
+
+        // Reinsert the row.
+        let reinserted_row = datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+        assert_eq!(reinserted_row, row);
+
+        // The actual test: we should be able to iterate again, while still in the
+        // second transaction, and see exactly one row.
+        let rows = datastore
+            .iter_by_col_eq_mut_tx(&mut tx, table_id, ColId(0), &AlgebraicValue::U32(1))?
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 1);
+
+        datastore.commit_mut_tx(tx)?;
+
         Ok(())
     }
 
