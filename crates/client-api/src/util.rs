@@ -1,6 +1,7 @@
 mod flat_csv;
 pub mod websocket;
 
+use core::fmt;
 use std::net::IpAddr;
 
 use axum::body::{Bytes, HttpBody};
@@ -104,5 +105,14 @@ impl<'de> serde::Deserialize<'de> for NameOrAddress {
                 NameOrAddress::Name(s)
             }
         })
+    }
+}
+
+impl fmt::Display for NameOrAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Address(addr) => f.write_str(&addr.to_hex()),
+            Self::Name(name) => f.write_str(name),
+        }
     }
 }
