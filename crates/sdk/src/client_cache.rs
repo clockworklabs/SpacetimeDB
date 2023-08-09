@@ -7,7 +7,6 @@ use anymap::{
     Map,
 };
 use im::HashMap;
-use log::log_enabled;
 use spacetimedb_sats::bsatn;
 use std::collections::HashMap as StdHashMap;
 use std::sync::Arc;
@@ -116,10 +115,10 @@ impl<T: TableType> TableCache<T> {
             }
             Ok(value) => {
                 if op_is_delete(op) {
-                    log::debug!("Got delete event for {:?} row {:?}", T::TABLE_NAME, value,);
+                    log::trace!("Got delete event for {:?} row {:?}", T::TABLE_NAME, value,);
                     self.delete(callbacks, row_pk, value);
                 } else if op_is_insert(op) {
-                    log::debug!("Got insert event for {:?} row {:?}", T::TABLE_NAME, value,);
+                    log::trace!("Got insert event for {:?} row {:?}", T::TABLE_NAME, value,);
                     self.insert(callbacks, row_pk, value);
                 } else {
                     log::error!("Unknown table_row_operation::OperationType {}", op);
@@ -239,11 +238,7 @@ impl<T: TableType> TableCache<T> {
                         );
                     }
                     Ok(row) => {
-                        if log_enabled!(log::Level::Trace) {
-                            log::trace!("Initializing table {:?}: got new row {:?}", T::TABLE_NAME, row);
-                        } else {
-                            log::debug!("Initializing table {:?} with new row", T::TABLE_NAME);
-                        }
+                        log::trace!("Initializing table {:?}: got new row {:?}", T::TABLE_NAME, row);
                         diff.insert(row_pk, DiffEntry::Insert(row));
                     }
                 },
@@ -252,11 +247,7 @@ impl<T: TableType> TableCache<T> {
                     diff.insert(row_pk, diff_entry);
                 }
                 Some(DiffEntry::Delete(row)) => {
-                    if log_enabled!(log::Level::Trace) {
-                        log::trace!("Initializing table {:?}: row {:?} remains present", T::TABLE_NAME, row);
-                    } else {
-                        log::debug!("Initializing table {:?} with row remaining present", T::TABLE_NAME);
-                    }
+                    log::trace!("Initializing table {:?}: row {:?} remains present", T::TABLE_NAME, row);
                     diff.insert(row_pk, DiffEntry::NoChange(row));
                 }
             };
@@ -359,18 +350,10 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
                 }
                 Ok(row) => {
                     if op_is_delete(op) {
-                        if log_enabled!(log::Level::Trace) {
-                            log::trace!("Got delete event for {:?} row {:?}", T::TABLE_NAME, row,);
-                        } else {
-                            log::debug!("Got delete event for {:?}", T::TABLE_NAME);
-                        }
+                        log::trace!("Got delete event for {:?} row {:?}", T::TABLE_NAME, row,);
                         Some(DiffEntry::Delete(row_pk, row))
                     } else if op_is_insert(op) {
-                        if log_enabled!(log::Level::Trace) {
-                            log::trace!("Got insert event for {:?} row {:?}", T::TABLE_NAME, row,);
-                        } else {
-                            log::debug!("Got insert event for {:?}", T::TABLE_NAME);
-                        }
+                        log::trace!("Got insert event for {:?} row {:?}", T::TABLE_NAME, row,);
                         Some(DiffEntry::Insert(row_pk, row))
                     } else {
                         log::error!("Unknown table_row_operation::OperationType {}", op);
