@@ -123,6 +123,22 @@ If you'd like to build the `spacetime` CLI tool from source, you can install it 
 cargo install spacetimedb-cli
 ```
 
+### Installing from Source
+
+For MacOS and Linux this is straightforward. Just run the following commands in a terminal:
+
+```bash
+# Install rustup, you can skip this step if you have cargo and the wasm32-unknown-unknown target already installed.
+curl https://sh.rustup.rs -sSf | sh
+# Clone SpacetimeDB
+git clone https://github.com/clockworklabs/SpacetimeDB
+# Build and install the CLI
+cd SpacetimeDB
+cargo install --path ./crates/cli
+```
+
+Windows may require some extra dependencies be installed, including openssl and a specific version of perl. A guide for this will be available soon.
+
 #### Running with Docker
 
 You can execute the `spacetime` CLI tool using Docker to run the SpacetimeDB standalone server without needing to install any command-line tools or other dependencies.
