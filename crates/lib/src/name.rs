@@ -125,9 +125,8 @@ pub enum SetDefaultDomainResult {
 /// of a full [`DomainName`]. A [`Tld`] is also a valid [`DomainName`], and can
 /// be converted to this type.
 ///
-/// Note that [`PartialEq`] compares the exact string representation of
-/// the [`Tld`], as one would expect, but the SpacetimeDB registry compares the
-/// lowercase representation of it.
+/// Note that the SpacetimeDB DNS registry may apply additional restrictions on
+/// what TLDs can be registered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Tld(String);
