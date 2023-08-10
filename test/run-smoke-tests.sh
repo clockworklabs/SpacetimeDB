@@ -70,14 +70,17 @@ fi
 
 cargo run build "$RESET_PROJECT_PATH" -s -d
 
-if [ "$(docker ps | grep "node" -c)" != 1 ] ; then
-	echo "Docker container not found, is SpacetimeDB running?"
-	exit 1
-fi
-
 export SPACETIME_SKIP_CLIPPY=1
-CONTAINER_NAME=$(docker ps | grep "node" | awk '{print $NF}')
-docker logs "$CONTAINER_NAME"
+
+if [ -z "${NO_DOCKER:-}" ] ; then
+	if [ "$(docker ps | grep "node" -c)" != 1 ] ; then
+		echo "Docker container not found, is SpacetimeDB running?"
+		exit 1
+	fi
+
+	CONTAINER_NAME=$(docker ps | grep "node" | awk '{print $NF}')
+	docker logs "$CONTAINER_NAME"
+fi
 
 execute_procedural_test() {
 	if [ $# != 1 ] ; then
@@ -155,7 +158,7 @@ process_test_result() {
 		# Cleanup the test execution only if the test passed
 		rm -rf "$PROJECT_PATH" "$out_file_path" "$config_file_path"
 	else
-		docker logs "$CONTAINER_NAME"
+		[ -z "${NO_DOCKER:-}" ] && docker logs "$CONTAINER_NAME"
 		cat "$out_file_path"
 		echo "Config file:"
 		cat "$config_file_path"
