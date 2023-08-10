@@ -128,7 +128,7 @@ cargo install spacetimedb-cli
 For MacOS and Linux this is straightforward. Just run the following commands in a terminal:
 
 ```bash
-# Install cargo, if you already have cargo you can skip this
+# Install rustup, you can skip this step if you have cargo and the wasm32-unknown-unknown target already installed.
 curl https://sh.rustup.rs -sSf | sh
 # Clone SpacetimeDB
 git clone https://github.com/clockworklabs/SpacetimeDB
