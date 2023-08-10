@@ -28,3 +28,7 @@ lazy_static = "1.4"
 [dev-dependencies]
 # for quickstart-chat example
 hex = "0.4"
+# for cursive-chat example
+cursive = "0.20"
+futures-channel = "0.3"
+
