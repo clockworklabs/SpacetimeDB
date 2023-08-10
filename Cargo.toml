@@ -70,6 +70,7 @@ console = { version = "0.15.6" }
 convert_case = "0.6.0"
 criterion = { version = "0.4.0", features = ["async", "async_tokio", "html_reports"] }
 crossbeam-channel = "0.5"
+cursive = "0.20"
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 dirs = "5.0.1"
 duct = "0.13.5"

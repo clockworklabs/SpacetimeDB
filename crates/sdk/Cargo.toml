@@ -27,7 +27,7 @@ tokio.workspace = true
 tokio-tungstenite.workspace = true
 
 [dev-dependencies]
-# for cursive-chat example
-cursive = "0.20"
-futures-channel = "0.3"
 hex.workspace = true
+# for cursive-chat example
+cursive.workspace = true
+futures-channel.workspace = true
