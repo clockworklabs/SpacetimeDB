@@ -3,6 +3,7 @@ use crate::util::{create_dir_or_err, create_file_with_contents};
 use crate::StandaloneEnv;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
+use spacetimedb::config::{FilesGlobal, FilesLocal, SpacetimeDbFiles};
 use spacetimedb::db::{db_metrics, Storage};
 use spacetimedb::{startup, worker_metrics};
 use std::net::TcpListener;
@@ -85,20 +86,22 @@ pub fn cli(mode: ProgramMode) -> clap::Command {
     // The standalone mode instead uses global directories.
     match mode {
         ProgramMode::CLI => {
-            log_conf_path_arg = log_conf_path_arg.default_value(format!("{}/.spacetime/log.conf", default_root));
-            log_dir_path_arg = log_dir_path_arg.default_value(format!("{}/.spacetime", default_root));
-            database_path_arg = database_path_arg.default_value(format!("{}/.spacetime/stdb", default_root));
-            jwt_pub_key_path_arg =
-                jwt_pub_key_path_arg.default_value(format!("{}/.spacetime/id_ecdsa.pub", default_root));
-            jwt_priv_key_path_arg =
-                jwt_priv_key_path_arg.default_value(format!("{}/.spacetime/id_ecdsa", default_root));
+            let paths = FilesLocal::hidden(default_root);
+
+            log_conf_path_arg = log_conf_path_arg.default_value(paths.log_config().into_os_string());
+            log_dir_path_arg = log_dir_path_arg.default_value(paths.logs().into_os_string());
+            database_path_arg = database_path_arg.default_value(paths.db_path().into_os_string());
+            jwt_pub_key_path_arg = jwt_pub_key_path_arg.default_value(paths.public_key().into_os_string());
+            jwt_priv_key_path_arg = jwt_priv_key_path_arg.default_value(paths.private_key().into_os_string());
         }
         ProgramMode::Standalone => {
-            log_conf_path_arg = log_conf_path_arg.default_value("/etc/spacetimedb/log.conf");
-            log_dir_path_arg = log_dir_path_arg.default_value("/var/log");
-            database_path_arg = database_path_arg.default_value("/stdb");
-            jwt_pub_key_path_arg = jwt_pub_key_path_arg.default_value("/etc/spacetimedb/id_ecdsa.pub");
-            jwt_priv_key_path_arg = jwt_priv_key_path_arg.default_value("/etc/spacetimedb/id_ecdsa");
+            let paths = FilesGlobal::new();
+
+            log_conf_path_arg = log_conf_path_arg.default_value(paths.log_config().into_os_string());
+            log_dir_path_arg = log_dir_path_arg.default_value(paths.logs().into_os_string());
+            database_path_arg = database_path_arg.default_value(paths.db_path().into_os_string());
+            jwt_pub_key_path_arg = jwt_pub_key_path_arg.default_value(paths.public_key().into_os_string());
+            jwt_priv_key_path_arg = jwt_priv_key_path_arg.default_value(paths.private_key().into_os_string());
         }
     }
 
