@@ -183,6 +183,17 @@ TESTS_NAME=()
 TESTS_PROJECT_PATH=()
 TESTS_CONFIG_FILE=()
 
+# Make sure background tests are torn down even if we don't get to `wait`
+# for them (e.g. on ^C). Mainly for $RUN_PARALLEL.
+terminate_jobs() {
+	local running=""
+	running="$(jobs -pr)"
+	if [ -n "$running" ]; then
+		kill "$running"
+	fi
+}
+trap 'terminate_jobs' SIGINT SIGTERM EXIT
+
 for smoke_test in "${TESTS[@]}" ; do
 	if [ ${#EXCLUDE_TESTS[@]} -ne 0 ] && list_contains "$smoke_test" "${EXCLUDE_TESTS[@]}"; then
 		echo "Skipping test $smoke_test"
