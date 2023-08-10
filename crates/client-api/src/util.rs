@@ -79,14 +79,12 @@ impl NameOrAddress {
 
     /// Resolve this [`NameOrAddress`].
     ///
-    /// If `self` is a [`NameOrAddress::Address`], the returned
-    /// [`ResolvedAddress`] contains only an [`Address`] and a `None`
-    /// [`DomainName`].
+    /// If `self` is a [`NameOrAddress::Address`], the inner [`Address`] is
+    /// returned in a [`ResolvedAddress`] without a [`DomainName`].
     ///
     /// Otherwise, if `self` is a [`NameOrAddress::Name`], the [`Address`] is
-    /// looked up by that name in the SpacetimeDB DNS and the returned
-    /// [`ResolvedAddress`] contains both an [`Address`] and `Some`
-    /// [`DomainName`].
+    /// looked up by that name in the SpacetimeDB DNS and returned in a
+    /// [`ResolvedAddress`] alongside `Some` [`DomainName`].
     ///
     /// Errors are returned if [`NameOrAddress::Name`] cannot be parsed into a
     /// [`DomainName`], or the DNS lookup fails.
