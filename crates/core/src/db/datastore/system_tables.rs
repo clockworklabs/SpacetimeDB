@@ -665,7 +665,7 @@ impl<Name: AsRef<str>> From<&StColumnRow<Name>> for ProductValue {
         product![
             AlgebraicValue::U32(x.table_id),
             AlgebraicValue::U32(x.col_id),
-            AlgebraicValue::Bytes(bytes),
+            AlgebraicValue::Bytes(bytes.into()),
             AlgebraicValue::String(x.col_name.as_ref().into()),
             AlgebraicValue::Bool(x.is_autoinc),
         ]

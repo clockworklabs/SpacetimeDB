@@ -1,8 +1,9 @@
 use std::convert::Infallible;
 
 use super::AlgebraicValue;
+use crate::builtin_value::{MapValue, F32, F64};
 use crate::ser::{self, ForwardNamedToSeqProduct};
-use crate::ArrayValue;
+use crate::{ArrayValue, BuiltinValue};
 
 /// An implementation of [`Serializer`](ser::Serializer)
 /// where the output of serialization is an `AlgebraicValue`.
@@ -43,7 +44,7 @@ impl ser::Serializer for ValueSerializer {
         Ok(AlgebraicValue::String(v.into()))
     }
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::Bytes(v.to_owned()))
+        Ok(AlgebraicValue::Bytes(v.into()))
     }
 
     fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error> {
@@ -85,7 +86,7 @@ pub struct SerializeArrayValue {
     /// this is used to allocate with capacity.
     len: Option<usize>,
     /// The array being built.
-    array: ArrayValue,
+    array: ArrayValueBuilder,
 }
 
 impl ser::SerializeArray for SerializeArrayValue {
@@ -103,6 +104,204 @@ impl ser::SerializeArray for SerializeArrayValue {
         Ok(AlgebraicValue::ArrayOf(self.array))
     }
 }
+
+/// A builder for [`ArrayValue`]s
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+enum ArrayValueBuilder {
+    /// An array of [`SumValue`](crate::SumValue)s.
+    Sum(Vec<crate::SumValue>),
+    /// An array of [`ProductValue`](crate::ProductValue)s.
+    Product(Vec<crate::ProductValue>),
+    /// An array of [`bool`]s.
+    Bool(Vec<bool>),
+    /// An array of [`i8`]s.
+    I8(Vec<i8>),
+    /// An array of [`u8`]s.
+    U8(Vec<u8>),
+    /// An array of [`i16`]s.
+    I16(Vec<i16>),
+    /// An array of [`u16`]s.
+    U16(Vec<u16>),
+    /// An array of [`i32`]s.
+    I32(Vec<i32>),
+    /// An array of [`u32`]s.
+    U32(Vec<u32>),
+    /// An array of [`i64`]s.
+    I64(Vec<i64>),
+    /// An array of [`u64`]s.
+    U64(Vec<u64>),
+    /// An array of [`i128`]s.
+    I128(Vec<i128>),
+    /// An array of [`u128`]s.
+    U128(Vec<u128>),
+    /// An array of totally ordered [`F32`]s.
+    F32(Vec<F32>),
+    /// An array of totally ordered [`F64`]s.
+    F64(Vec<F64>),
+    /// An array of UTF-8 strings.
+    String(Vec<Box<str>>),
+    /// An array of arrays.
+    Array(Vec<ArrayValue>),
+    /// An array of maps.
+    Map(Vec<MapValue>),
+}
+
+impl ArrayValueBuilder {
+    /// Returns the length of the array.
+    fn len(&self) -> usize {
+        match self {
+            Self::Sum(v) => v.len(),
+            Self::Product(v) => v.len(),
+            Self::Bool(v) => v.len(),
+            Self::I8(v) => v.len(),
+            Self::U8(v) => v.len(),
+            Self::I16(v) => v.len(),
+            Self::U16(v) => v.len(),
+            Self::I32(v) => v.len(),
+            Self::U32(v) => v.len(),
+            Self::I64(v) => v.len(),
+            Self::U64(v) => v.len(),
+            Self::I128(v) => v.len(),
+            Self::U128(v) => v.len(),
+            Self::F32(v) => v.len(),
+            Self::F64(v) => v.len(),
+            Self::String(v) => v.len(),
+            Self::Array(v) => v.len(),
+            Self::Map(v) => v.len(),
+        }
+    }
+
+    /// Returns whether the array is empty.
+    #[must_use]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Returns a singleton array with `val` as its only element.
+    ///
+    /// Optionally allocates the backing `Vec<_>`s with `capacity`.
+    fn from_one_with_capacity(val: AlgebraicValue, capacity: Option<usize>) -> Self {
+        fn vec<T>(e: T, c: Option<usize>) -> Vec<T> {
+            let mut vec = c.map_or(Vec::new(), Vec::with_capacity);
+            vec.push(e);
+            vec
+        }
+
+        match val {
+            AlgebraicValue::Sum(x) => vec(x, capacity).into(),
+            AlgebraicValue::Product(x) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::Bool(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::I8(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::U8(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::I16(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::U16(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::I32(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::U32(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::I64(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::U64(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::I128(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::U128(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::F32(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::F64(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::String(x)) => vec(x, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::Array { val }) => vec(val, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::Map { val }) => vec(val, capacity).into(),
+        }
+    }
+
+    /// Pushes the value `val` onto the array `self`
+    /// or returns back `Err(val)` if there was a type mismatch
+    /// between the base type of the array and `val`.
+    ///
+    /// Optionally allocates the backing `Vec<_>`s with `capacity`.
+    fn push(&mut self, val: AlgebraicValue, capacity: Option<usize>) -> Result<(), AlgebraicValue> {
+        match (self, val) {
+            (Self::Sum(v), AlgebraicValue::Sum(val)) => v.push(val),
+            (Self::Product(v), AlgebraicValue::Product(val)) => v.push(val),
+            (Self::Bool(v), AlgebraicValue::Builtin(BuiltinValue::Bool(val))) => v.push(val),
+            (Self::I8(v), AlgebraicValue::Builtin(BuiltinValue::I8(val))) => v.push(val),
+            (Self::U8(v), AlgebraicValue::Builtin(BuiltinValue::U8(val))) => v.push(val),
+            (Self::I16(v), AlgebraicValue::Builtin(BuiltinValue::I16(val))) => v.push(val),
+            (Self::U16(v), AlgebraicValue::Builtin(BuiltinValue::U16(val))) => v.push(val),
+            (Self::I32(v), AlgebraicValue::Builtin(BuiltinValue::I32(val))) => v.push(val),
+            (Self::U32(v), AlgebraicValue::Builtin(BuiltinValue::U32(val))) => v.push(val),
+            (Self::I64(v), AlgebraicValue::Builtin(BuiltinValue::I64(val))) => v.push(val),
+            (Self::U64(v), AlgebraicValue::Builtin(BuiltinValue::U64(val))) => v.push(val),
+            (Self::I128(v), AlgebraicValue::Builtin(BuiltinValue::I128(val))) => v.push(val),
+            (Self::U128(v), AlgebraicValue::Builtin(BuiltinValue::U128(val))) => v.push(val),
+            (Self::F32(v), AlgebraicValue::Builtin(BuiltinValue::F32(val))) => v.push(val),
+            (Self::F64(v), AlgebraicValue::Builtin(BuiltinValue::F64(val))) => v.push(val),
+            (Self::String(v), AlgebraicValue::Builtin(BuiltinValue::String(val))) => v.push(val),
+            (Self::Array(v), AlgebraicValue::Builtin(BuiltinValue::Array { val })) => v.push(val),
+            (Self::Map(v), AlgebraicValue::Builtin(BuiltinValue::Map { val })) => v.push(val),
+            (me, val) if me.is_empty() => *me = Self::from_one_with_capacity(val, capacity),
+            (_, val) => return Err(val),
+        }
+        Ok(())
+    }
+}
+
+impl From<ArrayValueBuilder> for ArrayValue {
+    fn from(value: ArrayValueBuilder) -> Self {
+        match value {
+            ArrayValueBuilder::Sum(v) => Self::Sum(v.into()),
+            ArrayValueBuilder::Product(v) => Self::Product(v.into()),
+            ArrayValueBuilder::Bool(v) => Self::Bool(v.into()),
+            ArrayValueBuilder::I8(v) => Self::I8(v.into()),
+            ArrayValueBuilder::U8(v) => Self::U8(v.into()),
+            ArrayValueBuilder::I16(v) => Self::I16(v.into()),
+            ArrayValueBuilder::U16(v) => Self::U16(v.into()),
+            ArrayValueBuilder::I32(v) => Self::I32(v.into()),
+            ArrayValueBuilder::U32(v) => Self::U32(v.into()),
+            ArrayValueBuilder::I64(v) => Self::I64(v.into()),
+            ArrayValueBuilder::U64(v) => Self::U64(v.into()),
+            ArrayValueBuilder::I128(v) => Self::I128(v.into()),
+            ArrayValueBuilder::U128(v) => Self::U128(v.into()),
+            ArrayValueBuilder::F32(v) => Self::F32(v.into()),
+            ArrayValueBuilder::F64(v) => Self::F64(v.into()),
+            ArrayValueBuilder::String(v) => Self::String(v.into()),
+            ArrayValueBuilder::Array(v) => Self::Array(v.into()),
+            ArrayValueBuilder::Map(v) => Self::Map(v.into()),
+        }
+    }
+}
+
+impl Default for ArrayValueBuilder {
+    /// The default `ArrayValue` is an empty array of sum values.
+    fn default() -> Self {
+        Self::from(Vec::<crate::SumValue>::default())
+    }
+}
+
+macro_rules! impl_from_array {
+    ($el:ty, $var:ident) => {
+        impl From<Vec<$el>> for ArrayValueBuilder {
+            fn from(v: Vec<$el>) -> Self {
+                Self::$var(v)
+            }
+        }
+    };
+}
+
+impl_from_array!(crate::SumValue, Sum);
+impl_from_array!(crate::ProductValue, Product);
+impl_from_array!(bool, Bool);
+impl_from_array!(i8, I8);
+impl_from_array!(u8, U8);
+impl_from_array!(i16, I16);
+impl_from_array!(u16, U16);
+impl_from_array!(i32, I32);
+impl_from_array!(u32, U32);
+impl_from_array!(i64, I64);
+impl_from_array!(u64, U64);
+impl_from_array!(i128, I128);
+impl_from_array!(u128, U128);
+impl_from_array!(F32, F32);
+impl_from_array!(F64, F64);
+impl_from_array!(Box<str>, String);
+impl_from_array!(ArrayValue, Array);
+impl_from_array!(MapValue, Map);
+
 
 /// Continuation for serializing a map value.
 pub struct SerializeMapValue {

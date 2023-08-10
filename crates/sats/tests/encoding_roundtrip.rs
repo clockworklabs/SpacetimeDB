@@ -69,7 +69,7 @@ fn builtin_values() -> impl Strategy<Value = AlgebraicValue> {
         any::<f32>().prop_map(|x| AlgebraicValue::F32(x.into())),
         any::<f64>().prop_map(|x| AlgebraicValue::F64(x.into())),
         "[0-1]+".prop_map(|x| {
-            let x = x.into_bytes();
+            let x = x.into_bytes().into();
             AlgebraicValue::Bytes(x)
         }),
         ".*".prop_map(|x| AlgebraicValue::String(x.into())),

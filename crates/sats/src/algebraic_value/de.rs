@@ -120,7 +120,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
     }
 
     fn deserialize_bytes<V: de::SliceVisitor<'de, [u8]>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        visitor.visit_owned(map_err(self.val.into_bytes())?)
+        visitor.visit_owned(map_err(self.val.into_bytes().map(Into::into))?)
     }
 
     fn deserialize_array_seed<V: de::ArrayVisitor<'de, T::Output>, T: de::DeserializeSeed<'de> + Clone>(

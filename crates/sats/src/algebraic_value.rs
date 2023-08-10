@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::ops::{Bound, Deref, RangeBounds};
 
 use crate::builtin_value::{F32, F64};
-use crate::{AlgebraicType, ArrayValue, BuiltinType, BuiltinValue, ProductValue, SumValue};
+use crate::{AlgebraicType, ArrayValue, BuiltinType, BuiltinValue, ProductValue, SumValue, static_assert_size};
 use enum_as_inner::EnumAsInner;
 
 /// A value in SATS typed at some [`AlgebraicType`].
@@ -37,6 +37,8 @@ pub enum AlgebraicValue {
     /// A builtin value that has a builtin type.
     Builtin(BuiltinValue),
 }
+
+static_assert_size!(BuiltinValue, 32);
 
 #[allow(non_snake_case)]
 impl AlgebraicValue {
@@ -129,9 +131,9 @@ impl AlgebraicValue {
         self.as_builtin()?.as_string().map(|x| x.deref())
     }
 
-    /// Interpret the value as a `Vec<u8>` or `None` if it isn't a `Vec<u8>` value.
+    /// Interpret the value as a byte slice or `None` if it isn't a byte slice.
     #[inline]
-    pub fn as_bytes(&self) -> Option<&Vec<u8>> {
+    pub fn as_bytes(&self) -> Option<&[u8]> {
         self.as_builtin()?.as_bytes()
     }
 
@@ -231,9 +233,10 @@ impl AlgebraicValue {
         self.into_builtin()?.into_string().map_err(Self::Builtin)
     }
 
-    /// Convert the value into a `Vec<u8>` or `Err(self)` if it isn't a `Vec<u8>` value.
+    /// Convert the value into a `Box<[u8]>`
+    /// or `Err(self)` if it isn't a `Box<[u8]>` value.
     #[inline]
-    pub fn into_bytes(self) -> Result<Vec<u8>, Self> {
+    pub fn into_bytes(self) -> Result<Box<[u8]>, Self> {
         self.into_builtin()?.into_bytes().map_err(Self::Builtin)
     }
 
@@ -335,7 +338,7 @@ impl AlgebraicValue {
 
     /// Returns an [`AlgebraicValue`] representing `v: Vec<u8>`.
     #[inline]
-    pub const fn Bytes(v: Vec<u8>) -> Self {
+    pub const fn Bytes(v: Box<[u8]>) -> Self {
         Self::Builtin(BuiltinValue::Bytes(v))
     }
 
@@ -509,7 +512,7 @@ mod tests {
     #[test]
     fn array() {
         let array = AlgebraicType::array(AlgebraicType::U8);
-        let value = AlgebraicValue::ArrayOf(ArrayValue::Sum(Vec::new()));
+        let value = AlgebraicValue::ArrayOf(ArrayValue::Sum([].into()));
         let typespace = Typespace::new(vec![]);
         assert_eq!(in_space(&typespace, &array, &value).to_satn(), "[]");
     }
@@ -517,7 +520,7 @@ mod tests {
     #[test]
     fn array_of_values() {
         let array = AlgebraicType::array(AlgebraicType::U8);
-        let value = AlgebraicValue::ArrayOf(vec![3u8]);
+        let value = AlgebraicValue::ArrayOf([3u8]);
         let typespace = Typespace::new(vec![]);
         assert_eq!(in_space(&typespace, &array, &value).to_satn(), "[3]");
     }

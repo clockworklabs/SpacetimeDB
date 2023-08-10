@@ -429,9 +429,9 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
         /// Deserialize a vector and `map` it to the appropriate `ArrayValue` variant.
         fn de_array<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
             de: D,
-            map: impl FnOnce(Vec<T>) -> ArrayValue,
+            map: impl FnOnce(Box<[T]>) -> ArrayValue,
         ) -> Result<ArrayValue, D::Error> {
-            de.deserialize_array(BasicVecVisitor).map(map)
+            de.deserialize_array(BasicVecVisitor).map(|x| map(x.into()))
         }
 
         let mut ty = &*self.ty().elem_ty;
@@ -446,14 +446,14 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                 }
                 AlgebraicType::Sum(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
-                    .map(ArrayValue::Sum),
+                    .map(|x| ArrayValue::Sum(x.into())),
                 AlgebraicType::Product(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
-                    .map(ArrayValue::Product),
+                    .map(|x| ArrayValue::Product(x.into())),
                 AlgebraicType::Builtin(BuiltinType::Bool) => de_array(deserializer, ArrayValue::Bool),
                 AlgebraicType::Builtin(BuiltinType::I8) => de_array(deserializer, ArrayValue::I8),
                 AlgebraicType::Builtin(BuiltinType::U8) => {
-                    deserializer.deserialize_bytes(OwnedSliceVisitor).map(ArrayValue::U8)
+                    deserializer.deserialize_bytes(OwnedSliceVisitor).map(|x| ArrayValue::U8(x.into()))
                 }
                 AlgebraicType::Builtin(BuiltinType::I16) => de_array(deserializer, ArrayValue::I16),
                 AlgebraicType::Builtin(BuiltinType::U16) => de_array(deserializer, ArrayValue::U16),
@@ -468,10 +468,10 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                 AlgebraicType::Builtin(BuiltinType::String) => de_array(deserializer, ArrayValue::String),
                 AlgebraicType::Builtin(BuiltinType::Array(ty)) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
-                    .map(ArrayValue::Array),
+                    .map(|x| ArrayValue::Array(x.into())),
                 AlgebraicType::Builtin(BuiltinType::Map(ty)) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
-                    .map(ArrayValue::Map),
+                    .map(|x| ArrayValue::Map(x.into())),
             };
         }
     }

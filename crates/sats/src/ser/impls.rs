@@ -177,7 +177,7 @@ impl_serialize!([] ValueWithType<'_, BuiltinValue>, (self, ser) => match (self.v
 });
 impl_serialize!(
     [T: crate::Value] where [for<'a> ValueWithType<'a, T>: Serialize]
-    ValueWithType<'_, Vec<T>>,
+    ValueWithType<'_, Box<[T]>>,
     (self, ser) => {
         let mut vec = ser.serialize_array(self.value().len())?;
         for val in self.iter() {
