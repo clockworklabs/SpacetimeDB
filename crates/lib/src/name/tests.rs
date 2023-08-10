@@ -3,6 +3,8 @@ use std::iter;
 use itertools::Itertools as _;
 use proptest::prelude::*;
 
+use spacetimedb_sats::bsatn;
+
 use super::*;
 
 fn gen_valid_domain_name() -> impl Strategy<Value = String> {
@@ -46,8 +48,8 @@ proptest! {
     #[test]
     fn prop_domain_name_sats(s in gen_valid_domain_name()) {
         let a = parse_domain_name(s).unwrap();
-        let bsatn = spacetimedb_sats::bsatn::to_vec(&a).unwrap();
-        let b: DomainName = spacetimedb_sats::bsatn::from_slice(&bsatn).unwrap();
+        let bsatn = bsatn::to_vec(&a).unwrap();
+        let b: DomainName = bsatn::from_slice(&bsatn).unwrap();
         prop_assert_eq!(a, b)
     }
 
