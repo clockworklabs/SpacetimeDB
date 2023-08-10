@@ -4,10 +4,10 @@ import "./App.css";
 
 import { SpacetimeDBClient, Identity } from "@clockworklabs/spacetimedb-sdk";
 
-import Message from "./spacetime_types/message";
-import User from "./spacetime_types/user";
-import SendMessageReducer from "./spacetime_types/send_message_reducer";
-import SetNameReducer from "./spacetime_types/set_name_reducer";
+import Message from "./module_bindings/message";
+import User from "./module_bindings/user";
+import SendMessageReducer from "./module_bindings/send_message_reducer";
+import SetNameReducer from "./module_bindings/set_name_reducer";
 console.log(Message, User, SendMessageReducer, SetNameReducer);
 
 export type MessageType = {
