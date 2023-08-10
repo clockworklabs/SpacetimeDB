@@ -25,7 +25,7 @@ export class SetNameReducer {
         BuiltinType.Type.String
       );
       serializer.write(_nameType, _name);
-      __SPACETIMEDB__.spacetimeDBClient.call("set_name", serializer);
+      __SPACETIMEDB__.spacetimeDBClient.call("SetName", serializer);
     }
   }
 

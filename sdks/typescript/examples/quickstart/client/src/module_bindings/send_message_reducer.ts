@@ -25,7 +25,7 @@ export class SendMessageReducer {
         BuiltinType.Type.String
       );
       serializer.write(_textType, _text);
-      __SPACETIMEDB__.spacetimeDBClient.call("send_message", serializer);
+      __SPACETIMEDB__.spacetimeDBClient.call("SendMessage", serializer);
     }
   }
 

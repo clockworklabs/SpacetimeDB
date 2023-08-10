@@ -42,7 +42,7 @@ export class User extends IDatabaseTable {
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement(
-        "identity",
+        "Identity",
         AlgebraicType.createProductType([
           new ProductTypeElement(
             "__identity_bytes",
@@ -53,7 +53,7 @@ export class User extends IDatabaseTable {
         ])
       ),
       new ProductTypeElement(
-        "name",
+        "Name",
         AlgebraicType.createSumType([
           new SumTypeVariant(
             "some",
@@ -63,7 +63,7 @@ export class User extends IDatabaseTable {
         ])
       ),
       new ProductTypeElement(
-        "online",
+        "Online",
         AlgebraicType.createPrimitiveType(BuiltinType.Type.Bool)
       ),
     ]);
@@ -71,15 +71,15 @@ export class User extends IDatabaseTable {
 
   public static fromValue(value: AlgebraicValue): User {
     let productValue = value.asProductValue();
-    let __identity = new Identity(
+    let __Identity = new Identity(
       productValue.elements[0].asProductValue().elements[0].asBytes()
     );
-    let __name =
+    let __Name =
       productValue.elements[1].asSumValue().tag == 1
         ? null
         : productValue.elements[1].asSumValue().value.asString();
-    let __online = productValue.elements[2].asBoolean();
-    return new this(__identity, __name, __online);
+    let __Online = productValue.elements[2].asBoolean();
+    return new this(__Identity, __Name, __Online);
   }
 
   public static count(): number {
