@@ -60,7 +60,7 @@ impl headers::Header for XForwardedFor {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum NameOrAddress {
     Address(Address),
     Name(String),

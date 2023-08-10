@@ -354,10 +354,13 @@ pub async fn info(
     State(worker_ctx): State<Arc<dyn WorkerCtx>>,
     Path(InfoParams { name_or_address }): Path<InfoParams>,
 ) -> axum::response::Result<impl IntoResponse> {
+    log::trace!("Trying to resolve address: {:?}", name_or_address);
     let address = name_or_address.resolve(&*worker_ctx).await?;
+    log::trace!("Resolved address to: {address:?}");
     let database = worker_ctx_find_database(&*worker_ctx, &address)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
+    log::trace!("Fetched database from the worker db for address: {address:?}");
 
     let host_type = match database.host_type {
         HostType::Wasmer => "wasmer",
