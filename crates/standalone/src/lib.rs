@@ -20,13 +20,12 @@ use spacetimedb::control_db::ControlDb;
 use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::db::{db_metrics, Storage};
-use spacetimedb::hash::Hash;
+use spacetimedb::host::EnergyQuanta;
 use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::host::UpdateOutcome;
 use spacetimedb::host::{scheduler::Scheduler, HostController};
-use spacetimedb::host::{EnergyQuanta, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, EnergyBalance, HostType, IdentityEmail, Node};
+use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, IdentityEmail, Node};
 use spacetimedb::messages::worker_db::DatabaseInstanceState;
 use spacetimedb::module_host_context::ModuleHostContext;
 use spacetimedb::object_db::ObjectDb;
@@ -186,8 +185,10 @@ impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
         &self.private_key
     }
 
+    /// Standalone SpacetimeDB does not support SendGrid as a means to
+    /// reissue authentication tokens.
     fn sendgrid_controller(&self) -> Option<&SendGridController> {
-        self.sendgrid.as_ref()
+        None
     }
 
     async fn load_module_host_context(&self, db: Database, instance_id: u64) -> anyhow::Result<ModuleHostContext> {
@@ -259,7 +260,7 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     }
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyBalance>> {
+    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyQuanta>> {
         self.control_db.get_energy_balance(identity)
     }
 
@@ -374,17 +375,13 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         self.control_db.spacetime_insert_recovery_code(email, code)
     }
 
-    async fn add_energy(&self, identity: &Identity, quanta: u64) -> spacetimedb::control_db::Result<()> {
+    async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
         let mut balance = <Self as spacetimedb_client_api::ControlStateReadAccess>::get_energy_balance(self, identity)?
-            .unwrap_or(EnergyBalance {
-                identity: *identity,
-                balance_quanta: 0,
-            });
-        balance.balance_quanta = balance
-            .balance_quanta
-            .saturating_add(quanta.try_into().unwrap_or(i64::MAX));
+            .map(|quanta| quanta.0)
+            .unwrap_or(0);
+        balance = balance.saturating_add(amount.0.try_into().unwrap_or(i128::MAX));
 
-        self.control_db.set_energy_balance(identity, &balance)
+        self.control_db.set_energy_balance(*identity, EnergyQuanta(balance))
     }
     async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
         let energy_balance = self.control_db.get_energy_balance(identity)?;
@@ -392,9 +389,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         log::trace!("Withdrawing {} energy from {}", amount.0, identity);
         log::trace!("Old balance: {}", energy_balance.0);
         let new_balance = energy_balance - amount;
-        self.control_db
-            .set_energy_balance(*identity, new_balance.as_quanta())
-            .await
+        self.control_db.set_energy_balance(*identity, new_balance.as_quanta())
     }
 
     async fn register_tld(&self, identity: &Identity, tld: Tld) -> spacetimedb::control_db::Result<RegisterTldResult> {
@@ -409,23 +404,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
     ) -> spacetimedb::control_db::Result<InsertDomainResult> {
         self.control_db
             .spacetime_insert_domain(address, domain.clone(), *identity, true)
-    }
-}
-
-#[async_trait::async_trait]
-impl spacetimedb_client_api::ControlNodeDelegate for StandaloneEnv {
-    fn public_key(&self) -> &DecodingKey {
-        &self.public_key
-    }
-
-    fn private_key(&self) -> &EncodingKey {
-        &self.private_key
-    }
-
-    /// Standalone SpacetimeDB does not support SendGrid as a means to
-    /// reissue authentication tokens.
-    fn sendgrid_controller(&self) -> Option<&SendGridController> {
-        None
     }
 }
 
@@ -606,8 +584,9 @@ impl StandaloneEnv {
                 let (dbic, (scheduler, scheduler_starter)) = tokio::task::spawn_blocking({
                     let database = database.clone();
                     let path = root_db_path.clone();
+                    let storage = self.storage;
                     move || -> anyhow::Result<_> {
-                        let dbic = DatabaseInstanceContext::from_database(&database, instance_id, path);
+                        let dbic = DatabaseInstanceContext::from_database(storage, &database, instance_id, path);
                         let sched = Scheduler::open(dbic.scheduler_db_path(root_db_path))?;
                         Ok((dbic, sched))
                     }

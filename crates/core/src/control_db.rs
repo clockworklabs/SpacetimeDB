@@ -118,8 +118,8 @@ impl ControlDb {
         if self.spacetime_dns(&domain)?.is_some() {
             return Err(Error::RecordAlreadyExists(domain));
         }
-        let tld = domain.as_tld();
-        match self.spacetime_lookup_tld(&tld)? {
+        let tld = domain.tld();
+        match self.spacetime_lookup_tld(tld)? {
             Some(owner) => {
                 if owner != owner_identity {
                     return Ok(InsertDomainResult::PermissionDenied { domain });
@@ -128,7 +128,7 @@ impl ControlDb {
             None => {
                 if try_register_tld {
                     // Let's try to automatically register this TLD for the identity
-                    let result = self.spacetime_register_tld(domain.to_tld(), owner_identity).await?;
+                    let result = self.spacetime_register_tld(tld.to_owned(), owner_identity)?;
                     if let RegisterTldResult::Success { .. } = result {
                         // This identity now owns this TLD
                     } else {
@@ -233,7 +233,7 @@ impl ControlDb {
     ///
     /// # Arguments
     ///  * `domain` - The domain to lookup
-    pub async fn spacetime_lookup_tld(&self, domain: impl AsRef<TldRef>) -> Result<Option<Identity>> {
+    pub fn spacetime_lookup_tld(&self, domain: impl AsRef<TldRef>) -> Result<Option<Identity>> {
         let tree = self.db.open_tree("top_level_domains")?;
         match tree.get(domain.as_ref().to_lowercase().as_bytes())? {
             Some(owner) => Ok(Some(Identity::from_slice(&owner[..]))),
@@ -512,8 +512,7 @@ impl ControlDb {
     /// Return the current budget for all identities as stored in the db.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-<<<<<<< HEAD
-    pub async fn get_energy_balances(&self) -> Result<Vec<EnergyBalance>> {
+    pub fn get_energy_balances(&self) -> Result<Vec<EnergyBalance>> {
         let mut balances = vec![];
         let tree = self.db.open_tree("energy_budget")?;
         for balance_entry in tree.iter() {
@@ -557,7 +556,7 @@ impl ControlDb {
     /// Update the stored current budget for a identity.
     /// Note: this function is for the stored budget only and should *only* be called by functions in
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
-    pub async fn set_energy_balance(&self, identity: Identity, energy_balance: EnergyQuanta) -> Result<()> {
+    pub fn set_energy_balance(&self, identity: Identity, energy_balance: EnergyQuanta) -> Result<()> {
         let tree = self.db.open_tree("energy_budget")?;
         tree.insert(identity.as_bytes(), &energy_balance.0.to_be_bytes())?;
 

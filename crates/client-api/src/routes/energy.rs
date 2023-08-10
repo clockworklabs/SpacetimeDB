@@ -27,30 +27,53 @@ pub async fn get_energy_balance<S: ControlStateDelegate>(
 
 #[derive(Deserialize)]
 pub struct AddEnergyQueryParams {
-    quanta: Option<u64>,
+    amount: Option<String>,
 }
 pub async fn add_energy<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Path(IdentityParams { identity }): Path<IdentityParams>,
-    Query(AddEnergyQueryParams { quanta }): Query<AddEnergyQueryParams>,
+    Query(AddEnergyQueryParams { amount }): Query<AddEnergyQueryParams>,
+    auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
-    // TODO: we need to do authorization here. For now, just short-circuit. GOD MODE.
+    let Some(auth) = auth.auth else {
+        return Err(StatusCode::UNAUTHORIZED.into());
+    };
+    // Nb.: Negative amount withdraws
+    let amount = amount.map(|s| s.parse::<i128>()).transpose().map_err(|e| {
+        log::error!("Failed to parse amount: {e:?}");
+        StatusCode::BAD_REQUEST
+    })?;
 
-    if let Some(satoshi) = quanta {
-        ctx.add_energy(&identity, satoshi).await.map_err(log_and_500)?;
-    }
-    get_budget_inner(ctx, &identity)
-}
-
-fn get_budget_inner(ctx: impl ControlStateDelegate, identity: &Identity) -> axum::response::Result<impl IntoResponse> {
-    let budget = ctx
-        .get_energy_balance(identity)
+    let mut balance = ctx
+        .get_energy_balance(&auth.identity)
         .map_err(log_and_500)?
-        .unwrap_or(EnergyQuanta(0));
+        .map(|quanta| quanta.0)
+        .unwrap_or(0);
+
+    if let Some(satoshi) = amount {
+        ctx.add_energy(&auth.identity, EnergyQuanta(satoshi))
+            .await
+            .map_err(log_and_500)?;
+        balance += satoshi;
+    }
 
     let response_json = json!({
         // Note: balance must be returned as a string to avoid truncation.
-        "balance": balance.0.to_string(),
+        "balance": balance.to_string(),
+    });
+
+    Ok(axum::Json(response_json))
+}
+
+fn get_budget_inner(ctx: impl ControlStateDelegate, identity: &Identity) -> axum::response::Result<impl IntoResponse> {
+    let balance = ctx
+        .get_energy_balance(identity)
+        .map_err(log_and_500)?
+        .map(|quanta| quanta.0)
+        .unwrap_or(0);
+
+    let response_json = json!({
+        // Note: balance must be returned as a string to avoid truncation.
+        "balance": balance.to_string(),
     });
 
     Ok(axum::Json(response_json))
@@ -60,8 +83,8 @@ fn get_budget_inner(ctx: impl ControlStateDelegate, identity: &Identity) -> axum
 pub struct SetEnergyBalanceQueryParams {
     balance: Option<String>,
 }
-pub async fn set_energy_balance(
-    State(ctx): State<Arc<dyn ControlCtx>>,
+pub async fn set_energy_balance<S: ControlStateDelegate>(
+    State(ctx): State<S>,
     Path(IdentityParams { identity }): Path<IdentityParams>,
     Query(SetEnergyBalanceQueryParams { balance }): Query<SetEnergyBalanceQueryParams>,
     auth: SpacetimeAuthHeader,
@@ -80,23 +103,37 @@ pub async fn set_energy_balance(
 
     let identity = Identity::from(identity);
 
-    let balance = balance
+    let desired_balance = balance
         .map(|balance| balance.parse::<i128>())
         .transpose()
         .map_err(|err| {
             log::error!("Failed to parse balance: {:?}", err);
             StatusCode::BAD_REQUEST
-        })?;
-    let balance = EnergyQuanta(balance.unwrap_or(0));
+        })?
+        .unwrap_or(0);
+    let current_balance = ctx
+        .get_energy_balance(&identity)
+        .map_err(log_and_500)?
+        .map(|quanta| quanta.0)
+        .unwrap_or(0);
 
-    ctx.control_db()
-        .set_energy_balance(identity, balance)
-        .await
-        .map_err(log_and_500)?;
+    let balance: i128 = if desired_balance > current_balance {
+        let delta = desired_balance - current_balance;
+        ctx.add_energy(&identity, EnergyQuanta(delta))
+            .await
+            .map_err(log_and_500)?;
+        delta
+    } else {
+        let delta = current_balance - desired_balance;
+        ctx.withdraw_energy(&identity, EnergyQuanta(delta))
+            .await
+            .map_err(log_and_500)?;
+        delta
+    };
 
     let response_json = json!({
         // Note: balance must be returned as a string to avoid truncation.
-        "balance": balance.0.to_string(),
+        "balance": balance.to_string(),
     });
 
     Ok(axum::Json(response_json))
@@ -106,7 +143,7 @@ pub fn router<S>() -> axum::Router<S>
 where
     S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
-    use axum::routing::{get, post};
+    use axum::routing::{get, post, put};
     axum::Router::new()
         .route("/:identity", get(get_energy_balance::<S>))
         .route("/:identity", post(set_energy_balance::<S>))

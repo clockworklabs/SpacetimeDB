@@ -15,19 +15,19 @@ fn test_register_tld() -> anyhow::Result<()> {
     let domain: DomainName = "amaze".parse()?;
     let cdb = ControlDb::at(tmp.path())?;
 
-    cdb.spacetime_register_tld(domain.to_tld(), *ALICE).await?;
-    let owner = cdb.spacetime_lookup_tld(domain.tld()).await?;
+    cdb.spacetime_register_tld(domain.to_tld(), *ALICE)?;
+    let owner = cdb.spacetime_lookup_tld(domain.tld())?;
     assert_eq!(owner, Some(*ALICE));
 
-    let unauthorized = cdb.spacetime_register_tld(domain.to_tld(), *BOB).await?;
+    let unauthorized = cdb.spacetime_register_tld(domain.to_tld(), *BOB)?;
     assert!(matches!(unauthorized, RegisterTldResult::Unauthorized { .. }));
-    let already_registered = cdb.spacetime_register_tld(domain.to_tld(), *ALICE).await?;
+    let already_registered = cdb.spacetime_register_tld(domain.to_tld(), *ALICE)?;
     assert!(matches!(
         already_registered,
         RegisterTldResult::AlreadyRegistered { .. }
     ));
     let domain = DomainName::from_str("amAZe")?;
-    let already_registered = cdb.spacetime_register_tld(domain.to_tld(), *ALICE).await?;
+    let already_registered = cdb.spacetime_register_tld(domain.to_tld(), *ALICE)?;
     assert!(matches!(
         already_registered,
         RegisterTldResult::AlreadyRegistered { .. }
@@ -61,7 +61,7 @@ fn test_domain() -> anyhow::Result<()> {
     let already_registered = cdb.spacetime_insert_domain(&addr, domain_lower.clone(), *ALICE, true);
     assert!(matches!(already_registered, Err(Error::RecordAlreadyExists(_))));
 
-    let tld_owner = cdb.spacetime_lookup_tld(domain.tld()).await?;
+    let tld_owner = cdb.spacetime_lookup_tld(domain.tld())?;
     assert_eq!(tld_owner, Some(*ALICE));
 
     let registered_addr = cdb.spacetime_dns(&domain)?;

@@ -68,8 +68,8 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     let args = ReducerArgs::Json(body);
 
-    let address = name_or_address.resolve(&*worker_ctx).await?.into();
-    let database = worker_ctx_find_database(&*worker_ctx, &address).await?.ok_or_else(|| {
+    let address = name_or_address.resolve(&worker_ctx).await?.into();
+    let database = worker_ctx_find_database(&worker_ctx, &address).await?.ok_or_else(|| {
         log::error!("Could not find database: {}", address.to_hex());
         (StatusCode::NOT_FOUND, "No such database.")
     })?;
@@ -157,7 +157,7 @@ use rand::Rng;
 use spacetimedb::auth::identity::encode_token;
 use spacetimedb::sql::execute::execute;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::name::{DnsLookupResponse, PublishOp, PublishResult};
+use spacetimedb_lib::name::{DnsLookupResponse, PublishResult};
 use spacetimedb_lib::recovery::{RecoveryCode, RecoveryCodeResponse};
 use std::convert::From;
 
@@ -255,8 +255,8 @@ pub async fn describe<S>(
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let address = name_or_address.resolve(&*worker_ctx).await?.into();
-    let database = worker_ctx_find_database(&*worker_ctx, &address)
+    let address = name_or_address.resolve(&worker_ctx).await?.into();
+    let database = worker_ctx_find_database(&worker_ctx, &address)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -312,8 +312,8 @@ pub async fn catalog<S>(
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let address = name_or_address.resolve(&*worker_ctx).await?.into();
-    let database = worker_ctx_find_database(&*worker_ctx, &address)
+    let address = name_or_address.resolve(&worker_ctx).await?.into();
+    let database = worker_ctx_find_database(&worker_ctx, &address)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -358,8 +358,8 @@ pub async fn info<S: ControlStateDelegate>(
     State(worker_ctx): State<S>,
     Path(InfoParams { name_or_address }): Path<InfoParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let address = name_or_address.resolve(&*worker_ctx).await?.into();
-    let database = worker_ctx_find_database(&*worker_ctx, &address)
+    let address = name_or_address.resolve(&worker_ctx).await?.into();
+    let database = worker_ctx_find_database(&worker_ctx, &address)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -410,8 +410,8 @@ where
     //       Should all the others change?
     let auth = auth_or_unauth(auth)?;
 
-    let address = name_or_address.resolve(&*worker_ctx).await?.into();
-    let database = worker_ctx_find_database(&*worker_ctx, &address)
+    let address = name_or_address.resolve(&worker_ctx).await?.into();
+    let database = worker_ctx_find_database(&worker_ctx, &address)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -484,10 +484,10 @@ fn mime_ndjson() -> mime::Mime {
 }
 
 async fn worker_ctx_find_database(
-    worker_ctx: &dyn WorkerCtx,
+    worker_ctx: &(impl ControlStateDelegate + ?Sized),
     address: &Address,
 ) -> Result<Option<Database>, StatusCode> {
-    worker_ctx.get_database_by_address(address).await.map_err(log_and_500)
+    worker_ctx.get_database_by_address(address).map_err(log_and_500)
 }
 
 #[derive(Deserialize)]
@@ -512,8 +512,8 @@ where
     // which queries this identity is allowed to execute against the database.
     let auth = auth.get().ok_or((StatusCode::UNAUTHORIZED, "Invalid credentials."))?;
 
-    let address = name_or_address.resolve(&*worker_ctx).await?.into();
-    let database = worker_ctx_find_database(&*worker_ctx, &address)
+    let address = name_or_address.resolve(&worker_ctx).await?.into();
+    let database = worker_ctx_find_database(&worker_ctx, &address)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -631,11 +631,7 @@ pub async fn register_tld<S: ControlStateDelegate>(
     let auth = auth_or_bad_request(auth)?;
 
     let tld = tld.parse::<DomainName>().map_err(DomainParsingRejection)?.into();
-    let result = ctx
-        .control_db()
-        .spacetime_register_tld(tld, auth.identity)
-        .await
-        .map_err(log_and_500)?;
+    let result = ctx.register_tld(&auth.identity, tld).await.map_err(log_and_500)?;
     Ok(axum::Json(result))
 }
 
@@ -746,13 +742,6 @@ pub async fn confirm_recovery_code<S: ControlStateDelegate + NodeDelegate>(
     Ok(axum::Json(result))
 }
 
-async fn control_ctx_find_database(ctx: &dyn ControlCtx, address: &Address) -> Result<Option<Database>, StatusCode> {
-    ctx.control_db()
-        .get_database_by_address(address)
-        .await
-        .map_err(log_and_500)
-}
-
 #[derive(Deserialize)]
 pub struct PublishDatabaseParams {}
 
@@ -793,7 +782,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
 
     let (db_addr, db_name) = match name_or_address {
         Some(noa) => match noa.try_resolve(&ctx).await? {
-            Ok((addr, maybe_domain)) => (addr, maybe_domain),
+            Ok(resolved) => resolved.into(),
             Err(domain) => {
                 // `name_or_address` was a `NameOrAddress::Name`, but no record
                 // exists yet. Create it now with a fresh address.
@@ -923,10 +912,7 @@ pub async fn set_name<S: ControlStateDelegate>(
 
 /// This API call is just designed to allow clients to determine whether or not they can
 /// establish a connection to SpacetimeDB. This API call doesn't actually do anything.
-pub async fn ping(
-    State(_ctx): State<Arc<dyn ControlCtx>>,
-    _auth: SpacetimeAuthHeader,
-) -> axum::response::Result<impl IntoResponse> {
+pub async fn ping<S>(State(_ctx): State<S>, _auth: SpacetimeAuthHeader) -> axum::response::Result<impl IntoResponse> {
     Ok(())
 }
 
@@ -939,7 +925,7 @@ where
         .route("/dns/:database_name", get(dns::<S>))
         .route("/reverse_dns/:database_address", get(reverse_dns::<S>))
         .route("/set_name", get(set_name::<S>))
-        .route("/ping", get(ping))
+        .route("/ping", get(ping::<S>))
         .route("/register_tld", get(register_tld::<S>))
         .route("/request_recovery_code", get(request_recovery_code::<S>))
         .route("/confirm_recovery_code", get(confirm_recovery_code::<S>))

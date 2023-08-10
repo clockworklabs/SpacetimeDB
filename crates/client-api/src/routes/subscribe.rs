@@ -43,7 +43,7 @@ where
 {
     let auth = auth.get_or_create(&ctx).await?;
 
-    let address = name_or_address.resolve(&*worker_ctx).await?.into();
+    let address = name_or_address.resolve(&ctx).await?.into();
 
     let (res, ws_upgrade, protocol) =
         ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);

@@ -173,3 +173,9 @@ impl From<ResolvedAddress> for Address {
         value.address
     }
 }
+
+impl From<ResolvedAddress> for (Address, Option<DomainName>) {
+    fn from(ResolvedAddress { address, domain }: ResolvedAddress) -> Self {
+        (address, domain)
+    }
+}

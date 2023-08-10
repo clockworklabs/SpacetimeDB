@@ -1,7 +1,6 @@
 use core::fmt;
 use std::{borrow::Borrow, ops::Deref, str::FromStr};
 
-use serde::{Deserialize, Serialize};
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st};
 
 #[cfg(test)]
@@ -289,7 +288,6 @@ impl fmt::Display for TldRef {
 /// To construct a valid [`DomainName`], use [`parse_domain_name`] or the
 /// [`FromStr`] impl.
 #[derive(Debug, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DomainName {
     // Iff there is a subdomain, next char in `domain_name` is '/'.
     tld_offset: usize,

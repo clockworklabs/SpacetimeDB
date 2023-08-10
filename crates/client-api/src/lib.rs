@@ -7,11 +7,10 @@ use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
-use spacetimedb::hash::Hash;
 use spacetimedb::host::UpdateDatabaseResult;
-use spacetimedb::host::{EnergyQuanta, HostController, UpdateDatabaseResult};
+use spacetimedb::host::{EnergyQuanta, HostController};
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
+use spacetimedb::messages::control_db::{Database, DatabaseInstance, IdentityEmail, Node};
 use spacetimedb::messages::worker_db::DatabaseInstanceState;
 use spacetimedb::module_host_context::ModuleHostContext;
 use spacetimedb::sendgrid_controller::SendGridController;
@@ -112,7 +111,7 @@ pub trait ControlStateReadAccess {
     fn get_recovery_codes(&self, email: &str) -> spacetimedb::control_db::Result<Vec<RecoveryCode>>;
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyBalance>>;
+    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyQuanta>>;
 
     // DNS
     fn lookup_address(&self, domain: &DomainName) -> spacetimedb::control_db::Result<Option<Address>>;
@@ -152,7 +151,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
     ) -> spacetimedb::control_db::Result<()>;
 
     // Energy
-    async fn add_energy(&self, identity: &Identity, quanta: u64) -> spacetimedb::control_db::Result<()>;
+    async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()>;
     async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()>;
 
     // DNS
@@ -221,7 +220,7 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for ArcEnv<T> {
     }
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyBalance>> {
+    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyQuanta>> {
         self.0.get_energy_balance(identity)
     }
 
@@ -270,8 +269,8 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for ArcEnv<T> 
         self.0.insert_recovery_code(identity, email, code).await
     }
 
-    async fn add_energy(&self, identity: &Identity, quanta: u64) -> spacetimedb::control_db::Result<()> {
-        self.0.add_energy(identity, quanta).await
+    async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
+        self.0.add_energy(identity, amount).await
     }
     async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
         self.0.withdraw_energy(identity, amount).await
@@ -375,7 +374,7 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     }
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyBalance>> {
+    fn get_energy_balance(&self, identity: &Identity) -> spacetimedb::control_db::Result<Option<EnergyQuanta>> {
         (**self).get_energy_balance(identity)
     }
 
@@ -424,8 +423,11 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         (**self).insert_recovery_code(identity, email, code).await
     }
 
-    async fn add_energy(&self, identity: &Identity, quanta: u64) -> spacetimedb::control_db::Result<()> {
-        (**self).add_energy(identity, quanta).await
+    async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
+        (**self).add_energy(identity, amount).await
+    }
+    async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
+        (**self).withdraw_energy(identity, amount).await
     }
 
     async fn register_tld(&self, identity: &Identity, tld: Tld) -> spacetimedb::control_db::Result<RegisterTldResult> {

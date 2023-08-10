@@ -1,7 +1,4 @@
-use spacetimedb_lib::{
-    name::{UniqueDomainName, UniqueTld},
-    Address, DataKey, Hash, Identity,
-};
+use spacetimedb_lib::{Address, DataKey, Hash, Identity};
 
 use super::PrimaryKey;
 use crate::{FilterableValue, UniqueValue};
@@ -60,20 +57,6 @@ impl UniqueValue for Identity {
 
 impl FilterableValue for Address {}
 impl UniqueValue for Address {
-    fn into_primarykey(self) -> PrimaryKey {
-        todo!()
-    }
-}
-
-impl FilterableValue for UniqueDomainName {}
-impl UniqueValue for UniqueDomainName {
-    fn into_primarykey(self) -> PrimaryKey {
-        todo!()
-    }
-}
-
-impl FilterableValue for UniqueTld {}
-impl UniqueValue for UniqueTld {
     fn into_primarykey(self) -> PrimaryKey {
         todo!()
     }
