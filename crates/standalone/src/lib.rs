@@ -379,7 +379,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         let mut balance = <Self as spacetimedb_client_api::ControlStateReadAccess>::get_energy_balance(self, identity)?
             .map(|quanta| quanta.0)
             .unwrap_or(0);
-        balance = balance.saturating_add(amount.0.try_into().unwrap_or(i128::MAX));
+        balance = balance.saturating_add(amount.0);
 
         self.control_db.set_energy_balance(*identity, EnergyQuanta(balance))
     }
