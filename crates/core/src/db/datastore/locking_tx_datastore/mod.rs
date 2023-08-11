@@ -2877,7 +2877,7 @@ mod tests {
         let mut tx = datastore.begin_mut_tx();
         // Iterate over all rows with the value 1 (from the autoinc) in column 0.
         let rows = datastore
-            .iter_by_col_eq_mut_tx(&mut tx, table_id, ColId(0), &AlgebraicValue::U32(1))?
+            .iter_by_col_eq_mut_tx(&tx, table_id, ColId(0), &AlgebraicValue::U32(1))?
             .collect::<Vec<_>>();
         assert_eq!(rows.len(), 1);
         let rows: Vec<ProductValue> = rows
@@ -2891,7 +2891,7 @@ mod tests {
 
         // We shouldn't see the row when iterating now that it's deleted.
         let rows = datastore
-            .iter_by_col_eq_mut_tx(&mut tx, table_id, ColId(0), &AlgebraicValue::U32(1))?
+            .iter_by_col_eq_mut_tx(&tx, table_id, ColId(0), &AlgebraicValue::U32(1))?
             .collect::<Vec<_>>();
         assert_eq!(rows.len(), 0);
 
@@ -2902,7 +2902,7 @@ mod tests {
         // The actual test: we should be able to iterate again, while still in the
         // second transaction, and see exactly one row.
         let rows = datastore
-            .iter_by_col_eq_mut_tx(&mut tx, table_id, ColId(0), &AlgebraicValue::U32(1))?
+            .iter_by_col_eq_mut_tx(&tx, table_id, ColId(0), &AlgebraicValue::U32(1))?
             .collect::<Vec<_>>();
         assert_eq!(rows.len(), 1);
 
