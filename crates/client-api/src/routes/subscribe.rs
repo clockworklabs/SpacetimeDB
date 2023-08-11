@@ -39,8 +39,11 @@ pub async fn handle_websocket(
     auth: SpacetimeAuthHeader,
     ws: WebSocketUpgrade,
 ) -> axum::response::Result<impl IntoResponse> {
+    log::trace!("Handling WebSocket subscription request, getting or creating auth");
     let auth = auth.get_or_create(&*worker_ctx).await?;
 
+    log::trace!("Auth: {}", auth.identity.to_hex());
+    log::trace!("Resolving address: {:?}", name_or_address);
     let address = name_or_address.resolve(&*worker_ctx).await?;
 
     let (res, ws_upgrade, protocol) =
@@ -50,6 +53,7 @@ pub async fn handle_websocket(
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
     // to connect to multiple modules
+    log::trace!("Resolve address to {address:?}");
     let database = worker_ctx
         .get_database_by_address(&address)
         .await
@@ -61,6 +65,7 @@ pub async fn handle_websocket(
         .ok_or(StatusCode::BAD_REQUEST)?;
     let instance_id = database_instance.id;
 
+    log::trace!("Got databsae {} and instance {}", database.id, database_instance.id);
     let identity_token = auth.creds.token().to_owned();
 
     let host = worker_ctx.host_controller();
