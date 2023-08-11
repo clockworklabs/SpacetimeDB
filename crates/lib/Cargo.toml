@@ -19,22 +19,23 @@ serde = ["dep:serde", "spacetimedb-sats/serde", "dep:serde_with", "chrono/serde"
 cli = ["clap"]
 
 [dependencies]
-enum-as-inner = "0.6"
-sha3 = "0.10.0"
-serde = { version = "1.0.136", optional = true }
-hex = "0.4.3"
-thiserror = "1.0.37"
-itertools = "0.10.5"
-anyhow = "1.0.68"
 spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.6.0" }
 spacetimedb-sats = { path = "../sats", version = "0.6.0" }
-serde_with = { version = "2.2.0", optional = true }
-chrono = { version = "0.4.23", optional = true, default-features = false }
-clap = { version = "4.2.4", optional = true }
+
+anyhow.workspace = true
+chrono = { workspace = true, optional = true }
+clap = {workspace = true, optional = true }
+enum-as-inner.workspace = true
+hex.workspace = true
+itertools.workspace = true
+serde = { workspace = true, optional = true }
+serde_with = {workspace = true, optional = true }
+sha3.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
-rand = "0.8.5"
-bytes = "1.2.1"
-serde_json = "1.0.87"
-insta = "1.21.0"
-proptest = "1.2.0"
+rand.workspace = true
+bytes.workspace = true
+serde_json.workspace = true
+insta.workspace = true
+proptest.workspace = true

@@ -18,89 +18,73 @@ name = "odb_flavor_bench"
 harness = false
 
 [dependencies]
-openssl.workspace = true
-
-tokio = { version = "1.2", features = ["full"] }
-wasmer = "3.1.*"
-wasmer-vm = "3.1.*"
-wasmer-middlewares = "3.1.*"
-hex = "0.4.3"
-prost = "0.10"
-lazy_static = "1.4.0"
-# wasmer-compiler-llvm = "2.2.1"
 spacetimedb-lib = { path = "../lib", version = "0.6.0" }
 spacetimedb-sats = { path = "../sats", version = "0.6.0" }
 spacetimedb-vm = { path = "../vm", version = "0.6.0" }
 spacetimedb-client-api-messages = { path = "../client-api-messages", version = "0.6.0" }
-log = "0.4.16"
-hyper = "0.14.18"
-tracing = "0.1"
-tracing-log = "0.1"
-# We use the "ondemand" feature to allow connecting after the start,
-# and reconnecting, from the tracy client to the database.
-# TODO(George): Need to be able to remove "broadcast" in some build configurations.
-tracing-tracy = { version = "0.10.2", features = [ "enable", "system-tracing", "context-switch-tracing", "sampling", "code-transfer", "broadcast", "ondemand" ]}
-tracing-core = "0.1"
-tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
-tracing-appender = "0.2.2"
-tracing-flame = "0.2"
-serde = "1.0.136"
-serde_json = { version = "1.0", features = ["raw_value"] }
-anyhow = { version = "1.0.57", features = ["backtrace"] }
-thiserror = "1.0.37"
-jsonwebtoken = { version = "8.1.0" }
-sha1 = "0.10.1"
-base64 = "0.13.0"
-regex = "1"
-futures = "0.3"
-prometheus = "0.13.0"
-hostname = "^0.3"
-clap = { version = "4.2.4", features = ["derive"] }
-sled = "0.34.7"
-email_address = "0.2.3"
-sqlparser = "0.34.0"
-backtrace = "0.3.66"
-# pprof = { version = "0.10", features = ["flamegraph"] }
-# perf_monitor = "0.2"
-urlencoding = "2.1.2"
-fs2 = "0.4.3"
-once_cell = "1.16"
-sendgrid = { version = "0.18.1", features = ["async"] }
-itertools = "0.10.5"
-pin-project-lite = "0.2.9"
 
-slab = "0.4.7"
-
-# gluesql = "0.10"
-bytes = "1.2.0"
-strum = { version = "0.24.1", features = ["derive"] }
-scopeguard = "1.1.0"
-parking_lot = { version = "0.12.1", features = ["send_guard", "arc_lock"] }
-uuid = { version = "1.2.1", features = ["v4"]}
-crossbeam-channel = "0.5"
-
-# Used for tracelog
-imara-diff = "0.1.3"
-tempdir = "0.3.7"
-flate2 = "1.0.24"
-wasmparser = "0.92.0"
-tokio-util = { version = "0.7.4", features = ["time"] }
-rustc-demangle = "0.1.21"
-serde_with = { version = "2.2.0", features = ["base64", "hex"] }
-serde_path_to_error = "0.1.9"
-genawaiter = "0.99.1"
-async-trait = "0.1.66"
-bytestring = { version = "1.2.0", features = ["serde"] }
-indexmap = "1.9.2"
-rustc-hash = "1.1.0"
-url = "2.3.1"
-
+anyhow.workspace = true
+async-trait.workspace = true
+backtrace.workspace = true
+base64.workspace = true
+bytes.workspace = true
+bytestring.workspace = true
+clap.workspace = true
+crossbeam-channel.workspace = true
+email_address.workspace = true
+flate2.workspace = true
+fs2.workspace = true
+futures.workspace = true
+genawaiter.workspace = true
+hex.workspace = true
+hostname.workspace = true
+hyper.workspace = true
+imara-diff.workspace = true
+indexmap.workspace = true
+itertools.workspace = true
+jsonwebtoken.workspace = true
+lazy_static.workspace = true
+log.workspace = true
+once_cell.workspace = true
+openssl.workspace = true
+parking_lot.workspace = true
+pin-project-lite.workspace = true
+prometheus.workspace = true
+prost.workspace = true
+regex.workspace = true
+rustc-demangle.workspace = true
+rustc-hash.workspace = true
+scopeguard.workspace = true
+sendgrid.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_path_to_error.workspace = true
+serde_with.workspace = true
+sha1.workspace = true
+slab.workspace = true
+sled.workspace = true
+sqlparser.workspace = true
+strum.workspace = true
+tempdir.workspace = true
+thiserror.workspace = true
+tokio-util.workspace = true
+tokio.workspace = true
+tracing-appender.workspace = true
+tracing-core.workspace = true
+tracing-flame.workspace = true
+tracing-log.workspace = true
+tracing-subscriber.workspace = true
+tracing-tracy.workspace = true
+tracing.workspace = true
+url.workspace = true
+urlencoding.workspace = true
+uuid.workspace = true
+wasmer-middlewares.workspace = true
+wasmer-vm.workspace = true
+wasmer.workspace = true
+wasmparser.workspace = true
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
-[dependencies.rocksdb]
-version = "0.19.0"
-default-features = false
-optional = true
-features = ["lz4"] # if we link bzip, we get multiple defs
+rocksdb = {workspace = true, optional = true}
 
 [features]
 # Optional storage engines.
@@ -110,9 +94,9 @@ tracelogging = []
 default = ["tracelogging", "odb_sled"]
 
 [dev-dependencies]
-rusqlite = {version = "0.29.0", features = ["bundled", "column_decltype"]}
-criterion = { version = "0.4.0", features = ["async", "async_tokio", "html_reports"] }
-rand = "0.8.5"
+rusqlite.workspace = true
+criterion.workspace = true
+rand.workspace = true
 
 [build-dependencies]
-prost-build = { version = "0.10" }
+prost-build.workspace = true

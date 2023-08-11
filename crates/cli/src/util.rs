@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use reqwest::RequestBuilder;
 use serde::Deserialize;
 use spacetimedb_lib::name::{is_address, DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
@@ -190,7 +191,13 @@ pub async fn get_auth_header(
         };
         // The current form is: Authorization: Basic base64("token:<token>")
         let mut auth_header = String::new();
-        auth_header.push_str(format!("Basic {}", base64::encode(format!("token:{}", identity_config.token))).as_str());
+        auth_header.push_str(
+            format!(
+                "Basic {}",
+                BASE_64_STD.encode(format!("token:{}", identity_config.token))
+            )
+            .as_str(),
+        );
         match Identity::from_hex(identity_config.identity.clone()) {
             Ok(identity) => Some((auth_header, identity)),
             Err(_) => {
