@@ -196,7 +196,34 @@ impl CommittedState {
     }
 }
 
+/// `TxState` tracks all of the modifications made during a particular transaction.
+/// Rows inserted during a transaction will be added to insert_tables, and similarly,
+/// rows deleted in the transaction will be added to delete_tables.
+///
+/// Note that the state of a row at the beginning of a transaction is not tracked here,
+/// but rather in the `CommittedState` structure.
+///
+/// Note that because a transaction may have several operations performed on the same
+/// row, it is not the case that a call to insert a row guarantees that the row
+/// will be present in `insert_tables`. Rather, a row will be present in `insert_tables`
+/// if the cummulative effect of all the calls results in the row being inserted during
+/// this transaction. The same holds for delete tables.
+///
+/// For a concrete example, suppose a row is already present in a table at the start
+/// of a transaction. A call to delete that row will enter it into `delete_tables`.
+/// A subsequent call to reinsert that row will not put it into `insert_tables`, but
+/// instead remove it from `delete_tables`, as the cummulative effect is to do nothing.
+///
+/// This data structure also tracks modifications beyond inserting and deleting rows.
+/// In particular, creating indexes and sequences is tracked by `insert_tables`.
+///
+/// This means that we have the following invariants, within `TxState` and also
+/// the corresponding `CommittedState`:
+///   - any row in `insert_tables` must not be in the associated `CommittedState`
+///   - any row in `delete_tables` must be in the associated `CommittedState`
+///   - any row cannot be in both `insert_tables` and `delete_tables`
 struct TxState {
+    /// For each table,  additions have
     insert_tables: HashMap<TableId, Table>,
     delete_tables: HashMap<TableId, BTreeSet<RowId>>,
 }
@@ -1208,35 +1235,48 @@ impl Inner {
             }
         }
 
+        // Now that we have checked all the constraints, we can perform the actual insertion.
         {
             let tx_state = self.tx_state.as_mut().unwrap();
+
+            // We have a few cases to consider, based on the history of this transaction, and
+            // whether the row was already present or not at the start of this transaction.
+            // 1. If the row was not originally present, and therefore also not deleted by
+            //    this transaction, we will add it to `insert_tables`.
+            // 2. If the row was originally present, but not deleted by this transaction,
+            //    we should fail, as we would otherwise violate set semantics.
+            // 3. If the row was originally present, and is currently going to be deleted
+            //    by this transaction, we will remove it from `delete_tables`, and the
+            //    cummulative effect will be to leave the row in place in the committed state.
 
             let delete_table = tx_state.get_or_create_delete_table(table_id);
             let row_was_previously_deleted = delete_table.remove(&row_id);
 
             // If the row was just deleted in this transaction and we are re-inserting it now,
             // we're done. Otherwise we have to add the row to the insert table, and into our memory.
-            if !row_was_previously_deleted {
-                let insert_table = tx_state.get_insert_table_mut(&table_id).unwrap();
-
-                // TODO(cloutiertyler): should probably also check that all the columns are correct? Perf considerations.
-                if insert_table.row_type.elements.len() != row.elements.len() {
-                    return Err(TableError::RowInvalidType {
-                        table_id: table_id.0,
-                        row,
-                    }
-                    .into());
-                }
-
-                insert_table.insert(row_id, row);
-
-                match data_key {
-                    DataKey::Data(_) => (),
-                    DataKey::Hash(_) => {
-                        self.memory.insert(data_key, Arc::new(bytes));
-                    }
-                };
+            if row_was_previously_deleted {
+                return Ok(());
             }
+
+            let insert_table = tx_state.get_insert_table_mut(&table_id).unwrap();
+
+            // TODO(cloutiertyler): should probably also check that all the columns are correct? Perf considerations.
+            if insert_table.row_type.elements.len() != row.elements.len() {
+                return Err(TableError::RowInvalidType {
+                    table_id: table_id.0,
+                    row,
+                }
+                .into());
+            }
+
+            insert_table.insert(row_id, row);
+
+            match data_key {
+                DataKey::Data(_) => (),
+                DataKey::Hash(_) => {
+                    self.memory.insert(data_key, Arc::new(bytes));
+                }
+            };
         }
 
         Ok(())
