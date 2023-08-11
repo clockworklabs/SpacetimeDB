@@ -298,97 +298,6 @@ struct Inner {
 }
 
 impl Inner {
-    fn validate(&self) {
-        #[derive(Default)]
-        struct State {
-            committed: bool,
-            inserted: bool,
-            deleted: bool,
-        }
-
-        impl State {
-            fn validate(&self) {
-                match self {
-                    State {
-                        committed: false,
-                        inserted: false,
-                        deleted: false,
-                    } => (),
-                    State {
-                        committed: false,
-                        inserted: false,
-                        deleted: true,
-                    } => panic!("Row is deleted but not present"),
-                    State {
-                        committed: false,
-                        inserted: true,
-                        deleted: false,
-                    } => (),
-                    State {
-                        committed: false,
-                        inserted: true,
-                        deleted: true,
-                    } => panic!("Row is both deleted and inserted"),
-                    State {
-                        committed: true,
-                        inserted: false,
-                        deleted: false,
-                    } => (),
-                    State {
-                        committed: true,
-                        inserted: false,
-                        deleted: true,
-                    } => (),
-                    State {
-                        committed: true,
-                        inserted: true,
-                        deleted: false,
-                    } => panic!("Row is both inserted and committed"),
-                    State {
-                        committed: true,
-                        inserted: true,
-                        deleted: true,
-                    } => panic!("Row is both inserted and deleted, and both inserted and committed"),
-                }
-            }
-        }
-
-        if false {
-            let mut row_state: HashMap<TableId, HashMap<RowId, State>> = HashMap::new();
-
-            for (table_id, table) in self.committed_state.tables.iter() {
-                let table_state = row_state.entry(*table_id).or_default();
-                for (row_id, _) in table.rows.iter() {
-                    table_state.entry(*row_id).or_default().committed = true;
-                }
-            }
-
-            if let Some(tx_state) = self.tx_state.as_ref() {
-                for (table_id, table) in tx_state.insert_tables.iter() {
-                    let table_state = row_state.entry(*table_id).or_default();
-                    for (row_id, _) in table.rows.iter() {
-                        table_state.entry(*row_id).or_default().inserted = true;
-                    }
-                }
-
-                for (table_id, rows) in tx_state.delete_tables.iter() {
-                    let table_state = row_state.entry(*table_id).or_default();
-                    for row_id in rows.iter() {
-                        table_state.entry(*row_id).or_default().deleted = true;
-                    }
-                }
-            }
-
-            for (_, table_state) in row_state.iter() {
-                for (_, state) in table_state.iter() {
-                    state.validate()
-                }
-            }
-        }
-    }
-}
-
-impl Inner {
     pub fn new() -> Self {
         Self {
             memory: BTreeMap::new(),
@@ -481,8 +390,6 @@ impl Inner {
             let data_key = row.to_data_key();
             st_indexes.rows.insert(RowId(data_key), row);
         }
-
-        self.validate();
 
         Ok(())
     }
@@ -743,8 +650,6 @@ impl Inner {
         }
 
         log::trace!("TABLE CREATED: {table_name}, table_id:{table_id}");
-
-        self.validate();
 
         Ok(TableId(table_id))
     }
@@ -1215,9 +1120,6 @@ impl Inner {
             }
         }
         self.insert_row_internal(table_id, row.clone())?;
-
-        self.validate();
-
         Ok(row)
     }
 
@@ -1337,8 +1239,6 @@ impl Inner {
             }
         }
 
-        self.validate();
-
         Ok(())
     }
 
@@ -1408,7 +1308,6 @@ impl Inner {
                     .get_or_create_delete_table(*table_id)
                     .insert(*row_id);
             }
-            self.validate();
             true
         } else {
             false
@@ -1427,7 +1326,6 @@ impl Inner {
                 count += 1;
             }
         }
-        self.validate();
         Ok(Some(count))
     }
 
@@ -1512,12 +1410,10 @@ impl Inner {
         let tx_state = self.tx_state.take().unwrap();
         let memory = std::mem::take(&mut self.memory);
         let tx_data = self.committed_state.merge(tx_state, memory);
-        self.validate();
         Ok(Some(tx_data))
     }
 
     fn rollback(&mut self) {
-        self.validate();
         self.tx_state = None;
         // TODO: Check that no sequences exceed their allocation after the rollback.
     }
