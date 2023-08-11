@@ -18,7 +18,7 @@ pub fn db_path(db_instance: usize) -> PathBuf {
 }
 
 pub fn open_conn(path: &PathBuf) -> ResultBench<DbResult> {
-    let stdb = open_db(path)?;
+    let stdb = open_db(path, false)?;
 
     let tx = stdb.begin_tx();
 
@@ -40,7 +40,7 @@ pub fn create_db(db_instance: usize) -> ResultBench<PathBuf> {
         std::fs::remove_dir_all(&path)?;
     }
 
-    let stdb = open_db(&path)?;
+    let stdb = open_db(&path, false)?;
     let mut tx = stdb.begin_tx();
 
     stdb.create_table(

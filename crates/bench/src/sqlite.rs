@@ -131,10 +131,8 @@ mod tests {
     #[test]
     fn test() -> ResultBench<()> {
         let run = Runs::Tiny;
-        let mut db_instance = 0;
-        let path = create_db(db_instance).unwrap();
+        let path = create_db(0).unwrap();
         let mut conn = sqlite::open_conn(&path).unwrap();
-        db_instance += 1;
         insert_tx_per_row(&mut conn, run).unwrap();
         Ok(())
     }
