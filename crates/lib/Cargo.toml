@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb-lib"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 license-file = "LICENSE"
 description = "A common library for SpacetimeDB"
@@ -19,8 +19,8 @@ serde = ["dep:serde", "spacetimedb-sats/serde", "dep:serde_with", "chrono/serde"
 cli = ["clap"]
 
 [dependencies]
-spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.6.0" }
-spacetimedb-sats = { path = "../sats", version = "0.6.0" }
+spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.6.1" }
+spacetimedb-sats = { path = "../sats", version = "0.6.1" }
 
 anyhow.workspace = true
 chrono = { workspace = true, optional = true }
