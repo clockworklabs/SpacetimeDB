@@ -1,7 +1,6 @@
 ARG CARGO_PROFILE=release
 
 FROM rust:1.69.0 AS chef
-RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
 RUN cargo install cargo-chef@0.1.56
 WORKDIR /usr/src/app
 
