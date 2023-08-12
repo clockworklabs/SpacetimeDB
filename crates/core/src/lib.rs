@@ -14,7 +14,7 @@ pub fn stdb_path<S>(s: &S) -> PathBuf
 where
     S: AsRef<Path> + ?Sized,
 {
-    dbg!(STDB_PATH.join(s))
+    STDB_PATH.join(s)
 }
 
 // to let us be incremental in updating all the references to what used to be individual lazy_statics
