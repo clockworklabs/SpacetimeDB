@@ -15,7 +15,7 @@ ENV SPACETIMEDB_LOG_CONFIG=/usr/src/app/crates/standalone/log.conf
 ENV SPACETIMEDB_JWT_PUB_KEY=/etc/spacetimedb/id_ecdsa.pub
 ENV SPACETIMEDB_JWT_PRIV_KEY=/etc/spacetimedb/id_ecdsa
 
-# We need the container to be able to find the spacetimedb binary reguardless
+# We need the container to be able to find the spacetimedb binary regardless
 # of whether we are building in debug or release
 ENV PATH="/usr/src/app/target/debug:${PATH}"
 ENV PATH="/usr/src/app/target/release:${PATH}"
