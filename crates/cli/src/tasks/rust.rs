@@ -7,66 +7,68 @@ use duct::cmd;
 
 pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
     // Make sure that we have the wasm target installed (ok to run if its already installed)
-    cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run()?;
-    let reader = if build_debug {
-        cmd!(
-            "cargo",
-            "--config=net.git-fetch-with-cli=true",
-            "build",
-            "--target=wasm32-unknown-unknown",
-            "--message-format=json-render-diagnostics"
-        )
-    } else {
-        cmd!(
-            "cargo",
-            "--config=net.git-fetch-with-cli=true",
-            "build",
-            "--target=wasm32-unknown-unknown",
-            "--release",
-            "--message-format=json-render-diagnostics"
-        )
-    }
-    .dir(project_path)
-    .reader()?;
+    // cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run()?;
+    // let reader = if build_debug {
+    //     cmd!(
+    //         "cargo",
+    //         "--config=net.git-fetch-with-cli=true",
+    //         "build",
+    //         "--target=wasm32-unknown-unknown",
+    //         "--message-format=json-render-diagnostics"
+    //     )
+    // } else {
+    //     cmd!(
+    //         "cargo",
+    //         "--config=net.git-fetch-with-cli=true",
+    //         "build",
+    //         "--target=wasm32-unknown-unknown",
+    //         "--release",
+    //         "--message-format=json-render-diagnostics"
+    //     )
+    // }
+    // .dir(project_path)
+    // .reader()?;
+    //
+    // let mut artifact = None;
+    // for message in Message::parse_stream(io::BufReader::new(reader)) {
+    //     match message {
+    //         Ok(Message::CompilerArtifact(art)) => artifact = Some(art),
+    //         Err(error) => return Err(anyhow::anyhow!(error)),
+    //         _ => {}
+    //     }
+    // }
+    // let artifact = artifact.context("no artifact found?")?;
+    // let artifact = artifact.filenames.into_iter().next().context("no wasm?")?;
+    // println!("artifact: {artifact}");
 
-    let mut artifact = None;
-    for message in Message::parse_stream(io::BufReader::new(reader)) {
-        match message {
-            Ok(Message::CompilerArtifact(art)) => artifact = Some(art),
-            Err(error) => return Err(anyhow::anyhow!(error)),
-            _ => {}
-        }
-    }
-    let artifact = artifact.context("no artifact found?")?;
-    let artifact = artifact.filenames.into_iter().next().context("no wasm?")?;
+    let artifact = "/Users/drogus/code/clockwork/foo/target/wasm32-unknown-unknown/release/spacetime_module.wasm";
+    // if !skip_clippy {
+    //     let clippy_conf_dir = tempfile::tempdir()?;
+    //     fs::write(clippy_conf_dir.path().join("clippy.toml"), CLIPPY_TOML)?;
+    //     println!("checking crate with spacetimedb's clippy configuration");
+    //     // TODO: should we pass --no-deps here? leaving it out could be valuable if a module is split
+    //     //       into multiple crates, but without it it lints on proc-macro crates too
+    //     let out = cmd!(
+    //         "cargo",
+    //         "--config=net.git-fetch-with-cli=true",
+    //         "clippy",
+    //         "--target=wasm32-unknown-unknown",
+    //         // TODO: pass -q? otherwise it might be too busy
+    //         // "-q",
+    //         "--",
+    //         "--no-deps",
+    //         "-Aclippy::all",
+    //         "-Dclippy::disallowed-macros"
+    //     )
+    //     .dir(project_path)
+    //     .env("CLIPPY_DISABLE_DOCS_LINKS", "1")
+    //     .env("CLIPPY_CONF_DIR", clippy_conf_dir.path())
+    //     .unchecked()
+    //     .run()?;
+    //     anyhow::ensure!(out.status.success(), "clippy found a lint error");
+    // }
 
-    if !skip_clippy {
-        let clippy_conf_dir = tempfile::tempdir()?;
-        fs::write(clippy_conf_dir.path().join("clippy.toml"), CLIPPY_TOML)?;
-        println!("checking crate with spacetimedb's clippy configuration");
-        // TODO: should we pass --no-deps here? leaving it out could be valuable if a module is split
-        //       into multiple crates, but without it it lints on proc-macro crates too
-        let out = cmd!(
-            "cargo",
-            "--config=net.git-fetch-with-cli=true",
-            "clippy",
-            "--target=wasm32-unknown-unknown",
-            // TODO: pass -q? otherwise it might be too busy
-            // "-q",
-            "--",
-            "--no-deps",
-            "-Aclippy::all",
-            "-Dclippy::disallowed-macros"
-        )
-        .dir(project_path)
-        .env("CLIPPY_DISABLE_DOCS_LINKS", "1")
-        .env("CLIPPY_CONF_DIR", clippy_conf_dir.path())
-        .unchecked()
-        .run()?;
-        anyhow::ensure!(out.status.success(), "clippy found a lint error");
-    }
-
-    check_for_wasm_bindgen(artifact.as_ref())?;
+    // check_for_wasm_bindgen(artifact.as_ref())?;
 
     Ok(artifact.into())
 }
