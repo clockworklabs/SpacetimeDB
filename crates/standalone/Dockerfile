@@ -1,3 +1,5 @@
+# Warning: we removed binstall recently because they added a dependency on the QUIC protocol.
+
 ARG CARGO_PROFILE=release
 
 FROM rust:1.69.0 AS chef
