@@ -97,7 +97,6 @@ struct InstanceSeed<T: WasmInstancePre> {
     module: T,
     worker_database_instance: Arc<DatabaseInstanceContext>,
     event_tx: SubscriptionEventSender,
-    #[allow(dead_code)]
     // Don't warn about 'trace_log' below when tracelogging feature isn't enabled.
     trace_log: Option<Arc<Mutex<TraceLog>>>,
     scheduler: Scheduler,
@@ -233,6 +232,7 @@ impl<T: WasmInstancePre> JobRunnerSeed for InstanceSeed<T> {
         self.make_from_instance(instance)
     }
 }
+
 impl<T: WasmInstancePre> InstanceSeed<T> {
     fn make_from_instance(&self, instance: T::Instance) -> WasmInstanceActor<T::Instance> {
         WasmInstanceActor {
@@ -251,10 +251,12 @@ trait JobRunnerSeed: Send + Sync + 'static {
     type Job: Send + 'static;
     fn make_runner(&self) -> Self::Runner;
 }
+
 trait JobRunner {
     type Job;
     fn run(&mut self, job: Self::Job) -> ControlFlow<()>;
 }
+
 struct JobPool<S: JobRunnerSeed> {
     shared: Arc<JobPoolData<S>>,
     rx: crossbeam_channel::Receiver<S::Job>,
@@ -303,6 +305,7 @@ impl<S: JobRunnerSeed> JobPool<S> {
             }
         });
     }
+
     fn spawn(&self) {
         self.spawn_from_runner(self.seed().make_runner())
     }

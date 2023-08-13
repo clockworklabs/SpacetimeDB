@@ -367,15 +367,15 @@ impl ModuleHost {
         let (tx, rx) = mpsc::channel(8);
         let (start_tx, start_rx) = oneshot::channel();
         let info = actor.info();
-        tokio::task::spawn_blocking(|| {
-            let _ = start_rx.blocking_recv();
-            Self::run_actor(rx, actor)
+        tokio::task::spawn(async move {
+            let _ = start_rx.await;
+            Self::run_actor(rx, actor).await
         });
         (ModuleHost { info, tx }, ModuleStarter { tx: start_tx })
     }
 
-    fn run_actor(mut rx: mpsc::Receiver<CmdOrExit>, mut actor: impl ModuleHostActor) {
-        while let Some(command) = rx.blocking_recv() {
+    async fn run_actor(mut rx: mpsc::Receiver<CmdOrExit>, mut actor: impl ModuleHostActor) {
+        while let Some(command) = rx.recv().await {
             match command {
                 CmdOrExit::Cmd(command) => command.dispatch(&mut actor),
                 CmdOrExit::Exit => rx.close(),
