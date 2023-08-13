@@ -18,6 +18,7 @@ services:
       - ./crates/bindings-sys:/usr/src/app/crates/bindings-sys
       - ./crates/vm:/usr/src/app/crates/vm
       - ./crates/client-api-messages:/usr/src/app/crates/client-api-messages
+      - ./Cargo.toml:/usr/src/app/Cargo.toml
       - ./flamegraphs:/usr/src/app/flamegraphs
       - key_files:/etc/spacetimedb
       - /stdb
