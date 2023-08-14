@@ -144,6 +144,8 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         scheduler: Scheduler,
         energy_monitor: Arc<dyn EnergyMonitor>,
     ) -> Result<Self, InitializationError> {
+        log::trace!("Making new module host actor for database {}", database_instance_context.address);
+
         let trace_log = if database_instance_context.trace_log {
             Some(Arc::new(Mutex::new(TraceLog::new().unwrap())))
         } else {
@@ -218,6 +220,7 @@ impl<T: WasmInstancePre> JobRunnerSeed for InstanceSeed<T> {
     type Runner = WasmInstanceActor<T::Instance>;
     type Job = InstanceMessage;
     fn make_runner(&self) -> Self::Runner {
+        log::trace!("Making new runner for database {}", self.worker_database_instance.address);
         let env = InstanceEnv::new(
             self.worker_database_instance.clone(),
             self.scheduler.clone(),
@@ -529,10 +532,13 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
         stdb.with_auto_commit::<_, _, anyhow::Error>(|tx| {
             for table in self.info.catalog.values().filter_map(EntityDef::as_table) {
                 let schema = self.schema_for(table)?;
-                stdb.create_table(tx, schema)
-                    .with_context(|| format!("failed to create table {}", table.name))?;
+                let result = stdb.create_table(tx, schema)
+                    .with_context(|| format!("failed to create table {}", table.name));
+                if let Err(err) = result {
+                    log::error!("{:?}", err);
+                    return Err(err)
+                }
             }
-
             Ok(())
         })?;
 

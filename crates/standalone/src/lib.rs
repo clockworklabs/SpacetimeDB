@@ -472,10 +472,10 @@ impl StandaloneEnv {
                 database_instance_id: instance.id,
                 initialized: false,
             };
+            state.initialized = true;
+            self.worker_db.upsert_database_instance_state(state.clone()).unwrap();
             self.init_module_on_database_instance(instance.database_id, instance.id)
                 .await?;
-            self.worker_db.upsert_database_instance_state(state.clone()).unwrap();
-            state.initialized = true;
             self.worker_db.upsert_database_instance_state(state).unwrap();
             Ok(())
         }
