@@ -165,6 +165,7 @@ impl HostController {
     }
 
     pub async fn init_module_host(&self, module_host_context: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
+        log::trace!("spawn_module_host in init_module_host, database.instance_id: {}", module_host_context.dbic.database_instance_id);
         let module_host = self.spawn_module_host(module_host_context).await?;
         // TODO(cloutiertyler): Hook this up again
         // let identity = &module_host.info().identity;
@@ -187,6 +188,7 @@ impl HostController {
         &self,
         module_host_context: ModuleHostContext,
     ) -> Result<UpdateOutcome, anyhow::Error> {
+        log::trace!("spawn_module_host in update_module_host, database.instance_id: {}", module_host_context.dbic.database_instance_id);
         let module_host = self.spawn_module_host(module_host_context).await?;
         // TODO: see init_module_host
         let update_result = module_host.update_database().await?;
@@ -198,6 +200,7 @@ impl HostController {
     }
 
     pub async fn add_module_host(&self, module_host_context: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
+        log::trace!("spawn_module_host in add_module_host, database.instance_id: {}", module_host_context.dbic.database_instance_id);
         let module_host = self.spawn_module_host(module_host_context).await?;
         // module_host.init_function(); ??
         Ok(module_host)
