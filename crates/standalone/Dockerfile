@@ -44,3 +44,4 @@ EXPOSE 3000
 
 ENV RUST_BACKTRACE=1
 ENTRYPOINT ["spacetimedb"]
+CMD ["start"]
