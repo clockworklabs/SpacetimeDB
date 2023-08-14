@@ -223,9 +223,10 @@ impl CommittedState {
 ///   - any row in `delete_tables` must be in the associated `CommittedState`
 ///   - any row cannot be in both `insert_tables` and `delete_tables`
 struct TxState {
+    //NOTE: Need to preserve order to correctly restore the db after reopen
     /// For each table,  additions have
-    insert_tables: HashMap<TableId, Table>,
-    delete_tables: HashMap<TableId, BTreeSet<RowId>>,
+    insert_tables: BTreeMap<TableId, Table>,
+    delete_tables: BTreeMap<TableId, BTreeSet<RowId>>,
 }
 
 /// Represents whether a row has been previously committed, inserted
@@ -247,8 +248,8 @@ enum RowState {
 impl TxState {
     pub fn new() -> Self {
         Self {
-            insert_tables: HashMap::new(),
-            delete_tables: HashMap::new(),
+            insert_tables: BTreeMap::new(),
+            delete_tables: BTreeMap::new(),
         }
     }
 
