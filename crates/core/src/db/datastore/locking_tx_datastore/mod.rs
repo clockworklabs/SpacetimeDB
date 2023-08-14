@@ -497,13 +497,12 @@ impl Inner {
                 .committed_state
                 .tables
                 .get(&TableId(sequence.table_id))
-                .map(|x| x.schema.table_type == StTableType::System)
-                .unwrap_or(false);
+                .map_or(false, |x| x.schema.table_type == StTableType::System)
 
             let schema = (&sequence).into();
 
             let mut seq = Sequence::new(schema);
-            //Now we need to recover the last allocation value...
+            // Now we need to recover the last allocation value.
             if !is_system_table && seq.value < sequence.allocated + 1 {
                 seq.value = sequence.allocated + 1;
             }
@@ -593,7 +592,7 @@ impl Inner {
 
             // If there are allocated sequence values, return the new value, if it is not bigger than
             // the upper range of `sequence.allocated`
-            if let Some(value) = sequence.gen_next_value() {
+            if let Some(value) = sequence.gen_next_value().filter(|v| v < sequence.allocated()) {
                 if value < sequence.allocated() {
                     return Ok(value);
                 }
