@@ -306,6 +306,7 @@ impl<S: JobRunnerSeed> JobPool<S> {
             }
         });
     }
+
     fn spawn(&self) {
         self.spawn_from_runner(self.seed().make_runner())
     }
