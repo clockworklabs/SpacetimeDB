@@ -5,7 +5,7 @@ on: "push"
 jobs:
   docker:
     runs-on: spacetimedb-runner
-    name: SpacetimeDB DockerHub Container
+    name: Build DockerHub Container
     steps:
       - name: Checkout
         uses: actions/checkout@v3
