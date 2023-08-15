@@ -18,7 +18,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install @octokit/rest @actions/core @actions/github
+          npm install @octokit/rest @actions/core @actions/github node-fetch
 
       - name: Verify author is contributor
         run: node .github/scripts/checkMembership.js
