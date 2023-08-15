@@ -11,11 +11,13 @@ const octokit = new Octokit({
 });
 
 async function main() {
+    let prAuthor;
+
     try {
         const context = github.context;
         const owner = context.repo.owner;
         const repo = context.repo.repo;
-        const prAuthor = context.payload.pull_request.user.login;
+        prAuthor = context.payload.pull_request.user.login;
 
         // Check if the PR author is a member of the organization
         const isMember = await octokit.orgs.checkMembershipForUser({
