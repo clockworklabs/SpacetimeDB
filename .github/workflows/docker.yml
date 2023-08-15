@@ -1,4 +1,4 @@
-name: SpacetimeDB Docker image
+name: CI
 
 on: "push"
 
