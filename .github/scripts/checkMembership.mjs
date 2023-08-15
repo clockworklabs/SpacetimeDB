@@ -1,7 +1,7 @@
-const { Octokit } = require("@octokit/rest");
-const core = require("@actions/core");
-const github = require("@actions/github");
-const fetch = require("node-fetch");
+import { Octokit } from "@octokit/rest";
+import core from "@actions/core";
+import github from "@actions/github";
+import fetch from "node-fetch";
 
 const octokit = new Octokit({
     auth: process.env.GITHUB_TOKEN,
