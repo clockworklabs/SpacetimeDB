@@ -3,9 +3,9 @@ name: CI
 on:
   pull_request:
     types: [opened, synchronize]
+permissions: read-all
 
 jobs:
-  permissions: read-all
   check_membership:
     name: Contributor Membership Check
     runs-on: spacetimedb-runner
