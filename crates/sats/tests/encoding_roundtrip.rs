@@ -94,7 +94,7 @@ fn algebraic_values() -> impl Strategy<Value = AlgebraicValue> {
                     }
                 }),
                 prop::collection::btree_map(inner.clone(), inner.clone(), 1..2)
-                    .prop_map(|val| { BuiltinValue::Map { val }.into() }),
+                    .prop_map(|val| { BuiltinValue::Map { val: Box::new(val) }.into() }),
                 prop::collection::vec(inner, 0..10).prop_map(|val| {
                     let product = ProductValue::from_iter(val.into_iter());
                     AlgebraicValue::Product(product)

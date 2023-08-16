@@ -172,7 +172,7 @@ impl_serialize!([] ValueWithType<'_, BuiltinValue>, (self, ser) => match (self.v
     (BuiltinValue::F64(v), BuiltinType::F64) => ser.serialize_f64((*v).into()),
     (BuiltinValue::String(s), BuiltinType::String) => ser.serialize_str(s),
     (BuiltinValue::Array { val }, BuiltinType::Array(ty)) => self.with(ty, val).serialize(ser),
-    (BuiltinValue::Map { val }, BuiltinType::Map(ty)) => self.with(ty, val).serialize(ser),
+    (BuiltinValue::Map { val }, BuiltinType::Map(ty)) => self.with(ty, &**val).serialize(ser),
     (val, ty) => panic!("mismatched value and schema: {val:?} {ty:?}"),
 });
 impl_serialize!(

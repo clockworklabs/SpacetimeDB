@@ -77,10 +77,13 @@ pub enum BuiltinValue {
     /// as the natural order is used as opposed to insertion order.
     /// Where insertion order is relevant,
     /// a [`BuiltinValue::Array`] with `(key, value)` pairs can be used instead.
-    Map { val: MapValue },
+    ///
+    /// We box the `MapValue` to reduce size
+    /// and because we assume that map values will be uncommon.
+    Map { val: Box<MapValue> },
 }
 
-static_assert_size!(BuiltinValue, 32);
+static_assert_size!(BuiltinValue, 24);
 
 /// A map value `AlgebraicValue` → `AlgebraicValue`.
 pub type MapValue = BTreeMap<AlgebraicValue, AlgebraicValue>;

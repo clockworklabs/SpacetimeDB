@@ -38,7 +38,7 @@ pub enum AlgebraicValue {
     Builtin(BuiltinValue),
 }
 
-static_assert_size!(AlgebraicValue, 32);
+static_assert_size!(AlgebraicValue, 24);
 
 #[allow(non_snake_case)]
 impl AlgebraicValue {
@@ -141,7 +141,7 @@ impl AlgebraicValue {
     /// Interpret the value as a map or `None` if it isn't a map value.
     #[inline]
     pub fn as_map(&self) -> Option<&BTreeMap<Self, Self>> {
-        self.as_builtin()?.as_map()
+        self.as_builtin()?.as_map().map(|m| &**m)
     }
 
     /// Convert the value into a `bool` or `Err(self)` if it isn't a `bool` value.
@@ -243,7 +243,7 @@ impl AlgebraicValue {
 
     /// Convert the value into a map or `Err(self)` if it isn't a map value.
     #[inline]
-    pub fn into_map(self) -> Result<BTreeMap<Self, Self>, Self> {
+    pub fn into_map(self) -> Result<Box<BTreeMap<Self, Self>>, Self> {
         self.into_builtin()?.into_map().map_err(Self::Builtin)
     }
 
@@ -378,8 +378,8 @@ impl AlgebraicValue {
     }
 
     /// Returns an [`AlgebraicValue`] representing a map value defined by the given `map`.
-    pub const fn map(map: BTreeMap<Self, Self>) -> Self {
-        Self::Builtin(BuiltinValue::Map { val: map })
+    pub fn map(map: BTreeMap<Self, Self>) -> Self {
+        Self::Builtin(BuiltinValue::Map { val: Box::new(map) })
     }
 
     /// Returns the [`AlgebraicType`] of the sum value `x`.

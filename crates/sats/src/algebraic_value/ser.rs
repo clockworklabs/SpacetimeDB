@@ -205,7 +205,7 @@ impl ArrayValueBuilder {
             AlgebraicValue::Builtin(BuiltinValue::F64(x)) => vec(x, capacity).into(),
             AlgebraicValue::Builtin(BuiltinValue::String(x)) => vec(x, capacity).into(),
             AlgebraicValue::Builtin(BuiltinValue::Array { val }) => vec(val, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::Map { val }) => vec(val, capacity).into(),
+            AlgebraicValue::Builtin(BuiltinValue::Map { val }) => vec(*val, capacity).into(),
         }
     }
 
@@ -233,7 +233,7 @@ impl ArrayValueBuilder {
             (Self::F64(v), AlgebraicValue::Builtin(BuiltinValue::F64(val))) => v.push(val),
             (Self::String(v), AlgebraicValue::Builtin(BuiltinValue::String(val))) => v.push(val),
             (Self::Array(v), AlgebraicValue::Builtin(BuiltinValue::Array { val })) => v.push(val),
-            (Self::Map(v), AlgebraicValue::Builtin(BuiltinValue::Map { val })) => v.push(val),
+            (Self::Map(v), AlgebraicValue::Builtin(BuiltinValue::Map { val })) => v.push(*val),
             (me, val) if me.is_empty() => *me = Self::from_one_with_capacity(val, capacity),
             (_, val) => return Err(val),
         }
@@ -301,7 +301,6 @@ impl_from_array!(F64, F64);
 impl_from_array!(Box<str>, String);
 impl_from_array!(ArrayValue, Array);
 impl_from_array!(MapValue, Map);
-
 
 /// Continuation for serializing a map value.
 pub struct SerializeMapValue {

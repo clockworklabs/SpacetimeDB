@@ -331,7 +331,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, BuiltinType> {
                 val: self.with(ty).deserialize(deserializer)?,
             },
             BuiltinType::Map(ty) => BuiltinValue::Map {
-                val: self.with(ty).deserialize(deserializer)?,
+                val: Box::new(self.with(ty).deserialize(deserializer)?),
             },
         })
     }
@@ -452,9 +452,9 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                     .map(|x| ArrayValue::Product(x.into())),
                 AlgebraicType::Builtin(BuiltinType::Bool) => de_array(deserializer, ArrayValue::Bool),
                 AlgebraicType::Builtin(BuiltinType::I8) => de_array(deserializer, ArrayValue::I8),
-                AlgebraicType::Builtin(BuiltinType::U8) => {
-                    deserializer.deserialize_bytes(OwnedSliceVisitor).map(|x| ArrayValue::U8(x.into()))
-                }
+                AlgebraicType::Builtin(BuiltinType::U8) => deserializer
+                    .deserialize_bytes(OwnedSliceVisitor)
+                    .map(|x| ArrayValue::U8(x.into())),
                 AlgebraicType::Builtin(BuiltinType::I16) => de_array(deserializer, ArrayValue::I16),
                 AlgebraicType::Builtin(BuiltinType::U16) => de_array(deserializer, ArrayValue::U16),
                 AlgebraicType::Builtin(BuiltinType::I32) => de_array(deserializer, ArrayValue::I32),
