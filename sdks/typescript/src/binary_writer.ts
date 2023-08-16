@@ -20,7 +20,7 @@ export default class BinaryWriter {
   }
 
   getBuffer(): Uint8Array {
-    return this.buffer.slice(0, this.offset + 1);
+    return this.buffer.slice(0, this.offset);
   }
 
   writeUInt8Array(value: Uint8Array): void {
@@ -127,7 +127,7 @@ export default class BinaryWriter {
     const encoder = new TextEncoder();
     const encodedString = encoder.encode(value);
     this.writeU32(encodedString.length);
-    this.expandBuffer(4 + encodedString.length);
+    this.expandBuffer(encodedString.length);
     this.buffer.set(encodedString, this.offset);
     this.offset += encodedString.length;
   }
