@@ -38,7 +38,7 @@ pub enum AlgebraicValue {
     Builtin(BuiltinValue),
 }
 
-static_assert_size!(BuiltinValue, 32);
+static_assert_size!(AlgebraicValue, 32);
 
 #[allow(non_snake_case)]
 impl AlgebraicValue {

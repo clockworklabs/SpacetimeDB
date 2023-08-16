@@ -1,5 +1,6 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::product_type::ProductType;
+use crate::static_assert_size;
 use crate::ArrayValue;
 use nonempty::NonEmpty;
 
@@ -12,6 +13,8 @@ pub struct ProductValue {
     /// The values that make up this product value.
     pub elements: Box<[AlgebraicValue]>,
 }
+
+static_assert_size!(ProductValue, 16);
 
 /// See [`ProductValue`].
 pub struct ProductValueBuilder {
