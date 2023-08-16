@@ -25,5 +25,5 @@ jobs:
       - name: Verify author is contributor
         run: node .github/scripts/checkMembership.mjs
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
 
