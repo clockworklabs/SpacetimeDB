@@ -5,6 +5,7 @@ on:
     types: [opened, synchronize]
 
 jobs:
+  permissions: read-all
   check_membership:
     name: Contributor Membership Check
     runs-on: ubuntu-latest
