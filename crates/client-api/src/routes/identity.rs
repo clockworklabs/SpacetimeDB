@@ -184,7 +184,7 @@ pub async fn create_websocket_token(
 ) -> axum::response::Result<impl IntoResponse> {
     match auth.auth {
         Some(auth) => {
-            let token = encode_token_with_expiry(ctx.private_key(), auth.identity, Some(60)).map_err(log_and_500)?;
+            let token = encode_token_with_expiry(ctx.private_key(), auth.identity, Some(30)).map_err(log_and_500)?;
             Ok(axum::Json(WebsocketTokenResponse { token }))
         }
         None => Err(StatusCode::UNAUTHORIZED)?,

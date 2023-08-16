@@ -74,6 +74,16 @@ pub struct TokenQueryParam {
     token: String,
 }
 
+fn creds_from_str(token: &str) -> Result<SpacetimeCreds, AuthorizationRejection> {
+    let header = HeaderValue::from_str(&format!("Basic {}", token)).map_err(|_| AuthorizationRejection {
+        reason: AuthorizationRejectionReason::MalformedTokenQueryString,
+    })?;
+    let creds = SpacetimeCreds(authorization::Basic::decode(&header).ok_or(AuthorizationRejection {
+        reason: AuthorizationRejectionReason::CantDecodeAuthorizationToken,
+    })?);
+    Ok(creds)
+}
+
 #[async_trait::async_trait]
 impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for SpacetimeAuthHeader {
     type Rejection = AuthorizationRejection;
@@ -97,24 +107,30 @@ impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> fo
                 Ok(Self { auth: Some(auth) })
             }
             (_, Ok(Query(query))) => {
-                let header =
-                    HeaderValue::from_str(&format!("Basic {}", query.token)).map_err(|_| AuthorizationRejection {
-                        reason: AuthorizationRejectionReason::MalformedTokenQueryString,
-                    })?;
-                let creds = SpacetimeCreds(authorization::Basic::decode(&header).ok_or(AuthorizationRejection {
-                    reason: AuthorizationRejectionReason::CantDecodeAuthorizationToken,
-                })?);
+                let mut creds = creds_from_str(&query.token)?;
                 let claims = creds
                     .decode_token(state.public_key())
                     .map_err(|e| AuthorizationRejection {
                         reason: AuthorizationRejectionReason::Jwt(e.into_kind()),
                     })?;
-                let auth = SpacetimeAuth {
-                    creds,
-                    identity: Identity::from_hex(claims.hex_identity).map_err(|_| AuthorizationRejection {
-                        reason: AuthorizationRejectionReason::CantDecodeAuthorizationToken,
-                    })?,
-                };
+
+                let identity = Identity::from_hex(claims.hex_identity).map_err(|_| AuthorizationRejection {
+                    reason: AuthorizationRejectionReason::CantDecodeAuthorizationToken,
+                })?;
+
+                if claims.exp.is_some() {
+                    // this is a short lived token, let's create a long lived one
+                    // TODO: I think working with SpacetimeCreds is kinda hard,
+                    //       it would be good to refactor it in the future, ie.
+                    //       we don't really need to keep it as a value we get
+                    //       from the header
+                    let new_token = encode_token(state.private_key(), identity).map_err(|_| AuthorizationRejection {
+                        reason: AuthorizationRejectionReason::CantEncodeAuthorizationToken,
+                    })?;
+                    creds = creds_from_str(&format!("token:{new_token}"))?;
+                }
+
+                let auth = SpacetimeAuth { creds, identity };
                 Ok(Self { auth: Some(auth) })
             }
             (Err(e), Err(_)) => match e.reason() {
@@ -165,6 +181,7 @@ enum AuthorizationRejectionReason {
     Header(TypedHeaderRejection),
     MalformedTokenQueryString,
     CantDecodeAuthorizationToken,
+    CantEncodeAuthorizationToken,
 }
 
 impl SpacetimeAuth {
