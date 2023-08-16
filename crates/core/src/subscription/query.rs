@@ -63,11 +63,13 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
             AlgebraicType::U8,
         ));
         t.data.extend(data.ops.iter().map(|row| {
-            let mut new = row.row.clone();
-            new.elements.push(row.op_type.into());
+            let es = &row.row.elements;
+            let mut new = Vec::with_capacity(es.len());
+            new.extend(es.iter().cloned());
+            new.push(row.op_type.into());
+
             let mut bytes: &[u8] = row.row_pk.as_ref();
-            t.data
-                .push(RelValue::new(new, Some(DataKey::decode(&mut bytes).unwrap())));
+            RelValue::new(new, Some(DataKey::decode(&mut bytes).unwrap()));
         }
     }
 

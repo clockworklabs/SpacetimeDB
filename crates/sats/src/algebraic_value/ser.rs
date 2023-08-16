@@ -343,6 +343,6 @@ impl ser::SerializeSeqProduct for SerializeProductValue {
         Ok(())
     }
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::product(self.elements))
+        Ok(AlgebraicValue::product(self.elements.into()))
     }
 }

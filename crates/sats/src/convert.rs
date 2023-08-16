@@ -28,7 +28,7 @@ impl From<ProductValue> for AlgebraicValue {
 
 impl From<AlgebraicValue> for ProductValue {
     fn from(x: AlgebraicValue) -> Self {
-        Self { elements: vec![x] }
+        Self { elements: [x].into() }
     }
 }
 

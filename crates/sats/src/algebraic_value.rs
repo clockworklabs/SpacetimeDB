@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::ops::{Bound, Deref, RangeBounds};
 
 use crate::builtin_value::{F32, F64};
-use crate::{AlgebraicType, ArrayValue, BuiltinType, BuiltinValue, ProductValue, SumValue, static_assert_size};
+use crate::{static_assert_size, AlgebraicType, ArrayValue, BuiltinType, BuiltinValue, ProductValue, SumValue};
 use enum_as_inner::EnumAsInner;
 
 /// A value in SATS typed at some [`AlgebraicType`].
@@ -42,11 +42,6 @@ static_assert_size!(BuiltinValue, 32);
 
 #[allow(non_snake_case)]
 impl AlgebraicValue {
-    /// The canonical unit value defined as the nullary product value `()`.
-    ///
-    /// The type of `UNIT` is `()`.
-    pub const UNIT: Self = Self::product(Vec::new());
-
     /// Interpret the value as a `bool` or `None` if it isn't a `bool` value.
     #[inline]
     pub fn as_bool(&self) -> Option<&bool> {
@@ -252,6 +247,13 @@ impl AlgebraicValue {
         self.into_builtin()?.into_map().map_err(Self::Builtin)
     }
 
+    /// The canonical unit value defined as the nullary product value `()`.
+    ///
+    /// The type of `UNIT` is `()`.
+    pub fn unit() -> Self {
+        Self::product([].into())
+    }
+
     /// Returns an [`AlgebraicValue`] representing `v: bool`.
     #[inline]
     pub const fn Bool(v: bool) -> Self {
@@ -361,7 +363,7 @@ impl AlgebraicValue {
     /// The `none` variant is assigned the tag `1`.
     #[inline]
     pub fn OptionNone() -> Self {
-        Self::sum(1, Self::UNIT)
+        Self::sum(1, Self::unit())
     }
 
     /// Returns an [`AlgebraicValue`] representing a sum value with `tag` and `value`.
@@ -371,7 +373,7 @@ impl AlgebraicValue {
     }
 
     /// Returns an [`AlgebraicValue`] representing a product value with the given `elements`.
-    pub const fn product(elements: Vec<Self>) -> Self {
+    pub const fn product(elements: Box<[Self]>) -> Self {
         Self::Product(ProductValue { elements })
     }
 
@@ -476,7 +478,7 @@ mod tests {
 
     #[test]
     fn unit() {
-        let val = AlgebraicValue::UNIT;
+        let val = AlgebraicValue::unit();
         let unit = AlgebraicType::unit();
         let typespace = Typespace::new(vec![]);
         assert_eq!(in_space(&typespace, &unit, &val).to_satn(), "()");
@@ -486,7 +488,7 @@ mod tests {
     fn product_value() {
         let product_type = AlgebraicType::product([ProductTypeElement::new_named(AlgebraicType::I32, "foo")].into());
         let typespace = Typespace::new(vec![]);
-        let product_value = AlgebraicValue::product(vec![AlgebraicValue::I32(42)]);
+        let product_value = AlgebraicValue::product([AlgebraicValue::I32(42)].into());
         assert_eq!(
             "(foo = 42)",
             in_space(&typespace, &product_type, &product_value).to_satn(),

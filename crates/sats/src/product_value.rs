@@ -10,6 +10,12 @@ use nonempty::NonEmpty;
 #[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct ProductValue {
     /// The values that make up this product value.
+    pub elements: Box<[AlgebraicValue]>,
+}
+
+/// See [`ProductValue`].
+pub struct ProductValueBuilder {
+    /// The values that make up this product value.
     pub elements: Vec<AlgebraicValue>,
 }
 
@@ -20,7 +26,7 @@ pub struct ProductValue {
 macro_rules! product {
     [$($elems:expr),*$(,)?] => {
         $crate::ProductValue {
-            elements: vec![$($crate::AlgebraicValue::from($elems)),*]
+            elements: [$($crate::AlgebraicValue::from($elems)),*].into()
         }
     }
 }
@@ -29,7 +35,7 @@ impl ProductValue {
     /// Returns a product value constructed from the given values in `elements`.
     pub fn new(elements: &[AlgebraicValue]) -> Self {
         Self {
-            elements: elements.into(),
+            elements: elements.iter().cloned().collect(),
         }
     }
 }

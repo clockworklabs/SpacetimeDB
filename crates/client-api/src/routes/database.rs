@@ -549,7 +549,7 @@ where
         .into_iter()
         .map(|result| StmtResultJson {
             schema: result.head.ty(),
-            rows: result.data.into_iter().map(|x| x.data.elements).collect::<Vec<_>>(),
+            rows: result.data.into_iter().map(|x| x.data).collect::<Vec<_>>(),
         })
         .collect::<Vec<_>>();
 

@@ -54,7 +54,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
     type Error = ValueDeserializeError;
 
     fn deserialize_product<V: de::ProductVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        let vals = map_err(self.val.into_product())?.elements.into_iter();
+        let vals = map_err(self.val.into_product())?.elements.into_vec().into_iter();
         visitor.visit_seq_product(ProductAccess { vals })
     }
 

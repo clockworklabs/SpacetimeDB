@@ -136,7 +136,7 @@ impl DatabaseUpdate {
                                     "delete".into()
                                 },
                                 row_pk,
-                                row: op.row.elements,
+                                row: op.row.elements.into(),
                             }
                         })
                         .collect(),

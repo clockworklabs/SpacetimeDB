@@ -101,8 +101,6 @@ impl AsyncDB for SpaceDb {
     type ColumnType = Kind;
 
     async fn run(&mut self, sql: &str) -> Result<DBOutput<Self::ColumnType>, Self::Error> {
-        let mut output: Vec<_> = vec![];
-
         let is_query_sql = {
             let lower_sql = sql.trim_start().to_ascii_lowercase();
             lower_sql.starts_with("select")
@@ -115,38 +113,38 @@ impl AsyncDB for SpaceDb {
 
         let header = r.head.fields.iter().map(|x| Kind(x.algebraic_type.clone())).collect();
 
-        for row in r.data {
-            let mut row_vec = vec![];
-
-            for value in row.data.elements {
-                let value = match value {
-                    AlgebraicValue::Builtin(x) => match x {
-                        BuiltinValue::Bool(x) => {
-                            //for compat with sqlite...
-                            if x { "1" } else { "0" }.to_string()
-                        }
-                        BuiltinValue::I8(x) => x.to_string(),
-                        BuiltinValue::U8(x) => x.to_string(),
-                        BuiltinValue::I16(x) => x.to_string(),
-                        BuiltinValue::U16(x) => x.to_string(),
-                        BuiltinValue::I32(x) => x.to_string(),
-                        BuiltinValue::U32(x) => x.to_string(),
-                        BuiltinValue::I64(x) => x.to_string(),
-                        BuiltinValue::U64(x) => x.to_string(),
-                        BuiltinValue::I128(x) => x.to_string(),
-                        BuiltinValue::U128(x) => x.to_string(),
-                        BuiltinValue::F32(x) => format!("{:?}", x.as_ref()),
-                        BuiltinValue::F64(x) => format!("{:?}", x.as_ref()),
-                        BuiltinValue::String(x) => format!("'{}'", x),
+        let output: Vec<Vec<_>> = r
+            .data
+            .into_iter()
+            .map(|row| {
+                row.elements
+                    .iter()
+                    .map(|value| match value {
+                        AlgebraicValue::Builtin(x) => match x {
+                            BuiltinValue::Bool(x) => {
+                                //for compat with sqlite...
+                                if *x { "1" } else { "0" }.to_string()
+                            }
+                            BuiltinValue::I8(x) => x.to_string(),
+                            BuiltinValue::U8(x) => x.to_string(),
+                            BuiltinValue::I16(x) => x.to_string(),
+                            BuiltinValue::U16(x) => x.to_string(),
+                            BuiltinValue::I32(x) => x.to_string(),
+                            BuiltinValue::U32(x) => x.to_string(),
+                            BuiltinValue::I64(x) => x.to_string(),
+                            BuiltinValue::U64(x) => x.to_string(),
+                            BuiltinValue::I128(x) => x.to_string(),
+                            BuiltinValue::U128(x) => x.to_string(),
+                            BuiltinValue::F32(x) => format!("{:?}", x.as_ref()),
+                            BuiltinValue::F64(x) => format!("{:?}", x.as_ref()),
+                            BuiltinValue::String(x) => format!("'{}'", x),
+                            x => x.to_satn(),
+                        },
                         x => x.to_satn(),
-                    },
-                    x => x.to_satn(),
-                };
-                row_vec.push(value);
-            }
-
-            output.push(row_vec);
-        }
+                    })
+                    .collect()
+            })
+            .collect();
 
         Ok(DBOutput::Rows {
             types: header,

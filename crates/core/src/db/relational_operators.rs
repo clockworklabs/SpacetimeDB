@@ -1,4 +1,5 @@
 use spacetimedb_lib::ProductValue;
+use spacetimedb_sats::AlgebraicValue;
 use std::{collections::HashSet, marker::PhantomData};
 
 // NOTE
@@ -104,12 +105,13 @@ pub struct Project<S: Iterator<Item = ProductValue>> {
 }
 
 impl<S: Iterator<Item = ProductValue>> Iterator for Project<S> {
-    type Item = ProductValue;
+    type Item = Vec<AlgebraicValue>;
 
-    fn next(&mut self) -> Option<ProductValue> {
-        self.source.next().map(|mut row| {
+    fn next(&mut self) -> Option<Self::Item> {
+        self.source.next().map(|row| {
+            let mut row = row.elements.into_vec();
             for &i in self.cols.iter().rev() {
-                row.elements.remove(i as usize);
+                row.remove(i as usize);
             }
             row
         })

@@ -424,7 +424,7 @@ impl<'a> RelValueRef<'a> {
                     if let Some(v) = self.data.elements.get(pos) {
                         v
                     } else {
-                        unreachable!("Field `{col}` at pos {pos} not found on row: {:?}", self.data.elements)
+                        unreachable!("Field `{col}` at pos {pos} not found on row: {:?}", self.data)
                     }
                 } else {
                     unreachable!("Field `{col}` not found on `{}`. Fields:{}", header.table_name, header)
