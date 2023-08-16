@@ -1,10 +1,10 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::builtin_type::BuiltinType;
+use crate::map_value::MapValue;
 use crate::{static_assert_size, AlgebraicType, ArrayType};
 use enum_as_inner::EnumAsInner;
 use itertools::Itertools;
 use nonempty::NonEmpty;
-use std::collections::BTreeMap;
 use std::fmt;
 
 /// Totally ordered [`f32`] allowing all IEEE-754 floating point values.
@@ -62,35 +62,9 @@ pub enum BuiltinValue {
     /// The contained values are stored packed in a representation appropriate for their type.
     /// See [`ArrayValue`] for details on the representation.
     Array { val: ArrayValue },
-    /// An ordered map value of `key: AlgebraicValue`s mapped to `value: AlgebraicValue`s.
-    /// Each `key` must be of the same [`AlgebraicType`] as all the others
-    /// and the same applies to each `value`.
-    /// A map as a whole has the type [`BuiltinType::Map(key_ty, val_ty)`].
-    ///
-    /// Maps are implemented internally as [`BTreeMap<AlgebraicValue, AlgebraicValue>`].
-    /// This implies that key/values are ordered first by key and then value
-    /// as if they were a sorted slice `[(key, value)]`.
-    /// This order is observable as maps are exposed both directly
-    /// and indirectly via `Ord for `[`AlgebraicValue`].
-    /// The latter lets us observe that e.g., `{ a: 42 } < { b: 42 }`.
-    /// However, we cannot observe any difference between `{ a: 0, b: 0 }` and `{ b: 0, a: 0 }`,
-    /// as the natural order is used as opposed to insertion order.
-    /// Where insertion order is relevant,
-    /// a [`BuiltinValue::Array`] with `(key, value)` pairs can be used instead.
-    ///
-    /// We box the `MapValue` to reduce size
-    /// and because we assume that map values will be uncommon.
-    Map { val: Box<MapValue> },
 }
 
 static_assert_size!(BuiltinValue, 24);
-
-/// A map value `AlgebraicValue` → `AlgebraicValue`.
-pub type MapValue = BTreeMap<AlgebraicValue, AlgebraicValue>;
-
-impl crate::Value for MapValue {
-    type Type = crate::MapType;
-}
 
 impl BuiltinValue {
     /// Returns the byte string `v` as a [`BuiltinValue`].

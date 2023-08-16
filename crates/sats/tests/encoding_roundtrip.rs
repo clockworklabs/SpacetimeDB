@@ -5,8 +5,7 @@ use proptest::proptest;
 use spacetimedb_sats::buffer::DecodeError;
 use spacetimedb_sats::builtin_value::{F32, F64};
 use spacetimedb_sats::{
-    meta_type::MetaType, product, AlgebraicType, AlgebraicValue, BuiltinValue, ProductType, ProductTypeElement,
-    ProductValue,
+    meta_type::MetaType, product, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue,
 };
 
 #[test]
@@ -93,8 +92,7 @@ fn algebraic_values() -> impl Strategy<Value = AlgebraicValue> {
                         AlgebraicValue::OptionNone()
                     }
                 }),
-                prop::collection::btree_map(inner.clone(), inner.clone(), 1..2)
-                    .prop_map(|val| { BuiltinValue::Map { val: Box::new(val) }.into() }),
+                prop::collection::btree_map(inner.clone(), inner.clone(), 1..2).prop_map(AlgebraicValue::map),
                 prop::collection::vec(inner, 0..10).prop_map(|val| {
                     let product = ProductValue::from_iter(val.into_iter());
                     AlgebraicValue::Product(product)

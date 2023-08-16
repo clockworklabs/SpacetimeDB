@@ -2,8 +2,7 @@ use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem};
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::{
-    AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
-    SumTypeVariant,
+    AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, ProductType, ProductTypeElement, SumType, SumTypeVariant,
 };
 use spacetimedb_lib::{ColumnIndexAttribute, ReducerDef, TableDef};
 use std::collections::HashSet;
@@ -18,7 +17,6 @@ type Imports = HashSet<(String, String)>;
 enum MaybePrimitive<'a> {
     Primitive(&'a str),
     Array(&'a ArrayType),
-    Map(&'a MapType),
 }
 
 fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
@@ -38,7 +36,6 @@ fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
         BuiltinType::F32 => "f32",
         BuiltinType::F64 => "f64",
         BuiltinType::Array(ty) => return MaybePrimitive::Array(ty),
-        BuiltinType::Map(m) => return MaybePrimitive::Map(m),
     })
 }
 
@@ -74,23 +71,23 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
                 write_type(ctx, out, &elem.algebraic_type);
             });
         }
+        AlgebraicType::Map(ty) => {
+            // TODO: Should `BuiltinType::Map` translate to `HashMap`? This requires
+            //       that any map-key type implement `Hash`. We'll have to derive hash
+            //       on generated types, and notably, `HashMap` is not itself `Hash`,
+            //       so any type that holds a `Map` cannot derive `Hash` and cannot
+            //       key a `Map`.
+            write!(out, "HashMap::<").unwrap();
+            write_type(ctx, out, &ty.key_ty);
+            write!(out, ", ").unwrap();
+            write_type(ctx, out, &ty.ty);
+            write!(out, ">").unwrap();
+        }
         AlgebraicType::Builtin(b) => match maybe_primitive(b) {
             MaybePrimitive::Primitive(p) => write!(out, "{}", p).unwrap(),
             MaybePrimitive::Array(ArrayType { elem_ty }) => {
                 write!(out, "Vec::<").unwrap();
                 write_type(ctx, out, elem_ty);
-                write!(out, ">").unwrap();
-            }
-            MaybePrimitive::Map(ty) => {
-                // TODO: Should `BuiltinType::Map` translate to `HashMap`? This requires
-                //       that any map-key type implement `Hash`. We'll have to derive hash
-                //       on generated types, and notably, `HashMap` is not itself `Hash`,
-                //       so any type that holds a `Map` cannot derive `Hash` and cannot
-                //       key a `Map`.
-                write!(out, "HashMap::<").unwrap();
-                write_type(ctx, out, &ty.key_ty);
-                write!(out, ", ").unwrap();
-                write_type(ctx, out, &ty.ty);
                 write!(out, ">").unwrap();
             }
         },
@@ -1096,11 +1093,11 @@ fn module_name(name: &str) -> String {
 fn generate_imports(ctx: &GenCtx, imports: &mut Imports, ty: &AlgebraicType) {
     match ty {
         AlgebraicType::Builtin(BuiltinType::Array(ArrayType { elem_ty })) => generate_imports(ctx, imports, elem_ty),
-        AlgebraicType::Builtin(BuiltinType::Map(map_type)) => {
+        AlgebraicType::Map(map_type) => {
             generate_imports(ctx, imports, &map_type.key_ty);
             generate_imports(ctx, imports, &map_type.ty);
         }
-        AlgebraicType::Builtin(_) => (),
+        AlgebraicType::Builtin(_) => {}
         AlgebraicType::Ref(r) => {
             let type_name = type_name(ctx, *r);
             let module_name = module_name(&type_name);
@@ -1109,7 +1106,7 @@ fn generate_imports(ctx: &GenCtx, imports: &mut Imports, ty: &AlgebraicType) {
         // Recurse into variants of anonymous sum types, e.g. for `Option<T>`, import `T`.
         AlgebraicType::Sum(s) => generate_imports_variants(ctx, imports, &s.variants),
         // Do we need to generate imports for fields of anonymous product types?
-        _ => (),
+        _ => {}
     }
 }
 

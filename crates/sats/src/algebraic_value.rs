@@ -1,11 +1,12 @@
 pub mod de;
 pub mod ser;
-use std::collections::BTreeMap;
-use std::ops::{Bound, Deref, RangeBounds};
 
 use crate::builtin_value::{F32, F64};
-use crate::{static_assert_size, AlgebraicType, ArrayValue, BuiltinType, BuiltinValue, ProductValue, SumValue};
+use crate::{
+    static_assert_size, AlgebraicType, ArrayValue, BuiltinType, BuiltinValue, MapValue, ProductValue, SumValue,
+};
 use enum_as_inner::EnumAsInner;
+use std::ops::{Bound, Deref, RangeBounds};
 
 /// A value in SATS typed at some [`AlgebraicType`].
 ///
@@ -36,6 +37,25 @@ pub enum AlgebraicValue {
     Product(ProductValue),
     /// A builtin value that has a builtin type.
     Builtin(BuiltinValue),
+    /// An ordered map value of `key: AlgebraicValue`s mapped to `value: AlgebraicValue`s.
+    /// Each `key` must be of the same [`AlgebraicType`] as all the others
+    /// and the same applies to each `value`.
+    /// A map as a whole has the type [`BuiltinType::Map(key_ty, val_ty)`].
+    ///
+    /// Maps are implemented internally as [`BTreeMap<AlgebraicValue, AlgebraicValue>`].
+    /// This implies that key/values are ordered first by key and then value
+    /// as if they were a sorted slice `[(key, value)]`.
+    /// This order is observable as maps are exposed both directly
+    /// and indirectly via `Ord for `[`AlgebraicValue`].
+    /// The latter lets us observe that e.g., `{ a: 42 } < { b: 42 }`.
+    /// However, we cannot observe any difference between `{ a: 0, b: 0 }` and `{ b: 0, a: 0 }`,
+    /// as the natural order is used as opposed to insertion order.
+    /// Where insertion order is relevant,
+    /// a [`BuiltinValue::Array`] with `(key, value)` pairs can be used instead.
+    ///
+    /// We box the `MapValue` to reduce size
+    /// and because we assume that map values will be uncommon.
+    Map(Box<MapValue>),
 }
 
 static_assert_size!(AlgebraicValue, 24);
@@ -138,12 +158,6 @@ impl AlgebraicValue {
         self.as_builtin()?.as_array()
     }
 
-    /// Interpret the value as a map or `None` if it isn't a map value.
-    #[inline]
-    pub fn as_map(&self) -> Option<&BTreeMap<Self, Self>> {
-        self.as_builtin()?.as_map().map(|m| &**m)
-    }
-
     /// Convert the value into a `bool` or `Err(self)` if it isn't a `bool` value.
     #[inline]
     pub fn into_bool(self) -> Result<bool, Self> {
@@ -239,12 +253,6 @@ impl AlgebraicValue {
     #[inline]
     pub fn into_array(self) -> Result<ArrayValue, Self> {
         self.into_builtin()?.into_array().map_err(Self::Builtin)
-    }
-
-    /// Convert the value into a map or `Err(self)` if it isn't a map value.
-    #[inline]
-    pub fn into_map(self) -> Result<Box<BTreeMap<Self, Self>>, Self> {
-        self.into_builtin()?.into_map().map_err(Self::Builtin)
     }
 
     /// The canonical unit value defined as the nullary product value `()`.
@@ -378,8 +386,8 @@ impl AlgebraicValue {
     }
 
     /// Returns an [`AlgebraicValue`] representing a map value defined by the given `map`.
-    pub fn map(map: BTreeMap<Self, Self>) -> Self {
-        Self::Builtin(BuiltinValue::Map { val: Box::new(map) })
+    pub fn map(map: MapValue) -> Self {
+        Self::Map(Box::new(map))
     }
 
     /// Returns the [`AlgebraicType`] of the sum value `x`.
@@ -403,7 +411,7 @@ impl AlgebraicValue {
     }
 
     /// Returns the [`AlgebraicType`] of the map with key type `k` and value type `v`.
-    pub(crate) fn type_of_map(val: &BTreeMap<Self, Self>) -> AlgebraicType {
+    pub(crate) fn type_of_map(val: &MapValue) -> AlgebraicType {
         AlgebraicType::product(if let Some((k, v)) = val.first_key_value() {
             [k.type_of().into(), v.type_of().into()].into()
         } else {
@@ -419,9 +427,10 @@ impl AlgebraicValue {
     pub fn type_of(&self) -> AlgebraicType {
         // TODO: What are the types of empty arrays/maps/sums?
         match self {
-            AlgebraicValue::Sum(x) => Self::type_of_sum(x),
-            AlgebraicValue::Product(x) => Self::type_of_product(x),
-            AlgebraicValue::Builtin(x) => match x {
+            Self::Sum(x) => Self::type_of_sum(x),
+            Self::Product(x) => Self::type_of_product(x),
+            Self::Map(x) => Self::type_of_map(x),
+            Self::Builtin(x) => match x {
                 BuiltinValue::Bool(_) => AlgebraicType::Bool,
                 BuiltinValue::I8(_) => AlgebraicType::I8,
                 BuiltinValue::U8(_) => AlgebraicType::U8,
@@ -437,7 +446,6 @@ impl AlgebraicValue {
                 BuiltinValue::F64(_) => AlgebraicType::F64,
                 BuiltinValue::String(_) => AlgebraicType::String,
                 BuiltinValue::Array { val } => AlgebraicType::Builtin(BuiltinType::Array(val.type_of())),
-                BuiltinValue::Map { val } => Self::type_of_map(val),
             },
         }
     }

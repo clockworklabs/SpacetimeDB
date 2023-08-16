@@ -1,9 +1,9 @@
 use std::convert::Infallible;
 
 use super::AlgebraicValue;
-use crate::builtin_value::{MapValue, F32, F64};
+use crate::builtin_value::{F32, F64};
 use crate::ser::{self, ForwardNamedToSeqProduct};
-use crate::{ArrayValue, BuiltinValue};
+use crate::{ArrayValue, BuiltinValue, MapValue};
 
 /// An implementation of [`Serializer`](ser::Serializer)
 /// where the output of serialization is an `AlgebraicValue`.
@@ -190,6 +190,7 @@ impl ArrayValueBuilder {
         match val {
             AlgebraicValue::Sum(x) => vec(x, capacity).into(),
             AlgebraicValue::Product(x) => vec(x, capacity).into(),
+            AlgebraicValue::Map(val) => vec(*val, capacity).into(),
             AlgebraicValue::Builtin(BuiltinValue::Bool(x)) => vec(x, capacity).into(),
             AlgebraicValue::Builtin(BuiltinValue::I8(x)) => vec(x, capacity).into(),
             AlgebraicValue::Builtin(BuiltinValue::U8(x)) => vec(x, capacity).into(),
@@ -205,7 +206,6 @@ impl ArrayValueBuilder {
             AlgebraicValue::Builtin(BuiltinValue::F64(x)) => vec(x, capacity).into(),
             AlgebraicValue::Builtin(BuiltinValue::String(x)) => vec(x, capacity).into(),
             AlgebraicValue::Builtin(BuiltinValue::Array { val }) => vec(val, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::Map { val }) => vec(*val, capacity).into(),
         }
     }
 
@@ -218,6 +218,7 @@ impl ArrayValueBuilder {
         match (self, val) {
             (Self::Sum(v), AlgebraicValue::Sum(val)) => v.push(val),
             (Self::Product(v), AlgebraicValue::Product(val)) => v.push(val),
+            (Self::Map(v), AlgebraicValue::Map(val)) => v.push(*val),
             (Self::Bool(v), AlgebraicValue::Builtin(BuiltinValue::Bool(val))) => v.push(val),
             (Self::I8(v), AlgebraicValue::Builtin(BuiltinValue::I8(val))) => v.push(val),
             (Self::U8(v), AlgebraicValue::Builtin(BuiltinValue::U8(val))) => v.push(val),
@@ -233,7 +234,6 @@ impl ArrayValueBuilder {
             (Self::F64(v), AlgebraicValue::Builtin(BuiltinValue::F64(val))) => v.push(val),
             (Self::String(v), AlgebraicValue::Builtin(BuiltinValue::String(val))) => v.push(val),
             (Self::Array(v), AlgebraicValue::Builtin(BuiltinValue::Array { val })) => v.push(val),
-            (Self::Map(v), AlgebraicValue::Builtin(BuiltinValue::Map { val })) => v.push(*val),
             (me, val) if me.is_empty() => *me = Self::from_one_with_capacity(val, capacity),
             (_, val) => return Err(val),
         }

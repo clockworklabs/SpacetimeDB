@@ -300,10 +300,14 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
         match self.ty() {
+            AlgebraicType::Ref(r) => self.resolve(*r).deserialize(deserializer),
             AlgebraicType::Sum(sum) => self.with(sum).deserialize(deserializer).map(AlgebraicValue::Sum),
             AlgebraicType::Product(prod) => self.with(prod).deserialize(deserializer).map(AlgebraicValue::Product),
+            AlgebraicType::Map(ty) => self
+                .with(ty)
+                .deserialize(deserializer)
+                .map(|m| AlgebraicValue::Map(Box::new(m))),
             AlgebraicType::Builtin(b) => self.with(b).deserialize(deserializer).map(AlgebraicValue::Builtin),
-            AlgebraicType::Ref(r) => self.resolve(*r).deserialize(deserializer),
         }
     }
 }
@@ -329,9 +333,6 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, BuiltinType> {
             BuiltinType::String => BuiltinValue::String(<Box<str>>::deserialize(deserializer)?),
             BuiltinType::Array(ty) => BuiltinValue::Array {
                 val: self.with(ty).deserialize(deserializer)?,
-            },
-            BuiltinType::Map(ty) => BuiltinValue::Map {
-                val: Box::new(self.with(ty).deserialize(deserializer)?),
             },
         })
     }
@@ -450,6 +451,9 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                 AlgebraicType::Product(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(|x| ArrayValue::Product(x.into())),
+                AlgebraicType::Map(ty) => deserializer
+                    .deserialize_array_seed(BasicVecVisitor, self.with(ty))
+                    .map(|x| ArrayValue::Map(x.into())),
                 AlgebraicType::Builtin(BuiltinType::Bool) => de_array(deserializer, ArrayValue::Bool),
                 AlgebraicType::Builtin(BuiltinType::I8) => de_array(deserializer, ArrayValue::I8),
                 AlgebraicType::Builtin(BuiltinType::U8) => deserializer
@@ -469,9 +473,6 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                 AlgebraicType::Builtin(BuiltinType::Array(ty)) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(|x| ArrayValue::Array(x.into())),
-                AlgebraicType::Builtin(BuiltinType::Map(ty)) => deserializer
-                    .deserialize_array_seed(BasicVecVisitor, self.with(ty))
-                    .map(|x| ArrayValue::Map(x.into())),
             };
         }
     }

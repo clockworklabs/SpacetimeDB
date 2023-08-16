@@ -3,10 +3,12 @@ pub mod map_notation;
 
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
+use crate::map_type::MapType;
 use crate::meta_type::MetaType;
-use crate::{de::Deserialize, ser::Serialize, MapType};
+use crate::{de::Deserialize, ser::Serialize};
 use crate::{
-    AlgebraicTypeRef, AlgebraicValue, ArrayType, BuiltinType, ProductType, ProductTypeElement, SumType, SumTypeVariant,
+    static_assert_size, AlgebraicTypeRef, AlgebraicValue, ArrayType, BuiltinType, ProductType, ProductTypeElement,
+    SumType, SumTypeVariant,
 };
 use enum_as_inner::EnumAsInner;
 
@@ -56,6 +58,12 @@ use enum_as_inner::EnumAsInner;
 #[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[sats(crate = crate)]
 pub enum AlgebraicType {
+    /// A type where the definition is given by the typing context (`Typespace`).
+    /// In other words, this is defined by a pointer to another `AlgebraicType`.
+    ///
+    /// This should not be conflated with reference and pointer types in languages like Rust,
+    /// In other words, this is not `&T` or `*const T`.
+    Ref(AlgebraicTypeRef),
     /// A structural sum type.
     ///
     /// Unlike most languages, sums in SATs are *[structural]* and not nominal.
@@ -107,13 +115,13 @@ pub enum AlgebraicType {
     Product(ProductType),
     /// A bulltin type, e.g., `bool`.
     Builtin(BuiltinType),
-    /// A type where the definition is given by the typing context (`Typespace`).
-    /// In other words, this is defined by a pointer to another `AlgebraicType`.
-    ///
-    /// This should not be conflated with reference and pointer types in languages like Rust,
-    /// In other words, this is not `&T` or `*const T`.
-    Ref(AlgebraicTypeRef),
+    /// The type of map values consisting of a key type `key_ty` and value `ty`.
+    /// Values [`BuiltinValue::Map(map)`](crate::BuiltinValue::Map) will have this type.
+    /// The order of entries in a map value is observable.
+    Map(MapType),
 }
+
+static_assert_size!(AlgebraicType, 24);
 
 #[allow(non_upper_case_globals)]
 impl AlgebraicType {
@@ -230,8 +238,7 @@ impl AlgebraicType {
 
     /// Returns a map type from the type `key` to the type `value`.
     pub fn map(key: Self, value: Self) -> Self {
-        let value = MapType::new(key, value);
-        AlgebraicType::Builtin(BuiltinType::Map(value))
+        AlgebraicType::Map(MapType::new(key, value))
     }
 
     /// Returns a sum type of unit variants with names taken from `var_names`.

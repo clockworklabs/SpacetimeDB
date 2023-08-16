@@ -30,6 +30,7 @@ impl ColumnType for Kind {
 
     fn to_char(&self) -> char {
         match &self.0 {
+            AlgebraicType::Map(_) | AlgebraicType::Builtin(BuiltinType::Array(_)) => '?',
             AlgebraicType::Builtin(x) => match x {
                 BuiltinType::I8
                 | BuiltinType::U8
@@ -44,7 +45,7 @@ impl ColumnType for Kind {
                 BuiltinType::F32 | BuiltinType::F64 => 'R',
                 BuiltinType::String => 'T',
                 BuiltinType::Bool => 'B',
-                BuiltinType::Array(_) | BuiltinType::Map(_) => '?',
+                BuiltinType::Array(_) => '?',
             },
             _ => '!',
         }

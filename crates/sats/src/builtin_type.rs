@@ -4,7 +4,7 @@ use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
 use crate::{
     impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductTypeElement,
-    SumTypeVariant,
+    SumTypeVariant, static_assert_size,
 };
 use enum_as_inner::EnumAsInner;
 
@@ -49,11 +49,9 @@ pub enum BuiltinType {
     /// The type of array values where elements are of a base type `elem_ty`.
     /// Values [`BuiltinValue::Array(array)`](crate::BuiltinValue::Array) will have this type.
     Array(ArrayType),
-    /// The type of map values consisting of a key type `key_ty` and value `ty`.
-    /// Values [`BuiltinValue::Map(map)`](crate::BuiltinValue::Map) will have this type.
-    /// The order of entries in a map value is observable.
-    Map(MapType),
 }
+
+static_assert_size!(BuiltinType, 16);
 
 /// An array type is a homegeneous product type of dynamic length.
 ///
@@ -68,26 +66,6 @@ pub struct ArrayType {
 
 impl_serialize!([] ArrayType, (self, ser) => self.elem_ty.serialize(ser));
 impl_deserialize!([] ArrayType, de => Deserialize::deserialize(de).map(|elem_ty| Self { elem_ty }));
-
-/// A map type from keys of type `key_ty` to values of type `ty`.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[sats(crate = crate)]
-pub struct MapType {
-    /// The key type of the map.
-    pub key_ty: Box<AlgebraicType>,
-    /// The value type of the map.
-    pub ty: Box<AlgebraicType>,
-}
-
-impl MapType {
-    /// Returns a map type with keys of type `key` and values of type `value`.
-    pub fn new(key: AlgebraicType, value: AlgebraicType) -> Self {
-        Self {
-            key_ty: Box::new(key),
-            ty: Box::new(value),
-        }
-    }
-}
 
 impl MetaType for BuiltinType {
     fn meta_type() -> AlgebraicType {

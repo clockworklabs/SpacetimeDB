@@ -1,5 +1,6 @@
 use super::{AlgebraicType, BuiltinType, ProductType, SumType};
 use crate::de::fmt_fn;
+use fmt_algebraic_type as fmt;
 use std::fmt::Display;
 
 /// Wraps the algebraic `ty` into a `Display`able.
@@ -17,6 +18,7 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + Display {
         AlgebraicType::Product(ty) => write!(f, "{}", fmt_product_type(ty)),
         AlgebraicType::Builtin(p) => write!(f, "{}", fmt_builtin_type(p)),
         AlgebraicType::Ref(r) => write!(f, "{}", r),
+        AlgebraicType::Map(m) => write!(f, "Map<{}, {}>", fmt(&m.key_ty), fmt(&m.ty)),
     })
 }
 
@@ -63,8 +65,6 @@ fn fmt_sum_type(ty: &SumType) -> impl '_ + Display {
 
 /// Wraps the builtin `ty` into a `Display`able.
 fn fmt_builtin_type(ty: &BuiltinType) -> impl '_ + Display {
-    use fmt_algebraic_type as fmt;
-
     fmt_fn(move |f| match ty {
         BuiltinType::Bool => write!(f, "Bool"),
         BuiltinType::I8 => write!(f, "I8"),
@@ -81,6 +81,5 @@ fn fmt_builtin_type(ty: &BuiltinType) -> impl '_ + Display {
         BuiltinType::F64 => write!(f, "F64"),
         BuiltinType::String => write!(f, "String"),
         BuiltinType::Array(a) => write!(f, "Array<{}>", fmt(&a.elem_ty)),
-        BuiltinType::Map(m) => write!(f, "Map<{}, {}>", fmt(&m.key_ty), fmt(&m.ty)),
     })
 }
