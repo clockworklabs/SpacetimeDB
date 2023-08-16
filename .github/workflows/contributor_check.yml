@@ -3,11 +3,12 @@ name: CI
 on:
   pull_request:
     types: [opened, synchronize]
+permissions: read-all
 
 jobs:
   check_membership:
     name: Contributor Membership Check
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-runner
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -24,5 +25,5 @@ jobs:
       - name: Verify author is contributor
         run: node .github/scripts/checkMembership.mjs
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
 
