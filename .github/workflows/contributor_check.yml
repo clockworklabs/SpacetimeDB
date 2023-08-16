@@ -8,7 +8,7 @@ jobs:
   permissions: read-all
   check_membership:
     name: Contributor Membership Check
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-runner
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
