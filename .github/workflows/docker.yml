@@ -1,6 +1,11 @@
 name: CI
 
-on: "push"
+on:
+  push:
+    branches:
+      - master
+      - staging
+      - development
 
 jobs:
   docker:
