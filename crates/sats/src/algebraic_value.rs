@@ -3,7 +3,7 @@ pub mod ser;
 
 use crate::builtin_value::{F32, F64};
 use crate::{
-    static_assert_size, AlgebraicType, ArrayValue, BuiltinType, BuiltinValue, MapValue, ProductValue, SumValue,
+    static_assert_size, AlgebraicType, ArrayValue, BuiltinValue, MapValue, ProductValue, SumValue,
 };
 use enum_as_inner::EnumAsInner;
 use std::ops::{Bound, Deref, RangeBounds};
@@ -445,7 +445,7 @@ impl AlgebraicValue {
                 BuiltinValue::F32(_) => AlgebraicType::F32,
                 BuiltinValue::F64(_) => AlgebraicType::F64,
                 BuiltinValue::String(_) => AlgebraicType::String,
-                BuiltinValue::Array { val } => AlgebraicType::Builtin(BuiltinType::Array(val.type_of())),
+                BuiltinValue::Array { val } => AlgebraicType::Array(val.type_of()),
             },
         }
     }

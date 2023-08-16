@@ -303,6 +303,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
             AlgebraicType::Ref(r) => self.resolve(*r).deserialize(deserializer),
             AlgebraicType::Sum(sum) => self.with(sum).deserialize(deserializer).map(AlgebraicValue::Sum),
             AlgebraicType::Product(prod) => self.with(prod).deserialize(deserializer).map(AlgebraicValue::Product),
+            AlgebraicType::Array(ty) => self.with(ty).deserialize(deserializer).map(AlgebraicValue::ArrayOf),
             AlgebraicType::Map(ty) => self
                 .with(ty)
                 .deserialize(deserializer)
@@ -331,9 +332,6 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, BuiltinType> {
             BuiltinType::F32 => BuiltinValue::F32(f32::deserialize(deserializer)?.into()),
             BuiltinType::F64 => BuiltinValue::F64(f64::deserialize(deserializer)?.into()),
             BuiltinType::String => BuiltinValue::String(<Box<str>>::deserialize(deserializer)?),
-            BuiltinType::Array(ty) => BuiltinValue::Array {
-                val: self.with(ty).deserialize(deserializer)?,
-            },
         })
     }
 }
@@ -451,6 +449,9 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                 AlgebraicType::Product(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(|x| ArrayValue::Product(x.into())),
+                AlgebraicType::Array(ty) => deserializer
+                    .deserialize_array_seed(BasicVecVisitor, self.with(ty))
+                    .map(|x| ArrayValue::Array(x.into())),
                 AlgebraicType::Map(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(|x| ArrayValue::Map(x.into())),
@@ -470,9 +471,6 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                 AlgebraicType::Builtin(BuiltinType::F32) => de_array(deserializer, ArrayValue::F32),
                 AlgebraicType::Builtin(BuiltinType::F64) => de_array(deserializer, ArrayValue::F64),
                 AlgebraicType::Builtin(BuiltinType::String) => de_array(deserializer, ArrayValue::String),
-                AlgebraicType::Builtin(BuiltinType::Array(ty)) => deserializer
-                    .deserialize_array_seed(BasicVecVisitor, self.with(ty))
-                    .map(|x| ArrayValue::Array(x.into())),
             };
         }
     }

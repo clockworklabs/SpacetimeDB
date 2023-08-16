@@ -115,6 +115,9 @@ pub enum AlgebraicType {
     Product(ProductType),
     /// A bulltin type, e.g., `bool`.
     Builtin(BuiltinType),
+    /// The type of array values where elements are of a base type `elem_ty`.
+    /// Values [`BuiltinValue::Array(array)`](crate::BuiltinValue::Array) will have this type.
+    Array(ArrayType),
     /// The type of map values consisting of a key type `key_ty` and value `ty`.
     /// Values [`BuiltinValue::Map(map)`](crate::BuiltinValue::Map) will have this type.
     /// The order of entries in a map value is observable.
@@ -179,10 +182,11 @@ impl MetaType for AlgebraicType {
     fn meta_type() -> Self {
         AlgebraicType::sum(
             [
+                SumTypeVariant::new_named(AlgebraicTypeRef::meta_type(), "ref"),
                 SumTypeVariant::new_named(SumType::meta_type(), "sum"),
                 SumTypeVariant::new_named(ProductType::meta_type(), "product"),
                 SumTypeVariant::new_named(BuiltinType::meta_type(), "builtin"),
-                SumTypeVariant::new_named(AlgebraicTypeRef::meta_type(), "ref"),
+                SumTypeVariant::new_named(AlgebraicType::ZERO_REF, "array"),
                 SumTypeVariant::new_named(
                     AlgebraicType::product(
                         [
@@ -217,7 +221,7 @@ impl AlgebraicType {
 
     /// Returns whether this type is `AlgebraicType::bytes()`.
     pub fn is_bytes(&self) -> bool {
-        matches!(self, AlgebraicType::Builtin(BuiltinType::Array(ArrayType { elem_ty }))
+        matches!(self, AlgebraicType::Array(ArrayType { elem_ty })
             if **elem_ty == AlgebraicType::U8
         )
     }
@@ -245,7 +249,7 @@ impl AlgebraicType {
 
     /// Returns an unsized array type where the element type is `ty`.
     pub fn array(ty: Self) -> Self {
-        AlgebraicType::Builtin(BuiltinType::Array(ArrayType { elem_ty: Box::new(ty) }))
+        AlgebraicType::Array(ArrayType { elem_ty: Box::new(ty) })
     }
 
     /// Returns a map type from the type `key` to the type `value`.

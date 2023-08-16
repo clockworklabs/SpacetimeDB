@@ -31,7 +31,8 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + fmt::Display {
             }
             write!(f, " }}")
         }
-        AlgebraicType::Map(MapType { key_ty, ty }) => write!(f, "0: Map, 1: {}, 2: {}", fmt(key_ty), fmt(ty)),
+        AlgebraicType::Array(ArrayType { elem_ty }) => write!(f, "{{ ty_: Array, 0: {} }}", fmt(elem_ty)),
+        AlgebraicType::Map(MapType { key_ty, ty }) => write!(f, "{{ ty_: Map, 0: {}, 1: {} }}", fmt(key_ty), fmt(ty)),
         AlgebraicType::Builtin(ty) => {
             write!(f, "{{ ty_: Builtin")?;
             match &ty {
@@ -49,7 +50,6 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + fmt::Display {
                 BuiltinType::F32 => write!(f, ", 0: F32")?,
                 BuiltinType::F64 => write!(f, ", 0: F64")?,
                 BuiltinType::String => write!(f, ", 0: String")?,
-                BuiltinType::Array(ArrayType { elem_ty }) => write!(f, ", 0: Array, 1: {}", fmt(elem_ty))?,
             }
             write!(f, " }}")
         }

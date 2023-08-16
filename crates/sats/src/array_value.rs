@@ -1,7 +1,5 @@
 use crate::builtin_value::{F32, F64};
-use crate::{
-    static_assert_size, AlgebraicType, AlgebraicValue, ArrayType, BuiltinType, MapValue, ProductValue, SumValue,
-};
+use crate::{static_assert_size, AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SumValue};
 use itertools::Itertools;
 use nonempty::NonEmpty;
 use std::fmt;
@@ -78,7 +76,7 @@ impl ArrayValue {
             Self::F32(_) => AlgebraicType::F32,
             Self::F64(_) => AlgebraicType::F64,
             Self::String(_) => AlgebraicType::String,
-            Self::Array(v) => Self::first_type_of(v, |a| AlgebraicType::Builtin(BuiltinType::Array(a.type_of()))),
+            Self::Array(v) => Self::first_type_of(v, |a| AlgebraicType::Array(a.type_of())),
             Self::Map(v) => Self::first_type_of(v, AlgebraicValue::type_of_map),
         });
         ArrayType { elem_ty }

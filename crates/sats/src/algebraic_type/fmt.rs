@@ -18,6 +18,7 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + Display {
         AlgebraicType::Product(ty) => write!(f, "{}", fmt_product_type(ty)),
         AlgebraicType::Builtin(p) => write!(f, "{}", fmt_builtin_type(p)),
         AlgebraicType::Ref(r) => write!(f, "{}", r),
+        AlgebraicType::Array(a) => write!(f, "Array<{}>", fmt(&a.elem_ty)),
         AlgebraicType::Map(m) => write!(f, "Map<{}, {}>", fmt(&m.key_ty), fmt(&m.ty)),
     })
 }
@@ -80,6 +81,5 @@ fn fmt_builtin_type(ty: &BuiltinType) -> impl '_ + Display {
         BuiltinType::F32 => write!(f, "F32"),
         BuiltinType::F64 => write!(f, "F64"),
         BuiltinType::String => write!(f, "String"),
-        BuiltinType::Array(a) => write!(f, "Array<{}>", fmt(&a.elem_ty)),
     })
 }

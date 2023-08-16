@@ -263,7 +263,9 @@ impl GenItem {
                     let name = name.deref().to_case(Case::Snake);
                     Some((name + ".py", code))
                 }
-                AlgebraicType::Builtin(_) | AlgebraicType::Map(_) | AlgebraicType::Ref(_) => todo!(),
+                AlgebraicType::Builtin(_) | AlgebraicType::Array(_) | AlgebraicType::Map(_) | AlgebraicType::Ref(_) => {
+                    todo!()
+                }
             },
             // I'm not sure exactly how this should work; when does init_database get called with csharp?
             GenItem::Reducer(reducer) if &*reducer.name == "__init__" => None,
@@ -293,7 +295,9 @@ impl GenItem {
                     let name = name.deref().to_case(Case::Snake);
                     Some((name + ".ts", code))
                 }
-                AlgebraicType::Builtin(_) | AlgebraicType::Map(_) | AlgebraicType::Ref(_) => todo!(),
+                AlgebraicType::Builtin(_) | AlgebraicType::Array(_) | AlgebraicType::Map(_) | AlgebraicType::Ref(_) => {
+                    todo!()
+                }
             },
             // I'm not sure exactly how this should work; when does init_database get called with csharp?
             GenItem::Reducer(reducer) if &*reducer.name == "__init__" => None,
@@ -321,7 +325,9 @@ impl GenItem {
                     let code = csharp::autogen_csharp_tuple(ctx, name, prod, namespace);
                     Some((name.to_string() + ".cs", code))
                 }
-                AlgebraicType::Builtin(_) | AlgebraicType::Map(_) | AlgebraicType::Ref(_) => todo!(),
+                AlgebraicType::Builtin(_) | AlgebraicType::Array(_) | AlgebraicType::Map(_) | AlgebraicType::Ref(_) => {
+                    todo!()
+                }
             },
             // I'm not sure exactly how this should work; when does init_database get called with csharp?
             GenItem::Reducer(reducer) if &*reducer.name == "__init__" => None,

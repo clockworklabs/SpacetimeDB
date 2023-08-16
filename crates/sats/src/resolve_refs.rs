@@ -67,6 +67,7 @@ impl ResolveRefs for AlgebraicType {
         match this.ty() {
             Self::Sum(sum) => this.with(sum)._resolve_refs(state).map(Self::Sum),
             Self::Product(prod) => this.with(prod)._resolve_refs(state).map(Self::Product),
+            Self::Array(ty) => this.with(ty)._resolve_refs(state).map(Self::Array),
             Self::Map(m) => this.with(m)._resolve_refs(state).map(Self::Map),
             Self::Builtin(b) => this.with(b)._resolve_refs(state).map(Self::Builtin),
             Self::Ref(r) => this.with(r)._resolve_refs(state),
@@ -76,12 +77,9 @@ impl ResolveRefs for AlgebraicType {
 
 impl ResolveRefs for BuiltinType {
     type Output = Self;
-    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        match this.ty() {
-            Self::Array(ty) => this.with(ty)._resolve_refs(state).map(Self::Array),
-            // These types are plain and cannot have refs in them.
-            x => Some(x.clone()),
-        }
+    fn resolve_refs(this: WithTypespace<'_, Self>, _: &mut ResolveRefState) -> Option<Self::Output> {
+        // These types are plain and cannot have refs in them.
+        Some(this.ty().clone())
     }
 }
 

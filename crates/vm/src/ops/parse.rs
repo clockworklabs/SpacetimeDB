@@ -49,10 +49,6 @@ pub fn parse(value: &str, ty: &AlgebraicType) -> Result<AlgebraicValue, ErrorVm>
             BuiltinType::F32 => _parse::<f32>(value, ty),
             BuiltinType::F64 => _parse::<f64>(value, ty),
             BuiltinType::String => Ok(AlgebraicValue::String(value.into())),
-            x => Err(ErrorVm::Unsupported(format!(
-                "Can't parse '{value}' to {}",
-                x.to_satn_pretty()
-            ))),
         },
         x => Err(ErrorVm::Unsupported(format!(
             "Can't parse '{value}' to {}",

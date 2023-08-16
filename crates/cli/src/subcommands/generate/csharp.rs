@@ -12,13 +12,8 @@ use spacetimedb_lib::{ColumnIndexAttribute, ProductTypeElement, ReducerDef, Tabl
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem, INDENT};
 
-enum MaybePrimitive<'a> {
-    Primitive(&'static str),
-    Array(&'a ArrayType),
-}
-
-fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
-    MaybePrimitive::Primitive(match b {
+fn to_primitive(b: &BuiltinType) -> &'static str {
+    match b {
         BuiltinType::Bool => "bool",
         BuiltinType::I8 => "sbyte",
         BuiltinType::U8 => "byte",
@@ -35,8 +30,7 @@ fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
         BuiltinType::String => "string",
         BuiltinType::F32 => "float",
         BuiltinType::F64 => "double",
-        BuiltinType::Array(ty) => return MaybePrimitive::Array(ty),
-    })
+    }
 }
 
 fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> impl fmt::Display + 'a {
@@ -82,23 +76,21 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
                 unimplemented!()
             }
         }
+        AlgebraicType::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => f.write_str("byte[]"),
+        AlgebraicType::Array(ArrayType { elem_ty }) => {
+            write!(
+                f,
+                "System.Collections.Generic.List<{}>",
+                ty_fmt(ctx, elem_ty, namespace)
+            )
+        }
         AlgebraicType::Map(ty) => write!(
             f,
             "System.Collections.Generic.Dictionary<{}, {}>",
             ty_fmt(ctx, &ty.ty, namespace),
             ty_fmt(ctx, &ty.key_ty, namespace)
         ),
-        AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-            MaybePrimitive::Primitive(p) => f.write_str(p),
-            MaybePrimitive::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => f.write_str("byte[]"),
-            MaybePrimitive::Array(ArrayType { elem_ty }) => {
-                write!(
-                    f,
-                    "System.Collections.Generic.List<{}>",
-                    ty_fmt(ctx, elem_ty, namespace)
-                )
-            }
-        },
+        AlgebraicType::Builtin(b) => f.write_str(to_primitive(b)),
         AlgebraicType::Ref(r) => {
             let name = csharp_typename(ctx, *r);
             match &ctx.typespace.types[r.idx()] {
@@ -124,21 +116,33 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
     })
 }
 
-fn convert_builtintype<'a>(
+fn convert_builtintype<'a>(b: &'a BuiltinType, value: impl fmt::Display + 'a) -> impl fmt::Display + 'a {
+    fmt_fn(move |f| write!(f, "{value}.As{b:?}()"))
+}
+
+fn convert_type<'a>(
     ctx: &'a GenCtx,
     vecnest: usize,
-    b: &'a BuiltinType,
+    ty: &'a AlgebraicType,
     value: impl fmt::Display + 'a,
     namespace: &'a str,
 ) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| match maybe_primitive(b) {
-        MaybePrimitive::Primitive(_) => {
-            write!(f, "{value}.As{b:?}()")
+    fmt_fn(move |f| match ty {
+        AlgebraicType::Product(product) => {
+            if product.is_identity() {
+                write!(
+                    f,
+                    "SpacetimeDB.Identity.From({}.AsProductValue().elements[0].AsBytes())",
+                    value
+                )
+            } else {
+                unimplemented!()
+            }
         }
-        MaybePrimitive::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => {
+        AlgebraicType::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => {
             write!(f, "{value}.AsBytes()")
         }
-        MaybePrimitive::Array(ArrayType { elem_ty }) => {
+        AlgebraicType::Array(ArrayType { elem_ty }) => {
             let csharp_type = ty_fmt(ctx, elem_ty, namespace);
             writeln!(
                 f,
@@ -160,28 +164,6 @@ fn convert_builtintype<'a>(
             writeln!(f, "\t}}")?;
             writeln!(f, "\treturn vec{vecnest};")?;
             write!(f, "}}))()")
-        }
-    })
-}
-
-fn convert_type<'a>(
-    ctx: &'a GenCtx,
-    vecnest: usize,
-    ty: &'a AlgebraicType,
-    value: impl fmt::Display + 'a,
-    namespace: &'a str,
-) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| match ty {
-        AlgebraicType::Product(product) => {
-            if product.is_identity() {
-                write!(
-                    f,
-                    "SpacetimeDB.Identity.From({}.AsProductValue().elements[0].AsBytes())",
-                    value
-                )
-            } else {
-                unimplemented!()
-            }
         }
         AlgebraicType::Map(_) => todo!(),
         AlgebraicType::Sum(sum_type) => {
@@ -234,7 +216,7 @@ fn convert_type<'a>(
                 unimplemented!()
             }
         }
-        AlgebraicType::Builtin(b) => fmt::Display::fmt(&convert_builtintype(ctx, vecnest, b, &value, namespace), f),
+        AlgebraicType::Builtin(b) => fmt::Display::fmt(&convert_builtintype(b, &value), f),
         AlgebraicType::Ref(r) => {
             let name = csharp_typename(ctx, *r);
             let algebraic_type = &ctx.typespace.types[r.idx()];
@@ -285,21 +267,16 @@ fn convert_algebraic_type<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace:
     fmt_fn(move |f| match ty {
         AlgebraicType::Product(product_type) => write!(f, "{}", convert_product_type(ctx, product_type, namespace)),
         AlgebraicType::Sum(sum_type) => write!(f, "{}", convert_sum_type(ctx, sum_type, namespace)),
+        AlgebraicType::Array(ArrayType { elem_ty }) => write!(
+            f,
+            "SpacetimeDB.SATS.AlgebraicType.CreateArrayType({})",
+            convert_algebraic_type(ctx, elem_ty, namespace)
+        ),
         AlgebraicType::Map(_) => todo!(),
-        AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-            MaybePrimitive::Primitive(_) => {
-                write!(
-                    f,
-                    "SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.{:?})",
-                    b
-                )
-            }
-            MaybePrimitive::Array(ArrayType { elem_ty }) => write!(
-                f,
-                "SpacetimeDB.SATS.AlgebraicType.CreateArrayType({})",
-                convert_algebraic_type(ctx, elem_ty, namespace)
-            ),
-        },
+        AlgebraicType::Builtin(b) => write!(
+            f,
+            "SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.{b:?})",
+        ),
         AlgebraicType::Ref(r) => {
             let name = csharp_typename(ctx, *r);
             match &ctx.typespace.types[r.idx()] {
@@ -576,7 +553,7 @@ fn autogen_csharp_product_table_common(
                     .replace("r#", "");
                 writeln!(output, "[Newtonsoft.Json.JsonProperty(\"{field_name}\")]").unwrap();
                 match &field.algebraic_type {
-                    Builtin(BuiltinType::Array(ArrayType { elem_ty: array_type })) => {
+                    AlgebraicType::Array(ArrayType { elem_ty: array_type }) => {
                         if let Builtin(BuiltinType::U8) = **array_type {
                             writeln!(
                                 output,
@@ -947,18 +924,16 @@ fn autogen_csharp_access_funcs_for_struct(
                 //       which we can do.
                 continue;
             }
-            AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-                MaybePrimitive::Primitive(ty) => (format!("{:?}", b), ty),
-                MaybePrimitive::Array(ArrayType { elem_ty }) => {
-                    if let Some(BuiltinType::U8) = elem_ty.as_builtin() {
-                        // Do allow filtering for byte arrays
-                        ("Bytes".into(), "byte[]")
-                    } else {
-                        // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
-                        continue;
-                    }
+            AlgebraicType::Array(ArrayType { elem_ty }) => {
+                if let Some(BuiltinType::U8) = elem_ty.as_builtin() {
+                    // Do allow filtering for byte arrays
+                    ("Bytes".into(), "byte[]")
+                } else {
+                    // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
+                    continue;
                 }
-            },
+            }
+            AlgebraicType::Builtin(b) => (format!("{:?}", b), to_primitive(b)),
         };
 
         let filter_return_type = fmt_fn(|f| {
@@ -1213,10 +1188,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                         json_args.push_str(&arg_name);
                     }
                 }
-                AlgebraicType::Product(_) => {
-                    json_args.push_str(arg_name.as_str());
-                }
-                Builtin(_) => {
+                AlgebraicType::Product(_) | AlgebraicType::Array(_) | AlgebraicType::Builtin(_) => {
                     json_args.push_str(arg_name.as_str());
                 }
                 AlgebraicType::Map(_) => todo!(),

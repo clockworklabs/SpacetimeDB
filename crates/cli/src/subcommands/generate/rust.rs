@@ -14,13 +14,8 @@ type Indenter = CodeIndenter<String>;
 /// Pairs of (module_name, TypeName).
 type Imports = HashSet<(String, String)>;
 
-enum MaybePrimitive<'a> {
-    Primitive(&'a str),
-    Array(&'a ArrayType),
-}
-
-fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
-    MaybePrimitive::Primitive(match b {
+fn to_primitive(b: &BuiltinType) -> &'static str {
+    match b {
         BuiltinType::Bool => "bool",
         BuiltinType::I8 => "i8",
         BuiltinType::U8 => "u8",
@@ -35,8 +30,7 @@ fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
         BuiltinType::String => "String",
         BuiltinType::F32 => "f32",
         BuiltinType::F64 => "f64",
-        BuiltinType::Array(ty) => return MaybePrimitive::Array(ty),
-    })
+    }
 }
 
 fn write_type_ctx(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
@@ -71,6 +65,11 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
                 write_type(ctx, out, &elem.algebraic_type);
             });
         }
+        AlgebraicType::Array(ArrayType { elem_ty }) => {
+            write!(out, "Vec::<").unwrap();
+            write_type(ctx, out, elem_ty);
+            write!(out, ">").unwrap();
+        }
         AlgebraicType::Map(ty) => {
             // TODO: Should `BuiltinType::Map` translate to `HashMap`? This requires
             //       that any map-key type implement `Hash`. We'll have to derive hash
@@ -83,14 +82,7 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
             write_type(ctx, out, &ty.ty);
             write!(out, ">").unwrap();
         }
-        AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-            MaybePrimitive::Primitive(p) => write!(out, "{}", p).unwrap(),
-            MaybePrimitive::Array(ArrayType { elem_ty }) => {
-                write!(out, "Vec::<").unwrap();
-                write_type(ctx, out, elem_ty);
-                write!(out, ">").unwrap();
-            }
-        },
+        AlgebraicType::Builtin(b) => write!(out, "{}", to_primitive(b)).unwrap(),
         AlgebraicType::Ref(r) => {
             write!(out, "{}", ctx(*r)).unwrap();
         }
@@ -1092,7 +1084,7 @@ fn module_name(name: &str) -> String {
 
 fn generate_imports(ctx: &GenCtx, imports: &mut Imports, ty: &AlgebraicType) {
     match ty {
-        AlgebraicType::Builtin(BuiltinType::Array(ArrayType { elem_ty })) => generate_imports(ctx, imports, elem_ty),
+        AlgebraicType::Array(ArrayType { elem_ty }) => generate_imports(ctx, imports, elem_ty),
         AlgebraicType::Map(map_type) => {
             generate_imports(ctx, imports, &map_type.key_ty);
             generate_imports(ctx, imports, &map_type.ty);

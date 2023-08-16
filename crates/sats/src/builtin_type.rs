@@ -1,6 +1,5 @@
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
-use crate::array_type::ArrayType;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
 use crate::{static_assert_size, AlgebraicType, AlgebraicValue, SumTypeVariant};
@@ -44,12 +43,9 @@ pub enum BuiltinType {
     /// This type exists for convenience and because it is easy to just use Rust's `String` (UTF-8)
     /// as opposed to rolling your own equivalent byte-array based UTF-8 encoding.
     String,
-    /// The type of array values where elements are of a base type `elem_ty`.
-    /// Values [`BuiltinValue::Array(array)`](crate::BuiltinValue::Array) will have this type.
-    Array(ArrayType),
 }
 
-static_assert_size!(BuiltinType, 16);
+static_assert_size!(BuiltinType, 1);
 
 impl MetaType for BuiltinType {
     fn meta_type() -> AlgebraicType {
@@ -69,7 +65,6 @@ impl MetaType for BuiltinType {
             SumTypeVariant::unit("f32"),
             SumTypeVariant::unit("f64"),
             SumTypeVariant::unit("string"),
-            SumTypeVariant::new_named(AlgebraicType::ZERO_REF, "array"),
         ];
         AlgebraicType::sum(vs.into())
     }

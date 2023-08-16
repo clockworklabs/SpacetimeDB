@@ -147,6 +147,7 @@ impl_serialize!([] ValueWithType<'_, AlgebraicValue>, (self, ser) => {
         break match (self.value(), ty) {
             (AlgebraicValue::Sum(val), AlgebraicType::Sum(ty)) => self.with(ty, val).serialize(ser),
             (AlgebraicValue::Product(val), AlgebraicType::Product(ty)) => self.with(ty, val).serialize(ser),
+            (AlgebraicValue::Builtin(BuiltinValue::Array { val }), AlgebraicType::Array(ty)) => self.with(ty, val).serialize(ser),
             (AlgebraicValue::Map(val), AlgebraicType::Map(ty)) => self.with(ty, &**val).serialize(ser),
             (AlgebraicValue::Builtin(val), AlgebraicType::Builtin(ty)) => self.with(ty, val).serialize(ser),
             (_, &AlgebraicType::Ref(r)) => {
@@ -172,7 +173,6 @@ impl_serialize!([] ValueWithType<'_, BuiltinValue>, (self, ser) => match (self.v
     (BuiltinValue::F32(v), BuiltinType::F32) => ser.serialize_f32((*v).into()),
     (BuiltinValue::F64(v), BuiltinType::F64) => ser.serialize_f64((*v).into()),
     (BuiltinValue::String(s), BuiltinType::String) => ser.serialize_str(s),
-    (BuiltinValue::Array { val }, BuiltinType::Array(ty)) => self.with(ty, val).serialize(ser),
     (val, ty) => panic!("mismatched value and schema: {val:?} {ty:?}"),
 });
 impl_serialize!(
@@ -218,9 +218,7 @@ impl_serialize!([] ValueWithType<'_, ArrayValue>, (self, ser) => match (self.val
     (ArrayValue::F32(v), &AlgebraicType::Builtin(BuiltinType::F32)) => v.serialize(ser),
     (ArrayValue::F64(v), &AlgebraicType::Builtin(BuiltinType::F64)) => v.serialize(ser),
     (ArrayValue::String(v), &AlgebraicType::Builtin(BuiltinType::String)) => v.serialize(ser),
-    (ArrayValue::Array(v), AlgebraicType::Builtin(BuiltinType::Array(ty))) => {
-        self.with(ty, v).serialize(ser)
-    }
+    (ArrayValue::Array(v), AlgebraicType::Array(ty)) => self.with(ty, v).serialize(ser),
     (val, _) if val.is_empty() => ser.serialize_array(0)?.end(),
     (val, ty) => panic!("mismatched value and schema: {val:?} {ty:?}"),
 });
