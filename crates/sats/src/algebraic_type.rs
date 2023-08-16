@@ -166,6 +166,8 @@ impl AlgebraicType {
 
     /// The built-in string type.
     pub const String: Self = Self::Builtin(BuiltinType::String);
+
+    pub const ZERO_REF: Self = Self::Ref(AlgebraicTypeRef(0));
 }
 
 impl MetaType for AlgebraicType {
@@ -181,6 +183,16 @@ impl MetaType for AlgebraicType {
                 SumTypeVariant::new_named(ProductType::meta_type(), "product"),
                 SumTypeVariant::new_named(BuiltinType::meta_type(), "builtin"),
                 SumTypeVariant::new_named(AlgebraicTypeRef::meta_type(), "ref"),
+                SumTypeVariant::new_named(
+                    AlgebraicType::product(
+                        [
+                            ProductTypeElement::new_named(Self::ZERO_REF, "key_ty"),
+                            ProductTypeElement::new_named(Self::ZERO_REF, "ty"),
+                        ]
+                        .into(),
+                    ),
+                    "map",
+                ),
             ]
             .into(),
         )

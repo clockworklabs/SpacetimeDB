@@ -1,11 +1,9 @@
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
+use crate::array_type::ArrayType;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{
-    impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductTypeElement,
-    SumTypeVariant, static_assert_size,
-};
+use crate::{static_assert_size, AlgebraicType, AlgebraicValue, SumTypeVariant};
 use enum_as_inner::EnumAsInner;
 
 /// Represents the built-in types in SATS.
@@ -53,23 +51,8 @@ pub enum BuiltinType {
 
 static_assert_size!(BuiltinType, 16);
 
-/// An array type is a homegeneous product type of dynamic length.
-///
-/// That is, it is a product type
-/// where every element / factor / field is of the same type
-/// and where the length is statically unknown.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct ArrayType {
-    /// The base type every element of the array has.
-    pub elem_ty: Box<AlgebraicType>,
-}
-
-impl_serialize!([] ArrayType, (self, ser) => self.elem_ty.serialize(ser));
-impl_deserialize!([] ArrayType, de => Deserialize::deserialize(de).map(|elem_ty| Self { elem_ty }));
-
 impl MetaType for BuiltinType {
     fn meta_type() -> AlgebraicType {
-        let zero_ref = || AlgebraicType::Ref(AlgebraicTypeRef(0));
         // TODO: sats(rename_all = "lowercase"), otherwise json won't work.
         let vs = [
             SumTypeVariant::unit("bool"),
@@ -86,17 +69,7 @@ impl MetaType for BuiltinType {
             SumTypeVariant::unit("f32"),
             SumTypeVariant::unit("f64"),
             SumTypeVariant::unit("string"),
-            SumTypeVariant::new_named(zero_ref(), "array"),
-            SumTypeVariant::new_named(
-                AlgebraicType::product(
-                    [
-                        ProductTypeElement::new_named(zero_ref(), "key_ty"),
-                        ProductTypeElement::new_named(zero_ref(), "ty"),
-                    ]
-                    .into(),
-                ),
-                "map",
-            ),
+            SumTypeVariant::new_named(AlgebraicType::ZERO_REF, "array"),
         ];
         AlgebraicType::sum(vs.into())
     }
