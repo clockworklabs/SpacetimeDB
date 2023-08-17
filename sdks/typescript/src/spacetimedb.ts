@@ -706,7 +706,11 @@ export class SpacetimeDBClient {
         }
       } else if (message instanceof IdentityTokenMessage) {
         this.identity = message.identity;
-        this.token = message.token;
+        if (this.runtime.auth_token) {
+          this.token = this.runtime.auth_token;
+        } else {
+          this.token = message.token;
+        }
         this.emitter.emit("connected", this.token, this.identity);
       }
     });
