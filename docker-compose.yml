@@ -30,6 +30,7 @@ services:
     privileged: true
     environment:
       SPACETIMEDB_FLAMEGRAPH_PATH: ../../../../flamegraphs/flamegraph.folded
+      SPACETIMEDB_TRACY: 1
       RUST_BACKTRACE: 1
       ENV: dev
       SENDGRID_API_KEY:
