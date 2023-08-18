@@ -6,8 +6,8 @@ license-file = "LICENSE"
 description = "A VM for SpacetimeDB"
 
 [dependencies]
-spacetimedb-sats= { path = "../sats", version = "0.6.1" }
-spacetimedb-lib = { path = "../lib", version = "0.6.1" }
+spacetimedb-sats.workspace = true
+spacetimedb-lib.workspace = true
 
 anyhow.workspace = true
 thiserror.workspace = true

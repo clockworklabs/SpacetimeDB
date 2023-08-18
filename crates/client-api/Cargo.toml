@@ -6,28 +6,28 @@ license-file = "LICENSE"
 description = "The HTTP API for SpacetimeDB"
 
 [dependencies]
-spacetimedb-core = { path = "../core", version = "0.6.1" }
-tokio = { version = "1.2", features = ["full"] }
-lazy_static = "1.4.0"
-spacetimedb-lib = { path = "../lib", version = "0.6.1" }
-log = "0.4.4"
-serde = "1.0.136"
-serde_json = { version = "1.0", features = ["raw_value"] }
-anyhow = { version = "1.0.57", features = ["backtrace"] }
-regex = "1"
-prometheus = "0.13.0"
-email_address = "0.2.3"
-tempdir = "0.3.7"
-async-trait = "0.1.60"
-chrono = { version = "0.4.23", features = ["serde"]}
-rand = "0.8.5"
-axum = { version = "0.6.16", features = ["headers", "ws", "tracing"] }
-hyper = "0.14"
-http = "0.2"
-mime = "0.3.17"
-tokio-stream = { version = "0.1.12", features = ["sync"] }
-futures = "0.3"
-bytes = "1"
-bytestring = "1"
-tokio-tungstenite = "0.18.0"
-itoa = "1.0.9"
+spacetimedb-core.workspace = true
+tokio = { workspace = true, features = ["full"] }
+lazy_static.workspace = true
+spacetimedb-lib.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
+anyhow = { workspace = true, features = ["backtrace"] }
+regex.workspace = true
+prometheus.workspace = true
+email_address.workspace = true
+tempdir.workspace = true
+async-trait.workspace = true
+chrono = { workspace = true, features = ["serde"]}
+rand.workspace = true
+axum = { workspace = true, features = ["headers", "ws", "tracing"] }
+hyper.workspace = true
+http.workspace = true
+mime.workspace = true
+tokio-stream = { workspace = true, features = ["sync"] }
+futures.workspace = true
+bytes.workspace = true
+bytestring.workspace = true
+tokio-tungstenite.workspace = true
+itoa.workspace = true

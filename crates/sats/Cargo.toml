@@ -11,7 +11,7 @@ description = "Spacetime Algebraic Type Notation"
 serde = ["dep:serde", "hex"]
 
 [dependencies]
-spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.6.1" }
+spacetimedb-bindings-macro.workspace = true
 
 arrayvec.workspace = true
 decorum.workspace = true

@@ -11,8 +11,8 @@ crate-type = ["cdylib"]
 bench = false
 
 [dependencies]
-spacetimedb = { path = "../../crates/bindings" }
-spacetimedb-lib = { path = "../../crates/lib" } # TODO: this should not ever be necessary. `spacetimedb` should provide all module dependencies.
+spacetimedb.workspace = true
+spacetimedb-lib.workspace = true # TODO: this should not ever be necessary. `spacetimedb` should provide all module dependencies.
 
 anyhow.workspace = true
 log.workspace = true

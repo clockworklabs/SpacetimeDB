@@ -5,9 +5,9 @@ edition = "2021"
 description = "Sql integration test for SpaceTimeDb"
 
 [dependencies]
-spacetimedb-lib = { path = "../lib" }
-spacetimedb-core = { path = "../core" }
-spacetimedb-sats = { path = "../sats" }
+spacetimedb-lib.workspace = true
+spacetimedb-core.workspace = true
+spacetimedb-sats.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true
