@@ -124,9 +124,10 @@ impl<S: ControlNodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> fo
                     //       it would be good to refactor it in the future, ie.
                     //       we don't really need to keep it as a value we get
                     //       from the header
-                    let new_token = encode_token(state.private_key(), identity).map_err(|_| AuthorizationRejection {
-                        reason: AuthorizationRejectionReason::CantEncodeAuthorizationToken,
-                    })?;
+                    let new_token =
+                        encode_token(state.private_key(), identity).map_err(|_| AuthorizationRejection {
+                            reason: AuthorizationRejectionReason::CantEncodeAuthorizationToken,
+                        })?;
                     creds = creds_from_str(&format!("token:{new_token}"))?;
                 }
 
