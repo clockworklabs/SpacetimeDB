@@ -10,34 +10,31 @@ const octokit = new Octokit({
     }
 });
 
-async function main() {
-    let prAuthor;
-
+async function isMemberOfOrganization(username) {
+    let isMember = false;
     try {
-        const context = github.context;
-        const owner = context.repo.owner;
-        const repo = context.repo.repo;
-        prAuthor = context.payload.pull_request.user.login;
-
-        // Check if the PR author is a member of the organization
-        const isMember = await octokit.orgs.checkMembershipForUser({
-            org: owner,
-            username: prAuthor,
+        const members = await octokit.paginate(octokit.orgs.listMembers, {
+            org: "clockworklabs",
+            per_page: 100 
         });
 
-        if (!isMember) {
-            core.setFailed(`${prAuthor} is not a member of the organization`);
-        } else {
-            console.log(`${prAuthor} is a member of the organization`);
-        }
+        isMember = members.some(member => member.login === username);
     } catch (error) {
-        if (error.status === 404) {
-            core.setFailed(`${prAuthor} is not a member of the organization`);
-        } else {
-            core.setFailed(error.message);
-        }
+        core.setFailed(error.message);
     }
+
+    return isMember;
 }
 
+async function main() {
+    const context = github.context;
+    const prAuthor = context.payload.pull_request.user.login;
+
+    if (await isMemberOfOrganization(prAuthor)) {
+        console.log(`${prAuthor} is a member of the organization`);
+    } else {
+        core.setFailed(`${prAuthor} is not a member of the organization`);
+    }
+}
 main();
 
