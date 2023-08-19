@@ -23,7 +23,6 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
         return Ok(());
     }
 
-    // print the current path of the current executable
     println!("Path: {}", std::env::current_exe()?.display());
     println!(
         "spacetimedb tool version {}; spacetimedb-lib version {};",
