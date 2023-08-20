@@ -4,31 +4,13 @@ use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::{
-    AlgebraicType, AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, ProductType, ProductTypeElement,
+    AlgebraicType, AlgebraicTypeRef, ArrayType, ProductType, ProductTypeElement,
     SumType, SumTypeVariant,
 };
 use spacetimedb_lib::{ColumnIndexAttribute, ReducerDef, TableDef};
 
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem, INDENT};
-
-fn to_primitive(b: &BuiltinType) -> &'static str {
-    match b {
-        BuiltinType::Bool => "boolean",
-        BuiltinType::I8
-        | BuiltinType::U8
-        | BuiltinType::I16
-        | BuiltinType::U16
-        | BuiltinType::I32
-        | BuiltinType::U32
-        | BuiltinType::I64
-        | BuiltinType::U64
-        | BuiltinType::F32
-        | BuiltinType::F64 => "number",
-        BuiltinType::I128 | BuiltinType::U128 => "BigInt",
-        BuiltinType::String => "string",
-    }
-}
 
 fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix: &'a str) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
@@ -39,15 +21,9 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix: &'a str) -> im
                 unimplemented!()
             }
         }
-        AlgebraicType::Product(prod) => {
-            // The only type that is allowed here is the identity type. All other types should fail.
-            if prod.is_identity() {
-                write!(f, "Identity")
-            } else {
-                unimplemented!()
-            }
-        }
-        AlgebraicType::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => f.write_str("Uint8Array"),
+        ty if ty.is_identity() => write!(f, "Identity"),
+        AlgebraicType::Product(_) => unimplemented!(),
+        ty if ty.is_bytes() => f.write_str("Uint8Array"),
         AlgebraicType::Array(ArrayType { elem_ty }) => {
             write!(f, "{}[]", ty_fmt(ctx, elem_ty, ref_prefix))
         }
@@ -57,30 +33,13 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix: &'a str) -> im
             ty_fmt(ctx, &map_type.ty, ref_prefix),
             ty_fmt(ctx, &map_type.key_ty, ref_prefix)
         ),
-        AlgebraicType::Builtin(b) => f.write_str(to_primitive(b)),
+        AlgebraicType::Bool => f.write_str("boolean"),
+        AlgebraicType::I128 | AlgebraicType::U128 => f.write_str("BigInt"),
+        AlgebraicType::String => f.write_str("string"),
+        ty if ty.is_int() => f.write_str("number"),
         AlgebraicType::Ref(r) => write!(f, "{}{}", ref_prefix, typescript_typename(ctx, *r)),
+        _ => unreachable!(),
     })
-}
-fn typescript_as_type(b: &BuiltinType) -> &str {
-    match b {
-        BuiltinType::Bool => "Boolean",
-        BuiltinType::I8 => "Number",
-        BuiltinType::U8 => "Number",
-        BuiltinType::I16 => "Number",
-        BuiltinType::U16 => "Number",
-        BuiltinType::I32 => "Number",
-        BuiltinType::U32 => "Number",
-        BuiltinType::I64 => "Number",
-        BuiltinType::U64 => "Number",
-        BuiltinType::I128 => "BigInt",
-        BuiltinType::U128 => "BigInt",
-        BuiltinType::F32 => "Number",
-        BuiltinType::F64 => "Number",
-        BuiltinType::String => "String",
-    }
-}
-fn convert_builtintype<'a>(b: &'a BuiltinType, value: impl fmt::Display + 'a) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| write!(f, "{value}.as{}()", typescript_as_type(b)))
 }
 
 fn convert_type<'a>(
@@ -90,46 +49,18 @@ fn convert_type<'a>(
     ref_prefix: &'a str,
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Product(product) => {
-            if product.is_identity() {
-                write!(f, "new Identity({}.asProductValue().elements[0].asBytes())", value)
-            } else {
-                unimplemented!()
-            }
-        }
+        ty if ty.is_identity() => write!(f, "new Identity({}.asProductValue().elements[0].asBytes())", value),
+        AlgebraicType::Product(_) => unimplemented!(),
         AlgebraicType::Sum(sum_type) => {
             if let Some(inner_ty) = sum_type.as_option() {
                 match inner_ty {
-                    Builtin(ty) => match ty {
-                        BuiltinType::Bool
-                        | BuiltinType::I8
-                        | BuiltinType::U8
-                        | BuiltinType::I16
-                        | BuiltinType::U16
-                        | BuiltinType::I32
-                        | BuiltinType::U32
-                        | BuiltinType::I64
-                        | BuiltinType::U64
-                        | BuiltinType::I128
-                        | BuiltinType::U128
-                        | BuiltinType::F32
-                        | BuiltinType::F64 => write!(
-                            f,
-                            "{}.asSumValue().tag == 1 ? null : {}.asSumValue().value{}",
-                            value,
-                            value,
-                            &convert_type(ctx, inner_ty, "", ref_prefix),
-                        ),
-                        _ => fmt::Display::fmt(
-                            &convert_type(
-                                ctx,
-                                inner_ty,
-                                format_args!("{value}.asSumValue().tag == 1 ? null : {value}.asSumValue().value"),
-                                ref_prefix
-                            ),
-                            f,
-                        ),
-                    },
+                    ty if ty.is_scalar() => write!(
+                        f,
+                        "{}.asSumValue().tag == 1 ? null : {}.asSumValue().value{}",
+                        value,
+                        value,
+                        &convert_type(ctx, inner_ty, "", ref_prefix),
+                    ),
                     AlgebraicType::Ref(_) => fmt::Display::fmt(
                         &format!(
                             "function() {{ const value = {}.asSumValue().tag == 1 ? null : {}.asSumValue().value; return value ? {} : null; }}()",
@@ -158,9 +89,7 @@ fn convert_type<'a>(
                 unimplemented!()
             }
         }
-        AlgebraicType::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => {
-            write!(f, "{value}.asBytes()")
-        }
+        ty if ty.is_bytes() => write!(f, "{value}.asBytes()"),
         AlgebraicType::Array(ArrayType { elem_ty }) => {
             let typescript_type = ty_fmt(ctx, elem_ty, ref_prefix);
             writeln!(
@@ -169,14 +98,16 @@ fn convert_type<'a>(
                 convert_type(ctx, elem_ty, "el", ref_prefix)
             )
         }
-        AlgebraicType::Map(_) => {
-            write!(f, "{value}.asMap()")
-        }
-        AlgebraicType::Builtin(b) => fmt::Display::fmt(&convert_builtintype(b, &value), f),
+        AlgebraicType::Map(_) => write!(f, "{value}.asMap()"),
+        AlgebraicType::Bool => write!(f, "{value}.asBool()"),
+        AlgebraicType::I128 | AlgebraicType::U128 => write!(f, "{value}.asBigInt()"),
+        ty if ty.is_int() => write!(f, "{value}.asNumber()"),
+        AlgebraicType::String => write!(f, "{value}.asString()"),
         AlgebraicType::Ref(r) => {
             let name = typescript_typename(ctx, *r);
             write!(f, "{ref_prefix}{name}.fromValue({value})",)
         }
+        _ => unreachable!(),
     })
 }
 
@@ -208,8 +139,9 @@ fn convert_algebraic_type<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix
             convert_algebraic_type(ctx, elem_ty, ref_prefix)
         ),
         AlgebraicType::Map(_) => todo!(),
-        AlgebraicType::Builtin(b) => write!(f, "AlgebraicType.createPrimitiveType(BuiltinType.Type.{b:?})"),
+        ty if ty.is_scalar_or_string() => write!(f, "AlgebraicType.Type.{ty:?}"),
         AlgebraicType::Ref(r) => write!(f, "{ref_prefix}{}.getAlgebraicType()", typescript_typename(ctx, *r)),
+        _ => unreachable!(),
     })
 }
 
@@ -260,13 +192,8 @@ fn serialize_type<'a>(
     prefix: &'a str,
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Product(prod) => {
-            if prod.is_identity() {
-                write!(f, "Array.from({value}.toUint8Array())")
-            } else {
-                unimplemented!()
-            }
-        }
+        ty if ty.is_identity() => write!(f, "Array.from({value}.toUint8Array())"),
+        AlgebraicType::Product(_) => unimplemented!(),
         AlgebraicType::Sum(sum_type) => {
             if let Some(inner_ty) = sum_type.as_option() {
                 write!(
@@ -279,15 +206,16 @@ fn serialize_type<'a>(
             }
         }
         AlgebraicType::Array(ArrayType { elem_ty }) => match &**elem_ty {
-            Builtin(BuiltinType::U8) => write!(f, "Array.from({value})"),
-            Builtin(_) => write!(f, "{value}"),
-            t => write!(f, "{value}.map(el => {})", serialize_type(ctx, t, "el", prefix)),
+            ty if ty.is_u8() => write!(f, "Array.from({value})"),
+            ty if ty.is_scalar_or_string() => write!(f, "{value}"),
+            ty => write!(f, "{value}.map(el => {})", serialize_type(ctx, ty, "el", prefix)),
         },
-        AlgebraicType::Map(_) | AlgebraicType::Builtin(_) => write!(f, "{value}"),
+        ty if ty.is_map() || ty.is_scalar_or_string() => write!(f, "{value}"),
         AlgebraicType::Ref(r) => {
             let typename = typescript_typename(ctx, *r);
             write!(f, "{prefix}{typename}.serialize({value})",)
         }
+        _ => unreachable!(),
     })
 }
 
@@ -307,7 +235,7 @@ pub fn autogen_typescript_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> S
     writeln!(output, "// @ts-ignore").unwrap();
     writeln!(
         output,
-        "import {{ __SPACETIMEDB__, AlgebraicType, SumTypeVariant, BuiltinType, AlgebraicValue }} from \"@clockworklabs/spacetimedb-sdk\";"
+        "import {{ __SPACETIMEDB__, AlgebraicType, SumTypeVariant, AlgebraicValue }} from \"@clockworklabs/spacetimedb-sdk\";"
     )
     .unwrap();
 
@@ -559,7 +487,6 @@ fn generate_imports_variants(
 
 fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>, prefix: Option<&str>) {
     match ty {
-        Builtin(_) => {}
         AlgebraicType::Array(ArrayType { elem_ty }) => _generate_imports(ctx, elem_ty, imports, prefix),
         AlgebraicType::Map(map_type) => {
             _generate_imports(ctx, &map_type.key_ty, imports, prefix);
@@ -608,7 +535,7 @@ fn autogen_typescript_product_table_common(
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent, Identity }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, IDatabaseTable, AlgebraicValue, ReducerEvent, Identity }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(ctx, &product_type.elements, &mut imports, None);
@@ -955,26 +882,26 @@ fn autogen_typescript_access_funcs_for_struct(
         let typescript_field_name_camel = field_name.replace("r#", "").to_case(Case::Camel);
 
         let typescript_field_type = match field_type {
-            AlgebraicType::Product(product) if product.is_identity() => "Identity",
-            AlgebraicType::Product(_) | AlgebraicType::Sum(_) | AlgebraicType::Ref(_) | AlgebraicType::Map(_) => {
-                // TODO: We don't allow filtering on enums, tuples, or maps right now,
+            AlgebraicType::Bool => "boolean",
+            AlgebraicType::I128 | AlgebraicType::U128 => "BigInt",
+            ty if ty.is_int() => "number",
+            AlgebraicType::String => "string",
+            ty if ty.is_identity() => "Identity",
+            // Do allow filtering for byte arrays.
+            ty if ty.is_bytes() => "Uint8Array",
+            AlgebraicType::Product(_)
+            | AlgebraicType::Sum(_)
+            | AlgebraicType::Ref(_)
+            | AlgebraicType::Array(_)
+            | AlgebraicType::Map(_) => {
+                // TODO: We don't allow filtering on enums, tuples, arrays, or maps right now,
                 // its possible we may consider it for the future.
                 // For maps, it would be nice to be able to say,
                 // give me all entries where this vec contains this value,
                 // which we can do.
                 continue;
             }
-            AlgebraicType::Array(ArrayType { elem_ty }) => {
-                if let Some(BuiltinType::U8) = elem_ty.as_builtin() {
-                    // Do allow filtering for byte arrays
-                    "Uint8Array"
-                } else {
-                    // TODO: We don't allow filtering based on an array type,
-                    // but we might want other functionality here in the future.
-                    continue;
-                }
-            }
-            AlgebraicType::Builtin(b) => to_primitive(b),
+            _ => unreachable!(),
         };
 
         let filter_return_type = fmt_fn(|f| {
@@ -1103,7 +1030,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output).unwrap();
 
     writeln!(output, "// @ts-ignore").unwrap();
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, ReducerEvent }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, IDatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, ReducerEvent }} from \"@clockworklabs/spacetimedb-sdk\";").unwrap();
 
     let mut imports = Vec::new();
     generate_imports(ctx, &reducer.args, &mut imports, None);

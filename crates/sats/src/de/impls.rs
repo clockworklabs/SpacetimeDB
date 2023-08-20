@@ -5,10 +5,9 @@ use std::marker::PhantomData;
 // use crate::type_value::{ElementValue, EnumValue};
 // use crate::{ProductTypeElement, SumType, PrimitiveType, ReducerDef, ProductType, ProductValue, AlgebraicType, AlgebraicValue};
 
-use crate::builtin_value::{F32, F64};
 use crate::{
-    AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, BuiltinType, BuiltinValue, MapType, MapValue, ProductType,
-    ProductTypeElement, ProductValue, SumType, SumValue, WithTypespace,
+    AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, MapValue, ProductType, ProductTypeElement,
+    ProductValue, SumType, SumValue, WithTypespace, F32, F64,
 };
 
 use super::{
@@ -298,41 +297,28 @@ impl<'de, T: Deserialize<'de>, U: Deserialize<'de>> VariantVisitor for ResultVis
 impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
     type Output = AlgebraicValue;
 
-    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
+    fn deserialize<D: Deserializer<'de>>(self, de: D) -> Result<Self::Output, D::Error> {
         match self.ty() {
-            AlgebraicType::Ref(r) => self.resolve(*r).deserialize(deserializer),
-            AlgebraicType::Sum(sum) => self.with(sum).deserialize(deserializer).map(AlgebraicValue::Sum),
-            AlgebraicType::Product(prod) => self.with(prod).deserialize(deserializer).map(AlgebraicValue::Product),
-            AlgebraicType::Array(ty) => self.with(ty).deserialize(deserializer).map(AlgebraicValue::ArrayOf),
-            AlgebraicType::Map(ty) => self
-                .with(ty)
-                .deserialize(deserializer)
-                .map(|m| AlgebraicValue::Map(Box::new(m))),
-            AlgebraicType::Builtin(b) => self.with(b).deserialize(deserializer).map(AlgebraicValue::Builtin),
+            AlgebraicType::Ref(r) => self.resolve(*r).deserialize(de),
+            AlgebraicType::Sum(sum) => self.with(sum).deserialize(de).map(AlgebraicValue::Sum),
+            AlgebraicType::Product(prod) => self.with(prod).deserialize(de).map(AlgebraicValue::Product),
+            AlgebraicType::Array(ty) => self.with(ty).deserialize(de).map(AlgebraicValue::Array),
+            AlgebraicType::Map(ty) => self.with(ty).deserialize(de).map(|m| AlgebraicValue::Map(Box::new(m))),
+            AlgebraicType::Bool => bool::deserialize(de).map(AlgebraicValue::Bool),
+            AlgebraicType::I8 => i8::deserialize(de).map(AlgebraicValue::I8),
+            AlgebraicType::U8 => u8::deserialize(de).map(AlgebraicValue::U8),
+            AlgebraicType::I16 => i16::deserialize(de).map(AlgebraicValue::I16),
+            AlgebraicType::U16 => u16::deserialize(de).map(AlgebraicValue::U16),
+            AlgebraicType::I32 => i32::deserialize(de).map(AlgebraicValue::I32),
+            AlgebraicType::U32 => u32::deserialize(de).map(AlgebraicValue::U32),
+            AlgebraicType::I64 => i64::deserialize(de).map(AlgebraicValue::I64),
+            AlgebraicType::U64 => u64::deserialize(de).map(AlgebraicValue::U64),
+            AlgebraicType::I128 => i128::deserialize(de).map(AlgebraicValue::I128),
+            AlgebraicType::U128 => u128::deserialize(de).map(AlgebraicValue::U128),
+            AlgebraicType::F32 => f32::deserialize(de).map(|x| AlgebraicValue::F32(x.into())),
+            AlgebraicType::F64 => f64::deserialize(de).map(|x| AlgebraicValue::F64(x.into())),
+            AlgebraicType::String => <Box<str>>::deserialize(de).map(AlgebraicValue::String),
         }
-    }
-}
-
-impl<'de> DeserializeSeed<'de> for WithTypespace<'_, BuiltinType> {
-    type Output = BuiltinValue;
-
-    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
-        Ok(match self.ty() {
-            BuiltinType::Bool => BuiltinValue::Bool(bool::deserialize(deserializer)?),
-            BuiltinType::I8 => BuiltinValue::I8(i8::deserialize(deserializer)?),
-            BuiltinType::U8 => BuiltinValue::U8(u8::deserialize(deserializer)?),
-            BuiltinType::I16 => BuiltinValue::I16(i16::deserialize(deserializer)?),
-            BuiltinType::U16 => BuiltinValue::U16(u16::deserialize(deserializer)?),
-            BuiltinType::I32 => BuiltinValue::I32(i32::deserialize(deserializer)?),
-            BuiltinType::U32 => BuiltinValue::U32(u32::deserialize(deserializer)?),
-            BuiltinType::I64 => BuiltinValue::I64(i64::deserialize(deserializer)?),
-            BuiltinType::U64 => BuiltinValue::U64(u64::deserialize(deserializer)?),
-            BuiltinType::I128 => BuiltinValue::I128(i128::deserialize(deserializer)?),
-            BuiltinType::U128 => BuiltinValue::U128(u128::deserialize(deserializer)?),
-            BuiltinType::F32 => BuiltinValue::F32(f32::deserialize(deserializer)?.into()),
-            BuiltinType::F64 => BuiltinValue::F64(f64::deserialize(deserializer)?.into()),
-            BuiltinType::String => BuiltinValue::String(<Box<str>>::deserialize(deserializer)?),
-        })
     }
 }
 
@@ -455,22 +441,22 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                 AlgebraicType::Map(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(|x| ArrayValue::Map(x.into())),
-                AlgebraicType::Builtin(BuiltinType::Bool) => de_array(deserializer, ArrayValue::Bool),
-                AlgebraicType::Builtin(BuiltinType::I8) => de_array(deserializer, ArrayValue::I8),
-                AlgebraicType::Builtin(BuiltinType::U8) => deserializer
+                AlgebraicType::Bool => de_array(deserializer, ArrayValue::Bool),
+                AlgebraicType::I8 => de_array(deserializer, ArrayValue::I8),
+                AlgebraicType::U8 => deserializer
                     .deserialize_bytes(OwnedSliceVisitor)
                     .map(|x| ArrayValue::U8(x.into())),
-                AlgebraicType::Builtin(BuiltinType::I16) => de_array(deserializer, ArrayValue::I16),
-                AlgebraicType::Builtin(BuiltinType::U16) => de_array(deserializer, ArrayValue::U16),
-                AlgebraicType::Builtin(BuiltinType::I32) => de_array(deserializer, ArrayValue::I32),
-                AlgebraicType::Builtin(BuiltinType::U32) => de_array(deserializer, ArrayValue::U32),
-                AlgebraicType::Builtin(BuiltinType::I64) => de_array(deserializer, ArrayValue::I64),
-                AlgebraicType::Builtin(BuiltinType::U64) => de_array(deserializer, ArrayValue::U64),
-                AlgebraicType::Builtin(BuiltinType::I128) => de_array(deserializer, ArrayValue::I128),
-                AlgebraicType::Builtin(BuiltinType::U128) => de_array(deserializer, ArrayValue::U128),
-                AlgebraicType::Builtin(BuiltinType::F32) => de_array(deserializer, ArrayValue::F32),
-                AlgebraicType::Builtin(BuiltinType::F64) => de_array(deserializer, ArrayValue::F64),
-                AlgebraicType::Builtin(BuiltinType::String) => de_array(deserializer, ArrayValue::String),
+                AlgebraicType::I16 => de_array(deserializer, ArrayValue::I16),
+                AlgebraicType::U16 => de_array(deserializer, ArrayValue::U16),
+                AlgebraicType::I32 => de_array(deserializer, ArrayValue::I32),
+                AlgebraicType::U32 => de_array(deserializer, ArrayValue::U32),
+                AlgebraicType::I64 => de_array(deserializer, ArrayValue::I64),
+                AlgebraicType::U64 => de_array(deserializer, ArrayValue::U64),
+                AlgebraicType::I128 => de_array(deserializer, ArrayValue::I128),
+                AlgebraicType::U128 => de_array(deserializer, ArrayValue::U128),
+                AlgebraicType::F32 => de_array(deserializer, ArrayValue::F32),
+                AlgebraicType::F64 => de_array(deserializer, ArrayValue::F64),
+                AlgebraicType::String => de_array(deserializer, ArrayValue::String),
             };
         }
     }

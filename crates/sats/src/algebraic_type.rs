@@ -7,8 +7,8 @@ use crate::map_type::MapType;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
 use crate::{
-    static_assert_size, AlgebraicTypeRef, AlgebraicValue, ArrayType, BuiltinType, ProductType, ProductTypeElement,
-    SumType, SumTypeVariant,
+    static_assert_size, AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, ProductTypeElement, SumType,
+    SumTypeVariant,
 };
 use enum_as_inner::EnumAsInner;
 
@@ -31,11 +31,9 @@ use enum_as_inner::EnumAsInner;
 /// type Option<T> = (some: T | none: ())
 /// type Ref = &0
 ///
-/// type AlgebraicType = (sum: SumType | product: ProductType | builtin: BuiltinType | set: AlgebraicType)
 /// type Catalog<T> = (name: String, indices: Set<Set<Tag>>, relation: Set<>)
 /// type CatalogEntry = { name: string, indexes: {some type}, relation: Relation }
 /// type ElementValue = (tag: Tag, value: AlgebraicValue)
-/// type AlgebraicValue = (sum: ElementValue | product: {ElementValue} | builtin: BuiltinValue | set: {AlgebraicValue})
 /// type Any = (value: Bytes, type: AlgebraicType)
 ///
 /// type Table<Row: ProductType> = (
@@ -113,8 +111,6 @@ pub enum AlgebraicType {
     ///
     /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
     Product(ProductType),
-    /// A bulltin type, e.g., `bool`.
-    Builtin(BuiltinType),
     /// The type of array values where elements are of a base type `elem_ty`.
     /// Values [`BuiltinValue::Array(array)`](crate::BuiltinValue::Array) will have this type.
     Array(ArrayType),
@@ -122,56 +118,41 @@ pub enum AlgebraicType {
     /// Values [`BuiltinValue::Map(map)`](crate::BuiltinValue::Map) will have this type.
     /// The order of entries in a map value is observable.
     Map(MapType),
+    /// The bool type. Values [`BuiltinValue::Bool(b)`](crate::BuiltinValue::Bool) will have this type.
+    Bool,
+    /// The `I8` type. Values [`BuiltinValue::I8(v)`](crate::BuiltinValue::I8) will have this type.
+    I8,
+    /// The `U8` type. Values [`BuiltinValue::U8(v)`](crate::BuiltinValue::U8) will have this type.
+    U8,
+    /// The `I16` type. Values [`BuiltinValue::I16(v)`](crate::BuiltinValue::I16) will have this type.
+    I16,
+    /// The `U16` type. Values [`BuiltinValue::U16(v)`](crate::BuiltinValue::U16) will have this type.
+    U16,
+    /// The `I32` type. Values [`BuiltinValue::I32(v)`](crate::BuiltinValue::I32) will have this type.
+    I32,
+    /// The `U32` type. Values [`BuiltinValue::U32(v)`](crate::BuiltinValue::U32) will have this type.
+    U32,
+    /// The `I64` type. Values [`BuiltinValue::I64(v)`](crate::BuiltinValue::I64) will have this type.
+    I64,
+    /// The `U64` type. Values [`BuiltinValue::U64(v)`](crate::BuiltinValue::U64) will have this type.
+    U64,
+    /// The `I128` type. Values [`BuiltinValue::I128(v)`](crate::BuiltinValue::I128) will have this type.
+    I128,
+    /// The `U128` type. Values [`BuiltinValue::U128(v)`](crate::BuiltinValue::U128) will have this type.
+    U128,
+    /// The `F32` type. Values [`BuiltinValue::F32(v)`](crate::BuiltinValue::F32) will have this type.
+    F32,
+    /// The `F64` type. Values [`BuiltinValue::F64(v)`](crate::BuiltinValue::F64) will have this type.
+    F64,
+    /// The UTF-8 encoded `String` type.
+    /// Values [`BuiltinValue::String(s)`](crate::BuiltinValue::String) will have this type.
+    ///
+    /// This type exists for convenience and because it is easy to just use Rust's `String` (UTF-8)
+    /// as opposed to rolling your own equivalent byte-array based UTF-8 encoding.
+    String,
 }
 
 static_assert_size!(AlgebraicType, 24);
-
-#[allow(non_upper_case_globals)]
-impl AlgebraicType {
-    /// The built-in Bool type.
-    pub const Bool: Self = Self::Builtin(BuiltinType::Bool);
-
-    /// The built-in signed 8-bit integer type.
-    pub const I8: Self = Self::Builtin(BuiltinType::I8);
-
-    /// The built-in unsigned 8-bit integer type.
-    pub const U8: Self = Self::Builtin(BuiltinType::U8);
-
-    /// The built-in signed 16-bit integer type.
-    pub const I16: Self = Self::Builtin(BuiltinType::I16);
-
-    /// The built-in unsigned 16-bit integer type.
-    pub const U16: Self = Self::Builtin(BuiltinType::U16);
-
-    /// The built-in signed 32-bit integer type.
-    pub const I32: Self = Self::Builtin(BuiltinType::I32);
-
-    /// The built-in unsigned 32-bit integer type.
-    pub const U32: Self = Self::Builtin(BuiltinType::U32);
-
-    /// The built-in signed 64-bit integer type.
-    pub const I64: Self = Self::Builtin(BuiltinType::I64);
-
-    /// The built-in unsigned 64-bit integer type.
-    pub const U64: Self = Self::Builtin(BuiltinType::U64);
-
-    /// The built-in signed 128-bit integer type.
-    pub const I128: Self = Self::Builtin(BuiltinType::I128);
-
-    /// The built-in unsigned 128-bit integer type.
-    pub const U128: Self = Self::Builtin(BuiltinType::U128);
-
-    /// The built-in 32-bit floating point type.
-    pub const F32: Self = Self::Builtin(BuiltinType::F32);
-
-    /// The built-in 64-bit floating point type.
-    pub const F64: Self = Self::Builtin(BuiltinType::F64);
-
-    /// The built-in string type.
-    pub const String: Self = Self::Builtin(BuiltinType::String);
-
-    pub const ZERO_REF: Self = Self::Ref(AlgebraicTypeRef(0));
-}
 
 impl MetaType for AlgebraicType {
     /// This is a static function that constructs the type of `AlgebraicType`
@@ -180,30 +161,77 @@ impl MetaType for AlgebraicType {
     /// This could alternatively be implemented
     /// as a regular AlgebraicValue or as a static variable.
     fn meta_type() -> Self {
-        AlgebraicType::sum(
-            [
-                SumTypeVariant::new_named(AlgebraicTypeRef::meta_type(), "ref"),
-                SumTypeVariant::new_named(SumType::meta_type(), "sum"),
-                SumTypeVariant::new_named(ProductType::meta_type(), "product"),
-                SumTypeVariant::new_named(BuiltinType::meta_type(), "builtin"),
-                SumTypeVariant::new_named(AlgebraicType::ZERO_REF, "array"),
-                SumTypeVariant::new_named(
-                    AlgebraicType::product(
-                        [
-                            ProductTypeElement::new_named(Self::ZERO_REF, "key_ty"),
-                            ProductTypeElement::new_named(Self::ZERO_REF, "ty"),
-                        ]
-                        .into(),
-                    ),
-                    "map",
-                ),
-            ]
-            .into(),
-        )
+        let map_fs = [
+            ProductTypeElement::new_named(Self::ZERO_REF, "key_ty"),
+            ProductTypeElement::new_named(Self::ZERO_REF, "ty"),
+        ];
+        let vs = [
+            SumTypeVariant::new_named(AlgebraicTypeRef::meta_type(), "ref"),
+            SumTypeVariant::new_named(SumType::meta_type(), "sum"),
+            SumTypeVariant::new_named(ProductType::meta_type(), "product"),
+            SumTypeVariant::new_named(AlgebraicType::ZERO_REF, "array"),
+            SumTypeVariant::new_named(AlgebraicType::product(map_fs.into()), "map"),
+            SumTypeVariant::unit("bool"),
+            SumTypeVariant::unit("i8"),
+            SumTypeVariant::unit("u8"),
+            SumTypeVariant::unit("i16"),
+            SumTypeVariant::unit("u16"),
+            SumTypeVariant::unit("i32"),
+            SumTypeVariant::unit("u32"),
+            SumTypeVariant::unit("i64"),
+            SumTypeVariant::unit("u64"),
+            SumTypeVariant::unit("i128"),
+            SumTypeVariant::unit("u128"),
+            SumTypeVariant::unit("f32"),
+            SumTypeVariant::unit("f64"),
+            SumTypeVariant::unit("string"),
+        ];
+        AlgebraicType::sum(vs.into())
     }
 }
 
 impl AlgebraicType {
+    pub const ZERO_REF: Self = Self::Ref(AlgebraicTypeRef(0));
+
+    /// Returns whether this type is the conventional identity type.
+    pub fn is_identity(&self) -> bool {
+        matches!(self, Self::Product(p) if p.is_identity())
+    }
+
+    /// Returns whether this type is scalar or a string type.
+    pub fn is_scalar_or_string(&self) -> bool {
+        self.is_scalar() || self.is_string()
+    }
+
+    /// Returns whether this type is one which holds a scalar value.
+    ///
+    /// A scalar value is one not made up of other values, i.e., not composite.
+    /// These are all integer and float values,
+    /// i.e., integer and float types are scalar.
+    pub fn is_scalar(&self) -> bool {
+        self.is_bool() || self.is_int() || self.is_float()
+    }
+
+    /// Returns whether the type is a signed integer type.
+    pub fn is_signed(&self) -> bool {
+        matches!(self, Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::I128)
+    }
+
+    /// Returns whether the type is an unsigned integer type.
+    pub fn is_unsigned(&self) -> bool {
+        matches!(self, Self::U8 | Self::U16 | Self::U32 | Self::U64 | Self::U128)
+    }
+
+    /// Returns whether the type is an integer type.
+    pub fn is_int(&self) -> bool {
+        self.is_signed() || self.is_unsigned()
+    }
+
+    /// Returns whether the type is a float type.
+    pub fn is_float(&self) -> bool {
+        matches!(self, Self::F32 | Self::F64)
+    }
+
     /// The canonical 0-element unit type.
     pub fn unit() -> Self {
         Self::product(Vec::new().into_boxed_slice())

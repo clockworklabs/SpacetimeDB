@@ -52,8 +52,12 @@ use spacetimedb_lib::{
     relation::RelValue,
     DataKey,
 };
-use spacetimedb_sats::{
-    AlgebraicType, AlgebraicValue, BuiltinType, BuiltinValue, ProductType, ProductValue,
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    ops::RangeBounds,
+    sync::Arc,
+    vec,
 };
 use thiserror::Error;
 
@@ -803,7 +807,8 @@ impl Inner {
         // we have created the table in the database, but have not yet
         // represented in memory or inserted any rows into it.
         let table_schema = self.schema_for_table(table_id)?;
-        let elements = table_schema.columns
+        let elements = table_schema
+            .columns
             .into_vec()
             .into_iter()
             .map(|col| col.col_type.into())
@@ -948,12 +953,11 @@ impl Inner {
         })
     }
 
-    fn table_name_from_id(&self, table_id: TableId) -> super::Result<Option<String>> {
-        let table_id_col: ColId = ColId(0);
-        self.iter_by_col_eq(&ST_TABLES_ID, &table_id_col, table_id.into())
+    fn table_name_from_id(&self, table_id: TableId) -> super::Result<Option<Box<str>>> {
+        self.iter_by_col_eq(&ST_TABLES_ID, &ColId(0), table_id.into())
             .map(|mut iter| {
                 iter.next()
-                    .map(|row| row.view().elements[1].as_string().unwrap().to_owned())
+                    .map(|row| row.view().elements[1].as_string().unwrap().clone())
             })
     }
 
@@ -1141,50 +1145,41 @@ impl Inner {
         ty: &AlgebraicType,
         sequence_value: i128,
     ) -> Result<AlgebraicValue, SequenceError> {
-        match ty {
-            AlgebraicType::Builtin(of) => Ok(match of {
-                BuiltinType::I8 => AlgebraicValue::I8(sequence_value as i8),
-                BuiltinType::U8 => AlgebraicValue::U8(sequence_value as u8),
-                BuiltinType::I16 => AlgebraicValue::I16(sequence_value as i16),
-                BuiltinType::U16 => AlgebraicValue::U16(sequence_value as u16),
-                BuiltinType::I32 => AlgebraicValue::I32(sequence_value as i32),
-                BuiltinType::U32 => AlgebraicValue::U32(sequence_value as u32),
-                BuiltinType::I64 => AlgebraicValue::I64(sequence_value as i64),
-                BuiltinType::U64 => AlgebraicValue::U64(sequence_value as u64),
-                BuiltinType::I128 => AlgebraicValue::I128(sequence_value),
-                BuiltinType::U128 => AlgebraicValue::U128(sequence_value as u128),
-                _ => {
-                    return Err(SequenceError::NotInteger {
-                        col: format!("{}.{}", table_name, col_name),
-                        found: ty.clone(),
-                    })
-                }
-            }),
-            _ => Err(SequenceError::NotInteger {
-                col: format!("{}.{}", table_name, col_name),
-                found: ty.clone(),
-            }),
-        }
+        Ok(match ty {
+            AlgebraicType::I8 => AlgebraicValue::I8(sequence_value as i8),
+            AlgebraicType::U8 => AlgebraicValue::U8(sequence_value as u8),
+            AlgebraicType::I16 => AlgebraicValue::I16(sequence_value as i16),
+            AlgebraicType::U16 => AlgebraicValue::U16(sequence_value as u16),
+            AlgebraicType::I32 => AlgebraicValue::I32(sequence_value as i32),
+            AlgebraicType::U32 => AlgebraicValue::U32(sequence_value as u32),
+            AlgebraicType::I64 => AlgebraicValue::I64(sequence_value as i64),
+            AlgebraicType::U64 => AlgebraicValue::U64(sequence_value as u64),
+            AlgebraicType::I128 => AlgebraicValue::I128(sequence_value),
+            AlgebraicType::U128 => AlgebraicValue::U128(sequence_value as u128),
+            _ => {
+                return Err(SequenceError::NotInteger {
+                    col: format!("{}.{}", table_name, col_name),
+                    found: ty.clone(),
+                })
+            }
+        })
     }
 
     /// Check if the value is one of the `numeric` types and is `0`.
     fn can_replace_with_sequence(value: &AlgebraicValue) -> bool {
-        match value.as_builtin() {
-            Some(x) => match x {
-                BuiltinValue::I8(x) => *x == 0,
-                BuiltinValue::U8(x) => *x == 0,
-                BuiltinValue::I16(x) => *x == 0,
-                BuiltinValue::U16(x) => *x == 0,
-                BuiltinValue::I32(x) => *x == 0,
-                BuiltinValue::U32(x) => *x == 0,
-                BuiltinValue::I64(x) => *x == 0,
-                BuiltinValue::U64(x) => *x == 0,
-                BuiltinValue::I128(x) => *x == 0,
-                BuiltinValue::U128(x) => *x == 0,
-                BuiltinValue::F32(x) => *x == 0.0,
-                BuiltinValue::F64(x) => *x == 0.0,
-                _ => false,
-            },
+        match value {
+            AlgebraicValue::I8(x) => *x == 0,
+            AlgebraicValue::U8(x) => *x == 0,
+            AlgebraicValue::I16(x) => *x == 0,
+            AlgebraicValue::U16(x) => *x == 0,
+            AlgebraicValue::I32(x) => *x == 0,
+            AlgebraicValue::U32(x) => *x == 0,
+            AlgebraicValue::I64(x) => *x == 0,
+            AlgebraicValue::U64(x) => *x == 0,
+            AlgebraicValue::I128(x) => *x == 0,
+            AlgebraicValue::U128(x) => *x == 0,
+            AlgebraicValue::F32(x) => *x == 0.0,
+            AlgebraicValue::F64(x) => *x == 0.0,
             _ => false,
         }
     }
@@ -2001,7 +1996,7 @@ impl MutTxDatastore for Locking {
         tx.lock.table_id_from_name(table_name)
     }
 
-    fn table_name_from_id_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> super::Result<Option<String>> {
+    fn table_name_from_id_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> super::Result<Option<Box<str>>> {
         tx.lock.table_name_from_id(table_id)
     }
 

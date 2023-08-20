@@ -1,5 +1,4 @@
-use crate::builtin_value::{F32, F64};
-use crate::{static_assert_size, AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SumValue};
+use crate::{static_assert_size, AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SumValue, F32, F64};
 use itertools::Itertools;
 use nonempty::NonEmpty;
 use std::fmt;
@@ -310,6 +309,8 @@ impl Iterator for ArrayValueIntoIter {
         match self {
             Self::Sum(it) => it.next().map(AlgebraicValue::Sum),
             Self::Product(it) => it.next().map(Into::into),
+            Self::Array(it) => it.next().map(AlgebraicValue::Array),
+            Self::Map(it) => it.next().map(AlgebraicValue::map),
             Self::Bool(it) => it.next().map(Into::into),
             Self::I8(it) => it.next().map(Into::into),
             Self::U8(it) => it.next().map(Into::into),
@@ -324,8 +325,6 @@ impl Iterator for ArrayValueIntoIter {
             Self::F32(it) => it.next().map(|f| f32::from(f).into()),
             Self::F64(it) => it.next().map(|f| f64::from(f).into()),
             Self::String(it) => it.next().map(Into::into),
-            Self::Array(it) => it.next().map(AlgebraicValue::ArrayOf),
-            Self::Map(it) => it.next().map(AlgebraicValue::map),
         }
     }
 }
@@ -358,6 +357,8 @@ impl Iterator for ArrayValueIterCloned<'_> {
         match self {
             Self::Sum(it) => it.next().cloned().map(AlgebraicValue::Sum),
             Self::Product(it) => it.next().cloned().map(Into::into),
+            Self::Array(it) => it.next().cloned().map(AlgebraicValue::Array),
+            Self::Map(it) => it.next().cloned().map(AlgebraicValue::map),
             Self::Bool(it) => it.next().cloned().map(Into::into),
             Self::I8(it) => it.next().cloned().map(Into::into),
             Self::U8(it) => it.next().cloned().map(Into::into),
@@ -372,8 +373,6 @@ impl Iterator for ArrayValueIterCloned<'_> {
             Self::F32(it) => it.next().map(|f| f32::from(*f).into()),
             Self::F64(it) => it.next().map(|f| f64::from(*f).into()),
             Self::String(it) => it.next().cloned().map(Into::into),
-            Self::Array(it) => it.next().cloned().map(AlgebraicValue::ArrayOf),
-            Self::Map(it) => it.next().cloned().map(AlgebraicValue::map),
         }
     }
 }

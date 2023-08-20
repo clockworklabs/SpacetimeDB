@@ -67,7 +67,7 @@ impl DatabaseUpdate {
             let table_name = if let Some(name) = table_name_map.get(&table_id) {
                 name.clone()
             } else {
-                let table_name: Box<str> = stdb.table_name_from_id(&tx, table_id.0).unwrap().unwrap().into();
+                let table_name = stdb.table_name_from_id(&tx, table_id.0).unwrap().unwrap();
                 table_name_map.insert(table_id, table_name.clone());
                 table_name
             };

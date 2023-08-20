@@ -1,5 +1,4 @@
 use super::AlgebraicType;
-use crate::builtin_type::BuiltinType;
 use crate::de::fmt_fn;
 use crate::{ArrayType, MapType};
 use std::fmt::{self, Formatter};
@@ -15,6 +14,7 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + fmt::Display {
     };
 
     fmt_fn(move |f| match ty {
+        AlgebraicType::Ref(r) => write!(f, "{{ ty_: Ref, 0: {} }}", r.0),
         AlgebraicType::Sum(ty) => {
             write!(f, "{{ ty_: Sum")?;
             for (i, e_ty) in ty.variants.iter().enumerate() {
@@ -33,26 +33,19 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + fmt::Display {
         }
         AlgebraicType::Array(ArrayType { elem_ty }) => write!(f, "{{ ty_: Array, 0: {} }}", fmt(elem_ty)),
         AlgebraicType::Map(MapType { key_ty, ty }) => write!(f, "{{ ty_: Map, 0: {}, 1: {} }}", fmt(key_ty), fmt(ty)),
-        AlgebraicType::Builtin(ty) => {
-            write!(f, "{{ ty_: Builtin")?;
-            match &ty {
-                BuiltinType::Bool => write!(f, ", 0: Bool")?,
-                BuiltinType::I8 => write!(f, ", 0: I8")?,
-                BuiltinType::U8 => write!(f, ", 0: U8")?,
-                BuiltinType::I16 => write!(f, ", 0: I16")?,
-                BuiltinType::U16 => write!(f, ", 0: U16")?,
-                BuiltinType::I32 => write!(f, ", 0: I32")?,
-                BuiltinType::U32 => write!(f, ", 0: U32")?,
-                BuiltinType::I64 => write!(f, ", 0: I64")?,
-                BuiltinType::U64 => write!(f, ", 0: U64")?,
-                BuiltinType::I128 => write!(f, ", 0: I128")?,
-                BuiltinType::U128 => write!(f, ", 0: U128")?,
-                BuiltinType::F32 => write!(f, ", 0: F32")?,
-                BuiltinType::F64 => write!(f, ", 0: F64")?,
-                BuiltinType::String => write!(f, ", 0: String")?,
-            }
-            write!(f, " }}")
-        }
-        AlgebraicType::Ref(r) => write!(f, "{{ ty_: Ref, 0: {} }}", r.0),
+        AlgebraicType::Bool => write!(f, "{{ ty_: Bool }}"),
+        AlgebraicType::I8 => write!(f, "{{ ty_: I8 }}"),
+        AlgebraicType::U8 => write!(f, "{{ ty_: U8 }}"),
+        AlgebraicType::I16 => write!(f, "{{ ty_: I16 }}"),
+        AlgebraicType::U16 => write!(f, "{{ ty_: U16 }}"),
+        AlgebraicType::I32 => write!(f, "{{ ty_: I32 }}"),
+        AlgebraicType::U32 => write!(f, "{{ ty_: U32 }}"),
+        AlgebraicType::I64 => write!(f, "{{ ty_: I64 }}"),
+        AlgebraicType::U64 => write!(f, "{{ ty_: U64 }}"),
+        AlgebraicType::I128 => write!(f, "{{ ty_: I128 }}"),
+        AlgebraicType::U128 => write!(f, "{{ ty_: U128 }}"),
+        AlgebraicType::F32 => write!(f, "{{ ty_: F32 }}"),
+        AlgebraicType::F64 => write!(f, "{{ ty_: F64 }}"),
+        AlgebraicType::String => write!(f, "{{ ty_: String }}"),
     })
 }

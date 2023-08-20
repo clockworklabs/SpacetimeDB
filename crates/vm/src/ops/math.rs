@@ -5,31 +5,24 @@ use crate::functions::Args;
 use crate::ops::shared::bin_op;
 use crate::program::ProgramRef;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::builtin_value::BuiltinValue;
 
 macro_rules! math_op {
     ($name:ident, $op:path) => {
         pub(crate) fn $name(lhs: &AlgebraicValue, rhs: &AlgebraicValue) -> AlgebraicValue {
-            match (lhs.as_builtin(), rhs.as_builtin()) {
-                (Some(lhs), Some(rhs)) => match (lhs, rhs) {
-                    (BuiltinValue::U8(a), BuiltinValue::U8(b)) => bin_op::<u8, _>($op, *a, *b),
-                    (BuiltinValue::I8(a), BuiltinValue::I8(b)) => bin_op::<i8, _>($op, *a, *b),
-                    (BuiltinValue::U16(a), BuiltinValue::U16(b)) => bin_op::<u16, _>($op, *a, *b),
-                    (BuiltinValue::I16(a), BuiltinValue::I16(b)) => bin_op::<i16, _>($op, *a, *b),
-                    (BuiltinValue::U32(a), BuiltinValue::U32(b)) => bin_op::<u32, _>($op, *a, *b),
-                    (BuiltinValue::I32(a), BuiltinValue::I32(b)) => bin_op::<i32, _>($op, *a, *b),
-                    (BuiltinValue::U64(a), BuiltinValue::U64(b)) => bin_op::<u64, _>($op, *a, *b),
-                    (BuiltinValue::I64(a), BuiltinValue::I64(b)) => bin_op::<i64, _>($op, *a, *b),
-                    (BuiltinValue::U128(a), BuiltinValue::U128(b)) => bin_op::<u128, _>($op, *a, *b),
-                    (BuiltinValue::I128(a), BuiltinValue::I128(b)) => bin_op::<i128, _>($op, *a, *b),
-                    (BuiltinValue::F32(a), BuiltinValue::F32(b)) => {
-                        bin_op::<f32, _>($op, a.into_inner(), b.into_inner())
-                    }
-                    (BuiltinValue::F64(a), BuiltinValue::F64(b)) => {
-                        bin_op::<f64, _>($op, a.into_inner(), b.into_inner())
-                    }
-                    _ => unreachable!("Calling a math op with invalid param value"),
-                },
+            use AlgebraicValue::*;
+            match (lhs, rhs) {
+                (U8(a), U8(b)) => bin_op::<u8, _>($op, *a, *b),
+                (I8(a), I8(b)) => bin_op::<i8, _>($op, *a, *b),
+                (U16(a), U16(b)) => bin_op::<u16, _>($op, *a, *b),
+                (I16(a), I16(b)) => bin_op::<i16, _>($op, *a, *b),
+                (U32(a), U32(b)) => bin_op::<u32, _>($op, *a, *b),
+                (I32(a), I32(b)) => bin_op::<i32, _>($op, *a, *b),
+                (U64(a), U64(b)) => bin_op::<u64, _>($op, *a, *b),
+                (I64(a), I64(b)) => bin_op::<i64, _>($op, *a, *b),
+                (U128(a), U128(b)) => bin_op::<u128, _>($op, *a, *b),
+                (I128(a), I128(b)) => bin_op::<i128, _>($op, *a, *b),
+                (F32(a), F32(b)) => bin_op::<f32, _>($op, a.into_inner(), b.into_inner()),
+                (F64(a), F64(b)) => bin_op::<f64, _>($op, a.into_inner(), b.into_inner()),
                 _ => unreachable!("Calling a math op with invalid param value"),
             }
         }

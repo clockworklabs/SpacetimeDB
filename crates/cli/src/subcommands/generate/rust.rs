@@ -2,7 +2,7 @@ use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem};
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::{
-    AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, ProductType, ProductTypeElement, SumType, SumTypeVariant,
+    AlgebraicType, AlgebraicTypeRef, ArrayType, ProductType, ProductTypeElement, SumType, SumTypeVariant,
 };
 use spacetimedb_lib::{ColumnIndexAttribute, ReducerDef, TableDef};
 use std::collections::HashSet;
@@ -13,25 +13,6 @@ type Indenter = CodeIndenter<String>;
 
 /// Pairs of (module_name, TypeName).
 type Imports = HashSet<(String, String)>;
-
-fn to_primitive(b: &BuiltinType) -> &'static str {
-    match b {
-        BuiltinType::Bool => "bool",
-        BuiltinType::I8 => "i8",
-        BuiltinType::U8 => "u8",
-        BuiltinType::I16 => "i16",
-        BuiltinType::U16 => "u16",
-        BuiltinType::I32 => "i32",
-        BuiltinType::U32 => "u32",
-        BuiltinType::I64 => "i64",
-        BuiltinType::U64 => "u64",
-        BuiltinType::I128 => "i128",
-        BuiltinType::U128 => "u128",
-        BuiltinType::String => "String",
-        BuiltinType::F32 => "f32",
-        BuiltinType::F64 => "f64",
-    }
-}
 
 fn write_type_ctx(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
     write_type(&|r| type_name(ctx, r), out, ty)
@@ -71,18 +52,32 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
             write!(out, ">").unwrap();
         }
         AlgebraicType::Map(ty) => {
-            // TODO: Should `BuiltinType::Map` translate to `HashMap`? This requires
-            //       that any map-key type implement `Hash`. We'll have to derive hash
-            //       on generated types, and notably, `HashMap` is not itself `Hash`,
-            //       so any type that holds a `Map` cannot derive `Hash` and cannot
-            //       key a `Map`.
+            // TODO: Should `AlgebraicType::Map` translate to `HashMap`?
+            //       This requires that any map-key type implement `Hash`.
+            //       We'll have to derive hash on generated types,
+            //       and notably, `HashMap` is not itself `Hash`,
+            //       so any type that holds a `Map` cannot derive `Hash`
+            //       and cannot key a `Map`.
             write!(out, "HashMap::<").unwrap();
             write_type(ctx, out, &ty.key_ty);
             write!(out, ", ").unwrap();
             write_type(ctx, out, &ty.ty);
             write!(out, ">").unwrap();
         }
-        AlgebraicType::Builtin(b) => write!(out, "{}", to_primitive(b)).unwrap(),
+        AlgebraicType::Bool => write!(out, "bool").unwrap(),
+        AlgebraicType::I8 => write!(out, "i8").unwrap(),
+        AlgebraicType::U8 => write!(out, "u8").unwrap(),
+        AlgebraicType::I16 => write!(out, "i16").unwrap(),
+        AlgebraicType::U16 => write!(out, "u16").unwrap(),
+        AlgebraicType::I32 => write!(out, "i32").unwrap(),
+        AlgebraicType::U32 => write!(out, "u32").unwrap(),
+        AlgebraicType::I64 => write!(out, "i64").unwrap(),
+        AlgebraicType::U64 => write!(out, "u64").unwrap(),
+        AlgebraicType::I128 => write!(out, "i128").unwrap(),
+        AlgebraicType::U128 => write!(out, "u128").unwrap(),
+        AlgebraicType::String => write!(out, "String").unwrap(),
+        AlgebraicType::F32 => write!(out, "f32").unwrap(),
+        AlgebraicType::F64 => write!(out, "f64").unwrap(),
         AlgebraicType::Ref(r) => {
             write!(out, "{}", ctx(*r)).unwrap();
         }
@@ -1089,7 +1084,6 @@ fn generate_imports(ctx: &GenCtx, imports: &mut Imports, ty: &AlgebraicType) {
             generate_imports(ctx, imports, &map_type.key_ty);
             generate_imports(ctx, imports, &map_type.ty);
         }
-        AlgebraicType::Builtin(_) => {}
         AlgebraicType::Ref(r) => {
             let type_name = type_name(ctx, *r);
             let module_name = module_name(&type_name);
@@ -1097,6 +1091,7 @@ fn generate_imports(ctx: &GenCtx, imports: &mut Imports, ty: &AlgebraicType) {
         }
         // Recurse into variants of anonymous sum types, e.g. for `Option<T>`, import `T`.
         AlgebraicType::Sum(s) => generate_imports_variants(ctx, imports, &s.variants),
+        // Products, scalars, and strings.
         // Do we need to generate imports for fields of anonymous product types?
         _ => {}
     }

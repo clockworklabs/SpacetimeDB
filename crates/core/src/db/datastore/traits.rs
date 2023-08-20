@@ -452,7 +452,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> Result<()>;
     fn table_id_exists(&self, tx: &Self::MutTxId, table_id: &TableId) -> bool;
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> Result<Option<TableId>>;
-    fn table_name_from_id_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<Option<String>>;
+    fn table_name_from_id_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<Option<Box<str>>>;
     fn get_all_tables_mut_tx(&self, tx: &Self::MutTxId) -> super::Result<Vec<TableSchema>> {
         let mut tables = Vec::new();
         let table_rows = self.iter_mut_tx(tx, TableId(ST_TABLES_ID))?.collect::<Vec<_>>();

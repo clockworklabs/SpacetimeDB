@@ -4,69 +4,26 @@ use std::fmt::{self, Write};
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::sats::{
-    AlgebraicType, AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, ProductType, SumType,
-};
+use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, ArrayType, ProductType, SumType};
 use spacetimedb_lib::{ColumnIndexAttribute, ProductTypeElement, ReducerDef, TableDef};
 
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem, INDENT};
 
-fn to_primitive(b: &BuiltinType) -> &'static str {
-    match b {
-        BuiltinType::Bool => "bool",
-        BuiltinType::I8 => "sbyte",
-        BuiltinType::U8 => "byte",
-        BuiltinType::I16 => "short",
-        BuiltinType::U16 => "ushort",
-        BuiltinType::I32 => "int",
-        BuiltinType::U32 => "uint",
-        BuiltinType::I64 => "long",
-        BuiltinType::U64 => "ulong",
-        // BuiltinType::I128 => "int128", Not a supported type in csharp
-        // BuiltinType::U128 => "uint128", Not a supported type in csharp
-        BuiltinType::I128 => panic!("i128 not supported for csharp"),
-        BuiltinType::U128 => panic!("i128 not supported for csharp"),
-        BuiltinType::String => "string",
-        BuiltinType::F32 => "float",
-        BuiltinType::F64 => "double",
-    }
-}
-
 fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
         AlgebraicType::Sum(sum_type) => {
             // This better be an option type
-            if let Some(inner_ty) = sum_type.as_option() {
-                match inner_ty {
-                    Builtin(b) => match b {
-                        BuiltinType::Bool
-                        | BuiltinType::I8
-                        | BuiltinType::U8
-                        | BuiltinType::I16
-                        | BuiltinType::U16
-                        | BuiltinType::I32
-                        | BuiltinType::U32
-                        | BuiltinType::I64
-                        | BuiltinType::U64
-                        | BuiltinType::I128
-                        | BuiltinType::U128
-                        | BuiltinType::F32
-                        | BuiltinType::F64 => {
-                            // This has to be a nullable type.
-                            write!(f, "{}?", ty_fmt(ctx, inner_ty, namespace))
-                        }
-                        _ => {
-                            write!(f, "{}", ty_fmt(ctx, inner_ty, namespace))
-                        }
-                    },
-                    _ => {
-                        write!(f, "{}", ty_fmt(ctx, inner_ty, namespace))
-                    }
-                }
-            } else {
-                unimplemented!()
+            let Some(inner_ty) = sum_type.as_option() else {
+                unimplemented!();
+            };
+
+            write!(f, "{}", ty_fmt(ctx, inner_ty, namespace))?;
+            if inner_ty.is_scalar() {
+                // This has to be a nullable type.
+                f.write_char('?')?;
             }
+            Ok(())
         }
         AlgebraicType::Product(prod) => {
             // The only type that is allowed here is the identity type. All other types should fail.
@@ -90,20 +47,27 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
             ty_fmt(ctx, &ty.ty, namespace),
             ty_fmt(ctx, &ty.key_ty, namespace)
         ),
-        AlgebraicType::Builtin(b) => f.write_str(to_primitive(b)),
+        AlgebraicType::Bool => f.write_str("bool"),
+        AlgebraicType::I8 => f.write_str("sbyte"),
+        AlgebraicType::U8 => f.write_str("byte"),
+        AlgebraicType::I16 => f.write_str("short"),
+        AlgebraicType::U16 => f.write_str("ushort"),
+        AlgebraicType::I32 => f.write_str("int"),
+        AlgebraicType::U32 => f.write_str("uint"),
+        AlgebraicType::I64 => f.write_str("long"),
+        AlgebraicType::U64 => f.write_str("ulong"),
+        AlgebraicType::I128 => panic!("i128 not supported for csharp"),
+        AlgebraicType::U128 => panic!("i128 not supported for csharp"),
+        AlgebraicType::String => f.write_str("string"),
+        AlgebraicType::F32 => f.write_str("float"),
+        AlgebraicType::F64 => f.write_str("double"),
         AlgebraicType::Ref(r) => {
             let name = csharp_typename(ctx, *r);
-            match &ctx.typespace.types[r.idx()] {
-                AlgebraicType::Sum(sum_type) => {
-                    if sum_type.is_simple_enum() {
-                        let parts: Vec<&str> = name.split('.').collect();
-                        if parts.len() >= 2 {
-                            let enum_namespace = parts[0];
-                            let enum_name = parts[1];
-                            write!(f, "{namespace}.{enum_namespace}.Types.{enum_name}")
-                        } else {
-                            write!(f, "{}.{}", namespace, name)
-                        }
+            match &ctx.typespace[*r] {
+                AlgebraicType::Sum(sum_type) if sum_type.is_simple_enum() => {
+                    let mut ps = name.split('.');
+                    if let Some((e_ns, e_name)) = ps.next().zip(ps.next()) {
+                        write!(f, "{namespace}.{e_ns}.Types.{e_name}")
                     } else {
                         write!(f, "{}.{}", namespace, name)
                     }
@@ -116,10 +80,6 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
     })
 }
 
-fn convert_builtintype<'a>(b: &'a BuiltinType, value: impl fmt::Display + 'a) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| write!(f, "{value}.As{b:?}()"))
-}
-
 fn convert_type<'a>(
     ctx: &'a GenCtx,
     vecnest: usize,
@@ -128,20 +88,12 @@ fn convert_type<'a>(
     namespace: &'a str,
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
-        AlgebraicType::Product(product) => {
-            if product.is_identity() {
-                write!(
-                    f,
-                    "SpacetimeDB.Identity.From({}.AsProductValue().elements[0].AsBytes())",
-                    value
-                )
-            } else {
-                unimplemented!()
-            }
-        }
-        AlgebraicType::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => {
-            write!(f, "{value}.AsBytes()")
-        }
+        ty if ty.is_identity() => write!(
+            f,
+            "SpacetimeDB.Identity.From({}.AsProductValue().elements[0].AsBytes())",
+            value
+        ),
+        ty if ty.is_bytes() => write!(f, "{value}.AsBytes()"),
         AlgebraicType::Array(ArrayType { elem_ty }) => {
             let csharp_type = ty_fmt(ctx, elem_ty, namespace);
             writeln!(
@@ -165,42 +117,18 @@ fn convert_type<'a>(
             writeln!(f, "\treturn vec{vecnest};")?;
             write!(f, "}}))()")
         }
-        AlgebraicType::Map(_) => todo!(),
+        AlgebraicType::Product(_) | AlgebraicType::Map(_) => todo!(),
         AlgebraicType::Sum(sum_type) => {
             if let Some(inner_ty) = sum_type.as_option() {
                 match inner_ty {
-                    Builtin(ty) => match ty {
-                        BuiltinType::Bool
-                        | BuiltinType::I8
-                        | BuiltinType::U8
-                        | BuiltinType::I16
-                        | BuiltinType::U16
-                        | BuiltinType::I32
-                        | BuiltinType::U32
-                        | BuiltinType::I64
-                        | BuiltinType::U64
-                        | BuiltinType::I128
-                        | BuiltinType::U128
-                        | BuiltinType::F32
-                        | BuiltinType::F64 => write!(
-                            f,
-                            "{}.AsSumValue().tag == 1 ? null : new {}?({}.AsSumValue().value{})",
-                            value,
-                            ty_fmt(ctx, inner_ty, namespace),
-                            value,
-                            &convert_type(ctx, vecnest, inner_ty, "", namespace),
-                        ),
-                        _ => fmt::Display::fmt(
-                            &convert_type(
-                                ctx,
-                                vecnest,
-                                inner_ty,
-                                format_args!("{}.AsSumValue().tag == 1 ? null : {}.AsSumValue().value", value, value),
-                                namespace,
-                            ),
-                            f,
-                        ),
-                    },
+                    ty if ty.is_scalar() => write!(
+                        f,
+                        "{}.AsSumValue().tag == 1 ? null : new {}?({}.AsSumValue().value{})",
+                        value,
+                        ty_fmt(ctx, inner_ty, namespace),
+                        value,
+                        &convert_type(ctx, vecnest, inner_ty, "", namespace),
+                    ),
                     _ => fmt::Display::fmt(
                         &convert_type(
                             ctx,
@@ -216,11 +144,9 @@ fn convert_type<'a>(
                 unimplemented!()
             }
         }
-        AlgebraicType::Builtin(b) => fmt::Display::fmt(&convert_builtintype(b, &value), f),
         AlgebraicType::Ref(r) => {
             let name = csharp_typename(ctx, *r);
-            let algebraic_type = &ctx.typespace.types[r.idx()];
-            match algebraic_type {
+            match &ctx.typespace[*r] {
                 AlgebraicType::Sum(sum) => {
                     if sum.is_simple_enum() {
                         let split: Vec<&str> = name.split('.').collect();
@@ -249,6 +175,9 @@ fn convert_type<'a>(
                 }
             }
         }
+        ty if ty.is_scalar() => write!(f, "{value}.As{ty:?}()"),
+        AlgebraicType::String => write!(f, "{value}.AsString()"),
+        _ => unreachable!(),
     })
 }
 
@@ -273,32 +202,23 @@ fn convert_algebraic_type<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace:
             convert_algebraic_type(ctx, elem_ty, namespace)
         ),
         AlgebraicType::Map(_) => todo!(),
-        AlgebraicType::Builtin(b) => write!(
-            f,
-            "SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.{b:?})",
-        ),
+        ty if ty.is_scalar_or_string() => write!(f, "SpacetimeDB.SATS.AlgebraicType.Type.{ty:?}",),
         AlgebraicType::Ref(r) => {
             let name = csharp_typename(ctx, *r);
-            match &ctx.typespace.types[r.idx()] {
-                AlgebraicType::Sum(sum_type) => {
-                    if sum_type.is_simple_enum() {
-                        let parts: Vec<&str> = name.split('.').collect();
-                        if parts.len() >= 2 {
-                            let enum_namespace = parts[0];
-                            let enum_name = parts[1];
-                            write!(f, "{namespace}.{enum_namespace}.GetAlgebraicTypeFor{enum_name}()")
-                        } else {
-                            write!(f, "{}", convert_sum_type(ctx, sum_type, namespace))
-                        }
+            match &ctx.typespace[*r] {
+                AlgebraicType::Sum(sum_type) if sum_type.is_simple_enum() => {
+                    let mut ps = name.split('.');
+                    if let Some((e_ns, e_name)) = ps.next().zip(ps.next()) {
+                        write!(f, "{namespace}.{e_ns}.GetAlgebraicTypeFor{e_name}()")
                     } else {
-                        unimplemented!()
+                        write!(f, "{}", convert_sum_type(ctx, sum_type, namespace))
                     }
                 }
-                _ => {
-                    write!(f, "{}.{}.GetAlgebraicType()", namespace, name)
-                }
+                AlgebraicType::Sum(_) => unimplemented!(),
+                _ => write!(f, "{}.{}.GetAlgebraicType()", namespace, name),
             }
         }
+        _ => unreachable!(),
     })
 }
 
@@ -553,14 +473,12 @@ fn autogen_csharp_product_table_common(
                     .replace("r#", "");
                 writeln!(output, "[Newtonsoft.Json.JsonProperty(\"{field_name}\")]").unwrap();
                 match &field.algebraic_type {
-                    AlgebraicType::Array(ArrayType { elem_ty: array_type }) => {
-                        if let Builtin(BuiltinType::U8) = **array_type {
-                            writeln!(
-                                output,
-                                "[Newtonsoft.Json.JsonConverter(typeof(SpacetimeDB.ByteArrayConverter))]"
-                            )
-                            .unwrap();
-                        }
+                    ty if ty.is_bytes() => {
+                        writeln!(
+                            output,
+                            "[Newtonsoft.Json.JsonConverter(typeof(SpacetimeDB.ByteArrayConverter))]"
+                        )
+                        .unwrap();
                     }
                     AlgebraicType::Sum(sum) => {
                         if sum.as_option().is_some() {
@@ -570,8 +488,7 @@ fn autogen_csharp_product_table_common(
                         }
                     }
                     AlgebraicType::Ref(type_ref) => {
-                        let ref_type = &ctx.typespace.types[type_ref.idx()];
-                        if let AlgebraicType::Sum(sum_type) = ref_type {
+                        if let AlgebraicType::Sum(sum_type) = &ctx.typespace[*type_ref] {
                             if sum_type.is_simple_enum() {
                                 writeln!(output, "[SpacetimeDB.Enum]").unwrap();
                             } else {
@@ -915,25 +832,35 @@ fn autogen_csharp_access_funcs_for_struct(
         let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
 
         let (field_type, csharp_field_type) = match field_type {
-            AlgebraicType::Product(product) if product.is_identity() => ("Identity".into(), "SpacetimeDB.Identity"),
-            AlgebraicType::Product(_) | AlgebraicType::Ref(_) | AlgebraicType::Sum(_) | AlgebraicType::Map(_) => {
-                // TODO: We don't allow filtering on enums, tuples, or maps right now;
+            ty if ty.is_identity() => ("Identity", "SpacetimeDB.Identity"),
+            // Do allow filtering for byte arrays.
+            ty if ty.is_bytes() => ("Bytes", "byte[]"),
+            AlgebraicType::Product(_)
+            | AlgebraicType::Ref(_)
+            | AlgebraicType::Sum(_)
+            | AlgebraicType::Array(_)
+            | AlgebraicType::Map(_) => {
+                // TODO: We don't allow filtering on enums, tuples, arrays, or maps right now;
                 //       it's possible we may consider it for the future.
                 //       For maps, it would be nice to be able to say,
                 //       give me all entries where this vec contains this value,
                 //       which we can do.
                 continue;
             }
-            AlgebraicType::Array(ArrayType { elem_ty }) => {
-                if let Some(BuiltinType::U8) = elem_ty.as_builtin() {
-                    // Do allow filtering for byte arrays
-                    ("Bytes".into(), "byte[]")
-                } else {
-                    // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
-                    continue;
-                }
-            }
-            AlgebraicType::Builtin(b) => (format!("{:?}", b), to_primitive(b)),
+            AlgebraicType::Bool => ("Bool", "bool"),
+            AlgebraicType::I8 => ("I8", "sbyte"),
+            AlgebraicType::U8 => ("U8", "byte"),
+            AlgebraicType::I16 => ("I16", "short"),
+            AlgebraicType::U16 => ("U16", "ushort"),
+            AlgebraicType::I32 => ("I32", "int"),
+            AlgebraicType::U32 => ("U32", "uint"),
+            AlgebraicType::I64 => ("I64", "long"),
+            AlgebraicType::U64 => ("U64", "ulong"),
+            AlgebraicType::I128 => panic!("i128 not supported for csharp"),
+            AlgebraicType::U128 => panic!("i128 not supported for csharp"),
+            AlgebraicType::String => ("String", "string"),
+            AlgebraicType::F32 => ("F32", "float"),
+            AlgebraicType::F64 => ("F64", "double"),
         };
 
         let filter_return_type = fmt_fn(|f| {
@@ -1188,24 +1115,18 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                         json_args.push_str(&arg_name);
                     }
                 }
-                AlgebraicType::Product(_) | AlgebraicType::Array(_) | AlgebraicType::Builtin(_) => {
-                    json_args.push_str(arg_name.as_str());
+                ty if ty.is_product() || ty.is_array() || ty.is_scalar_or_string() => {
+                    json_args.push_str(&arg_name);
                 }
                 AlgebraicType::Map(_) => todo!(),
-                AlgebraicType::Ref(type_ref) => {
-                    let ref_type = &ctx.typespace.types[*type_ref];
-                    if let AlgebraicType::Sum(sum_type) = ref_type {
-                        if sum_type.is_simple_enum() {
-                            json_args.push_str(
-                                format!("new SpacetimeDB.EnumWrapper<{}>({})", arg_type_str, arg_name).as_str(),
-                            );
-                        } else {
-                            unimplemented!()
-                        }
-                    } else {
-                        json_args.push_str(arg_name.as_str());
+                AlgebraicType::Ref(type_ref) => match &ctx.typespace[*type_ref] {
+                    AlgebraicType::Sum(sum) if sum.is_simple_enum() => {
+                        json_args.push_str(format!("new SpacetimeDB.EnumWrapper<{}>({})", arg_type_str, arg_name).as_str());
                     }
-                }
+                    AlgebraicType::Sum(_) => unimplemented!(),
+                    _ => json_args.push_str(&arg_name),
+                },
+                _ => unreachable!(),
             }
 
             if arg_i > 0 {

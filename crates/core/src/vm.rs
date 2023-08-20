@@ -412,7 +412,7 @@ pub(crate) mod tests {
     use crate::db::relational_db::{ST_COLUMNS_NAME, ST_INDEXES_NAME, ST_SEQUENCES_NAME, ST_TABLES_NAME};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::{DbTable, FieldName};
-    use spacetimedb_sats::{product, AlgebraicType, BuiltinType, ProductType, ProductValue};
+    use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_vm::dsl::*;
     use spacetimedb_vm::eval::run_ast;
     use spacetimedb_vm::operator::OpCmp;
@@ -473,7 +473,7 @@ pub(crate) mod tests {
         let mut tx = stdb.begin_tx();
         let p = &mut DbProgram::new(&stdb, &mut tx, AuthCtx::for_testing());
 
-        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let head = ProductType::from_iter([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
         let table_id = create_table_from_program(p, "inventory", head.clone(), &[row])?;
 
@@ -491,9 +491,9 @@ pub(crate) mod tests {
 
         //The expected result
         let inv = ProductType::from_iter([
-            (Some("inventory_id"), BuiltinType::U64),
-            (Some("name"), BuiltinType::String),
-            (None, BuiltinType::U64),
+            (Some("inventory_id"), AlgebraicType::U64),
+            (Some("name"), AlgebraicType::String),
+            (None, AlgebraicType::U64),
         ]);
         let row = product!(scalar(1u64), scalar("health"), scalar(1u64));
         let input = mem_table(inv, vec![row]);
@@ -587,7 +587,7 @@ pub(crate) mod tests {
     fn test_query_catalog_indexes() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
 
-        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let head = ProductType::from_iter([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
 
         let mut tx = db.begin_tx();

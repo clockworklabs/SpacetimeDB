@@ -1,6 +1,6 @@
 use crate::{
-    AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
-    SumTypeVariant, WithTypespace,
+    AlgebraicType, AlgebraicTypeRef, ArrayType, MapType, ProductType, ProductTypeElement, SumType, SumTypeVariant,
+    WithTypespace,
 };
 
 /// Resolver for [`AlgebraicTypeRef`]s within a structure.
@@ -65,21 +65,27 @@ impl ResolveRefs for AlgebraicType {
     type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
         match this.ty() {
+            Self::Ref(r) => this.with(r)._resolve_refs(state),
             Self::Sum(sum) => this.with(sum)._resolve_refs(state).map(Self::Sum),
             Self::Product(prod) => this.with(prod)._resolve_refs(state).map(Self::Product),
             Self::Array(ty) => this.with(ty)._resolve_refs(state).map(Self::Array),
             Self::Map(m) => this.with(m)._resolve_refs(state).map(Self::Map),
-            Self::Builtin(b) => this.with(b)._resolve_refs(state).map(Self::Builtin),
-            Self::Ref(r) => this.with(r)._resolve_refs(state),
+            // These types are plain and cannot have refs in them.
+            Self::Bool
+            | Self::I8
+            | Self::U8
+            | Self::I16
+            | Self::U16
+            | Self::I32
+            | Self::U32
+            | Self::I64
+            | Self::U64
+            | Self::I128
+            | Self::U128
+            | Self::F32
+            | Self::F64
+            | Self::String => Some(this.ty().clone()),
         }
-    }
-}
-
-impl ResolveRefs for BuiltinType {
-    type Output = Self;
-    fn resolve_refs(this: WithTypespace<'_, Self>, _: &mut ResolveRefState) -> Option<Self::Output> {
-        // These types are plain and cannot have refs in them.
-        Some(this.ty().clone())
     }
 }
 

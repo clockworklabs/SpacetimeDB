@@ -3,9 +3,9 @@
 use proptest::prelude::*;
 use proptest::proptest;
 use spacetimedb_sats::buffer::DecodeError;
-use spacetimedb_sats::builtin_value::{F32, F64};
 use spacetimedb_sats::{
-    meta_type::MetaType, product, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue,
+    meta_type::MetaType, product, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, F32,
+    F64,
 };
 
 #[test]
@@ -24,30 +24,30 @@ fn check_type(ty: &AlgebraicType) {
 
 fn array_values() -> impl Strategy<Value = AlgebraicValue> {
     prop_oneof![
-        prop::collection::vec(0u8..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0i16..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0u16..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0i32..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0u32..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0i64..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0u64..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0i128..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0u128..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
+        prop::collection::vec(0u8..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
+        prop::collection::vec(0i16..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
+        prop::collection::vec(0u16..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
+        prop::collection::vec(0i32..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
+        prop::collection::vec(0u32..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
+        prop::collection::vec(0i64..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
+        prop::collection::vec(0u64..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
+        prop::collection::vec(0i128..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
+        prop::collection::vec(0u128..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
         prop::collection::vec(0..10, 0..10).prop_map(|x| {
-            let bools: Vec<_> = x.into_iter().map(|x| x == 0).collect();
-            AlgebraicValue::ArrayOf(bools)
+            let bools: Vec<_> = x.into_iter().map(|x| x == 0).collect::<Vec<_>>();
+            AlgebraicValue::Array(bools.into())
         }),
         prop::collection::vec(0i32..10, 0..10).prop_map(|x| {
             let strs: Vec<Box<str>> = x.into_iter().map(|x| x.to_string().into()).collect();
-            AlgebraicValue::ArrayOf(strs)
+            AlgebraicValue::Array(strs.into())
         }),
         prop::collection::vec(0i32..10, 0..10).prop_map(|x| {
             let floats: Vec<_> = x.into_iter().map(|x| F32::from_inner(x as f32)).collect();
-            AlgebraicValue::ArrayOf(floats)
+            AlgebraicValue::Array(floats.into())
         }),
         prop::collection::vec(0i32..10, 0..10).prop_map(|x| {
             let floats: Vec<_> = x.into_iter().map(|x| F64::from_inner(x as f64)).collect();
-            AlgebraicValue::ArrayOf(floats)
+            AlgebraicValue::Array(floats.into())
         }),
     ]
 }

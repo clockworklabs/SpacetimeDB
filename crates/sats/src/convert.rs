@@ -1,20 +1,6 @@
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_value::AlgebraicValue;
-use crate::builtin_type::BuiltinType;
-use crate::builtin_value::BuiltinValue;
-use crate::{ProductType, ProductTypeElement, ProductValue};
-
-impl From<BuiltinType> for AlgebraicType {
-    fn from(x: BuiltinType) -> Self {
-        AlgebraicType::Builtin(x)
-    }
-}
-
-impl From<BuiltinValue> for AlgebraicValue {
-    fn from(value: BuiltinValue) -> Self {
-        AlgebraicValue::Builtin(value)
-    }
-}
+use crate::{ProductType, ProductValue};
 
 impl crate::Value for AlgebraicValue {
     type Type = AlgebraicType;
@@ -44,23 +30,11 @@ impl From<AlgebraicType> for ProductType {
     }
 }
 
-impl From<BuiltinType> for ProductTypeElement {
-    fn from(x: BuiltinType) -> Self {
-        Self::new(x.into(), None)
-    }
-}
-
 macro_rules! built_in {
     ($native:ty, $kind:ident) => {
-        impl From<$native> for BuiltinValue {
-            fn from(x: $native) -> Self {
-                BuiltinValue::$kind(x)
-            }
-        }
-
         impl From<$native> for AlgebraicValue {
             fn from(x: $native) -> Self {
-                AlgebraicValue::Builtin(x.into())
+                Self::$kind(x)
             }
         }
     };
@@ -68,15 +42,9 @@ macro_rules! built_in {
 
 macro_rules! built_in_into {
     ($native:ty, $kind:ident) => {
-        impl From<$native> for BuiltinValue {
-            fn from(x: $native) -> Self {
-                BuiltinValue::$kind(x.into())
-            }
-        }
-
         impl From<$native> for AlgebraicValue {
             fn from(x: $native) -> Self {
-                AlgebraicValue::Builtin(x.into())
+                Self::$kind(x.into())
             }
         }
     };

@@ -160,7 +160,7 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::FieldName;
     use spacetimedb_lib::Identity;
-    use spacetimedb_sats::{product, BuiltinType, ProductType, ProductValue};
+    use spacetimedb_sats::{product, ProductType, ProductValue};
     use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
 

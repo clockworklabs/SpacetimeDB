@@ -159,7 +159,7 @@ impl ProductValue {
 
     /// Interprets the value at field of `self` identified by `index` as a string slice.
     pub fn field_as_str(&self, index: usize, named: Option<&'static str>) -> Result<&str, InvalidFieldError> {
-        self.extract_field(index, named, |f| f.as_string())
+        self.extract_field(index, named, |f| f.as_string()).map(|s| &**s)
     }
 
     /// Interprets the value at field of `self` identified by `index` as a byte slice.

@@ -1,9 +1,8 @@
 use std::convert::Infallible;
 
 use super::AlgebraicValue;
-use crate::builtin_value::{F32, F64};
 use crate::ser::{self, ForwardNamedToSeqProduct};
-use crate::{ArrayValue, BuiltinValue, MapValue};
+use crate::{ArrayValue, MapValue, F32, F64};
 
 /// An implementation of [`Serializer`](ser::Serializer)
 /// where the output of serialization is an `AlgebraicValue`.
@@ -101,7 +100,7 @@ impl ser::SerializeArray for SerializeArrayValue {
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::ArrayOf(self.array))
+        Ok(AlgebraicValue::Array(self.array.into()))
     }
 }
 
@@ -191,21 +190,21 @@ impl ArrayValueBuilder {
             AlgebraicValue::Sum(x) => vec(x, capacity).into(),
             AlgebraicValue::Product(x) => vec(x, capacity).into(),
             AlgebraicValue::Map(val) => vec(*val, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::Bool(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::I8(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::U8(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::I16(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::U16(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::I32(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::U32(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::I64(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::U64(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::I128(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::U128(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::F32(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::F64(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::String(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::Array { val }) => vec(val, capacity).into(),
+            AlgebraicValue::Bool(x) => vec(x, capacity).into(),
+            AlgebraicValue::I8(x) => vec(x, capacity).into(),
+            AlgebraicValue::U8(x) => vec(x, capacity).into(),
+            AlgebraicValue::I16(x) => vec(x, capacity).into(),
+            AlgebraicValue::U16(x) => vec(x, capacity).into(),
+            AlgebraicValue::I32(x) => vec(x, capacity).into(),
+            AlgebraicValue::U32(x) => vec(x, capacity).into(),
+            AlgebraicValue::I64(x) => vec(x, capacity).into(),
+            AlgebraicValue::U64(x) => vec(x, capacity).into(),
+            AlgebraicValue::I128(x) => vec(x, capacity).into(),
+            AlgebraicValue::U128(x) => vec(x, capacity).into(),
+            AlgebraicValue::F32(x) => vec(x, capacity).into(),
+            AlgebraicValue::F64(x) => vec(x, capacity).into(),
+            AlgebraicValue::String(x) => vec(x, capacity).into(),
+            AlgebraicValue::Array(x) => vec(x, capacity).into(),
         }
     }
 
@@ -219,21 +218,21 @@ impl ArrayValueBuilder {
             (Self::Sum(v), AlgebraicValue::Sum(val)) => v.push(val),
             (Self::Product(v), AlgebraicValue::Product(val)) => v.push(val),
             (Self::Map(v), AlgebraicValue::Map(val)) => v.push(*val),
-            (Self::Bool(v), AlgebraicValue::Builtin(BuiltinValue::Bool(val))) => v.push(val),
-            (Self::I8(v), AlgebraicValue::Builtin(BuiltinValue::I8(val))) => v.push(val),
-            (Self::U8(v), AlgebraicValue::Builtin(BuiltinValue::U8(val))) => v.push(val),
-            (Self::I16(v), AlgebraicValue::Builtin(BuiltinValue::I16(val))) => v.push(val),
-            (Self::U16(v), AlgebraicValue::Builtin(BuiltinValue::U16(val))) => v.push(val),
-            (Self::I32(v), AlgebraicValue::Builtin(BuiltinValue::I32(val))) => v.push(val),
-            (Self::U32(v), AlgebraicValue::Builtin(BuiltinValue::U32(val))) => v.push(val),
-            (Self::I64(v), AlgebraicValue::Builtin(BuiltinValue::I64(val))) => v.push(val),
-            (Self::U64(v), AlgebraicValue::Builtin(BuiltinValue::U64(val))) => v.push(val),
-            (Self::I128(v), AlgebraicValue::Builtin(BuiltinValue::I128(val))) => v.push(val),
-            (Self::U128(v), AlgebraicValue::Builtin(BuiltinValue::U128(val))) => v.push(val),
-            (Self::F32(v), AlgebraicValue::Builtin(BuiltinValue::F32(val))) => v.push(val),
-            (Self::F64(v), AlgebraicValue::Builtin(BuiltinValue::F64(val))) => v.push(val),
-            (Self::String(v), AlgebraicValue::Builtin(BuiltinValue::String(val))) => v.push(val),
-            (Self::Array(v), AlgebraicValue::Builtin(BuiltinValue::Array { val })) => v.push(val),
+            (Self::Bool(v), AlgebraicValue::Bool(val)) => v.push(val),
+            (Self::I8(v), AlgebraicValue::I8(val)) => v.push(val),
+            (Self::U8(v), AlgebraicValue::U8(val)) => v.push(val),
+            (Self::I16(v), AlgebraicValue::I16(val)) => v.push(val),
+            (Self::U16(v), AlgebraicValue::U16(val)) => v.push(val),
+            (Self::I32(v), AlgebraicValue::I32(val)) => v.push(val),
+            (Self::U32(v), AlgebraicValue::U32(val)) => v.push(val),
+            (Self::I64(v), AlgebraicValue::I64(val)) => v.push(val),
+            (Self::U64(v), AlgebraicValue::U64(val)) => v.push(val),
+            (Self::I128(v), AlgebraicValue::I128(val)) => v.push(val),
+            (Self::U128(v), AlgebraicValue::U128(val)) => v.push(val),
+            (Self::F32(v), AlgebraicValue::F32(val)) => v.push(val),
+            (Self::F64(v), AlgebraicValue::F64(val)) => v.push(val),
+            (Self::String(v), AlgebraicValue::String(val)) => v.push(val),
+            (Self::Array(v), AlgebraicValue::Array(val)) => v.push(val),
             (me, val) if me.is_empty() => *me = Self::from_one_with_capacity(val, capacity),
             (_, val) => return Err(val),
         }

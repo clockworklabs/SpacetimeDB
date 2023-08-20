@@ -2,7 +2,7 @@ use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::RelValue;
 use spacetimedb_lib::PrimaryKey;
-use spacetimedb_sats::{AlgebraicValue, BuiltinValue, ProductValue};
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::expr::QueryExpr;
 use std::collections::HashSet;
 
@@ -115,7 +115,7 @@ impl QuerySet {
                             // See `to_mem_table`
                             // Needs to be done before calculating the PK.
                             let mut row = row.data;
-                            let op_type = if let AlgebraicValue::Builtin(BuiltinValue::U8(op)) = row.remove(pos_op_type)
+                            let op_type = if let AlgebraicValue::U8(op) = row.remove(pos_op_type)
                             {
                                 op
                             } else {

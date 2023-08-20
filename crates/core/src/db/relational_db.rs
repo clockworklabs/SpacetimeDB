@@ -389,7 +389,7 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn table_name_from_id(&self, tx: &MutTxId, table_id: u32) -> Result<Option<String>, DBError> {
+    pub fn table_name_from_id(&self, tx: &MutTxId, table_id: u32) -> Result<Option<Box<str>>, DBError> {
         self.inner.table_name_from_id_mut_tx(tx, TableId(table_id))
     }
 
