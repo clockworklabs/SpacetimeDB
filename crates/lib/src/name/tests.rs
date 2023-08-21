@@ -147,3 +147,44 @@ fn test_tld_is_domain_name() {
     assert_eq!("spacetimedb", dom.tld().as_str());
     assert_eq!(None, dom.sub_domain());
 }
+
+#[cfg(feature = "serde")]
+mod serde {
+    use super::*;
+
+    use crate::name::serde_impls::DomainNameV1;
+
+    #[test]
+    fn test_deserialize_domain_name_v1() {
+        let js = serde_json::to_string(&DomainNameV1 {
+            tld: "clockworklabs",
+            sub_domain: "bitcraft-mini",
+        })
+        .unwrap();
+        let de: DomainName = serde_json::from_str(&js).unwrap();
+
+        assert_eq!("clockworklabs/bitcraft-mini", de.as_str());
+        assert_eq!("clockworklabs", de.tld().as_str());
+        assert_eq!(Some("bitcraft-mini"), de.sub_domain());
+    }
+
+    #[test]
+    fn test_deserialize_domain_name_v1_validates() {
+        let invalid = serde_json::to_string(&DomainNameV1 {
+            tld: "eve",
+            sub_domain: "bit//craft",
+        })
+        .unwrap();
+        let de: Result<DomainName, serde_json::Error> = serde_json::from_str(&invalid);
+
+        assert!(matches!(de, Err(e) if e.classify() == serde_json::error::Category::Data));
+    }
+
+    #[test]
+    fn test_deserialize_domain_name_v2() {
+        let dn = parse_domain_name("clockworklabs/bitcraft-mini").unwrap();
+        let js = serde_json::to_string(&dn).unwrap();
+        let de = serde_json::from_str(&js).unwrap();
+        assert_eq!(dn, de);
+    }
+}
