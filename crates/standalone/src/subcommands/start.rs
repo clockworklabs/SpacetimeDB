@@ -173,6 +173,10 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     };
 
     banner();
+    let exe_name = std::env::current_exe()?;
+    let exe_name = exe_name.file_name().unwrap().to_str().unwrap();
+    println!("{} version: {}", exe_name, env!("CARGO_PKG_VERSION"));
+    println!("{} path: {}", exe_name, std::env::current_exe()?.display());
 
     if let Some(log_conf_path) = log_conf_path {
         create_file_with_contents(log_conf_path, include_str!("../../log.conf"))?;
