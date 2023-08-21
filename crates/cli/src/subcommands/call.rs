@@ -31,6 +31,12 @@ pub fn cli() -> clap::Command {
                 .default_value("[]"),
         )
         .arg(
+            Arg::new("server")
+                .long("server")
+                .short('s')
+                .help("The nickname, host name or URL of the server hosting the database"),
+        )
+        .arg(
             Arg::new("as_identity")
                 .long("as-identity")
                 .short('i')
@@ -52,19 +58,20 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     let database = args.get_one::<String>("database").unwrap();
     let reducer_name = args.get_one::<String>("reducer_name").unwrap();
     let arg_json = args.get_one::<String>("arguments").unwrap();
+    let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
     let as_identity = args.get_one::<String>("as_identity");
     let anon_identity = args.get_flag("anon_identity");
 
-    let address = database_address(&config, database).await?;
+    let address = database_address(&config, database, server).await?;
 
     let builder = reqwest::Client::new().post(format!(
         "{}/database/call/{}/{}",
-        config.get_host_url(),
+        config.get_host_url(server)?,
         address,
         reducer_name
     ));
-    let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity).await;
+    let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity, server).await;
     let builder = add_auth_header_opt(builder, &auth_header);
 
     let res = builder.body(arg_json.to_owned()).send().await?;
@@ -78,9 +85,18 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         let error = Err(e).context(format!("Response text: {}", response_text));
 
         let error_msg = if response_text.starts_with("no such reducer") {
-            no_such_reducer(config, &address, database, &auth_header, reducer_name).await
+            no_such_reducer(config, &address, database, &auth_header, reducer_name, server).await
         } else if response_text.starts_with("invalid arguments") {
-            invalid_arguments(config, &address, database, &auth_header, reducer_name, &response_text).await
+            invalid_arguments(
+                config,
+                &address,
+                database,
+                &auth_header,
+                reducer_name,
+                &response_text,
+                server,
+            )
+            .await
         } else {
             return error;
         };
@@ -99,6 +115,7 @@ async fn invalid_arguments(
     auth_header: &Option<String>,
     reducer: &str,
     text: &str,
+    server: Option<&str>,
 ) -> String {
     let mut error = format!(
         "Invalid arguments provided for reducer `{}` for database `{}` resolving to address `{}`.",
@@ -114,7 +131,7 @@ async fn invalid_arguments(
         .unwrap();
     }
 
-    if let Some(sig) = schema_json(config, addr, auth_header, true)
+    if let Some(sig) = schema_json(config, addr, auth_header, true, server)
         .await
         .and_then(|schema| reducer_signature(schema, reducer))
     {
@@ -174,13 +191,20 @@ fn reducer_signature(schema_json: Value, reducer_name: &str) -> Option<String> {
 }
 
 /// Returns an error message for when `reducer` does not exist in `db`.
-async fn no_such_reducer(config: Config, addr: &str, db: &str, auth_header: &Option<String>, reducer: &str) -> String {
+async fn no_such_reducer(
+    config: Config,
+    addr: &str,
+    db: &str,
+    auth_header: &Option<String>,
+    reducer: &str,
+    server: Option<&str>,
+) -> String {
     let mut error = format!(
         "No such reducer `{}` for database `{}` resolving to address `{}`.",
         reducer, db, addr
     );
 
-    if let Some(schema) = schema_json(config, addr, auth_header, false).await {
+    if let Some(schema) = schema_json(config, addr, auth_header, false, server).await {
         add_reducer_ctx_to_err(&mut error, schema, reducer);
     }
 
@@ -229,8 +253,18 @@ fn add_reducer_ctx_to_err(error: &mut String, schema_json: Value, reducer_name: 
 /// Fetch the schema as JSON for the database at `address`.
 ///
 /// The value of `expand` determines how detailed information to fetch.
-async fn schema_json(config: Config, address: &str, auth_header: &Option<String>, expand: bool) -> Option<Value> {
-    let builder = reqwest::Client::new().get(format!("{}/database/schema/{}", config.get_host_url(), address));
+async fn schema_json(
+    config: Config,
+    address: &str,
+    auth_header: &Option<String>,
+    expand: bool,
+    server: Option<&str>,
+) -> Option<Value> {
+    let builder = reqwest::Client::new().get(format!(
+        "{}/database/schema/{}",
+        config.get_host_url(server).ok()?,
+        address
+    ));
     let builder = add_auth_header_opt(builder, auth_header);
 
     builder
