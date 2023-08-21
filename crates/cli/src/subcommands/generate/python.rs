@@ -247,7 +247,8 @@ fn autogen_python_product_table_common(
                         .name
                         .as_ref()
                         .expect("autogen'd tuples should have field names")
-                        .replace("r#", "");
+                        .replace("r#", "")
+                        .to_case(Case::Snake);
                     format!("\"{}\"", field_name)
                 })
             {
@@ -316,7 +317,8 @@ fn autogen_python_product_table_common(
                     .name
                     .as_ref()
                     .expect("autogen'd tuples should have field names")
-                    .replace("r#", "");
+                    .replace("r#", "")
+                    .to_case(Case::Snake);
 
                 writeln!(output, "@classmethod").unwrap();
                 if attr.is_unique() {
@@ -346,7 +348,8 @@ fn autogen_python_product_table_common(
                     .name
                     .as_ref()
                     .expect("autogen'd tuples should have field names")
-                    .replace("r#", "");
+                    .replace("r#", "")
+                    .to_case(Case::Snake);
 
                 let field_type = &field.algebraic_type;
                 let python_field_name = field_name.to_string().replace("r#", "");
@@ -371,7 +374,7 @@ fn autogen_python_product_table_common(
                     .as_deref()
                     .unwrap_or_else(|| panic!("autogen'd tuples should have field names"));
 
-                let python_field_name = field_name.to_string().replace("r#", "");
+                let python_field_name = field_name.to_string().replace("r#", "").to_case(Case::Snake);
                 match &field.algebraic_type {
                     AlgebraicType::Sum(sum_type) if sum_type.as_option().is_some() => {
                         reducer_args.push(format!("{{'0': [self.{}]}}", python_field_name))
@@ -549,6 +552,9 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     }
     writeln!(output).unwrap();
 
+    writeln!(output, "reducer_name = \"{}\"", reducer.name).unwrap();
+    writeln!(output).unwrap();
+
     let mut func_call = Vec::new();
     let mut func_arguments = Vec::new();
     let mut func_types = Vec::new();
@@ -578,7 +584,13 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
         func_types_str
     };
 
-    writeln!(output, "def {}({}):", reducer.name, func_arguments_str).unwrap();
+    writeln!(
+        output,
+        "def {}({}):",
+        reducer.name.to_case(Case::Snake),
+        func_arguments_str
+    )
+    .unwrap();
     {
         indent_scope!(output);
 
@@ -610,7 +622,8 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(
         output,
         "def register_on_{}(callback: Callable[[Identity, str, str{}], None]):",
-        reducer.name, callback_sig_str
+        reducer.name.to_case(Case::Snake),
+        callback_sig_str
     )
     .unwrap();
     {

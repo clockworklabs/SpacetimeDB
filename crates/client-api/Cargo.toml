@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb-client-api"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 license-file = "LICENSE"
 description = "The HTTP API for SpacetimeDB"
@@ -9,10 +9,10 @@ description = "The HTTP API for SpacetimeDB"
 tracelogging = ["spacetimedb-core/tracelogging"]
 
 [dependencies]
-spacetimedb-core = { path = "../core", version = "0.6.0" }
+spacetimedb-core = { path = "../core", version = "0.6.1" }
 tokio = { version = "1.2", features = ["full"] }
 lazy_static = "1.4.0"
-spacetimedb-lib = { path = "../lib", version = "0.6.0" }
+spacetimedb-lib = { path = "../lib", version = "0.6.1" }
 log = "0.4.4"
 serde = "1.0.136"
 serde_json = { version = "1.0", features = ["raw_value"] }

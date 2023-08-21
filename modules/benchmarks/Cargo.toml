@@ -11,4 +11,4 @@ crate-type = ["cdylib"]
 [dependencies]
 spacetimedb = { path = "../../crates/bindings" }
 
-anyhow = "1.0"
+anyhow.workspace = true

@@ -115,10 +115,10 @@ impl<T: TableType> TableCache<T> {
             }
             Ok(value) => {
                 if op_is_delete(op) {
-                    log::info!("Got delete event for {:?} row {:?}", T::TABLE_NAME, value,);
+                    log::trace!("Got delete event for {:?} row {:?}", T::TABLE_NAME, value,);
                     self.delete(callbacks, row_pk, value);
                 } else if op_is_insert(op) {
-                    log::info!("Got insert event for {:?} row {:?}", T::TABLE_NAME, value,);
+                    log::trace!("Got insert event for {:?} row {:?}", T::TABLE_NAME, value,);
                     self.insert(callbacks, row_pk, value);
                 } else {
                     log::error!("Unknown table_row_operation::OperationType {}", op);
@@ -238,7 +238,7 @@ impl<T: TableType> TableCache<T> {
                         );
                     }
                     Ok(row) => {
-                        log::info!("Initializing table {:?}: got new row {:?}", T::TABLE_NAME, row);
+                        log::trace!("Initializing table {:?}: got new row {:?}", T::TABLE_NAME, row);
                         diff.insert(row_pk, DiffEntry::Insert(row));
                     }
                 },
@@ -247,7 +247,7 @@ impl<T: TableType> TableCache<T> {
                     diff.insert(row_pk, diff_entry);
                 }
                 Some(DiffEntry::Delete(row)) => {
-                    log::info!("Initializing table {:?}: row {:?} remains present", T::TABLE_NAME, row);
+                    log::trace!("Initializing table {:?}: row {:?} remains present", T::TABLE_NAME, row);
                     diff.insert(row_pk, DiffEntry::NoChange(row));
                 }
             };
@@ -350,10 +350,10 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
                 }
                 Ok(row) => {
                     if op_is_delete(op) {
-                        log::info!("Got delete event for {:?} row {:?}", T::TABLE_NAME, row,);
+                        log::trace!("Got delete event for {:?} row {:?}", T::TABLE_NAME, row,);
                         Some(DiffEntry::Delete(row_pk, row))
                     } else if op_is_insert(op) {
-                        log::info!("Got insert event for {:?} row {:?}", T::TABLE_NAME, row,);
+                        log::trace!("Got insert event for {:?} row {:?}", T::TABLE_NAME, row,);
                         Some(DiffEntry::Insert(row_pk, row))
                     } else {
                         log::error!("Unknown table_row_operation::OperationType {}", op);

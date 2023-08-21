@@ -1,3 +1,4 @@
+use super::{ArgsTuple, EnergyDiff, InvalidReducerArguments, ReducerArgs, ReducerCallResult, Timestamp};
 use crate::client::ClientConnectionSender;
 use crate::database_logger::LogLevel;
 use crate::db::datastore::traits::{TableId, TxData, TxOp};
@@ -8,6 +9,7 @@ use crate::identity::Identity;
 use crate::json::client_api::{SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson};
 use crate::protobuf::client_api::{table_row_operation, SubscriptionUpdate, TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
+use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use indexmap::IndexMap;
 use spacetimedb_lib::{ReducerDef, TableDef};
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
@@ -16,8 +18,6 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
-
-use super::{ArgsTuple, EnergyDiff, InvalidReducerArguments, ReducerArgs, ReducerCallResult, Timestamp};
 
 #[derive(Debug, Default, Clone)]
 pub struct DatabaseUpdate {
@@ -123,7 +123,7 @@ impl DatabaseUpdate {
                         .ops
                         .into_iter()
                         .map(|op| {
-                            let row_pk = base64::encode(&op.row_pk);
+                            let row_pk = BASE_64_STD.encode(&op.row_pk);
                             TableRowOperationJson {
                                 op: if op.op_type == 1 {
                                     "insert".into()

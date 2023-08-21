@@ -1,13 +1,13 @@
 [package]
 name = "spacetimedb-client-api-messages"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 license-file = "LICENSE"
 description = "Types for the SpacetimeDB client API messages"
 
 [dependencies]
-strum = { version = "0.24.1", features = ["derive"] }
-prost = "0.10"
+prost.workspace = true
+strum.workspace = true
 
 [build-dependencies]
-prost-build = { version = "0.10" }
+prost-build.workspace = true

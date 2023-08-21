@@ -69,7 +69,7 @@ pub async fn call(
 
     let args = ReducerArgs::Json(body);
 
-    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let address = name_or_address.resolve(&*worker_ctx).await?.into();
     let database = worker_ctx_find_database(&*worker_ctx, &address).await?.ok_or_else(|| {
         log::error!("Could not find database: {}", address.to_hex());
         (StatusCode::NOT_FOUND, "No such database.")
@@ -254,7 +254,7 @@ pub async fn describe(
     Query(DescribeQueryParams { expand }): Query<DescribeQueryParams>,
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
-    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let address = name_or_address.resolve(&*worker_ctx).await?.into();
     let database = worker_ctx_find_database(&*worker_ctx, &address)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
@@ -308,7 +308,7 @@ pub async fn catalog(
     Query(DescribeQueryParams { expand }): Query<DescribeQueryParams>,
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
-    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let address = name_or_address.resolve(&*worker_ctx).await?.into();
     let database = worker_ctx_find_database(&*worker_ctx, &address)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
@@ -355,7 +355,7 @@ pub async fn info(
     Path(InfoParams { name_or_address }): Path<InfoParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     log::trace!("Trying to resolve address: {:?}", name_or_address);
-    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let address = name_or_address.resolve(&*worker_ctx).await?.into();
     log::trace!("Resolved address to: {address:?}");
     let database = worker_ctx_find_database(&*worker_ctx, &address)
         .await?
@@ -406,7 +406,7 @@ pub async fn logs(
     //       Should all the others change?
     let auth = auth_or_unauth(auth)?;
 
-    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let address = name_or_address.resolve(&*worker_ctx).await?.into();
     let database = worker_ctx_find_database(&*worker_ctx, &address)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
@@ -506,7 +506,7 @@ pub async fn sql(
     // which queries this identity is allowed to execute against the database.
     let auth = auth.get_or_create(&*worker_ctx).await?;
 
-    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let address = name_or_address.resolve(&*worker_ctx).await?.into();
     let database = worker_ctx_find_database(&*worker_ctx, &address)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
@@ -629,7 +629,7 @@ pub async fn register_tld(
     // so, unless you are the owner, this will fail, hence not using get_or_create
     let auth = auth_or_bad_request(auth)?;
 
-    let tld = tld.parse::<DomainName>().map_err(DomainParsingRejection)?.into_tld();
+    let tld = tld.parse::<DomainName>().map_err(DomainParsingRejection)?.into();
     let result = ctx
         .control_db()
         .spacetime_register_tld(tld, auth.identity)
@@ -803,9 +803,8 @@ pub async fn publish(
     // Parse the address or convert the name to a usable address
     let db_address = if let Some(name_or_address) = name_or_address.clone() {
         match name_or_address.try_resolve(&*ctx).await? {
-            Ok(address) => address,
-            Err(name) => {
-                let domain = name.parse().map_err(DomainParsingRejection)?;
+            Ok(resolved) => resolved.into(),
+            Err(domain) => {
                 // Client specified a name which doesn't yet exist
                 // Create a new DNS record and a new address to assign to it
                 let address = ctx.control_db().alloc_spacetime_address().await.map_err(log_and_500)?;

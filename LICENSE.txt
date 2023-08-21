@@ -5,7 +5,7 @@ Business Source License 1.1
 Parameters
 
 Licensor:             Clockwork Laboratories, Inc.
-Licensed Work:        SpacetimeDB 0.6.0
+Licensed Work:        SpacetimeDB 0.6.1
                       The Licensed Work is
                       (c) 2023 Clockwork Laboratories, Inc.
                       
@@ -21,7 +21,7 @@ Additional Use Grant: You may make use the Licensed Work provided your
                       Licensed Work by creating tables whose schemas are
                       controlled by such third parties.
 
-Change Date:          2028-08-03
+Change Date:          2028-08-12
 
 Change License:       GNU Affero General Public License v3.0 with a linking
                       exception
@@ -701,8 +701,8 @@ them to the start of each source file to most effectively state the exclusion
 of warranty; and each file should have at least the "copyright" line and a 
 pointer to where the full notice is found.
 
-<one line to give the program's name and a brief idea of what it does.>
-Copyright (C) <year>  <name of author>
+SpacetimeDB: A database which replaces your server.
+Copyright (C) 2023 Clockwork Laboratories, Inc.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as

@@ -196,16 +196,51 @@ impl CommittedState {
     }
 }
 
+/// `TxState` tracks all of the modifications made during a particular transaction.
+/// Rows inserted during a transaction will be added to insert_tables, and similarly,
+/// rows deleted in the transaction will be added to delete_tables.
+///
+/// Note that the state of a row at the beginning of a transaction is not tracked here,
+/// but rather in the `CommittedState` structure.
+///
+/// Note that because a transaction may have several operations performed on the same
+/// row, it is not the case that a call to insert a row guarantees that the row
+/// will be present in `insert_tables`. Rather, a row will be present in `insert_tables`
+/// if the cummulative effect of all the calls results in the row being inserted during
+/// this transaction. The same holds for delete tables.
+///
+/// For a concrete example, suppose a row is already present in a table at the start
+/// of a transaction. A call to delete that row will enter it into `delete_tables`.
+/// A subsequent call to reinsert that row will not put it into `insert_tables`, but
+/// instead remove it from `delete_tables`, as the cummulative effect is to do nothing.
+///
+/// This data structure also tracks modifications beyond inserting and deleting rows.
+/// In particular, creating indexes and sequences is tracked by `insert_tables`.
+///
+/// This means that we have the following invariants, within `TxState` and also
+/// the corresponding `CommittedState`:
+///   - any row in `insert_tables` must not be in the associated `CommittedState`
+///   - any row in `delete_tables` must be in the associated `CommittedState`
+///   - any row cannot be in both `insert_tables` and `delete_tables`
 struct TxState {
+    /// For each table,  additions have
     insert_tables: HashMap<TableId, Table>,
     delete_tables: HashMap<TableId, BTreeSet<RowId>>,
 }
 
-/// Represents whether a row has been inserted, deleted, or has not been
-/// alterted in the current transaction.
-enum RowOp {
+/// Represents whether a row has been previously committed, inserted
+/// or deleted this transaction, or simply not present at all.
+enum RowState {
+    /// The row is present in the table because it was inserted
+    /// in a previously committed transaction.
+    Committed(ProductValue),
+    /// The row is present because it has been inserted in the
+    /// current transaction.
     Insert(ProductValue),
+    /// The row is absent because it has been deleted in the
+    /// current transaction.
     Delete,
+    /// The row is not present in the table.
     Absent,
 }
 
@@ -217,17 +252,17 @@ impl TxState {
         }
     }
 
-    pub fn get_row_op(&self, table_id: &TableId, row_id: &RowId) -> RowOp {
+    pub fn get_row_op(&self, table_id: &TableId, row_id: &RowId) -> RowState {
         if let Some(true) = self.delete_tables.get(table_id).map(|set| set.contains(row_id)) {
-            return RowOp::Delete;
+            return RowState::Delete;
         }
         let Some(table) = self.insert_tables.get(table_id) else {
-            return RowOp::Absent;
+            return RowState::Absent;
         };
         table
             .get_row(row_id)
-            .map(|pv| RowOp::Insert(pv.clone()))
-            .unwrap_or(RowOp::Absent)
+            .map(|pv| RowState::Insert(pv.clone()))
+            .unwrap_or(RowState::Absent)
     }
 
     pub fn get_row(&self, table_id: &TableId, row_id: &RowId) -> Option<&ProductValue> {
@@ -1027,11 +1062,12 @@ impl Inner {
         })
     }
 
-    fn contains_row(&self, table_id: &TableId, row_id: &RowId) -> RowOp {
+    fn contains_row(&self, table_id: &TableId, row_id: &RowId) -> RowState {
         match self.tx_state.as_ref().unwrap().get_row_op(table_id, row_id) {
-            RowOp::Insert(pv) => return RowOp::Insert(pv),
-            RowOp::Delete => return RowOp::Delete,
-            RowOp::Absent => (),
+            RowState::Committed(_) => unreachable!("a row cannot be committed in a tx state"),
+            RowState::Insert(pv) => return RowState::Insert(pv),
+            RowState::Delete => return RowState::Delete,
+            RowState::Absent => (),
         }
         match self
             .committed_state
@@ -1039,8 +1075,8 @@ impl Inner {
             .get(table_id)
             .and_then(|table| table.rows.get(row_id))
         {
-            Some(pv) => RowOp::Insert(pv.clone()),
-            None => RowOp::Absent,
+            Some(pv) => RowState::Committed(pv.clone()),
+            None => RowState::Absent,
         }
     }
 
@@ -1227,8 +1263,29 @@ impl Inner {
             }
         }
 
+        // Now that we have checked all the constraints, we can perform the actual insertion.
         {
             let tx_state = self.tx_state.as_mut().unwrap();
+
+            // We have a few cases to consider, based on the history of this transaction, and
+            // whether the row was already present or not at the start of this transaction.
+            // 1. If the row was not originally present, and therefore also not deleted by
+            //    this transaction, we will add it to `insert_tables`.
+            // 2. If the row was originally present, but not deleted by this transaction,
+            //    we should fail, as we would otherwise violate set semantics.
+            // 3. If the row was originally present, and is currently going to be deleted
+            //    by this transaction, we will remove it from `delete_tables`, and the
+            //    cummulative effect will be to leave the row in place in the committed state.
+
+            let delete_table = tx_state.get_or_create_delete_table(table_id);
+            let row_was_previously_deleted = delete_table.remove(&row_id);
+
+            // If the row was just deleted in this transaction and we are re-inserting it now,
+            // we're done. Otherwise we have to add the row to the insert table, and into our memory.
+            if row_was_previously_deleted {
+                return Ok(());
+            }
+
             let insert_table = tx_state.get_insert_table_mut(&table_id).unwrap();
 
             // TODO(cloutiertyler): should probably also check that all the columns are correct? Perf considerations.
@@ -1250,9 +1307,6 @@ impl Inner {
             };
         }
 
-        let delete_table = self.tx_state.as_mut().unwrap().get_or_create_delete_table(table_id);
-        delete_table.remove(&row_id);
-
         Ok(())
     }
 
@@ -1261,13 +1315,14 @@ impl Inner {
             return Err(TableError::IdNotFound(table_id.0).into());
         }
         match self.tx_state.as_ref().unwrap().get_row_op(table_id, row_id) {
-            RowOp::Insert(row) => {
+            RowState::Committed(_) => unreachable!("a row cannot be committed in a tx state"),
+            RowState::Insert(row) => {
                 return Ok(Some(DataRef::new(row)));
             }
-            RowOp::Delete => {
+            RowState::Delete => {
                 return Ok(None);
             }
-            RowOp::Absent => {}
+            RowState::Absent => {}
         }
         Ok(self
             .committed_state
@@ -1312,18 +1367,30 @@ impl Inner {
     }
 
     fn delete_row_internal(&mut self, table_id: &TableId, row_id: &RowId) -> bool {
-        if let RowOp::Insert(_) = self.contains_row(table_id, row_id) {
-            self.tx_state
-                .as_mut()
-                .unwrap()
-                .get_or_create_delete_table(*table_id)
-                .insert(*row_id);
-            if let Some(table) = self.tx_state.as_mut().unwrap().get_insert_table_mut(table_id) {
-                table.delete(row_id);
+        match self.contains_row(table_id, row_id) {
+            RowState::Committed(_) => {
+                // If the row is present because of a previously committed transaction,
+                // we need to add it to the appropriate delete_table.
+                self.tx_state
+                    .as_mut()
+                    .unwrap()
+                    .get_or_create_delete_table(*table_id)
+                    .insert(*row_id);
+                // True because we did delete the row.
+                true
             }
-            true
-        } else {
-            false
+            RowState::Insert(_) => {
+                // If the row is present because of a an insertion in this transaction,
+                // we need to remove it from the appropriate insert_table.
+                let insert_table = self.tx_state.as_mut().unwrap().get_insert_table_mut(table_id).unwrap();
+                insert_table.delete(row_id);
+                // True because we did delete a row.
+                true
+            }
+            RowState::Delete | RowState::Absent => {
+                // In either case, there's nothing to delete.
+                false
+            }
         }
     }
 
@@ -1607,9 +1674,10 @@ impl Iterator for Iter<'_> {
                             .as_ref()
                             .map(|tx_state| tx_state.get_row_op(&self.table_id, row_id))
                         {
-                            Some(RowOp::Insert(_)) => (), // Do nothing, we'll get it in the next stage
-                            Some(RowOp::Delete) => (),    // Skip it, it's been deleted
-                            Some(RowOp::Absent) => {
+                            Some(RowState::Committed(_)) => unreachable!("a row cannot be committed in a tx state"),
+                            Some(RowState::Insert(_)) => (), // Do nothing, we'll get it in the next stage
+                            Some(RowState::Delete) => (),    // Skip it, it's been deleted
+                            Some(RowState::Absent) => {
                                 return Some(DataRef::new(row.clone()));
                             }
                             None => {
@@ -2024,7 +2092,9 @@ mod tests {
             locking_tx_datastore::{
                 StColumnRow, StIndexRow, StSequenceRow, ST_COLUMNS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
             },
-            traits::{ColumnDef, ColumnSchema, IndexDef, IndexSchema, MutTx, MutTxDatastore, TableDef, TableSchema},
+            traits::{
+                ColumnDef, ColumnSchema, DataRow, IndexDef, IndexSchema, MutTx, MutTxDatastore, TableDef, TableSchema,
+            },
         },
         error::{DBError, IndexError},
     };
@@ -2823,6 +2893,62 @@ mod tests {
                 AlgebraicValue::U32(18),
             ])
         ]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_update_reinsert() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // Insert a row and commit the tx.
+        let mut tx = datastore.begin_mut_tx();
+        let schema = basic_table_schema();
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let row = ProductValue::from_iter(vec![
+            AlgebraicValue::U32(0), // 0 will be ignored.
+            AlgebraicValue::String("Foo".to_string()),
+            AlgebraicValue::U32(18),
+        ]);
+        // Because of autoinc columns, we will get a slightly different
+        // value than the one we inserted.
+        let row = datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        datastore.commit_mut_tx(tx)?;
+
+        // Update the db with the same actual value for that row, in a new tx.
+        let mut tx = datastore.begin_mut_tx();
+        // Iterate over all rows with the value 1 (from the autoinc) in column 0.
+        let rows = datastore
+            .iter_by_col_eq_mut_tx(&tx, table_id, ColId(0), &AlgebraicValue::U32(1))?
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 1);
+        let rows: Vec<ProductValue> = rows
+            .into_iter()
+            .map(|row| datastore.data_to_owned(row).into())
+            .collect();
+        assert_eq!(row, rows[0]);
+        // Delete the row.
+        let count_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, rows)?;
+        assert_eq!(count_deleted, Some(1));
+
+        // We shouldn't see the row when iterating now that it's deleted.
+        let rows = datastore
+            .iter_by_col_eq_mut_tx(&tx, table_id, ColId(0), &AlgebraicValue::U32(1))?
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 0);
+
+        // Reinsert the row.
+        let reinserted_row = datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+        assert_eq!(reinserted_row, row);
+
+        // The actual test: we should be able to iterate again, while still in the
+        // second transaction, and see exactly one row.
+        let rows = datastore
+            .iter_by_col_eq_mut_tx(&tx, table_id, ColId(0), &AlgebraicValue::U32(1))?
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 1);
+
+        datastore.commit_mut_tx(tx)?;
+
         Ok(())
     }
 
