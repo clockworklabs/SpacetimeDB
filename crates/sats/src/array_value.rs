@@ -49,6 +49,9 @@ pub enum ArrayValue {
     Map(Box<[MapValue]>),
 }
 
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(ArrayValue, 12);
+#[cfg(not(target_arch = "wasm32"))]
 static_assert_size!(ArrayValue, 24);
 
 impl crate::Value for ArrayValue {

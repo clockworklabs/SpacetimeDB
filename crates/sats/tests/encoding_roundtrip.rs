@@ -63,10 +63,10 @@ fn builtin_values() -> impl Strategy<Value = AlgebraicValue> {
         any::<u32>().prop_map(AlgebraicValue::U32),
         any::<i64>().prop_map(AlgebraicValue::I64),
         any::<u64>().prop_map(AlgebraicValue::U64),
-        any::<i128>().prop_map(AlgebraicValue::I128),
-        any::<u128>().prop_map(AlgebraicValue::U128),
-        any::<f32>().prop_map(|x| AlgebraicValue::F32(x.into())),
-        any::<f64>().prop_map(|x| AlgebraicValue::F64(x.into())),
+        any::<i128>().prop_map(Into::into),
+        any::<u128>().prop_map(Into::into),
+        any::<f32>().prop_map(Into::into),
+        any::<f64>().prop_map(Into::into),
         "[0-1]+".prop_map(|x| {
             let x = x.into_bytes().into();
             AlgebraicValue::Bytes(x)

@@ -1,3 +1,5 @@
+use std::mem::size_of;
+
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
 use crate::{static_assert_size, AlgebraicType, AlgebraicTypeRef};
@@ -23,7 +25,7 @@ pub struct ProductTypeElement {
     pub algebraic_type: AlgebraicType,
 }
 
-static_assert_size!(ProductTypeElement, 40);
+static_assert_size!(ProductTypeElement, size_of::<usize>() * 5);
 
 impl ProductTypeElement {
     /// Returns an element with the given `name` and `algebraic_type`.

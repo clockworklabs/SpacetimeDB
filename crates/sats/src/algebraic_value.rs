@@ -82,9 +82,11 @@ pub enum AlgebraicValue {
     /// A [`u64`] value of type [`AlgebraicType::U64`].
     U64(u64),
     /// An [`i128`] value of type [`AlgebraicType::I128`].
-    I128(i128),
+    ///
+    /// We box these up as
+    I128(Box<i128>),
     /// A [`u128`] value of type [`AlgebraicType::U128`].
-    U128(u128),
+    U128(Box<u128>),
     /// A totally ordered [`F32`] value of type [`AlgebraicType::F32`].
     ///
     /// All floating point values defined in IEEE-754 are supported.
@@ -105,6 +107,9 @@ pub enum AlgebraicValue {
     String(Box<str>),
 }
 
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(AlgebraicValue, 16);
+#[cfg(not(target_arch = "wasm32"))]
 static_assert_size!(AlgebraicValue, 24);
 
 #[allow(non_snake_case)]

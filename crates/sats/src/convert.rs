@@ -59,8 +59,16 @@ built_in!(i32, I32);
 built_in!(u32, U32);
 built_in!(i64, I64);
 built_in!(u64, U64);
-built_in!(i128, I128);
-built_in!(u128, U128);
+impl From<u128> for AlgebraicValue {
+    fn from(x: u128) -> Self {
+        Self::U128(Box::new(x))
+    }
+}
+impl From<i128> for AlgebraicValue {
+    fn from(x: i128) -> Self {
+        Self::I128(Box::new(x))
+    }
+}
 built_in_into!(f32, F32);
 built_in_into!(f64, F64);
 built_in!(Box<str>, String);

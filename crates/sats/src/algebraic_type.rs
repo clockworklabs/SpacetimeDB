@@ -1,6 +1,8 @@
 pub mod fmt;
 pub mod map_notation;
 
+use std::mem::size_of;
+
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::map_type::MapType;
@@ -152,7 +154,7 @@ pub enum AlgebraicType {
     String,
 }
 
-static_assert_size!(AlgebraicType, 24);
+static_assert_size!(AlgebraicType, size_of::<usize>() * 3);
 
 impl MetaType for AlgebraicType {
     /// This is a static function that constructs the type of `AlgebraicType`

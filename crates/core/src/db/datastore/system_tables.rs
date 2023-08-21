@@ -795,11 +795,11 @@ impl<Name: AsRef<str>> From<&StSequenceRow<Name>> for ProductValue {
             AlgebraicValue::String(x.sequence_name.as_ref().into()),
             AlgebraicValue::U32(x.table_id),
             AlgebraicValue::U32(x.col_id),
-            AlgebraicValue::I128(x.increment),
-            AlgebraicValue::I128(x.start),
-            AlgebraicValue::I128(x.min_value),
-            AlgebraicValue::I128(x.max_value),
-            AlgebraicValue::I128(x.allocated),
+            AlgebraicValue::I128(Box::new(x.increment)),
+            AlgebraicValue::I128(Box::new(x.start)),
+            AlgebraicValue::I128(Box::new(x.min_value)),
+            AlgebraicValue::I128(Box::new(x.max_value)),
+            AlgebraicValue::I128(Box::new(x.allocated)),
         ]
     }
 }

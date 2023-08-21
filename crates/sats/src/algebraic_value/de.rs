@@ -84,7 +84,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
     }
 
     fn deserialize_u128(self) -> Result<u128, Self::Error> {
-        map_err(self.val.into_u128())
+        map_err(self.val.into_u128().map(|x| *x))
     }
 
     fn deserialize_i8(self) -> Result<i8, Self::Error> {
@@ -104,7 +104,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
     }
 
     fn deserialize_i128(self) -> Result<i128, Self::Error> {
-        map_err(self.val.into_i128())
+        map_err(self.val.into_i128().map(|x| *x))
     }
 
     fn deserialize_f32(self) -> Result<f32, Self::Error> {
@@ -281,7 +281,7 @@ impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
         ok_or(self.val.as_u64().copied())
     }
     fn deserialize_u128(self) -> Result<u128, Self::Error> {
-        ok_or(self.val.as_u128().copied())
+        ok_or(self.val.as_u128().map(|x| **x))
     }
     fn deserialize_i8(self) -> Result<i8, Self::Error> {
         ok_or(self.val.as_i8().copied())
@@ -296,7 +296,7 @@ impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
         ok_or(self.val.as_i64().copied())
     }
     fn deserialize_i128(self) -> Result<i128, Self::Error> {
-        ok_or(self.val.as_i128().copied())
+        ok_or(self.val.as_i128().map(|x| **x))
     }
     fn deserialize_f32(self) -> Result<f32, Self::Error> {
         ok_or(self.val.as_f32().copied().map(f32::from))

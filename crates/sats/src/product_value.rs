@@ -1,3 +1,5 @@
+use std::mem::size_of;
+
 use crate::algebraic_value::AlgebraicValue;
 use crate::product_type::ProductType;
 use crate::static_assert_size;
@@ -14,7 +16,7 @@ pub struct ProductValue {
     pub elements: Box<[AlgebraicValue]>,
 }
 
-static_assert_size!(ProductValue, 16);
+static_assert_size!(ProductValue, size_of::<usize>() * 2);
 
 /// See [`ProductValue`].
 pub struct ProductValueBuilder {
@@ -149,12 +151,12 @@ impl ProductValue {
 
     /// Interprets the value at field of `self` identified by `index` as a `i128`.
     pub fn field_as_i128(&self, index: usize, named: Option<&'static str>) -> Result<i128, InvalidFieldError> {
-        self.extract_field(index, named, |f| f.as_i128().copied())
+        self.extract_field(index, named, |f| f.as_i128().map(|x| **x))
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `u128`.
     pub fn field_as_u128(&self, index: usize, named: Option<&'static str>) -> Result<u128, InvalidFieldError> {
-        self.extract_field(index, named, |f| f.as_u128().copied())
+        self.extract_field(index, named, |f| f.as_u128().map(|x| **x))
     }
 
     /// Interprets the value at field of `self` identified by `index` as a string slice.

@@ -1,3 +1,5 @@
+use std::mem::size_of;
+
 use crate::algebraic_type::AlgebraicType;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
@@ -22,7 +24,7 @@ pub struct SumTypeVariant {
     pub algebraic_type: AlgebraicType,
 }
 
-static_assert_size!(SumTypeVariant, 40);
+static_assert_size!(SumTypeVariant, size_of::<usize>() * 5);
 
 impl SumTypeVariant {
     /// Returns a sum type variant with an optional `name` and `algebraic_type`.

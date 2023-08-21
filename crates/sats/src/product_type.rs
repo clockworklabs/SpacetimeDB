@@ -1,3 +1,5 @@
+use std::mem::size_of;
+
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
@@ -37,7 +39,7 @@ pub struct ProductType {
     pub elements: Box<[ProductTypeElement]>,
 }
 
-static_assert_size!(ProductType, 16);
+static_assert_size!(ProductType, size_of::<usize>() * 2);
 
 impl ProductType {
     /// Returns a product type with the given `elements` as its factors.

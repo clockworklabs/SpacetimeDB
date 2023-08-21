@@ -1154,8 +1154,8 @@ impl Inner {
             AlgebraicType::U32 => AlgebraicValue::U32(sequence_value as u32),
             AlgebraicType::I64 => AlgebraicValue::I64(sequence_value as i64),
             AlgebraicType::U64 => AlgebraicValue::U64(sequence_value as u64),
-            AlgebraicType::I128 => AlgebraicValue::I128(sequence_value),
-            AlgebraicType::U128 => AlgebraicValue::U128(sequence_value as u128),
+            AlgebraicType::I128 => sequence_value.into(),
+            AlgebraicType::U128 => (sequence_value as u128).into(),
             _ => {
                 return Err(SequenceError::NotInteger {
                     col: format!("{}.{}", table_name, col_name),
@@ -1176,8 +1176,8 @@ impl Inner {
             AlgebraicValue::U32(x) => *x == 0,
             AlgebraicValue::I64(x) => *x == 0,
             AlgebraicValue::U64(x) => *x == 0,
-            AlgebraicValue::I128(x) => *x == 0,
-            AlgebraicValue::U128(x) => *x == 0,
+            AlgebraicValue::I128(x) => **x == 0,
+            AlgebraicValue::U128(x) => **x == 0,
             AlgebraicValue::F32(x) => *x == 0.0,
             AlgebraicValue::F64(x) => *x == 0.0,
             _ => false,
