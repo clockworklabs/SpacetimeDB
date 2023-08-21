@@ -25,14 +25,17 @@ mod paths {
 mod paths {
     use super::*;
 
+    /// The default path for the database files.
     pub(super) fn db_path() -> PathBuf {
         PathBuf::from("/usr/local/var/stdb")
     }
 
+    /// The default path for the database logs.
     pub(super) fn logs_path() -> PathBuf {
         PathBuf::from("/var/log")
     }
 
+    /// The default path for the database config files.
     pub(super) fn config_path() -> PathBuf {
         PathBuf::from("/etc/spacetimedb/")
     }
@@ -42,16 +45,19 @@ mod paths {
 mod paths {
     use super::*;
 
+    /// The default path for the database files.
     pub(super) fn db_path() -> PathBuf {
         dirs::data_dir()
             .map(|x| x.join("stdb"))
             .expect("Fail to read the windows `data directory`")
     }
 
+    /// The default path for the database logs.
     pub(super) fn logs_path() -> PathBuf {
         db_path().join("log")
     }
 
+    /// The default path for the database config files.
     pub(super) fn config_path() -> PathBuf {
         dirs::config_dir()
             .map(|x| x.join("stdb"))
