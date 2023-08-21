@@ -1,4 +1,3 @@
-
 /// Asserts that `$ty` is `$size` bytes in `static_assert_size($ty, $size)`.
 ///
 /// Example:

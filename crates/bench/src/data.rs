@@ -43,7 +43,11 @@ pub struct Data {
 impl Data {
     pub fn new(a: i32) -> Self {
         let b = (a as u64) + START_B;
-        Self { a, b, c: encode(b).into() }
+        Self {
+            a,
+            b,
+            c: encode(b).into(),
+        }
     }
 }
 

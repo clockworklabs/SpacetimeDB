@@ -4,8 +4,7 @@ use std::fmt::{self, Write};
 
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::{
-    AlgebraicType, AlgebraicTypeRef, ArrayType, ProductType, ProductTypeElement,
-    SumType, SumTypeVariant,
+    AlgebraicType, AlgebraicTypeRef, ArrayType, ProductType, ProductTypeElement, SumType, SumTypeVariant,
 };
 use spacetimedb_lib::{ColumnIndexAttribute, ReducerDef, TableDef};
 

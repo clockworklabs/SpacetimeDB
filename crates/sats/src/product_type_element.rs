@@ -1,6 +1,6 @@
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicTypeRef, static_assert_size};
+use crate::{static_assert_size, AlgebraicType, AlgebraicTypeRef};
 
 /// A factor / element of a product type.
 ///

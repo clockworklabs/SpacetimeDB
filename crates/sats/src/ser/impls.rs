@@ -1,9 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::{
-    AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue,
-    ValueWithType,
-};
+use crate::{AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType};
 
 use super::{Serialize, SerializeArray, SerializeMap, SerializeNamedProduct, SerializeSeqProduct, Serializer};
 

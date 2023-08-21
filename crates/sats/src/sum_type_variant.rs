@@ -1,7 +1,7 @@
 use crate::algebraic_type::AlgebraicType;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicTypeRef, ProductTypeElement, static_assert_size};
+use crate::{static_assert_size, AlgebraicTypeRef, ProductTypeElement};
 
 /// A variant of a sum type.
 ///

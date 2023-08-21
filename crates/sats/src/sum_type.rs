@@ -2,7 +2,7 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SumTypeVariant, static_assert_size};
+use crate::{static_assert_size, AlgebraicType, AlgebraicValue, ProductTypeElement, SumTypeVariant};
 
 /// A structural sum type.
 ///
