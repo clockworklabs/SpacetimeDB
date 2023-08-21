@@ -205,6 +205,7 @@ pub enum IndexType {
     Hash,
 }
 
+// NOTE: Duplicated in `crates/bindings-macro/src/lib.rs`
 bitflags::bitflags! {
     #[derive(Debug, Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
     pub struct ColumnIndexAttribute: u8 {

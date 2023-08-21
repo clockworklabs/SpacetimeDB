@@ -12,20 +12,58 @@ pub(crate) const ST_COLUMNS_ID: TableId = TableId(1);
 pub(crate) const ST_SEQUENCES_ID: TableId = TableId(2);
 /// The static ID of the table that defines indexes
 pub(crate) const ST_INDEXES_ID: TableId = TableId(3);
+/// The static ID of the table that defines constraints
+pub(crate) const ST_CONSTRAINTS_ID: TableId = TableId(4);
 
 pub(crate) const ST_TABLES_NAME: &str = "st_table";
 pub(crate) const ST_COLUMNS_NAME: &str = "st_columns";
 pub(crate) const ST_SEQUENCES_NAME: &str = "st_sequence";
 pub(crate) const ST_INDEXES_NAME: &str = "st_indexes";
+pub(crate) const ST_CONSTRAINTS_NAME: &str = "st_constraints";
 
 pub(crate) const TABLE_ID_SEQUENCE_ID: SequenceId = SequenceId(0);
 pub(crate) const SEQUENCE_ID_SEQUENCE_ID: SequenceId = SequenceId(1);
 pub(crate) const INDEX_ID_SEQUENCE_ID: SequenceId = SequenceId(2);
+pub(crate) const CONSTRAINT_ID_SEQUENCE_ID: SequenceId = SequenceId(3);
 
 pub(crate) const ST_TABLE_ID_INDEX_ID: u32 = 0;
 pub(crate) const ST_TABLE_NAME_INDEX_ID: u32 = 3;
 pub(crate) const ST_INDEX_ID_INDEX_ID: u32 = 1;
 pub(crate) const ST_SEQUENCE_ID_INDEX_ID: u32 = 2;
+pub(crate) const ST_CONSTRAINT_ID_INDEX_ID: u32 = 4;
+
+pub(crate) struct SystemTables {}
+
+impl SystemTables {
+    pub(crate) fn tables() -> [TableSchema; 5] {
+        [
+            st_table_schema(),
+            st_columns_schema(),
+            st_sequences_schema(),
+            st_indexes_schema(),
+            st_constraints_schema(),
+        ]
+    }
+
+    pub(crate) fn total_tables() -> usize {
+        Self::tables().len()
+    }
+
+    pub(crate) fn total_indexes() -> usize {
+        Self::tables().iter().flat_map(|x| x.indexes.iter()).count()
+    }
+
+    pub(crate) fn total_sequences() -> usize {
+        Self::tables()
+            .iter()
+            .flat_map(|x| x.columns.iter().filter(|x| x.is_autoinc))
+            .count()
+    }
+
+    pub(crate) fn total_constraints() -> usize {
+        0
+    }
+}
 
 // WARNING: In order to keep a stable schema, don't change the discriminant of the fields
 #[derive(Debug)]
@@ -121,6 +159,29 @@ impl StSequenceFields {
             StSequenceFields::MinValue => "min_value",
             StSequenceFields::MaxValue => "max_value",
             StSequenceFields::Allocated => "allocated",
+        }
+    }
+}
+
+// WARNING: In order to keep a stable schema, don't change the discriminant of the fields
+#[derive(Debug)]
+pub enum StConstraintFields {
+    ConstraintId = 0,
+    ConstraintName = 1,
+    Type = 2,
+    TableId = 3,
+    Columns = 4,
+}
+
+impl StConstraintFields {
+    pub fn name(&self) -> &'static str {
+        // WARNING: Don't change the name of the fields
+        match self {
+            Self::ConstraintId => "constraint_id",
+            Self::ConstraintName => "constraint_name",
+            Self::Type => "type",
+            Self::TableId => "table_id",
+            Self::Columns => "columns",
         }
     }
 }
@@ -395,6 +456,68 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
 
 pub static ST_SEQUENCE_ROW_TYPE: Lazy<ProductType> =
     Lazy::new(|| ProductType::from_iter(st_sequences_schema().columns.iter().map(|c| c.col_type.clone())));
+
+/// System Table [ST_CONSTRAINTS_NAME]
+///
+/// | constraint_id | constraint_name      | type | table_id | columns |
+/// |---------------|-------------------- -|-----------|-------|-----------|
+/// | 1             | "unique_customer_id" | 1         | 100   | [1, 4]        |
+pub(crate) fn st_constraints_schema() -> TableSchema {
+    TableSchema {
+        table_id: ST_CONSTRAINTS_ID.0,
+        table_name: ST_CONSTRAINTS_NAME.into(),
+        // TODO: Unique constraint on sequence name?
+        indexes: vec![IndexSchema {
+            index_id: ST_CONSTRAINT_ID_INDEX_ID,
+            table_id: ST_CONSTRAINTS_ID.0,
+            col_id: 0,
+            index_name: "constraint_id_idx".into(),
+            is_unique: true,
+        }],
+        columns: vec![
+            ColumnSchema {
+                table_id: ST_CONSTRAINTS_ID.0,
+                col_id: StConstraintFields::ConstraintId as u32,
+                col_name: StConstraintFields::ConstraintId.name().into(),
+                col_type: AlgebraicType::U32,
+                is_autoinc: true,
+            },
+            ColumnSchema {
+                table_id: ST_CONSTRAINTS_ID.0,
+                col_id: StConstraintFields::ConstraintName as u32,
+                col_name: StConstraintFields::ConstraintName.name().into(),
+                col_type: AlgebraicType::String,
+                is_autoinc: false,
+            },
+            ColumnSchema {
+                table_id: ST_CONSTRAINTS_ID.0,
+                col_id: StConstraintFields::Type as u32,
+                col_name: StConstraintFields::Type.name().into(),
+                col_type: AlgebraicType::U32,
+                is_autoinc: false,
+            },
+            ColumnSchema {
+                table_id: ST_CONSTRAINTS_ID.0,
+                col_id: StConstraintFields::TableId as u32,
+                col_name: StConstraintFields::TableId.name().into(),
+                col_type: AlgebraicType::U32,
+                is_autoinc: false,
+            },
+            ColumnSchema {
+                table_id: ST_CONSTRAINTS_ID.0,
+                col_id: StConstraintFields::Columns as u32,
+                col_name: StConstraintFields::Columns.name().into(),
+                col_type: AlgebraicType::array(AlgebraicType::U32),
+                is_autoinc: false,
+            },
+        ],
+        table_type: StTableType::System,
+        table_access: StAccess::Public,
+    }
+}
+
+pub static ST_CONSTRAINT_ROW_TYPE: Lazy<ProductType> =
+    Lazy::new(|| ProductType::from_iter(st_constraints_schema().columns.iter().map(|c| c.col_type.clone())));
 
 pub(crate) fn table_name_is_system(table_name: &str) -> bool {
     table_name.starts_with("st_")

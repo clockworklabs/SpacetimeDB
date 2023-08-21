@@ -169,6 +169,33 @@ pub struct TableSchema {
 }
 
 impl TableSchema {
+    pub fn new(table_id: u32, table_name: &str, table_type: StTableType, table_access: StAccess) -> Self {
+        Self {
+            table_id,
+            table_name: table_name.into(),
+            columns: Vec::new(),
+            indexes: Vec::new(),
+            table_type,
+            table_access,
+        }
+    }
+    //
+    // pub fn set_columns(self, columns: &[ColumnSchema]) -> Self {
+    //     let mut x = self;
+    //
+    //     //remove the automatic constraints
+    //     for c in columns {
+    //         if c.is_autoinc {}
+    //     }
+    //     x
+    // }
+    //
+    // pub fn set_indexes(self, indexes: &[IndexSchema]) -> Self {
+    //     let mut x = self;
+    //
+    //     x
+    // }
+
     /// Check if the `name` of the [FieldName] exist on this [TableSchema]
     ///
     /// Warning: It ignores the `table_name`
