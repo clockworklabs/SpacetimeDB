@@ -1,6 +1,6 @@
 [package]
 name = "spacetimedb-sdk"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 license-file = "LICENSE"
 description = "A Rust SDK for clients to interface with SpacetimeDB"
@@ -8,27 +8,26 @@ description = "A Rust SDK for clients to interface with SpacetimeDB"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-spacetimedb-sats = { path = "../sats", version = "0.6.0" }
-spacetimedb-lib = { path = "../lib", version = "0.6.0" }
-spacetimedb-client-api-messages = { path = "../client-api-messages", version = "0.6.0" }
-tokio-tungstenite = { version = "0.19", features = ["native-tls"] }
-tokio = { version = "1.2", features = ["full"] }
-http = "0.2"
-anyhow = "1.0"
-futures = "0.3"
-prost = "0.10"
-log = "0.4"
-futures-channel = "0.3"
-anymap = "0.12"
-im = "15.1"
-base64 = "0.21"
-home = "0.5"
-lazy_static = "1.4"
+spacetimedb-sats = { path = "../sats", version = "0.6.1" }
+spacetimedb-lib = { path = "../lib", version = "0.6.1" }
+spacetimedb-client-api-messages = { path = "../client-api-messages", version = "0.6.1" }
+
+anyhow.workspace = true
+anymap.workspace = true
+base64.workspace = true
+futures.workspace = true
+futures-channel.workspace = true
+home.workspace = true
+http.workspace = true
+im.workspace = true
+lazy_static.workspace = true
+log.workspace = true
+prost.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
 
 [dev-dependencies]
-# for quickstart-chat example
-hex = "0.4"
+hex.workspace = true
 # for cursive-chat example
-cursive = "0.20"
-futures-channel = "0.3"
-
+cursive.workspace = true
+futures-channel.workspace = true

@@ -1,10 +1,11 @@
-name: SpacetimeDB Docker image
+name: CI
 
 on: "push"
 
 jobs:
   docker:
     runs-on: spacetimedb-runner
+    name: Build DockerHub Container
     steps:
       - name: Checkout
         uses: actions/checkout@v3
