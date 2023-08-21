@@ -27,7 +27,7 @@ use crate::{static_assert_size, AlgebraicType, AlgebraicValue, ProductTypeElemen
 ///
 /// See also: https://ncatlab.org/nlab/show/sum+type.
 ///
-/// [structural]: https://en.wikipedia.org/wiki/Structural_type_systemw
+/// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[sats(crate = crate)]
 pub struct SumType {
