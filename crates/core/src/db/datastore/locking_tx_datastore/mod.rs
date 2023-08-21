@@ -3014,7 +3014,7 @@ mod tests {
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
         let row = ProductValue::from_iter(vec![
             AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Foo".to_string()),
+            AlgebraicValue::String("Foo".into()),
             AlgebraicValue::U32(18),
         ]);
         // Because of autoinc columns, we will get a slightly different

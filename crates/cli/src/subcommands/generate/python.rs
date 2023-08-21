@@ -491,7 +491,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(
         output,
         "def {}({}):",
-        reducer.name.to_case(Case::Snake),
+        reducer.name.as_ref().to_case(Case::Snake),
         func_arguments_str
     )
     .unwrap();
@@ -526,7 +526,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(
         output,
         "def register_on_{}(callback: Callable[[Identity, str, str{}], None]):",
-        reducer.name.to_case(Case::Snake),
+        reducer.name.as_ref().to_case(Case::Snake),
         callback_sig_str
     )
     .unwrap();
