@@ -71,6 +71,11 @@ pub fn cli(mode: ProgramMode) -> clap::Command {
         .action(SetTrue)
         .help("If specified the database will run entirely in memory. After the process exits all data will be lost.");
 
+    let wal_fsync_arg = Arg::new("wal_fsync")
+        .long("wal-fsync")
+        .action(SetTrue)
+        .help("If specified the database will fsync on each commit.");
+
     // the default root for files, this *should* be the home directory unless it cannot be determined.
     let default_root = if let Some(dir) = dirs::home_dir() {
         dir
@@ -134,6 +139,7 @@ pub fn cli(mode: ProgramMode) -> clap::Command {
         .arg(jwt_pub_key_path_arg)
         .arg(jwt_priv_key_path_arg)
         .arg(in_memory_arg)
+        .arg(wal_fsync_arg)
         .after_help(mode.after_help())
 }
 
