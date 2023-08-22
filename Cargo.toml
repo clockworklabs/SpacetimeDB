@@ -160,6 +160,7 @@ wasmbin = "0.6"
 # wasmer prior to 4.1.1 had a signal handling bug on macOS.
 wasmer = "4.1.1"
 wasmer-middlewares = "4.1.1"
+wasmer-types = "4.1.1"
 wasmer-vm = "4.1.1"
 
 wasmparser = "0.92.0"
