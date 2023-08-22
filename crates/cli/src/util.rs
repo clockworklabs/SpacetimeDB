@@ -53,8 +53,8 @@ pub async fn spacetime_register_tld(
     Ok(serde_json::from_slice(&bytes[..]).unwrap())
 }
 
-pub async fn spacetime_server_fingerprint(host: &str, protocol: &str) -> anyhow::Result<String> {
-    let builder = reqwest::Client::new().get(format!("{}://{}/identity/public-key", protocol, host,).as_str());
+pub async fn spacetime_server_fingerprint(url: &str) -> anyhow::Result<String> {
+    let builder = reqwest::Client::new().get(format!("{}/identity/public-key", url).as_str());
     let res = builder.send().await?.error_for_status()?;
     let fingerprint = res.text().await?;
     Ok(fingerprint)

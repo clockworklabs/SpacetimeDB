@@ -264,21 +264,6 @@ impl RawConfig {
         }
     }
 
-    // fn find_or_make_server(
-    //     &mut self,
-    //     name_or_host: &str,
-    //     protocol: Option<&str>,
-    // ) -> anyhow::Result<&mut ServerConfig> {
-    //     if let Some(cfg) = self.find_server_mut(name_or_host) {
-    //         return Ok(cfg);
-    //     }
-    //     let protocol = protocol.ok_or_else(|| {
-    //         anyhow::anyhow!("Must specify protocol for server {:?}", name_or_host)
-    //     })?;
-
-    //     Ok(self.make_server(name_or_host, protocol))
-    // }
-
     fn unset_all_default_identities(&mut self) {
         if let Some(server_configs) = &mut self.server_configs {
             for cfg in server_configs {
@@ -365,28 +350,30 @@ impl RawConfig {
         Err(anyhow::anyhow!("No such saved server configuration: {}", server))
     }
 
-    fn server_decoding_key(&self, server: &str) -> anyhow::Result<DecodingKey> {
+    fn server_fingerprint(&self, server: &str) -> anyhow::Result<Option<&str>> {
         self.find_server(server)
             .with_context(|| "Looking up fingerprint for server configuration")
-            .and_then(|cfg| {
-                if let Some(fing) = &cfg.ecdsa_public_key {
-                    DecodingKey::from_ec_pem(fing.as_bytes())
-                        .with_context(|| "Parsing server fingerprint as ECDSA public key")
-                } else {
-                    Err(anyhow::anyhow!(
-                        "No fingerprint saved for server: {}",
-                        cfg.nick_or_host()
-                    ))
-                }
-            })
+            .map(|cfg| cfg.ecdsa_public_key.as_deref())
     }
 
-    fn default_server_decoding_key(&self) -> anyhow::Result<DecodingKey> {
+    fn default_server_fingerprint(&self) -> anyhow::Result<Option<&str>> {
         if let Some(server) = &self.default_server {
-            self.server_decoding_key(server)
+            self.server_fingerprint(server)
         } else {
             Err(anyhow::anyhow!("No default server configuration"))
         }
+    }
+
+    fn set_server_fingerprint(&mut self, server: &str, ecdsa_public_key: String) -> anyhow::Result<()> {
+        let cfg = self.find_server_mut(server)?;
+        cfg.ecdsa_public_key = Some(ecdsa_public_key);
+        Ok(())
+    }
+
+    fn set_default_server_fingerprint(&mut self, ecdsa_public_key: String) -> anyhow::Result<()> {
+        let cfg = self.default_server_mut()?;
+        cfg.ecdsa_public_key = Some(ecdsa_public_key);
+        Ok(())
     }
 }
 
@@ -760,16 +747,17 @@ impl Config {
     }
 
     pub fn server_decoding_key(&self, server: Option<&str>) -> anyhow::Result<DecodingKey> {
-        if let Some(server) = server {
-            let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.proj
-                .server_decoding_key(host)
-                .or_else(|_| self.home.server_decoding_key(host))
-        } else {
-            self.proj
-                .default_server_decoding_key()
-                .or_else(|_| self.home.default_server_decoding_key())
-        }
+        self.server_fingerprint(server).and_then(|fing| {
+            if let Some(fing) = fing {
+                DecodingKey::from_ec_pem(fing.as_bytes())
+                    .with_context(|| "Parsing server fingerprint as ECDSA public key")
+            } else {
+                Err(anyhow::anyhow!(
+                    "No fingerprint saved for server: {}",
+                    self.server_nick_or_host(server)?,
+                ))
+            }
+        })
     }
 
     pub fn server_nick_or_host<'a>(&'a self, server: Option<&'a str>) -> anyhow::Result<&'a str> {
@@ -781,6 +769,28 @@ impl Config {
                 .default_server()
                 .or_else(|_| self.home.default_server())
                 .map(ServerConfig::nick_or_host)
+        }
+    }
+
+    pub fn server_fingerprint(&self, server: Option<&str>) -> anyhow::Result<Option<&str>> {
+        if let Some(server) = server {
+            let (host, _) = host_or_url_to_host_and_protocol(server);
+            self.proj
+                .server_fingerprint(host)
+                .or_else(|_| self.home.server_fingerprint(host))
+        } else {
+            self.proj
+                .default_server_fingerprint()
+                .or_else(|_| self.home.default_server_fingerprint())
+        }
+    }
+
+    pub fn set_server_fingerprint(&mut self, server: Option<&str>, new_fingerprint: String) -> anyhow::Result<()> {
+        if let Some(server) = server {
+            let (host, _) = host_or_url_to_host_and_protocol(server);
+            self.home.set_server_fingerprint(host, new_fingerprint)
+        } else {
+            self.home.set_default_server_fingerprint(new_fingerprint)
         }
     }
 }

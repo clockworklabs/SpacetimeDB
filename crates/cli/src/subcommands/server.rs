@@ -171,7 +171,7 @@ pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyho
     let fingerprint = if no_fingerprint {
         None
     } else {
-        let fingerprint = spacetime_server_fingerprint(host, protocol).await?;
+        let fingerprint = spacetime_server_fingerprint(url).await?;
         println!("For server {}, got fingerprint:\n{}", url, fingerprint);
         Some(fingerprint)
     };
@@ -207,8 +207,19 @@ pub async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), an
     Ok(())
 }
 
-pub async fn exec_fingerprint(_config: Config, _args: &ArgMatches) -> Result<(), anyhow::Error> {
-    todo!()
+pub async fn exec_fingerprint(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let server = args.get_one::<String>("server").map(|s| s.as_str());
+    let nick_or_host = config.server_nick_or_host(server)?;
+
+    if let Some(fing) = config.server_fingerprint(server)? {
+        println!("Fingerprint for server {}:\n{}", nick_or_host, fing);
+    } else {
+        println!(
+            "No saved fingerprint for server {}. Consider fetching a fingerprint with:\n\tspacetime server update {}",
+            nick_or_host, nick_or_host
+        );
+    }
+    Ok(())
 }
 
 pub async fn exec_ping(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
@@ -227,6 +238,31 @@ pub async fn exec_ping(config: Config, args: &ArgMatches) -> Result<(), anyhow::
     Ok(())
 }
 
-pub async fn exec_update(_config: Config, _args: &ArgMatches) -> Result<(), anyhow::Error> {
-    todo!()
+pub async fn exec_update(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let server = args.get_one::<String>("server").map(|s| s.as_str());
+    let nick_or_host = config.server_nick_or_host(server)?;
+    let url = config.get_host_url(server)?;
+
+    let new_fing = spacetime_server_fingerprint(&url).await?;
+    if let Some(saved_fing) = config.server_fingerprint(server)? {
+        if saved_fing == new_fing {
+            println!("Fingerprint is unchanged for server {}:\n{}", nick_or_host, saved_fing);
+        } else {
+            println!(
+                "Fingerprint has changed for server {}.\nWas:\n{}\nNew:\n{}",
+                nick_or_host, saved_fing, new_fing
+            );
+        }
+    } else {
+        println!(
+            "No saved fingerprint for server {}. New fingerprint:\n{}",
+            nick_or_host, new_fing
+        );
+    }
+
+    config.set_server_fingerprint(server, new_fing)?;
+
+    config.save();
+
+    Ok(())
 }

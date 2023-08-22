@@ -16,10 +16,9 @@ TOKEN=$(cat "$TEST_OUT")
 
 reset_config
 
-# Remove and re-add the server to get its fingerprint.
+# Fetch the server's fingerprint.
 # The fingerprint is required for `identity list`.
-run_test cargo run server remove 127.0.0.1:3000
-run_test cargo run server add http://127.0.0.1:3000
+run_test cargo run server update 127.0.0.1:3000
 
 run_test cargo run identity import "$IDENT" "$TOKEN"
 run_test cargo run identity list
