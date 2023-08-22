@@ -266,22 +266,6 @@ impl HostController {
     fn take_module_host(&self, instance_id: u64) -> Option<ModuleHost> {
         self.modules.lock().unwrap().remove(&instance_id)
     }
-
-    /// If a module's DB activity is being traced (for diagnostics etc.), retrieves the current contents of its trace stream.
-    #[cfg(feature = "tracelogging")]
-    pub async fn get_trace(&self, instance_id: u64) -> Result<Option<bytes::Bytes>, anyhow::Error> {
-        let module_host = self.get_module_host(instance_id)?;
-        let trace = module_host.get_trace().await.unwrap();
-        Ok(trace)
-    }
-
-    /// If a module's DB activity is being traced (for diagnostics etc.), stop tracing it.
-    #[cfg(feature = "tracelogging")]
-    pub async fn stop_trace(&self, instance_id: u64) -> Result<(), anyhow::Error> {
-        let module_host = self.get_module_host(instance_id)?;
-        module_host.stop_trace().await.unwrap();
-        Ok(())
-    }
 }
 
 impl Default for HostController {

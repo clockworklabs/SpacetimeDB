@@ -11,7 +11,6 @@ members = [
   "crates/sats",
   "crates/testing",
   "crates/vm",
-  "crates/replay",
   "crates/client-api",
   "crates/sdk",
   "crates/client-api-messages",

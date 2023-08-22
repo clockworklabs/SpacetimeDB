@@ -15,7 +15,6 @@ use std::sync::{Arc, Mutex};
 pub struct DatabaseInstanceContext {
     pub database_instance_id: u64,
     pub database_id: u64,
-    pub trace_log: bool,
     pub identity: Identity,
     pub address: Address,
     pub logger: Arc<Mutex<DatabaseLogger>>,
@@ -34,7 +33,6 @@ impl DatabaseInstanceContext {
             storage,
             instance_id,
             database.id,
-            database.trace_log,
             database.identity,
             database.address,
             db_path,
@@ -54,7 +52,6 @@ impl DatabaseInstanceContext {
         storage: Storage,
         database_instance_id: u64,
         database_id: u64,
-        trace_log: bool,
         identity: Identity,
         address: Address,
         db_path: PathBuf,
@@ -80,7 +77,6 @@ impl DatabaseInstanceContext {
         Arc::new(Self {
             database_instance_id,
             database_id,
-            trace_log,
             identity,
             address,
             logger: Arc::new(Mutex::new(DatabaseLogger::open(log_path))),

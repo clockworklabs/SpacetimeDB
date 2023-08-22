@@ -761,19 +761,8 @@ pub struct PublishDatabaseQueryParams {
     #[serde(default)]
     clear: bool,
     name_or_address: Option<NameOrAddress>,
-    trace_log: Option<bool>,
     #[serde(default)]
     register_tld: bool,
-}
-
-#[cfg(not(feature = "tracelogging"))]
-fn should_trace(_trace_log: Option<bool>) -> bool {
-    false
-}
-
-#[cfg(feature = "tracelogging")]
-fn should_trace(trace_log: Option<bool>) -> bool {
-    trace_log.unwrap_or(false)
 }
 
 pub async fn publish(
@@ -787,7 +776,6 @@ pub async fn publish(
         name_or_address,
         host_type,
         clear,
-        trace_log,
         register_tld,
     } = query_params;
 
@@ -841,8 +829,6 @@ pub async fn publish(
 
     let num_replicas = 1;
 
-    let trace_log = should_trace(trace_log);
-
     let op = match control_ctx_find_database(&*ctx, &db_address).await? {
         Some(db) => {
             if db.identity != auth.identity {
@@ -857,7 +843,6 @@ pub async fn publish(
                     host_type,
                     num_replicas,
                     clear,
-                    trace_log,
                 )
                 .await
                 .map_err(log_and_500)?;
@@ -905,7 +890,6 @@ pub async fn publish(
                 host_type,
                 num_replicas,
                 false,
-                trace_log,
             )
             .await
             .map_err(log_and_500)?;
