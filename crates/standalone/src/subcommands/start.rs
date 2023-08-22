@@ -95,7 +95,7 @@ pub fn cli(mode: ProgramMode) -> clap::Command {
             jwt_priv_key_path_arg = jwt_priv_key_path_arg.default_value(paths.private_key().into_os_string());
         }
         ProgramMode::Standalone => {
-            let paths = FilesGlobal::new();
+            let paths = FilesGlobal;
 
             log_conf_path_arg = log_conf_path_arg.default_value(paths.log_config().into_os_string());
             log_dir_path_arg = log_dir_path_arg.default_value(paths.logs().into_os_string());

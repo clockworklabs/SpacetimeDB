@@ -49,7 +49,7 @@ mod paths {
     pub(super) fn db_path() -> PathBuf {
         dirs::data_dir()
             .map(|x| x.join("stdb"))
-            .expect("Fail to read the windows `data directory`")
+            .expect("failed to read the windows `data directory`")
     }
 
     /// The default path for the database logs.
@@ -70,6 +70,7 @@ pub fn stdb_path_temp() -> PathBuf {
     temp_dir().join("stdb")
 }
 
+/// Types specifying where to find various files needed by spacetimedb.
 pub trait SpacetimeDbFiles {
     /// The path for the database files.
     fn db_path(&self) -> PathBuf;
@@ -111,7 +112,7 @@ impl FilesLocal {
         }
     }
 
-    /// Create a new [FilesLocal], that is in a hidden `path + .spacetime` folder.
+    /// Create a new [FilesLocal] that is in a hidden `path + .spacetime` folder.
     pub fn hidden<P: AsRef<Path>>(path: P) -> Self {
         Self {
             dir: path.as_ref().join(".spacetime"),
@@ -135,21 +136,8 @@ impl SpacetimeDbFiles for FilesLocal {
 
 /// The global location of paths for the database.
 ///
-/// NOTE: This location vary by OS.
-pub struct FilesGlobal {}
-
-impl FilesGlobal {
-    /// Create a new [FilesGlobal] that use the global location of paths.
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-impl Default for FilesGlobal {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+/// NOTE: This location varies by OS.
+pub struct FilesGlobal;
 
 impl SpacetimeDbFiles for FilesGlobal {
     fn db_path(&self) -> PathBuf {

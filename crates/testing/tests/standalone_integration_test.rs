@@ -2,7 +2,8 @@ use serde_json::Value;
 use serial_test::serial;
 use spacetimedb_testing::modules::{compile, with_module_async};
 
-// The test MUST be run in sequence because them read the OS environment and that cause a race if running in parallel.
+// The tests MUST be run in sequence because they read the OS environment
+// and can cause a race when run in parallel.
 
 #[test]
 #[serial]

@@ -131,7 +131,8 @@ pub async fn load_module(name: &str) -> ModuleHandle {
     let storage = Storage::Disk;
 
     let paths = FilesLocal::temp(name);
-    // The database created in the `temp` folder can't be randomized, so it persist after running the test.
+    // The database created in the `temp` folder can't be randomized,
+    // so it persists after running the test.
     std::fs::remove_dir(paths.db_path()).ok();
 
     crate::set_key_env_vars(&paths);
