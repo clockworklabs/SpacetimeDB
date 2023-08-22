@@ -1,4 +1,4 @@
-use std::{net::Ipv6Addr, fmt::Display};
+use std::{fmt::Display, net::Ipv6Addr};
 
 use anyhow::Context as _;
 use hex::FromHex as _;

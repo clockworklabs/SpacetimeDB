@@ -238,16 +238,12 @@ impl HostController {
             HostType::Wasmer => {
                 // make_actor with block_in_place since it's going to take some time to compute.
                 let start = Instant::now();
-                let actor = tokio::task::block_in_place(|| wasmer::make_actor(
-                    mhc.dbic,
-                    module_hash,
-                    &mhc.program_bytes,
-                    mhc.scheduler,
-                    energy_monitor,
-                ))?;
+                let actor = tokio::task::block_in_place(|| {
+                    wasmer::make_actor(mhc.dbic, module_hash, &mhc.program_bytes, mhc.scheduler, energy_monitor)
+                })?;
                 log::trace!("wasmer::make_actor blocked for {}us", start.elapsed().as_micros());
                 ModuleHost::spawn(actor)
-            },
+            }
         };
         Ok((module_host, module_starter, mhc.scheduler_starter))
     }
