@@ -71,7 +71,8 @@ impl SpaceDb {
     pub fn new() -> anyhow::Result<Self> {
         let tmp_dir = TempDir::new("stdb_test")?;
         let in_memory = false;
-        let conn = open_db(&tmp_dir, in_memory)?;
+        let fsync = false;
+        let conn = open_db(&tmp_dir, in_memory, fsync)?;
         Ok(Self {
             conn,
             tmp_dir,

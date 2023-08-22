@@ -35,16 +35,16 @@ enum Commands {
 }
 
 macro_rules! bench_fn {
-    ($cli:ident, $fun:ident, $run:expr, $prefill:literal) => {{
+    ($cli:ident, $fun:ident, $run:expr, $prefill:literal, $fsync:literal) => {{
         let run = $run;
 
         match $cli.db {
             DbEngine::Sqlite => {
-                let mut pool = Pool::new($prefill)?;
+                let mut pool = Pool::new($prefill, $fsync)?;
                 sqlite::$fun(&mut pool, run)
             }
             DbEngine::Spacetime => {
-                let mut pool = Pool::new($prefill)?;
+                let mut pool = Pool::new($prefill, $fsync)?;
                 spacetime::$fun(&mut pool, run)
             }
         }
@@ -56,13 +56,13 @@ fn main() -> ResultBench<()> {
 
     match cli.command {
         Commands::Insert { rows } => {
-            bench_fn!(cli, insert_tx_per_row, rows.unwrap_or(Runs::Tiny), false)
+            bench_fn!(cli, insert_tx_per_row, rows.unwrap_or(Runs::Tiny), false, true)
         }
         Commands::InsertBulk { rows } => {
-            bench_fn!(cli, insert_tx, rows.unwrap_or(Runs::Small), true)
+            bench_fn!(cli, insert_tx, rows.unwrap_or(Runs::Small), true, true)
         }
         Commands::SelectNoIndex { rows } => {
-            bench_fn!(cli, select_no_index, rows.unwrap_or(Runs::Tiny), true)
+            bench_fn!(cli, select_no_index, rows.unwrap_or(Runs::Tiny), true, false)
         }
     }
 }

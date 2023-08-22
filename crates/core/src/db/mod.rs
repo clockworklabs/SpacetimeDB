@@ -20,3 +20,12 @@ pub enum Storage {
     /// The object store is persisted to disk, and a message log is kept.
     Disk,
 }
+
+/// Internal database config parameters
+#[derive(Clone, Copy)]
+pub struct Config {
+    /// Specifies whether writes to the WAL should be fsync'd.
+    pub fsync: bool,
+    /// Specifies the object storage model.
+    pub storage: Storage,
+}

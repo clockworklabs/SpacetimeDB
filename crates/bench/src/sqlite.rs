@@ -2,17 +2,17 @@ use crate::prelude::*;
 use rusqlite::{Connection, Transaction};
 
 impl BuildDb for Connection {
-    fn build(prefill: bool) -> ResultBench<Self>
+    fn build(prefill: bool, fsync: bool) -> ResultBench<Self>
     where
         Self: Sized,
     {
         let tmp_dir = TempDir::new("sqlite_test")?;
         let mut db = Connection::open(tmp_dir.path().join("test.db"))?;
-        //let mut db = Connection::open("test.db")?;
-        db.execute_batch(
-            "PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = normal;",
-        )?;
+        db.execute_batch(if fsync {
+            "PRAGMA journal_mode = WAL; PRAGMA synchronous = full;"
+        } else {
+            "PRAGMA journal_mode = WAL; PRAGMA synchronous = off;"
+        })?;
 
         db.execute_batch(
             "CREATE TABLE data (

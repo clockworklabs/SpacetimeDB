@@ -18,7 +18,7 @@ use spacetimedb::client::ClientActorIndex;
 use spacetimedb::control_db::ControlDb;
 use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
-use spacetimedb::db::{db_metrics, Storage};
+use spacetimedb::db::{db_metrics, Config};
 use spacetimedb::hash::Hash;
 use spacetimedb::host::UpdateOutcome;
 use spacetimedb::host::{scheduler::Scheduler, HostController};
@@ -46,17 +46,11 @@ pub struct StandaloneEnv {
     client_actor_index: ClientActorIndex,
     public_key: DecodingKey,
     private_key: EncodingKey,
-
-    /// Whether databases in this environment will be created entirely in memory
-    /// or otherwise persist their message log and object store to disk.
-    ///
-    /// Note that this does not apply to the StandaloneEnv's own control_db
-    /// or object_db.
-    storage: Storage,
+    config: Config,
 }
 
 impl StandaloneEnv {
-    pub async fn init(storage: Storage) -> anyhow::Result<Arc<Self>> {
+    pub async fn init(config: Config) -> anyhow::Result<Arc<Self>> {
         let worker_db = WorkerDb::init()?;
         let object_db = ObjectDb::init()?;
         let db_inst_ctx_controller = DatabaseInstanceContextController::new();
@@ -74,7 +68,7 @@ impl StandaloneEnv {
             client_actor_index,
             public_key,
             private_key,
-            storage,
+            config,
         });
         energy_monitor.set_standalone_env(this.clone());
         Ok(this)
@@ -540,7 +534,7 @@ impl StandaloneEnv {
                 (dbic, scheduler.new_with_same_db())
             } else {
                 let dbic =
-                    DatabaseInstanceContext::from_database(self.storage, &database, instance_id, root_db_path.clone());
+                    DatabaseInstanceContext::from_database(self.config, &database, instance_id, root_db_path.clone());
                 let (scheduler, scheduler_starter) = Scheduler::open(dbic.scheduler_db_path(root_db_path))?;
                 self.db_inst_ctx_controller.insert(dbic.clone(), scheduler.clone());
                 (dbic, (scheduler, scheduler_starter))

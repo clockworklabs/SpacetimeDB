@@ -4,7 +4,7 @@ use crate::StandaloneEnv;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{FilesGlobal, FilesLocal, SpacetimeDbFiles};
-use spacetimedb::db::{db_metrics, Storage};
+use spacetimedb::db::{db_metrics, Config, Storage};
 use spacetimedb::{startup, worker_metrics};
 use std::net::TcpListener;
 
@@ -169,11 +169,13 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let jwt_pub_key_path = read_argument(args, "jwt_pub_key_path", "SPACETIMEDB_JWT_PUB_KEY");
     let jwt_priv_key_path = read_argument(args, "jwt_priv_key_path", "SPACETIMEDB_JWT_PRIV_KEY");
     let enable_tracy = args.get_flag("enable_tracy");
+    let fsync = args.get_flag("wal_fsync");
     let storage = if args.get_flag("in_memory") {
         Storage::Memory
     } else {
         Storage::Disk
     };
+    let config = Config { storage, fsync };
 
     banner();
     let exe_name = std::env::current_exe()?;
@@ -218,7 +220,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     // Metrics for our use of db/.
     db_metrics::register_custom_metrics();
 
-    let ctx = spacetimedb_client_api::ArcEnv(StandaloneEnv::init(storage).await?);
+    let ctx = spacetimedb_client_api::ArcEnv(StandaloneEnv::init(config).await?);
 
     let service = router().with_state(ctx).into_make_service();
 

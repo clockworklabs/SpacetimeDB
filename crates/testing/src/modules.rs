@@ -7,7 +7,7 @@ use std::sync::Arc;
 use spacetimedb::address::Address;
 use spacetimedb::client::{ClientActorId, ClientConnection, Protocol};
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::db::Storage;
+use spacetimedb::db::{Config, Storage};
 use spacetimedb::hash::hash_bytes;
 
 use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
@@ -129,6 +129,8 @@ pub async fn load_module(name: &str) -> ModuleHandle {
     // For testing, persist to disk by default, as many tests
     // exercise functionality like restarting the database.
     let storage = Storage::Disk;
+    let fsync = false;
+    let config = Config { storage, fsync };
 
     let paths = FilesLocal::temp(name);
     // The database created in the `temp` folder can't be randomized,
@@ -136,7 +138,7 @@ pub async fn load_module(name: &str) -> ModuleHandle {
     std::fs::remove_dir(paths.db_path()).ok();
 
     crate::set_key_env_vars(&paths);
-    let env = spacetimedb_standalone::StandaloneEnv::init(storage).await.unwrap();
+    let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
     let identity = env.control_db().alloc_spacetime_identity().await.unwrap();
     let address = env.control_db().alloc_spacetime_address().await.unwrap();
     let program_bytes = read_module(name);
