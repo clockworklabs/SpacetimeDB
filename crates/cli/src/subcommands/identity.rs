@@ -309,13 +309,27 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
     let identity_or_name = args.get_one::<String>("identity");
     let force = args.get_flag("force");
     let all = args.get_flag("all");
+    let all_server = args.get_one::<String>("all-server").map(|s| s.as_str());
 
-    if !all && identity_or_name.is_none() {
+    if !all && identity_or_name.is_none() && all_server.is_none() {
         return Err(anyhow::anyhow!("Must provide an identity or name to remove"));
     }
 
-    if force && !all {
-        return Err(anyhow::anyhow!("The --force flag can only be used with --all"));
+    if force && !(all || all_server.is_some()) {
+        return Err(anyhow::anyhow!(
+            "The --force flag can only be used with --all or --all-server"
+        ));
+    }
+
+    fn should_continue(force: bool, prompt: &str) -> anyhow::Result<bool> {
+        Ok(force || {
+            let mut input = String::new();
+            print!("Are you sure you want to remove all identities{}? (y/n) ", prompt);
+            std::io::stdout().flush()?;
+            std::io::stdin().read_line(&mut input)?;
+
+            input.trim() == "y"
+        })
     }
 
     if let Some(identity_or_name) = identity_or_name {
@@ -326,36 +340,43 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
         }
         .ok_or(anyhow::anyhow!("No such identity or name: {}", identity_or_name))?;
         config.update_all_default_identities();
-        config.save();
         println!(" Removed identity");
         print_identity_config(&ic);
+    } else if let Some(server) = all_server {
+        if !should_continue(force, &format!(" which apply to server {}", server))? {
+            println!(" Aborted");
+            return Ok(());
+        }
+        let removed = config.remove_identities_for_server(Some(server))?;
+        let count = removed.len();
+        println!(
+            " {} {} removed:",
+            count,
+            if count == 1 { "identity" } else { "identities" }
+        );
+        for identity_config in removed {
+            println!("{}", identity_config.identity);
+        }
     } else {
         if config.identity_configs().is_empty() {
             println!(" No identities to remove");
             return Ok(());
         }
 
-        let mut input = String::new();
-        if !force {
-            print!("Are you sure you want to remove all identities? (y/n) ");
-            std::io::stdout().flush()?;
-            std::io::stdin().read_line(&mut input)?;
-
-            if input.trim() != "y" {
-                println!(" Aborted");
-                return Ok(());
-            }
+        if !should_continue(force, "")? {
+            println!(" Aborted");
+            return Ok(());
         }
 
         let identity_count = config.identity_configs().len();
         config.delete_all_identity_configs();
-        config.save();
         println!(
             " {} {} removed.",
             identity_count,
-            if identity_count > 1 { "identities" } else { "identity" }
+            if identity_count == 1 { "identity" } else { "identities" }
         );
     }
+    config.save();
     Ok(())
 }
 

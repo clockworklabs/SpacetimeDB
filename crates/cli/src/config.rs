@@ -83,6 +83,45 @@ impl ServerConfig {
         }
         Ok(())
     }
+
+    fn remove_identities(
+        &mut self,
+        identity_configs: &mut Option<Vec<IdentityConfig>>,
+    ) -> anyhow::Result<Vec<IdentityConfig>> {
+        let fingerprint = self.ecdsa_public_key.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Cannot delete identities for server without fingerprint: {}",
+                self.nick_or_host()
+            )
+        })?;
+
+        let decoder = DecodingKey::from_ec_pem(fingerprint.as_bytes()).with_context(|| {
+            format!(
+                "Verifying tokens using saved fingerprint from server: {}",
+                self.nick_or_host()
+            )
+        })?;
+
+        let to_discard = if let Some(id_cfgs) = identity_configs.take() {
+            let mut to_keep = Vec::new();
+            let mut to_discard = Vec::new();
+            for cfg in id_cfgs.into_iter() {
+                if decode_token(&decoder, &cfg.token).is_err() {
+                    to_keep.push(cfg);
+                } else {
+                    to_discard.push(cfg);
+                }
+            }
+            *identity_configs = if to_keep.is_empty() { None } else { Some(to_keep) };
+            to_discard
+        } else {
+            Vec::new()
+        };
+
+        self.default_identity = None;
+
+        Ok(to_discard)
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -318,28 +357,13 @@ impl RawConfig {
     }
 
     fn remove_server(&mut self, server: &str, delete_identities: bool) -> anyhow::Result<()> {
+        // Have to find the server config manually instead of doing `find_server_mut`
+        // because we need to mutably borrow multiple components of `self`.
         if let Some(server_configs) = &mut self.server_configs {
             if let Some(idx) = server_configs.iter().position(|cfg| cfg.nick_or_host_or_url_is(server)) {
-                let cfg = server_configs.remove(idx);
+                let mut cfg = server_configs.remove(idx);
                 if delete_identities {
-                    let fingerprint = cfg.ecdsa_public_key.ok_or_else(|| {
-                        anyhow::anyhow!("Cannot delete identities for server without fingerprint: {}", server)
-                    })?;
-
-                    let decoder = DecodingKey::from_ec_pem(fingerprint.as_bytes())
-                        .with_context(|| format!("Verifying tokens using saved fingerprint from server: {}", server))?;
-
-                    if let Some(identity_configs) = self.identity_configs.take() {
-                        let identity_configs = identity_configs
-                            .into_iter()
-                            .filter(|cfg| decode_token(&decoder, &cfg.token).is_err())
-                            .collect::<Vec<_>>();
-                        self.identity_configs = if identity_configs.is_empty() {
-                            None
-                        } else {
-                            Some(identity_configs)
-                        };
-                    }
+                    cfg.remove_identities(&mut self.identity_configs)?;
                 }
                 if server_configs.is_empty() {
                     self.server_configs = None;
@@ -348,6 +372,26 @@ impl RawConfig {
             }
         }
         Err(anyhow::anyhow!("No such saved server configuration: {}", server))
+    }
+
+    fn remove_identities_for_server(&mut self, server: &str) -> anyhow::Result<Vec<IdentityConfig>> {
+        // Have to find the server config manually instead of doing `find_server_mut`
+        // because we need to mutably borrow multiple components of `self`.
+        if let Some(server_configs) = &mut self.server_configs {
+            if let Some(cfg) = server_configs.iter_mut().find(|cfg| cfg.nick_or_host_or_url_is(server)) {
+                return cfg.remove_identities(&mut self.identity_configs);
+            }
+        }
+        Err(anyhow::anyhow!("No such saved server configuration: {}", server))
+    }
+
+    fn remove_identities_for_default_server(&mut self) -> anyhow::Result<Vec<IdentityConfig>> {
+        if let Some(default_server) = &self.default_server {
+            let default_server = default_server.clone();
+            self.remove_identities_for_server(&default_server)
+        } else {
+            Err(anyhow::anyhow!("No default server configuration"))
+        }
     }
 
     fn server_fingerprint(&self, server: &str) -> anyhow::Result<Option<&str>> {
@@ -791,6 +835,15 @@ impl Config {
             self.home.set_server_fingerprint(host, new_fingerprint)
         } else {
             self.home.set_default_server_fingerprint(new_fingerprint)
+        }
+    }
+
+    pub fn remove_identities_for_server(&mut self, server: Option<&str>) -> anyhow::Result<Vec<IdentityConfig>> {
+        if let Some(server) = server {
+            let (host, _) = host_or_url_to_host_and_protocol(server);
+            self.home.remove_identities_for_server(host)
+        } else {
+            self.home.remove_identities_for_default_server()
         }
     }
 }
