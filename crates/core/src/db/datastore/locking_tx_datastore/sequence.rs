@@ -2,7 +2,7 @@ use crate::db::datastore::traits::SequenceSchema;
 
 pub struct Sequence {
     schema: SequenceSchema,
-    pub(crate) value: i128,
+    value: i128,
 }
 
 impl Sequence {
@@ -44,10 +44,6 @@ impl Sequence {
         let value = self.value;
         self.value = self.next_value();
         Some(value)
-    }
-
-    pub fn allocated(&self) -> i128 {
-        self.schema.allocated
     }
 
     pub fn next_value(&self) -> i128 {
