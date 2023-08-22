@@ -13,3 +13,6 @@ anyhow.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 wasmbin.workspace = true
+
+[dev-dependencies]
+serial_test.workspace = true
