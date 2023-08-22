@@ -191,6 +191,27 @@ pub async fn create_websocket_token(
     }
 }
 
+#[derive(Deserialize)]
+pub struct ValidateTokenParams {
+    identity: IdentityForUrl,
+}
+
+pub async fn validate_token(
+    Path(ValidateTokenParams { identity }): Path<ValidateTokenParams>,
+    auth: SpacetimeAuthHeader,
+) -> axum::response::Result<impl IntoResponse> {
+    let identity = Identity::from(identity);
+    if let Some(auth) = auth.auth {
+        if auth.identity == identity {
+            Ok(StatusCode::NO_CONTENT)
+        } else {
+            Err(StatusCode::BAD_REQUEST.into())
+        }
+    } else {
+        Err(StatusCode::UNAUTHORIZED.into())
+    }
+}
+
 pub fn router<S>() -> axum::Router<S>
 where
     S: ControlNodeDelegate + Clone + 'static,
@@ -200,6 +221,7 @@ where
     axum::Router::new()
         .route("/", get(get_identity).post(create_identity))
         .route("/websocket_token", post(create_websocket_token))
+        .route("/:identity/verify", get(validate_token))
         .route("/:identity/set-email", post(set_email))
         .route("/:identity/databases", get(get_databases))
 }
