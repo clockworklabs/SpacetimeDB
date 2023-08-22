@@ -34,10 +34,7 @@ pub struct TxSlot {
 
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
-    pub fn new(
-        dbic: Arc<DatabaseInstanceContext>,
-        scheduler: Scheduler,
-    ) -> Self {
+    pub fn new(dbic: Arc<DatabaseInstanceContext>, scheduler: Scheduler) -> Self {
         Self {
             dbic,
             scheduler,

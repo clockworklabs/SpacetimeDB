@@ -208,10 +208,7 @@ impl<T: WasmInstancePre> JobRunnerSeed for InstanceSeed<T> {
     type Runner = WasmInstanceActor<T::Instance>;
     type Job = InstanceMessage;
     fn make_runner(&self) -> Self::Runner {
-        let env = InstanceEnv::new(
-            self.worker_database_instance.clone(),
-            self.scheduler.clone(),
-        );
+        let env = InstanceEnv::new(self.worker_database_instance.clone(), self.scheduler.clone());
         // this shouldn't fail, since we already called module.create_instance()
         // before and it didn't error, and ideally they should be deterministic
         let mut instance = self
