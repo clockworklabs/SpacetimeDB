@@ -8,6 +8,8 @@ impl BuildDb for Connection {
     {
         let tmp_dir = TempDir::new("sqlite_test")?;
         let mut db = Connection::open(tmp_dir.path().join("test.db"))?;
+        // For sqlite benchmarks we should set synchronous to either full or off which more
+        // closely aligns with wal_fsync=true and wal_fsync=false respectively in stdb.
         db.execute_batch(if fsync {
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = full;"
         } else {

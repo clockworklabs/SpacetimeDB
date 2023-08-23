@@ -46,6 +46,8 @@ pub struct StandaloneEnv {
     client_actor_index: ClientActorIndex,
     public_key: DecodingKey,
     private_key: EncodingKey,
+
+    /// The following config applies to the whole environment minus the control_db and object_db.
     config: Config,
 }
 
