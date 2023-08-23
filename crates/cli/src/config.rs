@@ -103,6 +103,9 @@ pub struct RawConfig {
     server_configs: Option<Vec<ServerConfig>>,
 }
 
+const DEFAULT_HOST: &str = "127.0.0.1:3000";
+const DEFAULT_PROTOCOL: &str = "http";
+
 #[derive(Clone)]
 pub struct Config {
     proj: RawConfig,
@@ -113,9 +116,6 @@ const HOME_CONFIG_DIR: &str = ".spacetime";
 const CONFIG_FILENAME: &str = "config.toml";
 const SPACETIME_FILENAME: &str = "spacetime.toml";
 const DOT_SPACETIME_FILENAME: &str = ".spacetime.toml";
-
-const DEFAULT_HOST: &str = "testnet.spacetimedb.com";
-const DEFAULT_PROTOCOL: &str = "https";
 
 const NO_DEFAULT_SERVER_ERROR_MESSAGE: &str = "No default server configuration.
 Set an existing server as the default with:
@@ -136,6 +136,28 @@ fn hanging_default_server_context(server: &str) -> String {
 }
 
 impl RawConfig {
+    fn new_empty() -> Self {
+        RawConfig {
+            default_server: None,
+            identity_configs: None,
+            server_configs: None,
+        }
+    }
+
+    fn new_with_localhost() -> Self {
+        RawConfig {
+            default_server: Some(DEFAULT_HOST.to_string()),
+            identity_configs: None,
+            server_configs: Some(vec![ServerConfig {
+                default_identity: None,
+                host: DEFAULT_HOST.to_string(),
+                protocol: DEFAULT_PROTOCOL.to_string(),
+                nickname: None,
+                ecdsa_public_key: None,
+            }]),
+        }
+    }
+
     fn find_server(&self, name_or_host: &str) -> anyhow::Result<&ServerConfig> {
         if let Some(server_configs) = &self.server_configs {
             for cfg in server_configs {
@@ -606,10 +628,7 @@ impl Config {
                 self.proj.host(server).or_else(|_| self.home.host(server))
             }
         } else {
-            self.proj
-                .default_host()
-                .or_else(|_| self.home.default_host())
-                .or(Ok(DEFAULT_HOST))
+            self.proj.default_host().or_else(|_| self.home.default_host())
         }
     }
 
@@ -638,10 +657,7 @@ impl Config {
                 self.proj.protocol(server).or_else(|_| self.home.protocol(server))
             }
         } else {
-            self.proj
-                .default_protocol()
-                .or_else(|_| self.home.default_protocol())
-                .or(Ok(DEFAULT_PROTOCOL))
+            self.proj.default_protocol().or_else(|_| self.home.default_protocol())
         }
     }
 
@@ -741,8 +757,16 @@ impl Config {
 
         let config_filename = Self::find_config_filename(&config_dir);
         let Some(config_filename) = config_filename else {
-            // Return an empty raw config without creating a file.
-            return toml::from_str("").unwrap();
+
+            return if is_project {
+                // Return an empty config without creating a file.
+                RawConfig::new_empty()
+            } else {
+                // Return a default config with http://127.0.0.1:3000 as the default server.
+                // Do not (yet) create a file.
+                // The config file will be created later by `Config::save` if necessary.
+                RawConfig::new_with_localhost()
+            };
         };
 
         let config_path = config_dir.join(config_filename);

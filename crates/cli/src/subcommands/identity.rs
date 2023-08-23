@@ -5,6 +5,7 @@ use crate::{
 use std::io::Write;
 
 use crate::util::{is_hex_identity, print_identity_config};
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use email_address::EmailAddress;
 use reqwest::{StatusCode, Url};
@@ -486,7 +487,14 @@ async fn exec_list(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     } else {
         let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
-        let decoding_key = config.server_decoding_key(server)?;
+        let server_name = config.server_nick_or_host(server)?;
+        let decoding_key = config.server_decoding_key(server).with_context(|| {
+            format!(
+                "Cannot list identities for server without a saved fingerprint: {server_name}
+Fetch the server's fingerprint with:
+\tspacetime server update {server_name}"
+            )
+        })?;
         let default_identity = config.default_identity(server);
 
         let is_default = |id| {
