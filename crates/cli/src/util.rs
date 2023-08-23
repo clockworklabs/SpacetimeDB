@@ -331,9 +331,9 @@ pub fn unauth_error_context<T>(res: anyhow::Result<T>, identity: &str, server: &
             "Identity {identity} is not valid for server {server}.
 Has the server rotated its keys?
 Remove the outdated identity with:
-  spacetime identity remove {identity}
+\tspacetime identity remove {identity}
 Generate a new identity with:
-  spacetime identity new --no-email --server {server}"
+\tspacetime identity new --no-email --server {server}"
         )
     })
 }
