@@ -4226,6 +4226,7 @@ dependencies = [
  "prost",
  "prost-build",
  "rand 0.8.5",
+ "rayon-core",
  "regex",
  "rocksdb",
  "rusqlite",

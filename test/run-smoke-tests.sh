@@ -44,7 +44,7 @@ while [ $# != 0 ] ; do
 	esac
 done
 
-rustup update
+rustup update $(rustup show active-toolchain | cut -d' ' -f1)
 rustup component add clippy
 
 source "lib.include"

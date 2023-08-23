@@ -16,7 +16,6 @@ mod wasmer_module;
 
 use wasmer_module::WasmerModule;
 
-use super::module_host::ModuleHostActor;
 use super::scheduler::Scheduler;
 use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
 use super::{EnergyMonitor, EnergyQuanta};
@@ -27,7 +26,7 @@ pub fn make_actor(
     program_bytes: &[u8],
     scheduler: Scheduler,
     energy_monitor: Arc<dyn EnergyMonitor>,
-) -> Result<impl ModuleHostActor, ModuleCreationError> {
+) -> Result<impl super::module_host::Module, ModuleCreationError> {
     let cost_function =
         |operator: &Operator| -> u64 { opcode_cost::OperationType::operation_type_of(operator).energy_cost() };
 

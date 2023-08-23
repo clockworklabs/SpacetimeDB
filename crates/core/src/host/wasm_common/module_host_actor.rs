@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -7,10 +6,8 @@ use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef, TableSchema};
 use crate::host::scheduler::Scheduler;
 use anyhow::Context;
 use bytes::Bytes;
-use parking_lot::{Condvar, Mutex};
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::{bsatn, IndexType, ModuleDef};
-use tokio::sync::oneshot;
 
 use crate::client::ClientConnectionSender;
 use crate::database_instance_context::DatabaseInstanceContext;
@@ -18,8 +15,8 @@ use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::hash::Hash;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
-    DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleHostActor, ModuleInfo, UpdateDatabaseError,
-    UpdateDatabaseResult, UpdateDatabaseSuccess,
+    DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo, ModuleInstance,
+    UpdateDatabaseError, UpdateDatabaseResult, UpdateDatabaseSuccess,
 };
 use crate::host::{
     ArgsTuple, EnergyDiff, EnergyMonitor, EnergyMonitorFingerprint, EnergyQuanta, EntityDef, ReducerCallResult,
@@ -30,9 +27,6 @@ use crate::subscription::module_subscription_actor::{ModuleSubscriptionManager, 
 use crate::worker_metrics::{REDUCER_COMPUTE_TIME, REDUCER_COUNT, REDUCER_WRITE_SIZE};
 
 use super::*;
-
-const MSG_CHANNEL_CAP: usize = 8;
-const MSG_CHANNEL_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
@@ -50,7 +44,7 @@ pub trait WasmInstancePre: Send + Sync + 'static {
     fn instantiate(&self, env: InstanceEnv, func_name: &FuncNames) -> Result<Self::Instance, InitializationError>;
 }
 
-pub trait WasmInstance: Send + 'static {
+pub trait WasmInstance: Send + Sync + 'static {
     fn extract_descriptions(&mut self) -> Result<Bytes, DescribeError>;
 
     fn instance_env(&self) -> &InstanceEnv;
@@ -89,11 +83,8 @@ pub struct ExecuteResult<E> {
 }
 
 pub(crate) struct WasmModuleHostActor<T: WasmModule> {
-    instances: JobPool<InstanceSeed<T::InstancePre>>,
-}
-
-struct InstanceSeed<T: WasmInstancePre> {
-    module: T,
+    module: T::InstancePre,
+    initial_instance: Option<Box<WasmModuleInstance<T::Instance>>>,
     worker_database_instance: Arc<DatabaseInstanceContext>,
     event_tx: SubscriptionEventSender,
     scheduler: Scheduler,
@@ -187,8 +178,9 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         });
 
         let func_names = Arc::new(func_names);
-        let instance_seed = InstanceSeed {
+        let mut module = WasmModuleHostActor {
             module: uninit_instance,
+            initial_instance: None,
             func_names,
             info,
             event_tx,
@@ -196,40 +188,15 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             scheduler,
             energy_monitor,
         };
-        let instance = instance_seed.make_from_instance(instance);
-        let instances = JobPool::new(instance_seed, MSG_CHANNEL_CAP);
-        instances.spawn_from_runner(instance);
+        module.initial_instance = Some(Box::new(module.make_from_instance(instance)));
 
-        Ok(Self { instances })
-    }
-
-    fn seed(&self) -> &InstanceSeed<T::InstancePre> {
-        self.instances.seed()
+        Ok(module)
     }
 }
 
-impl<T: WasmInstancePre> JobRunnerSeed for InstanceSeed<T> {
-    type Runner = WasmInstanceActor<T::Instance>;
-    type Job = InstanceMessage;
-    fn make_runner(&self) -> Self::Runner {
-        log::trace!(
-            "Making new runner for database {}",
-            self.worker_database_instance.address
-        );
-        let env = InstanceEnv::new(self.worker_database_instance.clone(), self.scheduler.clone());
-        // this shouldn't fail, since we already called module.create_instance()
-        // before and it didn't error, and ideally they should be deterministic
-        let mut instance = self
-            .module
-            .instantiate(env, &self.func_names)
-            .expect("failed to initialize instance");
-        let _ = instance.extract_descriptions();
-        self.make_from_instance(instance)
-    }
-}
-impl<T: WasmInstancePre> InstanceSeed<T> {
-    fn make_from_instance(&self, instance: T::Instance) -> WasmInstanceActor<T::Instance> {
-        WasmInstanceActor {
+impl<T: WasmModule> WasmModuleHostActor<T> {
+    fn make_from_instance(&self, instance: T::Instance) -> WasmModuleInstance<T::Instance> {
+        WasmModuleInstance {
             instance,
             func_names: self.func_names.clone(),
             info: self.info.clone(),
@@ -240,154 +207,46 @@ impl<T: WasmInstancePre> InstanceSeed<T> {
     }
 }
 
-trait JobRunnerSeed: Send + Sync + 'static {
-    type Runner: JobRunner<Job = Self::Job> + Send;
-    type Job: Send + 'static;
-    fn make_runner(&self) -> Self::Runner;
-}
-trait JobRunner {
-    type Job;
-    fn run(&mut self, job: Self::Job) -> ControlFlow<()>;
-}
-struct JobPool<S: JobRunnerSeed> {
-    shared: Arc<JobPoolData<S>>,
-    rx: crossbeam_channel::Receiver<S::Job>,
-    tx: crossbeam_channel::Sender<S::Job>,
-}
+impl<T: WasmModule> Module for WasmModuleHostActor<T> {
+    type Instance = WasmModuleInstance<T::Instance>;
 
-struct JobPoolData<S> {
-    seed: S,
-    nthreads: Mutex<usize>,
-    cvar: Condvar,
-}
+    type InitialInstances<'a> = Option<Self::Instance>;
 
-impl<S: JobRunnerSeed> JobPool<S> {
-    fn new(seed: S, cap: usize) -> Self {
-        let (tx, rx) = crossbeam_channel::bounded(cap);
-        let nthreads = Mutex::new(0);
-        let cvar = Condvar::new();
-        JobPool {
-            shared: Arc::new(JobPoolData { seed, nthreads, cvar }),
-            rx,
-            tx,
-        }
+    fn initial_instances(&mut self) -> Self::InitialInstances<'_> {
+        self.initial_instance.take().map(|x| *x)
     }
 
-    fn seed(&self) -> &S {
-        &self.shared.seed
-    }
-
-    fn spawn_from_runner(&self, mut runner: S::Runner) {
-        let shared = self.shared.clone();
-        let rx = self.rx.clone();
-        *shared.nthreads.lock() += 1;
-        tokio::task::spawn_blocking(move || {
-            scopeguard::defer! {
-                let mut nthreads = shared.nthreads.lock();
-                *nthreads -= 1;
-                if *nthreads == 0 {
-                    shared.cvar.notify_one();
-                }
-            }
-            while let Ok(job) = rx.recv() {
-                match runner.run(job) {
-                    ControlFlow::Continue(()) => {}
-                    ControlFlow::Break(()) => runner = shared.seed.make_runner(),
-                }
-            }
-        });
-    }
-
-    fn spawn(&self) {
-        self.spawn_from_runner(self.seed().make_runner())
-    }
-
-    fn send(&self, mut job: S::Job) {
-        if true {
-            // this can never actually be a SendError, since we're holding
-            // onto a msg_rx ourselves, so the channel won't close
-            let _ = self.tx.send(job);
-        } else {
-            // TODO: implement reducer retries and have multiple instance threads
-            loop {
-                match self.tx.send_timeout(job, MSG_CHANNEL_TIMEOUT) {
-                    Ok(()) => break,
-                    // this can never actually be a SendTimeoutError::Disconnected, since we're holding
-                    // onto a msg_rx ourselves, so the channel won't close
-                    Err(err) => {
-                        job = err.into_inner();
-                        let instance_count = *self.shared.nthreads.lock();
-                        // TODO: better heuristics
-                        // e.g. figure out when we should cull instances due to lack of use
-                        if instance_count < 8 {
-                            self.spawn()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn join(self) {
-        let Self { shared, rx, tx } = self;
-        drop((tx, rx));
-        let mut nthreads = shared.nthreads.lock();
-        if *nthreads != 0 {
-            shared.cvar.wait(&mut nthreads)
-        }
-    }
-}
-
-impl<T: WasmModule> ModuleHostActor for WasmModuleHostActor<T> {
     fn info(&self) -> Arc<ModuleInfo> {
-        self.seed().info.clone()
+        self.info.clone()
     }
 
-    fn init_database(&mut self, args: ArgsTuple, respond_to: oneshot::Sender<anyhow::Result<ReducerCallResult>>) {
-        self.instances.send(InstanceMessage::InitDatabase { args, respond_to })
+    fn create_instance(&self) -> Self::Instance {
+        let env = InstanceEnv::new(self.worker_database_instance.clone(), self.scheduler.clone());
+        // this shouldn't fail, since we already called module.create_instance()
+        // before and it didn't error, and ideally they should be deterministic
+        let mut instance = self
+            .module
+            .instantiate(env, &self.func_names)
+            .expect("failed to initialize instance");
+        let _ = instance.extract_descriptions();
+        self.make_from_instance(instance)
     }
 
-    fn update_database(&mut self, respond_to: oneshot::Sender<Result<UpdateDatabaseResult, anyhow::Error>>) {
-        self.instances.send(InstanceMessage::UpdateDatabase { respond_to })
-    }
-
-    fn call_connect_disconnect(&mut self, caller_identity: Identity, connected: bool, respond_to: oneshot::Sender<()>) {
-        self.instances.send(InstanceMessage::CallConnectDisconnect {
-            caller_identity,
-            connected,
-            respond_to,
-        });
-    }
-
-    fn call_reducer(
-        &mut self,
-        caller_identity: Identity,
-        client: Option<ClientConnectionSender>,
-        reducer_id: usize,
-
-        args: ArgsTuple,
-        respond_to: oneshot::Sender<ReducerCallResult>,
-    ) {
-        self.instances.send(InstanceMessage::CallReducer {
-            caller_identity,
-            client,
-            reducer_id,
-            args,
-            respond_to,
-        })
-    }
-
-    fn inject_logs(&self, respond_to: oneshot::Sender<()>, log_level: LogLevel, message: String) {
-        self.instances.send(InstanceMessage::InjectLogs {
-            respond_to,
+    fn inject_logs(&self, log_level: LogLevel, message: &str) {
+        self.worker_database_instance.logger.lock().unwrap().write(
             log_level,
-            message,
-        })
+            &Record {
+                target: None,
+                filename: Some("external"),
+                line_number: None,
+                message,
+            },
+            &(),
+        )
     }
 
     fn close(self) {
-        self.instances.seed().scheduler.close();
-        self.instances.join()
+        self.scheduler.close()
     }
 }
 
@@ -418,7 +277,7 @@ impl SystemLogger<'_> {
     }
 }
 
-struct WasmInstanceActor<T: WasmInstance> {
+pub struct WasmModuleInstance<T: WasmInstance> {
     instance: T,
     func_names: Arc<FuncNames>,
     info: Arc<ModuleInfo>,
@@ -427,7 +286,7 @@ struct WasmInstanceActor<T: WasmInstance> {
     trapped: bool,
 }
 
-impl<T: WasmInstance> std::fmt::Debug for WasmInstanceActor<T> {
+impl<T: WasmInstance> std::fmt::Debug for WasmModuleInstance<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WasmInstanceActor")
             .field("trapped", &self.trapped)
@@ -435,62 +294,15 @@ impl<T: WasmInstance> std::fmt::Debug for WasmInstanceActor<T> {
     }
 }
 
-impl<T: WasmInstance> JobRunner for WasmInstanceActor<T> {
-    type Job = InstanceMessage;
-    fn run(&mut self, msg: InstanceMessage) -> ControlFlow<()> {
-        match msg {
-            InstanceMessage::InitDatabase { args, respond_to } => {
-                let _ = respond_to.send(self.init_database(args));
-            }
-            InstanceMessage::CallConnectDisconnect {
-                caller_identity,
-                connected,
-                respond_to,
-            } => {
-                self.call_connect_disconnect(caller_identity, connected);
-                let _ = respond_to.send(());
-            }
-            InstanceMessage::CallReducer {
-                caller_identity,
-                client,
-                reducer_id,
-                args,
-                respond_to,
-            } => {
-                let _ = respond_to.send(self.call_reducer(caller_identity, client, reducer_id, args));
-            }
-            InstanceMessage::UpdateDatabase { respond_to } => {
-                let _ = respond_to.send(self.update_database());
-            }
-            InstanceMessage::InjectLogs {
-                respond_to,
-                log_level,
-                message,
-            } => {
-                self.instance.instance_env().console_log(
-                    log_level,
-                    &Record {
-                        target: None,
-                        filename: Some("external"),
-                        line_number: None,
-                        message: &message,
-                    },
-                    &(),
-                );
-                let _ = respond_to.send(());
-            }
-        }
-        if self.trapped {
-            ControlFlow::Break(())
-        } else {
-            ControlFlow::Continue(())
-        }
+impl<T: WasmInstance> WasmModuleInstance<T> {
+    fn database_instance_context(&self) -> &DatabaseInstanceContext {
+        &self.instance.instance_env().dbic
     }
 }
 
-impl<T: WasmInstance> WasmInstanceActor<T> {
-    fn database_instance_context(&self) -> &DatabaseInstanceContext {
-        &self.instance.instance_env().dbic
+impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
+    fn trapped(&self) -> bool {
+        self.trapped
     }
 
     #[tracing::instrument(skip(args))]
@@ -689,7 +501,9 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
         };
         self.event_tx.broadcast_event_blocking(None, event);
     }
+}
 
+impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(skip_all)]
     fn execute(&mut self, op: InstanceOp<'_>) -> (EventStatus, EnergyStats) {
         let address = &self.database_instance_context().address.to_abbreviated_hex();
@@ -908,32 +722,5 @@ enum InstanceOp<'a> {
         conn: bool,
         sender: &'a Identity,
         timestamp: Timestamp,
-    },
-}
-
-enum InstanceMessage {
-    InitDatabase {
-        args: ArgsTuple,
-        respond_to: oneshot::Sender<anyhow::Result<ReducerCallResult>>,
-    },
-    CallConnectDisconnect {
-        caller_identity: Identity,
-        connected: bool,
-        respond_to: oneshot::Sender<()>,
-    },
-    CallReducer {
-        caller_identity: Identity,
-        client: Option<ClientConnectionSender>,
-        reducer_id: usize,
-        args: ArgsTuple,
-        respond_to: oneshot::Sender<ReducerCallResult>,
-    },
-    UpdateDatabase {
-        respond_to: oneshot::Sender<Result<UpdateDatabaseResult, anyhow::Error>>,
-    },
-    InjectLogs {
-        respond_to: oneshot::Sender<()>,
-        log_level: LogLevel,
-        message: String,
     },
 }
