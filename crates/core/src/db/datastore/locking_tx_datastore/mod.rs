@@ -497,7 +497,7 @@ impl Inner {
                 .committed_state
                 .tables
                 .get(&TableId(sequence.table_id))
-                .map_or(false, |x| x.schema.table_type == StTableType::System)
+                .map_or(false, |x| x.schema.table_type == StTableType::System);
 
             let schema = (&sequence).into();
 
@@ -592,7 +592,7 @@ impl Inner {
 
             // If there are allocated sequence values, return the new value, if it is not bigger than
             // the upper range of `sequence.allocated`
-            if let Some(value) = sequence.gen_next_value().filter(|v| v < sequence.allocated()) {
+            if let Some(value) = sequence.gen_next_value().filter(|v| v < &sequence.allocated()) {
                 if value < sequence.allocated() {
                     return Ok(value);
                 }
