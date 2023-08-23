@@ -435,36 +435,18 @@ impl Config {
         protocol: String,
         ecdsa_public_key: Option<String>,
         nickname: Option<String>,
-        project: bool,
     ) -> anyhow::Result<()> {
-        if project {
-            self.proj.add_server(host, protocol, ecdsa_public_key, nickname)
-        } else {
-            self.home.add_server(host, protocol, ecdsa_public_key, nickname)
-        }
+        self.home.add_server(host, protocol, ecdsa_public_key, nickname)
     }
 
-    pub fn set_default_server(&mut self, nickname_or_host_or_url: &str, project: bool) -> anyhow::Result<()> {
+    pub fn set_default_server(&mut self, nickname_or_host_or_url: &str) -> anyhow::Result<()> {
         let (host, _) = host_or_url_to_host_and_protocol(nickname_or_host_or_url);
-        if project {
-            self.proj.set_default_server(host)
-        } else {
-            self.home.set_default_server(host)
-        }
+        self.home.set_default_server(host)
     }
 
-    pub fn remove_server(
-        &mut self,
-        nickname_or_host_or_url: &str,
-        project: bool,
-        delete_identities: bool,
-    ) -> anyhow::Result<()> {
+    pub fn remove_server(&mut self, nickname_or_host_or_url: &str, delete_identities: bool) -> anyhow::Result<()> {
         let (host, _) = host_or_url_to_host_and_protocol(nickname_or_host_or_url);
-        if project {
-            self.proj.remove_server(host, delete_identities)
-        } else {
-            self.home.remove_server(host, delete_identities)
-        }
+        self.home.remove_server(host, delete_identities)
     }
 
     pub fn get_host_url(&self, server: Option<&str>) -> anyhow::Result<String> {

@@ -22,13 +22,6 @@ fn get_subcommands() -> Vec<Command> {
                 Arg::new("server")
                     .help("The nickname, host name or URL of the new default server")
                     .required(true),
-            )
-            .arg(
-                Arg::new("project")
-                    .help("Set the default server for the project-local configuration")
-                    .long("project")
-                    .short('p')
-                    .action(ArgAction::SetTrue),
             ),
         Command::new("add")
             .about("Add a new server configuration")
@@ -39,13 +32,6 @@ fn get_subcommands() -> Vec<Command> {
                     .help("Make the new server the default server for future operations")
                     .long("default")
                     .short('d')
-                    .action(ArgAction::SetTrue),
-            )
-            .arg(
-                Arg::new("project")
-                    .help("Add the server to the project-level configuration")
-                    .long("project")
-                    .short('p')
                     .action(ArgAction::SetTrue),
             )
             .arg(
@@ -67,13 +53,6 @@ fn get_subcommands() -> Vec<Command> {
                     .long("delete-identities")
                     .short('i')
                     .action(ArgAction::SetTrue),
-            )
-            .arg(
-                Arg::new("project")
-                    .help("Remove the server from the project-level configuration")
-                    .long("project")
-                    .short('p')
-                    .action(ArgAction::SetTrue),
             ),
         Command::new("fingerprint")
             .about("Show a saved server's fingerprint")
@@ -83,15 +62,7 @@ fn get_subcommands() -> Vec<Command> {
             .arg(Arg::new("server").help("The nickname, host name or URL of the server to ping")),
         Command::new("update")
             .about("Update a saved server's fingerprint")
-            .arg(Arg::new("server").help("The nickname, host name or URL of the server"))
-            .arg(
-                Arg::new("project")
-                    .help("Add the server to the project-level configuration")
-                    .long("project")
-                    .short('p')
-                    .action(ArgAction::SetTrue),
-            ),
-        // TODO: set-name, set-protocol, set-host, set-url
+            .arg(Arg::new("server").help("The nickname, host name or URL of the server")), // TODO: set-name, set-protocol, set-host, set-url
     ]
 }
 
@@ -148,8 +119,7 @@ pub async fn exec_list(config: Config, _args: &ArgMatches) -> Result<(), anyhow:
 
 pub async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").unwrap();
-    let project = *args.get_one::<bool>("project").unwrap();
-    config.set_default_server(server, project)?;
+    config.set_default_server(server)?;
     config.save();
     Ok(())
 }
@@ -157,7 +127,6 @@ pub async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(
 pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let url = args.get_one::<String>("url").unwrap();
     let nickname = args.get_one::<String>("name");
-    let project = *args.get_one::<bool>("project").unwrap();
     let default = *args.get_one::<bool>("default").unwrap();
     let no_fingerprint = *args.get_one::<bool>("no-fingerprint").unwrap();
 
@@ -176,16 +145,10 @@ pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyho
         Some(fingerprint)
     };
 
-    config.add_server(
-        host.to_string(),
-        protocol.to_string(),
-        fingerprint,
-        nickname.cloned(),
-        project,
-    )?;
+    config.add_server(host.to_string(), protocol.to_string(), fingerprint, nickname.cloned())?;
 
     if default {
-        config.set_default_server(host, project)?;
+        config.set_default_server(host)?;
     }
 
     println!("Host: {}", host);
@@ -198,10 +161,9 @@ pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyho
 
 pub async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").unwrap();
-    let project = *args.get_one::<bool>("project").unwrap();
     let delete_identities = *args.get_one::<bool>("delete-identities").unwrap();
 
-    config.remove_server(server, project, delete_identities)?;
+    config.remove_server(server, delete_identities)?;
     config.save();
 
     Ok(())
