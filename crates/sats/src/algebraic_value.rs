@@ -83,9 +83,11 @@ pub enum AlgebraicValue {
     U64(u64),
     /// An [`i128`] value of type [`AlgebraicType::I128`].
     ///
-    /// We box these up as
+    /// We box these up as they allow us to shrink `AlgebraicValue`.
     I128(Box<i128>),
     /// A [`u128`] value of type [`AlgebraicType::U128`].
+    ///
+    /// We box these up as they allow us to shrink `AlgebraicValue`.
     U128(Box<u128>),
     /// A totally ordered [`F32`] value of type [`AlgebraicType::F32`].
     ///
