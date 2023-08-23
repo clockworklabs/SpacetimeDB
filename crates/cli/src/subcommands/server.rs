@@ -2,6 +2,7 @@ use crate::{
     util::{host_or_url_to_host_and_protocol, spacetime_server_fingerprint, y_or_n, VALID_PROTOCOLS},
     Config,
 };
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use tabled::{object::Columns, Alignment, Modify, Style, Table, Tabled};
 
@@ -162,7 +163,14 @@ pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyho
     let fingerprint = if no_fingerprint {
         None
     } else {
-        let fingerprint = spacetime_server_fingerprint(url).await?;
+        let fingerprint = spacetime_server_fingerprint(url).await.with_context(|| {
+            format!(
+                "Unable to retrieve fingerprint for server: {url}
+Is the server running?
+Add a server without retrieving its fingerprint with:
+\tspacetime server add {url} --no-fingerprint",
+            )
+        })?;
         println!("For server {}, got fingerprint:\n{}", url, fingerprint);
         Some(fingerprint)
     };
