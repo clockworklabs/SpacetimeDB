@@ -31,6 +31,7 @@ bytes.workspace = true
 bytestring.workspace = true
 clap.workspace = true
 crossbeam-channel.workspace = true
+dirs.workspace = true
 email_address.workspace = true
 flate2.workspace = true
 fs2.workspace = true

@@ -4203,6 +4203,7 @@ dependencies = [
  "clap 4.3.10",
  "criterion",
  "crossbeam-channel",
+ "dirs",
  "email_address",
  "flate2",
  "fs2",
