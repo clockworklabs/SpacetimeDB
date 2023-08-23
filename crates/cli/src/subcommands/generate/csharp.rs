@@ -1304,23 +1304,6 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
             writeln!(
                 output,
-                "Newtonsoft.Json.JsonSerializerSettings _settings = new Newtonsoft.Json.JsonSerializerSettings"
-            )
-            .unwrap();
-            writeln!(output, "{{").unwrap();
-            {
-                indent_scope!(output);
-                writeln!(
-                    output,
-                    "Converters = {{ new SpacetimeDB.SomeWrapperConverter(), new SpacetimeDB.EnumWrapperConverter() }},"
-                )
-                .unwrap();
-                writeln!(output, "ContractResolver = new SpacetimeDB.JsonContractResolver(),").unwrap();
-            }
-            writeln!(output, "}};").unwrap();
-
-            writeln!(
-                output,
                 "SpacetimeDBClient.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));"
             )
                 .unwrap();
@@ -1612,7 +1595,29 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
     }
 
     writeln!(output, "[ReducerClass]").unwrap();
-    writeln!(output, "public partial class Reducer {{ }}").unwrap();
+    writeln!(output, "public partial class Reducer").unwrap();
+    writeln!(output, "{{").unwrap();
+    {
+        indent_scope!(output);
+        writeln!(
+            output,
+            "private static Newtonsoft.Json.JsonSerializerSettings _settings = new Newtonsoft.Json.JsonSerializerSettings"
+        )
+        .unwrap();
+        writeln!(output, "{{").unwrap();
+        {
+            indent_scope!(output);
+            writeln!(
+                output,
+                "Converters = {{ new SpacetimeDB.SomeWrapperConverter(), new SpacetimeDB.EnumWrapperConverter() }},"
+            )
+            .unwrap();
+            writeln!(output, "ContractResolver = new SpacetimeDB.JsonContractResolver(),").unwrap();
+        }
+        writeln!(output, "}};").unwrap();
+    }
+    // Closing brace for struct ReducerArgs
+    writeln!(output, "}}").unwrap();
 
     if use_namespace {
         output.dedent(1);
