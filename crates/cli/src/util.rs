@@ -3,6 +3,7 @@ use reqwest::RequestBuilder;
 use serde::Deserialize;
 use spacetimedb_lib::name::{is_address, DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
 use spacetimedb_lib::Identity;
+use std::io::Write;
 use std::path::Path;
 use std::process::exit;
 
@@ -309,4 +310,16 @@ pub fn host_or_url_to_host_and_protocol(host_or_url: &str) -> (&str, Option<&str
     } else {
         (host_or_url, None)
     }
+}
+
+/// Prompt the user for `y` or `n` from stdin.
+///
+/// Return `false` unless the input is `y`.
+pub fn y_or_n(prompt: &str) -> anyhow::Result<bool> {
+    let mut input = String::new();
+    print!("{} (y/n)", prompt);
+    std::io::stdout().flush()?;
+    std::io::stdin().read_line(&mut input)?;
+
+    Ok(input.trim() == "y")
 }

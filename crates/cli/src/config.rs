@@ -60,67 +60,39 @@ impl ServerConfig {
     }
 
     fn default_identity(&self) -> anyhow::Result<&str> {
-        self.default_identity
-            .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("No default identity for server: {}", self.nick_or_host()))
+        self.default_identity.as_deref().ok_or_else(|| {
+            let server = self.nick_or_host();
+            anyhow::anyhow!(
+                "No default identity for server: {server}
+Set the default identity with:
+\tspacetime identity set-default -s {server} <identity>
+Or initialize a default identity with:
+\tspacetime identity init-default -s {server}"
+            )
+        })
     }
 
     fn assert_identity_applies(&self, id: &IdentityConfig) -> anyhow::Result<()> {
         if let Some(fingerprint) = &self.ecdsa_public_key {
             let decoder = DecodingKey::from_ec_pem(fingerprint.as_bytes()).with_context(|| {
+                let server = self.nick_or_host();
                 format!(
-                    "Verifying tokens using saved fingerprint from server: {}",
-                    self.nick_or_host(),
+                    "Cannot verify tokens using invalid saved fingerprint from server: {server}
+Update the fingerprint with:
+\tspacetime server update {server}",
                 )
             })?;
             decode_token(&decoder, &id.token).map_err(|_| {
+                let id_name = id.nick_or_identity();
+                let server_name = self.nick_or_host();
                 anyhow::anyhow!(
-                    "Identity {} is not valid for server {}",
-                    id.nick_or_identity(),
-                    self.nick_or_host()
+                    "Identity {id_name} is not valid for server {server_name}
+List valid identities for server {server_name} with:
+\tspacetime identity list -s {server_name}",
                 )
             })?;
         }
         Ok(())
-    }
-
-    fn remove_identities(
-        &mut self,
-        identity_configs: &mut Option<Vec<IdentityConfig>>,
-    ) -> anyhow::Result<Vec<IdentityConfig>> {
-        let fingerprint = self.ecdsa_public_key.as_ref().ok_or_else(|| {
-            anyhow::anyhow!(
-                "Cannot delete identities for server without fingerprint: {}",
-                self.nick_or_host()
-            )
-        })?;
-
-        let decoder = DecodingKey::from_ec_pem(fingerprint.as_bytes()).with_context(|| {
-            format!(
-                "Verifying tokens using saved fingerprint from server: {}",
-                self.nick_or_host()
-            )
-        })?;
-
-        let to_discard = if let Some(id_cfgs) = identity_configs.take() {
-            let mut to_keep = Vec::new();
-            let mut to_discard = Vec::new();
-            for cfg in id_cfgs.into_iter() {
-                if decode_token(&decoder, &cfg.token).is_err() {
-                    to_keep.push(cfg);
-                } else {
-                    to_discard.push(cfg);
-                }
-            }
-            *identity_configs = if to_keep.is_empty() { None } else { Some(to_keep) };
-            to_discard
-        } else {
-            Vec::new()
-        };
-
-        self.default_identity = None;
-
-        Ok(to_discard)
     }
 }
 
@@ -145,6 +117,24 @@ const DOT_SPACETIME_FILENAME: &str = ".spacetime.toml";
 const DEFAULT_HOST: &str = "testnet.spacetimedb.com";
 const DEFAULT_PROTOCOL: &str = "https";
 
+const NO_DEFAULT_SERVER_ERROR_MESSAGE: &str = "No default server configuration.
+Set an existing server as the default with:
+\tspacetime server set-default <server>
+Or add a new server which will become the default:
+\tspacetime server add <url> --default";
+
+fn no_such_server_error(server: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "No such saved server configuration: {server}
+Add a new server configuration with:
+\tspacetime server add <url>",
+    )
+}
+
+fn hanging_default_server_context(server: &str) -> String {
+    format!("Default server does not refer to a saved server configuration: {server}")
+}
+
 impl RawConfig {
     fn find_server(&self, name_or_host: &str) -> anyhow::Result<&ServerConfig> {
         if let Some(server_configs) = &self.server_configs {
@@ -154,7 +144,7 @@ impl RawConfig {
                 }
             }
         }
-        Err(anyhow::anyhow!("No such saved server configuration: {}", name_or_host,))
+        Err(no_such_server_error(name_or_host))
     }
 
     fn find_server_mut(&mut self, name_or_host: &str) -> anyhow::Result<&mut ServerConfig> {
@@ -165,15 +155,15 @@ impl RawConfig {
                 }
             }
         }
-        Err(anyhow::anyhow!("No such saved server configuration: {}", name_or_host,))
+        Err(no_such_server_error(name_or_host))
     }
 
     fn default_server(&self) -> anyhow::Result<&ServerConfig> {
         if let Some(default_server) = self.default_server.as_ref() {
             self.find_server(default_server)
-                .with_context(|| "Finding server configuration for default server")
+                .with_context(|| hanging_default_server_context(default_server))
         } else {
-            Err(anyhow::anyhow!("No default server configuration"))
+            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
         }
     }
 
@@ -181,9 +171,9 @@ impl RawConfig {
         if let Some(default_server) = self.default_server.as_ref() {
             let default = default_server.to_string();
             self.find_server_mut(&default)
-                .with_context(|| "Finding server configuration for default server")
+                .with_context(|| hanging_default_server_context(&default))
         } else {
-            Err(anyhow::anyhow!("No default server configuration"))
+            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
         }
     }
 
@@ -195,7 +185,11 @@ impl RawConfig {
                 }
             }
         }
-        Err(anyhow::anyhow!("No such saved identity configuration: {}", identity,))
+        Err(anyhow::anyhow!(
+            "No such saved identity configuration: {identity}
+Import an existing identity with:
+\tspacetime identity import <identity> <token>",
+        ))
     }
 
     fn add_server(
@@ -219,10 +213,10 @@ impl RawConfig {
         if let Ok(cfg) = self.find_server(&host) {
             if let Some(nick) = &cfg.nickname {
                 if nick == &host {
-                    anyhow::bail!("Server host name is ambiguous with existing server nickname: {}", nick,);
+                    anyhow::bail!("Server host name is ambiguous with existing server nickname: {}", nick);
                 }
             }
-            anyhow::bail!("Server already configured for host: {}", host,);
+            anyhow::bail!("Server already configured for host: {}", host);
         }
 
         if self.server_configs.is_none() {
@@ -244,12 +238,12 @@ impl RawConfig {
     fn host(&self, server: &str) -> anyhow::Result<&str> {
         self.find_server(server)
             .map(|cfg| cfg.host.as_ref())
-            .with_context(|| "Finding hostname for server")
+            .with_context(|| format!("Cannot find hostname for unknown server: {server}"))
     }
 
     fn default_host(&self) -> anyhow::Result<&str> {
         self.default_server()
-            .with_context(|| "Finding hostname for default server")
+            .with_context(|| "Cannot find hostname for default server")
             .map(|cfg| cfg.host.as_ref())
     }
 
@@ -259,7 +253,7 @@ impl RawConfig {
 
     fn default_protocol(&self) -> anyhow::Result<&str> {
         self.default_server()
-            .with_context(|| "Finding protocol for default server")
+            .with_context(|| "Cannot find protocol for default server")
             .map(|cfg| cfg.protocol.as_ref())
     }
 
@@ -274,10 +268,10 @@ impl RawConfig {
     fn assert_identity_matches_server(&self, server: &str, identity: &str) -> anyhow::Result<()> {
         let ident = self
             .find_identity_config(identity)
-            .with_context(|| format!("Verifying that identity {} applies to server {}", identity, server))?;
+            .with_context(|| format!("Cannot verify that unknown identity {identity} applies to server {server}",))?;
         let server_cfg = self
             .find_server(server)
-            .with_context(|| format!("Verifying that identity {} applies to server {}", identity, server))?;
+            .with_context(|| format!("Cannot verify that identity {identity} applies to unknown server {server}",))?;
         server_cfg.assert_identity_applies(ident)
     }
 
@@ -292,14 +286,17 @@ impl RawConfig {
 
     fn set_default_server_default_identity(&mut self, default_identity: String) -> anyhow::Result<()> {
         if let Some(default_server) = &self.default_server {
-            self.assert_identity_matches_server(default_server, &default_identity)?;
+            self.assert_identity_matches_server(default_server, &default_identity)
+                .with_context(|| {
+                    format!("Cannot set {default_identity} as default identity for server {default_server}")
+                })?;
 
             // Unfortunate clone,
             // because `set_server_default_identity` needs a unique ref to `self`.
             let def = default_server.to_string();
             self.set_server_default_identity(&def, default_identity)
         } else {
-            Err(anyhow::anyhow!("No default server configuration"))
+            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
         }
     }
 
@@ -350,70 +347,154 @@ impl RawConfig {
     }
 
     fn set_default_server(&mut self, server: &str) -> anyhow::Result<()> {
+        // Check that such a server exists before setting the default.
         self.find_server(server)
-            .with_context(|| "Finding server configuration to set default server")?;
+            .with_context(|| format!("Cannot set default server to unknown server {server}"))?;
+
         self.default_server = Some(server.to_string());
+
         Ok(())
     }
 
-    fn remove_server(&mut self, server: &str, delete_identities: bool) -> anyhow::Result<()> {
+    /// Implements `spacetime server remove`.
+    fn remove_server(&mut self, server: &str, delete_identities: bool) -> anyhow::Result<Vec<IdentityConfig>> {
         // Have to find the server config manually instead of doing `find_server_mut`
         // because we need to mutably borrow multiple components of `self`.
         if let Some(server_configs) = &mut self.server_configs {
             if let Some(idx) = server_configs.iter().position(|cfg| cfg.nick_or_host_or_url_is(server)) {
-                let mut cfg = server_configs.remove(idx);
-                if delete_identities {
-                    cfg.remove_identities(&mut self.identity_configs)?;
+                // Actually remove the config.
+                let cfg = server_configs.remove(idx);
+
+                // If we're removing the default server,
+                // unset the default server.
+                if let Some(default_server) = &self.default_server {
+                    if cfg.nick_or_host_or_url_is(default_server) {
+                        self.default_server = None;
+                    }
                 }
+
+                // Store `None` rather than the empty vec, as it makes TOML happier.
                 if server_configs.is_empty() {
                     self.server_configs = None;
                 }
-                return Ok(());
+
+                // If requested, delete all identities which match the server.
+                // This requires a fingerprint.
+                let deleted_ids = if delete_identities {
+                    let fingerprint = cfg.ecdsa_public_key.clone().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Cannot delete identities for server without saved identity: {server}
+Fetch the server's fingerprint with:
+\tspacetime server update {server}"
+                        )
+                    })?;
+                    self.remove_identities_for_fingerprint(&fingerprint)?
+                } else {
+                    Vec::new()
+                };
+
+                return Ok(deleted_ids);
             }
         }
-        Err(anyhow::anyhow!("No such saved server configuration: {}", server))
+        Err(no_such_server_error(server))
     }
 
+    fn remove_identities_for_fingerprint(&mut self, fingerprint: &str) -> anyhow::Result<Vec<IdentityConfig>> {
+        let decoder = DecodingKey::from_ec_pem(fingerprint.as_bytes()).with_context(|| {
+            "Cannot delete identities for server without saved identity: {server}
+Fetch the server's fingerprint with:
+\tspacetime server update {server}"
+        })?;
+
+        let to_discard = if let Some(id_cfgs) = self.identity_configs.take() {
+            let mut to_keep = Vec::new();
+            let mut to_discard = Vec::new();
+            for cfg in id_cfgs.into_iter() {
+                if decode_token(&decoder, &cfg.token).is_err() {
+                    to_keep.push(cfg);
+                } else {
+                    to_discard.push(cfg);
+                }
+            }
+            self.identity_configs = if to_keep.is_empty() { None } else { Some(to_keep) };
+            to_discard
+        } else {
+            Vec::new()
+        };
+
+        Ok(to_discard)
+    }
+
+    /// Remove all stored `IdentityConfig`s which apply to the server named by `server`.
+    ///
+    /// Implements `spacetime identity remove --all-server`.
     fn remove_identities_for_server(&mut self, server: &str) -> anyhow::Result<Vec<IdentityConfig>> {
         // Have to find the server config manually instead of doing `find_server_mut`
         // because we need to mutably borrow multiple components of `self`.
         if let Some(server_configs) = &mut self.server_configs {
             if let Some(cfg) = server_configs.iter_mut().find(|cfg| cfg.nick_or_host_or_url_is(server)) {
-                return cfg.remove_identities(&mut self.identity_configs);
+                let fingerprint = cfg
+                    .ecdsa_public_key
+                    .clone()
+                    .ok_or_else(|| anyhow::anyhow!("No fingerprint saved for server: {}", server))?;
+                return self.remove_identities_for_fingerprint(&fingerprint);
             }
         }
-        Err(anyhow::anyhow!("No such saved server configuration: {}", server))
+        Err(no_such_server_error(server))
     }
 
+    /// Remove all storied `IdentityConfig`s which apply to the default server.
     fn remove_identities_for_default_server(&mut self) -> anyhow::Result<Vec<IdentityConfig>> {
         if let Some(default_server) = &self.default_server {
             let default_server = default_server.clone();
             self.remove_identities_for_server(&default_server)
         } else {
-            Err(anyhow::anyhow!("No default server configuration"))
+            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
         }
     }
 
+    /// Return the ECDSA public key in PEM format for the server named by `server`.
+    ///
+    /// Returns an `Err` if there is no such server configuration.
+    /// Returns `None` if the server configuration exists, but does not have a fingerprint saved.
     fn server_fingerprint(&self, server: &str) -> anyhow::Result<Option<&str>> {
         self.find_server(server)
-            .with_context(|| "Looking up fingerprint for server configuration")
+            .with_context(|| {
+                format!(
+                    "No saved fingerprint for server: {server}
+Fetch the server's fingerprint with:
+\tspacetime server update {server}"
+                )
+            })
             .map(|cfg| cfg.ecdsa_public_key.as_deref())
     }
 
+    /// Return the ECDSA public key in PEM format for the default server.
+    ///
+    /// Returns an `Err` if there is no default server configuration.
+    /// Returns `None` if the server configuration exists, but does not have a fingerprint saved.
     fn default_server_fingerprint(&self) -> anyhow::Result<Option<&str>> {
         if let Some(server) = &self.default_server {
             self.server_fingerprint(server)
         } else {
-            Err(anyhow::anyhow!("No default server configuration"))
+            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
         }
     }
 
+    /// Store the fingerprint for the server named `server`.
+    ///
+    /// Returns an `Err` if no such server configuration exists.
+    /// On success, any existing fingerprint is dropped.
     fn set_server_fingerprint(&mut self, server: &str, ecdsa_public_key: String) -> anyhow::Result<()> {
         let cfg = self.find_server_mut(server)?;
         cfg.ecdsa_public_key = Some(ecdsa_public_key);
         Ok(())
     }
 
+    /// Store the fingerprint for the default server.
+    ///
+    /// Returns an `Err` if no default server configuration exists.
+    /// On success, any existing fingerprint is dropped.
     fn set_default_server_fingerprint(&mut self, ecdsa_public_key: String) -> anyhow::Result<()> {
         let cfg = self.default_server_mut()?;
         cfg.ecdsa_public_key = Some(ecdsa_public_key);
@@ -429,6 +510,13 @@ impl Config {
             .or(self.home.default_server.as_deref())
     }
 
+    /// Add a `ServerConfig` to the home configuration.
+    ///
+    /// Returns an `Err` on name conflict,
+    /// i.e. if a `ServerConfig` with the `nickname` or `host` already exists.
+    ///
+    /// Callers should call `Config::save` afterwards
+    /// to ensure modifications are persisted to disk.
     pub fn add_server(
         &mut self,
         host: String,
@@ -439,20 +527,77 @@ impl Config {
         self.home.add_server(host, protocol, ecdsa_public_key, nickname)
     }
 
+    /// Set the default server in the home configuration.
+    ///
+    /// Returns an `Err` if `nickname_or_host_or_url`
+    /// does not refer to an existing `ServerConfig`
+    /// in the home configuration.
+    ///
+    /// Callers should call `Config::save` afterwards
+    /// to ensure modifications are persisted to disk.
     pub fn set_default_server(&mut self, nickname_or_host_or_url: &str) -> anyhow::Result<()> {
         let (host, _) = host_or_url_to_host_and_protocol(nickname_or_host_or_url);
         self.home.set_default_server(host)
     }
 
-    pub fn remove_server(&mut self, nickname_or_host_or_url: &str, delete_identities: bool) -> anyhow::Result<()> {
+    /// Delete a `ServerConfig` from the home configuration.
+    ///
+    /// Returns an `Err` if `nickname_or_host_or_url`
+    /// does not refer to an existing `ServerConfig`
+    /// in the home configuration.
+    ///
+    /// If `delete_identities` is true,
+    /// also removes any saved `IdentityConfig`s
+    /// which apply to the removed server.
+    /// This requires that the server have a saved fingerprint.
+    ///
+    /// Callers should call `Config::save` afterwards
+    /// to ensure modifications are persisted to disk.
+    pub fn remove_server(
+        &mut self,
+        nickname_or_host_or_url: &str,
+        delete_identities: bool,
+    ) -> anyhow::Result<Vec<IdentityConfig>> {
         let (host, _) = host_or_url_to_host_and_protocol(nickname_or_host_or_url);
         self.home.remove_server(host, delete_identities)
     }
 
+    /// Get a URL for the specified `server`.
+    ///
+    /// Returns the URL of the default server if `server` is `None`.
+    ///
+    /// Entries in the project configuration supersede entries in the home configuration.
+    ///
+    /// If `server` is `Some` and is a complete URL,
+    /// including protocol and hostname,
+    /// returns that URL without accessing the configuration.
+    ///
+    /// Returns an `Err` if:
+    /// - `server` is `Some`, but not a complete URL,
+    ///   and the supplied name does not refer to any server
+    ///   in either the project or the home configuration.
+    /// - `server` is `None`, but neither the home nor the project configuration
+    ///   has a default server.
     pub fn get_host_url(&self, server: Option<&str>) -> anyhow::Result<String> {
         Ok(format!("{}://{}", self.protocol(server)?, self.host(server)?))
     }
 
+    /// Get the hostname of the specified `server`.
+    ///
+    /// Returns the hostname of the default server if `server` is `None`.
+    ///
+    /// Entries in the project configuration supersede entries in the home configuration.
+    ///
+    /// If `server` is `Some` and is a complete URL,
+    /// including protocol and hostname,
+    /// returns that hostname without accessing the configuration.
+    ///
+    /// Returns an `Err` if:
+    /// - `server` is `Some`, but not a complete URL,
+    ///   and the supplied name does not refer to any server
+    ///   in either the project or the home configuration.
+    /// - `server` is `None`, but neither the home nor the project configuration
+    ///   has a default server.
     pub fn host<'a>(&'a self, server: Option<&'a str>) -> anyhow::Result<&'a str> {
         if let Some(server) = server {
             if contains_protocol(server) {
@@ -468,6 +613,23 @@ impl Config {
         }
     }
 
+    /// Get the protocol of the specified `server`, either `"http"` or `"https"`.
+    ///
+    /// Returns the protocol of the default server if `server` is `None`.
+    ///
+    /// Entries in the project configuration supersede entries in the home configuration.
+    ///
+    /// If `server` is `Some` and is a complete URL,
+    /// including protocol and hostname,
+    /// returns that protocol without accessing the configuration.
+    /// In that case, the protocol is not validated.
+    ///
+    /// Returns an `Err` if:
+    /// - `server` is `Some`, but not a complete URL,
+    ///   and the supplied name does not refer to any server
+    ///   in either the project or the home configuration.
+    /// - `server` is `None`, but neither the home nor the project configuration
+    ///   has a default server.
     pub fn protocol<'a>(&'a self, server: Option<&'a str>) -> anyhow::Result<&'a str> {
         if let Some(server) = server {
             if contains_protocol(server) {
@@ -496,16 +658,21 @@ impl Config {
         }
     }
 
+    /// Set the default identity for `server` in the home configuration.
+    ///
+    /// Does not validate that `default_identity` applies to `server`.
+    ///
+    /// Returns an `Err` if:
+    /// - `server` is `Some`, but does not refer to any server
+    ///   in the home configuration.
+    /// - `server` is `None`, but the home configuration
+    ///   does not have a default server.
     pub fn set_default_identity(&mut self, default_identity: String, server: Option<&str>) -> anyhow::Result<()> {
         if let Some(server) = server {
             let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.proj
-                .set_server_default_identity(host, default_identity.clone())
-                .or_else(|_| self.home.set_server_default_identity(host, default_identity))
+            self.home.set_server_default_identity(host, default_identity)
         } else {
-            self.proj
-                .set_default_server_default_identity(default_identity.clone())
-                .or_else(|_| self.home.set_default_server_default_identity(default_identity))
+            self.home.set_default_server_default_identity(default_identity)
         }
     }
 
@@ -647,7 +814,13 @@ impl Config {
             self.identity_configs()
                 .iter()
                 .find(|c| c.identity == identity)
-                .ok_or_else(|| anyhow::anyhow!("No saved configuration for identity: {}", identity))
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No saved configuration for identity: {identity}
+Import an existing identity with:
+\tspacetime identity import <identity> <token>"
+                    )
+                })
         })
     }
 
@@ -775,8 +948,14 @@ impl Config {
     pub fn server_decoding_key(&self, server: Option<&str>) -> anyhow::Result<DecodingKey> {
         self.server_fingerprint(server).and_then(|fing| {
             if let Some(fing) = fing {
-                DecodingKey::from_ec_pem(fing.as_bytes())
-                    .with_context(|| "Parsing server fingerprint as ECDSA public key")
+                DecodingKey::from_ec_pem(fing.as_bytes()).with_context(|| {
+                    format!(
+                        "Unable to parse invalid saved server fingerprint as ECDSA public key.
+Update the server's fingerprint with:
+\tspacetime server update {}",
+                        server.unwrap_or("")
+                    )
+                })
             } else {
                 Err(anyhow::anyhow!(
                     "No fingerprint saved for server: {}",
@@ -827,5 +1006,9 @@ impl Config {
         } else {
             self.home.remove_identities_for_default_server()
         }
+    }
+
+    pub fn remove_identities_for_fingerprint(&mut self, fingerprint: &str) -> anyhow::Result<Vec<IdentityConfig>> {
+        self.home.remove_identities_for_fingerprint(fingerprint)
     }
 }

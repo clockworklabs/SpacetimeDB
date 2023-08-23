@@ -1,5 +1,5 @@
 use crate::{
-    util::{host_or_url_to_host_and_protocol, spacetime_server_fingerprint, VALID_PROTOCOLS},
+    util::{host_or_url_to_host_and_protocol, spacetime_server_fingerprint, y_or_n, VALID_PROTOCOLS},
     Config,
 };
 use clap::{Arg, ArgAction, ArgMatches, Command};
@@ -51,7 +51,14 @@ fn get_subcommands() -> Vec<Command> {
                 Arg::new("delete-identities")
                     .help("Also delete all identities which apply to the server")
                     .long("delete-identities")
-                    .short('i')
+                    .short('I')
+                    .action(ArgAction::SetTrue),
+            )
+            .arg(
+                Arg::new("force")
+                    .help("Do not prompt before deleting identities")
+                    .long("force")
+                    .short('f')
                     .action(ArgAction::SetTrue),
             ),
         Command::new("fingerprint")
@@ -62,7 +69,22 @@ fn get_subcommands() -> Vec<Command> {
             .arg(Arg::new("server").help("The nickname, host name or URL of the server to ping")),
         Command::new("update")
             .about("Update a saved server's fingerprint")
-            .arg(Arg::new("server").help("The nickname, host name or URL of the server")), // TODO: set-name, set-protocol, set-host, set-url
+            .arg(Arg::new("server").help("The nickname, host name or URL of the server"))
+            .arg(
+                Arg::new("delete-obsolete-identities")
+                    .help("Delete obsoleted identities if the server's fingerprint has changed")
+                    .long("delete-obsolete-identities")
+                    .short('I')
+                    .action(ArgAction::SetTrue),
+            )
+            .arg(
+                Arg::new("force")
+                    .help("Do not prompt before deleting identities")
+                    .long("force")
+                    .short('f')
+                    .action(ArgAction::SetTrue),
+            ),
+        // TODO: set-name, set-protocol, set-host, set-url
     ]
 }
 
@@ -161,9 +183,31 @@ pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyho
 
 pub async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").unwrap();
-    let delete_identities = *args.get_one::<bool>("delete-identities").unwrap();
+    let delete_identities = args.get_flag("delete-identities");
+    let force = args.get_flag("force");
 
-    config.remove_server(server, delete_identities)?;
+    let deleted_ids = config.remove_server(server, delete_identities)?;
+
+    if !deleted_ids.is_empty() {
+        println!(
+            "Deleting {} {}:",
+            deleted_ids.len(),
+            if deleted_ids.len() == 1 {
+                " identity"
+            } else {
+                "identities"
+            }
+        );
+        for id in deleted_ids {
+            println!("{}", id.identity);
+        }
+        if !(force || y_or_n("Continue?")?) {
+            anyhow::bail!("Aborted");
+        }
+
+        config.update_all_default_identities();
+    }
+
     config.save();
 
     Ok(())
@@ -204,6 +248,8 @@ pub async fn exec_update(mut config: Config, args: &ArgMatches) -> Result<(), an
     let server = args.get_one::<String>("server").map(|s| s.as_str());
     let nick_or_host = config.server_nick_or_host(server)?;
     let url = config.get_host_url(server)?;
+    let delete_identities = args.get_flag("delete-obsolete-identities");
+    let force = args.get_flag("force");
 
     let new_fing = spacetime_server_fingerprint(&url).await?;
     if let Some(saved_fing) = config.server_fingerprint(server)? {
@@ -214,17 +260,48 @@ pub async fn exec_update(mut config: Config, args: &ArgMatches) -> Result<(), an
                 "Fingerprint has changed for server {}.\nWas:\n{}\nNew:\n{}",
                 nick_or_host, saved_fing, new_fing
             );
+
+            if delete_identities {
+                // Unfortunate clone because we need to mutate `config`
+                // while holding `saved_fing`.
+                let saved_fing = saved_fing.to_string();
+
+                let deleted_ids = config.remove_identities_for_fingerprint(&saved_fing)?;
+                if !deleted_ids.is_empty() {
+                    println!(
+                        "Deleting {} obsolete {}:",
+                        deleted_ids.len(),
+                        if deleted_ids.len() == 1 {
+                            "identity"
+                        } else {
+                            "identities"
+                        }
+                    );
+                    for id in deleted_ids {
+                        println!("{}", id.identity);
+                    }
+                    if !(force || y_or_n("Continue?")?) {
+                        anyhow::bail!("Aborted");
+                    }
+                }
+
+                config.update_all_default_identities();
+            }
+
+            config.set_server_fingerprint(server, new_fing)?;
+
+            config.save();
         }
     } else {
         println!(
             "No saved fingerprint for server {}. New fingerprint:\n{}",
             nick_or_host, new_fing
         );
+
+        config.set_server_fingerprint(server, new_fing)?;
+
+        config.save();
     }
-
-    config.set_server_fingerprint(server, new_fing)?;
-
-    config.save();
 
     Ok(())
 }

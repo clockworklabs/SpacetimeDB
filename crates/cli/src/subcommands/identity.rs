@@ -1,6 +1,6 @@
 use crate::{
     config::{Config, IdentityConfig},
-    util::{init_default, IdentityTokenJson, InitDefaultResultType},
+    util::{init_default, y_or_n, IdentityTokenJson, InitDefaultResultType},
 };
 use std::io::Write;
 
@@ -322,14 +322,7 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
     }
 
     fn should_continue(force: bool, prompt: &str) -> anyhow::Result<bool> {
-        Ok(force || {
-            let mut input = String::new();
-            print!("Are you sure you want to remove all identities{}? (y/n) ", prompt);
-            std::io::stdout().flush()?;
-            std::io::stdin().read_line(&mut input)?;
-
-            input.trim() == "y"
-        })
+        Ok(force || y_or_n(&format!("Are you sure you want to remove all identities{}?", prompt))?)
     }
 
     if let Some(identity_or_name) = identity_or_name {
