@@ -14,6 +14,3 @@ pub mod repl;
 pub mod server;
 pub mod sql;
 pub mod version;
-
-#[cfg(feature = "tracelogging")]
-pub mod tracelog;

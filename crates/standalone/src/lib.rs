@@ -244,7 +244,6 @@ impl spacetimedb_client_api::ControlCtx for StandaloneEnv {
         host_type: HostType,
         num_replicas: u32,
         force: bool,
-        trace_log: bool,
     ) -> Result<(), anyhow::Error> {
         let database = Database {
             id: 0,
@@ -253,7 +252,6 @@ impl spacetimedb_client_api::ControlCtx for StandaloneEnv {
             host_type,
             num_replicas,
             program_bytes_address: *program_bytes_address,
-            trace_log,
         };
 
         if force {

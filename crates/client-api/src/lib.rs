@@ -67,7 +67,6 @@ pub trait ControlCtx: ControlNodeDelegate + Send + Sync {
         host_type: HostType,
         num_replicas: u32,
         force: bool,
-        trace_log: bool,
     ) -> Result<(), anyhow::Error>;
 
     async fn update_database(

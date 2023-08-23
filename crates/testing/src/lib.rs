@@ -1,18 +1,18 @@
+use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use std::env;
-use std::path::{Path, PathBuf};
 
 pub mod modules;
 
-pub fn set_key_env_vars() {
+pub fn set_key_env_vars(paths: &FilesLocal) {
     let set_if_not_exist = |var, path| {
         if env::var_os(var).is_none() {
-            env::set_var(var, Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(path));
+            env::set_var(var, path);
         }
     };
 
-    set_if_not_exist("STDB_PATH", PathBuf::from("/stdb"));
-    set_if_not_exist("SPACETIMEDB_LOGS_PATH", PathBuf::from("/var/log"));
-    set_if_not_exist("SPACETIMEDB_LOG_CONFIG", PathBuf::from("/stdb/log.conf"));
-    set_if_not_exist("SPACETIMEDB_JWT_PUB_KEY", PathBuf::from("/stdb/id_ecdsa.pub"));
-    set_if_not_exist("SPACETIMEDB_JWT_PRIV_KEY", PathBuf::from("/stdb/id_ecdsa"));
+    set_if_not_exist("STDB_PATH", paths.db_path());
+    set_if_not_exist("SPACETIMEDB_LOGS_PATH", paths.logs());
+    set_if_not_exist("SPACETIMEDB_LOG_CONFIG", paths.log_config());
+    set_if_not_exist("SPACETIMEDB_JWT_PUB_KEY", paths.public_key());
+    set_if_not_exist("SPACETIMEDB_JWT_PRIV_KEY", paths.private_key());
 }
