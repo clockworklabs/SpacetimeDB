@@ -699,7 +699,7 @@ impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a str> {
         Ok(StIndexRow {
             index_id,
             table_id,
-            col_id: col_id,
+            col_id,
             index_name,
             is_unique,
         })
