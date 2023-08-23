@@ -15,7 +15,7 @@ pub fn determine_spacetime_abi(wasm_module: &[u8]) -> Result<VersionTuple, AbiVe
     let mut data = wasm_module;
     let (mut globals, mut exports, mut datas) = (None, None, None);
     loop {
-        let payload = match parser.parse(data, true).unwrap() {
+        let payload = match parser.parse(data, true).map_err(|_| AbiVersionError::Malformed)? {
             wasmparser::Chunk::NeedMoreData(_) => unreachable!("determine_spacetime_abi:NeedMoreData"),
             wasmparser::Chunk::Parsed { consumed, payload } => {
                 data = &data[consumed..];
@@ -41,9 +41,11 @@ pub fn determine_spacetime_abi(wasm_module: &[u8]) -> Result<VersionTuple, AbiVe
 
     let exports = exports
         .into_iter()
-        .map(Result::unwrap)
-        .map(|exp| (exp.name, exp))
-        .collect::<HashMap<_, _>>();
+        .map(|exp| {
+            let exp = exp.map_err(|_| AbiVersionError::Malformed)?;
+            Ok((exp.name, exp))
+        })
+        .collect::<Result<HashMap<_, _>, AbiVersionError>>()?;
 
     let export = exports.get(STDB_ABI_SYM).ok_or(AbiVersionError::NoVersion)?;
     // LLVM can only output statics as addresses into the data section currently, so we need to do
@@ -56,36 +58,41 @@ pub fn determine_spacetime_abi(wasm_module: &[u8]) -> Result<VersionTuple, AbiVe
 
     let global = globals
         .into_iter()
-        .map(Result::unwrap)
         .nth(export.index as usize)
-        .unwrap();
+        .and_then(Result::ok)
+        .ok_or(AbiVersionError::Malformed)?;
 
     if global.ty != ABIVER_GLOBAL_TY {
         return Err(AbiVersionError::Malformed);
     }
     let mut op_rdr = global.init_expr.get_operators_reader();
-    let wasmparser::Operator::I32Const { value } = op_rdr.read().unwrap() else {
+    let Ok(wasmparser::Operator::I32Const { value }) = op_rdr.read() else {
         return Err(AbiVersionError::Malformed);
     };
     let ver = if export_is_addr {
-        let mut datas = datas.ok_or(AbiVersionError::Malformed)?;
-        let data = datas.read().unwrap();
-        let wasmparser::DataKind::Active {
-            memory_index: 0,
-            offset_expr,
-        } = data.kind
-        else {
-            return Err(AbiVersionError::Malformed);
-        };
-        let offset_op = offset_expr.get_operators_reader().read().unwrap();
-        let wasmparser::Operator::I32Const { value: offset } = offset_op else {
-            unreachable!("determine_spacetime_abi:I32Const?")
-        };
-        let slice = value
-            .checked_sub(offset)
-            .and_then(|idx| data.data.get(idx as usize..)?.get(..4))
-            .ok_or(AbiVersionError::Malformed)?;
-        u32::from_le_bytes(slice.try_into().unwrap())
+        datas
+            .into_iter()
+            .flatten()
+            .find_map(|data| {
+                let data = data.ok()?;
+                let wasmparser::DataKind::Active {
+                    memory_index: 0,
+                    offset_expr,
+                } = data.kind
+                else {
+                    return None;
+                };
+                let offset_op = offset_expr.get_operators_reader().read().ok()?;
+                let wasmparser::Operator::I32Const { value: offset } = offset_op else {
+                    return None;
+                };
+                let idx = value.checked_sub(offset)?;
+                let slice = data.data.get(idx as usize..)?.get(..4)?;
+                Some(u32::from_le_bytes(
+                    slice.try_into().unwrap(/* we passed constant length above */),
+                ))
+            })
+            .ok_or(AbiVersionError::Malformed)?
     } else {
         value as u32
     };

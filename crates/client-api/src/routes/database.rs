@@ -750,17 +750,6 @@ pub struct PublishDatabaseQueryParams {
     #[serde(default)]
     clear: bool,
     name_or_address: Option<NameOrAddress>,
-    trace_log: Option<bool>,
-}
-
-#[cfg(not(feature = "tracelogging"))]
-fn should_trace(_trace_log: Option<bool>) -> bool {
-    false
-}
-
-#[cfg(feature = "tracelogging")]
-fn should_trace(trace_log: Option<bool>) -> bool {
-    trace_log.unwrap_or(false)
 }
 
 pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
@@ -770,11 +759,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     auth: SpacetimeAuthHeader,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
-    let PublishDatabaseQueryParams {
-        name_or_address,
-        clear,
-        trace_log,
-    } = query_params;
+    let PublishDatabaseQueryParams { name_or_address, clear } = query_params;
 
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail.
@@ -824,7 +809,6 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
                 address: db_addr,
                 program_bytes: body.into(),
                 num_replicas: 1,
-                trace_log: should_trace(trace_log),
             },
         )
         .await

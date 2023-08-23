@@ -78,6 +78,10 @@ impl_serialize!([T: Serialize] Option<T>, (self, ser) => match self {
     Some(v) => ser.serialize_variant(0, Some("some"), v),
     None => ser.serialize_variant(1, Some("none"), &()),
 });
+impl_serialize!([T: Serialize, E: Serialize] Result<T, E>, (self, ser) => match self {
+    Ok(v) => ser.serialize_variant(0, Some("ok"), v),
+    Err(e) => ser.serialize_variant(1, Some("err"), e),
+});
 impl_serialize!([K: Serialize, V: Serialize] BTreeMap<K, V>, (self, ser) => {
     let mut map = ser.serialize_map(self.len())?;
     for (k, v) in self {

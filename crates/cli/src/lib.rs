@@ -29,8 +29,6 @@ pub fn get_subcommands() -> Vec<Command> {
         list::cli(),
         init::cli(),
         build::cli(),
-        #[cfg(feature = "tracelogging")]
-        tracelog::cli(),
         server::cli(),
         #[cfg(feature = "standalone")]
         start::cli(ProgramMode::CLI),
@@ -54,8 +52,6 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "init" => init::exec(config, args).await,
         "build" => build::exec(config, args).await,
         "server" => server::exec(config, args).await,
-        #[cfg(feature = "tracelogging")]
-        "tracelog" => tracelog::exec(config, args).await,
         #[cfg(feature = "standalone")]
         "start" => start::exec(args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),

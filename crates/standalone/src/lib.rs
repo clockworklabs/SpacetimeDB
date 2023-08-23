@@ -292,7 +292,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 address: spec.address,
                 num_replicas: spec.num_replicas,
                 program_bytes_address,
-                trace_log: spec.trace_log,
                 ..existing.clone()
             },
             None => Database {
@@ -302,7 +301,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 host_type: HostType::Wasmer,
                 num_replicas: spec.num_replicas,
                 program_bytes_address,
-                trace_log: spec.trace_log,
             },
         };
 

@@ -120,26 +120,4 @@ mod tests {
             assert_eq!(addr, de);
         }
     }
-
-    // At some point, using `Address` in a spacetimedb table was not working
-    // (buffer length errors were thrown when deserializing). This test exists
-    // to guard against a regression.
-    #[test]
-    fn test_addr_column_rountrip() {
-        use spacetimedb_bindings_macro::{Deserialize, Serialize};
-
-        #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-        struct MyTable {
-            name: String,
-            addr: Address,
-        }
-
-        let val = MyTable {
-            name: "example.com".into(),
-            addr: Address(rand::random()),
-        };
-        let ser = sats::bsatn::to_vec(&val).unwrap();
-        let de = sats::bsatn::from_slice(&ser).unwrap();
-        assert_eq!(val, de);
-    }
 }

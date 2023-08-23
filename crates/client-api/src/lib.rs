@@ -59,8 +59,6 @@ pub struct DatabaseDef {
     pub program_bytes: Vec<u8>,
     /// The desired number of replicas the database shall have.
     pub num_replicas: u32,
-    /// It has been long forgotten what this does, if anything.
-    pub trace_log: bool,
 }
 
 /// API of the SpacetimeDB control plane.

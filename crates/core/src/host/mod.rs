@@ -18,7 +18,6 @@ mod wasmer;
 // Visible for integration testing.
 pub mod instance_env;
 mod timestamp;
-pub mod tracelog;
 mod wasm_common;
 
 pub use host_controller::{

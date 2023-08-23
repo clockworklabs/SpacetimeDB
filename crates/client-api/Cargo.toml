@@ -5,9 +5,6 @@ edition = "2021"
 license-file = "LICENSE"
 description = "The HTTP API for SpacetimeDB"
 
-[features]
-tracelogging = ["spacetimedb-core/tracelogging"]
-
 [dependencies]
 spacetimedb-core = { path = "../core", version = "0.6.1" }
 tokio = { version = "1.2", features = ["full"] }

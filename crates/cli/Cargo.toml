@@ -50,6 +50,5 @@ wasmtime.workspace = true
 insta.workspace = true
 
 [features]
-tracelogging = []
 standalone = ["spacetimedb-standalone"]
 default = ["standalone"]

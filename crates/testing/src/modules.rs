@@ -11,6 +11,8 @@ use spacetimedb::client::{ClientActorId, ClientConnection, Protocol};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::Storage;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
+
+use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb_standalone::StandaloneEnv;
 
 fn start_runtime() -> Runtime {
@@ -127,7 +129,12 @@ pub async fn load_module(name: &str) -> ModuleHandle {
     // exercise functionality like restarting the database.
     let storage = Storage::Disk;
 
-    crate::set_key_env_vars();
+    let paths = FilesLocal::temp(name);
+    // The database created in the `temp` folder can't be randomized,
+    // so it persists after running the test.
+    std::fs::remove_dir(paths.db_path()).ok();
+
+    crate::set_key_env_vars(&paths);
     let env = spacetimedb_standalone::StandaloneEnv::init(storage).await.unwrap();
     let identity = env.create_identity().await.unwrap();
     let address = env.create_address().await.unwrap();
@@ -139,7 +146,6 @@ pub async fn load_module(name: &str) -> ModuleHandle {
             address,
             program_bytes,
             num_replicas: 1,
-            trace_log: false,
         },
     )
     .await

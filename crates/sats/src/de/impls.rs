@@ -238,6 +238,63 @@ impl<'de, T: Deserialize<'de>> VariantVisitor for OptionVisitor<T> {
     }
 }
 
+impl_deserialize!([T: Deserialize<'de>, E: Deserialize<'de>] Result<T, E>, de =>
+    de.deserialize_sum(ResultVisitor(PhantomData))
+);
+
+/// Visitor to deserialize a `Result<T, E>`.
+struct ResultVisitor<T, E>(PhantomData<(T, E)>);
+
+/// Variant determined by the [`VariantVisitor`] for `Result<T, E>`.
+enum ResultVariant {
+    Ok,
+    Err,
+}
+
+impl<'de, T: Deserialize<'de>, E: Deserialize<'de>> SumVisitor<'de> for ResultVisitor<T, E> {
+    type Output = Result<T, E>;
+
+    fn sum_name(&self) -> Option<&str> {
+        Some("result")
+    }
+
+    fn is_option(&self) -> bool {
+        false
+    }
+
+    fn visit_sum<A: SumAccess<'de>>(self, data: A) -> Result<Self::Output, A::Error> {
+        let (variant, data) = data.variant(self)?;
+        Ok(match variant {
+            ResultVariant::Ok => Ok(data.deserialize()?),
+            ResultVariant::Err => Err(data.deserialize()?),
+        })
+    }
+}
+
+impl<'de, T: Deserialize<'de>, U: Deserialize<'de>> VariantVisitor for ResultVisitor<T, U> {
+    type Output = ResultVariant;
+
+    fn variant_names(&self, names: &mut dyn super::ValidNames) {
+        names.extend(["ok", "err"])
+    }
+
+    fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
+        match tag {
+            0 => Ok(ResultVariant::Ok),
+            1 => Ok(ResultVariant::Err),
+            _ => Err(E::unknown_variant_tag(tag, &self)),
+        }
+    }
+
+    fn visit_name<E: Error>(self, name: &str) -> Result<Self::Output, E> {
+        match name {
+            "ok" => Ok(ResultVariant::Ok),
+            "err" => Ok(ResultVariant::Err),
+            _ => Err(E::unknown_variant_name(name, &self)),
+        }
+    }
+}
+
 impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
     type Output = AlgebraicValue;
 

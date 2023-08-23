@@ -1,4 +1,5 @@
 #!/bin/bash
+# Run a ephemeral database inside a `temp` folder
 set -euo pipefail
 
 SRC_TREE="$(dirname "$0")"
@@ -14,6 +15,13 @@ cargo build -p spacetimedb-standalone
 
 export STDB_PATH="${STDB_PATH:-$(mktemp -d)}"
 mkdir -p "$STDB_PATH/logs"
+
+function cleanup {
+  echo "Removing ${STDB_PATH}"
+  rm  -rf "$STDB_PATH"
+}
+
+trap cleanup EXIT
 
 cp crates/standalone/log.conf "$STDB_PATH/log.conf"
 # -i differs between GNU and BSD sed, so use a temp file

@@ -23,6 +23,7 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
         return Ok(());
     }
 
+    println!("Path: {}", std::env::current_exe()?.display());
     println!(
         "spacetimedb tool version {}; spacetimedb-lib version {};",
         CLI_VERSION,

@@ -28,9 +28,8 @@ pub struct Database {
     pub host_type: HostType,
     pub num_replicas: u32,
     pub program_bytes_address: Hash,
-    /// Whether to create a full event log of all database events, for diagnostic / replay purposes.
-    pub trace_log: bool,
 }
+
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct DatabaseStatus {
     pub state: String,
