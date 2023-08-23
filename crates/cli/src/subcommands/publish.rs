@@ -2,15 +2,15 @@ use anyhow::bail;
 use clap::Arg;
 use clap::ArgAction::SetTrue;
 use clap::ArgMatches;
-use reqwest::Url;
+use reqwest::{StatusCode, Url};
 use spacetimedb_lib::name::PublishOp;
 use spacetimedb_lib::name::{is_address, parse_domain_name, PublishResult};
 use std::fs;
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::util::init_default;
 use crate::util::{add_auth_header_opt, get_auth_header};
+use crate::util::{init_default, unauth_error_context};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("publish")
@@ -165,6 +165,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     };
 
     let res = builder.body(program_bytes).send().await?;
+    if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
+        if let Some(identity) = &identity {
+            let err = res.text().await?;
+            return unauth_error_context(
+                Err(anyhow::anyhow!(err)),
+                &identity.to_hex(),
+                config.server_nick_or_host(server)?,
+            );
+        }
+    }
     if res.status().is_client_error() || res.status().is_server_error() {
         let err = res.text().await?;
         bail!(err)

@@ -1,3 +1,4 @@
+use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use reqwest::RequestBuilder;
 use serde::Deserialize;
@@ -322,4 +323,17 @@ pub fn y_or_n(prompt: &str) -> anyhow::Result<bool> {
     std::io::stdin().read_line(&mut input)?;
 
     Ok(input.trim() == "y")
+}
+
+pub fn unauth_error_context<T>(res: anyhow::Result<T>, identity: &str, server: &str) -> anyhow::Result<T> {
+    res.with_context(|| {
+        format!(
+            "Identity {identity} is not valid for server {server}.
+Has the server rotated its keys?
+Remove the outdated identity with:
+  spacetime identity remove {identity}
+Generate a new identity with:
+  spacetime identity new --no-email --server {server}"
+        )
+    })
 }
