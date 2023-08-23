@@ -12,7 +12,6 @@ use crate::db::messages::commit::Commit;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::error::{DBError, DatabaseError, TableError};
-use crate::hash::Hash;
 use crate::util::prometheus_handle::HistogramVecHandle;
 use fs2::FileExt;
 use prometheus::HistogramVec;
@@ -89,15 +88,11 @@ impl RelationalDB {
         let datastore = Locking::bootstrap()?;
         let unwritten_commit = {
             let mut transaction_offset = 0;
-            let mut last_commit_offset = None;
-            let mut last_hash: Option<Hash> = None;
 
             if let Some(message_log) = &message_log {
                 let message_log = message_log.lock().unwrap();
                 for message in message_log.iter() {
                     let (commit, _) = Commit::decode(message);
-                    last_hash = commit.parent_commit_hash;
-                    last_commit_offset = Some(commit.commit_offset);
                     for transaction in commit.transactions {
                         transaction_offset += 1;
                         // NOTE: Although I am creating a datastore transaction in a
@@ -117,22 +112,9 @@ impl RelationalDB {
                 datastore.rebuild_state_after_replay()?;
             }
 
-            let commit_offset = if let Some(last_commit_offset) = last_commit_offset {
-                last_commit_offset + 1
-            } else {
-                0
-            };
-
-            log::debug!(
-                "Initialized with {} commits and tx offset {}",
-                commit_offset,
-                transaction_offset
-            );
+            log::debug!("Initialized with tx offset {}", transaction_offset);
 
             Commit {
-                parent_commit_hash: last_hash,
-                commit_offset,
-                min_tx_offset: transaction_offset,
                 transactions: Vec::new(),
             }
         };

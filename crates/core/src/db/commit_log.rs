@@ -14,7 +14,7 @@ use crate::{
     },
     error::DBError,
 };
-use spacetimedb_lib::hash::hash_bytes;
+
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -101,9 +101,6 @@ impl CommitLog {
             let mut bytes = Vec::new();
             unwritten_commit.encode(&mut bytes);
 
-            unwritten_commit.parent_commit_hash = Some(hash_bytes(&bytes));
-            unwritten_commit.commit_offset += 1;
-            unwritten_commit.min_tx_offset += unwritten_commit.transactions.len() as u64;
             unwritten_commit.transactions.clear();
 
             Some(bytes)
