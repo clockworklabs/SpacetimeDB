@@ -2,6 +2,7 @@ mod module_bindings;
 use module_bindings::*;
 
 use spacetimedb_sdk::{
+    disconnect,
     identity::{identity, load_credentials, once_on_connect, save_credentials, Credentials, Identity},
     on_subscription_applied,
     reducer::Status,
@@ -37,6 +38,7 @@ fn main() {
     // rather than using the Cursive event loop,
     // so that we can push events into it.
     user_input_loop(ui, ui_recv);
+    disconnect();
 }
 
 enum UiMessage {
