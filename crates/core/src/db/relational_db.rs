@@ -312,13 +312,6 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn table_exist(&self, tx: &MutTxId, table_name: &str) -> Result<Option<u32>, DBError> {
-        self.inner
-            .table_id_from_name_mut_tx(tx, table_name)
-            .map(|x| x.map(|x| x.0))
-    }
-
-    #[tracing::instrument(skip_all)]
     pub fn table_name_from_id(&self, tx: &MutTxId, table_id: u32) -> Result<Option<String>, DBError> {
         self.inner.table_name_from_id_mut_tx(tx, TableId(table_id))
     }
