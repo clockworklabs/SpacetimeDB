@@ -1,10 +1,11 @@
 mod module_bindings;
+
 use module_bindings::*;
 
 use spacetimedb_sdk::{
     disconnect,
     identity::{load_credentials, once_on_connect, save_credentials, Credentials, Identity},
-    on_subscription_applied,
+    on_disconnect, on_subscription_applied,
     reducer::Status,
     subscribe,
     table::{TableType, TableWithPrimaryKey},
@@ -44,6 +45,9 @@ fn register_callbacks() {
 
     // When we fail to send a message, print a warning.
     on_send_message(on_message_sent);
+
+    // When our connection closes, inform the user and exit.
+    on_disconnect(on_disconnected);
 }
 
 // ## Save credentials to a file
@@ -140,6 +144,14 @@ fn on_message_sent(_sender: &Identity, status: &Status, text: &String) {
     if let Status::Failed(err) = status {
         eprintln!("Failed to send message {:?}: {}", text, err);
     }
+}
+
+// ## Exit when disconnected
+
+/// Our `on_disconnect` callback: print a note, then exit the process.
+fn on_disconnected() {
+    eprintln!("Disconnected!");
+    std::process::exit(0)
 }
 
 // # Connect to the database
