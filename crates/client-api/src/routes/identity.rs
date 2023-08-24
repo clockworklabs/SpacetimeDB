@@ -8,7 +8,7 @@ use spacetimedb::auth::identity::encode_token_with_expiry;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::Identity;
 
-use crate::auth::{SpacetimeAuth, SpacetimeAuthHeader};
+pub use crate::auth::{SpacetimeAuth, SpacetimeAuthHeader};
 use crate::{log_and_500, ControlCtx, ControlNodeDelegate};
 
 #[derive(Deserialize)]
@@ -175,7 +175,7 @@ pub async fn get_databases(
 
 #[derive(Debug, Serialize)]
 pub struct WebsocketTokenResponse {
-    token: String,
+    pub token: String,
 }
 
 pub async fn create_websocket_token(

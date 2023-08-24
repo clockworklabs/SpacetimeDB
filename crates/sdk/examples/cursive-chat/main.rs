@@ -127,7 +127,7 @@ fn register_callbacks(send: UiSend) {
     on_set_name(on_name_set(send.clone()));
 
     // When we fail to send a message, print a warning.
-    on_send_message(on_message_sent(send.clone()));
+    on_send_message(on_message_sent(send));
 }
 
 // ## Save credentials to a file
