@@ -345,7 +345,6 @@ impl BackgroundDbConnection {
         if let Some(h) = self.recv_handle.take() {
             let _ = self.handle.block_on(h);
         }
-        self.runtime = None;
     }
 
     fn send_message(&self, message: client_api_messages::Message) -> Result<()> {
