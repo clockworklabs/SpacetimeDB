@@ -19,6 +19,7 @@ derive_more.workspace = true
 enum-as-inner.workspace = true
 hex = { workspace = true, optional = true }
 itertools.workspace = true
+nonempty.workspace = true
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
 tracing.workspace = true

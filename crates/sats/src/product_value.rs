@@ -1,6 +1,7 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::product_type::ProductType;
 use crate::ArrayValue;
+use nonempty::NonEmpty;
 
 /// A product value is made of a a list of
 /// "elements" / "fields" / "factors" of other `AlgebraicValue`s.
@@ -60,6 +61,26 @@ impl ProductValue {
     /// The `name` is non-functional and is only used for error-messages.
     pub fn get_field(&self, index: usize, name: Option<&'static str>) -> Result<&AlgebraicValue, InvalidFieldError> {
         self.elements.get(index).ok_or(InvalidFieldError { index, name })
+    }
+
+    /// Project the fields from the supplied `indexes`.
+    ///
+    /// The `name: Option<&'static str>` is non-functional and is only used for error-messages.
+    pub fn project(
+        &self,
+        indexes: impl Iterator<Item = (usize, Option<&'static str>)>,
+    ) -> Result<ProductValue, InvalidFieldError> {
+        let fields: Result<Vec<_>, _> = indexes
+            .map(|(index, name)| self.get_field(index, name).cloned())
+            .collect();
+
+        Ok(ProductValue::new(&fields?))
+    }
+
+    /// Utility for project the fields from the supplied `indexes` that is a [NonEmpty<u32>],
+    /// used for when the list of field indexes have at least one value.
+    pub fn project_not_empty(&self, indexes: &NonEmpty<u32>) -> Result<ProductValue, InvalidFieldError> {
+        self.project(indexes.iter().map(|x| (*x as usize, None)))
     }
 
     /// Extracts the `value` at field of `self` identified by `index`

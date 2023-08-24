@@ -12,10 +12,11 @@ use crate::db::db_metrics::{RDB_DELETE_BY_REL_TIME, RDB_DROP_TABLE_TIME, RDB_INS
 use crate::db::messages::commit::Commit;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
-use crate::error::{DBError, DatabaseError, TableError};
+use crate::error::{DBError, DatabaseError, IndexError, TableError};
 use crate::hash::Hash;
 use crate::util::prometheus_handle::HistogramVecHandle;
 use fs2::FileExt;
+use nonempty::NonEmpty;
 use prometheus::HistogramVec;
 use spacetimedb_lib::ColumnIndexAttribute;
 use spacetimedb_lib::{data_key::ToDataKey, PrimaryKey};
@@ -371,11 +372,19 @@ impl RelationalDB {
         &self,
         tx: &mut MutTxId,
         table_id: u32,
-        col_id: u32,
-    ) -> Result<Option<ColumnIndexAttribute>, DBError> {
+        cols: &NonEmpty<u32>,
+    ) -> Result<ColumnIndexAttribute, DBError> {
         let table = self.inner.schema_for_table_mut_tx(tx, TableId(table_id))?;
-        let Some(column) = table.columns.get(col_id as usize) else {
-            return Ok(None);
+        let columns = table.project_not_empty(cols)?;
+        // Verify we don't have more than 1 auto_inc in the list of columns
+        let autoinc = columns.iter().filter(|x| x.is_autoinc).count();
+        let is_autoinc = if autoinc < 2 {
+            autoinc == 1
+        } else {
+            return Err(DBError::Index(IndexError::OneAutoInc(
+                TableId(table_id),
+                columns.iter().map(|x| x.col_name.clone()).collect(),
+            )));
         };
         let unique_index = table.indexes.iter().find(|x| x.col_id == col_id).map(|x| x.is_unique);
         let mut attr = ColumnIndexAttribute::UNSET;
@@ -432,7 +441,7 @@ impl RelationalDB {
 
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
-    /// where the column data identified by `col_id` matches `value`.
+    /// where the column data identified by `cols` matches `value`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
     #[tracing::instrument(skip(self, tx))]
@@ -449,7 +458,7 @@ impl RelationalDB {
 
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
-    /// where the column data identified by `col_id` matches what is within `range`.
+    /// where the column data identified by `cols` matches what is within `range`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
     pub fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue> + 'a>(
@@ -563,6 +572,7 @@ pub(crate) mod tests_utils {
 #[cfg(test)]
 mod tests {
 
+    use nonempty::NonEmpty;
     use std::sync::{Arc, Mutex};
 
     use crate::address::Address;
@@ -957,7 +967,7 @@ mod tests {
             }],
             indexes: vec![IndexDef {
                 table_id: 0,
-                col_id: 0,
+                cols: NonEmpty::new(0),
                 name: "MyTable_my_col_idx".to_string(),
                 is_unique: false,
             }],
@@ -999,7 +1009,7 @@ mod tests {
             }],
             indexes: vec![IndexDef {
                 table_id: 0,
-                col_id: 0,
+                cols: NonEmpty::new(0),
                 name: "MyTable_my_col_idx".to_string(),
                 is_unique: true,
             }],
@@ -1046,7 +1056,7 @@ mod tests {
             }],
             indexes: vec![IndexDef {
                 table_id: 0,
-                col_id: 0,
+                cols: NonEmpty::new(0),
                 name: "MyTable_my_col_idx".to_string(),
                 is_unique: true,
             }],
@@ -1109,19 +1119,19 @@ mod tests {
             indexes: vec![
                 IndexDef {
                     table_id: 0,
-                    col_id: 0,
+                    cols: NonEmpty::new(0),
                     name: "MyTable_col1_idx".to_string(),
                     is_unique: true,
                 },
                 IndexDef {
                     table_id: 0,
-                    col_id: 2,
+                    cols: NonEmpty::new(2),
                     name: "MyTable_col3_idx".to_string(),
                     is_unique: false,
                 },
                 IndexDef {
                     table_id: 0,
-                    col_id: 3,
+                    cols: NonEmpty::new(3),
                     name: "MyTable_col4_idx".to_string(),
                     is_unique: true,
                 },
@@ -1179,7 +1189,7 @@ mod tests {
             }],
             indexes: vec![IndexDef {
                 table_id: 0,
-                col_id: 0,
+                cols: NonEmpty::new(0),
                 name: "MyTable_my_col_idx".to_string(),
                 is_unique: true,
             }],

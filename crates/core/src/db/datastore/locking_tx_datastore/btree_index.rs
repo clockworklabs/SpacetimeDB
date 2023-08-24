@@ -3,6 +3,7 @@ use crate::{
     db::datastore::traits::{IndexId, IndexSchema},
     error::DBError,
 };
+use nonempty::NonEmpty;
 use spacetimedb_lib::{data_key::ToDataKey, DataKey};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use std::{
@@ -57,28 +58,33 @@ impl Iterator for BTreeIndexRangeIter<'_> {
 pub(crate) struct BTreeIndex {
     pub(crate) index_id: IndexId,
     pub(crate) table_id: u32,
-    pub(crate) col_id: u32,
+    pub(crate) cols: NonEmpty<u32>,
     pub(crate) name: String,
     pub(crate) is_unique: bool,
     idx: BTreeSet<IndexKey>,
 }
 
 impl BTreeIndex {
-    pub(crate) fn new(index_id: IndexId, table_id: u32, col_id: u32, name: String, is_unique: bool) -> Self {
+    pub(crate) fn new(index_id: IndexId, table_id: u32, cols: NonEmpty<u32>, name: String, is_unique: bool) -> Self {
         Self {
             index_id,
             table_id,
-            col_id,
+            cols,
             name,
             is_unique,
             idx: BTreeSet::new(),
         }
     }
 
+    pub(crate) fn get_fields(&self, row: &ProductValue) -> Result<AlgebraicValue, DBError> {
+        let fields = row.project_not_empty(&self.cols)?;
+        Ok(AlgebraicValue::Product(fields))
+    }
+
     #[tracing::instrument(skip_all)]
     pub(crate) fn insert(&mut self, row: &ProductValue) -> Result<(), DBError> {
-        let col_value = row.get_field(self.col_id as usize, None)?;
-        let key = IndexKey::from_row(col_value, row.to_data_key());
+        let col_value = self.get_fields(row)?;
+        let key = IndexKey::from_row(&col_value, row.to_data_key());
         self.idx.insert(key);
         Ok(())
     }
@@ -92,8 +98,8 @@ impl BTreeIndex {
     #[tracing::instrument(skip_all)]
     pub(crate) fn violates_unique_constraint(&self, row: &ProductValue) -> bool {
         if self.is_unique {
-            let col_value = row.get_field(self.col_id as usize, None).unwrap();
-            return self.contains_any(col_value);
+            let col_value = self.get_fields(row).unwrap();
+            return self.contains_any(&col_value);
         }
         false
     }
@@ -103,8 +109,10 @@ impl BTreeIndex {
         &'a self,
         row: &'a ProductValue,
     ) -> Option<BTreeIndexRangeIter<'a>> {
-        self.is_unique
-            .then(|| self.seek(row.get_field(self.col_id as usize, None).unwrap()))
+        self.is_unique.then(|| {
+            let value = self.get_fields(row).unwrap();
+            self.seek(&value)
+        })
     }
 
     /// Returns `true` if the [BTreeIndex] contains a value for the specified `value`.
@@ -165,7 +173,7 @@ impl From<&BTreeIndex> for IndexSchema {
         IndexSchema {
             index_id: x.index_id.0,
             table_id: x.table_id,
-            col_id: x.col_id,
+            cols: x.cols.clone(),
             is_unique: x.is_unique,
             index_name: x.name.clone(),
         }

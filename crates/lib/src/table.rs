@@ -117,12 +117,3 @@ impl From<ProductTypeMeta> for ProductType {
         value.columns
     }
 }
-
-impl<'a> FromIterator<&'a (&'a str, AlgebraicType, ColumnIndexAttribute)> for ProductTypeMeta {
-    fn from_iter<T: IntoIterator<Item = &'a (&'a str, AlgebraicType, ColumnIndexAttribute)>>(iter: T) -> Self {
-        Self::with_attributes(
-            iter.into_iter()
-                .map(|(name, ty, attr)| (ProductTypeElement::new(ty.clone(), Some(name.to_string())), *attr)),
-        )
-    }
-}

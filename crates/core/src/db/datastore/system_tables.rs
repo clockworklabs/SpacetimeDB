@@ -1,9 +1,11 @@
 use super::traits::{ColumnSchema, IndexSchema, SequenceId, SequenceSchema, TableId, TableSchema};
 use crate::db::datastore::traits::ConstraintSchema;
 use crate::error::{DBError, TableError};
+use nonempty::NonEmpty;
 use once_cell::sync::Lazy;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::ColumnIndexAttribute;
+use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue};
 
 /// The static ID of the table that defines tables
@@ -110,7 +112,7 @@ impl StColumnFields {
         // WARNING: Don't change the name of the fields
         match self {
             Self::TableId => "table_id",
-            Self::ColId => "col_id",
+            Self::ColId => "cols",
             Self::ColType => "col_type",
             Self::ColName => "col_name",
             Self::IsAutoInc => "is_autoinc",
@@ -123,7 +125,7 @@ impl StColumnFields {
 pub enum StIndexFields {
     IndexId = 0,
     TableId = 1,
-    ColId = 2,
+    Cols = 2,
     IndexName = 3,
     IsUnique = 4,
 }
@@ -134,7 +136,7 @@ impl StIndexFields {
         match self {
             StIndexFields::IndexId => "index_id",
             StIndexFields::TableId => "table_id",
-            StIndexFields::ColId => "col_id",
+            StIndexFields::Cols => "cols",
             StIndexFields::IndexName => "index_name",
             StIndexFields::IsUnique => "is_unique",
         }
@@ -162,7 +164,7 @@ impl StSequenceFields {
             StSequenceFields::SequenceId => "sequence_id",
             StSequenceFields::SequenceName => "sequence_name",
             StSequenceFields::TableId => "table_id",
-            StSequenceFields::ColId => "col_id",
+            StSequenceFields::ColId => "cols",
             StSequenceFields::Start => "increment",
             StSequenceFields::Increment => "start",
             StSequenceFields::MinValue => "min_value",
@@ -208,14 +210,14 @@ pub fn st_table_schema() -> TableSchema {
             IndexSchema {
                 index_id: ST_TABLE_ID_INDEX_ID,
                 table_id: ST_TABLES_ID.0,
-                col_id: StTableFields::TableId as u32,
+                cols: NonEmpty::new(StTableFields::TableId as u32),
                 index_name: "table_id_idx".into(),
                 is_unique: true,
             },
             IndexSchema {
                 index_id: ST_TABLE_NAME_INDEX_ID,
                 table_id: ST_TABLES_ID.0,
-                col_id: StTableFields::TableName as u32,
+                cols: NonEmpty::new(StTableFields::TableName as u32),
                 index_name: "table_name_idx".into(),
                 is_unique: true,
             },
@@ -261,7 +263,7 @@ pub static ST_TABLE_ROW_TYPE: Lazy<ProductType> =
 
 /// System Table [ST_COLUMNS_NAME]
 ///
-/// | table_id: u32 | col_id | col_type: Bytes       | col_name: String | is_autoinc: bool |
+/// | table_id: u32 | cols | col_type: Bytes       | col_name: String | is_autoinc: bool |
 /// |---------------|--------|-----------------------|------------------|------------------|
 /// | 1             | 0      | AlgebraicType->0b0101 | "id"             | true             |
 pub fn st_columns_schema() -> TableSchema {
@@ -270,7 +272,7 @@ pub fn st_columns_schema() -> TableSchema {
         table_name: ST_COLUMNS_NAME.into(),
         indexes: vec![],
         columns: vec![
-            // TODO(cloutiertyler): (table_id, col_id) should be have a unique constraint
+            // TODO(cloutiertyler): (table_id, cols) should be have a unique constraint
             ColumnSchema {
                 table_id: ST_COLUMNS_ID.0,
                 col_id: StColumnFields::TableId as u32,
@@ -282,6 +284,8 @@ pub fn st_columns_schema() -> TableSchema {
                 table_id: ST_COLUMNS_ID.0,
                 col_id: StColumnFields::ColId as u32,
                 col_name: StColumnFields::ColId.name().to_string(),
+                col_id: 1,
+                col_name: "cols".into(),
                 col_type: AlgebraicType::U32,
                 is_autoinc: false,
             },
@@ -325,9 +329,9 @@ pub static ST_COLUMNS_ROW_TYPE: Lazy<ProductType> =
 
 /// System Table [ST_INDEXES]
 ///
-/// | index_id: u32 | table_id: u32 | col_id: u32 | index_name: String | is_unique: bool      |
-/// |---------------|---------------|-------------|--------------------|----------------------|
-/// | 1             | 1             | 1           | "ix_sample"        | 0                    |
+/// | index_id: u32 | table_id: u32 | cols: NonEmpty<u32> | index_name: String | is_unique: bool      |
+/// |---------------|---------------|---------------------|--------------------|----------------------|
+/// | 1             | 1             | [1]                 | "ix_sample"        | 0                    |
 pub fn st_indexes_schema() -> TableSchema {
     TableSchema {
         table_id: ST_INDEXES_ID.0,
@@ -336,7 +340,7 @@ pub fn st_indexes_schema() -> TableSchema {
         indexes: vec![IndexSchema {
             index_id: ST_INDEX_ID_INDEX_ID,
             table_id: ST_INDEXES_ID.0,
-            col_id: 0,
+            cols: NonEmpty::new(0),
             index_name: "index_id_idx".into(),
             is_unique: true,
         }],
@@ -358,8 +362,8 @@ pub fn st_indexes_schema() -> TableSchema {
             ColumnSchema {
                 table_id: ST_INDEXES_ID.0,
                 col_id: 2,
-                col_name: "col_id".into(),
-                col_type: AlgebraicType::U32,
+                col_name: "cols".into(),
+                col_type: AlgebraicType::array(AlgebraicType::U32),
                 is_autoinc: false,
             },
             ColumnSchema {
@@ -388,7 +392,7 @@ pub static ST_INDEX_ROW_TYPE: Lazy<ProductType> =
 
 /// System Table [ST_SEQUENCES]
 ///
-/// | sequence_id | sequence_name     | increment | start | min_value | max_value | table_id | col_id | allocated |
+/// | sequence_id | sequence_name     | increment | start | min_value | max_value | table_id | cols | allocated |
 /// |-------------|-------------------|-----------|-------|-----------|-----------|----------|--------|-----------|
 /// | 1           | "seq_customer_id" | 1         | 100   | 10        | 1200      | 1        | 1      | 200       |
 pub(crate) fn st_sequences_schema() -> TableSchema {
@@ -399,7 +403,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
         indexes: vec![IndexSchema {
             index_id: ST_SEQUENCE_ID_INDEX_ID,
             table_id: ST_SEQUENCES_ID.0,
-            col_id: 0,
+            cols: NonEmpty::new(0),
             index_name: "sequences_id_idx".into(),
             is_unique: true,
         }],
@@ -428,7 +432,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
             ColumnSchema {
                 table_id: ST_SEQUENCES_ID.0,
                 col_id: 3,
-                col_name: "col_id".into(),
+                col_name: "cols".into(),
                 col_type: AlgebraicType::U32,
                 is_autoinc: false,
             },
@@ -671,7 +675,7 @@ impl<Name: AsRef<str>> From<&StColumnRow<Name>> for ProductValue {
 pub struct StIndexRow<Name: AsRef<str>> {
     pub(crate) index_id: u32,
     pub(crate) table_id: u32,
-    pub(crate) col_id: u32,
+    pub(crate) cols: NonEmpty<u32>,
     pub(crate) index_name: Name,
     pub(crate) is_unique: bool,
 }
@@ -681,7 +685,7 @@ impl StIndexRow<&str> {
         StIndexRow {
             index_id: self.index_id,
             table_id: self.table_id,
-            col_id: self.col_id,
+            cols: self.cols.clone(),
             index_name: self.index_name.to_owned(),
             is_unique: self.is_unique,
         }
@@ -693,13 +697,23 @@ impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a str> {
     fn try_from(row: &'a ProductValue) -> Result<StIndexRow<&'a str>, DBError> {
         let index_id = row.field_as_u32(StIndexFields::IndexId as usize, None)?;
         let table_id = row.field_as_u32(StIndexFields::TableId as usize, None)?;
-        let col_id = row.field_as_u32(StIndexFields::ColId as usize, None)?;
+        let cols = row.field_as_array(StIndexFields::Cols as usize, None)?;
+        let cols = if let ArrayValue::U32(x) = cols {
+            NonEmpty::from_slice(x).unwrap()
+        } else {
+            return Err(InvalidFieldError {
+                index: StIndexFields::Cols as usize,
+                name: StIndexFields::Cols.name().into(),
+            }
+            .into());
+        };
+
         let index_name = row.field_as_str(StIndexFields::IndexName as usize, None)?;
         let is_unique = row.field_as_bool(StIndexFields::IsUnique as usize, None)?;
         Ok(StIndexRow {
             index_id,
             table_id,
-            col_id,
+            cols,
             index_name,
             is_unique,
         })
@@ -711,7 +725,7 @@ impl<Name: AsRef<str>> From<&StIndexRow<Name>> for ProductValue {
         product![
             AlgebraicValue::U32(x.index_id),
             AlgebraicValue::U32(x.table_id),
-            AlgebraicValue::U32(x.col_id),
+            AlgebraicValue::ArrayOf(x.cols.clone()),
             AlgebraicValue::String(x.index_name.as_ref().to_string()),
             AlgebraicValue::Bool(x.is_unique)
         ]

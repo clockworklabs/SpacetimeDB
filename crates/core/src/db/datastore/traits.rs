@@ -1,8 +1,11 @@
 use crate::db::relational_db::ST_TABLES_ID;
 use core::fmt;
+use nonempty::NonEmpty;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
+use spacetimedb_lib::DataKey;
 use spacetimedb_lib::{ColumnIndexAttribute, DataKey};
+use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
 use spacetimedb_vm::expr::SourceExpr;
 use std::{ops::RangeBounds, sync::Arc};
@@ -61,16 +64,16 @@ pub struct SequenceDef {
 pub struct IndexSchema {
     pub(crate) index_id: u32,
     pub(crate) table_id: u32,
-    pub(crate) col_id: u32,
     pub(crate) index_name: String,
     pub(crate) is_unique: bool,
+    pub(crate) cols: NonEmpty<u32>,
 }
 
 /// This type is just the [IndexSchema] without the autoinc fields
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexDef {
     pub(crate) table_id: u32,
-    pub(crate) col_id: u32,
+    pub(crate) cols: NonEmpty<u32>,
     pub(crate) name: String,
     pub(crate) is_unique: bool,
 }
@@ -78,7 +81,7 @@ pub struct IndexDef {
 impl IndexDef {
     pub fn new(name: String, table_id: u32, col_id: u32, is_unique: bool) -> Self {
         Self {
-            col_id,
+            cols: NonEmpty::new(col_id),
             name,
             is_unique,
             table_id,
@@ -90,7 +93,7 @@ impl From<IndexSchema> for IndexDef {
     fn from(value: IndexSchema) -> Self {
         Self {
             table_id: value.table_id,
-            col_id: value.col_id,
+            cols: value.cols,
             name: value.index_name,
             is_unique: value.is_unique,
         }
@@ -212,6 +215,22 @@ impl TableSchema {
     /// Turn a [TableField] that could be an unqualified field `id` into `table.id`
     pub fn normalize_field(&self, or_use: &TableField) -> FieldName {
         FieldName::named(or_use.table.unwrap_or(&self.table_name), or_use.field)
+    }
+
+    /// Project the fields from the supplied `indexes`.
+    pub fn project(&self, indexes: impl Iterator<Item = usize>) -> Result<Vec<&ColumnSchema>> {
+        indexes
+            .map(|index| {
+                self.get_column(index)
+                    .ok_or(InvalidFieldError { index, name: None }.into())
+            })
+            .collect()
+    }
+
+    /// Utility for project the fields from the supplied `indexes` that is a [NonEmpty<u32>],
+    /// used for when the list of field indexes have at least one value.
+    pub fn project_not_empty(&self, indexes: &NonEmpty<u32>) -> Result<Vec<&ColumnSchema>> {
+        self.project(indexes.iter().map(|&x| x as usize))
     }
 }
 

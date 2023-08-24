@@ -7,6 +7,8 @@ use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef, Table
 use crate::host::scheduler::Scheduler;
 use anyhow::Context;
 use bytes::Bytes;
+use nonempty::NonEmpty;
+use parking_lot::{Condvar, Mutex};
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::{bsatn, IndexType, ModuleDef};
 
@@ -693,7 +695,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             let mut index_for_column = None;
             for index in table.indexes.iter() {
                 let [index_col_id] = *index.col_ids else {
-                    anyhow::bail!("multi-column indexes not yet supported")
+                    //Ignore multi-column indexes
+                    continue;
                 };
                 if index_col_id as usize != col_id {
                     continue;
@@ -713,7 +716,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }
                 let index = IndexDef {
                     table_id: 0, // Will be ignored
-                    col_id: col_id as u32,
+                    cols: NonEmpty::new(col_id as u32),
                     name: index.name.clone(),
                     is_unique: col_attr.is_unique(),
                 };
@@ -723,7 +726,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 // anyway.
                 let index = IndexDef {
                     table_id: 0, // Will be ignored
-                    col_id: col_id as u32,
+                    cols: NonEmpty::new(col_id as u32),
                     name: format!("{}_{}_unique", table.name, col.col_name),
                     is_unique: true,
                 };
