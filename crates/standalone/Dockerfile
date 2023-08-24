@@ -3,7 +3,7 @@
 ARG CARGO_PROFILE=release
 
 FROM rust:1.69.0 AS chef
-RUN cargo install cargo-chef@0.1.56
+RUN cargo install cargo-chef@0.1.56 --locked
 WORKDIR /usr/src/app
 
 FROM chef AS planner
