@@ -7,7 +7,7 @@ use std::sync::Arc;
 use spacetimedb::address::Address;
 use spacetimedb::client::{ClientActorId, ClientConnection, Protocol};
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::db::{Config, Storage};
+use spacetimedb::db::{Config, FsyncPolicy, Storage};
 use spacetimedb::hash::hash_bytes;
 
 use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
@@ -129,7 +129,7 @@ pub async fn load_module(name: &str) -> ModuleHandle {
     // For testing, persist to disk by default, as many tests
     // exercise functionality like restarting the database.
     let storage = Storage::Disk;
-    let fsync = false;
+    let fsync = FsyncPolicy::Never;
     let config = Config { storage, fsync };
 
     let paths = FilesLocal::temp(name);

@@ -21,11 +21,20 @@ pub enum Storage {
     Disk,
 }
 
+/// How often Txn messages are physically persisted to the WAL.
+#[derive(Clone, Copy, PartialEq)]
+pub enum FsyncPolicy {
+    /// Flush WAL writes to OS buffers and let OS schedule the write to disk.
+    Never,
+    /// Every Txn should be fsync'd to disk.
+    EveryTx,
+}
+
 /// Internal database config parameters
 #[derive(Clone, Copy)]
 pub struct Config {
     /// Specifies whether writes to the WAL should be fsync'd.
-    pub fsync: bool,
+    pub fsync: FsyncPolicy,
     /// Specifies the object storage model.
     pub storage: Storage,
 }

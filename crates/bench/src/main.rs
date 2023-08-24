@@ -56,13 +56,31 @@ fn main() -> ResultBench<()> {
 
     match cli.command {
         Commands::Insert { rows } => {
-            bench_fn!(cli, insert_tx_per_row, rows.unwrap_or(Runs::Tiny), false, true)
+            bench_fn!(
+                cli,
+                insert_tx_per_row,
+                rows.unwrap_or(Runs::Tiny),
+                false, // prefill
+                true   // fsync
+            )
         }
         Commands::InsertBulk { rows } => {
-            bench_fn!(cli, insert_tx, rows.unwrap_or(Runs::Small), true, true)
+            bench_fn!(
+                cli,
+                insert_tx,
+                rows.unwrap_or(Runs::Small),
+                true,  // prefill
+                false  // fsync
+            )
         }
         Commands::SelectNoIndex { rows } => {
-            bench_fn!(cli, select_no_index, rows.unwrap_or(Runs::Tiny), true, false)
+            bench_fn!(
+                cli,
+                select_no_index,
+                rows.unwrap_or(Runs::Tiny),
+                true,  // prefill
+                false  // fsync
+            )
         }
     }
 }

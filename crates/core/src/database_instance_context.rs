@@ -5,7 +5,7 @@ use crate::db::ostorage::memory_object_db::MemoryObjectDB;
 use crate::db::ostorage::sled_object_db::SledObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::db::relational_db::RelationalDB;
-use crate::db::{Config, Storage};
+use crate::db::{Config, FsyncPolicy, Storage};
 use crate::identity::Identity;
 use crate::messages::control_db::Database;
 use std::path::{Path, PathBuf};
@@ -80,7 +80,9 @@ impl DatabaseInstanceContext {
             identity,
             address,
             logger: Arc::new(Mutex::new(DatabaseLogger::open(log_path))),
-            relational_db: Arc::new(RelationalDB::open(db_path, message_log, odb, config.fsync).unwrap()),
+            relational_db: Arc::new(
+                RelationalDB::open(db_path, message_log, odb, config.fsync != FsyncPolicy::Never).unwrap(),
+            ),
         })
     }
 
