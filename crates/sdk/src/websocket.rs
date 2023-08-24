@@ -1,22 +1,19 @@
 use crate::identity::Credentials;
 use anyhow::{bail, Result};
-use futures::{
-    stream::{SplitSink, SplitStream},
-    SinkExt, StreamExt,
-};
+use futures::{SinkExt, StreamExt, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Parts, Scheme, Uri};
 use prost::Message as ProtobufMessage;
 use spacetimedb_client_api_messages::client_api::Message;
-use tokio::{net::TcpStream, runtime, task::JoinHandle};
+use tokio::task::JoinHandle;
+use tokio::{net::TcpStream, runtime};
 use tokio_tungstenite::{
     connect_async, tungstenite::client::IntoClientRequest, tungstenite::protocol::Message as WebSocketMessage,
     MaybeTlsStream, WebSocketStream,
 };
 
 pub(crate) struct DbConnection {
-    pub(crate) read: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
-    pub(crate) write: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, WebSocketMessage>,
+    sock: WebSocketStream<MaybeTlsStream<TcpStream>>,
 }
 
 fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme> {
@@ -122,9 +119,8 @@ impl DbConnection {
         <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
     {
         let req = make_request(host, db_name, credentials)?;
-        let (stream, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = connect_async(req).await?;
-        let (write, read) = stream.split();
-        Ok(DbConnection { write, read })
+        let (sock, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = connect_async(req).await?;
+        Ok(DbConnection { sock })
     }
 
     pub(crate) fn parse_response(bytes: &[u8]) -> Result<Message> {
@@ -144,17 +140,18 @@ impl DbConnection {
     async fn message_loop(
         mut self,
         incoming_messages: mpsc::UnboundedSender<Message>,
-        mut outgoing_messages: mpsc::UnboundedReceiver<Message>,
+        outgoing_messages: mpsc::UnboundedReceiver<Message>,
     ) {
+        let mut outgoing_messages = Some(outgoing_messages);
         loop {
             tokio::select! {
-                Some(incoming) = self.read.next() => match incoming {
+                incoming = self.sock.try_next() => match incoming {
                     Err(e) => Self::maybe_log_error::<(), _>(
                         "Error reading message from read WebSocket stream",
                         Err(e),
                     ),
 
-                    Ok(WebSocketMessage::Binary(bytes)) => {
+                    Ok(Some(WebSocketMessage::Binary(bytes))) => {
                         match Self::parse_response(&bytes) {
                             Err(e) => Self::maybe_log_error::<(), _>(
                                 "Error decoding WebSocketMessage::Binary payload",
@@ -167,20 +164,26 @@ impl DbConnection {
                         }
                     }
 
-                    Ok(WebSocketMessage::Ping(payload)) => Self::maybe_log_error(
-                        "Error sending Pong in response to Ping",
-                        self.write.send(WebSocketMessage::Pong(payload)).await,
-                    ),
+                    Ok(Some(WebSocketMessage::Ping(_))) => {}
 
-                    Ok(other) => log::warn!("Unexpected WebSocket message {:?}", other),
+                    Ok(Some(other)) => log::warn!("Unexpected WebSocket message {:?}", other),
+
+                    Ok(None) => break,
                 },
 
-                Some(outgoing) = outgoing_messages.next() => {
-                    let msg = Self::encode_message(outgoing);
-                    Self::maybe_log_error(
-                        "Error sending outgoing message",
-                        self.write.send(msg).await,
-                    );
+                // this is stupid. we want to handle the channel close *once*, and then disable this branch
+                Some(outgoing) = async { Some(outgoing_messages.as_mut()?.next().await) } => match outgoing {
+                    Some(outgoing) => {
+                        let msg = Self::encode_message(outgoing);
+                        Self::maybe_log_error(
+                            "Error sending outgoing message",
+                                self.sock.send(msg).await,
+                        );
+                    }
+                    None => {
+                        Self::maybe_log_error("Error sending close frame", SinkExt::close(&mut self.sock).await);
+                        outgoing_messages = None;
+                    }
                 },
             }
         }

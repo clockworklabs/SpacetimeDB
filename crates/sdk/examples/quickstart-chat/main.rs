@@ -16,6 +16,7 @@ fn main() {
     connect_to_db();
     subscribe_to_tables();
     user_input_loop();
+    spacetimedb_sdk::global_connection::with_connection_mut(|x| x.disconnect())
 }
 
 // # Register callbacks
