@@ -166,7 +166,7 @@ pub async fn get_databases<S: ControlStateDelegate>(
 
 #[derive(Debug, Serialize)]
 pub struct WebsocketTokenResponse {
-    token: String,
+    pub token: String,
 }
 
 pub async fn create_websocket_token<S: NodeDelegate>(

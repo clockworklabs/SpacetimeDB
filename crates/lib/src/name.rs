@@ -364,23 +364,74 @@ impl_deserialize!([] DomainName, de => {
 });
 
 #[cfg(feature = "serde")]
-impl serde::Serialize for DomainName {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serde::Serialize::serialize(self.as_str(), serializer)
-    }
-}
+mod serde_impls {
+    use super::*;
 
-#[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for DomainName {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s: String = serde::Deserialize::deserialize(deserializer)?;
-        parse_domain_name(s).map_err(serde::de::Error::custom)
+    use serde::{
+        de::{self, value::MapAccessDeserializer, MapAccess},
+        Deserialize, Deserializer, Serialize, Serializer,
+    };
+
+    impl Serialize for DomainName {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            Serialize::serialize(self.as_str(), serializer)
+        }
+    }
+
+    /// Version 1 of [`DomainName`] which is represented as a map in JSON.
+    #[derive(serde::Deserialize)]
+    #[cfg_attr(test, derive(serde::Serialize))]
+    pub(super) struct DomainNameV1<'a> {
+        pub(super) tld: &'a str,
+        pub(super) sub_domain: &'a str,
+    }
+
+    /// [`de::Visitor`] for deserializing [`DomainName`].
+    ///
+    /// Due to the ubiquitous use of [`DomainName`], this must ensure all past
+    /// and future `serde` representations can be deserialized.
+    struct DomainNameVisitor;
+
+    impl<'de> de::Visitor<'de> for DomainNameVisitor {
+        type Value = DomainName;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("string or map")
+        }
+
+        fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            parse_domain_name(v).map_err(de::Error::custom)
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            parse_domain_name(v).map_err(de::Error::custom)
+        }
+
+        fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+        {
+            let v1: DomainNameV1 = Deserialize::deserialize(MapAccessDeserializer::new(map))?;
+            parse_domain_name([v1.tld, "/", v1.sub_domain].concat()).map_err(de::Error::custom)
+        }
+    }
+
+    impl<'de> Deserialize<'de> for DomainName {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            deserializer.deserialize_any(DomainNameVisitor)
+        }
     }
 }
 

@@ -7,9 +7,9 @@ use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType};
 
 type DbResult = (RelationalDB, TempDir, u32);
 
-fn init_db(in_memory: bool) -> ResultBench<(TempDir, u32)> {
+fn init_db(in_memory: bool, fsync: bool) -> ResultBench<(TempDir, u32)> {
     let tmp_dir = TempDir::new("stdb_test")?;
-    let stdb = open_db(tmp_dir.path(), in_memory)?;
+    let stdb = open_db(tmp_dir.path(), in_memory, fsync)?;
     let mut tx = stdb.begin_tx();
     let table_id = stdb.create_table(
         &mut tx,
@@ -23,9 +23,9 @@ fn init_db(in_memory: bool) -> ResultBench<(TempDir, u32)> {
     Ok((tmp_dir, table_id))
 }
 
-fn build_db(in_memory: bool) -> ResultBench<DbResult> {
-    let (tmp_dir, table_id) = init_db(in_memory)?;
-    let stdb = open_db(&tmp_dir, in_memory)?;
+fn build_db(in_memory: bool, fsync: bool) -> ResultBench<DbResult> {
+    let (tmp_dir, table_id) = init_db(in_memory, fsync)?;
+    let stdb = open_db(&tmp_dir, in_memory, fsync)?;
     Ok((stdb, tmp_dir, table_id))
 }
 
@@ -46,13 +46,13 @@ fn insert_row(db: &RelationalDB, tx: &mut MutTxId, table_id: u32, run: Runs) -> 
 }
 
 impl BuildDb for DbResult {
-    fn build(prefill: bool) -> ResultBench<Self>
+    fn build(prefill: bool, fsync: bool) -> ResultBench<Self>
     where
         Self: Sized,
     {
         // For benchmarking, we are concerned with the persistent version of the database.
         let in_memory = false;
-        let db = build_db(in_memory)?;
+        let db = build_db(in_memory, fsync)?;
 
         if prefill {
             prefill_data(&db, Runs::Small)?;

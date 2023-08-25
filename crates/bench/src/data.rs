@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::ops::Range;
 
 pub trait BuildDb {
-    fn build(prefill: bool) -> ResultBench<Self>
+    fn build(prefill: bool, fsync: bool) -> ResultBench<Self>
     where
         Self: Sized;
 }
@@ -12,14 +12,16 @@ pub trait BuildDb {
 pub struct Pool<T> {
     instance: u8,
     pub(crate) prefill: bool,
+    pub(crate) fsync: bool,
     _x: PhantomData<T>,
 }
 
 impl<T: BuildDb> Pool<T> {
-    pub fn new(prefill: bool) -> ResultBench<Self> {
+    pub fn new(prefill: bool, fsync: bool) -> ResultBench<Self> {
         Ok(Self {
             instance: 0,
             prefill,
+            fsync,
             _x: Default::default(),
         })
     }
@@ -27,7 +29,7 @@ impl<T: BuildDb> Pool<T> {
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> ResultBench<T> {
         self.instance += 1;
-        T::build(self.prefill)
+        T::build(self.prefill, self.fsync)
     }
 }
 

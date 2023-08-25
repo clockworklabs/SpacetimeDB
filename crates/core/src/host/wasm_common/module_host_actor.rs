@@ -140,6 +140,10 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         scheduler: Scheduler,
         energy_monitor: Arc<dyn EnergyMonitor>,
     ) -> Result<Self, InitializationError> {
+        log::trace!(
+            "Making new module host actor for database {}",
+            database_instance_context.address
+        );
         let log_tx = database_instance_context.logger.lock().unwrap().tx.clone();
 
         FuncNames::check_required(|name| module.get_export(name))?;
@@ -208,6 +212,10 @@ impl<T: WasmInstancePre> JobRunnerSeed for InstanceSeed<T> {
     type Runner = WasmInstanceActor<T::Instance>;
     type Job = InstanceMessage;
     fn make_runner(&self) -> Self::Runner {
+        log::trace!(
+            "Making new runner for database {}",
+            self.worker_database_instance.address
+        );
         let env = InstanceEnv::new(self.worker_database_instance.clone(), self.scheduler.clone());
         // this shouldn't fail, since we already called module.create_instance()
         // before and it didn't error, and ideally they should be deterministic
@@ -289,6 +297,7 @@ impl<S: JobRunnerSeed> JobPool<S> {
             }
         });
     }
+
     fn spawn(&self) {
         self.spawn_from_runner(self.seed().make_runner())
     }
@@ -490,10 +499,14 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
         stdb.with_auto_commit::<_, _, anyhow::Error>(|tx| {
             for table in self.info.catalog.values().filter_map(EntityDef::as_table) {
                 let schema = self.schema_for(table)?;
-                stdb.create_table(tx, schema)
-                    .with_context(|| format!("failed to create table {}", table.name))?;
+                let result = stdb
+                    .create_table(tx, schema)
+                    .with_context(|| format!("failed to create table {}", table.name));
+                if let Err(err) = result {
+                    log::error!("{:?}", err);
+                    return Err(err);
+                }
             }
-
             Ok(())
         })?;
 

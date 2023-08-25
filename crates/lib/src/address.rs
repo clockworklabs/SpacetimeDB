@@ -1,4 +1,4 @@
-use std::net::Ipv6Addr;
+use std::{fmt::Display, net::Ipv6Addr};
 
 use anyhow::Context as _;
 use hex::FromHex as _;
@@ -14,6 +14,12 @@ use crate::sats;
 /// permanently to a database.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Address(u128);
+
+impl Display for Address {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_hex())
+    }
+}
 
 impl Address {
     const ABBREVIATION_LEN: usize = 16;

@@ -72,6 +72,7 @@ impl RelationalDB {
         root: impl AsRef<Path>,
         message_log: Option<Arc<Mutex<MessageLog>>>,
         odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
+        fsync: bool,
     ) -> Result<Self, DBError> {
         log::trace!("DATABASE: OPENING");
 
@@ -136,7 +137,7 @@ impl RelationalDB {
                 transactions: Vec::new(),
             }
         };
-        let commit_log = CommitLog::new(message_log, odb.clone(), unwritten_commit);
+        let commit_log = CommitLog::new(message_log, odb.clone(), unwritten_commit, fsync);
 
         // i.e. essentially bootstrap the creation of the schema
         // tables by hard coding the schema of the schema tables
@@ -311,13 +312,6 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn table_exist(&self, tx: &MutTxId, table_name: &str) -> Result<Option<u32>, DBError> {
-        self.inner
-            .table_id_from_name_mut_tx(tx, table_name)
-            .map(|x| x.map(|x| x.0))
-    }
-
-    #[tracing::instrument(skip_all)]
     pub fn table_name_from_id(&self, tx: &MutTxId, table_id: u32) -> Result<Option<String>, DBError> {
         self.inner.table_name_from_id_mut_tx(tx, TableId(table_id))
     }
@@ -478,7 +472,7 @@ fn make_default_ostorage(in_memory: bool, path: impl AsRef<Path>) -> Result<Box<
     })
 }
 
-pub fn open_db(path: impl AsRef<Path>, in_memory: bool) -> Result<RelationalDB, DBError> {
+pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<RelationalDB, DBError> {
     let path = path.as_ref();
     let mlog = if in_memory {
         None
@@ -486,7 +480,7 @@ pub fn open_db(path: impl AsRef<Path>, in_memory: bool) -> Result<RelationalDB, 
         Some(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
     };
     let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, path.join("odb"))?));
-    let stdb = RelationalDB::open(path, mlog, odb)?;
+    let stdb = RelationalDB::open(path, mlog, odb, fsync)?;
 
     Ok(stdb)
 }
@@ -505,7 +499,8 @@ pub(crate) mod tests_utils {
     pub(crate) fn make_test_db() -> Result<(RelationalDB, TempDir), DBError> {
         let tmp_dir = TempDir::new("stdb_test")?;
         let in_memory = false;
-        let stdb = open_db(&tmp_dir, in_memory)?;
+        let fsync = false;
+        let stdb = open_db(&tmp_dir, in_memory, fsync)?;
         Ok((stdb, tmp_dir))
     }
 }
@@ -568,7 +563,7 @@ mod tests {
             tmp_dir.path().join("odb"),
         )?));
 
-        match RelationalDB::open(tmp_dir.path(), mlog, odb) {
+        match RelationalDB::open(tmp_dir.path(), mlog, odb, true) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
             }

@@ -19,7 +19,7 @@ use spacetimedb::client::ClientActorIndex;
 use spacetimedb::control_db::ControlDb;
 use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
-use spacetimedb::db::{db_metrics, Storage};
+use spacetimedb::db::{db_metrics, Config};
 use spacetimedb::host::EnergyQuanta;
 use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::host::UpdateOutcome;
@@ -49,16 +49,12 @@ pub struct StandaloneEnv {
     public_key: DecodingKey,
     private_key: EncodingKey,
 
-    /// Whether databases in this environment will be created entirely in memory
-    /// or otherwise persist their message log and object store to disk.
-    ///
-    /// Note that this does not apply to the StandaloneEnv's own control_db
-    /// or object_db.
-    storage: Storage,
+    /// The following config applies to the whole environment minus the control_db and object_db.
+    config: Config,
 }
 
 impl StandaloneEnv {
-    pub async fn init(storage: Storage) -> anyhow::Result<Arc<Self>> {
+    pub async fn init(config: Config) -> anyhow::Result<Arc<Self>> {
         let worker_db = WorkerDb::init()?;
         let object_db = ObjectDb::init()?;
         let db_inst_ctx_controller = DatabaseInstanceContextController::new();
@@ -76,7 +72,7 @@ impl StandaloneEnv {
             client_actor_index,
             public_key,
             private_key,
-            storage,
+            config,
         });
         energy_monitor.set_standalone_env(this.clone());
         Ok(this)
@@ -509,10 +505,10 @@ impl StandaloneEnv {
                 database_instance_id: instance.id,
                 initialized: false,
             };
+            state.initialized = true;
+            self.worker_db.upsert_database_instance_state(state.clone()).unwrap();
             self.init_module_on_database_instance(instance.database_id, instance.id)
                 .await?;
-            self.worker_db.upsert_database_instance_state(state.clone()).unwrap();
-            state.initialized = true;
             self.worker_db.upsert_database_instance_state(state).unwrap();
             Ok(())
         }
@@ -582,9 +578,9 @@ impl StandaloneEnv {
                 let (dbic, (scheduler, scheduler_starter)) = tokio::task::spawn_blocking({
                     let database = database.clone();
                     let path = root_db_path.clone();
-                    let storage = self.storage;
+                    let config = self.config;
                     move || -> anyhow::Result<_> {
-                        let dbic = DatabaseInstanceContext::from_database(storage, &database, instance_id, path);
+                        let dbic = DatabaseInstanceContext::from_database(config, &database, instance_id, path);
                         let sched = Scheduler::open(dbic.scheduler_db_path(root_db_path))?;
                         Ok((dbic, sched))
                     }
