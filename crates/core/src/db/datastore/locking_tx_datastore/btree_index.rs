@@ -78,7 +78,7 @@ impl BTreeIndex {
 
     pub(crate) fn get_fields(&self, row: &ProductValue) -> Result<AlgebraicValue, DBError> {
         let fields = row.project_not_empty(&self.cols)?;
-        Ok(AlgebraicValue::Product(fields))
+        Ok(fields)
     }
 
     #[tracing::instrument(skip_all)]
@@ -107,12 +107,9 @@ impl BTreeIndex {
     #[tracing::instrument(skip_all)]
     pub(crate) fn get_rows_that_violate_unique_constraint<'a>(
         &'a self,
-        row: &'a ProductValue,
+        row: &'a AlgebraicValue,
     ) -> Option<BTreeIndexRangeIter<'a>> {
-        self.is_unique.then(|| {
-            let value = self.get_fields(row).unwrap();
-            self.seek(&value)
-        })
+        self.is_unique.then(|| self.seek(row))
     }
 
     /// Returns `true` if the [BTreeIndex] contains a value for the specified `value`.
@@ -149,6 +146,13 @@ impl BTreeIndex {
     /// Matches is defined by `Ord for AlgebraicValue`.
     ///
     /// For a unique index this will always yield at most one `RowId`.
+    ///
+    /// **Warning:**
+    ///
+    /// As explained in [ProductValue::project], the `index` will store a single [AlgebraicValue]
+    /// or [AlgebraicValue::ProductValue] based on the number of fields defined in [Self::cols].
+    /// Therefore, if you need to seek a `value` for multiple columns, you'll need to wrap them.
+    ///
     #[tracing::instrument(skip_all)]
     pub(crate) fn seek<'a>(&'a self, value: &'a AlgebraicValue) -> BTreeIndexRangeIter<'a> {
         let k_start = IndexKey::from_row(value, DataKey::min_datakey());

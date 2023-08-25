@@ -1311,14 +1311,15 @@ impl Inner {
                         .iter()
                         .map(|&x| insert_table.schema.columns[x as usize].col_name.clone())
                         .collect(),
-                    value: AlgebraicValue::Product(value),
+                    value,
                 }
                 .into());
             }
         }
         if let Some(table) = self.committed_state.tables.get_mut(&table_id) {
             for index in table.indexes.values() {
-                let Some(violators) = index.get_rows_that_violate_unique_constraint(&row) else {
+                let value = index.get_fields(&row)?;
+                let Some(violators) = index.get_rows_that_violate_unique_constraint(&value) else {
                     continue;
                 };
                 for row_id in violators {
@@ -1333,7 +1334,7 @@ impl Inner {
                                     .iter()
                                     .map(|&x| insert_table.schema.columns[x as usize].col_name.clone())
                                     .collect(),
-                                value: AlgebraicValue::Product(value),
+                                value,
                             }
                             .into());
                         }
@@ -1347,7 +1348,7 @@ impl Inner {
                                 .iter()
                                 .map(|&x| insert_table.schema.columns[x as usize].col_name.clone())
                                 .collect(),
-                            value: AlgebraicValue::Product(value),
+                            value,
                         }
                         .into());
                     }
@@ -2294,7 +2295,7 @@ mod tests {
                 StColumnRow { table_id: 0, col_id: 3, col_name: "table_access".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
 
                 StColumnRow { table_id: 1, col_id: 0, col_name: "table_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
-                StColumnRow { table_id: 1, col_id: 1, col_name: "cols".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
+                StColumnRow { table_id: 1, col_id: 1, col_name: "col_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
                 StColumnRow { table_id: 1, col_id: 2, col_name: "col_type".to_string(), col_type: AlgebraicType::array(AlgebraicType::U8), is_autoinc: false },
                 StColumnRow { table_id: 1, col_id: 3, col_name: "col_name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
                 StColumnRow { table_id: 1, col_id: 4, col_name: "is_autoinc".to_string(), col_type: AlgebraicType::Bool, is_autoinc: false },
@@ -2302,7 +2303,7 @@ mod tests {
                 StColumnRow { table_id: 2, col_id: 0, col_name: "sequence_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: true },
                 StColumnRow { table_id: 2, col_id: 1, col_name: "sequence_name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
                 StColumnRow { table_id: 2, col_id: 2, col_name: "table_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
-                StColumnRow { table_id: 2, col_id: 3, col_name: "cols".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
+                StColumnRow { table_id: 2, col_id: 3, col_name: "col_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
                 StColumnRow { table_id: 2, col_id: 4, col_name: "increment".to_string(), col_type: AlgebraicType::I128, is_autoinc: false },
                 StColumnRow { table_id: 2, col_id: 5, col_name: "start".to_string(), col_type: AlgebraicType::I128, is_autoinc: false },
                 StColumnRow { table_id: 2, col_id: 6, col_name: "min_value".to_string(), col_type: AlgebraicType::I128, is_autoinc: false },
@@ -2311,7 +2312,7 @@ mod tests {
 
                 StColumnRow { table_id: 3, col_id: 0, col_name: "index_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: true },
                 StColumnRow { table_id: 3, col_id: 1, col_name: "table_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
-                StColumnRow { table_id: 3, col_id: 2, col_name: "cols".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
+                StColumnRow { table_id: 3, col_id: 2, col_name: "cols".to_string(), col_type: AlgebraicType::array(AlgebraicType::U32), is_autoinc: false },
                 StColumnRow { table_id: 3, col_id: 3, col_name: "index_name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
                 StColumnRow { table_id: 3, col_id: 4, col_name: "is_unique".to_string(), col_type: AlgebraicType::Bool, is_autoinc: false },
 

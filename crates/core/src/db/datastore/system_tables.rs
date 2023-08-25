@@ -112,7 +112,7 @@ impl StColumnFields {
         // WARNING: Don't change the name of the fields
         match self {
             Self::TableId => "table_id",
-            Self::ColId => "cols",
+            Self::ColId => "col_id",
             Self::ColType => "col_type",
             Self::ColName => "col_name",
             Self::IsAutoInc => "is_autoinc",
@@ -164,7 +164,7 @@ impl StSequenceFields {
             StSequenceFields::SequenceId => "sequence_id",
             StSequenceFields::SequenceName => "sequence_name",
             StSequenceFields::TableId => "table_id",
-            StSequenceFields::ColId => "cols",
+            StSequenceFields::ColId => "col_id",
             StSequenceFields::Start => "increment",
             StSequenceFields::Increment => "start",
             StSequenceFields::MinValue => "min_value",
@@ -263,7 +263,7 @@ pub static ST_TABLE_ROW_TYPE: Lazy<ProductType> =
 
 /// System Table [ST_COLUMNS_NAME]
 ///
-/// | table_id: u32 | cols | col_type: Bytes       | col_name: String | is_autoinc: bool |
+/// | table_id: u32 | col_id | col_type: Bytes       | col_name: String | is_autoinc: bool |
 /// |---------------|--------|-----------------------|------------------|------------------|
 /// | 1             | 0      | AlgebraicType->0b0101 | "id"             | true             |
 pub fn st_columns_schema() -> TableSchema {
@@ -272,7 +272,7 @@ pub fn st_columns_schema() -> TableSchema {
         table_name: ST_COLUMNS_NAME.into(),
         indexes: vec![],
         columns: vec![
-            // TODO(cloutiertyler): (table_id, cols) should be have a unique constraint
+            // TODO(cloutiertyler): (table_id, col_id) should be have a unique constraint
             ColumnSchema {
                 table_id: ST_COLUMNS_ID.0,
                 col_id: StColumnFields::TableId as u32,
@@ -285,7 +285,7 @@ pub fn st_columns_schema() -> TableSchema {
                 col_id: StColumnFields::ColId as u32,
                 col_name: StColumnFields::ColId.name().to_string(),
                 col_id: 1,
-                col_name: "cols".into(),
+                col_name: "col_id".into(),
                 col_type: AlgebraicType::U32,
                 is_autoinc: false,
             },
@@ -392,7 +392,7 @@ pub static ST_INDEX_ROW_TYPE: Lazy<ProductType> =
 
 /// System Table [ST_SEQUENCES]
 ///
-/// | sequence_id | sequence_name     | increment | start | min_value | max_value | table_id | cols | allocated |
+/// | sequence_id | sequence_name     | increment | start | min_value | max_value | table_id | col_id | allocated |
 /// |-------------|-------------------|-----------|-------|-----------|-----------|----------|--------|-----------|
 /// | 1           | "seq_customer_id" | 1         | 100   | 10        | 1200      | 1        | 1      | 200       |
 pub(crate) fn st_sequences_schema() -> TableSchema {
@@ -432,7 +432,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
             ColumnSchema {
                 table_id: ST_SEQUENCES_ID.0,
                 col_id: 3,
-                col_name: "cols".into(),
+                col_name: "col_id".into(),
                 col_type: AlgebraicType::U32,
                 is_autoinc: false,
             },

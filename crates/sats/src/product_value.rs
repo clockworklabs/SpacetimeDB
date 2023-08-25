@@ -63,24 +63,46 @@ impl ProductValue {
         self.elements.get(index).ok_or(InvalidFieldError { index, name })
     }
 
-    /// Project the fields from the supplied `indexes`.
+    /// This function is used to project fields based on the provided `indexes`.
     ///
-    /// The `name: Option<&'static str>` is non-functional and is only used for error-messages.
-    pub fn project(
-        &self,
-        indexes: impl Iterator<Item = (usize, Option<&'static str>)>,
-    ) -> Result<ProductValue, InvalidFieldError> {
-        let fields: Result<Vec<_>, _> = indexes
-            .map(|(index, name)| self.get_field(index, name).cloned())
-            .collect();
+    /// It will raise an [InvalidFieldError] if any of the supplied `indexes` cannot be found.
+    ///
+    /// The optional parameter `name: Option<&'static str>` serves a non-functional role and is
+    /// solely utilized for generating error messages.
+    ///
+    /// **Important:**
+    ///
+    /// The resulting [AlgebraicValue] will wrap into a [ProductValue] when projecting multiple
+    /// fields, otherwise it will consist of a single [AlgebraicValue].
+    ///
+    pub fn project(&self, indexes: &[(usize, Option<&'static str>)]) -> Result<AlgebraicValue, InvalidFieldError> {
+        let fields = match indexes {
+            [(index, name)] => self.get_field(*index, *name)?.clone(),
+            indexes => {
+                let fields: Result<Vec<_>, _> = indexes
+                    .iter()
+                    .map(|(index, name)| self.get_field(*index, *name).cloned())
+                    .collect();
+                AlgebraicValue::Product(ProductValue::new(&fields?))
+            }
+        };
 
-        Ok(ProductValue::new(&fields?))
+        Ok(fields)
     }
 
-    /// Utility for project the fields from the supplied `indexes` that is a [NonEmpty<u32>],
-    /// used for when the list of field indexes have at least one value.
-    pub fn project_not_empty(&self, indexes: &NonEmpty<u32>) -> Result<ProductValue, InvalidFieldError> {
-        self.project(indexes.iter().map(|x| (*x as usize, None)))
+    /// This utility function is designed to project fields based on the supplied `indexes`.
+    ///
+    /// **Important:**
+    ///
+    /// The resulting [AlgebraicValue] will wrap into a [ProductValue] when projecting multiple
+    /// fields, otherwise it will consist of a single [AlgebraicValue].
+    ///
+    /// **Parameters:**
+    /// - `indexes`: A [NonEmpty<u32>] containing the indexes of fields to be projected.
+    ///
+    pub fn project_not_empty(&self, indexes: &NonEmpty<u32>) -> Result<AlgebraicValue, InvalidFieldError> {
+        let indexes: Vec<_> = indexes.iter().map(|x| (*x as usize, None)).collect();
+        self.project(&indexes)
     }
 
     /// Extracts the `value` at field of `self` identified by `index`

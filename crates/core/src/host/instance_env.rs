@@ -284,7 +284,7 @@ impl InstanceEnv {
 
         let index = IndexDef {
             table_id,
-            cols: cols.map(|x| x as u32),
+            cols,
             name: index_name,
             is_unique,
         };
