@@ -20,6 +20,7 @@ pub struct Query {
 }
 
 impl Query {
+    #[tracing::instrument(skip(self))]
     pub fn queries_of_table_id<'a>(&'a self, table: &'a DatabaseTableUpdate) -> impl Iterator<Item = QueryExpr> + '_ {
         self.queries.iter().filter_map(move |x| {
             if x.source.get_db_table().map(|x| x.table_id) == Some(table.table_id) {
@@ -35,6 +36,7 @@ impl Query {
 pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
 
 //HACK: To recover the `op_type` of this particular row I add a "hidden" column `OP_TYPE_FIELD_NAME`
+#[tracing::instrument(skip_all)]
 pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
     let mut q = of;
     let table_access = q.source.table_access();
@@ -68,6 +70,7 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
 }
 
 /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
+#[tracing::instrument(skip_all)]
 pub(crate) fn run_query(
     db: &RelationalDB,
     tx: &mut MutTxId,
@@ -77,6 +80,7 @@ pub(crate) fn run_query(
     execute_single_sql(db, tx, CrudExpr::Query(query.clone()), auth)
 }
 
+#[tracing::instrument(skip(relational_db, tx))]
 pub fn compile_query(relational_db: &RelationalDB, tx: &MutTxId, input: &str) -> Result<Query, DBError> {
     let input = input.trim();
     if input.is_empty() {

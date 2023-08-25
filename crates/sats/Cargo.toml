@@ -20,6 +20,7 @@ hex = { workspace = true, optional = true }
 itertools.workspace = true
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 bytes.workspace = true

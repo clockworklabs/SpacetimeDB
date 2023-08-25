@@ -21,6 +21,7 @@ use std::collections::HashMap;
 
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
+#[tracing::instrument(skip_all)]
 pub fn build_query<'a>(
     stdb: &'a RelationalDB,
     tx: &'a mut MutTxId,
@@ -331,6 +332,7 @@ impl RelOps for TableCursor<'_> {
         RowCount::unknown()
     }
 
+    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         if let Some(row) = self.iter.next() {
             return Ok(Some(RelValue::new(self.head(), row.view())));
@@ -357,6 +359,7 @@ where
         self.row_count
     }
 
+    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         if let Some(row) = self.iter.next() {
             return Ok(Some(RelValue::new(self.head(), &row)));
