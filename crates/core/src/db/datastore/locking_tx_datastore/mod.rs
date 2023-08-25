@@ -180,7 +180,7 @@ impl CommittedState {
 
             // Add all newly created indexes to the committed state
             for (_, index) in table.indexes {
-                if !commit_table.indexes.contains_key(&index.cols) {
+                if !commit_table.indexes.contains_key(&index.cols.clone().map(ColId)) {
                     commit_table.insert_index(index);
                 }
             }
@@ -218,7 +218,7 @@ impl CommittedState {
         value: &'a AlgebraicValue,
     ) -> Option<BTreeIndexRangeIter<'a>> {
         if let Some(table) = self.tables.get(table_id) {
-            table.index_seek(cols, value)
+            table.index_seek(cols.map(ColId), value)
         } else {
             None
         }
@@ -331,7 +331,7 @@ impl TxState {
         cols: NonEmpty<u32>,
         value: &'a AlgebraicValue,
     ) -> Option<BTreeIndexRangeIter<'a>> {
-        self.insert_tables.get(table_id)?.index_seek(cols, value)
+        self.insert_tables.get(table_id)?.index_seek(cols.map(ColId), value)
     }
 }
 
@@ -554,7 +554,7 @@ impl Inner {
                 index_row.is_unique,
             );
             index.build_from_rows(table.scan_rows())?;
-            table.indexes.insert(index_row.cols, index);
+            table.indexes.insert(index_row.cols.map(ColId), index);
         }
         Ok(())
     }
@@ -1070,7 +1070,7 @@ impl Inner {
             index_id: index_id.0,
         });
 
-        insert_table.indexes.insert(index.cols.clone(), insert_index);
+        insert_table.indexes.insert(index.cols.clone().map(ColId), insert_index);
         Ok(())
     }
 
@@ -1106,7 +1106,7 @@ impl Inner {
                 }
             }
             for col in cols {
-                table.indexes.remove(&col);
+                table.indexes.remove(&col.clone().map(ColId));
                 table.schema.indexes.retain(|x| x.cols != col);
             }
         }
@@ -1123,7 +1123,7 @@ impl Inner {
                 }
             }
             for col in cols {
-                insert_table.indexes.remove(&col);
+                insert_table.indexes.remove(&col.clone().map(ColId));
                 insert_table.schema.indexes.retain(|x| x.cols != col);
             }
         }

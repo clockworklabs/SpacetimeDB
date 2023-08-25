@@ -2,7 +2,7 @@ use super::{
     btree_index::{BTreeIndex, BTreeIndexIter, BTreeIndexRangeIter},
     RowId,
 };
-use crate::db::datastore::traits::TableSchema;
+use crate::db::datastore::traits::{ColId, TableSchema};
 use nonempty::NonEmpty;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use std::{
@@ -13,14 +13,14 @@ use std::{
 pub(crate) struct Table {
     pub(crate) row_type: ProductType,
     pub(crate) schema: TableSchema,
-    pub(crate) indexes: HashMap<NonEmpty<u32>, BTreeIndex>,
+    pub(crate) indexes: HashMap<NonEmpty<ColId>, BTreeIndex>,
     pub(crate) rows: BTreeMap<RowId, ProductValue>,
 }
 
 impl Table {
     pub(crate) fn insert_index(&mut self, mut index: BTreeIndex) {
         index.build_from_rows(self.scan_rows()).unwrap();
-        self.indexes.insert(index.cols.clone(), index);
+        self.indexes.insert(index.cols.clone().map(ColId), index);
     }
 
     pub(crate) fn insert(&mut self, row_id: RowId, row: ProductValue) {
@@ -33,7 +33,7 @@ impl Table {
     pub(crate) fn delete(&mut self, row_id: &RowId) -> Option<ProductValue> {
         let row = self.rows.remove(row_id)?;
         for (cols, index) in self.indexes.iter_mut() {
-            let col_value = row.project_not_empty(cols).unwrap();
+            let col_value = row.project_not_empty(&cols.clone().map(|x| x.0)).unwrap();
             index.delete(&col_value, row_id)
         }
         Some(row)
@@ -64,19 +64,19 @@ impl Table {
     /// For a unique index this will always yield at most one `RowId`.
     pub(crate) fn index_seek<'a>(
         &'a self,
-        cols: NonEmpty<u32>,
+        cols: NonEmpty<ColId>,
         value: &'a AlgebraicValue,
     ) -> Option<BTreeIndexRangeIter<'a>> {
         self.indexes.get(&cols).map(|index| index.seek(value))
     }
 
-    pub(crate) fn _index_scan(&self, cols: NonEmpty<u32>) -> BTreeIndexIter<'_> {
+    pub(crate) fn _index_scan(&self, cols: NonEmpty<ColId>) -> BTreeIndexIter<'_> {
         self.indexes.get(&cols).unwrap().scan()
     }
 
     pub(crate) fn _index_range_scan(
         &self,
-        cols: NonEmpty<u32>,
+        cols: NonEmpty<ColId>,
         range: impl RangeBounds<AlgebraicValue>,
     ) -> BTreeIndexRangeIter<'_> {
         self.indexes.get(&cols).unwrap().scan_range(range)
