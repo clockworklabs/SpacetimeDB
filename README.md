@@ -134,7 +134,7 @@ curl https://sh.rustup.rs -sSf | sh
 git clone https://github.com/clockworklabs/SpacetimeDB
 # Build and install the CLI
 cd SpacetimeDB
-cargo install --path ./crates/cli
+cargo install --path ./crates/cli --locked
 ```
 
 Windows may require some extra dependencies be installed, including openssl and a specific version of perl. A guide for this will be available soon.
