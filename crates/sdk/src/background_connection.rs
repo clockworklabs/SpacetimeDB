@@ -4,15 +4,13 @@ use crate::client_cache::{ClientCache, ClientCacheView, RowCallbackReminders};
 use crate::identity::Credentials;
 use crate::reducer::{AnyReducerEvent, Reducer};
 use crate::websocket::DbConnection;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use futures::stream::StreamExt;
 use futures_channel::mpsc;
 use spacetimedb_sats::bsatn;
 use std::sync::{Arc, Mutex};
-use tokio::{
-    runtime::{self, Builder, Runtime},
-    task::JoinHandle,
-};
+use tokio::runtime::{self, Builder, Runtime};
+use tokio::task::JoinHandle;
 
 /// A thread-safe mutable place that can be shared by multiple referents.
 type SharedCell<T> = Arc<Mutex<T>>;
@@ -338,12 +336,23 @@ impl BackgroundDbConnection {
         Ok(())
     }
 
+    pub fn disconnect(&mut self) {
+        self.send_chan = None;
+        self.client_cache = None;
+        if let Some(h) = self.websocket_loop_handle.take() {
+            let _ = self.handle.block_on(h);
+        }
+        if let Some(h) = self.recv_handle.take() {
+            let _ = self.handle.block_on(h);
+        }
+    }
+
     fn send_message(&self, message: client_api_messages::Message) -> Result<()> {
         self.send_chan
             .as_ref()
-            .ok_or(anyhow!("Cannot send message before connecting"))?
+            .context("Cannot send message before connecting")?
             .unbounded_send(message)
-            .with_context(|| "Sending message to remote DB")
+            .context("Sending message to remote DB")
     }
 
     pub(crate) fn subscribe(&self, queries: &[&str]) -> Result<()> {
