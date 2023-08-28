@@ -7,7 +7,6 @@ use crate::global_connection::CLIENT_CACHE;
 use crate::identity::Credentials;
 use crate::reducer::{AnyReducerEvent, Reducer};
 use crate::websocket::DbConnection;
-use crate::utils::with_trace;
 use anyhow::{Context, Result};
 use futures::stream::StreamExt;
 use futures_channel::mpsc;
@@ -320,47 +319,42 @@ impl BackgroundDbConnection {
         IntoUri: TryInto<http::Uri>,
         <IntoUri as TryInto<http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
     {
-        with_trace! {
-            "BackgroundDbConnection::connect" => {
-                // `block_in_place` is required here, as tokio won't allow us to call
-                // `block_on` if it would block the current thread of an outer runtime
-                let connection = tokio::task::block_in_place(|| {
-                    self.handle
-                        .block_on(DbConnection::connect(spacetimedb_uri, db_name, credentials.as_ref()))
-                })?;
-                let client_cache = Arc::new(ClientCache::new(
-                    handle_table_update,
-                    handle_resubscribe,
-                    invoke_row_callbacks,
-                ));
+        // `block_in_place` is required here, as tokio won't allow us to call
+        // `block_on` if it would block the current thread of an outer runtime
+        let connection = tokio::task::block_in_place(|| {
+            self.handle
+                .block_on(DbConnection::connect(spacetimedb_uri, db_name, credentials.as_ref()))
+        })?;
+        let client_cache = Arc::new(ClientCache::new(
+            handle_table_update,
+            handle_resubscribe,
+            invoke_row_callbacks,
+        ));
 
-                with_trace! {
-                    "BackgroundDbConnection::connect#set_client_cache" => {
-                        let mut client_cache_lock = self.client_cache.lock().expect("ClientCache mutex is poisoned");
-                        *client_cache_lock = Some(client_cache);
-                    }
-                }
-
-
-                let (websocket_loop_handle, recv_chan, send_chan) = connection.spawn_message_loop(&self.handle);
-                let recv_handle = self.spawn_receiver(recv_chan, self.client_cache.clone());
-
-                self.send_chan = Some(send_chan);
-                self.websocket_loop_handle = Some(websocket_loop_handle);
-                self.recv_handle = Some(recv_handle);
-
-                self.reducer_callbacks
-                    .lock()
-                    .expect("ReducerCallbacks Mutex is poisoned")
-                    .set_handle_event(handle_event);
-                self.credentials
-                    .lock()
-                    .expect("CredentialStore Mutex is poisoned")
-                    .maybe_set_credentials(credentials);
-
-                Ok(())
-            }
+        {
+            // Set the global `CLIENT_CACHE` to our newly-constructed cache.
+            // Do this inside a short scope to avoid holding the lock unnecessarily.
+            let mut client_cache_lock = self.client_cache.lock().expect("ClientCache mutex is poisoned");
+            *client_cache_lock = Some(client_cache);
         }
+
+        let (websocket_loop_handle, recv_chan, send_chan) = connection.spawn_message_loop(&self.handle);
+        let recv_handle = self.spawn_receiver(recv_chan, self.client_cache.clone());
+
+        self.send_chan = Some(send_chan);
+        self.websocket_loop_handle = Some(websocket_loop_handle);
+        self.recv_handle = Some(recv_handle);
+
+        self.reducer_callbacks
+            .lock()
+            .expect("ReducerCallbacks Mutex is poisoned")
+            .set_handle_event(handle_event);
+        self.credentials
+            .lock()
+            .expect("CredentialStore Mutex is poisoned")
+            .maybe_set_credentials(credentials);
+
+        Ok(())
     }
 
     pub fn disconnect(&mut self) {
