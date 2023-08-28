@@ -615,7 +615,7 @@ mod tests {
         schema.table_name = "MyTable".to_string();
         stdb.create_table(&mut tx, schema.clone())?;
         let result = stdb.create_table(&mut tx, schema);
-        assert!(matches!(result, Err(_)));
+        result.expect_err("create_table should error when called twice");
         Ok(())
     }
 
@@ -732,7 +732,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let result = stdb.drop_table(&mut tx, table_id);
-        assert!(matches!(result, Err(_)));
+        result.expect_err("drop_table should fail");
         Ok(())
     }
 

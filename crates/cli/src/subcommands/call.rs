@@ -261,7 +261,9 @@ fn find_of_type_in_schema<'v, 't: 'v>(
     let iter = entities
         .into_iter()
         .filter(move |(_, value)| {
-            let Some(obj) = value.as_object() else { return false; };
+            let Some(obj) = value.as_object() else {
+                return false;
+            };
             obj.get("type").filter(|x| x.as_str() == Some(ty)).is_some()
         })
         .map(|(key, value)| (key.as_str(), value));
