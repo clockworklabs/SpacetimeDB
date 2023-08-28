@@ -174,10 +174,11 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
                 }
                 continue;
             }
-            () = client.module.exited() => {
+            () = client.module.exited(), if !closed => {
                 if let Err(e) = ws.close(Some(CloseFrame { code: CloseCode::Away, reason: "module exited".into() })).await {
                     log::warn!("error closing: {e:#}")
                 }
+                closed = true;
                 continue;
             }
             _ = liveness_check_interval.tick() => {
