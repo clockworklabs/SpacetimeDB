@@ -1,3 +1,4 @@
+pub mod utils;
 #[doc(hidden)]
 pub mod callbacks;
 

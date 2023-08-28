@@ -2,6 +2,7 @@ use crate::callbacks::{CallbackId, TableCallbacks};
 use crate::client_cache::TableCache;
 use crate::global_connection::{try_with_client_cache, with_db_callbacks};
 use crate::reducer::AnyReducerEvent;
+use crate::utils::with_trace;
 use anyhow::{anyhow, Result};
 use spacetimedb_sats::{de::DeserializeOwned, ser::Serialize};
 use std::{any::Any, sync::Arc};
@@ -51,16 +52,20 @@ fn flatten_result<T>(res: Result<Result<T>>) -> Result<T> {
 }
 
 fn try_with_table<T: TableType, Res>(f: impl FnOnce(&TableCache<T>) -> Res) -> Result<Res> {
-    flatten_result(try_with_client_cache(|client_cache| {
-        client_cache
-            .get_table::<T>()
-            .map(f)
-            .ok_or_else(|| anyhow!("TableCache does not exist"))
-    }))
+    with_trace! {
+        format!("try_with_table<{}>", T::TABLE_NAME) => flatten_result(try_with_client_cache(|client_cache| {
+            client_cache
+                .get_table::<T>()
+                .map(f)
+                .ok_or_else(|| anyhow!("TableCache does not exist"))
+        }))
+    }
 }
 
 fn with_callbacks<T: TableType, Res>(f: impl FnOnce(&mut TableCallbacks<T>) -> Res) -> Res {
-    with_db_callbacks(|db_callbacks| f(db_callbacks.find_table::<T>()))
+    with_trace! {
+        format!("with_callbacks<{}", T::TABLE_NAME) => with_db_callbacks(|db_callbacks| f(db_callbacks.find_table::<T>()))
+    }
 }
 
 // Any bound so these can go into an `AnyMap` in the `ClientCache`.
@@ -106,10 +111,12 @@ pub trait TableType: DeserializeOwned + Serialize + Any + Send + Sync + Clone + 
     /// iterated over. `TableType::filter` allocates significantly less, so prefer it when
     /// possible.
     fn iter() -> TableIter<Self> {
-        TableIter {
-            iter: try_with_table::<Self, _>(|table_cache| table_cache.values())
-                .unwrap_or_else(|_| Vec::new())
-                .into_iter(),
+        with_trace! {
+            format!("{}::iter", Self::TABLE_NAME) => TableIter {
+                iter: try_with_table::<Self, _>(|table_cache| table_cache.values())
+                    .unwrap_or_else(|_| Vec::new())
+                    .into_iter(),
+            }
         }
     }
 
@@ -124,10 +131,12 @@ pub trait TableType: DeserializeOwned + Serialize + Any + Send + Sync + Clone + 
     /// This method must heap-allocate enough memory to hold all of the matching rows, but
     /// does not allocate space for subscribed rows which do not match the `predicate`.
     fn filter(predicate: impl FnMut(&Self) -> bool) -> TableIter<Self> {
-        TableIter {
-            iter: try_with_table::<Self, _>(|table_cache| table_cache.filter(predicate))
-                .unwrap_or_else(|_| Vec::new())
-                .into_iter(),
+        with_trace! {
+            format!("{}::filter", Self::TABLE_NAME) => TableIter {
+                iter: try_with_table::<Self, _>(|table_cache| table_cache.filter(predicate))
+                    .unwrap_or_else(|_| Vec::new())
+                    .into_iter(),
+            }
         }
     }
 
@@ -139,7 +148,9 @@ pub trait TableType: DeserializeOwned + Serialize + Any + Send + Sync + Clone + 
     /// choice may not be stable across different calls to `find` with the same
     /// `predicate`.
     fn find(predicate: impl FnMut(&Self) -> bool) -> Option<Self> {
-        try_with_table::<Self, _>(|table_cache| table_cache.find(predicate)).unwrap_or(None)
+        with_trace! {
+            format!("{}::find", Self::TABLE_NAME) => try_with_table::<Self, _>(|table_cache| table_cache.find(predicate)).unwrap_or(None)
+        }
     }
 
     /// Register an `on_insert` callback for when a row is newly inserted into the
