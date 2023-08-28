@@ -4178,7 +4178,7 @@ dependencies = [
  "tempdir",
  "tokio",
  "tokio-stream",
- "tokio-tungstenite 0.18.0",
+ "tokio-tungstenite 0.19.0",
 ]
 
 [[package]]

@@ -17,11 +17,11 @@ harness = false
 bench = false
 
 [dependencies]
-spacetimedb-lib = { path = "../lib" }
-spacetimedb-core = { path = "../core" }
-spacetimedb-standalone = { path = "../standalone" }
-spacetimedb-client-api = { path = "../client-api" }
-spacetimedb-testing = { path = "../testing" }
+spacetimedb-lib.workspace = true
+spacetimedb-core.workspace = true
+spacetimedb-standalone.workspace = true
+spacetimedb-client-api.workspace = true
+spacetimedb-testing.workspace = true
 
 clap.workspace = true
 rusqlite.workspace = true

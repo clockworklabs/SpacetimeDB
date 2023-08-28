@@ -9,5 +9,5 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb = { path = "../../crates/bindings" }
+spacetimedb.workspace = true
 log.workspace = true
