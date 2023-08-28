@@ -161,7 +161,7 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
     type Instance = WasmerInstance;
 
     fn instantiate(&self, env: InstanceEnv, func_names: &FuncNames) -> Result<Self::Instance, InitializationError> {
-        let mut store = Store::new(&self.engine);
+        let mut store = Store::new(self.engine.clone());
         let env = WasmInstanceEnv {
             instance_env: env,
             mem: None,
