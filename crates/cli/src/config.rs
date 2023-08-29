@@ -538,6 +538,31 @@ Fetch the server's fingerprint with:
         new_host: Option<&str>,
         new_protocol: Option<&str>,
     ) -> anyhow::Result<(Option<String>, Option<String>, Option<String>)> {
+        // Check if the new nickname or host name would introduce ambiguities between
+        // server configurations.
+        if let Some(new_nick) = new_nickname {
+            if let Ok(other_server) = self.find_server(new_nick) {
+                anyhow::bail!(
+                    "Nickname {} conflicts with saved configuration for server {}: {}://{}",
+                    new_nick,
+                    other_server.nick_or_host(),
+                    other_server.protocol,
+                    other_server.host
+                );
+            }
+        }
+        if let Some(new_host) = new_host {
+            if let Ok(other_server) = self.find_server(new_host) {
+                anyhow::bail!(
+                    "Host {} conflicts with saved configuration for server {}: {}://{}",
+                    new_host,
+                    other_server.nick_or_host(),
+                    other_server.protocol,
+                    other_server.host
+                );
+            }
+        }
+
         let cfg = self.find_server_mut(server)?;
         let old_nickname = if let Some(new_nickname) = new_nickname {
             std::mem::replace(&mut cfg.nickname, Some(new_nickname.to_string()))
@@ -554,6 +579,10 @@ Fetch the server's fingerprint with:
         } else {
             None
         };
+
+        // If the server we edited was the default server,
+        // and we changed the identifier stored in the `default_server` field,
+        // update that field.
         if let Some(default_server) = &mut self.default_server {
             if let Some(old_host) = &old_host {
                 if default_server == old_host {
@@ -565,6 +594,7 @@ Fetch the server's fingerprint with:
                 }
             }
         }
+
         Ok((old_nickname, old_host, old_protocol))
     }
 
