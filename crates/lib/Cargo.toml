@@ -23,6 +23,7 @@ spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.6.1" }
 spacetimedb-sats = { path = "../sats", version = "0.6.1" }
 
 anyhow.workspace = true
+bitflags.workspace = true
 chrono = { workspace = true, optional = true }
 clap = {workspace = true, optional = true }
 enum-as-inner.workspace = true

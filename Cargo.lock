@@ -4103,6 +4103,7 @@ dependencies = [
 name = "spacetimedb-bindings-macro"
 version = "0.6.1"
 dependencies = [
+ "bitflags 2.3.3",
  "humantime",
  "proc-macro2",
  "quote",
@@ -4271,6 +4272,7 @@ name = "spacetimedb-lib"
 version = "0.6.1"
 dependencies = [
  "anyhow",
+ "bitflags 2.3.3",
  "bytes",
  "chrono",
  "clap 4.3.10",
