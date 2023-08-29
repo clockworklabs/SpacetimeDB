@@ -844,7 +844,6 @@ impl Config {
 
         let config_filename = Self::find_config_filename(&config_dir);
         let Some(config_filename) = config_filename else {
-
             return if is_project {
                 // Return an empty config without creating a file.
                 RawConfig::new_empty()
