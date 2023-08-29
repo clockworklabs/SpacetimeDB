@@ -554,6 +554,17 @@ Fetch the server's fingerprint with:
         } else {
             None
         };
+        if let Some(default_server) = &mut self.default_server {
+            if let Some(old_host) = &old_host {
+                if default_server == old_host {
+                    *default_server = new_host.unwrap().to_string();
+                }
+            } else if let Some(old_nick) = &old_nickname {
+                if default_server == old_nick {
+                    *default_server = new_nickname.unwrap().to_string();
+                }
+            }
+        }
         Ok((old_nickname, old_host, old_protocol))
     }
 
