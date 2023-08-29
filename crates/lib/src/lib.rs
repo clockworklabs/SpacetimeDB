@@ -229,6 +229,9 @@ impl ColumnIndexAttribute {
     pub const fn is_unique(self) -> bool {
         self.contains(Self::UNIQUE)
     }
+    pub const fn is_indexed(self) -> bool {
+        self.contains(Self::INDEXED)
+    }
     pub const fn is_autoinc(self) -> bool {
         self.contains(Self::AUTO_INC)
     }

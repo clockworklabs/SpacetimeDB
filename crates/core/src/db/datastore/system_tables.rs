@@ -58,7 +58,7 @@ impl SystemTables {
     pub(crate) fn total_constraints_indexes() -> usize {
         Self::tables()
             .iter()
-            .flat_map(|x| x.constraints.iter().filter(|x| x.kind != ColumnIndexAttribute::UnSet))
+            .flat_map(|x| x.constraints.iter().filter(|x| x.kind != ColumnIndexAttribute::UNSET))
             .count()
     }
 
@@ -310,7 +310,7 @@ pub fn st_columns_schema() -> TableSchema {
         constraints: vec![ConstraintSchema {
             constraint_id: ST_CONSTRAINT_ID_INDEX_HACK,
             constraint_name: "ct_columns_table_id".to_string(),
-            kind: ColumnIndexAttribute::Indexed,
+            kind: ColumnIndexAttribute::INDEXED,
             table_id: ST_COLUMNS_ID.0,
             //TODO: Change to multi-columns when PR for it land: StColumnFields::ColId as u32
             columns: vec![StColumnFields::TableId as u32],
@@ -856,7 +856,7 @@ impl<Name: AsRef<str>> From<&StConstraintRow<Name>> for ProductValue {
         product![
             AlgebraicValue::U32(x.constraint_id),
             AlgebraicValue::String(x.constraint_name.as_ref().to_string()),
-            AlgebraicValue::U8(x.kind as u8),
+            AlgebraicValue::U8(x.kind.bits()),
             AlgebraicValue::U32(x.table_id),
             AlgebraicValue::ArrayOf(x.columns.clone())
         ]

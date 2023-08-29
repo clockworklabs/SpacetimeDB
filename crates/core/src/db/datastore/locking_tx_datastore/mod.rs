@@ -45,7 +45,7 @@ use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
 use spacetimedb_lib::{
     auth::{StAccess, StTableType},
     data_key::ToDataKey,
-    ColumnIndexAttribute, DataKey,
+    DataKey,
 };
 use spacetimedb_sats::{
     AlgebraicType, AlgebraicValue, BuiltinType, BuiltinValue, ProductType, ProductTypeElement, ProductValue,
@@ -444,14 +444,14 @@ impl Inner {
 
             //Check if add an index:
             let idx = match constraint.kind {
-                ColumnIndexAttribute::Unique => IndexSchema {
+                x if x.is_unique() => IndexSchema {
                     index_id: constraint.constraint_id,
                     table_id,
                     col_id: col_id.col_id,
                     index_name: format!("idx_{}", &constraint.constraint_name),
                     is_unique: true,
                 },
-                ColumnIndexAttribute::Indexed => IndexSchema {
+                x if x.is_indexed() => IndexSchema {
                     index_id: constraint.constraint_id,
                     table_id,
                     col_id: col_id.col_id,
@@ -2294,7 +2294,7 @@ mod tests {
         assert_eq!(
             constraints_rows,
             vec![
-                StConstraintRow{ constraint_id: 5, constraint_name: "ct_columns_table_id".to_string(), kind:  ColumnIndexAttribute::Indexed, table_id: 1, columns: vec![0] },
+                StConstraintRow{ constraint_id: 5, constraint_name: "ct_columns_table_id".to_string(), kind:  ColumnIndexAttribute::INDEXED, table_id: 1, columns: vec![0] },
             ]
         );
         datastore.rollback_mut_tx(tx);
