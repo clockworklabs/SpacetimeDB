@@ -403,7 +403,7 @@ Import an existing identity with:
                 // If requested, delete all identities which match the server.
                 // This requires a fingerprint.
                 let deleted_ids = if delete_identities {
-                    let fingerprint = cfg.ecdsa_public_key.clone().ok_or_else(|| {
+                    let fingerprint = cfg.ecdsa_public_key.ok_or_else(|| {
                         anyhow::anyhow!(
                             "Cannot delete identities for server without saved identity: {server}
 Fetch the server's fingerprint with:
