@@ -1029,7 +1029,6 @@ fn compile_statement(db: &RelationalDB, tx: &MutTxId, statement: Statement) -> R
 }
 
 /// Compiles a `sql` string into a `Vec<SqlAst>` using a SQL parser with [PostgreSqlDialect]
-#[tracing::instrument(skip(db, tx))]
 pub(crate) fn compile_to_ast(db: &RelationalDB, tx: &MutTxId, sql_text: &str) -> Result<Vec<SqlAst>, DBError> {
     let dialect = PostgreSqlDialect {};
     let ast = Parser::parse_sql(&dialect, sql_text).map_err(|error| DBError::SqlParser {
