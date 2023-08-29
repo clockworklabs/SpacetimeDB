@@ -1,6 +1,8 @@
 pub mod abi;
 pub mod module_host_actor;
 
+use spacetimedb_sats::SatsString;
+
 use crate::error::{DBError, IndexError, NodesError};
 
 pub const CALL_REDUCER_DUNDER: &str = "__call_reducer__";
@@ -121,14 +123,14 @@ pub enum ValidationError {
     #[error("bad {kind} signature for {name:?}; expected {expected:?} got {actual:?}")]
     MismatchedSignature {
         kind: &'static str,
-        name: Box<str>,
+        name: SatsString,
         expected: StaticFuncSig,
         actual: BoxFuncSig,
     },
     #[error("expected {name:?} export to be a {kind} with signature {expected:?}, but it wasn't a function at all")]
     NotAFunction {
         kind: &'static str,
-        name: Box<str>,
+        name: SatsString,
         expected: StaticFuncSig,
     },
     #[error("there should be a memory export called \"memory\" but it does not exist")]

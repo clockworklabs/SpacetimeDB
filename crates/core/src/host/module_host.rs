@@ -17,7 +17,7 @@ use futures::{Future, FutureExt};
 use indexmap::IndexMap;
 use spacetimedb_lib::relation::MemTable;
 use spacetimedb_lib::{ReducerDef, TableDef};
-use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
+use spacetimedb_sats::{ProductValue, Typespace, WithTypespace, SatsString};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Weak};
@@ -61,7 +61,7 @@ impl DatabaseUpdate {
             });
         }
 
-        let mut table_name_map: HashMap<TableId, Box<str>> = HashMap::new();
+        let mut table_name_map: HashMap<TableId, SatsString> = HashMap::new();
         let mut table_updates = Vec::new();
         for (table_id, table_row_operations) in map.drain() {
             let table_name = if let Some(name) = table_name_map.get(&table_id) {
@@ -149,7 +149,7 @@ impl DatabaseUpdate {
 #[derive(Debug, Clone)]
 pub struct DatabaseTableUpdate {
     pub table_id: u32,
-    pub table_name: Box<str>,
+    pub table_name: SatsString,
     pub ops: Box<[TableOp]>,
 }
 
@@ -178,7 +178,7 @@ impl EventStatus {
 
 #[derive(Debug, Clone)]
 pub struct ModuleFunctionCall {
-    pub reducer: Box<str>,
+    pub reducer: SatsString,
     pub args: ArgsTuple,
 }
 
@@ -197,8 +197,8 @@ pub struct ModuleInfo {
     pub identity: Identity,
     pub module_hash: Hash,
     pub typespace: Typespace,
-    pub reducers: IndexMap<Box<str>, ReducerDef>,
-    pub catalog: HashMap<Box<str>, EntityDef>,
+    pub reducers: IndexMap<SatsString, ReducerDef>,
+    pub catalog: HashMap<SatsString, EntityDef>,
     pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
     pub subscription: ModuleSubscriptionManager,
 }
@@ -418,7 +418,7 @@ pub struct UpdateDatabaseSuccess {
 #[derive(thiserror::Error, Debug)]
 pub enum UpdateDatabaseError {
     #[error("incompatible schema changes for: {tables:?}")]
-    IncompatibleSchema { tables: Vec<Box<str>> },
+    IncompatibleSchema { tables: Vec<SatsString> },
     #[error(transparent)]
     Database(#[from] DBError),
 }

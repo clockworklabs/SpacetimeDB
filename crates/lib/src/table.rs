@@ -1,5 +1,5 @@
 use crate::ColumnIndexAttribute;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SatsString};
 
 #[derive(Clone)]
 pub struct ColumnDef {
@@ -37,7 +37,7 @@ impl ProductTypeMeta {
         self.attr.clear();
     }
 
-    pub fn push(&mut self, name: Box<str>, ty: AlgebraicType, attr: ColumnIndexAttribute) {
+    pub fn push(&mut self, name: SatsString, ty: AlgebraicType, attr: ColumnIndexAttribute) {
         self.columns.push(ProductTypeElement::new(ty, Some(name)));
         self.attr.push(attr);
     }

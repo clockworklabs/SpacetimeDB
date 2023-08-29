@@ -1,24 +1,17 @@
 use auth::StAccess;
 use auth::StTableType;
-use sats::impl_serialize;
-pub use spacetimedb_sats::buffer;
+use sats::SatsString;
+use spacetimedb_sats::impl_serialize;
+
 pub mod address;
 pub mod data_key;
-pub mod filter;
-pub mod identity;
-pub use spacetimedb_sats::de;
 pub mod error;
+pub mod filter;
 pub mod hash;
 pub mod name;
 pub mod operator;
 pub mod primary_key;
-pub use spacetimedb_sats::ser;
-pub mod type_def {
-    pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
-}
-pub mod type_value {
-    pub use spacetimedb_sats::{AlgebraicValue, ProductValue};
-}
+
 pub mod auth;
 #[cfg(feature = "serde")]
 pub mod recovery;
@@ -28,17 +21,15 @@ pub mod table;
 pub mod util;
 pub mod version;
 
-pub use spacetimedb_sats::bsatn;
-
 pub use address::Address;
 pub use data_key::DataKey;
 pub use hash::Hash;
 pub use identity::Identity;
 pub use primary_key::PrimaryKey;
-pub use type_def::*;
-pub use type_value::{AlgebraicValue, ProductValue};
-
-pub use spacetimedb_sats as sats;
+pub use spacetimedb_sats::{
+    self as sats, bsatn, buffer, de, ser, str, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement,
+    ProductValue, SumType, SatsStr,
+};
 
 pub const MODULE_ABI_VERSION: VersionTuple = VersionTuple::new(4, 0);
 
@@ -93,7 +84,7 @@ extern crate self as spacetimedb_lib;
 //WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub struct TableDef {
-    pub name: Box<str>,
+    pub name: SatsString,
     /// data should always point to a ProductType in the typespace
     pub data: sats::AlgebraicTypeRef,
     pub column_attrs: Box<[ColumnIndexAttribute]>,
@@ -104,7 +95,7 @@ pub struct TableDef {
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 pub struct ReducerDef {
-    pub name: Box<str>,
+    pub name: SatsString,
     pub args: Box<[ProductTypeElement]>,
 }
 
@@ -187,13 +178,13 @@ pub enum MiscModuleExport {
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 pub struct TypeAlias {
-    pub name: Box<str>,
+    pub name: SatsString,
     pub ty: sats::AlgebraicTypeRef,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub struct IndexDef {
-    pub name: Box<str>,
+    pub name: SatsString,
     pub ty: IndexType,
     pub col_ids: Box<[u8]>,
 }

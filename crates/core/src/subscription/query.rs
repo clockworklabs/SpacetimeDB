@@ -160,7 +160,7 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::FieldName;
     use spacetimedb_lib::Identity;
-    use spacetimedb_sats::{product, ProductType, ProductValue};
+    use spacetimedb_sats::{product, string, ProductType, ProductValue};
     use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
 
@@ -184,7 +184,7 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id,
-            table_name: table_name.to_string(),
+            table_name: string(table_name),
             ops: [op].into(),
         };
 
@@ -379,7 +379,7 @@ mod tests {
         assert_eq!(schema.table_type, StTableType::User);
         assert_eq!(schema.table_access, StAccess::Private);
 
-        let row = product!(1u64, "health");
+        let row = product!(1u64, string("health"));
         check_query(&db, &table, &mut tx, &q, &data)?;
 
         //SELECT * FROM inventory
@@ -415,7 +415,7 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: "_inventory".to_string(),
+            table_name: string("_inventory"),
             ops: [row1, row2].into(),
         };
 
@@ -425,7 +425,7 @@ mod tests {
 
         check_query_incr(&db, &mut tx, &s, &update, 3, &[row])?;
 
-        let q = QueryExpr::new(db_table((&schema).into(), "_inventory", schema.table_id));
+        let q = QueryExpr::new(db_table((&schema).into(), string("_inventory"), schema.table_id));
 
         let q = to_mem_table(q, &data);
         //Try access the private table
@@ -462,7 +462,7 @@ mod tests {
         let (schema, _table, _data, _q) = make_inv(&db, &mut tx, StAccess::Private)?;
 
         //SELECT * FROM inventory
-        let q_all = QueryExpr::new(db_table((&schema).into(), "inventory", schema.table_id));
+        let q_all = QueryExpr::new(db_table((&schema).into(), string("inventory"), schema.table_id));
         //SELECT * FROM inventory WHERE inventory_id = 1
         let q_id =
             q_all
@@ -478,9 +478,9 @@ mod tests {
             },
         ]);
 
-        check_query_eval(&db, &mut tx, &s, 3, &[product!(1u64, "health")])?;
+        check_query_eval(&db, &mut tx, &s, 3, &[product!(1u64, string("health"))])?;
 
-        let row = product!(1u64, "health");
+        let row = product!(1u64, string("health"));
 
         let row_pk: Box<[u8]> = row.to_data_key().to_bytes().into();
         let row1 = TableOp {
@@ -497,7 +497,7 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: "inventory".to_string(),
+            table_name: string("inventory"),
             ops: [row1, row2].into(),
         };
 

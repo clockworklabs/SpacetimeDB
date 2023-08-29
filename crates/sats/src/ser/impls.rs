@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::{AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType};
+use crate::{AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType, slim_slice::{SlimStrBox, SlimSliceBox}};
 
 use super::{Serialize, SerializeArray, SerializeMap, SerializeNamedProduct, SerializeSeqProduct, Serializer};
 
@@ -70,6 +70,8 @@ impl_serialize!([T: Serialize] [T], (self, ser) => T::__serialize_array(self, se
 impl_serialize!([T: Serialize, const N: usize] [T; N], (self, ser) => T::__serialize_array(self, ser));
 impl_serialize!([T: Serialize + ?Sized] Box<T>, (self, ser) => (**self).serialize(ser));
 impl_serialize!([T: Serialize + ?Sized] &T, (self, ser) => (**self).serialize(ser));
+impl_serialize!([T: Serialize] SlimSliceBox<T>, (self, ser) => (**self).serialize(ser));
+impl_serialize!([] SlimStrBox, (self, ser) => ser.serialize_str(self));
 impl_serialize!([] String, (self, ser) => ser.serialize_str(self));
 impl_serialize!([T: Serialize] Option<T>, (self, ser) => match self {
     Some(v) => ser.serialize_variant(0, Some("some"), v),
@@ -186,7 +188,7 @@ impl_serialize!([] ValueWithType<'_, ProductValue>, (self, ser) => {
     assert_eq!(val.len(), self.ty().elements.len());
     let mut prod = ser.serialize_named_product(val.len())?;
     for (val, el_ty) in val.iter().zip(&*self.ty().elements) {
-        prod.serialize_element(el_ty.name(), &self.with(&el_ty.algebraic_type, val))?
+        prod.serialize_element(el_ty.name().copied(), &self.with(&el_ty.algebraic_type, val))?
     }
     prod.end()
 });

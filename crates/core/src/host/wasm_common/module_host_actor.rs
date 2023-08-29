@@ -13,6 +13,7 @@ use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, IndexType, ModuleDef};
 use spacetimedb_vm::expr::CrudExpr;
+use spacetimedb_sats::string;
 
 use crate::client::ClientConnectionSender;
 use crate::database_instance_context::DatabaseInstanceContext;
@@ -84,7 +85,7 @@ pub struct EnergyStats {
 pub struct ExecuteResult<E> {
     pub energy: EnergyStats,
     pub execution_duration: Duration,
-    pub call_result: Result<Result<(), Box<str>>, E>,
+    pub call_result: Result<Result<(), SatsString>, E>,
 }
 
 pub(crate) struct WasmModuleHostActor<T: WasmModule> {
@@ -103,7 +104,7 @@ pub enum InitializationError {
     #[error(transparent)]
     Validation(#[from] ValidationError),
     #[error("setup function returned an error: {0}")]
-    Setup(Box<str>),
+    Setup(SatsString),
     #[error("wasm trap while calling {func:?}")]
     RuntimeError {
         #[source]

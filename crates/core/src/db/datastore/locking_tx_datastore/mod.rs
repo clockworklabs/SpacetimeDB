@@ -52,7 +52,7 @@ use spacetimedb_lib::{
     relation::RelValue,
     DataKey,
 };
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_sats::{str, AlgebraicType, AlgebraicValue, ProductType, ProductValue, SatsString};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::RangeBounds,
@@ -924,7 +924,7 @@ impl Inner {
         Ok(())
     }
 
-    fn rename_table(&mut self, table_id: TableId, new_name: &str) -> super::Result<()> {
+    fn rename_table(&mut self, table_id: TableId, new_name: SatsString) -> super::Result<()> {
         // Update the table's name in st_tables.
         const ST_TABLES_TABLE_ID_COL: ColId = ColId(0);
         let rows = self
@@ -936,7 +936,7 @@ impl Inner {
         let mut el = StTableRow::try_from(row.view())?;
         el.table_name = new_name;
         self.delete(&ST_TABLES_ID, &row_id)?;
-        self.insert(ST_TABLES_ID, (&el).into())?;
+        self.insert(ST_TABLES_ID, el.into())?;
         Ok(())
     }
 
@@ -953,7 +953,7 @@ impl Inner {
         })
     }
 
-    fn table_name_from_id(&self, table_id: TableId) -> super::Result<Option<Box<str>>> {
+    fn table_name_from_id(&self, table_id: TableId) -> super::Result<Option<SatsString>> {
         self.iter_by_col_eq(&ST_TABLES_ID, &ColId(0), table_id.into())
             .map(|mut iter| {
                 iter.next()
@@ -976,10 +976,10 @@ impl Inner {
             index_id: 0, // Autogen'd
             table_id: index.table_id,
             cols: index.cols.clone(),
-            index_name: &index.name,
+            index_name: index.name,
             is_unique: index.is_unique,
         };
-        let index_id = StIndexRow::try_from(&self.insert(ST_INDEXES_ID, (&row).into())?)?.index_id;
+        let index_id = StIndexRow::try_from(&self.insert(ST_INDEXES_ID, row.into())?)?.index_id;
 
         // Create the index in memory
         if !self.table_exists(&TableId(index.table_id)) {
@@ -1100,12 +1100,12 @@ impl Inner {
         }
     }
 
-    fn index_id_from_name(&self, index_name: &str) -> super::Result<Option<IndexId>> {
+    fn index_id_from_name(&self, index_name: SatsString) -> super::Result<Option<IndexId>> {
         let index_name_col: ColId = ColId(3);
         self.iter_by_col_eq(
             &ST_INDEXES_ID,
             &index_name_col,
-            AlgebraicValue::String(index_name.into()),
+            index_name.into(),
         )
         .map(|mut iter| {
             iter.next()
@@ -1984,7 +1984,12 @@ impl MutTxDatastore for Locking {
         tx.lock.drop_table(table_id)
     }
 
-    fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> super::Result<()> {
+    fn rename_table_mut_tx(
+        &self,
+        tx: &mut Self::MutTxId,
+        table_id: TableId,
+        new_name: SatsString,
+    ) -> super::Result<()> {
         tx.lock.rename_table(table_id, new_name)
     }
 
@@ -1996,7 +2001,7 @@ impl MutTxDatastore for Locking {
         tx.lock.table_id_from_name(table_name)
     }
 
-    fn table_name_from_id_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> super::Result<Option<Box<str>>> {
+    fn table_name_from_id_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> super::Result<Option<SatsString>> {
         tx.lock.table_name_from_id(table_id)
     }
 
@@ -2116,7 +2121,15 @@ mod tests {
         error::ResultTest,
         ColumnIndexAttribute,
     };
-    use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
+    use spacetimedb_sats::{string, AlgebraicType, AlgebraicValue, ProductValue};
+
+    fn u32_str_u32(a: u32, b: &str, c: u32) -> ProductValue {
+        ProductValue::from_iter(vec![
+            AlgebraicValue::U32(a),
+            AlgebraicValue::String(string(b)),
+            AlgebraicValue::U32(c),
+        ])
+    }
 
     fn get_datastore() -> super::super::Result<Locking> {
         Locking::bootstrap()
@@ -2124,20 +2137,20 @@ mod tests {
 
     fn basic_table_schema() -> TableDef {
         TableDef {
-            table_name: "Foo".into(),
+            table_name: string("Foo"),
             columns: [
                 ColumnDef {
-                    col_name: "id".into(),
+                    col_name: string("id"),
                     col_type: AlgebraicType::U32,
                     is_autoinc: true,
                 },
                 ColumnDef {
-                    col_name: "name".into(),
+                    col_name: string("name"),
                     col_type: AlgebraicType::String,
                     is_autoinc: false,
                 },
                 ColumnDef {
-                    col_name: "age".into(),
+                    col_name: string("age"),
                     col_type: AlgebraicType::U32,
                     is_autoinc: false,
                 },
@@ -2147,13 +2160,13 @@ mod tests {
                 IndexDef {
                     table_id: 0, // Ignored
                     cols: NonEmpty::new(0),
-                    name: "id_idx".into(),
+                    name: string("id_idx"),
                     is_unique: true,
                 },
                 IndexDef {
                     table_id: 0, // Ignored
                     cols: NonEmpty::new(1),
-                    name: "name_idx".into(),
+                    name: string("name_idx"),
                     is_unique: true,
                 },
             ],
@@ -2175,11 +2188,11 @@ mod tests {
         assert_eq!(
             table_rows,
             vec![
-                StTableRow { table_id: 0, table_name: "st_table".to_string(), table_type: StTableType::System, table_access: StAccess::Public },
-                StTableRow { table_id: 1, table_name: "st_columns".to_string(), table_type: StTableType::System, table_access: StAccess::Public },
-                StTableRow { table_id: 2, table_name: "st_sequence".to_string(), table_type: StTableType::System, table_access: StAccess::Public},
-                StTableRow { table_id: 3, table_name: "st_indexes".to_string() , table_type: StTableType::System, table_access: StAccess::Public},
-                StTableRow { table_id: 4, table_name: "st_constraints".to_string() , table_type: StTableType::System, table_access: StAccess::Public},
+                StTableRow { table_id: 0, table_name: string("st_table"), table_type: StTableType::System, table_access: StAccess::Public },
+                StTableRow { table_id: 1, table_name: string("st_columns"), table_type: StTableType::System, table_access: StAccess::Public },
+                StTableRow { table_id: 2, table_name: string("st_sequence"), table_type: StTableType::System, table_access: StAccess::Public},
+                StTableRow { table_id: 3, table_name: string("st_indexes") , table_type: StTableType::System, table_access: StAccess::Public},
+                StTableRow { table_id: 4, table_name: string("st_constraints") , table_type: StTableType::System, table_access: StAccess::Public},
             ]
         );
         let column_rows = datastore
@@ -2379,15 +2392,15 @@ mod tests {
         #[rustfmt::skip]
         assert_eq!(schema, TableSchema {
             table_id: table_id.0,
-            table_name: "Foo".into(),
+            table_name: string("Foo"),
             columns: [
-                ColumnSchema { table_id: 5, col_id: 0, col_name: "id".into(), col_type: AlgebraicType::U32, is_autoinc: true },
-                ColumnSchema { table_id: 5, col_id: 1, col_name: "name".into(), col_type: AlgebraicType::String, is_autoinc: false },
-                ColumnSchema { table_id: 5, col_id: 2, col_name: "age".into(), col_type: AlgebraicType::U32, is_autoinc: false },
+                ColumnSchema { table_id: 5, col_id: 0, col_name: string("id"), col_type: AlgebraicType::U32, is_autoinc: true },
+                ColumnSchema { table_id: 5, col_id: 1, col_name: string("name"), col_type: AlgebraicType::String, is_autoinc: false },
+                ColumnSchema { table_id: 5, col_id: 2, col_name: string("age"), col_type: AlgebraicType::U32, is_autoinc: false },
             ].into(),
             indexes: vec![
-                IndexSchema { index_id: 6, table_id: 5, cols: NonEmpty::new(0), index_name: "id_idx".into(), is_unique: true },
-                IndexSchema { index_id: 7, table_id: 5, cols: NonEmpty::new(1), index_name: "name_idx".into(), is_unique: true },
+                IndexSchema { index_id: 6, table_id: 5, cols: NonEmpty::new(0), index_name: string("id_idx"), is_unique: true },
+                IndexSchema { index_id: 7, table_id: 5, cols: NonEmpty::new(1), index_name: string("name_idx"), is_unique: true },
             ],
             constraints: vec![],
             table_type: StTableType::User,
@@ -2408,15 +2421,15 @@ mod tests {
         #[rustfmt::skip]
         assert_eq!(schema, TableSchema {
             table_id: table_id.0,
-            table_name: "Foo".into(),
+            table_name: string("Foo"),
             columns: [
-                ColumnSchema { table_id: 5, col_id: 0, col_name: "id".into(), col_type: AlgebraicType::U32, is_autoinc: true },
-                ColumnSchema { table_id: 5, col_id: 1, col_name: "name".into(), col_type: AlgebraicType::String, is_autoinc: false },
-                ColumnSchema { table_id: 5, col_id: 2, col_name: "age".into(), col_type: AlgebraicType::U32, is_autoinc: false },
+                ColumnSchema { table_id: 5, col_id: 0, col_name: string("id"), col_type: AlgebraicType::U32, is_autoinc: true },
+                ColumnSchema { table_id: 5, col_id: 1, col_name: string("name"), col_type: AlgebraicType::String, is_autoinc: false },
+                ColumnSchema { table_id: 5, col_id: 2, col_name: string("age"), col_type: AlgebraicType::U32, is_autoinc: false },
             ].into(),
             indexes: vec![
-                IndexSchema { index_id: 6, table_id: 5, cols: NonEmpty::new(0), index_name: "id_idx".into(), is_unique: true },
-                IndexSchema { index_id: 7, table_id: 5, cols: NonEmpty::new(1), index_name: "name_idx".into(), is_unique: true },
+                IndexSchema { index_id: 6, table_id: 5, cols: NonEmpty::new(0), index_name: string("id_idx"), is_unique: true },
+                IndexSchema { index_id: 7, table_id: 5, cols: NonEmpty::new(1), index_name: string("name_idx"), is_unique: true },
             ],
             constraints: vec![],
             table_type: StTableType::User,
@@ -2507,24 +2520,14 @@ mod tests {
         let mut tx = datastore.begin_mut_tx();
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
-        let row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Foo".into()),
-            AlgebraicValue::U32(18),
-        ]);
+        let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         let rows = datastore
             .iter_mut_tx(&tx, table_id)?
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![
-            ProductValue::from_iter(vec![
-                AlgebraicValue::U32(1),
-                AlgebraicValue::String("Foo".into()),
-                AlgebraicValue::U32(18),
-            ])
-        ]);
+        assert_eq!(rows, vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
     }
 
@@ -2536,7 +2539,7 @@ mod tests {
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
         let row = ProductValue::from_iter(vec![
             AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Foo".into()),
+            AlgebraicValue::String(string("Foo")),
         ]);
         assert!(datastore.insert_mut_tx(&mut tx, table_id, row).is_err());
         let rows = datastore
@@ -2554,12 +2557,8 @@ mod tests {
         let mut tx = datastore.begin_mut_tx();
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
-        let row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Foo".into()),
-            AlgebraicValue::U32(18),
-        ]);
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        // 0 will be ignored.
+        datastore.insert_mut_tx(&mut tx, table_id, u32_str_u32(0, "Foo", 18))?;
         datastore.commit_mut_tx(tx)?;
         let tx = datastore.begin_mut_tx();
         let rows = datastore
@@ -2567,13 +2566,7 @@ mod tests {
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![
-            ProductValue::from_iter(vec![
-                AlgebraicValue::U32(1),
-                AlgebraicValue::String("Foo".into()),
-                AlgebraicValue::U32(18),
-            ])
-        ]);
+        assert_eq!(rows, vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
     }
 
@@ -2583,11 +2576,7 @@ mod tests {
         let mut tx = datastore.begin_mut_tx();
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
-        let row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(15), // A number which will be ignored.
-            AlgebraicValue::String("Foo".into()),
-            AlgebraicValue::U32(18),
-        ]);
+        let row = u32_str_u32(15, "Foo", 18); // 15 is ignored.
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
@@ -2608,19 +2597,11 @@ mod tests {
         let mut tx = datastore.begin_mut_tx();
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
-        let row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Foo".into()),
-            AlgebraicValue::U32(18),
-        ]);
+        let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
-        let created_row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(1),
-            AlgebraicValue::String("Foo".into()),
-            AlgebraicValue::U32(18),
-        ]);
+        let created_row = u32_str_u32(1, "Foo", 18);
         let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, vec![created_row])?;
         assert_eq!(num_deleted, Some(1));
         let rows = datastore
@@ -2628,24 +2609,14 @@ mod tests {
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         assert_eq!(rows.len(), 0);
-        let created_row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(1),
-            AlgebraicValue::String("Foo".into()),
-            AlgebraicValue::U32(19),
-        ]);
+        let created_row = u32_str_u32(1, "Foo", 19);
         datastore.insert_mut_tx(&mut tx, table_id, created_row)?;
         let rows = datastore
             .iter_mut_tx(&tx, table_id)?
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![
-            ProductValue::from_iter(vec![
-                AlgebraicValue::U32(1),
-                AlgebraicValue::String("Foo".into()),
-                AlgebraicValue::U32(19),
-            ])
-        ]);
+        assert_eq!(rows, vec![u32_str_u32(1, "Foo", 19)]);
         Ok(())
     }
 
@@ -2655,18 +2626,10 @@ mod tests {
         let mut tx = datastore.begin_mut_tx();
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
-        let row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Foo".into()),
-            AlgebraicValue::U32(18),
-        ]);
+        let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         for _ in 0..2 {
-            let created_row = ProductValue::from_iter(vec![
-                AlgebraicValue::U32(1),
-                AlgebraicValue::String("Foo".into()),
-                AlgebraicValue::U32(18),
-            ]);
+            let created_row = u32_str_u32(1, "Foo", 18);
             let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, vec![created_row.clone()])?;
             assert_eq!(num_deleted, Some(1));
             let rows = datastore
@@ -2680,13 +2643,7 @@ mod tests {
                 .map(|r| r.view().clone())
                 .collect::<Vec<_>>();
             #[rustfmt::skip]
-            assert_eq!(rows, vec![
-                ProductValue::from_iter(vec![
-                    AlgebraicValue::U32(1),
-                    AlgebraicValue::String("Foo".into()),
-                    AlgebraicValue::U32(18),
-                ])
-            ]);
+            assert_eq!(rows, vec![u32_str_u32(1, "Foo", 18)]);
         }
         Ok(())
     }
@@ -2697,11 +2654,7 @@ mod tests {
         let mut tx = datastore.begin_mut_tx();
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
-        let row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Foo".into()),
-            AlgebraicValue::U32(18),
-        ]);
+        let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
         match result {
@@ -2718,13 +2671,7 @@ mod tests {
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![
-            ProductValue::from_iter(vec![
-                AlgebraicValue::U32(1),
-                AlgebraicValue::String("Foo".into()),
-                AlgebraicValue::U32(18),
-            ])
-        ]);
+        assert_eq!(rows, vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
     }
 
@@ -2734,11 +2681,7 @@ mod tests {
         let mut tx = datastore.begin_mut_tx();
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
-        let row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Foo".into()),
-            AlgebraicValue::U32(18),
-        ]);
+        let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
@@ -2757,13 +2700,7 @@ mod tests {
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![
-            ProductValue::from_iter(vec![
-                AlgebraicValue::U32(1),
-                AlgebraicValue::String("Foo".into()),
-                AlgebraicValue::U32(18),
-            ])
-        ]);
+        assert_eq!(rows, vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
     }
 
@@ -2775,11 +2712,7 @@ mod tests {
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
-        let row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Foo".into()),
-            AlgebraicValue::U32(18),
-        ]);
+        let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
         datastore.rollback_mut_tx(tx);
         let mut tx = datastore.begin_mut_tx();
@@ -2789,13 +2722,7 @@ mod tests {
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![
-            ProductValue::from_iter(vec![
-                AlgebraicValue::U32(2),
-                AlgebraicValue::String("Foo".into()),
-                AlgebraicValue::U32(18),
-            ])
-        ]);
+        assert_eq!(rows, vec![u32_str_u32(2, "Foo", 18)]);
         Ok(())
     }
 
@@ -2807,17 +2734,13 @@ mod tests {
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
-        let row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Foo".into()),
-            AlgebraicValue::U32(18),
-        ]);
+        let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
         let index_def = IndexDef {
             cols: NonEmpty::new(2),
-            name: "age_idx".into(),
+            name: string("age_idx"),
             is_unique: true,
             table_id: table_id.0,
         };
@@ -2839,11 +2762,7 @@ mod tests {
             StIndexRow { index_id: 7, table_id: 5, cols: NonEmpty::new(1), index_name: "name_idx".to_string(), is_unique: true },
             StIndexRow { index_id: 8, table_id: 5, cols: NonEmpty::new(2), index_name: "age_idx".to_string(), is_unique: true },
         ]);
-        let row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Bar".into()),
-            AlgebraicValue::U32(18),
-        ]);
+        let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation {
@@ -2859,13 +2778,7 @@ mod tests {
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![
-            ProductValue::from_iter(vec![
-                AlgebraicValue::U32(1),
-                AlgebraicValue::String("Foo".into()),
-                AlgebraicValue::U32(18),
-            ])
-        ]);
+        assert_eq!(rows, vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
     }
 
@@ -2875,18 +2788,14 @@ mod tests {
         let mut tx = datastore.begin_mut_tx();
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
-        let row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Foo".into()),
-            AlgebraicValue::U32(18),
-        ]);
+        let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
         let index_def = IndexDef {
             table_id: table_id.0,
             cols: NonEmpty::new(2),
-            name: "age_idx".into(),
+            name: string("age_idx"),
             is_unique: true,
         };
         datastore.create_index_mut_tx(&mut tx, index_def)?;
@@ -2909,11 +2818,7 @@ mod tests {
             StIndexRow { index_id: 7, table_id: 5, cols: NonEmpty::new(1), index_name: "name_idx".to_string(), is_unique: true },
             StIndexRow { index_id: 8, table_id: 5, cols: NonEmpty::new(2), index_name: "age_idx".to_string(), is_unique: true },
         ]);
-        let row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Bar".into()),
-            AlgebraicValue::U32(18),
-        ]);
+        let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation {
@@ -2929,13 +2834,7 @@ mod tests {
             .map(|r| r.view().clone())
             .collect::<Vec<_>>();
         #[rustfmt::skip]
-        assert_eq!(rows, vec![
-            ProductValue::from_iter(vec![
-                AlgebraicValue::U32(1),
-                AlgebraicValue::String("Foo".into()),
-                AlgebraicValue::U32(18),
-            ])
-        ]);
+        assert_eq!(rows, vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
     }
 
@@ -2945,17 +2844,13 @@ mod tests {
         let mut tx = datastore.begin_mut_tx();
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
-        let row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Foo".into()),
-            AlgebraicValue::U32(18),
-        ]);
+        let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
         let index_def = IndexDef {
             cols: NonEmpty::new(2),
-            name: "age_idx".into(),
+            name: string("age_idx"),
             is_unique: true,
             table_id: table_id.0,
         };
@@ -2978,11 +2873,7 @@ mod tests {
             StIndexRow { index_id: 6, table_id: 5, cols: NonEmpty::new(0), index_name: "id_idx".to_string(), is_unique: true },
             StIndexRow { index_id: 7, table_id: 5, cols: NonEmpty::new(1), index_name: "name_idx".to_string(), is_unique: true },
         ]);
-        let row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Bar".into()),
-            AlgebraicValue::U32(18),
-        ]);
+        let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         let rows = datastore
             .iter_mut_tx(&tx, table_id)?
@@ -2990,16 +2881,8 @@ mod tests {
             .collect::<Vec<_>>();
         #[rustfmt::skip]
         assert_eq!(rows, vec![
-            ProductValue::from_iter(vec![
-                AlgebraicValue::U32(1),
-                AlgebraicValue::String("Foo".into()),
-                AlgebraicValue::U32(18),
-            ]),
-            ProductValue::from_iter(vec![
-                AlgebraicValue::U32(2),
-                AlgebraicValue::String("Bar".into()),
-                AlgebraicValue::U32(18),
-            ])
+            u32_str_u32(1, "Foo", 18),
+            u32_str_u32(2, "Bar", 18),
         ]);
         Ok(())
     }
@@ -3012,13 +2895,9 @@ mod tests {
         let mut tx = datastore.begin_mut_tx();
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
-        let row = ProductValue::from_iter(vec![
-            AlgebraicValue::U32(0), // 0 will be ignored.
-            AlgebraicValue::String("Foo".into()),
-            AlgebraicValue::U32(18),
-        ]);
-        // Because of autoinc columns, we will get a slightly different
-        // value than the one we inserted.
+        let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
+                                             // Because of autoinc columns, we will get a slightly different
+                                             // value than the one we inserted.
         let row = datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx(tx)?;
 

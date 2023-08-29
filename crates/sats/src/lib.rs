@@ -16,6 +16,7 @@ pub mod product_value;
 mod resolve_refs;
 pub mod satn;
 pub mod ser;
+pub mod slim_slice;
 pub mod sum_type;
 pub mod sum_type_variant;
 pub mod sum_value;
@@ -36,6 +37,10 @@ pub use sum_type::SumType;
 pub use sum_type_variant::SumTypeVariant;
 pub use sum_value::SumValue;
 pub use typespace::{SpacetimeType, Typespace};
+
+pub use slim_slice::{SlimSlice as SatsVec, SlimSlice as SatsSlice, SlimSliceMut as SatsSliceMut};
+pub use slim_slice::{SlimStr as SatsStr, SlimStrBox as SatsString, SlimStrMut as SatsStrMut};
+pub use slim_slice::{slice, slice_mut, str, str_mut, string};
 
 /// The `Value` trait provides an abstract notion of a value.
 ///

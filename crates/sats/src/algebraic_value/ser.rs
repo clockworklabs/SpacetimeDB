@@ -1,12 +1,24 @@
-use std::convert::Infallible;
+use std::fmt::Display;
 
 use super::AlgebraicValue;
 use crate::ser::{self, ForwardNamedToSeqProduct};
-use crate::{ArrayValue, MapValue, F32, F64};
+use crate::{ArrayValue, MapValue, F32, F64, SatsString};
 
 /// An implementation of [`Serializer`](ser::Serializer)
 /// where the output of serialization is an `AlgebraicValue`.
 pub struct ValueSerializer;
+
+/// Some slice length overflowed `u32::MAX`
+/// when serializing to an `AlgebraicValue`.
+#[derive(Debug)]
+pub struct U32LenOverflow(usize);
+
+// Unused.
+impl ser::Error for U32LenOverflow {
+    fn custom<T: Display>(_: T) -> Self {
+        unimplemented!()
+    }
+}
 
 macro_rules! method {
     ($name:ident -> $t:ty) => {
@@ -18,7 +30,7 @@ macro_rules! method {
 
 impl ser::Serializer for ValueSerializer {
     type Ok = AlgebraicValue;
-    type Error = Infallible;
+    type Error = U32LenOverflow;
 
     type SerializeArray = SerializeArrayValue;
     type SerializeMap = SerializeMapValue;
@@ -40,7 +52,9 @@ impl ser::Serializer for ValueSerializer {
     method!(serialize_f64 -> f64);
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::String(v.into()))
+        Ok(AlgebraicValue::String(
+            SatsString::try_from(v).map_err(|_| U32LenOverflow(v.len()))?,
+        ))
     }
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
         Ok(AlgebraicValue::Bytes(v.into()))
@@ -90,7 +104,7 @@ pub struct SerializeArrayValue {
 
 impl ser::SerializeArray for SerializeArrayValue {
     type Ok = AlgebraicValue;
-    type Error = Infallible;
+    type Error = <ValueSerializer as ser::Serializer>::Error;
 
     fn serialize_element<T: ser::Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
         self.array
@@ -138,7 +152,7 @@ enum ArrayValueBuilder {
     /// An array of totally ordered [`F64`]s.
     F64(Vec<F64>),
     /// An array of UTF-8 strings.
-    String(Vec<Box<str>>),
+    String(Vec<SatsString>),
     /// An array of arrays.
     Array(Vec<ArrayValue>),
     /// An array of maps.
@@ -297,7 +311,7 @@ impl_from_array!(i128, I128);
 impl_from_array!(u128, U128);
 impl_from_array!(F32, F32);
 impl_from_array!(F64, F64);
-impl_from_array!(Box<str>, String);
+impl_from_array!(SatsString, String);
 impl_from_array!(ArrayValue, Array);
 impl_from_array!(MapValue, Map);
 
@@ -309,7 +323,7 @@ pub struct SerializeMapValue {
 
 impl ser::SerializeMap for SerializeMapValue {
     type Ok = AlgebraicValue;
-    type Error = Infallible;
+    type Error = <ValueSerializer as ser::Serializer>::Error;
 
     fn serialize_entry<K: ser::Serialize + ?Sized, V: ser::Serialize + ?Sized>(
         &mut self,
@@ -334,7 +348,7 @@ pub struct SerializeProductValue {
 
 impl ser::SerializeSeqProduct for SerializeProductValue {
     type Ok = AlgebraicValue;
-    type Error = Infallible;
+    type Error = <ValueSerializer as ser::Serializer>::Error;
 
     fn serialize_element<T: ser::Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
         self.elements.push(elem.serialize(ValueSerializer)?);

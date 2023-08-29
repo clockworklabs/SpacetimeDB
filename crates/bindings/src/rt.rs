@@ -12,7 +12,7 @@ use crate::{sys, ReducerContext, ScheduleToken, SpacetimeType, TableType, Timest
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
-use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
+use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement, string};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
 use spacetimedb_lib::{bsatn, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias};
 use sys::Buffer;
@@ -393,7 +393,7 @@ pub fn register_table<T: TableType>() {
     register_describer(|module| {
         let data = *T::make_type(module).as_ref().unwrap();
         let schema = TableDef {
-            name: T::TABLE_NAME.into(),
+            name: string(T::TABLE_NAME),
             data,
             column_attrs: T::COLUMN_ATTRS.into(),
             indexes: T::INDEXES.iter().copied().map(Into::into).collect(),
@@ -407,7 +407,7 @@ pub fn register_table<T: TableType>() {
 impl From<crate::IndexDef<'_>> for spacetimedb_lib::IndexDef {
     fn from(index: crate::IndexDef<'_>) -> spacetimedb_lib::IndexDef {
         spacetimedb_lib::IndexDef {
-            name: index.name.into(),
+            name: string(index.name),
             ty: index.ty,
             col_ids: index.col_ids.into(),
         }

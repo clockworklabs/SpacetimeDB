@@ -2,7 +2,7 @@ use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::error::RelationError;
 use spacetimedb_lib::table::{ColumnDef, ProductTypeMeta};
 use spacetimedb_lib::ColumnIndexAttribute;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement, SatsString};
 use sqlparser::ast::{
     Assignment, BinaryOperator, ColumnDef as SqlColumnDef, ColumnOption, DataType, ExactNumberInfo, Expr as SqlExpr,
     GeneratedAs, HiveDistributionStyle, Ident, JoinConstraint, JoinOperator, ObjectName, ObjectType, Query, Select,
@@ -237,13 +237,13 @@ pub enum SqlAst {
         selection: Option<Selection>,
     },
     CreateTable {
-        table: String,
+        table: SatsString,
         columns: ProductTypeMeta,
         table_type: StTableType,
         table_access: StAccess,
     },
     Drop {
-        name: String,
+        name: SatsString,
         kind: DbType,
         table_access: StAccess,
     },
@@ -812,7 +812,7 @@ fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst,
             });
         }
 
-        let name: Box<str> = col.name.to_string().into();
+        let name: SatsString = col.name.to_string().try_into().map_err(PlanError::LenTooLong)?;
         let (is_null, attr) = compile_column_option(&col)?;
         let ty = column_def_type(&name, is_null, &col.data_type)?;
 

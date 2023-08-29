@@ -1,4 +1,7 @@
-use crate::{static_assert_size, AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SumValue, F32, F64};
+use crate::{
+    static_assert_size, AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SatsString, SumValue, F32,
+    F64,
+};
 use itertools::Itertools;
 use nonempty::NonEmpty;
 use std::fmt;
@@ -42,7 +45,7 @@ pub enum ArrayValue {
     /// An array of totally ordered [`F64`]s.
     F64(Box<[F64]>),
     /// An array of UTF-8 strings.
-    String(Box<[Box<str>]>),
+    String(Box<[SatsString]>),
     /// An array of arrays.
     Array(Box<[ArrayValue]>),
     /// An array of maps.
@@ -192,7 +195,7 @@ impl_from_array!(i128, I128);
 impl_from_array!(u128, U128);
 impl_from_array!(F32, F32);
 impl_from_array!(F64, F64);
-impl_from_array!(Box<str>, String);
+impl_from_array!(SatsString, String);
 impl_from_array!(ArrayValue, Array);
 impl_from_array!(MapValue, Map);
 
@@ -298,7 +301,7 @@ pub enum ArrayValueIntoIter {
     /// An iterator on a [`F64`] array.
     F64(std::vec::IntoIter<F64>),
     /// An iterator on an array of UTF-8 strings.
-    String(std::vec::IntoIter<Box<str>>),
+    String(std::vec::IntoIter<SatsString>),
     /// An iterator on an array of arrays.
     Array(std::vec::IntoIter<ArrayValue>),
     /// An iterator on an array of maps.
@@ -348,7 +351,7 @@ pub enum ArrayValueIterCloned<'a> {
     U128(std::slice::Iter<'a, u128>),
     F32(std::slice::Iter<'a, F32>),
     F64(std::slice::Iter<'a, F64>),
-    String(std::slice::Iter<'a, Box<str>>),
+    String(std::slice::Iter<'a, SatsString>),
     Array(std::slice::Iter<'a, ArrayValue>),
     Map(std::slice::Iter<'a, MapValue>),
 }

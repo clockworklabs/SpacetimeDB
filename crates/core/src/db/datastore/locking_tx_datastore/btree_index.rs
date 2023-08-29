@@ -5,7 +5,7 @@ use crate::{
 };
 use nonempty::NonEmpty;
 use spacetimedb_lib::{data_key::ToDataKey, DataKey};
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_sats::{AlgebraicValue, ProductValue, SatsString};
 use std::{
     collections::{btree_set, BTreeSet},
     ops::{Bound, RangeBounds},
@@ -79,13 +79,13 @@ pub(crate) struct BTreeIndex {
     pub(crate) index_id: IndexId,
     pub(crate) table_id: u32,
     pub(crate) cols: NonEmpty<u32>,
-    pub(crate) name: Box<str>,
+    pub(crate) name: SatsString,
     pub(crate) is_unique: bool,
     idx: BTreeSet<IndexKey>,
 }
 
 impl BTreeIndex {
-    pub(crate) fn new(index_id: IndexId, table_id: u32, cols: NonEmpty<u32>, name: String, is_unique: bool) -> Self {
+    pub(crate) fn new(index_id: IndexId, table_id: u32, cols: NonEmpty<u32>, name: SatsString, is_unique: bool) -> Self {
         Self {
             index_id,
             table_id,

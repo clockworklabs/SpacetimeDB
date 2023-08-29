@@ -6,8 +6,8 @@ use std::marker::PhantomData;
 // use crate::{ProductTypeElement, SumType, PrimitiveType, ReducerDef, ProductType, ProductValue, AlgebraicType, AlgebraicValue};
 
 use crate::{
-    AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, MapValue, ProductType, ProductTypeElement,
-    ProductValue, SumType, SumValue, WithTypespace, F32, F64,
+    slim_slice::{SlimStrBox, SlimSliceBox, SlimStr}, AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, MapValue, ProductType,
+    ProductTypeElement, ProductValue, SumType, SumValue, WithTypespace, F32, F64,
 };
 
 use super::{
@@ -102,6 +102,18 @@ impl_deserialize!([T: Deserialize<'de>] Vec<T>, de => T::__deserialize_vec(de));
 impl_deserialize!([T: Deserialize<'de>, const N: usize] [T; N], de => T::__deserialize_array(de));
 impl_deserialize!([] Box<str>, de => String::deserialize(de).map(|s| s.into_boxed_str()));
 impl_deserialize!([T: Deserialize<'de>] Box<[T]>, de => Vec::deserialize(de).map(|s| s.into_boxed_slice()));
+
+fn map_len_err<T, E: Error>(res: Result<T, usize>) -> Result<T, E> {
+    res.map_err(|len| E::custom(format!("expected `len ({len}) <= u32::MAX`")))
+}
+impl_deserialize!([] SlimStrBox, de => {
+    let s = String::deserialize(de)?;
+    map_len_err(SlimStrBox::try_from(s).map_err(|s| s.len()))
+});
+impl_deserialize!([T: Deserialize<'de>] SlimSliceBox<T>, de => {
+    let v = Vec::deserialize(de)?;
+    map_len_err(SlimSliceBox::try_from(v).map_err(|s| s.len()))
+});
 
 /// The visitor converts the slice to its owned version.
 struct OwnedSliceVisitor;
@@ -317,7 +329,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
             AlgebraicType::U128 => <Box<_>>::deserialize(de).map(AlgebraicValue::U128),
             AlgebraicType::F32 => f32::deserialize(de).map(|x| AlgebraicValue::F32(x.into())),
             AlgebraicType::F64 => f64::deserialize(de).map(|x| AlgebraicValue::F64(x.into())),
-            AlgebraicType::String => <Box<str>>::deserialize(de).map(AlgebraicValue::String),
+            AlgebraicType::String => SlimStrBox::deserialize(de).map(AlgebraicValue::String),
         }
     }
 }
@@ -535,7 +547,7 @@ pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
             // Find the first field name we haven't filled an element for.
             let missing = elements.iter().position(|field| field.is_none()).unwrap();
             let field_name = elems[missing].name();
-            Error::missing_field(missing, field_name, visitor)
+            Error::missing_field(missing, field_name.map(|n| &**n), visitor)
         })?;
 
         let element = &elems[index];
@@ -543,7 +555,7 @@ pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
         // By index we can select which element to deserialize a value for.
         let slot = &mut elements[index];
         if slot.is_some() {
-            return Err(Error::duplicate_field(index, element.name(), visitor));
+            return Err(Error::duplicate_field(index, element.name().map(|n| &**n), visitor));
         }
 
         // Deserialize the value for this field's type.
@@ -573,18 +585,18 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
     type Output = usize;
 
     fn field_names(&self, names: &mut dyn super::ValidNames) {
-        names.extend(self.elems.iter().filter_map(|f| f.name()))
+        names.extend(self.elems.iter().filter_map(|f| f.name().map(|n| &**n)))
     }
 
     fn kind(&self) -> ProductKind {
         self.kind
     }
 
-    fn visit<E: Error>(self, name: &str) -> Result<Self::Output, E> {
+    fn visit<E: Error>(self, name: SlimStr<'_>) -> Result<Self::Output, E> {
         // Finds the index of a field with `name`.
         self.elems
             .iter()
-            .position(|f| f.has_name(name))
-            .ok_or_else(|| Error::unknown_field_name(name, &self))
+            .position(|f| f.has_name(&name))
+            .ok_or_else(|| Error::unknown_field_name(&name, &self))
     }
 }

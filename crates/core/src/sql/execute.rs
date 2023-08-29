@@ -1,6 +1,6 @@
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::MemTable;
-use spacetimedb_lib::{ProductType, ProductValue};
+use spacetimedb_sats::{ProductType, ProductValue};
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 
@@ -107,8 +107,8 @@ pub(crate) mod tests {
     use spacetimedb_lib::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::{Header, RelValue};
-    use spacetimedb_sats::{product, AlgebraicType, ProductType};
-    use spacetimedb_vm::dsl::{mem_table, scalar};
+    use spacetimedb_sats::{product, str, AlgebraicType, ProductType, SatsString, string};
+    use spacetimedb_vm::dsl::mem_table;
     use spacetimedb_vm::eval::create_game_data;
     use tempdir::TempDir;
 
@@ -123,7 +123,7 @@ pub(crate) mod tests {
         let mut tx = db.begin_tx();
         let head = ProductType::from_iter([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let rows: Vec<_> = (1..=total_rows)
-            .map(|i| product!(i, format!("health{i}").into_boxed_str()))
+            .map(|i| product!(i, SatsString::from_string(format!("health{i}"))))
             .collect();
         create_table_with_rows(&db, &mut tx, "inventory", head.clone(), &rows)?;
         db.commit_tx(tx)?;
@@ -192,7 +192,7 @@ pub(crate) mod tests {
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
         let schema = ProductType::from_iter([AlgebraicType::I32]);
-        let row = product!(scalar(1));
+        let row = product!(1);
         let input = mem_table(schema, vec![row]);
 
         assert_eq!(result.as_without_table_name(), input.as_without_table_name(), "Scalar");
@@ -229,10 +229,10 @@ pub(crate) mod tests {
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
         let row = product!(
-            scalar(ST_TABLES_ID),
-            scalar(ST_TABLES_NAME),
-            scalar(StTableType::System.as_str()),
-            scalar(StAccess::Public.as_str()),
+            ST_TABLES_ID,
+            string(ST_TABLES_NAME),
+            string(StTableType::System.as_str()),
+            string(StAccess::Public.as_str()),
         );
         let input = mem_table(Header::from(&schema), vec![row]);
 
@@ -254,10 +254,10 @@ pub(crate) mod tests {
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
         //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
+        let col = table.head.find_by_name(str("inventory_id")).unwrap();
         let inv = table.head.project(&[col.field.clone()]).unwrap();
 
-        let row = product!(scalar(1u64));
+        let row = product!(1u64);
         let input = mem_table(inv, vec![row]);
 
         assert_eq!(
@@ -283,10 +283,10 @@ pub(crate) mod tests {
         let result = result.first().unwrap().clone();
 
         //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
+        let col = table.head.find_by_name(str("inventory_id")).unwrap();
         let inv = table.head.project(&[col.field.clone()]).unwrap();
 
-        let row = product!(scalar(1u64));
+        let row = product!(1u64);
         let input = mem_table(inv, vec![row]);
 
         assert_eq!(
@@ -312,10 +312,10 @@ pub(crate) mod tests {
         let mut result = result.first().unwrap().clone();
         result.data.sort();
         //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
+        let col = table.head.find_by_name(str("inventory_id")).unwrap();
         let inv = table.head.project(&[col.field.clone()]).unwrap();
 
-        let input = mem_table(inv, vec![product!(scalar(1u64)), product!(scalar(2u64))]);
+        let input = mem_table(inv, vec![product!(1u64), product!(2u64)]);
 
         assert_eq!(
             result.as_without_table_name(),
@@ -340,10 +340,10 @@ pub(crate) mod tests {
         let mut result = result.first().unwrap().clone();
         result.data.sort();
         //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
+        let col = table.head.find_by_name(str("inventory_id")).unwrap();
         let inv = table.head.project(&[col.field.clone()]).unwrap();
 
-        let input = mem_table(inv, vec![product!(scalar(1u64)), product!(scalar(2u64))]);
+        let input = mem_table(inv, vec![product!(1u64), product!(2u64)]);
 
         assert_eq!(
             result.as_without_table_name(),
@@ -419,7 +419,7 @@ pub(crate) mod tests {
         )?[0];
 
         let head = ProductType::from_iter([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
-        let row1 = product!(1u64, "health");
+        let row1 = product!(1u64, string("health"));
         let input = mem_table(head, [row1]);
 
         assert_eq!(
@@ -447,7 +447,7 @@ pub(crate) mod tests {
         assert_eq!(result.len(), 1, "Not return results");
         let mut result = result.first().unwrap().clone();
 
-        let row = product!(scalar(2u64), scalar("test"));
+        let row = product!(2u64, string("test"));
         input.data.push(RelValue::new(row, None));
         input.data.sort();
         result.data.sort();
@@ -526,7 +526,7 @@ pub(crate) mod tests {
         let result = run_for_testing(&db, &mut tx, "SELECT * FROM inventory WHERE inventory_id = 2")?;
 
         let result = result.first().unwrap().clone();
-        let row = product!(scalar(2u64), scalar("c2"));
+        let row = product!(2u64, string("c2"));
 
         let mut change = input;
         change.data.clear();

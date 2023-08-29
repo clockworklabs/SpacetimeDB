@@ -9,6 +9,7 @@ use base64::Engine;
 use bytes::Bytes;
 use bytestring::ByteString;
 use prost::Message as _;
+use spacetimedb_sats::{SatsString, string};
 
 use super::messages::{ServerMessage, TransactionUpdateMessage};
 use super::{ClientConnection, DataMessage};
@@ -156,7 +157,7 @@ impl DecodedMessage<'_> {
 #[derive(thiserror::Error, Debug)]
 #[error("error executing message (reducer: {reducer:?}) (err: {err:?})")]
 pub struct MessageExecutionError {
-    pub reducer: Option<Box<str>>,
+    pub reducer: Option<SatsString>,
     pub caller_identity: Identity,
     #[source]
     pub err: anyhow::Error,
@@ -168,7 +169,7 @@ impl MessageExecutionError {
             timestamp: Timestamp::now(),
             caller_identity: self.caller_identity,
             function_call: ModuleFunctionCall {
-                reducer: self.reducer.unwrap_or_else(|| "<none>".into()),
+                reducer: self.reducer.unwrap_or_else(|| string("<none>")),
                 args: Default::default(),
             },
             status: EventStatus::Failed(format!("{:#}", self.err)),

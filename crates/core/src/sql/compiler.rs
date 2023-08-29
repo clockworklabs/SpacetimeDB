@@ -10,7 +10,7 @@ use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::relation::{self, DbTable, FieldExpr, FieldName, Header};
 use spacetimedb_lib::table::ProductTypeMeta;
-use spacetimedb_sats::{AlgebraicValue, ProductType};
+use spacetimedb_sats::{AlgebraicValue, ProductType, SatsString};
 use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
@@ -211,7 +211,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
                 Err(err) => return Err(err),
             },
             Column::QualifiedWildcard { table: name } => {
-                if let Some(t) = table.iter_tables().find(|x| x.table_name.as_ref() == name) {
+                if let Some(t) = table.iter_tables().find(|x| (&*x.table_name) == name) {
                     col_ids.extend(
                         t.columns
                             .iter()
@@ -234,7 +234,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
 
     let mut q = query(db_table_raw(
         ProductType::from(&table.root),
-        &table.root.table_name,
+        table.root.table_name.into(),
         table.root.table_id,
         table.root.table_type,
         table.root.table_access,
@@ -244,7 +244,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
         for join in joins {
             match join {
                 Join::Inner { rhs, on } => {
-                    let t = db_table(rhs.into(), &rhs.table_name, rhs.table_id);
+                    let t = db_table(rhs.into(), rhs.table_name.into(), rhs.table_id);
                     match on.op {
                         OpCmp::Eq => {}
                         x => unreachable!("Unsupported operator `{x}` for joins"),
@@ -276,7 +276,7 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
     }
 
     DbTable::new(
-        &Header::new(&table.table_name, &new),
+        Header::new(table.table_name.clone(), &new),
         table.table_id,
         table.table_type,
         table.table_access,
@@ -343,7 +343,7 @@ fn compile_update(
 
 /// Compiles a `CREATE TABLE ...` clause
 fn compile_create_table(
-    name: String,
+    name: SatsString,
     columns: ProductTypeMeta,
     table_type: StTableType,
     table_access: StAccess,
@@ -357,7 +357,7 @@ fn compile_create_table(
 }
 
 /// Compiles a `DROP ...` clause
-fn compile_drop(name: String, kind: DbType, table_access: StAccess) -> Result<CrudExpr, PlanError> {
+fn compile_drop(name: SatsString, kind: DbType, table_access: StAccess) -> Result<CrudExpr, PlanError> {
     Ok(CrudExpr::Drop {
         name,
         kind,

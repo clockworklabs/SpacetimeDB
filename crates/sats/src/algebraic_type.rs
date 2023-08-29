@@ -293,7 +293,7 @@ impl AlgebraicType {
     }
 
     pub fn as_value(&self) -> AlgebraicValue {
-        self.serialize(ValueSerializer).unwrap_or_else(|x| match x {})
+        self.serialize(ValueSerializer).expect("unexpected `len >= u32::MAX`")
     }
 
     pub fn from_value(value: &AlgebraicValue) -> Result<Self, ValueDeserializeError> {
@@ -378,26 +378,14 @@ mod tests {
     #[test]
     fn nested_products_and_sums() {
         let builtin = AlgebraicType::U8;
-        let product = AlgebraicType::product(
-            [ProductTypeElement {
-                name: Some("thing".into()),
-                algebraic_type: AlgebraicType::U8,
-            }]
-            .into(),
-        );
+        let product = AlgebraicType::product([ProductTypeElement::new_named(AlgebraicType::U8, "thing")].into());
         let next = AlgebraicType::sum([builtin.clone().into(), builtin.clone().into(), product.into()].into());
         let next = AlgebraicType::product(
             [
-                ProductTypeElement {
-                    algebraic_type: builtin.clone(),
-                    name: Some("test".into()),
-                },
+                ProductTypeElement::new_named(builtin.clone(), "test"),
                 next.into(),
                 builtin.into(),
-                ProductTypeElement {
-                    algebraic_type: AlgebraicType::never(),
-                    name: Some("never".into()),
-                },
+                ProductTypeElement::new_named(AlgebraicType::never(), "never"),
             ]
             .into(),
         );
@@ -429,10 +417,7 @@ mod tests {
         let algebraic_type = AlgebraicType::meta_type();
         let typespace = Typespace::new(vec![algebraic_type]);
         let at_ref = AlgebraicType::Ref(AlgebraicTypeRef(0));
-        assert_eq!(
-            "(u8 = ())",
-            in_space(&typespace, &at_ref, &array.as_value()).to_satn()
-        );
+        assert_eq!("(u8 = ())", in_space(&typespace, &at_ref, &array.as_value()).to_satn());
     }
 
     #[test]

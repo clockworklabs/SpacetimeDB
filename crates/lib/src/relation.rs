@@ -11,7 +11,9 @@ use crate::DataKey;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{algebraic_type, AlgebraicType, ProductType, ProductTypeElement, Typespace, WithTypespace};
+use spacetimedb_sats::{
+    algebraic_type, str, AlgebraicType, ProductType, ProductTypeElement, SatsStr, SatsString, Typespace, WithTypespace,
+};
 
 impl ColumnDef {
     pub fn name(&self) -> FieldOnly {
@@ -69,21 +71,21 @@ impl fmt::Display for FieldOnly<'_> {
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum FieldName {
-    Name { table: Box<str>, field: Box<str> },
-    Pos { table: Box<str>, field: usize },
+    Name { table: SatsString, field: SatsString },
+    Pos { table: SatsString, field: usize },
 }
 
 impl FieldName {
     pub fn named(table: &str, field: &str) -> Self {
         Self::Name {
-            table: table.into(),
-            field: field.into(),
+            table: str(table).into(),
+            field: str(field).into(),
         }
     }
 
     pub fn positional(table: &str, field: usize) -> Self {
         Self::Pos {
-            table: table.into(),
+            table: str(table).into(),
             field,
         }
     }
@@ -100,7 +102,14 @@ impl FieldName {
         }
     }
 
-    pub fn field_name(&self) -> Option<&str> {
+    pub fn field_name(&self) -> Option<&SatsStr> {
+        match self {
+            FieldName::Name { field, .. } => Some(field.shared_ref()),
+            FieldName::Pos { .. } => None,
+        }
+    }
+
+    pub fn into_field_name(self) -> Option<SatsString> {
         match self {
             FieldName::Name { field, .. } => Some(field),
             FieldName::Pos { .. } => None,
@@ -174,57 +183,51 @@ pub struct HeaderOnlyField<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Header {
-    pub table_name: Box<str>,
+    pub table_name: SatsString,
     pub fields: Vec<Column>,
 }
 
 impl From<Header> for ProductType {
     fn from(value: Header) -> Self {
-        ProductType::from_iter(value.fields.iter().map(|x| match &x.field {
-            FieldName::Name { field, .. } => ProductTypeElement::new_named(x.algebraic_type.clone(), field.clone()),
-            FieldName::Pos { .. } => ProductTypeElement::new(x.algebraic_type.clone(), None),
-        }))
+        ProductType::from_iter(
+            value
+                .fields
+                .into_iter()
+                .map(|x| ProductTypeElement::new(x.algebraic_type, x.field.into_field_name())),
+        )
     }
 }
 
 impl Header {
-    pub fn new(table_name: &str, fields: &[Column]) -> Self {
+    pub fn new(table_name: SatsString, fields: &[Column]) -> Self {
         Self {
-            table_name: table_name.into(),
+            table_name,
             fields: fields.into(),
         }
     }
 
-    pub fn from_product_type(table_name: &str, fields: ProductType) -> Self {
-        let cols = fields
+    pub fn from_product_type(table_name: SatsString, fields: ProductType) -> Self {
+        let fields = fields
             .elements
             .into_vec()
             .into_iter()
             .enumerate()
             .map(|(pos, f)| {
+                let table = table_name.clone();
                 let name = match f.name {
-                    None => FieldName::Pos {
-                        table: table_name.into(),
-                        field: pos,
-                    },
-                    Some(x) => FieldName::Name {
-                        table: table_name.into(),
-                        field: x,
-                    },
+                    None => FieldName::Pos { table, field: pos },
+                    Some(x) => FieldName::Name { table, field: x },
                 };
                 Column::new(name, f.algebraic_type)
             })
             .collect();
 
-        Self {
-            table_name: table_name.into(),
-            fields: cols,
-        }
+        Self { table_name, fields }
     }
 
     pub fn for_mem_table(fields: ProductType) -> Self {
-        let table_name = format!("mem#{:x}", calculate_hash(&fields));
-        Self::from_product_type(&table_name, fields)
+        let table_name = SatsString::from_string(format!("mem#{:x}", calculate_hash(&fields)));
+        Self::from_product_type(table_name, fields)
     }
 
     pub fn as_without_table_name(&self) -> HeaderOnlyField {
@@ -237,12 +240,12 @@ impl Header {
         ProductType::from_iter(
             self.fields
                 .iter()
-                .map(|x| (x.field.field_name(), x.algebraic_type.clone())),
+                .map(|x| (x.field.field_name().map(SatsString::from), x.algebraic_type.clone())),
         )
     }
 
-    pub fn find_by_name(&self, field_name: &str) -> Option<&Column> {
-        self.fields.iter().find(|x| x.field.field_name() == Some(field_name))
+    pub fn find_by_name(&self, field_name: SatsStr) -> Option<&Column> {
+        self.fields.iter().find(|x| x.field.field_name() == Some(&field_name))
     }
 
     pub fn column_pos<'a>(&'a self, col: &'a FieldName) -> Option<usize> {
@@ -293,7 +296,7 @@ impl Header {
             }
         }
 
-        Ok(Self::new(&self.table_name, &p))
+        Ok(Self::new(self.table_name.clone(), &p))
     }
 
     /// Adds the fields from `right` to this [`Header`],
@@ -306,9 +309,9 @@ impl Header {
         let mut cont = 0;
         //Avoid duplicated field names...
         for mut f in right.fields.iter().cloned() {
-            if f.field.table() == self.table_name.as_ref() && self.column_pos(&f.field).is_some() {
-                let field = format!("{}_{}", f.field.field(), cont).into();
-                let table = f.field.table().into();
+            if self.table_name == f.field.table() && self.column_pos(&f.field).is_some() {
+                let field = SatsString::from_string(format!("{}_{}", f.field.field(), cont));
+                let table = str(f.field.table()).into();
                 f.field = FieldName::Name { table, field };
 
                 cont += 1;
@@ -316,7 +319,7 @@ impl Header {
             fields.push(f);
         }
 
-        Self::new(&self.table_name, &fields)
+        Self::new(self.table_name.clone(), &fields)
     }
 }
 
@@ -558,7 +561,7 @@ impl MemTable {
         self.head.fields.get(pos).map(|x| &x.field)
     }
 
-    pub fn get_field_named(&self, name: &str) -> Option<&FieldName> {
+    pub fn get_field_named(&self, name: SatsStr) -> Option<&FieldName> {
         self.head.find_by_name(name).map(|x| &x.field)
     }
 }
@@ -583,9 +586,9 @@ pub struct DbTable {
 }
 
 impl DbTable {
-    pub fn new(head: &Header, table_id: u32, table_type: StTableType, table_access: StAccess) -> Self {
+    pub fn new(head: Header, table_id: u32, table_type: StTableType, table_access: StAccess) -> Self {
         Self {
-            head: head.clone(),
+            head,
             table_id,
             table_type,
             table_access,

@@ -47,7 +47,13 @@ pub fn parse(value: &str, ty: &AlgebraicType) -> Result<AlgebraicValue, ErrorVm>
         AlgebraicType::U128 => _parse::<u128>(value, ty),
         AlgebraicType::F32 => _parse::<f32>(value, ty),
         AlgebraicType::F64 => _parse::<f64>(value, ty),
-        AlgebraicType::String => Ok(AlgebraicValue::String(value.into())),
+        AlgebraicType::String => match value.try_into() {
+            Ok(s) => Ok(AlgebraicValue::String(s)),
+            Err(s) => Err(ErrorVm::Unsupported(format!(
+                "The '{s}' is too long for {}",
+                ty.to_satn_pretty()
+            ))),
+        },
         x => Err(ErrorVm::Unsupported(format!(
             "Can't parse '{value}' to {}",
             x.to_satn_pretty()

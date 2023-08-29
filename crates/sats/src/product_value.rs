@@ -1,10 +1,9 @@
-use std::mem::size_of;
-
 use crate::algebraic_value::AlgebraicValue;
 use crate::product_type::ProductType;
-use crate::static_assert_size;
-use crate::ArrayValue;
+use crate::{static_assert_size, ArrayValue, SatsStr};
+
 use nonempty::NonEmpty;
+use std::mem::size_of;
 
 /// A product value is made of a a list of
 /// "elements" / "fields" / "factors" of other `AlgebraicValue`s.
@@ -160,8 +159,9 @@ impl ProductValue {
     }
 
     /// Interprets the value at field of `self` identified by `index` as a string slice.
-    pub fn field_as_str(&self, index: usize, named: Option<&'static str>) -> Result<&str, InvalidFieldError> {
-        self.extract_field(index, named, |f| f.as_string()).map(|s| &**s)
+    pub fn field_as_str(&self, index: usize, named: Option<&'static str>) -> Result<&SatsStr<'_>, InvalidFieldError> {
+        self.extract_field(index, named, |f| f.as_string())
+            .map(|s| s.shared_ref())
     }
 
     /// Interprets the value at field of `self` identified by `index` as a byte slice.

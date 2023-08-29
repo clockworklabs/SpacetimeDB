@@ -5,6 +5,7 @@ use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationE
 use crate::host::wasm_common::*;
 use crate::host::{EnergyQuanta, Timestamp};
 use bytes::Bytes;
+use spacetimedb_sats::string;
 use wasmer::{
     imports, AsStoreMut, Engine, ExternType, Function, FunctionEnv, Imports, Instance, Module, RuntimeError, Store,
     TypedFunction,
@@ -198,7 +199,9 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
                         .buffers
                         .take(errbuf)
                         .unwrap_or_else(|| "unknown error".as_bytes().into());
-                    let errbuf = crate::util::string_from_utf8_lossy_owned(errbuf.into()).into();
+                    let errbuf = crate::util::string_from_utf8_lossy_owned(errbuf.into())
+                        .try_into()
+                        .unwrap_or_else(|_| string("errbuf len too long"));
                     // TODO: catch this and return the error message to the http client
                     return Err(InitializationError::Setup(errbuf));
                 }

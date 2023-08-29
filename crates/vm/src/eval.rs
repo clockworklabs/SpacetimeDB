@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use spacetimedb_lib::relation::{FieldExpr, MemTable, RelIter, Relation, Table};
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::{product, ProductType, ProductValue};
+use spacetimedb_sats::{product, string, ProductType, ProductValue};
 
 use crate::dsl::{bin_op, call_fn, if_, mem_table, scalar, var};
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
@@ -523,11 +523,12 @@ pub struct GameData {
     pub inv: MemTable,
     pub player: MemTable,
 }
+
 // Used internally for testing  SQL JOINS
 #[doc(hidden)]
 pub fn create_game_data() -> GameData {
     let head = ProductType::from_iter([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
-    let row = product!(1u64, "health");
+    let row = product!(1u64, string("health"));
     let inv = mem_table(head, [row]);
 
     let head = ProductType::from_iter([("entity_id", AlgebraicType::U64), ("inventory_id", AlgebraicType::U64)]);
@@ -559,6 +560,7 @@ mod tests {
     use spacetimedb_lib::error::RelationError;
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::relation::{FieldName, MemTable, RelValue};
+    use spacetimedb_sats::str;
 
     fn fib(n: u64) -> u64 {
         if n < 2 {
@@ -783,8 +785,8 @@ mod tests {
         };
 
         //The expected result
-        let inv = ProductType::from_iter([(None, AlgebraicType::I32), (Some("0_0"), AlgebraicType::I32)]);
-        let row = product!(scalar(1), scalar(1));
+        let inv = ProductType::from_iter([(None, AlgebraicType::I32), (Some(string("0_0")), AlgebraicType::I32)]);
+        let row = product!(1, 1);
         let input = mem_table(inv, vec![row]);
 
         println!("{}", &result.head);
@@ -799,7 +801,7 @@ mod tests {
 
         let inv = ProductType::from_iter([("id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
-        let row = product!(scalar(1u64), scalar("health"));
+        let row = product!(1u64, string("health"));
 
         let input = mem_table(inv, vec![row]);
         let inv = input.clone();
@@ -825,7 +827,7 @@ mod tests {
 
         let inv = ProductType::from_iter([("id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
-        let row = product!(scalar(1u64), scalar("health"));
+        let row = product!(1u64, string("health"));
 
         let input = mem_table(inv, vec![row]);
         let field = input.get_field(0).unwrap().clone();
@@ -840,10 +842,10 @@ mod tests {
         //The expected result
         let inv = ProductType::from_iter([
             (None, AlgebraicType::U64),
-            (Some("id"), AlgebraicType::U64),
-            (Some("name"), AlgebraicType::String),
+            (Some(string("id")), AlgebraicType::U64),
+            (Some(string("name")), AlgebraicType::String),
         ]);
-        let row = product!(scalar(1u64), scalar("health"), scalar(1u64), scalar("health"));
+        let row = product!(1u64, string("health"), 1u64, string("health"));
         let input = mem_table(inv, vec![row]);
         assert_eq!(result.data, input.data, "Project");
     }
@@ -860,14 +862,14 @@ mod tests {
 
         let data = create_game_data();
 
-        let location_entity_id = data.location.get_field_named("entity_id").unwrap().clone();
-        let inv_inventory_id = data.inv.get_field_named("inventory_id").unwrap().clone();
-        let player_inventory_id = data.player.get_field_named("inventory_id").unwrap().clone();
-        let player_entity_id = data.player.get_field_named("entity_id").unwrap().clone();
+        let location_entity_id = data.location.get_field_named(str("entity_id")).unwrap().clone();
+        let inv_inventory_id = data.inv.get_field_named(str("inventory_id")).unwrap().clone();
+        let player_inventory_id = data.player.get_field_named(str("inventory_id")).unwrap().clone();
+        let player_entity_id = data.player.get_field_named(str("entity_id")).unwrap().clone();
 
-        let inv_name = data.inv.get_field_named("name").unwrap().clone();
-        let location_x = data.location.get_field_named("x").unwrap().clone();
-        let location_z = data.location.get_field_named("z").unwrap().clone();
+        let inv_name = data.inv.get_field_named(str("name")).unwrap().clone();
+        let location_x = data.location.get_field_named(str("x")).unwrap().clone();
+        let location_z = data.location.get_field_named(str("z")).unwrap().clone();
 
         // SELECT
         // Player.*
@@ -917,7 +919,7 @@ mod tests {
         let result = run_query(p, q.into());
 
         let head = ProductType::from_iter([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
-        let row1 = product!(1u64, "health");
+        let row1 = product!(1u64, string("health"));
         let input = mem_table(head, [row1]);
 
         assert_eq!(

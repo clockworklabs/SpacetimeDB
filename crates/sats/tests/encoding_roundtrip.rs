@@ -3,6 +3,7 @@
 use proptest::prelude::*;
 use proptest::proptest;
 use spacetimedb_sats::buffer::DecodeError;
+use spacetimedb_sats::SatsString;
 use spacetimedb_sats::{
     meta_type::MetaType, product, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, F32,
     F64,
@@ -38,7 +39,7 @@ fn array_values() -> impl Strategy<Value = AlgebraicValue> {
             AlgebraicValue::Array(bools.into())
         }),
         prop::collection::vec(0i32..10, 0..10).prop_map(|x| {
-            let strs: Vec<Box<str>> = x.into_iter().map(|x| x.to_string().into()).collect();
+            let strs: Vec<SatsString> = x.into_iter().map(|x| SatsString::from_string(x.to_string())).collect();
             AlgebraicValue::Array(strs.into())
         }),
         prop::collection::vec(0i32..10, 0..10).prop_map(|x| {
@@ -71,7 +72,8 @@ fn builtin_values() -> impl Strategy<Value = AlgebraicValue> {
             let x = x.into_bytes().into();
             AlgebraicValue::Bytes(x)
         }),
-        ".*".prop_map(|x| AlgebraicValue::String(x.into())),
+        ".*".prop_filter("overflowed u32::MAX", |x| x.len() <= u32::MAX as usize)
+            .prop_map(|x| AlgebraicValue::String(SatsString::from_string(x)))
     ]
 }
 
@@ -104,7 +106,7 @@ fn algebraic_values() -> impl Strategy<Value = AlgebraicValue> {
 
 fn round_trip(value: AlgebraicValue) -> Result<(ProductValue, ProductValue), DecodeError> {
     let ty = value.type_of();
-    let schema = ProductType::new([ProductTypeElement::new(ty, Some("x".into()))].into());
+    let schema = ProductType::new([ProductTypeElement::new_named(ty, "x")].into());
 
     let row = product!(value);
 

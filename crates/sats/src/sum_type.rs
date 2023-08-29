@@ -85,7 +85,7 @@ impl MetaType for SumType {
 
 impl SumType {
     pub fn as_value(&self) -> AlgebraicValue {
-        self.serialize(ValueSerializer).unwrap_or_else(|x| match x {})
+        self.serialize(ValueSerializer).expect("unexpected `len >= u32::MAX`")
     }
 
     pub fn from_value(value: &AlgebraicValue) -> Result<SumType, ValueDeserializeError> {

@@ -116,7 +116,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
     }
 
     fn deserialize_str<V: de::SliceVisitor<'de, str>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        visitor.visit_owned(map_err(self.val.into_string().map(|s| s.into_string()))?)
+        visitor.visit_owned(map_err(self.val.into_string().map(|s| s.into()))?)
     }
 
     fn deserialize_bytes<V: de::SliceVisitor<'de, [u8]>>(self, visitor: V) -> Result<V::Output, Self::Error> {

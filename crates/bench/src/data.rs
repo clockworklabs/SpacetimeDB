@@ -37,7 +37,7 @@ impl<T: BuildDb> Pool<T> {
 pub struct Data {
     pub(crate) a: i32,
     pub(crate) b: u64,
-    pub(crate) c: Box<str>,
+    pub(crate) c: SatsString,
 }
 
 impl Data {

@@ -1,7 +1,7 @@
 pub mod de;
 pub mod ser;
 
-use crate::{static_assert_size, AlgebraicType, ArrayValue, MapValue, ProductValue, SumValue};
+use crate::{static_assert_size, AlgebraicType, ArrayValue, MapValue, ProductValue, SatsString, SumValue};
 use enum_as_inner::EnumAsInner;
 use std::ops::{Bound, Deref, RangeBounds};
 
@@ -106,7 +106,7 @@ pub enum AlgebraicValue {
     /// A UTF-8 string value of type [`AlgebraicType::String`].
     ///
     /// Uses Rust's standard representation of strings.
-    String(Box<str>),
+    String(SatsString),
 }
 
 #[cfg(target_arch = "wasm32")]
