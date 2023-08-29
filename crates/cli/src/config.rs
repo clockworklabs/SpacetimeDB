@@ -522,6 +522,51 @@ Fetch the server's fingerprint with:
         cfg.ecdsa_public_key = Some(ecdsa_public_key);
         Ok(())
     }
+
+    /// Edit a saved server configuration.
+    ///
+    /// Implements `spacetime server edit`.
+    ///
+    /// Returns `Err` if no such server exists.
+    /// On success, returns `(old_nickname, old_host, hold_protocol)`,
+    /// with `Some` for each field that was changed.
+    pub fn edit_server(
+        &mut self,
+        server: &str,
+        new_nickname: Option<&str>,
+        new_host: Option<&str>,
+        new_protocol: Option<&str>,
+    ) -> anyhow::Result<(Option<String>, Option<String>, Option<String>)> {
+        let cfg = self.find_server_mut(server)?;
+        let old_nickname = if let Some(new_nickname) = new_nickname {
+            std::mem::replace(&mut cfg.nickname, Some(new_nickname.to_string()))
+        } else {
+            None
+        };
+        let old_host = if let Some(new_host) = new_host {
+            Some(std::mem::replace(&mut cfg.host, new_host.to_string()))
+        } else {
+            None
+        };
+        let old_protocol = if let Some(new_protocol) = new_protocol {
+            Some(std::mem::replace(&mut cfg.protocol, new_protocol.to_string()))
+        } else {
+            None
+        };
+        Ok((old_nickname, old_host, old_protocol))
+    }
+
+    pub fn delete_server_fingerprint(&mut self, server: &str) -> anyhow::Result<()> {
+        let cfg = self.find_server_mut(server)?;
+        cfg.ecdsa_public_key = None;
+        Ok(())
+    }
+
+    pub fn delete_default_server_fingerprint(&mut self) -> anyhow::Result<()> {
+        let cfg = self.default_server_mut()?;
+        cfg.ecdsa_public_key = None;
+        Ok(())
+    }
 }
 
 impl Config {
@@ -1034,5 +1079,25 @@ Update the server's fingerprint with:
 
     pub fn remove_identities_for_fingerprint(&mut self, fingerprint: &str) -> anyhow::Result<Vec<IdentityConfig>> {
         self.home.remove_identities_for_fingerprint(fingerprint)
+    }
+
+    pub fn edit_server(
+        &mut self,
+        server: &str,
+        new_nickname: Option<&str>,
+        new_host: Option<&str>,
+        new_protocol: Option<&str>,
+    ) -> anyhow::Result<(Option<String>, Option<String>, Option<String>)> {
+        let (host, _) = host_or_url_to_host_and_protocol(server);
+        self.home.edit_server(host, new_nickname, new_host, new_protocol)
+    }
+
+    pub fn delete_server_fingerprint(&mut self, server: Option<&str>) -> anyhow::Result<()> {
+        if let Some(server) = server {
+            let (host, _) = host_or_url_to_host_and_protocol(server);
+            self.home.delete_server_fingerprint(host)
+        } else {
+            self.home.delete_default_server_fingerprint()
+        }
     }
 }

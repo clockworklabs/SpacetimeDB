@@ -18,7 +18,7 @@ reset_config
 
 # Fetch the server's fingerprint.
 # The fingerprint is required for `identity list`.
-run_test cargo run server update 127.0.0.1:3000
+run_test cargo run server fingerprint localhost -f
 
 run_test cargo run identity import "$IDENT" "$TOKEN"
 run_test cargo run identity list
