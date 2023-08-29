@@ -492,7 +492,7 @@ async fn exec_list(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
             format!(
                 "Cannot list identities for server without a saved fingerprint: {server_name}
 Fetch the server's fingerprint with:
-\tspacetime server update {server_name}"
+\tspacetime server fingerprint {server_name}"
             )
         })?;
         let default_identity = config.default_identity(server);
