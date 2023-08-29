@@ -105,6 +105,7 @@ pub struct RawConfig {
 
 const DEFAULT_HOST: &str = "127.0.0.1:3000";
 const DEFAULT_PROTOCOL: &str = "http";
+const DEFAULT_HOST_NICKNAME: &str = "local";
 
 #[derive(Clone)]
 pub struct Config {
@@ -146,13 +147,13 @@ impl RawConfig {
 
     fn new_with_localhost() -> Self {
         RawConfig {
-            default_server: Some(DEFAULT_HOST.to_string()),
+            default_server: Some(DEFAULT_HOST_NICKNAME.to_string()),
             identity_configs: None,
             server_configs: Some(vec![ServerConfig {
                 default_identity: None,
                 host: DEFAULT_HOST.to_string(),
                 protocol: DEFAULT_PROTOCOL.to_string(),
-                nickname: None,
+                nickname: Some(DEFAULT_HOST_NICKNAME.to_string()),
                 ecdsa_public_key: None,
             }]),
         }
