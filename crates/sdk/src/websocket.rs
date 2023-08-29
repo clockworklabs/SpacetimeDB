@@ -160,6 +160,8 @@ impl DbConnection {
         loop {
             tokio::select! {
                 incoming = self.sock.try_next() => match incoming {
+                    Err(tokio_tungstenite::tungstenite::error::Error::ConnectionClosed) | Ok(None) => break,
+
                     Err(e) => Self::maybe_log_error::<(), _>(
                         "Error reading message from read WebSocket stream",
                         Err(e),
@@ -181,8 +183,6 @@ impl DbConnection {
                     Ok(Some(WebSocketMessage::Ping(_))) => {}
 
                     Ok(Some(other)) => log::warn!("Unexpected WebSocket message {:?}", other),
-
-                    Ok(None) => break,
                 },
 
                 // this is stupid. we want to handle the channel close *once*, and then disable this branch
