@@ -81,6 +81,7 @@ url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
 wasmer-middlewares.workspace = true
+wasmer-types.workspace = true
 wasmer-vm.workspace = true
 wasmer.workspace = true
 wasmparser.workspace = true

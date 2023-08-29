@@ -21,6 +21,9 @@ members = [
   "modules/quickstart-chat",
 ]
 default-members = ["crates/cli"]
+# cargo feature graph resolver. v2 is default in edition2021 but workspace
+# manifests don't have editions.
+resolver = "2"
 
 [profile.release]
 opt-level = 3
@@ -157,9 +160,13 @@ url = "2.3.1"
 urlencoding = "2.1.2"
 uuid = { version = "1.2.1", features = ["v4"]}
 wasmbin = "0.6"
-wasmer = "3.1.*"
-wasmer-middlewares = "3.1.*"
-wasmer-vm = "3.1.*"
+
+# wasmer prior to 4.1.1 had a signal handling bug on macOS.
+wasmer = "4.1.1"
+wasmer-middlewares = "4.1.1"
+wasmer-types = "4.1.1"
+wasmer-vm = "4.1.1"
+
 wasmparser = "0.92.0"
 wasmtime = { version = "7", default-features = false, features = ["cranelift"] }
 
