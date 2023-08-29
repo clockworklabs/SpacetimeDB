@@ -89,19 +89,19 @@ fn get_subcommands() -> Vec<Command> {
                 Arg::new("nickname")
                     .help("A new nickname to assign the server configuration")
                     .short('n')
-                    .long("nickname")
+                    .long("nickname"),
             )
             .arg(
                 Arg::new("host")
                     .help("A new hostname to assign the server configuration")
                     .short('H')
-                    .long("host")
+                    .long("host"),
             )
             .arg(
                 Arg::new("protocol")
                     .help("A new protocol to assign the server configuration; http or https")
                     .short('p')
-                    .long("protocol")
+                    .long("protocol"),
             )
             .arg(
                 Arg::new("no-fingerprint")
@@ -265,10 +265,16 @@ pub async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), an
     Ok(())
 }
 
-async fn update_server_fingerprint(config: &mut Config, server: Option<&str>, delete_identities: bool) -> Result<bool, anyhow::Error> {
+async fn update_server_fingerprint(
+    config: &mut Config,
+    server: Option<&str>,
+    delete_identities: bool,
+) -> Result<bool, anyhow::Error> {
     let url = config.get_host_url(server)?;
     let nick_or_host = config.server_nick_or_host(server)?;
-    let new_fing = spacetime_server_fingerprint(&url).await.context("Error fetching server fingerprint")?;
+    let new_fing = spacetime_server_fingerprint(&url)
+        .await
+        .context("Error fetching server fingerprint")?;
     if let Some(saved_fing) = config.server_fingerprint(server)? {
         if saved_fing == new_fing {
             println!("Fingerprint is unchanged for server {}:\n{}", nick_or_host, saved_fing);
@@ -353,7 +359,10 @@ pub async fn exec_ping(config: Config, args: &ArgMatches) -> Result<(), anyhow::
 }
 
 pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let server = args.get_one::<String>("server").map(|s| s.as_str()).expect("Supply a server to spacetime server edit");
+    let server = args
+        .get_one::<String>("server")
+        .map(|s| s.as_str())
+        .expect("Supply a server to spacetime server edit");
 
     let old_url = config.get_host_url(Some(server))?;
 
@@ -396,6 +405,6 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
     }
 
     config.save();
-    
+
     Ok(())
 }
