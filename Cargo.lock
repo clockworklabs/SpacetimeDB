@@ -4309,6 +4309,7 @@ dependencies = [
  "spacetimedb-bindings-macro",
  "spacetimedb-sats",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -4333,6 +4334,7 @@ dependencies = [
  "serde",
  "spacetimedb-bindings-macro",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]

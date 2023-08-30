@@ -162,6 +162,7 @@ where
         self.count
     }
 
+    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         let filter = &mut self.predicate;
         while let Some(v) = self.iter.next()? {
@@ -205,6 +206,7 @@ where
         self.count
     }
 
+    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         let extract = &mut self.extractor;
         if let Some(v) = self.iter.next()? {
@@ -262,6 +264,7 @@ where
         self.count
     }
 
+    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         if !self.filled {
             self.map = HashMap::with_capacity(self.rhs.row_count().min);
