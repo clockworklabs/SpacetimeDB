@@ -5,7 +5,7 @@ use rusqlite::types::Value;
 use spacetimedb_sats::{meta_type::MetaType, AlgebraicType};
 use sqllogictest::{AsyncDB, DBOutput};
 use std::path::PathBuf;
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 fn kind(of: &str) -> AlgebraicType {
     let of = of.to_uppercase();
@@ -46,7 +46,7 @@ pub struct Sqlite {
 
 impl Sqlite {
     pub fn new() -> anyhow::Result<Self> {
-        let tmp_dir = TempDir::new("sqlite_test")?;
+        let tmp_dir = TempDir::with_prefix("sqlite_test")?;
         let mut file = PathBuf::from(tmp_dir.path());
         file.push("db.db");
 

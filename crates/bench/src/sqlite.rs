@@ -12,7 +12,7 @@ use std::{
     hint::black_box,
     sync::{Arc, RwLock},
 };
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 /// SQLite benchmark harness.
 pub struct SQLite {
@@ -30,7 +30,7 @@ impl BenchDatabase for SQLite {
     where
         Self: Sized,
     {
-        let temp_dir = TempDir::new("sqlite_test")?;
+        let temp_dir = TempDir::with_prefix("sqlite_test")?;
         let db = if in_memory {
             Connection::open_in_memory()?
         } else {

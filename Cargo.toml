@@ -160,7 +160,6 @@ syntect = { version = "5.0.0", default-features = false, features = [
   "default-fancy",
 ] }
 tabled = "0.8.0"
-tempdir = "0.3.7"
 tempfile = "3.8"
 termcolor = "1.2.0"
 thiserror = "1.0.37"
