@@ -433,6 +433,8 @@ impl InstanceEnv {
     }
 }
 
+/// ==== Iterator packing ====
+
 /// An item yielded by a table iterator, either a header describing the type of the table
 /// or a row with data. Iterators yielding this type should return exactly one header
 /// at the beginning of iteration.
@@ -440,12 +442,15 @@ enum IterItem {
     Header(ProductType),
     Row(ProductValue),
 }
+
+/// State of a compactor iterator
 #[derive(Copy, Clone)]
 enum BSatnCompactorState {
     Start,
     Iterating,
     Complete,
 }
+
 /// Pack bsatns into buffers. No delimiters or length metadata. Wraps an iterator,
 /// which should produce a single `IterItem::Header` and then as many `IterItem::Row`s as
 /// needed.
@@ -454,6 +459,7 @@ struct BSatnCompactor<I: Iterator<Item = Result<IterItem, NodesError>>> {
     buf: Vec<u8>,
     state: BSatnCompactorState,
 }
+
 impl<I: Iterator<Item = Result<IterItem, NodesError>>> BSatnCompactor<I> {
     fn new(iter: I) -> Self {
         BSatnCompactor {
@@ -463,6 +469,7 @@ impl<I: Iterator<Item = Result<IterItem, NodesError>>> BSatnCompactor<I> {
         }
     }
 }
+
 impl<I: Iterator<Item = Result<IterItem, NodesError>>> Iterator for BSatnCompactor<I> {
     type Item = Result<Vec<u8>, NodesError>;
 
@@ -517,11 +524,15 @@ impl<I: Iterator<Item = Result<IterItem, NodesError>>> Iterator for BSatnCompact
                     *state = BSatnCompactorState::Complete;
                     return Some(Err(err));
                 }
-                (BSatnCompactorState::Start, _) => 
-                    panic!("{}: Wrapped iterator did not produce a starting header!", std::any::type_name::<Self>()),
-                (BSatnCompactorState::Iterating, Some(Ok(IterItem::Header(_)))) => 
-                    panic!("{}: Wrapped iterator produced too many headers!", std::any::type_name::<Self>()),
-                (BSatnCompactorState::Complete, _) => unreachable!()
+                (BSatnCompactorState::Start, _) => panic!(
+                    "{}: Wrapped iterator did not produce a starting header!",
+                    std::any::type_name::<Self>()
+                ),
+                (BSatnCompactorState::Iterating, Some(Ok(IterItem::Header(_)))) => panic!(
+                    "{}: Wrapped iterator produced too many headers!",
+                    std::any::type_name::<Self>()
+                ),
+                (BSatnCompactorState::Complete, _) => unreachable!(),
             }
         }
     }
