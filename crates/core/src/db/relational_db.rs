@@ -386,9 +386,9 @@ impl RelationalDB {
                 columns.iter().map(|x| x.col_name.clone()).collect(),
             )));
         };
-        let unique_index = table.indexes.iter().find(|x| x.col_id == col_id).map(|x| x.is_unique);
+        let unique_index = table.indexes.iter().find(|x| &x.cols == cols).map(|x| x.is_unique);
         let mut attr = ColumnIndexAttribute::UNSET;
-        if column.is_autoinc {
+        if is_autoinc {
             attr |= ColumnIndexAttribute::AUTO_INC;
         }
         if let Some(is_unique) = unique_index {
@@ -398,7 +398,7 @@ impl RelationalDB {
                 ColumnIndexAttribute::INDEXED
             };
         }
-        Ok(Some(attr))
+        Ok(attr)
     }
 
     #[tracing::instrument(skip_all)]
