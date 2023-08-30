@@ -100,7 +100,8 @@ macro_rules! impl_product {
                 $(
                     let $field =
                         prod
-                        .next_element_seed(impl_product!(@seed $($seed(self.ctx),)? self.with_type::<$field_ty>()))?
+                        // TODO: remove the braces around {$seed} when clippy false positive is fixed
+                        .next_element_seed(impl_product!(@seed $({$seed}(self.ctx),)? self.with_type::<$field_ty>()))?
                         .ok_or_else(|| {
                             A::Error::missing_field(
                                 {

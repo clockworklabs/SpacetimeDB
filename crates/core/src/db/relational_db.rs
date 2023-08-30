@@ -328,13 +328,18 @@ impl RelationalDB {
             return Ok(None);
         };
         let unique_index = table.indexes.iter().find(|x| x.col_id == col_id).map(|x| x.is_unique);
-        Ok(Some(match (column.is_autoinc, unique_index) {
-            (true, Some(true)) => ColumnIndexAttribute::Identity,
-            (true, Some(false) | None) => ColumnIndexAttribute::AutoInc,
-            (false, Some(true)) => ColumnIndexAttribute::Unique,
-            (false, Some(false)) => ColumnIndexAttribute::Indexed,
-            (false, None) => ColumnIndexAttribute::UnSet,
-        }))
+        let mut attr = ColumnIndexAttribute::UNSET;
+        if column.is_autoinc {
+            attr |= ColumnIndexAttribute::AUTO_INC;
+        }
+        if let Some(is_unique) = unique_index {
+            attr |= if is_unique {
+                ColumnIndexAttribute::UNIQUE
+            } else {
+                ColumnIndexAttribute::INDEXED
+            };
+        }
+        Ok(Some(attr))
     }
 
     #[tracing::instrument(skip_all)]
@@ -615,7 +620,7 @@ mod tests {
         schema.table_name = "MyTable".to_string();
         stdb.create_table(&mut tx, schema.clone())?;
         let result = stdb.create_table(&mut tx, schema);
-        assert!(matches!(result, Err(_)));
+        result.expect_err("create_table should error when called twice");
         Ok(())
     }
 
@@ -732,7 +737,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let result = stdb.drop_table(&mut tx, table_id);
-        assert!(matches!(result, Err(_)));
+        result.expect_err("drop_table should fail");
         Ok(())
     }
 
