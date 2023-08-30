@@ -227,13 +227,6 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     }
 
     // Database instances
-    fn get_database_instance_state(
-        &self,
-        database_instance_id: u64,
-    ) -> spacetimedb::control_db::Result<Option<DatabaseInstanceState>> {
-        Ok(self.worker_db.get_database_instance_state(database_instance_id)?)
-    }
-
     fn get_database_instance_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<DatabaseInstance>> {
         self.control_db.get_database_instance_by_id(id)
     }

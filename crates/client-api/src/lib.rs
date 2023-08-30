@@ -11,7 +11,6 @@ use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::host::{EnergyQuanta, HostController};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, IdentityEmail, Node};
-use spacetimedb::messages::worker_db::DatabaseInstanceState;
 use spacetimedb::module_host_context::ModuleHostContext;
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb_lib::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
@@ -96,10 +95,6 @@ pub trait ControlStateReadAccess {
     fn get_databases(&self) -> spacetimedb::control_db::Result<Vec<Database>>;
 
     // Database instances
-    fn get_database_instance_state(
-        &self,
-        database_instance_id: u64,
-    ) -> spacetimedb::control_db::Result<Option<DatabaseInstanceState>>;
     fn get_database_instance_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<DatabaseInstance>>;
     fn get_database_instances(&self) -> spacetimedb::control_db::Result<Vec<DatabaseInstance>>;
     fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance>;
@@ -193,12 +188,6 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for ArcEnv<T> {
     }
 
     // Database instances
-    fn get_database_instance_state(
-        &self,
-        database_instance_id: u64,
-    ) -> spacetimedb::control_db::Result<Option<DatabaseInstanceState>> {
-        self.0.get_database_instance_state(database_instance_id)
-    }
     fn get_database_instance_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<DatabaseInstance>> {
         self.0.get_database_instance_by_id(id)
     }
@@ -347,12 +336,6 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     }
 
     // Database instances
-    fn get_database_instance_state(
-        &self,
-        database_instance_id: u64,
-    ) -> spacetimedb::control_db::Result<Option<DatabaseInstanceState>> {
-        (**self).get_database_instance_state(database_instance_id)
-    }
     fn get_database_instance_by_id(&self, id: u64) -> spacetimedb::control_db::Result<Option<DatabaseInstance>> {
         (**self).get_database_instance_by_id(id)
     }
