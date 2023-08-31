@@ -1,8 +1,8 @@
 #!/bin/bash
 
 if [ "$DESCRIBE_TEST" = 1 ] ; then
-	echo "This tests publishing a module without the --clear-database option"
-        exit
+    echo "This tests publishing a module without the --clear-database option"
+    exit
 fi
 
 set -euox pipefail
@@ -68,6 +68,30 @@ EOF
 
 run_test cargo run publish -s -d --project-path "$PROJECT_PATH" "$IDENT" || true
 [ "1" == "$(grep -c "Error: Database update rejected" "$TEST_OUT")" ]
+
+# Adding an index is fine, too, and invokes update
+cat > "${PROJECT_PATH}/src/lib.rs" <<EOF
+use spacetimedb::{println, spacetimedb};
+
+#[spacetimedb(table)]
+#[spacetimedb(index(btree, name = "name", name))]
+pub struct Person {
+    #[primarykey]
+    #[autoinc]
+    id: u64,
+    name: String,
+}
+
+#[spacetimedb(update)]
+pub fn on_module_update() {
+    println!("INDEX ADDED");
+}
+EOF
+
+run_test cargo run publish -s -d --project-path "$PROJECT_PATH" "$IDENT"
+[ "1" == "$(grep -c "Updated database" "$TEST_OUT")" ]
+run_test cargo run logs "$IDENT" 1
+[ ' INDEX ADDED' == "$(grep 'INDEX ADDED' "$TEST_OUT" | tail -n 1 | cut -d: -f4-)" ]
 
 # Adding a table is ok, and invokes update
 cat > "${PROJECT_PATH}/src/lib.rs" <<EOF

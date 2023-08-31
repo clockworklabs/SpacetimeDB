@@ -3,7 +3,7 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef, TableSchema};
+use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef, TableSchema};
 use crate::host::scheduler::Scheduler;
 use anyhow::Context;
 use bytes::Bytes;
@@ -528,6 +528,25 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
     fn update_database(&mut self) -> Result<UpdateDatabaseResult, anyhow::Error> {
         let stdb = &*self.database_instance_context().relational_db;
 
+        // Until we know how to migrate schemas, we only accept `TableDef`s for
+        // existing tables which are equal sans their indexes.
+        struct Equiv<'a>(&'a TableDef);
+        impl PartialEq for Equiv<'_> {
+            fn eq(&self, other: &Self) -> bool {
+                let TableDef {
+                    table_name,
+                    columns,
+                    indexes: _,
+                    table_type,
+                    table_access,
+                } = &self.0;
+                table_name == &other.0.table_name
+                    && table_type == &other.0.table_type
+                    && table_access == &other.0.table_access
+                    && columns == &other.0.columns
+            }
+        }
+
         let mut tainted = vec![];
         stdb.with_auto_commit::<_, _, anyhow::Error>(|tx| {
             let mut known_tables: BTreeMap<String, TableSchema> = stdb
@@ -537,29 +556,56 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
                 .collect();
 
             let mut new_tables = Vec::new();
+            let mut index_changes = Vec::new();
+
             for table in self.info.catalog.values().filter_map(EntityDef::as_table) {
-                let mut proposed_schema = self.schema_for(table)?;
+                let proposed_schema_def = self.schema_for(table)?;
+
                 if let Some(known_schema) = known_tables.remove(&table.name) {
-                    // If the table is known, we also know its id. Update the
-                    // index definitions so the `TableDef` of both schemas is
-                    // equivalent.
-                    for index in proposed_schema.indexes.iter_mut() {
-                        index.table_id = known_schema.table_id;
-                    }
-                    let known_schema = TableDef::from(known_schema);
-                    if known_schema != proposed_schema {
+                    let table_id = known_schema.table_id;
+                    let known_schema_def = TableDef::from(known_schema.clone());
+
+                    if Equiv(&known_schema_def) != Equiv(&proposed_schema_def) {
                         self.system_logger()
                             .warn(&format!("stored and proposed schema of `{}` differ", table.name));
+                        log::warn!("schema mismatch {}", table.name);
                         tainted.push(table.name.to_owned());
                     } else {
-                        // Table unchanged
+                        // Schema unchanged, try to migrate indexes.
+                        let mut known_indexes = known_schema
+                            .indexes
+                            .into_iter()
+                            .map(|idx| (idx.index_name.clone(), idx))
+                            .collect::<BTreeMap<_, _>>();
+
+                        for mut index_def in proposed_schema_def.indexes {
+                            // This is zero in the proposed schema, as the table
+                            // id is not known at proposal time.
+                            index_def.table_id = table_id;
+
+                            match known_indexes.remove(&index_def.name) {
+                                None => index_changes.push((None, Some(index_def))),
+                                Some(known_index) => {
+                                    let known_id = IndexId(known_index.index_id);
+                                    let known_index_def = IndexDef::from(known_index);
+                                    if known_index_def != index_def {
+                                        index_changes.push((Some(known_id), Some(index_def)));
+                                    }
+                                }
+                            }
+                        }
+
+                        // Indexes not in the proposed schema shall be dropped.
+                        for index in known_indexes.into_values() {
+                            index_changes.push((Some(IndexId(index.index_id)), None));
+                        }
                     }
                 } else {
-                    new_tables.push((table, proposed_schema));
+                    new_tables.push((table, proposed_schema_def));
                 }
             }
             // We may at some point decide to drop orphaned tables automatically,
-            // but for now it's an incompatible schema change
+            // but for now it's an incompatible schema change.
             for orphan in known_tables.into_keys() {
                 if !orphan.starts_with("st_") {
                     self.system_logger()
@@ -568,9 +614,25 @@ impl<T: WasmInstance> WasmInstanceActor<T> {
                 }
             }
             if tainted.is_empty() {
+                log::debug!(
+                    "Updating database `{}` with {} new tables and {} index changes",
+                    self.database_instance_context().address.to_hex(),
+                    new_tables.len(),
+                    index_changes.len()
+                );
                 for (table, schema) in new_tables {
                     stdb.create_table(tx, schema)
-                        .with_context(|| format!("failed to create table {}", table.name))?;
+                        .with_context(|| format!("failed to create table `{}`", table.name))?;
+                }
+
+                for (index_id, index_def) in index_changes {
+                    if let Some(index_id) = index_id {
+                        stdb.drop_index(tx, index_id)?;
+                    }
+
+                    if let Some(index_def) = index_def {
+                        stdb.create_index(tx, index_def)?;
+                    }
                 }
             }
 
