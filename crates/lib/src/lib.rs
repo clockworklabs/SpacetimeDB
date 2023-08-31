@@ -205,6 +205,7 @@ pub enum IndexType {
     Hash,
 }
 
+// NOTE: Duplicated in `crates/bindings-macro/src/lib.rs`
 bitflags::bitflags! {
     #[derive(Debug, Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
     pub struct ColumnIndexAttribute: u8 {
@@ -227,6 +228,9 @@ bitflags::bitflags! {
 impl ColumnIndexAttribute {
     pub const fn is_unique(self) -> bool {
         self.contains(Self::UNIQUE)
+    }
+    pub const fn is_indexed(self) -> bool {
+        self.contains(Self::INDEXED)
     }
     pub const fn is_autoinc(self) -> bool {
         self.contains(Self::AUTO_INC)

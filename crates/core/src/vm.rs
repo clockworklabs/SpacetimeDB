@@ -614,7 +614,7 @@ pub(crate) mod tests {
                 table_id: 2,
                 col_id: 0,
                 increment: 1,
-                start: 3,
+                start: 4,
                 min_value: 1,
                 max_value: 4294967295,
                 allocated: 4096,
