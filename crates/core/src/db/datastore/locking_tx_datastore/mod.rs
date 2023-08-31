@@ -1509,12 +1509,19 @@ impl Inner {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
             match self.committed_state.index_seek(table_id, col_id, value) {
-                Some(committed_rows) => Ok(IterByColEq::CommittedIndex(CommittedIndexIterByColEq {
-                    table_id: *table_id,
-                    tx_state: self.tx_state.as_ref().unwrap(),
-                    committed_state: &self.committed_state,
-                    committed_rows,
-                })),
+                Some(committed_rows) => match self.tx_state.as_ref() {
+                    None => Ok(IterByColEq::Scan(ScanIterByColEq {
+                        value,
+                        col_id: *col_id,
+                        scan_iter: self.iter(table_id)?,
+                    })),
+                    Some(tx_state) => Ok(IterByColEq::CommittedIndex(CommittedIndexIterByColEq {
+                        table_id: *table_id,
+                        tx_state,
+                        committed_state: &self.committed_state,
+                        committed_rows,
+                    })),
+                },
                 None => Ok(IterByColEq::Scan(ScanIterByColEq {
                     value,
                     col_id: *col_id,
