@@ -1509,6 +1509,7 @@ impl Inner {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
             match self.committed_state.index_seek(table_id, col_id, value) {
+                //If we don't have `self.tx_state` yet is likely we are running the bootstrap process
                 Some(committed_rows) => match self.tx_state.as_ref() {
                     None => Ok(IterByColEq::Scan(ScanIterByColEq {
                         value,
