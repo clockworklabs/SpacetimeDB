@@ -87,8 +87,8 @@ macro_rules! define_tables {
      { insert $insert:ident
        $(, $($ops:tt)* )? }
      $($field_name:ident $ty:ty),* $(,)*) => {
-        #[allow(clippy::too_many_arguments)]
         #[spacetimedb(reducer)]
+        #[allow(clippy::too_many_arguments)]
         pub fn $insert ($($field_name : $ty,)*) {
             $name::insert($name { $($field_name,)* });
         }
@@ -102,8 +102,8 @@ macro_rules! define_tables {
      { insert_or_panic $insert:ident
        $(, $($ops:tt)* )? }
      $($field_name:ident $ty:ty),* $(,)*) => {
-        #[allow(clippy::too_many_arguments)]
         #[spacetimedb(reducer)]
+        #[allow(clippy::too_many_arguments)]
         pub fn $insert ($($field_name : $ty,)*) {
             $name::insert($name { $($field_name,)* }).expect(concat!("Failed to insert row for table: ", stringify!($name)));
         }
@@ -117,8 +117,8 @@ macro_rules! define_tables {
      { update_by $update:ident = $update_method:ident($unique_field:ident)
        $(, $($ops:tt)* )? }
      $($field_name:ident $ty:ty),* $(,)*) => {
-        #[allow(clippy::too_many_arguments)]
         #[spacetimedb(reducer)]
+        #[allow(clippy::too_many_arguments)]
         pub fn $update ($($field_name : $ty,)*) {
             let key = $unique_field.clone();
             $name::$update_method(&key, $name { $($field_name,)* });
