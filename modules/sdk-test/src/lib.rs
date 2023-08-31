@@ -1,4 +1,12 @@
-use spacetimedb::{spacetimedb, Identity, ReducerContext, SpacetimeType};
+// Some of our tests include reducers with large numbers of arguments.
+// This is on purpose.
+// Due to a clippy bug (as of 2023-08-31),
+// we cannot locally disable the lint around the definitions of those reducers,
+// because the definitions are macro-generated,
+// and clippy misunderstands `#[allow]` attributes in macro-expansions.
+#![allow(clippy::too_many_arguments)]
+
+use spacetimedb::{spacetimedb, Identity, SpacetimeType};
 
 #[derive(SpacetimeType)]
 pub enum SimpleEnum {
@@ -88,7 +96,6 @@ macro_rules! define_tables {
        $(, $($ops:tt)* )? }
      $($field_name:ident $ty:ty),* $(,)*) => {
         #[spacetimedb(reducer)]
-        #[allow(clippy::too_many_arguments)]
         pub fn $insert ($($field_name : $ty,)*) {
             $name::insert($name { $($field_name,)* });
         }
@@ -103,7 +110,6 @@ macro_rules! define_tables {
        $(, $($ops:tt)* )? }
      $($field_name:ident $ty:ty),* $(,)*) => {
         #[spacetimedb(reducer)]
-        #[allow(clippy::too_many_arguments)]
         pub fn $insert ($($field_name : $ty,)*) {
             $name::insert($name { $($field_name,)* }).expect(concat!("Failed to insert row for table: ", stringify!($name)));
         }
@@ -118,7 +124,6 @@ macro_rules! define_tables {
        $(, $($ops:tt)* )? }
      $($field_name:ident $ty:ty),* $(,)*) => {
         #[spacetimedb(reducer)]
-        #[allow(clippy::too_many_arguments)]
         pub fn $update ($($field_name : $ty,)*) {
             let key = $unique_field.clone();
             $name::$update_method(&key, $name { $($field_name,)* });
@@ -459,18 +464,3 @@ define_tables! {
 
 //     OneEveryVecStruct::insert(Default::default());
 // }
-
-#[spacetimedb(init)]
-pub fn init() {
-    // Called when the module is initially published
-}
-
-#[spacetimedb(connect)]
-pub fn identity_connected(_ctx: ReducerContext) {
-    // Called everytime a new client connects
-}
-
-#[spacetimedb(disconnect)]
-pub fn identity_disconnected(_ctx: ReducerContext) {
-    // Called everytime a client disconnects
-}
