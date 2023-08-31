@@ -77,7 +77,7 @@ impl<T> SlimRawSlice<T> {
     ///
     /// It is assumed that `len <= u32::MAX`.
     /// The caller must ensure that `ptr != NULL`.
-    fn from_ptr_len(ptr: *mut T, len: usize) -> Self {
+    const fn from_ptr_len(ptr: *mut T, len: usize) -> Self {
         // SAFETY: caller ensured that `!ptr.is_null()`.
         let ptr = unsafe { NonNull::new_unchecked(ptr) };
         let len = len as u32;
@@ -88,7 +88,7 @@ impl<T> SlimRawSlice<T> {
 impl<T> Copy for SlimRawSlice<T> {}
 impl<T> Clone for SlimRawSlice<T> {
     fn clone(&self) -> Self {
-        Self { ..*self }
+        *self
     }
 }
 
@@ -498,7 +498,7 @@ impl<'a, T> SlimSlice<'a, T> {
     /// Converts a `&[T]` to the limited version without length checking.
     ///
     /// SAFETY: `slice.len() <= u32::MAX` must hold.
-    unsafe fn from_slice_unchecked(slice: &'a [T]) -> Self {
+    const unsafe fn from_slice_unchecked(slice: &'a [T]) -> Self {
         // SAFETY: `&mut [T]` implies that the pointer is non-null.
         let raw = SlimRawSlice::from_ptr_len(slice.as_ptr().cast_mut(), slice.len());
         // SAFETY: Our length invariant is satisfied by the caller.
@@ -850,8 +850,16 @@ impl<'a> TryFrom<&'a str> for SlimStr<'a> {
 ///
 /// Panics when `str.len() > u32::MAX`.
 #[inline]
-pub fn str(s: &str) -> SlimStr<'_> {
-    expect_fit(s.try_into(), |x| x.len())
+pub const fn str(s: &str) -> SlimStr<'_> {
+    if s.len() > u32::MAX as usize {
+        panic!("length didn't fit in `u32`");
+    }
+
+    // SAFETY: ^-- satisfies `len <= u32::MAX`.
+    let raw = unsafe { SlimSlice::from_slice_unchecked(s.as_bytes()) };
+
+    // SAFETY: `slice` is UTF-8.
+    SlimStr { raw }
 }
 
 /// Converts `&str` into the owned slim limited version.

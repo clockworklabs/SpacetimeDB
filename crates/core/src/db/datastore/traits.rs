@@ -54,7 +54,7 @@ impl From<TableId> for AlgebraicValue {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SequenceSchema {
     pub(crate) sequence_id: u32,
-    pub(crate) sequence_name: String,
+    pub(crate) sequence_name: SatsString,
     pub(crate) table_id: u32,
     pub(crate) col_id: u32,
     pub(crate) increment: i128,
@@ -68,7 +68,7 @@ pub struct SequenceSchema {
 /// It's also adjusted to be convenient for specifying a new sequence
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SequenceDef {
-    pub(crate) sequence_name: String,
+    pub(crate) sequence_name: SatsString,
     pub(crate) table_id: u32,
     pub(crate) col_id: u32,
     pub(crate) increment: i128,
@@ -452,9 +452,9 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn row_type_for_table_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<ProductType>;
     fn schema_for_table_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<TableSchema>;
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId) -> Result<()>;
-    fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> Result<()>;
+    fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: SatsString) -> Result<()>;
     fn table_id_exists(&self, tx: &Self::MutTxId, table_id: &TableId) -> bool;
-    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> Result<Option<TableId>>;
+    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: SatsString) -> Result<Option<TableId>>;
     fn table_name_from_id_mut_tx(&self, tx: &Self::MutTxId, table_id: TableId) -> Result<Option<SatsString>>;
     fn get_all_tables_mut_tx(&self, tx: &Self::MutTxId) -> super::Result<Vec<TableSchema>> {
         let mut tables = Vec::new();
@@ -471,7 +471,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     // Indexes
     fn create_index_mut_tx(&self, tx: &mut Self::MutTxId, index: IndexDef) -> Result<IndexId>;
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTxId, index_id: IndexId) -> Result<()>;
-    fn index_id_from_name_mut_tx(&self, tx: &Self::MutTxId, index_name: &str) -> super::Result<Option<IndexId>>;
+    fn index_id_from_name_mut_tx(&self, tx: &Self::MutTxId, index_name: SatsString) -> super::Result<Option<IndexId>>;
 
     // TODO: Index data
     // - index_scan_mut_tx
@@ -485,7 +485,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn sequence_id_from_name_mut_tx(
         &self,
         tx: &Self::MutTxId,
-        sequence_name: &str,
+        sequence_name: SatsString,
     ) -> super::Result<Option<SequenceId>>;
 
     // Data

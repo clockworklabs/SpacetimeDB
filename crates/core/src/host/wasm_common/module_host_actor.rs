@@ -1,11 +1,3 @@
-use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-
-use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef, TableSchema};
-use crate::host::scheduler::Scheduler;
-use crate::sql;
 use anyhow::Context;
 use bytes::Bytes;
 use nonempty::NonEmpty;
@@ -13,22 +5,28 @@ use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, IndexType, ModuleDef};
 use spacetimedb_vm::expr::CrudExpr;
-use spacetimedb_sats::string;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::client::ClientConnectionSender;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
+use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef, TableSchema};
 use crate::hash::Hash;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
     DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo, ModuleInstance,
     UpdateDatabaseError, UpdateDatabaseResult, UpdateDatabaseSuccess,
 };
+use crate::host::scheduler::Scheduler;
 use crate::host::{
     ArgsTuple, EnergyDiff, EnergyMonitor, EnergyMonitorFingerprint, EnergyQuanta, EntityDef, ReducerCallResult,
     ReducerOutcome, Timestamp,
 };
 use crate::identity::Identity;
+use crate::sql;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptionManager, SubscriptionEventSender};
 use crate::worker_metrics::{REDUCER_COMPUTE_TIME, REDUCER_COUNT, REDUCER_WRITE_SIZE};
 
@@ -85,7 +83,7 @@ pub struct EnergyStats {
 pub struct ExecuteResult<E> {
     pub energy: EnergyStats,
     pub execution_duration: Duration,
-    pub call_result: Result<Result<(), SatsString>, E>,
+    pub call_result: Result<Result<(), String>, E>,
 }
 
 pub(crate) struct WasmModuleHostActor<T: WasmModule> {
@@ -104,7 +102,7 @@ pub enum InitializationError {
     #[error(transparent)]
     Validation(#[from] ValidationError),
     #[error("setup function returned an error: {0}")]
-    Setup(SatsString),
+    Setup(String),
     #[error("wasm trap while calling {func:?}")]
     RuntimeError {
         #[source]
@@ -672,7 +670,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
                 log::info!("reducer returned error: {errmsg}");
 
-                EventStatus::Failed(errmsg.into())
+                EventStatus::Failed(errmsg)
             }
             Ok(Ok(())) => {
                 if let Some((tx_data, bytes_written)) = stdb.commit_tx(tx).unwrap() {
@@ -754,7 +752,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 let index = IndexDef {
                     table_id: 0, // Will be ignored
                     cols: NonEmpty::new(col_id as u32),
-                    name: format!("{}_{}_unique", table.name, col.col_name).into(),
+                    name: format!("{}_{}_unique", table.name, col.col_name)
+                        .try_into()
+                        .map_err(|e| anyhow::anyhow!("unique index name too long for `{e}`"))?,
                     is_unique: true,
                 };
                 indexes.push(index);

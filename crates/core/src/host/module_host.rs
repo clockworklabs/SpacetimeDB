@@ -17,7 +17,7 @@ use futures::{Future, FutureExt};
 use indexmap::IndexMap;
 use spacetimedb_lib::relation::MemTable;
 use spacetimedb_lib::{ReducerDef, TableDef};
-use spacetimedb_sats::{ProductValue, Typespace, WithTypespace, SatsString};
+use spacetimedb_sats::{ProductValue, SatsStr, SatsString, Typespace, WithTypespace};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Weak};
@@ -522,11 +522,11 @@ impl ModuleHost {
         &self,
         caller_identity: Identity,
         client: Option<ClientConnectionSender>,
-        reducer_name: &str,
+        reducer_name: &SatsStr<'_>,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = self
-            .call_reducer_inner(caller_identity, client, reducer_name, args)
+            .call_reducer_inner(caller_identity, client, &**reducer_name, args)
             .await;
 
         let log_message = match &res {

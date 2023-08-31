@@ -377,12 +377,12 @@ impl RelationalDB {
     /// relatively cheap operation which only modifies the system tables.
     ///
     /// If the table is not found or is a system table, an error is returned.
-    pub fn rename_table(&self, tx: &mut MutTxId, table_id: u32, new_name: &str) -> Result<(), DBError> {
+    pub fn rename_table(&self, tx: &mut MutTxId, table_id: u32, new_name: SatsString) -> Result<(), DBError> {
         self.inner.rename_table_mut_tx(tx, TableId(table_id), new_name)
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn table_id_from_name(&self, tx: &MutTxId, table_name: &str) -> Result<Option<u32>, DBError> {
+    pub fn table_id_from_name(&self, tx: &MutTxId, table_name: SatsString) -> Result<Option<u32>, DBError> {
         self.inner
             .table_id_from_name_mut_tx(tx, table_name)
             .map(|x| x.map(|x| x.0))
@@ -428,14 +428,14 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn index_id_from_name(&self, tx: &MutTxId, index_name: &str) -> Result<Option<u32>, DBError> {
+    pub fn index_id_from_name(&self, tx: &MutTxId, index_name: SatsString) -> Result<Option<u32>, DBError> {
         self.inner
             .index_id_from_name_mut_tx(tx, index_name)
             .map(|x| x.map(|x| x.0))
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn sequence_id_from_name(&self, tx: &MutTxId, sequence_name: &str) -> Result<Option<u32>, DBError> {
+    pub fn sequence_id_from_name(&self, tx: &MutTxId, sequence_name: SatsString) -> Result<Option<u32>, DBError> {
         self.inner
             .sequence_id_from_name_mut_tx(tx, sequence_name)
             .map(|x| x.map(|x| x.0))
@@ -680,7 +680,7 @@ mod tests {
         let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         schema.table_name = string("MyTable");
         let table_id = stdb.create_table(&mut tx, schema)?;
-        let t_id = stdb.table_id_from_name(&tx, "MyTable")?;
+        let t_id = stdb.table_id_from_name(&tx, string("MyTable"))?;
         assert_eq!(t_id, Some(table_id));
         Ok(())
     }
@@ -693,7 +693,7 @@ mod tests {
         let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         schema.table_name = string("MyTable");
         stdb.create_table(&mut tx, schema)?;
-        let table_id = stdb.table_id_from_name(&tx, "MyTable")?.unwrap();
+        let table_id = stdb.table_id_from_name(&tx, string("MyTable"))?.unwrap();
         let schema = stdb.schema_for_table(&tx, table_id)?;
         let col = schema.columns.iter().find(|x| &*x.col_name == "my_col").unwrap();
         assert_eq!(col.col_id, 0);
@@ -878,7 +878,7 @@ mod tests {
         };
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
+        let sequence = stdb.sequence_id_from_name(&tx, string("MyTable_my_col_seq"))?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
@@ -914,7 +914,7 @@ mod tests {
         };
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
+        let sequence = stdb.sequence_id_from_name(&tx, string("MyTable_my_col_seq"))?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(5)])?;
@@ -1008,7 +1008,7 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         assert!(
-            stdb.index_id_from_name(&tx, "MyTable_my_col_idx")?.is_some(),
+            stdb.index_id_from_name(&tx, string("MyTable_my_col_idx"))?.is_some(),
             "Index not created"
         );
 
@@ -1051,7 +1051,7 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         assert!(
-            stdb.index_id_from_name(&tx, "MyTable_my_col_idx")?.is_some(),
+            stdb.index_id_from_name(&tx, string("MyTable_my_col_idx"))?.is_some(),
             "Index not created"
         );
 
@@ -1099,11 +1099,11 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         assert!(
-            stdb.index_id_from_name(&tx, "MyTable_my_col_idx")?.is_some(),
+            stdb.index_id_from_name(&tx, string("MyTable_my_col_idx"))?.is_some(),
             "Index not created"
         );
 
-        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
+        let sequence = stdb.sequence_id_from_name(&tx, string("MyTable_my_col_seq"))?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
@@ -1232,7 +1232,7 @@ mod tests {
             table_access: StAccess::Public,
         };
         let table_id = stdb.create_table(&mut tx, schema)?;
-        stdb.rename_table(&mut tx, table_id, "YourTable")?;
+        stdb.rename_table(&mut tx, table_id, string("YourTable"))?;
         let table_name = stdb.table_name_from_id(&tx, table_id)?;
 
         assert_eq!(Some("YourTable"), table_name.as_deref());

@@ -14,7 +14,7 @@ use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement, string};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias};
+use spacetimedb_lib::{bsatn, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias, SatsStr};
 use sys::Buffer;
 
 pub use once_cell::sync::{Lazy, OnceCell};
@@ -259,10 +259,10 @@ macro_rules! impl_reducer {
                 #[allow(non_snake_case, irrefutable_let_patterns)]
                 let [.., $($T),*] = Info::ARG_NAMES else { panic!() };
                 ReducerDef {
-                    name: Info::NAME.into(),
+                    name: string(Info::NAME),
                     args: [
                         $(ProductTypeElement {
-                            name: $T.map(Into::into),
+                            name: $T.map(string),
                             algebraic_type: <$T>::make_type(_typespace),
                         }),*
                     ].into(),
@@ -438,7 +438,7 @@ impl TypespaceBuilder for ModuleBuilder {
     fn add(
         &mut self,
         typeid: TypeId,
-        name: Option<&'static str>,
+        name: Option<&'static SatsStr<'static>>,
         make_ty: impl FnOnce(&mut Self) -> AlgebraicType,
     ) -> AlgebraicType {
         let r = match self.type_map.entry(typeid) {

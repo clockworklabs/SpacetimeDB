@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::time::Duration;
 
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
@@ -9,7 +10,7 @@ use base64::Engine;
 use bytes::Bytes;
 use bytestring::ByteString;
 use prost::Message as _;
-use spacetimedb_sats::{SatsString, string};
+use spacetimedb_sats::{string, SatsStr, SatsString};
 
 use super::messages::{ServerMessage, TransactionUpdateMessage};
 use super::{ClientConnection, DataMessage};
@@ -24,6 +25,9 @@ pub enum MessageHandleError {
     TextDecode(#[from] serde_json::Error),
     #[error(transparent)]
     Base64Decode(#[from] base64::DecodeError),
+
+    #[error("string length ({0}) too long")]
+    LenTooLong(usize),
 
     #[error(transparent)]
     Execution(#[from] MessageExecutionError),
@@ -54,6 +58,10 @@ async fn handle_binary(client: &ClientConnection, message_buf: Vec<u8>) -> Resul
     let message = match message.r#type {
         Some(message::Type::FunctionCall(FunctionCall { ref reducer, arg_bytes })) => {
             let args = ReducerArgs::Bsatn(arg_bytes.into());
+            let reducer = reducer
+                .deref()
+                .try_into()
+                .map_err(|e: &str| MessageHandleError::LenTooLong(e.len()))?;
             DecodedMessage::Call { reducer, args }
         }
         Some(message::Type::Subscribe(subscription)) => DecodedMessage::Subscribe(subscription),
@@ -97,7 +105,7 @@ async fn handle_text(client: &ClientConnection, message: String) -> Result<(), M
     let msg = match msg {
         RawJsonMessage::Call { ref func, args } => {
             let args = ReducerArgs::Json(message.slice_ref(args.get()));
-            DecodedMessage::Call { reducer: func, args }
+            DecodedMessage::Call { reducer, args }
         }
         RawJsonMessage::Subscribe { query_strings } => DecodedMessage::Subscribe(Subscribe { query_strings }),
         RawJsonMessage::OneOffQuery {
@@ -122,7 +130,7 @@ async fn handle_text(client: &ClientConnection, message: String) -> Result<(), M
 
 enum DecodedMessage<'a> {
     Call {
-        reducer: &'a str,
+        reducer: SatsStr<'a>,
         args: ReducerArgs,
     },
     Subscribe(Subscribe),
@@ -136,7 +144,7 @@ impl DecodedMessage<'_> {
     async fn handle(self, client: &ClientConnection) -> Result<(), MessageExecutionError> {
         let res = match self {
             DecodedMessage::Call { reducer, args } => {
-                let res = client.call_reducer(reducer, args).await;
+                let res = client.call_reducer(&reducer, args).await;
                 res.map(drop).map_err(|e| (Some(reducer), e.into()))
             }
             DecodedMessage::Subscribe(subscription) => client.subscribe(subscription).map_err(|e| (None, e.into())),
@@ -153,7 +161,7 @@ impl DecodedMessage<'_> {
     }
 }
 
-/// An error that arises from executing a message.  
+/// An error that arises from executing a message.
 #[derive(thiserror::Error, Debug)]
 #[error("error executing message (reducer: {reducer:?}) (err: {err:?})")]
 pub struct MessageExecutionError {

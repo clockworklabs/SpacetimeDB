@@ -5,6 +5,7 @@ use rustc_hash::FxHashMap;
 use sled::transaction::{ConflictableTransactionError::Abort as TxAbort, TransactionError};
 use spacetimedb_lib::bsatn;
 use spacetimedb_lib::bsatn::ser::BsatnError;
+use spacetimedb_sats::SatsString;
 use tokio::sync::mpsc;
 use tokio_util::time::{delay_queue, DelayQueue};
 
@@ -27,7 +28,7 @@ enum SchedulerMessage {
 #[derive(spacetimedb_sats::ser::Serialize, spacetimedb_sats::de::Deserialize)]
 struct ScheduledReducer {
     at: Timestamp,
-    reducer: String,
+    reducer: SatsString,
     bsatn_args: Vec<u8>,
 }
 
@@ -144,7 +145,7 @@ pub enum ScheduleError {
 impl Scheduler {
     pub fn schedule(
         &self,
-        reducer: String,
+        reducer: SatsString,
         bsatn_args: Vec<u8>,
         at: Timestamp,
     ) -> Result<ScheduledReducerId, ScheduleError> {
@@ -275,7 +276,7 @@ impl SchedulerActor {
                 .call_reducer(
                     identity,
                     None,
-                    &scheduled.reducer,
+                    scheduled.reducer.shared_ref(),
                     ReducerArgs::Bsatn(scheduled.bsatn_args.into()),
                 )
                 .await;

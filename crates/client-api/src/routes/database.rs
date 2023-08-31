@@ -24,7 +24,7 @@ use spacetimedb::sql::execute::execute;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::name::{self, DnsLookupResponse, DomainName, DomainParsingError, PublishOp, PublishResult};
 use spacetimedb_lib::recovery::{RecoveryCode, RecoveryCodeResponse};
-use spacetimedb_lib::sats::WithTypespace;
+use spacetimedb_lib::sats::{WithTypespace, SatsString};
 use std::collections::HashMap;
 use std::convert::From;
 
@@ -92,7 +92,10 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             host.spawn_module_host(dbic).await.map_err(log_and_500)?
         }
     };
-    let result = match module.call_reducer(caller_identity, None, &reducer, args).await {
+    let result = match module
+        .call_reducer(caller_identity, None, reducer.shared_ref(), args)
+        .await
+    {
         Ok(rcr) => rcr,
         Err(e) => {
             let status_code = match e {
@@ -197,7 +200,7 @@ fn entity_description_json(description: WithTypespace<EntityDef>, expand: bool) 
                 json!(description.with(&table.data).resolve_refs()?.as_product()?)
             }
             EntityDef::Reducer(r) => json!({
-                "name": r.name,
+                "name": &*r.name,
                 "elements": r.args,
             }),
         };

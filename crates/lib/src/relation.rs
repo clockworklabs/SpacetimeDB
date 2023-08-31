@@ -479,11 +479,18 @@ impl RelValue {
         RelValueRef::new(&self.data)
     }
 
-    pub fn extend(self, with: RelValue) -> RelValue {
-        let mut x = self;
-        x.id = None;
-        x.data.elements.extend(with.data.elements);
-        x
+    pub fn extend(mut self, with: RelValue) -> RelValue {
+        // Cleared as `self.extend(with)` no longer belongs to a table.
+        self.id = None;
+
+        if !with.data.elements.is_empty() {
+            let mut data = Vec::with_capacity(self.data.elements.len() + with.data.elements.len());
+            data.append(&mut self.data.elements.into());
+            data.append(&mut with.data.elements.into());
+            self.data = ProductValue { elements: data.into() };
+        }
+
+        self
     }
 }
 

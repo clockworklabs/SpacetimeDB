@@ -70,7 +70,7 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
 
             let mut bytes: &[u8] = row.row_pk.as_ref();
             RelValue::new(new, Some(DataKey::decode(&mut bytes).unwrap()));
-        }
+        }));
     }
 
     q.source = SourceExpr::MemTable(t);

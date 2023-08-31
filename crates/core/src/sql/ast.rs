@@ -298,7 +298,9 @@ fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlE
         }
         SqlExpr::Value(x) => FieldExpr::Value(match x {
             Value::Number(value, is_long) => infer_number(field, &value, is_long)?,
-            Value::SingleQuotedString(s) | Value::DoubleQuotedString(s) => AlgebraicValue::String(s.into()),
+            Value::SingleQuotedString(s) | Value::DoubleQuotedString(s) => {
+                AlgebraicValue::String(s.try_into().map_err(PlanError::LenTooLong)?)
+            }
             Value::Boolean(x) => AlgebraicValue::Bool(x),
             Value::Null => AlgebraicValue::OptionNone(),
             x => {
@@ -411,8 +413,9 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
 ///
 /// Fails if the table `name` and/or `table_id` is not found
 fn find_table(db: &RelationalDB, tx: &MutTxId, t: Table) -> Result<TableSchema, PlanError> {
+    let name = t.name.clone().try_into().map_err(PlanError::LenTooLong)?;
     let table_id = db
-        .table_id_from_name(tx, &t.name)?
+        .table_id_from_name(tx, name)?
         .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
     if !db.inner.table_id_exists(tx, &TableId(table_id)) {
         return Err(PlanError::UnknownTable { table: t.name });
@@ -802,7 +805,7 @@ fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, ColumnIndexAttribu
 
 /// Compiles the `CREATE TABLE ...` clause
 fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst, PlanError> {
-    let table = table.name;
+    let table_name: SatsString = table.name.try_into().map_err(PlanError::LenTooLong)?;
     let mut columns = ProductTypeMeta::with_capacity(cols.len());
 
     for col in cols {
@@ -820,8 +823,8 @@ fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst,
     }
 
     Ok(SqlAst::CreateTable {
-        table_access: StAccess::for_name(&table),
-        table,
+        table_access: StAccess::for_name(&table_name),
+        table: table_name,
         columns,
         table_type: StTableType::User,
     })
@@ -839,7 +842,7 @@ fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError
         }
     };
 
-    let name = name.to_string();
+    let name: SatsString = name.to_string().try_into().map_err(PlanError::LenTooLong)?;
     Ok(SqlAst::Drop {
         table_access: StAccess::for_name(&name),
         name,

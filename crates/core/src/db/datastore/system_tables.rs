@@ -596,24 +596,24 @@ impl<'a> TryFrom<&'a ProductValue> for StTableRow<&'a SatsStr<'a>> {
     }
 }
 
-impl StTableRow<&str> {
-    pub fn to_owned(&self) -> StTableRow<String> {
+impl StTableRow<&SatsStr<'_>> {
+    pub fn to_owned(&self) -> StTableRow<SatsString> {
         StTableRow {
             table_id: self.table_id,
-            table_name: self.table_name.to_owned(),
+            table_name: self.table_name.into(),
             table_type: self.table_type,
             table_access: self.table_access,
         }
     }
 }
 
-impl From<&StTableRow<Name>> for ProductValue {
-    fn from(x: &StTableRow<Name>) -> Self {
+impl<N: Into<SatsString>> From<StTableRow<N>> for ProductValue {
+    fn from(x: StTableRow<N>) -> Self {
         product![
             x.table_id,
-            str(x.table_name.as_ref()),
-            str(x.table_type.as_str()),
-            str(x.table_access.as_str()),
+            x.table_name.into(),
+            string(x.table_type.as_str()),
+            string(x.table_access.as_str()),
         ]
     }
 }
@@ -627,21 +627,21 @@ pub struct StColumnRow<Name> {
     pub(crate) is_autoinc: bool,
 }
 
-impl StColumnRow<&str> {
-    pub fn to_owned(&self) -> StColumnRow<String> {
+impl StColumnRow<&SatsStr<'_>> {
+    pub fn to_owned(&self) -> StColumnRow<SatsString> {
         StColumnRow {
             table_id: self.table_id,
             col_id: self.col_id,
-            col_name: self.col_name.to_owned(),
+            col_name: self.col_name.into(),
             col_type: self.col_type.clone(),
             is_autoinc: self.is_autoinc,
         }
     }
 }
 
-impl<'a> TryFrom<&'a ProductValue> for StColumnRow<&'a str> {
+impl<'a> TryFrom<&'a ProductValue> for StColumnRow<&'a SatsStr<'a>> {
     type Error = DBError;
-    fn try_from(row: &'a ProductValue) -> Result<StColumnRow<&'a str>, DBError> {
+    fn try_from(row: &'a ProductValue) -> Result<StColumnRow<&'a SatsStr<'a>>, DBError> {
         let table_id = row.field_as_u32(StColumnFields::TableId as usize, None)?;
         let col_id = row.field_as_u32(StColumnFields::ColId as usize, None)?;
 
@@ -662,15 +662,15 @@ impl<'a> TryFrom<&'a ProductValue> for StColumnRow<&'a str> {
     }
 }
 
-impl From<StColumnRow<SatsString>> for ProductValue {
-    fn from(x: StColumnRow<SatsString>) -> Self {
+impl<N: Into<SatsString>> From<StColumnRow<N>> for ProductValue {
+    fn from(x: StColumnRow<N>) -> Self {
         let mut bytes = Vec::new();
         x.col_type.encode(&mut bytes);
         product![
             AlgebraicValue::U32(x.table_id),
             AlgebraicValue::U32(x.col_id),
             AlgebraicValue::Bytes(bytes.into()),
-            AlgebraicValue::String(x.col_name),
+            AlgebraicValue::String(x.col_name.into()),
             AlgebraicValue::Bool(x.is_autoinc),
         ]
     }
@@ -685,21 +685,21 @@ pub struct StIndexRow<Name> {
     pub(crate) is_unique: bool,
 }
 
-impl StIndexRow<&str> {
-    pub fn to_owned(&self) -> StIndexRow<String> {
+impl StIndexRow<&SatsStr<'_>> {
+    pub fn to_owned(&self) -> StIndexRow<SatsString> {
         StIndexRow {
             index_id: self.index_id,
             table_id: self.table_id,
             cols: self.cols.clone(),
-            index_name: self.index_name.to_owned(),
+            index_name: self.index_name.into(),
             is_unique: self.is_unique,
         }
     }
 }
 
-impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a str> {
+impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a SatsStr<'a>> {
     type Error = DBError;
-    fn try_from(row: &'a ProductValue) -> Result<StIndexRow<&'a str>, DBError> {
+    fn try_from(row: &'a ProductValue) -> Result<StIndexRow<&'a SatsStr<'a>>, DBError> {
         let index_id = row.field_as_u32(StIndexFields::IndexId as usize, None)?;
         let table_id = row.field_as_u32(StIndexFields::TableId as usize, None)?;
         let cols = row.field_as_array(StIndexFields::Cols as usize, None)?;
@@ -725,13 +725,13 @@ impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a str> {
     }
 }
 
-impl From<StIndexRow<SatsString>> for ProductValue {
-    fn from(x: StIndexRow<SatsString>) -> Self {
+impl<N: Into<SatsString>> From<StIndexRow<N>> for ProductValue {
+    fn from(x: StIndexRow<N>) -> Self {
         product![
             AlgebraicValue::U32(x.index_id),
             AlgebraicValue::U32(x.table_id),
             AlgebraicValue::Array(x.cols.clone()),
-            AlgebraicValue::String(x.index_name),
+            AlgebraicValue::String(x.index_name.into()),
             AlgebraicValue::Bool(x.is_unique)
         ]
     }
@@ -750,11 +750,11 @@ pub struct StSequenceRow<Name> {
     pub(crate) allocated: i128,
 }
 
-impl<Name: AsRef<str>> StSequenceRow<Name> {
-    pub fn to_owned(&self) -> StSequenceRow<String> {
+impl StSequenceRow<&SatsStr<'_>> {
+    pub fn to_owned(&self) -> StSequenceRow<SatsString> {
         StSequenceRow {
             sequence_id: self.sequence_id,
-            sequence_name: self.sequence_name.as_ref().to_owned(),
+            sequence_name: self.sequence_name.into(),
             table_id: self.table_id,
             col_id: self.col_id,
             increment: self.increment,
@@ -766,9 +766,9 @@ impl<Name: AsRef<str>> StSequenceRow<Name> {
     }
 }
 
-impl<'a> TryFrom<&'a ProductValue> for StSequenceRow<&'a str> {
+impl<'a> TryFrom<&'a ProductValue> for StSequenceRow<&'a SatsStr<'a>> {
     type Error = DBError;
-    fn try_from(row: &'a ProductValue) -> Result<StSequenceRow<&'a str>, DBError> {
+    fn try_from(row: &'a ProductValue) -> Result<StSequenceRow<&'a SatsStr<'a>>, DBError> {
         let sequence_id = row.field_as_u32(StSequenceFields::SequenceId as usize, None)?;
         let sequence_name = row.field_as_str(StSequenceFields::SequenceName as usize, None)?;
         let table_id = row.field_as_u32(StSequenceFields::TableId as usize, None)?;
@@ -792,11 +792,11 @@ impl<'a> TryFrom<&'a ProductValue> for StSequenceRow<&'a str> {
     }
 }
 
-impl From<StSequenceRow<SatsString>> for ProductValue {
-    fn from(x: StSequenceRow<SatsString>) -> Self {
+impl<N: Into<SatsString>> From<StSequenceRow<N>> for ProductValue {
+    fn from(x: StSequenceRow<N>) -> Self {
         product![
             AlgebraicValue::U32(x.sequence_id),
-            AlgebraicValue::String(x.sequence_name),
+            AlgebraicValue::String(x.sequence_name.into()),
             AlgebraicValue::U32(x.table_id),
             AlgebraicValue::U32(x.col_id),
             AlgebraicValue::I128(Box::new(x.increment)),
@@ -808,8 +808,8 @@ impl From<StSequenceRow<SatsString>> for ProductValue {
     }
 }
 
-impl<'a> From<&StSequenceRow<&'a str>> for SequenceSchema {
-    fn from(sequence: &StSequenceRow<&'a str>) -> Self {
+impl<'a> From<&StSequenceRow<&'a SatsStr<'a>>> for SequenceSchema {
+    fn from(sequence: &StSequenceRow<&'a SatsStr<'a>>) -> Self {
         Self {
             sequence_id: sequence.sequence_id,
             sequence_name: sequence.sequence_name.into(),

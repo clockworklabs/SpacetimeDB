@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use rusqlite::{Connection, Transaction};
+use spacetimedb_lib::sats::SatsString;
 
 impl BuildDb for Connection {
     fn build(prefill: bool, fsync: bool) -> ResultBench<Self>
@@ -85,7 +86,7 @@ pub fn select_no_index(pool: &mut Pool<Connection>, run: Runs) -> ResultBench<()
                 Ok(Data {
                     a: row.get(0)?,
                     b: row.get(1)?,
-                    c: row.get(2)?,
+                    c: SatsString::from_string(row.get(2)?),
                 })
             })?
             .collect::<Vec<_>>();

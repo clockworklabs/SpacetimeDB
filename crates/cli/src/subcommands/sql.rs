@@ -2,7 +2,7 @@ use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson};
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches};
 use reqwest::RequestBuilder;
 use spacetimedb_lib::de::serde::SeedWrapper;
-use spacetimedb_lib::sats::{satn, Typespace};
+use spacetimedb_lib::sats::{satn, Typespace, SatsString};
 use tabled::builder::Builder;
 use tabled::Style;
 
@@ -99,7 +99,7 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), an
                 .elements
                 .iter()
                 .enumerate()
-                .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}").into())),
+                .map(|(i, e)| e.name.clone().unwrap_or_else(|| SatsString::from_string(format!("column {i}")))),
         );
 
         let typespace = Typespace::default();

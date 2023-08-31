@@ -1,5 +1,6 @@
 use crate::utils::{encode, ResultBench, START_B};
 use clap::ValueEnum;
+use spacetimedb_lib::sats::SatsString;
 use std::marker::PhantomData;
 use std::ops::Range;
 
@@ -46,7 +47,7 @@ impl Data {
         Self {
             a,
             b,
-            c: encode(b).into(),
+            c: SatsString::from_string(encode(b)),
         }
     }
 }

@@ -626,7 +626,7 @@ pub(crate) mod tests {
             is_autoinc: bool,
             idx_uniq: Option<bool>,
         ) -> ResultTest<()> {
-            let t = db.table_id_from_name(tx, table_name)?.unwrap();
+            let t = db.table_id_from_name(tx, string(table_name))?.unwrap();
             let t = db.schema_for_table(tx, t)?;
 
             let col = t.columns.first().unwrap();

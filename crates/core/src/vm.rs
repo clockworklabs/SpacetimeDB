@@ -228,7 +228,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
                 indexes.push(IndexDef {
                     table_id: 0, // Ignored
                     cols: NonEmpty::new(i as u32),
-                    name: SatsString::from_string(format!("{}_{}_idx", table_name, i).into()),
+                    name: SatsString::from_string(format!("{}_{}_idx", table_name, i)),
                     is_unique: true,
                 });
             }
@@ -254,7 +254,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         Ok(Code::Pass)
     }
 
-    fn drop(&mut self, name: &str, kind: DbType) -> Result<Code, ErrorVm> {
+    fn drop(&mut self, name: SatsString, kind: DbType) -> Result<Code, ErrorVm> {
         match kind {
             DbType::Table => {
                 if let Some(id) = self.db.table_id_from_name(self.tx, name)? {
@@ -336,7 +336,7 @@ impl ProgramVm for DbProgram<'_, '_> {
                 name,
                 kind,
                 table_access: _,
-            } => self.drop(&name, kind),
+            } => self.drop(name, kind),
         }
     }
 
@@ -529,13 +529,13 @@ pub(crate) mod tests {
         check_catalog(
             p,
             ST_TABLES_NAME,
-            (&StTableRow {
+            (StTableRow {
                 table_id: ST_TABLES_ID.0,
-                table_name: ST_TABLES_NAME,
+                table_name: string(ST_TABLES_NAME),
                 table_type: StTableType::System,
                 table_access: StAccess::Public,
             })
-                .into(),
+            .into(),
             q,
             DbTable::from(&st_table_schema()),
         );

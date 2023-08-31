@@ -211,7 +211,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
                 Err(err) => return Err(err),
             },
             Column::QualifiedWildcard { table: name } => {
-                if let Some(t) = table.iter_tables().find(|x| (&*x.table_name) == name) {
+                if let Some(t) = table.iter_tables().find(|x| *x.table_name == name) {
                     col_ids.extend(
                         t.columns
                             .iter()
@@ -234,7 +234,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
 
     let mut q = query(db_table_raw(
         ProductType::from(&table.root),
-        table.root.table_name.into(),
+        table.root.table_name.clone(),
         table.root.table_id,
         table.root.table_type,
         table.root.table_access,
@@ -244,7 +244,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
         for join in joins {
             match join {
                 Join::Inner { rhs, on } => {
-                    let t = db_table(rhs.into(), rhs.table_name.into(), rhs.table_id);
+                    let t = db_table(rhs.into(), rhs.table_name.clone(), rhs.table_id);
                     match on.op {
                         OpCmp::Eq => {}
                         x => unreachable!("Unsupported operator `{x}` for joins"),

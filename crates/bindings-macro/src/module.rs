@@ -126,7 +126,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
         SatsTypeData::Product(fields) => {
             let fields = fields.iter().map(|field| {
                 let field_name = match &field.name {
-                    Some(name) => quote!(Some(#name.into())),
+                    Some(name) => quote!(Some(spacetimedb::sats::string(#name))),
                     None => quote!(None),
                 };
                 let ty = field.ty;
@@ -157,7 +157,10 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
 
     let (impl_generics, ty_generics, where_clause) = ty.generics.split_for_impl();
     let ty_name = if gen_type_alias {
-        quote!(Some(#ty_name))
+        quote!(Some({
+            const NAME: &spacetimedb::sats::SatsStr<'_> = &spacetimedb::sats::str(#ty_name);
+            NAME
+        }))
     } else {
         quote!(None)
     };
