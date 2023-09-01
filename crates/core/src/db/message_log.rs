@@ -1,6 +1,6 @@
 use std::{
     fs::{self, read_dir, File, OpenOptions},
-    io::{BufReader, BufWriter, Read, Write},
+    io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -12,7 +12,9 @@ use crate::error::DBError;
 use std::os::windows::fs::FileExt;
 
 const HEADER_SIZE: usize = 4;
-const MAX_SEGMENT_SIZE: u64 = 1_073_741_824;
+
+/// Maximum size in bytes of a single log segment.
+pub const MAX_SEGMENT_SIZE: u64 = 1_073_741_824;
 
 #[derive(Clone, Copy, Debug)]
 struct Segment {
@@ -32,7 +34,6 @@ pub struct MessageLog {
     total_size: u64,
     open_segment_file: BufWriter<File>,
     open_segment_max_offset: u64,
-    open_segment_size: u64,
 }
 
 impl std::fmt::Debug for MessageLog {
@@ -43,7 +44,7 @@ impl std::fmt::Debug for MessageLog {
             .field("total_size", &self.total_size)
             .field("open_segment_file", &self.open_segment_file)
             .field("open_segment_max_offset", &self.open_segment_max_offset)
-            .field("open_segment_size", &self.open_segment_size)
+            .field("open_segment_size", &self.open_segment().size)
             .finish()
     }
 }
@@ -82,7 +83,6 @@ impl MessageLog {
 
         let last_segment = segments.last().unwrap();
         let last_segment_path = root.join(last_segment.name() + ".log");
-        let last_segment_size = last_segment.size;
         let file = OpenOptions::new()
             .read(true)
             .append(true)
@@ -113,7 +113,6 @@ impl MessageLog {
             total_size,
             open_segment_file: file,
             open_segment_max_offset: max_offset,
-            open_segment_size: last_segment_size,
         })
     }
 
@@ -130,7 +129,7 @@ impl MessageLog {
         let mess_size = message.len() as u32;
         let size: u32 = mess_size + HEADER_SIZE as u32;
 
-        let end_size = self.open_segment_size + size as u64;
+        let end_size = self.open_segment().size + size as u64;
         if end_size > MAX_SEGMENT_SIZE {
             self.flush()?;
             self.segments.push(Segment {
@@ -141,17 +140,19 @@ impl MessageLog {
             let last_segment = self.segments.last().unwrap();
             let last_segment_path = self.root.join(last_segment.name() + ".log");
 
-            let file = OpenOptions::new().append(true).create(true).open(last_segment_path)?;
+            let file = OpenOptions::new()
+                .append(true)
+                .create_new(true)
+                .open(last_segment_path)?;
             let file = BufWriter::new(file);
 
-            self.open_segment_size = 0;
             self.open_segment_file = file;
         }
 
         self.open_segment_file.write_all(&mess_size.to_le_bytes())?;
         self.open_segment_file.write_all(message)?;
 
-        self.open_segment_size += size as u64;
+        self.open_segment_mut().size += size as u64;
         self.open_segment_max_offset += 1;
         self.total_size += size as u64;
 
@@ -203,6 +204,55 @@ impl MessageLog {
         }
     }
 
+    /// Obtains an iterator over all segments in the log, in the order they were
+    /// created.
+    ///
+    /// The iterator represents a _snapshot_ of the log at the time this method
+    /// is called. That is, segments created after the method returns will not
+    /// appear in the iteration. The last segment yielded by the iterator may be
+    /// incomplete (i.e. still be appended to).
+    ///
+    /// See also: [`MessageLog::segments_from`]
+    pub fn segments(&self) -> SegmentsIter {
+        self.segments_from(0)
+    }
+
+    /// Obtains an iterator over all segments containing messages equal to or
+    /// newer than `offset`.
+    ///
+    /// `offset` counts all _messages_ (not: bytes) in the log, starting from
+    /// zero.
+    ///
+    /// Note that the first segment yielded by the iterator may contain messages
+    /// with an offset _smaller_ than the argument, as segments do not currently
+    /// support slicing.
+    ///
+    /// The iterator represents a _snapshot_ of the log at the time this method
+    /// is called. That is, segments created after the method returns will not
+    /// appear in the iteration. The last segment yielded by the iterator may be
+    /// incomplete (i.e. still be appended to).
+    pub fn segments_from(&self, offset: u64) -> SegmentsIter {
+        let root = self.get_root();
+        let pos = self
+            .segments
+            .iter()
+            .rposition(|s| s.min_offset <= offset)
+            .expect("a segment with offset 0 must exist");
+
+        SegmentsIter {
+            root,
+            inner: Vec::from(&self.segments[pos..]).into_iter(),
+        }
+    }
+
+    fn open_segment(&self) -> &Segment {
+        self.segments.last().expect("at least one segment must exist")
+    }
+
+    fn open_segment_mut(&mut self) -> &mut Segment {
+        self.segments.last_mut().expect("at least one segment must exist")
+    }
+
     fn segment_for_offset(&self, offset: u64) -> Option<Segment> {
         let prev = self.segments[0];
         for segment in &self.segments {
@@ -214,6 +264,124 @@ impl MessageLog {
             return Some(*self.segments.last().unwrap());
         }
         None
+    }
+}
+
+/// A read-only view of an on-disk [`Segment`] of the [`MessageLog`].
+///
+/// The underlying file is opened lazily when calling [`SegmentView::try_into_iter`]
+/// or [`SegmentView::try_into_file`].
+#[derive(Clone, Debug)]
+pub struct SegmentView {
+    info: Segment,
+    path: PathBuf,
+}
+
+impl SegmentView {
+    /// The offset of the first message in the segment, relative to all segments
+    /// in the log.
+    pub fn offset(&self) -> u64 {
+        self.info.min_offset
+    }
+
+    /// The size in bytes of the segment.
+    pub fn size(&self) -> u64 {
+        self.info.size
+    }
+
+    /// Obtain an iterator over the _messages_ the segment contains.
+    ///
+    /// Opens a new handle to the underlying file.
+    pub fn try_into_iter(self) -> io::Result<SegmentIter> {
+        self.try_into()
+    }
+
+    /// Turn this [`SegmentView`] into a [`Read`]able [`File`].
+    pub fn try_into_file(self) -> io::Result<File> {
+        self.try_into()
+    }
+}
+
+impl TryFrom<SegmentView> for SegmentIter {
+    type Error = io::Error;
+
+    fn try_from(view: SegmentView) -> Result<Self, Self::Error> {
+        File::try_from(view)
+            .map(BufReader::new)
+            .map(|file| SegmentIter { file })
+    }
+}
+
+impl TryFrom<SegmentView> for File {
+    type Error = io::Error;
+
+    fn try_from(view: SegmentView) -> Result<Self, Self::Error> {
+        File::open(view.path)
+    }
+}
+
+/// Iterator over a [`SegmentView`], yielding individual messages.
+///
+/// Created by [`SegmentView::try_iter`].
+#[must_use = "iterators are lazy and do nothing unless consumed"]
+pub struct SegmentIter {
+    file: BufReader<File>,
+}
+
+impl SegmentIter {
+    fn read_exact_or_none(&mut self, buf: &mut [u8]) -> Option<io::Result<()>> {
+        match self.file.read_exact(buf) {
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => None,
+            Err(e) => Some(Err(e)),
+            Ok(()) => Some(Ok(())),
+        }
+    }
+}
+
+impl Iterator for SegmentIter {
+    type Item = io::Result<Vec<u8>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut buf = [0; HEADER_SIZE];
+        if let Err(e) = self.read_exact_or_none(&mut buf)? {
+            return Some(Err(e));
+        }
+
+        let message_len = u32::from_le_bytes(buf);
+        let mut buf = vec![0; message_len as usize];
+        if let Err(e) = self.read_exact_or_none(&mut buf)? {
+            return Some(Err(e));
+        }
+
+        Some(Ok(buf))
+    }
+}
+
+/// Iterator yielding [`SegmentView`]s, created by [`MessageLog::segments`] and
+/// [`MessageLog::segments_from`] respectively.
+#[must_use = "iterators are lazy and do nothing unless consumed"]
+pub struct SegmentsIter {
+    root: PathBuf,
+    inner: std::vec::IntoIter<Segment>,
+}
+
+impl SegmentsIter {
+    pub fn empty() -> Self {
+        Self {
+            root: PathBuf::default(),
+            inner: vec![].into_iter(),
+        }
+    }
+}
+
+impl Iterator for SegmentsIter {
+    type Item = SegmentView;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|segment| SegmentView {
+            info: segment,
+            path: self.root.join(segment.name()).with_extension("log"),
+        })
     }
 }
 

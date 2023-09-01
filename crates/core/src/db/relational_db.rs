@@ -1,4 +1,4 @@
-use super::commit_log::CommitLog;
+use super::commit_log::{CommitLog, CommitLogView};
 use super::datastore::locking_tx_datastore::{Data, DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
 use super::datastore::traits::{
     ColId, DataRow, IndexDef, IndexId, MutTx, MutTxDatastore, SequenceDef, SequenceId, TableDef, TableId, TableSchema,
@@ -149,6 +149,11 @@ impl RelationalDB {
 
         log::trace!("DATABASE: OPENED");
         Ok(db)
+    }
+
+    /// Obtain a read-only view of this database's [`CommitLog`].
+    pub fn commit_log(&self) -> CommitLogView {
+        CommitLogView::from(&self.commit_log)
     }
 
     // pub fn reset_hard(&mut self, message_log: Arc<Mutex<MessageLog>>) -> Result<(), DBError> {

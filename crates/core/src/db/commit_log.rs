@@ -1,6 +1,6 @@
 use super::{
     datastore::traits::{MutTxDatastore, TxData},
-    message_log::MessageLog,
+    message_log::{self, MessageLog},
     messages::commit::Commit,
     ostorage::ObjectDB,
 };
@@ -14,7 +14,13 @@ use crate::{
     },
     error::DBError,
 };
-use spacetimedb_lib::hash::hash_bytes;
+
+use spacetimedb_lib::{
+    hash::{hash_bytes, Hash},
+    DataKey,
+};
+
+use std::io;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -118,6 +124,153 @@ impl CommitLog {
             Some(bytes)
         } else {
             None
+        }
+    }
+}
+
+/// A read-only view of a [`CommitLog`].
+pub struct CommitLogView {
+    mlog: Option<Arc<Mutex<MessageLog>>>,
+    odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
+}
+
+impl CommitLogView {
+    /// Obtain an iterator over a snapshot of the raw message log segments.
+    ///
+    /// See also: [`MessageLog::segments`]
+    pub fn message_log_segments(&self) -> message_log::SegmentsIter {
+        self.message_log_segments_from(0)
+    }
+
+    /// Obtain an iterator over a snapshot of the raw message log segments
+    /// containing messages equal to or newer than `offset`.
+    ///
+    /// See [`MessageLog::segments_from`] for more information.
+    pub fn message_log_segments_from(&self, offset: u64) -> message_log::SegmentsIter {
+        if let Some(mlog) = &self.mlog {
+            let mlog = mlog.lock().unwrap();
+            mlog.segments_from(offset)
+        } else {
+            message_log::SegmentsIter::empty()
+        }
+    }
+
+    /// Obtain an iterator over the [`Commit`]s in the log.
+    ///
+    /// The iterator represents a snapshot of the log.
+    pub fn iter(&self) -> CommitLogIter {
+        self.iter_from(0)
+    }
+
+    /// Obtain an iterator over the [`Commit`]s in the log, starting at `offset`.
+    ///
+    /// The iterator represents a snapshot of the log.
+    ///
+    /// Note that [`Commit`]s with an offset _smaller_ than `offset` may be
+    /// yielded if the offset doesn't fall on a segment boundary, due to the
+    /// lack of slicing support.
+    ///
+    /// See [`MessageLog::segments_from`] for more information.
+    pub fn iter_from(&self, offset: u64) -> CommitLogIter {
+        self.message_log_segments_from(offset).into()
+    }
+
+    /// Obtain an iterator over the large objects in [`Commit`], if any.
+    ///
+    /// Large objects are stored in the [`ObjectDB`], and are referenced from
+    /// the transactions in a [`Commit`].
+    ///
+    /// The iterator attempts to read each large object in turn, yielding an
+    /// [`io::Error`] with kind [`io::ErrorKind::NotFound`] if the object was
+    /// not found.
+    //
+    // TODO(kim): We probably want a more efficient way to stream the contents
+    // of the ODB over the network for replication purposes.
+    pub fn commit_objects<'a>(&self, commit: &'a Commit) -> impl Iterator<Item = io::Result<bytes::Bytes>> + 'a {
+        fn hashes(tx: &Arc<Transaction>) -> impl Iterator<Item = Hash> + '_ {
+            tx.writes.iter().filter_map(|write| {
+                if let DataKey::Hash(h) = write.data_key {
+                    Some(h)
+                } else {
+                    None
+                }
+            })
+        }
+
+        let odb = self.odb.clone();
+        commit.transactions.iter().flat_map(hashes).map(move |hash| {
+            let odb = odb.lock().unwrap();
+            odb.get(hash)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("Missing object: {hash}")))
+        })
+    }
+}
+
+impl From<&CommitLog> for CommitLogView {
+    fn from(log: &CommitLog) -> Self {
+        Self {
+            mlog: log.mlog.clone(),
+            odb: log.odb.clone(),
+        }
+    }
+}
+
+#[must_use = "iterators are lazy and do nothing unless consumed"]
+struct SegmentIter {
+    inner: message_log::SegmentIter,
+}
+
+impl Iterator for SegmentIter {
+    type Item = io::Result<Commit>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.inner.next()?;
+        Some(next.map(|bytes| {
+            // It seems very improbable that `decode` is infallible...
+            let (commit, _) = Commit::decode(bytes);
+            commit
+        }))
+    }
+}
+
+/// Iterator over a [`CommitLogView`], yielding [`Commit`]s.
+///
+/// Created by [`CommitLogView::iter`] and [`CommitLogView::iter_from`]
+/// respectively.
+#[must_use = "iterators are lazy and do nothing unless consumed"]
+pub struct CommitLogIter {
+    commits: Option<SegmentIter>,
+    segments: message_log::SegmentsIter,
+}
+
+impl Iterator for CommitLogIter {
+    type Item = io::Result<Commit>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(mut commits) = self.commits.take() {
+                if let Some(commit) = commits.next() {
+                    self.commits = Some(commits);
+                    return Some(commit);
+                }
+            }
+
+            let segment = self.segments.next()?;
+            match segment.try_into_iter() {
+                Err(e) => return Some(Err(e)),
+                Ok(inner) => {
+                    self.commits = Some(SegmentIter { inner });
+                }
+            }
+        }
+    }
+}
+
+impl From<message_log::SegmentsIter> for CommitLogIter {
+    fn from(segments: message_log::SegmentsIter) -> Self {
+        Self {
+            commits: None,
+            segments,
         }
     }
 }
