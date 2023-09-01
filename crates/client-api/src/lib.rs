@@ -84,16 +84,32 @@ pub trait ControlCtx: ControlNodeDelegate + Send + Sync {
 }
 
 #[async_trait]
+/// Access to the SpacetimeDB control plane.
+///
+/// Implementors of this trait are able to delegate requests to a `ControlCtx`
+/// through some unspecified method.
+/// In SpacetimeDB-standalone, this manifests as a direct in-program call to the control node.
+/// In SpacetimeDB-cloud, worker nodes' `ControlNodeDelegate` implementations
+/// may make network requests to the control node to handle some of these methods.
 pub trait ControlNodeDelegate: Send + Sync {
+    /// Resolve a database name to an address.
     async fn spacetime_dns(&self, domain: &DomainName) -> spacetimedb::control_db::Result<Option<Address>>;
 
+    /// Create a new, unique `Identity`.
     async fn alloc_spacetime_identity(&self) -> spacetimedb::control_db::Result<Identity>;
 
+    /// Subtract `amount` from the energy balance of `identity`.
     async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()>;
 
+    /// Return a JWT decoding key for verifying credentials.
     fn public_key(&self) -> &DecodingKey;
+
+    /// Return a JWT encoding key for signing credentials.
     fn private_key(&self) -> &EncodingKey;
 
+    /// Return the public key used to verify JWTs, as the bytes of a PEM public key file.
+    ///
+    /// The `/identity/public-key` route calls this method to return the public key to callers.
     fn public_key_bytes(&self) -> &[u8];
 }
 
