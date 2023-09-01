@@ -49,6 +49,8 @@ impl IndexMut<AlgebraicTypeRef> for Typespace {
 }
 
 impl Typespace {
+    pub const EMPTY: &Typespace = &Self::new(Vec::new());
+
     /// Returns a context ([`Typespace`]) with the given `types`.
     pub const fn new(types: Vec<AlgebraicType>) -> Self {
         Self { types }

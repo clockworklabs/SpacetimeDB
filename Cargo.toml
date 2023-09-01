@@ -73,17 +73,13 @@ bitflags = "2.3.3"
 byte-unit = "4.0.18"
 bytes = "1.2.1"
 bytestring = { version = "1.2.0", features = ["serde"] }
-cargo_metadata = "0.15.2"
+cargo_metadata = "0.17.0"
 chrono = { version = "0.4.24", default-features = false }
 clap = { version = "4.2.4", features = ["derive"] }
 colored = "2.0.0"
 console = { version = "0.15.6" }
 convert_case = "0.6.0"
-criterion = { version = "0.4.0", features = [
-  "async",
-  "async_tokio",
-  "html_reports",
-] }
+criterion = { version = "0.5.1", features = ["async", "async_tokio", "html_reports"] }
 crossbeam-channel = "0.5"
 cursive = { version = "0.20", default-features = false, features = ["crossterm-backend"] }
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
@@ -109,10 +105,10 @@ humantime = "2.1.0"
 hyper = "0.14.18"
 im = "15.1"
 imara-diff = "0.1.3"
-indexmap = "1.9.2"
+indexmap = "2.0.0"
 insta = { version = "1.21.0", features = ["toml"] }
 is-terminal = "0.4"
-itertools = "0.10.5"
+itertools = "0.11.0"
 jsonwebtoken = { version = "8.1.0" }
 lazy_static = "1.4.0"
 log = "0.4.17"
@@ -141,33 +137,31 @@ rust_decimal = { version = "1.29.1", features = ["db-tokio-postgres"] }
 rustyline = { version = "12.0.0", features = [] }
 scoped-tls = "1.0.1"
 scopeguard = "1.1.0"
-sendgrid = { version = "0.18.1", features = ["async"] }
+sendgrid = { version = "0.19.2", features = ["async"] }
 serde = "1.0.136"
 serde_json = { version = "1.0.87", features = ["raw_value"] }
 serde_path_to_error = "0.1.9"
-serde_with = { version = "2.2.0", features = ["base64", "hex"] }
+serde_with = { version = "3.3.0", features = ["base64", "hex"] }
 serial_test = "2.0.0"
 sha1 = "0.10.1"
 sha3 = "0.10.0"
 slab = "0.4.7"
 sled = "0.34.7"
-sqlparser = "0.34.0"
-sqllogictest-engines = "0.13.0"
-sqllogictest = "0.13.2"
-strum = { version = "0.24.1", features = ["derive"] }
+sqlparser = "0.38.0"
+sqllogictest-engines = "0.17"
+sqllogictest = "0.17"
+strum = { version = "0.25.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
-syntect = { version = "5.0.0", default-features = false, features = [
-  "default-fancy",
-] }
-tabled = "0.8.0"
+syntect = { version = "5.0.0", default-features = false, features = ["default-fancy"] }
+tabled = "0.14.0"
 tempfile = "3.8"
 termcolor = "1.2.0"
 thiserror = "1.0.37"
 tokio = { version = "1.25.1", features = ["full"] }
 tokio-util = { version = "0.7.4", features = ["time"] }
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
-tokio-tungstenite = { version = "0.19", features = ["native-tls"] }
-toml = "0.5"
+tokio-tungstenite = { version = "0.20", features = ["native-tls"] }
+toml = "0.8"
 tower-http = { version = "0.4.1", features = ["cors"] }
 tracing = { version = "0.1.37", features = ["release_max_level_off"] }
 tracing-appender = "0.2.2"
@@ -187,8 +181,7 @@ wasmer-middlewares = "4.1.1"
 wasmer-types = "4.1.1"
 wasmer-vm = "4.1.1"
 
-wasmparser = "0.92.0"
-wasmtime = { version = "7", default-features = false, features = ["cranelift"] }
+wasmtime = { version = "14", default-features = false, features = ["cranelift"] }
 
 # We use the "ondemand" feature to allow connecting after the start,
 # and reconnecting, from the tracy client to the database.
@@ -209,4 +202,4 @@ openssl = { version = "0.10", features = ["vendored"] }
 
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
 # if we link bzip, we get multiple defs
-rocksdb = { version = "0.19.0", default-features = false, features = ["lz4"] }
+rocksdb = { version = "0.21.0", default-features = false, features = ["lz4"] }

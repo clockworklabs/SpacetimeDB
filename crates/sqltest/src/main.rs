@@ -18,9 +18,12 @@ use anyhow::{anyhow, bail, Context};
 use chrono::Local;
 use clap::{Parser, ValueEnum};
 use console::style;
+use itertools::Itertools;
 use quick_junit::{NonSuccessKind, Report, TestCase, TestCaseStatus, TestSuite};
+use spacetimedb::error::DBError;
 use sqllogictest::{
-    default_validator, strict_column_validator, update_record_with_output, AsyncDB, Injected, Record, Runner,
+    default_validator, strict_column_validator, update_record_with_output, AsyncDB, Injected, MakeConnection, Record,
+    Runner,
 };
 
 #[derive(Default, Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
@@ -104,7 +107,7 @@ async fn main() -> anyhow::Result<()> {
         bail!("no test case found");
     }
     if args.r#override || args.format {
-        return update_test_files(files, &args.engine, args.format).await;
+        return update_test_files(files, args.engine, args.format).await;
     }
 
     let mut report = Report::new(TEST_NAME.to_string());
@@ -120,11 +123,11 @@ async fn main() -> anyhow::Result<()> {
     result
 }
 
-async fn open_db(engine: &DbType) -> anyhow::Result<DBRunner> {
+async fn open_db(engine: DbType) -> Result<DBRunner, DBError> {
     Ok(match engine {
         DbType::SpaceTimeDb => SpaceDb::new()?.into_db(),
-        DbType::Sqlite => Sqlite::new()?.into_db(),
-        DbType::Postgres => Pg::new().await?.into_db(),
+        DbType::Sqlite => Sqlite::new().map_err(DBError::Other)?.into_db(),
+        DbType::Postgres => Pg::new().await.map_err(DBError::Other)?.into_db(),
     })
 }
 
@@ -134,9 +137,8 @@ async fn run_serial(test_suite: &mut TestSuite, files: Vec<PathBuf>, engine: DbT
     let start = Instant::now();
 
     for file in files {
-        let engine = open_db(&engine).await?;
-        let db_name = engine.engine_name().to_string();
-        let runner = Runner::new(engine);
+        let db_name = format!("{engine:?}");
+        let runner = Runner::new(|| open_db(engine));
         let filename = file.to_string_lossy().to_string();
         let test_case_name = filename.replace(['/', ' ', '.', '-'], "_");
         let case = match run_test_file(&mut std::io::stdout(), runner, &file, &db_name).await {
@@ -191,9 +193,9 @@ async fn run_serial(test_suite: &mut TestSuite, files: Vec<PathBuf>, engine: DbT
 
 /// Different from [`Runner::run_file_async`], we re-implement it here to print some progress
 /// information.
-async fn run_test_file<T: std::io::Write, D: AsyncDB>(
+async fn run_test_file<T: std::io::Write, D: AsyncDB, M: MakeConnection<Conn = D>>(
     out: &mut T,
-    mut runner: Runner<D>,
+    mut runner: Runner<D, M>,
     filename: impl AsRef<Path>,
     db_name: &str,
 ) -> anyhow::Result<(bool, Duration)> {
@@ -232,7 +234,7 @@ async fn run_test_file<T: std::io::Write, D: AsyncDB>(
         let will_skip = match &record {
             Record::Statement { conditions, .. } | Record::Query { conditions, .. } => {
                 total += 1;
-                conditions.iter().any(|c| c.should_skip(db_name))
+                conditions.iter().any(|c| should_skip(c, [db_name]))
             }
             _ => false,
         };
@@ -242,7 +244,8 @@ async fn run_test_file<T: std::io::Write, D: AsyncDB>(
         }
 
         runner
-            .run(record)
+            .run_async(record)
+            .await
             .map_err(|e| anyhow!("{}", e.display(console::colors_enabled())))
             .context(format!("failed to run `{}`", style(filename.to_string_lossy()).bold()))?;
     }
@@ -263,6 +266,14 @@ async fn run_test_file<T: std::io::Write, D: AsyncDB>(
     writeln!(out)?;
 
     Ok((skipped, duration))
+}
+
+// sqllogictest::Condition::should_skip
+fn should_skip<'a>(c: &'a sqllogictest::Condition, labels: impl IntoIterator<Item = &'a str>) -> bool {
+    match c {
+        sqllogictest::Condition::OnlyIf { label } => !labels.into_iter().contains(&label.as_str()),
+        sqllogictest::Condition::SkipIf { label } => labels.into_iter().contains(&label.as_str()),
+    }
 }
 
 async fn finish_test_file<T: std::io::Write>(
@@ -301,10 +312,9 @@ async fn finish_test_file<T: std::io::Write>(
 }
 
 /// * `format` - If true, will not run sqls, only formats the file.
-async fn update_test_files(files: Vec<PathBuf>, engine: &DbType, format: bool) -> anyhow::Result<()> {
+async fn update_test_files(files: Vec<PathBuf>, engine: DbType, format: bool) -> anyhow::Result<()> {
     for file in files {
-        let engine = open_db(engine).await?;
-        let runner = Runner::new(engine);
+        let runner = Runner::new(|| open_db(engine));
 
         if let Err(e) = update_test_file(&mut std::io::stdout(), runner, &file, format).await {
             {
@@ -319,9 +329,9 @@ async fn update_test_files(files: Vec<PathBuf>, engine: &DbType, format: bool) -
 
 /// Different from [`sqllogictest::update_test_file`], we re-implement it here to print some
 /// progress information.
-async fn update_test_file<T: std::io::Write, D: AsyncDB>(
+async fn update_test_file<T: std::io::Write, D: AsyncDB, M: MakeConnection<Conn = D>>(
     out: &mut T,
-    mut runner: Runner<D>,
+    mut runner: Runner<D, M>,
     filename: impl AsRef<Path>,
     format: bool,
 ) -> anyhow::Result<()> {
@@ -471,9 +481,9 @@ async fn update_test_file<T: std::io::Write, D: AsyncDB>(
     Ok(())
 }
 
-async fn update_record<D: AsyncDB>(
+async fn update_record<D: AsyncDB, M: MakeConnection<Conn = D>>(
     outfile: &mut File,
-    runner: &mut Runner<D>,
+    runner: &mut Runner<D, M>,
     record: Record<D::ColumnType>,
     format: bool,
 ) -> anyhow::Result<()> {
