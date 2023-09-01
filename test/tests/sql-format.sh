@@ -90,7 +90,7 @@ pub fn test() {
 }
 EOF
 
-run_test cargo run publish -s -d --project-path "$PROJECT_PATH" --clear-database
+run_test cargo run publish -S -d --project-path "$PROJECT_PATH" --clear-database
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 # We have to give the database some time to setup our instance
