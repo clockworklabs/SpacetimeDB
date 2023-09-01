@@ -226,24 +226,20 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = rust::autogen_rust_table(ctx, table);
-                let name = table.name.to_case(Case::Snake);
-                Some((name + ".rs", code))
+                Some((rust::rust_type_file_name(&table.name), code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => {
-                let filename = name.replace('.', "").to_case(Case::Snake);
-                let filename = filename + ".rs";
                 let code = match &ctx.typespace[*ty] {
                     AlgebraicType::Sum(sum) => rust::autogen_rust_sum(ctx, name, sum),
                     AlgebraicType::Product(prod) => rust::autogen_rust_tuple(ctx, name, prod),
                     _ => todo!(),
                 };
-                Some((filename, code))
+                Some((rust::rust_type_file_name(&name), code))
             }
             GenItem::Reducer(reducer) if reducer.name == "__init__" => None,
             GenItem::Reducer(reducer) => {
                 let code = rust::autogen_rust_reducer(ctx, reducer);
-                let name = reducer.name.to_case(Case::Snake);
-                Some((name + "_reducer.rs", code))
+                Some((rust::rust_reducer_file_name(&reducer.name), code))
             }
         }
     }

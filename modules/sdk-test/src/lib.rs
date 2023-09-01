@@ -202,13 +202,13 @@ define_tables! {
     VecU16 { insert insert_vec_u16 } n Vec<u16>;
     VecU32 { insert insert_vec_u32 } n Vec<u32>;
     VecU64 { insert insert_vec_u64 } n Vec<u64>;
-    Vecu128 { insert insert_vec_u128 } n Vec<u128>;
+    VecU128 { insert insert_vec_u128 } n Vec<u128>;
 
     VecI8 { insert insert_vec_i8 } n Vec<i8>;
     VecI16 { insert insert_vec_i16 } n Vec<i16>;
     VecI32 { insert insert_vec_i32 } n Vec<i32>;
     VecI64 { insert insert_vec_i64 } n Vec<i64>;
-    Veci128 { insert insert_vec_i128 } n Vec<i128>;
+    VecI128 { insert insert_vec_i128 } n Vec<i128>;
 
     VecBool { insert insert_vec_bool } b Vec<bool>;
 
@@ -435,32 +435,3 @@ define_tables! {
     b VecU8,
     ;
 }
-
-// #[spacetimedb(reducer)]
-// pub fn insert_default_of_each() {
-//     OneU8::insert(Default::default());
-//     OneU16::insert(Default::default());
-//     OneU32::insert(Default::default());
-//     OneU64::insert(Default::default());
-//     OneU128::insert(Default::default());
-
-//     OneI8::insert(Default::default());
-//     OneI16::insert(Default::default());
-//     OneI32::insert(Default::default());
-//     OneI64::insert(Default::default());
-//     OneI128::insert(Default::default());
-
-//     OneBool::insert(Default::default());
-
-//     OneF32::insert(Default::default());
-//     OneF64::insert(Default::default());
-
-//     OneString::insert(Default::default());
-
-//     OneSimpleEnum::insert(Default::default());
-//     OneEnumWithPayload::insert(Default::default());
-
-//     OneEveryPrimitiveStruct::insert(Default::default());
-
-//     OneEveryVecStruct::insert(Default::default());
-// }
