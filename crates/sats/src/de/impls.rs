@@ -6,8 +6,9 @@ use std::marker::PhantomData;
 // use crate::{ProductTypeElement, SumType, PrimitiveType, ReducerDef, ProductType, ProductValue, AlgebraicType, AlgebraicValue};
 
 use crate::{
-    slim_slice::{SlimStrBox, SlimSliceBox, SlimStr}, AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, MapValue, ProductType,
-    ProductTypeElement, ProductValue, SumType, SumValue, WithTypespace, F32, F64,
+    slim_slice::{SlimSliceBox, SlimStr, SlimStrBox},
+    AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, MapValue, ProductType, ProductTypeElement,
+    ProductValue, SumType, SumValue, WithTypespace, F32, F64,
 };
 
 use super::{
@@ -315,7 +316,10 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
             AlgebraicType::Sum(sum) => self.with(sum).deserialize(de).map(AlgebraicValue::Sum),
             AlgebraicType::Product(prod) => self.with(prod).deserialize(de).map(AlgebraicValue::Product),
             AlgebraicType::Array(ty) => self.with(ty).deserialize(de).map(AlgebraicValue::Array),
-            AlgebraicType::Map(ty) => self.with(ty).deserialize(de).map(|m| AlgebraicValue::Map(Box::new(m))),
+            AlgebraicType::Map(ty) => self
+                .with(&**ty)
+                .deserialize(de)
+                .map(|m| AlgebraicValue::Map(Box::new(m))),
             AlgebraicType::Bool => bool::deserialize(de).map(AlgebraicValue::Bool),
             AlgebraicType::I8 => i8::deserialize(de).map(AlgebraicValue::I8),
             AlgebraicType::U8 => u8::deserialize(de).map(AlgebraicValue::U8),
@@ -451,7 +455,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(|x| ArrayValue::Array(x.into())),
                 AlgebraicType::Map(ty) => deserializer
-                    .deserialize_array_seed(BasicVecVisitor, self.with(ty))
+                    .deserialize_array_seed(BasicVecVisitor, self.with(&**ty))
                     .map(|x| ArrayValue::Map(x.into())),
                 AlgebraicType::Bool => de_array(deserializer, ArrayValue::Bool),
                 AlgebraicType::I8 => de_array(deserializer, ArrayValue::I8),
@@ -479,7 +483,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, MapType> {
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
         let MapType { key_ty, ty } = self.ty();
-        deserializer.deserialize_map_seed(BasicMapVisitor, self.with(&**key_ty), self.with(&**ty))
+        deserializer.deserialize_map_seed(BasicMapVisitor, self.with(key_ty), self.with(ty))
     }
 }
 

@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
-use crate::{AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType, slim_slice::{SlimStrBox, SlimSliceBox}};
+use crate::{
+    slim_slice::{SlimSliceBox, SlimStrBox},
+    AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType,
+};
 
 use super::{Serialize, SerializeArray, SerializeMap, SerializeNamedProduct, SerializeSeqProduct, Serializer};
 
@@ -148,7 +151,7 @@ impl_serialize!([] ValueWithType<'_, AlgebraicValue>, (self, ser) => {
             (AlgebraicValue::Sum(val), AlgebraicType::Sum(ty)) => self.with(ty, val).serialize(ser),
             (AlgebraicValue::Product(val), AlgebraicType::Product(ty)) => self.with(ty, val).serialize(ser),
             (AlgebraicValue::Array(val), AlgebraicType::Array(ty)) => self.with(ty, val).serialize(ser),
-            (AlgebraicValue::Map(val), AlgebraicType::Map(ty)) => self.with(ty, &**val).serialize(ser),
+            (AlgebraicValue::Map(val), AlgebraicType::Map(ty)) => self.with(&**ty, &**val).serialize(ser),
             (AlgebraicValue::Bool(v), AlgebraicType::Bool) => ser.serialize_bool(*v),
             (AlgebraicValue::I8(v), AlgebraicType::I8) => ser.serialize_i8(*v),
             (AlgebraicValue::U8(v), AlgebraicType::U8) => ser.serialize_u8(*v),
@@ -195,7 +198,7 @@ impl_serialize!([] ValueWithType<'_, ProductValue>, (self, ser) => {
 impl_serialize!([] ValueWithType<'_, ArrayValue>, (self, ser) => match (self.value(), &*self.ty().elem_ty) {
     (ArrayValue::Sum(v), AlgebraicType::Sum(ty)) => self.with(ty, v).serialize(ser),
     (ArrayValue::Product(v), AlgebraicType::Product(ty)) => self.with(ty, v).serialize(ser),
-    (ArrayValue::Map(v), AlgebraicType::Map(m)) => self.with(m, v).serialize(ser),
+    (ArrayValue::Map(v), AlgebraicType::Map(m)) => self.with(&**m, v).serialize(ser),
     (ArrayValue::Bool(v), &AlgebraicType::Bool) => v.serialize(ser),
     (ArrayValue::I8(v), &AlgebraicType::I8) => v.serialize(ser),
     (ArrayValue::U8(v), &AlgebraicType::U8) => v.serialize(ser),
@@ -219,7 +222,7 @@ impl_serialize!([] ValueWithType<'_, MapValue>, (self, ser) => {
     let MapType { key_ty, ty } = self.ty();
     let mut map = ser.serialize_map(val.len())?;
     for (key, val) in val {
-        map.serialize_entry(&self.with(&**key_ty, key), &self.with(&**ty, val))?;
+        map.serialize_entry(&self.with(key_ty, key), &self.with(ty, val))?;
     }
     map.end()
 });

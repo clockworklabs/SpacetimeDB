@@ -119,7 +119,7 @@ pub enum AlgebraicType {
     /// The type of map values consisting of a key type `key_ty` and value `ty`.
     /// Values [`BuiltinValue::Map(map)`](crate::BuiltinValue::Map) will have this type.
     /// The order of entries in a map value is observable.
-    Map(MapType),
+    Map(Box<MapType>),
     /// The bool type. Values [`BuiltinValue::Bool(b)`](crate::BuiltinValue::Bool) will have this type.
     Bool,
     /// The `I8` type. Values [`BuiltinValue::I8(v)`](crate::BuiltinValue::I8) will have this type.
@@ -284,7 +284,7 @@ impl AlgebraicType {
 
     /// Returns a map type from the type `key` to the type `value`.
     pub fn map(key: Self, value: Self) -> Self {
-        AlgebraicType::Map(MapType::new(key, value))
+        AlgebraicType::Map(Box::new(MapType::new(key, value)))
     }
 
     /// Returns a sum type of unit variants with names taken from `var_names`.

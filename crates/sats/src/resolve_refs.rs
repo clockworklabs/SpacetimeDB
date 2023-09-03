@@ -69,7 +69,7 @@ impl ResolveRefs for AlgebraicType {
             Self::Sum(sum) => this.with(sum)._resolve_refs(state).map(Self::Sum),
             Self::Product(prod) => this.with(prod)._resolve_refs(state).map(Self::Product),
             Self::Array(ty) => this.with(ty)._resolve_refs(state).map(Self::Array),
-            Self::Map(m) => this.with(m)._resolve_refs(state).map(Self::Map),
+            Self::Map(m) => this.with(&**m)._resolve_refs(state).map(|x| Self::Map(Box::new(x))),
             // These types are plain and cannot have refs in them.
             Self::Bool
             | Self::I8
@@ -102,8 +102,8 @@ impl ResolveRefs for MapType {
     type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
         Some(Self {
-            key_ty: Box::new(this.map(|m| &*m.key_ty)._resolve_refs(state)?),
-            ty: Box::new(this.map(|m| &*m.ty)._resolve_refs(state)?),
+            key_ty: this.map(|m| &m.key_ty)._resolve_refs(state)?,
+            ty: this.map(|m| &m.ty)._resolve_refs(state)?,
         })
     }
 }
