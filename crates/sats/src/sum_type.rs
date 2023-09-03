@@ -1,10 +1,8 @@
-use std::mem::size_of;
-
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{static_assert_size, AlgebraicType, AlgebraicValue, ProductTypeElement, SumTypeVariant};
+use crate::{static_assert_size, AlgebraicType, AlgebraicValue, ProductTypeElement, SatsVec, SumTypeVariant};
 
 /// A structural sum type.
 ///
@@ -36,20 +34,14 @@ pub struct SumType {
     /// The possible variants of the sum type.
     ///
     /// The order is relevant as it defines the tags of the variants at runtime.
-    pub variants: Box<[SumTypeVariant]>,
+    pub variants: SatsVec<SumTypeVariant>,
 }
 
-static_assert_size!(SumType, size_of::<usize>() * 2);
+static_assert_size!(SumType, 12);
 
 impl SumType {
     /// Returns a sum type with these possible `variants`.
-    pub const fn new(variants: Box<[SumTypeVariant]>) -> Self {
-        Self { variants }
-    }
-
-    /// Returns a sum type of unnamed variants taken from `types`.
-    pub fn new_unnamed(types: Box<[AlgebraicType]>) -> Self {
-        let variants = types.into_vec().into_iter().map(|ty| ty.into()).collect();
+    pub const fn new(variants: SatsVec<SumTypeVariant>) -> Self {
         Self { variants }
     }
 

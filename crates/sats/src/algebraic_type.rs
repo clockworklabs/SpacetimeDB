@@ -7,9 +7,10 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::map_type::MapType;
 use crate::meta_type::MetaType;
+use crate::slim_slice::SlimSliceBoxCollected;
 use crate::{de::Deserialize, ser::Serialize};
 use crate::{
-    static_assert_size, AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, ProductTypeElement, SumType,
+    static_assert_size, AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, ProductTypeElement, SatsVec, SumType,
     SumTypeVariant,
 };
 use enum_as_inner::EnumAsInner;
@@ -154,7 +155,7 @@ pub enum AlgebraicType {
     String,
 }
 
-static_assert_size!(AlgebraicType, size_of::<usize>() * 3);
+static_assert_size!(AlgebraicType, size_of::<usize>() * 2);
 
 impl MetaType for AlgebraicType {
     /// This is a static function that constructs the type of `AlgebraicType`
@@ -236,7 +237,7 @@ impl AlgebraicType {
 
     /// The canonical 0-element unit type.
     pub fn unit() -> Self {
-        Self::product(Vec::new().into_boxed_slice())
+        Self::product([].into())
     }
 
     /// The canonical 0-variant "never" / "absurd" / "void" type.
@@ -257,12 +258,12 @@ impl AlgebraicType {
     }
 
     /// Returns a sum type with the given `variants`.
-    pub const fn sum(variants: Box<[SumTypeVariant]>) -> Self {
+    pub const fn sum(variants: SatsVec<SumTypeVariant>) -> Self {
         AlgebraicType::Sum(SumType { variants })
     }
 
     /// Returns a product type with the given `factors`.
-    pub const fn product(factors: Box<[ProductTypeElement]>) -> Self {
+    pub const fn product(factors: SatsVec<ProductTypeElement>) -> Self {
         AlgebraicType::Product(ProductType::new(factors))
     }
 
@@ -289,7 +290,12 @@ impl AlgebraicType {
 
     /// Returns a sum type of unit variants with names taken from `var_names`.
     pub fn simple_enum<'a>(var_names: impl Iterator<Item = &'a str>) -> Self {
-        Self::sum(var_names.into_iter().map(SumTypeVariant::unit).collect())
+        let vars = var_names
+            .into_iter()
+            .map(SumTypeVariant::unit)
+            .collect::<SlimSliceBoxCollected<_>>()
+            .unwrap();
+        Self::sum(vars)
     }
 
     pub fn as_value(&self) -> AlgebraicValue {

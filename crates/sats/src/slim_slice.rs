@@ -298,6 +298,12 @@ pub struct SlimSliceBoxCollected<T> {
     pub inner: Result<SlimSliceBox<T>, Vec<T>>,
 }
 
+impl<T: Debug> SlimSliceBoxCollected<T> {
+    pub fn unwrap(self) -> SlimSliceBox<T> {
+        self.inner.expect("number of elements overflowed `u32::MAX`")
+    }
+}
+
 impl<A> FromIterator<A> for SlimSliceBoxCollected<A> {
     fn from_iter<T: IntoIterator<Item = A>>(iter: T) -> Self {
         let inner = iter.into_iter().collect::<Vec<_>>().try_into();

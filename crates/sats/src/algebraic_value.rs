@@ -1,7 +1,10 @@
 pub mod de;
 pub mod ser;
 
-use crate::{static_assert_size, AlgebraicType, ArrayValue, MapValue, ProductValue, SatsString, SumValue};
+use crate::{
+    slim_slice::SlimSliceBoxCollected, static_assert_size, AlgebraicType, ArrayValue, MapValue, ProductValue,
+    SatsString, SumValue,
+};
 use enum_as_inner::EnumAsInner;
 use std::ops::{Bound, Deref, RangeBounds};
 
@@ -197,7 +200,13 @@ impl AlgebraicValue {
 
     /// Returns the [`AlgebraicType`] of the product value `x`.
     pub(crate) fn type_of_product(x: &ProductValue) -> AlgebraicType {
-        AlgebraicType::product(x.elements.iter().map(|x| x.type_of().into()).collect())
+        AlgebraicType::product(
+            x.elements
+                .iter()
+                .map(|x| x.type_of().into())
+                .collect::<SlimSliceBoxCollected<_>>()
+                .unwrap(),
+        )
     }
 
     /// Returns the [`AlgebraicType`] of the map with key type `k` and value type `v`.
@@ -209,7 +218,7 @@ impl AlgebraicValue {
             //   I think this requires a soundness argument.
             //   I could see that it is OK with the argument that this is an empty map
             //   under the requirement that we cannot insert elements into the map.
-            vec![AlgebraicType::never().into(); 2].into()
+            [AlgebraicType::never().into(), AlgebraicType::never().into()].into()
         })
     }
 

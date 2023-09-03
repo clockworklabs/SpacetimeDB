@@ -20,6 +20,8 @@ pub enum ErrorType {
     FieldBool(AlgebraicValue),
     #[error("Error Parsing `{value}` into type [{ty}]: {err}")]
     Parse { value: String, ty: String, err: String },
+    #[error("The length `{0}` was too long")]
+    LenTooLong(usize),
 }
 
 /// Vm Errors

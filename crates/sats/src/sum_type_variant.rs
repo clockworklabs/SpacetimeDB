@@ -24,7 +24,7 @@ pub struct SumTypeVariant {
     pub algebraic_type: AlgebraicType,
 }
 
-static_assert_size!(SumTypeVariant, size_of::<usize>() * 5);
+static_assert_size!(SumTypeVariant, size_of::<usize>() * 4);
 
 impl SumTypeVariant {
     /// Returns a sum type variant with an optional `name` and `algebraic_type`.

@@ -25,7 +25,7 @@ pub struct ProductTypeElement {
     pub algebraic_type: AlgebraicType,
 }
 
-static_assert_size!(ProductTypeElement, size_of::<usize>() * 5);
+static_assert_size!(ProductTypeElement, size_of::<usize>() * 4);
 
 impl ProductTypeElement {
     /// Returns an element with the given `name` and `algebraic_type`.

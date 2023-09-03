@@ -5,7 +5,10 @@ use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
 use spacetimedb_lib::{ColumnIndexAttribute, DataKey};
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::{string, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SatsString};
+use spacetimedb_sats::slim_slice::SlimSliceBoxCollected;
+use spacetimedb_sats::{
+    string, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SatsString0,
+};
 use spacetimedb_vm::expr::SourceExpr;
 use std::{ops::RangeBounds, sync::Arc};
 
@@ -266,7 +269,8 @@ impl From<&TableSchema> for ProductType {
                     name: Some(c.col_name.clone()),
                     algebraic_type: c.col_type.clone(),
                 })
-                .collect(),
+                .collect::<SlimSliceBoxCollected<_>>()
+                .unwrap(),
         )
     }
 }
@@ -303,7 +307,8 @@ impl TableDef {
                     name: None,
                     algebraic_type: c.col_type.clone(),
                 })
-                .collect(),
+                .collect::<SlimSliceBoxCollected<_>>()
+                .unwrap(),
         )
     }
 }

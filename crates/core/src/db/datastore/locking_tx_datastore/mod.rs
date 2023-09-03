@@ -52,7 +52,7 @@ use spacetimedb_lib::{
     relation::RelValue,
     DataKey,
 };
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue, SatsString};
+use spacetimedb_sats::{slim_slice::SlimSliceBoxCollected, AlgebraicType, AlgebraicValue, ProductType, ProductValue, SatsString};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::RangeBounds,
@@ -814,7 +814,8 @@ impl Inner {
             .into_vec()
             .into_iter()
             .map(|col| col.col_type.into())
-            .collect();
+            .collect::<SlimSliceBoxCollected<_>>()
+            .unwrap();
         Ok(ProductType { elements })
     }
 

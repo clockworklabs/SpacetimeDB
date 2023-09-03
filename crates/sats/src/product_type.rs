@@ -1,10 +1,9 @@
-use std::mem::size_of;
-
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
+use crate::slim_slice::SlimSliceBoxCollected;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{static_assert_size, string, AlgebraicType, AlgebraicValue, ProductTypeElement, SatsString};
+use crate::{static_assert_size, string, AlgebraicType, AlgebraicValue, ProductTypeElement, SatsString, SatsVec};
 
 /// A structural product type  of the factors given by `elements`.
 ///
@@ -36,14 +35,14 @@ pub struct ProductType {
     ///
     /// These factors can either be named or unnamed.
     /// When all the factors are unnamed, we can regard this as a plain tuple type.
-    pub elements: Box<[ProductTypeElement]>,
+    pub elements: SatsVec<ProductTypeElement>,
 }
 
-static_assert_size!(ProductType, size_of::<usize>() * 2);
+static_assert_size!(ProductType, 12);
 
 impl ProductType {
     /// Returns a product type with the given `elements` as its factors.
-    pub const fn new(elements: Box<[ProductTypeElement]>) -> Self {
+    pub const fn new(elements: SatsVec<ProductTypeElement>) -> Self {
         Self { elements }
     }
 
@@ -61,7 +60,12 @@ impl ProductType {
 
 impl<I: Into<ProductTypeElement>> FromIterator<I> for ProductType {
     fn from_iter<T: IntoIterator<Item = I>>(iter: T) -> Self {
-        Self::new(iter.into_iter().map(Into::into).collect())
+        Self::new(
+            iter.into_iter()
+                .map(Into::into)
+                .collect::<SlimSliceBoxCollected<_>>()
+                .unwrap(),
+        )
     }
 }
 impl<I: Into<AlgebraicType>> FromIterator<(SatsString, I)> for ProductType {

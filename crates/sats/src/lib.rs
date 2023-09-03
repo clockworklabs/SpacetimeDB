@@ -38,9 +38,9 @@ pub use sum_type_variant::SumTypeVariant;
 pub use sum_value::SumValue;
 pub use typespace::{SpacetimeType, Typespace};
 
-pub use slim_slice::{SlimSlice as SatsVec, SlimSlice as SatsSlice, SlimSliceMut as SatsSliceMut};
-pub use slim_slice::{SlimStr as SatsStr, SlimStrBox as SatsString, SlimStrMut as SatsStrMut};
 pub use slim_slice::{slice, slice_mut, str, str_mut, string};
+pub use slim_slice::{SlimSlice as SatsSlice, SlimSliceBox as SatsVec, SlimSliceMut as SatsSliceMut};
+pub use slim_slice::{SlimStr as SatsStr, SlimStrBox as SatsString, SlimStrMut as SatsStrMut};
 
 /// The `Value` trait provides an abstract notion of a value.
 ///

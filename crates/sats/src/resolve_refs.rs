@@ -1,6 +1,6 @@
 use crate::{
-    AlgebraicType, AlgebraicTypeRef, ArrayType, MapType, ProductType, ProductTypeElement, SumType, SumTypeVariant,
-    WithTypespace,
+    slim_slice::SlimSliceBoxCollected, AlgebraicType, AlgebraicTypeRef, ArrayType, MapType, ProductType,
+    ProductTypeElement, SumType, SumTypeVariant, WithTypespace,
 };
 
 /// Resolver for [`AlgebraicTypeRef`]s within a structure.
@@ -116,7 +116,8 @@ impl ResolveRefs for ProductType {
             .elements
             .iter()
             .map(|el| this.with(el)._resolve_refs(state))
-            .collect::<Option<_>>()?;
+            .collect::<Option<SlimSliceBoxCollected<_>>>()?
+            .unwrap();
         Some(ProductType { elements })
     }
 }
@@ -139,7 +140,8 @@ impl ResolveRefs for SumType {
             .variants
             .iter()
             .map(|v| this.with(v)._resolve_refs(state))
-            .collect::<Option<_>>()?;
+            .collect::<Option<SlimSliceBoxCollected<_>>>()?
+            .unwrap();
         Some(Self { variants })
     }
 }
