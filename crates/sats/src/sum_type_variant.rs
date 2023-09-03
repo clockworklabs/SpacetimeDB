@@ -3,7 +3,7 @@ use std::mem::size_of;
 use crate::algebraic_type::AlgebraicType;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{static_assert_size, AlgebraicTypeRef, ProductTypeElement};
+use crate::{static_assert_size, AlgebraicTypeRef, ProductTypeElement, string, SatsString};
 
 /// A variant of a sum type.
 ///
@@ -13,7 +13,7 @@ use crate::{static_assert_size, AlgebraicTypeRef, ProductTypeElement};
 #[sats(crate = crate)]
 pub struct SumTypeVariant {
     /// The name of the variant, if any.
-    pub name: Option<Box<str>>,
+    pub name: Option<SatsString>,
     /// The type of the variant.
     ///
     /// Unlike a language like Rust,
@@ -28,20 +28,17 @@ static_assert_size!(SumTypeVariant, size_of::<usize>() * 5);
 
 impl SumTypeVariant {
     /// Returns a sum type variant with an optional `name` and `algebraic_type`.
-    pub const fn new(algebraic_type: AlgebraicType, name: Option<Box<str>>) -> Self {
+    pub const fn new(algebraic_type: AlgebraicType, name: Option<SatsString>) -> Self {
         Self { algebraic_type, name }
     }
 
     /// Returns a sum type variant with `name` and `algebraic_type`.
-    pub fn new_named(algebraic_type: AlgebraicType, name: impl AsRef<str>) -> Self {
-        Self {
-            algebraic_type,
-            name: Some(name.as_ref().into()),
-        }
+    pub fn new_named(algebraic_type: AlgebraicType, name: &str) -> Self {
+        Self::new(algebraic_type, Some(string(name)))
     }
 
     /// Returns a unit variant with `name`.
-    pub fn unit(name: impl AsRef<str>) -> Self {
+    pub fn unit(name: &str) -> Self {
         Self::new_named(AlgebraicType::unit(), name)
     }
 

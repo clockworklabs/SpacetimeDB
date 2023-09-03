@@ -2,7 +2,7 @@ use std::mem::size_of;
 
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{static_assert_size, str, SatsStr, SatsString, AlgebraicType, AlgebraicTypeRef};
+use crate::{static_assert_size, string, SatsStr, SatsString, AlgebraicType, AlgebraicTypeRef};
 
 /// A factor / element of a product type.
 ///
@@ -37,7 +37,7 @@ impl ProductTypeElement {
     ///
     /// Panics when `name.len() > u32::MAX`.
     pub fn new_named(algebraic_type: AlgebraicType, name: &str) -> Self {
-        Self::new(algebraic_type, Some(str(name).into()))
+        Self::new(algebraic_type, Some(string(name)))
     }
 
     /// Returns the name of the field.
