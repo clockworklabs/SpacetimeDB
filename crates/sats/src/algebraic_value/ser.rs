@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use super::AlgebraicValue;
 use crate::ser::{self, ForwardNamedToSeqProduct};
-use crate::{ArrayValue, MapValue, F32, F64, SatsString};
+use crate::{ArrayValue, MapValue, SatsString, F32, F64, SatsSlice};
 
 /// An implementation of [`Serializer`](ser::Serializer)
 /// where the output of serialization is an `AlgebraicValue`.
@@ -57,6 +57,7 @@ impl ser::Serializer for ValueSerializer {
         ))
     }
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
+        let v = SatsSlice::try_from(v).map_err(|v: &[_]| U32LenOverflow(v.len()))?;
         Ok(AlgebraicValue::Bytes(v.into()))
     }
 
@@ -114,7 +115,10 @@ impl ser::SerializeArray for SerializeArrayValue {
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::Array(self.array.into()))
+        self.array
+            .try_into()
+            .map_err(|v: ArrayValueBuilder| U32LenOverflow(v.len()))
+            .map(AlgebraicValue::Array)
     }
 }
 
@@ -254,27 +258,29 @@ impl ArrayValueBuilder {
     }
 }
 
-impl From<ArrayValueBuilder> for ArrayValue {
-    fn from(value: ArrayValueBuilder) -> Self {
+impl TryFrom<ArrayValueBuilder> for ArrayValue {
+    type Error = ArrayValueBuilder;
+
+    fn try_from(value: ArrayValueBuilder) -> Result<Self, Self::Error> {
         match value {
-            ArrayValueBuilder::Sum(v) => Self::Sum(v.into()),
-            ArrayValueBuilder::Product(v) => Self::Product(v.into()),
-            ArrayValueBuilder::Bool(v) => Self::Bool(v.into()),
-            ArrayValueBuilder::I8(v) => Self::I8(v.into()),
-            ArrayValueBuilder::U8(v) => Self::U8(v.into()),
-            ArrayValueBuilder::I16(v) => Self::I16(v.into()),
-            ArrayValueBuilder::U16(v) => Self::U16(v.into()),
-            ArrayValueBuilder::I32(v) => Self::I32(v.into()),
-            ArrayValueBuilder::U32(v) => Self::U32(v.into()),
-            ArrayValueBuilder::I64(v) => Self::I64(v.into()),
-            ArrayValueBuilder::U64(v) => Self::U64(v.into()),
-            ArrayValueBuilder::I128(v) => Self::I128(v.into()),
-            ArrayValueBuilder::U128(v) => Self::U128(v.into()),
-            ArrayValueBuilder::F32(v) => Self::F32(v.into()),
-            ArrayValueBuilder::F64(v) => Self::F64(v.into()),
-            ArrayValueBuilder::String(v) => Self::String(v.into()),
-            ArrayValueBuilder::Array(v) => Self::Array(v.into()),
-            ArrayValueBuilder::Map(v) => Self::Map(v.into()),
+            ArrayValueBuilder::Sum(v) => v.try_into().map(Self::Sum).map_err(ArrayValueBuilder::Sum),
+            ArrayValueBuilder::Product(v) => v.try_into().map(Self::Product).map_err(ArrayValueBuilder::Product),
+            ArrayValueBuilder::Bool(v) => v.try_into().map(Self::Bool).map_err(ArrayValueBuilder::Bool),
+            ArrayValueBuilder::I8(v) => v.try_into().map(Self::I8).map_err(ArrayValueBuilder::I8),
+            ArrayValueBuilder::U8(v) => v.try_into().map(Self::U8).map_err(ArrayValueBuilder::U8),
+            ArrayValueBuilder::I16(v) => v.try_into().map(Self::I16).map_err(ArrayValueBuilder::I16),
+            ArrayValueBuilder::U16(v) => v.try_into().map(Self::U16).map_err(ArrayValueBuilder::U16),
+            ArrayValueBuilder::I32(v) => v.try_into().map(Self::I32).map_err(ArrayValueBuilder::I32),
+            ArrayValueBuilder::U32(v) => v.try_into().map(Self::U32).map_err(ArrayValueBuilder::U32),
+            ArrayValueBuilder::I64(v) => v.try_into().map(Self::I64).map_err(ArrayValueBuilder::I64),
+            ArrayValueBuilder::U64(v) => v.try_into().map(Self::U64).map_err(ArrayValueBuilder::U64),
+            ArrayValueBuilder::I128(v) => v.try_into().map(Self::I128).map_err(ArrayValueBuilder::I128),
+            ArrayValueBuilder::U128(v) => v.try_into().map(Self::U128).map_err(ArrayValueBuilder::U128),
+            ArrayValueBuilder::F32(v) => v.try_into().map(Self::F32).map_err(ArrayValueBuilder::F32),
+            ArrayValueBuilder::F64(v) => v.try_into().map(Self::F64).map_err(ArrayValueBuilder::F64),
+            ArrayValueBuilder::String(v) => v.try_into().map(Self::String).map_err(ArrayValueBuilder::String),
+            ArrayValueBuilder::Array(v) => v.try_into().map(Self::Array).map_err(ArrayValueBuilder::Array),
+            ArrayValueBuilder::Map(v) => v.try_into().map(Self::Map).map_err(ArrayValueBuilder::Map),
         }
     }
 }
@@ -355,6 +361,8 @@ impl ser::SerializeSeqProduct for SerializeProductValue {
         Ok(())
     }
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::product(self.elements.into()))
+        Ok(AlgebraicValue::product(
+            self.elements.try_into().map_err(|v: Vec<_>| U32LenOverflow(v.len()))?,
+        ))
     }
 }

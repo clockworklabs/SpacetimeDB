@@ -396,7 +396,7 @@ impl Inner {
                 col_type: col.col_type.clone(),
                 is_autoinc: col.is_autoinc,
             };
-            let row = ProductValue::from(row);
+            let row = ProductValue::try_from(row).map_err(DBError::LenTooLong)?;
             let data_key = row.to_data_key();
             {
                 let st_columns =
@@ -737,13 +737,14 @@ impl Inner {
                 col_type: col.col_type.clone(),
                 is_autoinc: col.is_autoinc,
             };
-            self.insert(ST_COLUMNS_ID, row.into())?;
+            let row = ProductValue::try_from(row).map_err(DBError::LenTooLong)?;
+            self.insert(ST_COLUMNS_ID, row)?;
 
             // Insert create the sequence for the autoinc column
             if col.is_autoinc {
                 let sequence_name = format!("{}_{}_seq", table_name, col.col_name)
                     .try_into()
-                    .map_err(DBError::LenTooLong)?;
+                    .map_err(|v: String| DBError::LenTooLong(v.len()))?;
                 let sequence_def = SequenceDef {
                     sequence_name,
                     table_id,

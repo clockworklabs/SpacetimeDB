@@ -3,7 +3,9 @@
 use proptest::prelude::*;
 use proptest::proptest;
 use spacetimedb_sats::buffer::DecodeError;
+use spacetimedb_sats::ArrayValue;
 use spacetimedb_sats::SatsString;
+use spacetimedb_sats::SatsVec;
 use spacetimedb_sats::{
     meta_type::MetaType, product, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, F32,
     F64,
@@ -23,33 +25,31 @@ fn check_type(ty: &AlgebraicType) {
     assert_eq!(direct, through_value);
 }
 
+fn array_value<T>(vec: Vec<T>) -> AlgebraicValue
+where
+    ArrayValue: From<SatsVec<T>>,
+{
+    AlgebraicValue::Array(SatsVec::from_vec(vec).into())
+}
+
 fn array_values() -> impl Strategy<Value = AlgebraicValue> {
     prop_oneof![
-        prop::collection::vec(0u8..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
-        prop::collection::vec(0i16..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
-        prop::collection::vec(0u16..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
-        prop::collection::vec(0i32..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
-        prop::collection::vec(0u32..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
-        prop::collection::vec(0i64..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
-        prop::collection::vec(0u64..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
-        prop::collection::vec(0i128..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
-        prop::collection::vec(0u128..10, 0..10).prop_map(|v| AlgebraicValue::Array(v.into())),
-        prop::collection::vec(0..10, 0..10).prop_map(|x| {
-            let bools: Vec<_> = x.into_iter().map(|x| x == 0).collect::<Vec<_>>();
-            AlgebraicValue::Array(bools.into())
-        }),
-        prop::collection::vec(0i32..10, 0..10).prop_map(|x| {
-            let strs: Vec<SatsString> = x.into_iter().map(|x| SatsString::from_string(x.to_string())).collect();
-            AlgebraicValue::Array(strs.into())
-        }),
-        prop::collection::vec(0i32..10, 0..10).prop_map(|x| {
-            let floats: Vec<_> = x.into_iter().map(|x| F32::from_inner(x as f32)).collect();
-            AlgebraicValue::Array(floats.into())
-        }),
-        prop::collection::vec(0i32..10, 0..10).prop_map(|x| {
-            let floats: Vec<_> = x.into_iter().map(|x| F64::from_inner(x as f64)).collect();
-            AlgebraicValue::Array(floats.into())
-        }),
+        prop::collection::vec(0u8..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0i16..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0u16..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0i32..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0u32..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0i64..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0u64..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0i128..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0u128..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0..10, 0..10).prop_map(|x| array_value(x.into_iter().map(|x| x == 0).collect())),
+        prop::collection::vec(0i32..10, 0..10)
+            .prop_map(|x| array_value(x.into_iter().map(|x| SatsString::from_string(x.to_string())).collect())),
+        prop::collection::vec(0i32..10, 0..10)
+            .prop_map(|x| array_value(x.into_iter().map(|x| F32::from_inner(x as f32)).collect())),
+        prop::collection::vec(0i32..10, 0..10)
+            .prop_map(|x| array_value(x.into_iter().map(|x| F64::from_inner(x as f64)).collect())),
     ]
 }
 
@@ -68,10 +68,7 @@ fn builtin_values() -> impl Strategy<Value = AlgebraicValue> {
         any::<u128>().prop_map(Into::into),
         any::<f32>().prop_map(Into::into),
         any::<f64>().prop_map(Into::into),
-        "[0-1]+".prop_map(|x| {
-            let x = x.into_bytes().into();
-            AlgebraicValue::Bytes(x)
-        }),
+        "[0-1]+".prop_map(|x| array_value(x.into_bytes())),
         ".*".prop_filter("overflowed u32::MAX", |x| x.len() <= u32::MAX as usize)
             .prop_map(|x| AlgebraicValue::String(SatsString::from_string(x)))
     ]

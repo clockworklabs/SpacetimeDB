@@ -109,7 +109,7 @@ impl<S: Iterator<Item = ProductValue>> Iterator for Project<S> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.source.next().map(|row| {
-            let mut row = row.elements.into_vec();
+            let mut row = Vec::from(row.elements);
             for &i in self.cols.iter().rev() {
                 row.remove(i as usize);
             }

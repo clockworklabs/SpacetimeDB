@@ -207,7 +207,8 @@ impl Header {
     }
 
     pub fn from_product_type(table_name: SatsString, fields: ProductType) -> Self {
-        let fields = Vec::from(fields.elements)
+        let fields = fields
+            .elements
             .into_iter()
             .enumerate()
             .map(|(pos, f)| {

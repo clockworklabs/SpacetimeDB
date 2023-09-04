@@ -1,6 +1,6 @@
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_value::AlgebraicValue;
-use crate::{ProductType, SatsString, ProductValue};
+use crate::{ProductType, SatsString, ProductValue, SatsVec};
 
 impl crate::Value for AlgebraicValue {
     type Type = AlgebraicType;
@@ -72,4 +72,4 @@ impl From<i128> for AlgebraicValue {
 built_in_into!(f32, F32);
 built_in_into!(f64, F64);
 built_in!(SatsString, String);
-built_in_into!(&[u8], Bytes);
+built_in_into!(SatsVec<u8>, Bytes);

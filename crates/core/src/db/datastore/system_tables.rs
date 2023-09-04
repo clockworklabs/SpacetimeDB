@@ -8,7 +8,9 @@ use once_cell::sync::Lazy;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::ColumnIndexAttribute;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::{product, string, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue, SatsString};
+use spacetimedb_sats::{
+    product, string, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue, SatsStr, SatsString, SatsVec,
+};
 
 /// The static ID of the table that defines tables
 pub(crate) const ST_TABLES_ID: TableId = TableId(0);
@@ -474,7 +476,8 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
                 col_type: AlgebraicType::I128,
                 is_autoinc: false,
             },
-        ].into(),
+        ]
+        .into(),
         constraints: vec![],
         table_type: StTableType::System,
         table_access: StAccess::Public,
@@ -662,17 +665,19 @@ impl<'a> TryFrom<&'a ProductValue> for StColumnRow<&'a SatsStr<'a>> {
     }
 }
 
-impl<N: Into<SatsString>> From<StColumnRow<N>> for ProductValue {
-    fn from(x: StColumnRow<N>) -> Self {
+impl<N: Into<SatsString>> TryFrom<StColumnRow<N>> for ProductValue {
+    type Error = usize;
+    fn try_from(x: StColumnRow<N>) -> Result<Self, Self::Error> {
         let mut bytes = Vec::new();
         x.col_type.encode(&mut bytes);
-        product![
+        let bytes: SatsVec<u8> = bytes.try_into().map_err(|v: Vec<_>| v.len())?;
+        Ok(product![
             AlgebraicValue::U32(x.table_id),
             AlgebraicValue::U32(x.col_id),
-            AlgebraicValue::Bytes(bytes.into()),
+            AlgebraicValue::Bytes(bytes),
             AlgebraicValue::String(x.col_name.into()),
             AlgebraicValue::Bool(x.is_autoinc),
-        ]
+        ])
     }
 }
 

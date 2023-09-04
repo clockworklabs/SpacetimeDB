@@ -168,8 +168,8 @@ pub enum DBError {
     },
     #[error("SqlError: {error}, executing: `{sql}`")]
     Plan { sql: String, error: PlanError },
-    #[error("The string `{0}` was too long")]
-    LenTooLong(String),
+    #[error("The length `{0}` was too long")]
+    LenTooLong(usize),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

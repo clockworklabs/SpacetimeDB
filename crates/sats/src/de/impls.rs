@@ -6,9 +6,9 @@ use std::marker::PhantomData;
 // use crate::{ProductTypeElement, SumType, PrimitiveType, ReducerDef, ProductType, ProductValue, AlgebraicType, AlgebraicValue};
 
 use crate::{
-    slim_slice::{SlimSliceBox, SlimStr, SlimStrBox},
-    AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, MapValue, ProductType, ProductTypeElement,
-    ProductValue, SumType, SumValue, WithTypespace, F32, F64,
+    slim_slice::SlimSliceBoxCollected, AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, MapValue,
+    ProductType, ProductTypeElement, ProductValue, SatsStr, SatsString, SatsVec, SumType, SumValue,
+    WithTypespace, F32, F64,
 };
 
 use super::{
@@ -107,13 +107,13 @@ impl_deserialize!([T: Deserialize<'de>] Box<[T]>, de => Vec::deserialize(de).map
 fn map_len_err<T, E: Error>(res: Result<T, usize>) -> Result<T, E> {
     res.map_err(|len| E::custom(format!("expected `len ({len}) <= u32::MAX`")))
 }
-impl_deserialize!([] SlimStrBox, de => {
+impl_deserialize!([] SatsString, de => {
     let s = String::deserialize(de)?;
-    map_len_err(SlimStrBox::try_from(s).map_err(|s| s.len()))
+    map_len_err(SatsString::try_from(s).map_err(|s| s.len()))
 });
-impl_deserialize!([T: Deserialize<'de>] SlimSliceBox<T>, de => {
+impl_deserialize!([T: Deserialize<'de>] SatsVec<T>, de => {
     let v = Vec::deserialize(de)?;
-    map_len_err(SlimSliceBox::try_from(v).map_err(|s| s.len()))
+    map_len_err(SatsVec::try_from(v).map_err(|s| s.len()))
 });
 
 /// The visitor converts the slice to its owned version.
@@ -333,7 +333,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
             AlgebraicType::U128 => <Box<_>>::deserialize(de).map(AlgebraicValue::U128),
             AlgebraicType::F32 => f32::deserialize(de).map(|x| AlgebraicValue::F32(x.into())),
             AlgebraicType::F64 => f64::deserialize(de).map(|x| AlgebraicValue::F64(x.into())),
-            AlgebraicType::String => SlimStrBox::deserialize(de).map(AlgebraicValue::String),
+            AlgebraicType::String => SatsString::deserialize(de).map(AlgebraicValue::String),
         }
     }
 }
@@ -430,9 +430,11 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
         /// Deserialize a vector and `map` it to the appropriate `ArrayValue` variant.
         fn de_array<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
             de: D,
-            map: impl FnOnce(Box<[T]>) -> ArrayValue,
+            map: impl FnOnce(SatsVec<T>) -> ArrayValue,
         ) -> Result<ArrayValue, D::Error> {
-            de.deserialize_array(BasicVecVisitor).map(|x| map(x.into()))
+            let v = de.deserialize_array(BasicVecVisitor)?;
+            let v = map_len_err(v.try_into().map_err(|v: Vec<_>| v.len()))?;
+            Ok(map(v))
         }
 
         let mut ty = &*self.ty().elem_ty;
@@ -445,23 +447,33 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                     ty = self.resolve(*r).ty();
                     continue;
                 }
-                AlgebraicType::Sum(ty) => deserializer
-                    .deserialize_array_seed(BasicVecVisitor, self.with(ty))
-                    .map(|x| ArrayValue::Sum(x.into())),
-                AlgebraicType::Product(ty) => deserializer
-                    .deserialize_array_seed(BasicVecVisitor, self.with(ty))
-                    .map(|x| ArrayValue::Product(x.into())),
-                AlgebraicType::Array(ty) => deserializer
-                    .deserialize_array_seed(BasicVecVisitor, self.with(ty))
-                    .map(|x| ArrayValue::Array(x.into())),
-                AlgebraicType::Map(ty) => deserializer
-                    .deserialize_array_seed(BasicVecVisitor, self.with(&**ty))
-                    .map(|x| ArrayValue::Map(x.into())),
+                AlgebraicType::Sum(ty) => {
+                    let v = deserializer.deserialize_array_seed(BasicVecVisitor, self.with(ty))?;
+                    let v = map_len_err(v.try_into().map_err(|v: Vec<_>| v.len()))?;
+                    Ok(ArrayValue::Sum(v))
+                }
+                AlgebraicType::Product(ty) => {
+                    let v = deserializer.deserialize_array_seed(BasicVecVisitor, self.with(ty))?;
+                    let v = map_len_err(v.try_into().map_err(|v: Vec<_>| v.len()))?;
+                    Ok(ArrayValue::Product(v))
+                }
+                AlgebraicType::Array(ty) => {
+                    let v = deserializer.deserialize_array_seed(BasicVecVisitor, self.with(ty))?;
+                    let v = map_len_err(v.try_into().map_err(|v: Vec<_>| v.len()))?;
+                    Ok(ArrayValue::Array(v))
+                }
+                AlgebraicType::Map(ty) => {
+                    let v = deserializer.deserialize_array_seed(BasicVecVisitor, self.with(&**ty))?;
+                    let v = map_len_err(v.try_into().map_err(|v: Vec<_>| v.len()))?;
+                    Ok(ArrayValue::Map(v))
+                }
                 AlgebraicType::Bool => de_array(deserializer, ArrayValue::Bool),
                 AlgebraicType::I8 => de_array(deserializer, ArrayValue::I8),
-                AlgebraicType::U8 => deserializer
-                    .deserialize_bytes(OwnedSliceVisitor)
-                    .map(|x| ArrayValue::U8(x.into())),
+                AlgebraicType::U8 => {
+                    let v = deserializer.deserialize_bytes(OwnedSliceVisitor)?;
+                    let v = map_len_err(v.try_into().map_err(|v: Vec<_>| v.len()))?;
+                    Ok(ArrayValue::U8(v))
+                }
                 AlgebraicType::I16 => de_array(deserializer, ArrayValue::I16),
                 AlgebraicType::U16 => de_array(deserializer, ArrayValue::U16),
                 AlgebraicType::I32 => de_array(deserializer, ArrayValue::I32),
@@ -527,7 +539,8 @@ pub fn visit_seq_product<'de, A: SeqProductAccess<'de>>(
         tup.next_element_seed(elems.with(&el.algebraic_type))?
             .ok_or_else(|| Error::invalid_product_length(i, visitor))
     });
-    let elements = elements.collect::<Result<_, _>>()?;
+    let elements = elements.collect::<Result<SlimSliceBoxCollected<_>, _>>()?;
+    let elements = elements.inner.map_err(|v: Vec<_>| Error::len_too_long(v.len()))?;
     Ok(ProductValue { elements })
 }
 
@@ -571,7 +584,9 @@ pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
         .into_iter()
         // We reached here, so we know nothing was missing, i.e., `None`.
         .map(|x| x.unwrap_or_else(|| unreachable!("visit_named_product")))
-        .collect();
+        .collect::<SlimSliceBoxCollected<_>>()
+        .inner
+        .map_err(|v: Vec<_>| Error::len_too_long(v.len()))?;
 
     Ok(ProductValue { elements })
 }
@@ -596,7 +611,7 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
         self.kind
     }
 
-    fn visit<E: Error>(self, name: SlimStr<'_>) -> Result<Self::Output, E> {
+    fn visit<E: Error>(self, name: SatsStr<'_>) -> Result<Self::Output, E> {
         // Finds the index of a field with `name`.
         self.elems
             .iter()

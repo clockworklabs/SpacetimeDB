@@ -1,9 +1,8 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::product_type::ProductType;
-use crate::{static_assert_size, ArrayValue, SatsStr};
+use crate::{slim_slice::SlimSliceBoxCollected, static_assert_size, ArrayValue, SatsStr, SatsVec};
 
 use nonempty::NonEmpty;
-use std::mem::size_of;
 
 /// A product value is made of a a list of
 /// "elements" / "fields" / "factors" of other `AlgebraicValue`s.
@@ -12,10 +11,10 @@ use std::mem::size_of;
 #[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct ProductValue {
     /// The values that make up this product value.
-    pub elements: Box<[AlgebraicValue]>,
+    pub elements: SatsVec<AlgebraicValue>,
 }
 
-static_assert_size!(ProductValue, size_of::<usize>() * 2);
+static_assert_size!(ProductValue, 12);
 
 /// See [`ProductValue`].
 pub struct ProductValueBuilder {
@@ -39,14 +38,14 @@ impl ProductValue {
     /// Returns a product value constructed from the given values in `elements`.
     pub fn new(elements: &[AlgebraicValue]) -> Self {
         Self {
-            elements: elements.iter().cloned().collect(),
+            elements: elements.iter().cloned().collect::<SlimSliceBoxCollected<_>>().unwrap(),
         }
     }
 }
 
 impl FromIterator<AlgebraicValue> for ProductValue {
     fn from_iter<T: IntoIterator<Item = AlgebraicValue>>(iter: T) -> Self {
-        let elements = iter.into_iter().collect();
+        let elements = iter.into_iter().collect::<SlimSliceBoxCollected<_>>().unwrap();
         Self { elements }
     }
 }

@@ -290,6 +290,14 @@ impl<T: Hash> Hash for SlimSliceBox<T> {
     }
 }
 
+impl<T> IntoIterator for SlimSliceBox<T> {
+    type Item = T;
+    type IntoIter = <Vec<T> as IntoIterator>::IntoIter;
+    fn into_iter(self) -> Self::IntoIter {
+        Vec::from(self).into_iter()
+    }
+}
+
 /// A wrapper to achieve `FromIterator<T> for Result<SlimSliceBox<T>, Vec<T>>`.
 ///
 /// We cannot do this directly due to orphan rules.

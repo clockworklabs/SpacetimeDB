@@ -225,6 +225,11 @@ pub trait Error: Sized {
             Self::custom(format_args!("unknown variant `{name}`, there are no variants"))
         }
     }
+
+    /// The length `len` exceeded `u32::MAX`.
+    fn len_too_long(len: usize) -> Self {
+        Self::custom(format_args!("length `{len}` exceeded `u32::MAX`"))
+    }
 }
 
 /// Turns a closure `impl Fn(&mut Formatter) -> Result` into a `Display`able object.

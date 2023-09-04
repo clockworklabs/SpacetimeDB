@@ -3,7 +3,7 @@ pub mod ser;
 
 use crate::{
     slim_slice::SlimSliceBoxCollected, static_assert_size, AlgebraicType, ArrayValue, MapValue, ProductValue,
-    SatsString, SumValue,
+    SatsString, SumValue, SatsVec,
 };
 use enum_as_inner::EnumAsInner;
 use std::ops::{Bound, Deref, RangeBounds};
@@ -115,7 +115,7 @@ pub enum AlgebraicValue {
 #[cfg(target_arch = "wasm32")]
 static_assert_size!(AlgebraicValue, 16);
 #[cfg(not(target_arch = "wasm32"))]
-static_assert_size!(AlgebraicValue, 24);
+static_assert_size!(AlgebraicValue, 16);
 
 #[allow(non_snake_case)]
 impl AlgebraicValue {
@@ -131,7 +131,7 @@ impl AlgebraicValue {
     /// Convert the value into a `Box<[u8]>`
     /// or `Err(self)` if it isn't a `Box<[u8]>` value.
     #[inline]
-    pub fn into_bytes(self) -> Result<Box<[u8]>, Self> {
+    pub fn into_bytes(self) -> Result<SatsVec<u8>, Self> {
         match self {
             Self::Array(ArrayValue::U8(a)) => Ok(a),
             e => Err(e),
@@ -147,7 +147,7 @@ impl AlgebraicValue {
 
     /// Returns an [`AlgebraicValue`] representing `v: Vec<u8>`.
     #[inline]
-    pub const fn Bytes(v: Box<[u8]>) -> Self {
+    pub const fn Bytes(v: SatsVec<u8>) -> Self {
         Self::Array(ArrayValue::U8(v))
     }
 
@@ -174,7 +174,7 @@ impl AlgebraicValue {
     }
 
     /// Returns an [`AlgebraicValue`] representing a product value with the given `elements`.
-    pub const fn product(elements: Box<[Self]>) -> Self {
+    pub const fn product(elements: SatsVec<Self>) -> Self {
         Self::Product(ProductValue { elements })
     }
 

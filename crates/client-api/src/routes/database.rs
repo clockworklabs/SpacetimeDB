@@ -24,7 +24,7 @@ use spacetimedb::sql::execute::execute;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::name::{self, DnsLookupResponse, DomainName, DomainParsingError, PublishOp, PublishResult};
 use spacetimedb_lib::recovery::{RecoveryCode, RecoveryCodeResponse};
-use spacetimedb_lib::sats::{WithTypespace, SatsString};
+use spacetimedb_lib::sats::{SatsString, WithTypespace};
 use std::collections::HashMap;
 use std::convert::From;
 

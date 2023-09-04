@@ -121,7 +121,9 @@ impl QuerySet {
                             } else {
                                 panic!("Fail to extract `{OP_TYPE_FIELD_NAME}` on `{}`", result.head.table_name)
                             };
-                            let row = ProductValue { elements: row.into() };
+                            let row = ProductValue {
+                                elements: row.try_into().unwrap(),
+                            };
 
                             let row_pk = pk_for_row(&row);
 

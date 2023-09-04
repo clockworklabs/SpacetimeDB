@@ -50,7 +50,7 @@ pub trait Value {
     type Type;
 }
 
-impl<T: Value> Value for Box<[T]> {
+impl<T: Value> Value for SatsVec<T> {
     // TODO(centril/phoebe): This looks weird; shouldn't it be ArrayType?
     type Type = T::Type;
 }
@@ -103,7 +103,7 @@ impl<'a, T: Value> ValueWithType<'a, T> {
     }
 }
 
-impl<'a, T: Value> ValueWithType<'a, Box<[T]>> {
+impl<'a, T: Value> ValueWithType<'a, SatsVec<T>> {
     pub fn iter(&self) -> impl Iterator<Item = ValueWithType<'_, T>> {
         self.value().iter().map(|val| ValueWithType { ty: self.ty, val })
     }

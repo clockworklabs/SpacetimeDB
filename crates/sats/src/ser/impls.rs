@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    slim_slice::{SlimSliceBox, SlimStrBox},
-    AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType,
+    AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SatsString, SatsVec, SumValue,
+    ValueWithType,
 };
 
 use super::{Serialize, SerializeArray, SerializeMap, SerializeNamedProduct, SerializeSeqProduct, Serializer};
@@ -73,8 +73,8 @@ impl_serialize!([T: Serialize] [T], (self, ser) => T::__serialize_array(self, se
 impl_serialize!([T: Serialize, const N: usize] [T; N], (self, ser) => T::__serialize_array(self, ser));
 impl_serialize!([T: Serialize + ?Sized] Box<T>, (self, ser) => (**self).serialize(ser));
 impl_serialize!([T: Serialize + ?Sized] &T, (self, ser) => (**self).serialize(ser));
-impl_serialize!([T: Serialize] SlimSliceBox<T>, (self, ser) => (**self).serialize(ser));
-impl_serialize!([] SlimStrBox, (self, ser) => ser.serialize_str(self));
+impl_serialize!([T: Serialize] SatsVec<T>, (self, ser) => (**self).serialize(ser));
+impl_serialize!([] SatsString, (self, ser) => ser.serialize_str(self));
 impl_serialize!([] String, (self, ser) => ser.serialize_str(self));
 impl_serialize!([T: Serialize] Option<T>, (self, ser) => match self {
     Some(v) => ser.serialize_variant(0, Some("some"), v),
@@ -172,7 +172,7 @@ impl_serialize!([] ValueWithType<'_, AlgebraicValue>, (self, ser) => {
 });
 impl_serialize!(
     [T: crate::Value] where [for<'a> ValueWithType<'a, T>: Serialize]
-    ValueWithType<'_, Box<[T]>>,
+    ValueWithType<'_, SatsVec<T>>,
     (self, ser) => {
         let mut vec = ser.serialize_array(self.value().len())?;
         for val in self.iter() {
@@ -182,9 +182,10 @@ impl_serialize!(
     }
 );
 impl_serialize!([] ValueWithType<'_, SumValue>, (self, ser) => {
-    let &SumValue { tag, ref value } = self.value();
+    let sv = self.value();
+    let (tag, val) = sv.parts();
     let var_ty = &self.ty().variants[tag as usize]; // Extract the variant type by tag.
-    ser.serialize_variant(tag, var_ty.name(), &self.with(&var_ty.algebraic_type, &**value))
+    ser.serialize_variant(tag, var_ty.name(), &self.with(&var_ty.algebraic_type, val))
 });
 impl_serialize!([] ValueWithType<'_, ProductValue>, (self, ser) => {
     let val = &self.value().elements;

@@ -1,6 +1,6 @@
 use crate::{
-    static_assert_size, AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SatsString, SumValue, F32,
-    F64,
+    static_assert_size, AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SatsString, SatsVec,
+    SumValue, F32, F64,
 };
 use itertools::Itertools;
 use nonempty::NonEmpty;
@@ -15,47 +15,47 @@ use std::fmt;
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum ArrayValue {
     /// An array of [`SumValue`](crate::SumValue)s.
-    Sum(Box<[SumValue]>),
+    Sum(SatsVec<SumValue>),
     /// An array of [`ProductValue`](crate::ProductValue)s.
-    Product(Box<[ProductValue]>),
+    Product(SatsVec<ProductValue>),
     /// An array of [`bool`]s.
-    Bool(Box<[bool]>),
+    Bool(SatsVec<bool>),
     /// An array of [`i8`]s.
-    I8(Box<[i8]>),
+    I8(SatsVec<i8>),
     /// An array of [`u8`]s.
-    U8(Box<[u8]>),
+    U8(SatsVec<u8>),
     /// An array of [`i16`]s.
-    I16(Box<[i16]>),
+    I16(SatsVec<i16>),
     /// An array of [`u16`]s.
-    U16(Box<[u16]>),
+    U16(SatsVec<u16>),
     /// An array of [`i32`]s.
-    I32(Box<[i32]>),
+    I32(SatsVec<i32>),
     /// An array of [`u32`]s.
-    U32(Box<[u32]>),
+    U32(SatsVec<u32>),
     /// An array of [`i64`]s.
-    I64(Box<[i64]>),
+    I64(SatsVec<i64>),
     /// An array of [`u64`]s.
-    U64(Box<[u64]>),
+    U64(SatsVec<u64>),
     /// An array of [`i128`]s.
-    I128(Box<[i128]>),
+    I128(SatsVec<i128>),
     /// An array of [`u128`]s.
-    U128(Box<[u128]>),
+    U128(SatsVec<u128>),
     /// An array of totally ordered [`F32`]s.
-    F32(Box<[F32]>),
+    F32(SatsVec<F32>),
     /// An array of totally ordered [`F64`]s.
-    F64(Box<[F64]>),
+    F64(SatsVec<F64>),
     /// An array of UTF-8 strings.
-    String(Box<[SatsString]>),
+    String(SatsVec<SatsString>),
     /// An array of arrays.
-    Array(Box<[ArrayValue]>),
+    Array(SatsVec<ArrayValue>),
     /// An array of maps.
-    Map(Box<[MapValue]>),
+    Map(SatsVec<MapValue>),
 }
 
 #[cfg(target_arch = "wasm32")]
 static_assert_size!(ArrayValue, 12);
 #[cfg(not(target_arch = "wasm32"))]
-static_assert_size!(ArrayValue, 24);
+static_assert_size!(ArrayValue, 13);
 
 impl crate::Value for ArrayValue {
     type Type = ArrayType;
@@ -157,24 +157,16 @@ impl Default for ArrayValue {
 
 macro_rules! impl_from_array {
     ($el:ty, $var:ident) => {
-        impl From<Box<[$el]>> for ArrayValue {
-            fn from(v: Box<[$el]>) -> Self {
-                Self::$var(v)
-            }
-        }
-
         impl<const N: usize> From<[$el; N]> for ArrayValue {
             fn from(v: [$el; N]) -> Self {
-                let v: Box<[$el]> = v.into();
                 v.into()
             }
         }
 
         // Exists for convenience.
-        impl From<Vec<$el>> for ArrayValue {
-            fn from(v: Vec<$el>) -> Self {
-                let v: Box<[$el]> = v.into();
-                v.into()
+        impl From<SatsVec<$el>> for ArrayValue {
+            fn from(v: SatsVec<$el>) -> Self {
+                Self::$var(v)
             }
         }
     };
@@ -246,24 +238,24 @@ impl IntoIterator for ArrayValue {
 
     fn into_iter(self) -> Self::IntoIter {
         match self {
-            Self::Sum(v) => ArrayValueIntoIter::Sum(v.into_vec().into_iter()),
-            Self::Product(v) => ArrayValueIntoIter::Product(v.into_vec().into_iter()),
-            Self::Bool(v) => ArrayValueIntoIter::Bool(v.into_vec().into_iter()),
-            Self::I8(v) => ArrayValueIntoIter::I8(v.into_vec().into_iter()),
-            Self::U8(v) => ArrayValueIntoIter::U8(v.into_vec().into_iter()),
-            Self::I16(v) => ArrayValueIntoIter::I16(v.into_vec().into_iter()),
-            Self::U16(v) => ArrayValueIntoIter::U16(v.into_vec().into_iter()),
-            Self::I32(v) => ArrayValueIntoIter::I32(v.into_vec().into_iter()),
-            Self::U32(v) => ArrayValueIntoIter::U32(v.into_vec().into_iter()),
-            Self::I64(v) => ArrayValueIntoIter::I64(v.into_vec().into_iter()),
-            Self::U64(v) => ArrayValueIntoIter::U64(v.into_vec().into_iter()),
-            Self::I128(v) => ArrayValueIntoIter::I128(v.into_vec().into_iter()),
-            Self::U128(v) => ArrayValueIntoIter::U128(v.into_vec().into_iter()),
-            Self::F32(v) => ArrayValueIntoIter::F32(v.into_vec().into_iter()),
-            Self::F64(v) => ArrayValueIntoIter::F64(v.into_vec().into_iter()),
-            Self::String(v) => ArrayValueIntoIter::String(v.into_vec().into_iter()),
-            Self::Array(v) => ArrayValueIntoIter::Array(v.into_vec().into_iter()),
-            Self::Map(v) => ArrayValueIntoIter::Map(v.into_vec().into_iter()),
+            Self::Sum(v) => ArrayValueIntoIter::Sum(v.into_iter()),
+            Self::Product(v) => ArrayValueIntoIter::Product(v.into_iter()),
+            Self::Bool(v) => ArrayValueIntoIter::Bool(v.into_iter()),
+            Self::I8(v) => ArrayValueIntoIter::I8(v.into_iter()),
+            Self::U8(v) => ArrayValueIntoIter::U8(v.into_iter()),
+            Self::I16(v) => ArrayValueIntoIter::I16(v.into_iter()),
+            Self::U16(v) => ArrayValueIntoIter::U16(v.into_iter()),
+            Self::I32(v) => ArrayValueIntoIter::I32(v.into_iter()),
+            Self::U32(v) => ArrayValueIntoIter::U32(v.into_iter()),
+            Self::I64(v) => ArrayValueIntoIter::I64(v.into_iter()),
+            Self::U64(v) => ArrayValueIntoIter::U64(v.into_iter()),
+            Self::I128(v) => ArrayValueIntoIter::I128(v.into_iter()),
+            Self::U128(v) => ArrayValueIntoIter::U128(v.into_iter()),
+            Self::F32(v) => ArrayValueIntoIter::F32(v.into_iter()),
+            Self::F64(v) => ArrayValueIntoIter::F64(v.into_iter()),
+            Self::String(v) => ArrayValueIntoIter::String(v.into_iter()),
+            Self::Array(v) => ArrayValueIntoIter::Array(v.into_iter()),
+            Self::Map(v) => ArrayValueIntoIter::Map(v.into_iter()),
         }
     }
 }

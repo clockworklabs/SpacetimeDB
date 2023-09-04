@@ -573,7 +573,8 @@ pub(crate) mod tests {
                 col_type: AlgebraicType::U32,
                 is_autoinc: false,
             })
-            .into(),
+            .try_into()
+            .unwrap(),
             q,
             (&st_columns_schema()).into(),
         );
