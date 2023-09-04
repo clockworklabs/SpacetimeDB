@@ -38,6 +38,9 @@ pub struct ProductType {
     pub elements: SatsVec<ProductTypeElement>,
 }
 
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(ProductType, 8);
+#[cfg(not(target_arch = "wasm32"))]
 static_assert_size!(ProductType, 12);
 
 impl ProductType {

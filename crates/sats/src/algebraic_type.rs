@@ -1,8 +1,6 @@
 pub mod fmt;
 pub mod map_notation;
 
-use std::mem::size_of;
-
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::map_type::MapType;
@@ -155,7 +153,10 @@ pub enum AlgebraicType {
     String,
 }
 
-static_assert_size!(AlgebraicType, size_of::<usize>() * 2);
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(AlgebraicType, 12);
+#[cfg(not(target_arch = "wasm32"))]
+static_assert_size!(AlgebraicType, 16);
 
 impl MetaType for AlgebraicType {
     /// This is a static function that constructs the type of `AlgebraicType`

@@ -53,7 +53,7 @@ pub enum ArrayValue {
 }
 
 #[cfg(target_arch = "wasm32")]
-static_assert_size!(ArrayValue, 12);
+static_assert_size!(ArrayValue, 9);
 #[cfg(not(target_arch = "wasm32"))]
 static_assert_size!(ArrayValue, 13);
 

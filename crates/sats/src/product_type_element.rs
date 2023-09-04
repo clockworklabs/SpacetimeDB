@@ -1,5 +1,3 @@
-use std::mem::size_of;
-
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
 use crate::{static_assert_size, string, AlgebraicType, AlgebraicTypeRef, SatsStr, SatsString};
@@ -25,7 +23,10 @@ pub struct ProductTypeElement {
     pub algebraic_type: AlgebraicType,
 }
 
-static_assert_size!(ProductTypeElement, size_of::<usize>() * 4);
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(ProductTypeElement, 20);
+#[cfg(not(target_arch = "wasm32"))]
+static_assert_size!(ProductTypeElement, 32);
 
 impl ProductTypeElement {
     /// Returns an element with the given `name` and `algebraic_type`.

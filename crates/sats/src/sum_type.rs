@@ -37,7 +37,11 @@ pub struct SumType {
     pub variants: SatsVec<SumTypeVariant>,
 }
 
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(SumType, 8);
+#[cfg(not(target_arch = "wasm32"))]
 static_assert_size!(SumType, 12);
+
 
 impl SumType {
     /// Returns a sum type with these possible `variants`.

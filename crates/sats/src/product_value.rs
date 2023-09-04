@@ -14,7 +14,11 @@ pub struct ProductValue {
     pub elements: SatsVec<AlgebraicValue>,
 }
 
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(ProductValue, 8);
+#[cfg(not(target_arch = "wasm32"))]
 static_assert_size!(ProductValue, 12);
+
 
 /// See [`ProductValue`].
 pub struct ProductValueBuilder {
