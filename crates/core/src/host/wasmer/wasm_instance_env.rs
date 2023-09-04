@@ -92,7 +92,12 @@ impl WasmInstanceEnv {
     ///
     /// Returns an error if there were memory access issues
     /// or if the string was not valid UTF-8 or if `string.len() > u32::MAX`.
-    fn read_sats_string(caller: &FunctionEnvMut<'_, Self>, mem: &Mem, ptr: WasmPtr<u8>, len: u32) -> RtResult<SatsString> {
+    fn read_sats_string(
+        caller: &FunctionEnvMut<'_, Self>,
+        mem: &Mem,
+        ptr: WasmPtr<u8>,
+        len: u32,
+    ) -> RtResult<SatsString> {
         let bytes = mem.read_bytes(&caller, ptr, len)?;
         let string = String::from_utf8(bytes).map_err(|_| RuntimeError::new("name must be utf8"))?;
         string

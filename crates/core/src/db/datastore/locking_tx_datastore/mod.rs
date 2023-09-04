@@ -462,7 +462,7 @@ impl Inner {
                 table_id,
                 columns: constraint.columns,
             };
-            let row = ProductValue::from(&row);
+            let row = ProductValue::from(row);
             let data_key = row.to_data_key();
             st_constraints.rows.insert(RowId(data_key), row);
 
@@ -472,14 +472,14 @@ impl Inner {
                     index_id: constraint.constraint_id,
                     table_id,
                     cols: NonEmpty::new(col_id.col_id),
-                    index_name: format!("idx_{}", &constraint.constraint_name),
+                    index_name: SatsString::from_string(format!("idx_{}", &constraint.constraint_name)),
                     is_unique: true,
                 },
                 x if x.is_indexed() => IndexSchema {
                     index_id: constraint.constraint_id,
                     table_id,
                     cols: NonEmpty::new(col_id.col_id),
-                    index_name: format!("idx_{}", &constraint.constraint_name),
+                    index_name: SatsString::from_string(format!("idx_{}", &constraint.constraint_name)),
                     is_unique: false,
                 },
                 x => {
@@ -2284,7 +2284,7 @@ mod tests {
         assert_eq!(
             constraints_rows,
             vec![
-                StConstraintRow { constraint_id: 5, constraint_name: string("ct_columns_table_id"), kind: ColumnIndexAttribute::INDEXED, table_id: 1, columns: vec![0] },
+                StConstraintRow { constraint_id: 5, constraint_name: string("ct_columns_table_id"), kind: ColumnIndexAttribute::INDEXED, table_id: 1, columns: [0].into() },
             ]
         );
         datastore.rollback_mut_tx(tx);

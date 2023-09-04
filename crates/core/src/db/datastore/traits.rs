@@ -7,7 +7,7 @@ use spacetimedb_lib::{ColumnIndexAttribute, DataKey};
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::slim_slice::SlimSliceBoxCollected;
 use spacetimedb_sats::{
-    string, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SatsString0,
+    string, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SatsString, SatsVec,
 };
 use spacetimedb_vm::expr::SourceExpr;
 use std::{ops::RangeBounds, sync::Arc};
@@ -184,16 +184,16 @@ impl From<ColumnSchema> for ColumnDef {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstraintSchema {
     pub(crate) constraint_id: u32,
-    pub(crate) constraint_name: String,
+    pub(crate) constraint_name: SatsString,
     pub(crate) kind: ColumnIndexAttribute,
     pub(crate) table_id: u32,
-    pub(crate) columns: Vec<u32>,
+    pub(crate) columns: SatsVec<u32>,
 }
 
 /// This type is just the [ConstraintSchema] without the autoinc fields
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstraintDef {
-    pub(crate) constraint_name: String,
+    pub(crate) constraint_name: SatsString,
     pub(crate) kind: ColumnIndexAttribute,
     pub(crate) table_id: u32,
     pub(crate) columns: Vec<u32>,

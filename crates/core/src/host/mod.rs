@@ -7,7 +7,7 @@ use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{bsatn, Hash, Identity};
 use spacetimedb_lib::{ProductValue, ReducerDef};
-use spacetimedb_sats::{WithTypespace, SatsString};
+use spacetimedb_sats::{SatsString, WithTypespace};
 
 mod host_controller;
 pub(crate) mod module_host;

@@ -149,7 +149,11 @@ impl ClientConnection {
         message_handlers::handle(self, message.into())
     }
 
-    pub async fn call_reducer(&self, reducer: &SatsStr<'_>, args: ReducerArgs) -> Result<ReducerCallResult, ReducerCallError> {
+    pub async fn call_reducer(
+        &self,
+        reducer: &SatsStr<'_>,
+        args: ReducerArgs,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
         self.module
             .call_reducer(self.id.identity, Some(self.sender()), reducer, args)
             .await

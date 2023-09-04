@@ -5,7 +5,10 @@ use spacetimedb_lib::{
     sats::{AlgebraicTypeRef, ArrayType},
     AlgebraicType, ColumnIndexAttribute, ProductType, ProductTypeElement, ReducerDef, SumType, TableDef,
 };
-use std::{fmt::{self, Write}, ops::Deref};
+use std::{
+    fmt::{self, Write},
+    ops::Deref,
+};
 
 use super::{code_indenter::CodeIndenter, GenCtx, GenItem};
 

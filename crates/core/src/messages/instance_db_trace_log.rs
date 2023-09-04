@@ -1,6 +1,6 @@
-use spacetimedb_sats::SatsString;
 use spacetimedb_sats::de::Deserialize;
 use spacetimedb_sats::ser::Serialize;
+use spacetimedb_sats::SatsString;
 
 use crate::host::Timestamp;
 

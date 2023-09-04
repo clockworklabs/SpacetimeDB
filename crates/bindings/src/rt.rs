@@ -12,9 +12,11 @@ use crate::{sys, ReducerContext, ScheduleToken, SpacetimeType, TableType, Timest
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
-use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement, string};
+use spacetimedb_lib::sats::{
+    impl_deserialize, impl_serialize, string, AlgebraicType, AlgebraicTypeRef, ProductTypeElement,
+};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias, SatsStr};
+use spacetimedb_lib::{bsatn, Identity, MiscModuleExport, ModuleDef, ReducerDef, SatsStr, TableDef, TypeAlias};
 use sys::Buffer;
 
 pub use once_cell::sync::{Lazy, OnceCell};

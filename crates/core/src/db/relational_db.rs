@@ -937,19 +937,20 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let schema = TableDef {
-            table_name: "MyTable".to_string(),
-            columns: vec![ColumnDef {
-                col_name: "my_col".to_string(),
+            table_name: string("MyTable"),
+            columns: [ColumnDef {
+                col_name: string("my_col"),
                 col_type: AlgebraicType::I64,
                 is_autoinc: true,
-            }],
+            }]
+            .into(),
             indexes: vec![],
             table_type: StTableType::User,
             table_access: StAccess::Public,
         };
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
+        let sequence = stdb.sequence_id_from_name(&tx, string("MyTable_my_col_seq"))?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;

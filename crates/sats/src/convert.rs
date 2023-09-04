@@ -1,6 +1,6 @@
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_value::AlgebraicValue;
-use crate::{ProductType, SatsString, ProductValue, SatsVec};
+use crate::{ProductType, ProductValue, SatsString, SatsVec};
 
 impl crate::Value for AlgebraicValue {
     type Type = AlgebraicType;

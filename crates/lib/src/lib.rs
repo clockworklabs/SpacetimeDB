@@ -28,7 +28,7 @@ pub use identity::Identity;
 pub use primary_key::PrimaryKey;
 pub use spacetimedb_sats::{
     self as sats, bsatn, buffer, de, ser, str, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement,
-    ProductValue, SumType, SatsStr,
+    ProductValue, SatsStr, SumType,
 };
 
 pub const MODULE_ABI_VERSION: VersionTuple = VersionTuple::new(4, 0);

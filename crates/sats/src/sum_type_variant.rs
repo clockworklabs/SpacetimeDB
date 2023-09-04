@@ -3,7 +3,7 @@ use std::mem::size_of;
 use crate::algebraic_type::AlgebraicType;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{static_assert_size, AlgebraicTypeRef, ProductTypeElement, string, SatsString};
+use crate::{static_assert_size, string, AlgebraicTypeRef, ProductTypeElement, SatsString};
 
 /// A variant of a sum type.
 ///

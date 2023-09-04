@@ -14,9 +14,6 @@ pub struct MapType {
 impl MapType {
     /// Returns a map type with keys of type `key` and values of type `value`.
     pub fn new(key: AlgebraicType, value: AlgebraicType) -> Self {
-        Self {
-            key_ty: key,
-            ty: value,
-        }
+        Self { key_ty: key, ty: value }
     }
 }

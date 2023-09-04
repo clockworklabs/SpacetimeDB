@@ -3,7 +3,7 @@ pub mod ser;
 
 use crate::{
     slim_slice::SlimSliceBoxCollected, static_assert_size, AlgebraicType, ArrayValue, MapValue, ProductValue,
-    SatsString, SumValue, SatsVec,
+    SatsString, SatsVec, SumValue,
 };
 use enum_as_inner::EnumAsInner;
 use std::ops::{Bound, Deref, RangeBounds};

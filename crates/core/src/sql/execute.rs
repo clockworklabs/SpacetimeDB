@@ -107,7 +107,7 @@ pub(crate) mod tests {
     use spacetimedb_lib::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::{Header, RelValue};
-    use spacetimedb_sats::{product, str, AlgebraicType, ProductType, SatsString, string};
+    use spacetimedb_sats::{product, str, string, AlgebraicType, ProductType, SatsString};
     use spacetimedb_vm::dsl::mem_table;
     use spacetimedb_vm::eval::create_game_data;
     use tempdir::TempDir;

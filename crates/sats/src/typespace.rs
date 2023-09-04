@@ -3,8 +3,8 @@ use std::ops::{Index, IndexMut};
 
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_type_ref::AlgebraicTypeRef;
-use crate::{WithTypespace, SatsStr};
 use crate::{de::Deserialize, ser::Serialize};
+use crate::{SatsStr, WithTypespace};
 
 /// A `Typespace` represents the typing context in SATS.
 ///

@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use super::AlgebraicValue;
 use crate::ser::{self, ForwardNamedToSeqProduct};
-use crate::{ArrayValue, MapValue, SatsString, F32, F64, SatsSlice};
+use crate::{ArrayValue, MapValue, SatsSlice, SatsString, F32, F64};
 
 /// An implementation of [`Serializer`](ser::Serializer)
 /// where the output of serialization is an `AlgebraicValue`.

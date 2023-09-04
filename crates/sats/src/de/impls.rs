@@ -7,8 +7,8 @@ use std::marker::PhantomData;
 
 use crate::{
     slim_slice::SlimSliceBoxCollected, AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, MapValue,
-    ProductType, ProductTypeElement, ProductValue, SatsStr, SatsString, SatsVec, SumType, SumValue,
-    WithTypespace, F32, F64,
+    ProductType, ProductTypeElement, ProductValue, SatsStr, SatsString, SatsVec, SumType, SumValue, WithTypespace, F32,
+    F64,
 };
 
 use super::{

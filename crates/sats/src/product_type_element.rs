@@ -2,7 +2,7 @@ use std::mem::size_of;
 
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{static_assert_size, string, SatsStr, SatsString, AlgebraicType, AlgebraicTypeRef};
+use crate::{static_assert_size, string, AlgebraicType, AlgebraicTypeRef, SatsStr, SatsString};
 
 /// A factor / element of a product type.
 ///
