@@ -19,7 +19,6 @@ static_assert_size!(ProductValue, 8);
 #[cfg(not(target_arch = "wasm32"))]
 static_assert_size!(ProductValue, 12);
 
-
 /// See [`ProductValue`].
 pub struct ProductValueBuilder {
     /// The values that make up this product value.
