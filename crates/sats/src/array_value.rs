@@ -159,7 +159,8 @@ macro_rules! impl_from_array {
     ($el:ty, $var:ident) => {
         impl<const N: usize> From<[$el; N]> for ArrayValue {
             fn from(v: [$el; N]) -> Self {
-                v.into()
+                let vec: SatsVec<_> = v.into();
+                vec.into()
             }
         }
 
