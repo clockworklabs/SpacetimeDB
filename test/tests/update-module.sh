@@ -88,7 +88,7 @@ pub fn on_module_update() {
 }
 EOF
 
-run_test cargo run publish -s -d --project-path "$PROJECT_PATH" "$IDENT"
+run_test cargo run publish -S -d --project-path "$PROJECT_PATH" "$IDENT"
 [ "1" == "$(grep -c "Updated database" "$TEST_OUT")" ]
 run_test cargo run logs "$IDENT" 1
 [ ' INDEX ADDED' == "$(grep 'INDEX ADDED' "$TEST_OUT" | tail -n 1 | cut -d: -f4-)" ]
