@@ -593,9 +593,7 @@ impl Inner {
             // If there are allocated sequence values, return the new value, if it is not bigger than
             // the upper range of `sequence.allocated`
             if let Some(value) = sequence.gen_next_value().filter(|v| v < &sequence.allocated()) {
-                if value < sequence.allocated() {
-                    return Ok(value);
-                }
+                return Ok(value);
             }
         }
         // Allocate new sequence values
