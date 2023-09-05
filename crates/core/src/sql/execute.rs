@@ -20,6 +20,7 @@ pub struct StmtResult {
 // we always generate a plan, but it may contain errors
 
 /// Run a `SQL` query/statement in the specified `database_instance_id`.
+#[tracing::instrument(skip_all)]
 pub fn execute(
     db_inst_ctx_controller: &DatabaseInstanceContextController,
     database_instance_id: u64,
@@ -51,6 +52,7 @@ fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBErr
     Ok(())
 }
 
+#[tracing::instrument(skip_all)]
 pub fn execute_single_sql(
     db: &RelationalDB,
     tx: &mut MutTxId,
@@ -66,6 +68,7 @@ pub fn execute_single_sql(
 }
 
 /// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
+#[tracing::instrument(skip_all)]
 pub fn execute_sql(
     db: &RelationalDB,
     tx: &mut MutTxId,
@@ -83,6 +86,7 @@ pub fn execute_sql(
 }
 
 /// Run the `SQL` string using the `auth` credentials
+#[tracing::instrument(skip_all)]
 pub(crate) fn run(
     db: &RelationalDB,
     tx: &mut MutTxId,

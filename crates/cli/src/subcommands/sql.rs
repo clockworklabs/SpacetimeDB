@@ -51,17 +51,24 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("If this flag is present, no identity will be provided when querying the database")
         )
+        .arg(
+            Arg::new("server")
+                .long("server")
+                .short('s')
+                .help("The nickname, host name or URL of the server hosting the database"),
+        )
 }
 
 pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
+    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let database = args.get_one::<String>("database").unwrap();
     let as_identity = args.get_one::<String>("as_identity");
     let anon_identity = args.get_flag("anon_identity");
 
     Ok(Connection {
-        host: config.get_host_url(),
-        auth_header: get_auth_header_only(&mut config, anon_identity, as_identity).await,
-        address: database_address(&config, database).await?,
+        host: config.get_host_url(server)?,
+        auth_header: get_auth_header_only(&mut config, anon_identity, as_identity, server).await,
+        address: database_address(&config, database, server).await?,
         database: database.to_string(),
     })
 }

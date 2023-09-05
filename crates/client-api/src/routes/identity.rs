@@ -1,5 +1,5 @@
 use axum::extract::{Path, Query, State};
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 
@@ -203,6 +203,14 @@ pub async fn validate_token(
     }
 }
 
+pub async fn get_public_key<S: NodeDelegate>(State(ctx): State<S>) -> axum::response::Result<impl IntoResponse> {
+    let res = Response::builder()
+        .header("Content-Type", "application/pem-certificate-chain")
+        .body(())
+        .map_err(log_and_500)?;
+    Ok((res, ctx.public_key_bytes().to_owned()))
+}
+
 pub fn router<S>() -> axum::Router<S>
 where
     S: NodeDelegate + ControlStateDelegate + Clone + 'static,
@@ -210,6 +218,7 @@ where
     use axum::routing::{get, post};
     axum::Router::new()
         .route("/", get(get_identity::<S>).post(create_identity::<S>))
+        .route("/public-key", get(get_public_key::<S>))
         .route("/websocket_token", post(create_websocket_token::<S>))
         .route("/:identity/verify", get(validate_token))
         .route("/:identity/set-email", post(set_email::<S>))

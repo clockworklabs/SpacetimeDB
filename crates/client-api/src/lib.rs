@@ -31,9 +31,18 @@ pub trait NodeDelegate: Send + Sync {
     fn database_instance_context_controller(&self) -> &DatabaseInstanceContextController;
     fn host_controller(&self) -> &Arc<HostController>;
     fn client_actor_index(&self) -> &ClientActorIndex;
-    fn public_key(&self) -> &DecodingKey;
-    fn private_key(&self) -> &EncodingKey;
     fn sendgrid_controller(&self) -> Option<&SendGridController>;
+
+    /// Return a JWT decoding key for verifying credentials.
+    fn public_key(&self) -> &DecodingKey;
+
+    /// Return the public key used to verify JWTs, as the bytes of a PEM public key file.
+    ///
+    /// The `/identity/public-key` route calls this method to return the public key to callers.
+    fn public_key_bytes(&self) -> &[u8];
+
+    /// Return a JWT encoding key for signing credentials.
+    fn private_key(&self) -> &EncodingKey;
 
     /// Load the [`ModuleHostContext`] for instance `instance_id` of
     /// [`Database`] `db`.
@@ -299,6 +308,10 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for ArcEnv<T> {
         self.0.public_key()
     }
 
+    fn public_key_bytes(&self) -> &[u8] {
+        self.0.public_key_bytes()
+    }
+
     fn private_key(&self) -> &EncodingKey {
         self.0.private_key()
     }
@@ -445,6 +458,10 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
 
     fn public_key(&self) -> &DecodingKey {
         (**self).public_key()
+    }
+
+    fn public_key_bytes(&self) -> &[u8] {
+        (**self).public_key_bytes()
     }
 
     fn private_key(&self) -> &EncodingKey {

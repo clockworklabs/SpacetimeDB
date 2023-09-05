@@ -4153,11 +4153,13 @@ dependencies = [
  "insta",
  "is-terminal",
  "itertools",
+ "jsonwebtoken",
  "reqwest",
  "rustyline",
  "serde",
  "serde_json",
  "slab",
+ "spacetimedb-core",
  "spacetimedb-lib",
  "spacetimedb-standalone",
  "syntect",
@@ -4309,6 +4311,7 @@ dependencies = [
  "spacetimedb-bindings-macro",
  "spacetimedb-sats",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -4333,6 +4336,7 @@ dependencies = [
  "serde",
  "spacetimedb-bindings-macro",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]

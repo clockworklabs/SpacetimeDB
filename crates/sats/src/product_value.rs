@@ -1,5 +1,6 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::product_type::ProductType;
+use crate::ArrayValue;
 
 /// A product value is made of a a list of
 /// "elements" / "fields" / "factors" of other `AlgebraicValue`s.
@@ -72,43 +73,48 @@ impl ProductValue {
         f(self.get_field(index, name)?).ok_or(InvalidFieldError { index, name })
     }
 
-    /// Interprets the value at field of `self` indentified by `index` as a `bool`.
+    /// Interprets the value at field of `self` identified by `index` as a `bool`.
     pub fn field_as_bool(&self, index: usize, named: Option<&'static str>) -> Result<bool, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_bool().copied())
     }
 
-    /// Interprets the value at field of `self` indentified by `index` as a `u8`.
+    /// Interprets the value at field of `self` identified by `index` as a `u8`.
     pub fn field_as_u8(&self, index: usize, named: Option<&'static str>) -> Result<u8, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_u8().copied())
     }
 
-    /// Interprets the value at field of `self` indentified by `index` as a `u32`.
+    /// Interprets the value at field of `self` identified by `index` as a `u32`.
     pub fn field_as_u32(&self, index: usize, named: Option<&'static str>) -> Result<u32, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_u32().copied())
     }
 
-    /// Interprets the value at field of `self` indentified by `index` as a `i64`.
+    /// Interprets the value at field of `self` identified by `index` as a `i64`.
     pub fn field_as_i64(&self, index: usize, named: Option<&'static str>) -> Result<i64, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_i64().copied())
     }
 
-    /// Interprets the value at field of `self` indentified by `index` as a `i128`.
+    /// Interprets the value at field of `self` identified by `index` as a `i128`.
     pub fn field_as_i128(&self, index: usize, named: Option<&'static str>) -> Result<i128, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_i128().copied())
     }
 
-    /// Interprets the value at field of `self` indentified by `index` as a `u128`.
+    /// Interprets the value at field of `self` identified by `index` as a `u128`.
     pub fn field_as_u128(&self, index: usize, named: Option<&'static str>) -> Result<u128, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_u128().copied())
     }
 
-    /// Interprets the value at field of `self` indentified by `index` as a string slice.
+    /// Interprets the value at field of `self` identified by `index` as a string slice.
     pub fn field_as_str(&self, index: usize, named: Option<&'static str>) -> Result<&str, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_string().map(|x| x.as_str()))
     }
 
-    /// Interprets the value at field of `self` indentified by `index` as a byte slice.
+    /// Interprets the value at field of `self` identified by `index` as a byte slice.
     pub fn field_as_bytes(&self, index: usize, named: Option<&'static str>) -> Result<&[u8], InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_bytes().map(|x| x.as_slice()))
+    }
+
+    /// Interprets the value at field of `self` identified by `index` as a array.
+    pub fn field_as_array(&self, index: usize, named: Option<&'static str>) -> Result<&ArrayValue, InvalidFieldError> {
+        self.extract_field(index, named, |f| f.as_array())
     }
 }
