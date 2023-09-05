@@ -9,7 +9,7 @@ use core::{
     slice,
     str::{from_utf8_unchecked, from_utf8_unchecked_mut},
 };
-use std::borrow::Borrow;
+use std::{borrow::Borrow, mem::ManuallyDrop};
 
 // =============================================================================
 // Utils
@@ -79,7 +79,7 @@ impl<T> SlimRawSlice<T> {
     ///
     /// It is assumed that `len <= u32::MAX`.
     /// The caller must ensure that `ptr != NULL`.
-    const fn from_ptr_len(ptr: *mut T, len: usize) -> Self {
+    const fn from_len_ptr(len: usize, ptr: *mut T) -> Self {
         // SAFETY: caller ensured that `!ptr.is_null()`.
         let ptr = unsafe { NonNull::new_unchecked(ptr) };
         let len = len as u32;
@@ -135,9 +135,11 @@ impl<T> SlimSliceBox<T> {
     /// Only safe to call if the constraint above is satisfied.
     #[allow(clippy::boxed_local)]
     // Clippy doesn't seem to consider unsafe code here.
-    unsafe fn from_boxed_unchecked(mut boxed: Box<[T]>) -> Self {
+    unsafe fn from_boxed_unchecked(boxed: Box<[T]>) -> Self {
+        let len = boxed.len();
+        let ptr = Box::into_raw(boxed) as *mut T;
         // SAFETY: `Box<T>`'s ptr was a `NonNull<T>` already.
-        let raw = SlimRawSlice::from_ptr_len(boxed.as_mut_ptr(), boxed.len());
+        let raw = SlimRawSlice::from_len_ptr(len, ptr);
         let owned = PhantomData;
         Self { raw, owned }
     }
@@ -231,6 +233,7 @@ impl<T, const N: usize> From<[T; N]> for SlimSliceBox<T> {
 
 impl<T> From<SlimSliceBox<T>> for Box<[T]> {
     fn from(slice: SlimSliceBox<T>) -> Self {
+        let slice = ManuallyDrop::new(slice);
         let (ptr, len) = slice.raw.split();
         // SAFETY: `ptr` and `len` originally came from a `Box<[T]>`.
         unsafe { Box::from_raw(slice_from_raw_parts_mut(ptr, len)) }
@@ -245,7 +248,7 @@ impl<T> From<SlimSliceBox<T>> for Vec<T> {
 
 impl<T: Debug> Debug for SlimSliceBox<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(&self, f)
+        Debug::fmt(self.deref(), f)
     }
 }
 
@@ -254,7 +257,7 @@ impl<T: Clone> Clone for SlimSliceBox<T> {
         // Allocate exactly the right amount
         // so we later don't reallocate due to excess capacity.
         let mut vec = Vec::with_capacity(self.len());
-        vec.clone_from_slice(self);
+        vec.extend_from_slice(self);
         // SAFETY: We know `self.len() <= u32::MAX`.
         unsafe { Self::from_boxed_unchecked(into_box(vec)) }
     }
@@ -375,7 +378,7 @@ impl Deref for SlimStrBox {
     #[inline]
     fn deref(&self) -> &Self::Target {
         // SAFETY: By construction all `SlimStr`s are valid UTF-8.
-        unsafe { from_utf8_unchecked(&self.raw) }
+        unsafe { from_utf8_unchecked(self.raw.deref()) }
     }
 }
 
@@ -436,13 +439,13 @@ impl From<SlimStrBox> for String {
 
 impl Debug for SlimStrBox {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(&self, f)
+        Debug::fmt(self.deref(), f)
     }
 }
 
 impl Display for SlimStrBox {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self, f)
+        Display::fmt(self.deref(), f)
     }
 }
 
@@ -515,8 +518,10 @@ impl<'a, T> SlimSlice<'a, T> {
     ///
     /// SAFETY: `slice.len() <= u32::MAX` must hold.
     const unsafe fn from_slice_unchecked(slice: &'a [T]) -> Self {
+        let len = slice.len();
+        let ptr = slice.as_ptr().cast_mut();
         // SAFETY: `&mut [T]` implies that the pointer is non-null.
-        let raw = SlimRawSlice::from_ptr_len(slice.as_ptr().cast_mut(), slice.len());
+        let raw = SlimRawSlice::from_len_ptr(len, ptr);
         // SAFETY: Our length invariant is satisfied by the caller.
         let covariant = PhantomData;
         Self { raw, covariant }
@@ -577,8 +582,9 @@ impl<T: PartialOrd> PartialOrd<[T]> for SlimSlice<'_, T> {
 
 impl<T: Clone> From<SlimSlice<'_, T>> for SlimSliceBox<T> {
     fn from(slice: SlimSlice<'_, T>) -> Self {
+        let boxed = into_box(slice.deref());
         // SAFETY: `slice` is limited to `len: u32` by construction.
-        unsafe { Self::from_boxed_unchecked(into_box(slice)) }
+        unsafe { Self::from_boxed_unchecked(boxed) }
     }
 }
 impl<T: Clone> From<SlimSlice<'_, T>> for Box<[T]> {
@@ -642,7 +648,7 @@ impl<'a, T> SlimSliceMut<'a, T> {
     /// SAFETY: `slice.len() <= u32::MAX` must hold.
     unsafe fn from_slice_unchecked(slice: &'a mut [T]) -> Self {
         // SAFETY: `&mut [T]` implies that the pointer is non-null.
-        let raw = SlimRawSlice::from_ptr_len(slice.as_mut_ptr(), slice.len());
+        let raw = SlimRawSlice::from_len_ptr(slice.len(), slice.as_mut_ptr());
         // SAFETY: Our invariants are satisfied by the caller
         // and that `&mut [T]` implies exclusive access to the data.
         let invariant = PhantomData;
@@ -716,7 +722,7 @@ impl<T: PartialOrd> PartialOrd<[T]> for SlimSliceMut<'_, T> {
 impl<T: Clone> From<SlimSliceMut<'_, T>> for SlimSliceBox<T> {
     fn from(slice: SlimSliceMut<'_, T>) -> Self {
         // SAFETY: `slice` is limited to `len: u32` by construction.
-        unsafe { Self::from_boxed_unchecked(into_box(slice)) }
+        unsafe { Self::from_boxed_unchecked(into_box(slice.deref())) }
     }
 }
 impl<T: Clone> From<SlimSliceMut<'_, T>> for Box<[T]> {
@@ -766,7 +772,7 @@ impl Deref for SlimStr<'_> {
     #[inline]
     fn deref(&self) -> &Self::Target {
         // SAFETY: Data is derived from `str` originally so it's valid UTF-8.
-        unsafe { from_utf8_unchecked(&self.raw) }
+        unsafe { from_utf8_unchecked(self.raw.deref()) }
     }
 }
 
@@ -903,7 +909,7 @@ impl Deref for SlimStrMut<'_> {
     #[inline]
     fn deref(&self) -> &Self::Target {
         // SAFETY: Data is derived from `str` originally so it's valid UTF-8.
-        unsafe { from_utf8_unchecked(&self.raw) }
+        unsafe { from_utf8_unchecked(self.raw.deref()) }
     }
 }
 
