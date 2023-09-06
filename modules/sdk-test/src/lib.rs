@@ -36,7 +36,8 @@ pub enum EnumWithPayload {
     Ints(Vec<i32>),
     Strings(Vec<String>),
     SimpleEnums(Vec<SimpleEnum>),
-    Recursive(Vec<EnumWithPayload>),
+    // SpacetimeDB doesn't yet support recursive types in modules
+    // Recursive(Vec<EnumWithPayload>),
 }
 
 #[derive(SpacetimeType)]

@@ -14,6 +14,8 @@ serde_json.workspace = true
 tokio.workspace = true
 wasmbin.workspace = true
 duct.workspace = true
+lazy_static.workspace = true
+rand.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true

@@ -1,8 +1,102 @@
-use duct::cmd;
-use spacetimedb_lib::Address;
-use std::fs::create_dir_all;
+use duct::{cmd, Handle};
+use rand::distributions::{Alphanumeric, DistString};
+use std::{fs::create_dir_all, sync::Mutex};
 
-use crate::modules::{compile, wasm_path, with_module};
+use crate::modules::{compile, module_path, wasm_path};
+
+struct StandaloneProcess {
+    handle: Handle,
+    num_using: usize,
+}
+
+impl StandaloneProcess {
+    fn start() -> Self {
+        let handle = cmd!("spacetime", "start")
+            .stderr_to_stdout()
+            .stdout_capture()
+            .unchecked()
+            .start()
+            .expect("Failed to run `spacetime start`");
+
+        StandaloneProcess { handle, num_using: 1 }
+    }
+
+    fn stop(&mut self) -> anyhow::Result<()> {
+        assert!(self.num_using == 0);
+
+        self.handle.kill()?;
+
+        Ok(())
+    }
+
+    fn running_or_err(&self) -> anyhow::Result<()> {
+        if let Some(output) = self
+            .handle
+            .try_wait()
+            .expect("Error from spacetime standalone subprocess")
+        {
+            let code = output.status;
+            let output = String::from_utf8_lossy(&output.stdout);
+            Err(anyhow::anyhow!(
+                "spacetime start exited unexpectedly. Exit status: {}. Output:\n{}",
+                code,
+                output,
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn add_user(&mut self) -> anyhow::Result<()> {
+        self.running_or_err()?;
+        self.num_using += 1;
+        Ok(())
+    }
+
+    /// Returns true if the process was stopped because no one is using it.
+    fn sub_user(&mut self) -> anyhow::Result<bool> {
+        self.num_using -= 1;
+        if self.num_using == 0 {
+            self.stop()?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+}
+
+static STANDALONE_PROCESS: Mutex<Option<StandaloneProcess>> = Mutex::new(None);
+
+pub struct StandaloneHandle {
+    _hidden: (),
+}
+
+impl Default for StandaloneHandle {
+    fn default() -> Self {
+        let mut process = STANDALONE_PROCESS.lock().expect("STANDALONE_PROCESS Mutex is poisoned");
+        if let Some(proc) = &mut *process {
+            proc.add_user()
+                .expect("Failed to add user for running spacetime standalone process");
+        } else {
+            *process = Some(StandaloneProcess::start());
+        }
+        StandaloneHandle { _hidden: () }
+    }
+}
+
+impl Drop for StandaloneHandle {
+    fn drop(&mut self) {
+        let mut process = STANDALONE_PROCESS.lock().expect("STANDALONE_PROCESS Mutex is poisoned");
+        if let Some(proc) = &mut *process {
+            if proc
+                .sub_user()
+                .expect("Failed to remove user for running spacetime standalone process")
+            {
+                *process = None;
+            }
+        }
+    }
+}
 
 pub struct Test {
     /// A human-readable name for this test.
@@ -37,7 +131,7 @@ pub struct Test {
 }
 
 pub const TEST_MODULE_PROJECT_ENV_VAR: &str = "SPACETIME_SDK_TEST_MODULE_PROJECT";
-pub const TEST_DB_ADDR_ENV_VAR: &str = "SPACETIME_SDK_TEST_DB_ADDR";
+pub const TEST_DB_NAME_ENV_VAR: &str = "SPACETIME_SDK_TEST_DB_NAME";
 pub const TEST_CLIENT_PROJECT_ENV_VAR: &str = "SPACETIME_SDK_TEST_CLIENT_PROJECT";
 
 impl Test {
@@ -45,6 +139,8 @@ impl Test {
         TestBuilder::default()
     }
     pub fn run(&self) {
+        let _handle = StandaloneHandle::default();
+
         compile(&self.module_name);
 
         generate_bindings(
@@ -57,9 +153,9 @@ impl Test {
 
         compile_client(&self.compile_command, &self.client_project, &self.name);
 
-        with_module(&self.module_name, |_, module| {
-            run_client(&self.run_command, &self.client_project, module.db_address, &self.name)
-        });
+        let db_name = publish_module(&self.module_name, &self.name);
+
+        run_client(&self.run_command, &self.client_project, &db_name, &self.name);
     }
 }
 
@@ -75,13 +171,32 @@ fn status_ok_or_panic(output: std::process::Output, command: &str, test_name: &s
     }
 }
 
+fn random_module_name() -> String {
+    Alphanumeric.sample_string(&mut rand::thread_rng(), 16)
+}
+
+fn publish_module(module: &str, test_name: &str) -> String {
+    let name = random_module_name();
+    let output = cmd!("spacetime", "publish", "--skip_clippy", name.clone(),)
+        .stderr_to_stdout()
+        .stdout_capture()
+        .dir(module_path(module))
+        .unchecked()
+        .run()
+        .expect("Error running spacetime publish");
+
+    status_ok_or_panic(output, "spacetime publish", test_name);
+
+    name
+}
+
 fn generate_bindings(language: &str, module_name: &str, client_project: &str, generate_subdir: &str, test_name: &str) {
     let generate_dir = format!("{}/{}", client_project, generate_subdir);
     create_dir_all(&generate_dir).expect("Error creating generate subdir");
     let output = cmd!(
         "spacetime",
         "generate",
-        "--skip-clippy",
+        "--skip_clippy",
         "--lang",
         language,
         "--wasm-file",
@@ -109,6 +224,7 @@ fn compile_client(compile_command: &str, client_project: &str, test_name: &str) 
     let (exe, args) = split_command_string(compile_command);
 
     let output = cmd(exe, args)
+        .dir(client_project)
         .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
         .stderr_to_stdout()
         .stdout_capture()
@@ -119,12 +235,13 @@ fn compile_client(compile_command: &str, client_project: &str, test_name: &str) 
     status_ok_or_panic(output, compile_command, test_name);
 }
 
-fn run_client(run_command: &str, client_project: &str, module_addr: Address, test_name: &str) {
+fn run_client(run_command: &str, client_project: &str, db_name: &str, test_name: &str) {
     let (exe, args) = split_command_string(run_command);
 
     let output = cmd(exe, args)
+        .dir(client_project)
         .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
-        .env(TEST_DB_ADDR_ENV_VAR, module_addr.to_hex())
+        .env(TEST_DB_NAME_ENV_VAR, db_name)
         .stderr_to_stdout()
         .stdout_capture()
         .unchecked()

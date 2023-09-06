@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 spacetimedb-sdk = { path = "../.." }
+tokio.workspace = true
+anyhow.workspace = true
