@@ -36,7 +36,7 @@ jobs:
           sudo chmod 777 /stdb
 
       - name: Run cargo test
-        run: cargo test --all --features odb_rocksdb,odb_sled
+        run: cargo test --all --exclude test-client --features odb_rocksdb,odb_sled
 
   lints:
     name: Lints
@@ -49,10 +49,10 @@ jobs:
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
       - name: Run cargo fmt
-        run: cargo fmt --all -- --check
+        run: cargo fmt --all --exclude test-client -- --check
 
       - name: Run cargo clippy
-        run: cargo clippy --all --tests --features odb_rocksdb,odb_sled -- -D warnings
+        run: cargo clippy --all --exclude test-client --tests --features odb_rocksdb,odb_sled -- -D warnings
 
   wasm_bindings:
     name: Build and test wasm bindings
