@@ -887,9 +887,8 @@ mod tests {
             .collect::<Vec<i64>>();
         rows.sort();
 
-        //TODO: This need the PR that recover the auto_inc, this is for check the db is correctly reopened...
-        //assert_eq!(rows, vec![1, 2]);
-        assert_eq!(rows, vec![1]);
+        // Check the second row start after `SEQUENCE_PREALLOCATION_AMOUNT`
+        assert_eq!(rows, vec![1, 4099]);
         Ok(())
     }
 
