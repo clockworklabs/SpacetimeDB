@@ -49,7 +49,7 @@ jobs:
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
       - name: Run cargo fmt
-        run: cargo fmt --all --exclude test-client -- --check
+        run: cargo fmt --all -- --check
 
       - name: Run cargo clippy
         run: cargo clippy --all --exclude test-client --tests --features odb_rocksdb,odb_sled -- -D warnings

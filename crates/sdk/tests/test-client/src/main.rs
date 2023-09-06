@@ -9,6 +9,7 @@ use std::{
     time::Duration,
 };
 
+#[rustfmt::skip]
 mod module_bindings;
 
 use module_bindings::*;
