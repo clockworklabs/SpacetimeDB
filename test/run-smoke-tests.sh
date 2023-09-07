@@ -44,6 +44,15 @@ while [ $# != 0 ] ; do
 	esac
 done
 
+# Make sure the active toolchain is installed including the wasm target (as
+# specified in rust-toolchain.toml), and clippy. Do NOT try to update other
+# toolchains people may have on their system, nor rustup itself -- this can take
+# a long time, e.g. when people have "nightly" installed without a specific
+# version.
+#
+# Note: `show active-toolchain` installs the toolchain if it is missing,
+# `update` adds the wasm target if the toolchain is there but without that
+# target.
 rustup update --no-self-update "$(rustup show active-toolchain|cut -d' ' -f1)"
 rustup component add clippy
 
