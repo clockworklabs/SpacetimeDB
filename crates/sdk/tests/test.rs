@@ -24,3 +24,8 @@ fn insert_primitive() {
 fn delete_primitive() {
     make_test("delete_primitive").run();
 }
+
+#[test]
+fn update_primitive() {
+    make_test("update_primitive").run();
+}
