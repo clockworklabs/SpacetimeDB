@@ -183,6 +183,140 @@ impl_simple_test_table! {
         insert_reducer = insert_one_every_vec_struct;
         insert_reducer_event = InsertOneEveryVecStruct;
     }
+
+    VecU8 {
+        Contents = Vec<u8>;
+        field_name = n;
+        insert_reducer = insert_vec_u_8;
+        insert_reducer_event = InsertVecU8;
+    }
+    VecU16 {
+        Contents = Vec<u16>;
+        field_name = n;
+        insert_reducer = insert_vec_u_16;
+        insert_reducer_event = InsertVecU16;
+    }
+    VecU32 {
+        Contents = Vec<u32>;
+        field_name = n;
+        insert_reducer = insert_vec_u_32;
+        insert_reducer_event = InsertVecU32;
+    }
+    VecU64 {
+        Contents = Vec<u64>;
+        field_name = n;
+        insert_reducer = insert_vec_u_64;
+        insert_reducer_event = InsertVecU64;
+    }
+    VecU128 {
+        Contents = Vec<u128>;
+        field_name = n;
+        insert_reducer = insert_vec_u_128;
+        insert_reducer_event = InsertVecU128;
+    }
+
+    VecI8 {
+        Contents = Vec<i8>;
+        field_name = n;
+        insert_reducer = insert_vec_i_8;
+        insert_reducer_event = InsertVecI8;
+    }
+    VecI16 {
+        Contents = Vec<i16>;
+        field_name = n;
+        insert_reducer = insert_vec_i_16;
+        insert_reducer_event = InsertVecI16;
+    }
+    VecI32 {
+        Contents = Vec<i32>;
+        field_name = n;
+        insert_reducer = insert_vec_i_32;
+        insert_reducer_event = InsertVecI32;
+    }
+    VecI64 {
+        Contents = Vec<i64>;
+        field_name = n;
+        insert_reducer = insert_vec_i_64;
+        insert_reducer_event = InsertVecI64;
+    }
+    VecI128 {
+        Contents = Vec<i128>;
+        field_name = n;
+        insert_reducer = insert_vec_i_128;
+        insert_reducer_event = InsertVecI128;
+    }
+
+    VecF32 {
+        Contents = Vec<f32>;
+        field_name = f;
+        insert_reducer = insert_vec_f_32;
+        insert_reducer_event = InsertVecF32;
+    }
+    VecF64 {
+        Contents = Vec<f64>;
+        field_name = f;
+        insert_reducer = insert_vec_f_64;
+        insert_reducer_event = InsertVecF64;
+    }
+
+    VecBool {
+        Contents = Vec<bool>;
+        field_name = b;
+        insert_reducer = insert_vec_bool;
+        insert_reducer_event = InsertVecBool;
+    }
+
+    VecString {
+        Contents = Vec<String>;
+        field_name = s;
+        insert_reducer = insert_vec_string;
+        insert_reducer_event = InsertVecString;
+    }
+
+    VecIdentity {
+        Contents = Vec<Identity>;
+        field_name = i;
+        insert_reducer = insert_vec_identity;
+        insert_reducer_event = InsertVecIdentity;
+    }
+
+    VecSimpleEnum {
+        Contents = Vec<SimpleEnum>;
+        field_name = e;
+        insert_reducer = insert_vec_simple_enum;
+        insert_reducer_event = InsertVecSimpleEnum;
+    }
+    VecEnumWithPayload {
+        Contents = Vec<EnumWithPayload>;
+        field_name = e;
+        insert_reducer = insert_vec_enum_with_payload;
+        insert_reducer_event = InsertVecEnumWithPayload;
+    }
+
+    VecUnitStruct {
+        Contents = Vec<UnitStruct>;
+        field_name = s;
+        insert_reducer = insert_vec_unit_struct;
+        insert_reducer_event = InsertVecUnitStruct;
+    }
+    VecByteStruct {
+        Contents = Vec<ByteStruct>;
+        field_name = s;
+        insert_reducer = insert_vec_byte_struct;
+        insert_reducer_event = InsertVecByteStruct;
+    }
+    VecEveryPrimitiveStruct {
+        Contents = Vec<EveryPrimitiveStruct>;
+        field_name = s;
+        insert_reducer = insert_vec_every_primitive_struct;
+        insert_reducer_event = InsertVecEveryPrimitiveStruct;
+    }
+    VecEveryVecStruct {
+        Contents = Vec<EveryVecStruct>;
+        field_name = s;
+        insert_reducer = insert_vec_every_vec_struct;
+        insert_reducer_event = InsertVecEveryVecStruct;
+    }
 }
 
 pub fn insert_one<T: SimpleTestTable>(test_counter: &Arc<TestCounter>, value: T::Contents) {

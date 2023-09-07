@@ -54,3 +54,18 @@ fn on_reducer() {
 fn fail_reducer() {
     make_test("fail_reducer").run();
 }
+
+#[test]
+fn insert_vec() {
+    make_test("insert_vec").run();
+}
+
+#[test]
+fn insert_simple_enum() {
+    make_test("insert_simple_enum").run();
+}
+
+#[test]
+fn insert_enum_with_payload() {
+    make_test("insert_enum_with_payload").run();
+}

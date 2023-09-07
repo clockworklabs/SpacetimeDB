@@ -642,19 +642,242 @@ fn exec_fail_reducer() {
 
     test_counter.wait_for_all();
 }
-
 fn exec_insert_vec() {
-    todo!()
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        once_on_subscription_applied(move || {
+            insert_one::<VecU8>(&test_counter, vec![0, 1]);
+            insert_one::<VecU16>(&test_counter, vec![0, 1]);
+            insert_one::<VecU32>(&test_counter, vec![0, 1]);
+            insert_one::<VecU64>(&test_counter, vec![0, 1]);
+            insert_one::<VecU128>(&test_counter, vec![0, 1]);
+
+            insert_one::<VecI8>(&test_counter, vec![0, 1]);
+            insert_one::<VecI16>(&test_counter, vec![0, 1]);
+            insert_one::<VecI32>(&test_counter, vec![0, 1]);
+            insert_one::<VecI64>(&test_counter, vec![0, 1]);
+            insert_one::<VecI128>(&test_counter, vec![0, 1]);
+
+            insert_one::<VecBool>(&test_counter, vec![false, true]);
+
+            insert_one::<VecF32>(&test_counter, vec![0.0, 1.0]);
+            insert_one::<VecF64>(&test_counter, vec![0.0, 1.0]);
+
+            insert_one::<VecString>(&test_counter, vec!["zero".to_string(), "one".to_string()]);
+
+            insert_one::<VecIdentity>(&test_counter, vec![identity().unwrap()]);
+
+            sub_applied_nothing_result(assert_all_tables_empty());
+        });
+    }
+
+    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
 }
+
 fn exec_insert_struct() {
-    todo!()
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        once_on_subscription_applied(move || {
+            insert_one::<OneUnitStruct>(&test_counter, UnitStruct {});
+            insert_one::<OneByteStruct>(&test_counter, ByteStruct { b: 0 });
+            insert_one::<OneEveryPrimitiveStruct>(
+                &test_counter,
+                EveryPrimitiveStruct {
+                    a: 0,
+                    b: 1,
+                    c: 2,
+                    d: 3,
+                    e: 4,
+                    f: -1,
+                    g: -2,
+                    h: -3,
+                    i: -4,
+                    j: -5,
+                    k: false,
+                    l: 1.0,
+                    m: -1.0,
+                    n: "string".to_string(),
+                    o: identity().unwrap(),
+                },
+            );
+            insert_one::<OneEveryVecStruct>(
+                &test_counter,
+                EveryVecStruct {
+                    a: vec![],
+                    b: vec![1],
+                    c: vec![2, 2],
+                    d: vec![3, 3, 3],
+                    e: vec![4, 4, 4, 4],
+                    f: vec![-1],
+                    g: vec![-2, -2],
+                    h: vec![-3, -3, -3],
+                    i: vec![-4, -4, -4, -4],
+                    j: vec![-5, -5, -5, -5, -5],
+                    k: vec![false, true, true, false],
+                    l: vec![0.0, -1.0, 1.0, -2.0, 2.0],
+                    m: vec![0.0, -0.5, 0.5, -1.5, 1.5],
+                    n: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
+                    o: vec![identity().unwrap()],
+                },
+            );
+
+            insert_one::<VecUnitStruct>(&test_counter, vec![UnitStruct {}]);
+            insert_one::<VecByteStruct>(&test_counter, vec![ByteStruct { b: 0 }]);
+            insert_one::<VecEveryPrimitiveStruct>(
+                &test_counter,
+                vec![EveryPrimitiveStruct {
+                    a: 0,
+                    b: 1,
+                    c: 2,
+                    d: 3,
+                    e: 4,
+                    f: -1,
+                    g: -2,
+                    h: -3,
+                    i: -4,
+                    j: -5,
+                    k: false,
+                    l: 1.0,
+                    m: -1.0,
+                    n: "string".to_string(),
+                    o: identity().unwrap(),
+                }],
+            );
+            insert_one::<VecEveryVecStruct>(
+                &test_counter,
+                vec![EveryVecStruct {
+                    a: vec![],
+                    b: vec![1],
+                    c: vec![2, 2],
+                    d: vec![3, 3, 3],
+                    e: vec![4, 4, 4, 4],
+                    f: vec![-1],
+                    g: vec![-2, -2],
+                    h: vec![-3, -3, -3],
+                    i: vec![-4, -4, -4, -4],
+                    j: vec![-5, -5, -5, -5, -5],
+                    k: vec![false, true, true, false],
+                    l: vec![0.0, -1.0, 1.0, -2.0, 2.0],
+                    m: vec![0.0, -0.5, 0.5, -1.5, 1.5],
+                    n: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
+                    o: vec![identity().unwrap()],
+                }],
+            );
+
+            sub_applied_nothing_result(assert_all_tables_empty());
+        });
+    }
+
+    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
 }
+
 fn exec_insert_simple_enum() {
-    todo!()
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        once_on_subscription_applied(move || {
+            insert_one::<OneSimpleEnum>(&test_counter, SimpleEnum::One);
+            insert_one::<VecSimpleEnum>(&test_counter, vec![SimpleEnum::Zero, SimpleEnum::One, SimpleEnum::Two]);
+
+            sub_applied_nothing_result(assert_all_tables_empty());
+        });
+    }
+
+    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
 }
+
 fn exec_insert_enum_with_payload() {
-    todo!()
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        once_on_subscription_applied(move || {
+            insert_one::<OneEnumWithPayload>(&test_counter, EnumWithPayload::U8(0));
+            insert_one::<VecEnumWithPayload>(
+                &test_counter,
+                vec![
+                    EnumWithPayload::U8(0),
+                    EnumWithPayload::U16(1),
+                    EnumWithPayload::U32(2),
+                    EnumWithPayload::U64(3),
+                    EnumWithPayload::U128(4),
+                    EnumWithPayload::I8(0),
+                    EnumWithPayload::I16(-1),
+                    EnumWithPayload::I32(-2),
+                    EnumWithPayload::I64(-3),
+                    EnumWithPayload::I128(-4),
+                    EnumWithPayload::Bool(true),
+                    EnumWithPayload::F32(0.0),
+                    EnumWithPayload::F64(100.0),
+                    EnumWithPayload::Str("enum holds string".to_string()),
+                    EnumWithPayload::Identity(identity().unwrap()),
+                    EnumWithPayload::Bytes(vec![0xde, 0xad, 0xbe, 0xef]),
+                    EnumWithPayload::Strings(
+                        ["enum", "of", "vec", "of", "strings"]
+                            .into_iter()
+                            .map(str::to_string)
+                            .collect(),
+                    ),
+                    EnumWithPayload::SimpleEnums(vec![SimpleEnum::Zero, SimpleEnum::One, SimpleEnum::Two]),
+                ],
+            );
+
+            sub_applied_nothing_result(assert_all_tables_empty());
+        });
+    }
+
+    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
 }
+
 fn exec_insert_long_table() {
     todo!()
 }
