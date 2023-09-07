@@ -1,5 +1,6 @@
+use anyhow::anyhow;
 use spacetimedb_sdk::{
-    identity::{identity, once_on_connect},
+    identity::{identity, once_on_connect, Identity},
     once_on_subscription_applied, subscribe,
     table::{TableType, TableWithPrimaryKey},
 };
@@ -9,6 +10,8 @@ use std::{
     time::Duration,
 };
 
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::large_enum_variant)]
 #[rustfmt::skip]
 mod module_bindings;
 
@@ -96,6 +99,10 @@ impl Default for TestCounter {
 }
 
 impl TestCounter {
+    fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
     fn add_test(
         self: &Arc<Self>,
         test_name: impl Into<String> + Clone + std::fmt::Display + Send + 'static,
@@ -346,33 +353,212 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM TableHoldsTable;",
 ];
 
-macro_rules! insert_one {
-    ($test_counter:ident; $table:ty; $field_name:ident; $val:expr; $insert_reducer:ident; $insert_reducer_event:ident $(;)?) => {{
-        let mut result = Some($test_counter.add_test(concat!("insert-", stringify!($table))));
-        let val = $val;
-        let val_dup = val.clone();
-        <$table as TableType>::on_insert(move |row, reducer_event| {
-            (result.take().unwrap())((|| {
-                if row.$field_name != val_dup {
-                    anyhow::bail!("Unexpected row value. Expected {:?} but found {:?}", val_dup, row);
-                }
-                if !matches!(reducer_event, Some(ReducerEvent::$insert_reducer_event(_))) {
-                    anyhow::bail!(
-                        "Unexpected ReducerEvent variant. Expected {} but found {:?}",
-                        stringify!($insert_reducer_event),
-                        reducer_event
-                    );
-                }
-                Ok(())
-            })());
-        });
+trait SimpleTestTable: TableType {
+    type Contents: Clone + Send + Sync + PartialEq + std::fmt::Debug + 'static;
 
-        $insert_reducer($val);
-    }};
+    fn as_contents(&self) -> &Self::Contents;
+    fn from_contents(contents: Self::Contents) -> Self;
+
+    fn is_insert_reducer_event(event: &Self::ReducerEvent) -> bool;
+
+    fn insert(contents: Self::Contents);
+}
+
+macro_rules! impl_simple_test_table {
+    ($table:ty {
+        Contents = $contents:ty;
+        field_name = $field_name:ident;
+        insert_reducer = $insert_reducer:ident;
+        insert_reducer_event = $insert_reducer_event:ident;
+    }) => {
+        impl SimpleTestTable for $table {
+            type Contents = $contents;
+
+            fn as_contents(&self) -> &Self::Contents {
+                &self.$field_name
+            }
+
+            fn from_contents(contents: Self::Contents) -> Self {
+                Self {
+                    $field_name: contents,
+                }
+            }
+
+            fn is_insert_reducer_event(event: &Self::ReducerEvent) -> bool {
+                matches!(event, ReducerEvent::$insert_reducer_event(_))
+            }
+
+            fn insert(contents: Self::Contents) {
+                $insert_reducer(contents);
+            }
+        }
+    };
+    ($($table:ty { $($stuff:tt)* })*) => {
+        $(impl_simple_test_table!($table { $($stuff)* });)*
+    };
+}
+
+impl_simple_test_table! {
+    OneU8 {
+        Contents = u8;
+        field_name = n;
+        insert_reducer = insert_one_u_8;
+        insert_reducer_event = InsertOneU8;
+    }
+    OneU16 {
+        Contents = u16;
+        field_name = n;
+        insert_reducer = insert_one_u_16;
+        insert_reducer_event = InsertOneU16;
+    }
+    OneU32 {
+        Contents = u32;
+        field_name = n;
+        insert_reducer = insert_one_u_32;
+        insert_reducer_event = InsertOneU32;
+    }
+    OneU64 {
+        Contents = u64;
+        field_name = n;
+        insert_reducer = insert_one_u_64;
+        insert_reducer_event = InsertOneU64;
+    }
+    OneU128 {
+        Contents = u128;
+        field_name = n;
+        insert_reducer = insert_one_u_128;
+        insert_reducer_event = InsertOneU128;
+    }
+
+    OneI8 {
+        Contents = i8;
+        field_name = n;
+        insert_reducer = insert_one_i_8;
+        insert_reducer_event = InsertOneI8;
+    }
+    OneI16 {
+        Contents = i16;
+        field_name = n;
+        insert_reducer = insert_one_i_16;
+        insert_reducer_event = InsertOneI16;
+    }
+    OneI32 {
+        Contents = i32;
+        field_name = n;
+        insert_reducer = insert_one_i_32;
+        insert_reducer_event = InsertOneI32;
+    }
+    OneI64 {
+        Contents = i64;
+        field_name = n;
+        insert_reducer = insert_one_i_64;
+        insert_reducer_event = InsertOneI64;
+    }
+    OneI128 {
+        Contents = i128;
+        field_name = n;
+        insert_reducer = insert_one_i_128;
+        insert_reducer_event = InsertOneI128;
+    }
+
+    OneF32 {
+        Contents = f32;
+        field_name = f;
+        insert_reducer = insert_one_f_32;
+        insert_reducer_event = InsertOneF32;
+    }
+    OneF64 {
+        Contents = f64;
+        field_name = f;
+        insert_reducer = insert_one_f_64;
+        insert_reducer_event = InsertOneF64;
+    }
+
+    OneBool {
+        Contents = bool;
+        field_name = b;
+        insert_reducer = insert_one_bool;
+        insert_reducer_event = InsertOneBool;
+    }
+
+    OneString {
+        Contents = String;
+        field_name = s;
+        insert_reducer = insert_one_string;
+        insert_reducer_event = InsertOneString;
+    }
+
+    OneIdentity {
+        Contents = Identity;
+        field_name = i;
+        insert_reducer = insert_one_identity;
+        insert_reducer_event = InsertOneIdentity;
+    }
+
+    OneSimpleEnum {
+        Contents = SimpleEnum;
+        field_name = e;
+        insert_reducer = insert_one_simple_enum;
+        insert_reducer_event = InsertOneSimpleEnum;
+    }
+    OneEnumWithPayload {
+        Contents = EnumWithPayload;
+        field_name = e;
+        insert_reducer = insert_one_enum_with_payload;
+        insert_reducer_event = InsertOneEnumWithPayload;
+    }
+
+    OneUnitStruct {
+        Contents = UnitStruct;
+        field_name = s;
+        insert_reducer = insert_one_unit_struct;
+        insert_reducer_event = InsertOneUnitStruct;
+    }
+    OneByteStruct {
+        Contents = ByteStruct;
+        field_name = s;
+        insert_reducer = insert_one_byte_struct;
+        insert_reducer_event = InsertOneByteStruct;
+    }
+    OneEveryPrimitiveStruct {
+        Contents = EveryPrimitiveStruct;
+        field_name = s;
+        insert_reducer = insert_one_every_primitive_struct;
+        insert_reducer_event = InsertOneEveryPrimitiveStruct;
+    }
+    OneEveryVecStruct {
+        Contents = EveryVecStruct;
+        field_name = s;
+        insert_reducer = insert_one_every_vec_struct;
+        insert_reducer_event = InsertOneEveryVecStruct;
+    }
+}
+
+fn insert_one<T: SimpleTestTable>(test_counter: &Arc<TestCounter>, value: T::Contents) {
+    let mut result = Some(test_counter.add_test(format!("insert-{}", T::TABLE_NAME)));
+    let value_dup = value.clone();
+    T::on_insert(move |row, reducer_event| {
+        if result.is_some() {
+            let run_checks = || {
+                if row.as_contents() != &value_dup {
+                    anyhow::bail!("Unexpected row value. Expected {:?} but found {:?}", value_dup, row);
+                }
+                reducer_event
+                    .ok_or(anyhow!("Expected a reducer event, but found None."))
+                    .map(T::is_insert_reducer_event)
+                    .and_then(|is_good| is_good.then_some(()).ok_or(anyhow!("Unexpected ReducerEvent variant.")))?;
+
+                Ok(())
+            };
+            (result.take().unwrap())(run_checks());
+        }
+    });
+
+    T::insert(value);
 }
 
 fn exec_insert_primitive() {
-    let test_counter = Arc::new(TestCounter::default());
+    let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
     let conn_result = test_counter.add_test("connect");
@@ -384,28 +570,24 @@ fn exec_insert_primitive() {
     {
         let test_counter = test_counter.clone();
         once_on_subscription_applied(move || {
+            insert_one::<OneU8>(&test_counter, 0);
+            insert_one::<OneU16>(&test_counter, 0);
+            insert_one::<OneU32>(&test_counter, 0);
+            insert_one::<OneU64>(&test_counter, 0);
+            insert_one::<OneU128>(&test_counter, 0);
+
+            insert_one::<OneI8>(&test_counter, 0);
+            insert_one::<OneI16>(&test_counter, 0);
+            insert_one::<OneI32>(&test_counter, 0);
+            insert_one::<OneI64>(&test_counter, 0);
+            insert_one::<OneI128>(&test_counter, 0);
+
+            insert_one::<OneBool>(&test_counter, false);
+
+            insert_one::<OneF32>(&test_counter, 0.0);
+            insert_one::<OneF64>(&test_counter, 0.0);
+
             sub_applied_nothing_result(assert_all_tables_empty());
-
-            insert_one!(test_counter; OneU8; n; 0; insert_one_u_8; InsertOneU8);
-            insert_one!(test_counter; OneU16; n; 0; insert_one_u_16; InsertOneU16);
-            insert_one!(test_counter; OneU32; n; 0; insert_one_u_32; InsertOneU32);
-            insert_one!(test_counter; OneU64; n; 0; insert_one_u_64; InsertOneU64);
-            insert_one!(test_counter; OneU128; n; 0; insert_one_u_128; InsertOneU128);
-
-            insert_one!(test_counter; OneI8; n; 0; insert_one_i_8; InsertOneI8);
-            insert_one!(test_counter; OneI16; n; 0; insert_one_i_16; InsertOneI16);
-            insert_one!(test_counter; OneI32; n; 0; insert_one_i_32; InsertOneI32);
-            insert_one!(test_counter; OneI64; n; 0; insert_one_i_64; InsertOneI64);
-            insert_one!(test_counter; OneI128; n; 0; insert_one_i_128; InsertOneI128);
-
-            insert_one!(test_counter; OneBool; b; false; insert_one_bool; InsertOneBool);
-
-            insert_one!(test_counter; OneF32; f; 0.0; insert_one_f_32; InsertOneF32);
-            insert_one!(test_counter; OneF64; f; 0.0; insert_one_f_64; InsertOneF64);
-
-            insert_one!(test_counter; OneString; s; "".to_string(); insert_one_string; InsertOneString);
-
-            insert_one!(test_counter; OneIdentity; i; identity().unwrap(); insert_one_identity; InsertOneIdentity);
         });
     }
 
@@ -416,9 +598,277 @@ fn exec_insert_primitive() {
     test_counter.wait_for_all();
 }
 
-fn exec_delete_primitive() {
-    todo!()
+trait UniqueTestTable: TableType {
+    type Key: Clone + Send + Sync + PartialEq + std::fmt::Debug + 'static;
+
+    fn as_key(&self) -> &Self::Key;
+    fn as_value(&self) -> i32;
+
+    fn from_key_value(k: Self::Key, v: i32) -> Self;
+
+    fn is_insert_reducer_event(event: &Self::ReducerEvent) -> bool;
+    fn is_delete_reducer_event(event: &Self::ReducerEvent) -> bool;
+
+    fn insert(k: Self::Key, v: i32);
+    fn delete(k: Self::Key);
 }
+
+fn insert_then_delete_one<T: UniqueTestTable>(test_counter: &Arc<TestCounter>, key: T::Key, value: i32) {
+    let mut insert_result = Some(test_counter.add_test(format!("insert-{}", T::TABLE_NAME)));
+    let mut delete_result = Some(test_counter.add_test(format!("delete-{}", T::TABLE_NAME)));
+
+    let mut on_delete = {
+        let key_dup = key.clone();
+        Some(move |row: &T, reducer_event: Option<&T::ReducerEvent>| {
+            if delete_result.is_some() {
+                let run_checks = || {
+                    if row.as_key() != &key_dup || row.as_value() != value {
+                        anyhow::bail!(
+                            "Unexpected row value. Expected ({:?}, {}) but found {:?}",
+                            key_dup,
+                            value,
+                            row
+                        );
+                    }
+                    reducer_event
+                        .ok_or(anyhow!("Expected a reducer event, but found None."))
+                        .map(T::is_delete_reducer_event)
+                        .and_then(|is_good| is_good.then_some(()).ok_or(anyhow!("Unexpected ReducerEvent variant.")))?;
+                    Ok(())
+                };
+
+                (delete_result.take().unwrap())(run_checks());
+            }
+        })
+    };
+
+    let key_dup = key.clone();
+
+    T::on_insert(move |row, reducer_event| {
+        if insert_result.is_some() {
+            let run_checks = || {
+                if row.as_key() != &key_dup || row.as_value() != value {
+                    anyhow::bail!(
+                        "Unexpected row value. Expected ({:?}, {}) but found {:?}",
+                        key_dup,
+                        value,
+                        row
+                    );
+                }
+                reducer_event
+                    .ok_or(anyhow!("Expected a reducer event, but found None."))
+                    .map(T::is_insert_reducer_event)
+                    .and_then(|is_good| is_good.then_some(()).ok_or(anyhow!("Unexpected ReducerEvent variant.")))?;
+
+                Ok(())
+            };
+
+            (insert_result.take().unwrap())(run_checks());
+
+            T::on_delete(on_delete.take().unwrap());
+
+            T::delete(key_dup.clone());
+        }
+    });
+
+    T::insert(key, value);
+}
+
+macro_rules! impl_unique_test_table {
+    ($table:ty {
+        Key = $key:ty;
+        key_field_name = $field_name:ident;
+        insert_reducer = $insert_reducer:ident;
+        insert_reducer_event = $insert_reducer_event:ident;
+        delete_reducer = $delete_reducer:ident;
+        delete_reducer_event = $delete_reducer_event:ident;
+    }) => {
+        impl UniqueTestTable for $table {
+            type Key = $key;
+
+            fn as_key(&self) -> &Self::Key {
+                &self.$field_name
+            }
+            fn as_value(&self) -> i32 {
+                self.data
+            }
+
+            fn from_key_value(key: Self::Key, value: i32) -> Self {
+                Self {
+                    $field_name: key,
+                    data: value,
+                }
+            }
+
+            fn is_insert_reducer_event(event: &Self::ReducerEvent) -> bool {
+                matches!(event, ReducerEvent::$insert_reducer_event(_))
+            }
+            fn is_delete_reducer_event(event: &Self::ReducerEvent) -> bool {
+                matches!(event, ReducerEvent::$delete_reducer_event(_))
+            }
+
+            fn insert(key: Self::Key, value: i32) {
+                $insert_reducer(key, value);
+            }
+            fn delete(key: Self::Key) {
+                $delete_reducer(key);
+            }
+        }
+    };
+    ($($table:ty { $($stuff:tt)* })*) => {
+        $(impl_unique_test_table!($table { $($stuff)* });)*
+    };
+}
+
+impl_unique_test_table! {
+    UniqueU8 {
+        Key = u8;
+        key_field_name = n;
+        insert_reducer = insert_unique_u_8;
+        insert_reducer_event = InsertUniqueU8;
+        delete_reducer = delete_unique_u_8;
+        delete_reducer_event = DeleteUniqueU8;
+    }
+    UniqueU16 {
+        Key = u16;
+        key_field_name = n;
+        insert_reducer = insert_unique_u_16;
+        insert_reducer_event = InsertUniqueU16;
+        delete_reducer = delete_unique_u_16;
+        delete_reducer_event = DeleteUniqueU16;
+    }
+    UniqueU32 {
+        Key = u32;
+        key_field_name = n;
+        insert_reducer = insert_unique_u_32;
+        insert_reducer_event = InsertUniqueU32;
+        delete_reducer = delete_unique_u_32;
+        delete_reducer_event = DeleteUniqueU32;
+    }
+    UniqueU64 {
+        Key = u64;
+        key_field_name = n;
+        insert_reducer = insert_unique_u_64;
+        insert_reducer_event = InsertUniqueU64;
+        delete_reducer = delete_unique_u_64;
+        delete_reducer_event = DeleteUniqueU64;
+    }
+    UniqueU128 {
+        Key = u128;
+        key_field_name = n;
+        insert_reducer = insert_unique_u_128;
+        insert_reducer_event = InsertUniqueU128;
+        delete_reducer = delete_unique_u_128;
+        delete_reducer_event = DeleteUniqueU128;
+    }
+
+    UniqueI8 {
+        Key = i8;
+        key_field_name = n;
+        insert_reducer = insert_unique_i_8;
+        insert_reducer_event = InsertUniqueI8;
+        delete_reducer = delete_unique_i_8;
+        delete_reducer_event = DeleteUniqueI8;
+    }
+    UniqueI16 {
+        Key = i16;
+        key_field_name = n;
+        insert_reducer = insert_unique_i_16;
+        insert_reducer_event = InsertUniqueI16;
+        delete_reducer = delete_unique_i_16;
+        delete_reducer_event = DeleteUniqueI16;
+    }
+    UniqueI32 {
+        Key = i32;
+        key_field_name = n;
+        insert_reducer = insert_unique_i_32;
+        insert_reducer_event = InsertUniqueI32;
+        delete_reducer = delete_unique_i_32;
+        delete_reducer_event = DeleteUniqueI32;
+    }
+    UniqueI64 {
+        Key = i64;
+        key_field_name = n;
+        insert_reducer = insert_unique_i_64;
+        insert_reducer_event = InsertUniqueI64;
+        delete_reducer = delete_unique_i_64;
+        delete_reducer_event = DeleteUniqueI64;
+    }
+    UniqueI128 {
+        Key = i128;
+        key_field_name = n;
+        insert_reducer = insert_unique_i_128;
+        insert_reducer_event = InsertUniqueI128;
+        delete_reducer = delete_unique_i_128;
+        delete_reducer_event = DeleteUniqueI128;
+    }
+
+    UniqueBool {
+        Key = bool;
+        key_field_name = b;
+        insert_reducer = insert_unique_bool;
+        insert_reducer_event = InsertUniqueBool;
+        delete_reducer = delete_unique_bool;
+        delete_reducer_event = DeleteUniqueBool;
+    }
+
+    UniqueString {
+        Key = String;
+        key_field_name = s;
+        insert_reducer = insert_unique_string;
+        insert_reducer_event = InsertUniqueString;
+        delete_reducer = delete_unique_string;
+        delete_reducer_event = DeleteUniqueString;
+    }
+
+    UniqueIdentity {
+        Key = Identity;
+        key_field_name = i;
+        insert_reducer = insert_unique_identity;
+        insert_reducer_event = InsertUniqueIdentity;
+        delete_reducer = delete_unique_identity;
+        delete_reducer_event = DeleteUniqueIdentity;
+    }
+}
+
+fn exec_delete_primitive() {
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        once_on_subscription_applied(move || {
+            insert_then_delete_one::<UniqueU8>(&test_counter, 0, 0xbeef);
+            insert_then_delete_one::<UniqueU16>(&test_counter, 0, 0xbeef);
+            insert_then_delete_one::<UniqueU32>(&test_counter, 0, 0xbeef);
+            insert_then_delete_one::<UniqueU64>(&test_counter, 0, 0xbeef);
+            insert_then_delete_one::<UniqueU128>(&test_counter, 0, 0xbeef);
+
+            insert_then_delete_one::<UniqueI8>(&test_counter, 0, 0xbeef);
+            insert_then_delete_one::<UniqueI16>(&test_counter, 0, 0xbeef);
+            insert_then_delete_one::<UniqueI32>(&test_counter, 0, 0xbeef);
+            insert_then_delete_one::<UniqueI64>(&test_counter, 0, 0xbeef);
+            insert_then_delete_one::<UniqueI128>(&test_counter, 0, 0xbeef);
+
+            insert_then_delete_one::<UniqueBool>(&test_counter, false, 0xbeef);
+
+            sub_applied_nothing_result(assert_all_tables_empty());
+        });
+    }
+
+    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
+}
+
 fn exec_update_primitive() {
     todo!()
 }

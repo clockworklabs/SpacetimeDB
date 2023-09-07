@@ -234,7 +234,7 @@ impl GenItem {
                     AlgebraicType::Product(prod) => rust::autogen_rust_tuple(ctx, name, prod),
                     _ => todo!(),
                 };
-                Some((rust::rust_type_file_name(&name), code))
+                Some((rust::rust_type_file_name(name), code))
             }
             GenItem::Reducer(reducer) if reducer.name == "__init__" => None,
             GenItem::Reducer(reducer) => {
