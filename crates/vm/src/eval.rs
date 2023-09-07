@@ -720,7 +720,7 @@ mod tests {
         let head = q.source.head();
 
         let result = run_ast(p, q.into());
-        let row = RelValue::new(&head, &scalar(1).into());
+        let row = RelValue::new(&head, &scalar(1).into(), None);
         assert_eq!(
             result,
             Code::Table(MemTable::new(&head, StAccess::Public, &[row])),
@@ -740,7 +740,7 @@ mod tests {
         let head = q.source.head();
 
         let result = run_ast(p, q.into());
-        let row = RelValue::new(&head, &input.into());
+        let row = RelValue::new(&head, &input.into(), None);
         assert_eq!(
             result,
             Code::Table(MemTable::new(&head, StAccess::Public, &[row])),

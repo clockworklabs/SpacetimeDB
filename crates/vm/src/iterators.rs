@@ -16,7 +16,7 @@ impl RelOps for RelIter<ProductValue> {
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         Ok(if self.pos == 0 {
             self.pos += 1;
-            Some(RelValue::new(&self.head, &self.of))
+            Some(RelValue::new(&self.head, &self.of, None))
         } else {
             None
         })

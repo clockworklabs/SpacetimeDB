@@ -211,7 +211,7 @@ where
         let extract = &mut self.extractor;
         if let Some(v) = self.iter.next()? {
             let row = extract(v.as_val_ref())?;
-            return Ok(Some(RelValue::new(&self.head, &row)));
+            return Ok(Some(RelValue::new(&self.head, &row, None)));
         }
         Ok(None)
     }

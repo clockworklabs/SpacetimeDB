@@ -343,7 +343,7 @@ impl RelOps for TableCursor<'_> {
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         if let Some(row) = self.iter.next() {
-            return Ok(Some(RelValue::new(self.head(), row.view())));
+            return Ok(Some(RelValue::new(self.head(), row.view(), Some(*row.id()))));
         };
         Ok(None)
     }
@@ -370,7 +370,7 @@ where
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         if let Some(row) = self.iter.next() {
-            return Ok(Some(RelValue::new(self.head(), &row)));
+            return Ok(Some(RelValue::new(self.head(), &row, None)));
         };
         Ok(None)
     }
