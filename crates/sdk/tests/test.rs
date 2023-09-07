@@ -29,3 +29,18 @@ fn delete_primitive() {
 fn update_primitive() {
     make_test("update_primitive").run();
 }
+
+#[test]
+fn insert_identity() {
+    make_test("insert_identity").run();
+}
+
+#[test]
+fn delete_identity() {
+    make_test("delete_identity").run();
+}
+
+#[test]
+fn update_identity() {
+    make_test("delete_identity").run();
+}

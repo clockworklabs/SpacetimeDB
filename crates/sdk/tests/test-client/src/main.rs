@@ -1,4 +1,8 @@
-use spacetimedb_sdk::{identity::once_on_connect, once_on_subscription_applied, subscribe, table::TableType};
+use spacetimedb_sdk::{
+    identity::{identity, once_on_connect},
+    once_on_subscription_applied, subscribe,
+    table::TableType,
+};
 
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::large_enum_variant)]
@@ -292,6 +296,8 @@ fn exec_insert_primitive() {
             insert_one::<OneF32>(&test_counter, 0.0);
             insert_one::<OneF64>(&test_counter, 0.0);
 
+            insert_one::<OneString>(&test_counter, "".to_string());
+
             sub_applied_nothing_result(assert_all_tables_empty());
         });
     }
@@ -330,6 +336,8 @@ fn exec_delete_primitive() {
 
             insert_then_delete_one::<UniqueBool>(&test_counter, false, 0xbeef);
 
+            insert_then_delete_one::<UniqueString>(&test_counter, "".to_string(), 0xbeef);
+
             sub_applied_nothing_result(assert_all_tables_empty());
         });
     }
@@ -339,6 +347,8 @@ fn exec_delete_primitive() {
     conn_result(connect(LOCALHOST, &name, None));
 
     test_counter.wait_for_all();
+
+    assert_all_tables_empty().unwrap();
 }
 
 fn exec_update_primitive() {
@@ -368,6 +378,35 @@ fn exec_update_primitive() {
 
             insert_update_delete_one::<PkBool>(&test_counter, false, 0xbeef, 0xbabe);
 
+            insert_update_delete_one::<PkString>(&test_counter, "".to_string(), 0xbeef, 0xbabe);
+
+            sub_applied_nothing_result(assert_all_tables_empty());
+        });
+    }
+
+    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
+
+    assert_all_tables_empty().unwrap();
+}
+fn exec_insert_identity() {
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        once_on_subscription_applied(move || {
+            insert_one::<OneIdentity>(&test_counter, identity().unwrap());
+
             sub_applied_nothing_result(assert_all_tables_empty());
         });
     }
@@ -378,15 +417,63 @@ fn exec_update_primitive() {
 
     test_counter.wait_for_all();
 }
-fn exec_insert_identity() {
-    todo!()
-}
+
 fn exec_delete_identity() {
-    todo!()
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        once_on_subscription_applied(move || {
+            insert_then_delete_one::<UniqueIdentity>(&test_counter, identity().unwrap(), 0xbeef);
+
+            sub_applied_nothing_result(assert_all_tables_empty());
+        });
+    }
+
+    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
+
+    assert_all_tables_empty().unwrap();
 }
+
 fn exec_update_identity() {
-    todo!()
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        once_on_subscription_applied(move || {
+            insert_update_delete_one::<PkIdentity>(&test_counter, identity().unwrap(), 0xbeef, 0xbabe);
+
+            sub_applied_nothing_result(assert_all_tables_empty());
+        });
+    }
+
+    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
+
+    assert_all_tables_empty().unwrap();
 }
+
 fn exec_on_reducer() {
     todo!()
 }
