@@ -30,6 +30,10 @@ jobs:
 
       - uses: dsherret/rust-toolchain-file@v1
 
+      - name: Install CLI tool
+        run: |
+          cargo install --path crates/cli
+
       - name: Create /stdb dir
         run: |
           sudo mkdir /stdb
