@@ -1,6 +1,8 @@
 use spacetimedb_sdk::{
     identity::{identity, once_on_connect},
-    once_on_subscription_applied, subscribe,
+    once_on_subscription_applied,
+    reducer::Status,
+    subscribe,
     table::TableType,
 };
 
@@ -475,11 +477,172 @@ fn exec_update_identity() {
 }
 
 fn exec_on_reducer() {
-    todo!()
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    let reducer_result = test_counter.add_test("reducer-callback");
+
+    let value = 128;
+
+    once_on_insert_one_u_8(move |caller, status, arg| {
+        let run_checks = || {
+            if *arg != value {
+                anyhow::bail!("Unexpected reducer argument. Expected {} but found {}", value, *arg);
+            }
+            if *caller != identity().unwrap() {
+                anyhow::bail!(
+                    "Unexpected caller. Expected:\n{:?}\nFound:\n{:?}",
+                    identity().unwrap(),
+                    caller
+                );
+            }
+            if !matches!(status, Status::Committed) {
+                anyhow::bail!("Unexpected status. Expected Committed but found {:?}", status);
+            }
+            if OneU8::count() != 1 {
+                anyhow::bail!("Expected 1 row in table OneU8, but found {}", OneU8::count());
+            }
+            let row = OneU8::iter().next().unwrap();
+            if row.n != value {
+                anyhow::bail!("Unexpected row value. Expected {} but found {:?}", value, row);
+            }
+            Ok(())
+        };
+
+        reducer_result(run_checks());
+    });
+
+    once_on_subscription_applied(move || {
+        insert_one_u_8(value);
+
+        sub_applied_nothing_result(assert_all_tables_empty());
+    });
+
+    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
 }
+
 fn exec_fail_reducer() {
-    todo!()
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    let reducer_success_result = test_counter.add_test("reducer-callback-success");
+    let reducer_fail_result = test_counter.add_test("reducer-callback-fail");
+
+    let key = 128;
+    let initial_data = 0xbeef;
+    let fail_data = 0xbabe;
+
+    once_on_insert_pk_u_8(move |caller, status, arg_key, arg_val| {
+        let run_checks = || {
+            if *arg_key != key {
+                anyhow::bail!("Unexpected reducer argument. Expected {} but found {}", key, *arg_key);
+            }
+            if *arg_val != initial_data {
+                anyhow::bail!(
+                    "Unexpected reducer argument. Expected {} but found {}",
+                    initial_data,
+                    *arg_val
+                );
+            }
+            if *caller != identity().unwrap() {
+                anyhow::bail!(
+                    "Unexpected caller. Expected:\n{:?}\nFound:\n{:?}",
+                    identity().unwrap(),
+                    caller
+                );
+            }
+            if !matches!(status, Status::Committed) {
+                anyhow::bail!("Unexpected status. Expected Committed but found {:?}", status);
+            }
+            if PkU8::count() != 1 {
+                anyhow::bail!("Expected 1 row in table PkU8, but found {}", PkU8::count());
+            }
+            let row = PkU8::iter().next().unwrap();
+            if row.n != key || row.data != initial_data {
+                anyhow::bail!(
+                    "Unexpected row value. Expected ({}, {}) but found {:?}",
+                    key,
+                    initial_data,
+                    row
+                );
+            }
+            Ok(())
+        };
+
+        reducer_success_result(run_checks());
+
+        once_on_insert_pk_u_8(move |caller, status, arg_key, arg_val| {
+            let run_checks = || {
+                if *arg_key != key {
+                    anyhow::bail!("Unexpected reducer argument. Expected {} but found {}", key, *arg_key);
+                }
+                if *arg_val != fail_data {
+                    anyhow::bail!(
+                        "Unexpected reducer argument. Expected {} but found {}",
+                        initial_data,
+                        *arg_val
+                    );
+                }
+                if *caller != identity().unwrap() {
+                    anyhow::bail!(
+                        "Unexpected caller. Expected:\n{:?}\nFound:\n{:?}",
+                        identity().unwrap(),
+                        caller
+                    );
+                }
+                if !matches!(status, Status::Failed(_)) {
+                    anyhow::bail!("Unexpected status. Expected Failed but found {:?}", status);
+                }
+                if PkU8::count() != 1 {
+                    anyhow::bail!("Expected 1 row in table PkU8, but found {}", PkU8::count());
+                }
+                let row = PkU8::iter().next().unwrap();
+                if row.n != key || row.data != initial_data {
+                    anyhow::bail!(
+                        "Unexpected row value. Expected ({}, {}) but found {:?}",
+                        key,
+                        initial_data,
+                        row
+                    );
+                }
+                Ok(())
+            };
+
+            reducer_fail_result(run_checks());
+        });
+
+        insert_pk_u_8(key, fail_data);
+    });
+
+    once_on_subscription_applied(move || {
+        insert_pk_u_8(key, initial_data);
+
+        sub_applied_nothing_result(assert_all_tables_empty());
+    });
+
+    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
 }
+
 fn exec_insert_vec() {
     todo!()
 }

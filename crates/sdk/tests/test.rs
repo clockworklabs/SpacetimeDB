@@ -44,3 +44,13 @@ fn delete_identity() {
 fn update_identity() {
     make_test("delete_identity").run();
 }
+
+#[test]
+fn on_reducer() {
+    make_test("on_reducer").run();
+}
+
+#[test]
+fn fail_reducer() {
+    make_test("fail_reducer").run();
+}

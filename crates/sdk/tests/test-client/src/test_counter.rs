@@ -31,6 +31,7 @@ impl TestCounter {
         Arc::new(Self::default())
     }
 
+    #[must_use]
     pub fn add_test(
         self: &Arc<Self>,
         test_name: impl Into<String> + Clone + std::fmt::Display + Send + 'static,
