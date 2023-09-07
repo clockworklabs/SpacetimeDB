@@ -4,6 +4,7 @@ use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, SequenceId, TableDef};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
+use itertools::Itertools;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::{FieldExpr, Relation};
@@ -177,7 +178,9 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         let result = self._eval_query(query)?;
 
         match result {
-            Code::Table(result) => self._execute_delete(&table, result.data),
+            Code::Table(result) => {
+                self._execute_delete(&table, result.data.into_iter().map(|row| row.data).collect_vec())
+            }
             _ => Ok(result),
         }
     }
@@ -185,7 +188,9 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
     fn insert_query(&mut self, table: &Table, query: QueryCode) -> Result<Code, ErrorVm> {
         let result = self._eval_query(query)?;
         match result {
-            Code::Table(result) => self._execute_insert(table, result.data),
+            Code::Table(result) => {
+                self._execute_insert(table, result.data.into_iter().map(|row| row.data).collect_vec())
+            }
             _ => Ok(result),
         }
     }
@@ -282,9 +287,12 @@ impl ProgramVm for DbProgram<'_, '_> {
                     Code::Table(result) => result,
                     _ => return Ok(result),
                 };
-                self._execute_delete(&table, deleted.data.clone())?;
+                self._execute_delete(
+                    &table,
+                    deleted.data.clone().into_iter().map(|row| row.data).collect_vec(),
+                )?;
 
-                let to_insert = mem_table(table.head(), deleted.data);
+                let to_insert = mem_table(table.head(), deleted.data.into_iter().map(|row| row.data));
                 insert.table = Table::MemTable(to_insert);
 
                 let result = self.insert_query(&table, insert)?;

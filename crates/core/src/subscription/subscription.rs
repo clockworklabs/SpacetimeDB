@@ -86,14 +86,14 @@ impl QuerySet {
                             //Hack: remove the hidden field OP_TYPE_FIELD_NAME. see `to_mem_table`
                             // Needs to be done before calculating the PK.
                             let op_type = if let AlgebraicValue::Builtin(BuiltinValue::U8(op)) =
-                                row.elements.remove(pos_op_type)
+                                row.data.elements.remove(pos_op_type)
                             {
                                 op
                             } else {
                                 panic!("Fail to extract `{OP_TYPE_FIELD_NAME}` on `{}`", result.head.table_name)
                             };
 
-                            let row_pk = RelationalDB::pk_for_row(&row);
+                            let row_pk = RelationalDB::pk_for_row(&row.data);
 
                             //Skip rows that are already resolved in a previous subscription...
                             if seen.contains(&(table.table_id, row_pk)) {
@@ -103,6 +103,7 @@ impl QuerySet {
                             seen.insert((table.table_id, row_pk));
 
                             let row_pk = row_pk.to_bytes();
+                            let row = row.data;
                             table_row_operations.ops.push(TableOp { op_type, row_pk, row });
                         }
                         output.tables.push(table_row_operations);
@@ -139,7 +140,7 @@ impl QuerySet {
                             let mut table_row_operations = Vec::new();
 
                             for row in table.data {
-                                let row_pk = RelationalDB::pk_for_row(&row);
+                                let row_pk = RelationalDB::pk_for_row(&row.data);
 
                                 //Skip rows that are already resolved in a previous subscription...
                                 if seen.contains(&(t.table_id, row_pk)) {
@@ -148,6 +149,7 @@ impl QuerySet {
                                 seen.insert((t.table_id, row_pk));
 
                                 let row_pk = row_pk.to_bytes();
+                                let row = row.data;
                                 table_row_operations.push(TableOp {
                                     op_type: 1, // Insert
                                     row_pk,
