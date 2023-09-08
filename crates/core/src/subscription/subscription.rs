@@ -1,5 +1,7 @@
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::relation::RelValue;
+use spacetimedb_lib::PrimaryKey;
 use spacetimedb_sats::{AlgebraicValue, BuiltinValue};
 use spacetimedb_vm::expr::QueryExpr;
 use std::collections::HashSet;
@@ -47,6 +49,15 @@ impl Subscription {
         if !self.subscribers.iter().any(|s| s.id == sender.id) {
             self.subscribers.push(sender);
         }
+    }
+}
+
+// If a RelValue has an id (DataKey) return it directly, otherwise we must construct it from the
+// row itself which can be an expensive operation.
+fn pk_for_row(row: &RelValue) -> PrimaryKey {
+    match row.id {
+        Some(data_key) => PrimaryKey { data_key },
+        None => RelationalDB::pk_for_row(&row.data),
     }
 }
 
@@ -103,14 +114,14 @@ impl QuerySet {
                             //Hack: remove the hidden field OP_TYPE_FIELD_NAME. see `to_mem_table`
                             // Needs to be done before calculating the PK.
                             let op_type = if let AlgebraicValue::Builtin(BuiltinValue::U8(op)) =
-                                row.elements.remove(pos_op_type)
+                                row.data.elements.remove(pos_op_type)
                             {
                                 op
                             } else {
                                 panic!("Fail to extract `{OP_TYPE_FIELD_NAME}` on `{}`", result.head.table_name)
                             };
 
-                            let row_pk = RelationalDB::pk_for_row(&row);
+                            let row_pk = pk_for_row(&row);
 
                             //Skip rows that are already resolved in a previous subscription...
                             if seen.contains(&(table.table_id, row_pk)) {
@@ -120,6 +131,7 @@ impl QuerySet {
                             seen.insert((table.table_id, row_pk));
 
                             let row_pk = row_pk.to_bytes();
+                            let row = row.data;
                             table_row_operations.ops.push(TableOp { op_type, row_pk, row });
                         }
                         output.tables.push(table_row_operations);
@@ -156,7 +168,7 @@ impl QuerySet {
                             let mut table_row_operations = Vec::new();
 
                             for row in table.data {
-                                let row_pk = RelationalDB::pk_for_row(&row);
+                                let row_pk = pk_for_row(&row);
 
                                 //Skip rows that are already resolved in a previous subscription...
                                 if seen.contains(&(t.table_id, row_pk)) {
@@ -165,6 +177,7 @@ impl QuerySet {
                                 seen.insert((t.table_id, row_pk));
 
                                 let row_pk = row_pk.to_bytes();
+                                let row = row.data;
                                 table_row_operations.push(TableOp {
                                     op_type: 1, // Insert
                                     row_pk,

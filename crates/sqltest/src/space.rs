@@ -118,7 +118,7 @@ impl AsyncDB for SpaceDb {
         for row in r.data {
             let mut row_vec = vec![];
 
-            for value in row.elements {
+            for value in row.data.elements {
                 let value = match value {
                     AlgebraicValue::Builtin(x) => match x {
                         BuiltinValue::Bool(x) => {
