@@ -1161,6 +1161,8 @@ fn exec_reconnect() {
     todo!()
 }
 
+/// Part of the `reauth` test, this connects to Spacetime to get new credentials,
+/// and saves them to a file.
 fn exec_reauth_part_1() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
@@ -1177,6 +1179,10 @@ fn exec_reauth_part_1() {
     test_counter.wait_for_all();
 }
 
+/// Part of the `reauth` test, this loads credentials from a file,
+/// and passes them to `connect`.
+///
+/// Must run after `exec_reauth_part_1`.
 fn exec_reauth_part_2() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();

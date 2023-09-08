@@ -86,6 +86,49 @@ pub struct EveryVecStruct {
     o: Vec<Identity>,
 }
 
+/// Defines one or more tables, and optionally reducers alongside them.
+///
+/// Each table specifier is:
+///
+/// TableName { reducers... } fields...;
+///
+/// where:
+///
+/// - TableName is an identifier for the new table.
+///
+/// - reducers... is a comma-separated list of reducer specifiers, which may be:
+///   - insert reducer_name
+///     Defines a reducer which takes an argument for each of the table's columns, and inserts a new row.
+///     Not suitable for tables with unique constraints.
+///     e.g. insert insert_my_table
+///   - insert_or_panic reducer_name
+///     Like insert, but for tables with unique constraints. Unwraps the output of `insert`.
+///     e.g. insert_or_panic insert_my_table
+///   - update_by reducer_name = update_method(field_name)
+///     Defines a reducer which takes an argument for each of the table's columns,
+///     and calls the update_method with the value of field_name as a first argument
+///     to update an existing row.
+///     e.g. update_by update_my_table = update_by_name(name)
+///   - delete_by reducer_name = delete_method(field_name: field_type)
+///     Defines a reducer which takes a single argument, and passes it to the delete_method
+///     to delete a row.
+///     e.g. delete_by delete_my_table = delete_by_name(name: String)
+///
+/// - fields is a comma-separated list of field specifiers, which are optional attribues,
+///   followed by a field name identifier and a type.
+///   e.g. #[unique] name String
+///
+/// A full table definition might be:
+///
+/// MyTable {
+///     insert_or_panic insert_my_table,
+///     update_by update_my_table = update_by_name(name),
+///     delete_by delete_my_table = delete_by_name(name: String),
+/// } #[primarykey] name String,
+///   #[autoinc] #[unique] id u32,
+///   count i64;
+//
+// Internal rules are prefixed with @.
 macro_rules! define_tables {
     // Base case for `@impl_ops` recursion: no more ops to define.
     (@impl_ops $name:ident { $(,)? } $($more:tt)*) => {};
