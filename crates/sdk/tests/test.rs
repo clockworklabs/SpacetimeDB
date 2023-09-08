@@ -85,3 +85,9 @@ fn resubscribe() {
 fn should_fail() {
     make_test("should_fail").run();
 }
+
+#[test]
+fn reauth() {
+    make_test("reauth_part_1").run();
+    make_test("reauth_part_2").run();
+}

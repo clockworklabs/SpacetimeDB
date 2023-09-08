@@ -1,5 +1,5 @@
 use spacetimedb_sdk::{
-    identity::{identity, once_on_connect},
+    identity::{identity, load_credentials, once_on_connect, save_credentials},
     once_on_subscription_applied,
     reducer::Status,
     subscribe,
@@ -81,123 +81,129 @@ fn main() {
 
         "reconnect" => exec_reconnect(),
 
+        "reauth_part_1" => exec_reauth_part_1(),
+        "reauth_part_2" => exec_reauth_part_2(),
+
         "should_fail" => exec_should_fail(),
 
         _ => panic!("Unknown test: {}", test),
     }
 }
 
-macro_rules! assert_table_empty {
-    ($table:ty) => {{
-        let count = <$table as TableType>::count();
-        if count != 0 {
-            anyhow::bail!(
-                "Expected table {} to be empty, but found {} rows resident",
-                <$table as TableType>::TABLE_NAME,
-                count,
-            );
-        }
-    }};
+fn assert_table_empty<T: TableType>() -> anyhow::Result<()> {
+    let count = T::count();
+    if count != 0 {
+        anyhow::bail!(
+            "Expected table {} to be empty, but found {} rows resident",
+            T::TABLE_NAME,
+            count,
+        )
+    }
+    Ok(())
 }
 
+/// Each test runs against a fresh DB, so all tables should be empty until we call an insert reducer.
+///
+/// We'll call this function within our initial `on_subscription_applied` callback to verify that.
 fn assert_all_tables_empty() -> anyhow::Result<()> {
-    assert_table_empty!(OneU8);
-    assert_table_empty!(OneU16);
-    assert_table_empty!(OneU32);
-    assert_table_empty!(OneU64);
-    assert_table_empty!(OneU128);
+    assert_table_empty::<OneU8>()?;
+    assert_table_empty::<OneU16>()?;
+    assert_table_empty::<OneU32>()?;
+    assert_table_empty::<OneU64>()?;
+    assert_table_empty::<OneU128>()?;
 
-    assert_table_empty!(OneI8);
-    assert_table_empty!(OneI16);
-    assert_table_empty!(OneI32);
-    assert_table_empty!(OneI64);
-    assert_table_empty!(OneI128);
+    assert_table_empty::<OneI8>()?;
+    assert_table_empty::<OneI16>()?;
+    assert_table_empty::<OneI32>()?;
+    assert_table_empty::<OneI64>()?;
+    assert_table_empty::<OneI128>()?;
 
-    assert_table_empty!(OneBool);
+    assert_table_empty::<OneBool>()?;
 
-    assert_table_empty!(OneF32);
-    assert_table_empty!(OneF64);
+    assert_table_empty::<OneF32>()?;
+    assert_table_empty::<OneF64>()?;
 
-    assert_table_empty!(OneString);
-    assert_table_empty!(OneIdentity);
+    assert_table_empty::<OneString>()?;
+    assert_table_empty::<OneIdentity>()?;
 
-    assert_table_empty!(OneSimpleEnum);
-    assert_table_empty!(OneEnumWithPayload);
+    assert_table_empty::<OneSimpleEnum>()?;
+    assert_table_empty::<OneEnumWithPayload>()?;
 
-    assert_table_empty!(OneUnitStruct);
-    assert_table_empty!(OneByteStruct);
-    assert_table_empty!(OneEveryPrimitiveStruct);
-    assert_table_empty!(OneEveryVecStruct);
+    assert_table_empty::<OneUnitStruct>()?;
+    assert_table_empty::<OneByteStruct>()?;
+    assert_table_empty::<OneEveryPrimitiveStruct>()?;
+    assert_table_empty::<OneEveryVecStruct>()?;
 
-    assert_table_empty!(VecU8);
-    assert_table_empty!(VecU16);
-    assert_table_empty!(VecU32);
-    assert_table_empty!(VecU64);
-    assert_table_empty!(VecU128);
+    assert_table_empty::<VecU8>()?;
+    assert_table_empty::<VecU16>()?;
+    assert_table_empty::<VecU32>()?;
+    assert_table_empty::<VecU64>()?;
+    assert_table_empty::<VecU128>()?;
 
-    assert_table_empty!(VecI8);
-    assert_table_empty!(VecI16);
-    assert_table_empty!(VecI32);
-    assert_table_empty!(VecI64);
-    assert_table_empty!(VecI128);
+    assert_table_empty::<VecI8>()?;
+    assert_table_empty::<VecI16>()?;
+    assert_table_empty::<VecI32>()?;
+    assert_table_empty::<VecI64>()?;
+    assert_table_empty::<VecI128>()?;
 
-    assert_table_empty!(VecBool);
+    assert_table_empty::<VecBool>()?;
 
-    assert_table_empty!(VecF32);
-    assert_table_empty!(VecF64);
+    assert_table_empty::<VecF32>()?;
+    assert_table_empty::<VecF64>()?;
 
-    assert_table_empty!(VecString);
-    assert_table_empty!(VecIdentity);
+    assert_table_empty::<VecString>()?;
+    assert_table_empty::<VecIdentity>()?;
 
-    assert_table_empty!(VecSimpleEnum);
-    assert_table_empty!(VecEnumWithPayload);
+    assert_table_empty::<VecSimpleEnum>()?;
+    assert_table_empty::<VecEnumWithPayload>()?;
 
-    assert_table_empty!(VecUnitStruct);
-    assert_table_empty!(VecByteStruct);
-    assert_table_empty!(VecEveryPrimitiveStruct);
-    assert_table_empty!(VecEveryVecStruct);
+    assert_table_empty::<VecUnitStruct>()?;
+    assert_table_empty::<VecByteStruct>()?;
+    assert_table_empty::<VecEveryPrimitiveStruct>()?;
+    assert_table_empty::<VecEveryVecStruct>()?;
 
-    assert_table_empty!(UniqueU8);
-    assert_table_empty!(UniqueU16);
-    assert_table_empty!(UniqueU32);
-    assert_table_empty!(UniqueU64);
-    assert_table_empty!(UniqueU128);
+    assert_table_empty::<UniqueU8>()?;
+    assert_table_empty::<UniqueU16>()?;
+    assert_table_empty::<UniqueU32>()?;
+    assert_table_empty::<UniqueU64>()?;
+    assert_table_empty::<UniqueU128>()?;
 
-    assert_table_empty!(UniqueI8);
-    assert_table_empty!(UniqueI16);
-    assert_table_empty!(UniqueI32);
-    assert_table_empty!(UniqueI64);
-    assert_table_empty!(UniqueI128);
+    assert_table_empty::<UniqueI8>()?;
+    assert_table_empty::<UniqueI16>()?;
+    assert_table_empty::<UniqueI32>()?;
+    assert_table_empty::<UniqueI64>()?;
+    assert_table_empty::<UniqueI128>()?;
 
-    assert_table_empty!(UniqueBool);
+    assert_table_empty::<UniqueBool>()?;
 
-    assert_table_empty!(UniqueString);
-    assert_table_empty!(UniqueIdentity);
+    assert_table_empty::<UniqueString>()?;
+    assert_table_empty::<UniqueIdentity>()?;
 
-    assert_table_empty!(PkU8);
-    assert_table_empty!(PkU16);
-    assert_table_empty!(PkU32);
-    assert_table_empty!(PkU64);
-    assert_table_empty!(PkU128);
+    assert_table_empty::<PkU8>()?;
+    assert_table_empty::<PkU16>()?;
+    assert_table_empty::<PkU32>()?;
+    assert_table_empty::<PkU64>()?;
+    assert_table_empty::<PkU128>()?;
 
-    assert_table_empty!(PkI8);
-    assert_table_empty!(PkI16);
-    assert_table_empty!(PkI32);
-    assert_table_empty!(PkI64);
-    assert_table_empty!(PkI128);
+    assert_table_empty::<PkI8>()?;
+    assert_table_empty::<PkI16>()?;
+    assert_table_empty::<PkI32>()?;
+    assert_table_empty::<PkI64>()?;
+    assert_table_empty::<PkI128>()?;
 
-    assert_table_empty!(PkBool);
+    assert_table_empty::<PkBool>()?;
 
-    assert_table_empty!(PkString);
-    assert_table_empty!(PkIdentity);
+    assert_table_empty::<PkString>()?;
+    assert_table_empty::<PkIdentity>()?;
 
-    assert_table_empty!(LargeTable);
+    assert_table_empty::<LargeTable>()?;
 
-    assert_table_empty!(TableHoldsTable);
+    assert_table_empty::<TableHoldsTable>()?;
 
     Ok(())
 }
 
+/// A great big honking query that subscribes to all rows from all tables.
 const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM OneU8;",
     "SELECT * FROM OneU16;",
@@ -271,6 +277,10 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM TableHoldsTable;",
 ];
 
+/// This tests that we can:
+/// - Pass primitive types to reducers.
+/// - Deserialize primitive types in rows and in reducer arguments.
+/// - Observe `on_insert` callbacks with appropriate reducer events.
 fn exec_insert_primitive() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
@@ -314,6 +324,7 @@ fn exec_insert_primitive() {
     test_counter.wait_for_all();
 }
 
+/// This tests that we can observe `on_delete` callbacks.
 fn exec_delete_primitive() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
@@ -356,6 +367,7 @@ fn exec_delete_primitive() {
     assert_all_tables_empty().unwrap();
 }
 
+/// This tests that we can distinguish between `on_update` and `on_delete` callbacks for tables with primary keys.
 fn exec_update_primitive() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
@@ -397,6 +409,8 @@ fn exec_update_primitive() {
 
     assert_all_tables_empty().unwrap();
 }
+
+/// This tests that we can serialize and deserialize `Identity` in various contexts.
 fn exec_insert_identity() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
@@ -423,6 +437,8 @@ fn exec_insert_identity() {
     test_counter.wait_for_all();
 }
 
+/// This test doesn't add much alongside `exec_insert_identity` and `exec_delete_primitive`,
+/// but it's here for symmetry.
 fn exec_delete_identity() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
@@ -451,6 +467,8 @@ fn exec_delete_identity() {
     assert_all_tables_empty().unwrap();
 }
 
+/// This tests that we can distinguish between `on_delete` and `on_update` events
+/// for tables with `Identity` primary keys.
 fn exec_update_identity() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
@@ -479,6 +497,7 @@ fn exec_update_identity() {
     assert_all_tables_empty().unwrap();
 }
 
+/// This tests that we can observe reducer callbacks for successful reducer runs.
 fn exec_on_reducer() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
@@ -534,6 +553,7 @@ fn exec_on_reducer() {
     test_counter.wait_for_all();
 }
 
+/// This tests that we can observe reducer callbacks for failed reducers.
 fn exec_fail_reducer() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
@@ -645,6 +665,8 @@ fn exec_fail_reducer() {
 
     test_counter.wait_for_all();
 }
+
+/// This tests that we can serialize and deserialize `Vec<?>` in various contexts.
 fn exec_insert_vec() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
@@ -690,6 +712,7 @@ fn exec_insert_vec() {
     test_counter.wait_for_all();
 }
 
+/// This tests that we can serialize and deserialize structs in various contexts.
 fn exec_insert_struct() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
@@ -800,6 +823,7 @@ fn exec_insert_struct() {
     test_counter.wait_for_all();
 }
 
+/// This tests that we can serialize and deserialize C-style enums in various contexts.
 fn exec_insert_simple_enum() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
@@ -827,6 +851,7 @@ fn exec_insert_simple_enum() {
     test_counter.wait_for_all();
 }
 
+/// This tests that we can serialize and deserialize sum types in various contexts.
 fn exec_insert_enum_with_payload() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
@@ -881,6 +906,7 @@ fn exec_insert_enum_with_payload() {
     test_counter.wait_for_all();
 }
 
+/// This tests that the test machinery itself is functional and can detect failures.
 fn exec_should_fail() {
     let test_counter = TestCounter::new();
     let fail = test_counter.add_test("should-fail");
@@ -904,6 +930,8 @@ macro_rules! assert_eq_or_bail {
     }};
 }
 
+/// This test invokes a reducer with many arguments of many types,
+/// and observes a callback for an inserted table with many columns of many types.
 fn exec_insert_long_table() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
@@ -1023,10 +1051,14 @@ fn exec_insert_long_table() {
     test_counter.wait_for_all();
 }
 
+/// This tests the behavior of re-subscribing
+/// by observing `on_delete` callbacks of newly-unsubscribed rows
+/// and `on_insert` callbacks of newly-subscribed rows.
 fn exec_resubscribe() {
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
+    // Boring stuff first: connect and subscribe to everything.
     let connect_result = test_counter.add_test("connect");
     let subscribe_result = test_counter.add_test("initial-subscribe");
     let sub_applied_result = test_counter.add_test("initial-subscription-nothing");
@@ -1035,14 +1067,17 @@ fn exec_resubscribe() {
         sub_applied_result(assert_all_tables_empty());
     });
 
-    connect_result(connect(LOCALHOST, &name, None));
-
     once_on_connect(|_| {
         subscribe_result(subscribe(SUBSCRIBE_ALL));
     });
 
+    connect_result(connect(LOCALHOST, &name, None));
+
+    // Wait for all previous checks before continuing.
     test_counter.wait_for_all();
 
+    // Insert 256 rows of `OneU8`.
+    // At this point, we should be subscribed to all of them.
     let test_counter = TestCounter::new();
     let mut insert_u8s = (0..=255)
         .map(|n| Some(test_counter.add_test(format!("insert-{}", n))))
@@ -1054,16 +1089,25 @@ fn exec_resubscribe() {
     for n in 0..=255 {
         insert_one_u_8(n as u8);
     }
+    // Wait for all previous checks before continuing,
     test_counter.wait_for_all();
+    // and remove the callback now that we're done with it.
     OneU8::remove_on_insert(on_insert_u8);
 
+    // Re-subscribe with a query that excludes the lower half of the `OneU8` rows,
+    // and observe `on_delete` callbacks for those rows.
     let test_counter = TestCounter::new();
     let mut delete_u8s = (0..128)
         .map(|n| Some(test_counter.add_test(format!("unsubscribe-{}-delete", n))))
         .collect::<Vec<_>>();
-    let on_delete_u8 = OneU8::on_delete(move |row, _| {
+    let on_delete_verify = OneU8::on_delete(move |row, _| {
         let n = row.n;
+        // This indexing will panic if n > 127.
         (delete_u8s[n as usize].take().unwrap())(Ok(()));
+    });
+    // There should be no newly-subscribed rows, so we'll panic if we get an on-insert event.
+    let on_insert_panic = OneU8::on_insert(|row, _| {
+        panic!("Unexpected insert during re-subscribe for {:?}", row);
     });
     let subscribe_less_result = test_counter.add_test("resubscribe-fewer-matches");
     once_on_subscription_applied(move || {
@@ -1078,17 +1122,25 @@ fn exec_resubscribe() {
     });
     let subscribe_result = test_counter.add_test("resubscribe");
     subscribe_result(subscribe(&["SELECT * FROM OneU8 WHERE n > 127"]));
+    // Wait before continuing, and remove callbacks.
     test_counter.wait_for_all();
-    OneU8::remove_on_delete(on_delete_u8);
+    OneU8::remove_on_delete(on_delete_verify);
+    OneU8::remove_on_insert(on_insert_panic);
 
+    // Re-subscribe with a query that includes all of the `OneU8` rows again,
+    // and observe `on_insert` callbacks for the lower half.
     let test_counter = TestCounter::new();
-
     let mut insert_u8s = (0..128)
         .map(|n| Some(test_counter.add_test(format!("resubscribe-{}-insert", n))))
         .collect::<Vec<_>>();
     OneU8::on_insert(move |row, _| {
         let n = row.n;
+        // This indexing will panic if n > 127.
         (insert_u8s[n as usize].take().unwrap())(Ok(()));
+    });
+    // There should be no newly-unsubscribed rows, so we'll panic if we get an on-delete event.
+    OneU8::on_delete(|row, _| {
+        panic!("Unexpected delete during re-subscribe for {:?}", row);
     });
     let subscribe_more_result = test_counter.add_test("resubscribe-more-matches");
     once_on_subscription_applied(move || {
@@ -1103,6 +1155,51 @@ fn exec_resubscribe() {
     test_counter.wait_for_all();
 }
 
+/// Once we determine appropriate semantics for in-process re-connecting,
+/// this test will verify it.
 fn exec_reconnect() {
     todo!()
+}
+
+fn exec_reauth_part_1() {
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let connect_result = test_counter.add_test("connect");
+    let save_result = test_counter.add_test("save-credentials");
+
+    once_on_connect(|creds| {
+        save_result(save_credentials(".spacetime_rust_sdk_test", creds));
+    });
+
+    connect_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
+}
+
+fn exec_reauth_part_2() {
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let connect_result = test_counter.add_test("connect");
+    let creds_match_result = test_counter.add_test("credentials-match");
+
+    let creds = load_credentials(".spacetime_rust_sdk_test")
+        .expect("Failed to load credentials")
+        .expect("Expected credentials but found none");
+
+    let creds_dup = creds.clone();
+
+    once_on_connect(move |received_creds| {
+        let run_checks = || {
+            assert_eq_or_bail!(creds_dup, *received_creds);
+            Ok(())
+        };
+
+        creds_match_result(run_checks());
+    });
+
+    connect_result(connect(LOCALHOST, &name, Some(creds)));
+
+    test_counter.wait_for_all();
 }
