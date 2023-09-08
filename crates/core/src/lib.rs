@@ -17,23 +17,6 @@ where
     STDB_PATH.join(s)
 }
 
-// to let us be incremental in updating all the references to what used to be individual lazy_statics
-macro_rules! metrics_delegator {
-    ($name:ident, $field:ident: $ty:ty) => {
-        #[allow(non_camel_case_types)]
-        pub struct $name {
-            __private: (),
-        }
-        pub static $name: $name = $name { __private: () };
-        impl std::ops::Deref for $name {
-            type Target = $ty;
-            fn deref(&self) -> &$ty {
-                &METRICS.$field
-            }
-        }
-    };
-}
-
 pub mod address {
     pub use spacetimedb_lib::Address;
 }

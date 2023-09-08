@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::protobuf::client_api::Subscribe;
-use crate::worker_metrics::{CONNECTED_CLIENTS, WEBSOCKET_SENT, WEBSOCKET_SENT_MSG_SIZE};
+use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
 use tokio::sync::mpsc;
@@ -42,12 +42,14 @@ impl ClientConnectionSender {
 
         self.sendtx.send(message).await.map_err(|_| ClientClosed)?;
 
-        WEBSOCKET_SENT
-            .with_label_values(&[self.id.identity.to_hex().as_str()])
+        WORKER_METRICS
+            .websocket_sent
+            .with_label_values(&[&self.id.identity.to_hex()])
             .inc();
 
-        WEBSOCKET_SENT_MSG_SIZE
-            .with_label_values(&[self.id.identity.to_hex().as_str()])
+        WORKER_METRICS
+            .websocket_sent_msg_size
+            .with_label_values(&[&self.id.identity.to_hex()])
             .observe(bytes_len as f64);
 
         Ok(())
@@ -122,9 +124,9 @@ impl ClientConnection {
 
         let actor_fut = actor(this.clone(), sendrx);
         tokio::spawn(async move {
-            CONNECTED_CLIENTS.inc();
+            WORKER_METRICS.connected_clients.inc();
             actor_fut.await;
-            CONNECTED_CLIENTS.dec();
+            WORKER_METRICS.connected_clients.dec();
         });
 
         Ok(this)

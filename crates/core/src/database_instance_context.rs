@@ -25,7 +25,7 @@ pub struct DatabaseInstanceContext {
 impl DatabaseInstanceContext {
     pub fn from_database(config: Config, database: &Database, instance_id: u64, root_db_path: PathBuf) -> Arc<Self> {
         let mut db_path = root_db_path;
-        db_path.extend([database.address.to_hex(), instance_id.to_string()]);
+        db_path.extend([&*database.address.to_hex(), &*instance_id.to_string()]);
         db_path.push("database");
 
         let log_path = DatabaseLogger::filepath(&database.address, instance_id);
@@ -44,7 +44,7 @@ impl DatabaseInstanceContext {
 
     pub fn scheduler_db_path(&self, root_db_path: PathBuf) -> PathBuf {
         let mut scheduler_db_path = root_db_path;
-        scheduler_db_path.extend([self.address.to_hex(), self.database_instance_id.to_string()]);
+        scheduler_db_path.extend([&*self.address.to_hex(), &*self.database_instance_id.to_string()]);
         scheduler_db_path.push("scheduler");
         scheduler_db_path
     }
