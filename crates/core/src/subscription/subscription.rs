@@ -1,4 +1,5 @@
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::PrimaryKey;
 use spacetimedb_sats::{AlgebraicValue, BuiltinValue};
 use std::collections::HashSet;
 
@@ -93,7 +94,10 @@ impl QuerySet {
                                 panic!("Fail to extract `{OP_TYPE_FIELD_NAME}` on `{}`", result.head.table_name)
                             };
 
-                            let row_pk = RelationalDB::pk_for_row(&row.data);
+                            let row_pk = match row.id {
+                                Some(data_key) => PrimaryKey { data_key },
+                                None => RelationalDB::pk_for_row(&row.data),
+                            };
 
                             //Skip rows that are already resolved in a previous subscription...
                             if seen.contains(&(table.table_id, row_pk)) {
@@ -140,7 +144,10 @@ impl QuerySet {
                             let mut table_row_operations = Vec::new();
 
                             for row in table.data {
-                                let row_pk = RelationalDB::pk_for_row(&row.data);
+                                let row_pk = match row.id {
+                                    Some(data_key) => PrimaryKey { data_key },
+                                    None => RelationalDB::pk_for_row(&row.data),
+                                };
 
                                 //Skip rows that are already resolved in a previous subscription...
                                 if seen.contains(&(t.table_id, row_pk)) {
