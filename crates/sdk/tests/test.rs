@@ -69,3 +69,14 @@ fn insert_simple_enum() {
 fn insert_enum_with_payload() {
     make_test("insert_enum_with_payload").run();
 }
+
+#[test]
+fn insert_long_table() {
+    make_test("insert_long_table").run();
+}
+
+#[test]
+#[should_panic]
+fn should_fail() {
+    make_test("should_fail").run();
+}

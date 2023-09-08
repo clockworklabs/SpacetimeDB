@@ -80,6 +80,9 @@ fn main() {
         "resubscribe" => exec_resubscribe(),
 
         "reconnect" => exec_reconnect(),
+
+        "should_fail" => exec_should_fail(),
+
         _ => panic!("Unknown test: {}", test),
     }
 }
@@ -878,8 +881,146 @@ fn exec_insert_enum_with_payload() {
     test_counter.wait_for_all();
 }
 
+fn exec_should_fail() {
+    let test_counter = TestCounter::new();
+    let fail = test_counter.add_test("should-fail");
+    fail(Err(anyhow::anyhow!("This is an intentional failure")));
+    test_counter.wait_for_all();
+}
+
+macro_rules! assert_eq_or_bail {
+    ($expected:expr, $found:expr) => {{
+        let expected = &$expected;
+        let found = &$found;
+        if expected != found {
+            anyhow::bail!(
+                "Expected {} => {:?} but found {} => {:?}",
+                stringify!($expected),
+                expected,
+                stringify!($found),
+                found
+            );
+        }
+    }};
+}
+
 fn exec_insert_long_table() {
-    todo!()
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        let mut large_table_result = Some(test_counter.add_test("insert-large-table"));
+        once_on_subscription_applied(move || {
+            let every_primitive_struct = EveryPrimitiveStruct {
+                a: 0,
+                b: 1,
+                c: 2,
+                d: 3,
+                e: 4,
+                f: 0,
+                g: -1,
+                h: -2,
+                i: -3,
+                j: -4,
+                k: false,
+                l: 0.0,
+                m: 1.0,
+                n: "string".to_string(),
+                o: identity().unwrap(),
+            };
+            let every_vec_struct = EveryVecStruct {
+                a: vec![0],
+                b: vec![1],
+                c: vec![2],
+                d: vec![3],
+                e: vec![4],
+                f: vec![0],
+                g: vec![-1],
+                h: vec![-2],
+                i: vec![-3],
+                j: vec![-4],
+                k: vec![false],
+                l: vec![0.0],
+                m: vec![1.0],
+                n: vec!["string".to_string()],
+                o: vec![identity().unwrap()],
+            };
+
+            let every_primitive_dup = every_primitive_struct.clone();
+            let every_vec_dup = every_vec_struct.clone();
+            LargeTable::on_insert(move |row, reducer_event| {
+                if large_table_result.is_some() {
+                    let run_tests = || {
+                        assert_eq_or_bail!(row.a, 0);
+                        assert_eq_or_bail!(row.b, 1);
+                        assert_eq_or_bail!(row.c, 2);
+                        assert_eq_or_bail!(row.d, 3);
+                        assert_eq_or_bail!(row.e, 4);
+                        assert_eq_or_bail!(row.f, 0);
+                        assert_eq_or_bail!(row.g, -1);
+                        assert_eq_or_bail!(row.h, -2);
+                        assert_eq_or_bail!(row.i, -3);
+                        assert_eq_or_bail!(row.j, -4);
+                        assert_eq_or_bail!(row.k, false);
+                        assert_eq_or_bail!(row.l, 0.0);
+                        assert_eq_or_bail!(row.m, 1.0);
+                        assert_eq_or_bail!(&row.n, "string");
+                        assert_eq_or_bail!(row.o, SimpleEnum::Zero);
+                        assert_eq_or_bail!(row.p, EnumWithPayload::Bool(false));
+                        assert_eq_or_bail!(row.q, UnitStruct {});
+                        assert_eq_or_bail!(row.r, ByteStruct { b: 0b10101010 });
+                        assert_eq_or_bail!(row.s, every_primitive_struct);
+                        assert_eq_or_bail!(row.t, every_vec_struct);
+                        if !matches!(reducer_event, Some(ReducerEvent::InsertLargeTable(_))) {
+                            anyhow::bail!(
+                                "Unexpected reducer event: expeced InsertLargeTable but found {:?}",
+                                reducer_event
+                            );
+                        }
+                        Ok(())
+                    };
+                    (large_table_result.take().unwrap())(run_tests());
+                }
+            });
+            insert_large_table(
+                0,
+                1,
+                2,
+                3,
+                4,
+                0,
+                -1,
+                -2,
+                -3,
+                -4,
+                false,
+                0.0,
+                1.0,
+                "string".to_string(),
+                SimpleEnum::Zero,
+                EnumWithPayload::Bool(false),
+                UnitStruct {},
+                ByteStruct { b: 0b10101010 },
+                every_primitive_dup,
+                every_vec_dup,
+            );
+
+            sub_applied_nothing_result(assert_all_tables_empty())
+        });
+    }
+
+    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
 }
 fn exec_resubscribe() {
     todo!()
