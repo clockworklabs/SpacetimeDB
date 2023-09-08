@@ -12,6 +12,7 @@ use crate::protobuf::client_api::{table_row_operation, SubscriptionUpdate, Table
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
+use crate::worker_metrics::WORKER_METRICS;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
@@ -461,7 +462,10 @@ pub enum InitDatabaseError {
 impl ModuleHost {
     pub fn new(threadpool: Arc<HostThreadpool>, mut module: impl Module) -> Self {
         let info = module.info();
-        let instance_pool = LendingPool::new();
+        let waiter_gauge = WORKER_METRICS
+            .instance_queue_length
+            .with_label_values(&info.identity, &info.module_hash);
+        let instance_pool = LendingPool::new(waiter_gauge);
         instance_pool.add_multiple(module.initial_instances()).unwrap();
         let inner = Arc::new(HostControllerActor {
             module: Arc::new(module),
