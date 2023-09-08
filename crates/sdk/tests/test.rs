@@ -76,6 +76,11 @@ fn insert_long_table() {
 }
 
 #[test]
+fn resubscribe() {
+    make_test("resubscribe").run();
+}
+
+#[test]
 #[should_panic]
 fn should_fail() {
     make_test("should_fail").run();

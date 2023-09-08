@@ -1022,9 +1022,87 @@ fn exec_insert_long_table() {
 
     test_counter.wait_for_all();
 }
+
 fn exec_resubscribe() {
-    todo!()
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let connect_result = test_counter.add_test("connect");
+    let subscribe_result = test_counter.add_test("initial-subscribe");
+    let sub_applied_result = test_counter.add_test("initial-subscription-nothing");
+
+    once_on_subscription_applied(move || {
+        sub_applied_result(assert_all_tables_empty());
+    });
+
+    connect_result(connect(LOCALHOST, &name, None));
+
+    once_on_connect(|_| {
+        subscribe_result(subscribe(SUBSCRIBE_ALL));
+    });
+
+    test_counter.wait_for_all();
+
+    let test_counter = TestCounter::new();
+    let mut insert_u8s = (0..=255)
+        .map(|n| Some(test_counter.add_test(format!("insert-{}", n))))
+        .collect::<Vec<_>>();
+    let on_insert_u8 = OneU8::on_insert(move |row, _| {
+        let n = row.n;
+        (insert_u8s[n as usize].take().unwrap())(Ok(()));
+    });
+    for n in 0..=255 {
+        insert_one_u_8(n as u8);
+    }
+    test_counter.wait_for_all();
+    OneU8::remove_on_insert(on_insert_u8);
+
+    let test_counter = TestCounter::new();
+    let mut delete_u8s = (0..128)
+        .map(|n| Some(test_counter.add_test(format!("unsubscribe-{}-delete", n))))
+        .collect::<Vec<_>>();
+    let on_delete_u8 = OneU8::on_delete(move |row, _| {
+        let n = row.n;
+        (delete_u8s[n as usize].take().unwrap())(Ok(()));
+    });
+    let subscribe_less_result = test_counter.add_test("resubscribe-fewer-matches");
+    once_on_subscription_applied(move || {
+        let run_checks = || {
+            assert_eq_or_bail!(128, OneU8::count());
+            if let Some(row) = OneU8::iter().find(|row| row.n < 128) {
+                anyhow::bail!("After subscribing to OneU8 WHERE n > 127, found row with n < {}", row.n);
+            }
+            Ok(())
+        };
+        subscribe_less_result(run_checks());
+    });
+    let subscribe_result = test_counter.add_test("resubscribe");
+    subscribe_result(subscribe(&["SELECT * FROM OneU8 WHERE n > 127"]));
+    test_counter.wait_for_all();
+    OneU8::remove_on_delete(on_delete_u8);
+
+    let test_counter = TestCounter::new();
+
+    let mut insert_u8s = (0..128)
+        .map(|n| Some(test_counter.add_test(format!("resubscribe-{}-insert", n))))
+        .collect::<Vec<_>>();
+    OneU8::on_insert(move |row, _| {
+        let n = row.n;
+        (insert_u8s[n as usize].take().unwrap())(Ok(()));
+    });
+    let subscribe_more_result = test_counter.add_test("resubscribe-more-matches");
+    once_on_subscription_applied(move || {
+        let run_checks = || {
+            assert_eq_or_bail!(256, OneU8::count());
+            Ok(())
+        };
+        subscribe_more_result(run_checks());
+    });
+    let subscribe_result = test_counter.add_test("resubscribe-again");
+    subscribe_result(subscribe(&["SELECT * FROM OneU8"]));
+    test_counter.wait_for_all();
 }
+
 fn exec_reconnect() {
     todo!()
 }
