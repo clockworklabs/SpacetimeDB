@@ -427,7 +427,7 @@ impl InstanceEnv {
             _ => unreachable!("query should always return a table"),
         };
         Ok(std::iter::once(bsatn::to_vec(&row_type))
-            .chain(results.data.into_iter().map(|row| bsatn::to_vec(&row)))
+            .chain(results.data.into_iter().map(|row| bsatn::to_vec(&row.data)))
             .map(|bytes| bytes.expect("encoding algebraic values should never fail")))
     }
 }
