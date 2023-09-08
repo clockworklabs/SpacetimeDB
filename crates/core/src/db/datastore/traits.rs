@@ -2,7 +2,7 @@ use crate::db::relational_db::ST_TABLES_ID;
 use core::fmt;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
-use spacetimedb_lib::DataKey;
+use spacetimedb_lib::{ColumnIndexAttribute, DataKey};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
 use spacetimedb_vm::expr::SourceExpr;
 use std::{ops::RangeBounds, sync::Arc};
@@ -159,11 +159,30 @@ impl From<ColumnSchema> for ColumnDef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstraintSchema {
+    pub(crate) constraint_id: u32,
+    pub(crate) constraint_name: String,
+    pub(crate) kind: ColumnIndexAttribute,
+    pub(crate) table_id: u32,
+    pub(crate) columns: Vec<u32>,
+}
+
+/// This type is just the [ConstraintSchema] without the autoinc fields
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstraintDef {
+    pub(crate) constraint_name: String,
+    pub(crate) kind: ColumnIndexAttribute,
+    pub(crate) table_id: u32,
+    pub(crate) columns: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableSchema {
     pub(crate) table_id: u32,
     pub(crate) table_name: String,
     pub(crate) columns: Vec<ColumnSchema>,
     pub(crate) indexes: Vec<IndexSchema>,
+    pub(crate) constraints: Vec<ConstraintSchema>,
     pub(crate) table_type: StTableType,
     pub(crate) table_access: StAccess,
 }

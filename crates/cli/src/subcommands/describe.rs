@@ -38,6 +38,12 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue)
                 .help("If this flag is present, no identity will be provided when describing the database"),
         )
+        .arg(
+            Arg::new("server")
+                .long("server")
+                .short('s')
+                .help("The nickname, host name or URL of the server hosting the database"),
+        )
         .after_help("Run `spacetime help describe` for more detailed information.\n")
 }
 
@@ -46,23 +52,24 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let expand = !args.get_flag("brief");
     let entity_name = args.get_one::<String>("entity_name");
     let entity_type = args.get_one::<String>("entity_type");
+    let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
     let as_identity = args.get_one::<String>("as_identity");
     let anon_identity = args.get_flag("anon_identity");
 
-    let address = database_address(&config, database).await?;
+    let address = database_address(&config, database, server).await?;
 
     let builder = reqwest::Client::new().get(match entity_name {
-        None => format!("{}/database/schema/{}", config.get_host_url(), address),
+        None => format!("{}/database/schema/{}", config.get_host_url(server)?, address),
         Some(entity_name) => format!(
             "{}/database/schema/{}/{}/{}",
-            config.get_host_url(),
+            config.get_host_url(server)?,
             address,
             format_args!("{}s", entity_type.unwrap()),
             entity_name
         ),
     });
-    let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity).await;
+    let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity, server).await;
     let builder = add_auth_header_opt(builder, &auth_header);
 
     let descr = builder

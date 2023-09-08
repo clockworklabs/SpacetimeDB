@@ -524,7 +524,7 @@ mod tests {
     use crate::db::datastore::traits::IndexDef;
     use crate::db::datastore::traits::TableDef;
     use crate::db::message_log::MessageLog;
-    use crate::db::relational_db::ST_TABLES_ID;
+    use crate::db::relational_db::{open_db, ST_TABLES_ID};
 
     use super::RelationalDB;
     use crate::db::relational_db::make_default_ostorage;
@@ -837,6 +837,58 @@ mod tests {
 
         assert_eq!(rows, vec![5, 6]);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_inc_reload() -> ResultTest<()> {
+        let (stdb, tmp_dir) = make_test_db()?;
+
+        let mut tx = stdb.begin_tx();
+        let schema = TableDef {
+            table_name: "MyTable".to_string(),
+            columns: vec![ColumnDef {
+                col_name: "my_col".to_string(),
+                col_type: AlgebraicType::I64,
+                is_autoinc: true,
+            }],
+            indexes: vec![],
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
+        };
+        let table_id = stdb.create_table(&mut tx, schema)?;
+
+        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
+        assert!(sequence.is_some(), "Sequence not created");
+
+        stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
+
+        let mut rows = stdb
+            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
+            .map(|r| *r.view().elements[0].as_i64().unwrap())
+            .collect::<Vec<i64>>();
+        rows.sort();
+
+        assert_eq!(rows, vec![1]);
+
+        stdb.commit_tx(tx)?;
+        drop(stdb);
+
+        dbg!("reopen...");
+        let stdb = open_db(&tmp_dir, false, true)?;
+
+        let mut tx = stdb.begin_tx();
+
+        stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
+
+        let mut rows = stdb
+            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
+            .map(|r| *r.view().elements[0].as_i64().unwrap())
+            .collect::<Vec<i64>>();
+        rows.sort();
+
+        // Check the second row start after `SEQUENCE_PREALLOCATION_AMOUNT`
+        assert_eq!(rows, vec![1, 4099]);
         Ok(())
     }
 
