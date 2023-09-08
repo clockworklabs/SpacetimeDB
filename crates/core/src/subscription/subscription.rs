@@ -1,4 +1,5 @@
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::relation::RelValue;
 use spacetimedb_lib::PrimaryKey;
 use spacetimedb_sats::{AlgebraicValue, BuiltinValue};
 use std::collections::HashSet;
@@ -49,6 +50,15 @@ impl Subscription {
     }
 }
 
+// If a RelValue has an id (DataKey) return it directly, otherwise we must construct it from the
+// row itself which can be an expensive operation.
+fn pk_for_row(row: &RelValue) -> PrimaryKey {
+    match row.id {
+        Some(data_key) => PrimaryKey { data_key },
+        None => RelationalDB::pk_for_row(&row.data),
+    }
+}
+
 impl QuerySet {
     /// Incremental evaluation of `rows` that matched the [Query] (aka subscriptions)
     ///
@@ -94,10 +104,7 @@ impl QuerySet {
                                 panic!("Fail to extract `{OP_TYPE_FIELD_NAME}` on `{}`", result.head.table_name)
                             };
 
-                            let row_pk = match row.id {
-                                Some(data_key) => PrimaryKey { data_key },
-                                None => RelationalDB::pk_for_row(&row.data),
-                            };
+                            let row_pk = pk_for_row(&row);
 
                             //Skip rows that are already resolved in a previous subscription...
                             if seen.contains(&(table.table_id, row_pk)) {
@@ -144,10 +151,7 @@ impl QuerySet {
                             let mut table_row_operations = Vec::new();
 
                             for row in table.data {
-                                let row_pk = match row.id {
-                                    Some(data_key) => PrimaryKey { data_key },
-                                    None => RelationalDB::pk_for_row(&row.data),
-                                };
+                                let row_pk = pk_for_row(&row);
 
                                 //Skip rows that are already resolved in a previous subscription...
                                 if seen.contains(&(t.table_id, row_pk)) {
