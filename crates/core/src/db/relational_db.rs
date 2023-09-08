@@ -8,15 +8,13 @@ use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
 use crate::address::Address;
-use crate::db::db_metrics::{RDB_DELETE_BY_REL_TIME, RDB_DROP_TABLE_TIME, RDB_INSERT_TIME, RDB_ITER_TIME};
+use crate::db::db_metrics::DB_METRICS;
 use crate::db::messages::commit::Commit;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::hash::Hash;
-use crate::util::prometheus_handle::HistogramVecHandle;
 use fs2::FileExt;
-use prometheus::HistogramVec;
 use spacetimedb_lib::ColumnIndexAttribute;
 use spacetimedb_lib::{data_key::ToDataKey, PrimaryKey};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
@@ -26,11 +24,6 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use super::datastore::locking_tx_datastore::Locking;
-
-/// Starts histogram prometheus measurements for `table_id`.
-fn measure(hist: &'static HistogramVec, table_id: u32) {
-    HistogramVecHandle::new(hist, vec![format!("{}", table_id)]).start();
-}
 
 pub const ST_TABLES_NAME: &str = "st_table";
 pub const ST_COLUMNS_NAME: &str = "st_columns";
@@ -310,7 +303,10 @@ impl RelationalDB {
     }
 
     pub fn drop_table(&self, tx: &mut MutTxId, table_id: u32) -> Result<(), DBError> {
-        measure(&RDB_DROP_TABLE_TIME, table_id);
+        let _guard = DB_METRICS
+            .rdb_drop_table_time
+            .with_label_values(&table_id)
+            .start_timer();
         self.inner.drop_table_mut_tx(tx, TableId(table_id))
     }
 
@@ -396,7 +392,7 @@ impl RelationalDB {
     /// yielding every row in the table identified by `table_id`.
     #[tracing::instrument(skip(self, tx))]
     pub fn iter<'a>(&'a self, tx: &'a MutTxId, table_id: u32) -> Result<Iter<'a>, DBError> {
-        measure(&RDB_ITER_TIME, table_id);
+        let _guard = DB_METRICS.rdb_iter_time.with_label_values(&table_id).start_timer();
         self.inner.iter_mut_tx(tx, TableId(table_id))
     }
 
@@ -435,7 +431,10 @@ impl RelationalDB {
 
     #[tracing::instrument(skip(self, tx))]
     pub fn insert(&self, tx: &mut MutTxId, table_id: u32, row: ProductValue) -> Result<ProductValue, DBError> {
-        measure(&RDB_INSERT_TIME, table_id);
+        let _guard = DB_METRICS
+            .rdb_insert_row_time
+            .with_label_values(&table_id)
+            .start_timer();
         self.inner.insert_mut_tx(tx, TableId(table_id), row)
     }
 
@@ -466,7 +465,10 @@ impl RelationalDB {
         table_id: u32,
         relation: R,
     ) -> Result<Option<u32>, DBError> {
-        measure(&RDB_DELETE_BY_REL_TIME, table_id);
+        let _guard = DB_METRICS
+            .rdb_delete_by_rel_time
+            .with_label_values(&table_id)
+            .start_timer();
         self.inner.delete_by_rel_mut_tx(tx, TableId(table_id), relation)
     }
 

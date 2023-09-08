@@ -49,6 +49,7 @@ log.workspace = true
 once_cell.workspace = true
 openssl.workspace = true
 parking_lot.workspace = true
+paste.workspace = true
 pin-project-lite.workspace = true
 prometheus.workspace = true
 prost.workspace = true

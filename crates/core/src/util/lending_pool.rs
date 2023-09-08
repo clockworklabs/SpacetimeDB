@@ -9,7 +9,10 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use parking_lot::Mutex;
+use prometheus::IntGauge;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+
+use crate::util::prometheus_handle::IntGaugeExt;
 
 use super::notify_once::{NotifiedOnce, NotifyOnce};
 
@@ -27,14 +30,15 @@ impl<T> Clone for LendingPool<T> {
     }
 }
 
-impl<T> Default for LendingPool<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// impl<T> Default for LendingPool<T> {
+//     fn default() -> Self {
+//         Self::new()
+//     }
+// }
 
 struct LendingPoolInner<T> {
     closed_notify: NotifyOnce,
+    waiter_gauge: IntGauge,
     vec: Mutex<PoolVec<T>>,
 }
 
@@ -47,15 +51,32 @@ struct PoolVec<T> {
 pub struct PoolClosed;
 
 impl<T> LendingPool<T> {
-    pub fn new() -> Self {
-        Self::from_iter(std::iter::empty())
+    pub fn new(waiter_gauge: IntGauge) -> Self {
+        Self::from_iter(std::iter::empty(), waiter_gauge)
+    }
+
+    pub fn from_iter<I: IntoIterator<Item = T>>(iter: I, waiter_gauge: IntGauge) -> Self {
+        let deque = VecDeque::from_iter(iter);
+        Self {
+            sem: Arc::new(Semaphore::new(deque.len())),
+            inner: Arc::new(LendingPoolInner {
+                closed_notify: NotifyOnce::new(),
+                waiter_gauge,
+                vec: Mutex::new(PoolVec {
+                    total_count: deque.len(),
+                    deque: Some(deque),
+                }),
+            }),
+        }
     }
 
     pub fn request(&self) -> impl Future<Output = Result<LentResource<T>, PoolClosed>> {
         let acq = self.sem.clone().acquire_owned();
         let pool_inner = self.inner.clone();
+        let waiter_guard = pool_inner.waiter_gauge.inc_scope();
         async move {
             let permit = acq.await.map_err(|_| PoolClosed)?;
+            drop(waiter_guard);
             let resource = pool_inner
                 .vec
                 .lock()
@@ -114,21 +135,7 @@ impl<T> LendingPool<T> {
     }
 }
 
-impl<T> FromIterator<T> for LendingPool<T> {
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        let deque = VecDeque::from_iter(iter);
-        Self {
-            sem: Arc::new(Semaphore::new(deque.len())),
-            inner: Arc::new(LendingPoolInner {
-                closed_notify: NotifyOnce::new(),
-                vec: Mutex::new(PoolVec {
-                    total_count: deque.len(),
-                    deque: Some(deque),
-                }),
-            }),
-        }
-    }
-}
+// impl<T> FromIterator<T> for LendingPool<T> {}
 
 pin_project_lite::pin_project! {
     pub struct Closed<'a> {
