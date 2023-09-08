@@ -134,6 +134,8 @@ impl CommittedState {
         let mut tx_data = TxData { records: vec![] };
         for (table_id, table) in tx_state.insert_tables {
             let commit_table = self.get_or_create_table(table_id, &table.row_type, &table.schema);
+            // The schema may have been modified in the transaction.
+            commit_table.schema = table.schema;
             tx_data.records.extend(table.rows.into_iter().map(|(row_id, row)| {
                 commit_table.insert(row_id, row.clone());
                 let pv = row;
