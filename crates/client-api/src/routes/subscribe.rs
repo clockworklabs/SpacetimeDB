@@ -65,7 +65,7 @@ pub async fn handle_websocket(
         .ok_or(StatusCode::BAD_REQUEST)?;
     let instance_id = database_instance.id;
 
-    log::trace!("Got databsae {} and instance {}", database.id, database_instance.id);
+    log::trace!("Got database {} and instance {}", database.id, database_instance.id);
     let identity_token = auth.creds.token().to_owned();
 
     let host = worker_ctx.host_controller();
