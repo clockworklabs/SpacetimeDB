@@ -1,7 +1,12 @@
 use serde_json::Value;
+use serial_test::serial;
 use spacetimedb_testing::modules::{compile, with_module_async};
 
+// The tests MUST be run in sequence because they read the OS environment
+// and can cause a race when run in parallel.
+
 #[test]
+#[serial]
 fn test_calling_a_reducer() {
     compile("spacetimedb-quickstart");
     with_module_async("spacetimedb-quickstart", |module| async move {
@@ -23,6 +28,7 @@ fn test_calling_a_reducer() {
 }
 
 #[test]
+#[serial]
 fn test_calling_a_reducer_with_private_table() {
     compile("rust-wasm-test");
     with_module_async("rust-wasm-test", |module| async move {

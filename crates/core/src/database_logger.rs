@@ -177,7 +177,7 @@ impl DatabaseLogger {
         let filepath = root.join("0.log");
 
         // TODO: Read backwards from the end of the file to only read in the latest lines
-        let text = tokio::fs::read_to_string(&filepath).await.expect("reading file");
+        let text = tokio::fs::read_to_string(&filepath).await.expect("reading log file");
 
         let Some(num_lines) = num_lines else { return text };
 

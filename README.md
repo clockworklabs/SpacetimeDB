@@ -26,7 +26,7 @@
     &nbsp;
     <a href="https://status.spacetimedb.com"><img src="https://img.shields.io/uptimerobot/ratio/7/m784409192-e472ca350bb615372ededed7?label=cloud%20uptime&style=flat-square"></a>
     &nbsp;
-    <a href="https://hub.docker.com/repository/docker/clockworklabs/spacetimedb"><img src="https://img.shields.io/docker/pulls/clockworklabs/spacetimedb?style=flat-square"></a>
+    <a href="https://hub.docker.com/r/clockworklabs/spacetimedb"><img src="https://img.shields.io/docker/pulls/clockworklabs/spacetimedb?style=flat-square"></a>
     &nbsp;
     <a href="https://github.com/clockworklabs/spacetimedb/blob/master/LICENSE.txt"><img src="https://img.shields.io/badge/license-BSL_1.1-00bfff.svg?style=flat-square"></a>
 </p>
@@ -59,7 +59,7 @@
 
 <br>
 
-## What is SpacetimeDB?
+## What is [SpacetimeDB](https://spacetimedb.com)?
 
 You can think of SpacetimeDB as both a database and server combined into one.
 
@@ -123,6 +123,22 @@ If you'd like to build the `spacetime` CLI tool from source, you can install it 
 cargo install spacetimedb-cli
 ```
 
+### Installing from Source
+
+For MacOS and Linux this is straightforward. Just run the following commands in a terminal:
+
+```bash
+# Install rustup, you can skip this step if you have cargo and the wasm32-unknown-unknown target already installed.
+curl https://sh.rustup.rs -sSf | sh
+# Clone SpacetimeDB
+git clone https://github.com/clockworklabs/SpacetimeDB
+# Build and install the CLI
+cd SpacetimeDB
+cargo install --path ./crates/cli --locked
+```
+
+Windows may require some extra dependencies be installed, including openssl and a specific version of perl. A guide for this will be available soon.
+
 #### Running with Docker
 
 You can execute the `spacetime` CLI tool using Docker to run the SpacetimeDB standalone server without needing to install any command-line tools or other dependencies.
@@ -155,7 +171,7 @@ You can write SpacetimeDB modules in a bunch of popular languages, with many mor
 #### Serverside Libraries
 
 - [Rust](https://spacetimedb.com/docs/server-languages/rust/rust-module-quickstart-guide)
-- [C# (experimental)](https://spacetimedb.com/docs/server-languages/csharp/csharp-module-quickstart-guide)
+- [C# (experimental)](https://spacetimedb.com/docs/server-languages/csharp/csharp-module-reference)
 - Typescript (coming soon)
 - Python (coming soon)
 - C++ (planned)

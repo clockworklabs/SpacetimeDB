@@ -23,6 +23,7 @@ pub struct CommitLog {
     mlog: Option<Arc<Mutex<MessageLog>>>,
     odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
     unwritten_commit: Arc<Mutex<Commit>>,
+    fsync: bool,
 }
 
 impl CommitLog {
@@ -30,11 +31,13 @@ impl CommitLog {
         mlog: Option<Arc<Mutex<MessageLog>>>,
         odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
         unwritten_commit: Commit,
+        fsync: bool,
     ) -> Self {
         Self {
             mlog,
             odb,
             unwritten_commit: Arc::new(Mutex::new(unwritten_commit)),
+            fsync,
         }
     }
 
@@ -50,8 +53,14 @@ impl CommitLog {
             if let Some(mlog) = &self.mlog {
                 let mut mlog = mlog.lock().unwrap();
                 mlog.append(&bytes)?;
-                mlog.sync_all()?;
-                log::trace!("DATABASE: FSYNC");
+                if self.fsync {
+                    mlog.sync_all()?;
+                    let mut odb = self.odb.lock().unwrap();
+                    odb.sync_all()?;
+                    log::trace!("DATABASE: FSYNC");
+                } else {
+                    mlog.flush()?;
+                }
             }
             Ok(Some(bytes.len()))
         } else {

@@ -14,6 +14,7 @@ extern crate proc_macro;
 use std::collections::HashMap;
 use std::time::Duration;
 
+use bitflags::{bitflags, Flags};
 use module::{derive_deserialize, derive_satstype, derive_serialize};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, TokenStreamExt};
@@ -442,22 +443,24 @@ struct Column<'a> {
     attr: ColumnIndexAttribute,
 }
 
-#[derive(Debug)]
-enum ColumnIndexAttribute {
-    UnSet = 0,
-    /// Unique + AutoInc
-    Identity = 1,
-    /// Index unique
-    Unique = 2,
-    ///  Index no unique
-    #[allow(unused)]
-    Indexed = 3,
-    /// Generate the next [Sequence]
-    AutoInc = 4,
-    /// Primary key column (implies Unique)
-    PrimaryKey = 5,
-    /// PrimaryKey + AutoInc
-    PrimaryKeyAuto = 6,
+// TODO: any way to avoid duplication with same structure in bindings crate? Extra crate?
+bitflags! {
+    #[derive(Debug, Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+    struct ColumnIndexAttribute: u8 {
+        const UNSET = Self::empty().bits();
+        ///  Index no unique
+        const INDEXED = 0b0001;
+        /// Generate the next [Sequence]
+        const AUTO_INC = 0b0010;
+        /// Index unique
+        const UNIQUE = Self::INDEXED.bits() | 0b0100;
+        /// Unique + AutoInc
+        const IDENTITY = Self::UNIQUE.bits() | Self::AUTO_INC.bits();
+        /// Primary key column (implies Unique)
+        const PRIMARY_KEY = Self::UNIQUE.bits() | 0b1000;
+        /// PrimaryKey + AutoInc
+        const PRIMARY_KEY_AUTO = Self::PRIMARY_KEY.bits() | Self::AUTO_INC.bits();
+    }
 }
 
 fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
@@ -551,35 +554,27 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
             .try_into()
             .map_err(|_| syn::Error::new_spanned(field.ident, "too many columns; the most a table can have is 256"))?;
 
-        use ColumnIndexAttribute::*;
-        let mut col_attr = UnSet;
+        let mut col_attr = ColumnIndexAttribute::UNSET;
         for attr in field.original_attrs {
             let Some(attr) = ColumnAttr::parse(attr)? else { continue };
             let duplicate = |span| syn::Error::new(span, "duplicate attribute");
-            match attr {
-                ColumnAttr::Unique(span) => match col_attr {
-                    UnSet => col_attr = Unique,
-                    Identity | Unique | PrimaryKey | PrimaryKeyAuto => return Err(duplicate(span)),
-                    Indexed => unreachable!(),
-                    AutoInc => col_attr = Identity,
-                },
-                ColumnAttr::Autoinc(span) => match col_attr {
-                    UnSet => col_attr = AutoInc,
-                    Identity | AutoInc | PrimaryKeyAuto => return Err(duplicate(span)),
-                    Unique => col_attr = Identity,
-                    Indexed => unreachable!(),
-                    PrimaryKey => col_attr = PrimaryKeyAuto,
-                },
-                ColumnAttr::Primarykey(span) => match col_attr {
-                    UnSet => col_attr = PrimaryKey,
-                    Identity | Unique | PrimaryKey | PrimaryKeyAuto => return Err(duplicate(span)),
-                    AutoInc => col_attr = PrimaryKeyAuto,
-                    Indexed => unreachable!(),
-                },
+            let (extra_col_attr, span) = match attr {
+                ColumnAttr::Unique(span) => (ColumnIndexAttribute::UNIQUE, span),
+                ColumnAttr::Autoinc(span) => (ColumnIndexAttribute::AUTO_INC, span),
+                ColumnAttr::Primarykey(span) => (ColumnIndexAttribute::PRIMARY_KEY, span),
+            };
+            // do those attributes intersect (not counting the INDEXED bit which is present in all attributes)?
+            // this will check that no two attributes both have UNIQUE, AUTOINC or PRIMARY_KEY bits set
+            if !(col_attr & extra_col_attr)
+                .difference(ColumnIndexAttribute::INDEXED)
+                .is_empty()
+            {
+                return Err(duplicate(span));
             }
+            col_attr |= extra_col_attr;
         }
 
-        if matches!(col_attr, AutoInc | Identity | PrimaryKeyAuto) {
+        if col_attr.contains(ColumnIndexAttribute::AUTO_INC) {
             let valid_for_autoinc = if let syn::Type::Path(p) = field.ty {
                 // TODO: this is janky as heck
                 matches!(
@@ -631,15 +626,9 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         }));
     }
 
-    let (unique_columns, nonunique_columns): (Vec<_>, Vec<_>) = columns.iter().partition(|x| {
-        matches!(
-            x.attr,
-            ColumnIndexAttribute::Identity
-                | ColumnIndexAttribute::Unique
-                | ColumnIndexAttribute::PrimaryKey
-                | ColumnIndexAttribute::PrimaryKeyAuto
-        )
-    });
+    let (unique_columns, nonunique_columns): (Vec<_>, Vec<_>) = columns
+        .iter()
+        .partition(|x| x.attr.contains(ColumnIndexAttribute::UNIQUE));
 
     let has_unique = !unique_columns.is_empty();
 
@@ -746,9 +735,15 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     let deserialize_impl = derive_deserialize(&sats_ty);
     let serialize_impl = derive_serialize(&sats_ty);
     let schema_impl = derive_satstype(&sats_ty, false);
-    let column_attrs = columns
-        .iter()
-        .map(|col| Ident::new(&format!("{:?}", col.attr), Span::call_site()));
+    let column_attrs = columns.iter().map(|col| {
+        Ident::new(
+            ColumnIndexAttribute::FLAGS
+                .iter()
+                .find_map(|f| (col.attr == *f.value()).then_some(f.name()))
+                .expect("Invalid column attribute"),
+            Span::call_site(),
+        )
+    });
     let tabletype_impl = quote! {
         impl spacetimedb::TableType for #original_struct_ident {
             const TABLE_NAME: &'static str = #table_name;

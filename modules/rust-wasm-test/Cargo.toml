@@ -10,9 +10,9 @@ crate-type = ["cdylib"]
 # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
 bench = false
 
-
 [dependencies]
-anyhow = "1.0.0"
 spacetimedb = { path = "../../crates/bindings" }
 spacetimedb-lib = { path = "../../crates/lib" } # TODO: this should not ever be necessary. `spacetimedb` should provide all module dependencies.
-log = "0.4"
+
+anyhow.workspace = true
+log.workspace = true

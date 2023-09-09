@@ -2,7 +2,7 @@ use crate::db::relational_db::ST_TABLES_ID;
 use core::fmt;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
-use spacetimedb_lib::DataKey;
+use spacetimedb_lib::{ColumnIndexAttribute, DataKey};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
 use spacetimedb_vm::expr::SourceExpr;
 use std::{ops::RangeBounds, sync::Arc};
@@ -113,9 +113,9 @@ impl From<&ColumnSchema> for spacetimedb_lib::table::ColumnDef {
             // TODO(cloutiertyler): !!! This is not correct !!! We do not have the information regarding constraints here.
             // We should remove this field from the ColumnDef struct.
             attr: if value.is_autoinc {
-                spacetimedb_lib::ColumnIndexAttribute::AutoInc
+                spacetimedb_lib::ColumnIndexAttribute::AUTO_INC
             } else {
-                spacetimedb_lib::ColumnIndexAttribute::UnSet
+                spacetimedb_lib::ColumnIndexAttribute::UNSET
             },
             // if value.is_autoinc && value.is_unique {
             //     spacetimedb_lib::ColumnIndexAttribute::Identity
@@ -159,11 +159,30 @@ impl From<ColumnSchema> for ColumnDef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstraintSchema {
+    pub(crate) constraint_id: u32,
+    pub(crate) constraint_name: String,
+    pub(crate) kind: ColumnIndexAttribute,
+    pub(crate) table_id: u32,
+    pub(crate) columns: Vec<u32>,
+}
+
+/// This type is just the [ConstraintSchema] without the autoinc fields
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstraintDef {
+    pub(crate) constraint_name: String,
+    pub(crate) kind: ColumnIndexAttribute,
+    pub(crate) table_id: u32,
+    pub(crate) columns: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableSchema {
     pub(crate) table_id: u32,
     pub(crate) table_name: String,
     pub(crate) columns: Vec<ColumnSchema>,
     pub(crate) indexes: Vec<IndexSchema>,
+    pub(crate) constraints: Vec<ConstraintSchema>,
     pub(crate) table_type: StTableType,
     pub(crate) table_access: StAccess,
 }
@@ -316,22 +335,8 @@ pub struct TxData {
     pub(crate) records: Vec<TxRecord>,
 }
 
-pub trait Blob {
-    fn view(&self) -> &[u8];
-}
-
 pub trait Data: Into<ProductValue> {
     fn view(&self) -> &ProductValue;
-}
-
-pub trait BlobRow: Send + Sync {
-    type TableId: Copy;
-    type RowId: Copy;
-
-    type Blob: Blob;
-    type BlobRef: Clone;
-
-    fn blob_to_owned(&self, blob_ref: Self::BlobRef) -> Self::Blob;
 }
 
 pub trait DataRow: Send + Sync {
@@ -356,100 +361,6 @@ pub trait MutTx {
     fn begin_mut_tx(&self) -> Self::MutTxId;
     fn rollback_mut_tx(&self, tx: Self::MutTxId);
     fn commit_mut_tx(&self, tx: Self::MutTxId) -> Result<Option<TxData>>;
-}
-
-pub trait Blobstore: BlobRow {
-    type Iter<'a>: Iterator<Item = Self::BlobRef>
-    where
-        Self: 'a;
-
-    fn iter_blobs(&self, table_id: TableId) -> Result<Self::Iter<'_>>;
-
-    fn get_blob(&self, table_id: TableId, row_id: Self::RowId) -> Result<Option<Self::BlobRef>>;
-}
-
-pub trait MutBlobstore: Blobstore {
-    fn delete_blob(&self, table_id: TableId, row_id: Self::RowId) -> Result<()>;
-
-    fn insert_blob(&self, table_id: TableId, row: &[u8]) -> Result<Self::RowId>;
-}
-
-pub trait Datastore: DataRow {
-    type Iter<'a>: Iterator<Item = Self::DataRef>
-    where
-        Self: 'a;
-
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::DataRef>
-    where
-        Self: 'a;
-
-    type IterByColEq<'a>: Iterator<Item = Self::DataRef>
-    where
-        Self: 'a;
-
-    fn iter(&self, table_id: TableId) -> Result<Self::Iter<'_>>;
-
-    fn iter_by_col_range<R: RangeBounds<AlgebraicValue>>(
-        &self,
-        table_id: TableId,
-        col_id: ColId,
-        range: R,
-    ) -> Result<Self::IterByColRange<'_, R>>;
-
-    fn iter_by_col_eq<'a>(
-        &'a self,
-        table_id: TableId,
-        col_id: ColId,
-        value: &'a AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a>>;
-
-    fn get(&self, table_id: TableId, row_id: Self::RowId) -> Result<Option<Self::DataRef>>;
-}
-
-pub trait MutDatastore: Datastore {
-    fn delete(&self, table_id: TableId, row_id: Self::RowId) -> Result<()>;
-
-    fn insert(&self, table_id: TableId, row: ProductValue) -> Result<Self::RowId>;
-}
-
-pub trait TxBlobstore: BlobRow + Tx {
-    type Iter<'a>: Iterator<Item = Self::BlobRef>
-    where
-        Self: 'a;
-
-    fn iter_blobs_tx<'a>(&'a self, tx: &'a Self::TxId, table_id: TableId) -> Result<Self::Iter<'a>>;
-
-    fn get_blob_tx<'a>(
-        &'a self,
-        tx: &'a Self::TxId,
-        table_id: TableId,
-        row_id: Self::RowId,
-    ) -> Result<Option<Self::BlobRef>>;
-}
-
-pub trait MutTxBlobstore: TxBlobstore + MutTx {
-    fn iter_blobs_mut_tx<'a>(&'a self, tx: &'a Self::MutTxId, table_id: TableId) -> Result<Self::Iter<'a>>;
-
-    fn get_blob_mut_tx<'a>(
-        &'a self,
-        tx: &'a Self::MutTxId,
-        table_id: TableId,
-        row_id: Self::RowId,
-    ) -> Result<Option<Self::BlobRef>>;
-
-    fn delete_blob_mut_tx<'a>(
-        &'a self,
-        tx: &'a mut Self::MutTxId,
-        table_id: TableId,
-        row_id: Self::RowId,
-    ) -> Result<()>;
-
-    fn insert_blob_mut_tx<'a>(
-        &'a self,
-        tx: &'a mut Self::MutTxId,
-        table_id: TableId,
-        row: &[u8],
-    ) -> Result<Self::RowId>;
 }
 
 pub trait TxDatastore: DataRow + Tx {

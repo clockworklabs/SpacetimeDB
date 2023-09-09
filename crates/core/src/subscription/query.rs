@@ -5,7 +5,8 @@ use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{Column, FieldName, MemTable};
+use spacetimedb_lib::relation::{Column, FieldName, MemTable, RelValue};
+use spacetimedb_lib::DataKey;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
 
@@ -20,6 +21,7 @@ pub struct Query {
 }
 
 impl Query {
+    #[tracing::instrument(skip(self))]
     pub fn queries_of_table_id<'a>(&'a self, table: &'a DatabaseTableUpdate) -> impl Iterator<Item = QueryExpr> + '_ {
         self.queries.iter().filter_map(move |x| {
             if x.source.get_db_table().map(|x| x.table_id) == Some(table.table_id) {
@@ -35,6 +37,7 @@ impl Query {
 pub const OP_TYPE_FIELD_NAME: &str = "__op_type";
 
 //HACK: To recover the `op_type` of this particular row I add a "hidden" column `OP_TYPE_FIELD_NAME`
+#[tracing::instrument(skip_all)]
 pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
     let mut q = of;
     let table_access = q.source.table_access();
@@ -48,7 +51,7 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
         t.data.extend(data.ops.iter().map(|row| {
             let mut new = row.row.clone();
             new.elements[pos] = row.op_type.into();
-            new
+            RelValue::new(&t.head, &new, Some(DataKey::from_data(&row.row_pk)))
         }));
     } else {
         t.head.fields.push(Column::new(
@@ -58,7 +61,8 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
         for row in &data.ops {
             let mut new = row.row.clone();
             new.elements.push(row.op_type.into());
-            t.data.push(new);
+            t.data
+                .push(RelValue::new(&t.head, &new, Some(DataKey::from_data(&row.row_pk))));
         }
     }
 
@@ -68,6 +72,7 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
 }
 
 /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
+#[tracing::instrument(skip_all)]
 pub(crate) fn run_query(
     db: &RelationalDB,
     tx: &mut MutTxId,
@@ -77,6 +82,7 @@ pub(crate) fn run_query(
     execute_single_sql(db, tx, CrudExpr::Query(query.clone()), auth)
 }
 
+#[tracing::instrument(skip(relational_db, tx))]
 pub fn compile_query(relational_db: &RelationalDB, tx: &MutTxId, input: &str) -> Result<Query, DBError> {
     let input = input.trim();
     if input.is_empty() {

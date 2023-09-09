@@ -6,7 +6,7 @@ use crate::identity::Identity;
 use crate::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
 use crate::stdb_path;
 
-use spacetimedb_lib::name::{DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld};
+use spacetimedb_lib::name::{DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef};
 use spacetimedb_lib::recovery::RecoveryCode;
 use spacetimedb_sats::bsatn;
 
@@ -123,9 +123,7 @@ impl ControlDb {
             None => {
                 if try_register_tld {
                     // Let's try to automatically register this TLD for the identity
-                    let result = self
-                        .spacetime_register_tld(domain.tld().clone(), owner_identity)
-                        .await?;
+                    let result = self.spacetime_register_tld(domain.to_tld(), owner_identity).await?;
                     if let RegisterTldResult::Success { .. } = result {
                         // This identity now owns this TLD
                     } else {
@@ -167,7 +165,8 @@ impl ControlDb {
     /// * `owner_identity` - The identity that should own this domain name.
     pub async fn spacetime_register_tld(&self, tld: Tld, owner_identity: Identity) -> Result<RegisterTldResult> {
         let tree = self.db.open_tree("top_level_domains")?;
-        let current_owner = tree.get(tld.as_lowercase().as_bytes())?;
+        let key = tld.to_lowercase();
+        let current_owner = tree.get(&key)?;
         match current_owner {
             Some(owner) => {
                 if Identity::from_slice(&owner[..]) == owner_identity {
@@ -177,7 +176,7 @@ impl ControlDb {
                 }
             }
             None => {
-                tree.insert(tld.as_lowercase().as_bytes(), owner_identity.as_bytes())?;
+                tree.insert(key, owner_identity.as_bytes())?;
                 Ok(RegisterTldResult::Success { domain: tld })
             }
         }
@@ -226,9 +225,9 @@ impl ControlDb {
     ///
     /// # Arguments
     ///  * `domain` - The domain to lookup
-    pub async fn spacetime_lookup_tld(&self, domain: &Tld) -> Result<Option<Identity>> {
+    pub async fn spacetime_lookup_tld(&self, domain: impl AsRef<TldRef>) -> Result<Option<Identity>> {
         let tree = self.db.open_tree("top_level_domains")?;
-        match tree.get(domain.as_lowercase().as_bytes())? {
+        match tree.get(domain.as_ref().to_lowercase().as_bytes())? {
             Some(owner) => Ok(Some(Identity::from_slice(&owner[..]))),
             None => Ok(None),
         }

@@ -1,4 +1,4 @@
-use std::net::Ipv6Addr;
+use std::{fmt::Display, net::Ipv6Addr};
 
 use anyhow::Context as _;
 use hex::FromHex as _;
@@ -13,8 +13,13 @@ use crate::sats;
 /// TODO: Evaluate replacing this with a literal Ipv6Address which is assigned
 /// permanently to a database.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Address(u128);
+
+impl Display for Address {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_hex())
+    }
+}
 
 impl Address {
     const ABBREVIATION_LEN: usize = 16;
@@ -59,8 +64,18 @@ impl Address {
     }
 }
 
-impl_serialize!([] Address, (self, ser) =>self.0.to_be_bytes().serialize(ser));
+impl_serialize!([] Address, (self, ser) => self.0.to_be_bytes().serialize(ser));
 impl_deserialize!([] Address, de => <[u8; 16]>::deserialize(de).map(|v| Self(u128::from_be_bytes(v))));
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Address {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_hex().serialize(serializer)
+    }
+}
 
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for Address {
@@ -73,4 +88,30 @@ impl<'de> serde::Deserialize<'de> for Address {
     }
 }
 
-impl_st!([] Address, _ts => sats::AlgebraicType::U128);
+impl_st!([] Address, _ts => sats::AlgebraicType::bytes());
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bsatn_roundtrip() {
+        let addr = Address(rand::random());
+        let ser = sats::bsatn::to_vec(&addr).unwrap();
+        let de = sats::bsatn::from_slice(&ser).unwrap();
+        assert_eq!(addr, de);
+    }
+
+    #[cfg(feature = "serde")]
+    mod serde {
+        use super::*;
+
+        #[test]
+        fn test_serde_roundtrip() {
+            let addr = Address(rand::random());
+            let ser = serde_json::to_vec(&addr).unwrap();
+            let de = serde_json::from_slice(&ser).unwrap();
+            assert_eq!(addr, de);
+        }
+    }
+}

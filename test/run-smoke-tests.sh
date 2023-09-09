@@ -44,7 +44,16 @@ while [ $# != 0 ] ; do
 	esac
 done
 
-rustup update
+# Make sure the active toolchain is installed including the wasm target (as
+# specified in rust-toolchain.toml), and clippy. Do NOT try to update other
+# toolchains people may have on their system, nor rustup itself -- this can take
+# a long time, e.g. when people have "nightly" installed without a specific
+# version.
+#
+# Note: `show active-toolchain` installs the toolchain if it is missing,
+# `update` adds the wasm target if the toolchain is there but without that
+# target.
+rustup update --no-self-update "$(rustup show active-toolchain|cut -d' ' -f1)"
 rustup component add clippy
 
 source "lib.include"
@@ -70,14 +79,17 @@ fi
 
 cargo run build "$RESET_PROJECT_PATH" -s -d
 
-if [ "$(docker ps | grep "node" -c)" != 1 ] ; then
-	echo "Docker container not found, is SpacetimeDB running?"
-	exit 1
-fi
-
 export SPACETIME_SKIP_CLIPPY=1
-CONTAINER_NAME=$(docker ps | grep "node" | awk '{print $NF}')
-docker logs "$CONTAINER_NAME"
+
+if [ -z "${NO_DOCKER:-}" ] ; then
+	if [ "$(docker ps | grep "node" -c)" != 1 ] ; then
+		echo "Docker container not found, is SpacetimeDB running?"
+		exit 1
+	fi
+
+	CONTAINER_NAME=$(docker ps | grep "node" | awk '{print $NF}')
+	docker logs "$CONTAINER_NAME"
+fi
 
 execute_procedural_test() {
 	if [ $# != 1 ] ; then
@@ -155,7 +167,7 @@ process_test_result() {
 		# Cleanup the test execution only if the test passed
 		rm -rf "$PROJECT_PATH" "$out_file_path" "$config_file_path"
 	else
-		docker logs "$CONTAINER_NAME"
+		[ -z "${NO_DOCKER:-}" ] && docker logs "$CONTAINER_NAME"
 		cat "$out_file_path"
 		echo "Config file:"
 		cat "$config_file_path"
@@ -182,6 +194,17 @@ TESTS_OUT_FILE=()
 TESTS_NAME=()
 TESTS_PROJECT_PATH=()
 TESTS_CONFIG_FILE=()
+
+# Make sure background tests are torn down even if we don't get to `wait`
+# for them (e.g. on ^C). Mainly for $RUN_PARALLEL.
+terminate_jobs() {
+	local running=""
+	running="$(jobs -pr)"
+	if [ -n "$running" ]; then
+		kill "$running"
+	fi
+}
+trap 'terminate_jobs' SIGINT SIGTERM EXIT
 
 for smoke_test in "${TESTS[@]}" ; do
 	if [ ${#EXCLUDE_TESTS[@]} -ne 0 ] && list_contains "$smoke_test" "${EXCLUDE_TESTS[@]}"; then

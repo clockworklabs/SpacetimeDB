@@ -71,7 +71,8 @@ impl SpaceDb {
     pub fn new() -> anyhow::Result<Self> {
         let tmp_dir = TempDir::new("stdb_test")?;
         let in_memory = false;
-        let conn = open_db(&tmp_dir, in_memory)?;
+        let fsync = false;
+        let conn = open_db(&tmp_dir, in_memory, fsync)?;
         Ok(Self {
             conn,
             tmp_dir,
@@ -117,7 +118,7 @@ impl AsyncDB for SpaceDb {
         for row in r.data {
             let mut row_vec = vec![];
 
-            for value in row.elements {
+            for value in row.data.elements {
                 let value = match value {
                     AlgebraicValue::Builtin(x) => match x {
                         BuiltinValue::Bool(x) => {

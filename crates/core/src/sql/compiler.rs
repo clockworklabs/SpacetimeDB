@@ -14,6 +14,7 @@ use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceEx
 use spacetimedb_vm::operator::OpCmp;
 
 /// Compile the `SQL` expression into a `ast`
+#[tracing::instrument(skip(db, tx))]
 pub fn compile_sql(db: &RelationalDB, tx: &MutTxId, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
     let ast = compile_to_ast(db, tx, sql_text)?;
 

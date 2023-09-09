@@ -21,9 +21,6 @@ where
         .nest("/prometheus", prometheus::router())
         .nest("/metrics", metrics::router());
 
-    #[cfg(feature = "tracelogging")]
-    let router = router.nest("/tracelog", spacetimedb_client_api::routes::tracelog::router());
-
     let cors = CorsLayer::new()
         .allow_headers([AUTHORIZATION, ACCEPT])
         .allow_methods(Any)

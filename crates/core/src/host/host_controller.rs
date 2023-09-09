@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::ops::Sub;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::module_host::{
     Catalog, EntityDef, EventStatus, ModuleHost, ModuleStarter, NoSuchModule, UpdateDatabaseResult,
@@ -217,7 +217,7 @@ impl HostController {
         let key = module_host_context.dbic.database_instance_id;
 
         let (module_host, start_module, start_scheduler) =
-            tokio::task::block_in_place(|| Self::make_module_host(module_host_context, self.energy_monitor.clone()))?;
+            Self::make_module_host(module_host_context, self.energy_monitor.clone())?;
 
         let old_module = self.modules.lock().unwrap().insert(key, module_host.clone());
         if let Some(old_module) = old_module {
@@ -235,13 +235,15 @@ impl HostController {
     ) -> anyhow::Result<(ModuleHost, ModuleStarter, SchedulerStarter)> {
         let module_hash = hash_bytes(&mhc.program_bytes);
         let (module_host, module_starter) = match mhc.host_type {
-            HostType::Wasmer => ModuleHost::spawn(wasmer::make_actor(
-                mhc.dbic,
-                module_hash,
-                &mhc.program_bytes,
-                mhc.scheduler,
-                energy_monitor,
-            )?),
+            HostType::Wasmer => {
+                // make_actor with block_in_place since it's going to take some time to compute.
+                let start = Instant::now();
+                let actor = tokio::task::block_in_place(|| {
+                    wasmer::make_actor(mhc.dbic, module_hash, &mhc.program_bytes, mhc.scheduler, energy_monitor)
+                })?;
+                log::trace!("wasmer::make_actor blocked for {}us", start.elapsed().as_micros());
+                ModuleHost::spawn(actor)
+            }
         };
         Ok((module_host, module_starter, mhc.scheduler_starter))
     }
@@ -265,22 +267,6 @@ impl HostController {
 
     fn take_module_host(&self, instance_id: u64) -> Option<ModuleHost> {
         self.modules.lock().unwrap().remove(&instance_id)
-    }
-
-    /// If a module's DB activity is being traced (for diagnostics etc.), retrieves the current contents of its trace stream.
-    #[cfg(feature = "tracelogging")]
-    pub async fn get_trace(&self, instance_id: u64) -> Result<Option<bytes::Bytes>, anyhow::Error> {
-        let module_host = self.get_module_host(instance_id)?;
-        let trace = module_host.get_trace().await.unwrap();
-        Ok(trace)
-    }
-
-    /// If a module's DB activity is being traced (for diagnostics etc.), stop tracing it.
-    #[cfg(feature = "tracelogging")]
-    pub async fn stop_trace(&self, instance_id: u64) -> Result<(), anyhow::Error> {
-        let module_host = self.get_module_host(instance_id)?;
-        module_host.stop_trace().await.unwrap();
-        Ok(())
     }
 }
 

@@ -48,6 +48,7 @@ pub mod protobuf {
     pub use spacetimedb_client_api_messages::*;
 }
 pub mod client;
+pub mod config;
 pub mod control_db;
 pub mod database_instance_context;
 pub mod database_instance_context_controller;

@@ -72,6 +72,7 @@ impl RelationalDB {
         root: impl AsRef<Path>,
         message_log: Option<Arc<Mutex<MessageLog>>>,
         odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
+        fsync: bool,
     ) -> Result<Self, DBError> {
         log::trace!("DATABASE: OPENING");
 
@@ -100,7 +101,7 @@ impl RelationalDB {
                     last_commit_offset = Some(commit.commit_offset);
                     for transaction in commit.transactions {
                         transaction_offset += 1;
-                        // NOTE: Although I am creating a blobstore transaction in a
+                        // NOTE: Although I am creating a datastore transaction in a
                         // one to one fashion for each message log transaction, this
                         // is just to reduce memory usage while inserting. We don't
                         // really care about inserting these transactionally as long
@@ -136,7 +137,7 @@ impl RelationalDB {
                 transactions: Vec::new(),
             }
         };
-        let commit_log = CommitLog::new(message_log, odb.clone(), unwritten_commit);
+        let commit_log = CommitLog::new(message_log, odb.clone(), unwritten_commit, fsync);
 
         // i.e. essentially bootstrap the creation of the schema
         // tables by hard coding the schema of the schema tables
@@ -311,13 +312,6 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn table_exist(&self, tx: &MutTxId, table_name: &str) -> Result<Option<u32>, DBError> {
-        self.inner
-            .table_id_from_name_mut_tx(tx, table_name)
-            .map(|x| x.map(|x| x.0))
-    }
-
-    #[tracing::instrument(skip_all)]
     pub fn table_name_from_id(&self, tx: &MutTxId, table_id: u32) -> Result<Option<String>, DBError> {
         self.inner.table_name_from_id_mut_tx(tx, TableId(table_id))
     }
@@ -334,13 +328,18 @@ impl RelationalDB {
             return Ok(None);
         };
         let unique_index = table.indexes.iter().find(|x| x.col_id == col_id).map(|x| x.is_unique);
-        Ok(Some(match (column.is_autoinc, unique_index) {
-            (true, Some(true)) => ColumnIndexAttribute::Identity,
-            (true, Some(false) | None) => ColumnIndexAttribute::AutoInc,
-            (false, Some(true)) => ColumnIndexAttribute::Unique,
-            (false, Some(false)) => ColumnIndexAttribute::Indexed,
-            (false, None) => ColumnIndexAttribute::UnSet,
-        }))
+        let mut attr = ColumnIndexAttribute::UNSET;
+        if column.is_autoinc {
+            attr |= ColumnIndexAttribute::AUTO_INC;
+        }
+        if let Some(is_unique) = unique_index {
+            attr |= if is_unique {
+                ColumnIndexAttribute::UNIQUE
+            } else {
+                ColumnIndexAttribute::INDEXED
+            };
+        }
+        Ok(Some(attr))
     }
 
     #[tracing::instrument(skip_all)]
@@ -478,7 +477,7 @@ fn make_default_ostorage(in_memory: bool, path: impl AsRef<Path>) -> Result<Box<
     })
 }
 
-pub fn open_db(path: impl AsRef<Path>, in_memory: bool) -> Result<RelationalDB, DBError> {
+pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<RelationalDB, DBError> {
     let path = path.as_ref();
     let mlog = if in_memory {
         None
@@ -486,7 +485,7 @@ pub fn open_db(path: impl AsRef<Path>, in_memory: bool) -> Result<RelationalDB, 
         Some(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
     };
     let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, path.join("odb"))?));
-    let stdb = RelationalDB::open(path, mlog, odb)?;
+    let stdb = RelationalDB::open(path, mlog, odb, fsync)?;
 
     Ok(stdb)
 }
@@ -505,7 +504,8 @@ pub(crate) mod tests_utils {
     pub(crate) fn make_test_db() -> Result<(RelationalDB, TempDir), DBError> {
         let tmp_dir = TempDir::new("stdb_test")?;
         let in_memory = false;
-        let stdb = open_db(&tmp_dir, in_memory)?;
+        let fsync = false;
+        let stdb = open_db(&tmp_dir, in_memory, fsync)?;
         Ok((stdb, tmp_dir))
     }
 }
@@ -524,7 +524,7 @@ mod tests {
     use crate::db::datastore::traits::IndexDef;
     use crate::db::datastore::traits::TableDef;
     use crate::db::message_log::MessageLog;
-    use crate::db::relational_db::ST_TABLES_ID;
+    use crate::db::relational_db::{open_db, ST_TABLES_ID};
 
     use super::RelationalDB;
     use crate::db::relational_db::make_default_ostorage;
@@ -568,7 +568,7 @@ mod tests {
             tmp_dir.path().join("odb"),
         )?));
 
-        match RelationalDB::open(tmp_dir.path(), mlog, odb) {
+        match RelationalDB::open(tmp_dir.path(), mlog, odb, true) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
             }
@@ -620,7 +620,7 @@ mod tests {
         schema.table_name = "MyTable".to_string();
         stdb.create_table(&mut tx, schema.clone())?;
         let result = stdb.create_table(&mut tx, schema);
-        assert!(matches!(result, Err(_)));
+        result.expect_err("create_table should error when called twice");
         Ok(())
     }
 
@@ -737,7 +737,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
         let result = stdb.drop_table(&mut tx, table_id);
-        assert!(matches!(result, Err(_)));
+        result.expect_err("drop_table should fail");
         Ok(())
     }
 
@@ -837,6 +837,58 @@ mod tests {
 
         assert_eq!(rows, vec![5, 6]);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_inc_reload() -> ResultTest<()> {
+        let (stdb, tmp_dir) = make_test_db()?;
+
+        let mut tx = stdb.begin_tx();
+        let schema = TableDef {
+            table_name: "MyTable".to_string(),
+            columns: vec![ColumnDef {
+                col_name: "my_col".to_string(),
+                col_type: AlgebraicType::I64,
+                is_autoinc: true,
+            }],
+            indexes: vec![],
+            table_type: StTableType::User,
+            table_access: StAccess::Public,
+        };
+        let table_id = stdb.create_table(&mut tx, schema)?;
+
+        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
+        assert!(sequence.is_some(), "Sequence not created");
+
+        stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
+
+        let mut rows = stdb
+            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
+            .map(|r| *r.view().elements[0].as_i64().unwrap())
+            .collect::<Vec<i64>>();
+        rows.sort();
+
+        assert_eq!(rows, vec![1]);
+
+        stdb.commit_tx(tx)?;
+        drop(stdb);
+
+        dbg!("reopen...");
+        let stdb = open_db(&tmp_dir, false, true)?;
+
+        let mut tx = stdb.begin_tx();
+
+        stdb.insert(&mut tx, table_id, product![AlgebraicValue::I64(0)])?;
+
+        let mut rows = stdb
+            .iter_by_col_range(&tx, table_id, 0, AlgebraicValue::I64(0)..)?
+            .map(|r| *r.view().elements[0].as_i64().unwrap())
+            .collect::<Vec<i64>>();
+        rows.sort();
+
+        // Check the second row start after `SEQUENCE_PREALLOCATION_AMOUNT`
+        assert_eq!(rows, vec![1, 4099]);
         Ok(())
     }
 

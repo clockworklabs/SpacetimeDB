@@ -126,7 +126,7 @@ impl<S: Relation, U: Relation> IntoIterator for UnionAll<S, U> {
     type IntoIter = std::iter::Chain<S::IntoIter, U::IntoIter>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.s.into_iter().chain(self.u.into_iter())
+        itertools::chain(self.s, self.u)
     }
 }
 

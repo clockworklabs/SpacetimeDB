@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use wasmer::wasmparser::Operator;
-use wasmer::{
-    AsStoreRef, CompilerConfig, EngineBuilder, Memory, MemoryAccessError, Module, RuntimeError, Store, WasmPtr,
-};
+use wasmer::{AsStoreRef, CompilerConfig, EngineBuilder, Memory, MemoryAccessError, Module, RuntimeError, WasmPtr};
 use wasmer_middlewares::Metering;
 
 use crate::database_instance_context::DatabaseInstanceContext;
@@ -46,10 +44,9 @@ pub fn make_actor(
     compiler_config.opt_level(wasmer::CraneliftOptLevel::Speed);
     compiler_config.push_middleware(metering);
 
-    let engine = EngineBuilder::new(compiler_config).engine();
+    let engine: wasmer::Engine = EngineBuilder::new(compiler_config).into();
 
-    let store = Store::new(&engine);
-    let module = Module::new(&store, program_bytes).map_err(|e| ModuleCreationError::WasmCompileError(e.into()))?;
+    let module = Module::new(&engine, program_bytes).map_err(|e| ModuleCreationError::WasmCompileError(e.into()))?;
 
     let abi = abi::determine_spacetime_abi(program_bytes)?;
 
@@ -84,7 +81,7 @@ impl Mem {
             memory: exports.get_memory("memory")?.clone(),
         })
     }
-    fn view(&self, store: &impl AsStoreRef) -> wasmer::MemoryView<'_> {
+    fn view<'a>(&self, store: &'a impl AsStoreRef) -> wasmer::MemoryView<'a> {
         self.memory.view(store)
     }
 

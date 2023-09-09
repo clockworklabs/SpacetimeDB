@@ -1,18 +1,18 @@
-use crate::callbacks::{CredentialStore, DbCallbacks, ReducerCallbacks, SubscriptionAppliedCallbacks};
+use crate::callbacks::{
+    CredentialStore, DbCallbacks, DisconnectCallbacks, ReducerCallbacks, SubscriptionAppliedCallbacks,
+};
 use crate::client_api_messages;
 use crate::client_cache::{ClientCache, ClientCacheView, RowCallbackReminders};
 use crate::identity::Credentials;
 use crate::reducer::{AnyReducerEvent, Reducer};
 use crate::websocket::DbConnection;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use futures::stream::StreamExt;
 use futures_channel::mpsc;
 use spacetimedb_sats::bsatn;
 use std::sync::{Arc, Mutex};
-use tokio::{
-    runtime::{self, Builder, Runtime},
-    task::JoinHandle,
-};
+use tokio::runtime::{self, Builder, Runtime};
+use tokio::task::JoinHandle;
 
 /// A thread-safe mutable place that can be shared by multiple referents.
 type SharedCell<T> = Arc<Mutex<T>>;
@@ -57,6 +57,7 @@ pub struct BackgroundDbConnection {
     pub(crate) db_callbacks: SharedCell<DbCallbacks>,
     pub(crate) reducer_callbacks: SharedCell<ReducerCallbacks>,
     pub(crate) subscription_callbacks: SharedCell<SubscriptionAppliedCallbacks>,
+    pub(crate) disconnect_callbacks: SharedCell<DisconnectCallbacks>,
 }
 
 // When called from within an async context, return a handle to it (and no
@@ -193,6 +194,7 @@ async fn receiver_loop(
     reducer_callbacks: SharedCell<ReducerCallbacks>,
     credentials: SharedCell<CredentialStore>,
     subscription_callbacks: SharedCell<SubscriptionAppliedCallbacks>,
+    disconnect_callbacks: SharedCell<DisconnectCallbacks>,
 ) {
     while let Some(msg) = recv.next().await {
         match msg {
@@ -232,6 +234,12 @@ async fn receiver_loop(
             other => log::info!("Unknown message: {:?}", other),
         }
     }
+    let final_state = client_cache.lock().expect("ClientCache Mutex is poisoned");
+    let final_state = ClientCacheView::clone(&final_state);
+    disconnect_callbacks
+        .lock()
+        .expect("DisconnectCallbacks Mutex is poisoned")
+        .handle_disconnect(final_state);
 }
 
 impl BackgroundDbConnection {
@@ -245,6 +253,7 @@ impl BackgroundDbConnection {
         let reducer_callbacks = Arc::new(Mutex::new(ReducerCallbacks::without_handle_event(handle.clone())));
         let credentials = Arc::new(Mutex::new(CredentialStore::without_credentials(&handle)));
         let subscription_callbacks = Arc::new(Mutex::new(SubscriptionAppliedCallbacks::new(&handle)));
+        let disconnect_callbacks = Arc::new(Mutex::new(DisconnectCallbacks::new(&handle)));
 
         Ok(BackgroundDbConnection {
             runtime,
@@ -257,6 +266,7 @@ impl BackgroundDbConnection {
             db_callbacks,
             reducer_callbacks,
             subscription_callbacks,
+            disconnect_callbacks,
         })
     }
 
@@ -272,6 +282,7 @@ impl BackgroundDbConnection {
             self.reducer_callbacks.clone(),
             self.credentials.clone(),
             self.subscription_callbacks.clone(),
+            self.disconnect_callbacks.clone(),
         ))
     }
 
@@ -338,12 +349,23 @@ impl BackgroundDbConnection {
         Ok(())
     }
 
+    pub fn disconnect(&mut self) {
+        self.send_chan = None;
+        self.client_cache = None;
+        if let Some(h) = self.websocket_loop_handle.take() {
+            let _ = self.handle.block_on(h);
+        }
+        if let Some(h) = self.recv_handle.take() {
+            let _ = self.handle.block_on(h);
+        }
+    }
+
     fn send_message(&self, message: client_api_messages::Message) -> Result<()> {
         self.send_chan
             .as_ref()
-            .ok_or(anyhow!("Cannot send message before connecting"))?
+            .context("Cannot send message before connecting")?
             .unbounded_send(message)
-            .with_context(|| "Sending message to remote DB")
+            .context("Sending message to remote DB")
     }
 
     pub(crate) fn subscribe(&self, queries: &[&str]) -> Result<()> {

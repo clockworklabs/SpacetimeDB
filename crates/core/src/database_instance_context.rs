@@ -5,7 +5,7 @@ use crate::db::ostorage::memory_object_db::MemoryObjectDB;
 use crate::db::ostorage::sled_object_db::SledObjectDB;
 use crate::db::ostorage::ObjectDB;
 use crate::db::relational_db::RelationalDB;
-use crate::db::Storage;
+use crate::db::{Config, FsyncPolicy, Storage};
 use crate::identity::Identity;
 use crate::messages::control_db::Database;
 use std::path::{Path, PathBuf};
@@ -15,7 +15,6 @@ use std::sync::{Arc, Mutex};
 pub struct DatabaseInstanceContext {
     pub database_instance_id: u64,
     pub database_id: u64,
-    pub trace_log: bool,
     pub identity: Identity,
     pub address: Address,
     pub logger: Arc<Mutex<DatabaseLogger>>,
@@ -23,7 +22,7 @@ pub struct DatabaseInstanceContext {
 }
 
 impl DatabaseInstanceContext {
-    pub fn from_database(storage: Storage, database: &Database, instance_id: u64, root_db_path: PathBuf) -> Arc<Self> {
+    pub fn from_database(config: Config, database: &Database, instance_id: u64, root_db_path: PathBuf) -> Arc<Self> {
         let mut db_path = root_db_path;
         db_path.extend([database.address.to_hex(), instance_id.to_string()]);
         db_path.push("database");
@@ -31,10 +30,9 @@ impl DatabaseInstanceContext {
         let log_path = DatabaseLogger::filepath(&database.address, instance_id);
 
         Self::new(
-            storage,
+            config,
             instance_id,
             database.id,
-            database.trace_log,
             database.identity,
             database.address,
             db_path,
@@ -51,16 +49,15 @@ impl DatabaseInstanceContext {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        storage: Storage,
+        config: Config,
         database_instance_id: u64,
         database_id: u64,
-        trace_log: bool,
         identity: Identity,
         address: Address,
         db_path: PathBuf,
         log_path: &Path,
     ) -> Arc<Self> {
-        let message_log = match storage {
+        let message_log = match config.storage {
             Storage::Memory => None,
             Storage::Disk => {
                 let mlog_path = db_path.join("mlog");
@@ -68,7 +65,7 @@ impl DatabaseInstanceContext {
             }
         };
 
-        let odb = match storage {
+        let odb = match config.storage {
             Storage::Memory => Box::<MemoryObjectDB>::default(),
             Storage::Disk => {
                 let odb_path = db_path.join("odb");
@@ -80,11 +77,12 @@ impl DatabaseInstanceContext {
         Arc::new(Self {
             database_instance_id,
             database_id,
-            trace_log,
             identity,
             address,
             logger: Arc::new(Mutex::new(DatabaseLogger::open(log_path))),
-            relational_db: Arc::new(RelationalDB::open(db_path, message_log, odb).unwrap()),
+            relational_db: Arc::new(
+                RelationalDB::open(db_path, message_log, odb, config.fsync != FsyncPolicy::Never).unwrap(),
+            ),
         })
     }
 

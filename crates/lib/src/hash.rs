@@ -46,6 +46,7 @@ impl Hash {
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> Hash {
     let data: [u8; HASH_SIZE] = Keccak256::digest(bytes).into();
     Hash { data }

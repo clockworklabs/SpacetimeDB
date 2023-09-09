@@ -42,9 +42,7 @@ pub async fn handle_websocket(
     log::trace!("Handling WebSocket subscription request, getting or creating auth");
     let auth = auth.get_or_create(&*worker_ctx).await?;
 
-    log::trace!("Auth: {}", auth.identity.to_hex());
-    log::trace!("Resolving address: {:?}", name_or_address);
-    let address = name_or_address.resolve(&*worker_ctx).await?;
+    let address = name_or_address.resolve(&*worker_ctx).await?.into();
 
     let (res, ws_upgrade, protocol) =
         ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
@@ -179,10 +177,11 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
                 }
                 continue;
             }
-            () = client.module.exited() => {
+            () = client.module.exited(), if !closed => {
                 if let Err(e) = ws.close(Some(CloseFrame { code: CloseCode::Away, reason: "module exited".into() })).await {
                     log::warn!("error closing: {e:#}")
                 }
+                closed = true;
                 continue;
             }
             _ = liveness_check_interval.tick() => {

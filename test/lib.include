@@ -35,6 +35,16 @@ reset_project() {
 	export PROJECT_PATH
 }
 
+# This cleans up the temporary project directory after a test
+clear_project() {
+    rm -rf "$PROJECT_PATH"
+}
+
+# This cleans up the temporary config file after a test
+clear_config() {
+    rm -f "$SPACETIME_CONFIG_FILE"
+}
+
 random_string() {
 	if [[ "$OSTYPE" == "darwin"* ]]; then
 		echo $RANDOM | md5 -q | head -c 20

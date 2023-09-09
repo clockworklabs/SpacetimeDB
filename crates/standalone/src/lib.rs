@@ -18,7 +18,7 @@ use spacetimedb::client::ClientActorIndex;
 use spacetimedb::control_db::ControlDb;
 use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
-use spacetimedb::db::{db_metrics, Storage};
+use spacetimedb::db::{db_metrics, Config};
 use spacetimedb::hash::Hash;
 use spacetimedb::host::UpdateOutcome;
 use spacetimedb::host::{scheduler::Scheduler, HostController};
@@ -46,17 +46,14 @@ pub struct StandaloneEnv {
     client_actor_index: ClientActorIndex,
     public_key: DecodingKey,
     private_key: EncodingKey,
+    public_key_bytes: Box<[u8]>,
 
-    /// Whether databases in this environment will be created entirely in memory
-    /// or otherwise persist their message log and object store to disk.
-    ///
-    /// Note that this does not apply to the StandaloneEnv's own control_db
-    /// or object_db.
-    storage: Storage,
+    /// The following config applies to the whole environment minus the control_db and object_db.
+    config: Config,
 }
 
 impl StandaloneEnv {
-    pub async fn init(storage: Storage) -> anyhow::Result<Arc<Self>> {
+    pub async fn init(config: Config) -> anyhow::Result<Arc<Self>> {
         let worker_db = WorkerDb::init()?;
         let object_db = ObjectDb::init()?;
         let db_inst_ctx_controller = DatabaseInstanceContextController::new();
@@ -64,7 +61,7 @@ impl StandaloneEnv {
         let energy_monitor = Arc::new(StandaloneEnergyMonitor::new());
         let host_controller = Arc::new(HostController::new(energy_monitor.clone()));
         let client_actor_index = ClientActorIndex::new();
-        let (public_key, private_key) = get_or_create_keys()?;
+        let (public_key, private_key, public_key_bytes) = get_or_create_keys()?;
         let this = Arc::new(Self {
             worker_db,
             control_db,
@@ -74,14 +71,15 @@ impl StandaloneEnv {
             client_actor_index,
             public_key,
             private_key,
-            storage,
+            public_key_bytes,
+            config,
         });
         energy_monitor.set_standalone_env(this.clone());
         Ok(this)
     }
 }
 
-fn get_or_create_keys() -> anyhow::Result<(DecodingKey, EncodingKey)> {
+fn get_or_create_keys() -> anyhow::Result<(DecodingKey, EncodingKey, Box<[u8]>)> {
     let public_key_path =
         get_key_path("SPACETIMEDB_JWT_PUB_KEY").expect("SPACETIMEDB_JWT_PUB_KEY must be set to a valid path");
     let private_key_path =
@@ -105,10 +103,12 @@ fn get_or_create_keys() -> anyhow::Result<(DecodingKey, EncodingKey)> {
         anyhow::bail!("Unable to read private key for JWT token signing");
     }
 
-    let encoding_key = EncodingKey::from_ec_pem(&private_key_bytes.unwrap())?;
-    let decoding_key = DecodingKey::from_ec_pem(&public_key_bytes.unwrap())?;
+    let public_key_bytes = Box::<[u8]>::from(public_key_bytes.unwrap());
 
-    Ok((decoding_key, encoding_key))
+    let encoding_key = EncodingKey::from_ec_pem(&private_key_bytes.unwrap())?;
+    let decoding_key = DecodingKey::from_ec_pem(&public_key_bytes)?;
+
+    Ok((decoding_key, encoding_key, public_key_bytes))
 }
 
 fn read_key(path: &Path) -> anyhow::Result<Vec<u8>> {
@@ -244,7 +244,6 @@ impl spacetimedb_client_api::ControlCtx for StandaloneEnv {
         host_type: HostType,
         num_replicas: u32,
         force: bool,
-        trace_log: bool,
     ) -> Result<(), anyhow::Error> {
         let database = Database {
             id: 0,
@@ -253,7 +252,6 @@ impl spacetimedb_client_api::ControlCtx for StandaloneEnv {
             host_type,
             num_replicas,
             program_bytes_address: *program_bytes_address,
-            trace_log,
         };
 
         if force {
@@ -332,8 +330,8 @@ impl spacetimedb_client_api::ControlNodeDelegate for StandaloneEnv {
     async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> spacetimedb::control_db::Result<()> {
         let energy_balance = self.control_db.get_energy_balance(identity)?;
         let energy_balance = energy_balance.unwrap_or(EnergyQuanta(0));
-        println!("Withdrawing {} energy from {}", amount.0, identity);
-        println!("Old balance: {}", energy_balance.0);
+        log::trace!("Withdrawing {} energy from {}", amount.0, identity);
+        log::trace!("Old balance: {}", energy_balance.0);
         let new_balance = energy_balance - amount;
         self.control_db
             .set_energy_balance(*identity, new_balance.as_quanta())
@@ -345,6 +343,9 @@ impl spacetimedb_client_api::ControlNodeDelegate for StandaloneEnv {
     }
     fn private_key(&self) -> &EncodingKey {
         &self.private_key
+    }
+    fn public_key_bytes(&self) -> &[u8] {
+        &self.public_key_bytes
     }
 }
 
@@ -472,10 +473,10 @@ impl StandaloneEnv {
                 database_instance_id: instance.id,
                 initialized: false,
             };
+            state.initialized = true;
+            self.worker_db.upsert_database_instance_state(state.clone()).unwrap();
             self.init_module_on_database_instance(instance.database_id, instance.id)
                 .await?;
-            self.worker_db.upsert_database_instance_state(state.clone()).unwrap();
-            state.initialized = true;
             self.worker_db.upsert_database_instance_state(state).unwrap();
             Ok(())
         }
@@ -542,7 +543,7 @@ impl StandaloneEnv {
                 (dbic, scheduler.new_with_same_db())
             } else {
                 let dbic =
-                    DatabaseInstanceContext::from_database(self.storage, &database, instance_id, root_db_path.clone());
+                    DatabaseInstanceContext::from_database(self.config, &database, instance_id, root_db_path.clone());
                 let (scheduler, scheduler_starter) = Scheduler::open(dbic.scheduler_db_path(root_db_path))?;
                 self.db_inst_ctx_controller.insert(dbic.clone(), scheduler.clone());
                 (dbic, (scheduler, scheduler_starter))
