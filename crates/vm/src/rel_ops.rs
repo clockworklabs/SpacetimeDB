@@ -211,7 +211,7 @@ where
         let extract = &mut self.extractor;
         if let Some(v) = self.iter.next()? {
             let row = extract(v.as_val_ref())?;
-            return Ok(Some(RelValue::new(&self.head, &row, None)));
+            return Ok(Some(RelValue::new(row, None)));
         }
         Ok(None)
     }
@@ -293,7 +293,7 @@ where
                 if let Some(rhs) = rvv.pop() {
                     if (self.predicate)(lhs.as_val_ref(), rhs.as_val_ref())? {
                         self.count.add_exact(1);
-                        return Ok(Some(lhs.clone().extend(&self.head, rhs)));
+                        return Ok(Some(lhs.clone().extend(rhs)));
                     }
                 }
             }

@@ -87,32 +87,39 @@ impl ColumnOp {
         }
     }
 
-    fn reduce(&self, row: RelValueRef, value: &ColumnOp) -> Result<AlgebraicValue, ErrorLang> {
+    fn reduce(&self, row: RelValueRef, value: &ColumnOp, header: &Header) -> Result<AlgebraicValue, ErrorLang> {
         match value {
-            ColumnOp::Field(field) => Ok(row.get(field).clone()),
-            ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs)?.into()),
+            ColumnOp::Field(field) => Ok(row.get(field, header).clone()),
+            ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs, header)?.into()),
         }
     }
 
-    fn reduce_bool(&self, row: RelValueRef, value: &ColumnOp) -> Result<bool, ErrorLang> {
+    fn reduce_bool(&self, row: RelValueRef, value: &ColumnOp, header: &Header) -> Result<bool, ErrorLang> {
         match value {
             ColumnOp::Field(field) => {
-                let field = row.get(field);
+                let field = row.get(field, header);
 
                 match field.as_bool() {
                     Some(b) => Ok(*b),
                     None => Err(ErrorType::FieldBool(field.clone()).into()),
                 }
             }
-            ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs)?),
+            ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs, header)?),
         }
     }
 
-    fn compare_bin_op(&self, row: RelValueRef, op: OpQuery, lhs: &ColumnOp, rhs: &ColumnOp) -> Result<bool, ErrorVm> {
+    fn compare_bin_op(
+        &self,
+        row: RelValueRef,
+        op: OpQuery,
+        lhs: &ColumnOp,
+        rhs: &ColumnOp,
+        header: &Header,
+    ) -> Result<bool, ErrorVm> {
         match op {
             OpQuery::Cmp(op) => {
-                let lhs = self.reduce(row, lhs)?;
-                let rhs = self.reduce(row, rhs)?;
+                let lhs = self.reduce(row, lhs, header)?;
+                let rhs = self.reduce(row, rhs, header)?;
 
                 Ok(match op {
                     OpCmp::Eq => lhs == rhs,
@@ -124,8 +131,8 @@ impl ColumnOp {
                 })
             }
             OpQuery::Logic(op) => {
-                let lhs = self.reduce_bool(row, lhs)?;
-                let rhs = self.reduce_bool(row, rhs)?;
+                let lhs = self.reduce_bool(row, lhs, header)?;
+                let rhs = self.reduce_bool(row, rhs, header)?;
 
                 Ok(match op {
                     OpLogic::And => lhs && rhs,
@@ -135,13 +142,13 @@ impl ColumnOp {
         }
     }
 
-    pub fn compare(&self, row: RelValueRef) -> Result<bool, ErrorVm> {
+    pub fn compare(&self, row: RelValueRef, header: &Header) -> Result<bool, ErrorVm> {
         match self {
             ColumnOp::Field(field) => {
-                let lhs = row.get(field);
+                let lhs = row.get(field, header);
                 Ok(*lhs.as_bool().unwrap())
             }
-            ColumnOp::Cmp { op, lhs, rhs } => self.compare_bin_op(row, *op, lhs, rhs),
+            ColumnOp::Cmp { op, lhs, rhs } => self.compare_bin_op(row, *op, lhs, rhs, header),
         }
     }
 }

@@ -49,14 +49,16 @@ pub fn build_query<'a>(
     for q in query.query {
         result = match q {
             Query::Select(cmp) => {
-                let iter = result.select(move |row| cmp.compare(row));
+                let header = result.head().clone();
+                let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
             Query::Project(cols) => {
                 if cols.is_empty() {
                     result
                 } else {
-                    let iter = result.project(&cols.clone(), move |row| Ok(row.project(&cols)?))?;
+                    let header = result.head().clone();
+                    let iter = result.project(&cols.clone(), move |row| Ok(row.project(&cols, &header)?))?;
                     Box::new(iter)
                 }
             }
@@ -76,21 +78,25 @@ pub fn build_query<'a>(
                     }
                 };
                 let lhs = result;
+                let key_lhs_header = lhs.head().clone();
+                let key_rhs_header = rhs.head().clone();
+                let col_lhs_header = lhs.head().clone();
+                let col_rhs_header = rhs.head().clone();
 
                 let iter = lhs.join_inner(
                     rhs,
                     move |row| {
-                        let f = row.get(&key_lhs);
+                        let f = row.get(&key_lhs, &key_lhs_header);
                         Ok(f.into())
                     },
                     move |row| {
-                        let f = row.get(&key_rhs);
+                        let f = row.get(&key_rhs, &key_rhs_header);
                         Ok(f.into())
                     },
-                    move |lhs, rhs| {
-                        let lhs = lhs.get(&col_lhs);
-                        let rhs = rhs.get(&col_rhs);
-                        Ok(lhs == rhs)
+                    move |l, r| {
+                        let l = l.get(&col_lhs, &col_lhs_header);
+                        let r = r.get(&col_rhs, &col_rhs_header);
+                        Ok(l == r)
                     },
                 )?;
                 Box::new(iter)
@@ -343,7 +349,7 @@ impl RelOps for TableCursor<'_> {
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         if let Some(row) = self.iter.next() {
-            return Ok(Some(RelValue::new(self.head(), row.view(), Some(*row.id()))));
+            return Ok(Some(row.into()));
         };
         Ok(None)
     }
@@ -370,7 +376,7 @@ where
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         if let Some(row) = self.iter.next() {
-            return Ok(Some(RelValue::new(self.head(), &row, None)));
+            return Ok(Some(RelValue::new(row, None)));
         };
         Ok(None)
     }
