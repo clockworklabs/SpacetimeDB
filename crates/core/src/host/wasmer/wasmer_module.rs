@@ -176,6 +176,12 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
 
         let mem = Mem::extract(&instance.exports).unwrap();
 
+        // We could (and did in the past) parse the ABI version manually before the instantiation,
+        // but it gets complicated in presence of wasm-opt optimisations which might split encoded
+        // versions like `[...other data...]\00\00\03\00[...other data...]` by zeroes
+        // into several segments, so there is no single data segment containing the entire version.
+        // Instead, it's more reliable to extract the version from an instantiated module
+        // when all the data segments are loaded into the flat memory at correct offsets.
         let abi_version = instance
             .exports
             .get_global(STDB_ABI_SYM)
