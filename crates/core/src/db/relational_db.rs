@@ -505,7 +505,7 @@ pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<R
         Some(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
     };
     let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, path.join("odb"))?));
-    let stdb = RelationalDB::open(path, mlog, odb, Address::from_arr(&[0u8; 16]), fsync)?;
+    let stdb = RelationalDB::open(path, mlog, odb, Address::zero(), fsync)?;
 
     Ok(stdb)
 }
@@ -589,7 +589,7 @@ mod tests {
             tmp_dir.path().join("odb"),
         )?));
 
-        match RelationalDB::open(tmp_dir.path(), mlog, odb, Address::from_arr(&[0u8; 16]), true) {
+        match RelationalDB::open(tmp_dir.path(), mlog, odb, Address::zero(), true) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
             }
