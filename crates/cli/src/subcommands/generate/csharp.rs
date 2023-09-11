@@ -1121,7 +1121,8 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 AlgebraicType::Map(_) => todo!(),
                 AlgebraicType::Ref(type_ref) => match &ctx.typespace[*type_ref] {
                     AlgebraicType::Sum(sum) if sum.is_simple_enum() => {
-                        json_args.push_str(format!("new SpacetimeDB.EnumWrapper<{}>({})", arg_type_str, arg_name).as_str());
+                        json_args
+                            .push_str(format!("new SpacetimeDB.EnumWrapper<{}>({})", arg_type_str, arg_name).as_str());
                     }
                     AlgebraicType::Sum(_) => unimplemented!(),
                     _ => json_args.push_str(&arg_name),
