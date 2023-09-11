@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 
-namespace Namespace 
+namespace SpacetimeDB
 {
     public class SomeWrapper<T>
     {
