@@ -4,7 +4,6 @@ use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, SequenceId, TableDef};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
-use itertools::Itertools;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::{FieldExpr, Relation};
@@ -178,9 +177,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         let result = self._eval_query(query)?;
 
         match result {
-            Code::Table(result) => {
-                self._execute_delete(&table, result.data.into_iter().map(|row| row.data).collect_vec())
-            }
+            Code::Table(result) => self._execute_delete(&table, result.data),
             _ => Ok(result),
         }
     }
@@ -188,9 +185,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
     fn insert_query(&mut self, table: &Table, query: QueryCode) -> Result<Code, ErrorVm> {
         let result = self._eval_query(query)?;
         match result {
-            Code::Table(result) => {
-                self._execute_insert(table, result.data.into_iter().map(|row| row.data).collect_vec())
-            }
+            Code::Table(result) => self._execute_insert(table, result.data),
             _ => Ok(result),
         }
     }
@@ -287,12 +282,9 @@ impl ProgramVm for DbProgram<'_, '_> {
                     Code::Table(result) => result,
                     _ => return Ok(result),
                 };
-                self._execute_delete(
-                    &table,
-                    deleted.data.clone().into_iter().map(|row| row.data).collect_vec(),
-                )?;
+                self._execute_delete(&table, deleted.data.clone())?;
 
-                let to_insert = mem_table(table.head(), deleted.data.into_iter().map(|row| row.data));
+                let to_insert = mem_table(table.head(), deleted.data);
                 insert.table = Table::MemTable(to_insert);
 
                 let result = self.insert_query(&table, insert)?;
@@ -343,7 +335,7 @@ impl RelOps for TableCursor<'_> {
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         if let Some(row) = self.iter.next() {
-            return Ok(Some(RelValue::new(self.head(), row.view(), Some(*row.id()))));
+            return Ok(Some(RelValue::new(self.head(), row.view())));
         };
         Ok(None)
     }
@@ -370,7 +362,7 @@ where
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         if let Some(row) = self.iter.next() {
-            return Ok(Some(RelValue::new(self.head(), &row, None)));
+            return Ok(Some(RelValue::new(self.head(), &row)));
         };
         Ok(None)
     }
