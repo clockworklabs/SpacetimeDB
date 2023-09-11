@@ -25,7 +25,6 @@ namespace SpacetimeDB
             writer.WritePropertyName(value.ToString());
             writer.WriteRawValue("{}");
             writer.WriteEndObject();
-
         }
     }
 }

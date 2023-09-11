@@ -7,14 +7,16 @@ namespace SpacetimeDB
     {
         public override bool CanConvert(Type objectType)
         {
-			if(objectType.IsGenericType) {
-				var genericType = objectType.GetGenericTypeDefinition();
-                if(genericType == typeof(SomeWrapper<>)) {
+            if (objectType.IsGenericType)
+            {
+                var genericType = objectType.GetGenericTypeDefinition();
+                if (genericType == typeof(SomeWrapper<>))
+                {
                     return true;
                 }
-			}
+            }
 
-			return false;
+            return false;
         }
 
 
@@ -31,15 +33,18 @@ namespace SpacetimeDB
         public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
         {
             writer.WriteStartObject();
-			var wrappedValue = value.GetType().GetProperty("Value").GetValue(value);
+            var wrappedValue = value.GetType().GetProperty("Value").GetValue(value);
 
-			if (wrappedValue != null) {
-            	writer.WritePropertyName("some");
-            	serializer.Serialize(writer, wrappedValue);
-			} else {
-            	writer.WritePropertyName("none");
-				writer.WriteRawValue("{}");
-			}
+            if (wrappedValue != null)
+            {
+                writer.WritePropertyName("some");
+                serializer.Serialize(writer, wrappedValue);
+            }
+            else
+            {
+                writer.WritePropertyName("none");
+                writer.WriteRawValue("{}");
+            }
 
             writer.WriteEndObject();
         }
