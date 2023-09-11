@@ -31,8 +31,16 @@ namespace SpacetimeDB
         public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
         {
             writer.WriteStartObject();
-            writer.WritePropertyName("some");
-            serializer.Serialize(writer, value);
+			var wrappedValue = value.GetType().GetProperty("Value").GetValue(value);
+
+			if (wrappedValue != null) {
+            	writer.WritePropertyName("some");
+            	serializer.Serialize(writer, wrappedValue);
+			} else {
+            	writer.WritePropertyName("none");
+				writer.WriteRawValue("{}");
+			}
+
             writer.WriteEndObject();
         }
     }
