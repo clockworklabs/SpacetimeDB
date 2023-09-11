@@ -239,18 +239,6 @@ impl MessageLog {
         self.root.clone()
     }
 
-    pub fn iter(&self) -> MessageLogIter {
-        self.iter_from(0)
-    }
-
-    pub fn iter_from(&self, start_offset: u64) -> MessageLogIter {
-        MessageLogIter {
-            offset: start_offset,
-            message_log: self,
-            open_segment_file: None,
-        }
-    }
-
     /// Obtains an iterator over all segments in the log, in the order they were
     /// created.
     ///
@@ -305,19 +293,6 @@ impl MessageLog {
 
     fn open_segment_mut(&mut self) -> &mut Segment {
         self.segments.last_mut().expect("at least one segment must exist")
-    }
-
-    fn segment_for_offset(&self, offset: u64) -> Option<Segment> {
-        let prev = self.segments[0];
-        for segment in &self.segments {
-            if segment.min_offset > offset {
-                return Some(prev);
-            }
-        }
-        if offset <= self.open_segment_max_offset {
-            return Some(*self.segments.last().unwrap());
-        }
-        None
     }
 }
 
@@ -436,56 +411,6 @@ impl Iterator for Segments {
             info: segment,
             path: self.root.join(segment.name()).with_extension("log"),
         })
-    }
-}
-
-pub struct MessageLogIter<'a> {
-    offset: u64,
-    message_log: &'a MessageLog,
-    open_segment_file: Option<BufReader<File>>,
-}
-
-impl<'a> Iterator for MessageLogIter<'a> {
-    type Item = Vec<u8>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let open_segment_file: &mut BufReader<File>;
-        if let Some(f) = &mut self.open_segment_file {
-            open_segment_file = f;
-        } else {
-            let segment = self.message_log.segment_for_offset(self.offset).unwrap();
-            let file = fs::OpenOptions::new()
-                .read(true)
-                .open(self.message_log.root.join(segment.name() + ".log"))
-                .unwrap();
-            let file = BufReader::new(file);
-            self.open_segment_file = Some(file);
-            open_segment_file = self.open_segment_file.as_mut().unwrap();
-        }
-
-        // TODO: use offset to jump to the right spot in the file
-        // open_segment_file.seek_relative(byte_offset(self.offset));
-
-        let mut buf = [0; HEADER_SIZE];
-        if let Err(err) = open_segment_file.read_exact(&mut buf) {
-            match err.kind() {
-                std::io::ErrorKind::UnexpectedEof => return None,
-                _ => panic!("MessageLogIter: {:?}", err),
-            }
-        };
-        let message_len = u32::from_le_bytes(buf);
-
-        let mut buf = vec![0; message_len as usize];
-        if let Err(err) = open_segment_file.read_exact(&mut buf) {
-            match err.kind() {
-                std::io::ErrorKind::UnexpectedEof => return None,
-                _ => panic!("MessageLogIter: {:?}", err),
-            }
-        }
-
-        self.offset += 1;
-
-        Some(buf)
     }
 }
 
