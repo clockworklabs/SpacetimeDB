@@ -25,7 +25,7 @@ type RtResult<T> = Result<T, RuntimeError>;
 fn mem_err(err: MemoryAccessError) -> RuntimeError {
     match err {
         MemoryAccessError::HeapOutOfBounds | MemoryAccessError::Overflow => {
-            RuntimeError::from_trap(wasmer_vm::Trap::lib(wasmer_vm::TrapCode::HeapAccessOutOfBounds))
+            RuntimeError::from(wasmer_vm::Trap::lib(wasmer_vm::TrapCode::HeapAccessOutOfBounds))
         }
         _ => RuntimeError::user(err.into()),
     }

@@ -21,6 +21,12 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
                     .long_help(
                     "The identity to check the balance for. If no identity is provided, the default one will be used.",
                 ),
+            )
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .short('s')
+                    .help("The nickname, host name or URL of the server from which to request balance information"),
             ),
         clap::Command::new("set-balance")
             .about("Update the current budget balance for a database")
@@ -36,6 +42,12 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
                     .long_help(
                         "The identity to set a balance for. If no identity is provided, the default one will be used.",
                     ),
+            )
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .short('s')
+                    .help("The nickname, host name or URL of the server on which to update the identity's balance"),
             )
             .arg(
                 Arg::new("quiet")
@@ -65,9 +77,10 @@ async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), an
     let hex_id = args.get_one::<String>("identity");
     let balance = *args.get_one::<i128>("balance").unwrap();
     let quiet = args.get_flag("quiet");
+    let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
-    let hex_id = hex_id_or_default(hex_id, &config);
-    let res = set_balance(&reqwest::Client::new(), &config, hex_id, balance).await?;
+    let hex_id = hex_id_or_default(hex_id, &config, server);
+    let res = set_balance(&reqwest::Client::new(), &config, hex_id, balance, server).await?;
 
     if !quiet {
         println!("{}", res.text().await?);
@@ -79,10 +92,11 @@ async fn exec_update_balance(config: Config, args: &ArgMatches) -> Result<(), an
 async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
     let hex_id = args.get_one::<String>("identity");
-    let hex_id = hex_id_or_default(hex_id, &config);
+    let server = args.get_one::<String>("server").map(|s| s.as_ref());
+    let hex_id = hex_id_or_default(hex_id, &config, server);
 
     let status = reqwest::Client::new()
-        .get(format!("{}/energy/{}", config.get_host_url(), hex_id))
+        .get(format!("{}/energy/{}", config.get_host_url(server)?, hex_id,))
         .send()
         .await?
         .error_for_status()?
@@ -94,8 +108,8 @@ async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
     Ok(())
 }
 
-fn hex_id_or_default<'a>(hex_id: Option<&'a String>, config: &'a Config) -> &'a String {
-    hex_id.unwrap_or_else(|| &config.get_default_identity_config().unwrap().identity)
+fn hex_id_or_default<'a>(hex_id: Option<&'a String>, config: &'a Config, server: Option<&str>) -> &'a String {
+    hex_id.unwrap_or_else(|| &config.get_default_identity_config(server).unwrap().identity)
 }
 
 pub(super) async fn set_balance(
@@ -103,12 +117,13 @@ pub(super) async fn set_balance(
     config: &Config,
     hex_identity: &str,
     balance: i128,
+    server: Option<&str>,
 ) -> anyhow::Result<reqwest::Response> {
     // TODO: this really should be form data in POST body, not query string parameter, but gotham
     // does not support that on the server side without an extension.
     // see https://github.com/gotham-rs/gotham/issues/11
     client
-        .post(format!("{}/energy/{}", config.get_host_url(), hex_identity))
+        .post(format!("{}/energy/{}", config.get_host_url(server)?, hex_identity,))
         .query(&[("balance", balance)])
         .send()
         .await?

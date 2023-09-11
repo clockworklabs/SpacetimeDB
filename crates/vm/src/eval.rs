@@ -145,6 +145,7 @@ fn build_typed<P: ProgramVm>(p: &mut P, node: Expr) -> ExprOpt {
 /// Compile the [Expr] into a type-annotated AST [Tree<ExprOpt>].
 ///
 /// Then validate & type-check it.
+#[tracing::instrument(skip_all)]
 pub fn optimize<P: ProgramVm>(p: &mut P, code: Expr) -> Result<ExprOpt, ErrorType> {
     let result = build_typed(p, code);
     check_types(&mut p.env_mut().ty, &result)?;
@@ -196,6 +197,7 @@ fn compile_query(q: QueryExprOpt) -> QueryCode {
 /// Second pass:
 ///
 /// Compiles [Tree<ExprOpt>] into [Code] moving the execution into closures.
+#[tracing::instrument(skip_all)]
 fn compile<P: ProgramVm>(p: &mut P, node: ExprOpt) -> Result<Code, ErrorVm> {
     Ok(match node {
         ExprOpt::Value(x) => Code::Value(x.of),
@@ -400,6 +402,7 @@ pub fn eval<P: ProgramVm>(p: &mut P, code: Code) -> Code {
 
 pub type IterRows<'a> = dyn RelOps + 'a;
 
+#[tracing::instrument(skip_all)]
 pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<IterRows<'_>>, ErrorVm> {
     for q in query {
         result = match q {
@@ -543,7 +546,7 @@ mod tests {
     use spacetimedb_lib::auth::StAccess;
     use spacetimedb_lib::error::RelationError;
     use spacetimedb_lib::identity::AuthCtx;
-    use spacetimedb_lib::relation::{FieldName, MemTable};
+    use spacetimedb_lib::relation::{FieldName, MemTable, RelValue};
 
     fn fib(n: u64) -> u64 {
         if n < 2 {
@@ -717,9 +720,10 @@ mod tests {
         let head = q.source.head();
 
         let result = run_ast(p, q.into());
+        let row = RelValue::new(&head, &scalar(1).into(), None);
         assert_eq!(
             result,
-            Code::Table(MemTable::new(&head, StAccess::Public, &[scalar(1).into()])),
+            Code::Table(MemTable::new(&head, StAccess::Public, &[row])),
             "Query"
         );
     }
@@ -736,9 +740,10 @@ mod tests {
         let head = q.source.head();
 
         let result = run_ast(p, q.into());
+        let row = RelValue::new(&head, &input.into(), None);
         assert_eq!(
             result,
-            Code::Table(MemTable::new(&head, StAccess::Public, &[input.into()])),
+            Code::Table(MemTable::new(&head, StAccess::Public, &[row])),
             "Project"
         );
 

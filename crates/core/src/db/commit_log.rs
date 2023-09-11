@@ -55,6 +55,8 @@ impl CommitLog {
                 mlog.append(&bytes)?;
                 if self.fsync {
                     mlog.sync_all()?;
+                    let mut odb = self.odb.lock().unwrap();
+                    odb.sync_all()?;
                     log::trace!("DATABASE: FSYNC");
                 } else {
                     mlog.flush()?;

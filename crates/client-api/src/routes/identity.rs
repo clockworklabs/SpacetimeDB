@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::extract::{FromRef, Path, Query, State};
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 use spacetimedb::auth::identity::encode_token_with_expiry;
@@ -212,6 +212,14 @@ pub async fn validate_token(
     }
 }
 
+pub async fn get_public_key(State(ctx): State<Arc<dyn ControlCtx>>) -> axum::response::Result<impl IntoResponse> {
+    let res = Response::builder()
+        .header("Content-Type", "application/pem-certificate-chain")
+        .body(())
+        .map_err(log_and_500)?;
+    Ok((res, ctx.public_key_bytes().to_owned()))
+}
+
 pub fn router<S>() -> axum::Router<S>
 where
     S: ControlNodeDelegate + Clone + 'static,
@@ -220,6 +228,7 @@ where
     use axum::routing::{get, post};
     axum::Router::new()
         .route("/", get(get_identity).post(create_identity))
+        .route("/public-key", get(get_public_key))
         .route("/websocket_token", post(create_websocket_token))
         .route("/:identity/verify", get(validate_token))
         .route("/:identity/set-email", post(set_email))

@@ -722,7 +722,9 @@ fn one_of_names(names: impl Fn(&mut dyn ValidNames)) -> Option<impl fmt::Display
             //       = 2 -> "`foo` or `bar`"
             //       > 2 -> "one of `foo`, `bar`, or `baz`"
 
-            let Ok(f) = &mut self.f else { return; };
+            let Ok(f) = &mut self.f else {
+                return;
+            };
 
             self.index += 1;
 

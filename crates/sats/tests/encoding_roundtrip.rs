@@ -1,3 +1,5 @@
+#![allow(clippy::arc_with_non_send_sync)]
+
 use proptest::prelude::*;
 use proptest::proptest;
 use spacetimedb_sats::buffer::DecodeError;

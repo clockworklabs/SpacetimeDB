@@ -68,6 +68,8 @@ EOF
   [[ "$(grep 'Robert' "$TEST_OUT" | tail -n 4)" =~ .*Hello,\ 2:Robert! ]]
   [[ "$(grep 'Success' "$TEST_OUT" | tail -n 4)" =~ .*Hello,\ 1:Success! ]]
   [[ "$(grep 'World' "$TEST_OUT" | tail -n 4)" =~ .*Hello,\ World! ]]
+
+  clear_project
 }
 
 do_test u8

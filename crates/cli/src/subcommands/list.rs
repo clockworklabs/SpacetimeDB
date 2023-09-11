@@ -1,4 +1,5 @@
 use crate::Config;
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -13,6 +14,12 @@ pub fn cli() -> Command {
                 .required(true)
                 .help("The identity to list databases for"),
         )
+        .arg(
+            Arg::new("server")
+                .long("server")
+                .short('s')
+                .help("The nickname, host name or URL of the server from which to list databases"),
+        )
 }
 
 #[derive(Deserialize)]
@@ -26,18 +33,21 @@ struct AddressRow {
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let identity = match args.get_one::<String>("identity") {
         Some(value) => value.to_string(),
-        None => match config.default_identity() {
-            Some(default_ident) => default_ident.to_string(),
-            None => {
-                return Err(anyhow::anyhow!("No default identity, and no identity provided!"));
-            }
-        },
+        None => config
+            .default_identity(server)
+            .map(str::to_string)
+            .with_context(|| "No default identity, and no identity provided!")?,
     };
 
     let client = reqwest::Client::new();
-    let mut builder = client.get(format!("{}/identity/{}/databases", config.get_host_url(), identity));
+    let mut builder = client.get(format!(
+        "{}/identity/{}/databases",
+        config.get_host_url(server)?,
+        identity
+    ));
 
     if let Some(identity_token) = config.get_identity_config_by_identity(&identity) {
         builder = builder.basic_auth("token", Some(identity_token.token.clone()));

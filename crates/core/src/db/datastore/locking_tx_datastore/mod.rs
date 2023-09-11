@@ -25,7 +25,10 @@ use super::{
     },
 };
 
-use crate::db::datastore::system_tables::table_name_is_system;
+use crate::db::datastore::system_tables::{
+    st_constraints_schema, table_name_is_system, StConstraintRow, SystemTables, CONSTRAINT_ID_SEQUENCE_ID,
+    ST_CONSTRAINTS_ID, ST_CONSTRAINT_ROW_TYPE,
+};
 use crate::{
     db::datastore::traits::{TxOp, TxRecord},
     db::{
@@ -91,16 +94,21 @@ impl traits::Data for Data {
 
 #[derive(Clone)]
 pub struct DataRef {
+    id: DataKey,
     data: ProductValue,
 }
 
 impl DataRef {
-    fn new(data: ProductValue) -> Self {
-        Self { data }
+    fn new(id: DataKey, data: ProductValue) -> Self {
+        Self { id, data }
     }
 
     pub fn view(&self) -> &ProductValue {
         &self.data
+    }
+
+    pub fn id(&self) -> &DataKey {
+        &self.id
     }
 }
 
@@ -223,9 +231,10 @@ impl CommittedState {
 ///   - any row in `delete_tables` must be in the associated `CommittedState`
 ///   - any row cannot be in both `insert_tables` and `delete_tables`
 struct TxState {
+    //NOTE: Need to preserve order to correctly restore the db after reopen
     /// For each table,  additions have
-    insert_tables: HashMap<TableId, Table>,
-    delete_tables: HashMap<TableId, BTreeSet<RowId>>,
+    insert_tables: BTreeMap<TableId, Table>,
+    delete_tables: BTreeMap<TableId, BTreeSet<RowId>>,
 }
 
 /// Represents whether a row has been previously committed, inserted
@@ -247,8 +256,8 @@ enum RowState {
 impl TxState {
     pub fn new() -> Self {
         Self {
-            insert_tables: HashMap::new(),
-            delete_tables: HashMap::new(),
+            insert_tables: BTreeMap::new(),
+            delete_tables: BTreeMap::new(),
         }
     }
 
@@ -380,11 +389,17 @@ impl Inner {
 
             // If any columns are auto incrementing, we need to create a sequence
             // NOTE: This code with the `seq_start` is particularly fragile.
+            // TODO: If we exceed  `SEQUENCE_PREALLOCATION_AMOUNT` we will get a unique violation
             if col.is_autoinc {
+                // The database is bootstrapped with the total of `SystemTables::total_` that identify what is the start of the sequence
                 let (seq_start, seq_id): (i128, SequenceId) = match TableId(schema.table_id) {
-                    ST_TABLES_ID => (4, TABLE_ID_SEQUENCE_ID), // The database is bootstrapped with 4 tables
-                    ST_INDEXES_ID => (4, INDEX_ID_SEQUENCE_ID), // The database is bootstrapped with 4 indexes
-                    ST_SEQUENCES_ID => (3, SEQUENCE_ID_SEQUENCE_ID), // The database is bootstrapped with 3 sequences
+                    ST_TABLES_ID => (SystemTables::total_tables() as i128, TABLE_ID_SEQUENCE_ID),
+                    ST_INDEXES_ID => (
+                        (SystemTables::total_indexes() + SystemTables::total_constraints_indexes()) as i128,
+                        INDEX_ID_SEQUENCE_ID,
+                    ),
+                    ST_SEQUENCES_ID => (SystemTables::total_sequences() as i128, SEQUENCE_ID_SEQUENCE_ID),
+                    ST_CONSTRAINTS_ID => (SystemTables::total_constraints() as i128, CONSTRAINT_ID_SEQUENCE_ID),
                     _ => unreachable!(),
                 };
                 let st_sequences = self.committed_state.get_or_create_table(
@@ -409,11 +424,58 @@ impl Inner {
             }
         }
 
+        //Insert constraints into `st_constraints`
+        let st_constraints = self.committed_state.get_or_create_table(
+            ST_CONSTRAINTS_ID,
+            &ST_CONSTRAINT_ROW_TYPE,
+            &st_constraints_schema(),
+        );
+
+        let mut indexes = schema.indexes.clone();
+        //TODO: The constraints are limited to 1 column until indexes are changed to deal with n-columns
+        for constraint in schema.constraints {
+            assert_eq!(constraint.columns.len(), 1, "Constraints only supported for 1 column.");
+            let col_id = schema.columns.first().unwrap();
+
+            let row = StConstraintRow {
+                constraint_id: constraint.constraint_id,
+                constraint_name: constraint.constraint_name.clone(),
+                kind: constraint.kind,
+                table_id,
+                columns: constraint.columns,
+            };
+            let row = ProductValue::from(&row);
+            let data_key = row.to_data_key();
+            st_constraints.rows.insert(RowId(data_key), row);
+
+            //Check if add an index:
+            let idx = match constraint.kind {
+                x if x.is_unique() => IndexSchema {
+                    index_id: constraint.constraint_id,
+                    table_id,
+                    col_id: col_id.col_id,
+                    index_name: format!("idx_{}", &constraint.constraint_name),
+                    is_unique: true,
+                },
+                x if x.is_indexed() => IndexSchema {
+                    index_id: constraint.constraint_id,
+                    table_id,
+                    col_id: col_id.col_id,
+                    index_name: format!("idx_{}", &constraint.constraint_name),
+                    is_unique: false,
+                },
+                x => {
+                    panic!("Adding constraint of kind `{x:?}` is not supported yet.")
+                }
+            };
+            indexes.push(idx);
+        }
+
         // Insert the indexes into st_indexes
         let st_indexes =
             self.committed_state
                 .get_or_create_table(ST_INDEXES_ID, &ST_INDEX_ROW_TYPE, &st_indexes_schema());
-        for (_, index) in schema.indexes.iter().enumerate() {
+        for (_, index) in indexes.iter().enumerate() {
             let row = StIndexRow {
                 index_id: index.index_id,
                 table_id,
@@ -434,10 +496,25 @@ impl Inner {
         let rows = st_sequences.scan_rows().cloned().collect::<Vec<_>>();
         for row in rows {
             let sequence = StSequenceRow::try_from(&row)?;
+            // TODO: The system tables have initialized their value already, but this is wrong:
+            // If we exceed  `SEQUENCE_PREALLOCATION_AMOUNT` we will get a unique violation
+            let is_system_table = self
+                .committed_state
+                .tables
+                .get(&TableId(sequence.table_id))
+                .map_or(false, |x| x.schema.table_type == StTableType::System);
+
             let schema = (&sequence).into();
+
+            let mut seq = Sequence::new(schema);
+            // Now we need to recover the last allocation value.
+            if !is_system_table && seq.value < sequence.allocated + 1 {
+                seq.value = sequence.allocated + 1;
+            }
+
             self.sequence_state
                 .sequences
-                .insert(SequenceId(sequence.sequence_id), Sequence::new(schema));
+                .insert(SequenceId(sequence.sequence_id), seq);
         }
         Ok(())
     }
@@ -518,8 +595,9 @@ impl Inner {
                 return Err(SequenceError::NotFound(seq_id).into());
             };
 
-            // If there are allocated sequence values, return the new value.
-            if let Some(value) = sequence.gen_next_value() {
+            // If there are allocated sequence values, return the new value, if it is not bigger than
+            // the upper range of `sequence.allocated`
+            if let Some(value) = sequence.gen_next_value().filter(|v| v < &sequence.allocated()) {
                 return Ok(value);
             }
         }
@@ -541,8 +619,7 @@ impl Inner {
             };
             let old_seq_row_id = RowId(old_seq_row.to_data_key());
             let mut seq_row = StSequenceRow::try_from(&old_seq_row)?;
-            let num_to_allocate = 1024;
-            seq_row.allocated = sequence.nth_value(num_to_allocate);
+            seq_row.allocated = sequence.nth_value(SEQUENCE_PREALLOCATION_AMOUNT as usize);
             sequence.set_allocation(seq_row.allocated);
             (seq_row, old_seq_row_id)
         };
@@ -575,7 +652,7 @@ impl Inner {
             sequence_name: seq.sequence_name.as_str(),
             table_id: seq.table_id,
             col_id: seq.col_id,
-            allocated: 0,
+            allocated: seq.start.unwrap_or(1),
             increment: seq.increment,
             start: seq.start.unwrap_or(1),
             min_value: seq.min_value.unwrap_or(1),
@@ -800,6 +877,7 @@ impl Inner {
             table_id,
             table_name,
             indexes,
+            constraints: vec![],
             table_type: el.table_type,
             table_access: el.table_access,
         })
@@ -1298,7 +1376,7 @@ impl Inner {
         match self.tx_state.as_ref().unwrap().get_row_op(table_id, row_id) {
             RowState::Committed(_) => unreachable!("a row cannot be committed in a tx state"),
             RowState::Insert(row) => {
-                return Ok(Some(DataRef::new(row)));
+                return Ok(Some(DataRef::new(row_id.0, row)));
             }
             RowState::Delete => {
                 return Ok(None);
@@ -1310,7 +1388,7 @@ impl Inner {
             .tables
             .get(table_id)
             .and_then(|table| table.get_row(row_id))
-            .map(|row| DataRef::new(row.clone())))
+            .map(|row| DataRef::new(row_id.0, row.clone())))
     }
 
     fn get_row_type(&self, table_id: &TableId) -> Option<&ProductType> {
@@ -1452,12 +1530,20 @@ impl Inner {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
             match self.committed_state.index_seek(table_id, col_id, value) {
-                Some(committed_rows) => Ok(IterByColEq::CommittedIndex(CommittedIndexIterByColEq {
-                    table_id: *table_id,
-                    tx_state: self.tx_state.as_ref().unwrap(),
-                    committed_state: &self.committed_state,
-                    committed_rows,
-                })),
+                //If we don't have `self.tx_state` yet is likely we are running the bootstrap process
+                Some(committed_rows) => match self.tx_state.as_ref() {
+                    None => Ok(IterByColEq::Scan(ScanIterByColEq {
+                        value,
+                        col_id: *col_id,
+                        scan_iter: self.iter(table_id)?,
+                    })),
+                    Some(tx_state) => Ok(IterByColEq::CommittedIndex(CommittedIndexIterByColEq {
+                        table_id: *table_id,
+                        tx_state,
+                        committed_state: &self.committed_state,
+                        committed_rows,
+                    })),
+                },
                 None => Ok(IterByColEq::Scan(ScanIterByColEq {
                     value,
                     col_id: *col_id,
@@ -1506,6 +1592,7 @@ impl Locking {
         // st_table, st_columns, st_indexes, and st_sequences.
         datastore.bootstrap_system_table(st_table_schema())?;
         datastore.bootstrap_system_table(st_columns_schema())?;
+        datastore.bootstrap_system_table(st_constraints_schema())?;
         datastore.bootstrap_system_table(st_indexes_schema())?;
         datastore.bootstrap_system_table(st_sequences_schema())?;
 
@@ -1659,10 +1746,10 @@ impl Iterator for Iter<'_> {
                             Some(RowState::Insert(_)) => (), // Do nothing, we'll get it in the next stage
                             Some(RowState::Delete) => (),    // Skip it, it's been deleted
                             Some(RowState::Absent) => {
-                                return Some(DataRef::new(row.clone()));
+                                return Some(DataRef::new(row_id.0, row.clone()));
                             }
                             None => {
-                                return Some(DataRef::new(row.clone()));
+                                return Some(DataRef::new(row_id.0, row.clone()));
                             }
                         }
                     }
@@ -1680,8 +1767,8 @@ impl Iterator for Iter<'_> {
                     }
                 }
                 ScanStage::CurrentTx { iter } => {
-                    if let Some((_, row)) = iter.next() {
-                        return Some(DataRef::new(row.clone()));
+                    if let Some((id, row)) = iter.next() {
+                        return Some(DataRef::new(id.0, row.clone()));
                     }
                     break;
                 }
@@ -1772,6 +1859,7 @@ impl Iterator for IndexSeekIterInner<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(row_id) = self.inserted_rows.next() {
             return Some(DataRef::new(
+                row_id.0,
                 self.tx_state.get_row(&self.table_id, &row_id).unwrap().clone(),
             ));
         }
@@ -1820,7 +1908,10 @@ impl Iterator for CommittedIndexIterByColEq<'_> {
 /// Retrieve a commited row. Panics if `table_id` and `row_id` do not identify an actually
 /// present row.
 fn get_committed_row(state: &CommittedState, table_id: &TableId, row_id: &RowId) -> DataRef {
-    DataRef::new(state.tables.get(table_id).unwrap().get_row(row_id).unwrap().clone())
+    DataRef::new(
+        row_id.0,
+        state.tables.get(table_id).unwrap().get_row(row_id).unwrap().clone(),
+    )
 }
 
 pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
@@ -2068,6 +2159,7 @@ impl MutTxDatastore for Locking {
 #[cfg(test)]
 mod tests {
     use super::{ColId, Locking, StTableRow};
+    use crate::db::datastore::system_tables::{StConstraintRow, ST_CONSTRAINTS_ID};
     use crate::{
         db::datastore::{
             locking_tx_datastore::{
@@ -2083,6 +2175,7 @@ mod tests {
     use spacetimedb_lib::{
         auth::{StAccess, StTableType},
         error::ResultTest,
+        ColumnIndexAttribute,
     };
     use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
 
@@ -2146,6 +2239,7 @@ mod tests {
                 StTableRow { table_id: 1, table_name: "st_columns".to_string(), table_type: StTableType::System, table_access: StAccess::Public },
                 StTableRow { table_id: 2, table_name: "st_sequence".to_string(), table_type: StTableType::System, table_access: StAccess::Public},
                 StTableRow { table_id: 3, table_name: "st_indexes".to_string() , table_type: StTableType::System, table_access: StAccess::Public},
+                StTableRow { table_id: 4, table_name: "st_constraints".to_string() , table_type: StTableType::System, table_access: StAccess::Public},
             ]
         );
         let column_rows = datastore
@@ -2183,6 +2277,12 @@ mod tests {
                 StColumnRow { table_id: 3, col_id: 2, col_name: "col_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
                 StColumnRow { table_id: 3, col_id: 3, col_name: "index_name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
                 StColumnRow { table_id: 3, col_id: 4, col_name: "is_unique".to_string(), col_type: AlgebraicType::Bool, is_autoinc: false },
+
+                StColumnRow { table_id: 4, col_id: 0, col_name: "constraint_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: true },
+                StColumnRow { table_id: 4, col_id: 1, col_name: "constraint_name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
+                StColumnRow { table_id: 4, col_id: 2, col_name: "kind".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
+                StColumnRow { table_id: 4, col_id: 3, col_name: "table_id".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
+                StColumnRow { table_id: 4, col_id: 4, col_name: "columns".to_string(), col_type: AlgebraicType::array(AlgebraicType::U32), is_autoinc: false },
             ]
         );
         let index_rows = datastore
@@ -2198,6 +2298,8 @@ mod tests {
                 StIndexRow { index_id: 1, table_id: 3, col_id: 0, index_name: "index_id_idx".to_string(), is_unique: true },
                 StIndexRow { index_id: 2, table_id: 2, col_id: 0, index_name: "sequences_id_idx".to_string(), is_unique: true },
                 StIndexRow { index_id: 3, table_id: 0, col_id: 1, index_name: "table_name_idx".to_string(), is_unique: true },
+                StIndexRow { index_id: 4, table_id: 4, col_id: 0, index_name: "constraint_id_idx".to_string(), is_unique: true },
+                StIndexRow { index_id: 5, table_id: 1, col_id: 0, index_name: "idx_ct_columns_table_id".to_string(), is_unique: false }
             ]
         );
         let sequence_rows = datastore
@@ -2209,9 +2311,23 @@ mod tests {
         assert_eq!(
             sequence_rows,
             vec![
-                StSequenceRow { sequence_id: 0, sequence_name: "table_id_seq".to_string(), table_id: 0, col_id: 0, increment: 1, start: 4, min_value: 1, max_value: 4294967295, allocated: 4096 },
-                StSequenceRow { sequence_id: 1, sequence_name: "sequence_id_seq".to_string(), table_id: 2, col_id: 0, increment: 1, start: 3, min_value: 1, max_value: 4294967295, allocated: 4096 },
-                StSequenceRow { sequence_id: 2, sequence_name: "index_id_seq".to_string(), table_id: 3, col_id: 0, increment: 1, start: 4, min_value: 1, max_value: 4294967295, allocated: 4096 },
+                StSequenceRow { sequence_id: 0, sequence_name: "table_id_seq".to_string(), table_id: 0, col_id: 0, increment: 1, start: 5, min_value: 1, max_value: 4294967295, allocated: 4096 },
+                StSequenceRow { sequence_id: 1, sequence_name: "sequence_id_seq".to_string(), table_id: 2, col_id: 0, increment: 1, start: 4, min_value: 1, max_value: 4294967295, allocated: 4096 },
+                StSequenceRow { sequence_id: 2, sequence_name: "index_id_seq".to_string(), table_id: 3, col_id: 0, increment: 1, start: 6, min_value: 1, max_value: 4294967295, allocated: 4096 },
+                StSequenceRow { sequence_id: 3, sequence_name: "constraint_id_seq".to_string(), table_id: 4, col_id: 0, increment: 1, start: 1, min_value: 1, max_value: 4294967295, allocated: 4096 },
+            ]
+        );
+        let constraints_rows = datastore
+            .iter_mut_tx(&tx, ST_CONSTRAINTS_ID)?
+            .map(|x| StConstraintRow::try_from(x.view()).unwrap().to_owned())
+            .sorted_by_key(|x| x.constraint_id)
+            .collect::<Vec<_>>();
+
+        #[rustfmt::skip]
+        assert_eq!(
+            constraints_rows,
+            vec![
+                StConstraintRow{ constraint_id: 5, constraint_name: "ct_columns_table_id".to_string(), kind:  ColumnIndexAttribute::INDEXED, table_id: 1, columns: vec![0] },
             ]
         );
         datastore.rollback_mut_tx(tx);
@@ -2233,7 +2349,7 @@ mod tests {
         assert_eq!(
             table_rows,
             vec![
-                StTableRow { table_id: 4, table_name: "Foo".to_string(), table_type: StTableType::User, table_access: StAccess::Public }
+                StTableRow { table_id: 5, table_name: "Foo".to_string(), table_type: StTableType::User, table_access: StAccess::Public }
             ]
         );
         let column_rows = datastore
@@ -2245,9 +2361,9 @@ mod tests {
         assert_eq!(
             column_rows,
             vec![
-                StColumnRow { table_id: 4, col_id: 0, col_name: "id".to_string(), col_type: AlgebraicType::U32, is_autoinc: true },
-                StColumnRow { table_id: 4, col_id: 1, col_name: "name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
-                StColumnRow { table_id: 4, col_id: 2, col_name: "age".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
+                StColumnRow { table_id: 5, col_id: 0, col_name: "id".to_string(), col_type: AlgebraicType::U32, is_autoinc: true },
+                StColumnRow { table_id: 5, col_id: 1, col_name: "name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
+                StColumnRow { table_id: 5, col_id: 2, col_name: "age".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
             ]
         );
         Ok(())
@@ -2270,7 +2386,7 @@ mod tests {
         assert_eq!(
             table_rows,
             vec![
-                StTableRow { table_id: 4, table_name: "Foo".to_string() , table_type: StTableType::User, table_access: StAccess::Public}
+                StTableRow { table_id: 5, table_name: "Foo".to_string() , table_type: StTableType::User, table_access: StAccess::Public}
             ]
         );
         let column_rows = datastore
@@ -2282,9 +2398,9 @@ mod tests {
         assert_eq!(
             column_rows,
             vec![
-                StColumnRow { table_id: 4, col_id: 0, col_name: "id".to_string(), col_type: AlgebraicType::U32, is_autoinc: true },
-                StColumnRow { table_id: 4, col_id: 1, col_name: "name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
-                StColumnRow { table_id: 4, col_id: 2, col_name: "age".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
+                StColumnRow { table_id: 5, col_id: 0, col_name: "id".to_string(), col_type: AlgebraicType::U32, is_autoinc: true },
+                StColumnRow { table_id: 5, col_id: 1, col_name: "name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
+                StColumnRow { table_id: 5, col_id: 2, col_name: "age".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
             ]
         );
         Ok(())
@@ -2325,14 +2441,15 @@ mod tests {
             table_id: table_id.0,
             table_name: "Foo".into(),
             columns: vec![
-                ColumnSchema { table_id: 4, col_id: 0, col_name: "id".to_string(), col_type: AlgebraicType::U32, is_autoinc: true },
-                ColumnSchema { table_id: 4, col_id: 1, col_name: "name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
-                ColumnSchema { table_id: 4, col_id: 2, col_name: "age".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
+                ColumnSchema { table_id: 5, col_id: 0, col_name: "id".to_string(), col_type: AlgebraicType::U32, is_autoinc: true },
+                ColumnSchema { table_id: 5, col_id: 1, col_name: "name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
+                ColumnSchema { table_id: 5, col_id: 2, col_name: "age".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
             ],
             indexes: vec![
-                IndexSchema { index_id: 4, table_id: 4, col_id: 0, index_name: "id_idx".to_string(), is_unique: true },
-                IndexSchema { index_id: 5, table_id: 4, col_id: 1, index_name: "name_idx".to_string(), is_unique: true },
+                IndexSchema { index_id: 6, table_id: 5, col_id: 0, index_name: "id_idx".to_string(), is_unique: true },
+                IndexSchema { index_id: 7, table_id: 5, col_id: 1, index_name: "name_idx".to_string(), is_unique: true },
             ],
+            constraints: vec![],
             table_type: StTableType::User,
             table_access: StAccess::Public,
         });
@@ -2353,14 +2470,15 @@ mod tests {
             table_id: table_id.0,
             table_name: "Foo".into(),
             columns: vec![
-                ColumnSchema { table_id: 4, col_id: 0, col_name: "id".to_string(), col_type: AlgebraicType::U32, is_autoinc: true },
-                ColumnSchema { table_id: 4, col_id: 1, col_name: "name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
-                ColumnSchema { table_id: 4, col_id: 2, col_name: "age".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
+                ColumnSchema { table_id: 5, col_id: 0, col_name: "id".to_string(), col_type: AlgebraicType::U32, is_autoinc: true },
+                ColumnSchema { table_id: 5, col_id: 1, col_name: "name".to_string(), col_type: AlgebraicType::String, is_autoinc: false },
+                ColumnSchema { table_id: 5, col_id: 2, col_name: "age".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
             ],
             indexes: vec![
-                IndexSchema { index_id: 4, table_id: 4, col_id: 0, index_name: "id_idx".to_string(), is_unique: true },
-                IndexSchema { index_id: 5, table_id: 4, col_id: 1, index_name: "name_idx".to_string(), is_unique: true },
+                IndexSchema { index_id: 6, table_id: 5, col_id: 0, index_name: "id_idx".to_string(), is_unique: true },
+                IndexSchema { index_id: 7, table_id: 5, col_id: 1, index_name: "name_idx".to_string(), is_unique: true },
             ],
+            constraints: vec![],
             table_type: StTableType::User,
             table_access: StAccess::Public,
         });
@@ -2712,9 +2830,11 @@ mod tests {
             StIndexRow { index_id: 1, table_id: 3, col_id: 0, index_name: "index_id_idx".to_string(), is_unique: true },
             StIndexRow { index_id: 2, table_id: 2, col_id: 0, index_name: "sequences_id_idx".to_string(), is_unique: true },
             StIndexRow { index_id: 3, table_id: 0, col_id: 1, index_name: "table_name_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 4, table_id: 4, col_id: 0, index_name: "id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 5, table_id: 4, col_id: 1, index_name: "name_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 6, table_id: 4, col_id: 2, index_name: "age_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 4, table_id: 4, col_id: 0, index_name: "constraint_id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 5, table_id: 1, col_id: 0, index_name: "idx_ct_columns_table_id".to_string(), is_unique: false },
+            StIndexRow { index_id: 6, table_id: 5, col_id: 0, index_name: "id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 7, table_id: 5, col_id: 1, index_name: "name_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 8, table_id: 5, col_id: 2, index_name: "age_idx".to_string(), is_unique: true },
         ]);
         let row = ProductValue::from_iter(vec![
             AlgebraicValue::U32(0), // 0 will be ignored.
@@ -2780,9 +2900,11 @@ mod tests {
             StIndexRow { index_id: 1, table_id: 3, col_id: 0, index_name: "index_id_idx".to_string(), is_unique: true },
             StIndexRow { index_id: 2, table_id: 2, col_id: 0, index_name: "sequences_id_idx".to_string(), is_unique: true },
             StIndexRow { index_id: 3, table_id: 0, col_id: 1, index_name: "table_name_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 4, table_id: 4, col_id: 0, index_name: "id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 5, table_id: 4, col_id: 1, index_name: "name_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 6, table_id: 4, col_id: 2, index_name: "age_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 4, table_id: 4, col_id: 0, index_name: "constraint_id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 5, table_id: 1, col_id: 0, index_name: "idx_ct_columns_table_id".to_string(), is_unique: false },
+            StIndexRow { index_id: 6, table_id: 5, col_id: 0, index_name: "id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 7, table_id: 5, col_id: 1, index_name: "name_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 8, table_id: 5, col_id: 2, index_name: "age_idx".to_string(), is_unique: true },
         ]);
         let row = ProductValue::from_iter(vec![
             AlgebraicValue::U32(0), // 0 will be ignored.
@@ -2848,8 +2970,10 @@ mod tests {
             StIndexRow { index_id: 1, table_id: 3, col_id: 0, index_name: "index_id_idx".to_string(), is_unique: true },
             StIndexRow { index_id: 2, table_id: 2, col_id: 0, index_name: "sequences_id_idx".to_string(), is_unique: true },
             StIndexRow { index_id: 3, table_id: 0, col_id: 1, index_name: "table_name_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 4, table_id: 4, col_id: 0, index_name: "id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 5, table_id: 4, col_id: 1, index_name: "name_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 4, table_id: 4, col_id: 0, index_name: "constraint_id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 5, table_id: 1, col_id: 0, index_name: "idx_ct_columns_table_id".to_string(), is_unique: false },
+            StIndexRow { index_id: 6, table_id: 5, col_id: 0, index_name: "id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 7, table_id: 5, col_id: 1, index_name: "name_idx".to_string(), is_unique: true },
         ]);
         let row = ProductValue::from_iter(vec![
             AlgebraicValue::U32(0), // 0 will be ignored.
