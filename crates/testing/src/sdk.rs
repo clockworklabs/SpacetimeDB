@@ -1,6 +1,7 @@
 use duct::{cmd, Handle};
+use lazy_static::lazy_static;
 use rand::distributions::{Alphanumeric, DistString};
-use std::{fs::create_dir_all, sync::Mutex};
+use std::{collections::HashSet, fs::create_dir_all, sync::Mutex};
 
 use crate::modules::{compile, module_path, wasm_path};
 
@@ -67,6 +68,12 @@ impl StandaloneProcess {
 
 static STANDALONE_PROCESS: Mutex<Option<StandaloneProcess>> = Mutex::new(None);
 
+/// An RAII handle on the `STANDALONE_PROCESS`.
+///
+/// On construction, ensures that the `STANDALONE_PROCESS` is running.
+///
+/// On drop, checks to see if it was the last `StandaloneHandle`, and if so,
+/// terminates the `STANDALONE_PROCESS`.
 pub struct StandaloneHandle {
     _hidden: (),
 }
@@ -96,6 +103,39 @@ impl Drop for StandaloneHandle {
             }
         }
     }
+}
+
+lazy_static! {
+    /// An exclusive lock which ensures we only run `spacetime generate` once for each target directory.
+    ///
+    /// Without this lock, if multiple `Test`s ran concurrently in the same process
+    /// with the same `client_project` and `generate_subdir`,
+    /// the test harness would run `spacetime generate` multiple times concurrently,
+    /// each of which would remove and re-populate the bindings directory,
+    /// potentially sweeping them out from under a compile or run process.
+    ///
+    /// This lock ensures that only one `spacetime generate` process runs at a time,
+    /// and the `HashSet` ensures that we run `spacetime generate` only once for each output directory.
+    ///
+    /// Circumstances where this will still break:
+    /// - If multiple tests want to use the same client_project/generate_subdir pair,
+    ///   but for different modules' bindings, only one module's bindings will ever be generated.
+    ///   If you need bindings for multiple different modules, put them in different subdirs.
+    /// - If multiple distinct test harness processes run concurrently,
+    ///   they will encounter the race condition described above,
+    ///   because the `BINDINGS_GENERATED` lock is not shared between harness processes.
+    ///   Running multiple test harness processes concurrently will break anyways
+    ///   because each will try to run `spacetime start` as a subprocess and will therefore
+    ///   contend over port 3000.
+    ///   Prefer constructing multiple `Test`s and `Test::run`ing them
+    ///   from within the same harness process.
+    //
+    // I (pgoldman 2023-09-11) considered, as an alternative to this lock,
+    // having `Test::run` copy the `client_project` into a fresh temporary directory.
+    // That would be more complicated, as we'd need to re-write dependencies
+    // on the client language's SpacetimeDB SDK to use a local absolute path.
+    // Doing so portably across all our SDK languages seemed infeasible.
+    static ref BINDINGS_GENERATED: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
 }
 
 pub struct Test {
@@ -192,6 +232,17 @@ fn publish_module(module: &str, test_name: &str) -> String {
 
 fn generate_bindings(language: &str, module_name: &str, client_project: &str, generate_subdir: &str, test_name: &str) {
     let generate_dir = format!("{}/{}", client_project, generate_subdir);
+
+    let mut bindings_lock = BINDINGS_GENERATED.lock().expect("BINDINGS_GENERATED Mutex is poisoned");
+
+    // If we've already generated bindings in this directory,
+    // return early.
+    // Otherwise, we'll hold the lock for the duration of the subprocess,
+    // so other tests will wait before overwriting our output.
+    if !bindings_lock.insert(generate_dir.clone()) {
+        return;
+    }
+
     create_dir_all(&generate_dir).expect("Error creating generate subdir");
     let output = cmd!(
         "spacetime",
