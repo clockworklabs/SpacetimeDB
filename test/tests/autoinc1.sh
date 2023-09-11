@@ -40,7 +40,7 @@ EOF
 
   fsed "s/REPLACE_VALUE/$1/g" "${PROJECT_PATH}/src/lib.rs"
 
-  run_test cargo run publish --project-path "$PROJECT_PATH" --clear-database -d -s
+  run_test cargo run publish --project-path "$PROJECT_PATH" --clear-database -d -S
   [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
   IDENT="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
@@ -53,6 +53,8 @@ EOF
   [[ "$(grep 'Julie' "$TEST_OUT" | tail -n 4)" =~ .*Hello,\ 2:Julie! ]]
   [[ "$(grep 'Robert' "$TEST_OUT" | tail -n 4)" =~ .*Hello,\ 1:Robert! ]]
   [[ "$(grep 'World' "$TEST_OUT" | tail -n 4)" =~ .*Hello,\ World! ]]
+
+  clear_project
 }
 
 do_test u8

@@ -12,6 +12,7 @@ impl RelOps for RelIter<ProductValue> {
         self.row_count
     }
 
+    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         Ok(if self.pos == 0 {
             self.pos += 1;
@@ -31,6 +32,7 @@ impl RelOps for RelIter<MemTable> {
         self.row_count
     }
 
+    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         if self.pos < self.of.data.len() {
             let row = &self.of.data[self.pos];

@@ -31,7 +31,7 @@ pub struct MessageLog {
     segments: Vec<Segment>,
     total_size: u64,
     open_segment_file: BufWriter<File>,
-    open_segment_max_offset: u64,
+    pub open_segment_max_offset: u64,
     open_segment_size: u64,
 }
 

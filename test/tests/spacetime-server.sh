@@ -1,28 +1,27 @@
 #!/bin/bash
 
 if [ "$DESCRIBE_TEST" = 1 ] ; then
-	echo "NO DESCRIPTION FOR THIS TEST!"
-        exit
+    echo "Verify that we can add and list server configurations"
+    exit
 fi
 
 set -euox pipefail
 
 source "./test/lib.include"
 
-run_test cargo run server set "https://spacetimedb.com/spacetimedb"
-[ "$(grep Host "$TEST_OUT")" == "Host: spacetimedb.com/spacetimedb" ]
+run_test cargo run server add "https://testnet.spacetimedb.com" testnet --no-fingerprint
+[ "$(grep Host "$TEST_OUT")" == "Host: testnet.spacetimedb.com" ]
 [ "$(grep Protocol "$TEST_OUT")" == "Protocol: https" ]
-[ "$(grep host "$SPACETIME_CONFIG_FILE")" == "host = 'spacetimedb.com/spacetimedb'" ]
-[ "$(grep protocol "$SPACETIME_CONFIG_FILE")" == "protocol = 'https'" ]
 
-run_test cargo run server set "http://127.0.0.1:3000/spacetimedb"
-[ "$(grep Host "$TEST_OUT")" == "Host: 127.0.0.1:3000/spacetimedb" ]
-[ "$(grep Protocol "$TEST_OUT")" == "Protocol: http" ]
-[ "$(grep host "$SPACETIME_CONFIG_FILE")" == "host = '127.0.0.1:3000/spacetimedb'" ]
-[ "$(grep protocol "$SPACETIME_CONFIG_FILE")" == "protocol = 'http'" ]
+run_test cargo run server list
+[[ "$(grep testnet.spacetimedb.com "$TEST_OUT")" =~ [[:space:]]*testnet\.spacetimedb\.com[[:space:]]+https[[:space:]]+testnet[[:space:]]* ]]
+[[ "$(grep 127.0.0.1:3000 "$TEST_OUT")" =~ [[:space:]]*\*\*\*[[:space:]]+127\.0\.0\.1:3000[[:space:]]+http[[:space:]]* ]]
 
-run_test cargo run server set "http://127.0.0.1"
-[ "$(grep Host "$TEST_OUT")" == "Host: 127.0.0.1" ]
-[ "$(grep Protocol "$TEST_OUT")" == "Protocol: http" ]
-[ "$(grep host "$SPACETIME_CONFIG_FILE")" == "host = '127.0.0.1'" ]
-[ "$(grep protocol "$SPACETIME_CONFIG_FILE")" == "protocol = 'http'" ]
+run_test cargo run server fingerprint 127.0.0.1:3000 -f
+grep "No saved fingerprint for server 127.0.0.1:3000." "$TEST_OUT"
+
+run_test cargo run server fingerprint 127.0.0.1:3000
+grep "Fingerprint is unchanged for server 127.0.0.1:3000" "$TEST_OUT"
+
+run_test cargo run server fingerprint localhost
+grep "Fingerprint is unchanged for server localhost" "$TEST_OUT"

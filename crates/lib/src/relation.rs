@@ -497,7 +497,7 @@ impl RelValue {
     pub fn extend(self, head: &Header, with: RelValue) -> RelValue {
         let mut x = self;
         x.head = head.clone();
-        x.data.elements.extend(with.data.elements.into_iter());
+        x.data.elements.extend(with.data.elements);
         x
     }
 }

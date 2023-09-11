@@ -24,11 +24,6 @@ namespace SpacetimeDB
 				fn = "add_player",
 				args = _argArray,
 			};
-			Newtonsoft.Json.JsonSerializerSettings _settings = new Newtonsoft.Json.JsonSerializerSettings
-			{
-				Converters = { new SpacetimeDB.SomeWrapperConverter(), new SpacetimeDB.EnumWrapperConverter() },
-				ContractResolver = new SpacetimeDB.JsonContractResolver(),
-			};
 			NetworkManager.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));
 		}
 
@@ -247,11 +242,6 @@ namespace SpacetimeDB
 			var _message = new NetworkManager.ReducerCallRequest {
 				fn = "repeating_test",
 				args = _argArray,
-			};
-			Newtonsoft.Json.JsonSerializerSettings _settings = new Newtonsoft.Json.JsonSerializerSettings
-			{
-				Converters = { new SpacetimeDB.SomeWrapperConverter(), new SpacetimeDB.EnumWrapperConverter() },
-				ContractResolver = new SpacetimeDB.JsonContractResolver(),
 			};
 			NetworkManager.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));
 		}
@@ -694,11 +684,6 @@ namespace SpacetimeDB
 				fn = "test",
 				args = _argArray,
 			};
-			Newtonsoft.Json.JsonSerializerSettings _settings = new Newtonsoft.Json.JsonSerializerSettings
-			{
-				Converters = { new SpacetimeDB.SomeWrapperConverter(), new SpacetimeDB.EnumWrapperConverter() },
-				ContractResolver = new SpacetimeDB.JsonContractResolver(),
-			};
 			NetworkManager.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));
 		}
 
@@ -767,11 +752,6 @@ namespace SpacetimeDB
 			var _message = new NetworkManager.ReducerCallRequest {
 				fn = "__update__",
 				args = _argArray,
-			};
-			Newtonsoft.Json.JsonSerializerSettings _settings = new Newtonsoft.Json.JsonSerializerSettings
-			{
-				Converters = { new SpacetimeDB.SomeWrapperConverter(), new SpacetimeDB.EnumWrapperConverter() },
-				ContractResolver = new SpacetimeDB.JsonContractResolver(),
 			};
 			NetworkManager.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));
 		}
