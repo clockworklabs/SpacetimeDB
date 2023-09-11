@@ -56,22 +56,28 @@ impl CommitLog {
         D: MutTxDatastore<RowId = RowId>,
     {
         if let Some(bytes) = self.generate_commit(tx_data, datastore) {
-            if let Some(mlog) = &self.mlog {
-                let mut mlog = mlog.lock().unwrap();
-                mlog.append(&bytes)?;
-                if self.fsync {
-                    mlog.sync_all()?;
-                    let mut odb = self.odb.lock().unwrap();
-                    odb.sync_all()?;
-                    log::trace!("DATABASE: FSYNC");
-                } else {
-                    mlog.flush()?;
-                }
-            }
-            Ok(Some(bytes.len()))
+            self.append_commit_bytes(&bytes).map(Some)
         } else {
             Ok(None)
         }
+    }
+
+    // For testing -- doesn't require a `MutTxDatastore`, which is currently
+    // unused anyway.
+    fn append_commit_bytes(&self, commit: &[u8]) -> Result<usize, DBError> {
+        if let Some(mlog) = &self.mlog {
+            let mut mlog = mlog.lock().unwrap();
+            mlog.append(commit)?;
+            if self.fsync {
+                mlog.sync_all()?;
+                let mut odb = self.odb.lock().unwrap();
+                odb.sync_all()?;
+                log::trace!("DATABASE: FSYNC");
+            } else {
+                mlog.flush()?;
+            }
+        }
+        Ok(commit.len())
     }
 
     fn generate_commit<D: MutTxDatastore<RowId = RowId>>(&self, tx_data: &TxData, _datastore: &D) -> Option<Vec<u8>> {
@@ -272,5 +278,91 @@ impl From<message_log::Segments> for Iter {
             commits: None,
             segments,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use spacetimedb_lib::data_key::InlineData;
+    use tempdir::TempDir;
+
+    use crate::db::ostorage::memory_object_db::MemoryObjectDB;
+
+    #[test]
+    fn test_iter_commits() {
+        let tmp = TempDir::new("commit_log_test").unwrap();
+
+        let data_key = DataKey::Data(InlineData::from_bytes(b"asdf").unwrap());
+        let tx = Transaction {
+            writes: vec![
+                Write {
+                    operation: Operation::Insert,
+                    set_id: 42,
+                    data_key,
+                },
+                Write {
+                    operation: Operation::Delete,
+                    set_id: 42,
+                    data_key,
+                },
+            ],
+        };
+
+        // The iterator doesn't verify integrity of commits, so we can just
+        // write the same one repeatedly.
+        let commit = Commit {
+            parent_commit_hash: None,
+            commit_offset: 0,
+            min_tx_offset: 0,
+            transactions: vec![Arc::new(tx)],
+        };
+        let mut commit_bytes = Vec::new();
+        commit.encode(&mut commit_bytes);
+
+        const COMMITS_PER_SEGMENT: usize = 10_000;
+        const TOTAL_MESSAGES: usize = (COMMITS_PER_SEGMENT * 3) - 1;
+        let segment_size: usize = COMMITS_PER_SEGMENT * (commit_bytes.len() + 4);
+
+        let mlog = message_log::MessageLog::options()
+            .max_segment_size(segment_size as u64)
+            .open(tmp.path())
+            .unwrap();
+        let odb = MemoryObjectDB::default();
+
+        let log = CommitLog::new(
+            Some(Arc::new(Mutex::new(mlog))),
+            Arc::new(Mutex::new(Box::new(odb))),
+            Commit {
+                parent_commit_hash: None,
+                commit_offset: 0,
+                min_tx_offset: 0,
+                transactions: Vec::new(),
+            },
+            true, // fsync
+        );
+
+        for _ in 0..TOTAL_MESSAGES {
+            log.append_commit_bytes(&commit_bytes).unwrap();
+        }
+
+        let view = CommitLogView::from(&log);
+        let commits = view.iter().map(Result::unwrap).count();
+        assert_eq!(TOTAL_MESSAGES, commits);
+
+        let commits = view.iter_from(1_000_000).map(Result::unwrap).count();
+        assert_eq!(0, commits);
+
+        // No slicing yet, so offsets on segment boundaries yield an additional
+        // COMMITS_PER_SEGMENT.
+        let commits = view.iter_from(20_001).map(Result::unwrap).count();
+        assert_eq!(9999, commits);
+
+        let commits = view.iter_from(10_001).map(Result::unwrap).count();
+        assert_eq!(19_999, commits);
+
+        let commits = view.iter_from(10_000).map(Result::unwrap).count();
+        assert_eq!(29_999, commits);
     }
 }
