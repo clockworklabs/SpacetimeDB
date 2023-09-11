@@ -260,7 +260,7 @@ impl MessageLog {
     /// incomplete (i.e. still be appended to).
     ///
     /// See also: [`MessageLog::segments_from`]
-    pub fn segments(&self) -> SegmentsIter {
+    pub fn segments(&self) -> Segments {
         self.segments_from(0)
     }
 
@@ -281,9 +281,9 @@ impl MessageLog {
     /// is called. That is, segments created after the method returns will not
     /// appear in the iteration. The last segment yielded by the iterator may be
     /// incomplete (i.e. still be appended to).
-    pub fn segments_from(&self, offset: u64) -> SegmentsIter {
+    pub fn segments_from(&self, offset: u64) -> Segments {
         if offset > self.open_segment_max_offset {
-            return SegmentsIter::empty();
+            return Segments::empty();
         }
 
         let root = self.get_root();
@@ -293,7 +293,7 @@ impl MessageLog {
             .rposition(|s| s.min_offset <= offset)
             .expect("a segment with offset 0 must exist");
 
-        SegmentsIter {
+        Segments {
             root,
             inner: Vec::from(&self.segments[pos..]).into_iter(),
         }
@@ -346,7 +346,7 @@ impl SegmentView {
     /// Obtain an iterator over the _messages_ the segment contains.
     ///
     /// Opens a new handle to the underlying file.
-    pub fn try_into_iter(self) -> io::Result<SegmentIter> {
+    pub fn try_into_iter(self) -> io::Result<IterSegment> {
         self.try_into()
     }
 
@@ -356,13 +356,13 @@ impl SegmentView {
     }
 }
 
-impl TryFrom<SegmentView> for SegmentIter {
+impl TryFrom<SegmentView> for IterSegment {
     type Error = io::Error;
 
     fn try_from(view: SegmentView) -> Result<Self, Self::Error> {
         File::try_from(view)
             .map(BufReader::new)
-            .map(|file| SegmentIter { file })
+            .map(|file| IterSegment { file })
     }
 }
 
@@ -378,11 +378,11 @@ impl TryFrom<SegmentView> for File {
 ///
 /// Created by [`SegmentView::try_iter`].
 #[must_use = "iterators are lazy and do nothing unless consumed"]
-pub struct SegmentIter {
+pub struct IterSegment {
     file: BufReader<File>,
 }
 
-impl SegmentIter {
+impl IterSegment {
     fn read_exact_or_none(&mut self, buf: &mut [u8]) -> Option<io::Result<()>> {
         match self.file.read_exact(buf) {
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => None,
@@ -392,7 +392,7 @@ impl SegmentIter {
     }
 }
 
-impl Iterator for SegmentIter {
+impl Iterator for IterSegment {
     type Item = io::Result<Vec<u8>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -414,12 +414,12 @@ impl Iterator for SegmentIter {
 /// Iterator yielding [`SegmentView`]s, created by [`MessageLog::segments`] and
 /// [`MessageLog::segments_from`] respectively.
 #[must_use = "iterators are lazy and do nothing unless consumed"]
-pub struct SegmentsIter {
+pub struct Segments {
     root: PathBuf,
     inner: std::vec::IntoIter<Segment>,
 }
 
-impl SegmentsIter {
+impl Segments {
     pub fn empty() -> Self {
         Self {
             root: PathBuf::default(),
@@ -428,7 +428,7 @@ impl SegmentsIter {
     }
 }
 
-impl Iterator for SegmentsIter {
+impl Iterator for Segments {
     type Item = SegmentView;
 
     fn next(&mut self) -> Option<Self::Item> {

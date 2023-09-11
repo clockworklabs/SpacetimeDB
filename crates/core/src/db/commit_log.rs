@@ -138,7 +138,7 @@ impl CommitLogView {
     /// Obtain an iterator over a snapshot of the raw message log segments.
     ///
     /// See also: [`MessageLog::segments`]
-    pub fn message_log_segments(&self) -> message_log::SegmentsIter {
+    pub fn message_log_segments(&self) -> message_log::Segments {
         self.message_log_segments_from(0)
     }
 
@@ -146,19 +146,19 @@ impl CommitLogView {
     /// containing messages equal to or newer than `offset`.
     ///
     /// See [`MessageLog::segments_from`] for more information.
-    pub fn message_log_segments_from(&self, offset: u64) -> message_log::SegmentsIter {
+    pub fn message_log_segments_from(&self, offset: u64) -> message_log::Segments {
         if let Some(mlog) = &self.mlog {
             let mlog = mlog.lock().unwrap();
             mlog.segments_from(offset)
         } else {
-            message_log::SegmentsIter::empty()
+            message_log::Segments::empty()
         }
     }
 
     /// Obtain an iterator over the [`Commit`]s in the log.
     ///
     /// The iterator represents a snapshot of the log.
-    pub fn iter(&self) -> CommitLogIter {
+    pub fn iter(&self) -> Iter {
         self.iter_from(0)
     }
 
@@ -171,7 +171,7 @@ impl CommitLogView {
     /// lack of slicing support.
     ///
     /// See [`MessageLog::segments_from`] for more information.
-    pub fn iter_from(&self, offset: u64) -> CommitLogIter {
+    pub fn iter_from(&self, offset: u64) -> Iter {
         self.message_log_segments_from(offset).into()
     }
 
@@ -216,11 +216,11 @@ impl From<&CommitLog> for CommitLogView {
 }
 
 #[must_use = "iterators are lazy and do nothing unless consumed"]
-struct SegmentIter {
-    inner: message_log::SegmentIter,
+struct IterSegment {
+    inner: message_log::IterSegment,
 }
 
-impl Iterator for SegmentIter {
+impl Iterator for IterSegment {
     type Item = io::Result<Commit>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -238,12 +238,12 @@ impl Iterator for SegmentIter {
 /// Created by [`CommitLogView::iter`] and [`CommitLogView::iter_from`]
 /// respectively.
 #[must_use = "iterators are lazy and do nothing unless consumed"]
-pub struct CommitLogIter {
-    commits: Option<SegmentIter>,
-    segments: message_log::SegmentsIter,
+pub struct Iter {
+    commits: Option<IterSegment>,
+    segments: message_log::Segments,
 }
 
-impl Iterator for CommitLogIter {
+impl Iterator for Iter {
     type Item = io::Result<Commit>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -259,15 +259,15 @@ impl Iterator for CommitLogIter {
             match segment.try_into_iter() {
                 Err(e) => return Some(Err(e)),
                 Ok(inner) => {
-                    self.commits = Some(SegmentIter { inner });
+                    self.commits = Some(IterSegment { inner });
                 }
             }
         }
     }
 }
 
-impl From<message_log::SegmentsIter> for CommitLogIter {
-    fn from(segments: message_log::SegmentsIter) -> Self {
+impl From<message_log::Segments> for Iter {
+    fn from(segments: message_log::Segments) -> Self {
         Self {
             commits: None,
             segments,
