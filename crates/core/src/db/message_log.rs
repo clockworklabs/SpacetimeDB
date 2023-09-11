@@ -34,7 +34,6 @@ pub struct MessageLog {
     total_size: u64,
     open_segment_file: BufWriter<File>,
     pub open_segment_max_offset: u64,
-    open_segment_size: u64,
 }
 
 impl std::fmt::Debug for MessageLog {
