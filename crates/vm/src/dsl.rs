@@ -32,7 +32,7 @@ where
     I: IntoIterator<Item = T>,
     T: Into<ProductValue>,
 {
-    MemTable::from_iter(&head.into(), iter.into_iter().map(Into::into))
+    MemTable::from_iter(head.into(), iter.into_iter().map(Into::into))
 }
 
 pub fn db_table_raw(

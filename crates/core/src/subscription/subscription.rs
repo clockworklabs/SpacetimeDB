@@ -2,7 +2,7 @@ use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::RelValue;
 use spacetimedb_lib::PrimaryKey;
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_vm::expr::QueryExpr;
 use std::collections::HashSet;
 
@@ -110,20 +110,17 @@ impl QuerySet {
 
                         // Optimistically assume we have seen nothing in the row list.
                         let mut ops = Vec::with_capacity(result.data.len());
-                        for row in result.data {
+                        for mut row in result.data {
                             // Hack: remove the hidden field OP_TYPE_FIELD_NAME.
                             // See `to_mem_table`
                             // Needs to be done before calculating the PK.
-                            let mut row = row.data;
-                            let op_type = if let AlgebraicValue::U8(op) = row.remove(pos_op_type)
-                            {
+                            let mut data: Vec<_> = row.data.elements.into();
+                            let op_type = if let AlgebraicValue::U8(op) = data.remove(pos_op_type) {
                                 op
                             } else {
                                 panic!("Fail to extract `{OP_TYPE_FIELD_NAME}` on `{}`", result.head.table_name)
                             };
-                            let row = ProductValue {
-                                elements: row.try_into().unwrap(),
-                            };
+                            row.data = data.try_into().unwrap();
 
                             let row_pk = pk_for_row(&row);
 

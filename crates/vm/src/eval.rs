@@ -737,7 +737,7 @@ mod tests {
         let row = RelValue::new(scalar(1).into(), None);
         assert_eq!(
             result,
-            Code::Table(MemTable::new(&head, StAccess::Public, &[row])),
+            Code::Table(MemTable::new(head, StAccess::Public, vec![row])),
             "Query"
         );
     }
@@ -757,7 +757,7 @@ mod tests {
         let row = RelValue::new(input.into(), None);
         assert_eq!(
             result,
-            Code::Table(MemTable::new(&head, StAccess::Public, &[row])),
+            Code::Table(MemTable::new(head.clone(), StAccess::Public, vec![row])),
             "Project"
         );
 

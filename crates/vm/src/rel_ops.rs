@@ -1,4 +1,4 @@
-use crate::errors::{ErrorType, ErrorVm};
+use crate::errors::{ErrorVm};
 use spacetimedb_lib::relation::{FieldExpr, Header, RelValue, RelValueRef, RowCount};
 use spacetimedb_sats::product_value::ProductValue;
 use std::collections::HashMap;

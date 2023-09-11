@@ -115,7 +115,8 @@ impl AsyncDB for SpaceDb {
             .data
             .into_iter()
             .map(|row| {
-                row.elements
+                row.data
+                    .elements
                     .iter()
                     .map(|value| match value {
                         AlgebraicValue::Bool(x) => if *x { "1" } else { "0" }.to_string(),

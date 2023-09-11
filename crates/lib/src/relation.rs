@@ -454,7 +454,7 @@ impl<'a> RelValueRef<'a> {
             }
         }
 
-        Ok(ProductValue::new(&elements))
+        Ok(elements.try_into().unwrap())
     }
 }
 
@@ -486,7 +486,8 @@ impl RelValue {
             let mut data = Vec::with_capacity(self.data.elements.len() + with.data.elements.len());
             data.append(&mut self.data.elements.into());
             data.append(&mut with.data.elements.into());
-            self.data = ProductValue { elements: data.into() };
+            let elements = data.try_into();
+            self.data = ProductValue { elements };
         }
 
         self
@@ -527,7 +528,7 @@ pub struct MemTable {
 }
 
 impl MemTable {
-    pub fn new(head: &Header, table_access: StAccess, data: &[RelValue]) -> Self {
+    pub fn new(head: Header, table_access: StAccess, data: Vec<RelValue>) -> Self {
         assert_eq!(
             head.fields.len(),
             data.first()
@@ -536,8 +537,8 @@ impl MemTable {
             "Not match the number of columns between the header.len() <> data.len()"
         );
         Self {
-            head: head.clone(),
-            data: data.into(),
+            head,
+            data,
             table_access,
         }
     }
@@ -545,10 +546,10 @@ impl MemTable {
     pub fn from_value(of: AlgebraicValue) -> Self {
         let head = Header::for_mem_table(of.type_of().into());
         let row = RelValue::new(of.into(), None);
-        Self::new(&head, StAccess::Public, &[row])
+        Self::new(&head, StAccess::Public, vec![row])
     }
 
-    pub fn from_iter(head: &Header, data: impl Iterator<Item = ProductValue>) -> Self {
+    pub fn from_iter(head: Header, data: impl Iterator<Item = ProductValue>) -> Self {
         Self {
             head: head.clone(),
             data: data.map(|row| RelValue::new(row, None)).collect(),

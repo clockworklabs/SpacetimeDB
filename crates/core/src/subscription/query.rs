@@ -45,10 +45,11 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
     let mut q = of;
     let table_access = q.source.table_access();
 
-    let mut t = match &q.source {
-        SourceExpr::MemTable(x) => MemTable::new(&x.head, table_access, &[]),
-        SourceExpr::DbTable(table) => MemTable::new(&table.head, table_access, &[]),
+    let head = match &q.source {
+        SourceExpr::MemTable(x) => &x.head,
+        SourceExpr::DbTable(table) => &table.head,
     };
+    let mut t = MemTable::new(head.clone(), table_access, vec![]);
 
     if let Some(pos) = t.head.find_pos_by_name(OP_TYPE_FIELD_NAME) {
         t.data.extend(data.ops.iter().map(|row| {

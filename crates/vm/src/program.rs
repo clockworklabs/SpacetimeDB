@@ -186,7 +186,7 @@ impl ProgramVm for Program {
                 let head = result.head().clone();
                 let rows: Vec<_> = result.collect_vec()?;
 
-                Ok(Code::Table(MemTable::new(&head, table_access, &rows)))
+                Ok(Code::Table(MemTable::new(head, table_access, rows)))
             }
             CrudCode::Insert { .. } => {
                 todo!()

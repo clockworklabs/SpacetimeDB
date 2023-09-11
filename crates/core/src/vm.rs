@@ -164,7 +164,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         let head = result.head().clone();
         let rows: Vec<_> = result.collect_vec()?;
 
-        Ok(Code::Table(MemTable::new(&head, table_access, &rows)))
+        Ok(Code::Table(MemTable::new(head, table_access, rows)))
     }
 
     fn _execute_insert(&mut self, table: &Table, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {

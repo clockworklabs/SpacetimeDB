@@ -19,12 +19,6 @@ static_assert_size!(ProductValue, 8);
 #[cfg(not(target_arch = "wasm32"))]
 static_assert_size!(ProductValue, 12);
 
-/// See [`ProductValue`].
-pub struct ProductValueBuilder {
-    /// The values that make up this product value.
-    pub elements: Vec<AlgebraicValue>,
-}
-
 /// Constructs a product value from a list of fields with syntax `product![v1, v2, ...]`.
 ///
 /// Repeat notation from `vec![x; n]` is not supported.
@@ -43,6 +37,21 @@ impl ProductValue {
         Self {
             elements: elements.iter().cloned().collect::<SlimSliceBoxCollected<_>>().unwrap(),
         }
+    }
+}
+
+impl TryFrom<Vec<AlgebraicValue>> for ProductValue {
+    type Error = usize;
+
+    fn try_from(value: Vec<AlgebraicValue>) -> Result<Self, Self::Error> {
+        let elements = value.try_into().map_err(|v: Vec<_>| v.len())?;
+        Ok(Self { elements })
+    }
+}
+
+impl From<SatsVec<AlgebraicValue>> for ProductValue {
+    fn from(elements: SatsVec<AlgebraicValue>) -> Self {
+        ProductValue { elements }
     }
 }
 
