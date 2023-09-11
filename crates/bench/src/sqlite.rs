@@ -13,17 +13,19 @@ pub fn db_path_instance(db_instance: usize) -> PathBuf {
     db_path().join(format!("{db_instance}.db"))
 }
 
-pub fn open_conn(path: &PathBuf) -> ResultBench<Connection> {
+pub fn open_conn(path: &PathBuf, fsync: bool) -> ResultBench<Connection> {
     let db = Connection::open(path)?;
-    db.execute_batch(
-        "PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = normal;",
-    )?;
-
+    // For sqlite benchmarks we should set synchronous to either full or off which more
+    // closely aligns with wal_fsync=true and wal_fsync=false respectively in stdb.
+    db.execute_batch(if fsync {
+        "PRAGMA journal_mode = WAL; PRAGMA synchronous = full;"
+    } else {
+        "PRAGMA journal_mode = WAL; PRAGMA synchronous = off;"
+    })?;
     Ok(db)
 }
 
-pub fn create_db(db_instance: usize) -> ResultBench<PathBuf> {
+pub fn create_db(db_instance: usize, fsync: bool) -> ResultBench<PathBuf> {
     let path = db_path();
     if !path.exists() {
         std::fs::create_dir_all(&path)?;
@@ -33,7 +35,7 @@ pub fn create_db(db_instance: usize) -> ResultBench<PathBuf> {
         std::fs::remove_file(&path)?;
     }
 
-    let db = open_conn(&path)?;
+    let db = open_conn(&path, fsync)?;
 
     db.execute_batch(
         "CREATE TABLE data (
@@ -52,8 +54,9 @@ pub fn create_dbs(total_dbs: usize) -> ResultBench<()> {
         std::fs::remove_dir_all(&path)?;
     }
 
+    //When pre-creating the DB need to persist changes...
     for i in 0..total_dbs {
-        create_db(i)?;
+        create_db(i, true)?;
     }
     set_counter(0)?;
 
@@ -98,8 +101,14 @@ pub fn insert_tx(conn: &mut Connection, run: Runs) -> ResultBench<()> {
     Ok(())
 }
 
+pub fn db_prefill(path: &PathBuf, run: Runs, fsync: bool) -> ResultBench<()> {
+    let mut conn = open_conn(path, fsync)?;
+    insert_tx(&mut conn, run)?;
+    Ok(())
+}
+
 pub fn select_no_index(conn: &mut Connection, run: Runs) -> ResultBench<()> {
-    for i in run.range().skip(1) {
+    for i in run.range_selects() {
         let i = i as u64;
         let sql = &format!(
             "SELECT * FROM data WHERE b >= {} AND b < {}",
@@ -131,8 +140,8 @@ mod tests {
     #[test]
     fn test() -> ResultBench<()> {
         let run = Runs::Tiny;
-        let path = create_db(0).unwrap();
-        let mut conn = sqlite::open_conn(&path).unwrap();
+        let path = create_db(0, true).unwrap();
+        let mut conn = sqlite::open_conn(&path, true).unwrap();
         insert_tx_per_row(&mut conn, run).unwrap();
         Ok(())
     }

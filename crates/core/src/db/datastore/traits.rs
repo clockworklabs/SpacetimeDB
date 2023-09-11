@@ -2,7 +2,7 @@ use crate::db::relational_db::ST_TABLES_ID;
 use core::fmt;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::relation::{calculate_hash, DbTable, FieldName, FieldOnly, Header, TableField};
-use spacetimedb_lib::DataKey;
+use spacetimedb_lib::{ColumnIndexAttribute, DataKey};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
 use spacetimedb_vm::expr::SourceExpr;
 use std::{ops::RangeBounds, sync::Arc};
@@ -178,13 +178,13 @@ pub struct ConstraintDef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableSchema {
-    pub(crate) table_id: u32,
-    pub(crate) table_name: String,
+    pub table_id: u32,
+    pub table_name: String,
     pub(crate) columns: Vec<ColumnSchema>,
     pub(crate) indexes: Vec<IndexSchema>,
     pub(crate) constraints: Vec<ConstraintSchema>,
-    pub(crate) table_type: StTableType,
-    pub(crate) table_access: StAccess,
+    pub table_type: StTableType,
+    pub table_access: StAccess,
 }
 
 impl TableSchema {

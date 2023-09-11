@@ -17,8 +17,8 @@ pub fn db_path(db_instance: usize) -> PathBuf {
     base_path().join(db_instance.to_string())
 }
 
-pub fn open_conn(path: &PathBuf) -> ResultBench<DbResult> {
-    let stdb = open_db(path, false)?;
+pub fn open_conn(path: &PathBuf, fsync: bool) -> ResultBench<DbResult> {
+    let stdb = open_db(path, false, fsync)?;
 
     let tx = stdb.begin_tx();
 
@@ -34,13 +34,13 @@ pub fn open_conn(path: &PathBuf) -> ResultBench<DbResult> {
     Ok((stdb, path.clone(), table_id))
 }
 
-pub fn create_db(db_instance: usize) -> ResultBench<PathBuf> {
+pub fn create_db(db_instance: usize, fsync: bool) -> ResultBench<PathBuf> {
     let path = db_path(db_instance);
     if path.exists() {
         std::fs::remove_dir_all(&path)?;
     }
 
-    let stdb = open_db(&path, false)?;
+    let stdb = open_db(&path, false, fsync)?;
     let mut tx = stdb.begin_tx();
 
     stdb.create_table(
@@ -57,6 +57,12 @@ pub fn create_db(db_instance: usize) -> ResultBench<PathBuf> {
     Ok(path)
 }
 
+pub fn db_prefill(path: &PathBuf, run: Runs, fsync: bool) -> ResultBench<()> {
+    let (conn, _dir, table_id) = open_conn(path, fsync)?;
+    insert_tx(&conn, table_id, run)?;
+    Ok(())
+}
+
 pub fn create_dbs(total_dbs: usize) -> ResultBench<()> {
     let path = base_path();
 
@@ -64,8 +70,9 @@ pub fn create_dbs(total_dbs: usize) -> ResultBench<()> {
         std::fs::remove_dir_all(&path)?;
     }
 
+    //When pre-creating the DB need to persist changes...
     for i in 0..total_dbs {
-        create_db(i)?;
+        create_db(i, true)?;
     }
 
     set_counter(0)?;
@@ -128,7 +135,7 @@ pub fn insert_tx(conn: &RelationalDB, table_id: u32, run: Runs) -> ResultBench<(
 pub fn select_no_index(conn: &RelationalDB, table_id: u32, run: Runs) -> ResultBench<()> {
     let tx = conn.begin_tx();
 
-    for i in run.range().skip(1) {
+    for i in run.range_selects() {
         let i = i as u64;
         let _r = conn
             .iter(&tx, table_id)?

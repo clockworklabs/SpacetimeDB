@@ -41,7 +41,14 @@ enum Commands {
     },
 }
 
-fn bench_fn<Space, Sqlite>(cli: Cli, space: Space, sqlite: Sqlite, run: Runs) -> ResultBench<()>
+fn bench_fn<Space, Sqlite>(
+    cli: Cli,
+    space: Space,
+    sqlite: Sqlite,
+    run: Runs,
+    prefill: bool,
+    fsync: bool,
+) -> ResultBench<()>
 where
     Space: Fn(&RelationalDB, u32, Runs) -> ResultBench<()>,
     Sqlite: Fn(&mut Connection, Runs) -> ResultBench<()>,
@@ -50,7 +57,10 @@ where
         DbEngine::Sqlite => {
             let db_instance = sqlite::get_counter()?;
             let path = sqlite::db_path_instance(db_instance);
-            let mut conn = sqlite::open_conn(&path)?;
+            if prefill {
+                sqlite::db_prefill(&path, run, true)?
+            }
+            let mut conn = sqlite::open_conn(&path, fsync)?;
             sqlite(&mut conn, run)?;
             sqlite::set_counter(db_instance + 1)?;
             Ok(())
@@ -58,7 +68,10 @@ where
         DbEngine::Spacetime => {
             let db_instance = spacetime::get_counter()?;
             let path = spacetime::db_path(db_instance);
-            let (conn, _tmp_dir, table_id) = spacetime::open_conn(&path)?;
+            if prefill {
+                spacetime::db_prefill(&path, run, true)?
+            }
+            let (conn, _tmp_dir, table_id) = spacetime::open_conn(&path, fsync)?;
             space(&conn, table_id, run)?;
             spacetime::set_counter(db_instance + 1)?;
             Ok(())
@@ -90,18 +103,24 @@ fn main() -> ResultBench<()> {
             spacetime::insert_tx_per_row,
             sqlite::insert_tx_per_row,
             rows.unwrap_or(Runs::Tiny),
+            false, // prefill
+            true,  // fsync
         ),
         Commands::InsertBulk { rows } => bench_fn(
             cli,
             spacetime::insert_tx,
             sqlite::insert_tx,
             rows.unwrap_or(Runs::Small),
+            false, // prefill
+            false, // fsync
         ),
         Commands::SelectNoIndex { rows } => bench_fn(
             cli,
             spacetime::select_no_index,
             sqlite::select_no_index,
             rows.unwrap_or(Runs::Tiny),
+            true,  // prefill
+            false, // fsync
         ),
         Commands::CreateDb { total_dbs } => match cli.db {
             DbEngine::Sqlite => {

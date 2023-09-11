@@ -24,6 +24,7 @@ spacetimedb-client-api = { path = "../client-api" }
 spacetimedb-testing = { path = "../testing" }
 
 anyhow.workspace = true
+byte-unit.workspace = true
 clap.workspace = true
 criterion.workspace = true
 rand.workspace = true

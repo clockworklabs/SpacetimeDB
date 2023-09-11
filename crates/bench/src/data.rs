@@ -1,5 +1,6 @@
 use crate::utils::{encode, START_B};
 use clap::ValueEnum;
+use std::iter::{Skip, Take};
 use std::ops::Range;
 
 #[derive(Debug)]
@@ -40,6 +41,12 @@ impl Runs {
     pub fn range(self) -> Range<u16> {
         let x = self as u16;
         0..x
+    }
+
+    // Range that divides the size of the run in batches of `START_B`, skipping the first
+    pub fn range_selects(self) -> Take<Skip<Range<u16>>> {
+        let x = self as u16;
+        (0..x).skip(1).take((self.range().end as u64 / START_B) as usize)
     }
 
     pub fn data(self) -> impl Iterator<Item = Data> {
