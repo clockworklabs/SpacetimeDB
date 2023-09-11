@@ -54,7 +54,8 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
         t.data.extend(data.ops.iter().map(|row| {
             let mut new = row.row.clone();
             new.elements[pos] = row.op_type.into();
-            RelValue::new(&t.head, &new, Some(DataKey::from_data(&row.row_pk)))
+            let mut bytes: &[u8] = row.row_pk.as_ref();
+            RelValue::new(&t.head, &new, Some(DataKey::decode(&mut bytes).unwrap()))
         }));
     } else {
         t.head.fields.push(Column::new(
@@ -64,8 +65,9 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
         for row in &data.ops {
             let mut new = row.row.clone();
             new.elements.push(row.op_type.into());
+            let mut bytes: &[u8] = row.row_pk.as_ref();
             t.data
-                .push(RelValue::new(&t.head, &new, Some(DataKey::from_data(&row.row_pk))));
+                .push(RelValue::new(&t.head, &new, Some(DataKey::decode(&mut bytes).unwrap())));
         }
     }
 

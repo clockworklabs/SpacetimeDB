@@ -92,6 +92,11 @@ impl traits::Data for Data {
     }
 }
 
+/// A `DataRef` represents a row stored in a table.
+///
+/// A table row always has a [`DataKey`] associated with it.
+/// This is in contrast to rows that are materialized during query execution
+/// which may or may not have an associated `DataKey`.
 #[derive(Clone)]
 pub struct DataRef {
     id: DataKey,
