@@ -5,7 +5,18 @@ namespace SpacetimeDB
 {
     public class SomeWrapperConverter : JsonConverter
     {
-        public override bool CanConvert(Type objectType) => objectType == typeof(SomeWrapper<>);
+        public override bool CanConvert(Type objectType)
+        {
+			if(objectType.IsGenericType) {
+				var genericType = objectType.GetGenericTypeDefinition();
+                if(genericType == typeof(SomeWrapper<>)) {
+                    return true;
+                }
+			}
+
+			return false;
+        }
+
 
         public override object ReadJson(
             JsonReader reader,
