@@ -16,7 +16,7 @@ impl RelOps for RelIter<ProductValue> {
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         Ok(if self.pos == 0 {
             self.pos += 1;
-            Some(RelValue::new(&self.head, &self.of, None))
+            Some(RelValue::new(&self.head, &self.of))
         } else {
             None
         })
@@ -38,7 +38,7 @@ impl RelOps for RelIter<MemTable> {
             let row = &self.of.data[self.pos];
             self.pos += 1;
 
-            Ok(Some(row.clone()))
+            Ok(Some(RelValue::new(self.head(), row)))
         } else {
             Ok(None)
         }

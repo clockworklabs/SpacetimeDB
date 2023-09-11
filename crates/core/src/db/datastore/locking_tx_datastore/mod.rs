@@ -94,21 +94,16 @@ impl traits::Data for Data {
 
 #[derive(Clone)]
 pub struct DataRef {
-    id: DataKey,
     data: ProductValue,
 }
 
 impl DataRef {
-    fn new(id: DataKey, data: ProductValue) -> Self {
-        Self { id, data }
+    fn new(data: ProductValue) -> Self {
+        Self { data }
     }
 
     pub fn view(&self) -> &ProductValue {
         &self.data
-    }
-
-    pub fn id(&self) -> &DataKey {
-        &self.id
     }
 }
 
@@ -1376,7 +1371,7 @@ impl Inner {
         match self.tx_state.as_ref().unwrap().get_row_op(table_id, row_id) {
             RowState::Committed(_) => unreachable!("a row cannot be committed in a tx state"),
             RowState::Insert(row) => {
-                return Ok(Some(DataRef::new(row_id.0, row)));
+                return Ok(Some(DataRef::new(row)));
             }
             RowState::Delete => {
                 return Ok(None);
@@ -1388,7 +1383,7 @@ impl Inner {
             .tables
             .get(table_id)
             .and_then(|table| table.get_row(row_id))
-            .map(|row| DataRef::new(row_id.0, row.clone())))
+            .map(|row| DataRef::new(row.clone())))
     }
 
     fn get_row_type(&self, table_id: &TableId) -> Option<&ProductType> {
@@ -1746,10 +1741,10 @@ impl Iterator for Iter<'_> {
                             Some(RowState::Insert(_)) => (), // Do nothing, we'll get it in the next stage
                             Some(RowState::Delete) => (),    // Skip it, it's been deleted
                             Some(RowState::Absent) => {
-                                return Some(DataRef::new(row_id.0, row.clone()));
+                                return Some(DataRef::new(row.clone()));
                             }
                             None => {
-                                return Some(DataRef::new(row_id.0, row.clone()));
+                                return Some(DataRef::new(row.clone()));
                             }
                         }
                     }
@@ -1767,8 +1762,8 @@ impl Iterator for Iter<'_> {
                     }
                 }
                 ScanStage::CurrentTx { iter } => {
-                    if let Some((id, row)) = iter.next() {
-                        return Some(DataRef::new(id.0, row.clone()));
+                    if let Some((_, row)) = iter.next() {
+                        return Some(DataRef::new(row.clone()));
                     }
                     break;
                 }
@@ -1859,7 +1854,6 @@ impl Iterator for IndexSeekIterInner<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(row_id) = self.inserted_rows.next() {
             return Some(DataRef::new(
-                row_id.0,
                 self.tx_state.get_row(&self.table_id, &row_id).unwrap().clone(),
             ));
         }
@@ -1908,10 +1902,7 @@ impl Iterator for CommittedIndexIterByColEq<'_> {
 /// Retrieve a commited row. Panics if `table_id` and `row_id` do not identify an actually
 /// present row.
 fn get_committed_row(state: &CommittedState, table_id: &TableId, row_id: &RowId) -> DataRef {
-    DataRef::new(
-        row_id.0,
-        state.tables.get(table_id).unwrap().get_row(row_id).unwrap().clone(),
-    )
+    DataRef::new(state.tables.get(table_id).unwrap().get_row(row_id).unwrap().clone())
 }
 
 pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
