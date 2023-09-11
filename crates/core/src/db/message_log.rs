@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, read_dir, File, OpenOptions},
+    fs::{self, File},
     io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
 };
@@ -7,64 +7,52 @@ use std::{
 #[cfg(target_family = "unix")]
 use std::os::unix::fs::FileExt;
 
+use anyhow::{anyhow, Context};
+
 use crate::error::DBError;
 #[cfg(target_family = "windows")]
 use std::os::windows::fs::FileExt;
 
 const HEADER_SIZE: usize = 4;
 
-/// Maximum size in bytes of a single log segment.
-pub const MAX_SEGMENT_SIZE: u64 = 1_073_741_824;
-
+/// Options for opening a [`MessageLog`], similar to [`fs::OpenOptions`].
 #[derive(Clone, Copy, Debug)]
-struct Segment {
-    min_offset: u64,
-    size: u64,
+pub struct OpenOptions {
+    max_segment_size: u64,
+    // TODO(kim): Offset index options
 }
 
-impl Segment {
-    fn name(&self) -> String {
-        format!("{:0>20}", self.min_offset)
+impl OpenOptions {
+    /// Set the maximum size in bytes of a single log segment.
+    ///
+    /// Default: 1GiB
+    pub fn max_segment_size(&mut self, size: u64) -> &mut Self {
+        self.max_segment_size = size;
+        self
     }
-}
 
-pub struct MessageLog {
-    root: PathBuf,
-    segments: Vec<Segment>,
-    total_size: u64,
-    open_segment_file: BufWriter<File>,
-    pub open_segment_max_offset: u64,
-}
-
-impl std::fmt::Debug for MessageLog {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MessageLog")
-            .field("root", &self.root)
-            .field("segments", &self.segments)
-            .field("total_size", &self.total_size)
-            .field("open_segment_file", &self.open_segment_file)
-            .field("open_segment_max_offset", &self.open_segment_max_offset)
-            .field("open_segment_size", &self.open_segment().size)
-            .finish()
-    }
-}
-
-// TODO: do we build the concept of batches into the message log?
-impl MessageLog {
-    #[tracing::instrument(skip(path))]
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, DBError> {
+    /// Open the [`MessageLog`] at `path` with the options in self.
+    #[tracing::instrument(skip_all)]
+    pub fn open(&self, path: impl AsRef<Path>) -> Result<MessageLog, DBError> {
         let root = path.as_ref();
-        fs::create_dir_all(root).unwrap();
+        fs::create_dir_all(root).with_context(|| format!("could not create root directory: {}", root.display()))?;
 
         let mut segments = Vec::new();
         let mut total_size = 0;
-        for file in read_dir(root)? {
+        for file in fs::read_dir(root).with_context(|| format!("unable to read root directory: {}", root.display()))? {
             let dir_entry = file?;
             let path = dir_entry.path();
-            if path.extension().unwrap() == "log" {
-                let file_stem = path.file_stem().unwrap();
-                let offset = file_stem.to_os_string().into_string().unwrap();
-                let offset = offset.parse::<u64>()?;
+            if let Some(ext) = path.extension() {
+                if ext != "log" {
+                    continue;
+                }
+                let file_stem = path
+                    .file_stem()
+                    .map(|os| os.to_string_lossy())
+                    .ok_or_else(|| anyhow!("unexpected .log file: {}", path.display()))?;
+                let offset = file_stem
+                    .parse::<u64>()
+                    .with_context(|| format!("could not parse log offset from: {}", path.display()))?;
                 let size = dir_entry.metadata()?.len();
 
                 total_size += size;
@@ -83,7 +71,7 @@ impl MessageLog {
 
         let last_segment = segments.last().unwrap();
         let last_segment_path = root.join(last_segment.name() + ".log");
-        let file = OpenOptions::new()
+        let file = fs::OpenOptions::new()
             .read(true)
             .append(true)
             .create(true)
@@ -107,13 +95,68 @@ impl MessageLog {
 
         log::debug!("Initialized with offset {}", max_offset);
 
-        Ok(Self {
+        Ok(MessageLog {
             root: root.to_owned(),
+            options: *self,
             segments,
             total_size,
             open_segment_file: file,
             open_segment_max_offset: max_offset,
         })
+    }
+}
+
+impl Default for OpenOptions {
+    fn default() -> Self {
+        Self {
+            max_segment_size: 1_073_741_824, // 1GiB
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Segment {
+    min_offset: u64,
+    size: u64,
+}
+
+impl Segment {
+    fn name(&self) -> String {
+        format!("{:0>20}", self.min_offset)
+    }
+}
+
+pub struct MessageLog {
+    root: PathBuf,
+    options: OpenOptions,
+    segments: Vec<Segment>,
+    total_size: u64,
+    open_segment_file: BufWriter<File>,
+    pub open_segment_max_offset: u64,
+}
+
+impl std::fmt::Debug for MessageLog {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MessageLog")
+            .field("root", &self.root)
+            .field("segments", &self.segments)
+            .field("total_size", &self.total_size)
+            .field("open_segment_file", &self.open_segment_file)
+            .field("open_segment_max_offset", &self.open_segment_max_offset)
+            .field("open_segment_size", &self.open_segment().size)
+            .finish()
+    }
+}
+
+// TODO: do we build the concept of batches into the message log?
+impl MessageLog {
+    #[tracing::instrument(skip(path))]
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, DBError> {
+        OpenOptions::default().open(path)
+    }
+
+    pub fn options() -> OpenOptions {
+        OpenOptions::default()
     }
 
     #[tracing::instrument]
@@ -130,7 +173,7 @@ impl MessageLog {
         let size: u32 = mess_size + HEADER_SIZE as u32;
 
         let end_size = self.open_segment().size + size as u64;
-        if end_size > MAX_SEGMENT_SIZE {
+        if end_size > self.options.max_segment_size {
             self.flush()?;
             self.segments.push(Segment {
                 min_offset: self.open_segment_max_offset + 1,
@@ -140,7 +183,7 @@ impl MessageLog {
             let last_segment = self.segments.last().unwrap();
             let last_segment_path = self.root.join(last_segment.name() + ".log");
 
-            let file = OpenOptions::new()
+            let file = fs::OpenOptions::new()
                 .append(true)
                 .create_new(true)
                 .open(last_segment_path)?;
@@ -188,6 +231,10 @@ impl MessageLog {
         self.total_size
     }
 
+    pub fn max_segment_size(&self) -> u64 {
+        self.options.max_segment_size
+    }
+
     pub fn get_root(&self) -> PathBuf {
         self.root.clone()
     }
@@ -227,11 +274,18 @@ impl MessageLog {
     /// with an offset _smaller_ than the argument, as segments do not currently
     /// support slicing.
     ///
+    /// If `offset` is larger than the offset of any message already written to
+    /// the log, an empty iterator is returned.
+    ///
     /// The iterator represents a _snapshot_ of the log at the time this method
     /// is called. That is, segments created after the method returns will not
     /// appear in the iteration. The last segment yielded by the iterator may be
     /// incomplete (i.e. still be appended to).
     pub fn segments_from(&self, offset: u64) -> SegmentsIter {
+        if offset > self.open_segment_max_offset {
+            return SegmentsIter::empty();
+        }
+
         let root = self.get_root();
         let pos = self
             .segments
@@ -400,7 +454,7 @@ impl<'a> Iterator for MessageLogIter<'a> {
             open_segment_file = f;
         } else {
             let segment = self.message_log.segment_for_offset(self.offset).unwrap();
-            let file = OpenOptions::new()
+            let file = fs::OpenOptions::new()
                 .read(true)
                 .open(self.message_log.root.join(segment.name() + ".log"))
                 .unwrap();
@@ -489,6 +543,68 @@ mod tests {
 
         let message_log = MessageLog::open(path)?;
         assert!(message_log.size() == 2_000_000);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_segments_iter() -> ResultTest<()> {
+        let tmp = TempDir::new("message_log_test")?;
+        let path = tmp.path();
+
+        const MESSAGE: &[u8] = b"fee fi fo fum";
+        const MESSAGES_PER_SEGMENT: usize = 10_000;
+        const SEGMENT_SIZE: usize = MESSAGES_PER_SEGMENT * (MESSAGE.len() + super::HEADER_SIZE);
+        const TOTAL_MESSAGES: usize = (MESSAGES_PER_SEGMENT * 3) - 1;
+
+        let mut message_log = MessageLog::options().max_segment_size(SEGMENT_SIZE as u64).open(path)?;
+        for _ in 0..TOTAL_MESSAGES {
+            message_log.append(MESSAGE)?;
+        }
+        message_log.sync_all()?;
+
+        let segments = message_log.segments().count();
+        assert_eq!(3, segments);
+
+        let segments = message_log.segments_from(1_000_000).count();
+        assert_eq!(0, segments);
+
+        let segments = message_log.segments_from(20_001).count();
+        assert_eq!(1, segments);
+
+        let segments = message_log.segments_from(10_001).count();
+        assert_eq!(2, segments);
+
+        let segments = message_log.segments_from(10_000).count();
+        assert_eq!(3, segments);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_segment_iter() -> ResultTest<()> {
+        let tmp = TempDir::new("message_log_test")?;
+        let path = tmp.path();
+
+        const MESSAGE: &[u8] = b"fee fi fo fum";
+        const MESSAGES_PER_SEGMENT: usize = 10_000;
+        const SEGMENT_SIZE: usize = MESSAGES_PER_SEGMENT * (MESSAGE.len() + super::HEADER_SIZE);
+        const TOTAL_MESSAGES: usize = (MESSAGES_PER_SEGMENT * 3) - 1;
+
+        let mut message_log = MessageLog::options().max_segment_size(SEGMENT_SIZE as u64).open(path)?;
+        for _ in 0..TOTAL_MESSAGES {
+            message_log.append(MESSAGE)?;
+        }
+        message_log.sync_all()?;
+
+        let mut count = 0;
+        for segment in message_log.segments() {
+            for message in segment.try_into_iter()? {
+                assert_eq!(message?, MESSAGE);
+                count += 1;
+            }
+        }
+        assert_eq!(count, TOTAL_MESSAGES);
 
         Ok(())
     }
