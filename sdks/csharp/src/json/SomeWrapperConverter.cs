@@ -9,11 +9,7 @@ namespace SpacetimeDB
         {
             if (objectType.IsGenericType)
             {
-                var genericType = objectType.GetGenericTypeDefinition();
-                if (genericType == typeof(SomeWrapper<>))
-                {
-                    return true;
-                }
+                return objectType.GetGenericTypeDefinition() == typeof(SomeWrapper<>);
             }
 
             return false;
