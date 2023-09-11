@@ -203,6 +203,12 @@ impl<T: TableType> TableCache<T> {
         );
 
         for (row_hash, row) in prev_subs.into_iter() {
+            log::trace!(
+                "Initalizing table {:?}: row previously resident: {:?} hash: {:?}",
+                T::TABLE_NAME,
+                row,
+                row_hash,
+            );
             if diff.insert(row_hash, DiffEntry::Delete(row)).is_some() {
                 // This should be impossible, but just in case...
                 log::error!("Found duplicate row in existing `TableCache` for {:?}", T::TABLE_NAME);
@@ -238,7 +244,12 @@ impl<T: TableType> TableCache<T> {
                         );
                     }
                     Ok(row) => {
-                        log::trace!("Initializing table {:?}: got new row {:?}", T::TABLE_NAME, row);
+                        log::trace!(
+                            "Initializing table {:?}: got new row {:?}. Hash: {:?}",
+                            T::TABLE_NAME,
+                            row,
+                            row_pk
+                        );
                         diff.insert(row_pk, DiffEntry::Insert(row));
                     }
                 },

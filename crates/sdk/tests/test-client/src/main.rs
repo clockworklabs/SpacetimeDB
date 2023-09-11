@@ -51,6 +51,7 @@ fn exit_on_panic() {
 }
 
 fn main() {
+    env_logger::init();
     exit_on_panic();
 
     let test = std::env::args()
