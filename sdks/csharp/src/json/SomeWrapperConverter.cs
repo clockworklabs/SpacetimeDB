@@ -1,5 +1,4 @@
 using System;
-using Namespace;
 using Newtonsoft.Json;
 
 namespace SpacetimeDB
