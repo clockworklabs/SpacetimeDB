@@ -284,8 +284,6 @@ pub fn st_columns_schema() -> TableSchema {
                 table_id: ST_COLUMNS_ID.0,
                 col_id: StColumnFields::ColId as u32,
                 col_name: StColumnFields::ColId.name().to_string(),
-                col_id: 1,
-                col_name: "col_id".into(),
                 col_type: AlgebraicType::U32,
                 is_autoinc: false,
             },
@@ -494,7 +492,7 @@ pub(crate) fn st_constraints_schema() -> TableSchema {
         indexes: vec![IndexSchema {
             index_id: ST_CONSTRAINT_ID_INDEX_ID,
             table_id: ST_CONSTRAINTS_ID.0,
-            col_id: 0,
+            cols: NonEmpty::new(0),
             index_name: "constraint_id_idx".into(),
             is_unique: true,
         }],
