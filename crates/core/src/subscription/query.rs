@@ -316,7 +316,7 @@ mod tests {
         assert_eq!(schema.table_type, StTableType::User);
         assert_eq!(schema.table_access, StAccess::Public);
 
-        let q_1 = to_mem_table(q.clone(), &data);
+        let q_1 = q.clone();
         check_query(&db, &table, &mut tx, &q_1, &data)?;
 
         let q_2 = q.with_select_cmp(OpCmp::Eq, FieldName::named("inventory", "inventory_id"), scalar(1u64));
