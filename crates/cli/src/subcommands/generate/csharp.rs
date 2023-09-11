@@ -1235,7 +1235,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
             match &arg.algebraic_type {
                 AlgebraicType::Sum(sum_type) => {
                     if sum_type.as_option().is_some() {
-                        json_args.push_str(&format!("new SomeWrapper({})", arg_name));
+                        json_args.push_str(&format!("new SpacetimeDB.SomeWrapper<{}>({})", arg_type_str, arg_name));
                     } else {
                         json_args.push_str(&arg_name);
                     }
@@ -1250,7 +1250,9 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                     let ref_type = &ctx.typespace.types[type_ref.idx()];
                     if let AlgebraicType::Sum(sum_type) = ref_type {
                         if is_enum(sum_type) {
-                            json_args.push_str(format!("new EnumWrapper<{}>({})", arg_type_str, arg_name).as_str());
+                            json_args.push_str(
+                                format!("new SpacetimeDB.EnumWrapper<{}>({})", arg_type_str, arg_name).as_str(),
+                            );
                         } else {
                             unimplemented!()
                         }
@@ -1594,7 +1596,6 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         output.indent(1);
     }
 
-    writeln!(output, "[ReducerClass]").unwrap();
     writeln!(output, "public partial class Reducer").unwrap();
     writeln!(output, "{{").unwrap();
     {
@@ -1624,7 +1625,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         writeln!(output, "}}").unwrap();
     }
 
-    result.push(vec![("Reducer.cs".into(), output.into_inner())]);
+    result.push(vec![("ReducerJsonSettings.cs".into(), output.into_inner())]);
 
     result
 }
