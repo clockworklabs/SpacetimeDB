@@ -78,7 +78,7 @@ impl InstanceEnv {
                 crate::error::DBError::Index(IndexError::UniqueConstraintViolation {
                     constraint_name: _,
                     table_name: _,
-                    cols: _,
+                    col_names: _,
                     value: _,
                 }) => {}
                 _ => {

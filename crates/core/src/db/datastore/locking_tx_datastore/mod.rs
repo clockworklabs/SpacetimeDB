@@ -1306,7 +1306,7 @@ impl Inner {
                 return Err(IndexError::UniqueConstraintViolation {
                     constraint_name: index.name.clone(),
                     table_name: insert_table.schema.table_name.clone(),
-                    cols: index
+                    col_names: index
                         .cols
                         .iter()
                         .map(|&x| insert_table.schema.columns[x as usize].col_name.clone())
@@ -1325,11 +1325,11 @@ impl Inner {
                 for row_id in violators {
                     if let Some(delete_table) = self.tx_state.as_ref().unwrap().delete_tables.get(&table_id) {
                         if !delete_table.contains(&row_id) {
-                            let value = row.project_not_empty(&index.cols).unwrap();
+                            let value = row.project_not_empty(&index.cols)?;
                             return Err(IndexError::UniqueConstraintViolation {
                                 constraint_name: index.name.clone(),
                                 table_name: table.schema.table_name.clone(),
-                                cols: index
+                                col_names: index
                                     .cols
                                     .iter()
                                     .map(|&x| insert_table.schema.columns[x as usize].col_name.clone())
@@ -1343,7 +1343,7 @@ impl Inner {
                         return Err(IndexError::UniqueConstraintViolation {
                             constraint_name: index.name.clone(),
                             table_name: table.schema.table_name.clone(),
-                            cols: index
+                            col_names: index
                                 .cols
                                 .iter()
                                 .map(|&x| insert_table.schema.columns[x as usize].col_name.clone())
@@ -2809,7 +2809,7 @@ mod tests {
             Err(DBError::Index(IndexError::UniqueConstraintViolation {
                 constraint_name: _,
                 table_name: _,
-                cols: _,
+                col_names: _,
                 value: _,
             })) => (),
             _ => panic!("Expected an unique constraint violation error."),
@@ -2848,7 +2848,7 @@ mod tests {
             Err(DBError::Index(IndexError::UniqueConstraintViolation {
                 constraint_name: _,
                 table_name: _,
-                cols: _,
+                col_names: _,
                 value: _,
             })) => (),
             _ => panic!("Expected an unique constraint violation error."),
@@ -2950,7 +2950,7 @@ mod tests {
             Err(DBError::Index(IndexError::UniqueConstraintViolation {
                 constraint_name: _,
                 table_name: _,
-                cols: _,
+                col_names: _,
                 value: _,
             })) => (),
             _ => panic!("Expected an unique constraint violation error."),
@@ -3020,7 +3020,7 @@ mod tests {
             Err(DBError::Index(IndexError::UniqueConstraintViolation {
                 constraint_name: _,
                 table_name: _,
-                cols: _,
+                col_names: _,
                 value: _,
             })) => (),
             _ => panic!("Expected an unique constraint violation error."),

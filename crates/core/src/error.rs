@@ -60,11 +60,11 @@ pub enum IndexError {
     IndexAlreadyExists(IndexDef, String),
     #[error("Column not found: {0:?}")]
     ColumnNotFound(IndexDef),
-    #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
+    #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, col_names, value.to_satn())]
     UniqueConstraintViolation {
         constraint_name: String,
         table_name: String,
-        cols: Vec<String>,
+        col_names: Vec<String>,
         value: AlgebraicValue,
     },
     #[error("Attempt to define a index with more than 1 auto_inc column: Table: {0:?}, Columns: {1:?}")]

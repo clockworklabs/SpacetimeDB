@@ -216,20 +216,25 @@ impl TableSchema {
         FieldName::named(or_use.table.unwrap_or(&self.table_name), or_use.field)
     }
 
-    /// Project the fields from the supplied `indexes`.
-    pub fn project(&self, indexes: impl Iterator<Item = usize>) -> Result<Vec<&ColumnSchema>> {
-        indexes
-            .map(|index| {
-                self.get_column(index)
-                    .ok_or(InvalidFieldError { index, name: None }.into())
+    /// Project the fields from the supplied `columns`.
+    pub fn project(&self, columns: impl Iterator<Item = usize>) -> Result<Vec<&ColumnSchema>> {
+        columns
+            .map(|pos| {
+                self.get_column(pos).ok_or(
+                    InvalidFieldError {
+                        col_pos: pos,
+                        name: None,
+                    }
+                    .into(),
+                )
             })
             .collect()
     }
 
-    /// Utility for project the fields from the supplied `indexes` that is a [NonEmpty<u32>],
-    /// used for when the list of field indexes have at least one value.
-    pub fn project_not_empty(&self, indexes: &NonEmpty<u32>) -> Result<Vec<&ColumnSchema>> {
-        self.project(indexes.iter().map(|&x| x as usize))
+    /// Utility for project the fields from the supplied `columns` that is a [NonEmpty<u32>],
+    /// used for when the list of field columns have at least one value.
+    pub fn project_not_empty(&self, columns: &NonEmpty<u32>) -> Result<Vec<&ColumnSchema>> {
+        self.project(columns.iter().map(|&x| x as usize))
     }
 }
 

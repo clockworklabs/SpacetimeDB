@@ -700,7 +700,7 @@ impl<'a> TryFrom<&'a ProductValue> for StIndexRow<&'a str> {
             NonEmpty::from_slice(x).unwrap()
         } else {
             return Err(InvalidFieldError {
-                index: StIndexFields::Cols as usize,
+                col_pos: StIndexFields::Cols as usize,
                 name: StIndexFields::Cols.name().into(),
             }
             .into());
