@@ -5,7 +5,8 @@ use crate::host::module_host::DatabaseTableUpdate;
 use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{Column, FieldName, MemTable};
+use spacetimedb_lib::relation::{Column, FieldName, MemTable, RelValue};
+use spacetimedb_lib::DataKey;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
 
@@ -50,7 +51,7 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
         t.data.extend(data.ops.iter().map(|row| {
             let mut new = row.row.clone();
             new.elements[pos] = row.op_type.into();
-            new
+            RelValue::new(&t.head, &new, Some(DataKey::from_data(&row.row_pk)))
         }));
     } else {
         t.head.fields.push(Column::new(
@@ -60,7 +61,8 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
         for row in &data.ops {
             let mut new = row.row.clone();
             new.elements.push(row.op_type.into());
-            t.data.push(new);
+            t.data
+                .push(RelValue::new(&t.head, &new, Some(DataKey::from_data(&row.row_pk))));
         }
     }
 

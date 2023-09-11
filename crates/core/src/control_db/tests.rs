@@ -53,7 +53,7 @@ async fn test_domain() -> anyhow::Result<()> {
     })
     .await??;
 
-    let addr = Address::from_arr(&[0; 16]);
+    let addr = Address::zero();
     let res = cdb.spacetime_insert_domain(&addr, domain.clone(), *ALICE, true).await?;
     assert!(matches!(res, InsertDomainResult::Success { .. }));
 

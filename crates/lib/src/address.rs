@@ -28,6 +28,10 @@ impl Address {
         Self(u128::from_be_bytes(*arr))
     }
 
+    pub fn zero() -> Self {
+        Self(0)
+    }
+
     pub fn from_hex(hex: &str) -> Result<Self, anyhow::Error> {
         <[u8; 16]>::from_hex(hex)
             .context("Addresses must be 32 hex characters (16 bytes) in length.")

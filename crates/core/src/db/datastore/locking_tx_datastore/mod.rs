@@ -94,16 +94,21 @@ impl traits::Data for Data {
 
 #[derive(Clone)]
 pub struct DataRef {
+    id: DataKey,
     data: ProductValue,
 }
 
 impl DataRef {
-    fn new(data: ProductValue) -> Self {
-        Self { data }
+    fn new(id: DataKey, data: ProductValue) -> Self {
+        Self { id, data }
     }
 
     pub fn view(&self) -> &ProductValue {
         &self.data
+    }
+
+    pub fn id(&self) -> &DataKey {
+        &self.id
     }
 }
 
@@ -384,6 +389,7 @@ impl Inner {
 
             // If any columns are auto incrementing, we need to create a sequence
             // NOTE: This code with the `seq_start` is particularly fragile.
+            // TODO: If we exceed  `SEQUENCE_PREALLOCATION_AMOUNT` we will get a unique violation
             if col.is_autoinc {
                 // The database is bootstrapped with the total of `SystemTables::total_` that identify what is the start of the sequence
                 let (seq_start, seq_id): (i128, SequenceId) = match TableId(schema.table_id) {
@@ -490,10 +496,25 @@ impl Inner {
         let rows = st_sequences.scan_rows().cloned().collect::<Vec<_>>();
         for row in rows {
             let sequence = StSequenceRow::try_from(&row)?;
+            // TODO: The system tables have initialized their value already, but this is wrong:
+            // If we exceed  `SEQUENCE_PREALLOCATION_AMOUNT` we will get a unique violation
+            let is_system_table = self
+                .committed_state
+                .tables
+                .get(&TableId(sequence.table_id))
+                .map_or(false, |x| x.schema.table_type == StTableType::System);
+
             let schema = (&sequence).into();
+
+            let mut seq = Sequence::new(schema);
+            // Now we need to recover the last allocation value.
+            if !is_system_table && seq.value < sequence.allocated + 1 {
+                seq.value = sequence.allocated + 1;
+            }
+
             self.sequence_state
                 .sequences
-                .insert(SequenceId(sequence.sequence_id), Sequence::new(schema));
+                .insert(SequenceId(sequence.sequence_id), seq);
         }
         Ok(())
     }
@@ -574,8 +595,9 @@ impl Inner {
                 return Err(SequenceError::NotFound(seq_id).into());
             };
 
-            // If there are allocated sequence values, return the new value.
-            if let Some(value) = sequence.gen_next_value() {
+            // If there are allocated sequence values, return the new value, if it is not bigger than
+            // the upper range of `sequence.allocated`
+            if let Some(value) = sequence.gen_next_value().filter(|v| v < &sequence.allocated()) {
                 return Ok(value);
             }
         }
@@ -597,8 +619,7 @@ impl Inner {
             };
             let old_seq_row_id = RowId(old_seq_row.to_data_key());
             let mut seq_row = StSequenceRow::try_from(&old_seq_row)?;
-            let num_to_allocate = 1024;
-            seq_row.allocated = sequence.nth_value(num_to_allocate);
+            seq_row.allocated = sequence.nth_value(SEQUENCE_PREALLOCATION_AMOUNT as usize);
             sequence.set_allocation(seq_row.allocated);
             (seq_row, old_seq_row_id)
         };
@@ -631,7 +652,7 @@ impl Inner {
             sequence_name: seq.sequence_name.as_str(),
             table_id: seq.table_id,
             col_id: seq.col_id,
-            allocated: 0,
+            allocated: seq.start.unwrap_or(1),
             increment: seq.increment,
             start: seq.start.unwrap_or(1),
             min_value: seq.min_value.unwrap_or(1),
@@ -1355,7 +1376,7 @@ impl Inner {
         match self.tx_state.as_ref().unwrap().get_row_op(table_id, row_id) {
             RowState::Committed(_) => unreachable!("a row cannot be committed in a tx state"),
             RowState::Insert(row) => {
-                return Ok(Some(DataRef::new(row)));
+                return Ok(Some(DataRef::new(row_id.0, row)));
             }
             RowState::Delete => {
                 return Ok(None);
@@ -1367,7 +1388,7 @@ impl Inner {
             .tables
             .get(table_id)
             .and_then(|table| table.get_row(row_id))
-            .map(|row| DataRef::new(row.clone())))
+            .map(|row| DataRef::new(row_id.0, row.clone())))
     }
 
     fn get_row_type(&self, table_id: &TableId) -> Option<&ProductType> {
@@ -1725,10 +1746,10 @@ impl Iterator for Iter<'_> {
                             Some(RowState::Insert(_)) => (), // Do nothing, we'll get it in the next stage
                             Some(RowState::Delete) => (),    // Skip it, it's been deleted
                             Some(RowState::Absent) => {
-                                return Some(DataRef::new(row.clone()));
+                                return Some(DataRef::new(row_id.0, row.clone()));
                             }
                             None => {
-                                return Some(DataRef::new(row.clone()));
+                                return Some(DataRef::new(row_id.0, row.clone()));
                             }
                         }
                     }
@@ -1746,8 +1767,8 @@ impl Iterator for Iter<'_> {
                     }
                 }
                 ScanStage::CurrentTx { iter } => {
-                    if let Some((_, row)) = iter.next() {
-                        return Some(DataRef::new(row.clone()));
+                    if let Some((id, row)) = iter.next() {
+                        return Some(DataRef::new(id.0, row.clone()));
                     }
                     break;
                 }
@@ -1838,6 +1859,7 @@ impl Iterator for IndexSeekIterInner<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(row_id) = self.inserted_rows.next() {
             return Some(DataRef::new(
+                row_id.0,
                 self.tx_state.get_row(&self.table_id, &row_id).unwrap().clone(),
             ));
         }
@@ -1886,7 +1908,10 @@ impl Iterator for CommittedIndexIterByColEq<'_> {
 /// Retrieve a commited row. Panics if `table_id` and `row_id` do not identify an actually
 /// present row.
 fn get_committed_row(state: &CommittedState, table_id: &TableId, row_id: &RowId) -> DataRef {
-    DataRef::new(state.tables.get(table_id).unwrap().get_row(row_id).unwrap().clone())
+    DataRef::new(
+        row_id.0,
+        state.tables.get(table_id).unwrap().get_row(row_id).unwrap().clone(),
+    )
 }
 
 pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
