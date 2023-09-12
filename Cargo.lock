@@ -1370,6 +1370,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "env_logger"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85cdab6a89accf66733ad5a1693a4dcced6aeff64602b634530dd73c1f3ee9f0"
+dependencies = [
+ "humantime",
+ "is-terminal",
+ "log",
+ "regex",
+ "termcolor",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3743,6 +3756,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 
 [[package]]
+name = "sdk-test-module"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "seahash"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4360,6 +4381,7 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-lib",
  "spacetimedb-sats",
+ "spacetimedb-testing",
  "tokio",
  "tokio-tungstenite 0.19.0",
 ]
@@ -4392,6 +4414,9 @@ name = "spacetimedb-testing"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "duct",
+ "lazy_static",
+ "rand 0.8.5",
  "serde_json",
  "serial_test",
  "spacetimedb-client-api",
@@ -4715,6 +4740,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be55cf8942feac5c765c2c993422806843c9a9a45d4d5c407ad6dd2ea95eb9b6"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "test-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "spacetimedb-sdk",
+ "tokio",
 ]
 
 [[package]]
