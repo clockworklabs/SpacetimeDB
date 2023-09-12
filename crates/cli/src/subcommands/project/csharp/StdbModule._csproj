@@ -9,8 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.Codegen" Version="0.6.*" />
-    <PackageReference Include="SpacetimeDB.Runtime" Version="0.6.*" />
+    <PackageReference Include="SpacetimeDB.Codegen" Version="0.7.*" />
+    <PackageReference Include="SpacetimeDB.Runtime" Version="0.7.*" />
   </ItemGroup>
 
   <ItemGroup>
