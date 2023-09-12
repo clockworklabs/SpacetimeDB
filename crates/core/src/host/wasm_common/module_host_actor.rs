@@ -452,6 +452,21 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 }
 
 impl<T: WasmInstance> WasmModuleInstance<T> {
+    /// Call a reducer.
+    ///
+    /// This is semantically the same as the trait method
+    /// [`ModuleInstance::call_reducer`], but allows to supply an optional
+    /// transaction context `tx`. If this context is `None`, a fresh transaction
+    /// is started.
+    ///
+    /// **Note** that the transaction context is consumed, i.e. committed or
+    /// rolled back as appropriate.
+    ///
+    /// Apart from executing the reducer via [`Self::execute`], this method will
+    /// broadcast a [`ModuleEvent`] containg information about the outcome of
+    /// the call.
+    ///
+    /// See also: [`Self::execute`]
     fn call_reducer_internal(
         &mut self,
         tx: Option<MutTxId>,
@@ -503,6 +518,20 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         }
     }
 
+    /// Execute a reducer.
+    ///
+    /// If `Some` [`MutTxId`] is supplied, the reducer is called within the
+    /// context of this transaction. Otherwise, a fresh transaction is started.
+    ///
+    /// **Note** that the transaction is committed or rolled back by this method
+    /// depending on the outcome of the reducer call.
+    //
+    // TODO(kim): This should probably change in the future. The reason it is
+    // not straightforward is that the returned [`EventStatus`] is constructed
+    // from transaction data in the [`EventStatus::Committed`] (i.e. success)
+    // case.
+    //
+    /// The method also performs various measurements and records energy usage.
     #[tracing::instrument(skip_all)]
     fn execute(&mut self, tx: Option<MutTxId>, op: InstanceOp<'_>) -> (EventStatus, EnergyStats) {
         let address = &self.database_instance_context().address.to_abbreviated_hex();
@@ -730,13 +759,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 for index in proposed_schema.indexes.iter_mut() {
                     index.table_id = known_schema.table_id;
                 }
+                // If the table is known, but the proposed schema differs from
+                // the existing one, the table becomes tainted so the caller
+                // can reject the update.
                 let known_schema = TableDef::from(known_schema);
                 if known_schema != proposed_schema {
                     self.system_logger()
                         .warn(&format!("stored and proposed schema of `{}` differ", table.name));
                     tainted_tables.push(table.name.to_owned());
-                } else {
-                    // Table unchanged
                 }
             } else {
                 new_tables.insert(table.name.to_owned(), proposed_schema);
