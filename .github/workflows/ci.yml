@@ -30,13 +30,17 @@ jobs:
 
       - uses: dsherret/rust-toolchain-file@v1
 
+      - name: Install CLI tool
+        run: |
+          cargo install --path crates/cli
+
       - name: Create /stdb dir
         run: |
           sudo mkdir /stdb
           sudo chmod 777 /stdb
 
       - name: Run cargo test
-        run: cargo test --all --features odb_rocksdb,odb_sled
+        run: cargo test --all --exclude test-client --features odb_rocksdb,odb_sled
 
   lints:
     name: Lints
@@ -52,7 +56,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run cargo clippy
-        run: cargo clippy --all --tests --features odb_rocksdb,odb_sled -- -D warnings
+        run: cargo clippy --all --exclude test-client --tests --features odb_rocksdb,odb_sled -- -D warnings
 
   wasm_bindings:
     name: Build and test wasm bindings

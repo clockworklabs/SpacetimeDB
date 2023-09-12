@@ -3,22 +3,46 @@ use crate::host::wasmer;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleHostContext;
 use anyhow::Context;
+// use parking_lot::{Condvar, Mutex};
+use parking_lot::Mutex;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Sub;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use super::module_host::{
-    Catalog, EntityDef, EventStatus, ModuleHost, ModuleStarter, NoSuchModule, UpdateDatabaseResult,
-};
+use super::module_host::{Catalog, EntityDef, EventStatus, ModuleHost, NoSuchModule, UpdateDatabaseResult};
 use super::scheduler::SchedulerStarter;
 use super::{EnergyMonitor, NullEnergyMonitor, ReducerArgs};
 
 pub struct HostController {
     modules: Mutex<HashMap<u64, ModuleHost>>,
+    threadpool: Arc<HostThreadpool>,
     pub energy_monitor: Arc<dyn EnergyMonitor>,
+}
+
+pub struct HostThreadpool {
+    inner: rayon_core::ThreadPool,
+}
+
+impl HostThreadpool {
+    fn new() -> Self {
+        let rt = tokio::runtime::Handle::current();
+        let inner = rayon_core::ThreadPoolBuilder::new()
+            .num_threads(std::thread::available_parallelism().unwrap().get() * 2)
+            .spawn_handler(move |thread| {
+                rt.spawn_blocking(|| thread.run());
+                Ok(())
+            })
+            .build()
+            .unwrap();
+        Self { inner }
+    }
+
+    pub fn spawn(&self, f: impl FnOnce() + Send + 'static) {
+        self.inner.spawn(f)
+    }
 }
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Serialize, Debug)]
@@ -160,6 +184,7 @@ impl HostController {
     pub fn new(energy_monitor: Arc<impl EnergyMonitor>) -> Self {
         Self {
             modules: Mutex::new(HashMap::new()),
+            threadpool: Arc::new(HostThreadpool::new()),
             energy_monitor,
         }
     }
@@ -216,36 +241,33 @@ impl HostController {
     pub async fn spawn_module_host(&self, module_host_context: ModuleHostContext) -> Result<ModuleHost, anyhow::Error> {
         let key = module_host_context.dbic.database_instance_id;
 
-        let (module_host, start_module, start_scheduler) =
-            Self::make_module_host(module_host_context, self.energy_monitor.clone())?;
+        let (module_host, start_scheduler) = self.make_module_host(module_host_context)?;
 
-        let old_module = self.modules.lock().unwrap().insert(key, module_host.clone());
+        let old_module = self.modules.lock().insert(key, module_host.clone());
         if let Some(old_module) = old_module {
             old_module.exit().await
         }
-        start_module.start();
+        module_host.start();
         start_scheduler.start(&module_host)?;
 
         Ok(module_host)
     }
 
-    fn make_module_host(
-        mhc: ModuleHostContext,
-        energy_monitor: Arc<dyn EnergyMonitor>,
-    ) -> anyhow::Result<(ModuleHost, ModuleStarter, SchedulerStarter)> {
+    fn make_module_host(&self, mhc: ModuleHostContext) -> anyhow::Result<(ModuleHost, SchedulerStarter)> {
         let module_hash = hash_bytes(&mhc.program_bytes);
-        let (module_host, module_starter) = match mhc.host_type {
+        let (threadpool, energy_monitor) = (self.threadpool.clone(), self.energy_monitor.clone());
+        let module_host = match mhc.host_type {
             HostType::Wasmer => {
                 // make_actor with block_in_place since it's going to take some time to compute.
                 let start = Instant::now();
                 let actor = tokio::task::block_in_place(|| {
                     wasmer::make_actor(mhc.dbic, module_hash, &mhc.program_bytes, mhc.scheduler, energy_monitor)
                 })?;
-                log::trace!("wasmer::make_actor blocked for {}us", start.elapsed().as_micros());
-                ModuleHost::spawn(actor)
+                log::trace!("wasmer::make_actor blocked for {:?}", start.elapsed());
+                ModuleHost::new(threadpool, actor)
             }
         };
-        Ok((module_host, module_starter, mhc.scheduler_starter))
+        Ok((module_host, mhc.scheduler_starter))
     }
 
     /// Request a list of all describable entities in a module.
@@ -261,12 +283,12 @@ impl HostController {
         Ok(self.get_module_host(instance_id)?.info().log_tx.subscribe())
     }
     pub fn get_module_host(&self, instance_id: u64) -> Result<ModuleHost, NoSuchModule> {
-        let modules = self.modules.lock().unwrap();
+        let modules = self.modules.lock();
         modules.get(&instance_id).cloned().ok_or(NoSuchModule)
     }
 
     fn take_module_host(&self, instance_id: u64) -> Option<ModuleHost> {
-        self.modules.lock().unwrap().remove(&instance_id)
+        self.modules.lock().remove(&instance_id)
     }
 }
 

@@ -149,7 +149,7 @@ impl ModuleSubscriptionActor {
         let queries: QuerySet = subscription
             .query_strings
             .into_iter()
-            .map(|query| compile_query(&self.relational_db, tx, &query))
+            .map(|query| compile_query(&self.relational_db, tx, &auth, &query))
             .collect::<Result<_, _>>()?;
 
         let sub = match self.subscriptions.iter_mut().find(|s| s.queries == queries) {
