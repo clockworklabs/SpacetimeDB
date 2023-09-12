@@ -357,7 +357,6 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                         stdb.create_table(tx, schema)
                             .with_context(|| format!("failed to create table {}", name))?;
                     }
->>>>>>> origin/kim/update-indexes
 
                     for index_id in updates.indexes_to_drop {
                         stdb.drop_index(tx, index_id)?;
