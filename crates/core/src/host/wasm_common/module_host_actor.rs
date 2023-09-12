@@ -370,11 +370,20 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             }));
         }
 
-        let update_result = self.info.reducers.get_index_of(UPDATE_DUNDER).map(|id| {
-            let caller_identity = self.database_instance_context().identity;
-            let client = None;
-            self.call_reducer_internal(Some(tx), caller_identity, client, id, ArgsTuple::default())
-        });
+        let update_result = match self.info.reducers.get_index_of(UPDATE_DUNDER) {
+            None => {
+                stdb.commit_tx(tx)?;
+                None
+            }
+
+            Some(reducer_id) => {
+                let caller_identity = self.database_instance_context().identity;
+                let client = None;
+                let res =
+                    self.call_reducer_internal(Some(tx), caller_identity, client, reducer_id, ArgsTuple::default());
+                Some(res)
+            }
+        };
 
         Ok(Ok(UpdateDatabaseSuccess {
             update_result,
