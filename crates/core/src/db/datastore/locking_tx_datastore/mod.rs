@@ -55,12 +55,6 @@ use spacetimedb_lib::{
 use spacetimedb_sats::{
     AlgebraicType, AlgebraicValue, BuiltinType, BuiltinValue, ProductType, ProductTypeElement, ProductValue,
 };
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
-    ops::RangeBounds,
-    sync::Arc,
-    vec,
-};
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -2335,12 +2329,12 @@ mod tests {
         assert_eq!(
             index_rows,
             vec![
-                StIndexRow { index_id: 0, table_id: 0, cols:NonEmpty::new(0), index_name: "table_id_idx".to_string(), is_unique: true },
-                StIndexRow { index_id: 1, table_id: 3, cols:NonEmpty::new(0), index_name: "index_id_idx".to_string(), is_unique: true },
-                StIndexRow { index_id: 2, table_id: 2, cols:NonEmpty::new(0), index_name: "sequences_id_idx".to_string(), is_unique: true },
-                StIndexRow { index_id: 3, table_id: 0, cols:NonEmpty::new(1), index_name: "table_name_idx".to_string(), is_unique: true },
-                StIndexRow { index_id: 4, table_id: 4, cols:NonEmpty::new(0), index_name: "constraint_id_idx".to_string(), is_unique: true },
-                StIndexRow { index_id: 5, table_id: 1, cols:NonEmpty::new(0), index_name: "idx_ct_columns_table_id".to_string(), is_unique: false }
+                StIndexRow { index_id: 0, table_id: 0, cols: NonEmpty::new(0), index_name: "table_id_idx".to_string(), is_unique: true },
+                StIndexRow { index_id: 1, table_id: 3, cols: NonEmpty::new(0), index_name: "index_id_idx".to_string(), is_unique: true },
+                StIndexRow { index_id: 2, table_id: 2, cols: NonEmpty::new(0), index_name: "sequences_id_idx".to_string(), is_unique: true },
+                StIndexRow { index_id: 3, table_id: 0, cols: NonEmpty::new(1), index_name: "table_name_idx".to_string(), is_unique: true },
+                StIndexRow { index_id: 4, table_id: 4, cols: NonEmpty::new(0), index_name: "constraint_id_idx".to_string(), is_unique: true },
+                StIndexRow { index_id: 5, table_id: 1, cols: NonEmpty::new(0), index_name: "idx_ct_columns_table_id".to_string(), is_unique: false }
             ]
         );
         let sequence_rows = datastore
@@ -2487,8 +2481,8 @@ mod tests {
                 ColumnSchema { table_id: 5, col_id: 2, col_name: "age".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
             ],
             indexes: vec![
-                IndexSchema { index_id: 6, table_id: 5, cols:NonEmpty::new(0), index_name: "id_idx".to_string(), is_unique: true },
-                IndexSchema { index_id: 7, table_id: 5, cols:NonEmpty::new( 1), index_name: "name_idx".to_string(), is_unique: true },
+                IndexSchema { index_id: 6, table_id: 5, cols: NonEmpty::new(0), index_name: "id_idx".to_string(), is_unique: true },
+                IndexSchema { index_id: 7, table_id: 5, cols: NonEmpty::new(1), index_name: "name_idx".to_string(), is_unique: true },
             ],
             constraints: vec![],
             table_type: StTableType::User,
@@ -2516,8 +2510,8 @@ mod tests {
                 ColumnSchema { table_id: 5, col_id: 2, col_name: "age".to_string(), col_type: AlgebraicType::U32, is_autoinc: false },
             ],
             indexes: vec![
-                IndexSchema { index_id: 6, table_id: 5, cols:NonEmpty::new( 0), index_name: "id_idx".to_string(), is_unique: true },
-                IndexSchema { index_id: 7, table_id: 5, cols:NonEmpty::new(1), index_name: "name_idx".to_string(), is_unique: true },
+                IndexSchema { index_id: 6, table_id: 5, cols: NonEmpty::new(0), index_name: "id_idx".to_string(), is_unique: true },
+                IndexSchema { index_id: 7, table_id: 5, cols: NonEmpty::new(1), index_name: "name_idx".to_string(), is_unique: true },
             ],
             constraints: vec![],
             table_type: StTableType::User,
@@ -2556,7 +2550,7 @@ mod tests {
             &mut tx,
             IndexDef {
                 table_id: 5,
-                col_id: 0,
+                cols: NonEmpty::new(0),
                 name: "id_idx".into(),
                 is_unique: true,
             },
@@ -2565,7 +2559,7 @@ mod tests {
         let expected_indexes = vec![IndexSchema {
             index_id: 8,
             table_id: 5,
-            col_id: 0,
+            cols: NonEmpty::new(0),
             index_name: "id_idx".into(),
             is_unique: true,
         }];
@@ -2930,15 +2924,15 @@ mod tests {
             .collect::<Vec<_>>();
         #[rustfmt::skip]
         assert_eq!(index_rows, vec![
-            StIndexRow { index_id: 0, table_id: 0, cols:NonEmpty::new(0), index_name: "table_id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 1, table_id: 3, cols:NonEmpty::new(0), index_name: "index_id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 2, table_id: 2, cols:NonEmpty::new(0), index_name: "sequences_id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 3, table_id: 0, cols:NonEmpty::new(1), index_name: "table_name_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 4, table_id: 4, cols:NonEmpty::new(0), index_name: "constraint_id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 5, table_id: 1, cols:NonEmpty::new(0), index_name: "idx_ct_columns_table_id".to_string(), is_unique: false },
-            StIndexRow { index_id: 6, table_id: 5, cols:NonEmpty::new(0), index_name: "id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 7, table_id: 5, cols:NonEmpty::new(1), index_name: "name_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 8, table_id: 5, cols:NonEmpty::new(2), index_name: "age_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 0, table_id: 0, cols: NonEmpty::new(0), index_name: "table_id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 1, table_id: 3, cols: NonEmpty::new(0), index_name: "index_id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 2, table_id: 2, cols: NonEmpty::new(0), index_name: "sequences_id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 3, table_id: 0, cols: NonEmpty::new(1), index_name: "table_name_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 4, table_id: 4, cols: NonEmpty::new(0), index_name: "constraint_id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 5, table_id: 1, cols: NonEmpty::new(0), index_name: "idx_ct_columns_table_id".to_string(), is_unique: false },
+            StIndexRow { index_id: 6, table_id: 5, cols: NonEmpty::new(0), index_name: "id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 7, table_id: 5, cols: NonEmpty::new(1), index_name: "name_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 8, table_id: 5, cols: NonEmpty::new(2), index_name: "age_idx".to_string(), is_unique: true },
         ]);
         let row = ProductValue::from_iter(vec![
             AlgebraicValue::U32(0), // 0 will be ignored.
@@ -3000,15 +2994,15 @@ mod tests {
             .collect::<Vec<_>>();
         #[rustfmt::skip]
         assert_eq!(index_rows, vec![
-            StIndexRow { index_id: 0, table_id: 0, cols:NonEmpty::new(0), index_name: "table_id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 1, table_id: 3, cols:NonEmpty::new(0), index_name: "index_id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 2, table_id: 2, cols:NonEmpty::new(0), index_name: "sequences_id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 3, table_id: 0, cols:NonEmpty::new(1), index_name: "table_name_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 4, table_id: 4, cols:NonEmpty::new(0), index_name: "constraint_id_idx".to_string(), is_unique: true }, 
-            StIndexRow { index_id: 5, table_id: 1, cols:NonEmpty::new(0), index_name: "idx_ct_columns_table_id".to_string(), is_unique: false }, 
-            StIndexRow { index_id: 6, table_id: 5, cols:NonEmpty::new(0), index_name: "id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 7, table_id: 5, cols:NonEmpty::new(1), index_name: "name_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 8, table_id: 5, cols:NonEmpty::new(2), index_name: "age_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 0, table_id: 0, cols: NonEmpty::new(0), index_name: "table_id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 1, table_id: 3, cols: NonEmpty::new(0), index_name: "index_id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 2, table_id: 2, cols: NonEmpty::new(0), index_name: "sequences_id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 3, table_id: 0, cols: NonEmpty::new(1), index_name: "table_name_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 4, table_id: 4, cols: NonEmpty::new(0), index_name: "constraint_id_idx".to_string(), is_unique: true }, 
+            StIndexRow { index_id: 5, table_id: 1, cols: NonEmpty::new(0), index_name: "idx_ct_columns_table_id".to_string(), is_unique: false }, 
+            StIndexRow { index_id: 6, table_id: 5, cols: NonEmpty::new(0), index_name: "id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 7, table_id: 5, cols: NonEmpty::new(1), index_name: "name_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 8, table_id: 5, cols: NonEmpty::new(2), index_name: "age_idx".to_string(), is_unique: true },
         ]);
         let row = ProductValue::from_iter(vec![
             AlgebraicValue::U32(0), // 0 will be ignored.
@@ -3070,14 +3064,14 @@ mod tests {
             .collect::<Vec<_>>();
         #[rustfmt::skip]
         assert_eq!(index_rows, vec![
-            StIndexRow { index_id: 0, table_id: 0, cols:NonEmpty::new(0), index_name: "table_id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 1, table_id: 3, cols:NonEmpty::new(0), index_name: "index_id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 2, table_id: 2, cols:NonEmpty::new(0), index_name: "sequences_id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 3, table_id: 0, cols:NonEmpty::new(1), index_name: "table_name_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 4, table_id: 4, cols:NonEmpty::new(0), index_name: "constraint_id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 5, table_id: 1, cols:NonEmpty::new(0), index_name: "idx_ct_columns_table_id".to_string(), is_unique: false },
-            StIndexRow { index_id: 6, table_id: 5, cols:NonEmpty::new(0), index_name: "id_idx".to_string(), is_unique: true },
-            StIndexRow { index_id: 7, table_id: 5, cols:NonEmpty::new(1), index_name: "name_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 0, table_id: 0, cols: NonEmpty::new(0), index_name: "table_id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 1, table_id: 3, cols: NonEmpty::new(0), index_name: "index_id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 2, table_id: 2, cols: NonEmpty::new(0), index_name: "sequences_id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 3, table_id: 0, cols: NonEmpty::new(1), index_name: "table_name_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 4, table_id: 4, cols: NonEmpty::new(0), index_name: "constraint_id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 5, table_id: 1, cols: NonEmpty::new(0), index_name: "idx_ct_columns_table_id".to_string(), is_unique: false },
+            StIndexRow { index_id: 6, table_id: 5, cols: NonEmpty::new(0), index_name: "id_idx".to_string(), is_unique: true },
+            StIndexRow { index_id: 7, table_id: 5, cols: NonEmpty::new(1), index_name: "name_idx".to_string(), is_unique: true },
         ]);
         let row = ProductValue::from_iter(vec![
             AlgebraicValue::U32(0), // 0 will be ignored.

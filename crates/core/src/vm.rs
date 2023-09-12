@@ -3,7 +3,6 @@ use crate::db::cursor::{CatalogCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, SequenceId, TableDef};
 use crate::db::relational_db::RelationalDB;
-use crate::error::DBError;
 use itertools::Itertools;
 use nonempty::NonEmpty;
 use spacetimedb_lib::auth::{StAccess, StTableType};

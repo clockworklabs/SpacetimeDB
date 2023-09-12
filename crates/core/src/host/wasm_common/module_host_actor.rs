@@ -8,7 +8,6 @@ use crate::host::scheduler::Scheduler;
 use anyhow::Context;
 use bytes::Bytes;
 use nonempty::NonEmpty;
-use parking_lot::{Condvar, Mutex};
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::{bsatn, IndexType, ModuleDef};
 
