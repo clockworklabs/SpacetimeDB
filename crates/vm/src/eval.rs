@@ -546,7 +546,7 @@ mod tests {
     use spacetimedb_lib::auth::StAccess;
     use spacetimedb_lib::error::RelationError;
     use spacetimedb_lib::identity::AuthCtx;
-    use spacetimedb_lib::relation::{FieldName, MemTable};
+    use spacetimedb_lib::relation::{FieldName, MemTable, RelValue};
 
     fn fib(n: u64) -> u64 {
         if n < 2 {
@@ -720,9 +720,10 @@ mod tests {
         let head = q.source.head();
 
         let result = run_ast(p, q.into());
+        let row = RelValue::new(&head, &scalar(1).into(), None);
         assert_eq!(
             result,
-            Code::Table(MemTable::new(&head, StAccess::Public, &[scalar(1).into()])),
+            Code::Table(MemTable::new(&head, StAccess::Public, &[row])),
             "Query"
         );
     }
@@ -739,9 +740,10 @@ mod tests {
         let head = q.source.head();
 
         let result = run_ast(p, q.into());
+        let row = RelValue::new(&head, &input.into(), None);
         assert_eq!(
             result,
-            Code::Table(MemTable::new(&head, StAccess::Public, &[input.into()])),
+            Code::Table(MemTable::new(&head, StAccess::Public, &[row])),
             "Project"
         );
 

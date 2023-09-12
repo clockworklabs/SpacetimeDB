@@ -6,7 +6,8 @@ use crate::sql::compiler::compile_sql;
 use crate::sql::execute::execute_single_sql;
 use crate::subscription::subscription::QuerySet;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{Column, FieldName, MemTable};
+use spacetimedb_lib::relation::{Column, FieldName, MemTable, RelValue};
+use spacetimedb_lib::DataKey;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_vm::expr::{Crud, CrudExpr, DbType, QueryExpr, SourceExpr};
 
@@ -53,7 +54,8 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
         t.data.extend(data.ops.iter().map(|row| {
             let mut new = row.row.clone();
             new.elements[pos] = row.op_type.into();
-            new
+            let mut bytes: &[u8] = row.row_pk.as_ref();
+            RelValue::new(&t.head, &new, Some(DataKey::decode(&mut bytes).unwrap()))
         }));
     } else {
         t.head.fields.push(Column::new(
@@ -63,7 +65,9 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
         for row in &data.ops {
             let mut new = row.row.clone();
             new.elements.push(row.op_type.into());
-            t.data.push(new);
+            let mut bytes: &[u8] = row.row_pk.as_ref();
+            t.data
+                .push(RelValue::new(&t.head, &new, Some(DataKey::decode(&mut bytes).unwrap())));
         }
     }
 
@@ -302,6 +306,46 @@ mod tests {
 
         assert_eq!(result, rows, "Must return the correct row(s)");
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_eval_incr_maintains_row_ids() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        let schema = ProductType::from_iter([("u8", BuiltinType::U8)]);
+        let row = product!(1u8);
+
+        // generate row id from row
+        let id1 = &row.to_data_key().to_bytes();
+
+        // create table empty table "test"
+        let table_id = create_table_with_rows(&db, &mut tx, "test", schema.clone(), &[])?;
+
+        // select * from test
+        let query = QueryExpr::new(db_table(schema.clone(), "test", table_id));
+        let query = QuerySet(vec![Query { queries: vec![query] }]);
+
+        let op = TableOp {
+            op_type: 0,
+            row_pk: id1.clone(),
+            row: row.clone(),
+        };
+
+        let update = DatabaseTableUpdate {
+            table_id,
+            table_name: "test".into(),
+            ops: vec![op],
+        };
+
+        let update = DatabaseUpdate { tables: vec![update] };
+
+        let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+        let id2 = &result.tables[0].ops[0].row_pk;
+
+        // check that both row ids are the same
+        assert_eq!(id1, id2);
         Ok(())
     }
 

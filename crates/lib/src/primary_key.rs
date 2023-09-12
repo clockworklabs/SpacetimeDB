@@ -3,6 +3,10 @@ use std::fmt;
 use crate::buffer::{BufReader, BufWriter, DecodeError};
 use crate::DataKey;
 
+// TODO(280): Remove PrimaryKey.
+// PrimaryKey is a wrapper for DataKey which identifies each row in the database.
+// It is not a column and therefore does correspond to a traditional primary key
+// in a relational database.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct PrimaryKey {
     pub data_key: DataKey,
