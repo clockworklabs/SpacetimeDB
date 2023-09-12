@@ -45,8 +45,7 @@ fn test_domain() -> anyhow::Result<()> {
 
     let cdb = ControlDb::at(tmp.path())?;
 
-    let addr = Address::from_arr(&[0; 16]);
-    let res = cdb.spacetime_insert_domain(&addr, domain.clone(), *ALICE, true)?;
+    let addr = Address::zero();
     assert!(matches!(res, InsertDomainResult::Success { .. }));
 
     // Check Alice owns TLD

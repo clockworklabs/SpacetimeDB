@@ -1,3 +1,4 @@
+use super::host_controller::HostThreadpool;
 use super::{ArgsTuple, EnergyDiff, InvalidReducerArguments, ReducerArgs, ReducerCallResult, Timestamp};
 use crate::client::ClientConnectionSender;
 use crate::database_logger::LogLevel;
@@ -9,15 +10,18 @@ use crate::identity::Identity;
 use crate::json::client_api::{SubscriptionUpdateJson, TableRowOperationJson, TableUpdateJson};
 use crate::protobuf::client_api::{table_row_operation, SubscriptionUpdate, TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
+use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
+use crate::util::notify_once::NotifyOnce;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
+use futures::{Future, FutureExt};
 use indexmap::IndexMap;
 use spacetimedb_lib::{ReducerDef, TableDef};
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
 use std::collections::HashMap;
-use std::convert::Infallible;
-use std::sync::Arc;
+use std::fmt;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 
 #[derive(Debug, Default, Clone)]
 pub struct DatabaseUpdate {
@@ -188,66 +192,6 @@ pub struct ModuleEvent {
 }
 
 #[derive(Debug)]
-enum ModuleHostCommand {
-    CallConnectDisconnect {
-        caller_identity: Identity,
-        connected: bool,
-        respond_to: oneshot::Sender<()>,
-    },
-    CallReducer {
-        caller_identity: Identity,
-        client: Option<ClientConnectionSender>,
-        reducer_id: usize,
-        args: ArgsTuple,
-        respond_to: oneshot::Sender<ReducerCallResult>,
-    },
-    InitDatabase {
-        args: ArgsTuple,
-        respond_to: oneshot::Sender<anyhow::Result<ReducerCallResult>>,
-    },
-    UpdateDatabase {
-        respond_to: oneshot::Sender<Result<UpdateDatabaseResult, anyhow::Error>>,
-    },
-    InjectLogs {
-        respond_to: oneshot::Sender<()>,
-        log_level: LogLevel,
-        message: String,
-    },
-}
-
-impl ModuleHostCommand {
-    fn dispatch<T: ModuleHostActor + ?Sized>(self, actor: &mut T) {
-        match self {
-            ModuleHostCommand::CallConnectDisconnect {
-                caller_identity,
-                connected,
-                respond_to,
-            } => actor.call_connect_disconnect(caller_identity, connected, respond_to),
-            ModuleHostCommand::CallReducer {
-                caller_identity,
-                client,
-                reducer_id,
-                args,
-                respond_to,
-            } => actor.call_reducer(caller_identity, client, reducer_id, args, respond_to),
-            ModuleHostCommand::InitDatabase { args, respond_to } => actor.init_database(args, respond_to),
-            ModuleHostCommand::UpdateDatabase { respond_to } => actor.update_database(respond_to),
-            ModuleHostCommand::InjectLogs {
-                respond_to,
-                log_level,
-                message,
-            } => actor.inject_logs(respond_to, log_level, message),
-        }
-    }
-}
-
-#[derive(Debug)]
-enum CmdOrExit {
-    Cmd(ModuleHostCommand),
-    Exit,
-}
-
-#[derive(Debug)]
 pub struct ModuleInfo {
     pub identity: Identity,
     pub module_hash: Hash,
@@ -258,32 +202,184 @@ pub struct ModuleInfo {
     pub subscription: ModuleSubscriptionManager,
 }
 
-pub trait ModuleHostActor: Send + 'static {
+pub trait Module: Send + Sync + 'static {
+    type Instance: ModuleInstance;
+    type InitialInstances<'a>: IntoIterator<Item = Self::Instance> + 'a;
+    fn initial_instances(&mut self) -> Self::InitialInstances<'_>;
     fn info(&self) -> Arc<ModuleInfo>;
-    fn call_connect_disconnect(&mut self, caller_identity: Identity, connected: bool, respond_to: oneshot::Sender<()>);
+    fn create_instance(&self) -> Self::Instance;
+    fn inject_logs(&self, log_level: LogLevel, message: &str);
+    fn close(self);
+
+    #[cfg(feature = "tracelogging")]
+    fn get_trace(&self) -> Option<bytes::Bytes>;
+    #[cfg(feature = "tracelogging")]
+    fn stop_trace(&self) -> anyhow::Result<()>;
+}
+
+pub trait ModuleInstance: Send + 'static {
+    fn trapped(&self) -> bool;
+
+    fn init_database(&mut self, args: ArgsTuple) -> anyhow::Result<ReducerCallResult>;
+
+    fn update_database(&mut self) -> anyhow::Result<UpdateDatabaseResult>;
+
     fn call_reducer(
         &mut self,
         caller_identity: Identity,
         client: Option<ClientConnectionSender>,
         reducer_id: usize,
         args: ArgsTuple,
-        respond_to: oneshot::Sender<ReducerCallResult>,
-    );
-    fn init_database(&mut self, args: ArgsTuple, respond_to: oneshot::Sender<Result<ReducerCallResult, anyhow::Error>>);
-    fn update_database(&mut self, respond_to: oneshot::Sender<Result<UpdateDatabaseResult, anyhow::Error>>);
-    fn inject_logs(&self, respond_to: oneshot::Sender<()>, log_level: LogLevel, message: String);
-    fn close(self);
+    ) -> ReducerCallResult;
+
+    fn call_connect_disconnect(&mut self, identity: Identity, connected: bool);
 }
 
-#[derive(Debug, Clone)]
+// TODO: figure out how we want to handle traps. maybe it should just not return to the LendingPool and
+//       let the get_instance logic handle it?
+struct AutoReplacingModuleInstance<T: Module> {
+    inst: LentResource<T::Instance>,
+    module: Arc<T>,
+}
+
+impl<T: Module> AutoReplacingModuleInstance<T> {
+    fn check_trap(&mut self) {
+        if self.inst.trapped() {
+            *self.inst = self.module.create_instance()
+        }
+    }
+}
+
+impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
+    fn trapped(&self) -> bool {
+        self.inst.trapped()
+    }
+    fn init_database(&mut self, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
+        let ret = self.inst.init_database(args);
+        self.check_trap();
+        ret
+    }
+    fn update_database(&mut self) -> anyhow::Result<UpdateDatabaseResult> {
+        let ret = self.inst.update_database();
+        self.check_trap();
+        ret
+    }
+    fn call_reducer(
+        &mut self,
+        caller_identity: Identity,
+        client: Option<ClientConnectionSender>,
+        reducer_id: usize,
+        args: ArgsTuple,
+    ) -> ReducerCallResult {
+        let ret = self.inst.call_reducer(caller_identity, client, reducer_id, args);
+        self.check_trap();
+        ret
+    }
+    fn call_connect_disconnect(&mut self, identity: Identity, connected: bool) {
+        self.inst.call_connect_disconnect(identity, connected);
+        self.check_trap();
+    }
+}
+
+#[derive(Clone)]
 pub struct ModuleHost {
     info: Arc<ModuleInfo>,
-    tx: mpsc::Sender<CmdOrExit>,
+    inner: Arc<dyn DynModuleHost>,
+}
+
+impl fmt::Debug for ModuleHost {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ModuleHost")
+            .field("info", &self.info)
+            .field("inner", &Arc::as_ptr(&self.inner))
+            .finish()
+    }
+}
+
+#[async_trait::async_trait]
+trait DynModuleHost: Send + Sync + 'static {
+    async fn get_instance(&self) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule>;
+    fn inject_logs(&self, log_level: LogLevel, message: &str);
+    fn start(&self);
+    fn exit(&self) -> Closed<'_>;
+    fn exited(&self) -> Closed<'_>;
+}
+
+struct HostControllerActor<T: Module> {
+    module: Arc<T>,
+    threadpool: Arc<HostThreadpool>,
+    instance_pool: LendingPool<T::Instance>,
+    start: NotifyOnce,
+}
+
+impl<T: Module> HostControllerActor<T> {
+    fn spinup_new_instance(&self) {
+        let (module, instance_pool) = (self.module.clone(), self.instance_pool.clone());
+        self.threadpool.spawn(move || {
+            let instance = module.create_instance();
+            match instance_pool.add(instance) {
+                Ok(()) => {}
+                Err(PoolClosed) => {
+                    // if the module closed since this new instance was requested, oh well, just throw it away
+                }
+            }
+        })
+    }
+}
+
+/// runs future A and future B concurrently. if A completes before B, B is cancelled. if B completes
+/// before A, A is polled to completion
+async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> A::Output {
+    tokio::select! {
+        ret = fut_a => ret,
+        Err(x) = fut_b.never_error() => match x {},
+    }
+}
+
+#[async_trait::async_trait]
+impl<T: Module> DynModuleHost for HostControllerActor<T> {
+    async fn get_instance(&self) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule> {
+        self.start.notified().await;
+        // in the future we should do something like in the else branch here -- add more instances based on load.
+        // we need to do write-skew retries first - right now there's only ever once instance per module.
+        let inst = if true {
+            self.instance_pool.request().await.map_err(|_| NoSuchModule)?
+        } else {
+            const GET_INSTANCE_TIMEOUT: Duration = Duration::from_millis(500);
+            select_first(
+                self.instance_pool.request(),
+                tokio::time::sleep(GET_INSTANCE_TIMEOUT).map(|()| self.spinup_new_instance()),
+            )
+            .await
+            .map_err(|_| NoSuchModule)?
+        };
+        let inst = AutoReplacingModuleInstance {
+            inst,
+            module: self.module.clone(),
+        };
+        Ok((&self.threadpool, Box::new(inst)))
+    }
+
+    fn inject_logs(&self, log_level: LogLevel, message: &str) {
+        self.module.inject_logs(log_level, message)
+    }
+
+    fn start(&self) {
+        self.start.notify();
+    }
+
+    fn exit(&self) -> Closed<'_> {
+        self.instance_pool.close()
+    }
+
+    fn exited(&self) -> Closed<'_> {
+        self.instance_pool.closed()
+    }
 }
 
 pub struct WeakModuleHost {
     info: Arc<ModuleInfo>,
-    tx: mpsc::WeakSender<CmdOrExit>,
+    inner: Weak<dyn DynModuleHost>,
 }
 
 pub type UpdateDatabaseResult = Result<UpdateDatabaseSuccess, UpdateDatabaseError>;
@@ -332,36 +428,22 @@ pub enum InitDatabaseError {
     Other(anyhow::Error),
 }
 
-pub struct ModuleStarter {
-    tx: oneshot::Sender<Infallible>,
-}
-
-impl ModuleStarter {
-    pub fn start(self) {
-        drop(self.tx)
-    }
-}
-
 impl ModuleHost {
-    pub fn spawn(actor: impl ModuleHostActor) -> (Self, ModuleStarter) {
-        let (tx, rx) = mpsc::channel(8);
-        let (start_tx, start_rx) = oneshot::channel();
-        let info = actor.info();
-        tokio::spawn(async move {
-            let _ = start_rx.await;
-            Self::run_actor(rx, actor).await
+    pub fn new(threadpool: Arc<HostThreadpool>, mut module: impl Module) -> Self {
+        let info = module.info();
+        let instance_pool = LendingPool::new();
+        instance_pool.add_multiple(module.initial_instances()).unwrap();
+        let inner = Arc::new(HostControllerActor {
+            module: Arc::new(module),
+            threadpool,
+            instance_pool,
+            start: NotifyOnce::new(),
         });
-        (ModuleHost { info, tx }, ModuleStarter { tx: start_tx })
+        ModuleHost { info, inner }
     }
 
-    async fn run_actor(mut rx: mpsc::Receiver<CmdOrExit>, mut actor: impl ModuleHostActor) {
-        while let Some(command) = rx.recv().await {
-            match command {
-                CmdOrExit::Cmd(command) => command.dispatch(&mut actor),
-                CmdOrExit::Exit => rx.close(),
-            }
-        }
-        actor.close()
+    pub fn start(&self) {
+        self.inner.start()
     }
 
     #[inline]
@@ -374,11 +456,18 @@ impl ModuleHost {
         &self.info.subscription
     }
 
-    async fn call<T>(&self, f: impl FnOnce(oneshot::Sender<T>) -> ModuleHostCommand) -> Result<T, NoSuchModule> {
-        let permit = self.tx.reserve().await.map_err(|_| NoSuchModule)?;
+    async fn call<F, R>(&self, f: F) -> Result<R, NoSuchModule>
+    where
+        F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        let (threadpool, mut inst) = self.inner.get_instance().await?;
+
         let (tx, rx) = oneshot::channel();
-        permit.send(CmdOrExit::Cmd(f(tx)));
-        Ok(rx.await.expect("task panicked"))
+        threadpool.spawn(move || {
+            let _ = tx.send(f(&mut *inst));
+        });
+        Ok(rx.await.expect("instance panicked"))
     }
 
     pub async fn call_identity_connected_disconnected(
@@ -386,12 +475,28 @@ impl ModuleHost {
         caller_identity: Identity,
         connected: bool,
     ) -> Result<(), NoSuchModule> {
-        self.call(|respond_to| ModuleHostCommand::CallConnectDisconnect {
-            caller_identity,
-            connected,
-            respond_to,
-        })
-        .await
+        self.call(move |inst| inst.call_connect_disconnect(caller_identity, connected))
+            .await
+    }
+
+    async fn call_reducer_inner(
+        &self,
+        caller_identity: Identity,
+        client: Option<ClientConnectionSender>,
+        reducer_name: &str,
+        args: ReducerArgs,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        let (reducer_id, _, schema) = self
+            .info
+            .reducers
+            .get_full(reducer_name)
+            .ok_or(ReducerCallError::NoSuchReducer)?;
+
+        let args = args.into_tuple(self.info.typespace.with_type(schema))?;
+
+        self.call(move |inst| inst.call_reducer(caller_identity, client, reducer_id, args))
+            .await
+            .map_err(Into::into)
     }
 
     pub async fn call_reducer(
@@ -401,43 +506,27 @@ impl ModuleHost {
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let found_reducer = self
-            .info
-            .reducers
-            .get_full(reducer_name)
-            .ok_or(ReducerCallError::NoSuchReducer);
-        let (reducer_id, _, schema) = match found_reducer {
-            Ok(ok) => ok,
-            Err(err) => {
-                let _ = self.inject_logs(LogLevel::Error, format!(
-                    "External attempt to call nonexistent reducer \"{}\" failed. Have you run `spacetime generate` recently?",
-                    reducer_name
-                )).await;
-                Err(err)?
-            }
-        };
+        let res = self
+            .call_reducer_inner(caller_identity, client, reducer_name, args)
+            .await;
 
-        let args = args.into_tuple(self.info.typespace.with_type(schema));
-        let args = match args {
-            Ok(ok) => ok,
-            Err(err) => {
-                let _ = self.inject_logs(LogLevel::Error, format!(
-                    "External attempt to call reducer \"{}\" failed, invalid arguments.\nThis is likely due to a mismatched client schema, have you run `spacetime generate` recently?",
-                    reducer_name,
-                )).await;
-                Err(err)?
-            }
+        let log_message = match &res {
+            Err(ReducerCallError::NoSuchReducer) => Some(format!(
+                "External attempt to call nonexistent reducer \"{}\" failed. Have you run `spacetime generate` recently?",
+                reducer_name
+            )),
+            Err(ReducerCallError::Args(_)) => Some(format!(
+                "External attempt to call reducer \"{}\" failed, invalid arguments.\n\
+                 This is likely due to a mismatched client schema, have you run `spacetime generate` recently?",
+                reducer_name,
+            )),
+            _ => None,
         };
+        if let Some(log_message) = log_message {
+            self.inject_logs(LogLevel::Error, &log_message)
+        }
 
-        self.call(|respond_to| ModuleHostCommand::CallReducer {
-            caller_identity,
-            client,
-            reducer_id,
-            args,
-            respond_to,
-        })
-        .await
-        .map_err(Into::into)
+        res
     }
 
     pub fn catalog(&self) -> Catalog {
@@ -453,51 +542,41 @@ impl ModuleHost {
             Some(schema) => args.into_tuple(schema)?,
             _ => ArgsTuple::default(),
         };
-        self.call(|respond_to| ModuleHostCommand::InitDatabase { args, respond_to })
+        self.call(|inst| inst.init_database(args))
             .await?
             .map_err(InitDatabaseError::Other)
     }
 
     pub async fn update_database(&self) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        self.call(|respond_to| ModuleHostCommand::UpdateDatabase { respond_to })
-            .await?
-            .map_err(Into::into)
+        self.call(|inst| inst.update_database()).await?.map_err(Into::into)
     }
 
     pub async fn exit(&self) {
-        // if we can't send, it's already closed :P
-        if self.tx.send(CmdOrExit::Exit).await.is_ok() {
-            self.tx.closed().await;
-        }
+        self.inner.exit().await
     }
 
     pub async fn exited(&self) {
-        self.tx.closed().await
+        self.inner.exited().await
     }
 
-    pub async fn inject_logs(&self, log_level: LogLevel, message: String) -> Result<(), NoSuchModule> {
-        self.call(|respond_to| ModuleHostCommand::InjectLogs {
-            respond_to,
-            log_level,
-            message,
-        })
-        .await
+    pub fn inject_logs(&self, log_level: LogLevel, message: &str) {
+        self.inner.inject_logs(log_level, message)
     }
 
     pub fn downgrade(&self) -> WeakModuleHost {
         WeakModuleHost {
             info: self.info.clone(),
-            tx: self.tx.downgrade(),
+            inner: Arc::downgrade(&self.inner),
         }
     }
 }
 
 impl WeakModuleHost {
     pub fn upgrade(&self) -> Option<ModuleHost> {
-        let tx = self.tx.upgrade()?;
+        let inner = self.inner.upgrade()?;
         Some(ModuleHost {
             info: self.info.clone(),
-            tx,
+            inner,
         })
     }
 }

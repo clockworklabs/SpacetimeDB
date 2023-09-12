@@ -285,7 +285,7 @@ impl BufferIdx {
     }
 }
 
-decl_index!(BufferIterIdx => Box<dyn Iterator<Item = Result<bytes::Bytes, NodesError>> + Send>);
+decl_index!(BufferIterIdx => Box<dyn Iterator<Item = Result<bytes::Bytes, NodesError>> + Send + Sync>);
 pub(super) type BufferIters = ResourceSlab<BufferIterIdx>;
 
 pub mod errnos {

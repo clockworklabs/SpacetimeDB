@@ -27,7 +27,11 @@ tokio.workspace = true
 tokio-tungstenite.workspace = true
 
 [dev-dependencies]
+# for quickstart-chat and cursive-chat examples
 hex.workspace = true
 # for cursive-chat example
 cursive.workspace = true
 futures-channel.workspace = true
+
+# for tests
+spacetimedb-testing = { path = "../testing" }

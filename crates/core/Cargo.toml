@@ -52,6 +52,7 @@ parking_lot.workspace = true
 pin-project-lite.workspace = true
 prometheus.workspace = true
 prost.workspace = true
+rayon-core.workspace = true
 regex.workspace = true
 rustc-demangle.workspace = true
 rustc-hash.workspace = true

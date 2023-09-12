@@ -7,6 +7,7 @@ use super::datastore::traits::{
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
+use crate::address::Address;
 use crate::db::db_metrics::{RDB_DELETE_BY_REL_TIME, RDB_DROP_TABLE_TIME, RDB_INSERT_TIME, RDB_ITER_TIME};
 use crate::db::messages::commit::Commit;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
@@ -72,9 +73,11 @@ impl RelationalDB {
         root: impl AsRef<Path>,
         message_log: Option<Arc<Mutex<MessageLog>>>,
         odb: Arc<Mutex<Box<dyn ObjectDB + Send>>>,
+        address: Address,
         fsync: bool,
     ) -> Result<Self, DBError> {
-        log::trace!("DATABASE: OPENING");
+        let address = address.to_hex();
+        log::debug!("[{}] DATABASE: OPENING", address);
 
         // Ensure that the `root` directory the database is running in exists.
         create_dir_all(&root)?;
@@ -88,25 +91,41 @@ impl RelationalDB {
             .map_err(|err| DatabaseError::DatabasedOpened(root.to_path_buf(), err.into()))?;
 
         let datastore = Locking::bootstrap()?;
+        log::debug!("[{}] Replaying transaction log.", address);
+        let mut segment_index = 0;
+        let mut last_logged_percentage = 0;
         let unwritten_commit = {
             let mut transaction_offset = 0;
             let mut last_commit_offset = None;
             let mut last_hash: Option<Hash> = None;
-
             if let Some(message_log) = &message_log {
                 let message_log = message_log.lock().unwrap();
+                let max_offset = message_log.open_segment_max_offset;
                 for message in message_log.iter() {
+                    segment_index += 1;
                     let (commit, _) = Commit::decode(message);
                     last_hash = commit.parent_commit_hash;
                     last_commit_offset = Some(commit.commit_offset);
                     for transaction in commit.transactions {
                         transaction_offset += 1;
-                        // NOTE: Although I am creating a datastore transaction in a
+                        // NOTE: Although I am creating a blobstore transaction in a
                         // one to one fashion for each message log transaction, this
                         // is just to reduce memory usage while inserting. We don't
                         // really care about inserting these transactionally as long
                         // as all of the writes get inserted.
                         datastore.replay_transaction(&transaction, odb.clone())?;
+
+                        let percentage = f64::floor((segment_index as f64 / max_offset as f64) * 100.0) as i32;
+                        if percentage > last_logged_percentage && percentage % 10 == 0 {
+                            last_logged_percentage = percentage;
+                            log::debug!(
+                                "[{}] Loaded {}% ({}/{})",
+                                address,
+                                percentage,
+                                transaction_offset,
+                                max_offset
+                            );
+                        }
                     }
                 }
 
@@ -125,7 +144,8 @@ impl RelationalDB {
             };
 
             log::debug!(
-                "Initialized with {} commits and tx offset {}",
+                "[{}] Initialized with {} commits and tx offset {}",
+                address,
                 commit_offset,
                 transaction_offset
             );
@@ -147,7 +167,7 @@ impl RelationalDB {
             _lock: Arc::new(lock),
         };
 
-        log::trace!("DATABASE: OPENED");
+        log::trace!("[{}] DATABASE: OPENED", address);
         Ok(db)
     }
 
@@ -485,7 +505,7 @@ pub fn open_db(path: impl AsRef<Path>, in_memory: bool, fsync: bool) -> Result<R
         Some(Arc::new(Mutex::new(MessageLog::open(path.join("mlog"))?)))
     };
     let odb = Arc::new(Mutex::new(make_default_ostorage(in_memory, path.join("odb"))?));
-    let stdb = RelationalDB::open(path, mlog, odb, fsync)?;
+    let stdb = RelationalDB::open(path, mlog, odb, Address::zero(), fsync)?;
 
     Ok(stdb)
 }
@@ -515,6 +535,7 @@ mod tests {
 
     use std::sync::{Arc, Mutex};
 
+    use crate::address::Address;
     use crate::db::datastore::system_tables::StIndexRow;
     use crate::db::datastore::system_tables::StSequenceRow;
     use crate::db::datastore::system_tables::StTableRow;
@@ -568,7 +589,7 @@ mod tests {
             tmp_dir.path().join("odb"),
         )?));
 
-        match RelationalDB::open(tmp_dir.path(), mlog, odb, true) {
+        match RelationalDB::open(tmp_dir.path(), mlog, odb, Address::zero(), true) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
             }

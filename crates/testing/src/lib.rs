@@ -2,6 +2,7 @@ use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use std::env;
 
 pub mod modules;
+pub mod sdk;
 
 pub fn set_key_env_vars(paths: &FilesLocal) {
     let set_if_not_exist = |var, path| {

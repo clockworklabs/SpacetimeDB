@@ -36,7 +36,7 @@ Example usage:
         )
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     // take_hook() returns the default hook in case when a custom one is not set
     let orig_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
@@ -51,5 +51,4 @@ fn main() {
         .build()
         .unwrap()
         .block_on(async_main())
-        .unwrap();
 }
