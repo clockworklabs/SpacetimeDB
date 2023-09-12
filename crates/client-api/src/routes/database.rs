@@ -1,46 +1,47 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, FromRef, Path, Query, State};
 use axum::response::{ErrorResponse, IntoResponse};
 use axum::{headers, TypedHeader};
+use chrono::Utc;
 use futures::StreamExt;
 use http::StatusCode;
+use rand::Rng;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use spacetimedb::address::Address;
+use spacetimedb::auth::identity::encode_token;
+use spacetimedb::database_logger::DatabaseLogger;
+use spacetimedb::host::DescribedEntityType;
 use spacetimedb::host::EntityDef;
 use spacetimedb::host::ReducerArgs;
 use spacetimedb::host::ReducerCallError;
 use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseSuccess;
-use spacetimedb_lib::name;
-use spacetimedb_lib::name::DomainName;
-use spacetimedb_lib::name::DomainParsingError;
-use spacetimedb_lib::name::PublishOp;
+use spacetimedb::identity::Identity;
+use spacetimedb::json::client_api::StmtResultJson;
+use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType};
+use spacetimedb::sql::execute::execute;
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::name::{
+    self, DnsLookupResponse, DomainName, DomainParsingError, InsertDomainResult, PublishOp, PublishResult,
+};
+use spacetimedb_lib::recovery::{RecoveryCode, RecoveryCodeResponse};
 use spacetimedb_lib::sats::WithTypespace;
+use std::collections::HashMap;
+use std::convert::From;
+use std::sync::Arc;
 
+use super::identity::IdentityForUrl;
 use crate::auth::{
     SpacetimeAuth, SpacetimeAuthHeader, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros, SpacetimeIdentity,
     SpacetimeIdentityToken,
 };
-use spacetimedb::address::Address;
-use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::host::DescribedEntityType;
-use spacetimedb::identity::Identity;
-use spacetimedb::json::client_api::StmtResultJson;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType};
-
-use super::identity::IdentityForUrl;
 use crate::util::{ByteStringBody, NameOrAddress};
 use crate::{log_and_500, ControlCtx, ControlNodeDelegate, WorkerCtx};
 
+#[derive(derive_more::From)]
 pub(crate) struct DomainParsingRejection(pub(crate) DomainParsingError);
-impl From<DomainParsingError> for DomainParsingRejection {
-    fn from(e: DomainParsingError) -> Self {
-        DomainParsingRejection(e)
-    }
-}
+
 impl IntoResponse for DomainParsingRejection {
     fn into_response(self) -> axum::response::Response {
         (StatusCode::BAD_REQUEST, "Unable to parse domain name").into_response()
@@ -147,26 +148,11 @@ fn reducer_outcome_response(identity: &Identity, reducer: &str, outcome: Reducer
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::From)]
 pub enum DBCallErr {
     HandlerError(ErrorResponse),
     NoSuchDatabase,
     InstanceNotScheduled,
-}
-
-use chrono::Utc;
-use rand::Rng;
-use spacetimedb::auth::identity::encode_token;
-use spacetimedb::sql::execute::execute;
-use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::name::{DnsLookupResponse, InsertDomainResult, PublishResult};
-use spacetimedb_lib::recovery::{RecoveryCode, RecoveryCodeResponse};
-use std::convert::From;
-
-impl From<ErrorResponse> for DBCallErr {
-    fn from(error: ErrorResponse) -> Self {
-        DBCallErr::HandlerError(error)
-    }
 }
 
 pub struct DatabaseInformation {

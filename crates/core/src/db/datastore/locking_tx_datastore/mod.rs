@@ -1,18 +1,12 @@
 mod btree_index;
 mod sequence;
 mod table;
+
 use self::{
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
     sequence::Sequence,
     table::Table,
 };
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
-    ops::RangeBounds,
-    sync::Arc,
-    vec,
-};
-
 use super::{
     system_tables::{
         StColumnRow, StIndexRow, StSequenceRow, StTableRow, INDEX_ID_SEQUENCE_ID, SEQUENCE_ID_SEQUENCE_ID,
@@ -41,6 +35,8 @@ use crate::{
     },
     error::{DBError, IndexError, TableError},
 };
+
+use derive_more::Into;
 use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
 use spacetimedb_lib::{
     auth::{StAccess, StTableType},
@@ -50,6 +46,12 @@ use spacetimedb_lib::{
 };
 use spacetimedb_sats::{
     AlgebraicType, AlgebraicValue, BuiltinType, BuiltinValue, ProductType, ProductTypeElement, ProductValue,
+};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    ops::RangeBounds,
+    sync::Arc,
+    vec,
 };
 use thiserror::Error;
 
@@ -77,14 +79,9 @@ pub enum SequenceError {
 
 const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 4_096;
 
+#[derive(Into)]
 pub struct Data {
     data: ProductValue,
-}
-
-impl From<Data> for ProductValue {
-    fn from(data: Data) -> Self {
-        data.data
-    }
 }
 
 impl traits::Data for Data {

@@ -179,6 +179,12 @@ impl DBError {
     }
 }
 
+impl From<DBError> for ErrorVm {
+    fn from(err: DBError) -> Self {
+        ErrorVm::Other(err.into())
+    }
+}
+
 impl From<InvalidFieldError> for DBError {
     fn from(value: InvalidFieldError) -> Self {
         LibError::from(value).into()

@@ -10,6 +10,7 @@ spacetimedb-sats= { path = "../sats", version = "0.6.1" }
 spacetimedb-lib = { path = "../lib", version = "0.6.1" }
 
 anyhow.workspace = true
+derive_more.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

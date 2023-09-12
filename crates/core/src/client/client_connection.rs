@@ -3,6 +3,7 @@ use std::ops::Deref;
 use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::protobuf::client_api::Subscribe;
 use crate::worker_metrics::{CONNECTED_CLIENTS, WEBSOCKET_SENT, WEBSOCKET_SENT_MSG_SIZE};
+use derive_more::From;
 use futures::prelude::*;
 use tokio::sync::mpsc;
 
@@ -68,7 +69,7 @@ impl Deref for ClientConnection {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, From)]
 pub enum DataMessage {
     Text(String),
     Binary(Vec<u8>),
@@ -85,18 +86,6 @@ impl DataMessage {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-}
-
-impl From<String> for DataMessage {
-    fn from(text: String) -> Self {
-        DataMessage::Text(text)
-    }
-}
-
-impl From<Vec<u8>> for DataMessage {
-    fn from(bin: Vec<u8>) -> Self {
-        DataMessage::Binary(bin)
     }
 }
 

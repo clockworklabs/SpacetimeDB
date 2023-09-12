@@ -2,6 +2,7 @@ use crate::db::DBRunner;
 use crate::space::Kind;
 use async_trait::async_trait;
 use chrono::Local;
+use derive_more::From;
 use postgres_types::{FromSql, Type};
 use rust_decimal::Decimal;
 use spacetimedb_sats::AlgebraicType;
@@ -43,25 +44,25 @@ $function$
 DECLARE
   _schema VARCHAR;
 BEGIN
-    FOR _schema IN 
+    FOR _schema IN
         SELECT schema_name
         FROM information_schema.schemata
         WHERE schema_name NOT LIKE 'pg_%' AND schema_name <> 'information_schema'
     LOOP
-        RAISE NOTICE 'SCHEMA.. :%', _schema;    
+        RAISE NOTICE 'SCHEMA.. :%', _schema;
         EXECUTE 'DROP SCHEMA IF EXISTS ' || _schema || ' CASCADE';
     END LOOP;
     CREATE SCHEMA public;
-    
-    
-    FOR _schema IN 
+
+
+    FOR _schema IN
         SELECT rolname
         FROM pg_roles
         WHERE rolname LIKE 'role_%'
     LOOP
-        RAISE NOTICE 'ROLE.. :%', _schema;    
+        RAISE NOTICE 'ROLE.. :%', _schema;
         EXECUTE 'DROP ROLE IF EXISTS ' || _schema;
-    END LOOP;        
+    END LOOP;
 END
 $function$;
 ";
@@ -138,13 +139,8 @@ impl AsyncDB for Pg {
     }
 }
 
+#[derive(From)]
 pub struct Scalar(String);
-
-impl From<String> for Scalar {
-    fn from(value: String) -> Self {
-        Scalar(value)
-    }
-}
 
 impl FromSql<'_> for Scalar {
     fn from_sql(ty: &Type, raw: &[u8]) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {

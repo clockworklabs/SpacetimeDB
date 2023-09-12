@@ -99,14 +99,8 @@ pub async fn get_identity(
 /// This newtype around `Identity` implements `Deserialize`
 /// directly from the inner identity bytes,
 /// without the enclosing `ProductValue` wrapper.
+#[derive(derive_more::Into)]
 pub struct IdentityForUrl(Identity);
-
-impl From<IdentityForUrl> for Identity {
-    /// Consumes `self` returning the backing `Identity`.
-    fn from(IdentityForUrl(id): IdentityForUrl) -> Identity {
-        id
-    }
-}
 
 impl<'de> serde::Deserialize<'de> for IdentityForUrl {
     fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {

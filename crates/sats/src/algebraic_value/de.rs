@@ -1,9 +1,12 @@
 use crate::builtin_value::{ArrayValueIntoIter, ArrayValueIterCloned};
 use crate::{de, AlgebraicValue, SumValue};
 
+use derive_more::From;
+
 /// An implementation of [`Deserializer`](de::Deserializer)
 /// where the input of deserialization is an `AlgebraicValue`.
 #[repr(transparent)]
+#[derive(From)]
 pub struct ValueDeserializer {
     /// The value to deserialize to some `T`.
     val: AlgebraicValue,
@@ -19,12 +22,6 @@ impl ValueDeserializer {
     pub fn from_ref(val: &AlgebraicValue) -> &Self {
         // SAFETY: The conversion is OK due to `repr(transparent)`.
         unsafe { &*(val as *const AlgebraicValue as *const ValueDeserializer) }
-    }
-}
-
-impl From<AlgebraicValue> for ValueDeserializer {
-    fn from(val: AlgebraicValue) -> Self {
-        Self { val }
     }
 }
 
