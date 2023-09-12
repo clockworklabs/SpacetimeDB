@@ -310,6 +310,46 @@ mod tests {
     }
 
     #[test]
+    fn test_eval_incr_maintains_row_ids() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        let schema = ProductType::from_iter([("u8", BuiltinType::U8)]);
+        let row = product!(1u8);
+
+        // generate row id from row
+        let id1 = &row.to_data_key().to_bytes();
+
+        // create table empty table "test"
+        let table_id = create_table_with_rows(&db, &mut tx, "test", schema.clone(), &[])?;
+
+        // select * from test
+        let query = QueryExpr::new(db_table(schema.clone(), "test", table_id));
+        let query = QuerySet(vec![Query { queries: vec![query] }]);
+
+        let op = TableOp {
+            op_type: 0,
+            row_pk: id1.clone(),
+            row: row.clone(),
+        };
+
+        let update = DatabaseTableUpdate {
+            table_id,
+            table_name: "test".into(),
+            ops: vec![op],
+        };
+
+        let update = DatabaseUpdate { tables: vec![update] };
+
+        let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+        let id2 = &result.tables[0].ops[0].row_pk;
+
+        // check that both row ids are the same
+        assert_eq!(id1, id2);
+        Ok(())
+    }
+
+    #[test]
     fn test_subscribe() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
         let mut tx = db.begin_tx();
