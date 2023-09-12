@@ -287,6 +287,21 @@ impl RelationalDB {
         self.finish_tx(tx, res)
     }
 
+    /// Run a fallible function in a transaction, rolling it back if the
+    /// function returns `Err`.
+    ///
+    /// Similar in purpose to [`Self::with_auto_commit`], but returns the
+    /// [`MutTxId`] alongside the `Ok` result of the function `F` without
+    /// committing the transaction.
+    pub fn with_auto_rollback<F, A, E>(&self, mut tx: MutTxId, f: F) -> Result<(MutTxId, A), E>
+    where
+        F: FnOnce(&mut MutTxId) -> Result<A, E>,
+        E: From<DBError>,
+    {
+        let res = f(&mut tx);
+        self.rollback_on_err(tx, res)
+    }
+
     /// Perform the transactional logic for the `tx` according to the `res`
     pub fn finish_tx<A, E>(&self, tx: MutTxId, res: Result<A, E>) -> Result<A, E>
     where
@@ -301,6 +316,21 @@ impl RelationalDB {
             }
         }
         res
+    }
+
+    /// Roll back transaction `tx` if `res` is `Err`, otherwise return it
+    /// alongside the `Ok` value.
+    pub fn rollback_on_err<A, E>(&self, tx: MutTxId, res: Result<A, E>) -> Result<(MutTxId, A), E>
+    where
+        E: From<DBError>,
+    {
+        match res {
+            Err(e) => {
+                self.rollback_tx(tx);
+                Err(e)
+            }
+            Ok(a) => Ok((tx, a)),
+        }
     }
 }
 
