@@ -613,9 +613,7 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
     let identity = config
         .resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_ref()))?
         .unwrap();
-    let identity_config = config
-        .get_identity_config_by_identity(identity.as_str())
-        .unwrap_or_else(|| panic!("Could not find identity: {}", identity));
+    let identity_config = config.get_identity_config_by_identity(identity.as_str())?;
 
     // TODO: check that the identity is valid for the server
 
@@ -626,12 +624,8 @@ async fn exec_set_email(config: Config, args: &ArgMatches) -> Result<(), anyhow:
         email
     ));
 
-    if let Some(identity_token) = config.get_identity_config_by_identity(identity.as_str()) {
-        builder = builder.basic_auth("token", Some(identity_token.token.clone()));
-    } else {
-        println!("Missing identity credentials for identity.");
-        std::process::exit(0);
-    }
+    let identity_token = config.get_identity_config_by_identity(identity.as_str())?;
+    builder = builder.basic_auth("token", Some(identity_token.token.clone()));
 
     builder.send().await?.error_for_status()?;
 

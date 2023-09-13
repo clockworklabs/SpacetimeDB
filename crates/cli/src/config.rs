@@ -134,6 +134,14 @@ Add a new server configuration with:
     )
 }
 
+fn no_such_identity_error(identity: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "No saved configuration for identity: {identity}
+Import an existing identity with:
+\tspacetime identity import <identity> <token>"
+    )
+}
+
 fn hanging_default_server_context(server: &str) -> String {
     format!("Default server does not refer to a saved server configuration: {server}")
 }
@@ -724,11 +732,7 @@ impl Config {
     /// * `Err(anyhow::Error)` - If the identity was not found.
     pub fn set_identity_nickname(&mut self, identity: &str, nickname: &str) -> Result<Option<String>, anyhow::Error> {
         let old_nickname = self
-            .home
-            .identity_configs
-            .iter_mut()
-            .find(|c| c.identity == identity)
-            .ok_or_else(|| anyhow::anyhow!("Identity {} not found", identity))?
+            .get_identity_config_by_identity_mut(identity)?
             .nickname
             .replace(nickname.to_owned());
 
@@ -855,18 +859,7 @@ impl Config {
     }
 
     pub fn get_default_identity_config(&self, server: Option<&str>) -> anyhow::Result<&IdentityConfig> {
-        self.default_identity(server).and_then(|identity| {
-            self.identity_configs()
-                .iter()
-                .find(|c| c.identity == identity)
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "No saved configuration for identity: {identity}
-Import an existing identity with:
-\tspacetime identity import <identity> <token>"
-                    )
-                })
-        })
+        self.get_identity_config_by_identity(self.default_identity(server)?)
     }
 
     pub fn name_exists(&self, nickname: &str) -> bool {
@@ -878,12 +871,18 @@ Import an existing identity with:
         false
     }
 
-    pub fn get_identity_config_by_identity(&self, identity: &str) -> Option<&IdentityConfig> {
-        self.identity_configs().iter().find(|c| c.identity == identity)
+    pub fn get_identity_config_by_identity(&self, identity: &str) -> anyhow::Result<&IdentityConfig> {
+        self.identity_configs()
+            .iter()
+            .find(|c| c.identity == identity)
+            .ok_or_else(|| no_such_identity_error(identity))
     }
 
-    pub fn get_identity_config_by_identity_mut(&mut self, identity: &str) -> Option<&mut IdentityConfig> {
-        self.identity_configs_mut().iter_mut().find(|c| c.identity == identity)
+    pub fn get_identity_config_by_identity_mut(&mut self, identity: &str) -> anyhow::Result<&mut IdentityConfig> {
+        self.identity_configs_mut()
+            .iter_mut()
+            .find(|c| c.identity == identity)
+            .ok_or_else(|| no_such_identity_error(identity))
     }
 
     /// Converts some given `identity_or_name` into an identity.
@@ -920,13 +919,14 @@ Import an existing identity with:
     /// # Returns
     /// * `None` - If an identity config with the given `identity_or_name` does not exist.
     /// * `Some` - A mutable reference to the `IdentityConfig` with the given `identity_or_name`.
-    pub fn get_identity_config_mut(&mut self, identity_or_name: &str) -> Option<&mut IdentityConfig> {
+    pub fn get_identity_config_mut(&mut self, identity_or_name: &str) -> anyhow::Result<&mut IdentityConfig> {
         if is_hex_identity(identity_or_name) {
             self.get_identity_config_by_identity_mut(identity_or_name)
         } else {
             self.identity_configs_mut()
                 .iter_mut()
                 .find(|c| c.nickname.as_deref() == Some(identity_or_name))
+                .ok_or_else(|| no_such_identity_error(identity_or_name))
         }
     }
 

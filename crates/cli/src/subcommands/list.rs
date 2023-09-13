@@ -49,11 +49,8 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         identity
     ));
 
-    if let Some(identity_token) = config.get_identity_config_by_identity(&identity) {
-        builder = builder.basic_auth("token", Some(identity_token.token.clone()));
-    } else {
-        return Err(anyhow::anyhow!("Missing identity credentials for identity."));
-    }
+    let identity_token = config.get_identity_config_by_identity(&identity)?;
+    builder = builder.basic_auth("token", Some(identity_token.token.clone()));
 
     let res = builder.send().await?;
     if res.status() != StatusCode::OK {

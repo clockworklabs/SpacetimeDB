@@ -149,10 +149,7 @@ pub async fn select_identity_config(
     server: Option<&str>,
 ) -> Result<IdentityConfig, anyhow::Error> {
     let resolve_identity_to_identity_config = |ident: &str| -> Result<IdentityConfig, anyhow::Error> {
-        config
-            .get_identity_config_by_identity(ident)
-            .map(Clone::clone)
-            .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {}", ident))
+        config.get_identity_config_by_identity(ident).cloned()
     };
 
     if let Some(identity_or_name) = identity_or_name {
