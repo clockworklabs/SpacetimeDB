@@ -100,7 +100,7 @@ pub trait RelOps {
 
     /// Utility to collect the results into a [Vec]
     #[inline]
-    fn collect_vec(mut self) -> Result<Vec<ProductValue>, ErrorVm>
+    fn collect_vec(mut self) -> Result<Vec<RelValue>, ErrorVm>
     where
         Self: Sized,
     {
@@ -109,7 +109,7 @@ pub trait RelOps {
         let mut result = Vec::with_capacity(estimate);
 
         while let Some(row) = self.next()? {
-            result.push(row.data.clone());
+            result.push(row);
         }
 
         Ok(result)
@@ -211,7 +211,7 @@ where
         let extract = &mut self.extractor;
         if let Some(v) = self.iter.next()? {
             let row = extract(v.as_val_ref())?;
-            return Ok(Some(RelValue::new(&self.head, &row)));
+            return Ok(Some(RelValue::new(&self.head, &row, None)));
         }
         Ok(None)
     }
