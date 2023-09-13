@@ -3,8 +3,10 @@ use crate::db::datastore::traits::ConstraintSchema;
 use crate::error::{DBError, TableError};
 use once_cell::sync::Lazy;
 use spacetimedb_lib::auth::{StAccess, StTableType};
-use spacetimedb_lib::ColumnIndexAttribute;
-use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue};
+use spacetimedb_lib::{ColumnIndexAttribute, Hash};
+use spacetimedb_sats::{
+    impl_deserialize, impl_serialize, product, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue,
+};
 
 /// The static ID of the table that defines tables
 pub(crate) const ST_TABLES_ID: TableId = TableId(0);
@@ -16,12 +18,16 @@ pub(crate) const ST_SEQUENCES_ID: TableId = TableId(2);
 pub(crate) const ST_INDEXES_ID: TableId = TableId(3);
 /// The static ID of the table that defines constraints
 pub(crate) const ST_CONSTRAINTS_ID: TableId = TableId(4);
+/// The static ID of the table that defines the stdb module associated with
+/// the database
+pub(crate) const ST_MODULE_ID: TableId = TableId(5);
 
 pub(crate) const ST_TABLES_NAME: &str = "st_table";
 pub(crate) const ST_COLUMNS_NAME: &str = "st_columns";
 pub(crate) const ST_SEQUENCES_NAME: &str = "st_sequence";
 pub(crate) const ST_INDEXES_NAME: &str = "st_indexes";
 pub(crate) const ST_CONSTRAINTS_NAME: &str = "st_constraints";
+pub(crate) const ST_MODULE_NAME: &str = "st_module";
 
 pub(crate) const TABLE_ID_SEQUENCE_ID: SequenceId = SequenceId(0);
 pub(crate) const SEQUENCE_ID_SEQUENCE_ID: SequenceId = SequenceId(1);
@@ -37,13 +43,14 @@ pub(crate) const ST_CONSTRAINT_ID_INDEX_HACK: u32 = 5;
 pub(crate) struct SystemTables {}
 
 impl SystemTables {
-    pub(crate) fn tables() -> [TableSchema; 5] {
+    pub(crate) fn tables() -> [TableSchema; 6] {
         [
             st_table_schema(),
             st_columns_schema(),
             st_sequences_schema(),
             st_indexes_schema(),
             st_constraints_schema(),
+            st_module_schema(),
         ]
     }
 
@@ -191,6 +198,21 @@ impl StConstraintFields {
             Self::Kind => "kind",
             Self::TableId => "table_id",
             Self::Columns => "columns",
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum StModuleFields {
+    ProgramHash = 0,
+    Kind = 1,
+}
+
+impl StModuleFields {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::ProgramHash => "program_hash",
+            Self::Kind => "kind",
         }
     }
 }
@@ -540,6 +562,41 @@ pub(crate) fn st_constraints_schema() -> TableSchema {
 pub static ST_CONSTRAINT_ROW_TYPE: Lazy<ProductType> =
     Lazy::new(|| ProductType::from_iter(st_constraints_schema().columns.iter().map(|c| c.col_type.clone())));
 
+/// System table [ST_MODULE_NAME]
+///
+/// | program_hash        | kind     |
+/// |---------------------|----------|
+/// | [250, 207, 5, ...]  | 0        |
+pub(crate) fn st_module_schema() -> TableSchema {
+    TableSchema {
+        table_id: ST_MODULE_ID.0,
+        table_name: ST_MODULE_NAME.into(),
+        indexes: vec![],
+        columns: vec![
+            ColumnSchema {
+                table_id: ST_MODULE_ID.0,
+                col_id: StModuleFields::ProgramHash as u32,
+                col_name: StModuleFields::ProgramHash.name().into(),
+                col_type: AlgebraicType::array(AlgebraicType::U8),
+                is_autoinc: false,
+            },
+            ColumnSchema {
+                table_id: ST_MODULE_ID.0,
+                col_id: StModuleFields::Kind as u32,
+                col_name: StModuleFields::Kind.name().into(),
+                col_type: AlgebraicType::U8,
+                is_autoinc: false,
+            },
+        ],
+        constraints: vec![],
+        table_type: StTableType::System,
+        table_access: StAccess::Public,
+    }
+}
+
+pub static ST_MODULE_ROW_TYPE: Lazy<ProductType> =
+    Lazy::new(|| ProductType::from_iter(st_module_schema().columns.iter().map(|c| c.col_type.clone())));
+
 pub(crate) fn table_name_is_system(table_name: &str) -> bool {
     table_name.starts_with("st_")
 }
@@ -859,6 +916,56 @@ impl<Name: AsRef<str>> From<&StConstraintRow<Name>> for ProductValue {
             AlgebraicValue::U8(x.kind.bits()),
             AlgebraicValue::U32(x.table_id),
             AlgebraicValue::ArrayOf(x.columns.clone())
+        ]
+    }
+}
+
+/// Indicates the kind of module the `program_hash` of a [`StModuleRow`]
+/// describes.
+///
+/// More or less a placeholder to allow for future non-WASM hosts without
+/// having to change the [`st_module_schema`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ModuleKind(u8);
+
+/// The [`ModuleKind`] of WASM-based modules.
+///
+/// This is currently the only known kind.
+pub const WASM_MODULE: ModuleKind = ModuleKind(0);
+
+impl_serialize!([] ModuleKind, (self, ser) => self.0.serialize(ser));
+impl_deserialize!([] ModuleKind, de => u8::deserialize(de).map(Self));
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StModuleRow {
+    pub(crate) program_hash: Hash,
+    pub(crate) kind: ModuleKind,
+}
+
+impl StModuleRow {
+    pub fn to_owned(&self) -> StModuleRow {
+        self.clone()
+    }
+}
+
+impl TryFrom<&ProductValue> for StModuleRow {
+    type Error = DBError;
+
+    fn try_from(row: &ProductValue) -> Result<Self, Self::Error> {
+        let program_hash = row
+            .field_as_bytes(StModuleFields::ProgramHash as usize, None)
+            .map(Hash::from_slice)?;
+        let kind = row.field_as_u8(StModuleFields::Kind as usize, None).map(ModuleKind)?;
+
+        Ok(Self { program_hash, kind })
+    }
+}
+
+impl From<&StModuleRow> for ProductValue {
+    fn from(row: &StModuleRow) -> Self {
+        product![
+            AlgebraicValue::Bytes(row.program_hash.as_slice().to_owned()),
+            AlgebraicValue::U8(row.kind.0)
         ]
     }
 }

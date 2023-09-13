@@ -350,6 +350,13 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                     e
                 })?;
         }
+
+        // Set the module hash. Morally, this should be done _after_ calling
+        // the `init` reducer, but that consumes our transaction context.
+        tx = stdb
+            .with_auto_rollback(tx, |tx| stdb.set_module_hash(tx, self.info.module_hash))
+            .map(|(tx, ())| tx)?;
+
         let rcr = match self.info.reducers.get_index_of(INIT_DUNDER) {
             None => {
                 stdb.commit_tx(tx)?;
@@ -404,6 +411,12 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 tables: updates.tainted_tables,
             }));
         }
+
+        // Update the module hash. Morally, this should be done _after_ calling
+        // the `update` reducer, but that consumes our transaction context.
+        tx = stdb
+            .with_auto_rollback(tx, |tx| stdb.set_module_hash(tx, self.info.module_hash))
+            .map(|(tx, ())| tx)?;
 
         let update_result = match self.info.reducers.get_index_of(UPDATE_DUNDER) {
             None => {

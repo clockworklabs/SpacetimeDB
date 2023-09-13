@@ -543,6 +543,25 @@ impl RelationalDB {
     pub fn drop_sequence(&self, tx: &mut MutTxId, seq_id: SequenceId) -> Result<(), DBError> {
         self.inner.drop_sequence_mut_tx(tx, seq_id)
     }
+
+    /// Get the [`Hash`] of the latest module version associated with this
+    /// database.
+    ///
+    /// A `None` result indicates that the database is not fully initialized
+    /// yet.
+    pub fn module_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
+        self.inner.module_hash(tx)
+    }
+
+    /// Set the [`Hash`] of the latest module version associated with this
+    /// database.
+    ///
+    /// **MUST** be called within the transaction context which ensures that
+    /// any lifecycle reducers (`init`, `update`) are invoked. That is, an impl
+    /// of [`crate::host::ModuleInstance`].
+    pub(crate) fn set_module_hash(&self, tx: &mut MutTxId, hash: Hash) -> Result<(), DBError> {
+        self.inner.set_module_hash(tx, hash)
+    }
 }
 
 fn make_default_ostorage(in_memory: bool, path: impl AsRef<Path>) -> Result<Box<dyn ObjectDB + Send>, DBError> {
