@@ -878,12 +878,6 @@ Import an existing identity with:
         false
     }
 
-    pub fn get_identity_config_by_name(&self, name: &str) -> Option<&IdentityConfig> {
-        self.identity_configs()
-            .iter()
-            .find(|c| c.nickname.as_ref() == Some(&name.to_string()))
-    }
-
     pub fn get_identity_config_by_identity(&self, identity: &str) -> Option<&IdentityConfig> {
         self.identity_configs().iter().find(|c| c.identity == identity)
     }
