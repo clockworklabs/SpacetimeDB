@@ -1,4 +1,4 @@
-use crate::errors::ErrorVm;
+use crate::errors::{ErrorType, ErrorVm};
 use spacetimedb_lib::relation::{FieldExpr, Header, RelValue, RelValueRef, RowCount};
 use spacetimedb_sats::product_value::ProductValue;
 use std::collections::HashMap;
@@ -293,7 +293,8 @@ where
                 if let Some(rhs) = rvv.pop() {
                     if (self.predicate)(lhs.as_val_ref(), rhs.as_val_ref())? {
                         self.count.add_exact(1);
-                        return Ok(Some(lhs.clone().extend(rhs)));
+                        let concat = lhs.extend(rhs).map_err(|l| ErrorVm::Type(ErrorType::LenTooLong(l)))?;
+                        return Ok(Some(concat));
                     }
                 }
             }

@@ -526,7 +526,7 @@ impl ModuleHost {
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = self
-            .call_reducer_inner(caller_identity, client, &**reducer_name, args)
+            .call_reducer_inner(caller_identity, client, reducer_name, args)
             .await;
 
         let log_message = match &res {

@@ -478,19 +478,23 @@ impl RelValue {
         RelValueRef::new(&self.data)
     }
 
-    pub fn extend(mut self, with: RelValue) -> RelValue {
+    /// Concatenates `with` to `self`, i.e., returns `self ++ with`.
+    ///
+    /// The `id` of the resulting `RelValue` is `None` as logically,
+    /// the value does not exist in the table.
+    pub fn extend(mut self, with: RelValue) -> Result<RelValue, usize> {
         // Cleared as `self.extend(with)` no longer belongs to a table.
         self.id = None;
 
-        if !with.data.elements.is_empty() {
-            let mut data = Vec::with_capacity(self.data.elements.len() + with.data.elements.len());
-            data.append(&mut self.data.elements.into());
-            data.append(&mut with.data.elements.into());
-            let elements = data.try_into();
-            self.data = ProductValue { elements };
-        }
+        debug_assert!(!self.data.elements.is_empty() && !with.data.elements.is_empty());
 
-        self
+        let mut data = Vec::with_capacity(self.data.elements.len() + with.data.elements.len());
+        data.append(&mut self.data.elements.into());
+        data.append(&mut with.data.elements.into());
+        let elements = data.try_into().map_err(|e: Vec<_>| e.len())?;
+        self.data = ProductValue { elements };
+
+        Ok(self)
     }
 }
 
@@ -546,7 +550,7 @@ impl MemTable {
     pub fn from_value(of: AlgebraicValue) -> Self {
         let head = Header::for_mem_table(of.type_of().into());
         let row = RelValue::new(of.into(), None);
-        Self::new(&head, StAccess::Public, vec![row])
+        Self::new(head, StAccess::Public, vec![row])
     }
 
     pub fn from_iter(head: Header, data: impl Iterator<Item = ProductValue>) -> Self {

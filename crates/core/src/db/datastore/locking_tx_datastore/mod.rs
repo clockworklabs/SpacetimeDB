@@ -2469,7 +2469,7 @@ mod tests {
             IndexDef {
                 table_id: 5,
                 cols: NonEmpty::new(0),
-                name: "id_idx".into(),
+                name: string("id_idx"),
                 is_unique: true,
             },
         )?;
@@ -2478,7 +2478,7 @@ mod tests {
             index_id: 8,
             table_id: 5,
             cols: NonEmpty::new(0),
-            index_name: "id_idx".into(),
+            index_name: string("id_idx"),
             is_unique: true,
         }];
         assert_eq!(

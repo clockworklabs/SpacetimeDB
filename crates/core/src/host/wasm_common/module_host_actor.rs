@@ -4,6 +4,7 @@ use nonempty::NonEmpty;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, IndexType, ModuleDef};
+use spacetimedb_sats::{string, SatsString};
 use spacetimedb_vm::expr::CrudExpr;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -13,7 +14,7 @@ use crate::client::ClientConnectionSender;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef, TableSchema};
+use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef};
 use crate::hash::Hash;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
@@ -474,7 +475,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let event = ModuleEvent {
             timestamp,
             function_call: ModuleFunctionCall {
-                reducer: reducer_symbol.to_string(),
+                reducer: string(reducer_symbol),
                 args: ArgsTuple::default(),
             },
             status,
@@ -803,7 +804,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let mut indexes_to_create = Vec::new();
         let mut indexes_to_drop = Vec::new();
 
-        let mut known_tables: BTreeMap<String, TableSchema> = stdb
+        let mut known_tables: BTreeMap<_, _> = stdb
             .get_all_tables(tx)?
             .into_iter()
             .map(|schema| (schema.table_name.clone(), schema))
@@ -819,7 +820,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 if Equiv(&known_schema_def) != Equiv(&proposed_schema_def) {
                     self.system_logger()
                         .warn(&format!("stored and proposed schema of `{}` differ", table.name));
-                    tainted_tables.push(table.name.to_owned());
+                    tainted_tables.push(table.name.clone());
                 } else {
                     // The schema is unchanged, but maybe the indexes are.
                     let mut known_indexes = known_schema
@@ -852,7 +853,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                     }
                 }
             } else {
-                new_tables.insert(table.name.to_owned(), proposed_schema_def);
+                new_tables.insert(table.name.clone(), proposed_schema_def);
             }
         }
         // We may at some point decide to drop orphaned tables automatically,
@@ -876,9 +877,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
 struct SchemaUpdates {
     /// Tables to create.
-    new_tables: HashMap<String, TableDef>,
+    new_tables: HashMap<SatsString, TableDef>,
     /// Names of tables with incompatible schema updates.
-    tainted_tables: Vec<String>,
+    tainted_tables: Vec<SatsString>,
     /// Indexes to drop.
     ///
     /// Should be processed _before_ `indexes_to_create`, as we might be
