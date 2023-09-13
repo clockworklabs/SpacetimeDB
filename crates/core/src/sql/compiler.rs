@@ -6,9 +6,10 @@ use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
 use spacetimedb_lib::auth::{StAccess, StTableType};
+use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::relation::{self, DbTable, FieldExpr, FieldName, Header};
 use spacetimedb_lib::table::ProductTypeMeta;
-use spacetimedb_sats::ProductType;
+use spacetimedb_sats::{AlgebraicValue, ProductType};
 use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
@@ -70,15 +71,64 @@ fn check_cmp_expr(table: &From, expr: &ColumnOp) -> Result<(), PlanError> {
 }
 
 /// Compiles a `WHERE ...` clause
-fn compile_where(q: QueryExpr, table: &From, filter: Selection) -> Result<QueryExpr, PlanError> {
+fn compile_where(q: QueryExpr, table: &From, mut filter: Selection) -> Result<QueryExpr, PlanError> {
     let mut q = q;
 
-    for x in filter.clauses {
-        check_cmp_expr(table, &x)?;
-        q = q.with_select(x)
+    for predicate in &filter.clauses {
+        check_cmp_expr(table, predicate)?;
+    }
+
+    // Create an index scan using the first sargable predicate if any exist.
+    if let Some((i, col, value)) = filter
+        .clauses
+        .iter()
+        .enumerate()
+        .filter_map(|(i, predicate)| is_sargable(table, predicate).map(|(col, value)| (i, col, value)))
+        .next()
+    {
+        filter.clauses.swap_remove(i);
+        let schema = &table.root;
+        q = q.with_index_scan(col, value, schema.into());
+    }
+
+    for predicate in filter.clauses {
+        q = q.with_select(predicate)
     }
 
     Ok(q)
+}
+
+// Sargable stands for Search ARGument ABLE.
+// A sargable predicate is one that can be answered using an index.
+// In our case this corresponds to an equality predicate of the form `<field> = <value>`.
+fn is_sargable(table: &From, predicate: &ColumnOp) -> Option<(u32, AlgebraicValue)> {
+    // Only equality is sargable at the moment
+    if let ColumnOp::Cmp {
+        op: OpQuery::Cmp(OpCmp::Eq),
+        lhs,
+        rhs,
+    } = predicate
+    {
+        // rhs must be a value
+        let value = if let ColumnOp::Field(FieldExpr::Value(ref v)) = **rhs {
+            Some(v.clone())
+        } else {
+            None
+        }?;
+        // lhs must be a field name
+        let column_schema = if let ColumnOp::Field(FieldExpr::Name(ref name)) = **lhs {
+            table.root.get_column_by_field(name)
+        } else {
+            None
+        }?;
+        // lhs field must have an index
+        let index_schema = table.root.indexes.iter().find(|index_schema| {
+            index_schema.table_id == column_schema.table_id && index_schema.col_id == column_schema.col_id
+        })?;
+        Some((index_schema.col_id, value))
+    } else {
+        None
+    }
 }
 
 /// Compiles a `SELECT ...` clause
@@ -275,4 +325,107 @@ fn compile_statement(statement: SqlAst) -> Result<CrudExpr, PlanError> {
     };
 
     Ok(q)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use itertools::Itertools;
+    use spacetimedb_lib::{
+        auth::{StAccess, StTableType},
+        error::ResultTest,
+    };
+    use spacetimedb_sats::AlgebraicType;
+    use spacetimedb_vm::expr::Query;
+
+    use crate::db::{
+        datastore::traits::{ColumnDef, IndexDef, TableDef},
+        relational_db::tests_utils::make_test_db,
+    };
+
+    fn create_table(
+        db: &RelationalDB,
+        tx: &mut MutTxId,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        indexes: &[(u32, &str)],
+    ) -> ResultTest<()> {
+        let table_name = name.to_string();
+        let table_type = StTableType::User;
+        let table_access = StAccess::Public;
+
+        let columns = schema
+            .iter()
+            .map(|(col_name, col_type)| ColumnDef {
+                col_name: col_name.to_string(),
+                col_type: col_type.clone(),
+                is_autoinc: false,
+            })
+            .collect_vec();
+
+        let indexes = indexes
+            .iter()
+            .map(|(col_id, index_name)| IndexDef {
+                table_id: 0,
+                col_id: *col_id,
+                name: index_name.to_string(),
+                is_unique: false,
+            })
+            .collect_vec();
+
+        let schema = TableDef {
+            table_name,
+            columns,
+            indexes,
+            table_type,
+            table_access,
+        };
+
+        db.create_table(tx, schema)?;
+        Ok(())
+    }
+
+    fn compile_query(db: &RelationalDB, tx: &MutTxId, sql: &str) -> ResultTest<Vec<Query>> {
+        let mut ast = compile_sql(db, tx, sql)?;
+
+        assert_eq!(1, ast.len());
+
+        let ast = ast.remove(0);
+        if let CrudExpr::Query(QueryExpr { source: _, query }) = ast {
+            Ok(query)
+        } else {
+            panic!("Expected QueryExpr, got {:?}", ast)
+        }
+    }
+
+    fn assert_index_scan(op: Query, col: u32, val: AlgebraicValue) -> ResultTest<()> {
+        let result = if let Query::IndexScan(col_id, value, _) = op {
+            (col_id, value)
+        } else {
+            panic!("Expected IndexScan, got {:?}", op)
+        };
+
+        assert_eq!(result.0, col);
+        assert_eq!(result.1, val);
+        Ok(())
+    }
+
+    #[test]
+    fn compile_sargable_predicate() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        // Create table [test] with index on [a]
+        let schema = &[("a", AlgebraicType::U64)];
+        let indexes = &[(0, "a")];
+        create_table(&db, &mut tx, "test", schema, indexes)?;
+
+        // Compile sargable query
+        let sql = "select * from test where a = 1";
+        let mut ops = compile_query(&db, &tx, sql)?;
+
+        // Assert index scan generated
+        assert_eq!(1, ops.len());
+        assert_index_scan(ops.remove(0), 0, AlgebraicValue::U64(1))
+    }
 }

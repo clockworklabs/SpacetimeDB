@@ -2,7 +2,7 @@ use crate::error::DBError;
 use spacetimedb_lib::relation::{DbTable, RowCount};
 use spacetimedb_sats::ProductValue;
 
-use super::datastore::locking_tx_datastore::Iter;
+use super::datastore::locking_tx_datastore::{Iter, IterByColEq};
 
 #[derive(Debug, Clone, Copy)]
 pub enum CatalogKind {
@@ -20,6 +20,19 @@ pub struct TableCursor<'a> {
 
 impl<'a> TableCursor<'a> {
     pub fn new(table: DbTable, iter: Iter<'a>) -> Result<Self, DBError> {
+        Ok(Self { table, iter })
+    }
+}
+
+/// A relational iterator wrapping a storage level index iterator.
+/// A relational iterator returns [RelValue]s whereas storage iterators return [DataRef]s.
+pub struct IndexCursor<'a> {
+    pub table: DbTable,
+    pub iter: IterByColEq<'a>,
+}
+
+impl<'a> IndexCursor<'a> {
+    pub fn new(table: DbTable, iter: IterByColEq<'a>) -> Result<Self, DBError> {
         Ok(Self { table, iter })
     }
 }

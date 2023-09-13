@@ -61,11 +61,7 @@ impl Table {
     /// Matching is defined by `Ord for AlgebraicValue`.
     ///
     /// For a unique index this will always yield at most one `RowId`.
-    pub(crate) fn index_seek<'a>(
-        &'a self,
-        col_id: ColId,
-        value: &'a AlgebraicValue,
-    ) -> Option<BTreeIndexRangeIter<'a>> {
+    pub(crate) fn index_seek<'a>(&'a self, col_id: ColId, value: &AlgebraicValue) -> Option<BTreeIndexRangeIter<'a>> {
         self.indexes.get(&col_id).map(|index| index.seek(value))
     }
 

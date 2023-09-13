@@ -295,6 +295,7 @@ pub enum CrudExpr {
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Query {
+    IndexScan(u32, AlgebraicValue, DbTable),
     Select(ColumnOp),
     Project(Vec<FieldExpr>),
     JoinInner(JoinExpr),
@@ -312,6 +313,12 @@ impl QueryExpr {
             source: source.into(),
             query: vec![],
         }
+    }
+
+    pub fn with_index_scan(self, col_id: u32, value: AlgebraicValue, table: DbTable) -> Self {
+        let mut expr = self;
+        expr.query.push(Query::IndexScan(col_id, value, table));
+        expr
     }
 
     pub fn with_select<O>(self, op: O) -> Self
@@ -502,6 +509,9 @@ impl fmt::Display for SourceExprOpt {
 impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Query::IndexScan(col, value, _) => {
+                write!(f, "ixscan on {col} for {:?}", value)
+            }
             Query::Select(q) => {
                 write!(f, "select {q}")
             }

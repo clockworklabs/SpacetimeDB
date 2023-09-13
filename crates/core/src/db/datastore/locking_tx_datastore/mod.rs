@@ -207,7 +207,7 @@ impl CommittedState {
         &'a self,
         table_id: &TableId,
         col_id: &ColId,
-        value: &'a AlgebraicValue,
+        value: &AlgebraicValue,
     ) -> Option<BTreeIndexRangeIter<'a>> {
         if let Some(table) = self.tables.get(table_id) {
             table.index_seek(*col_id, value)
@@ -321,7 +321,7 @@ impl TxState {
         &'a self,
         table_id: &TableId,
         col_id: &ColId,
-        value: &'a AlgebraicValue,
+        value: &AlgebraicValue,
     ) -> Option<BTreeIndexRangeIter<'a>> {
         self.insert_tables.get(table_id)?.index_seek(*col_id, value)
     }
@@ -579,8 +579,7 @@ impl Inner {
 
     fn drop_table_from_st_tables(&mut self, table_id: TableId) -> super::Result<()> {
         const ST_TABLES_TABLE_ID_COL: ColId = ColId(0);
-        let value = AlgebraicValue::U32(table_id.0);
-        let rows = self.iter_by_col_eq(&ST_TABLES_ID, &ST_TABLES_TABLE_ID_COL, &value)?;
+        let rows = self.iter_by_col_eq(&ST_TABLES_ID, &ST_TABLES_TABLE_ID_COL, table_id.into())?;
         let rows = rows.map(|row| row.view().to_owned()).collect::<Vec<_>>();
         if rows.is_empty() {
             return Err(TableError::IdNotFound(table_id.0).into());
@@ -591,8 +590,7 @@ impl Inner {
 
     fn drop_table_from_st_columns(&mut self, table_id: TableId) -> super::Result<()> {
         const ST_COLUMNS_TABLE_ID_COL: ColId = ColId(0);
-        let value = AlgebraicValue::U32(table_id.0);
-        let rows = self.iter_by_col_eq(&ST_COLUMNS_ID, &ST_COLUMNS_TABLE_ID_COL, &value)?;
+        let rows = self.iter_by_col_eq(&ST_COLUMNS_ID, &ST_COLUMNS_TABLE_ID_COL, table_id.into())?;
         let rows = rows.map(|row| row.view().to_owned()).collect::<Vec<_>>();
         if rows.is_empty() {
             return Err(TableError::IdNotFound(table_id.0).into());
@@ -618,11 +616,7 @@ impl Inner {
         // If we're out of allocations, then update the sequence row in st_sequences to allocate a fresh batch of sequences.
         const ST_SEQUENCES_SEQUENCE_ID_COL: ColId = ColId(0);
         let old_seq_row = self
-            .iter_by_col_eq(
-                &ST_SEQUENCES_ID,
-                &ST_SEQUENCES_SEQUENCE_ID_COL,
-                &AlgebraicValue::U32(seq_id.0),
-            )?
+            .iter_by_col_eq(&ST_SEQUENCES_ID, &ST_SEQUENCES_SEQUENCE_ID_COL, seq_id.into())?
             .last()
             .unwrap()
             .data;
@@ -687,11 +681,7 @@ impl Inner {
     fn drop_sequence(&mut self, seq_id: SequenceId) -> super::Result<()> {
         const ST_SEQUENCES_SEQUENCE_ID_COL: ColId = ColId(0);
         let old_seq_row = self
-            .iter_by_col_eq(
-                &ST_SEQUENCES_ID,
-                &ST_SEQUENCES_SEQUENCE_ID_COL,
-                &AlgebraicValue::U32(seq_id.0),
-            )?
+            .iter_by_col_eq(&ST_SEQUENCES_ID, &ST_SEQUENCES_SEQUENCE_ID_COL, seq_id.into())?
             .last()
             .unwrap()
             .data;
@@ -706,7 +696,7 @@ impl Inner {
         self.iter_by_col_eq(
             &ST_SEQUENCES_ID,
             &seq_name_col,
-            &AlgebraicValue::String(seq_name.to_owned()),
+            AlgebraicValue::String(seq_name.to_owned()),
         )
         .map(|mut iter| {
             iter.next()
@@ -837,7 +827,7 @@ impl Inner {
         // so. We can't just call iter_by_col_eq here as that would attempt to use the
         // index which we haven't created yet. So instead we just manually Scan here.
         let rows = IterByColEq::Scan(ScanIterByColEq {
-            value: &AlgebraicValue::U32(table_id.0),
+            value: table_id.into(),
             col_id: table_id_col,
             scan_iter: self.iter(&ST_TABLES_ID)?,
         })
@@ -852,7 +842,7 @@ impl Inner {
         // Look up the columns for the table in question.
         let mut columns = Vec::new();
         const TABLE_ID_COL: ColId = ColId(0);
-        for data_ref in self.iter_by_col_eq(&ST_COLUMNS_ID, &TABLE_ID_COL, &AlgebraicValue::U32(table_id))? {
+        for data_ref in self.iter_by_col_eq(&ST_COLUMNS_ID, &TABLE_ID_COL, table_id.into())? {
             let row = data_ref.view();
 
             let el = StColumnRow::try_from(row)?;
@@ -871,7 +861,7 @@ impl Inner {
         // Look up the indexes for the table in question.
         let mut indexes = Vec::new();
         let table_id_col: ColId = ColId(1);
-        for data_ref in self.iter_by_col_eq(&ST_INDEXES_ID, &table_id_col, &AlgebraicValue::U32(table_id))? {
+        for data_ref in self.iter_by_col_eq(&ST_INDEXES_ID, &table_id_col, table_id.into())? {
             let row = data_ref.view();
 
             let el = StIndexRow::try_from(row)?;
@@ -900,26 +890,18 @@ impl Inner {
         // First drop the tables indexes.
         const ST_INDEXES_TABLE_ID_COL: ColId = ColId(1);
         let rows = self
-            .iter_by_col_eq(
-                &ST_INDEXES_ID,
-                &ST_INDEXES_TABLE_ID_COL,
-                &AlgebraicValue::U32(table_id.0),
-            )?
+            .iter_by_col_eq(&ST_INDEXES_ID, &ST_INDEXES_TABLE_ID_COL, table_id.into())?
             .collect::<Vec<_>>();
         for data_ref in rows {
             let row = data_ref.view();
             let el = StIndexRow::try_from(row)?;
-            self.drop_index(&IndexId(el.index_id))?;
+            self.drop_index(IndexId(el.index_id))?;
         }
 
         // Remove the table's sequences from st_sequences.
         const ST_SEQUENCES_TABLE_ID_COL: ColId = ColId(2);
         let rows = self
-            .iter_by_col_eq(
-                &ST_SEQUENCES_ID,
-                &ST_SEQUENCES_TABLE_ID_COL,
-                &AlgebraicValue::U32(table_id.0),
-            )?
+            .iter_by_col_eq(&ST_SEQUENCES_ID, &ST_SEQUENCES_TABLE_ID_COL, table_id.into())?
             .collect::<Vec<_>>();
         for data_ref in rows {
             let row = data_ref.view();
@@ -944,7 +926,7 @@ impl Inner {
         // Update the table's name in st_tables.
         const ST_TABLES_TABLE_ID_COL: ColId = ColId(0);
         let rows = self
-            .iter_by_col_eq(&ST_TABLES_ID, &ST_TABLES_TABLE_ID_COL, &AlgebraicValue::U32(table_id.0))?
+            .iter_by_col_eq(&ST_TABLES_ID, &ST_TABLES_TABLE_ID_COL, table_id.into())?
             .collect::<Vec<_>>();
         assert!(rows.len() <= 1, "Expected at most one row in st_tables for table_id");
         let row = rows.first().ok_or_else(|| TableError::IdNotFound(table_id.0))?;
@@ -961,7 +943,7 @@ impl Inner {
         self.iter_by_col_eq(
             &ST_TABLES_ID,
             &table_name_col,
-            &AlgebraicValue::String(table_name.to_owned()),
+            AlgebraicValue::String(table_name.to_owned()),
         )
         .map(|mut iter| {
             iter.next()
@@ -971,7 +953,7 @@ impl Inner {
 
     fn table_name_from_id(&self, table_id: TableId) -> super::Result<Option<String>> {
         let table_id_col: ColId = ColId(0);
-        self.iter_by_col_eq(&ST_TABLES_ID, &table_id_col, &AlgebraicValue::U32(table_id.0))
+        self.iter_by_col_eq(&ST_TABLES_ID, &table_id_col, table_id.into())
             .map(|mut iter| {
                 iter.next()
                     .map(|row| row.view().elements[1].as_string().unwrap().to_owned())
@@ -1066,24 +1048,20 @@ impl Inner {
         Ok(())
     }
 
-    fn drop_index(&mut self, index_id: &IndexId) -> super::Result<()> {
+    fn drop_index(&mut self, index_id: IndexId) -> super::Result<()> {
         log::trace!("INDEX DROPPING: {}", index_id.0);
 
         // Remove the index from st_indexes.
         const ST_INDEXES_INDEX_ID_COL: ColId = ColId(0);
         let old_index_row = self
-            .iter_by_col_eq(
-                &ST_INDEXES_ID,
-                &ST_INDEXES_INDEX_ID_COL,
-                &AlgebraicValue::U32(index_id.0),
-            )?
+            .iter_by_col_eq(&ST_INDEXES_ID, &ST_INDEXES_INDEX_ID_COL, index_id.into())?
             .last()
             .unwrap()
             .data;
         let old_index_row_id = RowId(old_index_row.to_data_key());
         self.delete(&ST_INDEXES_ID, &old_index_row_id)?;
 
-        self.drop_index_internal(index_id);
+        self.drop_index_internal(&index_id);
 
         log::trace!("INDEX DROPPED: {}", index_id.0);
         Ok(())
@@ -1126,7 +1104,7 @@ impl Inner {
         self.iter_by_col_eq(
             &ST_INDEXES_ID,
             &index_name_col,
-            &AlgebraicValue::String(index_name.to_owned()),
+            AlgebraicValue::String(index_name.to_owned()),
         )
         .map(|mut iter| {
             iter.next()
@@ -1225,11 +1203,7 @@ impl Inner {
                     continue;
                 }
                 let st_sequences_table_id_col = ColId(2);
-                for seq_row in self.iter_by_col_eq(
-                    &ST_SEQUENCES_ID,
-                    &st_sequences_table_id_col,
-                    &AlgebraicValue::U32(table_id.0),
-                )? {
+                for seq_row in self.iter_by_col_eq(&ST_SEQUENCES_ID, &st_sequences_table_id_col, table_id.into())? {
                     let seq_row = seq_row.view();
                     let seq_row = StSequenceRow::try_from(seq_row)?;
                     if seq_row.col_id != col.col_id {
@@ -1504,12 +1478,7 @@ impl Inner {
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
     /// where the column data identified by `col_id` equates to `value`.
-    fn iter_by_col_eq<'a>(
-        &'a self,
-        table_id: &TableId,
-        col_id: &ColId,
-        value: &'a AlgebraicValue,
-    ) -> super::Result<IterByColEq> {
+    fn iter_by_col_eq(&self, table_id: &TableId, col_id: &ColId, value: AlgebraicValue) -> super::Result<IterByColEq> {
         // We have to index_seek in both the committed state and the current tx state.
         // First, we will check modifications in the current tx. It may be that the table
         // has not been modified yet in the current tx, in which case we will only search
@@ -1524,25 +1493,25 @@ impl Inner {
         if let Some(inserted_rows) = self
             .tx_state
             .as_ref()
-            .and_then(|tx_state| tx_state.index_seek(table_id, col_id, value))
+            .and_then(|tx_state| tx_state.index_seek(table_id, col_id, &value))
         {
             // The current transaction has modified this table, and the table is indexed.
             let tx_state = self.tx_state.as_ref().unwrap();
             Ok(IterByColEq::Index(IndexIterByColEq {
-                value,
+                value: value.clone(),
                 col_id: *col_id,
                 iter: IndexSeekIterInner {
                     table_id: *table_id,
                     tx_state,
                     inserted_rows,
-                    committed_rows: self.committed_state.index_seek(table_id, col_id, value),
+                    committed_rows: self.committed_state.index_seek(table_id, col_id, &value),
                     committed_state: &self.committed_state,
                 },
             }))
         } else {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
-            match self.committed_state.index_seek(table_id, col_id, value) {
+            match self.committed_state.index_seek(table_id, col_id, &value) {
                 //If we don't have `self.tx_state` yet is likely we are running the bootstrap process
                 Some(committed_rows) => match self.tx_state.as_ref() {
                     None => Ok(IterByColEq::Scan(ScanIterByColEq {
@@ -1821,7 +1790,7 @@ impl Iterator for IterByColEq<'_> {
 pub struct ScanIterByColEq<'a> {
     scan_iter: Iter<'a>,
     col_id: ColId,
-    value: &'a AlgebraicValue,
+    value: AlgebraicValue,
 }
 
 impl Iterator for ScanIterByColEq<'_> {
@@ -1832,7 +1801,7 @@ impl Iterator for ScanIterByColEq<'_> {
         for data_ref in &mut self.scan_iter {
             let row = data_ref.view();
             let value = &row.elements[self.col_id.0 as usize];
-            if self.value == value {
+            if &self.value == value {
                 return Some(data_ref);
             }
         }
@@ -1843,7 +1812,7 @@ impl Iterator for ScanIterByColEq<'_> {
 pub struct IndexIterByColEq<'a> {
     iter: IndexSeekIterInner<'a>,
     col_id: ColId,
-    value: &'a AlgebraicValue,
+    value: AlgebraicValue,
 }
 
 impl Iterator for IndexIterByColEq<'_> {
@@ -1854,7 +1823,7 @@ impl Iterator for IndexIterByColEq<'_> {
         self.iter.find(|data_ref| {
             let row = data_ref.view();
             let value = &row.elements[self.col_id.0 as usize];
-            self.value == value
+            &self.value == value
         })
     }
 }
@@ -1988,7 +1957,7 @@ impl TxDatastore for Locking {
         tx: &'a Self::TxId,
         table_id: TableId,
         col_id: ColId,
-        value: &'a spacetimedb_sats::AlgebraicValue,
+        value: spacetimedb_sats::AlgebraicValue,
     ) -> super::Result<Self::IterByColEq<'a>> {
         self.iter_by_col_eq_mut_tx(tx, table_id, col_id, value)
     }
@@ -2081,7 +2050,7 @@ impl MutTxDatastore for Locking {
     }
 
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTxId, index_id: IndexId) -> super::Result<()> {
-        tx.lock.drop_index(&index_id)
+        tx.lock.drop_index(index_id)
     }
 
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTxId, index_name: &str) -> super::Result<Option<IndexId>> {
@@ -2127,7 +2096,7 @@ impl MutTxDatastore for Locking {
         tx: &'a Self::MutTxId,
         table_id: TableId,
         col_id: ColId,
-        value: &'a spacetimedb_sats::AlgebraicValue,
+        value: spacetimedb_sats::AlgebraicValue,
     ) -> super::Result<Self::IterByColEq<'a>> {
         tx.lock.iter_by_col_eq(&table_id, &col_id, value)
     }
@@ -2355,7 +2324,7 @@ mod tests {
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
         let table_rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, ST_TABLES_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
+            .iter_by_col_eq_mut_tx(&tx, ST_TABLES_ID, ColId(0), table_id.into())?
             .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.table_id)
             .collect::<Vec<_>>();
@@ -2367,7 +2336,7 @@ mod tests {
             ]
         );
         let column_rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, ST_COLUMNS_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
+            .iter_by_col_eq_mut_tx(&tx, ST_COLUMNS_ID, ColId(0), table_id.into())?
             .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| (x.table_id, x.col_id))
             .collect::<Vec<_>>();
@@ -2392,7 +2361,7 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
         let tx = datastore.begin_mut_tx();
         let table_rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, ST_TABLES_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
+            .iter_by_col_eq_mut_tx(&tx, ST_TABLES_ID, ColId(0), table_id.into())?
             .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.table_id)
             .collect::<Vec<_>>();
@@ -2404,7 +2373,7 @@ mod tests {
             ]
         );
         let column_rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, ST_COLUMNS_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
+            .iter_by_col_eq_mut_tx(&tx, ST_COLUMNS_ID, ColId(0), table_id.into())?
             .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| (x.table_id, x.col_id))
             .collect::<Vec<_>>();
@@ -2429,13 +2398,13 @@ mod tests {
         datastore.rollback_mut_tx(tx);
         let tx = datastore.begin_mut_tx();
         let table_rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, ST_TABLES_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
+            .iter_by_col_eq_mut_tx(&tx, ST_TABLES_ID, ColId(0), table_id.into())?
             .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.table_id)
             .collect::<Vec<_>>();
         assert_eq!(table_rows, vec![]);
         let column_rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, ST_COLUMNS_ID, ColId(0), &AlgebraicValue::U32(table_id.0))?
+            .iter_by_col_eq_mut_tx(&tx, ST_COLUMNS_ID, ColId(0), table_id.into())?
             .map(|x| StColumnRow::try_from(x.view()).unwrap().to_owned())
             .sorted_by_key(|x| x.table_id)
             .collect::<Vec<_>>();
@@ -3100,7 +3069,7 @@ mod tests {
         let mut tx = datastore.begin_mut_tx();
         // Iterate over all rows with the value 1 (from the autoinc) in column 0.
         let rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, table_id, ColId(0), &AlgebraicValue::U32(1))?
+            .iter_by_col_eq_mut_tx(&tx, table_id, ColId(0), AlgebraicValue::U32(1))?
             .collect::<Vec<_>>();
         assert_eq!(rows.len(), 1);
         let rows: Vec<ProductValue> = rows
@@ -3114,7 +3083,7 @@ mod tests {
 
         // We shouldn't see the row when iterating now that it's deleted.
         let rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, table_id, ColId(0), &AlgebraicValue::U32(1))?
+            .iter_by_col_eq_mut_tx(&tx, table_id, ColId(0), AlgebraicValue::U32(1))?
             .collect::<Vec<_>>();
         assert_eq!(rows.len(), 0);
 
@@ -3125,7 +3094,7 @@ mod tests {
         // The actual test: we should be able to iterate again, while still in the
         // second transaction, and see exactly one row.
         let rows = datastore
-            .iter_by_col_eq_mut_tx(&tx, table_id, ColId(0), &AlgebraicValue::U32(1))?
+            .iter_by_col_eq_mut_tx(&tx, table_id, ColId(0), AlgebraicValue::U32(1))?
             .collect::<Vec<_>>();
         assert_eq!(rows.len(), 1);
 
