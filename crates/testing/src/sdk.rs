@@ -294,7 +294,7 @@ fn run_client(run_command: &str, client_project: &str, db_name: &str, test_name:
         .dir(client_project)
         .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
         .env(TEST_DB_NAME_ENV_VAR, db_name)
-        .env("RUST_LOG", "trace")
+        .env("RUST_LOG", "info")
         .stderr_to_stdout()
         .stdout_capture()
         .unchecked()
