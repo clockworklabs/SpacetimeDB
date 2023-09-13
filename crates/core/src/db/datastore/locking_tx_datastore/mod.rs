@@ -45,6 +45,7 @@ use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
 use spacetimedb_lib::{
     auth::{StAccess, StTableType},
     data_key::ToDataKey,
+    relation::RelValue,
     DataKey,
 };
 use spacetimedb_sats::{
@@ -114,6 +115,12 @@ impl DataRef {
 
     pub fn id(&self) -> &DataKey {
         &self.id
+    }
+}
+
+impl From<DataRef> for RelValue {
+    fn from(val: DataRef) -> Self {
+        RelValue::new(val.data, Some(val.id))
     }
 }
 
