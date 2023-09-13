@@ -20,6 +20,7 @@ spacetimedb-bindings-sys = { path = "../bindings-sys", version = "0.6.1" }
 spacetimedb-lib = { path = "../lib", default-features = false, version = "0.6.1"}
 spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.6.1"}
 
+derive_more.workspace = true
 log.workspace = true
 once_cell.workspace = true
 scoped-tls.workspace = true

@@ -3,7 +3,6 @@ use crate::db::cursor::{CatalogCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, SequenceId, TableDef};
 use crate::db::relational_db::RelationalDB;
-use crate::error::DBError;
 use itertools::Itertools;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
@@ -352,12 +351,6 @@ impl RelOps for TableCursor<'_> {
             return Ok(Some(row.into()));
         };
         Ok(None)
-    }
-}
-
-impl From<DBError> for ErrorVm {
-    fn from(err: DBError) -> Self {
-        ErrorVm::Other(err.into())
     }
 }
 

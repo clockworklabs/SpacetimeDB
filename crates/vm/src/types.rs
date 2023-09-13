@@ -1,4 +1,5 @@
 //! Define an in-progress `type` annotation.
+use derive_more::From;
 use std::fmt;
 
 use crate::operator::*;
@@ -9,12 +10,16 @@ use spacetimedb_sats::builtin_type::BuiltinType;
 
 /// Describe a `type`. In the case of [Ty::Unknown] the type of [Expr] is
 /// not yet know and should be resolved by the type-checker.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, From)]
 pub enum Ty {
     Unknown,
+    #[from]
     Val(AlgebraicType),
     Multi(Vec<Ty>),
-    Fun { params: Vec<Ty>, result: Box<Ty> },
+    Fun {
+        params: Vec<Ty>,
+        result: Box<Ty>,
+    },
 }
 
 impl fmt::Display for Ty {
@@ -35,12 +40,6 @@ impl fmt::Display for Ty {
                 write!(f, ") -> {result}")
             }
         }
-    }
-}
-
-impl From<AlgebraicType> for Ty {
-    fn from(x: AlgebraicType) -> Self {
-        Ty::Val(x)
     }
 }
 

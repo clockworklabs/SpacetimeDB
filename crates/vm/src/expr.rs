@@ -1,17 +1,17 @@
+use derive_more::From;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::error::AuthError;
-use spacetimedb_lib::table::ProductTypeMeta;
-use spacetimedb_lib::Identity;
-use std::collections::HashMap;
-use std::fmt;
-
 use spacetimedb_lib::relation::{
     DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
 };
+use spacetimedb_lib::table::ProductTypeMeta;
+use spacetimedb_lib::Identity;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
+use std::collections::HashMap;
+use std::fmt;
 
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::functions::{FunDef, Param};
@@ -166,7 +166,7 @@ impl fmt::Display for ColumnOp {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, From)]
 pub enum SourceExpr {
     MemTable(MemTable),
     DbTable(DbTable),
@@ -215,18 +215,6 @@ impl Relation for SourceExpr {
             SourceExpr::MemTable(x) => x.row_count(),
             SourceExpr::DbTable(x) => x.row_count(),
         }
-    }
-}
-
-impl From<MemTable> for SourceExpr {
-    fn from(x: MemTable) -> Self {
-        Self::MemTable(x)
-    }
-}
-
-impl From<DbTable> for SourceExpr {
-    fn from(x: DbTable) -> Self {
-        Self::DbTable(x)
     }
 }
 
@@ -387,8 +375,9 @@ impl AuthAccess for Query {
 //     }
 // }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, From)]
 pub enum Expr {
+    #[from]
     Value(AlgebraicValue),
     Ty(AlgebraicType),
     Op(Op, Vec<Expr>),
@@ -400,12 +389,6 @@ pub enum Expr {
     Ident(String),
     If(Box<(Expr, Expr, Expr)>),
     Crud(Box<CrudExpr>),
-}
-
-impl From<AlgebraicValue> for Expr {
-    fn from(x: AlgebraicValue) -> Self {
-        Expr::Value(x)
-    }
 }
 
 impl From<QueryExpr> for Expr {

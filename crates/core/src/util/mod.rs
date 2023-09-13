@@ -1,3 +1,4 @@
+use derive_more::From;
 use std::borrow::Cow;
 
 pub mod prometheus_handle;
@@ -29,25 +30,15 @@ pub(crate) fn string_from_utf8_lossy_owned(v: Vec<u8>) -> String {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, From)]
 pub enum AnyBytes {
     Bytes(bytes::Bytes),
     IVec(sled::IVec),
 }
 
-impl From<bytes::Bytes> for AnyBytes {
-    fn from(b: bytes::Bytes) -> Self {
-        Self::Bytes(b)
-    }
-}
 impl From<Vec<u8>> for AnyBytes {
     fn from(b: Vec<u8>) -> Self {
         Self::Bytes(b.into())
-    }
-}
-impl From<sled::IVec> for AnyBytes {
-    fn from(b: sled::IVec) -> Self {
-        Self::IVec(b)
     }
 }
 

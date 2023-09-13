@@ -394,14 +394,9 @@ pub struct IndexDef<'a> {
 }
 
 /// A table iterator which yields values of the `TableType` corresponding to the table.
+#[derive(derive_more::From)]
 pub struct TableIter<T: TableType> {
     iter: TableTypeTableIter<T>,
-}
-
-impl<T: TableType> From<TableTypeTableIter<T>> for TableIter<T> {
-    fn from(iter: TableTypeTableIter<T>) -> Self {
-        Self { iter }
-    }
 }
 
 impl<T: TableType> Iterator for TableIter<T> {

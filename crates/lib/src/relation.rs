@@ -1,3 +1,4 @@
+use derive_more::From;
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
@@ -109,22 +110,10 @@ impl FieldName {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, From)]
 pub enum FieldExpr {
     Name(FieldName),
     Value(AlgebraicValue),
-}
-
-impl From<AlgebraicValue> for FieldExpr {
-    fn from(x: AlgebraicValue) -> Self {
-        Self::Value(x)
-    }
-}
-
-impl From<FieldName> for FieldExpr {
-    fn from(x: FieldName) -> Self {
-        Self::Name(x)
-    }
 }
 
 impl fmt::Display for FieldName {

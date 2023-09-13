@@ -1,8 +1,6 @@
-use core::fmt;
-use std::{borrow::Borrow, ops::Deref, str::FromStr};
-
 use serde::{Deserialize, Serialize};
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st};
+use std::{borrow::Borrow, fmt, ops::Deref, str::FromStr};
 
 #[cfg(test)]
 mod tests;
