@@ -1,15 +1,12 @@
 use serde_json::Value;
 use serial_test::serial;
-use spacetimedb_testing::modules::{compile, with_module_async};
+use spacetimedb_testing::modules::CompiledModule;
 
 // The tests MUST be run in sequence because they read the OS environment
 // and can cause a race when run in parallel.
 
-#[test]
-#[serial]
-fn test_calling_a_reducer() {
-    compile("spacetimedb-quickstart");
-    with_module_async("spacetimedb-quickstart", |module| async move {
+fn test_calling_a_reducer_in_module(module_name: &'static str) {
+    CompiledModule::compile(module_name).with_module_async(|module| async move {
         let json = r#"{"call": {"fn": "add", "args": ["Tyrion"]}}"#.to_string();
         module.send(json).await.unwrap();
         let json = r#"{"call": {"fn": "say_hello", "args": []}}"#.to_string();
@@ -29,9 +26,20 @@ fn test_calling_a_reducer() {
 
 #[test]
 #[serial]
+fn test_calling_a_reducer() {
+    test_calling_a_reducer_in_module("spacetimedb-quickstart");
+}
+
+#[test]
+#[serial]
+fn test_calling_a_reducer_csharp() {
+    test_calling_a_reducer_in_module("spacetimedb-quickstart-cs");
+}
+
+#[test]
+#[serial]
 fn test_calling_a_reducer_with_private_table() {
-    compile("rust-wasm-test");
-    with_module_async("rust-wasm-test", |module| async move {
+    CompiledModule::compile("rust-wasm-test").with_module_async(|module| async move {
         let json = r#"{"call": {"fn": "add_private", "args": ["Tyrion"]}}"#.to_string();
         module.send(json).await.unwrap();
         let json = r#"{"call": {"fn": "query_private", "args": []}}"#.to_string();

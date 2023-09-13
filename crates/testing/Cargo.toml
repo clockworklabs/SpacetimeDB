@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+spacetimedb-cli = { path = "../cli", version = "0.6.1" }
 spacetimedb-lib = { path = "../lib", version = "0.6.1" }
 spacetimedb-core = { path = "../core", version = "0.6.1" }
 spacetimedb-standalone = { path = "../standalone", version = "0.6.1" }

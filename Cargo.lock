@@ -4452,6 +4452,7 @@ dependencies = [
  "rand 0.8.5",
  "serde_json",
  "serial_test",
+ "spacetimedb-cli",
  "spacetimedb-client-api",
  "spacetimedb-core",
  "spacetimedb-lib",
