@@ -52,7 +52,10 @@ use spacetimedb_lib::{
     relation::RelValue,
     DataKey,
 };
-use spacetimedb_sats::{slim_slice::SlimSliceBoxCollected, AlgebraicType, AlgebraicValue, ProductType, ProductValue, SatsString};
+use spacetimedb_sats::{
+    slim_slice::{try_into, SlimSliceBoxCollected},
+    AlgebraicType, AlgebraicValue, ProductType, ProductValue, SatsString,
+};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::RangeBounds,
@@ -737,14 +740,12 @@ impl Inner {
                 col_type: col.col_type.clone(),
                 is_autoinc: col.is_autoinc,
             };
-            let row = ProductValue::try_from(row).map_err(DBError::LenTooLong)?;
+            let row = ProductValue::try_from(row)?;
             self.insert(ST_COLUMNS_ID, row)?;
 
             // Insert create the sequence for the autoinc column
             if col.is_autoinc {
-                let sequence_name = format!("{}_{}_seq", table_name, col.col_name)
-                    .try_into()
-                    .map_err(|v: String| DBError::LenTooLong(v.len()))?;
+                let sequence_name = try_into(format!("{}_{}_seq", table_name, col.col_name))?;
                 let sequence_def = SequenceDef {
                     sequence_name,
                     table_id,

@@ -1,15 +1,57 @@
 use core::{
+    borrow::Borrow,
     cmp::Ordering,
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
     marker::PhantomData,
     mem,
+    mem::ManuallyDrop,
     ops::{Deref, DerefMut},
     ptr::{slice_from_raw_parts_mut, NonNull},
     slice,
     str::{from_utf8_unchecked, from_utf8_unchecked_mut},
 };
-use std::{borrow::Borrow, mem::ManuallyDrop};
+use thiserror::Error;
+
+// =============================================================================
+// Errors
+// =============================================================================
+
+#[derive(Error, Debug)]
+#[error("The length `{len}` was too long")]
+/// An error signifying that a container's size was over `u32::MAX`.
+pub struct LenTooLong<T = ()> {
+    /// The size of the container that was too large.
+    pub len: usize,
+    /// The container that was too large for into-slim conversion.
+    pub too_long: T,
+}
+
+impl<T> LenTooLong<T> {
+    /// Forgets the container part of the error.
+    pub fn forget(self) -> LenTooLong {
+        self.map(drop)
+    }
+
+    /// Maps the container part of the error.
+    pub fn map<U>(self, with: impl FnOnce(T) -> U) -> LenTooLong<U> {
+        LenTooLong {
+            len: self.len,
+            too_long: with(self.too_long),
+        }
+    }
+}
+
+/// Try to convert `x` into `B` and forget the container part of the error if any.
+pub fn try_into<A, B: TryFrom<A, Error = LenTooLong<A>>>(x: A) -> Result<B, LenTooLong> {
+    x.try_into().map_err(|e: LenTooLong<A>| e.forget())
+}
+
+impl<A> crate::ser::Error for LenTooLong<A> {
+    fn custom<T: Display>(_: T) -> Self {
+        unimplemented!()
+    }
+}
 
 // =============================================================================
 // Utils
@@ -19,15 +61,17 @@ use std::{borrow::Borrow, mem::ManuallyDrop};
 macro_rules! ensure_len_fits {
     ($thing:expr) => {
         let Ok(_) = u32::try_from($thing.len()) else {
-            return Err($thing);
+            return Err(LenTooLong {
+                len: $thing.len(),
+                too_long: $thing,
+            });
         };
     };
 }
 
-/// Expect `Ok(x)` and return it,
-/// erroring otherwise with the reason being that `len > u32::MAX`.
-fn expect_fit<T, E>(r: Result<T, E>, len: impl FnOnce(E) -> usize) -> T {
-    r.map_err(len).expect("length didn't fit in `u32`")
+/// Convert to `A` but panic if `x.len() > u32::MAX`.
+fn expect_fit<A, E, B: TryInto<A, Error = LenTooLong<E>>>(x: B) -> A {
+    x.try_into().map_err(|e| e.len).expect("length didn't fit in `u32`")
 }
 
 fn into_box<T, U: Into<Box<[T]>>>(x: U) -> Box<[T]> {
@@ -148,7 +192,7 @@ impl<T> SlimSliceBox<T> {
     ///
     /// Panics when `boxed.len() > u32::MAX`.
     pub fn from_boxed(boxed: Box<[T]>) -> Self {
-        expect_fit(Self::try_from(boxed), |x| x.len())
+        expect_fit(boxed)
     }
 
     /// Converts `vec: Vec<T>` into `SlimSlice<T>`.
@@ -197,7 +241,7 @@ impl<T> DerefMut for SlimSliceBox<T> {
 }
 
 impl<T> TryFrom<Box<[T]>> for SlimSliceBox<T> {
-    type Error = Box<[T]>;
+    type Error = LenTooLong<Box<[T]>>;
 
     fn try_from(boxed: Box<[T]>) -> Result<Self, Self::Error> {
         ensure_len_fits!(boxed);
@@ -207,7 +251,7 @@ impl<T> TryFrom<Box<[T]>> for SlimSliceBox<T> {
 }
 
 impl<T> TryFrom<Vec<T>> for SlimSliceBox<T> {
-    type Error = Vec<T>;
+    type Error = LenTooLong<Vec<T>>;
 
     fn try_from(vec: Vec<T>) -> Result<Self, Self::Error> {
         ensure_len_fits!(vec);
@@ -308,7 +352,7 @@ impl<T> IntoIterator for SlimSliceBox<T> {
 /// We cannot do this directly due to orphan rules.
 pub struct SlimSliceBoxCollected<T> {
     /// The result of `from_iter`.
-    pub inner: Result<SlimSliceBox<T>, Vec<T>>,
+    pub inner: Result<SlimSliceBox<T>, LenTooLong<Vec<T>>>,
 }
 
 impl<T: Debug> SlimSliceBoxCollected<T> {
@@ -342,7 +386,7 @@ impl SlimStrBox {
     /// Panics when `boxed.len() > u32::MAX`.
     #[inline]
     pub fn from_boxed(boxed: Box<str>) -> Self {
-        expect_fit(Self::try_from(boxed), |x| x.len())
+        expect_fit(boxed)
     }
 
     /// Converts `str: String` into `SlimStr`.
@@ -391,7 +435,7 @@ impl DerefMut for SlimStrBox {
 }
 
 impl TryFrom<Box<str>> for SlimStrBox {
-    type Error = Box<str>;
+    type Error = LenTooLong<Box<str>>;
 
     #[inline]
     fn try_from(boxed: Box<str>) -> Result<Self, Self::Error> {
@@ -403,7 +447,7 @@ impl TryFrom<Box<str>> for SlimStrBox {
 }
 
 impl TryFrom<String> for SlimStrBox {
-    type Error = String;
+    type Error = LenTooLong<String>;
 
     #[inline]
     fn try_from(str: String) -> Result<Self, Self::Error> {
@@ -415,7 +459,7 @@ impl TryFrom<String> for SlimStrBox {
 }
 
 impl<'a> TryFrom<&'a str> for SlimStrBox {
-    type Error = &'a str;
+    type Error = LenTooLong<&'a str>;
 
     #[inline]
     fn try_from(str: &'a str) -> Result<Self, Self::Error> {
@@ -599,7 +643,7 @@ impl<T: Clone> From<SlimSlice<'_, T>> for Vec<T> {
 }
 
 impl<'a, T> TryFrom<&'a [T]> for SlimSlice<'a, T> {
-    type Error = &'a [T];
+    type Error = LenTooLong<&'a [T]>;
 
     fn try_from(slice: &'a [T]) -> Result<Self, Self::Error> {
         ensure_len_fits!(slice);
@@ -613,7 +657,7 @@ impl<'a, T> TryFrom<&'a [T]> for SlimSlice<'a, T> {
 /// Panics when `slice.len() > u32::MAX`.
 #[inline]
 pub fn slice<T>(s: &[T]) -> SlimSlice<'_, T> {
-    expect_fit(s.try_into(), |x| x.len())
+    expect_fit(s)
 }
 
 // =============================================================================
@@ -737,7 +781,7 @@ impl<T: Clone> From<SlimSliceMut<'_, T>> for Vec<T> {
 }
 
 impl<'a, T> TryFrom<&'a mut [T]> for SlimSliceMut<'a, T> {
-    type Error = &'a mut [T];
+    type Error = LenTooLong<&'a mut [T]>;
 
     fn try_from(slice: &'a mut [T]) -> Result<Self, Self::Error> {
         ensure_len_fits!(slice);
@@ -751,7 +795,7 @@ impl<'a, T> TryFrom<&'a mut [T]> for SlimSliceMut<'a, T> {
 /// Panics when `slice.len() > u32::MAX`.
 #[inline]
 pub fn slice_mut<T>(s: &mut [T]) -> SlimSliceMut<'_, T> {
-    expect_fit(s.try_into(), |x| x.len())
+    expect_fit(s)
 }
 
 // =============================================================================
@@ -856,7 +900,7 @@ impl From<SlimStr<'_>> for String {
 }
 
 impl<'a> TryFrom<&'a str> for SlimStr<'a> {
-    type Error = &'a str;
+    type Error = LenTooLong<&'a str>;
 
     #[inline]
     fn try_from(slice: &'a str) -> Result<Self, Self::Error> {
@@ -995,7 +1039,7 @@ impl From<SlimStrMut<'_>> for String {
 }
 
 impl<'a> TryFrom<&'a mut str> for SlimStrMut<'a> {
-    type Error = &'a mut str;
+    type Error = LenTooLong<&'a mut str>;
 
     #[inline]
     fn try_from(slice: &'a mut str) -> Result<Self, Self::Error> {
@@ -1012,5 +1056,5 @@ impl<'a> TryFrom<&'a mut str> for SlimStrMut<'a> {
 /// Panics when `str.len() > u32::MAX`.
 #[inline]
 pub fn str_mut(s: &mut str) -> SlimStrMut<'_> {
-    expect_fit(s.try_into(), |x| x.len())
+    expect_fit(s)
 }

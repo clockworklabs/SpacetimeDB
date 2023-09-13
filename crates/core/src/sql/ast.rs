@@ -2,6 +2,7 @@ use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::error::RelationError;
 use spacetimedb_lib::table::{ColumnDef, ProductTypeMeta};
 use spacetimedb_lib::ColumnIndexAttribute;
+use spacetimedb_sats::slim_slice::try_into;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement, SatsString};
 use sqlparser::ast::{
     Assignment, BinaryOperator, ColumnDef as SqlColumnDef, ColumnOption, DataType, ExactNumberInfo, Expr as SqlExpr,
@@ -298,9 +299,7 @@ fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlE
         }
         SqlExpr::Value(x) => FieldExpr::Value(match x {
             Value::Number(value, is_long) => infer_number(field, &value, is_long)?,
-            Value::SingleQuotedString(s) | Value::DoubleQuotedString(s) => {
-                AlgebraicValue::String(s.try_into().map_err(PlanError::LenTooLong)?)
-            }
+            Value::SingleQuotedString(s) | Value::DoubleQuotedString(s) => AlgebraicValue::String(try_into(s)?),
             Value::Boolean(x) => AlgebraicValue::Bool(x),
             Value::Null => AlgebraicValue::OptionNone(),
             x => {
@@ -413,7 +412,7 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
 ///
 /// Fails if the table `name` and/or `table_id` is not found
 fn find_table(db: &RelationalDB, tx: &MutTxId, t: Table) -> Result<TableSchema, PlanError> {
-    let name = t.name.clone().try_into().map_err(PlanError::LenTooLong)?;
+    let name = try_into(t.name.clone())?;
     let table_id = db
         .table_id_from_name(tx, name)?
         .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
@@ -805,7 +804,7 @@ fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, ColumnIndexAttribu
 
 /// Compiles the `CREATE TABLE ...` clause
 fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst, PlanError> {
-    let table_name: SatsString = table.name.try_into().map_err(PlanError::LenTooLong)?;
+    let table_name: SatsString = try_into(table.name)?;
     let mut columns = ProductTypeMeta::with_capacity(cols.len());
 
     for col in cols {
@@ -815,7 +814,7 @@ fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst,
             });
         }
 
-        let name: SatsString = col.name.to_string().try_into().map_err(PlanError::LenTooLong)?;
+        let name: SatsString = try_into(col.name.to_string())?;
         let (is_null, attr) = compile_column_option(&col)?;
         let ty = column_def_type(&name, is_null, &col.data_type)?;
 
@@ -842,7 +841,7 @@ fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError
         }
     };
 
-    let name: SatsString = name.to_string().try_into().map_err(PlanError::LenTooLong)?;
+    let name: SatsString = try_into(name.to_string())?;
     Ok(SqlAst::Drop {
         table_access: StAccess::for_name(&name),
         name,

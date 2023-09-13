@@ -1,4 +1,5 @@
 use derive_more::From;
+use spacetimedb_sats::slim_slice::LenTooLong;
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
@@ -482,7 +483,7 @@ impl RelValue {
     ///
     /// The `id` of the resulting `RelValue` is `None` as logically,
     /// the value does not exist in the table.
-    pub fn extend(mut self, with: RelValue) -> Result<RelValue, usize> {
+    pub fn extend(mut self, with: RelValue) -> Result<RelValue, LenTooLong<Vec<AlgebraicValue>>> {
         // Cleared as `self.extend(with)` no longer belongs to a table.
         self.id = None;
 
@@ -491,7 +492,7 @@ impl RelValue {
         let mut data = Vec::with_capacity(self.data.elements.len() + with.data.elements.len());
         data.append(&mut self.data.elements.into());
         data.append(&mut with.data.elements.into());
-        let elements = data.try_into().map_err(|e: Vec<_>| e.len())?;
+        let elements = data.try_into()?;
         self.data = ProductValue { elements };
 
         Ok(self)

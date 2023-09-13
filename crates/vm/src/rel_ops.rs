@@ -293,7 +293,8 @@ where
                 if let Some(rhs) = rvv.pop() {
                     if (self.predicate)(lhs.as_val_ref(), rhs.as_val_ref())? {
                         self.count.add_exact(1);
-                        let concat = lhs.extend(rhs).map_err(|l| ErrorVm::Type(ErrorType::LenTooLong(l)))?;
+                        let concat = lhs.extend(rhs).map_err(|e| e.forget());
+                        let concat = concat.map_err(|e| ErrorVm::Type(ErrorType::LenTooLong(e)))?;
                         return Ok(Some(concat));
                     }
                 }

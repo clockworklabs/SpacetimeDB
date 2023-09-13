@@ -10,6 +10,7 @@ use base64::Engine;
 use bytes::Bytes;
 use bytestring::ByteString;
 use prost::Message as _;
+use spacetimedb_sats::slim_slice::{try_into, LenTooLong};
 use spacetimedb_sats::{string, SatsStr, SatsString};
 
 use super::messages::{ServerMessage, TransactionUpdateMessage};
@@ -26,8 +27,8 @@ pub enum MessageHandleError {
     #[error(transparent)]
     Base64Decode(#[from] base64::DecodeError),
 
-    #[error("string length ({0}) too long")]
-    LenTooLong(usize),
+    #[error(transparent)]
+    LenTooLong(#[from] LenTooLong),
 
     #[error(transparent)]
     Execution(#[from] MessageExecutionError),
@@ -58,10 +59,7 @@ async fn handle_binary(client: &ClientConnection, message_buf: Vec<u8>) -> Resul
     let message = match message.r#type {
         Some(message::Type::FunctionCall(FunctionCall { ref reducer, arg_bytes })) => {
             let args = ReducerArgs::Bsatn(arg_bytes.into());
-            let reducer = reducer
-                .deref()
-                .try_into()
-                .map_err(|e: &str| MessageHandleError::LenTooLong(e.len()))?;
+            let reducer = try_into(reducer.deref())?;
             DecodedMessage::Call { reducer, args }
         }
         Some(message::Type::Subscribe(subscription)) => DecodedMessage::Subscribe(subscription),
@@ -104,6 +102,7 @@ async fn handle_text(client: &ClientConnection, message: String) -> Result<(), M
     let mut message_id_ = Vec::new();
     let msg = match msg {
         RawJsonMessage::Call { ref func, args } => {
+            let reducer = try_into(func.deref())?;
             let args = ReducerArgs::Json(message.slice_ref(args.get()));
             DecodedMessage::Call { reducer, args }
         }

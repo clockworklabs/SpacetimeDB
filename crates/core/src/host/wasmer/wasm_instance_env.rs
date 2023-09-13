@@ -6,6 +6,7 @@ use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::{err_to_errno, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers};
 use bytes::Bytes;
 use itertools::Itertools;
+use spacetimedb_sats::slim_slice::LenTooLong;
 use spacetimedb_sats::SatsString;
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
 
@@ -102,7 +103,7 @@ impl WasmInstanceEnv {
         let string = String::from_utf8(bytes).map_err(|_| RuntimeError::new("name must be utf8"))?;
         string
             .try_into()
-            .map_err(|s: String| RuntimeError::new(format!("string too long: `{}`", s.len())))
+            .map_err(|e: LenTooLong<_>| RuntimeError::new(format!("string too long: `{}`", e.len)))
     }
 
     /// Schedule the reducer `(name, name_len)` to be executed asynchronously,

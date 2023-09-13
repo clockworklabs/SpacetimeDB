@@ -8,6 +8,7 @@ use once_cell::sync::Lazy;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::ColumnIndexAttribute;
 use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::slim_slice::{try_into, LenTooLong};
 use spacetimedb_sats::{
     product, string, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue, SatsStr, SatsString, SatsVec,
 };
@@ -667,11 +668,11 @@ impl<'a> TryFrom<&'a ProductValue> for StColumnRow<&'a SatsStr<'a>> {
 }
 
 impl<N: Into<SatsString>> TryFrom<StColumnRow<N>> for ProductValue {
-    type Error = usize;
+    type Error = LenTooLong;
     fn try_from(x: StColumnRow<N>) -> Result<Self, Self::Error> {
         let mut bytes = Vec::new();
         x.col_type.encode(&mut bytes);
-        let bytes: SatsVec<u8> = bytes.try_into().map_err(|v: Vec<_>| v.len())?;
+        let bytes: SatsVec<u8> = try_into(bytes)?;
         Ok(product![
             AlgebraicValue::U32(x.table_id),
             AlgebraicValue::U32(x.col_id),

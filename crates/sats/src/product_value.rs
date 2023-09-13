@@ -41,10 +41,10 @@ impl ProductValue {
 }
 
 impl TryFrom<Vec<AlgebraicValue>> for ProductValue {
-    type Error = usize;
+    type Error = LenTooLong<Vec<AlgebraicValue>>;
 
     fn try_from(value: Vec<AlgebraicValue>) -> Result<Self, Self::Error> {
-        let elements = value.try_into().map_err(|v: Vec<_>| v.len())?;
+        let elements = value.try_into()?;
         Ok(Self { elements })
     }
 }
