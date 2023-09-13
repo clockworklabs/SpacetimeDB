@@ -3,7 +3,8 @@ use lazy_static::lazy_static;
 use rand::distributions::{Alphanumeric, DistString};
 use std::{collections::HashSet, fs::create_dir_all, sync::Mutex};
 
-use crate::modules::{compile, module_path, wasm_path};
+use crate::modules::{module_path, CompiledModule};
+use std::path::Path;
 
 struct StandaloneProcess {
     handle: Handle,
@@ -181,11 +182,11 @@ impl Test {
     pub fn run(&self) {
         let _handle = StandaloneHandle::default();
 
-        compile(&self.module_name);
+        let compiled = CompiledModule::compile(&self.module_name);
 
         generate_bindings(
             &self.generate_language,
-            &self.module_name,
+            compiled.path(),
             &self.client_project,
             &self.generate_subdir,
             &self.name,
@@ -230,7 +231,7 @@ fn publish_module(module: &str, test_name: &str) -> String {
     name
 }
 
-fn generate_bindings(language: &str, module_name: &str, client_project: &str, generate_subdir: &str, test_name: &str) {
+fn generate_bindings(language: &str, path: &Path, client_project: &str, generate_subdir: &str, test_name: &str) {
     let generate_dir = format!("{}/{}", client_project, generate_subdir);
 
     let mut bindings_lock = BINDINGS_GENERATED.lock().expect("BINDINGS_GENERATED Mutex is poisoned");
@@ -251,7 +252,7 @@ fn generate_bindings(language: &str, module_name: &str, client_project: &str, ge
         "--lang",
         language,
         "--wasm-file",
-        wasm_path(module_name),
+        path,
         "--out-dir",
         generate_dir
     )

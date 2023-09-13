@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use spacetimedb_testing::modules::{compile, with_module};
+use spacetimedb_testing::modules::CompiledModule;
 use tokio::sync::Mutex;
 
 fn criterion_benchmark(c: &mut Criterion) {
-    compile("benchmarks");
+    let benchmarks = CompiledModule::compile("benchmarks");
 
-    with_module("benchmarks", |runtime, module| {
+    benchmarks.with_module(|runtime, module| {
         c.bench_function("empty reducer", |b| {
             b.to_async(runtime).iter(|| async move {
                 module.call_reducer("empty", "[]".into()).await.unwrap();
@@ -15,7 +15,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    with_module("benchmarks", |runtime, module| {
+    benchmarks.with_module(|runtime, module| {
         let count = &Arc::new(Mutex::new(0usize));
         c.bench_function("single insert", |b| {
             b.to_async(runtime).iter(|| async move {
@@ -28,7 +28,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    with_module("benchmarks", |runtime, module| {
+    benchmarks.with_module(|runtime, module| {
         let mut group = c.benchmark_group("multi insert");
 
         let offset = &Arc::new(Mutex::new(0usize));
@@ -46,7 +46,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.finish();
     });
 
-    with_module("benchmarks", |runtime, module| {
+    benchmarks.with_module(|runtime, module| {
         let mut group = c.benchmark_group("with existing records");
         let mut total = 0;
         let record_id = &Arc::new(Mutex::new(0usize));
@@ -82,7 +82,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    with_module("benchmarks", |runtime, module| {
+    benchmarks.with_module(|runtime, module| {
         // TODO: when bigger params are merged this should be changed
         // maybe even a group with different sizes
         let size = byte_unit::Byte::from_str("64KB").unwrap().get_bytes() as usize;
@@ -100,7 +100,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    with_module("benchmarks", |runtime, module| {
+    benchmarks.with_module(|runtime, module| {
         // TODO: when bigger params are merged this should be changed
         // maybe even a group with different sizes
         let size = byte_unit::Byte::from_str("64KB").unwrap().get_bytes() as usize;
@@ -128,7 +128,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    with_module("benchmarks", |runtime, module| {
+    benchmarks.with_module(|runtime, module| {
         let mut group = c.benchmark_group("filter unique random");
 
         let sizes: [u64; 3] = [100, 1_000, 10_000];
@@ -155,7 +155,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.finish();
     });
 
-    with_module("benchmarks", |runtime, module| {
+    benchmarks.with_module(|runtime, module| {
         let mut group = c.benchmark_group("filter unique sequential");
 
         let sizes: [u64; 4] = [100, 1_000, 10_000, 100_000];
@@ -184,7 +184,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.finish();
     });
 
-    with_module("benchmarks", |runtime, module| {
+    benchmarks.with_module(|runtime, module| {
         let mut group = c.benchmark_group("filter nonunique random");
 
         let sizes: [u64; 3] = [100, 1_000, 10_000];
@@ -211,7 +211,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.finish();
     });
 
-    with_module("benchmarks", |runtime, module| {
+    benchmarks.with_module(|runtime, module| {
         let mut group = c.benchmark_group("filter nonunique sequential");
 
         let sizes: [u64; 4] = [100, 1_000, 10_000, 100_000];
