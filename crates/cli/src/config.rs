@@ -155,19 +155,19 @@ impl RawConfig {
 
     fn find_server(&self, name_or_host: &str) -> anyhow::Result<&ServerConfig> {
         for cfg in &self.server_configs {
-                if cfg.nickname.as_deref() == Some(name_or_host) || cfg.host == name_or_host {
-                    return Ok(cfg);
-                }
+            if cfg.nickname.as_deref() == Some(name_or_host) || cfg.host == name_or_host {
+                return Ok(cfg);
             }
+        }
         Err(no_such_server_error(name_or_host))
     }
 
     fn find_server_mut(&mut self, name_or_host: &str) -> anyhow::Result<&mut ServerConfig> {
         for cfg in &mut self.server_configs {
-                if cfg.nickname.as_deref() == Some(name_or_host) || cfg.host == name_or_host {
-                    return Ok(cfg);
-                }
+            if cfg.nickname.as_deref() == Some(name_or_host) || cfg.host == name_or_host {
+                return Ok(cfg);
             }
+        }
         Err(no_such_server_error(name_or_host))
     }
 
@@ -192,10 +192,10 @@ impl RawConfig {
 
     fn find_identity_config(&self, identity: &str) -> anyhow::Result<&IdentityConfig> {
         for cfg in &self.identity_configs {
-                if cfg.nickname.as_deref() == Some(identity) || cfg.identity == identity {
-                    return Ok(cfg);
-                }
+            if cfg.nickname.as_deref() == Some(identity) || cfg.identity == identity {
+                return Ok(cfg);
             }
+        }
         Err(anyhow::anyhow!(
             "No such saved identity configuration: {identity}
 Import an existing identity with:
@@ -307,28 +307,28 @@ Import an existing identity with:
 
     fn unset_all_default_identities(&mut self) {
         for cfg in &mut self.server_configs {
-                cfg.default_identity = None;
-            }
+            cfg.default_identity = None;
         }
+    }
 
     fn update_all_default_identities(&mut self) {
         for server in &mut self.server_configs {
-                if let Some(default_identity) = &server.default_identity {
-                    if self
-                        .identity_configs
-                        .iter()
-                        .any(|cfg| &cfg.identity == default_identity)
-                    {
-                        server.default_identity = None;
-                        println!(
-                            "Unsetting removed default identity for server: {}",
-                            server.nick_or_host(),
-                        );
-                        // TODO: Find an appropriate identity and set it as the default?
-                    }
+            if let Some(default_identity) = &server.default_identity {
+                if self
+                    .identity_configs
+                    .iter()
+                    .any(|cfg| &cfg.identity == default_identity)
+                {
+                    server.default_identity = None;
+                    println!(
+                        "Unsetting removed default identity for server: {}",
+                        server.nick_or_host(),
+                    );
+                    // TODO: Find an appropriate identity and set it as the default?
                 }
             }
         }
+    }
 
     fn set_default_identity_if_unset(&mut self, server: &str, identity: &str) -> anyhow::Result<()> {
         let cfg = self.find_server_mut(server)?;
@@ -365,34 +365,34 @@ Import an existing identity with:
             .iter()
             .position(|cfg| cfg.nick_or_host_or_url_is(server))
         {
-                // Actually remove the config.
+            // Actually remove the config.
             let cfg = self.server_configs.remove(idx);
 
-                // If we're removing the default server,
-                // unset the default server.
-                if let Some(default_server) = &self.default_server {
-                    if cfg.nick_or_host_or_url_is(default_server) {
-                        self.default_server = None;
-                    }
+            // If we're removing the default server,
+            // unset the default server.
+            if let Some(default_server) = &self.default_server {
+                if cfg.nick_or_host_or_url_is(default_server) {
+                    self.default_server = None;
                 }
+            }
 
-                // If requested, delete all identities which match the server.
-                // This requires a fingerprint.
-                let deleted_ids = if delete_identities {
-                    let fingerprint = cfg.ecdsa_public_key.ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Cannot delete identities for server without saved identity: {server}
+            // If requested, delete all identities which match the server.
+            // This requires a fingerprint.
+            let deleted_ids = if delete_identities {
+                let fingerprint = cfg.ecdsa_public_key.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Cannot delete identities for server without saved identity: {server}
 Fetch the server's fingerprint with:
 \tspacetime server fingerprint {server}"
-                        )
-                    })?;
-                    self.remove_identities_for_fingerprint(&fingerprint)?
-                } else {
-                    Vec::new()
-                };
+                    )
+                })?;
+                self.remove_identities_for_fingerprint(&fingerprint)?
+            } else {
+                Vec::new()
+            };
 
-                return Ok(deleted_ids);
-            }
+            return Ok(deleted_ids);
+        }
         Err(no_such_server_error(server))
     }
 
@@ -423,12 +423,12 @@ Fetch the server's fingerprint with:
             .iter_mut()
             .find(|cfg| cfg.nick_or_host_or_url_is(server))
         {
-                let fingerprint = cfg
-                    .ecdsa_public_key
-                    .clone()
-                    .ok_or_else(|| anyhow::anyhow!("No fingerprint saved for server: {}", server))?;
-                return self.remove_identities_for_fingerprint(&fingerprint);
-            }
+            let fingerprint = cfg
+                .ecdsa_public_key
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("No fingerprint saved for server: {}", server))?;
+            return self.remove_identities_for_fingerprint(&fingerprint);
+        }
         Err(no_such_server_error(server))
     }
 
@@ -757,13 +757,13 @@ impl Config {
         let config = self
             .home
             .identity_configs
-                    .iter_mut()
-                    .find(|c| c.identity == identity)
-                    .ok_or_else(|| anyhow::anyhow!("Identity {} not found", identity))?;
-                let old_nickname = config.nickname.clone();
-                config.nickname = Some(nickname.to_string());
-                Ok(old_nickname)
-            }
+            .iter_mut()
+            .find(|c| c.identity == identity)
+            .ok_or_else(|| anyhow::anyhow!("Identity {} not found", identity))?;
+        let old_nickname = config.nickname.clone();
+        config.nickname = Some(nickname.to_string());
+        Ok(old_nickname)
+    }
 
     pub fn identity_configs(&self) -> &[IdentityConfig] {
         &self.home.identity_configs
