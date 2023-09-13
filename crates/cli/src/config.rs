@@ -109,7 +109,7 @@ const DEFAULT_HOST: &str = "127.0.0.1:3000";
 const DEFAULT_PROTOCOL: &str = "http";
 const DEFAULT_HOST_NICKNAME: &str = "local";
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Config {
     proj: RawConfig,
     home: RawConfig,
@@ -153,41 +153,38 @@ impl RawConfig {
         }
     }
 
+    fn find_server_pos(&self, name_or_host: &str) -> anyhow::Result<usize> {
+        self.server_configs
+            .iter()
+            .position(|cfg| cfg.nick_or_host_or_url_is(name_or_host))
+            .ok_or_else(|| no_such_server_error(name_or_host))
+    }
+
     fn find_server(&self, name_or_host: &str) -> anyhow::Result<&ServerConfig> {
-        for cfg in &self.server_configs {
-            if cfg.nickname.as_deref() == Some(name_or_host) || cfg.host == name_or_host {
-                return Ok(cfg);
-            }
-        }
-        Err(no_such_server_error(name_or_host))
+        self.find_server_pos(name_or_host).map(|idx| &self.server_configs[idx])
     }
 
     fn find_server_mut(&mut self, name_or_host: &str) -> anyhow::Result<&mut ServerConfig> {
-        for cfg in &mut self.server_configs {
-            if cfg.nickname.as_deref() == Some(name_or_host) || cfg.host == name_or_host {
-                return Ok(cfg);
-            }
-        }
-        Err(no_such_server_error(name_or_host))
+        self.find_server_pos(name_or_host)
+            .map(|idx| &mut self.server_configs[idx])
+    }
+
+    fn default_server_name_or_host(&self) -> anyhow::Result<&str> {
+        self.default_server
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
     }
 
     fn default_server(&self) -> anyhow::Result<&ServerConfig> {
-        if let Some(default_server) = self.default_server.as_ref() {
-            self.find_server(default_server)
-                .with_context(|| hanging_default_server_context(default_server))
-        } else {
-            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
-        }
+        let default_server = self.default_server_name_or_host()?;
+        self.find_server(default_server)
+            .with_context(|| hanging_default_server_context(default_server))
     }
 
     fn default_server_mut(&mut self) -> anyhow::Result<&mut ServerConfig> {
-        if let Some(default_server) = self.default_server.as_ref() {
-            let default = default_server.to_string();
-            self.find_server_mut(&default)
-                .with_context(|| hanging_default_server_context(&default))
-        } else {
-            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
-        }
+        let default_server = self.default_server_name_or_host()?.to_owned();
+        self.find_server_mut(&default_server)
+            .with_context(|| hanging_default_server_context(&default_server))
     }
 
     fn find_identity_config(&self, identity: &str) -> anyhow::Result<&IdentityConfig> {
@@ -290,19 +287,16 @@ Import an existing identity with:
     }
 
     fn set_default_server_default_identity(&mut self, default_identity: String) -> anyhow::Result<()> {
-        if let Some(default_server) = &self.default_server {
-            self.assert_identity_matches_server(default_server, &default_identity)
-                .with_context(|| {
-                    format!("Cannot set {default_identity} as default identity for server {default_server}")
-                })?;
+        let default_server = self.default_server_name_or_host()?;
+        self.assert_identity_matches_server(default_server, &default_identity)
+            .with_context(|| {
+                format!("Cannot set {default_identity} as default identity for server {default_server}")
+            })?;
 
-            // Unfortunate clone,
-            // because `set_server_default_identity` needs a unique ref to `self`.
-            let def = default_server.to_string();
-            self.set_server_default_identity(&def, default_identity)
-        } else {
-            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
-        }
+        // Unfortunate clone,
+        // because `set_server_default_identity` needs a unique ref to `self`.
+        let def = default_server.to_string();
+        self.set_server_default_identity(&def, default_identity)
     }
 
     fn unset_all_default_identities(&mut self) {
@@ -331,18 +325,16 @@ Import an existing identity with:
     }
 
     fn set_default_identity_if_unset(&mut self, server: &str, identity: &str) -> anyhow::Result<()> {
-        let cfg = self.find_server_mut(server)?;
-        if cfg.default_identity.is_none() {
-            cfg.default_identity = Some(identity.to_string());
-        }
+        self.find_server_mut(server)?
+            .default_identity
+            .get_or_insert_with(|| identity.to_owned());
         Ok(())
     }
 
     fn default_server_set_default_identity_if_unset(&mut self, identity: &str) -> anyhow::Result<()> {
-        let cfg = self.default_server_mut()?;
-        if cfg.default_identity.is_none() {
-            cfg.default_identity = Some(identity.to_string());
-        }
+        self.default_server_mut()?
+            .default_identity
+            .get_or_insert_with(|| identity.to_owned());
         Ok(())
     }
 
@@ -358,42 +350,35 @@ Import an existing identity with:
 
     /// Implements `spacetime server remove`.
     fn remove_server(&mut self, server: &str, delete_identities: bool) -> anyhow::Result<Vec<IdentityConfig>> {
-        // Have to find the server config manually instead of doing `find_server_mut`
-        // because we need to mutably borrow multiple components of `self`.
-        if let Some(idx) = self
-            .server_configs
-            .iter()
-            .position(|cfg| cfg.nick_or_host_or_url_is(server))
-        {
-            // Actually remove the config.
-            let cfg = self.server_configs.remove(idx);
+        let idx = self.find_server_pos(server)?;
 
-            // If we're removing the default server,
-            // unset the default server.
-            if let Some(default_server) = &self.default_server {
-                if cfg.nick_or_host_or_url_is(default_server) {
-                    self.default_server = None;
-                }
+        // Actually remove the config.
+        let cfg = self.server_configs.remove(idx);
+
+        // If we're removing the default server,
+        // unset the default server.
+        if let Some(default_server) = &self.default_server {
+            if cfg.nick_or_host_or_url_is(default_server) {
+                self.default_server = None;
             }
+        }
 
-            // If requested, delete all identities which match the server.
-            // This requires a fingerprint.
-            let deleted_ids = if delete_identities {
-                let fingerprint = cfg.ecdsa_public_key.ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Cannot delete identities for server without saved identity: {server}
+        // If requested, delete all identities which match the server.
+        // This requires a fingerprint.
+        let deleted_ids = if delete_identities {
+            let fingerprint = cfg.ecdsa_public_key.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Cannot delete identities for server without saved identity: {server}
 Fetch the server's fingerprint with:
 \tspacetime server fingerprint {server}"
-                    )
-                })?;
-                self.remove_identities_for_fingerprint(&fingerprint)?
-            } else {
-                Vec::new()
-            };
+                )
+            })?;
+            self.remove_identities_for_fingerprint(&fingerprint)?
+        } else {
+            Vec::new()
+        };
 
-            return Ok(deleted_ids);
-        }
-        Err(no_such_server_error(server))
+        Ok(deleted_ids)
     }
 
     fn remove_identities_for_fingerprint(&mut self, fingerprint: &str) -> anyhow::Result<Vec<IdentityConfig>> {
@@ -416,30 +401,18 @@ Fetch the server's fingerprint with:
     ///
     /// Implements `spacetime identity remove --all-server`.
     fn remove_identities_for_server(&mut self, server: &str) -> anyhow::Result<Vec<IdentityConfig>> {
-        // Have to find the server config manually instead of doing `find_server_mut`
-        // because we need to mutably borrow multiple components of `self`.
-        if let Some(cfg) = self
-            .server_configs
-            .iter_mut()
-            .find(|cfg| cfg.nick_or_host_or_url_is(server))
-        {
-            let fingerprint = cfg
-                .ecdsa_public_key
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("No fingerprint saved for server: {}", server))?;
-            return self.remove_identities_for_fingerprint(&fingerprint);
-        }
-        Err(no_such_server_error(server))
+        let cfg = self.find_server(server)?;
+        let fingerprint = cfg
+            .ecdsa_public_key
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("No fingerprint saved for server: {}", server))?;
+        self.remove_identities_for_fingerprint(&fingerprint)
     }
 
     /// Remove all storied `IdentityConfig`s which apply to the default server.
     fn remove_identities_for_default_server(&mut self) -> anyhow::Result<Vec<IdentityConfig>> {
-        if let Some(default_server) = &self.default_server {
-            let default_server = default_server.clone();
-            self.remove_identities_for_server(&default_server)
-        } else {
-            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
-        }
+        let default_server = self.default_server_name_or_host()?.to_owned();
+        self.remove_identities_for_server(&default_server)
     }
 
     /// Return the ECDSA public key in PEM format for the server named by `server`.
@@ -463,11 +436,7 @@ Fetch the server's fingerprint with:
     /// Returns an `Err` if there is no default server configuration.
     /// Returns `None` if the server configuration exists, but does not have a fingerprint saved.
     fn default_server_fingerprint(&self) -> anyhow::Result<Option<&str>> {
-        if let Some(server) = &self.default_server {
-            self.server_fingerprint(server)
-        } else {
-            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
-        }
+        self.server_fingerprint(self.default_server_name_or_host()?)
     }
 
     /// Store the fingerprint for the server named `server`.
@@ -754,14 +723,15 @@ impl Config {
     /// * `Ok(Option<String>)` - If the identity was found, the old nickname will be returned.
     /// * `Err(anyhow::Error)` - If the identity was not found.
     pub fn set_identity_nickname(&mut self, identity: &str, nickname: &str) -> Result<Option<String>, anyhow::Error> {
-        let config = self
+        let old_nickname = self
             .home
             .identity_configs
             .iter_mut()
             .find(|c| c.identity == identity)
-            .ok_or_else(|| anyhow::anyhow!("Identity {} not found", identity))?;
-        let old_nickname = config.nickname.clone();
-        config.nickname = Some(nickname.to_string());
+            .ok_or_else(|| anyhow::anyhow!("Identity {} not found", identity))?
+            .nickname
+            .replace(nickname.to_owned());
+
         Ok(old_nickname)
     }
 
@@ -971,21 +941,14 @@ Import an existing identity with:
             .home
             .identity_configs
             .iter()
-            .position(|c| c.nickname.as_deref() == Some(name));
-        if let Some(index) = index {
-            Some(self.home.identity_configs.remove(index))
-        } else {
-            None
-        }
+            .position(|c| c.nickname.as_deref() == Some(name))?;
+
+        Some(self.home.identity_configs.remove(index))
     }
 
     pub fn delete_identity_config_by_identity(&mut self, identity: &str) -> Option<IdentityConfig> {
-        let index = self.home.identity_configs.iter().position(|c| c.identity == identity);
-        if let Some(index) = index {
-            Some(self.home.identity_configs.remove(index))
-        } else {
-            None
-        }
+        let index = self.home.identity_configs.iter().position(|c| c.identity == identity)?;
+        Some(self.home.identity_configs.remove(index))
     }
 
     /// Deletes all stored identity configs. This function does not save the config after removing
