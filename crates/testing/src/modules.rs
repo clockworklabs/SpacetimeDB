@@ -1,5 +1,6 @@
+use std::cell::OnceCell;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use spacetimedb::address::Address;
@@ -60,15 +61,23 @@ impl ModuleHandle {
 }
 
 pub struct CompiledModule {
-    name: &'static str,
-    program_bytes: Vec<u8>,
+    name: String,
+    path: PathBuf,
+    program_bytes: OnceCell<Vec<u8>>,
 }
 
 impl CompiledModule {
-    pub fn compile(name: &'static str) -> Self {
+    pub fn compile(name: &str) -> Self {
         let path = spacetimedb_cli::build(&module_path(name), false, true).unwrap();
-        let program_bytes = std::fs::read(path).unwrap();
-        Self { name, program_bytes }
+        Self {
+            name: name.to_owned(),
+            path,
+            program_bytes: OnceCell::new(),
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     pub fn with_module_async<O, R, F>(&self, routine: R)
@@ -103,7 +112,7 @@ impl CompiledModule {
         let fsync = FsyncPolicy::Never;
         let config = Config { storage, fsync };
 
-        let paths = FilesLocal::temp(self.name);
+        let paths = FilesLocal::temp(&self.name);
         // The database created in the `temp` folder can't be randomized,
         // so it persists after running the test.
         std::fs::remove_dir(paths.db_path()).ok();
@@ -113,7 +122,11 @@ impl CompiledModule {
         let identity = env.control_db().alloc_spacetime_identity().await.unwrap();
         let address = env.control_db().alloc_spacetime_address().await.unwrap();
 
-        let program_bytes_addr = env.object_db().insert_object(self.program_bytes.clone()).unwrap();
+        let program_bytes = self
+            .program_bytes
+            .get_or_init(|| std::fs::read(&self.path).unwrap())
+            .clone();
+        let program_bytes_addr = env.object_db().insert_object(program_bytes).unwrap();
 
         let host_type = HostType::Wasmer;
 
