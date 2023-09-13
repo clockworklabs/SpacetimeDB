@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef, TableSchema};
+use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef, TableSchema};
 use crate::host::scheduler::Scheduler;
 use anyhow::Context;
 use bytes::Bytes;
@@ -356,6 +356,14 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                     for (name, schema) in updates.new_tables {
                         stdb.create_table(tx, schema)
                             .with_context(|| format!("failed to create table {}", name))?;
+                    }
+
+                    for index_id in updates.indexes_to_drop {
+                        stdb.drop_index(tx, index_id)?;
+                    }
+
+                    for index_def in updates.indexes_to_create {
+                        stdb.create_index(tx, index_def)?;
                     }
 
                     Ok(())
@@ -741,8 +749,29 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     fn schema_updates(&self, tx: &MutTxId) -> anyhow::Result<SchemaUpdates> {
         let stdb = &*self.database_instance_context().relational_db;
 
+        // Until we know how to migrate schemas, we only accept `TableDef`s for
+        // existing tables which are equal sans their indexes.
+        struct Equiv<'a>(&'a TableDef);
+        impl PartialEq for Equiv<'_> {
+            fn eq(&self, other: &Self) -> bool {
+                let TableDef {
+                    table_name,
+                    columns,
+                    indexes: _,
+                    table_type,
+                    table_access,
+                } = &self.0;
+                table_name == &other.0.table_name
+                    && table_type == &other.0.table_type
+                    && table_access == &other.0.table_access
+                    && columns == &other.0.columns
+            }
+        }
+
         let mut new_tables = HashMap::new();
         let mut tainted_tables = Vec::new();
+        let mut indexes_to_create = Vec::new();
+        let mut indexes_to_drop = Vec::new();
 
         let mut known_tables: BTreeMap<String, TableSchema> = stdb
             .get_all_tables(tx)?
@@ -751,25 +780,49 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .collect();
 
         for table in self.info.catalog.values().filter_map(EntityDef::as_table) {
-            let mut proposed_schema = self.schema_for(table)?;
+            let proposed_schema_def = self.schema_for(table)?;
             if let Some(known_schema) = known_tables.remove(&table.name) {
-                // If the table is known, we also know its id. Update the
-                // index definitions so the `TableDef` of both schemas is
-                // equivalent.
-                for index in proposed_schema.indexes.iter_mut() {
-                    index.table_id = known_schema.table_id;
-                }
-                // If the table is known, but the proposed schema differs from
-                // the existing one, the table becomes tainted so the caller
-                // can reject the update.
-                let known_schema = TableDef::from(known_schema);
-                if known_schema != proposed_schema {
+                let table_id = known_schema.table_id;
+                let known_schema_def = TableDef::from(known_schema.clone());
+                // If the schemas differ acc. to [Equiv], the update should be
+                // rejected.
+                if Equiv(&known_schema_def) != Equiv(&proposed_schema_def) {
                     self.system_logger()
                         .warn(&format!("stored and proposed schema of `{}` differ", table.name));
                     tainted_tables.push(table.name.to_owned());
+                } else {
+                    // The schema is unchanged, but maybe the indexes are.
+                    let mut known_indexes = known_schema
+                        .indexes
+                        .into_iter()
+                        .map(|idx| (idx.index_name.clone(), idx))
+                        .collect::<BTreeMap<_, _>>();
+
+                    for mut index_def in proposed_schema_def.indexes {
+                        // This is zero in the proposed schema, as the table id
+                        // is not known at proposal time.
+                        index_def.table_id = table_id;
+
+                        match known_indexes.remove(&index_def.name) {
+                            None => indexes_to_create.push(index_def),
+                            Some(known_index) => {
+                                let known_id = IndexId(known_index.index_id);
+                                let known_index_def = IndexDef::from(known_index);
+                                if known_index_def != index_def {
+                                    indexes_to_drop.push(known_id);
+                                    indexes_to_create.push(index_def);
+                                }
+                            }
+                        }
+                    }
+
+                    // Indexes not in the proposed schema shall be dropped.
+                    for index in known_indexes.into_values() {
+                        indexes_to_drop.push(IndexId(index.index_id));
+                    }
                 }
             } else {
-                new_tables.insert(table.name.to_owned(), proposed_schema);
+                new_tables.insert(table.name.to_owned(), proposed_schema_def);
             }
         }
         // We may at some point decide to drop orphaned tables automatically,
@@ -785,6 +838,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         Ok(SchemaUpdates {
             new_tables,
             tainted_tables,
+            indexes_to_drop,
+            indexes_to_create,
         })
     }
 }
@@ -794,6 +849,15 @@ struct SchemaUpdates {
     new_tables: HashMap<String, TableDef>,
     /// Names of tables with incompatible schema updates.
     tainted_tables: Vec<String>,
+    /// Indexes to drop.
+    ///
+    /// Should be processed _before_ `indexes_to_create`, as we might be
+    /// updating (i.e. drop then create with different parameters).
+    indexes_to_drop: Vec<IndexId>,
+    /// Indexes to create.
+    ///
+    /// Should be processed _after_ `indexes_to_drop`.
+    indexes_to_create: Vec<IndexDef>,
 }
 
 #[derive(Debug)]

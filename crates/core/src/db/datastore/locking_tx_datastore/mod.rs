@@ -147,6 +147,10 @@ impl CommittedState {
         let mut tx_data = TxData { records: vec![] };
         for (table_id, table) in tx_state.insert_tables {
             let commit_table = self.get_or_create_table(table_id, &table.row_type, &table.schema);
+            // The schema may have been modified in the transaction.
+            commit_table.row_type = table.row_type;
+            commit_table.schema = table.schema;
+
             tx_data.records.extend(table.rows.into_iter().map(|(row_id, row)| {
                 commit_table.insert(row_id, row.clone());
                 let pv = row;
@@ -2165,6 +2169,7 @@ impl MutTxDatastore for Locking {
 mod tests {
     use super::{ColId, Locking, StTableRow};
     use crate::db::datastore::system_tables::{StConstraintRow, ST_CONSTRAINTS_ID};
+    use crate::db::datastore::traits::IndexId;
     use crate::{
         db::datastore::{
             locking_tx_datastore::{
@@ -2487,6 +2492,69 @@ mod tests {
             table_type: StTableType::User,
             table_access: StAccess::Public,
         });
+        Ok(())
+    }
+
+    #[test]
+    fn test_schema_for_table_alter_indexes() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = datastore.begin_mut_tx();
+        let schema = basic_table_schema();
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        datastore.commit_mut_tx(tx)?;
+
+        let mut tx = datastore.begin_mut_tx();
+        let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
+
+        for index in schema.indexes {
+            datastore.drop_index_mut_tx(&mut tx, IndexId(index.index_id))?;
+        }
+        assert!(
+            datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
+            "no indexes should be left in the schema pre-commit"
+        );
+        datastore.commit_mut_tx(tx)?;
+
+        let mut tx = datastore.begin_mut_tx();
+        assert!(
+            datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
+            "no indexes should be left in the schema post-commit"
+        );
+
+        datastore.create_index_mut_tx(
+            &mut tx,
+            IndexDef {
+                table_id: 5,
+                col_id: 0,
+                name: "id_idx".into(),
+                is_unique: true,
+            },
+        )?;
+
+        let expected_indexes = vec![IndexSchema {
+            index_id: 8,
+            table_id: 5,
+            col_id: 0,
+            index_name: "id_idx".into(),
+            is_unique: true,
+        }];
+        assert_eq!(
+            datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes,
+            expected_indexes,
+            "created index should be present in schema pre-commit"
+        );
+
+        datastore.commit_mut_tx(tx)?;
+
+        let tx = datastore.begin_mut_tx();
+        assert_eq!(
+            datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes,
+            expected_indexes,
+            "created index should be present in schema post-commit"
+        );
+
+        datastore.commit_mut_tx(tx)?;
+
         Ok(())
     }
 
