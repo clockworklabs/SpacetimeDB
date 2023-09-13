@@ -852,8 +852,8 @@ impl Config {
 
     pub fn new_with_localhost() -> Self {
         Self {
-            home: RawConfig::default(),
-            proj: RawConfig::new_with_localhost(),
+            home: RawConfig::new_with_localhost(),
+            proj: RawConfig::default(),
         }
     }
 
