@@ -1,6 +1,6 @@
 use spacetimedb_sdk::{
     identity::{identity, load_credentials, once_on_connect, save_credentials},
-    once_on_subscription_applied,
+    on_disconnect, once_on_subscription_applied,
     reducer::Status,
     subscribe,
     table::TableType,
@@ -283,6 +283,7 @@ const SUBSCRIBE_ALL: &[&str] = &[
 /// - Deserialize primitive types in rows and in reducer arguments.
 /// - Observe `on_insert` callbacks with appropriate reducer events.
 fn exec_insert_primitive() {
+    on_disconnect(|| panic!("Unexpectedly disconnected"));
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
@@ -327,6 +328,7 @@ fn exec_insert_primitive() {
 
 /// This tests that we can observe `on_delete` callbacks.
 fn exec_delete_primitive() {
+    on_disconnect(|| panic!("Unexpectedly disconnected"));
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
@@ -370,6 +372,7 @@ fn exec_delete_primitive() {
 
 /// This tests that we can distinguish between `on_update` and `on_delete` callbacks for tables with primary keys.
 fn exec_update_primitive() {
+    on_disconnect(|| panic!("Unexpectedly disconnected"));
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
@@ -413,6 +416,7 @@ fn exec_update_primitive() {
 
 /// This tests that we can serialize and deserialize `Identity` in various contexts.
 fn exec_insert_identity() {
+    on_disconnect(|| panic!("Unexpectedly disconnected"));
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
@@ -441,6 +445,7 @@ fn exec_insert_identity() {
 /// This test doesn't add much alongside `exec_insert_identity` and `exec_delete_primitive`,
 /// but it's here for symmetry.
 fn exec_delete_identity() {
+    on_disconnect(|| panic!("Unexpectedly disconnected"));
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
@@ -471,6 +476,7 @@ fn exec_delete_identity() {
 /// This tests that we can distinguish between `on_delete` and `on_update` events
 /// for tables with `Identity` primary keys.
 fn exec_update_identity() {
+    on_disconnect(|| panic!("Unexpectedly disconnected"));
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
@@ -556,6 +562,7 @@ fn exec_on_reducer() {
 
 /// This tests that we can observe reducer callbacks for failed reducers.
 fn exec_fail_reducer() {
+    on_disconnect(|| panic!("Unexpectedly disconnected"));
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
@@ -669,6 +676,7 @@ fn exec_fail_reducer() {
 
 /// This tests that we can serialize and deserialize `Vec<?>` in various contexts.
 fn exec_insert_vec() {
+    on_disconnect(|| panic!("Unexpectedly disconnected"));
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
@@ -715,6 +723,7 @@ fn exec_insert_vec() {
 
 /// This tests that we can serialize and deserialize structs in various contexts.
 fn exec_insert_struct() {
+    on_disconnect(|| panic!("Unexpectedly disconnected"));
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
@@ -826,6 +835,7 @@ fn exec_insert_struct() {
 
 /// This tests that we can serialize and deserialize C-style enums in various contexts.
 fn exec_insert_simple_enum() {
+    on_disconnect(|| panic!("Unexpectedly disconnected"));
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
@@ -854,6 +864,7 @@ fn exec_insert_simple_enum() {
 
 /// This tests that we can serialize and deserialize sum types in various contexts.
 fn exec_insert_enum_with_payload() {
+    on_disconnect(|| panic!("Unexpectedly disconnected"));
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
@@ -934,6 +945,7 @@ macro_rules! assert_eq_or_bail {
 /// This test invokes a reducer with many arguments of many types,
 /// and observes a callback for an inserted table with many columns of many types.
 fn exec_insert_long_table() {
+    on_disconnect(|| panic!("Unexpectedly disconnected"));
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
@@ -1056,6 +1068,7 @@ fn exec_insert_long_table() {
 /// by observing `on_delete` callbacks of newly-unsubscribed rows
 /// and `on_insert` callbacks of newly-subscribed rows.
 fn exec_resubscribe() {
+    on_disconnect(|| panic!("Unexpectedly disconnected"));
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
@@ -1165,6 +1178,7 @@ fn exec_reconnect() {
 /// Part of the `reauth` test, this connects to Spacetime to get new credentials,
 /// and saves them to a file.
 fn exec_reauth_part_1() {
+    on_disconnect(|| panic!("Unexpectedly disconnected"));
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
@@ -1185,6 +1199,7 @@ fn exec_reauth_part_1() {
 ///
 /// Must run after `exec_reauth_part_1`.
 fn exec_reauth_part_2() {
+    on_disconnect(|| panic!("Unexpectedly disconnected"));
     let test_counter = TestCounter::new();
     let name = db_name_or_panic();
 
