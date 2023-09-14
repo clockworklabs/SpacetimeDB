@@ -1,6 +1,8 @@
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st};
 use std::{borrow::Borrow, fmt, ops::Deref, str::FromStr};
 
+use crate::Address;
+
 #[cfg(test)]
 mod tests;
 
@@ -9,7 +11,7 @@ mod tests;
 pub enum InsertDomainResult {
     Success {
         domain: DomainName,
-        address: String,
+        address: Address,
     },
 
     /// The top level domain for the database name is not registered. For example:
@@ -63,7 +65,7 @@ pub enum PublishResult {
         ///
         /// Always set, regardless of whether publish resolved a domain name first
         /// or not.
-        address: String,
+        address: Address,
         op: PublishOp,
     },
 
@@ -90,7 +92,7 @@ pub enum PublishResult {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DnsLookupResponse {
     /// The lookup was successful and the domain and address are returned.
-    Success { domain: DomainName, address: String },
+    Success { domain: DomainName, address: Address },
 
     /// There was no domain registered with the given domain name
     Failure { domain: DomainName },
@@ -443,7 +445,7 @@ pub struct ReverseDNSResponse {
 ///
 /// Any string that is a valid address is an invalid database name.
 pub fn is_address(hex: &str) -> bool {
-    hex::decode(hex).map_or(false, |value| value.len() == 16)
+    Address::from_hex(hex).is_ok()
 }
 
 #[derive(thiserror::Error, Debug)]

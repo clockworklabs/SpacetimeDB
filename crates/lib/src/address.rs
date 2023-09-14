@@ -4,6 +4,7 @@ use sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use std::{fmt, net::Ipv6Addr};
 
+use crate::hex::HexString;
 use crate::sats;
 
 /// This is the address for a SpacetimeDB database or client connection.
@@ -24,7 +25,7 @@ impl_st!([] Address, _ts => AlgebraicType::product([("__address_bytes", Algebrai
 
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_hex())
+        f.pad(&self.to_hex())
     }
 }
 
@@ -35,8 +36,6 @@ impl fmt::Debug for Address {
 }
 
 impl Address {
-    const ABBREVIATION_LEN: usize = 16;
-
     pub const ZERO: Self = Self {
         __address_bytes: [0; 16],
     };
@@ -61,12 +60,16 @@ impl Address {
             .map(|arr| Self::from_arr(&arr))
     }
 
-    pub fn to_hex(self) -> String {
-        hex::encode(self.as_slice())
+    pub fn to_hex(self) -> HexString<16> {
+        crate::hex::encode(self.as_slice())
     }
 
-    pub fn to_abbreviated_hex(self) -> String {
-        self.to_hex()[0..Self::ABBREVIATION_LEN].to_owned()
+    pub fn abbreviate(&self) -> [u8; 8] {
+        self.as_slice()[..8].try_into().unwrap()
+    }
+
+    pub fn to_abbreviated_hex(self) -> HexString<8> {
+        crate::hex::encode(&self.abbreviate())
     }
 
     pub fn from_slice(slice: impl AsRef<[u8]>) -> Self {
@@ -130,7 +133,7 @@ impl serde::Serialize for AddressForUrl {
     where
         S: serde::Serializer,
     {
-        Address::from(*self).to_hex().serialize(serializer)
+        spacetimedb_sats::ser::serde::serialize_to(&Address::from(*self).as_slice(), serializer)
     }
 }
 
@@ -140,8 +143,29 @@ impl<'de> serde::Deserialize<'de> for AddressForUrl {
     where
         D: serde::Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        Address::from_hex(&s).map_err(serde::de::Error::custom).map(Self::from)
+        let arr = spacetimedb_sats::de::serde::deserialize_from(deserializer)?;
+        Ok(Address::from_arr(&arr).into())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Address {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        spacetimedb_sats::ser::serde::serialize_to(&self.as_slice(), serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Address {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let arr = spacetimedb_sats::de::serde::deserialize_from(deserializer)?;
+        Ok(Address::from_arr(&arr))
     }
 }
 

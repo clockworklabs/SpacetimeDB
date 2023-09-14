@@ -1,6 +1,8 @@
 use bytestring::ByteString;
 use serde::Serialize;
+use spacetimedb_lib::Address;
 use spacetimedb_lib::AlgebraicValue;
+use spacetimedb_lib::Identity;
 use spacetimedb_lib::ProductType;
 
 use serde_with::serde_as;
@@ -45,9 +47,9 @@ impl MessageJson {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct IdentityTokenJson {
-    pub identity: String, // in hex
+    pub identity: Identity,
     pub token: String,
-    pub address: String, // in hex
+    pub address: Address,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -80,12 +82,12 @@ pub struct SubscriptionUpdateJson {
 #[derive(Debug, Clone, Serialize)]
 pub struct EventJson {
     pub timestamp: u64,
-    pub status: String,          // committed, failed
-    pub caller_identity: String, // hex identity
+    pub status: String, // committed, failed
+    pub caller_identity: Identity,
     pub function_call: FunctionCallJson,
     pub energy_quanta_used: i128,
     pub message: String,
-    pub caller_address: String, // hex address
+    pub caller_address: Address,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -1,8 +1,9 @@
-use crate::util::{contains_protocol, host_or_url_to_host_and_protocol, is_hex_identity};
+use crate::util::{contains_protocol, host_or_url_to_host_and_protocol};
 use anyhow::Context;
 use jsonwebtoken::DecodingKey;
 use serde::{Deserialize, Serialize};
 use spacetimedb::auth::identity::decode_token;
+use spacetimedb_lib::Identity;
 use std::{
     fs,
     io::{Read, Write},
@@ -12,16 +13,16 @@ use std::{
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IdentityConfig {
     pub nickname: Option<String>,
-    pub identity: String,
+    pub identity: Identity,
     pub token: String,
 }
 
 impl IdentityConfig {
-    fn nick_or_identity(&self) -> &str {
+    pub fn nick_or_identity(&self) -> impl std::fmt::Display + '_ {
         if let Some(nick) = &self.nickname {
-            nick
+            itertools::Either::Left(nick)
         } else {
-            &self.identity
+            itertools::Either::Right(&self.identity)
         }
     }
 }
@@ -192,7 +193,7 @@ impl RawConfig {
 
     fn find_identity_config(&self, identity: &str) -> anyhow::Result<&IdentityConfig> {
         for cfg in &self.identity_configs {
-            if cfg.nickname.as_deref() == Some(identity) || cfg.identity == identity {
+            if cfg.nickname.as_deref() == Some(identity) || &*cfg.identity.to_hex() == identity {
                 return Ok(cfg);
             }
         }
@@ -314,11 +315,10 @@ Import an existing identity with:
     fn update_all_default_identities(&mut self) {
         for server in &mut self.server_configs {
             if let Some(default_identity) = &server.default_identity {
-                if self
-                    .identity_configs
-                    .iter()
-                    .any(|cfg| &cfg.identity == default_identity)
-                {
+                // can't use find_identity_config because of borrow checker
+                if self.identity_configs.iter().any(|cfg| {
+                    cfg.nickname.as_deref() == Some(&**default_identity) || &*cfg.identity.to_hex() == default_identity
+                }) {
                     server.default_identity = None;
                     println!(
                         "Unsetting removed default identity for server: {}",
@@ -753,15 +753,18 @@ impl Config {
     /// # Returns
     /// * `Ok(Option<String>)` - If the identity was found, the old nickname will be returned.
     /// * `Err(anyhow::Error)` - If the identity was not found.
-    pub fn set_identity_nickname(&mut self, identity: &str, nickname: &str) -> Result<Option<String>, anyhow::Error> {
+    pub fn set_identity_nickname(
+        &mut self,
+        identity: &Identity,
+        nickname: &str,
+    ) -> Result<Option<String>, anyhow::Error> {
         let config = self
             .home
             .identity_configs
             .iter_mut()
-            .find(|c| c.identity == identity)
+            .find(|c| c.identity == *identity)
             .ok_or_else(|| anyhow::anyhow!("Identity {} not found", identity))?;
-        let old_nickname = config.nickname.clone();
-        config.nickname = Some(nickname.to_string());
+        let old_nickname = std::mem::replace(&mut config.nickname, Some(nickname.to_string()));
         Ok(old_nickname)
     }
 
@@ -885,17 +888,13 @@ impl Config {
     }
 
     pub fn get_default_identity_config(&self, server: Option<&str>) -> anyhow::Result<&IdentityConfig> {
-        self.default_identity(server).and_then(|identity| {
-            self.identity_configs()
-                .iter()
-                .find(|c| c.identity == identity)
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "No saved configuration for identity: {identity}
+        let default_identity = self.default_identity(server)?;
+        self.get_identity_config(default_identity).ok_or_else(|| {
+            anyhow::anyhow!(
+                "No saved configuration for identity: {default_identity}
 Import an existing identity with:
 \tspacetime identity import <identity> <token>"
-                    )
-                })
+            )
         })
     }
 
@@ -914,12 +913,12 @@ Import an existing identity with:
             .find(|c| c.nickname.as_ref() == Some(&name.to_string()))
     }
 
-    pub fn get_identity_config_by_identity(&self, identity: &str) -> Option<&IdentityConfig> {
-        self.identity_configs().iter().find(|c| c.identity == identity)
+    pub fn get_identity_config_by_identity(&self, identity: &Identity) -> Option<&IdentityConfig> {
+        self.identity_configs().iter().find(|c| c.identity == *identity)
     }
 
-    pub fn get_identity_config_by_identity_mut(&mut self, identity: &str) -> Option<&mut IdentityConfig> {
-        self.identity_configs_mut().iter_mut().find(|c| c.identity == identity)
+    pub fn get_identity_config_by_identity_mut(&mut self, identity: &Identity) -> Option<&mut IdentityConfig> {
+        self.identity_configs_mut().iter_mut().find(|c| c.identity == *identity)
     }
 
     /// Converts some given `identity_or_name` into an identity.
@@ -928,27 +927,26 @@ Import an existing identity with:
     /// then if its an identity then its just returned. If its not an identity it is assumed to be
     /// a name and it is looked up as an identity nickname. If the identity exists it is returned,
     /// otherwise we panic.
-    pub fn resolve_name_to_identity(&self, identity_or_name: Option<&str>) -> anyhow::Result<Option<String>> {
-        Ok(if let Some(identity_or_name) = identity_or_name {
-            let x = if is_hex_identity(identity_or_name) {
-                &self
-                    .identity_configs()
-                    .iter()
-                    .find(|c| c.identity == *identity_or_name)
-                    .ok_or_else(|| anyhow::anyhow!("No such identity: {}", identity_or_name))?
-                    .identity
-            } else {
-                &self
-                    .identity_configs()
-                    .iter()
-                    .find(|c| c.nickname == Some(identity_or_name.to_string()))
-                    .ok_or_else(|| anyhow::anyhow!("No such identity: {}", identity_or_name))?
-                    .identity
-            };
-            Some(x.clone())
+    pub fn resolve_name_to_identity(&self, identity_or_name: &str) -> anyhow::Result<Identity> {
+        let cfg = self
+            .get_identity_config(identity_or_name)
+            .ok_or_else(|| anyhow::anyhow!("No such identity: {}", identity_or_name))?;
+        Ok(cfg.identity)
+    }
+
+    /// Converts some given `identity_or_name` into an `IdentityConfig`.
+    ///
+    /// # Returns
+    /// * `None` - If an identity config with the given `identity_or_name` does not exist.
+    /// * `Some` - A mutable reference to the `IdentityConfig` with the given `identity_or_name`.
+    pub fn get_identity_config(&self, identity_or_name: &str) -> Option<&IdentityConfig> {
+        if let Ok(identity) = Identity::from_hex(identity_or_name) {
+            self.get_identity_config_by_identity(&identity)
         } else {
-            None
-        })
+            self.identity_configs()
+                .iter()
+                .find(|c| c.nickname.as_deref() == Some(identity_or_name))
+        }
     }
 
     /// Converts some given `identity_or_name` into a mutable `IdentityConfig`.
@@ -957,8 +955,8 @@ Import an existing identity with:
     /// * `None` - If an identity config with the given `identity_or_name` does not exist.
     /// * `Some` - A mutable reference to the `IdentityConfig` with the given `identity_or_name`.
     pub fn get_identity_config_mut(&mut self, identity_or_name: &str) -> Option<&mut IdentityConfig> {
-        if is_hex_identity(identity_or_name) {
-            self.get_identity_config_by_identity_mut(identity_or_name)
+        if let Ok(identity) = Identity::from_hex(identity_or_name) {
+            self.get_identity_config_by_identity_mut(&identity)
         } else {
             self.identity_configs_mut()
                 .iter_mut()
@@ -979,8 +977,8 @@ Import an existing identity with:
         }
     }
 
-    pub fn delete_identity_config_by_identity(&mut self, identity: &str) -> Option<IdentityConfig> {
-        let index = self.home.identity_configs.iter().position(|c| c.identity == identity);
+    pub fn delete_identity_config_by_identity(&mut self, identity: &Identity) -> Option<IdentityConfig> {
+        let index = self.home.identity_configs.iter().position(|c| c.identity == *identity);
         if let Some(index) = index {
             Some(self.home.identity_configs.remove(index))
         } else {

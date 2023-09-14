@@ -5,6 +5,7 @@ pub use spacetimedb_sats::buffer;
 pub mod address;
 pub mod data_key;
 pub mod filter;
+pub mod hex;
 pub mod identity;
 pub use spacetimedb_sats::de;
 pub mod error;

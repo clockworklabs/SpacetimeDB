@@ -35,9 +35,9 @@ pub struct IdentityTokenMessage {
 impl ServerMessage for IdentityTokenMessage {
     fn serialize_text(self) -> MessageJson {
         MessageJson::IdentityToken(IdentityTokenJson {
-            identity: self.identity.to_hex(),
+            identity: self.identity,
             token: self.identity_token,
-            address: self.address.to_hex(),
+            address: self.address,
         })
     }
     fn serialize_binary(self) -> Message {
@@ -68,14 +68,14 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
         let event = EventJson {
             timestamp: event.timestamp.0,
             status: status_str.to_string(),
-            caller_identity: event.caller_identity.to_hex(),
+            caller_identity: event.caller_identity,
             function_call: FunctionCallJson {
                 reducer: event.function_call.reducer.to_owned(),
                 args: event.function_call.args.get_json().clone(),
             },
             energy_quanta_used: event.energy_quanta_used.0,
             message: errmsg,
-            caller_address: event.caller_address.unwrap_or(Address::ZERO).to_hex(),
+            caller_address: event.caller_address.unwrap_or(Address::ZERO),
         };
 
         let subscription_update = database_update.into_json();

@@ -9,8 +9,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::config::Config;
+use crate::util::unauth_error_context;
 use crate::util::{add_auth_header_opt, get_auth_header};
-use crate::util::{init_default, unauth_error_context};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("publish")
@@ -97,9 +97,8 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let cloned_config = config.clone();
     let server = args.get_one::<String>("server").map(|s| s.as_str());
-    let identity = cloned_config.resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()))?;
+    let identity = args.get_one::<String>("identity").map(String::as_str);
     let name_or_address = args.get_one::<String>("name|address");
     let path_to_project = args.get_one::<PathBuf>("path_to_project").unwrap();
     let host_type = args.get_one::<String>("host_type").unwrap();
@@ -149,20 +148,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // we want to use the default identity
     // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
     //  easily create a new identity with an email
-    let identity = if !anon_identity {
-        if identity.is_none() && config.default_identity(server).is_err() {
-            init_default(&mut config, None, server).await?;
-        }
 
-        let (auth_header, chosen_identity) = get_auth_header(&mut config, anon_identity, identity.as_deref(), server)
-            .await
-            .unzip();
+    let (auth_header, identity) = get_auth_header(&mut config, anon_identity, identity, server)
+        .await?
+        .unzip();
 
-        builder = add_auth_header_opt(builder, &auth_header);
-        chosen_identity
-    } else {
-        None
-    };
+    builder = add_auth_header_opt(builder, &auth_header);
 
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {

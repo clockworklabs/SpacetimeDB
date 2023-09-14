@@ -90,9 +90,7 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
                     })?;
                 let auth = SpacetimeAuth {
                     creds,
-                    identity: Identity::from_hex(claims.hex_identity).map_err(|_| AuthorizationRejection {
-                        reason: AuthorizationRejectionReason::CantDecodeAuthorizationToken,
-                    })?,
+                    identity: claims.identity,
                 };
                 Ok(Self { auth: Some(auth) })
             }
@@ -111,9 +109,7 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
                     })?;
                 let auth = SpacetimeAuth {
                     creds,
-                    identity: Identity::from_hex(claims.hex_identity).map_err(|_| AuthorizationRejection {
-                        reason: AuthorizationRejectionReason::CantDecodeAuthorizationToken,
-                    })?,
+                    identity: claims.identity,
                 };
                 Ok(Self { auth: Some(auth) })
             }
@@ -213,7 +209,7 @@ impl headers::Header for SpacetimeIdentity {
     }
 
     fn encode<E: Extend<HeaderValue>>(&self, values: &mut E) {
-        values.extend([self.0.to_hex().try_into().unwrap()])
+        values.extend([self.0.to_hex().as_str().try_into().unwrap()])
     }
 }
 
