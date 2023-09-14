@@ -850,6 +850,13 @@ impl Config {
         }
     }
 
+    pub fn new_with_localhost() -> Self {
+        Self {
+            home: RawConfig::new_with_localhost(),
+            proj: RawConfig::default(),
+        }
+    }
+
     pub fn save(&self) {
         let config_path = if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
             PathBuf::from(&config_path)

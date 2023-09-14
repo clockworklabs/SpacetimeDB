@@ -4447,6 +4447,7 @@ name = "spacetimedb-testing"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap 4.3.10",
  "duct",
  "lazy_static",
  "rand 0.8.5",
