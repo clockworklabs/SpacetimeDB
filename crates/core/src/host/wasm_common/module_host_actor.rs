@@ -8,7 +8,7 @@ use crate::host::scheduler::Scheduler;
 use anyhow::Context;
 use bytes::Bytes;
 use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::{bsatn, IndexType, ModuleDef};
+use spacetimedb_lib::{bsatn, Address, IndexType, ModuleDef};
 
 use crate::client::ClientConnectionSender;
 use crate::database_instance_context::DatabaseInstanceContext;
@@ -56,7 +56,8 @@ pub trait WasmInstance: Send + Sync + 'static {
         &mut self,
         reducer_id: usize,
         budget: EnergyQuanta,
-        sender: &[u8; 32],
+        sender_identity: &[u8; 32],
+        sender_address: &[u8; 16],
         timestamp: Timestamp,
         arg_bytes: Bytes,
     ) -> ExecuteResult<Self::Trap>;
@@ -65,7 +66,8 @@ pub trait WasmInstance: Send + Sync + 'static {
         &mut self,
         connect: bool,
         budget: EnergyQuanta,
-        sender: &[u8; 32],
+        sendersender_: &[u8; 32],
+        sender_address: &[u8; 16],
         timestamp: Timestamp,
     ) -> ExecuteResult<Self::Trap>;
 
@@ -170,6 +172,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         let info = Arc::new(ModuleInfo {
             identity: database_instance_context.identity,
+            address: database_instance_context.address,
             module_hash,
             typespace,
             reducers,
@@ -335,8 +338,9 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
             Some(reducer_id) => {
                 let caller_identity = self.database_instance_context().identity;
+                let caller_address = self.database_instance_context().address;
                 let client = None;
-                self.call_reducer_internal(Some(tx), caller_identity, client, reducer_id, args)
+                self.call_reducer_internal(Some(tx), caller_identity, caller_address, client, reducer_id, args)
             }
         };
 
@@ -386,9 +390,16 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
             Some(reducer_id) => {
                 let caller_identity = self.database_instance_context().identity;
+                let caller_address = self.database_instance_context().address;
                 let client = None;
-                let res =
-                    self.call_reducer_internal(Some(tx), caller_identity, client, reducer_id, ArgsTuple::default());
+                let res = self.call_reducer_internal(
+                    Some(tx),
+                    caller_identity,
+                    caller_address,
+                    client,
+                    reducer_id,
+                    ArgsTuple::default(),
+                );
                 Some(res)
             }
         };
@@ -403,15 +414,16 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     fn call_reducer(
         &mut self,
         caller_identity: Identity,
+        caller_address: Address,
         client: Option<ClientConnectionSender>,
         reducer_id: usize,
         args: ArgsTuple,
     ) -> ReducerCallResult {
-        self.call_reducer_internal(None, caller_identity, client, reducer_id, args)
+        self.call_reducer_internal(None, caller_identity, caller_address, client, reducer_id, args)
     }
 
     #[tracing::instrument(skip_all)]
-    fn call_connect_disconnect(&mut self, identity: Identity, connected: bool) {
+    fn call_connect_disconnect(&mut self, caller_identity: Identity, caller_address: Address, connected: bool) {
         let has_function = if connected {
             self.func_names.conn
         } else {
@@ -429,7 +441,8 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             None,
             InstanceOp::ConnDisconn {
                 conn: connected,
-                sender: &identity,
+                sender_identity: &caller_identity,
+                sender_address: &caller_address,
                 timestamp,
             },
         );
@@ -451,7 +464,8 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 args: ArgsTuple::default(),
             },
             status,
-            caller_identity: identity,
+            caller_identity,
+            caller_address,
             energy_quanta_used: energy.used,
             host_execution_duration: start_instant.elapsed(),
         };
@@ -479,6 +493,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         &mut self,
         tx: Option<MutTxId>,
         caller_identity: Identity,
+        caller_address: Address,
         client: Option<ClientConnectionSender>,
         reducer_id: usize,
         mut args: ArgsTuple,
@@ -495,7 +510,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             tx,
             InstanceOp::Reducer {
                 id: reducer_id,
-                sender: &caller_identity,
+                sender_identity: &caller_identity,
+                sender_address: &caller_address,
                 timestamp,
                 arg_bytes: args.get_bsatn().clone(),
             },
@@ -509,6 +525,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let event = ModuleEvent {
             timestamp,
             caller_identity,
+            caller_address,
             function_call: ModuleFunctionCall {
                 reducer: reducerdef.name.clone(),
                 args,
@@ -559,7 +576,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             module_hash: self.info.module_hash,
             module_identity: self.info.identity,
             caller_identity: match op {
-                InstanceOp::Reducer { sender, .. } | InstanceOp::ConnDisconn { sender, .. } => *sender,
+                InstanceOp::Reducer { sender_identity, .. } | InstanceOp::ConnDisconn { sender_identity, .. } => {
+                    *sender_identity
+                }
             },
             reducer_name: func_ident,
         };
@@ -572,19 +591,30 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let (tx, result) = tx_slot.set(tx, || match op {
             InstanceOp::Reducer {
                 id,
-                sender,
+                sender_identity,
+                sender_address,
                 timestamp,
                 arg_bytes,
-            } => self
-                .instance
-                .call_reducer(id, budget, sender.as_bytes(), timestamp, arg_bytes),
+            } => self.instance.call_reducer(
+                id,
+                budget,
+                sender_identity.as_bytes(),
+                &sender_address.as_slice(),
+                timestamp,
+                arg_bytes,
+            ),
             InstanceOp::ConnDisconn {
                 conn,
-                sender,
+                sender_identity,
+                sender_address,
                 timestamp,
-            } => self
-                .instance
-                .call_connect_disconnect(conn, budget, sender.as_bytes(), timestamp),
+            } => self.instance.call_connect_disconnect(
+                conn,
+                budget,
+                sender_identity.as_bytes(),
+                &sender_address.as_slice(),
+                timestamp,
+            ),
         });
 
         let ExecuteResult {
@@ -864,13 +894,15 @@ struct SchemaUpdates {
 enum InstanceOp<'a> {
     Reducer {
         id: usize,
-        sender: &'a Identity,
+        sender_identity: &'a Identity,
+        sender_address: &'a Address,
         timestamp: Timestamp,
         arg_bytes: Bytes,
     },
     ConnDisconn {
         conn: bool,
-        sender: &'a Identity,
+        sender_identity: &'a Identity,
+        sender_address: &'a Address,
         timestamp: Timestamp,
     },
 }

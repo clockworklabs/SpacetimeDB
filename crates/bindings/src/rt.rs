@@ -14,7 +14,7 @@ use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias};
+use spacetimedb_lib::{bsatn, Address, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias};
 use sys::Buffer;
 
 pub use once_cell::sync::{Lazy, OnceCell};
@@ -28,11 +28,12 @@ pub use once_cell::sync::{Lazy, OnceCell};
 pub fn invoke_reducer<'a, A: Args<'a>, T>(
     reducer: impl Reducer<'a, A, T>,
     sender: Buffer,
+    client_address: Buffer,
     timestamp: u64,
     args: &'a [u8],
     epilogue: impl FnOnce(Result<(), &str>),
 ) -> Buffer {
-    let ctx = assemble_context(sender, timestamp);
+    let ctx = assemble_context(sender, timestamp, client_address);
 
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
@@ -71,21 +72,28 @@ pub fn create_index(index_name: &str, table_id: u32, index_type: sys::raw::Index
 pub fn invoke_connection_func<R: ReducerResult>(
     f: impl Fn(ReducerContext) -> R,
     sender: Buffer,
+    client_address: Buffer,
     timestamp: u64,
 ) -> Buffer {
-    let ctx = assemble_context(sender, timestamp);
+    let ctx = assemble_context(sender, timestamp, client_address);
 
     let res = with_timestamp_set(ctx.timestamp, || f(ctx).into_result());
     cvt_result(res)
 }
 
 /// Creates a reducer context from the given `sender` and `timestamp`.
-fn assemble_context(sender: Buffer, timestamp: u64) -> ReducerContext {
+fn assemble_context(sender: Buffer, timestamp: u64, client_address: Buffer) -> ReducerContext {
     let sender = Identity::from_byte_array(sender.read_array::<32>());
 
     let timestamp = Timestamp::UNIX_EPOCH + Duration::from_micros(timestamp);
 
-    ReducerContext { sender, timestamp }
+    let address = Address::from_arr(&client_address.read_array::<16>());
+
+    ReducerContext {
+        sender,
+        timestamp,
+        address,
+    }
 }
 
 /// Converts `errno` into a string message.
@@ -471,7 +479,7 @@ impl TypespaceBuilder for ModuleBuilder {
 static DESCRIBERS: Mutex<Vec<fn(&mut ModuleBuilder)>> = Mutex::new(Vec::new());
 
 /// A reducer function takes in `(Sender, Timestamp, Args)` and writes to a new `Buffer`.
-pub type ReducerFn = fn(Buffer, u64, &[u8]) -> Buffer;
+pub type ReducerFn = fn(Buffer, Buffer, u64, &[u8]) -> Buffer;
 static REDUCERS: OnceCell<Vec<ReducerFn>> = OnceCell::new();
 
 /// Describes the module into a serialized form that is returned and writes the set of `REDUCERS`.
@@ -497,8 +505,14 @@ extern "C" fn __describe_module__() -> Buffer {
 ///
 /// The result of the reducer is written into a fresh buffer.
 #[no_mangle]
-extern "C" fn __call_reducer__(id: usize, sender: Buffer, timestamp: u64, args: Buffer) -> Buffer {
+extern "C" fn __call_reducer__(
+    id: usize,
+    sender: Buffer,
+    caller_address: Buffer,
+    timestamp: u64,
+    args: Buffer,
+) -> Buffer {
     let reducers = REDUCERS.get().unwrap();
     let args = args.read();
-    reducers[id](sender, timestamp, &args)
+    reducers[id](sender, caller_address, timestamp, &args)
 }

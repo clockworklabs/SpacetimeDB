@@ -3,7 +3,7 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::TypedHeader;
 use futures::{SinkExt, StreamExt};
@@ -13,6 +13,7 @@ use spacetimedb::client::messages::{IdentityTokenMessage, ServerMessage};
 use spacetimedb::client::{ClientActorId, ClientClosed, ClientConnection, DataMessage, MessageHandleError, Protocol};
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::future_queue;
+use spacetimedb_lib::Address;
 use tokio::sync::mpsc;
 
 use crate::auth::{SpacetimeAuthHeader, SpacetimeIdentity, SpacetimeIdentityToken};
@@ -32,16 +33,32 @@ pub struct SubscribeParams {
     pub name_or_address: NameOrAddress,
 }
 
+#[derive(Deserialize)]
+pub struct SubscribeQueryParams {
+    pub client_address: Option<Address>,
+}
+
+// TODO: is this a reasonable way to generate client addresses?
+//       For DB addresses, [`ControlDb::alloc_spacetime_address`]
+//       maintains a global counter, and hashes the next value from that counter
+//       with some constant salt.
+pub fn generate_random_address() -> Address {
+    Address::from_arr(&rand::random())
+}
+
 pub async fn handle_websocket(
     State(worker_ctx): State<Arc<dyn WorkerCtx>>,
     Path(SubscribeParams { name_or_address }): Path<SubscribeParams>,
+    Query(SubscribeQueryParams { client_address }): Query<SubscribeQueryParams>,
     forwarded_for: Option<TypedHeader<XForwardedFor>>,
     auth: SpacetimeAuthHeader,
     ws: WebSocketUpgrade,
 ) -> axum::response::Result<impl IntoResponse> {
     let auth = auth.get_or_create(&*worker_ctx).await?;
 
-    let address = name_or_address.resolve(&*worker_ctx).await?.into();
+    let client_address = client_address.unwrap_or_else(generate_random_address);
+
+    let db_address = name_or_address.resolve(&*worker_ctx).await?.into();
 
     let (res, ws_upgrade, protocol) =
         ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
@@ -51,7 +68,7 @@ pub async fn handle_websocket(
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
     // to connect to multiple modules
     let database = worker_ctx
-        .get_database_by_address(&address)
+        .get_database_by_address(&db_address)
         .await
         .unwrap()
         .ok_or(StatusCode::BAD_REQUEST)?;
@@ -77,6 +94,7 @@ pub async fn handle_websocket(
 
     let client_id = ClientActorId {
         identity: auth.identity,
+        address: client_address,
         name: worker_ctx.client_actor_index().next_client_name(),
     };
 
@@ -248,7 +266,7 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
     let _ = client.module.subscription().remove_subscriber(client.id);
     let _ = client
         .module
-        .call_identity_connected_disconnected(client.id.identity, false)
+        .call_identity_connected_disconnected(client.id.identity, client.id.address, false)
         .await;
 }
 

@@ -8,6 +8,7 @@ use crate::worker_metrics::{WEBSOCKET_REQUESTS, WEBSOCKET_REQUEST_MSG_SIZE};
 use bytes::Bytes;
 use bytestring::ByteString;
 use prost::Message as _;
+use spacetimedb_lib::Address;
 
 use super::messages::{ServerMessage, TransactionUpdateMessage};
 use super::{ClientConnection, DataMessage};
@@ -106,6 +107,7 @@ impl DecodedMessage<'_> {
         res.map_err(|(reducer, err)| MessageExecutionError {
             reducer: reducer.map(str::to_owned),
             caller_identity: client.id.identity,
+            caller_address: client.id.address,
             err,
         })
     }
@@ -117,6 +119,7 @@ impl DecodedMessage<'_> {
 pub struct MessageExecutionError {
     pub reducer: Option<String>,
     pub caller_identity: Identity,
+    pub caller_address: Address,
     #[source]
     pub err: anyhow::Error,
 }
@@ -126,6 +129,7 @@ impl MessageExecutionError {
         ModuleEvent {
             timestamp: Timestamp::now(),
             caller_identity: self.caller_identity,
+            caller_address: self.caller_address,
             function_call: ModuleFunctionCall {
                 reducer: self.reducer.unwrap_or_else(|| "<none>".to_owned()),
                 args: Default::default(),

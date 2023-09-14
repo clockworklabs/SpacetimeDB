@@ -32,6 +32,7 @@ use std::convert::From;
 use std::sync::Arc;
 
 use super::identity::IdentityForUrl;
+use super::subscribe::generate_random_address;
 use crate::auth::{
     SpacetimeAuth, SpacetimeAuthHeader, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros, SpacetimeIdentity,
     SpacetimeIdentityToken,
@@ -54,6 +55,11 @@ pub struct CallParams {
     reducer: String,
 }
 
+#[derive(Deserialize)]
+pub struct CallQueryParams {
+    client_address: Option<Address>,
+}
+
 pub async fn call(
     State(worker_ctx): State<Arc<dyn WorkerCtx>>,
     auth: SpacetimeAuthHeader,
@@ -61,12 +67,15 @@ pub async fn call(
         name_or_address,
         reducer,
     }): Path<CallParams>,
+    Query(CallQueryParams { client_address }): Query<CallQueryParams>,
     ByteStringBody(body): ByteStringBody,
 ) -> axum::response::Result<impl IntoResponse> {
     let SpacetimeAuth {
         identity: caller_identity,
         creds: caller_identity_token,
     } = auth.get_or_create(&*worker_ctx).await?;
+
+    let client_address = client_address.unwrap_or_else(generate_random_address);
 
     let args = ReducerArgs::Json(body);
 
@@ -96,7 +105,10 @@ pub async fn call(
             host.spawn_module_host(dbic).await.map_err(log_and_500)?
         }
     };
-    let result = match module.call_reducer(caller_identity, None, &reducer, args).await {
+    let result = match module
+        .call_reducer(caller_identity, client_address, None, &reducer, args)
+        .await
+    {
         Ok(rcr) => rcr,
         Err(e) => {
             let status_code = match e {

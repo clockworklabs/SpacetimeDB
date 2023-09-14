@@ -13,7 +13,7 @@ use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, impl_st};
 pub use spacetimedb_lib::ser::Serialize;
-use spacetimedb_lib::{bsatn, ColumnIndexAttribute, IndexType, PrimaryKey, ProductType, ProductValue};
+use spacetimedb_lib::{bsatn, Address, ColumnIndexAttribute, IndexType, PrimaryKey, ProductType, ProductValue};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::{fmt, panic};
@@ -51,6 +51,8 @@ pub struct ReducerContext {
     pub sender: Identity,
     /// The time at which the reducer was started.
     pub timestamp: Timestamp,
+    /// The `Address` of the client that invoked the reducer.
+    pub address: Address,
 }
 
 impl ReducerContext {
@@ -59,6 +61,7 @@ impl ReducerContext {
         Self {
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
+            address: Address::__dummy(),
         }
     }
 }

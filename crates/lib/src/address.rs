@@ -12,7 +12,7 @@ use crate::sats;
 /// TODO: Evaluate other possible names: `DatabaseAddress`, `SPAddress`
 /// TODO: Evaluate replacing this with a literal Ipv6Address which is assigned
 /// permanently to a database.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Address(u128);
 
 impl Display for Address {
@@ -65,6 +65,11 @@ impl Address {
     #[allow(dead_code)]
     pub fn to_ipv6_string(self) -> String {
         self.to_ipv6().to_string()
+    }
+
+    #[doc(hidden)]
+    pub fn __dummy() -> Self {
+        Self(0)
     }
 }
 

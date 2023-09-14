@@ -111,10 +111,25 @@ const PREINIT_SIG: StaticFuncSig = FuncSig::new(&[], &[]);
 const INIT_SIG: StaticFuncSig = FuncSig::new(&[], &[WasmType::I32]);
 const DESCRIBE_MODULE_SIG: StaticFuncSig = FuncSig::new(&[], &[WasmType::I32]);
 const CALL_REDUCER_SIG: StaticFuncSig = FuncSig::new(
-    &[WasmType::I32, WasmType::I32, WasmType::I64, WasmType::I32],
+    &[
+        WasmType::I32, // Reducer ID
+        WasmType::I32, // Sender `Identity` buffer
+        WasmType::I32, // Sender `Address` buffer
+        WasmType::I64, // Timestamp
+        WasmType::I32, // Args buffer
+    ],
+    &[
+        WasmType::I32, // Result buffer
+    ],
+);
+const CONN_DISCONN_SIG: StaticFuncSig = FuncSig::new(
+    &[
+        WasmType::I32, // Sender `Identity` buffer
+        WasmType::I32, // Sender `Address` buffer
+        WasmType::I64, // Timestamp
+    ],
     &[WasmType::I32],
 );
-const CONN_DISCONN_SIG: StaticFuncSig = FuncSig::new(&[WasmType::I32, WasmType::I64], &[WasmType::I32]);
 
 #[derive(thiserror::Error, Debug)]
 pub enum ValidationError {

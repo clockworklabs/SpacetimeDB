@@ -140,7 +140,8 @@ pub async fn load_module(name: &str) -> ModuleHandle {
     crate::set_key_env_vars(&paths);
     let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
     let identity = env.control_db().alloc_spacetime_identity().await.unwrap();
-    let address = env.control_db().alloc_spacetime_address().await.unwrap();
+    let client_address = env.control_db().alloc_spacetime_address().await.unwrap();
+    let db_address = env.control_db().alloc_spacetime_address().await.unwrap();
     let program_bytes = read_module(name);
 
     let program_bytes_addr = hash_bytes(&program_bytes);
@@ -148,15 +149,16 @@ pub async fn load_module(name: &str) -> ModuleHandle {
 
     let host_type = HostType::Wasmer;
 
-    env.insert_database(&address, &identity, &program_bytes_addr, host_type, 1, true)
+    env.insert_database(&db_address, &identity, &program_bytes_addr, host_type, 1, true)
         .await
         .unwrap();
 
-    let database = env.get_database_by_address(&address).await.unwrap().unwrap();
+    let database = env.get_database_by_address(&db_address).await.unwrap().unwrap();
     let instance = env.get_leader_database_instance_by_database(database.id).await.unwrap();
 
     let client_id = ClientActorId {
         identity,
+        address: client_address,
         name: env.client_actor_index().next_client_name(),
     };
 
@@ -169,6 +171,6 @@ pub async fn load_module(name: &str) -> ModuleHandle {
     ModuleHandle {
         _env: env,
         client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module),
-        db_address: address,
+        db_address,
     }
 }
