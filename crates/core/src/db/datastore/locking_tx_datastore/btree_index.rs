@@ -11,6 +11,26 @@ use std::{
     ops::{Bound, RangeBounds},
 };
 
+/// ## Index Key Composition
+///
+/// [IndexKey] use an [AlgebraicValue] to optimize for the common case of *single columns* as key.
+///
+/// See [ProductValue::project] for the logic.
+///
+/// ### SQL Examples
+///
+/// To illustrate the concept of single and multiple column indexes, consider the following SQL examples:
+///
+/// ```sql
+/// CREATE INDEX a ON t1 (column_i32); -- Creating a single column index, a common case.
+/// CREATE INDEX b ON t1 (column_i32, column_i32); -- Creating a multiple column index for more complex requirements.
+/// ```
+/// Will be on memory:
+///
+/// ```rust,ignore
+/// [AlgebraicValue::I32(0)] = Row(ProductValue(...))
+/// [AlgebraicValue::Product(AlgebraicValue::I32(0), AlgebraicValue::I32(1))] = Row(ProductValue(...))
+/// ```
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 struct IndexKey {
     value: AlgebraicValue,
