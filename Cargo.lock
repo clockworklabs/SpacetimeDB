@@ -4156,8 +4156,12 @@ dependencies = [
  "byte-unit",
  "clap 4.3.10",
  "criterion",
+ "futures",
+ "lazy_static",
+ "log",
  "rand 0.8.5",
  "rusqlite",
+ "serde",
  "serde_json",
  "spacetimedb-client-api",
  "spacetimedb-core",
@@ -4166,6 +4170,7 @@ dependencies = [
  "spacetimedb-testing",
  "tempdir",
  "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -4450,6 +4455,7 @@ dependencies = [
  "clap 4.3.10",
  "duct",
  "lazy_static",
+ "prost",
  "rand 0.8.5",
  "serde_json",
  "serial_test",

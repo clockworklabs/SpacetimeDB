@@ -1,4 +1,62 @@
-spacetimedb-bench# Benchmarking suite for SpacetimeDB
+# spacetimedb-bench
+Benchmarking suite for SpacetimeDB using Criterion. Provides comparisons between the underlying spacetime datastore, spacetime modules, and sqlite.
+
+Timings for spacetime modules should be understood as *latencies to call a spacetime reducer without network delays*. They include serialization and deserialization times for any arguments passed. There are also separate benchmarks that measure these times on their own.
+
+## Benchmark structure
+
+The complete structure (not yet fully implemented) is as follows:
+
+```
+[db]/[disk]/
+    empty_transaction/
+    insert_1/[schema]/[index_type]/[load]
+    insert_bulk/[schema]/[index_type]/[load]/[count]
+    insert_large_value/[count]
+    iterate/[schema]/[count]/
+    filter/[string, u64]/[index?]/[load]/[count]
+    find_unique/u32/[load]/
+    update/[load]/[count]
+    delete/[index_type]/[load]/[count]
+
+# "load" refers to the number of rows in the table at the start of the benchmark.
+
+# db: [stdb_raw, stdb_module, sqlite]
+# disk: [disk, mem]
+# schema: [person, location]
+# index_type: [unique, non_unique, multi_index]
+
+# "person" is a schema with 2 ints and a string, "location" is a schema with 3 ints.
+
+serialize/
+    bsatn/[schema]/[count]
+    json/[schema]/[count]
+    product_value/[schema]/[count]
+
+deserialize/
+    bsatn/[schema]/[count]
+    json/[schema]/[count]
+    product_value/[schema]/[count]
+
+spacetime_module/
+    print_single/
+    print_bulk/
+    large_arguments/64KB/[count...]
+```
+
+Typically you don't want to run all benchmarks at once, there are a lot of them and it will take many minutes.
+You can pass regexes to the bench script to select what slice of benchmarks you'd like. For example,
+
+```sh
+cargo bench -- 'spacetime_raw/.*/insert_bulk'
+```
+Will run all of the `insert_bulk` benchmarks against the raw spacetime backend.
+
+Similarly, 
+```sh
+cargo bench -- 'mem/.*/unique'
+```
+Will run benchmarks involving unique primary keys against all databases, without writing to disc.
 
 ## Install tools
 

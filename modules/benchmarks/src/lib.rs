@@ -1,183 +1,364 @@
 #![allow(clippy::too_many_arguments)]
 use spacetimedb::{println, spacetimedb};
+use std::hint::black_box;
+
+// the following piece of code must remain synced with `crates/bench/src/schemas.rs`
+// unfortunately, you can't just copy it.
+
+// ---------- SYNCED CODE ----------
 
 #[spacetimedb(table)]
-pub struct Person {
+pub struct UniquePerson {
+    #[unique]
+    id: u32,
     name: String,
+    age: u64,
 }
 
-#[spacetimedb(reducer)]
-pub fn add(name: String) {
-    Person::insert(Person { name });
+#[spacetimedb(table)]
+pub struct NonUniquePerson {
+    id: u32,
+    name: String,
+    age: u64,
 }
 
-#[spacetimedb(reducer)]
-pub fn say_hello() {
-    for person in Person::iter() {
-        println!("Hello, {}!", person.name);
-    }
-    println!("Hello, World!");
-}
-
-#[spacetimedb(reducer)]
-pub fn single_insert(name: String) {
-    println!("inserting {}", name);
-    Person::insert(Person { name });
-}
-
-#[spacetimedb(reducer)]
-pub fn person_iterator() {
-    for person in Person::iter() {
-        std::hint::black_box(person);
-    }
-}
-
-#[spacetimedb(reducer)]
-pub fn multi_insert(count: u64, offset: u64) {
-    let start = offset;
-    let end = offset + count;
-    for i in start..end {
-        Person::insert(Person {
-            name: format!("name {}", i),
-        });
-    }
-}
-
-#[spacetimedb(reducer)]
-pub fn empty() {}
-
-#[spacetimedb(reducer)]
-pub fn a_lot_of_args(
-    arg1: String,
-    arg2: String,
-    arg3: String,
-    arg4: String,
-    arg5: String,
-    arg6: String,
-    arg7: String,
-    arg8: String,
-    arg9: String,
-    arg10: String,
-    arg11: String,
-    arg12: String,
-    arg13: String,
-    arg14: String,
-    arg15: String,
-    arg16: String,
-    arg17: String,
-    arg18: String,
-    arg19: String,
-    arg20: String,
-    arg21: String,
-    arg22: String,
-    arg23: String,
-    arg24: String,
-    arg25: String,
-    arg26: String,
-    arg27: String,
-    arg28: String,
-    arg29: String,
-    arg30: String,
-    arg31: String,
-    arg32: String,
-) {
-    println!("{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}",
-             arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10,
-             arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18, arg19, arg20,
-             arg21, arg22, arg23, arg24, arg25, arg26, arg27, arg28, arg29, arg30,
-             arg31, arg32);
-}
-
-fn xorshift(x: &mut u64) -> u64 {
-    let old_x = *x;
-    *x ^= *x << 13;
-    *x ^= *x >> 7;
-    *x ^= *x << 17;
-    old_x
+#[spacetimedb(table)]
+#[spacetimedb(index(btree, name = "id", id))]
+#[spacetimedb(index(btree, name = "name", name))]
+#[spacetimedb(index(btree, name = "age", age))]
+pub struct MultiIndexPerson {
+    id: u32,
+    name: String,
+    age: u64,
 }
 
 #[spacetimedb(table)]
 pub struct UniqueLocation {
     #[unique]
-    id: u64,
+    id: u32,
     x: u64,
     y: u64,
 }
 
-#[spacetimedb(reducer)]
-pub fn create_random_unique_locations(mut seed: u64, count: u64) {
-    for _ in 0..count {
-        let id = xorshift(&mut seed);
-        let x = xorshift(&mut seed);
-        let y = xorshift(&mut seed);
-        let loc = UniqueLocation { id, x, y };
-        UniqueLocation::insert(loc).unwrap();
-    }
-}
-
-#[spacetimedb(reducer)]
-pub fn create_sequential_unique_locations(mut seed: u64, start: u64, count: u64) {
-    for id in start..start + count {
-        let x = xorshift(&mut seed);
-        let y = xorshift(&mut seed);
-        let loc = UniqueLocation { id, x, y };
-        UniqueLocation::insert(loc).unwrap();
-    }
-}
-
-#[spacetimedb(reducer)]
-pub fn find_unique_location(id: u64) {
-    match UniqueLocation::filter_by_id(&id) {
-        Some(loc) => println!("found UniqueLocation {id} at {} {}", loc.x, loc.y),
-        None => println!("did not find UniqueLocation {id}"),
-    }
+#[spacetimedb(table)]
+pub struct NonUniqueLocation {
+    id: u32,
+    x: u64,
+    y: u64,
 }
 
 #[spacetimedb(table)]
 #[spacetimedb(index(btree, name = "id", id))]
-pub struct NonuniqueLocation {
-    id: u64,
+#[spacetimedb(index(btree, name = "x", x))]
+#[spacetimedb(index(btree, name = "y", y))]
+pub struct MultiIndexLocation {
+    id: u32,
     x: u64,
     y: u64,
 }
+// ---------- / SYNCED CODE ----------
 
 #[spacetimedb(reducer)]
-pub fn create_random_nonunique_locations(mut seed: u64, count: u64) {
-    for _ in 0..count {
-        // Create multiple locations with the same ID.
-        let id = xorshift(&mut seed);
+pub fn empty() {}
 
-        let x = xorshift(&mut seed);
-        let y = xorshift(&mut seed);
-        let loc = NonuniqueLocation { id, x, y };
-        NonuniqueLocation::insert(loc);
+// ---------- insert ----------
+#[spacetimedb(reducer)]
+pub fn insert_unique_person(id: u32, name: String, age: u64) {
+    UniquePerson::insert(UniquePerson { id, name, age }).unwrap();
+}
 
-        let x = xorshift(&mut seed);
-        let y = xorshift(&mut seed);
-        let loc = NonuniqueLocation { id, x, y };
-        NonuniqueLocation::insert(loc);
+#[spacetimedb(reducer)]
+pub fn insert_non_unique_person(id: u32, name: String, age: u64) {
+    NonUniquePerson::insert(NonUniquePerson { id, name, age });
+}
+
+#[spacetimedb(reducer)]
+pub fn insert_multi_index_person(id: u32, name: String, age: u64) {
+    MultiIndexPerson::insert(MultiIndexPerson { id, name, age });
+}
+
+#[spacetimedb(reducer)]
+pub fn insert_unique_location(id: u32, x: u64, y: u64) {
+    UniqueLocation::insert(UniqueLocation { id, x, y }).unwrap();
+}
+
+#[spacetimedb(reducer)]
+pub fn insert_non_unique_location(id: u32, x: u64, y: u64) {
+    NonUniqueLocation::insert(NonUniqueLocation { id, x, y });
+}
+
+#[spacetimedb(reducer)]
+pub fn insert_multi_index_location(id: u32, x: u64, y: u64) {
+    MultiIndexLocation::insert(MultiIndexLocation { id, x, y });
+}
+
+// ---------- insert bulk ----------
+
+#[spacetimedb(reducer)]
+pub fn insert_bulk_unique_location(locs: Vec<UniqueLocation>) {
+    for loc in locs {
+        UniqueLocation::insert(loc).unwrap();
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn create_sequential_nonunique_locations(mut seed: u64, start: u64, count: u64) {
-    for id in start..start + count {
-        // Create multiple locations with the same ID.
-        let x = xorshift(&mut seed);
-        let y = xorshift(&mut seed);
-        let loc = NonuniqueLocation { id, x, y };
-        NonuniqueLocation::insert(loc);
-
-        let x = xorshift(&mut seed);
-        let y = xorshift(&mut seed);
-        let loc = NonuniqueLocation { id, x, y };
-        NonuniqueLocation::insert(loc);
+pub fn insert_bulk_non_unique_location(locs: Vec<NonUniqueLocation>) {
+    for loc in locs {
+        NonUniqueLocation::insert(loc);
     }
 }
 
 #[spacetimedb(reducer)]
-pub fn find_nonunique_location(id: u64) {
-    for loc in NonuniqueLocation::filter_by_id(&id) {
-        println!("found NonuniqueLocation {id} at {} {}", loc.x, loc.y)
+pub fn insert_bulk_multi_index_location(locs: Vec<MultiIndexLocation>) {
+    for loc in locs {
+        MultiIndexLocation::insert(loc);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn insert_bulk_unique_person(people: Vec<UniquePerson>) {
+    for person in people {
+        UniquePerson::insert(person).unwrap();
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn insert_bulk_non_unique_person(people: Vec<NonUniquePerson>) {
+    for person in people {
+        NonUniquePerson::insert(person);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn insert_bulk_multi_index_person(people: Vec<MultiIndexPerson>) {
+    for person in people {
+        MultiIndexPerson::insert(person);
+    }
+}
+// ---------- iterate ----------
+// we don't bother comparing schema types here
+#[spacetimedb(reducer)]
+pub fn iterate_unique_person() {
+    for person in UniquePerson::iter() {
+        black_box(person);
+    }
+}
+#[spacetimedb(reducer)]
+pub fn iterate_unique_location() {
+    for location in UniqueLocation::iter() {
+        black_box(location);
+    }
+}
+
+// ---------- filtering ----------
+
+#[spacetimedb(reducer)]
+pub fn filter_unique_person_by_id(id: u32) {
+    if let Some(p) = UniquePerson::filter_by_id(&id) {
+        black_box(p);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_non_unique_person_by_id(id: u32) {
+    for p in NonUniquePerson::filter_by_id(&id) {
+        black_box(p);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_multi_index_person_by_id(id: u32) {
+    for p in MultiIndexPerson::filter_by_id(&id) {
+        black_box(p);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_unique_person_by_name(name: String) {
+    for p in UniquePerson::filter_by_name(&name) {
+        black_box(p);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_non_unique_person_by_name(name: String) {
+    for p in NonUniquePerson::filter_by_name(&name) {
+        black_box(p);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_multi_index_person_by_name(name: String) {
+    for p in MultiIndexPerson::filter_by_name(&name) {
+        black_box(p);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_unique_location_by_id(id: u32) {
+    if let Some(loc) = UniqueLocation::filter_by_id(&id) {
+        black_box(loc);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_non_unique_location_by_id(id: u32) {
+    for loc in NonUniqueLocation::filter_by_id(&id) {
+        black_box(loc);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_multi_index_location_by_id(id: u32) {
+    for loc in MultiIndexLocation::filter_by_id(&id) {
+        black_box(loc);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_unique_location_by_x(x: u64) {
+    for loc in UniqueLocation::filter_by_x(&x) {
+        black_box(loc);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_non_unique_location_by_x(x: u64) {
+    for loc in NonUniqueLocation::filter_by_x(&x) {
+        black_box(loc);
+    }
+}
+
+#[spacetimedb(reducer)]
+pub fn filter_multi_index_location_by_x(x: u64) {
+    for loc in MultiIndexLocation::filter_by_x(&x) {
+        black_box(loc);
+    }
+}
+
+// ---------- delete ----------
+// FIXME: current nonunique delete interface is UNUSABLE!!!!
+#[spacetimedb(reducer)]
+pub fn delete_unique_person_by_id(id: u32) {
+    UniquePerson::delete_by_id(&id);
+}
+
+#[spacetimedb(reducer)]
+pub fn delete_unique_location_by_id(id: u32) {
+    UniqueLocation::delete_by_id(&id);
+}
+
+// ---------- clear table ----------
+#[spacetimedb(reducer)]
+pub fn clear_table_unique_person() {
+    UniquePerson::delete(|_| true);
+}
+
+#[spacetimedb(reducer)]
+pub fn clear_table_non_unique_person() {
+    NonUniquePerson::delete(|_| true);
+}
+
+#[spacetimedb(reducer)]
+pub fn clear_table_multi_index_person() {
+    MultiIndexPerson::delete(|_| true);
+}
+
+#[spacetimedb(reducer)]
+pub fn clear_table_unique_location() {
+    UniqueLocation::delete(|_| true);
+}
+
+#[spacetimedb(reducer)]
+pub fn clear_table_non_unique_location() {
+    NonUniqueLocation::delete(|_| true);
+}
+
+#[spacetimedb(reducer)]
+pub fn clear_table_multi_index_location() {
+    MultiIndexLocation::delete(|_| true);
+}
+// ---------- count ----------
+// You need to inspect the module outputs to actually read the result from these.
+#[spacetimedb(reducer)]
+pub fn count_unique_person() {
+    println!("COUNT: {}", UniquePerson::iter().count());
+}
+
+#[spacetimedb(reducer)]
+pub fn count_non_unique_person() {
+    println!("COUNT: {}", NonUniquePerson::iter().count());
+}
+
+#[spacetimedb(reducer)]
+pub fn count_multi_index_person() {
+    println!("COUNT: {}", MultiIndexPerson::iter().count());
+}
+
+#[spacetimedb(reducer)]
+pub fn count_unique_location() {
+    println!("COUNT: {}", UniqueLocation::iter().count());
+}
+
+#[spacetimedb(reducer)]
+pub fn count_non_unique_location() {
+    println!("COUNT: {}", NonUniqueLocation::iter().count());
+}
+
+#[spacetimedb(reducer)]
+pub fn count_multi_index_location() {
+    println!("COUNT: {}", MultiIndexLocation::iter().count());
+}
+// ---------- module-specific stuff ----------
+
+#[spacetimedb(reducer)]
+pub fn fn_with_1_args(_arg: String) {}
+
+#[spacetimedb(reducer)]
+pub fn fn_with_32_args(
+    _arg1: String,
+    _arg2: String,
+    _arg3: String,
+    _arg4: String,
+    _arg5: String,
+    _arg6: String,
+    _arg7: String,
+    _arg8: String,
+    _arg9: String,
+    _arg10: String,
+    _arg11: String,
+    _arg12: String,
+    _arg13: String,
+    _arg14: String,
+    _arg15: String,
+    _arg16: String,
+    _arg17: String,
+    _arg18: String,
+    _arg19: String,
+    _arg20: String,
+    _arg21: String,
+    _arg22: String,
+    _arg23: String,
+    _arg24: String,
+    _arg25: String,
+    _arg26: String,
+    _arg27: String,
+    _arg28: String,
+    _arg29: String,
+    _arg30: String,
+    _arg31: String,
+    _arg32: String,
+) {
+}
+
+#[spacetimedb(reducer)]
+pub fn print_something() {
+    println!("hello, world!");
+}
+
+#[spacetimedb(reducer)]
+pub fn print_many_things(n: u32) {
+    for _ in 0..n {
+        println!("hello again!");
     }
 }

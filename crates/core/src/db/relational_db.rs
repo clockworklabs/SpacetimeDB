@@ -526,6 +526,17 @@ impl RelationalDB {
         self.inner.delete_by_rel_mut_tx(tx, TableId(table_id), relation)
     }
 
+    /// Clear all rows from a table without dropping it.
+    #[tracing::instrument(skip_all)]
+    pub fn clear_table(&self, tx: &mut MutTxId, table_id: u32) -> Result<(), DBError> {
+        let relation = self
+            .iter(tx, table_id)?
+            .map(|data| data.view().clone())
+            .collect::<Vec<_>>();
+        self.delete_by_rel(tx, table_id, relation)?;
+        Ok(())
+    }
+
     /// Generated the next value for the [SequenceId]
     #[tracing::instrument(skip_all)]
     pub fn next_sequence(&mut self, tx: &mut MutTxId, seq_id: SequenceId) -> Result<i128, DBError> {

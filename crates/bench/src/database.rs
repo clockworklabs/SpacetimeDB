@@ -1,0 +1,64 @@
+use spacetimedb_lib::AlgebraicValue;
+
+use crate::schemas::{BenchTable, TableStyle};
+use crate::ResultBench;
+
+/// A database we can execute a standard benchmark suite against.
+/// Currently implemented for SQLite, raw Spacetime (RelationalDB),
+/// and Spacetime via module.
+///
+/// Queries are separated into a prepare and execute step.
+/// Execute step can be run multiple times.
+/// `PreparedXYZ` should never have runtime lifetime constraints.
+///
+/// Not all benchmarks have to go through this trait.
+pub trait BenchDatabase: Sized {
+    fn name() -> &'static str;
+
+    type TableId: Clone + 'static;
+
+    fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
+    where
+        Self: Sized;
+
+    fn create_table<T: BenchTable>(&mut self, table_style: TableStyle) -> ResultBench<Self::TableId>;
+
+    /// Should not drop the table, only delete all the rows.
+    fn clear_table(&mut self, table_id: &Self::TableId) -> ResultBench<()>;
+
+    /// Count the number of rows in the table.
+    fn count_table(&mut self, table_id: &Self::TableId) -> ResultBench<u32>;
+
+    /// Perform an empty transaction.
+    fn empty_transaction(&mut self) -> ResultBench<()>;
+
+    type PreparedInsert<T>;
+    fn prepare_insert<T: BenchTable>(&mut self, table_id: &Self::TableId) -> ResultBench<Self::PreparedInsert<T>>;
+
+    /// Perform a transaction that commits a single row.
+    fn insert<T: BenchTable>(&mut self, prepared: &Self::PreparedInsert<T>, row: T) -> ResultBench<()>;
+
+    type PreparedInsertBulk<T>;
+    fn prepare_insert_bulk<T: BenchTable>(
+        &mut self,
+        table_id: &Self::TableId,
+    ) -> ResultBench<Self::PreparedInsertBulk<T>>;
+
+    /// Perform a transaction that commits many rows.
+    fn insert_bulk<T: BenchTable>(&mut self, prepared: &Self::PreparedInsertBulk<T>, rows: Vec<T>) -> ResultBench<()>;
+
+    type PreparedInterate;
+    fn prepare_iterate<T: BenchTable>(&mut self, table_id: &Self::TableId) -> ResultBench<Self::PreparedInterate>;
+
+    /// Perform a transaction that iterates an entire database table.
+    fn iterate(&mut self, prepared: &Self::PreparedInterate) -> ResultBench<()>;
+
+    type PreparedFilter;
+    fn prepare_filter<T: BenchTable>(
+        &mut self,
+        table_id: &Self::TableId,
+        column_index: u32,
+    ) -> ResultBench<Self::PreparedFilter>;
+    /// We can unpack an algebraic value for the sqlite case.
+    fn filter(&mut self, prepared: &Self::PreparedFilter, value: AlgebraicValue) -> ResultBench<()>;
+}
