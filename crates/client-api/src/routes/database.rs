@@ -32,7 +32,6 @@ use std::convert::From;
 use std::sync::Arc;
 
 use super::identity::IdentityForUrl;
-use super::subscribe::generate_random_address;
 use crate::auth::{
     SpacetimeAuth, SpacetimeAuthHeader, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros, SpacetimeIdentity,
     SpacetimeIdentityToken,
@@ -74,8 +73,6 @@ pub async fn call(
         identity: caller_identity,
         creds: caller_identity_token,
     } = auth.get_or_create(&*worker_ctx).await?;
-
-    let client_address = client_address.unwrap_or_else(generate_random_address);
 
     let args = ReducerArgs::Json(body);
 

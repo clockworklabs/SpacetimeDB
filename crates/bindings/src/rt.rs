@@ -81,13 +81,27 @@ pub fn invoke_connection_func<R: ReducerResult>(
     cvt_result(res)
 }
 
-/// Creates a reducer context from the given `sender` and `timestamp`.
+/// Creates a reducer context from the given `sender`, `timestamp` and `client_address`.
+///
+/// `sender` must contain 32 bytes, from which we will read an `Identity`.
+///
+/// `timestamp` is a count of microseconds since the Unix epoch.
+///
+/// `client_address` must contain 16 bytes, from which we will read an `Address`.
+/// The all-zeros `client_address` (constructed by [`Address::__dummy`]) is used as a sentinel,
+/// and translated to `None`.
 fn assemble_context(sender: Buffer, timestamp: u64, client_address: Buffer) -> ReducerContext {
     let sender = Identity::from_byte_array(sender.read_array::<32>());
 
     let timestamp = Timestamp::UNIX_EPOCH + Duration::from_micros(timestamp);
 
     let address = Address::from_arr(&client_address.read_array::<16>());
+
+    let address = if address == Address::__dummy() {
+        None
+    } else {
+        Some(address)
+    };
 
     ReducerContext {
         sender,

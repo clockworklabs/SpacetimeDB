@@ -52,7 +52,13 @@ pub struct ReducerContext {
     /// The time at which the reducer was started.
     pub timestamp: Timestamp,
     /// The `Address` of the client that invoked the reducer.
-    pub address: Address,
+    ///
+    /// `None` if no `Address` was supplied to the `/database/call` HTTP endpoint,
+    /// or via the CLI's `spacetime call` subcommand.
+    ///
+    /// For automatic reducers, i.e. `init`, `update` and scheduled reducers,
+    /// this will be the module's `Address`.
+    pub address: Option<Address>,
 }
 
 impl ReducerContext {
@@ -61,7 +67,7 @@ impl ReducerContext {
         Self {
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
-            address: Address::__dummy(),
+            address: None,
         }
     }
 }

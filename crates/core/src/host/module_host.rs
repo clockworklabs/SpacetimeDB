@@ -185,7 +185,7 @@ pub struct ModuleFunctionCall {
 pub struct ModuleEvent {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
-    pub caller_address: Address,
+    pub caller_address: Option<Address>,
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
     pub energy_quanta_used: EnergyDiff,
@@ -229,7 +229,7 @@ pub trait ModuleInstance: Send + 'static {
     fn call_reducer(
         &mut self,
         caller_identity: Identity,
-        caller_address: Address,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_id: usize,
         args: ArgsTuple,
@@ -270,7 +270,7 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
     fn call_reducer(
         &mut self,
         caller_identity: Identity,
-        caller_address: Address,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_id: usize,
         args: ArgsTuple,
@@ -489,7 +489,7 @@ impl ModuleHost {
     async fn call_reducer_inner(
         &self,
         caller_identity: Identity,
-        caller_address: Address,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_name: &str,
         args: ReducerArgs,
@@ -510,7 +510,7 @@ impl ModuleHost {
     pub async fn call_reducer(
         &self,
         caller_identity: Identity,
-        caller_address: Address,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_name: &str,
         args: ReducerArgs,

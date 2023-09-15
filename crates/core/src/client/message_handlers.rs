@@ -107,7 +107,7 @@ impl DecodedMessage<'_> {
         res.map_err(|(reducer, err)| MessageExecutionError {
             reducer: reducer.map(str::to_owned),
             caller_identity: client.id.identity,
-            caller_address: client.id.address,
+            caller_address: Some(client.id.address),
             err,
         })
     }
@@ -119,7 +119,7 @@ impl DecodedMessage<'_> {
 pub struct MessageExecutionError {
     pub reducer: Option<String>,
     pub caller_identity: Identity,
-    pub caller_address: Address,
+    pub caller_address: Option<Address>,
     #[source]
     pub err: anyhow::Error,
 }

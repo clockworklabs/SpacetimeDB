@@ -56,6 +56,13 @@ pub async fn handle_websocket(
 ) -> axum::response::Result<impl IntoResponse> {
     let auth = auth.get_or_create(&*worker_ctx).await?;
 
+    if client_address == Some(Address::__dummy()) {
+        Err((
+            StatusCode::BAD_REQUEST,
+            "Invalid client address: the all-zeros Address is reserved.",
+        ))?;
+    }
+
     let client_address = client_address.unwrap_or_else(generate_random_address);
 
     let db_address = name_or_address.resolve(&*worker_ctx).await?.into();

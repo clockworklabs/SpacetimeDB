@@ -340,7 +340,14 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 let caller_identity = self.database_instance_context().identity;
                 let caller_address = self.database_instance_context().address;
                 let client = None;
-                self.call_reducer_internal(Some(tx), caller_identity, caller_address, client, reducer_id, args)
+                self.call_reducer_internal(
+                    Some(tx),
+                    caller_identity,
+                    Some(caller_address),
+                    client,
+                    reducer_id,
+                    args,
+                )
             }
         };
 
@@ -395,7 +402,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 let res = self.call_reducer_internal(
                     Some(tx),
                     caller_identity,
-                    caller_address,
+                    Some(caller_address),
                     client,
                     reducer_id,
                     ArgsTuple::default(),
@@ -414,7 +421,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     fn call_reducer(
         &mut self,
         caller_identity: Identity,
-        caller_address: Address,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_id: usize,
         args: ArgsTuple,
@@ -465,7 +472,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             },
             status,
             caller_identity,
-            caller_address,
+            caller_address: Some(caller_address),
             energy_quanta_used: energy.used,
             host_execution_duration: start_instant.elapsed(),
         };
@@ -493,7 +500,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         &mut self,
         tx: Option<MutTxId>,
         caller_identity: Identity,
-        caller_address: Address,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_id: usize,
         mut args: ArgsTuple,
@@ -511,7 +518,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             InstanceOp::Reducer {
                 id: reducer_id,
                 sender_identity: &caller_identity,
-                sender_address: &caller_address,
+                sender_address: &caller_address.unwrap_or(Address::__dummy()),
                 timestamp,
                 arg_bytes: args.get_bsatn().clone(),
             },

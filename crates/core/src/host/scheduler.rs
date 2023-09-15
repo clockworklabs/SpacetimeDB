@@ -276,7 +276,7 @@ impl SchedulerActor {
             let res = module_host
                 .call_reducer(
                     identity,
-                    address,
+                    Some(address),
                     None,
                     &scheduled.reducer,
                     ReducerArgs::Bsatn(scheduled.bsatn_args.into()),

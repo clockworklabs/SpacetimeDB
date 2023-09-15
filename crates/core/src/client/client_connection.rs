@@ -152,7 +152,13 @@ impl ClientConnection {
 
     pub async fn call_reducer(&self, reducer: &str, args: ReducerArgs) -> Result<ReducerCallResult, ReducerCallError> {
         self.module
-            .call_reducer(self.id.identity, self.id.address, Some(self.sender()), reducer, args)
+            .call_reducer(
+                self.id.identity,
+                Some(self.id.address),
+                Some(self.sender()),
+                reducer,
+                args,
+            )
             .await
     }
 
