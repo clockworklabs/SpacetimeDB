@@ -7,7 +7,7 @@ use derive_more::From;
 use futures::prelude::*;
 use tokio::sync::mpsc;
 
-use super::messages::ServerMessage;
+use super::messages::{OneOffQueryResponseMessage, ServerMessage};
 use super::{message_handlers, ClientActorId, MessageHandleError};
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
@@ -156,5 +156,24 @@ impl ClientConnection {
 
     pub fn subscribe(&self, subscription: Subscribe) -> Result<(), NoSuchModule> {
         self.module.subscription().add_subscriber(self.sender(), subscription)
+    }
+
+    pub async fn one_off_query(&self, query: &str, message_id: &[u8]) -> Result<(), anyhow::Error> {
+        let result = self.module.one_off_query(self.id.identity, query.to_owned()).await;
+        let message_id = message_id.to_owned();
+        let response = match result {
+            Ok(results) => OneOffQueryResponseMessage {
+                message_id,
+                error: None,
+                results,
+            },
+            Err(err) => OneOffQueryResponseMessage {
+                message_id,
+                error: Some(format!("{}", err)),
+                results: Vec::new(),
+            },
+        };
+        self.send_message(response).await?;
+        Ok(())
     }
 }

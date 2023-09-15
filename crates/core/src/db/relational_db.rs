@@ -302,6 +302,26 @@ impl RelationalDB {
         self.rollback_on_err(tx, res)
     }
 
+    /// Run a fallible function in a transaction.
+    ///
+    /// This is similar to `with_auto_commit`, but regardless of the return value of
+    /// the fallible function, the transaction will ALWAYS be rolled back. This can be used to
+    /// emulate a read-only transaction.
+    ///
+    /// TODO(jgilles): when we support actual read-only transactions, use those here instead.
+    /// TODO(jgilles, kim): get this merged with the above function (two people had similar ideas
+    /// at the same time)
+    pub fn with_read_only<F, A, E>(&self, f: F) -> Result<A, E>
+    where
+        F: FnOnce(&mut MutTxId) -> Result<A, E>,
+        E: From<DBError>,
+    {
+        let mut tx = self.begin_tx();
+        let res = f(&mut tx);
+        self.rollback_tx(tx);
+        res
+    }
+
     /// Perform the transactional logic for the `tx` according to the `res`
     pub fn finish_tx<A, E>(&self, tx: MutTxId, res: Result<A, E>) -> Result<A, E>
     where
