@@ -66,7 +66,7 @@ pub trait WasmInstance: Send + Sync + 'static {
         &mut self,
         connect: bool,
         budget: EnergyQuanta,
-        sendersender_: &[u8; 32],
+        sender_identity: &[u8; 32],
         sender_address: &[u8; 16],
         timestamp: Timestamp,
     ) -> ExecuteResult<Self::Trap>;
