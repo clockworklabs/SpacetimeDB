@@ -21,6 +21,7 @@ use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType};
 use spacetimedb::sql::execute::execute;
+use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::name::{
     self, DnsLookupResponse, DomainName, DomainParsingError, InsertDomainResult, PublishOp, PublishResult,
@@ -56,7 +57,7 @@ pub struct CallParams {
 
 #[derive(Deserialize)]
 pub struct CallQueryParams {
-    client_address: Option<Address>,
+    client_address: Option<AddressForUrl>,
 }
 
 pub async fn call(
@@ -103,7 +104,7 @@ pub async fn call(
         }
     };
     let result = match module
-        .call_reducer(caller_identity, client_address, None, &reducer, args)
+        .call_reducer(caller_identity, client_address.map(Address::from), None, &reducer, args)
         .await
     {
         Ok(rcr) => rcr,
@@ -566,7 +567,7 @@ pub struct DNSParams {
 
 #[derive(Deserialize)]
 pub struct ReverseDNSParams {
-    database_address: Address,
+    database_address: AddressForUrl,
 }
 
 #[derive(Deserialize)]
@@ -597,7 +598,7 @@ pub async fn reverse_dns(
 ) -> axum::response::Result<impl IntoResponse> {
     let names = ctx
         .control_db()
-        .spacetime_reverse_dns(&database_address)
+        .spacetime_reverse_dns(&Address::from(database_address))
         .await
         .map_err(log_and_500)?;
 
@@ -912,7 +913,7 @@ pub async fn publish(
 
 #[derive(Deserialize)]
 pub struct DeleteDatabaseParams {
-    address: Address,
+    address: AddressForUrl,
 }
 
 pub async fn delete_database(
@@ -922,12 +923,12 @@ pub async fn delete_database(
 ) -> axum::response::Result<impl IntoResponse> {
     let auth = auth_or_bad_request(auth)?;
 
-    match control_ctx_find_database(&*ctx, &address).await? {
+    match control_ctx_find_database(&*ctx, &Address::from(address)).await? {
         Some(db) => {
             if db.identity != auth.identity {
                 Err((StatusCode::BAD_REQUEST, "Identity does not own this database.").into())
             } else {
-                ctx.delete_database(&address)
+                ctx.delete_database(&Address::from(address))
                     .await
                     .map_err(log_and_500)
                     .map_err(Into::into)
@@ -940,7 +941,7 @@ pub async fn delete_database(
 #[derive(Deserialize)]
 pub struct SetNameQueryParams {
     domain: String,
-    address: Address,
+    address: AddressForUrl,
     #[serde(default)]
     register_tld: bool,
 }
@@ -958,7 +959,7 @@ pub async fn set_name(
 
     let database = ctx
         .control_db()
-        .get_database_by_address(&address)
+        .get_database_by_address(&Address::from(address))
         .await
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
@@ -970,7 +971,7 @@ pub async fn set_name(
     let domain = domain.parse().map_err(DomainParsingRejection)?;
     let response = ctx
         .control_db()
-        .spacetime_insert_domain(&address, domain, auth.identity, register_tld)
+        .spacetime_insert_domain(&Address::from(address), domain, auth.identity, register_tld)
         .await
         .map_err(log_and_500)?;
 

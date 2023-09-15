@@ -13,6 +13,7 @@ use spacetimedb::client::messages::{IdentityTokenMessage, ServerMessage};
 use spacetimedb::client::{ClientActorId, ClientClosed, ClientConnection, DataMessage, MessageHandleError, Protocol};
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::future_queue;
+use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::Address;
 use tokio::sync::mpsc;
 
@@ -35,7 +36,7 @@ pub struct SubscribeParams {
 
 #[derive(Deserialize)]
 pub struct SubscribeQueryParams {
-    pub client_address: Option<Address>,
+    pub client_address: Option<AddressForUrl>,
 }
 
 // TODO: is this a reasonable way to generate client addresses?
@@ -56,14 +57,16 @@ pub async fn handle_websocket(
 ) -> axum::response::Result<impl IntoResponse> {
     let auth = auth.get_or_create(&*worker_ctx).await?;
 
-    if client_address == Some(Address::__dummy()) {
+    let client_address = client_address
+        .map(Address::from)
+        .unwrap_or_else(generate_random_address);
+
+    if client_address == Address::__dummy() {
         Err((
             StatusCode::BAD_REQUEST,
             "Invalid client address: the all-zeros Address is reserved.",
         ))?;
     }
-
-    let client_address = client_address.unwrap_or_else(generate_random_address);
 
     let db_address = name_or_address.resolve(&*worker_ctx).await?.into();
 
