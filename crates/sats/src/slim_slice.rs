@@ -87,10 +87,10 @@ fn into_box<T, U: Into<Box<[T]>>>(x: U) -> Box<[T]> {
 /// for safety, invariants and variance.
 #[repr(packed)]
 struct SlimRawSlice<T> {
-    /// The length of the slice.
-    len: u32,
     /// A valid pointer to the slice data.
     ptr: NonNull<T>,
+    /// The length of the slice.
+    len: u32,
 }
 
 impl<T> SlimRawSlice<T> {
@@ -101,7 +101,23 @@ impl<T> SlimRawSlice<T> {
 
     /// Dereferences this raw slice into a shared slice.
     ///
-    /// SAFETY: `self.ptr` and `self.len` must satisfy `from_raw_parts`'s requirements.
+    /// SAFETY: `self.ptr` and `self.len`
+    /// must satisfy [`std::slice::from_raw_parts`]'s requirements.
+    /// That is,
+    /// * `self.ptr` must be valid for reads
+    ///    for `self.len * size_of::<T>` many bytes and must be aligned.
+    ///
+    /// * `self.ptr` must point to `self.len`
+    ///    consecutive properly initialized values of type `T`.
+    ///
+    /// * The memory referenced by the returned slice
+    ///   must not be mutated for the duration of lifetime `'a`,
+    ///   except inside an `UnsafeCell`.
+    ///
+    /// * The total size `self.len * mem::size_of::<T>()`
+    ///   of the slice must be no larger than `isize::MAX`,
+    ///   and adding that size to `data`
+    ///   must not "wrap around" the address space.
     #[allow(clippy::needless_lifetimes)]
     unsafe fn deref<'a>(&'a self) -> &'a [T] {
         let (ptr, len) = self.split();
@@ -111,7 +127,24 @@ impl<T> SlimRawSlice<T> {
 
     /// Dereferences this raw slice into a mutable slice.
     ///
-    /// SAFETY: `self.ptr` and `self.len` must satisfy `from_raw_parts_mut`'s requirements.
+    /// SAFETY: `self.ptr` and `self.len`
+    /// must satisfy [`std::slice::from_raw_parts_mut`]'s requirements.
+    /// That is,
+    /// * `self.ptr` must be [valid] for both reads and writes
+    ///    for `self.len * mem::size_of::<T>()` many bytes,
+    ///   and it must be properly aligned.
+    ///
+    /// * `self.ptr` must point to `self.len`
+    ///   consecutive properly initialized values of type `T`.
+    ///
+    /// * The memory referenced by the returned slice
+    ///   must not be accessed through any other pointer
+    ///   (not derived from the return value) for the duration of lifetime `'a`.
+    ///   Both read and write accesses are forbidden.
+    ///
+    /// * The total size `self.len * mem::size_of::<T>()`
+    ///   of the slice must be no larger than `isize::MAX`,
+    ///   and adding that size to `data` must not "wrap around" the address space.
     #[allow(clippy::needless_lifetimes)]
     unsafe fn deref_mut<'a>(&'a mut self) -> &'a mut [T] {
         let (ptr, len) = self.split();
@@ -152,15 +185,15 @@ pub struct SlimSliceBox<T> {
     owned: PhantomData<T>,
 }
 
-/// `SlimSlice<T>` is `Send` if `T` is `Send` because the data is owned.
+/// `SlimSliceBox<T>` is `Send` if `T` is `Send` because the data is owned.
 unsafe impl<T: Send> Send for SlimSliceBox<T> {}
 
-/// `SlimSlice<T>` is `Sync` if `T` is `Sync` because the data is owned.
+/// `SlimSliceBox<T>` is `Sync` if `T` is `Sync` because the data is owned.
 unsafe impl<T: Sync> Sync for SlimSliceBox<T> {}
 
 impl<T> Drop for SlimSliceBox<T> {
     fn drop(&mut self) {
-        // Get us an owned `SliceSlice<T>`
+        // Get us an owned `SlimSliceBox<T>`
         // by replacing `self` with garbage that won't be dropped
         // as the drop glue for the constituent fields does nothing.
         let ptr = NonNull::dangling();
@@ -183,19 +216,20 @@ impl<T> SlimSliceBox<T> {
         let len = boxed.len();
         let ptr = Box::into_raw(boxed) as *mut T;
         // SAFETY: `Box<T>`'s ptr was a `NonNull<T>` already.
+        // and our caller has promised that `boxed.len() <= u32::MAX`.
         let raw = SlimRawSlice::from_len_ptr(len, ptr);
         let owned = PhantomData;
         Self { raw, owned }
     }
 
-    /// Converts `boxed: Box<[T]>` into `SlimSlice<T>`.
+    /// Converts `boxed: Box<[T]>` into `SlimSliceBox<T>`.
     ///
     /// Panics when `boxed.len() > u32::MAX`.
     pub fn from_boxed(boxed: Box<[T]>) -> Self {
         expect_fit(boxed)
     }
 
-    /// Converts `vec: Vec<T>` into `SlimSlice<T>`.
+    /// Converts `vec: Vec<T>` into `SlimSliceBox<T>`.
     ///
     /// Panics when `vec.len() > u32::MAX`.
     pub fn from_vec(vec: Vec<T>) -> Self {
@@ -279,7 +313,18 @@ impl<T> From<SlimSliceBox<T>> for Box<[T]> {
     fn from(slice: SlimSliceBox<T>) -> Self {
         let slice = ManuallyDrop::new(slice);
         let (ptr, len) = slice.raw.split();
-        // SAFETY: `ptr` and `len` originally came from a `Box<[T]>`.
+        // SAFETY: All paths to creating a `SlimSliceBox`
+        // go through `SlimSliceBox::from_boxed_unchecked`
+        // which requires a valid `Box<[T]>`.
+        // The function also uses `Box::into_raw`
+        // and the original length is kept.
+        //
+        // It therefore follows that if we reuse the same
+        // pointer and length as given to us by a valid `Box<[T]>`,
+        // we can use `Box::from_raw` to reconstruct the `Box<[T]>`.
+        //
+        // We also no longer claim ownership of the data pointed to by `ptr`
+        // by virtue of `ManuallyDrop` preventing `Drop for SlimSliceBox<T>`.
         unsafe { Box::from_raw(slice_from_raw_parts_mut(ptr, len)) }
     }
 }
@@ -381,7 +426,7 @@ pub struct SlimStrBox {
 }
 
 impl SlimStrBox {
-    /// Converts `boxed: Box<str>` into `SlimStr`.
+    /// Converts `boxed: Box<str>` into `SlimStrBox`.
     ///
     /// Panics when `boxed.len() > u32::MAX`.
     #[inline]
@@ -389,7 +434,7 @@ impl SlimStrBox {
         expect_fit(boxed)
     }
 
-    /// Converts `str: String` into `SlimStr`.
+    /// Converts `str: String` into `SlimStrBox`.
     ///
     /// Panics when `str.len() > u32::MAX`.
     #[inline]
@@ -421,7 +466,7 @@ impl Deref for SlimStrBox {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        // SAFETY: By construction all `SlimStr`s are valid UTF-8.
+        // SAFETY: By construction all `SlimStrBox`'s are valid UTF-8.
         unsafe { from_utf8_unchecked(self.raw.deref()) }
     }
 }
@@ -429,7 +474,7 @@ impl Deref for SlimStrBox {
 impl DerefMut for SlimStrBox {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        // SAFETY: By construction all `SlimStr`s are valid UTF-8.
+        // SAFETY: By construction all `SlimStrBox`'s are valid UTF-8.
         unsafe { from_utf8_unchecked_mut(&mut self.raw) }
     }
 }
@@ -470,7 +515,7 @@ impl<'a> TryFrom<&'a str> for SlimStrBox {
 impl From<SlimStrBox> for Box<str> {
     fn from(str: SlimStrBox) -> Self {
         let raw_box = into_box(str.raw);
-        // SAFETY: By construction, `SlimStr` is valid UTF-8.
+        // SAFETY: By construction, `SlimStrBox` is valid UTF-8.
         unsafe { Box::from_raw(Box::into_raw(raw_box) as *mut str) }
     }
 }
