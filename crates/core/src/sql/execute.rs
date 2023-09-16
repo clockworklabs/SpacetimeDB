@@ -52,7 +52,7 @@ fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBErr
     Ok(())
 }
 
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(skip(db, tx, auth))]
 pub fn execute_single_sql(
     db: &RelationalDB,
     tx: &mut MutTxId,

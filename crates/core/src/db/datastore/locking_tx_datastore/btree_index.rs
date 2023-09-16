@@ -142,7 +142,7 @@ impl BTreeIndex {
     ///
     /// For a unique index this will always yield at most one `RowId`.
     #[tracing::instrument(skip_all)]
-    pub(crate) fn seek<'a>(&'a self, value: &'a AlgebraicValue) -> BTreeIndexRangeIter<'a> {
+    pub(crate) fn seek<'a>(&'a self, value: &AlgebraicValue) -> BTreeIndexRangeIter<'a> {
         let k_start = IndexKey::from_row(value, DataKey::min_datakey());
         let k_end = IndexKey::from_row(value, DataKey::max_datakey());
         BTreeIndexRangeIter {
