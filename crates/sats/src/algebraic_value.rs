@@ -1,6 +1,7 @@
 pub mod de;
 pub mod ser;
 use std::collections::BTreeMap;
+use std::ops::{Bound, RangeBounds};
 
 use crate::builtin_value::{F32, F64};
 use crate::{AlgebraicType, ArrayValue, BuiltinType, BuiltinValue, ProductValue, SumValue};
@@ -443,6 +444,15 @@ impl<T: Into<AlgebraicValue>> From<Option<T>> for AlgebraicValue {
             None => AlgebraicValue::OptionNone(),
             Some(x) => AlgebraicValue::OptionSome(x.into()),
         }
+    }
+}
+
+impl RangeBounds<AlgebraicValue> for AlgebraicValue {
+    fn start_bound(&self) -> Bound<&AlgebraicValue> {
+        Bound::Included(self)
+    }
+    fn end_bound(&self) -> Bound<&AlgebraicValue> {
+        Bound::Included(self)
     }
 }
 

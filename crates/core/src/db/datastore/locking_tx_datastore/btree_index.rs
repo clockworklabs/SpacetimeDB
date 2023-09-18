@@ -122,7 +122,7 @@ impl BTreeIndex {
     /// Returns an iterator over the [BTreeIndex] that yields all the `RowId`s
     /// that fall within the specified `range`.
     #[tracing::instrument(skip_all)]
-    pub(crate) fn scan_range(&self, range: impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter {
+    pub(crate) fn seek<'a, R: RangeBounds<AlgebraicValue>>(&'a self, range: &R) -> BTreeIndexRangeIter<'a> {
         let map = |bound, datakey| match bound {
             Bound::Included(x) => Bound::Included(IndexKey::from_row(x, datakey)),
             Bound::Excluded(x) => Bound::Excluded(IndexKey::from_row(x, datakey)),
@@ -132,21 +132,6 @@ impl BTreeIndex {
         let end = map(range.end_bound(), DataKey::max_datakey());
         BTreeIndexRangeIter {
             range_iter: self.idx.range((start, end)),
-        }
-    }
-
-    /// Returns an iterator over the [BTreeIndex] that yields all the `RowId`s
-    /// that match the specified `value` in the indexed column.
-    ///
-    /// Matches is defined by `Ord for AlgebraicValue`.
-    ///
-    /// For a unique index this will always yield at most one `RowId`.
-    #[tracing::instrument(skip_all)]
-    pub(crate) fn seek<'a>(&'a self, value: &AlgebraicValue) -> BTreeIndexRangeIter<'a> {
-        let k_start = IndexKey::from_row(value, DataKey::min_datakey());
-        let k_end = IndexKey::from_row(value, DataKey::max_datakey());
-        BTreeIndexRangeIter {
-            range_iter: self.idx.range(k_start..k_end),
         }
     }
 

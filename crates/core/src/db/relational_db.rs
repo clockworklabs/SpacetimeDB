@@ -478,7 +478,7 @@ impl RelationalDB {
     /// where the column data identified by `col_id` matches what is within `range`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    pub fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue> + 'a>(
+    pub fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         tx: &'a MutTxId,
         table_id: u32,
