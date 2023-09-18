@@ -28,6 +28,7 @@ pub struct Database {
     pub host_type: HostType,
     pub num_replicas: u32,
     pub program_bytes_address: Hash,
+    pub publisher_address: Option<Address>,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

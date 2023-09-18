@@ -67,6 +67,7 @@ pub trait ControlCtx: ControlNodeDelegate + Send + Sync {
         host_type: HostType,
         num_replicas: u32,
         force: bool,
+        publisher_address: Option<&Address>,
     ) -> Result<(), anyhow::Error>;
 
     async fn update_database(
@@ -74,6 +75,7 @@ pub trait ControlCtx: ControlNodeDelegate + Send + Sync {
         address: &Address,
         program_bytes_address: &Hash,
         num_replicas: u32,
+        publisher_address: Option<&Address>,
     ) -> Result<Option<UpdateDatabaseResult>, anyhow::Error>;
 
     async fn delete_database(&self, address: &Address) -> Result<(), anyhow::Error>;

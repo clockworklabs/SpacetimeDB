@@ -338,16 +338,12 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
             Some(reducer_id) => {
                 let caller_identity = self.database_instance_context().identity;
-                let caller_address = self.database_instance_context().address;
+                // If a caller address was passed to the `/database/publish` HTTP endpoint,
+                // the init/update reducer will receive it as the caller address.
+                // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
+                let caller_address = self.database_instance_context().publisher_address;
                 let client = None;
-                self.call_reducer_internal(
-                    Some(tx),
-                    caller_identity,
-                    Some(caller_address),
-                    client,
-                    reducer_id,
-                    args,
-                )
+                self.call_reducer_internal(Some(tx), caller_identity, caller_address, client, reducer_id, args)
             }
         };
 
@@ -397,12 +393,15 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
             Some(reducer_id) => {
                 let caller_identity = self.database_instance_context().identity;
-                let caller_address = self.database_instance_context().address;
+                // If a caller address was passed to the `/database/publish` HTTP endpoint,
+                // the init/update reducer will receive it as the caller address.
+                // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
+                let caller_address = self.database_instance_context().publisher_address;
                 let client = None;
                 let res = self.call_reducer_internal(
                     Some(tx),
                     caller_identity,
-                    Some(caller_address),
+                    caller_address,
                     client,
                     reducer_id,
                     ArgsTuple::default(),
@@ -472,6 +471,8 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             },
             status,
             caller_identity,
+            // Conn/disconn always get a caller address,
+            // as WebSockets always have an address.
             caller_address: Some(caller_address),
             energy_quanta_used: energy.used,
             host_execution_duration: start_instant.elapsed(),

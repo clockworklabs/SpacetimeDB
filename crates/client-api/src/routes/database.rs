@@ -762,6 +762,7 @@ pub struct PublishDatabaseQueryParams {
     name_or_address: Option<NameOrAddress>,
     #[serde(default)]
     register_tld: bool,
+    client_address: Option<AddressForUrl>,
 }
 
 pub async fn publish(
@@ -776,6 +777,7 @@ pub async fn publish(
         host_type,
         clear,
         register_tld,
+        client_address,
     } = query_params;
 
     // You should not be able to publish to a database that you do not own
@@ -828,6 +830,8 @@ pub async fn publish(
 
     let num_replicas = 1;
 
+    let client_address = client_address.map(Address::from);
+
     let op = match control_ctx_find_database(&*ctx, &db_address).await? {
         Some(db) => {
             if db.identity != auth.identity {
@@ -842,13 +846,14 @@ pub async fn publish(
                     host_type,
                     num_replicas,
                     clear,
+                    client_address.as_ref(),
                 )
                 .await
                 .map_err(log_and_500)?;
                 PublishOp::Created
             } else {
                 let res = ctx
-                    .update_database(&db_address, &program_bytes_addr, num_replicas)
+                    .update_database(&db_address, &program_bytes_addr, num_replicas, client_address.as_ref())
                     .await
                     .map_err(log_and_500)?;
                 if let Some(res) = res {
@@ -889,6 +894,7 @@ pub async fn publish(
                 host_type,
                 num_replicas,
                 false,
+                client_address.as_ref(),
             )
             .await
             .map_err(log_and_500)?;

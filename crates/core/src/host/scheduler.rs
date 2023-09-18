@@ -270,13 +270,13 @@ impl SchedulerActor {
         tokio::spawn(async move {
             let info = module_host.info();
             let identity = info.identity;
-            let address = info.address;
             // TODO: pass a logical "now" timestamp to this reducer call, but there's some
             //       intricacies to get right (how much drift to tolerate? what kind of tokio::time::MissedTickBehavior do we want?)
             let res = module_host
                 .call_reducer(
                     identity,
-                    Some(address),
+                    // Scheduled reducers take `None` as the caller address.
+                    None,
                     None,
                     &scheduled.reducer,
                     ReducerArgs::Bsatn(scheduled.bsatn_args.into()),

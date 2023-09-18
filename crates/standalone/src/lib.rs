@@ -244,6 +244,7 @@ impl spacetimedb_client_api::ControlCtx for StandaloneEnv {
         host_type: HostType,
         num_replicas: u32,
         force: bool,
+        client_address: Option<&Address>,
     ) -> Result<(), anyhow::Error> {
         let database = Database {
             id: 0,
@@ -252,6 +253,7 @@ impl spacetimedb_client_api::ControlCtx for StandaloneEnv {
             host_type,
             num_replicas,
             program_bytes_address: *program_bytes_address,
+            publisher_address: client_address.cloned(),
         };
 
         if force {
@@ -271,6 +273,7 @@ impl spacetimedb_client_api::ControlCtx for StandaloneEnv {
         address: &Address,
         program_bytes_address: &Hash,
         num_replicas: u32,
+        client_address: Option<&Address>,
     ) -> Result<Option<UpdateDatabaseResult>, anyhow::Error> {
         let database = self.control_db.get_database_by_address(address).await?;
         let mut database = match database {
@@ -282,6 +285,7 @@ impl spacetimedb_client_api::ControlCtx for StandaloneEnv {
 
         database.program_bytes_address = *program_bytes_address;
         database.num_replicas = num_replicas;
+        database.publisher_address = client_address.cloned();
         let database_id = database.id;
         let new_database = database.clone();
         self.control_db.update_database(database).await?;
