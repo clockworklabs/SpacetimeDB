@@ -46,3 +46,7 @@ Tags will show up next to the section title in the sidebar. In the `_category.js
 ```json
 tag: "New" // Or anything else...
 ```
+
+## Images
+
+When referencing your images upload straight to GITHUB in the `images` folder and use that link as our own makeshift CDN for now.
