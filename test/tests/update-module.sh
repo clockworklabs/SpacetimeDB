@@ -22,7 +22,7 @@ pub struct Person {
 
 #[spacetimedb(reducer)]
 pub fn add(name: String) {
-    Person::insert(Person { id: 0, name });
+    Person::insert(Person { id: 0, name }).unwrap();
 }
 
 #[spacetimedb(reducer)]
