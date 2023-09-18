@@ -8,7 +8,7 @@ export type DocSectionConfig = {
   identifier: string;
   indexIdentifier?: string;
   comingSoon: boolean;
-  expiremental?: boolean;
+  tag?: boolean;
   hasPages: boolean;
   editUrl: string;
   nextKey?: JumpLink;
@@ -20,4 +20,5 @@ export type DocSectionConfig = {
 export type JumpLink = {
   title: string;
   route: string;
+  depth: number;
 };

@@ -1,6 +1,6 @@
 #! /usr/bin/env node
 
-import { DocConfig, DocSectionConfig } from "./types";
+import { DocConfig, DocSectionConfig, JumpLink } from "./types";
 
 const { Command } = require("commander");
 const clear = require("clear");
@@ -13,9 +13,29 @@ const cwd = process.cwd();
 const DOCS_PATH = path.join(__dirname, "docs");
 const CONFIG_PATH = path.join(cwd, "spacetime-docs.json");
 
+function extractHeadersFromMarkdown(filePath) {
+  const content = fs.readFileSync(filePath, "utf-8");
+  const headers: JumpLink[] = [];
+  const titleRegex = /^#\s+(.+)$/m;
+  const headerMatch = content.match(titleRegex);
+  const title = headerMatch ? headerMatch[1] : null;
+
+  const headerRegex = /^(#+)\s+(.+)$/gm; // This captures the hashes and the header text
+  let match;
+  while ((match = headerRegex.exec(content))) {
+    const depth = match[1].length; // Count of #'s indicate depth
+    headers.push({
+      title: match[2],
+      route: match[2].toLowerCase().replace(/[^\w]+/g, "-"),
+      depth: depth,
+    });
+  }
+
+  return { title, jumpLinks: headers };
+}
 let config = {
   docPath: "",
-  order: [],
+  order: [] as any[],
   editURLRoot: "",
 };
 
@@ -39,75 +59,93 @@ const program = new Command();
 program.version("1.0.0").description("Spacetime Docs CLI");
 
 program.command("generate").action(() => {
-  let unorderedSections: DocSectionConfig[] = [];
+  const rootDir = config.docPath;
 
-  const dirs = fs
-    .readdirSync(config.docPath, { withFileTypes: true })
-    .filter((dirent: any) => dirent.isDirectory())
-    .map((dirent: any) => dirent.name);
+  function processDirectory(dir) {
+    const categoryFile = path.join(dir, "_category.json");
+    if (!fs.existsSync(categoryFile)) return null;
 
-  for (const dir of dirs) {
-    const section: DocSectionConfig = {
-      title: dir,
-      identifier: dir.toLowerCase().replace(" ", "-"),
-      comingSoon: false,
+    const category = fsExtra.readJSONSync(categoryFile);
+    const docSectionConfig = {
+      title: category.title,
+      identifier: path.basename(dir),
+      indexIdentifier: category.index.replace(".md", ""),
+      comingSoon: category.disabled || false,
+      tag: category.tag || undefined,
       hasPages: false,
-      editUrl: `/${dir}`,
+      editUrl: encodeURIComponent(category.title) + "/" + category.index,
       jumpLinks: [],
-      pages: [],
+      pages: [] as any[],
     };
 
-    // Check for subdirectories (pages)
-    const subDirs = fs
-      .readdirSync(path.join(config.docPath, dir), { withFileTypes: true })
-      .filter((dirent: any) => dirent.isDirectory())
-      .map((dirent: any) => dirent.name);
+    const items = fs.readdirSync(dir);
+    const subSections: any[] = [];
 
-    if (subDirs.length > 0) {
-      section.hasPages = true;
-      for (const subDir of subDirs) {
-        const page: DocSectionConfig = {
-          title: subDir,
-          identifier: subDir.toLowerCase(),
-          comingSoon: false,
-          hasPages: false,
-          editUrl: `/${dir}/${subDir}`,
-          jumpLinks: [],
-        };
-        if (section.pages) {
-          section.pages.push(page);
-        } else {
-          section.pages = [page];
+    items.forEach((item) => {
+      const itemPath = path.join(dir, item);
+      const isDirectory = fs.statSync(itemPath).isDirectory();
+      const isMarkdownFile = path.extname(item) === ".md";
+
+      if (isDirectory) {
+        const subSection = processDirectory(itemPath);
+        if (subSection) {
+          subSections.push(subSection);
         }
+      } else if (isMarkdownFile && item !== "_category.json") {
+        const { title, jumpLinks } = extractHeadersFromMarkdown(itemPath);
+        const pageIdentifier = item.replace(".md", "");
+
+        subSections.push({
+          title: title || pageIdentifier, // Use the extracted title if available, otherwise fallback to the pageIdentifier
+          identifier: pageIdentifier,
+          indexIdentifier: pageIdentifier,
+          hasPages: false,
+          editUrl: encodeURIComponent(pageIdentifier) + ".md",
+          jumpLinks: jumpLinks,
+          pages: [],
+        });
       }
+    });
+
+    if (subSections.length > 0) {
+      docSectionConfig.hasPages = true;
+      docSectionConfig.pages = subSections;
     }
 
-    unorderedSections.push(section);
+    return docSectionConfig;
   }
 
-  let sections = config.order
-    .map((orderTitle) => {
-      return unorderedSections.find((section) => section.title === orderTitle);
-    })
-    .filter(Boolean);
-
-  if (sections.length === 0 || sections === undefined) {
-    sections = [];
-  }
-
-  const docConfig: DocConfig = {
-    //@ts-ignore
-    sections: sections,
-    rootEditURL: config.editURLRoot, // replace with your actual root edit URL
+  const docConfig = {
+    sections: [] as any[],
+    rootEditURL: config.editURLRoot,
   };
 
-  const configContent = `export const docConfig = ${JSON.stringify(
-    docConfig,
-    null,
-    2
-  )};`;
-  fs.writeFileSync(path.join(cwd, "docs-config.ts"), configContent);
-  console.log("docs-config.ts generated successfully!");
+  const folders = fs.readdirSync(rootDir);
+  folders.forEach((folder) => {
+    const folderPath = path.join(rootDir, folder);
+    if (fs.statSync(folderPath).isDirectory()) {
+      const section = processDirectory(folderPath);
+      if (section) {
+        docConfig.sections.push(section);
+      }
+    }
+  });
+
+  docConfig.sections = docConfig.sections.sort((a: any, b: any) => {
+    const orderA = config.order.indexOf(a.title);
+    const orderB = config.order.indexOf(b.title);
+
+    if (orderA === -1 && orderB === -1) return 0; // If both items are not in the order list, they remain in their current order.
+    if (orderA === -1) return 1; // If only 'a' is not in the order list, 'b' comes first.
+    if (orderB === -1) return -1; // If only 'b' is not in the order list, 'a' comes first.
+
+    return orderA - orderB; // Otherwise, sort according to the order in the order list.
+  });
+
+  fs.writeFileSync(
+    path.join(rootDir, "docs-config.ts"),
+    `export const docsConfig = ${JSON.stringify(docConfig, null, 2)};`
+  );
 });
 
 program

@@ -7,7 +7,8 @@
     "module": "commonjs",
     "sourceMap": true,
     "esModuleInterop": true,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "noImplicitAny": false
   },
-  "exclude": ["node_modules", "./docs-config.ts"]
+  "exclude": ["node_modules", "*/docs-config.ts"]
 }
