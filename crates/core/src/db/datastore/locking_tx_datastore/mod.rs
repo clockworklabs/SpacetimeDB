@@ -36,6 +36,7 @@ use crate::{
     error::{DBError, IndexError, TableError},
 };
 
+use anyhow::anyhow;
 use derive_more::Into;
 use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
 use spacetimedb_lib::{
@@ -1658,9 +1659,12 @@ impl Locking {
         }
     }
 
-    pub(crate) fn set_module_hash(&self, tx: &mut MutTxId, hash: Hash) -> Result<(), DBError> {
+    pub(crate) fn set_module_hash(&self, tx: &mut MutTxId, token: u64, hash: Hash) -> Result<(), DBError> {
         if let Some(data) = tx.lock.iter(&ST_MODULE_ID)?.next() {
             let row = StModuleRow::try_from(data.view())?;
+            if token <= row.epoch {
+                return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", token, row.epoch).into());
+            }
             tx.lock.delete_by_rel(&ST_MODULE_ID, Some(ProductValue::from(&row)))?;
         }
 
@@ -1669,6 +1673,7 @@ impl Locking {
             ProductValue::from(&StModuleRow {
                 program_hash: hash,
                 kind: WASM_MODULE,
+                epoch: token,
             }),
         )?;
 
@@ -2298,6 +2303,7 @@ mod tests {
 
                 StColumnRow { table_id: 5, col_id: 0, col_name: "program_hash".to_string(), col_type: AlgebraicType::array(AlgebraicType::U8), is_autoinc: false },
                 StColumnRow { table_id: 5, col_id: 1, col_name: "kind".to_string(), col_type: AlgebraicType::U8, is_autoinc: false },
+                StColumnRow { table_id: 5, col_id: 2, col_name: "epoch".to_string(), col_type: AlgebraicType::U64, is_autoinc: false },
             ]
         );
         let index_rows = datastore

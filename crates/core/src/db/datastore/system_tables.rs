@@ -206,6 +206,7 @@ impl StConstraintFields {
 pub enum StModuleFields {
     ProgramHash = 0,
     Kind = 1,
+    Epoch = 2,
 }
 
 impl StModuleFields {
@@ -213,6 +214,7 @@ impl StModuleFields {
         match self {
             Self::ProgramHash => "program_hash",
             Self::Kind => "kind",
+            Self::Epoch => "epoch",
         }
     }
 }
@@ -564,9 +566,16 @@ pub static ST_CONSTRAINT_ROW_TYPE: Lazy<ProductType> =
 
 /// System table [ST_MODULE_NAME]
 ///
-/// | program_hash        | kind     |
-/// |---------------------|----------|
-/// | [250, 207, 5, ...]  | 0        |
+/// This table holds exactly one row, describing the latest version of the
+/// SpacetimeDB module associated with the database:
+///
+/// * `program_hash` is the [`Hash`] of the raw bytes of the (compiled) module.
+/// * `kind` is the [`ModuleKind`] (currently always [`WASM_MODULE`]).
+/// * `epoch` is a _fencing token_ used to protect against concurrent updates.
+///
+/// | program_hash        | kind     | epoch |
+/// |---------------------|----------|-------|
+/// | [250, 207, 5, ...]  | 0        | 42    |
 pub(crate) fn st_module_schema() -> TableSchema {
     TableSchema {
         table_id: ST_MODULE_ID.0,
@@ -585,6 +594,13 @@ pub(crate) fn st_module_schema() -> TableSchema {
                 col_id: StModuleFields::Kind as u32,
                 col_name: StModuleFields::Kind.name().into(),
                 col_type: AlgebraicType::U8,
+                is_autoinc: false,
+            },
+            ColumnSchema {
+                table_id: ST_MODULE_ID.0,
+                col_id: StModuleFields::Epoch as u32,
+                col_name: StModuleFields::Epoch.name().into(),
+                col_type: AlgebraicType::U64,
                 is_autoinc: false,
             },
         ],
@@ -940,6 +956,7 @@ impl_deserialize!([] ModuleKind, de => u8::deserialize(de).map(Self));
 pub struct StModuleRow {
     pub(crate) program_hash: Hash,
     pub(crate) kind: ModuleKind,
+    pub(crate) epoch: u64,
 }
 
 impl StModuleRow {
@@ -956,8 +973,13 @@ impl TryFrom<&ProductValue> for StModuleRow {
             .field_as_bytes(StModuleFields::ProgramHash as usize, None)
             .map(Hash::from_slice)?;
         let kind = row.field_as_u8(StModuleFields::Kind as usize, None).map(ModuleKind)?;
+        let epoch = row.field_as_u64(StModuleFields::Epoch as usize, None)?;
 
-        Ok(Self { program_hash, kind })
+        Ok(Self {
+            program_hash,
+            kind,
+            epoch,
+        })
     }
 }
 
@@ -965,7 +987,8 @@ impl From<&StModuleRow> for ProductValue {
     fn from(row: &StModuleRow) -> Self {
         product![
             AlgebraicValue::Bytes(row.program_hash.as_slice().to_owned()),
-            AlgebraicValue::U8(row.kind.0)
+            AlgebraicValue::U8(row.kind.0),
+            AlgebraicValue::U64(row.epoch),
         ]
     }
 }

@@ -556,11 +556,15 @@ impl RelationalDB {
     /// Set the [`Hash`] of the latest module version associated with this
     /// database.
     ///
+    /// The `token` parameter is a _fencing token_ obtained from an external
+    /// locking service. It must be greater than any previous token used to call
+    /// this method, or the operation will fail.
+    ///
     /// **MUST** be called within the transaction context which ensures that
     /// any lifecycle reducers (`init`, `update`) are invoked. That is, an impl
     /// of [`crate::host::ModuleInstance`].
-    pub(crate) fn set_module_hash(&self, tx: &mut MutTxId, hash: Hash) -> Result<(), DBError> {
-        self.inner.set_module_hash(tx, hash)
+    pub(crate) fn set_module_hash(&self, tx: &mut MutTxId, token: u64, hash: Hash) -> Result<(), DBError> {
+        self.inner.set_module_hash(tx, token, hash)
     }
 }
 
