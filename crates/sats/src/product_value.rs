@@ -88,6 +88,11 @@ impl ProductValue {
         self.extract_field(index, named, |f| f.as_u32().copied())
     }
 
+    /// Interprets the value at field of `self` identified by `index` as a `u64`.
+    pub fn field_as_u64(&self, index: usize, named: Option<&'static str>) -> Result<u64, InvalidFieldError> {
+        self.extract_field(index, named, |f| f.as_u64().copied())
+    }
+
     /// Interprets the value at field of `self` identified by `index` as a `i64`.
     pub fn field_as_i64(&self, index: usize, named: Option<&'static str>) -> Result<i64, InvalidFieldError> {
         self.extract_field(index, named, |f| f.as_i64().copied())
