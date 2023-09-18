@@ -90,7 +90,7 @@ EOF
 
 run_test cargo run publish --skip_clippy --project-path "$PROJECT_PATH" "$IDENT"
 [ "1" == "$(grep -c "Updated database" "$TEST_OUT")" ]
-run_test cargo run logs "$IDENT" 1
+run_test cargo run logs "$IDENT" 2
 [ ' INDEX ADDED' == "$(grep 'INDEX ADDED' "$TEST_OUT" | tail -n 1 | cut -d: -f4-)" ]
 
 # Adding a table is ok, and invokes update
@@ -118,5 +118,5 @@ EOF
 
 run_test cargo run publish --skip_clippy --project-path "$PROJECT_PATH" "$IDENT"
 [ "1" == "$(grep -c "Updated database" "$TEST_OUT")" ]
-run_test cargo run logs "$IDENT" 1
+run_test cargo run logs "$IDENT" 2
 [ ' MODULE UPDATED' == "$(grep 'MODULE UPDATED' "$TEST_OUT" | tail -n 1 | cut -d: -f4-)" ]
