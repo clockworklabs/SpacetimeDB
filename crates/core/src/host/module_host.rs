@@ -226,9 +226,9 @@ pub trait Module: Send + Sync + 'static {
 pub trait ModuleInstance: Send + 'static {
     fn trapped(&self) -> bool;
 
-    fn init_database(&mut self, args: ArgsTuple) -> anyhow::Result<ReducerCallResult>;
+    fn init_database(&mut self, token: u64, args: ArgsTuple) -> anyhow::Result<ReducerCallResult>;
 
-    fn update_database(&mut self) -> anyhow::Result<UpdateDatabaseResult>;
+    fn update_database(&mut self, token: u64) -> anyhow::Result<UpdateDatabaseResult>;
 
     fn call_reducer(
         &mut self,
@@ -260,13 +260,13 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
     fn trapped(&self) -> bool {
         self.inst.trapped()
     }
-    fn init_database(&mut self, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
-        let ret = self.inst.init_database(args);
+    fn init_database(&mut self, token: u64, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
+        let ret = self.inst.init_database(token, args);
         self.check_trap();
         ret
     }
-    fn update_database(&mut self) -> anyhow::Result<UpdateDatabaseResult> {
-        let ret = self.inst.update_database();
+    fn update_database(&mut self, token: u64) -> anyhow::Result<UpdateDatabaseResult> {
+        let ret = self.inst.update_database(token);
         self.check_trap();
         ret
     }
@@ -556,18 +556,20 @@ impl ModuleHost {
         Ok(self.info().log_tx.subscribe())
     }
 
-    pub async fn init_database(&self, args: ReducerArgs) -> Result<ReducerCallResult, InitDatabaseError> {
+    pub async fn init_database(&self, token: u64, args: ReducerArgs) -> Result<ReducerCallResult, InitDatabaseError> {
         let args = match self.catalog().get_reducer("__init__") {
             Some(schema) => args.into_tuple(schema)?,
             _ => ArgsTuple::default(),
         };
-        self.call(|inst| inst.init_database(args))
+        self.call(move |inst| inst.init_database(token, args))
             .await?
             .map_err(InitDatabaseError::Other)
     }
 
-    pub async fn update_database(&self) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        self.call(|inst| inst.update_database()).await?.map_err(Into::into)
+    pub async fn update_database(&self, token: u64) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        self.call(move |inst| inst.update_database(token))
+            .await?
+            .map_err(Into::into)
     }
 
     pub async fn exit(&self) {
