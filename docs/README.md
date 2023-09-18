@@ -38,3 +38,11 @@ In the `spacetime-docs.json` file in your project root add:
         "SQL Reference"
     ]
 ```
+
+## Add tags
+
+Tags will show up next to the section title in the sidebar. In the `_category.json` file for a section add:
+
+```json
+tag: "New" // Or anything else...
+```
