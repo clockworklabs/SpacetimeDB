@@ -77,6 +77,7 @@ criterion = { version = "0.4.0", features = ["async", "async_tokio", "html_repor
 crossbeam-channel = "0.5"
 cursive = "0.20"
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
+derive_more = "0.99.17"
 dirs = "5.0.1"
 duct = "0.13.5"
 email_address = "0.2.4"

@@ -231,15 +231,19 @@ impl RelationalDB {
     /// **Note**: this call **must** be paired with [`Self::rollback_tx`] or
     /// [`Self::commit_tx`], otherwise the database will be left in an invalid
     /// state. See also [`Self::with_auto_commit`].
+    #[tracing::instrument(skip_all)]
     pub fn begin_tx(&self) -> MutTxId {
         log::trace!("BEGIN TX");
         self.inner.begin_mut_tx()
     }
 
+    #[tracing::instrument(skip_all)]
     pub fn rollback_tx(&self, tx: MutTxId) {
         log::trace!("ROLLBACK TX");
         self.inner.rollback_mut_tx(tx)
     }
+
+    #[tracing::instrument(skip_all)]
     pub fn commit_tx(&self, tx: MutTxId) -> Result<Option<(TxData, Option<usize>)>, DBError> {
         log::trace!("COMMIT TX");
         if let Some(tx_data) = self.inner.commit_mut_tx(tx)? {
@@ -302,7 +306,28 @@ impl RelationalDB {
         self.rollback_on_err(tx, res)
     }
 
+    /// Run a fallible function in a transaction.
+    ///
+    /// This is similar to `with_auto_commit`, but regardless of the return value of
+    /// the fallible function, the transaction will ALWAYS be rolled back. This can be used to
+    /// emulate a read-only transaction.
+    ///
+    /// TODO(jgilles): when we support actual read-only transactions, use those here instead.
+    /// TODO(jgilles, kim): get this merged with the above function (two people had similar ideas
+    /// at the same time)
+    pub fn with_read_only<F, A, E>(&self, f: F) -> Result<A, E>
+    where
+        F: FnOnce(&mut MutTxId) -> Result<A, E>,
+        E: From<DBError>,
+    {
+        let mut tx = self.begin_tx();
+        let res = f(&mut tx);
+        self.rollback_tx(tx);
+        res
+    }
+
     /// Perform the transactional logic for the `tx` according to the `res`
+    #[tracing::instrument(skip_all)]
     pub fn finish_tx<A, E>(&self, tx: MutTxId, res: Result<A, E>) -> Result<A, E>
     where
         E: From<DBError>,
@@ -320,6 +345,7 @@ impl RelationalDB {
 
     /// Roll back transaction `tx` if `res` is `Err`, otherwise return it
     /// alongside the `Ok` value.
+    #[tracing::instrument(skip_all)]
     pub fn rollback_on_err<A, E>(&self, tx: MutTxId, res: Result<A, E>) -> Result<(MutTxId, A), E>
     where
         E: From<DBError>,
@@ -441,7 +467,7 @@ impl RelationalDB {
         tx: &'a mut MutTxId,
         table_id: u32,
         col_id: u32,
-        value: &'a AlgebraicValue,
+        value: AlgebraicValue,
     ) -> Result<IterByColEq<'a>, DBError> {
         self.inner
             .iter_by_col_eq_mut_tx(tx, TableId(table_id), ColId(col_id), value)

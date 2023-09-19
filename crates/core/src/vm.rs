@@ -1,16 +1,15 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
-use crate::db::cursor::{CatalogCursor, TableCursor};
+use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, SequenceId, TableDef};
 use crate::db::relational_db::RelationalDB;
-use crate::error::DBError;
 use itertools::Itertools;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{FieldExpr, Relation};
+use spacetimedb_lib::relation::{DbTable, FieldExpr, Relation};
 use spacetimedb_lib::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
 use spacetimedb_lib::table::ProductTypeMeta;
-use spacetimedb_sats::ProductValue;
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::dsl::mem_table;
 use spacetimedb_vm::env::EnvDb;
 use spacetimedb_vm::errors::ErrorVm;
@@ -44,19 +43,34 @@ pub fn build_query<'a>(
         }
     }
 
-    let mut result = get_table(stdb, tx, q)?;
+    let mut ops = query.query.into_iter();
+    let first = ops.next();
 
-    for q in query.query {
-        result = match q {
+    // If the first operation is an index scan, open an index cursor, else a table cursor.
+    let (mut result, ops) = if let Some(Query::IndexScan(col_id, value, table)) = first {
+        (get_index_cursor(stdb, tx, table, col_id, value)?, ops.collect())
+    } else if let Some(op) = first {
+        (get_table(stdb, tx, q)?, std::iter::once(op).chain(ops).collect())
+    } else {
+        (get_table(stdb, tx, q)?, vec![])
+    };
+
+    for op in ops {
+        result = match op {
+            Query::IndexScan(_, _, _) => {
+                unreachable!()
+            }
             Query::Select(cmp) => {
-                let iter = result.select(move |row| cmp.compare(row));
+                let header = result.head().clone();
+                let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
             Query::Project(cols) => {
                 if cols.is_empty() {
                     result
                 } else {
-                    let iter = result.project(&cols.clone(), move |row| Ok(row.project(&cols)?))?;
+                    let header = result.head().clone();
+                    let iter = result.project(&cols.clone(), move |row| Ok(row.project(&cols, &header)?))?;
                     Box::new(iter)
                 }
             }
@@ -76,35 +90,35 @@ pub fn build_query<'a>(
                     }
                 };
                 let lhs = result;
+                let key_lhs_header = lhs.head().clone();
+                let key_rhs_header = rhs.head().clone();
+                let col_lhs_header = lhs.head().clone();
+                let col_rhs_header = rhs.head().clone();
 
                 let iter = lhs.join_inner(
                     rhs,
                     move |row| {
-                        let f = row.get(&key_lhs);
+                        let f = row.get(&key_lhs, &key_lhs_header);
                         Ok(f.into())
                     },
                     move |row| {
-                        let f = row.get(&key_rhs);
+                        let f = row.get(&key_rhs, &key_rhs_header);
                         Ok(f.into())
                     },
-                    move |lhs, rhs| {
-                        let lhs = lhs.get(&col_lhs);
-                        let rhs = rhs.get(&col_rhs);
-                        Ok(lhs == rhs)
+                    move |l, r| {
+                        let l = l.get(&col_lhs, &col_lhs_header);
+                        let r = r.get(&col_rhs, &col_rhs_header);
+                        Ok(l == r)
                     },
                 )?;
                 Box::new(iter)
             }
-        };
+        }
     }
     Ok(result)
 }
 
-fn get_table<'a>(
-    stdb: &'a RelationalDB,
-    tx: &'a mut MutTxId,
-    query: SourceExpr,
-) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
+fn get_table<'a>(stdb: &'a RelationalDB, tx: &'a MutTxId, query: SourceExpr) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
     let head = query.head();
     let row_count = query.row_count();
     Ok(match query {
@@ -114,6 +128,17 @@ fn get_table<'a>(
             Box::new(TableCursor::new(x, iter)?) as Box<IterRows<'_>>
         }
     })
+}
+
+fn get_index_cursor<'a>(
+    db: &'a RelationalDB,
+    tx: &'a mut MutTxId,
+    table: DbTable,
+    col_id: u32,
+    value: AlgebraicValue,
+) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
+    let iter = db.iter_by_col_eq(tx, table.table_id, col_id, value)?;
+    Ok(Box::new(IndexCursor::new(table, iter)?) as Box<IterRows<'_>>)
 }
 
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it
@@ -342,16 +367,22 @@ impl RelOps for TableCursor<'_> {
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
-        if let Some(row) = self.iter.next() {
-            return Ok(Some(RelValue::new(self.head(), row.view(), Some(*row.id()))));
-        };
-        Ok(None)
+        Ok(self.iter.next().map(|row| row.into()))
     }
 }
 
-impl From<DBError> for ErrorVm {
-    fn from(err: DBError) -> Self {
-        ErrorVm::Other(err.into())
+impl RelOps for IndexCursor<'_> {
+    fn head(&self) -> &Header {
+        &self.table.head
+    }
+
+    fn row_count(&self) -> RowCount {
+        RowCount::unknown()
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
+        Ok(self.iter.next().map(|row| row.into()))
     }
 }
 
@@ -370,7 +401,7 @@ where
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         if let Some(row) = self.iter.next() {
-            return Ok(Some(RelValue::new(self.head(), &row, None)));
+            return Ok(Some(RelValue::new(row, None)));
         };
         Ok(None)
     }

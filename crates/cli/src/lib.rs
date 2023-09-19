@@ -9,6 +9,7 @@ use clap::{ArgMatches, Command};
 pub use config::Config;
 use spacetimedb_standalone::subcommands::start::ProgramMode;
 pub use subcommands::*;
+pub use tasks::build;
 
 #[cfg(feature = "standalone")]
 use spacetimedb_standalone::subcommands::start;

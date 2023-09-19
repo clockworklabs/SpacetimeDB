@@ -406,15 +406,20 @@ pub type IterRows<'a> = dyn RelOps + 'a;
 pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<IterRows<'_>>, ErrorVm> {
     for q in query {
         result = match q {
+            Query::IndexScan(_, _, _) => {
+                panic!("index scans unsupported on memory tables")
+            }
             Query::Select(cmp) => {
-                let iter = result.select(move |row| cmp.compare(row));
+                let header = result.head().clone();
+                let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
             Query::Project(cols) => {
                 if cols.is_empty() {
                     result
                 } else {
-                    let iter = result.project(&cols.clone(), move |row| Ok(row.project(&cols)?))?;
+                    let header = result.head().clone();
+                    let iter = result.project(&cols.clone(), move |row| Ok(row.project(&cols, &header)?))?;
                     Box::new(iter)
                 }
             }
@@ -440,21 +445,25 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
                 };
 
                 let lhs = result;
+                let key_lhs_header = lhs.head().clone();
+                let key_rhs_header = rhs.head().clone();
+                let col_lhs_header = lhs.head().clone();
+                let col_rhs_header = rhs.head().clone();
 
                 let iter = lhs.join_inner(
                     rhs,
                     move |row| {
-                        let f = row.get(&key_lhs);
+                        let f = row.get(&key_lhs, &key_lhs_header);
                         Ok(f.into())
                     },
                     move |row| {
-                        let f = row.get(&key_rhs);
+                        let f = row.get(&key_rhs, &key_rhs_header);
                         Ok(f.into())
                     },
-                    move |lhs, rhs| {
-                        let lhs = lhs.get(&col_lhs);
-                        let rhs = rhs.get(&col_rhs);
-                        Ok(lhs == rhs)
+                    move |l, r| {
+                        let l = l.get(&col_lhs, &col_lhs_header);
+                        let r = r.get(&col_rhs, &col_rhs_header);
+                        Ok(l == r)
                     },
                 )?;
                 Box::new(iter)
@@ -720,7 +729,7 @@ mod tests {
         let head = q.source.head();
 
         let result = run_ast(p, q.into());
-        let row = RelValue::new(&head, &scalar(1).into(), None);
+        let row = RelValue::new(scalar(1).into(), None);
         assert_eq!(
             result,
             Code::Table(MemTable::new(&head, StAccess::Public, &[row])),
@@ -740,7 +749,7 @@ mod tests {
         let head = q.source.head();
 
         let result = run_ast(p, q.into());
-        let row = RelValue::new(&head, &input.into(), None);
+        let row = RelValue::new(input.into(), None);
         assert_eq!(
             result,
             Code::Table(MemTable::new(&head, StAccess::Public, &[row])),

@@ -1,17 +1,17 @@
+use derive_more::From;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::error::AuthError;
-use spacetimedb_lib::table::ProductTypeMeta;
-use spacetimedb_lib::Identity;
-use std::collections::HashMap;
-use std::fmt;
-
 use spacetimedb_lib::relation::{
     DbTable, FieldExpr, FieldName, Header, MemTable, RelValueRef, Relation, RowCount, Table,
 };
+use spacetimedb_lib::table::ProductTypeMeta;
+use spacetimedb_lib::Identity;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
+use std::collections::HashMap;
+use std::fmt;
 
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::functions::{FunDef, Param};
@@ -87,32 +87,39 @@ impl ColumnOp {
         }
     }
 
-    fn reduce(&self, row: RelValueRef, value: &ColumnOp) -> Result<AlgebraicValue, ErrorLang> {
+    fn reduce(&self, row: RelValueRef, value: &ColumnOp, header: &Header) -> Result<AlgebraicValue, ErrorLang> {
         match value {
-            ColumnOp::Field(field) => Ok(row.get(field).clone()),
-            ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs)?.into()),
+            ColumnOp::Field(field) => Ok(row.get(field, header).clone()),
+            ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs, header)?.into()),
         }
     }
 
-    fn reduce_bool(&self, row: RelValueRef, value: &ColumnOp) -> Result<bool, ErrorLang> {
+    fn reduce_bool(&self, row: RelValueRef, value: &ColumnOp, header: &Header) -> Result<bool, ErrorLang> {
         match value {
             ColumnOp::Field(field) => {
-                let field = row.get(field);
+                let field = row.get(field, header);
 
                 match field.as_bool() {
                     Some(b) => Ok(*b),
                     None => Err(ErrorType::FieldBool(field.clone()).into()),
                 }
             }
-            ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs)?),
+            ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs, header)?),
         }
     }
 
-    fn compare_bin_op(&self, row: RelValueRef, op: OpQuery, lhs: &ColumnOp, rhs: &ColumnOp) -> Result<bool, ErrorVm> {
+    fn compare_bin_op(
+        &self,
+        row: RelValueRef,
+        op: OpQuery,
+        lhs: &ColumnOp,
+        rhs: &ColumnOp,
+        header: &Header,
+    ) -> Result<bool, ErrorVm> {
         match op {
             OpQuery::Cmp(op) => {
-                let lhs = self.reduce(row, lhs)?;
-                let rhs = self.reduce(row, rhs)?;
+                let lhs = self.reduce(row, lhs, header)?;
+                let rhs = self.reduce(row, rhs, header)?;
 
                 Ok(match op {
                     OpCmp::Eq => lhs == rhs,
@@ -124,8 +131,8 @@ impl ColumnOp {
                 })
             }
             OpQuery::Logic(op) => {
-                let lhs = self.reduce_bool(row, lhs)?;
-                let rhs = self.reduce_bool(row, rhs)?;
+                let lhs = self.reduce_bool(row, lhs, header)?;
+                let rhs = self.reduce_bool(row, rhs, header)?;
 
                 Ok(match op {
                     OpLogic::And => lhs && rhs,
@@ -135,13 +142,13 @@ impl ColumnOp {
         }
     }
 
-    pub fn compare(&self, row: RelValueRef) -> Result<bool, ErrorVm> {
+    pub fn compare(&self, row: RelValueRef, header: &Header) -> Result<bool, ErrorVm> {
         match self {
             ColumnOp::Field(field) => {
-                let lhs = row.get(field);
+                let lhs = row.get(field, header);
                 Ok(*lhs.as_bool().unwrap())
             }
-            ColumnOp::Cmp { op, lhs, rhs } => self.compare_bin_op(row, *op, lhs, rhs),
+            ColumnOp::Cmp { op, lhs, rhs } => self.compare_bin_op(row, *op, lhs, rhs, header),
         }
     }
 }
@@ -159,7 +166,7 @@ impl fmt::Display for ColumnOp {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, From)]
 pub enum SourceExpr {
     MemTable(MemTable),
     DbTable(DbTable),
@@ -208,18 +215,6 @@ impl Relation for SourceExpr {
             SourceExpr::MemTable(x) => x.row_count(),
             SourceExpr::DbTable(x) => x.row_count(),
         }
-    }
-}
-
-impl From<MemTable> for SourceExpr {
-    fn from(x: MemTable) -> Self {
-        Self::MemTable(x)
-    }
-}
-
-impl From<DbTable> for SourceExpr {
-    fn from(x: DbTable) -> Self {
-        Self::DbTable(x)
     }
 }
 
@@ -300,6 +295,7 @@ pub enum CrudExpr {
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Query {
+    IndexScan(u32, AlgebraicValue, DbTable),
     Select(ColumnOp),
     Project(Vec<FieldExpr>),
     JoinInner(JoinExpr),
@@ -317,6 +313,12 @@ impl QueryExpr {
             source: source.into(),
             query: vec![],
         }
+    }
+
+    pub fn with_index_scan(self, col_id: u32, value: AlgebraicValue, table: DbTable) -> Self {
+        let mut expr = self;
+        expr.query.push(Query::IndexScan(col_id, value, table));
+        expr
     }
 
     pub fn with_select<O>(self, op: O) -> Self
@@ -380,8 +382,9 @@ impl AuthAccess for Query {
 //     }
 // }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, From)]
 pub enum Expr {
+    #[from]
     Value(AlgebraicValue),
     Ty(AlgebraicType),
     Op(Op, Vec<Expr>),
@@ -393,12 +396,6 @@ pub enum Expr {
     Ident(String),
     If(Box<(Expr, Expr, Expr)>),
     Crud(Box<CrudExpr>),
-}
-
-impl From<AlgebraicValue> for Expr {
-    fn from(x: AlgebraicValue) -> Self {
-        Expr::Value(x)
-    }
 }
 
 impl From<QueryExpr> for Expr {
@@ -512,6 +509,9 @@ impl fmt::Display for SourceExprOpt {
 impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Query::IndexScan(col, value, _) => {
+                write!(f, "ixscan on {col} for {:?}", value)
+            }
             Query::Select(q) => {
                 write!(f, "select {q}")
             }

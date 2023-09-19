@@ -55,7 +55,7 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
             let mut new = row.row.clone();
             new.elements[pos] = row.op_type.into();
             let mut bytes: &[u8] = row.row_pk.as_ref();
-            RelValue::new(&t.head, &new, Some(DataKey::decode(&mut bytes).unwrap()))
+            RelValue::new(new, Some(DataKey::decode(&mut bytes).unwrap()))
         }));
     } else {
         t.head.fields.push(Column::new(
@@ -67,7 +67,7 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
             new.elements.push(row.op_type.into());
             let mut bytes: &[u8] = row.row_pk.as_ref();
             t.data
-                .push(RelValue::new(&t.head, &new, Some(DataKey::decode(&mut bytes).unwrap())));
+                .push(RelValue::new(new, Some(DataKey::decode(&mut bytes).unwrap())));
         }
     }
 
@@ -91,7 +91,7 @@ pub(crate) fn run_query(
 // as it can only return back the changes valid for the tables in scope *right now*
 // instead of **continuously updating** the db changes
 // with system table modifications (add/remove tables, indexes, ...).
-/// Compile from `SQL` into a [`Query`].
+/// Compile from `SQL` into a [`Query`], rejecting empty queries and queries that attempt to modify the data in any way.
 ///
 /// NOTE: When the `input` query is equal to [`SUBSCRIBE_TO_ALL_QUERY`],
 /// **compilation is bypassed** and the equivalent of the following is done:
@@ -104,7 +104,7 @@ pub(crate) fn run_query(
 ///
 /// WARNING: [`SUBSCRIBE_TO_ALL_QUERY`] is only valid for repeated calls as long there is not change on database schema, and the clients must `unsubscribe` before modifying it.
 #[tracing::instrument(skip(relational_db, auth, tx))]
-pub fn compile_query(
+pub fn compile_read_only_query(
     relational_db: &RelationalDB,
     tx: &MutTxId,
     auth: &AuthCtx,
@@ -558,7 +558,7 @@ mod tests {
         run(&db, &mut tx, sql_create, AuthCtx::for_testing())?;
 
         let sql_query = "SELECT * FROM MobileEntityState JOIN EnemyState ON MobileEntityState.entity_id = EnemyState.entity_id WHERE location_x > 96000 AND MobileEntityState.location_x < 192000 AND MobileEntityState.location_z > 96000 AND MobileEntityState.location_z < 192000";
-        let q = compile_query(&db, &tx, &AuthCtx::for_testing(), sql_query)?;
+        let q = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), sql_query)?;
 
         for q in q.queries {
             assert_eq!(
@@ -581,7 +581,7 @@ mod tests {
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
 
-        let s = QuerySet(vec![compile_query(
+        let s = QuerySet(vec![compile_read_only_query(
             &db,
             &tx,
             &AuthCtx::for_testing(),

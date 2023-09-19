@@ -1,3 +1,4 @@
+use derive_more::{From, Into};
 use std::fmt::{self, Write as _};
 
 use crate::ser;
@@ -218,19 +219,8 @@ struct SatnFormatter<'a, 'b> {
 }
 
 /// An error occured during serialization to the SATS data format.
+#[derive(From, Into)]
 struct SatnError(fmt::Error);
-
-impl From<SatnError> for fmt::Error {
-    fn from(err: SatnError) -> Self {
-        err.0
-    }
-}
-
-impl From<fmt::Error> for SatnError {
-    fn from(err: fmt::Error) -> Self {
-        SatnError(err)
-    }
-}
 
 impl ser::Error for SatnError {
     fn custom<T: fmt::Display>(_msg: T) -> Self {
