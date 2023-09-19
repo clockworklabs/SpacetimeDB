@@ -1,8 +1,10 @@
+use std::ops::RangeBounds;
+
 use crate::error::DBError;
 use spacetimedb_lib::relation::{DbTable, RowCount};
-use spacetimedb_sats::ProductValue;
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 
-use super::datastore::locking_tx_datastore::{Iter, IterByColEq};
+use super::datastore::locking_tx_datastore::{Iter, IterByColRange};
 
 #[derive(Debug, Clone, Copy)]
 pub enum CatalogKind {
@@ -26,13 +28,13 @@ impl<'a> TableCursor<'a> {
 
 /// A relational iterator wrapping a storage level index iterator.
 /// A relational iterator returns [RelValue]s whereas storage iterators return [DataRef]s.
-pub struct IndexCursor<'a> {
+pub struct IndexCursor<'a, R: RangeBounds<AlgebraicValue>> {
     pub table: DbTable,
-    pub iter: IterByColEq<'a>,
+    pub iter: IterByColRange<'a, R>,
 }
 
-impl<'a> IndexCursor<'a> {
-    pub fn new(table: DbTable, iter: IterByColEq<'a>) -> Result<Self, DBError> {
+impl<'a, R: RangeBounds<AlgebraicValue>> IndexCursor<'a, R> {
+    pub fn new(table: DbTable, iter: IterByColRange<'a, R>) -> Result<Self, DBError> {
         Ok(Self { table, iter })
     }
 }
