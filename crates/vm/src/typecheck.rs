@@ -153,6 +153,8 @@ pub(crate) fn check_types(env: &mut EnvTy, ast: &ExprOpt) -> Result<Ty, ErrorTyp
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::disallowed_macros)]
+
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_sats::algebraic_type::AlgebraicType;
     use spacetimedb_sats::builtin_type::BuiltinType;

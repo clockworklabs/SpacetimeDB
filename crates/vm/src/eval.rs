@@ -549,6 +549,8 @@ pub fn create_game_data() -> GameData {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::disallowed_macros)]
+
     use super::*;
     use crate::dsl::{prefix_op, query, value};
     use crate::program::Program;

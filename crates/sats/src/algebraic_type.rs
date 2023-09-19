@@ -396,6 +396,7 @@ mod tests {
     }
 
     fn _legacy_encoding_comparison() {
+        #![allow(clippy::disallowed_macros)]
         let algebraic_type = AlgebraicType::meta_type();
 
         let mut buf = Vec::new();

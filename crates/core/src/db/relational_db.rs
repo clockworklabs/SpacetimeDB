@@ -588,6 +588,7 @@ pub(crate) mod tests_utils {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::disallowed_macros)]
 
     use std::sync::{Arc, Mutex};
 
