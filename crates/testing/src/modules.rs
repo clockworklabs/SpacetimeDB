@@ -130,7 +130,7 @@ impl CompiledModule {
             DatabaseDef {
                 address,
                 program_bytes,
-                num_replicas: 1
+                num_replicas: 1,
             }
         ).await
         .unwrap();
