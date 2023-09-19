@@ -13,6 +13,7 @@ export type DocSectionConfig = {
   editUrl: string;
   nextKey?: JumpLink;
   previousKey?: JumpLink;
+  content?: string;
   pages?: DocSectionConfig[];
   jumpLinks: JumpLink[];
 };

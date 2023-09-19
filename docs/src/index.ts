@@ -91,7 +91,11 @@ program.command("generate").action(() => {
         if (subSection) {
           subSections.push(subSection);
         }
-      } else if (isMarkdownFile && item !== "_category.json") {
+      } else if (
+        isMarkdownFile &&
+        item !== "_category.json" &&
+        item !== "index.md"
+      ) {
         const { title, jumpLinks } = extractHeadersFromMarkdown(itemPath);
         const pageIdentifier = item.replace(".md", "");
 
@@ -99,6 +103,21 @@ program.command("generate").action(() => {
           title: title || pageIdentifier, // Use the extracted title if available, otherwise fallback to the pageIdentifier
           identifier: pageIdentifier,
           indexIdentifier: pageIdentifier,
+          hasPages: false,
+          content: `${fs.readFileSync(itemPath, "utf-8")}`,
+          editUrl: encodeURIComponent(pageIdentifier) + ".md",
+          jumpLinks: jumpLinks,
+          pages: [],
+        });
+      } else if (isMarkdownFile && item === "index.md") {
+        const { title, jumpLinks } = extractHeadersFromMarkdown(itemPath);
+        const pageIdentifier = item.replace(".md", "");
+
+        subSections.push({
+          title: title || pageIdentifier,
+          identifier: pageIdentifier,
+          indexIdentifier: pageIdentifier,
+          content: `${fs.readFileSync(itemPath, "utf-8")}`,
           hasPages: false,
           editUrl: encodeURIComponent(pageIdentifier) + ".md",
           jumpLinks: jumpLinks,
@@ -135,12 +154,36 @@ program.command("generate").action(() => {
     const orderA = config.order.indexOf(a.title);
     const orderB = config.order.indexOf(b.title);
 
-    if (orderA === -1 && orderB === -1) return 0; // If both items are not in the order list, they remain in their current order.
-    if (orderA === -1) return 1; // If only 'a' is not in the order list, 'b' comes first.
-    if (orderB === -1) return -1; // If only 'b' is not in the order list, 'a' comes first.
+    if (orderA === -1 && orderB === -1) return 0;
+    if (orderA === -1) return 1;
+    if (orderB === -1) return -1;
 
-    return orderA - orderB; // Otherwise, sort according to the order in the order list.
+    return orderA - orderB;
   });
+
+  for (let i = 0; i < docConfig.sections.length; i++) {
+    const section = docConfig.sections[i];
+
+    if (i > 0) {
+      section.previousKey = {
+        title: docConfig.sections[i - 1].title,
+        route: docConfig.sections[i - 1].indexIdentifier,
+        depth: 1,
+      };
+    } else {
+      section.previousKey = null;
+    }
+
+    if (i < docConfig.sections.length - 1) {
+      section.nextKey = {
+        title: docConfig.sections[i + 1].title,
+        route: docConfig.sections[i + 1].indexIdentifier,
+        depth: 1,
+      };
+    } else {
+      section.nextKey = null;
+    }
+  }
 
   fs.writeFileSync(
     path.join(rootDir, "docs-config.ts"),
