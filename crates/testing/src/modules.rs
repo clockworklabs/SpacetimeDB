@@ -131,8 +131,9 @@ impl CompiledModule {
                 address,
                 program_bytes,
                 num_replicas: 1,
-            }
-        ).await
+            },
+        )
+        .await
         .unwrap();
 
         let database = env.get_database_by_address(&address).unwrap().unwrap();
