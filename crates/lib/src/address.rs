@@ -6,12 +6,15 @@ use std::{fmt, net::Ipv6Addr};
 
 use crate::sats;
 
-/// This is the address for a SpacetimeDB database. It is a unique identifier
-/// for a particular database and once set for a database, does not change.
+/// This is the address for a SpacetimeDB database or client connection.
 ///
-/// TODO: Evaluate other possible names: `DatabaseAddress`, `SPAddress`
-/// TODO: Evaluate replacing this with a literal Ipv6Address which is assigned
-/// permanently to a database.
+/// It is a unique identifier for a particular database and once set for a database,
+/// does not change.
+///
+// TODO: Evaluate other possible names: `DatabaseAddress`, `SPAddress`
+// TODO: Evaluate replacing this with a literal Ipv6Address
+//       which is assigned permanently to a database.
+//       This is likely
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Address {
     __address_bytes: [u8; 16],

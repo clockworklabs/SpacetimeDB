@@ -8,6 +8,7 @@ use spacetimedb_sdk::{
     reducer::Status,
     subscribe,
     table::{TableType, TableWithPrimaryKey},
+    Address,
 };
 
 use cursive::{
@@ -140,7 +141,7 @@ fn register_callbacks(send: UiSend) {
 // ## Save credentials to a file
 
 /// Our `on_connect` callback: save our credentials to a file.
-fn on_connected(creds: &Credentials) {
+fn on_connected(creds: &Credentials, _address: Address) {
     if let Err(e) = save_credentials(CREDS_DIR, creds) {
         eprintln!("Failed to save credentials: {:?}", e);
     }

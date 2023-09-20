@@ -46,6 +46,7 @@ impl MessageJson {
 pub struct IdentityTokenJson {
     pub identity: String,
     pub token: String,
+    pub address: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -149,6 +149,7 @@ pub async fn handle_websocket(
         let message = IdentityTokenMessage {
             identity: auth.identity,
             identity_token,
+            address: client_address,
         };
         if let Err(ClientClosed) = client.send_message(message).await {
             log::warn!("client closed before identity token was sent")

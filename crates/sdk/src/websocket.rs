@@ -5,6 +5,7 @@ use futures_channel::mpsc;
 use http::uri::{Parts, Scheme, Uri};
 use prost::Message as ProtobufMessage;
 use spacetimedb_client_api_messages::client_api::Message;
+use spacetimedb_lib::Address;
 use tokio::task::JoinHandle;
 use tokio::{net::TcpStream, runtime};
 use tokio_tungstenite::{
@@ -28,7 +29,7 @@ fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme> {
     })
 }
 
-fn make_uri<Host>(host: Host, db_name: &str) -> Result<Uri>
+fn make_uri<Host>(host: Host, db_name: &str, client_address: Address) -> Result<Uri>
 where
     Host: TryInto<Uri>,
     <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
@@ -51,6 +52,8 @@ where
     }
     path.push_str("database/subscribe/");
     path.push_str(db_name);
+    path.push_str("?client_address=");
+    path.push_str(&client_address.to_hex());
     parts.path_and_query = Some(path.parse()?);
     Ok(Uri::try_from(parts)?)
 }
@@ -64,12 +67,17 @@ where
 //       rather than having Tungstenite manage its own connections. Should this library do
 //       the same?
 
-fn make_request<Host>(host: Host, db_name: &str, credentials: Option<&Credentials>) -> Result<http::Request<()>>
+fn make_request<Host>(
+    host: Host,
+    db_name: &str,
+    credentials: Option<&Credentials>,
+    client_address: Address,
+) -> Result<http::Request<()>>
 where
     Host: TryInto<Uri>,
     <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
 {
-    let uri = make_uri(host, db_name)?;
+    let uri = make_uri(host, db_name, client_address)?;
     let mut req = IntoClientRequest::into_client_request(uri)?;
     request_insert_protocol_header(&mut req);
     request_insert_auth_header(&mut req, credentials);
@@ -113,12 +121,17 @@ fn request_insert_auth_header(req: &mut http::Request<()>, credentials: Option<&
 }
 
 impl DbConnection {
-    pub(crate) async fn connect<Host>(host: Host, db_name: &str, credentials: Option<&Credentials>) -> Result<Self>
+    pub(crate) async fn connect<Host>(
+        host: Host,
+        db_name: &str,
+        credentials: Option<&Credentials>,
+        client_address: Address,
+    ) -> Result<Self>
     where
         Host: TryInto<Uri>,
         <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
     {
-        let req = make_request(host, db_name, credentials)?;
+        let req = make_request(host, db_name, credentials, client_address)?;
         let (sock, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = connect_async(req).await?;
         Ok(DbConnection { sock })
     }

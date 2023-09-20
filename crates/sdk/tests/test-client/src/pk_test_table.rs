@@ -308,4 +308,16 @@ impl_pk_test_table! {
         update_reducer = update_pk_identity;
         update_reducer_event = UpdatePkIdentity;
     }
+
+    PkAddress {
+        Key = Address;
+        key_field_name = a;
+        insert_reducer = insert_pk_address;
+        insert_reducer_event = InsertPkAddress;
+        delete_reducer = delete_pk_address;
+        delete_reducer_event = DeletePkAddress;
+        update_reducer = update_pk_address;
+        update_reducer_event = UpdatePkAddress;
+    }
+
 }

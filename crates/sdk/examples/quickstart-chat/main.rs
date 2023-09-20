@@ -9,6 +9,7 @@ use spacetimedb_sdk::{
     reducer::Status,
     subscribe,
     table::{TableType, TableWithPrimaryKey},
+    Address,
 };
 
 // # Our main function
@@ -53,7 +54,7 @@ fn register_callbacks() {
 // ## Save credentials to a file
 
 /// Our `on_connect` callback: save our credentials to a file.
-fn on_connected(creds: &Credentials) {
+fn on_connected(creds: &Credentials, _address: Address) {
     if let Err(e) = save_credentials(CREDS_DIR, creds) {
         eprintln!("Failed to save credentials: {:?}", e);
     }
@@ -160,7 +161,7 @@ fn on_disconnected() {
 const HOST: &str = "http://localhost:3000";
 
 /// The module name we chose when we published our module.
-const DB_NAME: &str = "chat";
+const DB_NAME: &str = "quickstart-chat";
 
 /// Load credentials from a file and connect to the database.
 fn connect_to_db() {

@@ -46,6 +46,21 @@ fn update_identity() {
 }
 
 #[test]
+fn insert_address() {
+    make_test("insert_address").run();
+}
+
+#[test]
+fn delete_address() {
+    make_test("delete_address").run();
+}
+
+#[test]
+fn update_address() {
+    make_test("delete_address").run();
+}
+
+#[test]
 fn on_reducer() {
     make_test("on_reducer").run();
 }

@@ -1,4 +1,5 @@
 use prost::Message as _;
+use spacetimedb_lib::Address;
 
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::identity::Identity;
@@ -23,6 +24,7 @@ pub trait ServerMessage: Sized {
 pub struct IdentityTokenMessage {
     pub identity: Identity,
     pub identity_token: String,
+    pub address: Address,
 }
 
 impl ServerMessage for IdentityTokenMessage {
@@ -30,6 +32,7 @@ impl ServerMessage for IdentityTokenMessage {
         MessageJson::IdentityToken(IdentityTokenJson {
             identity: self.identity.to_hex(),
             token: self.identity_token,
+            address: self.address.to_hex(),
         })
     }
     fn serialize_binary(self) -> Message {
@@ -37,6 +40,7 @@ impl ServerMessage for IdentityTokenMessage {
             r#type: Some(message::Type::IdentityToken(IdentityToken {
                 identity: self.identity.as_bytes().to_vec(),
                 token: self.identity_token,
+                address: self.address.as_slice().to_vec(),
             })),
         }
     }

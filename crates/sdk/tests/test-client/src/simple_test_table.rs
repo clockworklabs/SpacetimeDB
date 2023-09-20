@@ -1,7 +1,7 @@
 use crate::module_bindings::*;
 use crate::test_counter::TestCounter;
 use anyhow::anyhow;
-use spacetimedb_sdk::{identity::Identity, table::TableType};
+use spacetimedb_sdk::{identity::Identity, table::TableType, Address};
 use std::sync::Arc;
 
 pub trait SimpleTestTable: TableType {
@@ -146,6 +146,13 @@ impl_simple_test_table! {
         insert_reducer_event = InsertOneIdentity;
     }
 
+    OneAddress {
+        Contents = Address;
+        field_name = a;
+        insert_reducer = insert_one_address;
+        insert_reducer_event = InsertOneAddress;
+    }
+
     OneSimpleEnum {
         Contents = SimpleEnum;
         field_name = e;
@@ -278,6 +285,13 @@ impl_simple_test_table! {
         field_name = i;
         insert_reducer = insert_vec_identity;
         insert_reducer_event = InsertVecIdentity;
+    }
+
+    VecAddress {
+        Contents = Vec<Address>;
+        field_name = a;
+        insert_reducer = insert_vec_address;
+        insert_reducer_event = InsertVecAddress;
     }
 
     VecSimpleEnum {

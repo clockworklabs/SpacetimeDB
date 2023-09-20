@@ -24,7 +24,7 @@ message Message {
     }
 }
 
-/// Received by database from client to inform of user's identity and token.
+/// Received by database from client to inform of user's identity, token and client address.
 ///
 /// The database will always send an `IdentityToken` message
 /// as the first message for a new WebSocket connection.
@@ -35,6 +35,7 @@ message Message {
 message IdentityToken {
     bytes identity = 1;
     string token = 2;
+    bytes address = 3;
 }
 
 // TODO: Evaluate if it makes sense for this to also include the
