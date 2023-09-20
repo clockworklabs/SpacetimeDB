@@ -3,16 +3,15 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use tokio::runtime::{Builder, Runtime};
+
 use spacetimedb::address::Address;
 use spacetimedb::client::{ClientActorId, ClientConnection, Protocol};
+use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, FsyncPolicy, Storage};
-
-use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
-use spacetimedb::messages::control_db::HostType;
-use spacetimedb_client_api::{ControlCtx, ControlStateDelegate, WorkerCtx};
+use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_standalone::StandaloneEnv;
-use tokio::runtime::{Builder, Runtime};
 
 fn start_runtime() -> Runtime {
     Builder::new_multi_thread().enable_all().build().unwrap()
@@ -88,7 +87,6 @@ impl CompiledModule {
         with_runtime(move |runtime| {
             runtime.block_on(async {
                 let module = self.load_module().await;
-
                 routine(module).await;
             });
         });
@@ -119,23 +117,27 @@ impl CompiledModule {
 
         crate::set_key_env_vars(&paths);
         let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
-        let identity = env.control_db().alloc_spacetime_identity().await.unwrap();
-        let address = env.control_db().alloc_spacetime_address().await.unwrap();
+        let identity = env.create_identity().await.unwrap();
+        let address = env.create_address().await.unwrap();
 
         let program_bytes = self
             .program_bytes
             .get_or_init(|| std::fs::read(&self.path).unwrap())
             .clone();
-        let program_bytes_addr = env.object_db().insert_object(program_bytes).unwrap();
 
-        let host_type = HostType::Wasmer;
+        env.publish_database(
+            &identity,
+            DatabaseDef {
+                address,
+                program_bytes,
+                num_replicas: 1,
+            },
+        )
+        .await
+        .unwrap();
 
-        env.insert_database(&address, &identity, &program_bytes_addr, host_type, 1, true)
-            .await
-            .unwrap();
-
-        let database = env.get_database_by_address(&address).await.unwrap().unwrap();
-        let instance = env.get_leader_database_instance_by_database(database.id).await.unwrap();
+        let database = env.get_database_by_address(&address).unwrap().unwrap();
+        let instance = env.get_leader_database_instance_by_database(database.id).unwrap();
 
         let client_id = ClientActorId {
             identity,

@@ -9,7 +9,6 @@ pub mod identity;
 pub use spacetimedb_sats::de;
 pub mod error;
 pub mod hash;
-#[cfg(feature = "serde")]
 pub mod name;
 pub mod operator;
 pub mod primary_key;
