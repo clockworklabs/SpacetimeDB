@@ -4153,6 +4153,7 @@ name = "spacetimedb-bench"
 version = "0.6.1"
 dependencies = [
  "anyhow",
+ "anymap",
  "byte-unit",
  "clap 4.3.10",
  "criterion",

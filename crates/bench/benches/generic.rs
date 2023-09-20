@@ -27,6 +27,7 @@ fn bench_suite<DB: BenchDatabase>(c: &mut Criterion, in_memory: bool) -> ResultB
     let db_params = format!("{param_db_name}/{param_in_memory}");
 
     empty(c, &db_params, &mut db)?;
+
     table_suite::<DB, Person>(c, &mut db, &db_params)?;
     table_suite::<DB, Location>(c, &mut db, &db_params)?;
 
@@ -39,35 +40,41 @@ fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(
     db: &mut DB,
     db_params: &str,
 ) -> ResultBench<()> {
-    let table_name = T::name_snake_case();
-    for table_style in [TableStyle::Unique, TableStyle::NonUnique, TableStyle::MultiIndex] {
+    // This setup is a compromise between trying to present related benchmarks together,
+    // and not having to deal with nasty reentrant generic dispatching.
+
+    type TableData<TableId> = (TableStyle, TableId, String);
+    let mut prep_table = |table_style: TableStyle| -> ResultBench<TableData<DB::TableId>> {
+        let table_name = T::name_snake_case();
         let style_name = table_style.snake_case();
         let table_params = format!("{table_name}/{style_name}");
         let table_id = db.create_table::<T>(table_style)?;
 
-        insert_1::<DB, T>(c, &db_params, &table_params, db, &table_id, 0)?;
-        insert_1::<DB, T>(c, &db_params, &table_params, db, &table_id, 1000)?;
-        insert_bulk::<DB, T>(c, &db_params, &table_params, db, &table_id, 0, 100)?;
-        if table_style == TableStyle::Unique {
-            iterate::<DB, T>(c, db_params, &table_params, db, &table_id, 100)?;
+        Ok((table_style, table_id, table_params))
+    };
+    let tables: [TableData<DB::TableId>; 3] = [
+        prep_table(TableStyle::Unique)?,
+        prep_table(TableStyle::NonUnique)?,
+        prep_table(TableStyle::MultiIndex)?,
+    ];
 
-            if table_params.starts_with("person") {
-                // perform "find" benchmarks
-                filter::<DB, T>(
-                    c,
-                    db_params,
-                    &table_params,
-                    db,
-                    &table_id,
-                    table_style,
-                    BENCH_PKEY_INDEX,
-                    1000,
-                    100,
-                )?;
-            }
+    for (_, table_id, table_params) in &tables {
+        insert_1::<DB, T>(c, db_params, table_params, db, table_id, 0)?;
+        insert_1::<DB, T>(c, db_params, table_params, db, table_id, 1000)?;
+    }
+    for (_, table_id, table_params) in &tables {
+        insert_bulk::<DB, T>(c, db_params, table_params, db, table_id, 0, 100)?;
+        insert_bulk::<DB, T>(c, db_params, table_params, db, table_id, 1000, 100)?;
+    }
+    for (table_style, table_id, table_params) in &tables {
+        if *table_style == TableStyle::Unique {
+            iterate::<DB, T>(c, db_params, table_params, db, table_id, 100)?;
+
+            // perform "find" benchmarks
+            find::<DB, T>(c, db_params, db, table_id, table_style, BENCH_PKEY_INDEX, 1000, 100)?;
         } else {
             // perform "filter" benchmarks
-            filter::<DB, T>(c, db_params, &table_params, db, &table_id, table_style, 1, 1000, 100)?;
+            filter::<DB, T>(c, db_params, db, table_id, table_style, 1, 1000, 100)?;
         }
     }
 
@@ -240,37 +247,73 @@ fn iterate<DB: BenchDatabase, T: BenchTable + RandomTable>(
 fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
     c: &mut Criterion,
     db_params: &str,
-    // just report the filtered column type
-    _table_params: &str,
     db: &mut DB,
     table_id: &DB::TableId,
-    table_style: TableStyle,
+    table_style: &TableStyle,
     column_id: u32,
     load: u32,
     buckets: u32,
 ) -> ResultBench<()> {
-    let id = if column_id == BENCH_PKEY_INDEX {
-        assert_eq!(
-            table_style,
-            TableStyle::Unique,
-            "don't bother scanning non-unique primary keys, we have other benches for that"
-        );
-        format!("{db_params}/find_unique/u32/load={load}")
-    } else {
-        let filter_column_type = match &T::product_type().elements[column_id as usize].algebraic_type {
-            AlgebraicType::Builtin(BuiltinType::String) => "string",
-            AlgebraicType::Builtin(BuiltinType::U32) => "u32",
-            AlgebraicType::Builtin(BuiltinType::U64) => "u64",
-            _ => unimplemented!(),
-        };
-        let mean_result_count = load / buckets;
-        let indexed = match table_style {
-            TableStyle::MultiIndex => "indexed",
-            TableStyle::NonUnique => "non_indexed",
-            _ => unimplemented!(),
-        };
-        format!("{db_params}/filter/{filter_column_type}/{indexed}/load={load}/count={mean_result_count}")
+    let filter_column_type = match &T::product_type().elements[column_id as usize].algebraic_type {
+        AlgebraicType::Builtin(BuiltinType::String) => "string",
+        AlgebraicType::Builtin(BuiltinType::U32) => "u32",
+        AlgebraicType::Builtin(BuiltinType::U64) => "u64",
+        _ => unimplemented!(),
     };
+    let mean_result_count = load / buckets;
+    let indexed = match table_style {
+        TableStyle::MultiIndex => "indexed",
+        TableStyle::NonUnique => "non_indexed",
+        _ => unimplemented!(),
+    };
+    let id = format!("{db_params}/filter/{filter_column_type}/{indexed}/load={load}/count={mean_result_count}");
+
+    let data = create_sequential::<T>(0xdeadbeef, load, buckets as u64);
+
+    let prepared_bulk = db.prepare_insert_bulk::<T>(table_id)?;
+    db.insert_bulk(&prepared_bulk, data.clone())?;
+
+    let prepared_filter = db.prepare_filter::<T>(table_id, column_id)?;
+
+    // We loop through all buckets found in the sample data.
+    // This mildly increases variance on the benchmark, but makes "mean_result_count" more accurate.
+    // Note that all databases have EXACTLY the same sample data.
+    let mut i = 0;
+
+    c.bench_function(&id, |b| {
+        bench_harness(
+            b,
+            db,
+            |_| {
+                // pick something to look for
+                let value = data[i].clone().into_product_value().elements[column_id as usize].clone();
+                i = (i + 1) % load as usize;
+                Ok(value)
+            },
+            |db, value| {
+                db.filter(&prepared_filter, value)?;
+                Ok(())
+            },
+        )
+    });
+    db.clear_table(table_id)?;
+    Ok(())
+}
+
+/// Implements both "filter" and "find" benchmarks.
+#[inline(never)]
+fn find<DB: BenchDatabase, T: BenchTable + RandomTable>(
+    c: &mut Criterion,
+    db_params: &str,
+    db: &mut DB,
+    table_id: &DB::TableId,
+    table_style: &TableStyle,
+    column_id: u32,
+    load: u32,
+    buckets: u32,
+) -> ResultBench<()> {
+    assert_eq!(*table_style, TableStyle::Unique, "find benchmarks require unique key");
+    let id = format!("{db_params}/find_unique/u32/load={load}");
 
     let data = create_sequential::<T>(0xdeadbeef, load, buckets as u64);
 

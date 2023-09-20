@@ -33,7 +33,7 @@ impl Drop for SpacetimeModule {
 // It's easier to do it this way because async trades are a mess.
 impl BenchDatabase for SpacetimeModule {
     fn name() -> &'static str {
-        "spacetime_module"
+        "stdb_module"
     }
 
     type TableId = TableId;

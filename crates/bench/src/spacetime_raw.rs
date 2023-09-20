@@ -17,7 +17,7 @@ pub struct SpacetimeRaw {
 }
 impl BenchDatabase for SpacetimeRaw {
     fn name() -> &'static str {
-        "spacetime_raw"
+        "stdb_raw"
     }
     type TableId = u32;
 
@@ -122,14 +122,14 @@ impl BenchDatabase for SpacetimeRaw {
         })
     }
 
-    type PreparedFilter = PreparedFind;
+    type PreparedFilter = PreparedFilter;
     #[inline(never)]
     fn prepare_filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,
         column_id: u32,
     ) -> ResultBench<Self::PreparedFilter> {
-        Ok(PreparedFind {
+        Ok(PreparedFilter {
             table_id: *table_id,
             column_id,
         })
@@ -152,7 +152,7 @@ pub struct PreparedQuery {
     table_id: u32,
 }
 
-pub struct PreparedFind {
+pub struct PreparedFilter {
     table_id: u32,
     column_id: u32,
 }
