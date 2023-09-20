@@ -1,8 +1,8 @@
 use super::commit_log::CommitLog;
 use super::datastore::locking_tx_datastore::{Data, DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
 use super::datastore::traits::{
-    ColId, DataRow, IndexDef, IndexId, MutTx, MutTxDatastore, SequenceDef, SequenceId, TableDef, TableId, TableSchema,
-    TxData,
+    ColId, DataRow, IndexDef, IndexId, MutProgrammable, MutTx, MutTxDatastore, Programmable, SequenceDef, SequenceId,
+    TableDef, TableId, TableSchema, TxData,
 };
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
@@ -544,27 +544,29 @@ impl RelationalDB {
         self.inner.drop_sequence_mut_tx(tx, seq_id)
     }
 
-    /// Get the [`Hash`] of the latest module version associated with this
-    /// database.
+    /// Retrieve the [`Hash`] of the program (SpacetimeDB module) currently
+    /// associated with the database.
     ///
     /// A `None` result indicates that the database is not fully initialized
     /// yet.
-    pub fn module_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
-        self.inner.module_hash(tx)
+    pub fn program_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
+        self.inner.program_hash(tx)
     }
 
-    /// Set the [`Hash`] of the latest module version associated with this
-    /// database.
+    /// Update the [`Hash`] of the program (SpacetimeDB module) currently
+    /// associated with the database.
     ///
-    /// The `token` parameter is a _fencing token_ obtained from an external
-    /// locking service. It must be greater than any previous token used to call
-    /// this method, or the operation will fail.
+    /// The operation runs within the transactional context `tx`.
     ///
-    /// **MUST** be called within the transaction context which ensures that
-    /// any lifecycle reducers (`init`, `update`) are invoked. That is, an impl
-    /// of [`crate::host::ModuleInstance`].
-    pub(crate) fn set_module_hash(&self, tx: &mut MutTxId, token: u64, hash: Hash) -> Result<(), DBError> {
-        self.inner.set_module_hash(tx, token, hash)
+    /// The fencing token `fence` must be greater than in any previous
+    /// invocations of this method, and is typically obtained from a locking
+    /// service.
+    ///
+    /// The method **MUST** be called within the transaction context which
+    /// ensures that any lifecycle reducers (`init`, `update`) are invoked. That
+    /// is, an impl of [`crate::host::ModuleInstance`].
+    pub(crate) fn set_program_hash(&self, tx: &mut MutTxId, fence: u128, hash: Hash) -> Result<(), DBError> {
+        self.inner.set_program_hash(tx, fence, hash)
     }
 }
 

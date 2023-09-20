@@ -339,7 +339,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     }
 
     #[tracing::instrument(skip(args))]
-    fn init_database(&mut self, token: u64, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
+    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
         let stdb = &*self.database_instance_context().relational_db;
         let mut tx = stdb.begin_tx();
         for table in self.info.catalog.values().filter_map(EntityDef::as_table) {
@@ -360,7 +360,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         // Set the module hash. Morally, this should be done _after_ calling
         // the `init` reducer, but that consumes our transaction context.
         tx = stdb
-            .with_auto_rollback(tx, |tx| stdb.set_module_hash(tx, token, self.info.module_hash))
+            .with_auto_rollback(tx, |tx| stdb.set_program_hash(tx, fence, self.info.module_hash))
             .map(|(tx, ())| tx)?;
 
         let rcr = match self.info.reducers.get_index_of(INIT_DUNDER) {
@@ -387,7 +387,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     }
 
     #[tracing::instrument(skip_all)]
-    fn update_database(&mut self, token: u64) -> Result<UpdateDatabaseResult, anyhow::Error> {
+    fn update_database(&mut self, fence: u128) -> Result<UpdateDatabaseResult, anyhow::Error> {
         let stdb = &*self.database_instance_context().relational_db;
         let mut tx = stdb.begin_tx();
 
@@ -429,7 +429,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         // Update the module hash. Morally, this should be done _after_ calling
         // the `update` reducer, but that consumes our transaction context.
         tx = stdb
-            .with_auto_rollback(tx, |tx| stdb.set_module_hash(tx, token, self.info.module_hash))
+            .with_auto_rollback(tx, |tx| stdb.set_program_hash(tx, fence, self.info.module_hash))
             .map(|(tx, ())| tx)?;
 
         let update_result = match self.info.reducers.get_index_of(UPDATE_DUNDER) {

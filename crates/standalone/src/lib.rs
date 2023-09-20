@@ -494,7 +494,7 @@ impl StandaloneEnv {
         let ctx = self.load_module_host_context(database.clone(), instance.id).await?;
         let stdb = &ctx.dbic.relational_db;
         let tx = stdb.begin_tx();
-        match stdb.module_hash(&tx) {
+        match stdb.program_hash(&tx) {
             Err(e) => {
                 stdb.rollback_tx(tx);
                 Err(e.into())
@@ -520,7 +520,7 @@ impl StandaloneEnv {
                         log::info!("Database already initialized with module {}", hash);
                     }
                 } else {
-                    self.host_controller.init_module_host(lock.token(), ctx).await?;
+                    self.host_controller.init_module_host(lock.token() as u128, ctx).await?;
                 }
 
                 Ok(())
@@ -547,7 +547,7 @@ impl StandaloneEnv {
         let stdb = &ctx.dbic.relational_db;
         let tx = stdb.begin_tx();
 
-        match stdb.module_hash(&tx) {
+        match stdb.program_hash(&tx) {
             Err(e) => {
                 stdb.rollback_tx(tx);
                 Err(e.into())
@@ -565,7 +565,7 @@ impl StandaloneEnv {
                             "Update requested on non-initialized database, initializing with module {}",
                             database.program_bytes_address
                         );
-                        self.host_controller.init_module_host(lock.token(), ctx).await?;
+                        self.host_controller.init_module_host(lock.token() as u128, ctx).await?;
                         Ok(None)
                     }
                     Some(hash) if hash == database.program_bytes_address => {
@@ -577,7 +577,10 @@ impl StandaloneEnv {
                         let UpdateOutcome {
                             module_host: _,
                             update_result,
-                        } = self.host_controller.update_module_host(lock.token(), ctx).await?;
+                        } = self
+                            .host_controller
+                            .update_module_host(lock.token() as u128, ctx)
+                            .await?;
                         Ok(Some(update_result))
                     }
                 }
@@ -597,7 +600,7 @@ impl StandaloneEnv {
         // some kind of database lifecycle manager long term.
         let (_, scheduler) = self.db_inst_ctx_controller.remove(instance_id).unzip();
         self.host_controller
-            .delete_module_host(lock.token(), instance_id)
+            .delete_module_host(lock.token() as u128, instance_id)
             .await
             .unwrap();
         if let Some(scheduler) = scheduler {

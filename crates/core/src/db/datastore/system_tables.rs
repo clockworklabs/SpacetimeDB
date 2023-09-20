@@ -1,6 +1,7 @@
 use super::traits::{ColumnSchema, IndexSchema, SequenceId, SequenceSchema, TableId, TableSchema};
 use crate::db::datastore::traits::ConstraintSchema;
 use crate::error::{DBError, TableError};
+use core::fmt;
 use once_cell::sync::Lazy;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::{ColumnIndexAttribute, Hash};
@@ -952,11 +953,24 @@ pub const WASM_MODULE: ModuleKind = ModuleKind(0);
 impl_serialize!([] ModuleKind, (self, ser) => self.0.serialize(ser));
 impl_deserialize!([] ModuleKind, de => u8::deserialize(de).map(Self));
 
+/// A monotonically increasing "epoch" value.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Epoch(pub(crate) u128);
+
+impl_serialize!([] Epoch, (self, ser) => self.0.serialize(ser));
+impl_deserialize!([] Epoch, de => u128::deserialize(de).map(Self));
+
+impl fmt::Display for Epoch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StModuleRow {
     pub(crate) program_hash: Hash,
     pub(crate) kind: ModuleKind,
-    pub(crate) epoch: u64,
+    pub(crate) epoch: Epoch,
 }
 
 impl StModuleRow {
@@ -973,7 +987,7 @@ impl TryFrom<&ProductValue> for StModuleRow {
             .field_as_bytes(StModuleFields::ProgramHash as usize, None)
             .map(Hash::from_slice)?;
         let kind = row.field_as_u8(StModuleFields::Kind as usize, None).map(ModuleKind)?;
-        let epoch = row.field_as_u64(StModuleFields::Epoch as usize, None)?;
+        let epoch = row.field_as_u128(StModuleFields::Epoch as usize, None).map(Epoch)?;
 
         Ok(Self {
             program_hash,
@@ -988,7 +1002,7 @@ impl From<&StModuleRow> for ProductValue {
         product![
             AlgebraicValue::Bytes(row.program_hash.as_slice().to_owned()),
             AlgebraicValue::U8(row.kind.0),
-            AlgebraicValue::U64(row.epoch),
+            AlgebraicValue::U128(row.epoch.0),
         ]
     }
 }

@@ -9,9 +9,9 @@ use self::{
 };
 use super::{
     system_tables::{
-        StColumnRow, StIndexRow, StModuleRow, StSequenceRow, StTableRow, INDEX_ID_SEQUENCE_ID, SEQUENCE_ID_SEQUENCE_ID,
-        ST_COLUMNS_ID, ST_COLUMNS_ROW_TYPE, ST_INDEXES_ID, ST_INDEX_ROW_TYPE, ST_MODULE_ID, ST_SEQUENCES_ID,
-        ST_SEQUENCE_ROW_TYPE, ST_TABLES_ID, ST_TABLE_ROW_TYPE, TABLE_ID_SEQUENCE_ID, WASM_MODULE,
+        self, StColumnRow, StIndexRow, StModuleRow, StSequenceRow, StTableRow, INDEX_ID_SEQUENCE_ID,
+        SEQUENCE_ID_SEQUENCE_ID, ST_COLUMNS_ID, ST_COLUMNS_ROW_TYPE, ST_INDEXES_ID, ST_INDEX_ROW_TYPE, ST_MODULE_ID,
+        ST_SEQUENCES_ID, ST_SEQUENCE_ROW_TYPE, ST_TABLES_ID, ST_TABLE_ROW_TYPE, TABLE_ID_SEQUENCE_ID, WASM_MODULE,
     },
     traits::{
         self, ColId, DataRow, IndexDef, IndexId, IndexSchema, MutTx, MutTxDatastore, SequenceDef, SequenceId, TableDef,
@@ -1648,37 +1648,6 @@ impl Locking {
         }
         Ok(())
     }
-
-    pub fn module_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
-        match tx.lock.iter(&ST_MODULE_ID)?.next() {
-            None => Ok(None),
-            Some(data) => {
-                let row = StModuleRow::try_from(data.view())?;
-                Ok(Some(row.program_hash))
-            }
-        }
-    }
-
-    pub(crate) fn set_module_hash(&self, tx: &mut MutTxId, token: u64, hash: Hash) -> Result<(), DBError> {
-        if let Some(data) = tx.lock.iter(&ST_MODULE_ID)?.next() {
-            let row = StModuleRow::try_from(data.view())?;
-            if token <= row.epoch {
-                return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", token, row.epoch).into());
-            }
-            tx.lock.delete_by_rel(&ST_MODULE_ID, Some(ProductValue::from(&row)))?;
-        }
-
-        tx.lock.insert(
-            ST_MODULE_ID,
-            ProductValue::from(&StModuleRow {
-                program_hash: hash,
-                kind: WASM_MODULE,
-                epoch: token,
-            }),
-        )?;
-
-        Ok(())
-    }
 }
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
@@ -2168,6 +2137,43 @@ impl MutTxDatastore for Locking {
         row: spacetimedb_sats::ProductValue,
     ) -> super::Result<ProductValue> {
         tx.lock.insert(table_id, row)
+    }
+}
+
+impl traits::Programmable for Locking {
+    fn program_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
+        match tx.lock.iter(&ST_MODULE_ID)?.next() {
+            None => Ok(None),
+            Some(data) => {
+                let row = StModuleRow::try_from(data.view())?;
+                Ok(Some(row.program_hash))
+            }
+        }
+    }
+}
+
+impl traits::MutProgrammable for Locking {
+    type FencingToken = u128;
+
+    fn set_program_hash(&self, tx: &mut MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<(), DBError> {
+        if let Some(data) = tx.lock.iter(&ST_MODULE_ID)?.next() {
+            let row = StModuleRow::try_from(data.view())?;
+            if fence <= row.epoch.0 {
+                return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", fence, row.epoch).into());
+            }
+            tx.lock.delete_by_rel(&ST_MODULE_ID, Some(ProductValue::from(&row)))?;
+        }
+
+        tx.lock.insert(
+            ST_MODULE_ID,
+            ProductValue::from(&StModuleRow {
+                program_hash: hash,
+                kind: WASM_MODULE,
+                epoch: system_tables::Epoch(fence),
+            }),
+        )?;
+
+        Ok(())
     }
 }
 
