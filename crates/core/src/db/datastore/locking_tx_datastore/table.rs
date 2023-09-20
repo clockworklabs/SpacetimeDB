@@ -59,11 +59,11 @@ impl Table {
     /// that match the specified `range` in the indexed column.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    pub(crate) fn index_seek<'a, R: RangeBounds<AlgebraicValue>>(
-        &'a self,
+    pub(crate) fn index_seek(
+        &self,
         col_id: ColId,
-        range: &R,
-    ) -> Option<BTreeIndexRangeIter<'a>> {
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> Option<BTreeIndexRangeIter<'_>> {
         self.indexes.get(&col_id).map(|index| index.seek(range))
     }
 }

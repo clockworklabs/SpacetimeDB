@@ -122,7 +122,7 @@ impl BTreeIndex {
     /// Returns an iterator over the [BTreeIndex] that yields all the `RowId`s
     /// that fall within the specified `range`.
     #[tracing::instrument(skip_all)]
-    pub(crate) fn seek<'a, R: RangeBounds<AlgebraicValue>>(&'a self, range: &R) -> BTreeIndexRangeIter<'a> {
+    pub(crate) fn seek<'a>(&'a self, range: &impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter<'a> {
         let map = |bound, datakey| match bound {
             Bound::Included(x) => Bound::Included(IndexKey::from_row(x, datakey)),
             Bound::Excluded(x) => Bound::Excluded(IndexKey::from_row(x, datakey)),

@@ -203,11 +203,11 @@ impl CommittedState {
         tx_data
     }
 
-    pub fn index_seek<'a, R: RangeBounds<AlgebraicValue>>(
+    pub fn index_seek<'a>(
         &'a self,
         table_id: &TableId,
         col_id: &ColId,
-        range: &R,
+        range: &impl RangeBounds<AlgebraicValue>,
     ) -> Option<BTreeIndexRangeIter<'a>> {
         if let Some(table) = self.tables.get(table_id) {
             table.index_seek(*col_id, range)
@@ -317,11 +317,11 @@ impl TxState {
     ///
     /// For a unique index this will always yield at most one `RowId`.
     /// When there is no index this returns `None`.
-    pub fn index_seek<'a, R: RangeBounds<AlgebraicValue>>(
+    pub fn index_seek<'a>(
         &'a self,
         table_id: &TableId,
         col_id: &ColId,
-        range: &R,
+        range: &impl RangeBounds<AlgebraicValue>,
     ) -> Option<BTreeIndexRangeIter<'a>> {
         self.insert_tables.get(table_id)?.index_seek(*col_id, range)
     }
@@ -824,7 +824,7 @@ impl Inner {
         // TODO(george): As part of the bootstrapping process, we add a bunch of rows
         // and only at very end do we patch things up and create table metadata, indexes,
         // and so on. Early parts of that process insert rows, and need the schema to do
-        // so. We can't just call iter_by_col_range here as that would attempt to use the
+        // so. We can't just call `iter_by_col_range` here as that would attempt to use the
         // index which we haven't created yet. So instead we just manually Scan here.
         let value: AlgebraicValue = table_id.into();
         let rows = IterByColRange::Scan(ScanIterByColRange {
@@ -1466,7 +1466,12 @@ impl Inner {
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
     /// where the column data identified by `col_id` equates to `value`.
-    fn iter_by_col_eq(&self, table_id: &TableId, col_id: &ColId, value: AlgebraicValue) -> super::Result<IterByColEq> {
+    fn iter_by_col_eq(
+        &self,
+        table_id: &TableId,
+        col_id: &ColId,
+        value: AlgebraicValue,
+    ) -> super::Result<IterByColEq<'_>> {
         self.iter_by_col_range(table_id, col_id, value)
     }
 
