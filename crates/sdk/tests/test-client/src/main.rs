@@ -1,6 +1,7 @@
 use spacetimedb_sdk::{
+    disconnect,
     identity::{address, identity, load_credentials, once_on_connect, save_credentials},
-    once_on_subscription_applied,
+    once_on_disconnect, once_on_subscription_applied,
     reducer::Status,
     subscribe,
     table::TableType,
@@ -90,6 +91,8 @@ fn main() {
         "reauth_part_2" => exec_reauth_part_2(),
 
         "should_fail" => exec_should_fail(),
+
+        "reconnect_same_address" => exec_reconnect_same_address(),
 
         _ => panic!("Unknown test: {}", test),
     }
@@ -1312,6 +1315,54 @@ fn exec_reauth_part_2() {
     });
 
     connect_result(connect(LOCALHOST, &name, Some(creds)));
+
+    test_counter.wait_for_all();
+}
+
+fn exec_reconnect_same_address() {
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let connect_result = test_counter.add_test("connect");
+    let read_addr_result = test_counter.add_test("read_addr");
+
+    let name_dup = name.clone();
+    once_on_connect(move |_, received_address| {
+        let my_address = address().unwrap();
+        let run_checks = || {
+            assert_eq_or_bail!(my_address, received_address);
+            Ok(())
+        };
+
+        read_addr_result(run_checks());
+    });
+
+    connect_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
+
+    let my_address = address().unwrap();
+
+    let test_counter = TestCounter::new();
+    let reconnect_result = test_counter.add_test("reconnect");
+    let addr_after_reconnect_result = test_counter.add_test("addr_after_reconnect");
+
+    once_on_disconnect(move || {
+        once_on_connect(move |_, received_address| {
+            let my_address_2 = address().unwrap();
+            let run_checks = || {
+                assert_eq_or_bail!(my_address, received_address);
+                assert_eq_or_bail!(my_address, my_address_2);
+                Ok(())
+            };
+
+            addr_after_reconnect_result(run_checks());
+        });
+
+        reconnect_result(connect(LOCALHOST, &name_dup, None));
+    });
+
+    disconnect();
 
     test_counter.wait_for_all();
 }

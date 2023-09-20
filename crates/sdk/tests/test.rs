@@ -106,3 +106,8 @@ fn reauth() {
     make_test("reauth_part_1").run();
     make_test("reauth_part_2").run();
 }
+
+#[test]
+fn reconnect_same_address() {
+    make_test("reconnect_same_address").run();
+}
