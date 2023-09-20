@@ -139,7 +139,7 @@ impl BenchDatabase for SpacetimeRaw {
         self.db.with_auto_commit(|tx| {
             for row in self
                 .db
-                .iter_by_col_eq(tx, prepared.table_id, prepared.column_id, &value)?
+                .iter_by_col_eq(tx, prepared.table_id, prepared.column_id, value)?
             {
                 black_box(row);
             }

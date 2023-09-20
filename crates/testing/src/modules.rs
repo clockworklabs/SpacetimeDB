@@ -7,22 +7,14 @@ use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::address::Address;
 
-use spacetimedb::client::{ClientActorId, ClientConnection, Protocol};
-use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
-use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::db::{Config, FsyncPolicy, Storage};
-use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
-
+use prost::Message;
 use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol};
+use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, FsyncPolicy, Storage};
 use spacetimedb::protobuf::client_api;
+use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_lib::sats;
-
-use prost::Message;
-use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
-use spacetimedb::messages::control_db::HostType;
-use spacetimedb_client_api::{ControlCtx, ControlStateDelegate, WorkerCtx};
 
 use spacetimedb_standalone::StandaloneEnv;
 
