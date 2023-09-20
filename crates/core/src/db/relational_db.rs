@@ -464,7 +464,7 @@ impl RelationalDB {
     #[tracing::instrument(skip(self, tx))]
     pub fn iter_by_col_eq<'a>(
         &'a self,
-        tx: &'a mut MutTxId,
+        tx: &'a MutTxId,
         table_id: u32,
         col_id: u32,
         value: AlgebraicValue,
