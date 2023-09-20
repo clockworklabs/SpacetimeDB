@@ -98,7 +98,7 @@ fn reload_config<S>(conf_file: &Path, reload_handle: &reload::Handle<EnvFilter, 
         std::thread::sleep(RELOAD_INTERVAL);
         if let Ok(modified) = conf_file.metadata().and_then(|m| m.modified()) {
             if prev_time.map_or(true, |prev| modified > prev) {
-                eprintln!("reloading log config...");
+                log::info!("reloading log config...");
                 prev_time = Some(modified);
                 if reload_handle.reload(parse_from_file(conf_file)).is_err() {
                     break;

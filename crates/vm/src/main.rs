@@ -20,6 +20,8 @@ fn fib(n: u64) -> u64 {
 }
 
 fn main() {
+    #![allow(clippy::disallowed_macros)]
+
     let mut args = env::args().skip(1);
     let first = args.next();
 
