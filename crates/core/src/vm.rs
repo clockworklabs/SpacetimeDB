@@ -1,7 +1,7 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, SequenceId, TableDef};
+use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
 use crate::db::relational_db::RelationalDB;
 use itertools::Itertools;
 use spacetimedb_lib::auth::{StAccess, StTableType};
@@ -267,12 +267,12 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             }
             DbType::Index => {
                 if let Some(id) = self.db.index_id_from_name(self.tx, name)? {
-                    self.db.drop_index(self.tx, IndexId(id))?;
+                    self.db.drop_index(self.tx, id)?;
                 }
             }
             DbType::Sequence => {
                 if let Some(id) = self.db.sequence_id_from_name(self.tx, name)? {
-                    self.db.drop_sequence(self.tx, SequenceId(id))?;
+                    self.db.drop_sequence(self.tx, id)?;
                 }
             }
         }
