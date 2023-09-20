@@ -394,17 +394,4 @@ mod tests {
         let algebraic_type = AlgebraicType::meta_type();
         AlgebraicType::from_value(&algebraic_type.as_value()).expect("No errors.");
     }
-
-    fn _legacy_encoding_comparison() {
-        #![allow(clippy::disallowed_macros)]
-        let algebraic_type = AlgebraicType::meta_type();
-
-        let mut buf = Vec::new();
-        algebraic_type.as_value().encode(&mut buf);
-        println!("buf: {:?}", buf);
-
-        let mut buf = Vec::new();
-        algebraic_type.encode(&mut buf);
-        println!("buf: {:?}", buf);
-    }
 }
