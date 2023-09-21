@@ -2,7 +2,11 @@ use std::fs;
 
 fn main() {
     let proto_dir = "protobuf";
-    println!("cargo:rerun-if-changed={proto_dir}");
+
+    {
+        #![allow(clippy::disallowed_macros)]
+        println!("cargo:rerun-if-changed={proto_dir}");
+    }
 
     let protos = fs::read_dir(proto_dir)
         .unwrap()

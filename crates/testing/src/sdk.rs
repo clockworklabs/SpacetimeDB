@@ -1,107 +1,27 @@
-use duct::{cmd, Handle};
+use duct::cmd;
 use lazy_static::lazy_static;
 use rand::distributions::{Alphanumeric, DistString};
+use std::thread::JoinHandle;
 use std::{collections::HashSet, fs::create_dir_all, sync::Mutex};
 
-use crate::modules::{compile, module_path, wasm_path};
+use crate::invoke_cli;
+use crate::modules::{module_path, CompiledModule};
+use std::path::Path;
 
-struct StandaloneProcess {
-    handle: Handle,
-    num_using: usize,
-}
-
-impl StandaloneProcess {
-    fn start() -> Self {
-        let handle = cmd!("spacetime", "start")
-            .stderr_to_stdout()
-            .stdout_capture()
-            .unchecked()
-            .start()
-            .expect("Failed to run `spacetime start`");
-
-        StandaloneProcess { handle, num_using: 1 }
+pub fn ensure_standalone_process() {
+    lazy_static! {
+        static ref JOIN_HANDLE: Mutex<Option<JoinHandle<()>>> =
+            Mutex::new(Some(std::thread::spawn(|| invoke_cli(&["start"]))));
     }
 
-    fn stop(&mut self) -> anyhow::Result<()> {
-        assert!(self.num_using == 0);
+    let mut join_handle = JOIN_HANDLE.lock().unwrap();
 
-        self.handle.kill()?;
-
-        Ok(())
-    }
-
-    fn running_or_err(&self) -> anyhow::Result<()> {
-        if let Some(output) = self
-            .handle
-            .try_wait()
-            .expect("Error from spacetime standalone subprocess")
-        {
-            let code = output.status;
-            let output = String::from_utf8_lossy(&output.stdout);
-            Err(anyhow::anyhow!(
-                "spacetime start exited unexpectedly. Exit status: {}. Output:\n{}",
-                code,
-                output,
-            ))
-        } else {
-            Ok(())
-        }
-    }
-
-    fn add_user(&mut self) -> anyhow::Result<()> {
-        self.running_or_err()?;
-        self.num_using += 1;
-        Ok(())
-    }
-
-    /// Returns true if the process was stopped because no one is using it.
-    fn sub_user(&mut self) -> anyhow::Result<bool> {
-        self.num_using -= 1;
-        if self.num_using == 0 {
-            self.stop()?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-}
-
-static STANDALONE_PROCESS: Mutex<Option<StandaloneProcess>> = Mutex::new(None);
-
-/// An RAII handle on the `STANDALONE_PROCESS`.
-///
-/// On construction, ensures that the `STANDALONE_PROCESS` is running.
-///
-/// On drop, checks to see if it was the last `StandaloneHandle`, and if so,
-/// terminates the `STANDALONE_PROCESS`.
-pub struct StandaloneHandle {
-    _hidden: (),
-}
-
-impl Default for StandaloneHandle {
-    fn default() -> Self {
-        let mut process = STANDALONE_PROCESS.lock().expect("STANDALONE_PROCESS Mutex is poisoned");
-        if let Some(proc) = &mut *process {
-            proc.add_user()
-                .expect("Failed to add user for running spacetime standalone process");
-        } else {
-            *process = Some(StandaloneProcess::start());
-        }
-        StandaloneHandle { _hidden: () }
-    }
-}
-
-impl Drop for StandaloneHandle {
-    fn drop(&mut self) {
-        let mut process = STANDALONE_PROCESS.lock().expect("STANDALONE_PROCESS Mutex is poisoned");
-        if let Some(proc) = &mut *process {
-            if proc
-                .sub_user()
-                .expect("Failed to remove user for running spacetime standalone process")
-            {
-                *process = None;
-            }
-        }
+    if join_handle
+        .as_ref()
+        .expect("Standalone process already finished")
+        .is_finished()
+    {
+        join_handle.take().unwrap().join().expect("Standalone process failed");
     }
 }
 
@@ -179,21 +99,20 @@ impl Test {
         TestBuilder::default()
     }
     pub fn run(&self) {
-        let _handle = StandaloneHandle::default();
+        ensure_standalone_process();
 
-        compile(&self.module_name);
+        let compiled = CompiledModule::compile(&self.module_name);
 
         generate_bindings(
             &self.generate_language,
-            &self.module_name,
+            compiled.path(),
             &self.client_project,
             &self.generate_subdir,
-            &self.name,
         );
 
         compile_client(&self.compile_command, &self.client_project, &self.name);
 
-        let db_name = publish_module(&self.module_name, &self.name);
+        let db_name = publish_module(&self.module_name);
 
         run_client(&self.run_command, &self.client_project, &db_name, &self.name);
     }
@@ -215,22 +134,20 @@ fn random_module_name() -> String {
     Alphanumeric.sample_string(&mut rand::thread_rng(), 16)
 }
 
-fn publish_module(module: &str, test_name: &str) -> String {
+fn publish_module(module: &str) -> String {
     let name = random_module_name();
-    let output = cmd!("spacetime", "publish", "--skip_clippy", name.clone(),)
-        .stderr_to_stdout()
-        .stdout_capture()
-        .dir(module_path(module))
-        .unchecked()
-        .run()
-        .expect("Error running spacetime publish");
-
-    status_ok_or_panic(output, "spacetime publish", test_name);
+    invoke_cli(&[
+        "publish",
+        "--project-path",
+        module_path(module).to_str().unwrap(),
+        "--skip_clippy",
+        &name,
+    ]);
 
     name
 }
 
-fn generate_bindings(language: &str, module_name: &str, client_project: &str, generate_subdir: &str, test_name: &str) {
+fn generate_bindings(language: &str, path: &Path, client_project: &str, generate_subdir: &str) {
     let generate_dir = format!("{}/{}", client_project, generate_subdir);
 
     let mut bindings_lock = BINDINGS_GENERATED.lock().expect("BINDINGS_GENERATED Mutex is poisoned");
@@ -244,24 +161,16 @@ fn generate_bindings(language: &str, module_name: &str, client_project: &str, ge
     }
 
     create_dir_all(&generate_dir).expect("Error creating generate subdir");
-    let output = cmd!(
-        "spacetime",
+    invoke_cli(&[
         "generate",
         "--skip_clippy",
         "--lang",
         language,
         "--wasm-file",
-        wasm_path(module_name),
+        path.to_str().unwrap(),
         "--out-dir",
-        generate_dir
-    )
-    .stderr_to_stdout()
-    .stdout_capture()
-    .unchecked()
-    .run()
-    .expect("Error running spacetime generate");
-
-    status_ok_or_panic(output, "spacetime generate", test_name);
+        &generate_dir,
+    ]);
 }
 
 fn split_command_string(command: &str) -> (&str, Vec<&str>) {

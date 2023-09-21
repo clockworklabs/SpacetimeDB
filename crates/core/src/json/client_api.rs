@@ -34,6 +34,7 @@ pub enum MessageJson {
     Event(EventJson),
     TransactionUpdate(TransactionUpdateJson),
     IdentityToken(IdentityTokenJson),
+    OneOffQueryResponse(OneOffQueryResponseJson),
 }
 
 impl MessageJson {
@@ -97,5 +98,18 @@ pub struct TransactionUpdateJson {
 pub struct StmtResultJson {
     pub schema: ProductType,
     #[serde_as(as = "Vec<Vec<Sats>>")]
+    pub rows: Vec<Vec<AlgebraicValue>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OneOffQueryResponseJson {
+    pub message_id_base64: String,
+    pub error: Option<String>,
+    pub result: Vec<OneOffTableJson>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OneOffTableJson {
+    pub table_name: String,
     pub rows: Vec<Vec<AlgebraicValue>>,
 }

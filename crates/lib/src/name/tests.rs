@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+
 use std::iter;
 
 use itertools::Itertools as _;

@@ -7,7 +7,7 @@ use std::path::Path;
 /// Otherwise if the directory does exist, do nothing.
 pub fn create_dir_or_err(path: &str) -> anyhow::Result<()> {
     if !Path::new(path).is_dir() {
-        println!("Creating directory {}", path);
+        log::info!("Creating directory {}", path);
         std::fs::create_dir_all(path)?;
     }
     Ok(())
@@ -19,7 +19,7 @@ pub fn create_dir_or_err(path: &str) -> anyhow::Result<()> {
 pub fn create_file_with_contents(path: &str, contents: &str) -> anyhow::Result<()> {
     create_dir_or_err(Path::new(path).parent().unwrap().to_str().unwrap())?;
     if !Path::new(path).is_file() {
-        println!("Creating file {}", path);
+        log::info!("Creating file {}", path);
         std::fs::write(path, contents)?;
     }
     Ok(())

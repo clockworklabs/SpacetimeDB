@@ -1,15 +1,15 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
-use crate::db::cursor::{CatalogCursor, TableCursor};
+use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, SequenceId, TableDef};
 use crate::db::relational_db::RelationalDB;
 use itertools::Itertools;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{FieldExpr, Relation};
+use spacetimedb_lib::relation::{DbTable, FieldExpr, Relation};
 use spacetimedb_lib::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
 use spacetimedb_lib::table::ProductTypeMeta;
-use spacetimedb_sats::ProductValue;
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::dsl::mem_table;
 use spacetimedb_vm::env::EnvDb;
 use spacetimedb_vm::errors::ErrorVm;
@@ -24,7 +24,7 @@ use std::collections::HashMap;
 #[tracing::instrument(skip_all)]
 pub fn build_query<'a>(
     stdb: &'a RelationalDB,
-    tx: &'a mut MutTxId,
+    tx: &'a MutTxId,
     query: QueryCode,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     let q = match &query.table {
@@ -32,21 +32,23 @@ pub fn build_query<'a>(
         Table::DbTable(x) => SourceExpr::DbTable(x.clone()),
     };
 
-    //TODO HACK: Turn all inner tables in joins to in-memory to avoid borrow checker
-    let mut query = query;
+    let mut ops = query.query.into_iter();
+    let first = ops.next();
 
-    for q in &mut query.query {
-        if let Query::JoinInner(q) = q {
-            let table_access = q.rhs.table_access();
-            let rhs = get_table(stdb, tx, q.rhs.clone())?;
-            q.rhs = SourceExpr::MemTable(MemTable::new(&q.rhs.head(), table_access, &rhs.collect_vec()?));
-        }
-    }
+    // If the first operation is an index scan, open an index cursor, else a table cursor.
+    let (mut result, ops) = if let Some(Query::IndexScan(col_id, value, table)) = first {
+        (get_index_cursor(stdb, tx, table, col_id, value)?, ops.collect())
+    } else if let Some(op) = first {
+        (get_table(stdb, tx, q)?, std::iter::once(op).chain(ops).collect())
+    } else {
+        (get_table(stdb, tx, q)?, vec![])
+    };
 
-    let mut result = get_table(stdb, tx, q)?;
-
-    for q in query.query {
-        result = match q {
+    for op in ops {
+        result = match op {
+            Query::IndexScan(_, _, _) => {
+                unreachable!()
+            }
             Query::Select(cmp) => {
                 let header = result.head().clone();
                 let iter = result.select(move |row| cmp.compare(row, &header));
@@ -68,14 +70,7 @@ pub fn build_query<'a>(
                 let key_lhs = col_lhs.clone();
                 let key_rhs = col_rhs.clone();
 
-                let rhs = match q.rhs {
-                    SourceExpr::MemTable(x) => {
-                        Box::new(RelIter::new(x.head.clone(), x.row_count(), x)) as Box<IterRows<'_>>
-                    }
-                    SourceExpr::DbTable(_) => {
-                        unreachable!()
-                    }
-                };
+                let rhs = build_query(stdb, tx, q.rhs.into())?;
                 let lhs = result;
                 let key_lhs_header = lhs.head().clone();
                 let key_rhs_header = rhs.head().clone();
@@ -100,16 +95,12 @@ pub fn build_query<'a>(
                 )?;
                 Box::new(iter)
             }
-        };
+        }
     }
     Ok(result)
 }
 
-fn get_table<'a>(
-    stdb: &'a RelationalDB,
-    tx: &'a mut MutTxId,
-    query: SourceExpr,
-) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
+fn get_table<'a>(stdb: &'a RelationalDB, tx: &'a MutTxId, query: SourceExpr) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
     let head = query.head();
     let row_count = query.row_count();
     Ok(match query {
@@ -119,6 +110,17 @@ fn get_table<'a>(
             Box::new(TableCursor::new(x, iter)?) as Box<IterRows<'_>>
         }
     })
+}
+
+fn get_index_cursor<'a>(
+    db: &'a RelationalDB,
+    tx: &'a MutTxId,
+    table: DbTable,
+    col_id: u32,
+    value: AlgebraicValue,
+) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
+    let iter = db.iter_by_col_eq(tx, table.table_id, col_id, value)?;
+    Ok(Box::new(IndexCursor::new(table, iter)?) as Box<IterRows<'_>>)
 }
 
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it
@@ -347,10 +349,22 @@ impl RelOps for TableCursor<'_> {
 
     #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
-        if let Some(row) = self.iter.next() {
-            return Ok(Some(row.into()));
-        };
-        Ok(None)
+        Ok(self.iter.next().map(|row| row.into()))
+    }
+}
+
+impl RelOps for IndexCursor<'_> {
+    fn head(&self) -> &Header {
+        &self.table.head
+    }
+
+    fn row_count(&self) -> RowCount {
+        RowCount::unknown()
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
+        Ok(self.iter.next().map(|row| row.into()))
     }
 }
 

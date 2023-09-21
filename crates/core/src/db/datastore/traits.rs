@@ -19,15 +19,33 @@ pub struct IndexId(pub(crate) u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SequenceId(pub(crate) u32);
 
-impl TableId {
-    pub fn from_u32_for_testing(id: u32) -> Self {
-        Self(id)
+impl From<IndexId> for AlgebraicValue {
+    fn from(value: IndexId) -> Self {
+        value.0.into()
+    }
+}
+
+impl From<SequenceId> for AlgebraicValue {
+    fn from(value: SequenceId) -> Self {
+        value.0.into()
     }
 }
 
 impl fmt::Display for SequenceId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl TableId {
+    pub fn from_u32_for_testing(id: u32) -> Self {
+        Self(id)
+    }
+}
+
+impl From<TableId> for AlgebraicValue {
+    fn from(value: TableId) -> Self {
+        value.0.into()
     }
 }
 
@@ -391,7 +409,7 @@ pub trait TxDatastore: DataRow + Tx {
         tx: &'a Self::TxId,
         table_id: TableId,
         col_id: ColId,
-        value: &'a AlgebraicValue,
+        value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
 
     fn get_tx<'a>(
@@ -458,7 +476,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         tx: &'a Self::MutTxId,
         table_id: TableId,
         col_id: ColId,
-        value: &'a AlgebraicValue,
+        value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
     fn get_mut_tx<'a>(
         &'a self,

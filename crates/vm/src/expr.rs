@@ -172,6 +172,15 @@ pub enum SourceExpr {
     DbTable(DbTable),
 }
 
+impl From<SourceExpr> for Table {
+    fn from(value: SourceExpr) -> Self {
+        match value {
+            SourceExpr::MemTable(t) => Table::MemTable(t),
+            SourceExpr::DbTable(t) => Table::DbTable(t),
+        }
+    }
+}
+
 impl SourceExpr {
     pub fn get_db_table(&self) -> Option<&DbTable> {
         match self {
@@ -220,13 +229,13 @@ impl Relation for SourceExpr {
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct JoinExpr {
-    pub rhs: SourceExpr,
+    pub rhs: QueryExpr,
     pub col_lhs: FieldName,
     pub col_rhs: FieldName,
 }
 
 impl JoinExpr {
-    pub fn new(rhs: SourceExpr, col_lhs: FieldName, col_rhs: FieldName) -> Self {
+    pub fn new(rhs: QueryExpr, col_lhs: FieldName, col_rhs: FieldName) -> Self {
         Self { rhs, col_lhs, col_rhs }
     }
 }
@@ -295,6 +304,7 @@ pub enum CrudExpr {
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Query {
+    IndexScan(u32, AlgebraicValue, DbTable),
     Select(ColumnOp),
     Project(Vec<FieldExpr>),
     JoinInner(JoinExpr),
@@ -306,12 +316,36 @@ pub struct QueryExpr {
     pub query: Vec<Query>,
 }
 
+impl From<MemTable> for QueryExpr {
+    fn from(value: MemTable) -> Self {
+        QueryExpr {
+            source: value.into(),
+            query: vec![],
+        }
+    }
+}
+
+impl From<DbTable> for QueryExpr {
+    fn from(value: DbTable) -> Self {
+        QueryExpr {
+            source: value.into(),
+            query: vec![],
+        }
+    }
+}
+
 impl QueryExpr {
     pub fn new<T: Into<SourceExpr>>(source: T) -> Self {
         Self {
             source: source.into(),
             query: vec![],
         }
+    }
+
+    pub fn with_index_scan(self, col_id: u32, value: AlgebraicValue, table: DbTable) -> Self {
+        let mut expr = self;
+        expr.query.push(Query::IndexScan(col_id, value, table));
+        expr
     }
 
     pub fn with_select<O>(self, op: O) -> Self
@@ -341,10 +375,7 @@ impl QueryExpr {
         x
     }
 
-    pub fn with_join_inner<Source>(self, with: Source, lhs: FieldName, rhs: FieldName) -> Self
-    where
-        Source: Into<SourceExpr>,
-    {
+    pub fn with_join_inner(self, with: impl Into<QueryExpr>, lhs: FieldName, rhs: FieldName) -> Self {
         let mut x = self;
         x.query.push(Query::JoinInner(JoinExpr::new(with.into(), lhs, rhs)));
         x
@@ -356,11 +387,11 @@ impl AuthAccess for Query {
         if owner == caller {
             Ok(())
         } else if let Query::JoinInner(j) = self {
-            if j.rhs.table_access() == StAccess::Public {
+            if j.rhs.source.table_access() == StAccess::Public {
                 Ok(())
             } else {
                 Err(AuthError::TablePrivate {
-                    named: j.rhs.table_name().to_string(),
+                    named: j.rhs.source.table_name().to_string(),
                 })
             }
         } else {
@@ -502,6 +533,9 @@ impl fmt::Display for SourceExprOpt {
 impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Query::IndexScan(col, value, _) => {
+                write!(f, "ixscan on {col} for {:?}", value)
+            }
             Query::Select(q) => {
                 write!(f, "select {q}")
             }
@@ -519,7 +553,7 @@ impl fmt::Display for Query {
                 Ok(())
             }
             Query::JoinInner(q) => {
-                write!(f, "&inner {} ON {} = {}", q.rhs, q.col_lhs, q.col_rhs)
+                write!(f, "&inner {:?} ON {} = {}", q.rhs, q.col_lhs, q.col_rhs)
             }
         }
     }
@@ -619,6 +653,15 @@ impl fmt::Display for ExprOpt {
 pub struct QueryCode {
     pub table: Table,
     pub query: Vec<Query>,
+}
+
+impl From<QueryExpr> for QueryCode {
+    fn from(value: QueryExpr) -> Self {
+        QueryCode {
+            table: value.source.into(),
+            query: value.query,
+        }
+    }
 }
 
 impl AuthAccess for Table {

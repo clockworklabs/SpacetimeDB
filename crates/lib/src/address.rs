@@ -39,6 +39,10 @@ impl fmt::Debug for Address {
 impl Address {
     const ABBREVIATION_LEN: usize = 16;
 
+    pub const ZERO: Self = Self {
+        __address_bytes: [0; 16],
+    };
+
     pub fn from_arr(arr: &[u8; 16]) -> Self {
         Self { __address_bytes: *arr }
     }
@@ -90,6 +94,16 @@ impl Address {
     #[doc(hidden)]
     pub fn __dummy() -> Self {
         Self::zero()
+    }
+
+    pub fn to_u128(&self) -> u128 {
+        u128::from_be_bytes(self.__address_bytes)
+    }
+}
+
+impl From<u128> for Address {
+    fn from(value: u128) -> Self {
+        Self::from_u128(value)
     }
 }
 

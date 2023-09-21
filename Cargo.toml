@@ -160,7 +160,7 @@ tracing-appender = "0.2.2"
 tracing-core = "0.1"
 tracing-flame = "0.2"
 tracing-log = "0.1"
-tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 url = "2.3.1"
 urlencoding = "2.1.2"
 uuid = { version = "1.2.1", features = ["v4"]}

@@ -861,7 +861,10 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-        println!("{}", emission);
+        {
+            #![allow(clippy::disallowed_macros)]
+            println!("{}", emission);
+        }
     }
 
     Ok(emission)
@@ -884,7 +887,10 @@ fn spacetimedb_index(
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-        println!("{}", output);
+        {
+            #![allow(clippy::disallowed_macros)]
+            println!("{}", output);
+        }
     }
 
     Ok(output)
@@ -925,7 +931,10 @@ fn spacetimedb_connect_disconnect(item: TokenStream, connect: bool) -> syn::Resu
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-        println!("{}", emission);
+        {
+            #![allow(clippy::disallowed_macros)]
+            println!("{}", emission);
+        }
     }
 
     Ok(emission)
@@ -992,7 +1001,10 @@ pub fn schema_type(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         };
 
         if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-            println!("{}", emission);
+            {
+                #![allow(clippy::disallowed_macros)]
+                println!("{}", emission);
+            }
         }
 
         Ok(emission)

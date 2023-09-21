@@ -15,6 +15,7 @@ use crate::util::notify_once::NotifyOnce;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
+use spacetimedb_lib::relation::MemTable;
 use spacetimedb_lib::{Address, ReducerDef, TableDef};
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
 use std::collections::HashMap;
@@ -212,6 +213,11 @@ pub trait Module: Send + Sync + 'static {
     fn create_instance(&self) -> Self::Instance;
     fn inject_logs(&self, log_level: LogLevel, message: &str);
     fn close(self);
+    fn one_off_query(
+        &self,
+        caller_identity: Identity,
+        query: String,
+    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
 
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
@@ -306,6 +312,11 @@ impl fmt::Debug for ModuleHost {
 trait DynModuleHost: Send + Sync + 'static {
     async fn get_instance(&self) -> Result<(&HostThreadpool, Box<dyn ModuleInstance>), NoSuchModule>;
     fn inject_logs(&self, log_level: LogLevel, message: &str);
+    fn one_off_query(
+        &self,
+        caller_identity: Identity,
+        query: String,
+    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
     fn start(&self);
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
@@ -368,6 +379,14 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
 
     fn inject_logs(&self, log_level: LogLevel, message: &str) {
         self.module.inject_logs(log_level, message)
+    }
+
+    fn one_off_query(
+        &self,
+        caller_identity: Identity,
+        query: String,
+    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError> {
+        self.module.one_off_query(caller_identity, query)
     }
 
     fn start(&self) {
@@ -570,6 +589,15 @@ impl ModuleHost {
 
     pub fn inject_logs(&self, log_level: LogLevel, message: &str) {
         self.inner.inject_logs(log_level, message)
+    }
+
+    pub async fn one_off_query(
+        &self,
+        caller_identity: Identity,
+        query: String,
+    ) -> Result<Vec<MemTable>, anyhow::Error> {
+        let result = self.inner.one_off_query(caller_identity, query)?;
+        Ok(result)
     }
 
     pub fn downgrade(&self) -> WeakModuleHost {

@@ -1,20 +1,17 @@
+use std::cell::OnceCell;
 use std::future::Future;
-use std::io::{self, Write};
-use std::path::PathBuf;
-use std::process::Command;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::address::Address;
 use spacetimedb::client::{ClientActorId, ClientConnection, Protocol};
+use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, FsyncPolicy, Storage};
-use spacetimedb::hash::hash_bytes;
-
-use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
-use spacetimedb::messages::control_db::HostType;
-use spacetimedb_client_api::{ControlCtx, ControlStateDelegate, WorkerCtx};
+use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_standalone::StandaloneEnv;
-use tokio::runtime::{Builder, Runtime};
 
 fn start_runtime() -> Runtime {
     Builder::new_multi_thread().enable_all().build().unwrap()
@@ -29,72 +26,9 @@ where
     func(&runtime);
 }
 
-pub fn with_module_async<O, R, F>(name: &str, routine: R)
-where
-    R: FnOnce(ModuleHandle) -> F,
-    F: Future<Output = O>,
-{
-    with_runtime(move |runtime| {
-        runtime.block_on(async {
-            let module = load_module(name).await;
-
-            routine(module).await;
-        });
-    });
-}
-
-pub fn with_module<F>(name: &str, func: F)
-where
-    F: FnOnce(&Runtime, &ModuleHandle),
-{
-    with_runtime(move |runtime| {
-        let module = runtime.block_on(async { load_module(name).await });
-
-        func(runtime, &module);
-    });
-}
-
 pub(crate) fn module_path(name: &str) -> PathBuf {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     root.join("../../modules").join(name)
-}
-
-pub(crate) fn wasm_path(name: &str) -> PathBuf {
-    module_path(name).join(format!(
-        "target/wasm32-unknown-unknown/release/{}_module.wasm",
-        name.replace('-', "_")
-    ))
-}
-
-fn read_module(path: &str) -> Vec<u8> {
-    println!("{}", wasm_path(path).to_str().unwrap());
-    std::fs::read(wasm_path(path)).unwrap()
-}
-
-pub fn compile(path: &str) {
-    let path = module_path(path);
-    let output = Command::new("cargo")
-        .current_dir(&path)
-        .args([
-            "build",
-            "--target=wasm32-unknown-unknown",
-            "--release",
-            "--target-dir",
-            path.join("target").to_str().unwrap(),
-        ])
-        .output()
-        .expect("Failed to execute process to compile a test depdendency");
-
-    if !output.status.success() {
-        eprintln!(
-            "There was a problem with compiling a test depenedency: {}",
-            path.display()
-        );
-        io::stdout().write_all(&output.stdout).unwrap();
-        io::stderr().write_all(&output.stderr).unwrap();
-
-        panic!("Couldn't compile the module");
-    }
 }
 
 #[derive(Clone)]
@@ -125,52 +59,104 @@ impl ModuleHandle {
     }
 }
 
-pub async fn load_module(name: &str) -> ModuleHandle {
-    // For testing, persist to disk by default, as many tests
-    // exercise functionality like restarting the database.
-    let storage = Storage::Disk;
-    let fsync = FsyncPolicy::Never;
-    let config = Config { storage, fsync };
+pub struct CompiledModule {
+    name: String,
+    path: PathBuf,
+    program_bytes: OnceCell<Vec<u8>>,
+}
 
-    let paths = FilesLocal::temp(name);
-    // The database created in the `temp` folder can't be randomized,
-    // so it persists after running the test.
-    std::fs::remove_dir(paths.db_path()).ok();
+impl CompiledModule {
+    pub fn compile(name: &str) -> Self {
+        let path = spacetimedb_cli::build(&module_path(name), false, true).unwrap();
+        Self {
+            name: name.to_owned(),
+            path,
+            program_bytes: OnceCell::new(),
+        }
+    }
 
-    crate::set_key_env_vars(&paths);
-    let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
-    let identity = env.control_db().alloc_spacetime_identity().await.unwrap();
-    let client_address = env.control_db().alloc_spacetime_address().await.unwrap();
-    let db_address = env.control_db().alloc_spacetime_address().await.unwrap();
-    let program_bytes = read_module(name);
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 
-    let program_bytes_addr = hash_bytes(&program_bytes);
-    env.object_db().insert_object(program_bytes).unwrap();
+    pub fn with_module_async<O, R, F>(&self, routine: R)
+    where
+        R: FnOnce(ModuleHandle) -> F,
+        F: Future<Output = O>,
+    {
+        with_runtime(move |runtime| {
+            runtime.block_on(async {
+                let module = self.load_module().await;
+                routine(module).await;
+            });
+        });
+    }
 
-    let host_type = HostType::Wasmer;
+    pub fn with_module<F>(&self, func: F)
+    where
+        F: FnOnce(&Runtime, &ModuleHandle),
+    {
+        with_runtime(move |runtime| {
+            let module = runtime.block_on(async { self.load_module().await });
 
-    env.insert_database(&db_address, &identity, &program_bytes_addr, host_type, 1, true, None)
+            func(runtime, &module);
+        });
+    }
+
+    async fn load_module(&self) -> ModuleHandle {
+        // For testing, persist to disk by default, as many tests
+        // exercise functionality like restarting the database.
+        let storage = Storage::Disk;
+        let fsync = FsyncPolicy::Never;
+        let config = Config { storage, fsync };
+
+        let paths = FilesLocal::temp(&self.name);
+        // The database created in the `temp` folder can't be randomized,
+        // so it persists after running the test.
+        std::fs::remove_dir(paths.db_path()).ok();
+
+        crate::set_key_env_vars(&paths);
+        let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
+        let identity = env.create_identity().await.unwrap();
+        let db_address = env.create_address().await.unwrap();
+        let client_address = env.create_address().await.unwrap();
+
+        let program_bytes = self
+            .program_bytes
+            .get_or_init(|| std::fs::read(&self.path).unwrap())
+            .clone();
+
+        env.publish_database(
+            &identity,
+            Some(client_address),
+            DatabaseDef {
+                address: db_address,
+                program_bytes,
+                num_replicas: 1,
+            },
+        )
         .await
         .unwrap();
 
-    let database = env.get_database_by_address(&db_address).await.unwrap().unwrap();
-    let instance = env.get_leader_database_instance_by_database(database.id).await.unwrap();
+        let database = env.get_database_by_address(&db_address).unwrap().unwrap();
+        let instance = env.get_leader_database_instance_by_database(database.id).unwrap();
 
-    let client_id = ClientActorId {
-        identity,
-        address: client_address,
-        name: env.client_actor_index().next_client_name(),
-    };
+        let client_id = ClientActorId {
+            identity,
+            address: client_address,
+            name: env.client_actor_index().next_client_name(),
+        };
 
-    let module = env.host_controller().get_module_host(instance.id).unwrap();
+        let module = env.host_controller().get_module_host(instance.id).unwrap();
 
-    // TODO: it might be neat to add some functionality to module handle to make
-    // it easier to interact with the database. For example it could include
-    // the runtime on which a module was created and then we could add impl
-    // for stuff like "get logs" or "get message log"
-    ModuleHandle {
-        _env: env,
-        client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module),
-        db_address,
+        // TODO: it might be neat to add some functionality to module handle to make
+        // it easier to interact with the database. For example it could include
+        // the runtime on which a module was created and then we could add impl
+        // for stuff like "get logs" or "get message log"
+        ModuleHandle {
+            _env: env,
+            client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module),
+            db_address,
+        }
     }
 }

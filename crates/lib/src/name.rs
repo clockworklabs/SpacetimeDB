@@ -1,11 +1,11 @@
-use serde::{Deserialize, Serialize};
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st};
 use std::{borrow::Borrow, fmt, ops::Deref, str::FromStr};
 
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum InsertDomainResult {
     Success {
         domain: DomainName,
@@ -32,16 +32,24 @@ pub enum InsertDomainResult {
     PermissionDenied {
         domain: DomainName,
     },
+
+    /// Some unspecified error occurred.
+    OtherError(String),
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "lowercase")
+)]
 pub enum PublishOp {
     Created,
     Updated,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PublishResult {
     Success {
         /// `Some` if publish was given a domain name to operate on, `None`
@@ -59,6 +67,7 @@ pub enum PublishResult {
         op: PublishOp,
     },
 
+    // TODO: below variants are obsolete with control db module
     /// The top level domain for the database name is not registered. For example:
     ///
     ///  - `clockworklabs/bitcraft`
@@ -77,7 +86,8 @@ pub enum PublishResult {
     PermissionDenied { domain: DomainName },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DnsLookupResponse {
     /// The lookup was successful and the domain and address are returned.
     Success { domain: DomainName, address: String },
@@ -86,7 +96,8 @@ pub enum DnsLookupResponse {
     Failure { domain: DomainName },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum RegisterTldResult {
     Success {
         domain: Tld,
@@ -102,7 +113,8 @@ pub enum RegisterTldResult {
     // TODO(jdetter): Insufficient funds error here
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SetDefaultDomainResult {
     Success {
         domain: DomainName,
@@ -273,7 +285,7 @@ impl fmt::Display for TldRef {
 ///
 /// To construct a valid [`DomainName`], use [`parse_domain_name`] or the
 /// [`FromStr`] impl.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct DomainName {
     // Iff there is a subdomain, next char in `domain_name` is '/'.
     tld_offset: usize,
