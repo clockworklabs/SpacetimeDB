@@ -295,7 +295,7 @@ fn autogen_python_product_table_common(
                         }
                     }
                     AlgebraicType::Sum(sum) => {
-                        if !sum.as_option().is_some() {
+                        if sum.as_option().is_none() {
                             continue;
                         }
                     }
