@@ -759,8 +759,11 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     auth: SpacetimeAuthHeader,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
-
-    let PublishDatabaseQueryParams { name_or_address, clear, client_address } = query_params;
+    let PublishDatabaseQueryParams {
+        name_or_address,
+        clear,
+        client_address,
+    } = query_params;
 
     let client_address = client_address.map(Address::from);
 
