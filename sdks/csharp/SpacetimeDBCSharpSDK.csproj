@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-    <PackageId>spacetimedbsdk</PackageId>
+    <PackageId>SpacetimeDB.ClientSDK</PackageId>
     <Title>SpacetimeDB SDK</Title>
     <Authors>derek_clockwork</Authors>
     <Company>Clockwork Labs</Company>
@@ -16,14 +16,14 @@
     <PackageIcon>logo.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDBCSharpSDK</RepositoryUrl>
-    <AssemblyVersion>0.5.0</AssemblyVersion>
-    <Version>0.5.0</Version>
+    <AssemblyVersion>0.6.0</AssemblyVersion>
+    <Version>0.6.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="Unity\**" />
-    <EmbeddedResource Remove="Unity\**" />
-    <None Remove="Unity\**" />
+    <Compile Remove="examples\**" />
+    <EmbeddedResource Remove="examples\**" />
+    <None Remove="examples\**" />
   </ItemGroup>
 
   <ItemGroup>
