@@ -24,24 +24,13 @@ use std::collections::HashMap;
 #[tracing::instrument(skip_all)]
 pub fn build_query<'a>(
     stdb: &'a RelationalDB,
-    tx: &'a mut MutTxId,
+    tx: &'a MutTxId,
     query: QueryCode,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     let q = match &query.table {
         Table::MemTable(x) => SourceExpr::MemTable(x.clone()),
         Table::DbTable(x) => SourceExpr::DbTable(x.clone()),
     };
-
-    //TODO HACK: Turn all inner tables in joins to in-memory to avoid borrow checker
-    let mut query = query;
-
-    for q in &mut query.query {
-        if let Query::JoinInner(q) = q {
-            let table_access = q.rhs.table_access();
-            let rhs = get_table(stdb, tx, q.rhs.clone())?;
-            q.rhs = SourceExpr::MemTable(MemTable::new(&q.rhs.head(), table_access, &rhs.collect_vec()?));
-        }
-    }
 
     let mut ops = query.query.into_iter();
     let first = ops.next();
@@ -81,14 +70,7 @@ pub fn build_query<'a>(
                 let key_lhs = col_lhs.clone();
                 let key_rhs = col_rhs.clone();
 
-                let rhs = match q.rhs {
-                    SourceExpr::MemTable(x) => {
-                        Box::new(RelIter::new(x.head.clone(), x.row_count(), x)) as Box<IterRows<'_>>
-                    }
-                    SourceExpr::DbTable(_) => {
-                        unreachable!()
-                    }
-                };
+                let rhs = build_query(stdb, tx, q.rhs.into())?;
                 let lhs = result;
                 let key_lhs_header = lhs.head().clone();
                 let key_rhs_header = rhs.head().clone();
@@ -132,7 +114,7 @@ fn get_table<'a>(stdb: &'a RelationalDB, tx: &'a MutTxId, query: SourceExpr) -> 
 
 fn get_index_cursor<'a>(
     db: &'a RelationalDB,
-    tx: &'a mut MutTxId,
+    tx: &'a MutTxId,
     table: DbTable,
     col_id: u32,
     value: AlgebraicValue,
