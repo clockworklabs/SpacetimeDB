@@ -21,9 +21,14 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| runtime.block_on(async move {}));
     });
     */
+
     serialize_benchmarks::<Person>(c);
     serialize_benchmarks::<Location>(c);
 
+    custom_module_benchmarks(c);
+}
+
+fn custom_module_benchmarks(c: &mut Criterion) {
     let runtime = start_runtime();
     let config = Config {
         storage: Storage::Memory,
