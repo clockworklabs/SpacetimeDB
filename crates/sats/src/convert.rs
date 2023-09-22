@@ -59,6 +59,7 @@ built_in!(i32, I32);
 built_in!(u32, U32);
 built_in!(i64, I64);
 built_in!(u64, U64);
+// The `u/i128` impls cannot use the macros due to `Box::new`.
 impl From<u128> for AlgebraicValue {
     fn from(x: u128) -> Self {
         Self::U128(Box::new(x))

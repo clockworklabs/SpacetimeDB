@@ -3,17 +3,24 @@ use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
 use crate::algebraic_value::AlgebraicValue;
+use crate::static_assert_size;
 use crate::sum_type::SumType;
 
 /// A value of a sum type chosing a specific variant of the type.
-#[repr(packed)]
+#[repr(packed)] // Shrink size enough to allow `size_of(AlgebraicValue) = 16`.
+#[derive(Eq)]
 pub struct SumValue {
-    /// A tag representing the choice of one variant of the sum type's variants.
-    pub tag: u8,
     /// Given a variant `Var(Ty)` in a sum type `{ Var(Ty), ... }`,
     /// this provides the `value` for `Ty`.
     pub value: Box<AlgebraicValue>,
+    /// A tag representing the choice of one variant of the sum type's variants.
+    pub tag: u8,
 }
+
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(SumValue, 5);
+#[cfg(not(target_arch = "wasm32"))]
+static_assert_size!(SumValue, 9);
 
 impl SumValue {
     /// Returns the tag and and a reference to the value.
@@ -37,7 +44,6 @@ impl Clone for SumValue {
     }
 }
 
-impl Eq for SumValue {}
 impl PartialEq for SumValue {
     fn eq(&self, other: &Self) -> bool {
         self.parts() == other.parts()
@@ -46,9 +52,7 @@ impl PartialEq for SumValue {
 
 impl Hash for SumValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let (t, v) = self.parts();
-        t.hash(state);
-        v.hash(state);
+        self.parts().hash(state);
     }
 }
 

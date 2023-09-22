@@ -61,7 +61,7 @@ pub enum AlgebraicValue {
     /// However, we cannot observe any difference between `{ a: 0, b: 0 }` and `{ b: 0, a: 0 }`,
     /// as the natural order is used as opposed to insertion order.
     /// Where insertion order is relevant,
-    /// a [`BuiltinValue::Array`] with `(key, value)` pairs can be used instead.
+    /// a [`AlgebraicValue::Array`] with `(key, value)` pairs can be used instead.
     ///
     /// We box the `MapValue` to reduce size
     /// and because we assume that map values will be uncommon.
@@ -128,8 +128,8 @@ impl AlgebraicValue {
         }
     }
 
-    /// Convert the value into a `Box<[u8]>`
-    /// or `Err(self)` if it isn't a `Box<[u8]>` value.
+    /// Convert the value into a `SatsVec<u8>`
+    /// or `Err(self)` if it doesn't match an `AlgebraicValue::Bytes(_)`.
     #[inline]
     pub fn into_bytes(self) -> Result<SatsVec<u8>, Self> {
         match self {
@@ -145,7 +145,7 @@ impl AlgebraicValue {
         Self::product([].into())
     }
 
-    /// Returns an [`AlgebraicValue`] representing `v: Vec<u8>`.
+    /// Returns an [`AlgebraicValue`] representing `v: SatsVec<u8>`.
     #[inline]
     pub const fn Bytes(v: SatsVec<u8>) -> Self {
         Self::Array(ArrayValue::U8(v))
