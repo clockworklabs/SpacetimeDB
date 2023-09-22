@@ -601,7 +601,7 @@ pub(crate) fn st_module_schema() -> TableSchema {
                 table_id: ST_MODULE_ID.0,
                 col_id: StModuleFields::Epoch as u32,
                 col_name: StModuleFields::Epoch.name().into(),
-                col_type: AlgebraicType::U64,
+                col_type: AlgebraicType::U128,
                 is_autoinc: false,
             },
         ],
@@ -984,10 +984,17 @@ impl TryFrom<&ProductValue> for StModuleRow {
 
     fn try_from(row: &ProductValue) -> Result<Self, Self::Error> {
         let program_hash = row
-            .field_as_bytes(StModuleFields::ProgramHash as usize, None)
+            .field_as_bytes(
+                StModuleFields::ProgramHash as usize,
+                Some(StModuleFields::ProgramHash.name()),
+            )
             .map(Hash::from_slice)?;
-        let kind = row.field_as_u8(StModuleFields::Kind as usize, None).map(ModuleKind)?;
-        let epoch = row.field_as_u128(StModuleFields::Epoch as usize, None).map(Epoch)?;
+        let kind = row
+            .field_as_u8(StModuleFields::Kind as usize, Some(StModuleFields::Kind.name()))
+            .map(ModuleKind)?;
+        let epoch = row
+            .field_as_u128(StModuleFields::Epoch as usize, Some(StModuleFields::Epoch.name()))
+            .map(Epoch)?;
 
         Ok(Self {
             program_hash,
@@ -998,11 +1005,17 @@ impl TryFrom<&ProductValue> for StModuleRow {
 }
 
 impl From<&StModuleRow> for ProductValue {
-    fn from(row: &StModuleRow) -> Self {
+    fn from(
+        StModuleRow {
+            program_hash,
+            kind: ModuleKind(kind),
+            epoch: Epoch(epoch),
+        }: &StModuleRow,
+    ) -> Self {
         product![
-            AlgebraicValue::Bytes(row.program_hash.as_slice().to_owned()),
-            AlgebraicValue::U8(row.kind.0),
-            AlgebraicValue::U128(row.epoch.0),
+            AlgebraicValue::Bytes(program_hash.as_slice().to_owned()),
+            AlgebraicValue::U8(*kind),
+            AlgebraicValue::U128(*epoch),
         ]
     }
 }
