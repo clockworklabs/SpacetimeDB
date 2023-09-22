@@ -532,6 +532,31 @@ impl QueryExpr {
             return self;
         };
         match query {
+            // try to push below join's lhs
+            Query::JoinInner(JoinExpr {
+                rhs:
+                    QueryExpr {
+                        source:
+                            SourceExpr::DbTable(DbTable {
+                                table_id: rhs_table_id, ..
+                            }),
+                        ..
+                    },
+                ..
+            }) if table.table_id != rhs_table_id => {
+                self = self.with_index_eq(table, col_id, value);
+                self.query.push(query);
+                self
+            }
+            // try to push below join's rhs
+            Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }) => {
+                self.query.push(Query::JoinInner(JoinExpr {
+                    rhs: rhs.with_index_eq(table, col_id, value),
+                    col_lhs,
+                    col_rhs,
+                }));
+                self
+            }
             // merge with a preceding select
             Query::Select(filter) => {
                 self.query.push(Query::Select(ColumnOp::Cmp {
@@ -585,6 +610,31 @@ impl QueryExpr {
             return self;
         };
         match query {
+            // try to push below join's lhs
+            Query::JoinInner(JoinExpr {
+                rhs:
+                    QueryExpr {
+                        source:
+                            SourceExpr::DbTable(DbTable {
+                                table_id: rhs_table_id, ..
+                            }),
+                        ..
+                    },
+                ..
+            }) if table.table_id != rhs_table_id => {
+                self = self.with_index_lower_bound(table, col_id, value, inclusive);
+                self.query.push(query);
+                self
+            }
+            // try to push below join's rhs
+            Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }) => {
+                self.query.push(Query::JoinInner(JoinExpr {
+                    rhs: rhs.with_index_lower_bound(table, col_id, value, inclusive),
+                    col_lhs,
+                    col_rhs,
+                }));
+                self
+            }
             // merge with a preceding upper bounded index scan (inclusive)
             Query::IndexScan(IndexScan {
                 col_id: lhs_col_id,
@@ -668,6 +718,31 @@ impl QueryExpr {
             return self;
         };
         match query {
+            // try to push below join's lhs
+            Query::JoinInner(JoinExpr {
+                rhs:
+                    QueryExpr {
+                        source:
+                            SourceExpr::DbTable(DbTable {
+                                table_id: rhs_table_id, ..
+                            }),
+                        ..
+                    },
+                ..
+            }) if table.table_id != rhs_table_id => {
+                self = self.with_index_upper_bound(table, col_id, value, inclusive);
+                self.query.push(query);
+                self
+            }
+            // try to push below join's rhs
+            Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }) => {
+                self.query.push(Query::JoinInner(JoinExpr {
+                    rhs: rhs.with_index_upper_bound(table, col_id, value, inclusive),
+                    col_lhs,
+                    col_rhs,
+                }));
+                self
+            }
             // merge with a preceding lower bounded index scan (inclusive)
             Query::IndexScan(IndexScan {
                 col_id: lhs_col_id,
@@ -940,7 +1015,7 @@ impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Query::IndexScan(op) => {
-                write!(f, "ixscan {:?}", op)
+                write!(f, "index_scan {:?}", op)
             }
             Query::Select(q) => {
                 write!(f, "select {q}")
