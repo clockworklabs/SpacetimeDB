@@ -10,7 +10,7 @@ use crate::{
 };
 
 lazy_static::lazy_static! {
-    static ref BENCHMARKS_MODULE: CompiledModule =
+    pub static ref BENCHMARKS_MODULE: CompiledModule =
         CompiledModule::compile("benchmarks");
 }
 

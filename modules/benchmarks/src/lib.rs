@@ -352,11 +352,6 @@ pub fn fn_with_32_args(
 }
 
 #[spacetimedb(reducer)]
-pub fn print_something() {
-    println!("hello, world!");
-}
-
-#[spacetimedb(reducer)]
 pub fn print_many_things(n: u32) {
     for _ in 0..n {
         println!("hello again!");

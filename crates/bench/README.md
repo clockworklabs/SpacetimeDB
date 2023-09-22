@@ -36,19 +36,17 @@ serialize/
 deserialize/
     bsatn/[schema]/[count]
     json/[schema]/[count]
-    product_value/[schema]/[count]
 
-spacetime_module/
-    print_single/
-    print_bulk/
-    large_arguments/64KB/[count...]
+stdb_module/
+    print_bulk/[count]
+    large_arguments/64KiB/
 ```
 
 Typically you don't want to run all benchmarks at once, there are a lot of them and it will take many minutes.
 You can pass regexes to the bench script to select what slice of benchmarks you'd like. For example,
 
 ```sh
-cargo bench -- 'spacetime_raw/.*/insert_bulk'
+cargo bench -- 'stdb_raw/.*/insert_bulk'
 ```
 Will run all of the `insert_bulk` benchmarks against the raw spacetime backend.
 
