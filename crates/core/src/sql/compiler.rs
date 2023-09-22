@@ -73,20 +73,19 @@ fn check_cmp_expr(table: &From, expr: &ColumnOp) -> Result<(), PlanError> {
 /// Compiles a `WHERE ...` clause
 fn compile_where(mut q: QueryExpr, table: &From, filter: Selection) -> Result<QueryExpr, PlanError> {
     check_cmp_expr(table, &filter.clause)?;
-    // get all of the table schemas referenced in the query
-    let mut schemas = vec![&table.root];
-    if let Some(joins) = &table.join {
-        for Join::Inner { ref rhs, .. } in joins {
-            schemas.push(rhs);
-        }
-    }
     'outer: for ref op in filter.clause.to_vec() {
-        for schema in &schemas {
+        // Go through each table schema referenced in the query.
+        // Find the first sargable condition and short-circuit.
+        for schema in core::iter::once(&table.root).chain(
+            table
+                .join
+                .iter()
+                .flat_map(|v| v.iter().map(|Join::Inner { rhs, .. }| rhs)),
+        ) {
             match is_sargable(schema, op) {
                 // found sargable equality condition for one of the table schemas
                 Some(IndexArgument::Eq { col_id, value }) => {
-                    let table: DbTable = (*schema).into();
-                    q = q.with_index_eq(table, col_id, value);
+                    q = q.with_index_eq(schema.into(), col_id, value);
                     continue 'outer;
                 }
                 // found sargable range condition for one of the table schemas
@@ -95,8 +94,7 @@ fn compile_where(mut q: QueryExpr, table: &From, filter: Selection) -> Result<Qu
                     value,
                     inclusive,
                 }) => {
-                    let table: DbTable = (*schema).into();
-                    q = q.with_index_lower_bound(table, col_id, value, inclusive);
+                    q = q.with_index_lower_bound(schema.into(), col_id, value, inclusive);
                     continue 'outer;
                 }
                 // found sargable range condition for one of the table schemas
@@ -105,8 +103,7 @@ fn compile_where(mut q: QueryExpr, table: &From, filter: Selection) -> Result<Qu
                     value,
                     inclusive,
                 }) => {
-                    let table: DbTable = (*schema).into();
-                    q = q.with_index_upper_bound(table, col_id, value, inclusive);
+                    q = q.with_index_upper_bound(schema.into(), col_id, value, inclusive);
                     continue 'outer;
                 }
                 None => {}
