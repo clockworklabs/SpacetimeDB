@@ -9,6 +9,7 @@ use spacetimedb_sdk::{
     sats::{de::Deserialize, ser::Serialize},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
+    Address,
 };
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -27,21 +28,21 @@ pub fn set_name(name: String) {
 
 #[allow(unused)]
 pub fn on_set_name(
-    mut __callback: impl FnMut(&Identity, &Status, &String) + Send + 'static,
+    mut __callback: impl FnMut(&Identity, Option<Address>, &Status, &String) + Send + 'static,
 ) -> ReducerCallbackId<SetNameArgs> {
-    SetNameArgs::on_reducer(move |__identity, __status, __args| {
+    SetNameArgs::on_reducer(move |__identity, __addr, __status, __args| {
         let SetNameArgs { name } = __args;
-        __callback(__identity, __status, name);
+        __callback(__identity, __addr, __status, name);
     })
 }
 
 #[allow(unused)]
 pub fn once_on_set_name(
-    __callback: impl FnOnce(&Identity, &Status, &String) + Send + 'static,
+    __callback: impl FnOnce(&Identity, Option<Address>, &Status, &String) + Send + 'static,
 ) -> ReducerCallbackId<SetNameArgs> {
-    SetNameArgs::once_on_reducer(move |__identity, __status, __args| {
+    SetNameArgs::once_on_reducer(move |__identity, __addr, __status, __args| {
         let SetNameArgs { name } = __args;
-        __callback(__identity, __status, name);
+        __callback(__identity, __addr, __status, name);
     })
 }
 

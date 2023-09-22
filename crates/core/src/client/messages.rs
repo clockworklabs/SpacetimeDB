@@ -103,6 +103,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
             message: errmsg,
             energy_quanta_used: event.energy_quanta_used.0 as i64,
             host_execution_duration_micros: event.host_execution_duration.as_micros() as u64,
+            caller_address: event.caller_address.unwrap_or(Address::zero()).as_slice().to_vec(),
         };
 
         let subscription_update = database_update.into_protobuf();

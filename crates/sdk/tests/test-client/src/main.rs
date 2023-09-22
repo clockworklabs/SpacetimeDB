@@ -615,16 +615,23 @@ fn exec_on_reducer() {
 
     let value = 128;
 
-    once_on_insert_one_u_8(move |caller, status, arg| {
+    once_on_insert_one_u_8(move |caller_id, caller_addr, status, arg| {
         let run_checks = || {
             if *arg != value {
                 anyhow::bail!("Unexpected reducer argument. Expected {} but found {}", value, *arg);
             }
-            if *caller != identity().unwrap() {
+            if *caller_id != identity().unwrap() {
                 anyhow::bail!(
-                    "Unexpected caller. Expected:\n{:?}\nFound:\n{:?}",
+                    "Unexpected caller_id. Expected:\n{:?}\nFound:\n{:?}",
                     identity().unwrap(),
-                    caller
+                    caller_id
+                );
+            }
+            if caller_addr != Some(address().unwrap()) {
+                anyhow::bail!(
+                    "Unexpected caller_addr. Expected:\n{:?}\nFound:\n{:?}",
+                    address().unwrap(),
+                    caller_addr
                 );
             }
             if !matches!(status, Status::Committed) {
@@ -674,7 +681,7 @@ fn exec_fail_reducer() {
     let initial_data = 0xbeef;
     let fail_data = 0xbabe;
 
-    once_on_insert_pk_u_8(move |caller, status, arg_key, arg_val| {
+    once_on_insert_pk_u_8(move |caller_id, caller_addr, status, arg_key, arg_val| {
         let run_checks = || {
             if *arg_key != key {
                 anyhow::bail!("Unexpected reducer argument. Expected {} but found {}", key, *arg_key);
@@ -683,14 +690,21 @@ fn exec_fail_reducer() {
                 anyhow::bail!(
                     "Unexpected reducer argument. Expected {} but found {}",
                     initial_data,
-                    *arg_val
+                    *arg_val,
                 );
             }
-            if *caller != identity().unwrap() {
+            if *caller_id != identity().unwrap() {
                 anyhow::bail!(
-                    "Unexpected caller. Expected:\n{:?}\nFound:\n{:?}",
+                    "Unexpected caller_id. Expected:\n{:?}\nFound:\n{:?}",
                     identity().unwrap(),
-                    caller
+                    caller_id,
+                );
+            }
+            if caller_addr != Some(address().unwrap()) {
+                anyhow::bail!(
+                    "Unexpected caller_addr. Expected:\n{:?}\nFound:\n{:?}",
+                    address().unwrap(),
+                    caller_addr,
                 );
             }
             if !matches!(status, Status::Committed) {
@@ -713,7 +727,7 @@ fn exec_fail_reducer() {
 
         reducer_success_result(run_checks());
 
-        once_on_insert_pk_u_8(move |caller, status, arg_key, arg_val| {
+        once_on_insert_pk_u_8(move |caller_id, caller_addr, status, arg_key, arg_val| {
             let run_checks = || {
                 if *arg_key != key {
                     anyhow::bail!("Unexpected reducer argument. Expected {} but found {}", key, *arg_key);
@@ -725,12 +739,19 @@ fn exec_fail_reducer() {
                         *arg_val
                     );
                 }
-                if *caller != identity().unwrap() {
+                if *caller_id != identity().unwrap() {
                     anyhow::bail!(
-                        "Unexpected caller. Expected:\n{:?}\nFound:\n{:?}",
+                        "Unexpected caller_id. Expected:\n{:?}\nFound:\n{:?}",
                         identity().unwrap(),
-                        caller
+                        caller_id,
                     );
+                }
+                if caller_addr != Some(address().unwrap()) {
+                    anyhow::bail!(
+                        "Unexpected caller_addr. Expected:\n{:?}\nFound:\n{:?}",
+                        address().unwrap(),
+                        caller_addr,
+                    )
                 }
                 if !matches!(status, Status::Failed(_)) {
                     anyhow::bail!("Unexpected status. Expected Failed but found {:?}", status);

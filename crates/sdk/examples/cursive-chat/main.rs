@@ -258,8 +258,8 @@ fn on_sub_applied(send: UiSend) -> impl FnMut() + Send + 'static {
 // ## Warn if set_name failed
 
 /// Our `on_set_name` callback: print a warning if the reducer failed.
-fn on_name_set(send: UiSend) -> impl FnMut(&Identity, &Status, &String) {
-    move |_sender, status, name| {
+fn on_name_set(send: UiSend) -> impl FnMut(&Identity, Option<Address>, &Status, &String) {
+    move |_sender_id, _sender_addr, status, name| {
         if let Status::Failed(err) = status {
             send.unbounded_send(UiMessage::NameRejected {
                 current_name: user_name_or_identity(&User::filter_by_identity(identity().unwrap()).unwrap()),
@@ -274,8 +274,8 @@ fn on_name_set(send: UiSend) -> impl FnMut(&Identity, &Status, &String) {
 // ## Warn if a message was rejected
 
 /// Our `on_send_message` callback: print a warning if the reducer failed.
-fn on_message_sent(send: UiSend) -> impl FnMut(&Identity, &Status, &String) {
-    move |_sender, status, text| {
+fn on_message_sent(send: UiSend) -> impl FnMut(&Identity, Option<Address>, &Status, &String) {
+    move |_sender_id, _sender_addr, status, text| {
         if let Status::Failed(err) = status {
             send.unbounded_send(UiMessage::MessageRejected {
                 rejected_message: text.clone(),

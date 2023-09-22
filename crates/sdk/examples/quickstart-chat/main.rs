@@ -132,7 +132,7 @@ fn on_sub_applied() {
 // ## Warn if set_name failed
 
 /// Our `on_set_name` callback: print a warning if the reducer failed.
-fn on_name_set(_sender: &Identity, status: &Status, name: &String) {
+fn on_name_set(_sender_id: &Identity, _sender_addr: Option<Address>, status: &Status, name: &String) {
     if let Status::Failed(err) = status {
         eprintln!("Failed to change name to {:?}: {}", name, err);
     }
@@ -141,7 +141,7 @@ fn on_name_set(_sender: &Identity, status: &Status, name: &String) {
 // ## Warn if a message was rejected
 
 /// Our `on_send_message` callback: print a warning if the reducer failed.
-fn on_message_sent(_sender: &Identity, status: &Status, text: &String) {
+fn on_message_sent(_sender: &Identity, _sender_addr: Option<Address>, status: &Status, text: &String) {
     if let Status::Failed(err) = status {
         eprintln!("Failed to send message {:?}: {}", text, err);
     }

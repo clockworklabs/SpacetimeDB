@@ -15,6 +15,7 @@ use spacetimedb_sdk::{
     sats::{de::Deserialize, ser::Serialize},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
+    Address,
 };
 use std::sync::Arc;
 
@@ -77,9 +78,8 @@ fn handle_event(
     state: Arc<ClientCache>,
 ) -> Option<Arc<AnyReducerEvent>> {
     let Some(function_call) = &event.function_call else {
-	spacetimedb_sdk::log::warn!("Received Event with None function_call");
-        return None;
-    };
+        spacetimedb_sdk::log::warn!("Received Event with None function_call"); return None;
+};
     match &function_call.reducer[..] {
         "send_message" => reducer_callbacks
             .handle_event_of_type::<send_message_reducer::SendMessageArgs, ReducerEvent>(
