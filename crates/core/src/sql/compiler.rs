@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{IndexSchema, TableSchema};
+use crate::db::datastore::traits::TableSchema;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
@@ -73,30 +73,47 @@ fn check_cmp_expr(table: &From, expr: &ColumnOp) -> Result<(), PlanError> {
 /// Compiles a `WHERE ...` clause
 fn compile_where(mut q: QueryExpr, table: &From, filter: Selection) -> Result<QueryExpr, PlanError> {
     check_cmp_expr(table, &filter.clause)?;
-    let schema = &table.root;
-    for op in filter.clause.to_vec() {
-        match is_sargable(table, &op) {
-            Some(IndexArgument::Eq { col_id, value }) => {
-                q = q.with_index_eq(schema.into(), col_id, value);
-            }
-            Some(IndexArgument::LowerBound {
-                col_id,
-                value,
-                inclusive,
-            }) => {
-                q = q.with_index_lower_bound(schema.into(), col_id, value, inclusive);
-            }
-            Some(IndexArgument::UpperBound {
-                col_id,
-                value,
-                inclusive,
-            }) => {
-                q = q.with_index_upper_bound(schema.into(), col_id, value, inclusive);
-            }
-            None => {
-                q = q.with_select(op);
+    // get all of the table schemas referenced in the query
+    let mut schemas = vec![&table.root];
+    if let Some(joins) = &table.join {
+        for Join::Inner { ref rhs, .. } in joins {
+            schemas.push(rhs);
+        }
+    }
+    'outer: for ref op in filter.clause.to_vec() {
+        for schema in &schemas {
+            match is_sargable(schema, op) {
+                // found sargable equality condition for one of the table schemas
+                Some(IndexArgument::Eq { col_id, value }) => {
+                    let table: DbTable = (*schema).into();
+                    q = q.with_index_eq(table, col_id, value);
+                    continue 'outer;
+                }
+                // found sargable range condition for one of the table schemas
+                Some(IndexArgument::LowerBound {
+                    col_id,
+                    value,
+                    inclusive,
+                }) => {
+                    let table: DbTable = (*schema).into();
+                    q = q.with_index_lower_bound(table, col_id, value, inclusive);
+                    continue 'outer;
+                }
+                // found sargable range condition for one of the table schemas
+                Some(IndexArgument::UpperBound {
+                    col_id,
+                    value,
+                    inclusive,
+                }) => {
+                    let table: DbTable = (*schema).into();
+                    q = q.with_index_upper_bound(table, col_id, value, inclusive);
+                    continue 'outer;
+                }
+                None => {}
             }
         }
+        // filter condition cannot be answered using an index
+        q = q.with_select(op.clone());
     }
     Ok(q)
 }
@@ -122,7 +139,7 @@ pub enum IndexArgument {
 
 // Sargable stands for Search ARGument ABLE.
 // A sargable predicate is one that can be answered using an index.
-fn is_sargable(table: &From, op: &ColumnOp) -> Option<IndexArgument> {
+fn is_sargable(table: &TableSchema, op: &ColumnOp) -> Option<IndexArgument> {
     if let ColumnOp::Cmp {
         op: OpQuery::Cmp(op),
         lhs,
@@ -138,12 +155,10 @@ fn is_sargable(table: &From, op: &ColumnOp) -> Option<IndexArgument> {
             return None;
         };
         // lhs field must exist
-        let column = table.root.get_column_by_field(name)?;
+        let column = table.get_column_by_field(name)?;
         // lhs field must have an index
-        let index =
-            table.root.indexes.iter().find(|IndexSchema { table_id, col_id, .. }| {
-                *table_id == column.table_id && *col_id == column.col_id
-            })?;
+        let index = table.indexes.iter().find(|index| index.col_id == column.col_id)?;
+
         match op {
             OpCmp::Eq => Some(IndexArgument::Eq {
                 col_id: index.col_id,
@@ -386,8 +401,8 @@ mod tests {
         auth::{StAccess, StTableType},
         error::ResultTest,
     };
-    use spacetimedb_sats::AlgebraicType;
-    use spacetimedb_vm::expr::{IndexScan, Query};
+    use spacetimedb_sats::{AlgebraicType, BuiltinValue};
+    use spacetimedb_vm::expr::{IndexScan, JoinExpr, Query};
 
     use crate::db::{
         datastore::traits::{ColumnDef, IndexDef, TableDef},
@@ -400,7 +415,7 @@ mod tests {
         name: &str,
         schema: &[(&str, AlgebraicType)],
         indexes: &[(u32, &str)],
-    ) -> ResultTest<()> {
+    ) -> ResultTest<u32> {
         let table_name = name.to_string();
         let table_type = StTableType::User;
         let table_access = StAccess::Public;
@@ -432,8 +447,7 @@ mod tests {
             table_access,
         };
 
-        db.create_table(tx, schema)?;
-        Ok(())
+        Ok(db.create_table(tx, schema)?)
     }
 
     #[test]
@@ -714,6 +728,170 @@ mod tests {
         let Query::Select(_) = ops.remove(0) else {
             panic!("Expected Select");
         };
+        Ok(())
+    }
+
+    #[test]
+    fn compile_join_lhs_push_down() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        // Create table [lhs] with index on [a]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(0, "a")];
+        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+
+        // Create table [rhs] with no indexes
+        let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
+        let indexes = &[];
+        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
+
+        // Should push sargable equality condition below join
+        let sql = "select * from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+
+        let CrudExpr::Query(QueryExpr {
+            source: SourceExpr::DbTable(DbTable { table_id, .. }),
+            query,
+            ..
+        }) = exp
+        else {
+            panic!("unexpected expression: {:#?}", exp);
+        };
+
+        assert_eq!(table_id, lhs_id);
+        assert_eq!(query.len(), 2);
+
+        // First operation in the pipeline should be an index scan
+        let Query::IndexScan(IndexScan {
+            table: DbTable { table_id, .. },
+            col_id: 0,
+            lower_bound: Bound::Included(AlgebraicValue::Builtin(BuiltinValue::U64(3))),
+            upper_bound: Bound::Included(AlgebraicValue::Builtin(BuiltinValue::U64(3))),
+        }) = query[0]
+        else {
+            panic!("unexpected operator {:#?}", query[0]);
+        };
+
+        assert_eq!(table_id, lhs_id);
+
+        // Followed by a join with the rhs table
+        let Query::JoinInner(JoinExpr {
+            rhs:
+                QueryExpr {
+                    source: SourceExpr::DbTable(DbTable { table_id, .. }),
+                    ..
+                },
+            col_lhs:
+                FieldName::Name {
+                    table: ref lhs_table,
+                    field: ref lhs_field,
+                },
+            col_rhs:
+                FieldName::Name {
+                    table: ref rhs_table,
+                    field: ref rhs_field,
+                },
+        }) = query[1]
+        else {
+            panic!("unexpected operator {:#?}", query[1]);
+        };
+
+        assert_eq!(table_id, rhs_id);
+        assert_eq!(lhs_field, "b");
+        assert_eq!(rhs_field, "b");
+        assert_eq!(lhs_table, "lhs");
+        assert_eq!(rhs_table, "rhs");
+        Ok(())
+    }
+
+    #[test]
+    fn compile_join_lhs_and_rhs_push_down() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        // Create table [lhs] with index on [a]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(0, "a")];
+        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+
+        // Create table [rhs] with index on [c]
+        let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
+        let indexes = &[(1, "c")];
+        let rhs_id = create_table(&db, &mut tx, "rhs", schema, indexes)?;
+
+        // Should push the sargable equality condition into the join's left arg.
+        // Should push the sargable range condition into the join's right arg.
+        let sql = "select * from lhs join rhs on lhs.b = rhs.b where lhs.a = 3 and rhs.c < 4";
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+
+        let CrudExpr::Query(QueryExpr {
+            source: SourceExpr::DbTable(DbTable { table_id, .. }),
+            query,
+            ..
+        }) = exp
+        else {
+            panic!("unexpected result from compilation: {:?}", exp);
+        };
+
+        assert_eq!(table_id, lhs_id);
+        assert_eq!(query.len(), 2);
+
+        // First operation in the pipeline should be an index scan
+        let Query::IndexScan(IndexScan {
+            table: DbTable { table_id, .. },
+            col_id: 0,
+            lower_bound: Bound::Included(AlgebraicValue::Builtin(BuiltinValue::U64(3))),
+            upper_bound: Bound::Included(AlgebraicValue::Builtin(BuiltinValue::U64(3))),
+        }) = query[0]
+        else {
+            panic!("unexpected operator {:#?}", query[0]);
+        };
+
+        assert_eq!(table_id, lhs_id);
+
+        // Followed by a join
+        let Query::JoinInner(JoinExpr {
+            rhs:
+                QueryExpr {
+                    source: SourceExpr::DbTable(DbTable { table_id, .. }),
+                    query: ref rhs,
+                },
+            col_lhs:
+                FieldName::Name {
+                    table: ref lhs_table,
+                    field: ref lhs_field,
+                },
+            col_rhs:
+                FieldName::Name {
+                    table: ref rhs_table,
+                    field: ref rhs_field,
+                },
+        }) = query[1]
+        else {
+            panic!("unexpected operator {:#?}", query[1]);
+        };
+
+        assert_eq!(table_id, rhs_id);
+        assert_eq!(lhs_field, "b");
+        assert_eq!(rhs_field, "b");
+        assert_eq!(lhs_table, "lhs");
+        assert_eq!(rhs_table, "rhs");
+
+        assert_eq!(1, rhs.len());
+
+        // The right side of the join should be an index scan
+        let Query::IndexScan(IndexScan {
+            table: DbTable { table_id, .. },
+            col_id: 1,
+            lower_bound: Bound::Unbounded,
+            upper_bound: Bound::Excluded(AlgebraicValue::Builtin(BuiltinValue::U64(4))),
+        }) = rhs[0]
+        else {
+            panic!("unexpected operator {:#?}", rhs[0]);
+        };
+
+        assert_eq!(table_id, rhs_id);
         Ok(())
     }
 }
