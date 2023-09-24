@@ -156,9 +156,9 @@ impl<T> SlimRawSlice<T> {
     ///
     /// It is assumed that `len <= u32::MAX`.
     /// The caller must ensure that `ptr != NULL`.
-    const fn from_len_ptr(len: usize, ptr: *mut T) -> Self {
+    const unsafe fn from_len_ptr(len: usize, ptr: *mut T) -> Self {
         // SAFETY: caller ensured that `!ptr.is_null()`.
-        let ptr = unsafe { NonNull::new_unchecked(ptr) };
+        let ptr = NonNull::new_unchecked(ptr);
         let len = len as u32;
         Self { ptr, len }
     }
@@ -175,14 +175,93 @@ impl<T> Clone for SlimRawSlice<T> {
 // Owned boxed slice
 // =============================================================================
 
-/// Provides a slimmer version of `Box<[T]>`
-/// using `u32` for its length instead of `usize`.
-#[repr(transparent)]
-pub struct SlimSliceBox<T> {
-    /// The representation of this boxed slice.
-    raw: SlimRawSlice<T>,
-    /// Marker to ensure covariance and dropck ownership.
-    owned: PhantomData<T>,
+pub use slim_slice_box::*;
+mod slim_slice_box {
+    // ^-- In the interest of soundness,
+    // this module exists to limit access to the private fields
+    // of `SlimSliceBox<T>` to a few key functions.
+    use super::*;
+
+    /// Provides a slimmer version of `Box<[T]>`
+    /// using `u32` for its length instead of `usize`.
+    #[repr(transparent)]
+    pub struct SlimSliceBox<T> {
+        /// The representation of this boxed slice.
+        ///
+        /// To convert to a `SlimSliceBox<T>` we must first have a `Box<[T]>`.
+        raw: SlimRawSlice<T>,
+        /// Marker to ensure covariance and dropck ownership.
+        owned: PhantomData<T>,
+    }
+
+    impl<T> Drop for SlimSliceBox<T> {
+        fn drop(&mut self) {
+            // Get us an owned `SlimSliceBox<T>`
+            // by replacing `self` with garbage that won't be dropped
+            // as the drop glue for the constituent fields does nothing.
+            let ptr = NonNull::dangling();
+            let raw = SlimRawSlice { len: 0, ptr };
+            let owned = PhantomData;
+            let this = mem::replace(self, Self { raw, owned });
+
+            // Convert into `Box<[T]>` and let it deal with dropping.
+            drop(into_box(this));
+        }
+    }
+
+    impl<T> SlimSliceBox<T> {
+        /// Converts `boxed` to `Self` without checking `boxed.len() <= u32::MAX`.
+        ///
+        /// Only safe to call if the constraint above is satisfied.
+        #[allow(clippy::boxed_local)]
+        // Clippy doesn't seem to consider unsafe code here.
+        pub(super) unsafe fn from_boxed_unchecked(boxed: Box<[T]>) -> Self {
+            let len = boxed.len();
+            let ptr = Box::into_raw(boxed) as *mut T;
+            // SAFETY: `Box<T>`'s ptr was a `NonNull<T>` already.
+            // and our caller has promised that `boxed.len() <= u32::MAX`.
+            let raw = SlimRawSlice::from_len_ptr(len, ptr);
+            let owned = PhantomData;
+            Self { raw, owned }
+        }
+
+        /// Returns a limited shared slice to this boxed slice.
+        #[allow(clippy::needless_lifetimes)]
+        pub fn shared_ref<'a>(&'a self) -> &'a SlimSlice<'a, T> {
+            // SAFETY: The reference lives as long as `self`.
+            // By virtue of `repr(transparent)` we're also allowed these reference casts.
+            unsafe { mem::transmute(self) }
+        }
+
+        /// Returns a limited mutable slice to this boxed slice.
+        #[allow(clippy::needless_lifetimes)]
+        pub fn exclusive_ref<'a>(&'a mut self) -> &'a mut SlimSliceMut<'a, T> {
+            // SAFETY: The reference lives as long as `self`
+            // and we have exclusive access to the heap data thanks to `&'a mut self`.
+            // By virtue of `repr(transparent)` we're also allowed these reference casts.
+            unsafe { mem::transmute(self) }
+        }
+    }
+
+    impl<T> From<SlimSliceBox<T>> for Box<[T]> {
+        fn from(slice: SlimSliceBox<T>) -> Self {
+            let slice = ManuallyDrop::new(slice);
+            let (ptr, len) = slice.raw.split();
+            // SAFETY: All paths to creating a `SlimSliceBox`
+            // go through `SlimSliceBox::from_boxed_unchecked`
+            // which requires a valid `Box<[T]>`.
+            // The function also uses `Box::into_raw`
+            // and the original length is kept.
+            //
+            // It therefore follows that if we reuse the same
+            // pointer and length as given to us by a valid `Box<[T]>`,
+            // we can use `Box::from_raw` to reconstruct the `Box<[T]>`.
+            //
+            // We also no longer claim ownership of the data pointed to by `ptr`
+            // by virtue of `ManuallyDrop` preventing `Drop for SlimSliceBox<T>`.
+            unsafe { Box::from_raw(slice_from_raw_parts_mut(ptr, len)) }
+        }
+    }
 }
 
 /// `SlimSliceBox<T>` is `Send` if `T` is `Send` because the data is owned.
@@ -191,37 +270,21 @@ unsafe impl<T: Send> Send for SlimSliceBox<T> {}
 /// `SlimSliceBox<T>` is `Sync` if `T` is `Sync` because the data is owned.
 unsafe impl<T: Sync> Sync for SlimSliceBox<T> {}
 
-impl<T> Drop for SlimSliceBox<T> {
-    fn drop(&mut self) {
-        // Get us an owned `SlimSliceBox<T>`
-        // by replacing `self` with garbage that won't be dropped
-        // as the drop glue for the constituent fields does nothing.
-        let ptr = NonNull::dangling();
-        let raw = SlimRawSlice { len: 0, ptr };
-        let owned = PhantomData;
-        let this = mem::replace(self, Self { raw, owned });
+impl<T> Deref for SlimSliceBox<T> {
+    type Target = [T];
 
-        // Convert into `Box<[T]>` and let it deal with dropping.
-        drop(into_box(this));
+    fn deref(&self) -> &Self::Target {
+        self.shared_ref().deref()
+    }
+}
+
+impl<T> DerefMut for SlimSliceBox<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.exclusive_ref().deref_mut()
     }
 }
 
 impl<T> SlimSliceBox<T> {
-    /// Converts `boxed` to `Self` without checking `boxed.len() <= u32::MAX`.
-    ///
-    /// Only safe to call if the constraint above is satisfied.
-    #[allow(clippy::boxed_local)]
-    // Clippy doesn't seem to consider unsafe code here.
-    unsafe fn from_boxed_unchecked(boxed: Box<[T]>) -> Self {
-        let len = boxed.len();
-        let ptr = Box::into_raw(boxed) as *mut T;
-        // SAFETY: `Box<T>`'s ptr was a `NonNull<T>` already.
-        // and our caller has promised that `boxed.len() <= u32::MAX`.
-        let raw = SlimRawSlice::from_len_ptr(len, ptr);
-        let owned = PhantomData;
-        Self { raw, owned }
-    }
-
     /// Converts `boxed: Box<[T]>` into `SlimSliceBox<T>`.
     ///
     /// Panics when `boxed.len() > u32::MAX`.
@@ -234,43 +297,6 @@ impl<T> SlimSliceBox<T> {
     /// Panics when `vec.len() > u32::MAX`.
     pub fn from_vec(vec: Vec<T>) -> Self {
         Self::from_boxed(vec.into())
-    }
-
-    /// Returns a limited shared slice to this boxed slice.
-    #[allow(clippy::needless_lifetimes)]
-    pub fn shared_ref<'a>(&'a self) -> &'a SlimSlice<'a, T> {
-        // SAFETY: The reference lives as long as `self`.
-        // By virtue of `repr(transparent)` we're also allowed these reference casts.
-        unsafe { mem::transmute(self) }
-    }
-
-    /// Returns a limited mutable slice to this boxed slice.
-    #[allow(clippy::needless_lifetimes)]
-    pub fn exclusive_ref<'a>(&'a mut self) -> &'a mut SlimSliceMut<'a, T> {
-        // SAFETY: The reference lives as long as `self`
-        // and we have exclusive access to the heap data thanks to `&'a mut self`.
-        // By virtue of `repr(transparent)` we're also allowed these reference casts.
-        unsafe { mem::transmute(self) }
-    }
-}
-
-impl<T> Deref for SlimSliceBox<T> {
-    type Target = [T];
-
-    #[allow(clippy::needless_lifetimes)]
-    fn deref<'a>(&'a self) -> &'a Self::Target {
-        // SAFETY: `ptr` and `len` are derived from a live `Box<[T]>` valid for `'self`
-        // so we satisfy all safety requirements for `from_raw_parts`.
-        unsafe { self.raw.deref() }
-    }
-}
-
-impl<T> DerefMut for SlimSliceBox<T> {
-    #[allow(clippy::needless_lifetimes)]
-    fn deref_mut<'a>(&'a mut self) -> &'a mut Self::Target {
-        // SAFETY: `ptr` and `len` are derived from a live `Box<[T]>`
-        // so we satisfy all safety requirements for `from_raw_parts`.
-        unsafe { self.raw.deref_mut() }
     }
 }
 
@@ -306,26 +332,6 @@ impl<T, const N: usize> From<[T; N]> for SlimSliceBox<T> {
 
         // SAFETY: We verified statically by `AssertU32<N>` above that `N` fits in u32.
         unsafe { Self::from_boxed_unchecked(into_box(arr)) }
-    }
-}
-
-impl<T> From<SlimSliceBox<T>> for Box<[T]> {
-    fn from(slice: SlimSliceBox<T>) -> Self {
-        let slice = ManuallyDrop::new(slice);
-        let (ptr, len) = slice.raw.split();
-        // SAFETY: All paths to creating a `SlimSliceBox`
-        // go through `SlimSliceBox::from_boxed_unchecked`
-        // which requires a valid `Box<[T]>`.
-        // The function also uses `Box::into_raw`
-        // and the original length is kept.
-        //
-        // It therefore follows that if we reuse the same
-        // pointer and length as given to us by a valid `Box<[T]>`,
-        // we can use `Box::from_raw` to reconstruct the `Box<[T]>`.
-        //
-        // We also no longer claim ownership of the data pointed to by `ptr`
-        // by virtue of `ManuallyDrop` preventing `Drop for SlimSliceBox<T>`.
-        unsafe { Box::from_raw(slice_from_raw_parts_mut(ptr, len)) }
     }
 }
 
@@ -466,16 +472,14 @@ impl Deref for SlimStrBox {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        // SAFETY: By construction all `SlimStrBox`'s are valid UTF-8.
-        unsafe { from_utf8_unchecked(self.raw.deref()) }
+        self.shared_ref().deref()
     }
 }
 
 impl DerefMut for SlimStrBox {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        // SAFETY: By construction all `SlimStrBox`'s are valid UTF-8.
-        unsafe { from_utf8_unchecked_mut(&mut self.raw) }
+        self.exclusive_ref().deref_mut()
     }
 }
 
@@ -549,7 +553,7 @@ where
     str: PartialEq<R::Target>,
 {
     fn eq(&self, other: &R) -> bool {
-        **self == **other
+        self.deref() == other.deref()
     }
 }
 
@@ -560,19 +564,19 @@ where
     str: PartialOrd<R::Target>,
 {
     fn partial_cmp(&self, other: &R) -> Option<Ordering> {
-        (**self).partial_cmp(&**other)
+        self.deref().partial_cmp(other.deref())
     }
 }
 
 impl Ord for SlimStrBox {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.raw.cmp(&other.raw)
+        self.deref().cmp(other.deref())
     }
 }
 
 impl Hash for SlimStrBox {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        Hash::hash(&**self, state)
+        Hash::hash(self.deref(), state)
     }
 }
 
@@ -586,48 +590,54 @@ impl Borrow<str> for SlimStrBox {
 // Shared slice reference
 // =============================================================================
 
-/// A shared reference to `[T]` limited to `u32::MAX` in length.
-#[repr(transparent)]
-#[derive(Clone, Copy)]
-pub struct SlimSlice<'a, T> {
-    /// The representation of this shared slice.
-    raw: SlimRawSlice<T>,
-    /// Marker to ensure covariance for `'a`.
-    covariant: PhantomData<&'a [T]>,
+#[allow(clippy::module_inception)]
+mod slim_slice {
+    use super::*;
+
+    /// A shared reference to `[T]` limited to `u32::MAX` in length.
+    #[repr(transparent)]
+    #[derive(Clone, Copy)]
+    pub struct SlimSlice<'a, T> {
+        /// The representation of this shared slice.
+        raw: SlimRawSlice<T>,
+        /// Marker to ensure covariance for `'a`.
+        covariant: PhantomData<&'a [T]>,
+    }
+
+    impl<'a, T> SlimSlice<'a, T> {
+        /// Converts a `&[T]` to the limited version without length checking.
+        ///
+        /// SAFETY: `slice.len() <= u32::MAX` must hold.
+        pub(super) const unsafe fn from_slice_unchecked(slice: &'a [T]) -> Self {
+            let len = slice.len();
+            let ptr = slice.as_ptr().cast_mut();
+            // SAFETY: `&mut [T]` implies that the pointer is non-null.
+            let raw = SlimRawSlice::from_len_ptr(len, ptr);
+            // SAFETY: Our length invariant is satisfied by the caller.
+            let covariant = PhantomData;
+            Self { raw, covariant }
+        }
+    }
+
+    impl<T> Deref for SlimSlice<'_, T> {
+        type Target = [T];
+
+        fn deref(&self) -> &Self::Target {
+            // SAFETY: `ptr` and `len` are either
+            // a) derived from a live `Box<[T]>` valid for `'self`
+            // b) derived from a live `&'self [T]`
+            // so we satisfy all safety requirements for `from_raw_parts`.
+            unsafe { self.raw.deref() }
+        }
+    }
 }
+pub use slim_slice::*;
 
 // SAFETY: Same rules as for `&[T]`.
 unsafe impl<T: Send + Sync> Send for SlimSlice<'_, T> {}
 
 // SAFETY: Same rules as for `&[T]`.
 unsafe impl<T: Sync> Sync for SlimSlice<'_, T> {}
-
-impl<'a, T> SlimSlice<'a, T> {
-    /// Converts a `&[T]` to the limited version without length checking.
-    ///
-    /// SAFETY: `slice.len() <= u32::MAX` must hold.
-    const unsafe fn from_slice_unchecked(slice: &'a [T]) -> Self {
-        let len = slice.len();
-        let ptr = slice.as_ptr().cast_mut();
-        // SAFETY: `&mut [T]` implies that the pointer is non-null.
-        let raw = SlimRawSlice::from_len_ptr(len, ptr);
-        // SAFETY: Our length invariant is satisfied by the caller.
-        let covariant = PhantomData;
-        Self { raw, covariant }
-    }
-}
-
-impl<T> Deref for SlimSlice<'_, T> {
-    type Target = [T];
-
-    fn deref(&self) -> &Self::Target {
-        // SAFETY: `ptr` and `len` are either
-        // a) derived from a live `Box<[T]>` valid for `'self`
-        // b) derived from a live `&'self [T]`
-        // so we satisfy all safety requirements for `from_raw_parts`.
-        unsafe { self.raw.deref() }
-    }
-}
 
 impl<T: Debug> Debug for SlimSlice<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -726,8 +736,8 @@ unsafe impl<T: Sync> Sync for SlimSliceMut<'_, T> {}
 
 impl<'a, T> SlimSliceMut<'a, T> {
     /// Convert this mutable reference to a shared one.
-    pub fn shared(&'a mut self) -> &'a SlimSlice<'a, T> {
-        // SAFETY: By virtue of `&'a mut X -> &'a X` being safe, this is also.
+    pub fn shared(&'a self) -> &'a SlimSlice<'a, T> {
+        // SAFETY: By virtue of `&'a mut X -> &'a X` being sound, this is also.
         // The types and references to them have the same layout as well.
         unsafe { mem::transmute(self) }
     }
@@ -749,11 +759,7 @@ impl<T> Deref for SlimSliceMut<'_, T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        // SAFETY: `ptr` and `len` are either
-        // a) derived from a live `Box<[T]>` valid for `'self`
-        // b) derived from a live `&'self mut [T]`
-        // so we satisfy all safety requirements for `from_raw_parts`.
-        unsafe { self.raw.deref() }
+        self.shared().deref()
     }
 }
 
