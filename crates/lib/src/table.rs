@@ -98,10 +98,3 @@ impl ProductTypeMeta {
             .filter(|(col, _)| col.attr.is_autoinc())
     }
 }
-
-/*
-impl From<ProductTypeMeta> for ProductType {
-    fn from(value: ProductTypeMeta) -> Self {
-        ProductType::new(value.columns.into())
-    }
-}
