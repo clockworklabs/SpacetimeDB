@@ -1,3 +1,4 @@
+use nonempty::NonEmpty;
 use std::collections::HashMap;
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -154,34 +155,39 @@ fn is_sargable(table: &TableSchema, op: &ColumnOp) -> Option<IndexArgument> {
         // lhs field must exist
         let column = table.get_column_by_field(name)?;
         // lhs field must have an index
-        let index = table.indexes.iter().find(|index| index.col_id == column.col_id)?;
+        let index = table
+            .indexes
+            .iter()
+            .find(|index| index.cols == NonEmpty::new(column.col_id))?;
+
+        assert_eq!(index.cols.len(), 1, "No yet supported multi-column indexes");
 
         match op {
             OpCmp::Eq => Some(IndexArgument::Eq {
-                col_id: index.col_id,
+                col_id: index.cols.head,
                 value: value.clone(),
             }),
             // a < 5 => exclusive upper bound
             OpCmp::Lt => Some(IndexArgument::UpperBound {
-                col_id: index.col_id,
+                col_id: index.cols.head,
                 value: value.clone(),
                 inclusive: false,
             }),
             // a > 5 => exclusive lower bound
             OpCmp::Gt => Some(IndexArgument::LowerBound {
-                col_id: index.col_id,
+                col_id: index.cols.head,
                 value: value.clone(),
                 inclusive: false,
             }),
             // a <= 5 => inclusive upper bound
             OpCmp::LtEq => Some(IndexArgument::UpperBound {
-                col_id: index.col_id,
+                col_id: index.cols.head,
                 value: value.clone(),
                 inclusive: true,
             }),
             // a >= 5 => inclusive lower bound
             OpCmp::GtEq => Some(IndexArgument::LowerBound {
-                col_id: index.col_id,
+                col_id: index.cols.head,
                 value: value.clone(),
                 inclusive: true,
             }),
@@ -430,7 +436,7 @@ mod tests {
             .iter()
             .map(|(col_id, index_name)| IndexDef {
                 table_id: 0,
-                col_id: *col_id,
+                cols: NonEmpty::new(*col_id),
                 name: index_name.to_string(),
                 is_unique: false,
             })

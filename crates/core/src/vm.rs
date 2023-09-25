@@ -4,6 +4,7 @@ use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, SequenceId, TableDef};
 use crate::db::relational_db::RelationalDB;
 use itertools::Itertools;
+use nonempty::NonEmpty;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::{DbTable, FieldExpr, Relation};
@@ -226,7 +227,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             if meta.is_unique() {
                 indexes.push(IndexDef {
                     table_id: 0, // Ignored
-                    col_id: i as u32,
+                    cols: NonEmpty::new(i as u32),
                     name: format!("{}_{}_idx", table_name, i),
                     is_unique: true,
                 });
@@ -611,7 +612,7 @@ pub(crate) mod tests {
                 index_id: index_id.0,
                 index_name: "idx_1",
                 table_id,
-                col_id: 0,
+                cols: NonEmpty::new(0),
                 is_unique: true,
             })
                 .into(),
