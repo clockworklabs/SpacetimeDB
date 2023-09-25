@@ -231,7 +231,7 @@ impl WasmInstanceEnv {
     }
 
     /// Deletes all rows in the table identified by `table_id`
-    /// where the column identified by `col_id` matches the byte string,
+    /// where the column identified by `cols` matches the byte string,
     /// in WASM memory, pointed to at by `value`.
     ///
     /// Matching is defined by decoding of `value` to an `AlgebraicValue`
@@ -289,7 +289,7 @@ impl WasmInstanceEnv {
     pub fn delete_range(
         caller: FunctionEnvMut<'_, Self>,
         table_id: u32,
-        col_id: u32,
+        cols: u32,
         range_start: WasmPtr<u8>,
         range_start_len: u32,
         range_end: WasmPtr<u8>,
@@ -302,7 +302,7 @@ impl WasmInstanceEnv {
             let n_deleted = caller
                 .data()
                 .instance_env
-                .delete_range(table_id, col_id, &start, &end)?;
+                .delete_range(table_id, cols, &start, &end)?;
             Ok(n_deleted)
         })
     }
@@ -384,7 +384,6 @@ impl WasmInstanceEnv {
 
             // Read the column ids on which to create an index from WASM memory.
             // This may be one column or an index on several columns.
-            // TODO(george) The index API right now only allows single column indexes.
             let cols = mem.read_bytes(&caller, col_ids, col_len)?;
 
             caller
@@ -396,7 +395,7 @@ impl WasmInstanceEnv {
     }
 
     /// Finds all rows in the table identified by `table_id`,
-    /// where the row has a column, identified by `col_id`,
+    /// where the row has a column, identified by `cols`,
     /// with data matching the byte string, in WASM memory, pointed to at by `val`.
     ///
     /// Matching is defined by decoding of `value` to an `AlgebraicValue`

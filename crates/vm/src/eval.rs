@@ -406,7 +406,7 @@ pub type IterRows<'a> = dyn RelOps + 'a;
 pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<IterRows<'_>>, ErrorVm> {
     for q in query {
         result = match q {
-            Query::IndexScan(_, _, _) => {
+            Query::IndexScan(_) => {
                 panic!("index scans unsupported on memory tables")
             }
             Query::Select(cmp) => {

@@ -4,6 +4,7 @@ use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, SequenceId, TableDef};
 use crate::db::relational_db::RelationalDB;
 use itertools::Itertools;
+use nonempty::NonEmpty;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::{DbTable, FieldExpr, Relation};
@@ -18,6 +19,7 @@ use spacetimedb_vm::expr::*;
 use spacetimedb_vm::program::{ProgramRef, ProgramVm};
 use spacetimedb_vm::rel_ops::RelOps;
 use std::collections::HashMap;
+use std::ops::RangeBounds;
 
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
@@ -36,8 +38,17 @@ pub fn build_query<'a>(
     let first = ops.next();
 
     // If the first operation is an index scan, open an index cursor, else a table cursor.
-    let (mut result, ops) = if let Some(Query::IndexScan(col_id, value, table)) = first {
-        (get_index_cursor(stdb, tx, table, col_id, value)?, ops.collect())
+    let (mut result, ops) = if let Some(Query::IndexScan(IndexScan {
+        table,
+        col_id,
+        lower_bound,
+        upper_bound,
+    })) = first
+    {
+        (
+            iter_by_col_range(stdb, tx, table, col_id, (lower_bound, upper_bound))?,
+            ops.collect(),
+        )
     } else if let Some(op) = first {
         (get_table(stdb, tx, q)?, std::iter::once(op).chain(ops).collect())
     } else {
@@ -46,7 +57,7 @@ pub fn build_query<'a>(
 
     for op in ops {
         result = match op {
-            Query::IndexScan(_, _, _) => {
+            Query::IndexScan(_) => {
                 unreachable!()
             }
             Query::Select(cmp) => {
@@ -112,14 +123,14 @@ fn get_table<'a>(stdb: &'a RelationalDB, tx: &'a MutTxId, query: SourceExpr) -> 
     })
 }
 
-fn get_index_cursor<'a>(
+fn iter_by_col_range<'a>(
     db: &'a RelationalDB,
     tx: &'a MutTxId,
     table: DbTable,
     col_id: u32,
-    value: AlgebraicValue,
+    range: impl RangeBounds<AlgebraicValue> + 'a,
 ) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
-    let iter = db.iter_by_col_eq(tx, table.table_id, col_id, value)?;
+    let iter = db.iter_by_col_range(tx, table.table_id, col_id, range)?;
     Ok(Box::new(IndexCursor::new(table, iter)?) as Box<IterRows<'_>>)
 }
 
@@ -216,7 +227,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             if meta.is_unique() {
                 indexes.push(IndexDef {
                     table_id: 0, // Ignored
-                    col_id: i as u32,
+                    cols: NonEmpty::new(i as u32),
                     name: format!("{}_{}_idx", table_name, i),
                     is_unique: true,
                 });
@@ -353,7 +364,7 @@ impl RelOps for TableCursor<'_> {
     }
 }
 
-impl RelOps for IndexCursor<'_> {
+impl<R: RangeBounds<AlgebraicValue>> RelOps for IndexCursor<'_, R> {
     fn head(&self) -> &Header {
         &self.table.head
     }
@@ -601,7 +612,7 @@ pub(crate) mod tests {
                 index_id: index_id.0,
                 index_name: "idx_1",
                 table_id,
-                col_id: 0,
+                cols: NonEmpty::new(0),
                 is_unique: true,
             })
                 .into(),
