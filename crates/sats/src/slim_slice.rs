@@ -679,21 +679,37 @@ impl<T: PartialOrd> PartialOrd<[T]> for SlimSlice<'_, T> {
     }
 }
 
-impl<T: Clone> From<SlimSlice<'_, T>> for SlimSliceBox<T> {
-    fn from(slice: SlimSlice<'_, T>) -> Self {
+impl<T: Clone> From<&SlimSlice<'_, T>> for SlimSliceBox<T> {
+    fn from(slice: &SlimSlice<'_, T>) -> Self {
         let boxed = into_box(slice.deref());
         // SAFETY: `slice` is limited to `len: u32` by construction.
         unsafe { Self::from_boxed_unchecked(boxed) }
     }
 }
+impl<T: Clone> From<&SlimSlice<'_, T>> for Box<[T]> {
+    fn from(slice: &SlimSlice<'_, T>) -> Self {
+        slice.deref().into()
+    }
+}
+impl<T: Clone> From<&SlimSlice<'_, T>> for Vec<T> {
+    fn from(slice: &SlimSlice<'_, T>) -> Self {
+        slice.deref().into()
+    }
+}
+
+impl<T: Clone> From<SlimSlice<'_, T>> for SlimSliceBox<T> {
+    fn from(slice: SlimSlice<'_, T>) -> Self {
+        (&slice).into()
+    }
+}
 impl<T: Clone> From<SlimSlice<'_, T>> for Box<[T]> {
     fn from(slice: SlimSlice<'_, T>) -> Self {
-        slice.into()
+        slice.deref().into()
     }
 }
 impl<T: Clone> From<SlimSlice<'_, T>> for Vec<T> {
     fn from(slice: SlimSlice<'_, T>) -> Self {
-        slice.into()
+        slice.deref().into()
     }
 }
 
@@ -814,20 +830,36 @@ impl<T: PartialOrd> PartialOrd<[T]> for SlimSliceMut<'_, T> {
     }
 }
 
-impl<T: Clone> From<SlimSliceMut<'_, T>> for SlimSliceBox<T> {
-    fn from(slice: SlimSliceMut<'_, T>) -> Self {
+impl<T: Clone> From<&SlimSliceMut<'_, T>> for SlimSliceBox<T> {
+    fn from(slice: &SlimSliceMut<'_, T>) -> Self {
         // SAFETY: `slice` is limited to `len: u32` by construction.
         unsafe { Self::from_boxed_unchecked(into_box(slice.deref())) }
     }
 }
+impl<T: Clone> From<&SlimSliceMut<'_, T>> for Box<[T]> {
+    fn from(slice: &SlimSliceMut<'_, T>) -> Self {
+        slice.deref().into()
+    }
+}
+impl<T: Clone> From<&SlimSliceMut<'_, T>> for Vec<T> {
+    fn from(slice: &SlimSliceMut<'_, T>) -> Self {
+        slice.deref().into()
+    }
+}
+
+impl<T: Clone> From<SlimSliceMut<'_, T>> for SlimSliceBox<T> {
+    fn from(slice: SlimSliceMut<'_, T>) -> Self {
+        (&slice).into()
+    }
+}
 impl<T: Clone> From<SlimSliceMut<'_, T>> for Box<[T]> {
     fn from(slice: SlimSliceMut<'_, T>) -> Self {
-        slice.into()
+        slice.deref().into()
     }
 }
 impl<T: Clone> From<SlimSliceMut<'_, T>> for Vec<T> {
     fn from(slice: SlimSliceMut<'_, T>) -> Self {
-        slice.into()
+        slice.deref().into()
     }
 }
 
@@ -930,6 +962,19 @@ impl From<&SlimStr<'_>> for SlimStrBox {
         (*slice).into()
     }
 }
+impl From<&SlimStr<'_>> for Box<str> {
+    #[inline]
+    fn from(slice: &SlimStr<'_>) -> Self {
+        slice.deref().into()
+    }
+}
+impl From<&SlimStr<'_>> for String {
+    #[inline]
+    fn from(slice: &SlimStr<'_>) -> Self {
+        slice.deref().into()
+    }
+}
+
 impl From<SlimStr<'_>> for SlimStrBox {
     #[inline]
     fn from(slice: SlimStr<'_>) -> Self {
@@ -940,13 +985,13 @@ impl From<SlimStr<'_>> for SlimStrBox {
 impl From<SlimStr<'_>> for Box<str> {
     #[inline]
     fn from(slice: SlimStr<'_>) -> Self {
-        slice.into()
+        slice.deref().into()
     }
 }
 impl From<SlimStr<'_>> for String {
     #[inline]
     fn from(slice: SlimStr<'_>) -> Self {
-        slice.into()
+        slice.deref().into()
     }
 }
 
@@ -1069,23 +1114,44 @@ impl PartialOrd<str> for SlimStrMut<'_> {
     }
 }
 
+impl From<&SlimStrMut<'_>> for SlimStrBox {
+    #[inline]
+    fn from(slice: &SlimStrMut<'_>) -> Self {
+        // SAFETY: `slice` is limited to `len: u32` by construction + UTF-8.
+        Self {
+            raw: (&slice.raw).into(),
+        }
+    }
+}
+impl From<&SlimStrMut<'_>> for Box<str> {
+    #[inline]
+    fn from(slice: &SlimStrMut<'_>) -> Self {
+        slice.deref().into()
+    }
+}
+impl From<&SlimStrMut<'_>> for String {
+    #[inline]
+    fn from(slice: &SlimStrMut<'_>) -> Self {
+        slice.deref().into()
+    }
+}
+
 impl From<SlimStrMut<'_>> for SlimStrBox {
     #[inline]
     fn from(slice: SlimStrMut<'_>) -> Self {
-        // SAFETY: `slice` is limited to `len: u32` by construction + UTF-8.
-        Self { raw: slice.raw.into() }
+        (&slice).into()
     }
 }
 impl From<SlimStrMut<'_>> for Box<str> {
     #[inline]
     fn from(slice: SlimStrMut<'_>) -> Self {
-        slice.into()
+        slice.deref().into()
     }
 }
 impl From<SlimStrMut<'_>> for String {
     #[inline]
     fn from(slice: SlimStrMut<'_>) -> Self {
-        slice.into()
+        slice.deref().into()
     }
 }
 
@@ -1108,4 +1174,272 @@ impl<'a> TryFrom<&'a mut str> for SlimStrMut<'a> {
 #[inline]
 pub fn str_mut(s: &mut str) -> SlimStrMut<'_> {
     expect_fit(s)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::hash_map::DefaultHasher;
+
+    use super::*;
+
+    fn hash_of<T: Hash>(x: T) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        x.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn hash_properties<T>(a: &T, b: &T, a_deref: &T::Target, b_deref: &T::Target)
+    where
+        T: Hash + Debug + Deref,
+        <T as Deref>::Target: Hash,
+    {
+        assert_eq!(hash_of(a), hash_of(a_deref));
+        assert_eq!(hash_of(b), hash_of(b_deref));
+        assert_ne!(hash_of(a), hash_of(b));
+    }
+
+    fn ord_properties<T: Ord>(a: &T, b: &T, a_deref: &T::Target, b_deref: &T::Target)
+    where
+        T: Ord + Debug + Deref + PartialOrd<<T as Deref>::Target>,
+    {
+        assert_eq!(a.partial_cmp(b), Some(Ordering::Less));
+        assert_eq!(b.partial_cmp(a), Some(Ordering::Greater));
+        assert_eq!(a.partial_cmp(a), Some(Ordering::Equal));
+        assert_eq!(b.partial_cmp(b), Some(Ordering::Equal));
+        assert_eq!(a.partial_cmp(b_deref), Some(Ordering::Less));
+        assert_eq!(b.partial_cmp(a_deref), Some(Ordering::Greater));
+        assert_eq!(a.partial_cmp(a_deref), Some(Ordering::Equal));
+        assert_eq!(b.partial_cmp(b_deref), Some(Ordering::Equal));
+
+        assert_eq!(a.cmp(b), Ordering::Less);
+        assert_eq!(b.cmp(a), Ordering::Greater);
+        assert_eq!(a.cmp(a), Ordering::Equal);
+        assert_eq!(b.cmp(b), Ordering::Equal);
+    }
+
+    #[allow(clippy::eq_op)]
+    fn eq_properties<T>(a: &T, b: &T, a_deref: &T::Target, b_deref: &T::Target)
+    where
+        T: Eq + Debug + Deref + PartialEq<<T as Deref>::Target>,
+    {
+        assert!(a != b);
+        assert!(b != a);
+        assert_eq!(a, a);
+        assert!(a != b_deref);
+        assert!(a == a_deref);
+        assert!(b != a_deref);
+        assert!(b == b_deref);
+    }
+
+    fn debug_properties<T: Debug, U: ?Sized + Debug>(a: &T, b: &T, a_cmp: &U, b_cmp: &U) {
+        assert_eq!(format!("{:?}", a), format!("{:?}", a_cmp));
+        assert_eq!(format!("{:?}", b), format!("{:?}", b_cmp));
+    }
+
+    fn display_properties<T: Debug + Display, U: ?Sized + Display>(a: &T, b: &T, a_cmp: &U, b_cmp: &U) {
+        assert_eq!(a.to_string(), a_cmp.to_string());
+        assert_eq!(b.to_string(), b_cmp.to_string());
+    }
+
+    fn general_properties<T, U>(a: &T, b: &T, a_deref: &U, b_deref: &U)
+    where
+        T: Deref<Target = U> + Debug + Eq + PartialEq<U> + PartialOrd<U> + Ord + Hash,
+        U: ?Sized + Debug + Eq + Ord + Hash,
+    {
+        eq_properties(a, b, a_deref, b_deref);
+        ord_properties(a, b, a_deref, b_deref);
+        hash_properties(a, b, a_deref, b_deref);
+        debug_properties(a, b, a_deref, b_deref);
+    }
+
+    const TEST_STR: &str = "foo";
+    const TEST_STR2: &str = "fop";
+    const TEST_SLICE: &[u8] = TEST_STR.as_bytes();
+    const TEST_SLICE2: &[u8] = TEST_STR2.as_bytes();
+
+    fn test_strings() -> [String; 2] {
+        [TEST_STR.to_string(), TEST_STR2.to_string()]
+    }
+
+    fn test_slices() -> [Vec<u8>; 2] {
+        [TEST_SLICE.to_owned(), TEST_SLICE2.to_owned()]
+    }
+
+    fn various_boxed_slices() -> [[SlimSliceBox<u8>; 2]; 5] {
+        [
+            test_slices().map(SlimSliceBox::from_vec),
+            test_slices().map(Box::from).map(SlimSliceBox::from_boxed),
+            test_slices().map(|s| SlimSliceBox::try_from(s).unwrap()),
+            test_slices().map(|s| SlimSliceBox::try_from(s.into_boxed_slice()).unwrap()),
+            test_slices().map(|s| SlimSliceBox::from(<[u8; 3]>::try_from(s).unwrap())),
+        ]
+    }
+
+    fn various_boxed_strs() -> [[SlimStrBox; 2]; 6] {
+        [
+            test_strings().map(|s| string(&*s)),
+            test_strings().map(SlimStrBox::from_string),
+            test_strings().map(Box::from).map(SlimStrBox::from_boxed),
+            test_strings().map(|s| SlimStrBox::try_from(s).unwrap()),
+            test_strings().map(|s| SlimStrBox::try_from(s.into_boxed_str()).unwrap()),
+            test_strings().map(|s| SlimStrBox::try_from(s.deref()).unwrap()),
+        ]
+    }
+
+    fn assert_str_mut_properties(s1: &mut SlimStrMut<'_>, s2: &mut SlimStrMut<'_>) {
+        let a: &SlimStrMut<'_> = s1;
+        let b: &SlimStrMut<'_> = s2;
+
+        assert_eq!(a.deref(), TEST_STR);
+        assert_eq!(SlimStrBox::from(a).clone().deref(), TEST_STR);
+        assert_eq!(b.deref(), TEST_STR2);
+
+        assert_eq!(String::from(a), TEST_STR);
+        assert_eq!(<Box<str>>::from(a).deref(), TEST_STR);
+        assert_eq!(SlimStrBox::from(a).deref(), TEST_STR);
+        assert_eq!(<Box<str>>::from(SlimStrBox::from(a)).deref(), TEST_STR);
+
+        general_properties(a, b, TEST_STR, TEST_STR2);
+        display_properties(a, b, TEST_STR, TEST_STR2);
+
+        s1.deref_mut().make_ascii_uppercase();
+        assert_eq!(&**s1, TEST_STR.to_uppercase());
+    }
+
+    #[test]
+    fn str_mut_call() {
+        let [mut s1, mut s2] = test_strings();
+        let s1 = &mut str_mut(s1.as_mut_str());
+        let s2 = &mut str_mut(s2.as_mut_str());
+        assert_str_mut_properties(s1, s2);
+    }
+
+    #[test]
+    fn str_mut_try_into() {
+        let [mut s1, mut s2] = test_strings();
+        let s1: &mut SlimStrMut = &mut s1.as_mut().try_into().unwrap();
+        let s2: &mut SlimStrMut = &mut s2.as_mut().try_into().unwrap();
+        assert_str_mut_properties(s1, s2);
+    }
+
+    #[test]
+    fn str_mut_exclusive_ref_various() {
+        for [mut a, mut b] in various_boxed_strs() {
+            assert_str_mut_properties(a.exclusive_ref(), b.exclusive_ref())
+        }
+    }
+
+    fn assert_str_properties(a: &SlimStr<'_>, b: &SlimStr<'_>) {
+        assert_eq!(a.deref(), TEST_STR);
+        assert_eq!(SlimStrBox::from(a).clone().deref(), TEST_STR);
+        assert_eq!(b.deref(), TEST_STR2);
+
+        assert_eq!(String::from(a), TEST_STR);
+        assert_eq!(<Box<str>>::from(a).deref(), TEST_STR);
+        assert_eq!(SlimStrBox::from(a).deref(), TEST_STR);
+        assert_eq!(String::from(SlimStrBox::from(a)).deref(), TEST_STR);
+        assert_eq!(<Box<str>>::from(SlimStrBox::from(a)).deref(), TEST_STR);
+
+        general_properties(a, b, TEST_STR, TEST_STR2);
+        display_properties(a, b, TEST_STR, TEST_STR2);
+    }
+
+    #[test]
+    fn str_call() {
+        let [s1, s2] = test_strings();
+        assert_str_properties(&str(&s1), &str(&s2));
+    }
+
+    #[test]
+    fn str_try_into() {
+        let [s1, s2] = test_strings();
+        let s1: &SlimStr = &mut s1.deref().try_into().unwrap();
+        let s2: &SlimStr = &mut s2.deref().try_into().unwrap();
+        assert_str_properties(s1, s2);
+    }
+
+    #[test]
+    fn str_shared_ref_various() {
+        for [a, b] in various_boxed_strs() {
+            assert_str_properties(a.shared_ref(), b.shared_ref())
+        }
+    }
+
+    fn assert_slice_mut_properties(s1: &mut SlimSliceMut<'_, u8>, s2: &mut SlimSliceMut<'_, u8>) {
+        let a: &SlimSliceMut<'_, u8> = s1;
+        let b: &SlimSliceMut<'_, u8> = s2;
+
+        assert_eq!(a.deref(), TEST_SLICE);
+        assert_eq!(SlimSliceBox::from(a).clone().deref(), TEST_SLICE);
+        assert_eq!(b.deref(), TEST_SLICE2);
+
+        assert_eq!(<Vec<u8>>::from(a), TEST_SLICE);
+        assert_eq!(<Box<[u8]>>::from(a).deref(), TEST_SLICE);
+        assert_eq!(<SlimSliceBox<u8>>::from(a).deref(), TEST_SLICE);
+        assert_eq!(<Vec<u8>>::from(<SlimSliceBox<u8>>::from(a)).deref(), TEST_SLICE);
+
+        general_properties(a, b, TEST_SLICE, TEST_SLICE2);
+
+        s1.deref_mut().make_ascii_uppercase();
+        let mut upper = TEST_SLICE.to_owned();
+        upper.iter_mut().for_each(|x| x.make_ascii_uppercase());
+        assert_eq!(&**s1, upper);
+    }
+
+    #[test]
+    fn slice_mut_call() {
+        let [mut s1, mut s2] = test_slices();
+        let s1 = &mut slice_mut(s1.as_mut());
+        let s2 = &mut slice_mut(s2.as_mut());
+        assert_slice_mut_properties(s1, s2);
+    }
+
+    #[test]
+    fn slice_mut_try_into() {
+        let [mut s1, mut s2] = test_slices();
+        let s1: &mut SlimSliceMut<u8> = &mut s1.deref_mut().try_into().unwrap();
+        let s2: &mut SlimSliceMut<u8> = &mut s2.deref_mut().try_into().unwrap();
+        assert_slice_mut_properties(s1, s2);
+    }
+
+    #[test]
+    fn slice_mut_exclusive_ref_various() {
+        for [mut a, mut b] in various_boxed_slices() {
+            assert_slice_mut_properties(a.exclusive_ref(), b.exclusive_ref());
+        }
+    }
+
+    fn assert_slice_properties(a: &SlimSlice<'_, u8>, b: &SlimSlice<'_, u8>) {
+        assert_eq!(a.deref(), TEST_SLICE);
+        assert_eq!(SlimSliceBox::from(a).clone().deref(), TEST_SLICE);
+        assert_eq!(b.deref(), TEST_SLICE2);
+
+        assert_eq!(<Vec<u8>>::from(a), TEST_SLICE);
+        assert_eq!(<Box<[u8]>>::from(a).deref(), TEST_SLICE);
+        assert_eq!(<SlimSliceBox<u8>>::from(a).deref(), TEST_SLICE);
+        assert_eq!(<Vec<u8>>::from(<SlimSliceBox<u8>>::from(a)).deref(), TEST_SLICE);
+
+        general_properties(a, b, TEST_SLICE, TEST_SLICE2);
+    }
+
+    #[test]
+    fn slice_call() {
+        let [s1, s2] = test_slices();
+        assert_slice_properties(&slice(&s1), &slice(&s2));
+    }
+
+    #[test]
+    fn slice_try_into() {
+        let [s1, s2] = test_slices();
+        let s1: &SlimSlice<u8> = &s1.deref().try_into().unwrap();
+        let s2: &SlimSlice<u8> = &s2.deref().try_into().unwrap();
+        assert_slice_properties(s1, s2);
+    }
+
+    #[test]
+    fn slice_shared_ref_various() {
+        for [a, b] in various_boxed_slices() {
+            assert_slice_properties(a.shared_ref(), b.shared_ref())
+        }
+    }
 }
