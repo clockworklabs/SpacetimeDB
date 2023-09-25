@@ -809,6 +809,167 @@ mod tests {
     }
 
     #[test]
+    fn compile_join_lhs_push_down_no_index() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        // Create table [lhs] with no indexes
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let lhs_id = create_table(&db, &mut tx, "lhs", schema, &[])?;
+
+        // Create table [rhs] with no indexes
+        let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
+        let rhs_id = create_table(&db, &mut tx, "rhs", schema, &[])?;
+
+        // Should push equality condition below join
+        let sql = "select * from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+
+        let CrudExpr::Query(QueryExpr {
+            source: SourceExpr::DbTable(DbTable { table_id, .. }),
+            query,
+            ..
+        }) = exp
+        else {
+            panic!("unexpected expression: {:#?}", exp);
+        };
+
+        assert_eq!(table_id, lhs_id);
+        assert_eq!(query.len(), 2);
+
+        // The first operation in the pipeline should be a selection
+        let Query::Select(ColumnOp::Cmp {
+            op: OpQuery::Cmp(OpCmp::Eq),
+            ref lhs,
+            ref rhs,
+        }) = query[0]
+        else {
+            panic!("unexpected operator {:#?}", query[0]);
+        };
+
+        let ColumnOp::Field(FieldExpr::Name(FieldName::Name { ref table, ref field })) = **lhs else {
+            panic!("unexpected left hand side {:#?}", **lhs);
+        };
+
+        assert_eq!(table, "lhs");
+        assert_eq!(field, "a");
+
+        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::Builtin(BuiltinValue::U64(3)))) = **rhs else {
+            panic!("unexpected right hand side {:#?}", **rhs);
+        };
+
+        // The join should follow the selection
+        let Query::JoinInner(JoinExpr {
+            rhs:
+                QueryExpr {
+                    source: SourceExpr::DbTable(DbTable { table_id, .. }),
+                    query: ref rhs,
+                },
+            col_lhs:
+                FieldName::Name {
+                    table: ref lhs_table,
+                    field: ref lhs_field,
+                },
+            col_rhs:
+                FieldName::Name {
+                    table: ref rhs_table,
+                    field: ref rhs_field,
+                },
+        }) = query[1]
+        else {
+            panic!("unexpected operator {:#?}", query[1]);
+        };
+
+        assert_eq!(table_id, rhs_id);
+        assert_eq!(lhs_field, "b");
+        assert_eq!(rhs_field, "b");
+        assert_eq!(lhs_table, "lhs");
+        assert_eq!(rhs_table, "rhs");
+        assert!(rhs.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn compile_join_rhs_push_down_no_index() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        // Create table [lhs] with no indexes
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let lhs_id = create_table(&db, &mut tx, "lhs", schema, &[])?;
+
+        // Create table [rhs] with no indexes
+        let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
+        let rhs_id = create_table(&db, &mut tx, "rhs", schema, &[])?;
+
+        // Should push equality condition below join
+        let sql = "select * from lhs join rhs on lhs.b = rhs.b where rhs.c = 3";
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+
+        let CrudExpr::Query(QueryExpr {
+            source: SourceExpr::DbTable(DbTable { table_id, .. }),
+            query,
+            ..
+        }) = exp
+        else {
+            panic!("unexpected expression: {:#?}", exp);
+        };
+
+        assert_eq!(table_id, lhs_id);
+        assert_eq!(query.len(), 1);
+
+        // First and only operation in the pipeline should be a join
+        let Query::JoinInner(JoinExpr {
+            rhs:
+                QueryExpr {
+                    source: SourceExpr::DbTable(DbTable { table_id, .. }),
+                    query: ref rhs,
+                },
+            col_lhs:
+                FieldName::Name {
+                    table: ref lhs_table,
+                    field: ref lhs_field,
+                },
+            col_rhs:
+                FieldName::Name {
+                    table: ref rhs_table,
+                    field: ref rhs_field,
+                },
+        }) = query[0]
+        else {
+            panic!("unexpected operator {:#?}", query[0]);
+        };
+
+        assert_eq!(table_id, rhs_id);
+        assert_eq!(lhs_field, "b");
+        assert_eq!(rhs_field, "b");
+        assert_eq!(lhs_table, "lhs");
+        assert_eq!(rhs_table, "rhs");
+
+        // The selection should be pushed onto the rhs of the join
+        let Query::Select(ColumnOp::Cmp {
+            op: OpQuery::Cmp(OpCmp::Eq),
+            ref lhs,
+            ref rhs,
+        }) = rhs[0]
+        else {
+            panic!("unexpected operator {:#?}", rhs[0]);
+        };
+
+        let ColumnOp::Field(FieldExpr::Name(FieldName::Name { ref table, ref field })) = **lhs else {
+            panic!("unexpected left hand side {:#?}", **lhs);
+        };
+
+        assert_eq!(table, "rhs");
+        assert_eq!(field, "c");
+
+        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::Builtin(BuiltinValue::U64(3)))) = **rhs else {
+            panic!("unexpected right hand side {:#?}", **rhs);
+        };
+        Ok(())
+    }
+
+    #[test]
     fn compile_join_lhs_and_rhs_push_down() -> ResultTest<()> {
         let (db, _) = make_test_db()?;
         let mut tx = db.begin_tx();

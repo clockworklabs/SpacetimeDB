@@ -82,11 +82,19 @@ pub enum ColumnOp {
 }
 
 impl ColumnOp {
-    pub fn cmp(op: OpQuery, lhs: ColumnOp, rhs: ColumnOp) -> Self {
+    pub fn new(op: OpQuery, lhs: ColumnOp, rhs: ColumnOp) -> Self {
         Self::Cmp {
             op,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
+        }
+    }
+
+    pub fn cmp(field: FieldName, op: OpCmp, value: AlgebraicValue) -> Self {
+        Self::Cmp {
+            op: OpQuery::Cmp(op),
+            lhs: Box::new(ColumnOp::Field(FieldExpr::Name(field))),
+            rhs: Box::new(ColumnOp::Field(FieldExpr::Value(value))),
         }
     }
 
@@ -816,18 +824,49 @@ impl QueryExpr {
             self.query.push(Query::Select(op.into()));
             return self;
         };
-        match query {
-            Query::Select(filter) => {
-                self.query.push(Query::Select(ColumnOp::Cmp {
-                    op: OpQuery::Logic(OpLogic::And),
-                    lhs: filter.into(),
-                    rhs: Box::new(op.into()),
-                }));
+
+        match (query, op.into()) {
+            (
+                Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }),
+                ColumnOp::Cmp {
+                    op: OpQuery::Cmp(cmp),
+                    lhs: field,
+                    rhs: value,
+                },
+            ) => match (*field, *value) {
+                (ColumnOp::Field(FieldExpr::Name(field)), ColumnOp::Field(FieldExpr::Value(value)))
+                    // Field is from lhs, so push onto join's left arg
+                    if self.source.head().column(&field).is_some() =>
+                {
+                    self = self.with_select(ColumnOp::cmp(field, cmp, value));
+                    self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }));
+                    self
+                }
+                (ColumnOp::Field(FieldExpr::Name(field)), ColumnOp::Field(FieldExpr::Value(value)))
+                    // Field is from rhs, so push onto join's right arg
+                    if rhs.source.head().column(&field).is_some() =>
+                {
+                    self.query.push(Query::JoinInner(JoinExpr {
+                        rhs: rhs.with_select(ColumnOp::cmp(field, cmp, value)),
+                        col_lhs,
+                        col_rhs,
+                    }));
+                    self
+                }
+                (field, value) => {
+                    self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }));
+                    self.query.push(Query::Select(ColumnOp::new(OpQuery::Cmp(cmp), field, value)));
+                    self
+                }
+            },
+            (Query::Select(filter), op) => {
+                self.query
+                    .push(Query::Select(ColumnOp::new(OpQuery::Logic(OpLogic::And), filter, op)));
                 self
             }
-            query => {
+            (query, op) => {
                 self.query.push(query);
-                self.query.push(Query::Select(op.into()));
+                self.query.push(Query::Select(op));
                 self
             }
         }
@@ -839,7 +878,7 @@ impl QueryExpr {
         RHS: Into<FieldExpr>,
         O: Into<OpQuery>,
     {
-        let op = ColumnOp::cmp(op.into(), ColumnOp::Field(lhs.into()), ColumnOp::Field(rhs.into()));
+        let op = ColumnOp::new(op.into(), ColumnOp::Field(lhs.into()), ColumnOp::Field(rhs.into()));
         self.with_select(op)
     }
 
