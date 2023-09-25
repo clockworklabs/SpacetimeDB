@@ -98,6 +98,9 @@ where
     }
 }
 
+/// Projects an iterator of product values
+/// into one of its columns as given by `cols`
+/// which identifies the indicies of the columns to *exclude*.
 // See: https://users.rust-lang.org/t/how-to-use-adapters-closures-for-intoiterator-implementation/46121
 pub struct Project<S: Iterator<Item = ProductValue>> {
     source: S,
