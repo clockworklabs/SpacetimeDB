@@ -2309,7 +2309,7 @@ mod tests {
 
                 StColumnRow { table_id: 5, col_id: 0, col_name: "program_hash".to_string(), col_type: AlgebraicType::array(AlgebraicType::U8), is_autoinc: false },
                 StColumnRow { table_id: 5, col_id: 1, col_name: "kind".to_string(), col_type: AlgebraicType::U8, is_autoinc: false },
-                StColumnRow { table_id: 5, col_id: 2, col_name: "epoch".to_string(), col_type: AlgebraicType::U64, is_autoinc: false },
+                StColumnRow { table_id: 5, col_id: 2, col_name: "epoch".to_string(), col_type: AlgebraicType::U128, is_autoinc: false },
             ]
         );
         let index_rows = datastore
