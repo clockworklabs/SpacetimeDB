@@ -121,14 +121,14 @@ pub enum ValidationError {
     #[error("bad {kind} signature for {name:?}; expected {expected:?} got {actual:?}")]
     MismatchedSignature {
         kind: &'static str,
-        name: String,
+        name: Box<str>,
         expected: StaticFuncSig,
         actual: BoxFuncSig,
     },
     #[error("expected {name:?} export to be a {kind} with signature {expected:?}, but it wasn't a function at all")]
     NotAFunction {
         kind: &'static str,
-        name: String,
+        name: Box<str>,
         expected: StaticFuncSig,
     },
     #[error("there should be a memory export called \"memory\" but it does not exist")]

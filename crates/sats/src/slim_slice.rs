@@ -1277,7 +1277,7 @@ mod tests {
 
     fn various_boxed_strs() -> [[SlimStrBox; 2]; 6] {
         [
-            test_strings().map(|s| string(&*s)),
+            test_strings().map(|s| string(&s)),
             test_strings().map(SlimStrBox::from_string),
             test_strings().map(Box::from).map(SlimStrBox::from_boxed),
             test_strings().map(|s| SlimStrBox::try_from(s).unwrap()),
