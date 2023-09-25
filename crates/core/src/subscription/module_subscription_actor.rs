@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::{
-    query::compile_query,
+    query::compile_read_only_query,
     subscription::{QuerySet, Subscription},
 };
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -149,7 +149,7 @@ impl ModuleSubscriptionActor {
         let queries: QuerySet = subscription
             .query_strings
             .into_iter()
-            .map(|query| compile_query(&self.relational_db, tx, &auth, &query))
+            .map(|query| compile_read_only_query(&self.relational_db, tx, &auth, &query))
             .collect::<Result<_, _>>()?;
 
         let sub = match self.subscriptions.iter_mut().find(|s| s.queries == queries) {

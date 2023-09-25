@@ -1,8 +1,7 @@
-use axum::extract::{FromRef, State};
+use axum::extract::State;
 use axum::response::IntoResponse;
-use std::sync::Arc;
 
-use crate::{ControlNodeDelegate, WorkerCtx};
+use crate::NodeDelegate;
 
 // #[derive(Clone, NewMiddleware)]
 // pub struct MetricsAuthMiddleware;
@@ -16,7 +15,7 @@ use crate::{ControlNodeDelegate, WorkerCtx};
 //     }
 // }
 
-pub async fn metrics(State(ctx): State<Arc<dyn WorkerCtx>>) -> axum::response::Result<impl IntoResponse> {
+pub async fn metrics<S: NodeDelegate>(State(ctx): State<S>) -> axum::response::Result<impl IntoResponse> {
     let mut buf = String::new();
 
     let mut encode_to_buffer = |mfs: &[_]| {
@@ -33,11 +32,10 @@ pub async fn metrics(State(ctx): State<Arc<dyn WorkerCtx>>) -> axum::response::R
 
 pub fn router<S>() -> axum::Router<S>
 where
-    S: ControlNodeDelegate + Clone + 'static,
-    Arc<dyn WorkerCtx>: FromRef<S>,
+    S: NodeDelegate + Clone + 'static,
 {
     use axum::routing::get;
-    axum::Router::new().route("/", get(metrics))
+    axum::Router::new().route("/", get(metrics::<S>))
     // TODO:
     // .layer(MetricsAuthMiddleware)
 }

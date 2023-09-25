@@ -1,6 +1,6 @@
 use crate::StandaloneEnv;
 use spacetimedb::host::{EnergyDiff, EnergyMonitor, EnergyMonitorFingerprint, EnergyQuanta};
-use spacetimedb_client_api::ControlNodeDelegate;
+use spacetimedb_client_api::ControlStateWriteAccess;
 use std::{
     sync::{Arc, Mutex, Weak},
     time::Duration,

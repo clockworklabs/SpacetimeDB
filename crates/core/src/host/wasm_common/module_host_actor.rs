@@ -5,11 +5,14 @@ use std::time::{Duration, Instant};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef, TableSchema};
 use crate::host::scheduler::Scheduler;
+use crate::sql;
 use anyhow::Context;
 use bytes::Bytes;
 use nonempty::NonEmpty;
 use spacetimedb_lib::buffer::DecodeError;
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, IndexType, ModuleDef};
+use spacetimedb_vm::expr::CrudExpr;
 
 use crate::client::ClientConnectionSender;
 use crate::database_instance_context::DatabaseInstanceContext;
@@ -249,6 +252,30 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
 
     fn close(self) {
         self.scheduler.close()
+    }
+
+    fn one_off_query(
+        &self,
+        caller_identity: Identity,
+        query: String,
+    ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError> {
+        let db = &self.worker_database_instance.relational_db;
+        let auth = AuthCtx::new(self.worker_database_instance.identity, caller_identity);
+        // TODO(jgilles): make this a read-only TX when those get added
+
+        db.with_read_only(|tx| {
+            log::debug!("One-off query: {query}");
+            // NOTE(jgilles): this returns errors about mutating queries as SubscriptionErrors, which is perhaps
+            // mildly confusing, since the user did not subscribe to anything. Should we rename SubscriptionError to ReadOnlyQueryError?
+            let compiled = crate::subscription::query::compile_read_only_query(db, tx, &auth, &query)?;
+
+            sql::execute::execute_sql(
+                db,
+                tx,
+                compiled.queries.into_iter().map(CrudExpr::Query).collect(),
+                auth,
+            )
+        })
     }
 }
 

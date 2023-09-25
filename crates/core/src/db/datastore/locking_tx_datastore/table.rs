@@ -1,5 +1,5 @@
 use super::{
-    btree_index::{BTreeIndex, BTreeIndexIter, BTreeIndexRangeIter},
+    btree_index::{BTreeIndex, BTreeIndexRangeIter},
     RowId,
 };
 use crate::db::datastore::traits::{ColId, TableSchema};
@@ -57,28 +57,14 @@ impl Table {
 
     /// When there's an index for `cols`,
     /// returns an iterator over the [`BTreeIndex`] that yields all the `RowId`s
-    /// that match the specified `value` in the indexed column.
+    /// that match the specified `range` in the indexed column.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    ///
-    /// For a unique index this will always yield at most one `RowId`.
-    pub(crate) fn index_seek<'a>(
-        &'a self,
-        cols: NonEmpty<ColId>,
-        value: &'a AlgebraicValue,
-    ) -> Option<BTreeIndexRangeIter<'a>> {
-        self.indexes.get(&cols).map(|index| index.seek(value))
-    }
-
-    pub(crate) fn _index_scan(&self, cols: NonEmpty<ColId>) -> BTreeIndexIter<'_> {
-        self.indexes.get(&cols).unwrap().scan()
-    }
-
-    pub(crate) fn _index_range_scan(
+    pub(crate) fn index_seek(
         &self,
         cols: NonEmpty<ColId>,
-        range: impl RangeBounds<AlgebraicValue>,
-    ) -> BTreeIndexRangeIter<'_> {
-        self.indexes.get(&cols).unwrap().scan_range(range)
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> Option<BTreeIndexRangeIter<'_>> {
+        self.indexes.get(&cols).map(|index| index.seek(range))
     }
 }

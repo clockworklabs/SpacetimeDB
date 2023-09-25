@@ -159,6 +159,7 @@ pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), 
 
     let res = builder.send().await?.error_for_status()?;
     let bytes = res.bytes().await.unwrap();
+    println!("{}", String::from_utf8_lossy(&bytes[..]));
     let result: InsertDomainResult = serde_json::from_slice(&bytes[..]).unwrap();
     match result {
         InsertDomainResult::Success { domain, address } => {
@@ -212,6 +213,7 @@ pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), 
                 )),
             };
         }
+        InsertDomainResult::OtherError(e) => return Err(anyhow::anyhow!(e)),
     }
 
     Ok(())

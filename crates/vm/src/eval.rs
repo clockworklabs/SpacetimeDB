@@ -406,6 +406,9 @@ pub type IterRows<'a> = dyn RelOps + 'a;
 pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<IterRows<'_>>, ErrorVm> {
     for q in query {
         result = match q {
+            Query::IndexScan(_) => {
+                panic!("index scans unsupported on memory tables")
+            }
             Query::Select(cmp) => {
                 let header = result.head().clone();
                 let iter = result.select(move |row| cmp.compare(row, &header));
@@ -426,10 +429,10 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
                 let col_rhs = FieldExpr::Name(q.col_rhs);
                 let key_lhs = col_lhs.clone();
                 let key_rhs = col_rhs.clone();
-                let row_rhs = q.rhs.row_count();
+                let row_rhs = q.rhs.source.row_count();
 
-                let head = q.rhs.head();
-                let rhs = match q.rhs {
+                let head = q.rhs.source.head();
+                let rhs = match q.rhs.source {
                     SourceExpr::MemTable(x) => Box::new(RelIter::new(head, row_rhs, x)) as Box<IterRows<'_>>,
                     SourceExpr::DbTable(_) => {
                         // let iter = stdb.scan(tx, x.table_id)?;
@@ -440,6 +443,8 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
                         todo!("How pass the db iter?")
                     }
                 };
+
+                let rhs = build_query(rhs, q.rhs.query)?;
 
                 let lhs = result;
                 let key_lhs_header = lhs.head().clone();
@@ -546,6 +551,8 @@ pub fn create_game_data() -> GameData {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::disallowed_macros)]
+
     use super::*;
     use crate::dsl::{prefix_op, query, value};
     use crate::program::Program;

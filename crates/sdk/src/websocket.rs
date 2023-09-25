@@ -8,7 +8,9 @@ use spacetimedb_client_api_messages::client_api::Message;
 use tokio::task::JoinHandle;
 use tokio::{net::TcpStream, runtime};
 use tokio_tungstenite::{
-    connect_async, tungstenite::client::IntoClientRequest, tungstenite::protocol::Message as WebSocketMessage,
+    connect_async_with_config,
+    tungstenite::client::IntoClientRequest,
+    tungstenite::protocol::{Message as WebSocketMessage, WebSocketConfig},
     MaybeTlsStream, WebSocketStream,
 };
 
@@ -119,7 +121,19 @@ impl DbConnection {
         <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
     {
         let req = make_request(host, db_name, credentials)?;
-        let (sock, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = connect_async(req).await?;
+        let (sock, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = connect_async_with_config(
+            req,
+            // TODO(kim): In order to be able to replicate module WASM blobs,
+            // `cloud-next` cannot have message / frame size limits. That's
+            // obviously a bad default for all other clients, though.
+            Some(WebSocketConfig {
+                max_frame_size: None,
+                max_message_size: None,
+                ..WebSocketConfig::default()
+            }),
+            false,
+        )
+        .await?;
         Ok(DbConnection { sock })
     }
 

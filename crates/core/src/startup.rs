@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tracing_appender::rolling;
 use tracing_flame::FlameLayer;
+use tracing_subscriber::fmt::writer::BoxMakeWriter;
 use tracing_subscriber::fmt::writer::MakeWriterExt;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::prelude::*;
@@ -27,8 +28,16 @@ pub fn configure_tracing() {
         .with_target(false)
         .compact();
 
+    let disable_disk_logging = std::env::var_os("SPACETIMEDB_DISABLE_DISK_LOGGING").is_some();
+
+    let write_to = if disable_disk_logging {
+        BoxMakeWriter::new(std::io::stdout)
+    } else {
+        BoxMakeWriter::new(std::io::stdout.and(rolling::daily(logs_path, "spacetimedb.log")))
+    };
+
     let fmt_layer = tracing_subscriber::fmt::Layer::default()
-        .with_writer(std::io::stdout.and(rolling::daily(logs_path, "spacetimedb.log")))
+        .with_writer(write_to)
         .event_format(format);
 
     let env_filter_layer = parse_from_file(&conf_file);
@@ -89,7 +98,7 @@ fn reload_config<S>(conf_file: &Path, reload_handle: &reload::Handle<EnvFilter, 
         std::thread::sleep(RELOAD_INTERVAL);
         if let Ok(modified) = conf_file.metadata().and_then(|m| m.modified()) {
             if prev_time.map_or(true, |prev| modified > prev) {
-                eprintln!("reloading log config...");
+                log::info!("reloading log config...");
                 prev_time = Some(modified);
                 if reload_handle.reload(parse_from_file(conf_file)).is_err() {
                     break;
