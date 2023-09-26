@@ -1,6 +1,7 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::product_type::ProductType;
 use crate::ArrayValue;
+use nonempty::NonEmpty;
 
 /// A product value is made of a a list of
 /// "elements" / "fields" / "factors" of other `AlgebraicValue`s.
@@ -46,10 +47,10 @@ impl crate::Value for ProductValue {
 
 /// An error that occurs when a field, of a product value, is accessed that doesn't exist.
 #[derive(thiserror::Error, Debug, Copy, Clone)]
-#[error("Field {index}({name:?}) not found or has an invalid type")]
+#[error("Field {col_pos}({name:?}) not found or has an invalid type")]
 pub struct InvalidFieldError {
-    /// The claimed index of the field within the product value.
-    pub index: usize,
+    /// The claimed col_pos of the field within the product value.
+    pub col_pos: usize,
     /// The name of the field, if any.
     pub name: Option<&'static str>,
 }
@@ -59,7 +60,51 @@ impl ProductValue {
     ///
     /// The `name` is non-functional and is only used for error-messages.
     pub fn get_field(&self, index: usize, name: Option<&'static str>) -> Result<&AlgebraicValue, InvalidFieldError> {
-        self.elements.get(index).ok_or(InvalidFieldError { index, name })
+        self.elements
+            .get(index)
+            .ok_or(InvalidFieldError { col_pos: index, name })
+    }
+
+    /// This function is used to project fields based on the provided `indexes`.
+    ///
+    /// It will raise an [InvalidFieldError] if any of the supplied `indexes` cannot be found.
+    ///
+    /// The optional parameter `name: Option<&'static str>` serves a non-functional role and is
+    /// solely utilized for generating error messages.
+    ///
+    /// **Important:**
+    ///
+    /// The resulting [AlgebraicValue] will wrap into a [ProductValue] when projecting multiple
+    /// fields, otherwise it will consist of a single [AlgebraicValue].
+    ///
+    pub fn project(&self, indexes: &[(usize, Option<&'static str>)]) -> Result<AlgebraicValue, InvalidFieldError> {
+        let fields = match indexes {
+            [(index, name)] => self.get_field(*index, *name)?.clone(),
+            indexes => {
+                let fields: Result<Vec<_>, _> = indexes
+                    .iter()
+                    .map(|(index, name)| self.get_field(*index, *name).cloned())
+                    .collect();
+                AlgebraicValue::Product(ProductValue::new(&fields?))
+            }
+        };
+
+        Ok(fields)
+    }
+
+    /// This utility function is designed to project fields based on the supplied `indexes`.
+    ///
+    /// **Important:**
+    ///
+    /// The resulting [AlgebraicValue] will wrap into a [ProductValue] when projecting multiple
+    /// fields, otherwise it will consist of a single [AlgebraicValue].
+    ///
+    /// **Parameters:**
+    /// - `indexes`: A [NonEmpty<u32>] containing the indexes of fields to be projected.
+    ///
+    pub fn project_not_empty(&self, indexes: &NonEmpty<u32>) -> Result<AlgebraicValue, InvalidFieldError> {
+        let indexes: Vec<_> = indexes.iter().map(|x| (*x as usize, None)).collect();
+        self.project(&indexes)
     }
 
     /// Extracts the `value` at field of `self` identified by `index`
@@ -70,7 +115,7 @@ impl ProductValue {
         name: Option<&'static str>,
         f: impl 'a + Fn(&'a AlgebraicValue) -> Option<T>,
     ) -> Result<T, InvalidFieldError> {
-        f(self.get_field(index, name)?).ok_or(InvalidFieldError { index, name })
+        f(self.get_field(index, name)?).ok_or(InvalidFieldError { col_pos: index, name })
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `bool`.

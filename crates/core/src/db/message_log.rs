@@ -269,6 +269,8 @@ impl<'a> Iterator for MessageLogIter<'a> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::disallowed_macros)]
+
     use super::MessageLog;
     use spacetimedb_lib::error::ResultTest;
     use tempdir::{self, TempDir};

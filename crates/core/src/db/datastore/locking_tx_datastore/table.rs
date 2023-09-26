@@ -1,8 +1,9 @@
 use super::{
-    btree_index::{BTreeIndex, BTreeIndexIter, BTreeIndexRangeIter},
+    btree_index::{BTreeIndex, BTreeIndexRangeIter},
     RowId,
 };
 use crate::db::datastore::traits::{ColId, TableSchema};
+use nonempty::NonEmpty;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -12,14 +13,14 @@ use std::{
 pub(crate) struct Table {
     pub(crate) row_type: ProductType,
     pub(crate) schema: TableSchema,
-    pub(crate) indexes: HashMap<ColId, BTreeIndex>,
+    pub(crate) indexes: HashMap<NonEmpty<ColId>, BTreeIndex>,
     pub(crate) rows: BTreeMap<RowId, ProductValue>,
 }
 
 impl Table {
     pub(crate) fn insert_index(&mut self, mut index: BTreeIndex) {
         index.build_from_rows(self.scan_rows()).unwrap();
-        self.indexes.insert(ColId(index.col_id), index);
+        self.indexes.insert(index.cols.clone().map(ColId), index);
     }
 
     pub(crate) fn insert(&mut self, row_id: RowId, row: ProductValue) {
@@ -31,9 +32,9 @@ impl Table {
 
     pub(crate) fn delete(&mut self, row_id: &RowId) -> Option<ProductValue> {
         let row = self.rows.remove(row_id)?;
-        for (col_id, index) in self.indexes.iter_mut() {
-            let col_value = row.get_field(col_id.0 as usize, None).unwrap();
-            index.delete(col_value, row_id)
+        for (cols, index) in self.indexes.iter_mut() {
+            let col_value = row.project_not_empty(&cols.clone().map(|x| x.0)).unwrap();
+            index.delete(&col_value, row_id)
         }
         Some(row)
     }
@@ -54,26 +55,16 @@ impl Table {
         self.rows.values()
     }
 
-    /// When there's an index for `col_id`,
+    /// When there's an index for `cols`,
     /// returns an iterator over the [`BTreeIndex`] that yields all the `RowId`s
-    /// that match the specified `value` in the indexed column.
+    /// that match the specified `range` in the indexed column.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    ///
-    /// For a unique index this will always yield at most one `RowId`.
-    pub(crate) fn index_seek<'a>(&'a self, col_id: ColId, value: &AlgebraicValue) -> Option<BTreeIndexRangeIter<'a>> {
-        self.indexes.get(&col_id).map(|index| index.seek(value))
-    }
-
-    pub(crate) fn _index_scan(&self, col_id: ColId) -> BTreeIndexIter<'_> {
-        self.indexes.get(&col_id).unwrap().scan()
-    }
-
-    pub(crate) fn _index_range_scan(
+    pub(crate) fn index_seek(
         &self,
-        col_id: ColId,
-        range: impl RangeBounds<AlgebraicValue>,
-    ) -> BTreeIndexRangeIter<'_> {
-        self.indexes.get(&col_id).unwrap().scan_range(range)
+        cols: NonEmpty<ColId>,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> Option<BTreeIndexRangeIter<'_>> {
+        self.indexes.get(&cols).map(|index| index.seek(range))
     }
 }

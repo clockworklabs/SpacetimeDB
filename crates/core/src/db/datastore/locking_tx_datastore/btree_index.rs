@@ -3,6 +3,7 @@ use crate::{
     db::datastore::traits::{IndexId, IndexSchema},
     error::DBError,
 };
+use nonempty::NonEmpty;
 use spacetimedb_lib::{data_key::ToDataKey, DataKey};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use std::{
@@ -10,6 +11,26 @@ use std::{
     ops::{Bound, RangeBounds},
 };
 
+/// ## Index Key Composition
+///
+/// [IndexKey] use an [AlgebraicValue] to optimize for the common case of *single columns* as key.
+///
+/// See [ProductValue::project] for the logic.
+///
+/// ### SQL Examples
+///
+/// To illustrate the concept of single and multiple column indexes, consider the following SQL examples:
+///
+/// ```sql
+/// CREATE INDEX a ON t1 (column_i32); -- Creating a single column index, a common case.
+/// CREATE INDEX b ON t1 (column_i32, column_i32); -- Creating a multiple column index for more complex requirements.
+/// ```
+/// Will be on memory:
+///
+/// ```rust,ignore
+/// [AlgebraicValue::I32(0)] = Row(ProductValue(...))
+/// [AlgebraicValue::Product(AlgebraicValue::I32(0), AlgebraicValue::I32(1))] = Row(ProductValue(...))
+/// ```
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 struct IndexKey {
     value: AlgebraicValue,
@@ -57,28 +78,33 @@ impl Iterator for BTreeIndexRangeIter<'_> {
 pub(crate) struct BTreeIndex {
     pub(crate) index_id: IndexId,
     pub(crate) table_id: u32,
-    pub(crate) col_id: u32,
+    pub(crate) cols: NonEmpty<u32>,
     pub(crate) name: String,
     pub(crate) is_unique: bool,
     idx: BTreeSet<IndexKey>,
 }
 
 impl BTreeIndex {
-    pub(crate) fn new(index_id: IndexId, table_id: u32, col_id: u32, name: String, is_unique: bool) -> Self {
+    pub(crate) fn new(index_id: IndexId, table_id: u32, cols: NonEmpty<u32>, name: String, is_unique: bool) -> Self {
         Self {
             index_id,
             table_id,
-            col_id,
+            cols,
             name,
             is_unique,
             idx: BTreeSet::new(),
         }
     }
 
+    pub(crate) fn get_fields(&self, row: &ProductValue) -> Result<AlgebraicValue, DBError> {
+        let fields = row.project_not_empty(&self.cols)?;
+        Ok(fields)
+    }
+
     #[tracing::instrument(skip_all)]
     pub(crate) fn insert(&mut self, row: &ProductValue) -> Result<(), DBError> {
-        let col_value = row.get_field(self.col_id as usize, None)?;
-        let key = IndexKey::from_row(col_value, row.to_data_key());
+        let col_value = self.get_fields(row)?;
+        let key = IndexKey::from_row(&col_value, row.to_data_key());
         self.idx.insert(key);
         Ok(())
     }
@@ -92,8 +118,8 @@ impl BTreeIndex {
     #[tracing::instrument(skip_all)]
     pub(crate) fn violates_unique_constraint(&self, row: &ProductValue) -> bool {
         if self.is_unique {
-            let col_value = row.get_field(self.col_id as usize, None).unwrap();
-            return self.contains_any(col_value);
+            let col_value = self.get_fields(row).unwrap();
+            return self.contains_any(&col_value);
         }
         false
     }
@@ -101,10 +127,9 @@ impl BTreeIndex {
     #[tracing::instrument(skip_all)]
     pub(crate) fn get_rows_that_violate_unique_constraint<'a>(
         &'a self,
-        row: &'a ProductValue,
+        row: &'a AlgebraicValue,
     ) -> Option<BTreeIndexRangeIter<'a>> {
-        self.is_unique
-            .then(|| self.seek(row.get_field(self.col_id as usize, None).unwrap()))
+        self.is_unique.then(|| self.seek(row))
     }
 
     /// Returns `true` if the [BTreeIndex] contains a value for the specified `value`.
@@ -122,7 +147,7 @@ impl BTreeIndex {
     /// Returns an iterator over the [BTreeIndex] that yields all the `RowId`s
     /// that fall within the specified `range`.
     #[tracing::instrument(skip_all)]
-    pub(crate) fn scan_range(&self, range: impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter {
+    pub(crate) fn seek<'a>(&'a self, range: &impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter<'a> {
         let map = |bound, datakey| match bound {
             Bound::Included(x) => Bound::Included(IndexKey::from_row(x, datakey)),
             Bound::Excluded(x) => Bound::Excluded(IndexKey::from_row(x, datakey)),
@@ -132,21 +157,6 @@ impl BTreeIndex {
         let end = map(range.end_bound(), DataKey::max_datakey());
         BTreeIndexRangeIter {
             range_iter: self.idx.range((start, end)),
-        }
-    }
-
-    /// Returns an iterator over the [BTreeIndex] that yields all the `RowId`s
-    /// that match the specified `value` in the indexed column.
-    ///
-    /// Matches is defined by `Ord for AlgebraicValue`.
-    ///
-    /// For a unique index this will always yield at most one `RowId`.
-    #[tracing::instrument(skip_all)]
-    pub(crate) fn seek<'a>(&'a self, value: &AlgebraicValue) -> BTreeIndexRangeIter<'a> {
-        let k_start = IndexKey::from_row(value, DataKey::min_datakey());
-        let k_end = IndexKey::from_row(value, DataKey::max_datakey());
-        BTreeIndexRangeIter {
-            range_iter: self.idx.range(k_start..k_end),
         }
     }
 
@@ -165,7 +175,7 @@ impl From<&BTreeIndex> for IndexSchema {
         IndexSchema {
             index_id: x.index_id.0,
             table_id: x.table_id,
-            col_id: x.col_id,
+            cols: x.cols.clone(),
             is_unique: x.is_unique,
             index_name: x.name.clone(),
         }
