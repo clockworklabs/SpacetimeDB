@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use reqwest::RequestBuilder;
 use serde::Deserialize;
 use spacetimedb_lib::name::{is_address, DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
-use spacetimedb_lib::Identity;
+use spacetimedb_lib::{AlgebraicType, Identity};
 use std::io::Write;
 use std::path::Path;
 use std::process::exit;
@@ -170,16 +171,41 @@ pub async fn select_identity_config(
     }
 }
 
-pub async fn describe_reducer(mut config: Config, database: &String, server: Option<String>, reducer_name: String, anon_identity: bool, as_identity: Option<String>) -> anyhow::Result<()> {
+#[derive(Debug, Deserialize, Clone)]
+pub struct DescribeReducer {
+    #[serde(rename = "type")]
+    pub type_field: String,
+    pub arity: i32,
+    pub schema: DescribeSchema,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct DescribeSchema {
+    pub name: String,
+    pub elements: Vec<DescribeElement>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct DescribeElement {
+    pub name: Option<DescribeElementName>,
+    pub algebraic_type: AlgebraicType,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct DescribeElementName {
+    pub some: String,
+}
+
+pub async fn describe_reducer(config: &mut Config, database: &String, server: Option<String>, reducer_name: String, anon_identity: bool, as_identity: Option<String>) -> anyhow::Result<DescribeReducer> {
     let address = database_address(&config, database, server.as_ref().map(|x| x.as_str())).await?;
 
     let builder = reqwest::Client::new().get(format!(
         "{}/database/schema/{}/{}/{}",
         config.get_host_url(server.as_ref().map(|x| x.as_str()))?,
         address,
-        "reducers",
+        "reducer",
         reducer_name));
-    let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity.as_ref(), server.as_ref().map(|x| x.as_str())).await;
+    let auth_header = get_auth_header_only(config, anon_identity, as_identity.as_ref(), server.as_ref().map(|x| x.as_str())).await;
     let builder = add_auth_header_opt(builder, &auth_header);
 
     let descr = builder
@@ -189,8 +215,8 @@ pub async fn describe_reducer(mut config: Config, database: &String, server: Opt
         .error_for_status()?
         .text()
         .await?;
-    println!("{}", descr);
-    Ok(())
+    let result: HashMap<String, DescribeReducer> = serde_json::from_str(descr.as_str()).unwrap();
+    Ok(result[&reducer_name].clone())
 }
 
 /// Add an authorization header, if provided, to the request `builder`.

@@ -7,10 +7,12 @@ use clap::{Arg, ArgAction, ArgMatches};
 use itertools::Either;
 use serde_json::Value;
 use spacetimedb_lib::de::serde::deserialize_from;
-use spacetimedb_lib::sats::{AlgebraicTypeRef, Typespace};
+use spacetimedb_lib::sats::{AlgebraicTypeRef, BuiltinType, Typespace};
 use spacetimedb_lib::ProductTypeElement;
 use std::fmt::Write;
 use std::iter;
+use spacetimedb::db::AlgebraicType;
+use crate::util;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("call")
@@ -74,13 +76,29 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity, server).await;
     let builder = add_auth_header_opt(builder, &auth_header);
 
-    let arg_json = match arguments {
-        None => "[]".to_string(),
-        Some(values) => format!("[{}]", values.map(|s_ref| s_ref.as_str()).collect::<Vec<_>>().join(", ")),
+    let mut arguments = match arguments {
+        None => vec![],
+        Some(values) => values.map(|x|x.clone()).collect::<Vec<_>>(),
     };
 
+    let describe_reducer = util::describe_reducer(&mut config, &address, server.map(|x|x.to_string()), reducer_name.clone(), anon_identity, as_identity.map(|x|x.clone())).await?;
 
+    // String quote any arguments that should be quoted
+    if describe_reducer.schema.elements.len() == arguments.len() {
+        for index in 0..arguments.len() {
+            let element = describe_reducer.schema.elements[index].clone();
+            let argument = &arguments[index];
+            if let AlgebraicType::Builtin(builtin_type) = element.algebraic_type {
+                if let BuiltinType::String = builtin_type {
+                    if !argument.starts_with("\"") || !argument.ends_with("\"") {
+                        arguments[index] = format!("\"{}\"", argument);
+                    }
+                }
+            }
+        }
+    }
 
+    let arg_json = format!("[{}]", arguments.join(", "));
     let res = builder.body(arg_json.to_owned()).send().await?;
 
     if let Err(e) = res.error_for_status_ref() {
