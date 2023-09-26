@@ -8,10 +8,17 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!--
+    Use local package sources instead of published ones.
+    This makes integration test somewhat differ from production configuration, but
+    at least it simplifies workflow for editing and testing C# code itself.
+  -->
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.Codegen" Version="0.7.*" />
-    <PackageReference Include="SpacetimeDB.Runtime" Version="0.7.*" />
+    <ProjectReference Include="../../crates/bindings-csharp/Codegen/Codegen.csproj" OutputItemType="Analyzer" />
+    <ProjectReference Include="../../crates/bindings-csharp/Runtime/Runtime.csproj" />
   </ItemGroup>
+  <!-- Only needed when referencing local dependencies as projects. For published packages, these are imported automatically. -->
+  <Import Project="../../crates/bindings-csharp/Runtime/build/SpacetimeDB.Runtime.targets" />
 
   <ItemGroup>
     <PackageReference Include="Wasi.Sdk" Version="0.1.4-preview.10020" />
