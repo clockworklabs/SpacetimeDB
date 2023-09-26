@@ -196,8 +196,8 @@ pub struct DescribeElementName {
     pub some: String,
 }
 
-pub async fn describe_reducer(config: &mut Config, database: &String, server: Option<String>, reducer_name: String, anon_identity: bool, as_identity: Option<String>) -> anyhow::Result<DescribeReducer> {
-    let address = database_address(config, database, server.as_deref()).await?;
+pub async fn describe_reducer(config: &mut Config, database: String, server: Option<String>, reducer_name: String, anon_identity: bool, as_identity: Option<String>) -> anyhow::Result<DescribeReducer> {
+    let address = database_address(config, &database, server.as_deref()).await?;
 
     let builder = reqwest::Client::new().get(format!(
         "{}/database/schema/{}/{}/{}",

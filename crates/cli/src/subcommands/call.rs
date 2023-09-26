@@ -70,33 +70,29 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     let builder = reqwest::Client::new().post(format!(
         "{}/database/call/{}/{}",
         config.get_host_url(server)?,
-        address,
+        address.clone(),
         reducer_name
     ));
     let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity, server).await;
     let builder = add_auth_header_opt(builder, &auth_header);
-
-    let mut arguments = match arguments {
-        None => vec![],
-        Some(values) => values.cloned().collect::<Vec<_>>(),
-    };
-
-    let describe_reducer = util::describe_reducer(&mut config, &address, server.map(|x|x.to_string()), reducer_name.clone(), anon_identity, as_identity.cloned()).await?;
+    let describe_reducer = util::describe_reducer(&mut config, address.clone(), server.map(|x|x.to_string()), reducer_name.clone(), anon_identity, as_identity.cloned()).await?;
 
     // String quote any arguments that should be quoted
-    if describe_reducer.schema.elements.len() == arguments.len() {
-        for index in 0..arguments.len() {
-            let element = describe_reducer.schema.elements[index].clone();
-            let argument = &arguments[index];
-            if let AlgebraicType::Builtin(builtin_type) = element.algebraic_type {
-                if let BuiltinType::String = builtin_type {
-                    if !argument.starts_with('\"') || !argument.ends_with('\"') {
-                        arguments[index] = format!("\"{}\"", argument);
-                    }
+    let arguments : Vec<String> = arguments
+        .filter(|args| args.len() == describe_reducer.schema.elements.len())
+        .unwrap_or_default()
+        .collect::<Vec<_>>()
+        .iter()
+        .zip(describe_reducer.schema.elements.iter())
+        .map(|(argument, element)| {
+            match &element.algebraic_type {
+                AlgebraicType::Builtin(BuiltinType::String) if !argument.starts_with('\"') || !argument.ends_with('\"') => {
+                    format!("\"{}\"", argument)
                 }
+                _ => argument.to_string(),
             }
-        }
-    }
+        })
+        .collect();
 
     let arg_json = format!("[{}]", arguments.join(", "));
     let res = builder.body(arg_json.to_owned()).send().await?;
@@ -114,7 +110,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         } else if response_text.starts_with("invalid arguments") {
             invalid_arguments(
                 config,
-                &address,
+                address.as_str(),
                 database,
                 &auth_header,
                 reducer_name,
