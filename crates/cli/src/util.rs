@@ -197,15 +197,15 @@ pub struct DescribeElementName {
 }
 
 pub async fn describe_reducer(config: &mut Config, database: &String, server: Option<String>, reducer_name: String, anon_identity: bool, as_identity: Option<String>) -> anyhow::Result<DescribeReducer> {
-    let address = database_address(&config, database, server.as_ref().map(|x| x.as_str())).await?;
+    let address = database_address(config, database, server.as_deref()).await?;
 
     let builder = reqwest::Client::new().get(format!(
         "{}/database/schema/{}/{}/{}",
-        config.get_host_url(server.as_ref().map(|x| x.as_str()))?,
+        config.get_host_url(server.as_deref())?,
         address,
         "reducer",
         reducer_name));
-    let auth_header = get_auth_header_only(config, anon_identity, as_identity.as_ref(), server.as_ref().map(|x| x.as_str())).await;
+    let auth_header = get_auth_header_only(config, anon_identity, as_identity.as_ref(), server.as_deref()).await;
     let builder = add_auth_header_opt(builder, &auth_header);
 
     let descr = builder

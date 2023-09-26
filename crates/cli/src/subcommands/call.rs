@@ -78,10 +78,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
 
     let mut arguments = match arguments {
         None => vec![],
-        Some(values) => values.map(|x|x.clone()).collect::<Vec<_>>(),
+        Some(values) => values.cloned().collect::<Vec<_>>(),
     };
 
-    let describe_reducer = util::describe_reducer(&mut config, &address, server.map(|x|x.to_string()), reducer_name.clone(), anon_identity, as_identity.map(|x|x.clone())).await?;
+    let describe_reducer = util::describe_reducer(&mut config, &address, server.map(|x|x.to_string()), reducer_name.clone(), anon_identity, as_identity.cloned()).await?;
 
     // String quote any arguments that should be quoted
     if describe_reducer.schema.elements.len() == arguments.len() {
@@ -90,7 +90,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
             let argument = &arguments[index];
             if let AlgebraicType::Builtin(builtin_type) = element.algebraic_type {
                 if let BuiltinType::String = builtin_type {
-                    if !argument.starts_with("\"") || !argument.ends_with("\"") {
+                    if !argument.starts_with('\"') || !argument.ends_with('\"') {
                         arguments[index] = format!("\"{}\"", argument);
                     }
                 }
