@@ -45,8 +45,6 @@ pub struct ModuleHandle {
 }
 
 impl ModuleHandle {
-    // TODO(drogus): args here is a string, but it might be nice to use a more specific type here,
-    // sth along the lines of Vec<serde_json::Value>
     pub async fn call_reducer_json(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
         let args = serde_json::to_string(&args)?;
         let args = format!("{{\"call\": {{\"fn\": \"{reducer}\", \"args\": {args} }} }}");
@@ -63,8 +61,6 @@ impl ModuleHandle {
         self.send(message.encode_to_vec()).await
     }
 
-    // TODO(drogus): not sure if it's the best name, maybe it should be about calling
-    // a reducer?
     pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {
         self.client.handle_message(message).await.map_err(Into::into)
     }

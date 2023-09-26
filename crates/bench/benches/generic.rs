@@ -5,7 +5,7 @@ use criterion::{
 };
 use spacetimedb_bench::{
     database::BenchDatabase,
-    schemas::{create_sequential, BenchTable, Location, Person, RandomTable, TableStyle, BENCH_PKEY_INDEX},
+    schemas::{create_sequential, BenchTable, IndexStrategy, Location, Person, RandomTable, BENCH_PKEY_INDEX},
     spacetime_module, spacetime_raw, sqlite, ResultBench,
 };
 use spacetimedb_lib::{sats::BuiltinType, AlgebraicType};
@@ -43,8 +43,8 @@ fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(
     // This setup is a compromise between trying to present related benchmarks together,
     // and not having to deal with nasty reentrant generic dispatching.
 
-    type TableData<TableId> = (TableStyle, TableId, String);
-    let mut prep_table = |table_style: TableStyle| -> ResultBench<TableData<DB::TableId>> {
+    type TableData<TableId> = (IndexStrategy, TableId, String);
+    let mut prep_table = |table_style: IndexStrategy| -> ResultBench<TableData<DB::TableId>> {
         let table_name = T::name_snake_case();
         let style_name = table_style.snake_case();
         let table_params = format!("{table_name}/{style_name}");
@@ -53,9 +53,9 @@ fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(
         Ok((table_style, table_id, table_params))
     };
     let tables: [TableData<DB::TableId>; 3] = [
-        prep_table(TableStyle::Unique)?,
-        prep_table(TableStyle::NonUnique)?,
-        prep_table(TableStyle::MultiIndex)?,
+        prep_table(IndexStrategy::Unique)?,
+        prep_table(IndexStrategy::NonUnique)?,
+        prep_table(IndexStrategy::MultiIndex)?,
     ];
 
     for (_, table_id, table_params) in &tables {
@@ -67,7 +67,7 @@ fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(
         insert_bulk::<DB, T>(c, db_params, table_params, db, table_id, 1000, 100)?;
     }
     for (table_style, table_id, table_params) in &tables {
-        if *table_style == TableStyle::Unique {
+        if *table_style == IndexStrategy::Unique {
             iterate::<DB, T>(c, db_params, table_params, db, table_id, 100)?;
 
             // perform "find" benchmarks
@@ -81,7 +81,7 @@ fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(
     Ok(())
 }
 
-/// Custom criterion timing loop.
+/// Custom criterion timing loop. Allows access to a database, which is reset every benchmark iteration.
 ///
 /// The prepare closure should restore the database to known state
 /// and prepare any inputs consumed by the benchmark. The time this takes will
@@ -242,7 +242,7 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
     db_params: &str,
     db: &mut DB,
     table_id: &DB::TableId,
-    table_style: &TableStyle,
+    table_style: &IndexStrategy,
     column_index: u32,
     load: u32,
     buckets: u32,
@@ -255,8 +255,8 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
     };
     let mean_result_count = load / buckets;
     let indexed = match table_style {
-        TableStyle::MultiIndex => "indexed",
-        TableStyle::NonUnique => "non_indexed",
+        IndexStrategy::MultiIndex => "indexed",
+        IndexStrategy::NonUnique => "non_indexed",
         _ => unimplemented!(),
     };
     let id = format!("{db_params}/filter/{filter_column_type}/{indexed}/load={load}/count={mean_result_count}");
@@ -297,12 +297,16 @@ fn find<DB: BenchDatabase, T: BenchTable + RandomTable>(
     db_params: &str,
     db: &mut DB,
     table_id: &DB::TableId,
-    table_style: &TableStyle,
+    table_style: &IndexStrategy,
     column_id: u32,
     load: u32,
     buckets: u32,
 ) -> ResultBench<()> {
-    assert_eq!(*table_style, TableStyle::Unique, "find benchmarks require unique key");
+    assert_eq!(
+        *table_style,
+        IndexStrategy::Unique,
+        "find benchmarks require unique key"
+    );
     let id = format!("{db_params}/find_unique/u32/load={load}");
 
     let data = create_sequential::<T>(0xdeadbeef, load, buckets as u64);

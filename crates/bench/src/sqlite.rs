@@ -1,6 +1,6 @@
 use crate::{
     database::BenchDatabase,
-    schemas::{table_name, BenchTable, TableStyle},
+    schemas::{table_name, BenchTable, IndexStrategy},
     ResultBench,
 };
 use ahash::AHashMap;
@@ -55,9 +55,11 @@ impl BenchDatabase for SQLite {
 
     type TableId = String;
 
-    #[inline(never)]
     /// We derive the SQLite schema from the AlgebraicType of the table.
-    fn create_table<T: BenchTable>(&mut self, table_style: crate::schemas::TableStyle) -> ResultBench<Self::TableId> {
+    fn create_table<T: BenchTable>(
+        &mut self,
+        table_style: crate::schemas::IndexStrategy,
+    ) -> ResultBench<Self::TableId> {
         let mut statement = String::new();
         let table_name = table_name::<T>(table_style);
         write!(&mut statement, "CREATE TABLE {table_name} (")?;
@@ -69,7 +71,7 @@ impl BenchDatabase for SQLite {
                 AlgebraicType::Builtin(sats::BuiltinType::String) => "TEXT",
                 _ => unimplemented!(),
             };
-            let extra = if table_style == TableStyle::Unique && i == 0 {
+            let extra = if table_style == IndexStrategy::Unique && i == 0 {
                 " PRIMARY KEY"
             } else {
                 ""
@@ -79,7 +81,7 @@ impl BenchDatabase for SQLite {
         }
         writeln!(&mut statement, ");")?;
 
-        if table_style == TableStyle::MultiIndex {
+        if table_style == IndexStrategy::MultiIndex {
             for column in T::product_type().elements.iter() {
                 let column_name = column.name.clone().unwrap();
 
@@ -96,13 +98,11 @@ impl BenchDatabase for SQLite {
         Ok(table_name)
     }
 
-    #[inline(never)]
     fn clear_table(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         self.db.execute_batch(&format!("DELETE FROM {table_id};"))?;
         Ok(())
     }
 
-    #[inline(never)]
     fn count_table(&mut self, table_id: &Self::TableId) -> ResultBench<u32> {
         let rows = self
             .db
@@ -110,7 +110,6 @@ impl BenchDatabase for SQLite {
         Ok(rows)
     }
 
-    #[inline(never)]
     fn empty_transaction(&mut self) -> ResultBench<()> {
         let mut begin = self.db.prepare_cached(BEGIN_TRANSACTION)?;
         let mut commit = self.db.prepare_cached(COMMIT_TRANSACTION)?;
@@ -120,7 +119,6 @@ impl BenchDatabase for SQLite {
         Ok(())
     }
 
-    #[inline(never)]
     fn insert<T: BenchTable>(&mut self, table_id: &Self::TableId, row: T) -> ResultBench<()> {
         let statement = memo_query(BenchName::Insert, table_id, || {
             insert_template(table_id, T::product_type())
@@ -136,7 +134,6 @@ impl BenchDatabase for SQLite {
         Ok(())
     }
 
-    #[inline(never)]
     fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()> {
         let statement = memo_query(BenchName::InsertBulk, table_id, || {
             insert_template(table_id, T::product_type())
@@ -155,7 +152,6 @@ impl BenchDatabase for SQLite {
         Ok(())
     }
 
-    #[inline(never)]
     fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         let statement = format!("SELECT * FROM {table_id}");
         let mut begin = self.db.prepare_cached(BEGIN_TRANSACTION)?;
@@ -173,7 +169,6 @@ impl BenchDatabase for SQLite {
         Ok(())
     }
 
-    #[inline(never)]
     fn filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,
@@ -231,13 +226,6 @@ enum BenchName {
     Filter,
 }
 
-lazy_static! {
-    // bench_name -> table_id -> query.
-    // Double hashmap is necessary because of tuple dereferencing problems.
-    static ref QUERIES: RwLock<ahash::AHashMap<BenchName, ahash::AHashMap<String, Arc<str>>>> =
-        RwLock::new(ahash::AHashMap::default());
-}
-
 #[inline(never)]
 /// Reduce latency of query formatting, for queries that are complicated to build.
 fn memo_query<F: FnOnce() -> String>(bench_name: BenchName, table_id: &str, generate_query: F) -> Arc<str> {
@@ -268,6 +256,13 @@ fn memo_query<F: FnOnce() -> String>(bench_name: BenchName, table_id: &str, gene
         bench_queries.insert(table_id.to_string(), (&query[..]).into());
         bench_queries[table_id].clone()
     }
+}
+
+lazy_static! {
+    // bench_name -> table_id -> query.
+    // Double hashmap is necessary because of tuple dereferencing problems.
+    static ref QUERIES: RwLock<ahash::AHashMap<BenchName, ahash::AHashMap<String, Arc<str>>>> =
+        RwLock::new(ahash::AHashMap::default());
 }
 
 #[inline(never)]

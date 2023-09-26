@@ -1,15 +1,11 @@
 use spacetimedb_lib::AlgebraicValue;
 
-use crate::schemas::{BenchTable, TableStyle};
+use crate::schemas::{BenchTable, IndexStrategy};
 use crate::ResultBench;
 
 /// A database we can execute a standard benchmark suite against.
-/// Currently implemented for SQLite, raw Spacetime (RelationalDB),
-/// and Spacetime via module.
-///
-/// Queries are separated into a prepare and execute step.
-/// Execute step can be run multiple times.
-/// `PreparedXYZ` should never have runtime lifetime constraints.
+/// Currently implemented for SQLite, raw Spacetime outside a module boundary
+/// (RelationalDB), and Spacetime through the module boundary.
 ///
 /// Not all benchmarks have to go through this trait.
 pub trait BenchDatabase: Sized {
@@ -21,7 +17,7 @@ pub trait BenchDatabase: Sized {
     where
         Self: Sized;
 
-    fn create_table<T: BenchTable>(&mut self, table_style: TableStyle) -> ResultBench<Self::TableId>;
+    fn create_table<T: BenchTable>(&mut self, table_style: IndexStrategy) -> ResultBench<Self::TableId>;
 
     /// Should not drop the table, only delete all the rows.
     fn clear_table(&mut self, table_id: &Self::TableId) -> ResultBench<()>;

@@ -10,7 +10,7 @@ pub type ResultBench<T> = Result<T, anyhow::Error>;
 mod tests {
     use crate::{
         database::BenchDatabase,
-        schemas::{create_sequential, BenchTable, Location, Person, RandomTable, TableStyle},
+        schemas::{create_sequential, BenchTable, IndexStrategy, Location, Person, RandomTable},
         spacetime_module::SpacetimeModule,
         spacetime_raw::SpacetimeRaw,
         sqlite::SQLite,
@@ -43,7 +43,7 @@ mod tests {
     }
 
     fn basic_invariants<DB: BenchDatabase, T: BenchTable + RandomTable>(
-        table_style: TableStyle,
+        table_style: IndexStrategy,
         in_memory: bool,
     ) -> ResultBench<()> {
         prepare_tests();
@@ -87,27 +87,28 @@ mod tests {
 
     #[test]
     fn test_basic_invariants_sqlite() {
-        basic_invariants::<SQLite, Person>(TableStyle::Unique, true).unwrap();
-        basic_invariants::<SQLite, Location>(TableStyle::Unique, true).unwrap();
+        basic_invariants::<SQLite, Person>(IndexStrategy::Unique, true).unwrap();
+        basic_invariants::<SQLite, Location>(IndexStrategy::Unique, true).unwrap();
     }
 
     #[test]
     fn test_basic_invariants_sqlite_multi_index() {
-        basic_invariants::<SQLite, Person>(TableStyle::MultiIndex, true).unwrap();
-        basic_invariants::<SQLite, Location>(TableStyle::MultiIndex, true).unwrap();
+        basic_invariants::<SQLite, Person>(IndexStrategy::MultiIndex, true).unwrap();
+        basic_invariants::<SQLite, Location>(IndexStrategy::MultiIndex, true).unwrap();
     }
 
     #[test]
     fn test_basic_invariants_spacetime_raw() {
-        basic_invariants::<SpacetimeRaw, Person>(TableStyle::Unique, true).unwrap();
-        basic_invariants::<SpacetimeRaw, Location>(TableStyle::Unique, true).unwrap();
+        basic_invariants::<SpacetimeRaw, Person>(IndexStrategy::Unique, true).unwrap();
+        basic_invariants::<SpacetimeRaw, Location>(IndexStrategy::Unique, true).unwrap();
     }
 
     #[test]
     fn test_basic_invariants_spacetime_module() {
-        // note: there can only be one test invoking spacetime module stuff. Otherwise they
-        // fight over lockfiles.
-        basic_invariants::<SpacetimeModule, Person>(TableStyle::Unique, true).unwrap();
-        basic_invariants::<SpacetimeModule, Location>(TableStyle::Unique, true).unwrap();
+        // note: there can only be one #[test] invoking spacetime module stuff.
+        // #[test]s run concurrently and they fight over lockfiles.
+        // so, run the sub-tests here in sequence.
+        basic_invariants::<SpacetimeModule, Person>(IndexStrategy::Unique, true).unwrap();
+        basic_invariants::<SpacetimeModule, Location>(IndexStrategy::Unique, true).unwrap();
     }
 }

@@ -11,17 +11,6 @@ use spacetimedb_lib::{
 use spacetimedb_testing::modules::start_runtime;
 
 fn criterion_benchmark(c: &mut Criterion) {
-    /*
-    let runtime = start_runtime();
-
-    c.bench_function("meta/criterion_async_bench", |b| {
-        b.to_async(&runtime).iter(|| async move {});
-    });
-    c.bench_function("meta/criterion_async_block_on", |b| {
-        b.iter(|| runtime.block_on(async move {}));
-    });
-    */
-
     serialize_benchmarks::<Person>(c);
     serialize_benchmarks::<Location>(c);
 
@@ -30,6 +19,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
 fn custom_module_benchmarks(c: &mut Criterion) {
     let runtime = start_runtime();
+
     let config = Config {
         storage: Storage::Memory,
         fsync: spacetimedb::db::FsyncPolicy::Never,

@@ -15,26 +15,31 @@ lazy_static::lazy_static! {
 }
 
 /// A benchmark backend that invokes a spacetime module.
+///
 /// This is tightly tied to the file `modules/benchmarks/src/lib.rs`;
 /// all of the implementations of `BenchDatabase` methods just invoke reducers
 /// in that module.
+///
+/// See the doc comment there for information on the formatting expected for
+/// table and reducer names.
 pub struct SpacetimeModule {
     runtime: Runtime,
-    // it's necessary for this to be dropped BEFORE the runtime.
-    // this is always Some when drop isn't running.
+    /// This is here due to Drop shenanigans.
+    /// It should always be Some when the module is not being dropped.
     module: Option<ModuleHandle>,
 }
 
 impl Drop for SpacetimeModule {
     fn drop(&mut self) {
-        // enforce module being dropped
+        // Module must be dropped BEFORE runtime,
+        // otherwise there is a deadlock!
         drop(self.module.take());
     }
 }
 
 // Note: we use block_on for the methods here. It adds about 70ns of overhead.
 // This isn't currently a problem. Overhead to call an empty reducer is currently 20_000 ns.
-// It's easier to do it this way because async trades are a mess.
+// It's easier to do it this way because async traits are a mess.
 impl BenchDatabase for SpacetimeModule {
     fn name() -> &'static str {
         "stdb_module"
@@ -66,8 +71,10 @@ impl BenchDatabase for SpacetimeModule {
         })
     }
 
-    #[inline(never)]
-    fn create_table<T: BenchTable>(&mut self, table_style: crate::schemas::TableStyle) -> ResultBench<Self::TableId> {
+    fn create_table<T: BenchTable>(
+        &mut self,
+        table_style: crate::schemas::IndexStrategy,
+    ) -> ResultBench<Self::TableId> {
         // Noop. All tables are built into the "benchmarks" module.
         Ok(TableId {
             pascal_case: table_name::<T>(table_style),
@@ -75,7 +82,6 @@ impl BenchDatabase for SpacetimeModule {
         })
     }
 
-    #[inline(never)]
     fn clear_table(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
@@ -94,7 +100,6 @@ impl BenchDatabase for SpacetimeModule {
     // Implemented by calling a reducer that logs, then looking for the resulting
     // message in the log.
     // This implementation will not work if other people are concurrently interacting with our module.
-    #[inline(never)]
     fn count_table(&mut self, table_id: &Self::TableId) -> ResultBench<u32> {
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
@@ -114,7 +119,6 @@ impl BenchDatabase for SpacetimeModule {
         Ok(count)
     }
 
-    #[inline(never)]
     fn empty_transaction(&mut self) -> ResultBench<()> {
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
@@ -125,7 +129,6 @@ impl BenchDatabase for SpacetimeModule {
         })
     }
 
-    #[inline(never)]
     fn insert<T: BenchTable>(&mut self, table_id: &Self::TableId, row: T) -> ResultBench<()> {
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
@@ -139,7 +142,6 @@ impl BenchDatabase for SpacetimeModule {
         })
     }
 
-    #[inline(never)]
     fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()> {
         let args = ProductValue {
             elements: vec![AlgebraicValue::Builtin(spacetimedb_lib::sats::BuiltinValue::Array {
@@ -156,7 +158,6 @@ impl BenchDatabase for SpacetimeModule {
         })
     }
 
-    #[inline(never)]
     fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
@@ -170,7 +171,6 @@ impl BenchDatabase for SpacetimeModule {
         })
     }
 
-    #[inline(never)]
     fn filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,
@@ -200,7 +200,11 @@ pub struct TableId {
 }
 
 #[allow(unused)]
-/// Sync with: `core::database_logger::Record`.
+/// Used to parse output from module logs.
+///
+/// Sync with: `core::database_logger::Record`. We can't use it
+/// directly because the types are wrong for deserialization.
+/// (Rust!)
 #[derive(serde::Deserialize)]
 struct LoggerRecord {
     target: Option<String>,

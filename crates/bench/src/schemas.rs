@@ -5,7 +5,8 @@ use std::hash::Hash;
 pub const BENCH_PKEY_INDEX: u32 = 0;
 
 // the following piece of code must remain synced with `modules/bencmarks/src/lib.rs`
-// unfortunately, you can't just copy it.
+// These are the schemas used for these database tables outside of the benchmark module.
+// It needs to match the schemas used inside the benchmark .
 
 // ---------- SYNCED CODE ----------
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -21,12 +22,12 @@ pub struct Location {
     x: u64,
     y: u64,
 }
-// ---------- / SYNCED CODE ----------
+// ---------- END SYNCED CODE ----------
 
 pub trait BenchTable: Debug + Clone + PartialEq + Eq + Hash {
-    /// PascalCase
+    /// PascalCase name. This is used to name tables.
     fn name_pascal_case() -> &'static str;
-    /// snake_case
+    /// snake_case name. This is used to look up reducers.
     fn name_snake_case() -> &'static str;
 
     /// Note: the first field will be used as the primary key, when using
@@ -122,37 +123,38 @@ impl BenchTable for Location {
     }
 }
 
+/// How we configure the indexes for a table used in benchmarks.
 #[derive(PartialEq, Copy, Clone, Debug)]
-pub enum TableStyle {
-    // Unique "id" field
+pub enum IndexStrategy {
+    /// Unique "id" field at index 0
     Unique,
-    // No unique field or indexes
+    /// No unique field or indexes
     NonUnique,
-    // Multiple indexes
+    /// Non-unique index on all fields
     MultiIndex,
 }
 
-impl TableStyle {
+impl IndexStrategy {
     pub fn snake_case(&self) -> &'static str {
         match self {
-            TableStyle::Unique => "unique",
-            TableStyle::NonUnique => "non_unique",
-            TableStyle::MultiIndex => "multi_index",
+            IndexStrategy::Unique => "unique",
+            IndexStrategy::NonUnique => "non_unique",
+            IndexStrategy::MultiIndex => "multi_index",
         }
     }
 }
 
-pub fn table_name<T: BenchTable>(style: TableStyle) -> String {
+pub fn table_name<T: BenchTable>(style: IndexStrategy) -> String {
     let prefix = match style {
-        TableStyle::Unique => "Unique",
-        TableStyle::NonUnique => "NonUnique",
-        TableStyle::MultiIndex => "MultiIndex",
+        IndexStrategy::Unique => "Unique",
+        IndexStrategy::NonUnique => "NonUnique",
+        IndexStrategy::MultiIndex => "MultiIndex",
     };
     let name = T::name_pascal_case();
 
     format!("{prefix}{name}")
 }
-pub fn snake_case_table_name<T: BenchTable>(style: TableStyle) -> String {
+pub fn snake_case_table_name<T: BenchTable>(style: IndexStrategy) -> String {
     let prefix = style.snake_case();
     let name = T::name_snake_case();
 

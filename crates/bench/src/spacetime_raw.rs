@@ -1,6 +1,6 @@
 use crate::{
     database::BenchDatabase,
-    schemas::{table_name, BenchTable, TableStyle},
+    schemas::{table_name, BenchTable, IndexStrategy},
     ResultBench,
 };
 use spacetimedb::db::datastore::traits::{IndexDef, TableDef};
@@ -34,20 +34,19 @@ impl BenchDatabase for SpacetimeRaw {
         })
     }
 
-    #[inline(never)]
-    fn create_table<T: BenchTable>(&mut self, table_style: TableStyle) -> ResultBench<Self::TableId> {
+    fn create_table<T: BenchTable>(&mut self, table_style: IndexStrategy) -> ResultBench<Self::TableId> {
         let name = table_name::<T>(table_style);
         self.db.with_auto_commit(|tx| {
             let table_def = TableDef::from(T::product_type());
             let table_id = self.db.create_table(tx, table_def)?;
             self.db.rename_table(tx, table_id, &name)?;
             match table_style {
-                TableStyle::Unique => {
+                IndexStrategy::Unique => {
                     self.db
                         .create_index(tx, IndexDef::new("id".to_string(), table_id, 0, true))?;
                 }
-                TableStyle::NonUnique => (),
-                TableStyle::MultiIndex => {
+                IndexStrategy::NonUnique => (),
+                IndexStrategy::MultiIndex => {
                     for (i, column) in T::product_type().elements.iter().enumerate() {
                         self.db.create_index(
                             tx,
@@ -61,7 +60,6 @@ impl BenchDatabase for SpacetimeRaw {
         })
     }
 
-    #[inline(never)]
     fn clear_table(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         self.db.with_auto_commit(|tx| {
             self.db.clear_table(tx, *table_id)?;
@@ -69,18 +67,15 @@ impl BenchDatabase for SpacetimeRaw {
         })
     }
 
-    #[inline(never)]
     fn count_table(&mut self, table_id: &Self::TableId) -> ResultBench<u32> {
         self.db
             .with_auto_commit(|tx| Ok(self.db.iter(tx, *table_id)?.map(|_| 1u32).sum()))
     }
 
-    #[inline(never)]
     fn empty_transaction(&mut self) -> ResultBench<()> {
         self.db.with_auto_commit(|_tx| Ok(()))
     }
 
-    #[inline(never)]
     fn insert<T: BenchTable>(&mut self, table_id: &Self::TableId, row: T) -> ResultBench<()> {
         self.db.with_auto_commit(|tx| {
             self.db.insert(tx, *table_id, row.into_product_value())?;
@@ -88,7 +83,6 @@ impl BenchDatabase for SpacetimeRaw {
         })
     }
 
-    #[inline(never)]
     fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()> {
         self.db.with_auto_commit(|tx| {
             for row in rows {
@@ -98,7 +92,6 @@ impl BenchDatabase for SpacetimeRaw {
         })
     }
 
-    #[inline(never)]
     fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         self.db.with_auto_commit(|tx| {
             for row in self.db.iter(tx, *table_id)? {
@@ -108,7 +101,6 @@ impl BenchDatabase for SpacetimeRaw {
         })
     }
 
-    #[inline(never)]
     fn filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,

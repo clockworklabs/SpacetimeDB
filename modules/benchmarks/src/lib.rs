@@ -1,9 +1,33 @@
-#![allow(clippy::too_many_arguments)]
+//! STDB module used for benchmarks.
+//!
+//! This file is tightly bound to the `benchmarks` crate (`crates/bench`).
+//!
+//! The various tables in this file need to remain synced with `crates/bench/src/schemas.rs`
+//! Field orders, names, and types should be the same.
+//!
+//! We instantiate multiple copies of each table. These should be identical
+//! aside from indexing strategy. Table names must match the template:
+//!
+//! `{IndexStrategy}{TableName}`, in PascalCase.
+//!
+//! The reducers need to remain synced with `crates/bench/src/spacetime_module.rs`
+//! Reducer names must match the template:
+//!
+//! `{operation}_{index_strategy}_{table_name}`, in snake_case.
+//!
+//! The three index strategies are:
+//! - `Unique` / `unique`: a single unique key, declared first in the struct.
+//! - `NonUnique` / `non_unique`: no indexes.
+//! - `MultiIndex` / `multi_index`: one index for each row.
+//!
+//! Obviously more could be added...
+
+#![allow(clippy::too_many_arguments, unused_variables)]
+
 use spacetimedb::{println, spacetimedb};
 use std::hint::black_box;
 
-// the following piece of code must remain synced with `crates/bench/src/schemas.rs`
-// unfortunately, you can't just copy it.
+// The following piece of code must remain synced
 
 // ---------- SYNCED CODE ----------
 
@@ -135,8 +159,9 @@ pub fn insert_bulk_multi_index_person(people: Vec<MultiIndexPerson>) {
         MultiIndexPerson::insert(person);
     }
 }
+
 // ---------- iterate ----------
-// we don't bother comparing schema types here
+
 #[spacetimedb(reducer)]
 pub fn iterate_unique_person() {
     for person in UniquePerson::iter() {
@@ -237,7 +262,9 @@ pub fn filter_multi_index_location_by_x(x: u64) {
 }
 
 // ---------- delete ----------
+
 // FIXME: current nonunique delete interface is UNUSABLE!!!!
+
 #[spacetimedb(reducer)]
 pub fn delete_unique_person_by_id(id: u32) {
     UniquePerson::delete_by_id(&id);
@@ -279,7 +306,9 @@ pub fn clear_table_multi_index_location() {
     MultiIndexLocation::delete(|_| true);
 }
 // ---------- count ----------
+
 // You need to inspect the module outputs to actually read the result from these.
+
 #[spacetimedb(reducer)]
 pub fn count_unique_person() {
     println!("COUNT: {}", UniquePerson::iter().count());
