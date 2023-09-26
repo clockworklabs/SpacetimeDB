@@ -207,7 +207,7 @@ fn autogen_python_product_table_common(
         writeln!(output).unwrap();
         writeln!(
             output,
-            "from spacetimedb_sdk.spacetimedb_client import SpacetimeDBClient, Identity"
+            "from spacetimedb_sdk.spacetimedb_client import SpacetimeDBClient, Identity, Address"
         )
         .unwrap();
         writeln!(output, "from spacetimedb_sdk.spacetimedb_client import ReducerEvent").unwrap();
@@ -290,7 +290,7 @@ fn autogen_python_product_table_common(
 
                 match field_type {
                     AlgebraicType::Product(product) => {
-                        if !product.is_identity() {
+                        if !product.is_special() {
                             continue;
                         }
                     }
@@ -491,6 +491,8 @@ pub fn encode_type<'a>(
         AlgebraicType::Product(product) => {
             if product.is_identity() {
                 write!(f, "Identity.from_string({value})")
+            } else if product.is_address() {
+                write!(f, "Address.from_string({value})")
             } else {
                 unimplemented!()
             }
@@ -528,7 +530,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(output, "# WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.").unwrap();
     writeln!(output).unwrap();
 
-    writeln!(output, "from typing import List, Callable").unwrap();
+    writeln!(output, "from typing import List, Callable, Optional").unwrap();
     writeln!(output).unwrap();
 
     writeln!(
@@ -537,6 +539,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     )
     .unwrap();
     writeln!(output, "from spacetimedb_sdk.spacetimedb_client import Identity").unwrap();
+    writeln!(output, "from spacetimedb_sdk.spacetimedb_client import Address").unwrap();
 
     writeln!(output).unwrap();
 
@@ -621,7 +624,7 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 
     writeln!(
         output,
-        "def register_on_{}(callback: Callable[[Identity, str, str{}], None]):",
+        "def register_on_{}(callback: Callable[[Identity, Optional[Address], str, str{}], None]):",
         reducer.name.to_case(Case::Snake),
         callback_sig_str
     )
