@@ -82,11 +82,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     .await?;
 
     // String quote any arguments that should be quoted
-    let arguments: Vec<String> = arguments
-        .filter(|args| args.len() == describe_reducer.schema.elements.len())
+    let arguments = arguments
         .unwrap_or_default()
-        .collect::<Vec<_>>()
-        .iter()
         .zip(describe_reducer.schema.elements.iter())
         .map(|(argument, element)| match &element.algebraic_type {
             AlgebraicType::Builtin(BuiltinType::String) if !argument.starts_with('\"') || !argument.ends_with('\"') => {
@@ -94,7 +91,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
             }
             _ => argument.to_string(),
         })
-        .collect();
+        .collect::<Vec<_>>();
 
     let arg_json = format!("[{}]", arguments.join(", "));
     let res = builder.body(arg_json.to_owned()).send().await?;
