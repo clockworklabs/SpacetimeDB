@@ -146,13 +146,14 @@ pub fn compile_read_only_query(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::traits::TableSchema;
+    use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef, TableSchema};
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
     use crate::sql::execute::run;
     use crate::subscription::subscription::QuerySet;
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
+    use nonempty::NonEmpty;
     use spacetimedb_lib::auth::{StAccess, StTableType};
     use spacetimedb_lib::data_key::ToDataKey;
     use spacetimedb_lib::error::ResultTest;
@@ -161,6 +162,47 @@ mod tests {
     use spacetimedb_sats::{product, BuiltinType, ProductType, ProductValue};
     use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
+
+    fn create_table(
+        db: &RelationalDB,
+        tx: &mut MutTxId,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        indexes: &[(u32, &str)],
+    ) -> ResultTest<u32> {
+        let table_name = name.to_string();
+        let table_type = StTableType::User;
+        let table_access = StAccess::Public;
+
+        let columns = schema
+            .iter()
+            .map(|(col_name, col_type)| ColumnDef {
+                col_name: col_name.to_string(),
+                col_type: col_type.clone(),
+                is_autoinc: false,
+            })
+            .collect_vec();
+
+        let indexes = indexes
+            .iter()
+            .map(|(col_id, index_name)| IndexDef {
+                table_id: 0,
+                cols: NonEmpty::new(*col_id),
+                name: index_name.to_string(),
+                is_unique: false,
+            })
+            .collect_vec();
+
+        let schema = TableDef {
+            table_name,
+            columns,
+            indexes,
+            table_type,
+            table_access,
+        };
+
+        Ok(db.create_table(tx, schema)?)
+    }
 
     fn make_data(
         db: &RelationalDB,
@@ -346,6 +388,63 @@ mod tests {
 
         // check that both row ids are the same
         assert_eq!(id1, id2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_eval_incr_for_index_scan() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        // Create table [test] with index on [b]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(1, "b")];
+        let table_id = create_table(&db, &mut tx, "test", schema, indexes)?;
+
+        let sql = "select * from test where b = 3";
+        let mut exp = compile_sql(&db, &tx, sql)?;
+
+        let Some(CrudExpr::Query(query)) = exp.pop() else {
+            panic!("unexpected query {:#?}", exp[0]);
+        };
+
+        let query = QuerySet(vec![Query { queries: vec![query] }]);
+
+        let mut ops = Vec::new();
+        for i in 0u64..9u64 {
+            let row = product!(i, i);
+            db.insert(&mut tx, table_id, row)?;
+
+            let row = product!(i + 10, i);
+            let row_pk = row.to_data_key().to_bytes();
+            ops.push(TableOp {
+                op_type: 0,
+                row_pk,
+                row,
+            })
+        }
+
+        let update = DatabaseUpdate {
+            tables: vec![DatabaseTableUpdate {
+                table_id,
+                table_name: "test".into(),
+                ops,
+            }],
+        };
+
+        let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+
+        assert_eq!(result.tables.len(), 1);
+
+        let update = &result.tables[0];
+
+        assert_eq!(update.ops.len(), 1);
+
+        let op = &update.ops[0];
+
+        assert_eq!(op.op_type, 0);
+        assert_eq!(op.row, product!(13u64, 3u64));
+        assert_eq!(op.row_pk, product!(13u64, 3u64).to_data_key().to_bytes());
         Ok(())
     }
 
