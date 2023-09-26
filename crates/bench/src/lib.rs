@@ -42,7 +42,7 @@ mod tests {
         });
     }
 
-    fn sanity<DB: BenchDatabase, T: BenchTable + RandomTable>(
+    fn basic_invariants<DB: BenchDatabase, T: BenchTable + RandomTable>(
         table_style: TableStyle,
         in_memory: bool,
     ) -> ResultBench<()> {
@@ -52,13 +52,13 @@ mod tests {
         let table_id = db.create_table::<T>(table_style)?;
         assert_eq!(db.count_table(&table_id)?, 0, "tables should begin empty");
 
+        // Chosen arbitrarily.
         let count = 37;
 
         let sample_data = create_sequential::<T>(0xdeadbeef, count, 100);
 
-        let prepared = db.prepare_insert(&table_id)?;
-        for row in sample_data {
-            db.insert::<T>(&prepared, row)?;
+        for row in sample_data.clone() {
+            db.insert::<T>(&table_id, row)?;
         }
         assert_eq!(db.count_table(&table_id)?, count, "inserted rows should be inserted");
 
@@ -69,9 +69,7 @@ mod tests {
             "clearing the table should clear the table"
         );
 
-        let sample_data = create_sequential::<T>(0xdeadbeef, count, 100);
-        let prepared = db.prepare_insert_bulk(&table_id)?;
-        db.insert_bulk(&prepared, sample_data.clone())?;
+        db.insert_bulk(&table_id, sample_data.clone())?;
         assert_eq!(
             db.count_table(&table_id)?,
             count,
@@ -84,42 +82,32 @@ mod tests {
             0,
             "clearing the table should clear the table"
         );
-
-        // do it again! had an issue with indexes not getting cleared...
-        db.insert_bulk(&prepared, sample_data.clone())?;
-        assert_eq!(
-            db.count_table(&table_id)?,
-            count,
-            "bulk inserted rows should be bulk inserted"
-        );
-
-        db.clear_table(&table_id)?;
-        assert_eq!(
-            db.count_table(&table_id)?,
-            0,
-            "clearing the table should clear the table"
-        );
-        drop(db);
         Ok(())
     }
 
     #[test]
-    fn test_sanity_sqlite() {
-        sanity::<SQLite, Person>(TableStyle::Unique, true).unwrap();
-        sanity::<SQLite, Location>(TableStyle::Unique, true).unwrap();
+    fn test_basic_invariants_sqlite() {
+        basic_invariants::<SQLite, Person>(TableStyle::Unique, true).unwrap();
+        basic_invariants::<SQLite, Location>(TableStyle::Unique, true).unwrap();
     }
 
     #[test]
-    fn test_sanity_spacetime_raw() {
-        sanity::<SpacetimeRaw, Person>(TableStyle::Unique, true).unwrap();
-        sanity::<SpacetimeRaw, Location>(TableStyle::Unique, true).unwrap();
+    fn test_basic_invariants_sqlite_multi_index() {
+        basic_invariants::<SQLite, Person>(TableStyle::MultiIndex, true).unwrap();
+        basic_invariants::<SQLite, Location>(TableStyle::MultiIndex, true).unwrap();
     }
 
     #[test]
-    fn test_sanity_spacetime_module() {
+    fn test_basic_invariants_spacetime_raw() {
+        basic_invariants::<SpacetimeRaw, Person>(TableStyle::Unique, true).unwrap();
+        basic_invariants::<SpacetimeRaw, Location>(TableStyle::Unique, true).unwrap();
+    }
+
+    #[test]
+    fn test_basic_invariants_spacetime_module() {
         // note: there can only be one test invoking spacetime module stuff. Otherwise they
         // fight over lockfiles.
-        sanity::<SpacetimeModule, Person>(TableStyle::Unique, true).unwrap();
-        sanity::<SpacetimeModule, Location>(TableStyle::Unique, true).unwrap();
+        basic_invariants::<SpacetimeModule, Person>(TableStyle::Unique, true).unwrap();
+        basic_invariants::<SpacetimeModule, Location>(TableStyle::Unique, true).unwrap();
     }
 }

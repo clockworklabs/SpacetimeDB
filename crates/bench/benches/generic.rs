@@ -147,9 +147,6 @@ fn insert_1<DB: BenchDatabase, T: BenchTable + RandomTable>(
     let id = format!("{db_params}/insert_1/{table_params}/load={load}");
     let data = create_sequential::<T>(0xdeadbeef, load + 1, 1000);
 
-    let prepared_bulk = db.prepare_insert_bulk::<T>(table_id)?;
-    let prepared = db.prepare_insert::<T>(table_id)?;
-
     c.bench_function(&id, |b| {
         bench_harness(
             b,
@@ -159,11 +156,11 @@ fn insert_1<DB: BenchDatabase, T: BenchTable + RandomTable>(
                 let mut data = data.clone();
                 db.clear_table(table_id)?;
                 let row = data.pop().unwrap();
-                db.insert_bulk(&prepared_bulk, data)?;
+                db.insert_bulk(&table_id, data)?;
                 Ok(row)
             },
             |db, row| {
-                db.insert(&prepared, row)?;
+                db.insert(&table_id, row)?;
                 Ok(())
             },
         )
@@ -185,8 +182,6 @@ fn insert_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
     let id = format!("{db_params}/insert_bulk/{table_params}/load={load}/count={count}");
     let data = create_sequential::<T>(0xdeadbeef, load + count, 1000);
 
-    let prepared_bulk = db.prepare_insert_bulk::<T>(table_id)?;
-
     c.bench_function(&id, |b| {
         bench_harness(
             b,
@@ -197,12 +192,12 @@ fn insert_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
                 db.clear_table(table_id)?;
                 let to_insert = data.split_off(load as usize);
                 if !data.is_empty() {
-                    db.insert_bulk(&prepared_bulk, data)?;
+                    db.insert_bulk(&table_id, data)?;
                 }
                 Ok(to_insert)
             },
             |db, to_insert| {
-                db.insert_bulk(&prepared_bulk, to_insert)?;
+                db.insert_bulk(&table_id, to_insert)?;
                 Ok(())
             },
         )
@@ -223,9 +218,7 @@ fn iterate<DB: BenchDatabase, T: BenchTable + RandomTable>(
     let id = format!("{db_params}/iterate/{table_params}/count={count}");
     let data = create_sequential::<T>(0xdeadbeef, count, 1000);
 
-    let prepared_bulk = db.prepare_insert_bulk::<T>(table_id)?;
-    db.insert_bulk(&prepared_bulk, data)?;
-    let prepared_iterate = db.prepare_iterate::<T>(table_id)?;
+    db.insert_bulk(table_id, data)?;
 
     c.bench_function(&id, |b| {
         bench_harness(
@@ -233,7 +226,7 @@ fn iterate<DB: BenchDatabase, T: BenchTable + RandomTable>(
             db,
             |_| Ok(()),
             |db, _| {
-                db.iterate(&prepared_iterate)?;
+                db.iterate(table_id)?;
                 Ok(())
             },
         )
@@ -250,11 +243,11 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
     db: &mut DB,
     table_id: &DB::TableId,
     table_style: &TableStyle,
-    column_id: u32,
+    column_index: u32,
     load: u32,
     buckets: u32,
 ) -> ResultBench<()> {
-    let filter_column_type = match &T::product_type().elements[column_id as usize].algebraic_type {
+    let filter_column_type = match &T::product_type().elements[column_index as usize].algebraic_type {
         AlgebraicType::Builtin(BuiltinType::String) => "string",
         AlgebraicType::Builtin(BuiltinType::U32) => "u32",
         AlgebraicType::Builtin(BuiltinType::U64) => "u64",
@@ -270,10 +263,7 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
 
     let data = create_sequential::<T>(0xdeadbeef, load, buckets as u64);
 
-    let prepared_bulk = db.prepare_insert_bulk::<T>(table_id)?;
-    db.insert_bulk(&prepared_bulk, data.clone())?;
-
-    let prepared_filter = db.prepare_filter::<T>(table_id, column_id)?;
+    db.insert_bulk(&table_id, data.clone())?;
 
     // We loop through all buckets found in the sample data.
     // This mildly increases variance on the benchmark, but makes "mean_result_count" more accurate.
@@ -286,12 +276,12 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
             db,
             |_| {
                 // pick something to look for
-                let value = data[i].clone().into_product_value().elements[column_id as usize].clone();
+                let value = data[i].clone().into_product_value().elements[column_index as usize].clone();
                 i = (i + 1) % load as usize;
                 Ok(value)
             },
             |db, value| {
-                db.filter(&prepared_filter, value)?;
+                db.filter::<T>(&table_id, column_index, value)?;
                 Ok(())
             },
         )
@@ -317,9 +307,7 @@ fn find<DB: BenchDatabase, T: BenchTable + RandomTable>(
 
     let data = create_sequential::<T>(0xdeadbeef, load, buckets as u64);
 
-    let prepared_bulk = db.prepare_insert_bulk::<T>(table_id)?;
-    db.insert_bulk(&prepared_bulk, data.clone())?;
-    let prepared_filter = db.prepare_filter::<T>(table_id, column_id)?;
+    db.insert_bulk(&table_id, data.clone())?;
 
     // We loop through all buckets found in the sample data.
     // This mildly increases variance on the benchmark, but makes "mean_result_count" more accurate.
@@ -336,7 +324,7 @@ fn find<DB: BenchDatabase, T: BenchTable + RandomTable>(
                 Ok(value)
             },
             |db, value| {
-                db.filter(&prepared_filter, value)?;
+                db.filter::<T>(&table_id, column_id, value)?;
                 Ok(())
             },
         )

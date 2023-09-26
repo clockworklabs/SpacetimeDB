@@ -34,6 +34,7 @@ impl BenchDatabase for SpacetimeRaw {
         })
     }
 
+    #[inline(never)]
     fn create_table<T: BenchTable>(&mut self, table_style: TableStyle) -> ResultBench<Self::TableId> {
         let name = table_name::<T>(table_style);
         self.db.with_auto_commit(|tx| {
@@ -60,6 +61,7 @@ impl BenchDatabase for SpacetimeRaw {
         })
     }
 
+    #[inline(never)]
     fn clear_table(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         self.db.with_auto_commit(|tx| {
             self.db.clear_table(tx, *table_id)?;
@@ -67,92 +69,57 @@ impl BenchDatabase for SpacetimeRaw {
         })
     }
 
+    #[inline(never)]
     fn count_table(&mut self, table_id: &Self::TableId) -> ResultBench<u32> {
         self.db
             .with_auto_commit(|tx| Ok(self.db.iter(tx, *table_id)?.map(|_| 1u32).sum()))
     }
 
+    #[inline(never)]
     fn empty_transaction(&mut self) -> ResultBench<()> {
         self.db.with_auto_commit(|_tx| Ok(()))
     }
 
-    type PreparedInsert<T> = PreparedQuery;
     #[inline(never)]
-    fn prepare_insert<T: BenchTable>(&mut self, table_id: &Self::TableId) -> ResultBench<Self::PreparedInsert<T>> {
-        Ok(PreparedQuery { table_id: *table_id })
-    }
-
-    fn insert<T: BenchTable>(&mut self, prepared: &Self::PreparedInsert<T>, row: T) -> ResultBench<()> {
+    fn insert<T: BenchTable>(&mut self, table_id: &Self::TableId, row: T) -> ResultBench<()> {
         self.db.with_auto_commit(|tx| {
-            self.db.insert(tx, prepared.table_id, row.into_product_value())?;
+            self.db.insert(tx, *table_id, row.into_product_value())?;
             Ok(())
         })
     }
 
-    type PreparedInsertBulk<T> = PreparedQuery;
     #[inline(never)]
-    fn prepare_insert_bulk<T: BenchTable>(
-        &mut self,
-        table_id: &Self::TableId,
-    ) -> ResultBench<Self::PreparedInsertBulk<T>> {
-        Ok(PreparedQuery { table_id: *table_id })
-    }
-
-    fn insert_bulk<T: BenchTable>(&mut self, prepared: &Self::PreparedInsertBulk<T>, rows: Vec<T>) -> ResultBench<()> {
+    fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()> {
         self.db.with_auto_commit(|tx| {
             for row in rows {
-                self.db.insert(tx, prepared.table_id, row.into_product_value())?;
+                self.db.insert(tx, *table_id, row.into_product_value())?;
             }
             Ok(())
         })
     }
 
-    type PreparedInterate = PreparedQuery;
     #[inline(never)]
-    fn prepare_iterate<T: BenchTable>(&mut self, table_id: &Self::TableId) -> ResultBench<Self::PreparedInterate> {
-        Ok(PreparedQuery { table_id: *table_id })
-    }
-    #[inline(never)]
-    fn iterate(&mut self, prepared: &Self::PreparedInterate) -> ResultBench<()> {
+    fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         self.db.with_auto_commit(|tx| {
-            for row in self.db.iter(tx, prepared.table_id)? {
+            for row in self.db.iter(tx, *table_id)? {
                 black_box(row);
             }
             Ok(())
         })
     }
 
-    type PreparedFilter = PreparedFilter;
     #[inline(never)]
-    fn prepare_filter<T: BenchTable>(
+    fn filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,
-        column_id: u32,
-    ) -> ResultBench<Self::PreparedFilter> {
-        Ok(PreparedFilter {
-            table_id: *table_id,
-            column_id,
-        })
-    }
-    #[inline(never)]
-    fn filter(&mut self, prepared: &Self::PreparedFilter, value: AlgebraicValue) -> ResultBench<()> {
+        column_index: u32,
+        value: AlgebraicValue,
+    ) -> ResultBench<()> {
         self.db.with_auto_commit(|tx| {
-            for row in self
-                .db
-                .iter_by_col_eq(tx, prepared.table_id, prepared.column_id, value)?
-            {
+            for row in self.db.iter_by_col_eq(tx, *table_id, column_index, value)? {
                 black_box(row);
             }
             Ok(())
         })
     }
-}
-
-pub struct PreparedQuery {
-    table_id: u32,
-}
-
-pub struct PreparedFilter {
-    table_id: u32,
-    column_id: u32,
 }

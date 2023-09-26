@@ -3,16 +3,24 @@ use crate::{
     schemas::{table_name, BenchTable, TableStyle},
     ResultBench,
 };
+use ahash::AHashMap;
+use lazy_static::lazy_static;
 use rusqlite::Connection;
 use spacetimedb_lib::{
     sats::{self},
     AlgebraicType, AlgebraicValue, ProductType,
 };
-use std::{fmt::Write, hint::black_box};
+use std::{
+    fmt::Write,
+    hint::black_box,
+    sync::{Arc, RwLock},
+};
 use tempdir::TempDir;
 
+/// SQLite benchmark harness.
 pub struct SQLite {
     db: Connection,
+    /// We keep this alive to prevent the temp dir from being deleted.
     _temp_dir: TempDir,
 }
 
@@ -47,12 +55,14 @@ impl BenchDatabase for SQLite {
 
     type TableId = String;
 
+    #[inline(never)]
+    /// We derive the SQLite schema from the AlgebraicType of the table.
     fn create_table<T: BenchTable>(&mut self, table_style: crate::schemas::TableStyle) -> ResultBench<Self::TableId> {
         let mut statement = String::new();
-        let name = table_name::<T>(table_style);
-        write!(&mut statement, "CREATE TABLE {name} (")?;
+        let table_name = table_name::<T>(table_style);
+        write!(&mut statement, "CREATE TABLE {table_name} (")?;
         for (i, column) in T::product_type().elements.iter().enumerate() {
-            let name = column.name.clone().unwrap();
+            let column_name = column.name.clone().unwrap();
             let type_ = match column.algebraic_type {
                 AlgebraicType::Builtin(sats::BuiltinType::U32) => "INTEGER",
                 AlgebraicType::Builtin(sats::BuiltinType::U64) => "INTEGER",
@@ -65,19 +75,33 @@ impl BenchDatabase for SQLite {
                 ""
             };
             let comma = if i == 0 { "" } else { ", " };
-            write!(&mut statement, "{comma}{name} {type_}{extra}")?;
+            write!(&mut statement, "{comma}{column_name} {type_}{extra}")?;
         }
-        write!(&mut statement, ");")?;
+        writeln!(&mut statement, ");")?;
+
+        if table_style == TableStyle::MultiIndex {
+            for column in T::product_type().elements.iter() {
+                let column_name = column.name.clone().unwrap();
+
+                writeln!(
+                    &mut statement,
+                    "CREATE INDEX index_{table_name}_{column_name} ON {table_name}({column_name});"
+                )?;
+            }
+        }
+
         log::info!("SQLITE: `{statement}`");
         self.db.execute_batch(&statement)?;
-        // TODO(jgilles): add indexes
-        Ok(name)
+
+        Ok(table_name)
     }
+
     #[inline(never)]
     fn clear_table(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         self.db.execute_batch(&format!("DELETE FROM {table_id};"))?;
         Ok(())
     }
+
     #[inline(never)]
     fn count_table(&mut self, table_id: &Self::TableId) -> ResultBench<u32> {
         let rows = self
@@ -86,6 +110,7 @@ impl BenchDatabase for SQLite {
         Ok(rows)
     }
 
+    #[inline(never)]
     fn empty_transaction(&mut self) -> ResultBench<()> {
         let mut begin = self.db.prepare_cached(BEGIN_TRANSACTION)?;
         let mut commit = self.db.prepare_cached(COMMIT_TRANSACTION)?;
@@ -95,17 +120,14 @@ impl BenchDatabase for SQLite {
         Ok(())
     }
 
-    type PreparedInsert<T> = PreparedStatement;
     #[inline(never)]
-    fn prepare_insert<T: BenchTable>(&mut self, table_id: &Self::TableId) -> ResultBench<Self::PreparedInsert<T>> {
-        let statement = insert_template(table_id, T::product_type());
-        let _ = self.db.prepare_cached(&statement);
-        Ok(PreparedStatement { statement })
-    }
+    fn insert<T: BenchTable>(&mut self, table_id: &Self::TableId, row: T) -> ResultBench<()> {
+        let statement = memo_query(BenchName::Insert, table_id, || {
+            insert_template(table_id, T::product_type())
+        });
 
-    fn insert<T: BenchTable>(&mut self, prepared: &Self::PreparedInsert<T>, row: T) -> ResultBench<()> {
         let mut begin = self.db.prepare_cached(BEGIN_TRANSACTION)?;
-        let mut stmt = self.db.prepare_cached(&prepared.statement)?;
+        let mut stmt = self.db.prepare_cached(&statement)?;
         let mut commit = self.db.prepare_cached(COMMIT_TRANSACTION)?;
 
         begin.execute(())?;
@@ -114,20 +136,14 @@ impl BenchDatabase for SQLite {
         Ok(())
     }
 
-    type PreparedInsertBulk<T> = PreparedStatement;
     #[inline(never)]
-    fn prepare_insert_bulk<T: BenchTable>(
-        &mut self,
-        table_id: &Self::TableId,
-    ) -> ResultBench<Self::PreparedInsertBulk<T>> {
-        let statement = insert_template(table_id, T::product_type());
-        let _ = self.db.prepare_cached(&statement);
-        Ok(PreparedStatement { statement })
-    }
+    fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()> {
+        let statement = memo_query(BenchName::InsertBulk, table_id, || {
+            insert_template(table_id, T::product_type())
+        });
 
-    fn insert_bulk<T: BenchTable>(&mut self, prepared: &Self::PreparedInsertBulk<T>, rows: Vec<T>) -> ResultBench<()> {
         let mut begin = self.db.prepare_cached(BEGIN_TRANSACTION)?;
-        let mut stmt = self.db.prepare_cached(&prepared.statement)?;
+        let mut stmt = self.db.prepare_cached(&statement)?;
         let mut commit = self.db.prepare_cached(COMMIT_TRANSACTION)?;
 
         begin.execute(())?;
@@ -139,17 +155,11 @@ impl BenchDatabase for SQLite {
         Ok(())
     }
 
-    type PreparedInterate = PreparedStatement;
     #[inline(never)]
-    fn prepare_iterate<T: BenchTable>(&mut self, table_id: &Self::TableId) -> ResultBench<Self::PreparedInterate> {
+    fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         let statement = format!("SELECT * FROM {table_id}");
-        let _ = self.db.prepare_cached(&statement);
-        Ok(PreparedStatement { statement })
-    }
-    #[inline(never)]
-    fn iterate(&mut self, prepared: &Self::PreparedInterate) -> ResultBench<()> {
         let mut begin = self.db.prepare_cached(BEGIN_TRANSACTION)?;
-        let mut stmt = self.db.prepare_cached(&prepared.statement)?;
+        let mut stmt = self.db.prepare_cached(&statement)?;
         let mut commit = self.db.prepare_cached(COMMIT_TRANSACTION)?;
         begin.execute(())?;
         let iter = stmt.query_map((), |row| {
@@ -163,22 +173,24 @@ impl BenchDatabase for SQLite {
         Ok(())
     }
 
-    type PreparedFilter = PreparedStatement;
     #[inline(never)]
-    fn prepare_filter<T: BenchTable>(
+    fn filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,
-        column_id: u32,
-    ) -> ResultBench<Self::PreparedFilter> {
-        let column = T::product_type().elements[column_id as usize].name.clone().unwrap();
-        Ok(PreparedStatement {
-            statement: format!("SELECT * FROM {table_id} WHERE {column} = ?"),
-        })
-    }
-    #[inline(never)]
-    fn filter(&mut self, prepared: &Self::PreparedFilter, value: AlgebraicValue) -> ResultBench<()> {
+        column_index: u32,
+        value: AlgebraicValue,
+    ) -> ResultBench<()> {
+        let statement = memo_query(BenchName::Filter, table_id, || {
+            let column = T::product_type()
+                .elements
+                .swap_remove(column_index as usize)
+                .name
+                .unwrap();
+            format!("SELECT * FROM {table_id} WHERE {column} = ?")
+        });
+
         let mut begin = self.db.prepare_cached(BEGIN_TRANSACTION)?;
-        let mut stmt = self.db.prepare_cached(&prepared.statement)?;
+        let mut stmt = self.db.prepare_cached(&statement)?;
         let mut commit = self.db.prepare_cached(COMMIT_TRANSACTION)?;
 
         begin.execute(())?;
@@ -209,20 +221,59 @@ impl BenchDatabase for SQLite {
     }
 }
 
-/// We don't need to actually store any handles to the DB, rusqlite has an internal fast
-/// string cache that will look up the query. This is necessary to use prepared statements
-/// in rusqlite transactions.
-pub struct PreparedStatement {
-    statement: String,
-}
-
 const BEGIN_TRANSACTION: &str = "BEGIN DEFERRED";
 const COMMIT_TRANSACTION: &str = "COMMIT";
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+enum BenchName {
+    Insert,
+    InsertBulk,
+    Filter,
+}
+
+lazy_static! {
+    // bench_name -> table_id -> query.
+    // Double hashmap is necessary because of tuple dereferencing problems.
+    static ref QUERIES: RwLock<ahash::AHashMap<BenchName, ahash::AHashMap<String, Arc<str>>>> =
+        RwLock::new(ahash::AHashMap::default());
+}
+
+#[inline(never)]
+/// Reduce latency of query formatting, for queries that are complicated to build.
+fn memo_query<F: FnOnce() -> String>(bench_name: BenchName, table_id: &str, generate_query: F) -> Arc<str> {
+    // fast path
+    let queries = QUERIES.read().unwrap();
+
+    if let Some(bench_queries) = queries.get(&bench_name) {
+        if let Some(query) = bench_queries.get(table_id) {
+            return query.clone();
+        }
+    }
+
+    // slow path
+    drop(queries);
+    let mut queries = QUERIES.write().unwrap();
+
+    let bench_queries = if let Some(bench_queries) = queries.get_mut(&bench_name) {
+        bench_queries
+    } else {
+        queries.insert(bench_name, AHashMap::default());
+        queries.get_mut(&bench_name).unwrap()
+    };
+
+    if let Some(query) = bench_queries.get(table_id) {
+        query.clone()
+    } else {
+        let query = generate_query();
+        bench_queries.insert(table_id.to_string(), (&query[..]).into());
+        bench_queries[table_id].clone()
+    }
+}
 
 #[inline(never)]
 fn insert_template(table_id: &str, product_type: ProductType) -> String {
     let mut columns = String::new();
-    let mut params = String::new();
+    let mut args = String::new();
 
     for (i, elt) in product_type.elements.iter().enumerate() {
         let comma = if i == 0 { "" } else { ", " };
@@ -231,8 +282,8 @@ fn insert_template(table_id: &str, product_type: ProductType) -> String {
         write!(&mut columns, "{comma}{name}").unwrap();
 
         let sqlite_arg_id = i + 1;
-        write!(&mut params, "{comma}?{sqlite_arg_id}").unwrap();
+        write!(&mut args, "{comma}?{sqlite_arg_id}").unwrap();
     }
 
-    format!("INSERT INTO {table_id}({columns}) VALUES ({params})")
+    format!("INSERT INTO {table_id}({columns}) VALUES ({args})")
 }

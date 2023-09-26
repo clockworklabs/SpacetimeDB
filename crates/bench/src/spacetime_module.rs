@@ -14,6 +14,10 @@ lazy_static::lazy_static! {
         CompiledModule::compile("benchmarks");
 }
 
+/// A benchmark backend that invokes a spacetime module.
+/// This is tightly tied to the file `modules/benchmarks/src/lib.rs`;
+/// all of the implementations of `BenchDatabase` methods just invoke reducers
+/// in that module.
 pub struct SpacetimeModule {
     runtime: Runtime,
     // it's necessary for this to be dropped BEFORE the runtime.
@@ -62,6 +66,7 @@ impl BenchDatabase for SpacetimeModule {
         })
     }
 
+    #[inline(never)]
     fn create_table<T: BenchTable>(&mut self, table_style: crate::schemas::TableStyle) -> ResultBench<Self::TableId> {
         // Noop. All tables are built into the "benchmarks" module.
         Ok(TableId {
@@ -70,6 +75,7 @@ impl BenchDatabase for SpacetimeModule {
         })
     }
 
+    #[inline(never)]
     fn clear_table(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
@@ -85,7 +91,10 @@ impl BenchDatabase for SpacetimeModule {
         })
     }
 
-    // This implementation will not work if other people are interacting with our module.
+    // Implemented by calling a reducer that logs, then looking for the resulting
+    // message in the log.
+    // This implementation will not work if other people are concurrently interacting with our module.
+    #[inline(never)]
     fn count_table(&mut self, table_id: &Self::TableId) -> ResultBench<u32> {
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
@@ -105,6 +114,7 @@ impl BenchDatabase for SpacetimeModule {
         Ok(count)
     }
 
+    #[inline(never)]
     fn empty_transaction(&mut self) -> ResultBench<()> {
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
@@ -115,40 +125,22 @@ impl BenchDatabase for SpacetimeModule {
         })
     }
 
-    type PreparedInsert<T> = PreparedQuery;
     #[inline(never)]
-    fn prepare_insert<T: BenchTable>(&mut self, table_id: &Self::TableId) -> ResultBench<Self::PreparedInsert<T>> {
-        Ok(PreparedQuery {
-            reducer_name: format!("insert_{}", table_id.snake_case),
-        })
-    }
-
-    fn insert<T: BenchTable>(&mut self, prepared: &Self::PreparedInsert<T>, row: T) -> ResultBench<()> {
+    fn insert<T: BenchTable>(&mut self, table_id: &Self::TableId, row: T) -> ResultBench<()> {
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
+        let reducer_name = format!("insert_{}", table_id.snake_case);
 
         runtime.block_on(async move {
             module
-                .call_reducer_binary(&prepared.reducer_name, row.into_product_value())
+                .call_reducer_binary(&reducer_name, row.into_product_value())
                 .await?;
             Ok(())
         })
     }
 
-    type PreparedInsertBulk<T> = PreparedQuery;
     #[inline(never)]
-    fn prepare_insert_bulk<T: BenchTable>(
-        &mut self,
-        table_id: &Self::TableId,
-    ) -> ResultBench<Self::PreparedInsertBulk<T>> {
-        Ok(PreparedQuery {
-            reducer_name: format!("insert_bulk_{}", table_id.snake_case),
-        })
-    }
-
-    fn insert_bulk<T: BenchTable>(&mut self, prepared: &Self::PreparedInsertBulk<T>, rows: Vec<T>) -> ResultBench<()> {
-        // unfortunately, the marshalling time here is included in the benchmark.
-        // At least it doesn't need to reallocate the strings.
+    fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()> {
         let args = ProductValue {
             elements: vec![AlgebraicValue::Builtin(spacetimedb_lib::sats::BuiltinValue::Array {
                 val: ArrayValue::Product(rows.into_iter().map(|row| row.into_product_value()).collect()),
@@ -156,54 +148,45 @@ impl BenchDatabase for SpacetimeModule {
         };
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
+        let reducer_name = format!("insert_bulk_{}", table_id.snake_case);
 
         runtime.block_on(async move {
-            module.call_reducer_binary(&prepared.reducer_name, args).await?;
+            module.call_reducer_binary(&reducer_name, args).await?;
             Ok(())
         })
     }
 
-    type PreparedInterate = PreparedQuery;
     #[inline(never)]
-    fn prepare_iterate<T: BenchTable>(&mut self, table_id: &Self::TableId) -> ResultBench<Self::PreparedInterate> {
-        Ok(PreparedQuery {
-            reducer_name: format!("iterate_{}", table_id.snake_case),
-        })
-    }
-    #[inline(never)]
-    fn iterate(&mut self, prepared: &Self::PreparedInterate) -> ResultBench<()> {
+    fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
+        let reducer_name = format!("iterate_{}", table_id.snake_case);
 
         runtime.block_on(async move {
             module
-                .call_reducer_binary(&prepared.reducer_name, ProductValue::new(&[]))
+                .call_reducer_binary(&reducer_name, ProductValue::new(&[]))
                 .await?;
             Ok(())
         })
     }
 
-    type PreparedFilter = PreparedQuery;
     #[inline(never)]
-    fn prepare_filter<T: BenchTable>(
+    fn filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,
-        column_id: u32,
-    ) -> ResultBench<Self::PreparedFilter> {
-        let product_type = T::product_type();
-        let column_name = product_type.elements[column_id as usize].name.as_ref().unwrap();
-        Ok(PreparedQuery {
-            reducer_name: format!("filter_{}_by_{}", table_id.snake_case, column_name),
-        })
-    }
-    #[inline(never)]
-    fn filter(&mut self, prepared: &Self::PreparedFilter, value: AlgebraicValue) -> ResultBench<()> {
+        column_index: u32,
+        value: AlgebraicValue,
+    ) -> ResultBench<()> {
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
 
+        let product_type = T::product_type();
+        let column_name = product_type.elements[column_index as usize].name.as_ref().unwrap();
+        let reducer_name = format!("filter_{}_by_{}", table_id.snake_case, column_name);
+
         runtime.block_on(async move {
             module
-                .call_reducer_binary(&prepared.reducer_name, ProductValue { elements: vec![value] })
+                .call_reducer_binary(&reducer_name, ProductValue { elements: vec![value] })
                 .await?;
             Ok(())
         })
@@ -214,11 +197,6 @@ impl BenchDatabase for SpacetimeModule {
 pub struct TableId {
     pascal_case: String,
     snake_case: String,
-}
-
-#[derive(Clone)]
-pub struct PreparedQuery {
-    reducer_name: String,
 }
 
 #[allow(unused)]

@@ -32,33 +32,21 @@ pub trait BenchDatabase: Sized {
     /// Perform an empty transaction.
     fn empty_transaction(&mut self) -> ResultBench<()>;
 
-    type PreparedInsert<T>;
-    fn prepare_insert<T: BenchTable>(&mut self, table_id: &Self::TableId) -> ResultBench<Self::PreparedInsert<T>>;
-
     /// Perform a transaction that commits a single row.
-    fn insert<T: BenchTable>(&mut self, prepared: &Self::PreparedInsert<T>, row: T) -> ResultBench<()>;
-
-    type PreparedInsertBulk<T>;
-    fn prepare_insert_bulk<T: BenchTable>(
-        &mut self,
-        table_id: &Self::TableId,
-    ) -> ResultBench<Self::PreparedInsertBulk<T>>;
+    fn insert<T: BenchTable>(&mut self, table_id: &Self::TableId, row: T) -> ResultBench<()>;
 
     /// Perform a transaction that commits many rows.
-    fn insert_bulk<T: BenchTable>(&mut self, prepared: &Self::PreparedInsertBulk<T>, rows: Vec<T>) -> ResultBench<()>;
-
-    type PreparedInterate;
-    fn prepare_iterate<T: BenchTable>(&mut self, table_id: &Self::TableId) -> ResultBench<Self::PreparedInterate>;
+    fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()>;
 
     /// Perform a transaction that iterates an entire database table.
-    fn iterate(&mut self, prepared: &Self::PreparedInterate) -> ResultBench<()>;
+    /// Note: this can be non-generic because none of the implementations use the relevant generic argument.
+    fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()>;
 
-    type PreparedFilter;
-    fn prepare_filter<T: BenchTable>(
+    /// Filter the table on the specified column index for the specified value.
+    fn filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,
         column_index: u32,
-    ) -> ResultBench<Self::PreparedFilter>;
-    /// We can unpack an algebraic value for the sqlite case.
-    fn filter(&mut self, prepared: &Self::PreparedFilter, value: AlgebraicValue) -> ResultBench<()>;
+        value: AlgebraicValue,
+    ) -> ResultBench<()>;
 }

@@ -23,15 +23,16 @@ pub struct Location {
 }
 // ---------- / SYNCED CODE ----------
 
-/// Note: the first field will be used as the primary key, when using
-/// `TableStyle::Unique`. It should be a u32.
 pub trait BenchTable: Debug + Clone + PartialEq + Eq + Hash {
     /// PascalCase
     fn name_pascal_case() -> &'static str;
     /// snake_case
     fn name_snake_case() -> &'static str;
 
+    /// Note: the first field will be used as the primary key, when using
+    /// `TableStyle::Unique`. It should be a u32.
     fn product_type() -> sats::ProductType;
+    /// MUST match product_type.
     fn into_product_value(self) -> sats::ProductValue;
 
     /// This should be a tuple like (u32, String, u32).
