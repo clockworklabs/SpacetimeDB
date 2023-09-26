@@ -1,10 +1,10 @@
-use std::collections::HashMap;
 use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use reqwest::RequestBuilder;
 use serde::Deserialize;
 use spacetimedb_lib::name::{is_address, DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
 use spacetimedb_lib::{AlgebraicType, Identity};
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 use std::process::exit;
@@ -196,7 +196,14 @@ pub struct DescribeElementName {
     pub some: String,
 }
 
-pub async fn describe_reducer(config: &mut Config, database: String, server: Option<String>, reducer_name: String, anon_identity: bool, as_identity: Option<String>) -> anyhow::Result<DescribeReducer> {
+pub async fn describe_reducer(
+    config: &mut Config,
+    database: String,
+    server: Option<String>,
+    reducer_name: String,
+    anon_identity: bool,
+    as_identity: Option<String>,
+) -> anyhow::Result<DescribeReducer> {
     let address = database_address(config, &database, server.as_deref()).await?;
 
     let builder = reqwest::Client::new().get(format!(
@@ -204,7 +211,8 @@ pub async fn describe_reducer(config: &mut Config, database: String, server: Opt
         config.get_host_url(server.as_deref())?,
         address,
         "reducer",
-        reducer_name));
+        reducer_name
+    ));
     let auth_header = get_auth_header_only(config, anon_identity, as_identity.as_ref(), server.as_deref()).await;
     let builder = add_auth_header_opt(builder, &auth_header);
 

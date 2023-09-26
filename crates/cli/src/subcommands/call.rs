@@ -1,18 +1,18 @@
 use crate::config::Config;
 use crate::edit_distance::{edit_distance, find_best_match_for_name};
 use crate::generate::rust::{write_arglist_no_delimiters, write_type};
+use crate::util;
 use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
 use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgAction, ArgMatches};
 use itertools::Either;
 use serde_json::Value;
+use spacetimedb::db::AlgebraicType;
 use spacetimedb_lib::de::serde::deserialize_from;
 use spacetimedb_lib::sats::{AlgebraicTypeRef, BuiltinType, Typespace};
 use spacetimedb_lib::ProductTypeElement;
 use std::fmt::Write;
 use std::iter;
-use spacetimedb::db::AlgebraicType;
-use crate::util;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("call")
@@ -27,11 +27,7 @@ pub fn cli() -> clap::Command {
                 .required(true)
                 .help("The name of the reducer to call"),
         )
-        .arg(
-            Arg::new("arguments")
-                .help("arguments formatted as JSON")
-                .num_args(1..)
-        )
+        .arg(Arg::new("arguments").help("arguments formatted as JSON").num_args(1..))
         .arg(
             Arg::new("server")
                 .long("server")
@@ -75,22 +71,28 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     ));
     let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity, server).await;
     let builder = add_auth_header_opt(builder, &auth_header);
-    let describe_reducer = util::describe_reducer(&mut config, address.clone(), server.map(|x|x.to_string()), reducer_name.clone(), anon_identity, as_identity.cloned()).await?;
+    let describe_reducer = util::describe_reducer(
+        &mut config,
+        address.clone(),
+        server.map(|x| x.to_string()),
+        reducer_name.clone(),
+        anon_identity,
+        as_identity.cloned(),
+    )
+    .await?;
 
     // String quote any arguments that should be quoted
-    let arguments : Vec<String> = arguments
+    let arguments: Vec<String> = arguments
         .filter(|args| args.len() == describe_reducer.schema.elements.len())
         .unwrap_or_default()
         .collect::<Vec<_>>()
         .iter()
         .zip(describe_reducer.schema.elements.iter())
-        .map(|(argument, element)| {
-            match &element.algebraic_type {
-                AlgebraicType::Builtin(BuiltinType::String) if !argument.starts_with('\"') || !argument.ends_with('\"') => {
-                    format!("\"{}\"", argument)
-                }
-                _ => argument.to_string(),
+        .map(|(argument, element)| match &element.algebraic_type {
+            AlgebraicType::Builtin(BuiltinType::String) if !argument.starts_with('\"') || !argument.ends_with('\"') => {
+                format!("\"{}\"", argument)
             }
+            _ => argument.to_string(),
         })
         .collect();
 
