@@ -65,7 +65,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             "{}/database/schema/{}/{}/{}",
             config.get_host_url(server)?,
             address,
-            format_args!("{}s", entity_type.unwrap()),
+            format_args!("{}", entity_type.unwrap()),
             entity_name
         ),
     });

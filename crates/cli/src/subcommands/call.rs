@@ -27,8 +27,8 @@ pub fn cli() -> clap::Command {
         )
         .arg(
             Arg::new("arguments")
-                .help("arguments as a JSON array")
-                .default_value("[]"),
+                .help("arguments formatted as JSON")
+                .num_args(1..)
         )
         .arg(
             Arg::new("server")
@@ -57,7 +57,7 @@ pub fn cli() -> clap::Command {
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     let database = args.get_one::<String>("database").unwrap();
     let reducer_name = args.get_one::<String>("reducer_name").unwrap();
-    let arg_json = args.get_one::<String>("arguments").unwrap();
+    let arguments = args.get_many::<String>("arguments");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
     let as_identity = args.get_one::<String>("as_identity");
@@ -73,6 +73,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     ));
     let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity, server).await;
     let builder = add_auth_header_opt(builder, &auth_header);
+
+    let arg_json = match arguments {
+        None => "[]".to_string(),
+        Some(values) => format!("[{}]", values.map(|s_ref| s_ref.as_str()).collect::<Vec<_>>().join(", ")),
+    };
+
+
 
     let res = builder.body(arg_json.to_owned()).send().await?;
 

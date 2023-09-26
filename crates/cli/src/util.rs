@@ -170,6 +170,29 @@ pub async fn select_identity_config(
     }
 }
 
+pub async fn describe_reducer(mut config: Config, database: &String, server: Option<String>, reducer_name: String, anon_identity: bool, as_identity: Option<String>) -> anyhow::Result<()> {
+    let address = database_address(&config, database, server.as_ref().map(|x| x.as_str())).await?;
+
+    let builder = reqwest::Client::new().get(format!(
+        "{}/database/schema/{}/{}/{}",
+        config.get_host_url(server.as_ref().map(|x| x.as_str()))?,
+        address,
+        "reducers",
+        reducer_name));
+    let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity.as_ref(), server.as_ref().map(|x| x.as_str())).await;
+    let builder = add_auth_header_opt(builder, &auth_header);
+
+    let descr = builder
+        .query(&[("expand", true)])
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    println!("{}", descr);
+    Ok(())
+}
+
 /// Add an authorization header, if provided, to the request `builder`.
 pub fn add_auth_header_opt(mut builder: RequestBuilder, auth_header: &Option<String>) -> RequestBuilder {
     if let Some(auth_header) = auth_header {
