@@ -706,6 +706,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "connect_disconnect_client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "spacetimedb-sdk",
+ "test-counter",
+]
+
+[[package]]
 name = "console"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4140,6 +4149,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetime-module"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "spacetimedb"
 version = "0.6.1"
 dependencies = [
@@ -4794,7 +4811,15 @@ dependencies = [
  "anyhow",
  "env_logger",
  "spacetimedb-sdk",
+ "test-counter",
  "tokio",
+]
+
+[[package]]
+name = "test-counter"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]
