@@ -216,14 +216,61 @@ public static class Runtime
         public static SpacetimeDB.SATS.TypeInfo<Identity> GetSatsTypeInfo() => satsTypeInfo;
     }
 
+    public struct Address : IEquatable<Address>
+    {
+        private readonly byte[] bytes;
+
+        public Address(byte[] bytes) => this.bytes = bytes;
+
+        public static readonly Address Zero = new(new byte[16]);
+
+        public bool Equals(Address other) =>
+            StructuralComparisons.StructuralEqualityComparer.Equals(bytes, other.bytes);
+
+        public override bool Equals(object? obj) => obj is Address other && Equals(other);
+
+        public static bool operator ==(Address left, Address right) => left.Equals(right);
+
+        public static bool operator !=(Address left, Address right) => !left.Equals(right);
+
+        public override int GetHashCode() =>
+            StructuralComparisons.StructuralEqualityComparer.GetHashCode(bytes);
+
+        public override string ToString() => BitConverter.ToString(bytes);
+
+        private static SpacetimeDB.SATS.TypeInfo<Address> satsTypeInfo =
+            new(
+                // We need to set type info to inlined address type as `generate` CLI currently can't recognise type references for built-ins.
+                new SpacetimeDB.SATS.ProductType
+                {
+                  { "__address_bytes", SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.AlgebraicType }
+                },
+                // Concern: We use this "packed" representation (as Bytes)
+                //          in the caller_id field of reducer arguments,
+                //          but in table rows,
+                //          we send the "unpacked" representation as a product value.
+                //          It's possible that these happen to be identical
+                //          because BSATN is minimally self-describing,
+                //          but that doesn't seem like something we should count on.
+                reader => new(SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.Read(reader)),
+                (writer, value) =>
+                    SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.Write(writer, value.bytes)
+            );
+
+        public static SpacetimeDB.SATS.TypeInfo<Address> GetSatsTypeInfo() => satsTypeInfo;
+    }
+
     public class DbEventArgs : EventArgs
     {
         public readonly Identity Sender;
         public readonly DateTimeOffset Time;
+        public readonly Address? Address;
 
-        public DbEventArgs(byte[] senderIdentity, ulong timestamp_us)
+        public DbEventArgs(byte[] senderIdentity, byte[] senderAddress, ulong timestamp_us)
         {
             Sender = new Identity(senderIdentity);
+            var addr = new Address(senderAddress);
+            Address = addr == Address.Zero ? null : addr;
             // timestamp is in microseconds; the easiest way to convert those w/o losing precision is to get Unix origin and add ticks which are 0.1ms each.
             Time = DateTimeOffset.UnixEpoch.AddTicks(10 * (long)timestamp_us);
         }
@@ -233,11 +280,11 @@ public static class Runtime
     public static event Action<DbEventArgs>? OnDisconnect;
 
     // Note: this is accessed by C bindings.
-    private static string? IdentityConnected(byte[] sender_identity, ulong timestamp)
+    private static string? IdentityConnected(byte[] sender_identity, byte[] sender_address, ulong timestamp)
     {
         try
         {
-            OnConnect?.Invoke(new(sender_identity, timestamp));
+            OnConnect?.Invoke(new(sender_identity, sender_address, timestamp));
             return null;
         }
         catch (Exception e)
@@ -247,11 +294,11 @@ public static class Runtime
     }
 
     // Note: this is accessed by C bindings.
-    private static string? IdentityDisconnected(byte[] sender_identity, ulong timestamp)
+    private static string? IdentityDisconnected(byte[] sender_identity, byte[] sender_address, ulong timestamp)
     {
         try
         {
-            OnDisconnect?.Invoke(new(sender_identity, timestamp));
+            OnDisconnect?.Invoke(new(sender_identity, sender_address, timestamp));
             return null;
         }
         catch (Exception e)
