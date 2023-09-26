@@ -329,28 +329,6 @@ impl module_host_actor::WasmInstance for WasmerInstance {
         )
     }
 
-    fn call_connect_disconnect(
-        &mut self,
-        connect: bool,
-        budget: EnergyQuanta,
-        sender_identity: &[u8; 32],
-        sender_address: &[u8; 16],
-        timestamp: Timestamp,
-    ) -> module_host_actor::ExecuteResult<Self::Trap> {
-        self.call_tx_function::<(u32, u32, u64), 2>(
-            if connect {
-                IDENTITY_CONNECTED_DUNDER
-            } else {
-                IDENTITY_DISCONNECTED_DUNDER
-            },
-            budget,
-            [sender_identity.to_vec().into(), sender_address.to_vec().into()],
-            |func, store, [sender_identity, sender_address]| {
-                func.call(store, sender_identity.0, sender_address.0, timestamp.0)
-            },
-        )
-    }
-
     fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap) {
         log_traceback(func_type, func, trap)
     }

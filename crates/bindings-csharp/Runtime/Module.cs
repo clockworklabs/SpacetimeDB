@@ -142,6 +142,8 @@ public static class ReducerKind
 {
     public const string Init = "__init__";
     public const string Update = "__update__";
+    public const string Connect = "__identity_connected__";
+    public const string Disconnect = "__identity_disconnected__";
 }
 
 public interface IReducer
