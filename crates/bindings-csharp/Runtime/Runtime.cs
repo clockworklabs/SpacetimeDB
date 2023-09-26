@@ -270,7 +270,7 @@ public static class Runtime
         {
             Sender = new Identity(senderIdentity);
             var addr = new Address(senderAddress);
-            Address = addr == Address.Zero ? null : addr;
+            Address = addr == Runtime.Address.Zero ? null : addr;
             // timestamp is in microseconds; the easiest way to convert those w/o losing precision is to get Unix origin and add ticks which are 0.1ms each.
             Time = DateTimeOffset.UnixEpoch.AddTicks(10 * (long)timestamp_us);
         }
