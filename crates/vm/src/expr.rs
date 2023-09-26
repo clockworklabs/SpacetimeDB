@@ -246,12 +246,6 @@ impl From<IndexScan> for ColumnOp {
                 lhs: field.into(),
                 rhs: value.into(),
             },
-            // Inclusive lower bound => field >= value
-            (Bound::Included(lower), Bound::Included(upper)) if lower == upper => ColumnOp::Cmp {
-                op: OpQuery::Cmp(OpCmp::Eq),
-                lhs: field.into(),
-                rhs: lower.into(),
-            },
             (Bound::Unbounded, Bound::Unbounded) => unreachable!(),
             (lower_bound, upper_bound) => {
                 let lhs = IndexScan {
@@ -280,6 +274,15 @@ impl From<IndexScan> for ColumnOp {
 pub enum SourceExpr {
     MemTable(MemTable),
     DbTable(DbTable),
+}
+
+impl From<Table> for SourceExpr {
+    fn from(value: Table) -> Self {
+        match value {
+            Table::MemTable(t) => SourceExpr::MemTable(t),
+            Table::DbTable(t) => SourceExpr::DbTable(t),
+        }
+    }
 }
 
 impl From<SourceExpr> for Table {

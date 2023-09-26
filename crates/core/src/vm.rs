@@ -29,36 +29,22 @@ pub fn build_query<'a>(
     tx: &'a MutTxId,
     query: QueryCode,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
-    let q = match &query.table {
-        Table::MemTable(x) => SourceExpr::MemTable(x.clone()),
-        Table::DbTable(x) => SourceExpr::DbTable(x.clone()),
-    };
+    let db_table = matches!(&query.table, Table::DbTable(_));
+    let mut result = get_table(stdb, tx, query.table.into())?;
 
-    let mut ops = query.query.into_iter();
-    let first = ops.next();
-
-    // If the first operation is an index scan, open an index cursor, else a table cursor.
-    let (mut result, ops) = if let Some(Query::IndexScan(IndexScan {
-        table,
-        col_id,
-        lower_bound,
-        upper_bound,
-    })) = first
-    {
-        (
-            iter_by_col_range(stdb, tx, table, col_id, (lower_bound, upper_bound))?,
-            ops.collect(),
-        )
-    } else if let Some(op) = first {
-        (get_table(stdb, tx, q)?, std::iter::once(op).chain(ops).collect())
-    } else {
-        (get_table(stdb, tx, q)?, vec![])
-    };
-
-    for op in ops {
+    for op in query.query {
         result = match op {
-            Query::IndexScan(_) => {
-                unreachable!()
+            Query::IndexScan(IndexScan {
+                table,
+                col_id,
+                lower_bound,
+                upper_bound,
+            }) if db_table => iter_by_col_range(stdb, tx, table, col_id, (lower_bound, upper_bound))?,
+            Query::IndexScan(index_scan) => {
+                let header = result.head().clone();
+                let cmp: ColumnOp = index_scan.into();
+                let iter = result.select(move |row| cmp.compare(row, &header));
+                Box::new(iter)
             }
             Query::Select(cmp) => {
                 let header = result.head().clone();
