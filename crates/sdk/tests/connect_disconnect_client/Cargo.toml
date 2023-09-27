@@ -1,5 +1,5 @@
 [package]
-name = "test-client"
+name = "connect_disconnect_client"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,6 +8,4 @@ edition = "2021"
 [dependencies]
 spacetimedb-sdk = { path = "../.." }
 test-counter = { path = "../test-counter" }
-tokio.workspace = true
 anyhow.workspace = true
-env_logger.workspace = true

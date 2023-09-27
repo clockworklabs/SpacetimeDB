@@ -82,11 +82,19 @@ pub enum ColumnOp {
 }
 
 impl ColumnOp {
-    pub fn cmp(op: OpQuery, lhs: ColumnOp, rhs: ColumnOp) -> Self {
+    pub fn new(op: OpQuery, lhs: ColumnOp, rhs: ColumnOp) -> Self {
         Self::Cmp {
             op,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
+        }
+    }
+
+    pub fn cmp(field: FieldName, op: OpCmp, value: AlgebraicValue) -> Self {
+        Self::Cmp {
+            op: OpQuery::Cmp(op),
+            lhs: Box::new(ColumnOp::Field(FieldExpr::Name(field))),
+            rhs: Box::new(ColumnOp::Field(FieldExpr::Value(value))),
         }
     }
 
@@ -246,12 +254,6 @@ impl From<IndexScan> for ColumnOp {
                 lhs: field.into(),
                 rhs: value.into(),
             },
-            // Inclusive lower bound => field >= value
-            (Bound::Included(lower), Bound::Included(upper)) if lower == upper => ColumnOp::Cmp {
-                op: OpQuery::Cmp(OpCmp::Eq),
-                lhs: field.into(),
-                rhs: lower.into(),
-            },
             (Bound::Unbounded, Bound::Unbounded) => unreachable!(),
             (lower_bound, upper_bound) => {
                 let lhs = IndexScan {
@@ -280,6 +282,15 @@ impl From<IndexScan> for ColumnOp {
 pub enum SourceExpr {
     MemTable(MemTable),
     DbTable(DbTable),
+}
+
+impl From<Table> for SourceExpr {
+    fn from(value: Table) -> Self {
+        match value {
+            Table::MemTable(t) => SourceExpr::MemTable(t),
+            Table::DbTable(t) => SourceExpr::DbTable(t),
+        }
+    }
 }
 
 impl From<SourceExpr> for Table {
@@ -335,6 +346,17 @@ impl Relation for SourceExpr {
             SourceExpr::DbTable(x) => x.row_count(),
         }
     }
+}
+
+// A descriptor for an index join operation.
+// The semantics are that of a semi-join with rows from the index side being returned.
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+pub struct IndexJoin {
+    pub probe_side: QueryExpr,
+    pub probe_field: FieldName,
+    pub index_header: Header,
+    pub index_table: u32,
+    pub index_col: u32,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
@@ -477,11 +499,25 @@ impl Ord for IndexScan {
     }
 }
 
+// An individual operation in a query.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Query {
+    // Fetching rows via an index.
     IndexScan(IndexScan),
+    // Joining rows via an index.
+    // Equivalent to Index Nested Loop Join.
+    IndexJoin(IndexJoin),
+    // A filter over an intermediate relation.
+    // In particular it does not utilize any indexes.
+    // If it could it would have already been transformed into an IndexScan.
     Select(ColumnOp),
-    Project(Vec<FieldExpr>),
+    // Projects a set of columns.
+    // The second argument is the table id for a qualified wildcard project.
+    // If present, further optimzations are possible.
+    Project(Vec<FieldExpr>, Option<u32>),
+    // A join of two relations (base or intermediate) based on equality.
+    // Equivalent to a Nested Loop Join.
+    // Its operands my use indexes but the join itself does not.
     JoinInner(JoinExpr),
 }
 
@@ -813,18 +849,49 @@ impl QueryExpr {
             self.query.push(Query::Select(op.into()));
             return self;
         };
-        match query {
-            Query::Select(filter) => {
-                self.query.push(Query::Select(ColumnOp::Cmp {
-                    op: OpQuery::Logic(OpLogic::And),
-                    lhs: filter.into(),
-                    rhs: Box::new(op.into()),
-                }));
+
+        match (query, op.into()) {
+            (
+                Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }),
+                ColumnOp::Cmp {
+                    op: OpQuery::Cmp(cmp),
+                    lhs: field,
+                    rhs: value,
+                },
+            ) => match (*field, *value) {
+                (ColumnOp::Field(FieldExpr::Name(field)), ColumnOp::Field(FieldExpr::Value(value)))
+                    // Field is from lhs, so push onto join's left arg
+                    if self.source.head().column(&field).is_some() =>
+                {
+                    self = self.with_select(ColumnOp::cmp(field, cmp, value));
+                    self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }));
+                    self
+                }
+                (ColumnOp::Field(FieldExpr::Name(field)), ColumnOp::Field(FieldExpr::Value(value)))
+                    // Field is from rhs, so push onto join's right arg
+                    if rhs.source.head().column(&field).is_some() =>
+                {
+                    self.query.push(Query::JoinInner(JoinExpr {
+                        rhs: rhs.with_select(ColumnOp::cmp(field, cmp, value)),
+                        col_lhs,
+                        col_rhs,
+                    }));
+                    self
+                }
+                (field, value) => {
+                    self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs }));
+                    self.query.push(Query::Select(ColumnOp::new(OpQuery::Cmp(cmp), field, value)));
+                    self
+                }
+            },
+            (Query::Select(filter), op) => {
+                self.query
+                    .push(Query::Select(ColumnOp::new(OpQuery::Logic(OpLogic::And), filter, op)));
                 self
             }
-            query => {
+            (query, op) => {
                 self.query.push(query);
-                self.query.push(Query::Select(op.into()));
+                self.query.push(Query::Select(op));
                 self
             }
         }
@@ -836,14 +903,17 @@ impl QueryExpr {
         RHS: Into<FieldExpr>,
         O: Into<OpQuery>,
     {
-        let op = ColumnOp::cmp(op.into(), ColumnOp::Field(lhs.into()), ColumnOp::Field(rhs.into()));
+        let op = ColumnOp::new(op.into(), ColumnOp::Field(lhs.into()), ColumnOp::Field(rhs.into()));
         self.with_select(op)
     }
 
-    pub fn with_project(self, cols: &[FieldExpr]) -> Self {
+    // Appends a project operation to the query operator pipeline.
+    // The `wildcard_table_id` represents a projection of the form `table.*`.
+    // This is used to determine if an inner join can be rewritten as an index join.
+    pub fn with_project(self, cols: &[FieldExpr], wildcard_table_id: Option<u32>) -> Self {
         let mut x = self;
         if !cols.is_empty() {
-            x.query.push(Query::Project(cols.into()));
+            x.query.push(Query::Project(cols.into(), wildcard_table_id));
         }
         x
     }
@@ -1017,10 +1087,13 @@ impl fmt::Display for Query {
             Query::IndexScan(op) => {
                 write!(f, "index_scan {:?}", op)
             }
+            Query::IndexJoin(op) => {
+                write!(f, "index_join {:?}", op)
+            }
             Query::Select(q) => {
                 write!(f, "select {q}")
             }
-            Query::Project(q) => {
+            Query::Project(q, _) => {
                 write!(f, "project")?;
                 if !q.is_empty() {
                     write!(f, " ")?;

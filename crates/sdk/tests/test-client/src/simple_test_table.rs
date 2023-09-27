@@ -1,8 +1,8 @@
 use crate::module_bindings::*;
-use crate::test_counter::TestCounter;
 use anyhow::anyhow;
 use spacetimedb_sdk::{identity::Identity, table::TableType, Address};
 use std::sync::Arc;
+use test_counter::TestCounter;
 
 pub trait SimpleTestTable: TableType {
     type Contents: Clone + Send + Sync + PartialEq + std::fmt::Debug + 'static;

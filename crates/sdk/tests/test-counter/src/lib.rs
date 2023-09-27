@@ -1,5 +1,4 @@
 #![allow(clippy::disallowed_macros)]
-
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Condvar, Mutex},

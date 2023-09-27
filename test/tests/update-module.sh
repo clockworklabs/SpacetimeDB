@@ -38,9 +38,9 @@ IDENT=$(basename "$PROJECT_PATH")
 run_test cargo run publish --skip_clippy --project-path "$PROJECT_PATH" "$IDENT"
 [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
 
-run_test cargo run call "$IDENT" add '["Robert"]'
-run_test cargo run call "$IDENT" add '["Julie"]'
-run_test cargo run call "$IDENT" add '["Samantha"]'
+run_test cargo run call "$IDENT" add Robert
+run_test cargo run call "$IDENT" add Julie
+run_test cargo run call "$IDENT" add Samantha
 run_test cargo run call "$IDENT" say_hello
 run_test cargo run logs "$IDENT" 100
 [ ' Hello, Samantha!' == "$(grep 'Samantha' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]

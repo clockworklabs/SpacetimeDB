@@ -106,7 +106,7 @@ pub struct Selection {
 
 impl Selection {
     pub fn with_cmp(op: OpQuery, lhs: ColumnOp, rhs: ColumnOp) -> Self {
-        let cmp = ColumnOp::cmp(op, lhs, rhs);
+        let cmp = ColumnOp::new(op, lhs, rhs);
         Selection { clause: cmp }
     }
 }
@@ -310,7 +310,7 @@ fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlE
         SqlExpr::BinaryOp { left, op, right } => {
             let (op, lhs, rhs) = compile_bin_op(table, op, left, right)?;
 
-            return Ok(ColumnOp::cmp(op, lhs, rhs));
+            return Ok(ColumnOp::new(op, lhs, rhs));
         }
         SqlExpr::Nested(x) => {
             return compile_expr_value(table, field, *x);
