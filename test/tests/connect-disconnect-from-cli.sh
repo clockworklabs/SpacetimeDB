@@ -13,12 +13,12 @@ cat > "${PROJECT_PATH}/src/lib.rs" << EOF
 use spacetimedb::{println, spacetimedb};
 
 #[spacetimedb(connect)]
-pub fn connect() {
+pub fn connected(_ctx: ReducerContext) {
     println!("connect");
 }
 
 #[spacetimedb(disconnect)]
-pub fn disconnect() {
+pub fn disconnected(_ctx: ReducerContext) {
     println!("disconnect");
 }
 
