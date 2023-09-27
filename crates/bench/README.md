@@ -78,7 +78,7 @@ To add a new generic benchmark, you'll need to:
 - Implement it for each `BenchDatabase` implementation.
     - [`SQLite`](src/sqlite.rs) will require you to write it as a SQL query and submit that to sqlite.
     - [`SpacetimeRaw`](src/spacetime_raw.rs) will require you to execute the query against the Spacetime database backend directly.
-    - [`SpacetimeModule`](src/spacetime_module.rs) will require you to add the reducer to the [`benchmarks`](../../modules/benchmarks/src/lib.rs) crate, and then add logic to invoke your reducer with the correct arguments.
+    - [`SpacetimeModule`](src/spacetime_module.rs) will require you to add a reducer to the [`benchmarks`](../../modules/benchmarks/src/lib.rs) crate, and then add logic to invoke your reducer with the correct arguments.
 - Add a benchmark harness that actually invokes your method in `benches/generic.rs`.
 
 

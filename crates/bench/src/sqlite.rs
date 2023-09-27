@@ -216,6 +216,9 @@ impl BenchDatabase for SQLite {
     }
 }
 
+/// Note: The rusqlite transaction API just invokes these statements,
+/// but it doesn't cache them, which significantly penalizes performance.
+/// We use prepare_cache to let sqlite go as fast as possible.
 const BEGIN_TRANSACTION: &str = "BEGIN DEFERRED";
 const COMMIT_TRANSACTION: &str = "COMMIT";
 
