@@ -79,12 +79,6 @@ pub fn insert_nonunique_person(id: i32, name: String, is_human: bool) {
     NonuniquePerson::insert(NonuniquePerson { id, name, is_human } );
 }
 
-// FIXME: the `delete` functionality on things without unique columns takes a function pointer, not a generic! This means closures can't capture!
-#[spacetimedb(reducer)]
-pub fn delete_nonunique_person_103() {
-    NonuniquePerson::delete((|nup| nup.id == 103) as fn(_: NonuniquePerson) -> bool);
-}
-
 #[spacetimedb(reducer)]
 pub fn find_nonunique_person(id: i32) {
     for person in NonuniquePerson::filter_by_id(&id) {
@@ -263,7 +257,6 @@ run_test cargo run logs "$IDENT" 100
 # run_test cargo run call "$IDENT" insert_nonunique_person 102 "Fi"
 # run_test cargo run call "$IDENT" insert_nonunique_person 103 Fo
 # run_test cargo run call "$IDENT" insert_nonunique_person 104 Fum
-# run_test cargo run call "$IDENT" delete_nonunique_person_103
 # run_test cargo run call "$IDENT" find_nonunique_person 104
 # run_test cargo run logs "$IDENT" 100
 # [ ' NONUNIQUE FOUND: id 104: Fum' == "$(grep 'NONUNIQUE FOUND: id 104: Fum' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
