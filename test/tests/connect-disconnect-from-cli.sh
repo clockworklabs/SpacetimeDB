@@ -10,7 +10,7 @@ set -euox pipefail
 source "./test/lib.include"
 
 cat > "${PROJECT_PATH}/src/lib.rs" << EOF
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::{println, spacetimedb, ReducerContext};
 
 #[spacetimedb(connect)]
 pub fn connected(_ctx: ReducerContext) {
