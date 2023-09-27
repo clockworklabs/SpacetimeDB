@@ -19,8 +19,8 @@ namespace SpacetimeDB.Types
 	{
 		public ReducerType Reducer { get; private set; }
 
-		public ReducerEvent(ReducerType reducer, string reducerName, ulong timestamp, SpacetimeDB.Identity identity, string errMessage, ClientApi.Event.Types.Status status, object args)
-			: base(reducerName, timestamp, identity, errMessage, status, args)
+		public ReducerEvent(ReducerType reducer, string reducerName, ulong timestamp, SpacetimeDB.Identity identity, SpacetimeDB.Address? callerAddress, string errMessage, ClientApi.Event.Types.Status status, object args)
+			: base(reducerName, timestamp, identity, callerAddress, errMessage, status, args)
 		{
 			Reducer = reducer;
 		}

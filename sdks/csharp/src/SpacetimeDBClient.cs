@@ -81,12 +81,14 @@ namespace SpacetimeDB
         /// <summary>
         /// Called when we receive an identity from the server
         /// </summary>
-        public event Action<string, Identity> onIdentityReceived;
+        public event Action<string, Identity, Address> onIdentityReceived;
 
         /// <summary>
         /// Invoked when an event message is received or at the end of a transaction update.
         /// </summary>
         public event Action<ClientApi.Event> onEvent;
+
+        public Address clientAddress { get; private set; }
 
         private SpacetimeDB.WebSocket webSocket;
         private bool connectionClosed;
@@ -150,6 +152,8 @@ namespace SpacetimeDB
             }
 
             instance = this;
+
+            clientAddress = Address.Random();
 
             logger = loggerToUse;
 
@@ -483,7 +487,7 @@ namespace SpacetimeDB
             {
                 try
                 {
-                    await webSocket.Connect(token, uri, addressOrName);
+                    await webSocket.Connect(token, host, addressOrName, sslEnabled, clientAddress);
                 }
                 catch (Exception e)
                 {
@@ -711,7 +715,7 @@ namespace SpacetimeDB
 
                     break;
                 case Message.TypeOneofCase.IdentityToken:
-                    onIdentityReceived?.Invoke(message.IdentityToken.Token, Identity.From(message.IdentityToken.Identity.ToByteArray()));
+                  onIdentityReceived?.Invoke(message.IdentityToken.Token, Identity.From(message.IdentityToken.Identity.ToByteArray()), (Address)Address.From(message.IdentityToken.Address.ToByteArray()));
                     break;
                 case Message.TypeOneofCase.Event:
                     onEvent?.Invoke(message.Event);

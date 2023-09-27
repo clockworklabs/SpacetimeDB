@@ -145,9 +145,10 @@ class OnSendErrorMessage : MainThreadDispatch
 
         public bool IsConnected { get { return Ws != null && Ws.State == WebSocketState.Open; } }
 
-        public async Task Connect(string auth, string uri, string nameOrAddress)
+        public async Task Connect(string auth, string host, string nameOrAddress, bool sslEnabled, Address clientAddress)
         {
-            var url = new Uri($"{uri}/database/subscribe/{nameOrAddress}");
+            var protocol = sslEnabled ? "wss" : "ws";
+            var url = new Uri($"{protocol}://{host}/database/subscribe/{nameOrAddress}?client_address={clientAddress}");
             Ws.Options.AddSubProtocol(_options.Protocol);
 
             var source = new CancellationTokenSource(10000);

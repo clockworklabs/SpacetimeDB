@@ -113,7 +113,7 @@ void OnConnect()
     SpacetimeDBClient.instance.Subscribe(new List<string> { "SELECT * FROM User", "SELECT * FROM Message" });
 }
 
-void OnIdentityReceived(string authToken, Identity identity)
+void OnIdentityReceived(string authToken, Identity identity, Address clientAddress)
 {
     local_identity = identity;
     AuthToken.SaveToken(authToken);

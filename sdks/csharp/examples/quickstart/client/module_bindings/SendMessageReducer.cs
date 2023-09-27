@@ -20,11 +20,6 @@ namespace SpacetimeDB.Types
 				fn = "send_message",
 				args = _argArray,
 			};
-			Newtonsoft.Json.JsonSerializerSettings _settings = new Newtonsoft.Json.JsonSerializerSettings
-			{
-				Converters = { new SpacetimeDB.SomeWrapperConverter(), new SpacetimeDB.EnumWrapperConverter() },
-				ContractResolver = new SpacetimeDB.JsonContractResolver(),
-			};
 			SpacetimeDBClient.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));
 		}
 
@@ -54,7 +49,7 @@ namespace SpacetimeDB.Types
 			using var reader = new System.IO.BinaryReader(ms);
 			var args_0_value = SpacetimeDB.SATS.AlgebraicValue.Deserialize(SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.String), reader);
 			args.Text = args_0_value.AsString();
-			dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.SendMessage, "send_message", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), dbEvent.Message, dbEvent.Status, args);
+			dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.SendMessage, "send_message", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), Address.From(dbEvent.CallerAddress.ToByteArray()), dbEvent.Message, dbEvent.Status, args);
 		}
 	}
 

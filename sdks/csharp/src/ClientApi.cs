@@ -34,39 +34,40 @@ namespace ClientApi {
             "GAYgASgLMhUuY2xpZW50X2FwaS5TdWJzY3JpYmVIABIuCgtvbmVPZmZRdWVy",
             "eRgHIAEoCzIXLmNsaWVudF9hcGkuT25lT2ZmUXVlcnlIABI+ChNvbmVPZmZR",
             "dWVyeVJlc3BvbnNlGAggASgLMh8uY2xpZW50X2FwaS5PbmVPZmZRdWVyeVJl",
-            "c3BvbnNlSABCBgoEdHlwZSIwCg1JZGVudGl0eVRva2VuEhAKCGlkZW50aXR5",
-            "GAEgASgMEg0KBXRva2VuGAIgASgJIjEKDEZ1bmN0aW9uQ2FsbBIPCgdyZWR1",
-            "Y2VyGAEgASgJEhAKCGFyZ0J5dGVzGAIgASgMIiIKCVN1YnNjcmliZRIVCg1x",
-            "dWVyeV9zdHJpbmdzGAEgAygJIpkCCgVFdmVudBIRCgl0aW1lc3RhbXAYASAB",
-            "KAQSFgoOY2FsbGVySWRlbnRpdHkYAiABKAwSLgoMZnVuY3Rpb25DYWxsGAMg",
-            "ASgLMhguY2xpZW50X2FwaS5GdW5jdGlvbkNhbGwSKAoGc3RhdHVzGAQgASgO",
-            "MhguY2xpZW50X2FwaS5FdmVudC5TdGF0dXMSDwoHbWVzc2FnZRgFIAEoCRIa",
-            "ChJlbmVyZ3lfcXVhbnRhX3VzZWQYBiABKAMSJgoeaG9zdF9leGVjdXRpb25f",
-            "ZHVyYXRpb25fbWljcm9zGAcgASgEIjYKBlN0YXR1cxINCgljb21taXR0ZWQQ",
-            "ABIKCgZmYWlsZWQQARIRCg1vdXRfb2ZfZW5lcmd5EAIiQwoSU3Vic2NyaXB0",
-            "aW9uVXBkYXRlEi0KDHRhYmxlVXBkYXRlcxgBIAMoCzIXLmNsaWVudF9hcGku",
-            "VGFibGVVcGRhdGUibAoLVGFibGVVcGRhdGUSDwoHdGFibGVJZBgBIAEoDRIR",
-            "Cgl0YWJsZU5hbWUYAiABKAkSOQoSdGFibGVSb3dPcGVyYXRpb25zGAMgAygL",
-            "Mh0uY2xpZW50X2FwaS5UYWJsZVJvd09wZXJhdGlvbiKSAQoRVGFibGVSb3dP",
-            "cGVyYXRpb24SNwoCb3AYASABKA4yKy5jbGllbnRfYXBpLlRhYmxlUm93T3Bl",
-            "cmF0aW9uLk9wZXJhdGlvblR5cGUSDgoGcm93X3BrGAIgASgMEgsKA3JvdxgD",
-            "IAEoDCInCg1PcGVyYXRpb25UeXBlEgoKBkRFTEVURRAAEgoKBklOU0VSVBAB",
-            "InEKEVRyYW5zYWN0aW9uVXBkYXRlEiAKBWV2ZW50GAEgASgLMhEuY2xpZW50",
-            "X2FwaS5FdmVudBI6ChJzdWJzY3JpcHRpb25VcGRhdGUYAiABKAsyHi5jbGll",
-            "bnRfYXBpLlN1YnNjcmlwdGlvblVwZGF0ZSI1CgtPbmVPZmZRdWVyeRIRCglt",
-            "ZXNzYWdlSWQYASABKAwSEwoLcXVlcnlTdHJpbmcYAiABKAkiYAoTT25lT2Zm",
-            "UXVlcnlSZXNwb25zZRIRCgltZXNzYWdlSWQYASABKAwSDQoFZXJyb3IYAiAB",
-            "KAkSJwoGdGFibGVzGAMgAygLMhcuY2xpZW50X2FwaS5PbmVPZmZUYWJsZSIt",
-            "CgtPbmVPZmZUYWJsZRIRCgl0YWJsZU5hbWUYAiABKAkSCwoDcm93GAQgAygM",
-            "YgZwcm90bzM="));
+            "c3BvbnNlSABCBgoEdHlwZSJBCg1JZGVudGl0eVRva2VuEhAKCGlkZW50aXR5",
+            "GAEgASgMEg0KBXRva2VuGAIgASgJEg8KB2FkZHJlc3MYAyABKAwiMQoMRnVu",
+            "Y3Rpb25DYWxsEg8KB3JlZHVjZXIYASABKAkSEAoIYXJnQnl0ZXMYAiABKAwi",
+            "IgoJU3Vic2NyaWJlEhUKDXF1ZXJ5X3N0cmluZ3MYASADKAkisAIKBUV2ZW50",
+            "EhEKCXRpbWVzdGFtcBgBIAEoBBIWCg5jYWxsZXJJZGVudGl0eRgCIAEoDBIu",
+            "CgxmdW5jdGlvbkNhbGwYAyABKAsyGC5jbGllbnRfYXBpLkZ1bmN0aW9uQ2Fs",
+            "bBIoCgZzdGF0dXMYBCABKA4yGC5jbGllbnRfYXBpLkV2ZW50LlN0YXR1cxIP",
+            "CgdtZXNzYWdlGAUgASgJEhoKEmVuZXJneV9xdWFudGFfdXNlZBgGIAEoAxIm",
+            "Ch5ob3N0X2V4ZWN1dGlvbl9kdXJhdGlvbl9taWNyb3MYByABKAQSFQoNY2Fs",
+            "bGVyQWRkcmVzcxgIIAEoDCI2CgZTdGF0dXMSDQoJY29tbWl0dGVkEAASCgoG",
+            "ZmFpbGVkEAESEQoNb3V0X29mX2VuZXJneRACIkMKElN1YnNjcmlwdGlvblVw",
+            "ZGF0ZRItCgx0YWJsZVVwZGF0ZXMYASADKAsyFy5jbGllbnRfYXBpLlRhYmxl",
+            "VXBkYXRlImwKC1RhYmxlVXBkYXRlEg8KB3RhYmxlSWQYASABKA0SEQoJdGFi",
+            "bGVOYW1lGAIgASgJEjkKEnRhYmxlUm93T3BlcmF0aW9ucxgDIAMoCzIdLmNs",
+            "aWVudF9hcGkuVGFibGVSb3dPcGVyYXRpb24ikgEKEVRhYmxlUm93T3BlcmF0",
+            "aW9uEjcKAm9wGAEgASgOMisuY2xpZW50X2FwaS5UYWJsZVJvd09wZXJhdGlv",
+            "bi5PcGVyYXRpb25UeXBlEg4KBnJvd19waxgCIAEoDBILCgNyb3cYAyABKAwi",
+            "JwoNT3BlcmF0aW9uVHlwZRIKCgZERUxFVEUQABIKCgZJTlNFUlQQASJxChFU",
+            "cmFuc2FjdGlvblVwZGF0ZRIgCgVldmVudBgBIAEoCzIRLmNsaWVudF9hcGku",
+            "RXZlbnQSOgoSc3Vic2NyaXB0aW9uVXBkYXRlGAIgASgLMh4uY2xpZW50X2Fw",
+            "aS5TdWJzY3JpcHRpb25VcGRhdGUiNQoLT25lT2ZmUXVlcnkSEQoJbWVzc2Fn",
+            "ZUlkGAEgASgMEhMKC3F1ZXJ5U3RyaW5nGAIgASgJImAKE09uZU9mZlF1ZXJ5",
+            "UmVzcG9uc2USEQoJbWVzc2FnZUlkGAEgASgMEg0KBWVycm9yGAIgASgJEicK",
+            "BnRhYmxlcxgDIAMoCzIXLmNsaWVudF9hcGkuT25lT2ZmVGFibGUiLQoLT25l",
+            "T2ZmVGFibGUSEQoJdGFibGVOYW1lGAIgASgJEgsKA3JvdxgEIAMoDGIGcHJv",
+            "dG8z"));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.Message), global::ClientApi.Message.Parser, new[]{ "FunctionCall", "SubscriptionUpdate", "Event", "TransactionUpdate", "IdentityToken", "Subscribe", "OneOffQuery", "OneOffQueryResponse" }, new[]{ "Type" }, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.IdentityToken), global::ClientApi.IdentityToken.Parser, new[]{ "Identity", "Token" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.IdentityToken), global::ClientApi.IdentityToken.Parser, new[]{ "Identity", "Token", "Address" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.FunctionCall), global::ClientApi.FunctionCall.Parser, new[]{ "Reducer", "ArgBytes" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.Subscribe), global::ClientApi.Subscribe.Parser, new[]{ "QueryStrings" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.Event), global::ClientApi.Event.Parser, new[]{ "Timestamp", "CallerIdentity", "FunctionCall", "Status", "Message", "EnergyQuantaUsed", "HostExecutionDurationMicros" }, null, new[]{ typeof(global::ClientApi.Event.Types.Status) }, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.Event), global::ClientApi.Event.Parser, new[]{ "Timestamp", "CallerIdentity", "FunctionCall", "Status", "Message", "EnergyQuantaUsed", "HostExecutionDurationMicros", "CallerAddress" }, null, new[]{ typeof(global::ClientApi.Event.Types.Status) }, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.SubscriptionUpdate), global::ClientApi.SubscriptionUpdate.Parser, new[]{ "TableUpdates" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.TableUpdate), global::ClientApi.TableUpdate.Parser, new[]{ "TableId", "TableName", "TableRowOperations" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.TableRowOperation), global::ClientApi.TableRowOperation.Parser, new[]{ "Op", "RowPk", "Row" }, null, new[]{ typeof(global::ClientApi.TableRowOperation.Types.OperationType) }, null, null),
@@ -715,7 +716,7 @@ namespace ClientApi {
   }
 
   /// <summary>
-  //// Received by database from client to inform of user's identity and token.
+  //// Received by database from client to inform of user's identity, token and client address.
   ////
   //// The database will always send an `IdentityToken` message
   //// as the first message for a new WebSocket connection.
@@ -760,6 +761,7 @@ namespace ClientApi {
     public IdentityToken(IdentityToken other) : this() {
       identity_ = other.identity_;
       token_ = other.token_;
+      address_ = other.address_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -793,6 +795,18 @@ namespace ClientApi {
       }
     }
 
+    /// <summary>Field number for the "address" field.</summary>
+    public const int AddressFieldNumber = 3;
+    private pb::ByteString address_ = pb::ByteString.Empty;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pb::ByteString Address {
+      get { return address_; }
+      set {
+        address_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -810,6 +824,7 @@ namespace ClientApi {
       }
       if (Identity != other.Identity) return false;
       if (Token != other.Token) return false;
+      if (Address != other.Address) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -819,6 +834,7 @@ namespace ClientApi {
       int hash = 1;
       if (Identity.Length != 0) hash ^= Identity.GetHashCode();
       if (Token.Length != 0) hash ^= Token.GetHashCode();
+      if (Address.Length != 0) hash ^= Address.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -845,6 +861,10 @@ namespace ClientApi {
         output.WriteRawTag(18);
         output.WriteString(Token);
       }
+      if (Address.Length != 0) {
+        output.WriteRawTag(26);
+        output.WriteBytes(Address);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -863,6 +883,10 @@ namespace ClientApi {
         output.WriteRawTag(18);
         output.WriteString(Token);
       }
+      if (Address.Length != 0) {
+        output.WriteRawTag(26);
+        output.WriteBytes(Address);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -878,6 +902,9 @@ namespace ClientApi {
       }
       if (Token.Length != 0) {
         size += 1 + pb::CodedOutputStream.ComputeStringSize(Token);
+      }
+      if (Address.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeBytesSize(Address);
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -896,6 +923,9 @@ namespace ClientApi {
       }
       if (other.Token.Length != 0) {
         Token = other.Token;
+      }
+      if (other.Address.Length != 0) {
+        Address = other.Address;
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -920,6 +950,10 @@ namespace ClientApi {
             Token = input.ReadString();
             break;
           }
+          case 26: {
+            Address = input.ReadBytes();
+            break;
+          }
         }
       }
     #endif
@@ -941,6 +975,10 @@ namespace ClientApi {
           }
           case 18: {
             Token = input.ReadString();
+            break;
+          }
+          case 26: {
+            Address = input.ReadBytes();
             break;
           }
         }
@@ -1418,6 +1456,15 @@ namespace ClientApi {
   //// - `energy_quanta_used` and `host_execution_duration_micros` seem self-explanatory;
   ////   they describe the amount of energy credits consumed by running the reducer,
   ////   and how long it took to run.
+  ////
+  //// - `callerAddress` is the 16-byte address of the user who requested the reducer run.
+  ////                   The all-zeros address is a sentinel which denotes no address.
+  ////                   `init` and `update` reducers will have a `callerAddress`
+  ////                   if and only if one was provided to the `publish` HTTP endpoint.
+  ////                   Scheduled reducers will never have a `callerAddress`.
+  ////                   Reducers invoked by HTTP will have a `callerAddress`
+  ////                   if and only if one was provided to the `call` HTTP endpoint.
+  ////                   Reducers invoked by WebSocket will always have a `callerAddress`.
   /// </summary>
   public sealed partial class Event : pb::IMessage<Event>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
@@ -1460,6 +1507,7 @@ namespace ClientApi {
       message_ = other.message_;
       energyQuantaUsed_ = other.energyQuantaUsed_;
       hostExecutionDurationMicros_ = other.hostExecutionDurationMicros_;
+      callerAddress_ = other.callerAddress_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -1557,6 +1605,18 @@ namespace ClientApi {
       }
     }
 
+    /// <summary>Field number for the "callerAddress" field.</summary>
+    public const int CallerAddressFieldNumber = 8;
+    private pb::ByteString callerAddress_ = pb::ByteString.Empty;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pb::ByteString CallerAddress {
+      get { return callerAddress_; }
+      set {
+        callerAddress_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -1579,6 +1639,7 @@ namespace ClientApi {
       if (Message != other.Message) return false;
       if (EnergyQuantaUsed != other.EnergyQuantaUsed) return false;
       if (HostExecutionDurationMicros != other.HostExecutionDurationMicros) return false;
+      if (CallerAddress != other.CallerAddress) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -1593,6 +1654,7 @@ namespace ClientApi {
       if (Message.Length != 0) hash ^= Message.GetHashCode();
       if (EnergyQuantaUsed != 0L) hash ^= EnergyQuantaUsed.GetHashCode();
       if (HostExecutionDurationMicros != 0UL) hash ^= HostExecutionDurationMicros.GetHashCode();
+      if (CallerAddress.Length != 0) hash ^= CallerAddress.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -1639,6 +1701,10 @@ namespace ClientApi {
         output.WriteRawTag(56);
         output.WriteUInt64(HostExecutionDurationMicros);
       }
+      if (CallerAddress.Length != 0) {
+        output.WriteRawTag(66);
+        output.WriteBytes(CallerAddress);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -1677,6 +1743,10 @@ namespace ClientApi {
         output.WriteRawTag(56);
         output.WriteUInt64(HostExecutionDurationMicros);
       }
+      if (CallerAddress.Length != 0) {
+        output.WriteRawTag(66);
+        output.WriteBytes(CallerAddress);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -1707,6 +1777,9 @@ namespace ClientApi {
       }
       if (HostExecutionDurationMicros != 0UL) {
         size += 1 + pb::CodedOutputStream.ComputeUInt64Size(HostExecutionDurationMicros);
+      }
+      if (CallerAddress.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeBytesSize(CallerAddress);
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -1743,6 +1816,9 @@ namespace ClientApi {
       }
       if (other.HostExecutionDurationMicros != 0UL) {
         HostExecutionDurationMicros = other.HostExecutionDurationMicros;
+      }
+      if (other.CallerAddress.Length != 0) {
+        CallerAddress = other.CallerAddress;
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -1790,6 +1866,10 @@ namespace ClientApi {
             HostExecutionDurationMicros = input.ReadUInt64();
             break;
           }
+          case 66: {
+            CallerAddress = input.ReadBytes();
+            break;
+          }
         }
       }
     #endif
@@ -1834,6 +1914,10 @@ namespace ClientApi {
           }
           case 56: {
             HostExecutionDurationMicros = input.ReadUInt64();
+            break;
+          }
+          case 66: {
+            CallerAddress = input.ReadBytes();
             break;
           }
         }
