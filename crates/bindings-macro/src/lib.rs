@@ -711,20 +711,6 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         }
     };
 
-    let db_delete = quote! {
-        #[allow(unused_variables)]
-        pub fn delete(f: fn (#original_struct_ident) -> bool) -> usize {
-            panic!("Delete using a function is not supported yet!");
-        }
-    };
-
-    let db_update = quote! {
-        #[allow(unused_variables)]
-        pub fn update(value: #original_struct_ident) -> bool {
-            panic!("Update using a value is not supported yet!");
-        }
-    };
-
     let db_iter = quote! {
         #[allow(unused_variables)]
         pub fn iter() -> spacetimedb::TableIter<Self> {
@@ -828,8 +814,6 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
 
         impl #original_struct_ident {
             #db_insert
-            #db_delete
-            #db_update
             #(#unique_filter_funcs)*
             #(#unique_update_funcs)*
             #(#unique_delete_funcs)*
