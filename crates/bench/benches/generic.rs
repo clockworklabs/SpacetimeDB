@@ -1,7 +1,7 @@
 use criterion::{
     criterion_group, criterion_main,
     measurement::{Measurement, WallTime},
-    Bencher, Criterion,
+    Bencher, BenchmarkGroup, Criterion,
 };
 use spacetimedb_bench::{
     database::BenchDatabase,
@@ -26,20 +26,20 @@ fn bench_suite<DB: BenchDatabase>(c: &mut Criterion, in_memory: bool) -> ResultB
     let param_in_memory = if in_memory { "mem" } else { "disk" };
     let db_params = format!("{param_db_name}/{param_in_memory}");
 
-    empty(c, &db_params, &mut db)?;
+    let mut g = c.benchmark_group(&db_params);
 
-    table_suite::<DB, Person>(c, &mut db, &db_params)?;
-    table_suite::<DB, Location>(c, &mut db, &db_params)?;
+    empty(&mut g, &mut db)?;
+
+    table_suite::<DB, Person>(&mut g, &mut db)?;
+    table_suite::<DB, Location>(&mut g, &mut db)?;
 
     Ok(())
 }
 
+type Group<'a> = BenchmarkGroup<'a, WallTime>;
+
 #[inline(never)]
-fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(
-    c: &mut Criterion,
-    db: &mut DB,
-    db_params: &str,
-) -> ResultBench<()> {
+fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(g: &mut Group, db: &mut DB) -> ResultBench<()> {
     // This setup is a compromise between trying to present related benchmarks together,
     // and not having to deal with nasty reentrant generic dispatching.
 
@@ -59,22 +59,24 @@ fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(
     ];
 
     for (_, table_id, table_params) in &tables {
-        insert_1::<DB, T>(c, db_params, table_params, db, table_id, 0)?;
-        insert_1::<DB, T>(c, db_params, table_params, db, table_id, 1000)?;
+        insert_1::<DB, T>(g, table_params, db, table_id, 0)?;
+        insert_1::<DB, T>(g, table_params, db, table_id, 1000)?;
     }
     for (_, table_id, table_params) in &tables {
-        insert_bulk::<DB, T>(c, db_params, table_params, db, table_id, 0, 100)?;
-        insert_bulk::<DB, T>(c, db_params, table_params, db, table_id, 1000, 100)?;
+        insert_bulk::<DB, T>(g, table_params, db, table_id, 0, 100)?;
+        insert_bulk::<DB, T>(g, table_params, db, table_id, 1000, 100)?;
     }
     for (index_strategy, table_id, table_params) in &tables {
         if *index_strategy == IndexStrategy::Unique {
-            iterate::<DB, T>(c, db_params, table_params, db, table_id, 100)?;
+            iterate::<DB, T>(g, table_params, db, table_id, 100)?;
 
-            // perform "find" benchmarks
-            find::<DB, T>(c, db_params, db, table_id, index_strategy, BENCH_PKEY_INDEX, 1000, 100)?;
+            if table_params.contains("person") {
+                // perform "find" benchmarks
+                find::<DB, T>(g, db, table_id, index_strategy, BENCH_PKEY_INDEX, 1000, 100)?;
+            }
         } else {
             // perform "filter" benchmarks
-            filter::<DB, T>(c, db_params, db, table_id, index_strategy, 1, 1000, 100)?;
+            filter::<DB, T>(g, db, table_id, index_strategy, 1, 1000, 100)?;
         }
     }
 
@@ -119,9 +121,9 @@ fn bench_harness<
 }
 
 #[inline(never)]
-fn empty<DB: BenchDatabase>(c: &mut Criterion, params: &str, db: &mut DB) -> ResultBench<()> {
-    let id = format!("{params}/empty");
-    c.bench_function(&id, |b| {
+fn empty<DB: BenchDatabase>(g: &mut Group, db: &mut DB) -> ResultBench<()> {
+    let id = format!("empty");
+    g.bench_function(&id, |b| {
         bench_harness(
             b,
             db,
@@ -137,22 +139,20 @@ fn empty<DB: BenchDatabase>(c: &mut Criterion, params: &str, db: &mut DB) -> Res
 
 #[inline(never)]
 fn insert_1<DB: BenchDatabase, T: BenchTable + RandomTable>(
-    c: &mut Criterion,
-    db_params: &str,
+    g: &mut Group,
     table_params: &str,
     db: &mut DB,
     table_id: &DB::TableId,
     load: u32,
 ) -> ResultBench<()> {
-    let id = format!("{db_params}/insert_1/{table_params}/load={load}");
+    let id = format!("insert_1/{table_params}/load={load}");
     let data = create_sequential::<T>(0xdeadbeef, load + 1, 1000);
 
-    c.bench_function(&id, |b| {
+    g.bench_function(&id, |b| {
         bench_harness(
             b,
             db,
             |db| {
-                // This is kind of slow. Whatever.
                 let mut data = data.clone();
                 db.clear_table(table_id)?;
                 let row = data.pop().unwrap();
@@ -171,23 +171,21 @@ fn insert_1<DB: BenchDatabase, T: BenchTable + RandomTable>(
 
 #[inline(never)]
 fn insert_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
-    c: &mut Criterion,
-    db_params: &str,
+    g: &mut Group,
     table_params: &str,
     db: &mut DB,
     table_id: &DB::TableId,
     load: u32,
     count: u32,
 ) -> ResultBench<()> {
-    let id = format!("{db_params}/insert_bulk/{table_params}/load={load}/count={count}");
+    let id = format!("insert_bulk/{table_params}/load={load}/count={count}");
     let data = create_sequential::<T>(0xdeadbeef, load + count, 1000);
 
-    c.bench_function(&id, |b| {
+    g.bench_function(&id, |b| {
         bench_harness(
             b,
             db,
             |db| {
-                // This is kind of slow. Whatever.
                 let mut data = data.clone();
                 db.clear_table(table_id)?;
                 let to_insert = data.split_off(load as usize);
@@ -208,19 +206,18 @@ fn insert_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
 
 #[inline(never)]
 fn iterate<DB: BenchDatabase, T: BenchTable + RandomTable>(
-    c: &mut Criterion,
-    db_params: &str,
+    g: &mut Group,
     table_params: &str,
     db: &mut DB,
     table_id: &DB::TableId,
     count: u32,
 ) -> ResultBench<()> {
-    let id = format!("{db_params}/iterate/{table_params}/count={count}");
+    let id = format!("iterate/{table_params}/count={count}");
     let data = create_sequential::<T>(0xdeadbeef, count, 1000);
 
     db.insert_bulk(table_id, data)?;
 
-    c.bench_function(&id, |b| {
+    g.bench_function(&id, |b| {
         bench_harness(
             b,
             db,
@@ -238,8 +235,7 @@ fn iterate<DB: BenchDatabase, T: BenchTable + RandomTable>(
 /// Implements both "filter" and "find" benchmarks.
 #[inline(never)]
 fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
-    c: &mut Criterion,
-    db_params: &str,
+    g: &mut Group,
     db: &mut DB,
     table_id: &DB::TableId,
     index_strategy: &IndexStrategy,
@@ -259,7 +255,7 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
         IndexStrategy::NonUnique => "non_indexed",
         _ => unimplemented!(),
     };
-    let id = format!("{db_params}/filter/{filter_column_type}/{indexed}/load={load}/count={mean_result_count}");
+    let id = format!("filter/{filter_column_type}/{indexed}/load={load}/count={mean_result_count}");
 
     let data = create_sequential::<T>(0xdeadbeef, load, buckets as u64);
 
@@ -270,7 +266,7 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
     // Note that all databases have EXACTLY the same sample data.
     let mut i = 0;
 
-    c.bench_function(&id, |b| {
+    g.bench_function(&id, |b| {
         bench_harness(
             b,
             db,
@@ -293,8 +289,7 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
 /// Implements both "filter" and "find" benchmarks.
 #[inline(never)]
 fn find<DB: BenchDatabase, T: BenchTable + RandomTable>(
-    c: &mut Criterion,
-    db_params: &str,
+    g: &mut Group,
     db: &mut DB,
     table_id: &DB::TableId,
     index_strategy: &IndexStrategy,
@@ -307,7 +302,7 @@ fn find<DB: BenchDatabase, T: BenchTable + RandomTable>(
         IndexStrategy::Unique,
         "find benchmarks require unique key"
     );
-    let id = format!("{db_params}/find_unique/u32/load={load}");
+    let id = format!("find_unique/u32/load={load}");
 
     let data = create_sequential::<T>(0xdeadbeef, load, buckets as u64);
 
@@ -315,10 +310,10 @@ fn find<DB: BenchDatabase, T: BenchTable + RandomTable>(
 
     // We loop through all buckets found in the sample data.
     // This mildly increases variance on the benchmark, but makes "mean_result_count" more accurate.
-    // Note that all databases have EXACTLY the same sample data.
+    // Note that all benchmarks use exactly the same sample data.
     let mut i = 0;
 
-    c.bench_function(&id, |b| {
+    g.bench_function(&id, |b| {
         bench_harness(
             b,
             db,
