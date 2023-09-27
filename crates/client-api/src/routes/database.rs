@@ -92,6 +92,12 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             host.spawn_module_host(dbic).await.map_err(log_and_500)?
         }
     };
+
+    module
+        .call_identity_connected_disconnected(caller_identity, true)
+        .await
+        .map_err(500)?;
+
     let result = match module.call_reducer(caller_identity, None, &reducer, args).await {
         Ok(rcr) => rcr,
         Err(e) => {
@@ -111,6 +117,10 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             return Err((status_code, format!("{:#}", anyhow::anyhow!(e))).into());
         }
     };
+    module
+        .call_identity_connected_disconnected(caller_identity, false)
+        .await
+        .map_err(500)?;
 
     let (status, body) = reducer_outcome_response(&identity, &reducer, result.outcome);
     Ok((
