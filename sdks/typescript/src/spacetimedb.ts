@@ -25,6 +25,7 @@ import {
 } from "./algebraic_type";
 import { EventType } from "./types";
 import { Identity } from "./identity";
+import { Address } from "./address";
 import {
   Message as ProtobufMessage,
   event_StatusToJSON,
@@ -75,6 +76,7 @@ export class IDatabaseTable {}
 
 export class ReducerEvent {
   public callerIdentity: Identity;
+  public callerAddress: Address | null;
   public reducerName: string;
   public status: string;
   public message: string;
@@ -82,12 +84,14 @@ export class ReducerEvent {
 
   constructor(
     callerIdentity: Identity,
+    callerAddress: Address | null,
     reducerName: string,
     status: string,
     message: string,
     args: any
   ) {
     this.callerIdentity = callerIdentity;
+    this.callerAddress = callerAddress;
     this.reducerName = reducerName;
     this.status = status;
     this.message = message;
@@ -405,6 +409,7 @@ class SubscriptionUpdateMessage {
 
 class TransactionUpdateEvent {
   public identity: Identity;
+  public address: Address | null;
   public originalReducerName: string;
   public reducerName: string;
   public args: any[] | Uint8Array;
@@ -413,6 +418,7 @@ class TransactionUpdateEvent {
 
   constructor(
     identity: Identity,
+    address: Address | null,
     originalReducerName: string,
     reducerName: string,
     args: any[] | Uint8Array,
@@ -420,6 +426,7 @@ class TransactionUpdateEvent {
     message: string
   ) {
     this.identity = identity;
+    this.address = address;
     this.originalReducerName = originalReducerName;
     this.reducerName = reducerName;
     this.args = args;
@@ -441,10 +448,12 @@ class TransactionUpdateMessage {
 class IdentityTokenMessage {
   public identity: Identity;
   public token: string;
+  public address: Address;
 
-  constructor(identity: Identity, token: string) {
+  constructor(identity: Identity, token: string, address: Address) {
     this.identity = identity;
     this.token = token;
+    this.address = address;
   }
 }
 type Message =
@@ -477,6 +486,7 @@ export class SpacetimeDBClient {
    * The user's private authentication token.
    */
   token?: string = undefined;
+
   /**
    * Reference to the database of the client.
    */
@@ -502,6 +512,7 @@ export class SpacetimeDBClient {
   private createWSFn: CreateWSFnType;
   private protocol: "binary" | "json";
   private ssl: boolean = false;
+  private clientAddress: Address = Address.random();
 
   /**
    * Creates a new `SpacetimeDBClient` database client and set the initial parameters.
@@ -584,7 +595,7 @@ export class SpacetimeDBClient {
       const response = await fetch(tokenUrl, { method: "POST", headers });
       if (response.ok) {
         const { token } = await response.json();
-        url += "?token=" + btoa("token:" + token);
+        url += "&token=" + btoa("token:" + token);
       }
       return new WebSocket(url, protocol);
     }
@@ -675,6 +686,7 @@ export class SpacetimeDBClient {
 
         reducerEvent = new ReducerEvent(
           message.event.identity,
+          message.event.address,
           message.event.originalReducerName,
           message.event.status,
           message.event.message,
@@ -711,7 +723,13 @@ export class SpacetimeDBClient {
         } else {
           this.token = message.token;
         }
-        this.emitter.emit("connected", this.token, this.identity);
+        this.clientAddress = message.address;
+        this.emitter.emit(
+          "connected",
+          this.token,
+          this.identity,
+          this.clientAddress
+        );
       }
     });
   }
@@ -828,6 +846,9 @@ export class SpacetimeDBClient {
       url = "ws://" + url;
     }
 
+    let clientAddress = this.clientAddress.toHexString();
+    url += `?client_address=${clientAddress}`;
+
     this.ssl = url.startsWith("wss");
     this.runtime.host = this.runtime.host
       .replace("ws://", "")
@@ -912,6 +933,7 @@ export class SpacetimeDBClient {
           const event = message["transactionUpdate"]["event"] as any;
           const functionCall = event["functionCall"] as any;
           const identity: Identity = new Identity(event["callerIdentity"]);
+          const address = Address.nullIfZero(event["callerAddress"]);
           const originalReducerName: string = functionCall["reducer"];
           const reducerName: string = toPascalCase(originalReducerName);
           const args = functionCall["argBytes"];
@@ -921,6 +943,7 @@ export class SpacetimeDBClient {
           const transactionUpdateEvent: TransactionUpdateEvent =
             new TransactionUpdateEvent(
               identity,
+              address,
               originalReducerName,
               reducerName,
               args,
@@ -937,8 +960,9 @@ export class SpacetimeDBClient {
           const identityToken = message["identityToken"] as any;
           const identity = new Identity(identityToken["identity"]);
           const token = identityToken["token"];
+          const address = new Address(identityToken["address"]);
           const identityTokenMessage: IdentityTokenMessage =
-            new IdentityTokenMessage(identity, token);
+            new IdentityTokenMessage(identity, token, address);
           callback(identityTokenMessage);
         }
       });
@@ -991,6 +1015,7 @@ export class SpacetimeDBClient {
         const identity: Identity = Identity.fromString(
           event["caller_identity"]
         );
+        const address = Address.fromStringOrNull(event["caller_address"]);
         const originalReducerName: string = functionCall["reducer"];
         const reducerName: string = toPascalCase(originalReducerName);
         const args = JSON.parse(functionCall["args"]);
@@ -1000,6 +1025,7 @@ export class SpacetimeDBClient {
         const transactionUpdateEvent: TransactionUpdateEvent =
           new TransactionUpdateEvent(
             identity,
+            address,
             originalReducerName,
             reducerName,
             args,
@@ -1016,8 +1042,9 @@ export class SpacetimeDBClient {
         const identityToken = data["IdentityToken"];
         const identity = new Identity(identityToken["identity"]);
         const token = identityToken["token"];
+        const address = Address.fromString(identityToken["address"]);
         const identityTokenMessage: IdentityTokenMessage =
-          new IdentityTokenMessage(identity, token);
+          new IdentityTokenMessage(identity, token, address);
         callback(identityTokenMessage);
       }
     }
@@ -1149,7 +1176,9 @@ export class SpacetimeDBClient {
    * });
    * ```
    */
-  onConnect(callback: (token: string, identity: Identity) => void) {
+  onConnect(
+    callback: (token: string, identity: Identity, address: Address) => void
+  ) {
     this.on("connected", callback);
   }
 
