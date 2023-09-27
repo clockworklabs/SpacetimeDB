@@ -43,13 +43,13 @@ mod tests {
     }
 
     fn basic_invariants<DB: BenchDatabase, T: BenchTable + RandomTable>(
-        table_style: IndexStrategy,
+        index_strategy: IndexStrategy,
         in_memory: bool,
     ) -> ResultBench<()> {
         prepare_tests();
 
         let mut db = DB::build(in_memory, false)?;
-        let table_id = db.create_table::<T>(table_style)?;
+        let table_id = db.create_table::<T>(index_strategy)?;
         assert_eq!(db.count_table(&table_id)?, 0, "tables should begin empty");
 
         // Chosen arbitrarily.

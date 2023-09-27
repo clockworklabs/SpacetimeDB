@@ -58,10 +58,10 @@ impl BenchDatabase for SQLite {
     /// We derive the SQLite schema from the AlgebraicType of the table.
     fn create_table<T: BenchTable>(
         &mut self,
-        table_style: crate::schemas::IndexStrategy,
+        index_strategy: crate::schemas::IndexStrategy,
     ) -> ResultBench<Self::TableId> {
         let mut statement = String::new();
-        let table_name = table_name::<T>(table_style);
+        let table_name = table_name::<T>(index_strategy);
         write!(&mut statement, "CREATE TABLE {table_name} (")?;
         for (i, column) in T::product_type().elements.iter().enumerate() {
             let column_name = column.name.clone().unwrap();
@@ -71,7 +71,7 @@ impl BenchDatabase for SQLite {
                 AlgebraicType::Builtin(sats::BuiltinType::String) => "TEXT",
                 _ => unimplemented!(),
             };
-            let extra = if table_style == IndexStrategy::Unique && i == 0 {
+            let extra = if index_strategy == IndexStrategy::Unique && i == 0 {
                 " PRIMARY KEY"
             } else {
                 ""
@@ -81,7 +81,7 @@ impl BenchDatabase for SQLite {
         }
         writeln!(&mut statement, ");")?;
 
-        if table_style == IndexStrategy::MultiIndex {
+        if index_strategy == IndexStrategy::MultiIndex {
             for column in T::product_type().elements.iter() {
                 let column_name = column.name.clone().unwrap();
 

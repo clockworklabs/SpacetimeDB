@@ -27,9 +27,7 @@
 use spacetimedb::{println, spacetimedb};
 use std::hint::black_box;
 
-// The following piece of code must remain synced
-
-// ---------- SYNCED CODE ----------
+// ---------- schemas ----------
 
 #[spacetimedb(table)]
 pub struct UniquePerson {
@@ -80,7 +78,8 @@ pub struct MultiIndexLocation {
     x: u64,
     y: u64,
 }
-// ---------- / SYNCED CODE ----------
+
+// ---------- empty ----------
 
 #[spacetimedb(reducer)]
 pub fn empty() {}

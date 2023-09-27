@@ -34,13 +34,13 @@ impl BenchDatabase for SpacetimeRaw {
         })
     }
 
-    fn create_table<T: BenchTable>(&mut self, table_style: IndexStrategy) -> ResultBench<Self::TableId> {
-        let name = table_name::<T>(table_style);
+    fn create_table<T: BenchTable>(&mut self, index_strategy: IndexStrategy) -> ResultBench<Self::TableId> {
+        let name = table_name::<T>(index_strategy);
         self.db.with_auto_commit(|tx| {
             let table_def = TableDef::from(T::product_type());
             let table_id = self.db.create_table(tx, table_def)?;
             self.db.rename_table(tx, table_id, &name)?;
-            match table_style {
+            match index_strategy {
                 IndexStrategy::Unique => {
                     self.db
                         .create_index(tx, IndexDef::new("id".to_string(), table_id, 0, true))?;

@@ -44,13 +44,13 @@ fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(
     // and not having to deal with nasty reentrant generic dispatching.
 
     type TableData<TableId> = (IndexStrategy, TableId, String);
-    let mut prep_table = |table_style: IndexStrategy| -> ResultBench<TableData<DB::TableId>> {
+    let mut prep_table = |index_strategy: IndexStrategy| -> ResultBench<TableData<DB::TableId>> {
         let table_name = T::name_snake_case();
-        let style_name = table_style.snake_case();
+        let style_name = index_strategy.snake_case();
         let table_params = format!("{table_name}/{style_name}");
-        let table_id = db.create_table::<T>(table_style)?;
+        let table_id = db.create_table::<T>(index_strategy)?;
 
-        Ok((table_style, table_id, table_params))
+        Ok((index_strategy, table_id, table_params))
     };
     let tables: [TableData<DB::TableId>; 3] = [
         prep_table(IndexStrategy::Unique)?,
@@ -66,15 +66,15 @@ fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(
         insert_bulk::<DB, T>(c, db_params, table_params, db, table_id, 0, 100)?;
         insert_bulk::<DB, T>(c, db_params, table_params, db, table_id, 1000, 100)?;
     }
-    for (table_style, table_id, table_params) in &tables {
-        if *table_style == IndexStrategy::Unique {
+    for (index_strategy, table_id, table_params) in &tables {
+        if *index_strategy == IndexStrategy::Unique {
             iterate::<DB, T>(c, db_params, table_params, db, table_id, 100)?;
 
             // perform "find" benchmarks
-            find::<DB, T>(c, db_params, db, table_id, table_style, BENCH_PKEY_INDEX, 1000, 100)?;
+            find::<DB, T>(c, db_params, db, table_id, index_strategy, BENCH_PKEY_INDEX, 1000, 100)?;
         } else {
             // perform "filter" benchmarks
-            filter::<DB, T>(c, db_params, db, table_id, table_style, 1, 1000, 100)?;
+            filter::<DB, T>(c, db_params, db, table_id, index_strategy, 1, 1000, 100)?;
         }
     }
 
@@ -242,7 +242,7 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
     db_params: &str,
     db: &mut DB,
     table_id: &DB::TableId,
-    table_style: &IndexStrategy,
+    index_strategy: &IndexStrategy,
     column_index: u32,
     load: u32,
     buckets: u32,
@@ -254,7 +254,7 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
         _ => unimplemented!(),
     };
     let mean_result_count = load / buckets;
-    let indexed = match table_style {
+    let indexed = match index_strategy {
         IndexStrategy::MultiIndex => "indexed",
         IndexStrategy::NonUnique => "non_indexed",
         _ => unimplemented!(),
@@ -297,13 +297,13 @@ fn find<DB: BenchDatabase, T: BenchTable + RandomTable>(
     db_params: &str,
     db: &mut DB,
     table_id: &DB::TableId,
-    table_style: &IndexStrategy,
+    index_strategy: &IndexStrategy,
     column_id: u32,
     load: u32,
     buckets: u32,
 ) -> ResultBench<()> {
     assert_eq!(
-        *table_style,
+        *index_strategy,
         IndexStrategy::Unique,
         "find benchmarks require unique key"
     );
