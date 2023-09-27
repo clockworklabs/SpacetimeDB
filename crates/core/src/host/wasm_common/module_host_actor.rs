@@ -512,7 +512,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         mut args: ArgsTuple,
     ) -> ReducerCallResult {
         let start_instant = Instant::now();
+
         let timestamp = Timestamp::now();
+
         let reducerdef = &self.info.reducers[reducer_id];
 
         log::trace!("Calling reducer {}", reducerdef.name);
