@@ -1,3 +1,4 @@
+pub mod abi;
 pub mod module_host_actor;
 
 use std::time::Instant;
@@ -16,9 +17,6 @@ pub const SETUP_DUNDER: &str = "__setup__";
 pub const INIT_DUNDER: &str = "__init__";
 /// the reducer with this name is invoked when updating the database
 pub const UPDATE_DUNDER: &str = "__update__";
-
-pub const STDB_ABI_SYM: &str = "SPACETIME_ABI_VERSION";
-pub const STDB_ABI_IS_ADDR_SYM: &str = "SPACETIME_ABI_VERSION_IS_ADDR";
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[allow(unused)]
@@ -210,6 +208,7 @@ impl FuncNames {
 pub enum ModuleCreationError {
     WasmCompileError(anyhow::Error),
     Init(#[from] module_host_actor::InitializationError),
+    Abi(#[from] abi::AbiVersionError),
 }
 
 pub trait ResourceIndex {

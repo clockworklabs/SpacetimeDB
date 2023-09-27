@@ -7,7 +7,7 @@ use convert_case::{Case, Casing};
 use duct::cmd;
 use spacetimedb_lib::sats::{AlgebraicType, Typespace};
 use spacetimedb_lib::{bsatn, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias};
-use wasmtime::{AsContext, Caller, ExternType};
+use wasmtime::{AsContext, Caller};
 
 mod code_indenter;
 pub mod csharp;
@@ -343,18 +343,9 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
     };
     let mut store = wasmtime::Store::new(&engine, ctx);
     let mut linker = wasmtime::Linker::new(&engine);
-    linker.allow_shadowing(true);
-    for imp in module.imports() {
-        if let ExternType::Func(func_type) = imp.ty() {
-            linker
-                .func_new(imp.module(), imp.name(), func_type, |_, _, _| {
-                    anyhow::bail!("don't call me!!")
-                })
-                .unwrap();
-        }
-    }
+    linker.allow_shadowing(true).define_unknown_imports_as_traps(&module)?;
     linker.func_wrap(
-        "spacetime",
+        "spacetime_6.0",
         "_console_log",
         |caller: Caller<'_, WasmCtx>,
          _level: u32,
@@ -374,7 +365,7 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
             }
         },
     )?;
-    linker.func_wrap("spacetime", "_buffer_alloc", WasmCtx::buffer_alloc)?;
+    linker.func_wrap("spacetime_6.0", "_buffer_alloc", WasmCtx::buffer_alloc)?;
     let instance = linker.instantiate(&mut store, &module)?;
     let memory = Memory {
         mem: instance.get_memory(&mut store, "memory").unwrap(),

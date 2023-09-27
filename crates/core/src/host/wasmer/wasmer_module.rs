@@ -1,14 +1,14 @@
 use super::wasm_instance_env::WasmInstanceEnv;
 use super::Mem;
 use crate::host::instance_env::InstanceEnv;
-use crate::host::wasm_common::module_host_actor::{AbiVersionError, DescribeError, InitializationError};
+use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError};
 use crate::host::wasm_common::*;
 use crate::host::{EnergyQuanta, Timestamp};
 use bytes::Bytes;
-use spacetimedb_lib::{Address, Identity, VersionTuple};
+use spacetimedb_lib::{Address, Identity};
 use wasmer::{
     imports, AsStoreMut, Engine, ExternType, Function, FunctionEnv, Imports, Instance, Module, RuntimeError, Store,
-    TypedFunction, WasmPtr,
+    TypedFunction,
 };
 use wasmer_middlewares::metering as wasmer_metering;
 
@@ -46,12 +46,12 @@ impl WasmerModule {
         WasmerModule { module, engine }
     }
 
-    pub const IMPLEMENTED_ABI: VersionTuple = VersionTuple::new(5, 0);
+    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(6, 0);
 
     fn imports(&self, store: &mut Store, env: &FunctionEnv<WasmInstanceEnv>) -> Imports {
-        const _: () = assert!(WasmerModule::IMPLEMENTED_ABI.eq(spacetimedb_lib::MODULE_ABI_VERSION));
+        const _: () = assert!(WasmerModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION);
         imports! {
-            "spacetime" => {
+            "spacetime_6.0" => {
                 "_schedule_reducer" => Function::new_typed_with_env(store, env, WasmInstanceEnv::schedule_reducer),
                 "_cancel_reducer" => Function::new_typed_with_env(store, env, WasmInstanceEnv::cancel_reducer),
                 "_delete_by_col_eq" => Function::new_typed_with_env(
@@ -178,42 +178,6 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
             .map_err(|err| InitializationError::Instantiation(err.into()))?;
 
         let mem = Mem::extract(&instance.exports).unwrap();
-
-        // We could (and did in the past) parse the ABI version manually before the instantiation,
-        // but it gets complicated in presence of wasm-opt optimisations which might split encoded
-        // versions like `[...other data...]\00\00\03\00[...other data...]` by zeroes
-        // into several segments, so there is no single data segment containing the entire version.
-        // Instead, it's more reliable to extract the version from an instantiated module
-        // when all the data segments are loaded into the flat memory at correct offsets.
-        let abi_version = instance
-            .exports
-            .get_global(STDB_ABI_SYM)
-            .map_err(|_| AbiVersionError::NoVersion)?;
-
-        let mut abi_version = match abi_version.get(&mut store) {
-            wasmer::Value::I32(x) => x as u32,
-            _ => return Err(AbiVersionError::Malformed.into()),
-        };
-
-        let abi_is_addr = instance.exports.get_global(STDB_ABI_IS_ADDR_SYM).is_ok();
-        if abi_is_addr {
-            abi_version = u32::from_le_bytes(
-                mem.read_bytes(&store, WasmPtr::new(abi_version), 4)
-                    .ok()
-                    .and_then(|bytes| bytes.try_into().ok())
-                    .ok_or(AbiVersionError::Malformed)?,
-            );
-        }
-
-        let abi_version = VersionTuple::from_u32(abi_version);
-
-        if !WasmerModule::IMPLEMENTED_ABI.supports(abi_version) {
-            return Err(AbiVersionError::UnsupportedVersion {
-                implement: WasmerModule::IMPLEMENTED_ABI,
-                got: abi_version,
-            }
-            .into());
-        }
 
         env.as_mut(&mut store).mem = Some(mem);
 

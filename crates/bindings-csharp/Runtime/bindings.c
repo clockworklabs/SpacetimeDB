@@ -100,7 +100,11 @@ static MonoArray* stdb_buffer_consume(Buffer buf);
 //   return out;
 // }
 
-__attribute__((import_module("spacetime"),
+#define STDB_ABI_MAJOR_VERSION "6"
+#define STDB_IMPORT_MODULE_MINOR(minor) "spacetime_" STDB_ABI_MAJOR_VERSION "." #minor
+#define STDB_IMPORT_MODULE STDB_IMPORT_MODULE_MINOR(0)
+
+__attribute__((import_module(STDB_IMPORT_MODULE),
                import_name("_get_table_id"))) extern uint16_t
 _get_table_id(const char* name, size_t name_len, uint32_t* out);
 
@@ -117,7 +121,7 @@ static uint32_t stdb_get_table_id(MonoString* name_) {
   return out;
 }
 
-__attribute__((import_module("spacetime"),
+__attribute__((import_module(STDB_IMPORT_MODULE),
                import_name("_create_index"))) extern uint16_t
 _create_index(const char* index_name,
               size_t index_name_len,
@@ -141,7 +145,7 @@ static void stdb_create_index(MonoString* index_name_,
   check_result(result);
 }
 
-__attribute__((import_module("spacetime"),
+__attribute__((import_module(STDB_IMPORT_MODULE),
                import_name("_iter_by_col_eq"))) extern uint16_t
 _iter_by_col_eq(uint32_t table_id,
                 uint32_t col_id,
@@ -163,7 +167,7 @@ static MonoArray* stdb_iter_by_col_eq(uint32_t table_id,
   return stdb_buffer_consume(out);
 }
 
-__attribute__((import_module("spacetime"),
+__attribute__((import_module(STDB_IMPORT_MODULE),
                import_name("_insert"))) extern uint16_t
 _insert(uint32_t table_id, uint8_t* row, size_t row_len);
 
@@ -175,7 +179,7 @@ static void stdb_insert(uint32_t table_id, MonoArray* row_) {
   check_result(result);
 }
 
-// __attribute__((import_module("spacetime"),
+// __attribute__((import_module(STDB_IMPORT_MODULE),
 //                import_name("_delete_pk"))) extern uint16_t
 // _delete_pk(uint32_t table_id, const uint8_t* pk, size_t pk_len);
 
@@ -187,7 +191,7 @@ static void stdb_insert(uint32_t table_id, MonoArray* row_) {
 //   check_result(result);
 // }
 
-// __attribute__((import_module("spacetime"),
+// __attribute__((import_module(STDB_IMPORT_MODULE),
 //                import_name("_delete_value"))) extern uint16_t
 // _delete_value(uint32_t table_id, const uint8_t* row, size_t row_len);
 
@@ -199,7 +203,7 @@ static void stdb_insert(uint32_t table_id, MonoArray* row_) {
 //   check_result(result);
 // }
 
-__attribute__((import_module("spacetime"),
+__attribute__((import_module(STDB_IMPORT_MODULE),
                import_name("_delete_by_col_eq"))) extern uint16_t
 _delete_by_col_eq(uint32_t table_id,
                   uint32_t col_id,
@@ -221,7 +225,7 @@ static uint32_t stdb_delete_by_col_eq(uint32_t table_id,
   return out;
 }
 
-// __attribute__((import_module("spacetime"),
+// __attribute__((import_module(STDB_IMPORT_MODULE),
 //                import_name("_delete_range"))) extern uint16_t
 // _delete_range(uint32_t table_id,
 //               uint32_t col_id,
@@ -248,7 +252,7 @@ static uint32_t stdb_delete_by_col_eq(uint32_t table_id,
 //   return out;
 // }
 
-__attribute__((import_module("spacetime"),
+__attribute__((import_module(STDB_IMPORT_MODULE),
                import_name("_iter_start"))) extern uint16_t
 _iter_start(uint32_t table_id, BufferIter* out);
 
@@ -258,7 +262,7 @@ static void stdb_iter_start(uint32_t table_id, BufferIter* iter) {
   check_result(result);
 }
 
-__attribute__((import_module("spacetime"),
+__attribute__((import_module(STDB_IMPORT_MODULE),
                import_name("_iter_start_filtered"))) extern uint16_t
 _iter_start_filtered(uint32_t table_id,
                      const uint8_t* filter,
@@ -276,7 +280,7 @@ static void stdb_iter_start_filtered(uint32_t table_id,
   check_result(result);
 }
 
-__attribute__((import_module("spacetime"),
+__attribute__((import_module(STDB_IMPORT_MODULE),
                import_name("_iter_next"))) extern uint16_t
 _iter_next(BufferIter iter, Buffer* out);
 
@@ -289,7 +293,7 @@ static MonoArray* stdb_iter_next(BufferIter iter) {
   return stdb_buffer_consume(out);
 }
 
-__attribute__((import_module("spacetime"),
+__attribute__((import_module(STDB_IMPORT_MODULE),
                import_name("_iter_drop"))) extern uint16_t
 _iter_drop(BufferIter iter);
 
@@ -307,7 +311,7 @@ static void stdb_iter_drop(BufferIter* iter) {
   check_result(result);
 }
 
-__attribute__((import_module("spacetime"),
+__attribute__((import_module(STDB_IMPORT_MODULE),
                import_name("_console_log"))) extern void
 _console_log(uint8_t level,
              const char* target,
@@ -335,7 +339,7 @@ static void stdb_console_log(MonoString* text_,
   free_string(filename);
 }
 
-__attribute__((import_module("spacetime"),
+__attribute__((import_module(STDB_IMPORT_MODULE),
                import_name("_schedule_reducer"))) extern void
 _schedule_reducer(const char* name,
                   size_t name_len,
@@ -360,7 +364,7 @@ static void stdb_schedule_reducer(
   free_string(name);
 }
 
-__attribute__((import_module("spacetime"),
+__attribute__((import_module(STDB_IMPORT_MODULE),
                import_name("_cancel_reducer"))) extern void
 _cancel_reducer(ScheduleToken token);
 
@@ -368,11 +372,11 @@ static void stdb_cancel_reducer(ScheduleToken* token) {
   _cancel_reducer(*token);
 }
 
-__attribute__((import_module("spacetime"),
+__attribute__((import_module(STDB_IMPORT_MODULE),
                import_name("_buffer_len"))) extern size_t
 _buffer_len(Buffer buf);
 
-__attribute__((import_module("spacetime"),
+__attribute__((import_module(STDB_IMPORT_MODULE),
                import_name("_buffer_consume"))) extern void
 _buffer_consume(Buffer buf, uint8_t* into, size_t len);
 
@@ -387,7 +391,7 @@ static MonoArray* stdb_buffer_consume(Buffer buf) {
   return result;
 }
 
-__attribute__((import_module("spacetime"),
+__attribute__((import_module(STDB_IMPORT_MODULE),
                import_name("_buffer_alloc"))) extern Buffer
 _buffer_alloc(const uint8_t* data, size_t data_len);
 
@@ -776,8 +780,3 @@ __attribute__((export_name("__preinit__10_init_csharp"))) void
 __preinit__10_init_csharp() {
   _start();
 }
-
-// __attribute__((export_name("SPACETIME_ABI_VERSION"))) -
-// doesn't work on non-functions, must specify on command line
-const uint32_t SPACETIME_ABI_VERSION = /* 5.0 */ (5 << 16) | 0;
-const uint8_t SPACETIME_ABI_VERSION_IS_ADDR = 1;

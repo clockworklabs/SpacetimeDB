@@ -13,34 +13,15 @@ use std::ptr;
 
 use alloc::boxed::Box;
 
-/// The current version of the ABI.
-///
-/// Exported as `SPACETIME_ABI_VERSION`, a `u32` WASM global.
-/// If this global contains an address into linear memory at which the version is stored,
-/// then a WASM global named `SPACETIME_ABI_VERSION_IS_ADDR` is also be exported.
-///
-/// In rust this looks like:
-/// ```rust,ignore
-/// #[no_mangle]
-/// static SPACETIME_ABI_VERSION: u32 = _; // right now, rust `static`s always export as an address.
-/// #[no_mangle]
-/// static SPACETIME_ABI_VERSION_IS_ADDR: () = ();
-/// ```
-///
-/// The (big-endian) first 2 bytes constitute the major version (`A`) of the ABI,
-/// and the last 2 bytes constitute the minor version (`B`).
-///
-/// The semantics of a version number `A.B` is that a host implementing version `A.B`
-/// can run a module declaring `X.Y` if and only if `X == A && Y <= B`.
-/// So, the minor version is intended for backwards-compatible changes, e.g. adding a new function,
-/// and the major version is for fully breaking changes.
-pub const ABI_VERSION: u32 = 0x0005_0000;
-
 /// Provides a raw set of sys calls which abstractions can be built atop of.
 pub mod raw {
     use core::mem::ManuallyDrop;
 
-    #[link(wasm_import_module = "spacetime")]
+    // this module identifier determines the abi version that modules built with this crate depend
+    // on. Any non-breaking additions to the abi surface should be put in a new `extern {}` block
+    // with a module identifier with a minor version 1 above the previous highest minor version.
+    // For breaking changes, all functions should be moved into one new `spacetime_X.0` block.
+    #[link(wasm_import_module = "spacetime_6.0")]
     extern "C" {
         /*
         /// Create a table with `name`, a UTF-8 slice in WASM memory lasting `name_len` bytes,
