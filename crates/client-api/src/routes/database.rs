@@ -93,34 +93,38 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         }
     };
 
-    module
-        .call_identity_connected_disconnected(caller_identity, true)
-        .await
-        .map_err(500)?;
-
-    let result = match module.call_reducer(caller_identity, None, &reducer, args).await {
-        Ok(rcr) => rcr,
-        Err(e) => {
-            let status_code = match e {
-                ReducerCallError::Args(_) => {
-                    log::debug!("Attempt to call reducer with invalid arguments");
-                    StatusCode::BAD_REQUEST
+    let result = if let Err(e) = module.call_identity_connected_disconnected(caller_identity, true).await {
+        return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into());
+    } else {
+        match module.call_reducer(caller_identity, None, &reducer, args).await {
+            Ok(rcr) => {
+                if let Err(e) = module
+                    .call_identity_connected_disconnected(caller_identity, false)
+                    .await
+                {
+                    return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into());
+                } else {
+                    rcr
                 }
-                ReducerCallError::NoSuchModule(_) => StatusCode::NOT_FOUND,
-                ReducerCallError::NoSuchReducer => {
-                    log::debug!("Attempt to call non-existent reducer {}", reducer);
-                    StatusCode::NOT_FOUND
-                }
-            };
+            }
+            Err(e) => {
+                let status_code = match e {
+                    ReducerCallError::Args(_) => {
+                        log::debug!("Attempt to call reducer with invalid arguments");
+                        StatusCode::BAD_REQUEST
+                    }
+                    ReducerCallError::NoSuchModule(_) => StatusCode::NOT_FOUND,
+                    ReducerCallError::NoSuchReducer => {
+                        log::debug!("Attempt to call non-existent reducer {}", reducer);
+                        StatusCode::NOT_FOUND
+                    }
+                };
 
-            log::debug!("Error while invoking reducer {:#}", e);
-            return Err((status_code, format!("{:#}", anyhow::anyhow!(e))).into());
+                log::debug!("Error while invoking reducer {:#}", e);
+                return Err((status_code, format!("{:#}", anyhow::anyhow!(e))).into());
+            }
         }
     };
-    module
-        .call_identity_connected_disconnected(caller_identity, false)
-        .await
-        .map_err(500)?;
 
     let (status, body) = reducer_outcome_response(&identity, &reducer, result.outcome);
     Ok((
