@@ -511,10 +511,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         reducer_id: usize,
         mut args: ArgsTuple,
     ) -> ReducerCallResult {
+        // If this is an HTTP connection, call connect/disconnect
+        if client.is_none() {
+            self.call_connect_disconnect(caller_identity, true);
+        }
+
         let start_instant = Instant::now();
-
         let timestamp = Timestamp::now();
-
         let reducerdef = &self.info.reducers[reducer_id];
 
         log::trace!("Calling reducer {}", reducerdef.name);
@@ -546,6 +549,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             host_execution_duration: execution_duration,
         };
         self.event_tx.broadcast_event_blocking(client.as_ref(), event);
+
+        if client.is_none() {
+            self.call_connect_disconnect(caller_identity, false);
+        }
 
         ReducerCallResult {
             outcome,
