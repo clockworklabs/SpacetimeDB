@@ -20,7 +20,10 @@ members = [
   "modules/spacetimedb-quickstart",
   "modules/quickstart-chat",
   "modules/sdk-test",
+  "modules/sdk-test-connect-disconnect",
+  "crates/sdk/tests/test-counter",
   "crates/sdk/tests/test-client",
+  "crates/sdk/tests/connect_disconnect_client",
 ]
 default-members = ["crates/cli"]
 # cargo feature graph resolver. v2 is default in edition2021 but workspace

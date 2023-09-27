@@ -1,13 +1,9 @@
 [package]
-name = "test-client"
+name = "test-counter"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-spacetimedb-sdk = { path = "../.." }
-test-counter = { path = "../test-counter" }
-tokio.workspace = true
 anyhow.workspace = true
-env_logger.workspace = true
