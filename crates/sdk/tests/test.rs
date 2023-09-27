@@ -105,3 +105,17 @@ fn connect_disconnect_callbacks() {
         .build()
         .run();
 }
+
+#[test]
+fn connect_disconnect_callbacks_csharp() {
+    Test::builder()
+        .with_name("connect_disconnect_callback_csharp")
+        .with_module("sdk-test-connect-disconnect-cs")
+        .with_client(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/connect_disconnect_client"))
+        .with_language("rust")
+        .with_bindings_dir("src/module_bindings")
+        .with_compile_command("cargo build")
+        .with_run_command("cargo run")
+        .build()
+        .run();
+}
