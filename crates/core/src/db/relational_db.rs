@@ -1,8 +1,8 @@
 use super::commit_log::CommitLog;
 use super::datastore::locking_tx_datastore::{Data, DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
 use super::datastore::traits::{
-    ColId, DataRow, IndexDef, IndexId, MutTx, MutTxDatastore, SequenceDef, SequenceId, TableDef, TableId, TableSchema,
-    TxData,
+    ColId, DataRow, IndexDef, IndexId, MutProgrammable, MutTx, MutTxDatastore, Programmable, SequenceDef, SequenceId,
+    TableDef, TableId, TableSchema, TxData,
 };
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
@@ -428,17 +428,13 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn index_id_from_name(&self, tx: &MutTxId, index_name: &str) -> Result<Option<u32>, DBError> {
-        self.inner
-            .index_id_from_name_mut_tx(tx, index_name)
-            .map(|x| x.map(|x| x.0))
+    pub fn index_id_from_name(&self, tx: &MutTxId, index_name: &str) -> Result<Option<IndexId>, DBError> {
+        self.inner.index_id_from_name_mut_tx(tx, index_name)
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn sequence_id_from_name(&self, tx: &MutTxId, sequence_name: &str) -> Result<Option<u32>, DBError> {
-        self.inner
-            .sequence_id_from_name_mut_tx(tx, sequence_name)
-            .map(|x| x.map(|x| x.0))
+    pub fn sequence_id_from_name(&self, tx: &MutTxId, sequence_name: &str) -> Result<Option<SequenceId>, DBError> {
+        self.inner.sequence_id_from_name_mut_tx(tx, sequence_name)
     }
 
     /// Adds the [index::BTreeIndex] into the [ST_INDEXES_NAME] table
@@ -537,13 +533,13 @@ impl RelationalDB {
 
     /// Generated the next value for the [SequenceId]
     #[tracing::instrument(skip_all)]
-    pub fn next_sequence(&mut self, tx: &mut MutTxId, seq_id: SequenceId) -> Result<i128, DBError> {
+    pub fn next_sequence(&self, tx: &mut MutTxId, seq_id: SequenceId) -> Result<i128, DBError> {
         self.inner.get_next_sequence_value_mut_tx(tx, seq_id)
     }
 
     /// Add a [Sequence] into the database instance, generates a stable [SequenceId] for it that will persist on restart.
     #[tracing::instrument(skip(self, tx))]
-    pub fn create_sequence(&mut self, tx: &mut MutTxId, seq: SequenceDef) -> Result<SequenceId, DBError> {
+    pub fn create_sequence(&self, tx: &mut MutTxId, seq: SequenceDef) -> Result<SequenceId, DBError> {
         self.inner.create_sequence_mut_tx(tx, seq)
     }
 
@@ -551,6 +547,31 @@ impl RelationalDB {
     #[tracing::instrument(skip(self, tx))]
     pub fn drop_sequence(&self, tx: &mut MutTxId, seq_id: SequenceId) -> Result<(), DBError> {
         self.inner.drop_sequence_mut_tx(tx, seq_id)
+    }
+
+    /// Retrieve the [`Hash`] of the program (SpacetimeDB module) currently
+    /// associated with the database.
+    ///
+    /// A `None` result indicates that the database is not fully initialized
+    /// yet.
+    pub fn program_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
+        self.inner.program_hash(tx)
+    }
+
+    /// Update the [`Hash`] of the program (SpacetimeDB module) currently
+    /// associated with the database.
+    ///
+    /// The operation runs within the transactional context `tx`.
+    ///
+    /// The fencing token `fence` must be greater than in any previous
+    /// invocations of this method, and is typically obtained from a locking
+    /// service.
+    ///
+    /// The method **MUST** be called within the transaction context which
+    /// ensures that any lifecycle reducers (`init`, `update`) are invoked. That
+    /// is, an impl of [`crate::host::ModuleInstance`].
+    pub(crate) fn set_program_hash(&self, tx: &mut MutTxId, fence: u128, hash: Hash) -> Result<(), DBError> {
+        self.inner.set_program_hash(tx, fence, hash)
     }
 }
 
