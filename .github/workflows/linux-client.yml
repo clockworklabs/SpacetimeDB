@@ -27,11 +27,13 @@ jobs:
           cargo build --release -p spacetimedb-cli
           mkdir build
           mv target/release/spacetime build/spacetime-linux-x86
+          cd build && tar -czf spacetime.linux-amd64.tar.gz spacetime.linux-amd64
 
       - name: Compile Aarch64
         run: |
           cargo build --release -p spacetimedb-cli --target=aarch64-unknown-linux-gnu
-          mv target/aarch64-unknown-linux-gnu/release/spacetime build/spacetime-linux-aarch64
+          mv target/aarch64-unknown-linux-gnu/release/spacetime build/spacetime.linux-arm64
+          cd build && tar -czf spacetime.linux-arm64.tar.gz spacetime.linux-arm64
 
       - name: Extract branch name
         shell: bash

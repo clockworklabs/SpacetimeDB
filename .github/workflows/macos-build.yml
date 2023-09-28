@@ -23,12 +23,14 @@ jobs:
         run: |
           cargo build --release -p spacetimedb-cli
           mkdir build
-          mv target/release/spacetime build/spacetime-darwin-x86
+          mv target/release/spacetime build/spacetime.darwin-amd64
+          cd build && tar -czf spacetime.darwin-amd64.tar.gz spacetime.darwin-amd64
 
       - name: Compile Aarch64
         run: |
           cargo build --release -p spacetimedb-cli --target=aarch64-apple-darwin
-          mv target/aarch64-apple-darwin/release/spacetime build/spacetime-darwin-aarch64
+          mv target/aarch64-apple-darwin/release/spacetime build/spacetime.darwin-arm64
+          cd build && tar -czf spacetime.darwin-arm64.tar.gz spacetime.darwin-arm64
 
       - name: Extract branch name
         shell: bash

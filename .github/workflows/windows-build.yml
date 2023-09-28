@@ -22,7 +22,7 @@ jobs:
         run: |
           cargo build --release -p spacetimedb-cli
           mkdir build
-          mv target/release/spacetime.exe build/spacetime-windows-x86.exe
+          mv target/release/spacetime.exe build/spacetime.exe
 
       - name: Extract branch name
         shell: bash
