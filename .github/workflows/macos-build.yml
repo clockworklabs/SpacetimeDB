@@ -1,4 +1,5 @@
 name: Build MacOS SpacetimeDB client
+
 on: [push]
 
 jobs:
@@ -26,3 +27,16 @@ jobs:
         run: |
           cargo build --release -p spacetimedb-cli --target=aarch64-apple-darwin
           mv target/release/spacetime build/spacetime-darwin-aarch64
+
+      - name: Set env
+        run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Upload to DO Spaces
+        uses: shallwefootball/s3-upload-action@master
+        with:
+          aws_key_id: ${{ secrets.AWS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
+          aws_bucket: ${{ vars.AWS_BUCKET }}
+          source_dir: build
+          endpoint: https://spacetimedb-client-binaries.nyc3.digitaloceanspaces.com
+          destination_dir: ${{ env.RELEASE_VERSION }}
