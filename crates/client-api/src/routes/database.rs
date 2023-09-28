@@ -473,7 +473,7 @@ fn mime_ndjson() -> mime::Mime {
 async fn worker_ctx_find_database(
     worker_ctx: &(impl ControlStateDelegate + ?Sized),
     address: &Address,
-) -> Result<Option<Database>, StatusCode> {
+) -> axum::response::Result<Option<Database>> {
     worker_ctx.get_database_by_address(address).map_err(log_and_500)
 }
 
@@ -603,11 +603,6 @@ pub struct RegisterTldParams {
     tld: String,
 }
 
-fn auth_or_bad_request(auth: SpacetimeAuthHeader) -> axum::response::Result<SpacetimeAuth> {
-    auth.get()
-        .ok_or((StatusCode::BAD_REQUEST, "Invalid credentials.").into())
-}
-
 pub async fn register_tld<S: ControlStateDelegate>(
     State(ctx): State<S>,
     Query(RegisterTldParams { tld }): Query<RegisterTldParams>,
@@ -615,7 +610,7 @@ pub async fn register_tld<S: ControlStateDelegate>(
 ) -> axum::response::Result<impl IntoResponse> {
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail, hence not using get_or_create
-    let auth = auth_or_bad_request(auth)?;
+    let auth = auth_or_unauth(auth)?;
 
     let tld = tld.parse::<DomainName>().map_err(DomainParsingRejection)?.into();
     let result = ctx.register_tld(&auth.identity, tld).await.map_err(log_and_500)?;
@@ -750,7 +745,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
 
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail.
-    let auth = auth_or_bad_request(auth)?;
+    let auth = auth_or_unauth(auth)?;
 
     let (db_addr, db_name) = match name_or_address {
         Some(noa) => match noa.try_resolve(&ctx).await? {
@@ -838,7 +833,7 @@ pub async fn delete_database<S: ControlStateDelegate>(
     Path(DeleteDatabaseParams { address }): Path<DeleteDatabaseParams>,
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
-    let auth = auth_or_bad_request(auth)?;
+    let auth = auth_or_unauth(auth)?;
 
     ctx.delete_database(&auth.identity, &address)
         .await
@@ -858,7 +853,7 @@ pub async fn set_name<S: ControlStateDelegate>(
     Query(SetNameQueryParams { domain, address }): Query<SetNameQueryParams>,
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
-    let auth = auth_or_bad_request(auth)?;
+    let auth = auth_or_unauth(auth)?;
 
     let database = ctx
         .get_database_by_address(&address)
@@ -874,7 +869,7 @@ pub async fn set_name<S: ControlStateDelegate>(
         .create_dns_record(&auth.identity, &domain, &address)
         .await
         .map_err(|err| match err {
-            spacetimedb::control_db::Error::RecordAlreadyExists(_) => StatusCode::CONFLICT,
+            spacetimedb::control_db::Error::RecordAlreadyExists(_) => StatusCode::CONFLICT.into(),
             _ => log_and_500(err),
         })?;
 
