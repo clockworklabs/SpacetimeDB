@@ -1,7 +1,7 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId};
-use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, SequenceId, TableDef};
+use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
 use crate::db::relational_db::RelationalDB;
 use itertools::Itertools;
 use nonempty::NonEmpty;
