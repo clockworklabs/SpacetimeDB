@@ -112,7 +112,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             };
 
             log::debug!("Error while invoking reducer {:#}", e);
-            Err((status_code, format!("{:#}", anyhow::anyhow!(e))).into())
+            Err((status_code, format!("{:#}", anyhow::anyhow!(e))))
         }
     };
 
@@ -135,7 +135,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
                 body,
             ))
         }
-        Err(e) => e,
+        Err(e) => Err((e.0, e.1).into()),
     }
 }
 
