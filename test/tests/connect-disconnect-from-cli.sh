@@ -14,29 +14,18 @@ use spacetimedb::{println, spacetimedb, ReducerContext};
 
 #[spacetimedb(connect)]
 pub fn connected(_ctx: ReducerContext) {
-    println!("connect");
+    println!("connect called");
+    panic!("Panic on connect");
 }
 
 #[spacetimedb(disconnect)]
 pub fn disconnected(_ctx: ReducerContext) {
-    println!("disconnect");
-}
-
-#[spacetimedb(table)]
-pub struct Person {
-    name: String,
-}
-
-#[spacetimedb(reducer)]
-pub fn add(name: String) {
-    Person::insert(Person { name });
+    println!("disconnect called");
+    panic!("Panic on disconnect");
 }
 
 #[spacetimedb(reducer)]
 pub fn say_hello() {
-    for person in Person::iter() {
-        println!("Hello, {}!", person.name);
-    }
     println!("Hello, World!");
 }
 EOF
@@ -47,5 +36,6 @@ IDENT="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 run_test cargo run call "$IDENT" say_hello
 run_test cargo run logs "$IDENT"
-[ ' connect' == "$(grep 'connect' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
-[ ' disconnect' == "$(grep 'disconnect' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' connect called' == "$(grep 'connect called' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' disconnect called' == "$(grep 'disconnect called' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' Hello, World' == "$(grep 'Hello, World' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
