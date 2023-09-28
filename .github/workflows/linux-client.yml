@@ -1,10 +1,10 @@
-name: Build MacOS SpacetimeDB client
+name: Build Linux SpacetimeDB client
 
 on: [push]
 
 jobs:
   macos-client:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -12,24 +12,23 @@ jobs:
 
       - name: Add aarch64 target
         run: |
-          rustup target add aarch64-apple-darwin
+          rustup target add aarch64-unknown-linux-gnu
 
       # - name: Compile x86
       #   run: |
       #     cargo build --release -p spacetimedb-cli
       #     mkdir build
-      #     mv target/release/spacetime build/spacetime-darwin-x86
+      #     mv target/release/spacetime build/spacetime-linux-x86
       #
       # - name: Compile Aarch64
       #   run: |
-      #     cargo build --release -p spacetimedb-cli --target=aarch64-apple-darwin
-      #     mv target/aarch64-apple-darwin/release/spacetime build/spacetime-darwin-aarch64
-      #     find .
-
-      - name: Just testing
+      #     cargo build --release -p spacetimedb-cli --target=aarch64-unknown-linux-gnu
+      #     mv target/aarch64-unknown-linux-gnu/release/spacetime build/spacetime-linux-aarch64
+      #
+      - name: Testing
         run: |
           mkdir build
-          touch build/macos
+          touch build/linux-test
 
       - name: Extract branch name
         shell: bash

@@ -12,14 +12,21 @@ jobs:
       - name: Show arch
         run: uname -a
 
-      - name: Compile
+      # - name: Compile
+      #   run: |
+      #     cargo build --release -p spacetimedb-cli
+      #     mkdir build
+      #     mv target/release/spacetime.exe build/spacetime-windows-x86.exe
+      
+      - name: Testing
         run: |
-          cargo build --release -p spacetimedb-cli
           mkdir build
-          mv target/release/spacetime build/spacetime-windows-x86
-
-      - name: Set env
-        run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+          touch build/windows
+ 
+      - name: Extract branch name
+        shell: bash
+        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
+        id: extract_branch
 
       - name: Upload to DO Spaces
         uses: shallwefootball/s3-upload-action@master
@@ -28,5 +35,5 @@ jobs:
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
           aws_bucket: ${{ vars.AWS_BUCKET }}
           source_dir: build
-          endpoint: https://spacetimedb-client-binaries.nyc3.digitaloceanspaces.com
-          destination_dir: ${{ env.RELEASE_VERSION }}
+          endpoint: https://nyc3.digitaloceanspaces.com
+          destination_dir: ${{ steps.extract_branch.outputs.branch }}
