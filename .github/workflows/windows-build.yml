@@ -2,20 +2,26 @@ name: Build Windows SpacetimeDB client
 on: [push]
 
 jobs:
-  macos-client:
+  windows-client:
     runs-on: windows-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Install Rust
-        run: |
-          rustup target add aarch64-apple-darwin
-          curl https://sh.rustup.rs -sSf | sh -s -- -y
-
       - name: Show arch
         run: uname -a
 
       - name: Compile
-        run: cargo build --release -p spacetimedb-cli
+        run: |
+          cargo build --release -p spacetimedb-cli
+          mkdir build
+          mv target/release/spacetime build/spacetime-windows-x86
+
+      - name: Upload to DO Spaces
+        uses: shallwefootball/s3-upload-action@master
+        with:
+          aws_key_id: ${{ secrets.AWS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
+          aws_bucket: ${{ secrets.AWS_BUCKET }}
+          source_dir: build

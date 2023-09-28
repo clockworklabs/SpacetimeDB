@@ -12,10 +12,17 @@ jobs:
       - name: Install Rust
         run: |
           rustup target add aarch64-apple-darwin
-          curl https://sh.rustup.rs -sSf | sh -s -- -y
 
       - name: Show arch
         run: uname -a
 
-      - name: Compile
-        run: cargo build --release -p spacetimedb-cli --target=aarch64-apple-darwin
+      - name: Compile x86
+        run: |
+          cargo build --release -p spacetimedb-cli
+          mkdir build
+          mv target/release/spacetime build/spacetime-darwin-x86
+
+      - name: Compile Aarch64
+        run: |
+          cargo build --release -p spacetimedb-cli --target=aarch64-apple-darwin
+          mv target/release/spacetime build/spacetime-darwin-aarch64
