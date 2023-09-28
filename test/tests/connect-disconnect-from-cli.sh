@@ -14,7 +14,7 @@ use spacetimedb::{println, spacetimedb, ReducerContext};
 
 #[spacetimedb(connect)]
 pub fn connected(_ctx: ReducerContext) {
-    println!("connect called");
+    println!("_connect called");
     panic!("Panic on connect");
 }
 
@@ -36,6 +36,6 @@ IDENT="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 run_test cargo run call "$IDENT" say_hello
 run_test cargo run logs "$IDENT"
-[ ' connect called' == "$(grep 'connect called' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+[ ' _connect called' == "$(grep '_connect called' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
 [ ' disconnect called' == "$(grep 'disconnect called' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
 [ ' Hello, World' == "$(grep 'Hello, World' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
