@@ -45,5 +45,5 @@ jobs:
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
           aws_bucket: ${{ vars.AWS_BUCKET }}
           source_dir: build
-          endpoint: https://spacetimedb-client-binaries.nyc3.digitaloceanspaces.com
+          endpoint: https://nyc3.digitaloceanspaces.com
           destination_dir: ${{ steps.extract_branch.outputs.branch }}
