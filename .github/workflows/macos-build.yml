@@ -29,7 +29,6 @@ jobs:
         run: |
           cargo build --release -p spacetimedb-cli --target=aarch64-apple-darwin
           mv target/aarch64-apple-darwin/release/spacetime build/spacetime-darwin-aarch64
-          find .
 
       - name: Extract branch name
         shell: bash
