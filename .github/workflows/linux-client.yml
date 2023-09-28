@@ -20,7 +20,7 @@ jobs:
           rustup target add aarch64-unknown-linux-gnu
 
       - name: Install gcc-aarch64-linux-gnu
-        run: sudo apt-get install -y gcc-aarch64-linux-gnu
+        run: sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
       - name: Compile x86
         run: |
