@@ -14,22 +14,17 @@ jobs:
         run: |
           rustup target add aarch64-apple-darwin
 
-      # - name: Compile x86
-      #   run: |
-      #     cargo build --release -p spacetimedb-cli
-      #     mkdir build
-      #     mv target/release/spacetime build/spacetime-darwin-x86
-      #
-      # - name: Compile Aarch64
-      #   run: |
-      #     cargo build --release -p spacetimedb-cli --target=aarch64-apple-darwin
-      #     mv target/aarch64-apple-darwin/release/spacetime build/spacetime-darwin-aarch64
-      #     find .
-
-      - name: Just testing
+      - name: Compile x86
         run: |
+          cargo build --release -p spacetimedb-cli
           mkdir build
-          touch build/macos
+          mv target/release/spacetime build/spacetime-darwin-x86
+
+      - name: Compile Aarch64
+        run: |
+          cargo build --release -p spacetimedb-cli --target=aarch64-apple-darwin
+          mv target/aarch64-apple-darwin/release/spacetime build/spacetime-darwin-aarch64
+          find .
 
       - name: Extract branch name
         shell: bash

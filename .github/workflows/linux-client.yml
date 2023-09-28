@@ -14,21 +14,16 @@ jobs:
         run: |
           rustup target add aarch64-unknown-linux-gnu
 
-      # - name: Compile x86
-      #   run: |
-      #     cargo build --release -p spacetimedb-cli
-      #     mkdir build
-      #     mv target/release/spacetime build/spacetime-linux-x86
-      #
-      # - name: Compile Aarch64
-      #   run: |
-      #     cargo build --release -p spacetimedb-cli --target=aarch64-unknown-linux-gnu
-      #     mv target/aarch64-unknown-linux-gnu/release/spacetime build/spacetime-linux-aarch64
-      #
-      - name: Testing
+      - name: Compile x86
         run: |
+          cargo build --release -p spacetimedb-cli
           mkdir build
-          touch build/linux-test
+          mv target/release/spacetime build/spacetime-linux-x86
+
+      - name: Compile Aarch64
+        run: |
+          cargo build --release -p spacetimedb-cli --target=aarch64-unknown-linux-gnu
+          mv target/aarch64-unknown-linux-gnu/release/spacetime build/spacetime-linux-aarch64
 
       - name: Extract branch name
         shell: bash

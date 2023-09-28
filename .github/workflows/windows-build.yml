@@ -12,17 +12,12 @@ jobs:
       - name: Show arch
         run: uname -a
 
-      # - name: Compile
-      #   run: |
-      #     cargo build --release -p spacetimedb-cli
-      #     mkdir build
-      #     mv target/release/spacetime.exe build/spacetime-windows-x86.exe
-      
-      - name: Testing
+      - name: Compile
         run: |
+          cargo build --release -p spacetimedb-cli
           mkdir build
-          touch build/windows
- 
+          mv target/release/spacetime.exe build/spacetime-windows-x86.exe
+
       - name: Extract branch name
         shell: bash
         run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
