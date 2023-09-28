@@ -3,7 +3,7 @@ use core::fmt;
 use nonempty::NonEmpty;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::relation::{DbTable, FieldName, FieldOnly, Header, TableField};
-use spacetimedb_lib::{ColumnIndexAttribute, DataKey};
+use spacetimedb_lib::{ColumnIndexAttribute, DataKey, Hash};
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue};
 use spacetimedb_vm::expr::SourceExpr;
@@ -216,6 +216,19 @@ impl TableSchema {
             FieldOnly::Name(x) => self.get_column_by_name(x),
             FieldOnly::Pos(x) => self.get_column(x),
         }
+    }
+
+    /// Check if there is an index for this [FieldName]
+    ///
+    /// Warning: It ignores the `table_name`
+    pub fn get_index_by_field(&self, field: &FieldName) -> Option<&IndexSchema> {
+        let ColumnSchema { col_id, .. } = self.get_column_by_field(field)?;
+        self.indexes.iter().find(
+            |IndexSchema {
+                 cols: NonEmpty { head: index_col, tail },
+                 ..
+             }| tail.is_empty() && index_col == col_id,
+        )
     }
 
     pub fn get_column(&self, pos: usize) -> Option<&ColumnSchema> {
@@ -520,4 +533,33 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         table_id: TableId,
         row: ProductValue,
     ) -> Result<ProductValue>;
+}
+
+/// Describes a programmable [`TxDatastore`].
+///
+/// A programmable datastore is one which has a program of some kind associated
+/// with it.
+pub trait Programmable: TxDatastore {
+    /// Retrieve the [`Hash`] of the program currently associated with the
+    /// datastore.
+    ///
+    /// A `None` result means that no program is currently associated, e.g.
+    /// because the datastore has not been fully initialized yet.
+    fn program_hash(&self, tx: &Self::TxId) -> Result<Option<Hash>>;
+}
+
+/// Describes a [`Programmable`] datastore which allows to update the program
+/// associated with it.
+pub trait MutProgrammable: MutTxDatastore {
+    /// A fencing token (usually a monotonic counter) which allows to order
+    /// `set_module_hash` with respect to a distributed locking service.
+    type FencingToken: Eq + Ord;
+
+    /// Update the [`Hash`] of the program currently associated with the
+    /// datastore.
+    ///
+    /// The operation runs within the transactional context `tx`. The fencing
+    /// token `fence` must be verified to be greater than in any previous
+    /// invocations of this method.
+    fn set_program_hash(&self, tx: &mut Self::MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<()>;
 }

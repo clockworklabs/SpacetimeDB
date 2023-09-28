@@ -348,6 +348,17 @@ impl Relation for SourceExpr {
     }
 }
 
+// A descriptor for an index join operation.
+// The semantics are that of a semi-join with rows from the index side being returned.
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+pub struct IndexJoin {
+    pub probe_side: QueryExpr,
+    pub probe_field: FieldName,
+    pub index_header: Header,
+    pub index_table: u32,
+    pub index_col: u32,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct JoinExpr {
     pub rhs: QueryExpr,
@@ -488,11 +499,25 @@ impl Ord for IndexScan {
     }
 }
 
+// An individual operation in a query.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Query {
+    // Fetching rows via an index.
     IndexScan(IndexScan),
+    // Joining rows via an index.
+    // Equivalent to Index Nested Loop Join.
+    IndexJoin(IndexJoin),
+    // A filter over an intermediate relation.
+    // In particular it does not utilize any indexes.
+    // If it could it would have already been transformed into an IndexScan.
     Select(ColumnOp),
-    Project(Vec<FieldExpr>),
+    // Projects a set of columns.
+    // The second argument is the table id for a qualified wildcard project.
+    // If present, further optimzations are possible.
+    Project(Vec<FieldExpr>, Option<u32>),
+    // A join of two relations (base or intermediate) based on equality.
+    // Equivalent to a Nested Loop Join.
+    // Its operands my use indexes but the join itself does not.
     JoinInner(JoinExpr),
 }
 
@@ -882,10 +907,13 @@ impl QueryExpr {
         self.with_select(op)
     }
 
-    pub fn with_project(self, cols: &[FieldExpr]) -> Self {
+    // Appends a project operation to the query operator pipeline.
+    // The `wildcard_table_id` represents a projection of the form `table.*`.
+    // This is used to determine if an inner join can be rewritten as an index join.
+    pub fn with_project(self, cols: &[FieldExpr], wildcard_table_id: Option<u32>) -> Self {
         let mut x = self;
         if !cols.is_empty() {
-            x.query.push(Query::Project(cols.into()));
+            x.query.push(Query::Project(cols.into(), wildcard_table_id));
         }
         x
     }
@@ -1059,10 +1087,13 @@ impl fmt::Display for Query {
             Query::IndexScan(op) => {
                 write!(f, "index_scan {:?}", op)
             }
+            Query::IndexJoin(op) => {
+                write!(f, "index_join {:?}", op)
+            }
             Query::Select(q) => {
                 write!(f, "select {q}")
             }
-            Query::Project(q) => {
+            Query::Project(q, _) => {
                 write!(f, "project")?;
                 if !q.is_empty() {
                     write!(f, " ")?;

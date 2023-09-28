@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if [ "$DESCRIBE_TEST" = 1 ] ; then
-	echo "This tests uploading a basic module and calling some functions and checking logs afterwards."
+	echo "This tests describing a module."
         exit
 fi
 
@@ -35,12 +35,6 @@ run_test cargo run publish -S -d --project-path "$PROJECT_PATH" --clear-database
 [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
 IDENT="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
-run_test cargo run call "$IDENT" add Robert
-run_test cargo run call "$IDENT" add Julie
-run_test cargo run call "$IDENT" add Samantha
-run_test cargo run call "$IDENT" say_hello
-run_test cargo run logs "$IDENT" 100
-[ ' Hello, Samantha!' == "$(grep 'Samantha' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
-[ ' Hello, Julie!' == "$(grep 'Julie' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
-[ ' Hello, Robert!' == "$(grep 'Robert' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
-[ ' Hello, World!' == "$(grep 'World' "$TEST_OUT" | tail -n 4 | cut -d: -f4-)" ]
+run_test cargo run describe "$IDENT"
+run_test cargo run describe "$IDENT" reducer say_hello
+run_test cargo run describe "$IDENT" table Person

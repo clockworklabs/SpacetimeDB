@@ -255,7 +255,7 @@ mod tests {
             FieldName::named(table_name, "name").into(),
         ];
 
-        let q = q.with_project(fields);
+        let q = q.with_project(fields, None);
 
         Ok((schema, table, data, q))
     }
@@ -276,7 +276,7 @@ mod tests {
             FieldName::named(table_name, "name").into(),
         ];
 
-        let q = q.with_project(fields);
+        let q = q.with_project(fields, None);
 
         Ok((schema, table, data, q))
     }

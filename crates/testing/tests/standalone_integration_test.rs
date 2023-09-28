@@ -15,11 +15,11 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
         let lines = module.read_log(Some(10)).await;
         let lines: Vec<&str> = lines.trim().split('\n').collect();
 
-        assert_eq!(lines.len(), 2);
+        assert_eq!(lines.len(), 4);
 
-        let json: Value = serde_json::from_str(lines[0]).unwrap();
+        let json: Value = serde_json::from_str(lines[2]).unwrap();
         assert_eq!(json["message"], Value::String("Hello, Tyrion!".to_string()));
-        let json: Value = serde_json::from_str(lines[1]).unwrap();
+        let json: Value = serde_json::from_str(lines[3]).unwrap();
         assert_eq!(json["message"], Value::String("Hello, World!".to_string()));
     });
 }
@@ -48,11 +48,11 @@ fn test_calling_a_reducer_with_private_table() {
         let lines = module.read_log(Some(10)).await;
         let lines: Vec<&str> = lines.trim().split('\n').collect();
 
-        assert_eq!(lines.len(), 2);
+        assert_eq!(lines.len(), 8);
 
-        let json: Value = serde_json::from_str(lines[0]).unwrap();
+        let json: Value = serde_json::from_str(lines[6]).unwrap();
         assert_eq!(json["message"], Value::String("Private, Tyrion!".to_string()));
-        let json: Value = serde_json::from_str(lines[1]).unwrap();
+        let json: Value = serde_json::from_str(lines[7]).unwrap();
         assert_eq!(json["message"], Value::String("Private, World!".to_string()));
     });
 }
