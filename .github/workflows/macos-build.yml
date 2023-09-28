@@ -1,0 +1,21 @@
+name: Build MacOS SpacetimeDB client
+on: [push]
+
+jobs:
+  macos-client:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Rust
+        run: |
+          rustup target add aarch64-apple-darwin
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+
+      - name: Show arch
+        run: uname -a
+
+      - name: Compile
+        run: cargo build --release -p spacetimedb-cli --target=aarch64-apple-darwin
