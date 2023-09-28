@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use axum::response::ErrorResponse;
 use http::StatusCode;
 
 use spacetimedb::address::Address;
@@ -477,7 +478,7 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
     }
 }
 
-pub fn log_and_500(e: impl std::fmt::Display) -> StatusCode {
+pub fn log_and_500(e: impl std::fmt::Display) -> ErrorResponse {
     log::error!("internal error: {e:#}");
-    StatusCode::INTERNAL_SERVER_ERROR
+    (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")).into()
 }

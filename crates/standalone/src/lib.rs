@@ -331,6 +331,9 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             return Ok(());
         };
         if &database.identity != identity {
+            // TODO: `PermissionDenied` should be a variant of `Error`,
+            //       so we can match on it and return better error responses
+            //       from HTTP endpoints.
             return Err(anyhow!(
                 "Permission denied: `{}` does not own database `{}`",
                 identity.to_hex(),
