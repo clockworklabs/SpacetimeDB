@@ -1,4 +1,5 @@
 use duct::cmd;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 pub(crate) fn build_csharp(project_path: &Path, _build_debug: bool) -> anyhow::Result<PathBuf> {
@@ -9,6 +10,14 @@ pub(crate) fn build_csharp(project_path: &Path, _build_debug: bool) -> anyhow::R
     // delete existing wasm file if exists
     if output_path.exists() {
         std::fs::remove_file(&output_path)?;
+    }
+
+    // Ensure the project path exists
+    if fs::metadata(project_path).is_err() {
+        anyhow::bail!(
+            "The provided project path '{}' does not exist.",
+            project_path.to_str().unwrap()
+        );
     }
 
     // run dotnet publish using cmd macro
