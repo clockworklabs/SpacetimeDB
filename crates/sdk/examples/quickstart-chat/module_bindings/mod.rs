@@ -69,7 +69,7 @@ impl SpacetimeModule for Module {
         state: Arc<ClientCache>,
     ) -> Option<Arc<AnyReducerEvent>> {
         let Some(function_call) = &event.function_call else {
-	    spacetimedb_sdk::log::warn!("Received Event with None function_call");
+            spacetimedb_sdk::log::warn!("Received Event with None function_call");
             return None;
         };
         match &function_call.reducer[..] {
