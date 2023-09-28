@@ -23,16 +23,14 @@ jobs:
           docker cp $id:/usr/local/bin/spacetime - > build/spacetime.linux-arm64.tar
           docker rm -v $id
           cd build
-          # unpack the tar to change the name of the binary
-          tar -xvf spacetime.linux-arm64.tar
-          mv spacetime spacetime.linux-arm64
-          tar -czf spacetime.linux-arm64.tar.gz spacetime.linux-arm64
+          gzip spacetime.linux-arm64.tar
 
       - name: Compile x86
         run: |
           cargo build --release -p spacetimedb-cli
-          mv target/release/spacetime build/spacetime.linux-amd64
-          cd build && tar -czf spacetime.linux-amd64.tar.gz spacetime.linux-amd64
+          mv target/release/spacetime build/spacetime
+          cd build && tar -czf spacetime.linux-amd64.tar.gz spacetime
+          rm spacetime
 
       - name: Extract branch name
         shell: bash
