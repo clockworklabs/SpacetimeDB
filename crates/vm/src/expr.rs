@@ -366,6 +366,16 @@ pub struct JoinExpr {
     pub col_rhs: FieldName,
 }
 
+impl From<IndexJoin> for JoinExpr {
+    fn from(value: IndexJoin) -> Self {
+        let pos = value.index_col as usize;
+        let rhs = value.probe_side;
+        let col_lhs = value.index_header.fields[pos].field.clone();
+        let col_rhs = value.probe_field;
+        JoinExpr::new(rhs, col_lhs, col_rhs)
+    }
+}
+
 impl JoinExpr {
     pub fn new(rhs: QueryExpr, col_lhs: FieldName, col_rhs: FieldName) -> Self {
         Self { rhs, col_lhs, col_rhs }

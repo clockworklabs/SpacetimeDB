@@ -46,16 +46,20 @@ pub fn build_query<'a>(
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
-            Query::IndexJoin(join) => Box::new(IndexSemiJoin {
-                probe_side: build_query(stdb, tx, join.probe_side.into())?,
-                probe_field: join.probe_field,
-                index_header: join.index_header,
-                index_table: join.index_table,
-                index_col: join.index_col,
-                index_iter: None,
-                db: stdb,
+            Query::IndexJoin(join) if db_table => Box::new(IndexSemiJoin::new(
+                stdb,
                 tx,
-            }) as Box<IterRows<'_>>,
+                build_query(stdb, tx, join.probe_side.into())?,
+                join.probe_field,
+                join.index_header,
+                join.index_table,
+                join.index_col,
+            )),
+            Query::IndexJoin(join) => {
+                let join: JoinExpr = join.into();
+                let iter = join_inner(stdb, tx, result, join, true)?;
+                Box::new(iter)
+            }
             Query::Select(cmp) => {
                 let header = result.head().clone();
                 let iter = result.select(move |row| cmp.compare(row, &header));
@@ -70,41 +74,63 @@ pub fn build_query<'a>(
                     Box::new(iter)
                 }
             }
-            Query::JoinInner(q) => {
-                //Pick the smaller set to be at the left
-                let col_lhs = FieldExpr::Name(q.col_lhs);
-                let col_rhs = FieldExpr::Name(q.col_rhs);
-                let key_lhs = col_lhs.clone();
-                let key_rhs = col_rhs.clone();
-
-                let rhs = build_query(stdb, tx, q.rhs.into())?;
-                let lhs = result;
-                let key_lhs_header = lhs.head().clone();
-                let key_rhs_header = rhs.head().clone();
-                let col_lhs_header = lhs.head().clone();
-                let col_rhs_header = rhs.head().clone();
-
-                let iter = lhs.join_inner(
-                    rhs,
-                    move |row| {
-                        let f = row.get(&key_lhs, &key_lhs_header);
-                        Ok(f.into())
-                    },
-                    move |row| {
-                        let f = row.get(&key_rhs, &key_rhs_header);
-                        Ok(f.into())
-                    },
-                    move |l, r| {
-                        let l = l.get(&col_lhs, &col_lhs_header);
-                        let r = r.get(&col_rhs, &col_rhs_header);
-                        Ok(l == r)
-                    },
-                )?;
+            Query::JoinInner(join) => {
+                let iter = join_inner(stdb, tx, result, join, false)?;
                 Box::new(iter)
             }
         }
     }
     Ok(result)
+}
+
+fn join_inner<'a>(
+    db: &'a RelationalDB,
+    tx: &'a MutTxId,
+    lhs: impl RelOps + 'a,
+    rhs: JoinExpr,
+    semi: bool,
+) -> Result<impl RelOps + 'a, ErrorVm> {
+    let col_lhs = FieldExpr::Name(rhs.col_lhs);
+    let col_rhs = FieldExpr::Name(rhs.col_rhs);
+    let key_lhs = col_lhs.clone();
+    let key_rhs = col_rhs.clone();
+
+    let rhs = build_query(db, tx, rhs.rhs.into())?;
+    let key_lhs_header = lhs.head().clone();
+    let key_rhs_header = rhs.head().clone();
+    let col_lhs_header = lhs.head().clone();
+    let col_rhs_header = rhs.head().clone();
+
+    let header = if semi {
+        col_lhs_header.clone()
+    } else {
+        col_lhs_header.extend(&col_rhs_header)
+    };
+
+    lhs.join_inner(
+        rhs,
+        header,
+        move |row| {
+            let f = row.get(&key_lhs, &key_lhs_header);
+            Ok(f.into())
+        },
+        move |row| {
+            let f = row.get(&key_rhs, &key_rhs_header);
+            Ok(f.into())
+        },
+        move |l, r| {
+            let l = l.get(&col_lhs, &col_lhs_header);
+            let r = r.get(&col_rhs, &col_rhs_header);
+            Ok(l == r)
+        },
+        move |l, r| {
+            if semi {
+                l
+            } else {
+                l.extend(r)
+            }
+        },
+    )
 }
 
 fn get_table<'a>(stdb: &'a RelationalDB, tx: &'a MutTxId, query: SourceExpr) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
@@ -151,6 +177,29 @@ pub struct IndexSemiJoin<'a, Rhs: RelOps> {
     pub db: &'a RelationalDB,
     // A reference to the current transaction.
     pub tx: &'a MutTxId,
+}
+
+impl<'a, Rhs: RelOps> IndexSemiJoin<'a, Rhs> {
+    pub fn new(
+        db: &'a RelationalDB,
+        tx: &'a MutTxId,
+        probe_side: Rhs,
+        probe_field: FieldName,
+        index_header: Header,
+        index_table: u32,
+        index_col: u32,
+    ) -> Self {
+        IndexSemiJoin {
+            db,
+            tx,
+            probe_side,
+            probe_field,
+            index_header,
+            index_table,
+            index_col,
+            index_iter: None,
+        }
+    }
 }
 
 impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
