@@ -35,7 +35,7 @@ ENV SPACETIMEDB_JWT_PRIV_KEY=/etc/spacetimedb/id_ecdsa
 ENV PATH="/usr/src/app/target/debug:${PATH}"
 
 FROM debian as env-release
-COPY --from=builder /usr/src/app/target/release/spacetimedb /usr/local/bin/
+COPY --from=builder /usr/src/app/target/release/spacetime /usr/local/bin/
 COPY --from=builder /usr/src/app/crates/standalone/log.conf /etc/spacetimedb/
 
 FROM env-${CARGO_PROFILE}
