@@ -17,7 +17,7 @@ jobs:
 
       - name: Add aarch64 target
         run: |
-          rustup target add aarch64-unknown-linux-gnu
+          rustup target add aarch64-unknown-none
 
       - name: Install gcc-aarch64-linux-gnu
         run: sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
@@ -31,8 +31,8 @@ jobs:
 
       - name: Compile Aarch64
         run: |
-          cargo build --release -p spacetimedb-cli --target=aarch64-unknown-linux-gnu
-          mv target/aarch64-unknown-linux-gnu/release/spacetime build/spacetime.linux-arm64
+          cargo build --release -p spacetimedb-cli --target=aarch64-unknown-none
+          mv target/aarch64-unknown-none/release/spacetime build/spacetime.linux-arm64
           cd build && tar -czf spacetime.linux-arm64.tar.gz spacetime.linux-arm64
 
       - name: Extract branch name
