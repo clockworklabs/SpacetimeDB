@@ -1,6 +1,11 @@
 name: Build MacOS SpacetimeDB client
 
-on: [push]
+on:
+  push:
+    tags:
+      - '**'
+    branches:
+      - master
 
 jobs:
   macos-client:

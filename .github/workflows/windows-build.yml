@@ -1,5 +1,11 @@
 name: Build Windows SpacetimeDB client
-on: [push]
+
+on:
+  push:
+    tags:
+      - '**'
+    branches:
+      - master
 
 jobs:
   windows-client:
