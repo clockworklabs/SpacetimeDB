@@ -69,7 +69,7 @@ pub enum IndexError {
         value: AlgebraicValue,
     },
     #[error("Attempt to define a index with more than 1 auto_inc column: Table: {0:?}, Columns: {1:?}")]
-    OneAutoInc(TableId, Vec<String>),
+    OneAutoInc(TableId, Vec<SatsString>),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]

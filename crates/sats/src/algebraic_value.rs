@@ -6,7 +6,7 @@ use crate::{
     SatsString, SatsVec, SumValue,
 };
 use enum_as_inner::EnumAsInner;
-use std::ops::{Bound, Deref, RangeBounds};
+use std::ops::{Bound, RangeBounds};
 
 /// Totally ordered [`f32`] allowing all IEEE-754 floating point values.
 pub type F32 = decorum::Total<f32>;

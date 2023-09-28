@@ -1,6 +1,5 @@
 use anyhow::Context;
 use bytes::Bytes;
-use nonempty::NonEmpty;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, IndexType, ModuleDef};
@@ -14,7 +13,7 @@ use crate::client::ClientConnectionSender;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef};
+use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, TableDef, ColId};
 use crate::hash::Hash;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
@@ -740,24 +739,25 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                     // TODO
                     IndexType::Hash => anyhow::bail!("hash indexes not yet supported"),
                 }
-                let index = IndexDef {
-                    table_id: 0, // Will be ignored
-                    cols: NonEmpty::new(col_id as u32),
-                    name: index.name.clone(),
-                    is_unique: col_attr.is_unique(),
-                };
+                let index = IndexDef::new(
+                    index.name.clone(),
+                    0, // Will be ignored
+                    ColId(col_id as u32),
+                    col_attr.is_unique(),
+                );
                 indexes.push(index);
             } else if col_attr.is_unique() {
-                // If you didn't find an index, but the column is unique then create a unique btree index
-                // anyway.
-                let index = IndexDef {
-                    table_id: 0, // Will be ignored
-                    cols: NonEmpty::new(col_id as u32),
-                    name: format!("{}_{}_unique", table.name, col.col_name)
-                        .try_into()
-                        .map_err(|e| anyhow::anyhow!("unique index name too long for `{e}`"))?,
-                    is_unique: true,
-                };
+                // If you didn't find an index,
+                // but the column is unique then create a unique btree index anyway.
+                let name = format!("{}_{}_unique", table.name, col.col_name)
+                    .try_into()
+                    .map_err(|e| anyhow::anyhow!("unique index name too long for `{e}`"))?;
+                let index = IndexDef::new(
+                    name,
+                    0, // Will be ignored
+                    ColId(col_id as u32),
+                    true,
+                );
                 indexes.push(index);
             }
         }

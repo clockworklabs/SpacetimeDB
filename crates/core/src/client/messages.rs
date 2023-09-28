@@ -200,7 +200,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
                 .into_iter()
                 .map(|table| OneOffTableJson {
                     table_name: table.head.table_name,
-                    rows: table.data.into_iter().map(|row| row.data.elements).collect(),
+                    rows: table.data.into_iter().map(|row| row.data).collect(),
                 })
                 .collect(),
         })
@@ -215,7 +215,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
                     .results
                     .into_iter()
                     .map(|table| OneOffTable {
-                        table_name: table.head.table_name,
+                        table_name: table.head.table_name.into(),
                         row: table
                             .data
                             .into_iter()

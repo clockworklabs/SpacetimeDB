@@ -4,15 +4,15 @@ use sats::SatsString;
 use spacetimedb_sats::impl_serialize;
 
 pub mod address;
+pub mod auth;
 pub mod data_key;
 pub mod error;
 pub mod filter;
 pub mod hash;
+pub mod identity;
 pub mod name;
 pub mod operator;
 pub mod primary_key;
-
-pub mod auth;
 #[cfg(feature = "serde")]
 pub mod recovery;
 pub mod relation;

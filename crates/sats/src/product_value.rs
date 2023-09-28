@@ -1,8 +1,7 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::product_type::ProductType;
-use crate::{slim_slice::SlimSliceBoxCollected, static_assert_size, ArrayValue, SatsStr, SatsVec};
-
-use nonempty::NonEmpty;
+use crate::slim_slice::{LenTooLong, SlimSliceBoxCollected};
+use crate::{static_assert_size, ArrayValue, SatsStr, SatsVec};
 
 /// A product value is made of a a list of
 /// "elements" / "fields" / "factors" of other `AlgebraicValue`s.
@@ -111,21 +110,6 @@ impl ProductValue {
         };
 
         Ok(fields)
-    }
-
-    /// This utility function is designed to project fields based on the supplied `indexes`.
-    ///
-    /// **Important:**
-    ///
-    /// The resulting [AlgebraicValue] will wrap into a [ProductValue] when projecting multiple
-    /// fields, otherwise it will consist of a single [AlgebraicValue].
-    ///
-    /// **Parameters:**
-    /// - `indexes`: A [NonEmpty<u32>] containing the indexes of fields to be projected.
-    ///
-    pub fn project_not_empty(&self, indexes: &NonEmpty<u32>) -> Result<AlgebraicValue, InvalidFieldError> {
-        let indexes: Vec<_> = indexes.iter().map(|x| (*x as usize, None)).collect();
-        self.project(&indexes)
     }
 
     /// Extracts the `value` at field of `self` identified by `index`

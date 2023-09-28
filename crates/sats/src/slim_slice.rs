@@ -11,6 +11,7 @@ use core::{
     slice,
     str::{from_utf8_unchecked, from_utf8_unchecked_mut},
 };
+use nonempty::NonEmpty;
 use thiserror::Error;
 
 // =============================================================================
@@ -420,6 +421,109 @@ impl<A> FromIterator<A> for SlimSliceBoxCollected<A> {
 }
 
 // =============================================================================
+// Non-empty owned boxed slice
+// =============================================================================
+
+/// A non-empty slim owned slice.
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
+pub struct SlimNonEmpty<T> {
+    /// The head of the list, ensuring there's at least one element.
+    pub head: T,
+    /// The tail of the list. Invariant `tail.len() < u32::MAX`.
+    tail: SlimSliceBox<T>,
+}
+
+impl<T> SlimNonEmpty<T> {
+    /// Returns the non-empty vector `[head]`.
+    pub fn new(head: T) -> Self {
+        Self { head, tail: [].into() }
+    }
+
+    /// Returns the length of the vector.
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        1 + self.tail.len()
+    }
+
+    /// Returns a non-empty, assuming it is,
+    /// owned version of `slice` mapped through `map`.
+    pub fn map_slice<U>(slice: &SlimSlice<T>, map: impl Fn(&T) -> U) -> Option<SlimNonEmpty<U>> {
+        slice.split_first().map(|(h, t)| SlimNonEmpty {
+            head: map(h),
+            // SAFETY: `slice.len() <= u32::MAX` so `slice.len() - 1 < u32::MAX` holds.
+            tail: unsafe { SlimSliceBox::from_boxed_unchecked(t.iter().map(map).collect()) },
+        })
+    }
+
+    /// Maps our `T`s into `U` via `f: T -> U`.
+    pub fn map<U>(self, mut f: impl FnMut(T) -> U) -> SlimNonEmpty<U> {
+        let head = f(self.head);
+        let tail = self.tail.into_iter().map(f).collect::<Box<[U]>>();
+        // SAFETY: `self.tail.len() <= u32::MAX` is exactly preserved.
+        let tail = unsafe { SlimSliceBox::from_boxed_unchecked(tail) };
+        SlimNonEmpty { head, tail }
+    }
+
+    /// Returns an iterator over borrowed elements of the vector.
+    pub fn iter(&self) -> Iter<'_, T> {
+        let elems = Some((&self.head, &*self.tail));
+        Iter { elems }
+    }
+}
+
+pub struct Iter<'a, T> {
+    elems: Option<(&'a T, &'a [T])>,
+}
+
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (next, tail) = self.elems.take().unzip();
+        self.elems = tail.unwrap_or_default().split_first();
+        next
+    }
+}
+
+impl<T> ExactSizeIterator for Iter<'_, T> {
+    fn len(&self) -> usize {
+        self.elems.map_or(0, |(_, tail)| 1 + tail.len())
+    }
+}
+
+impl<T> core::iter::FusedIterator for Iter<'_, T> {}
+
+impl<T> TryFrom<NonEmpty<T>> for SlimNonEmpty<T> {
+    type Error = LenTooLong<NonEmpty<T>>;
+
+    fn try_from(value: NonEmpty<T>) -> Result<Self, Self::Error> {
+        ensure_len_fits!(value);
+
+        // SAFETY: Ensured ^-- that `([head] ++ tail).len() <= u32::MAX`.
+        // This implies `[head].len() + tail.len() <= u32::MAX`
+        // so `1 + tail.len() <= u32::MAX`
+        // so `tail.len() <= u32::MAX` also holds.
+        let tail = unsafe { SlimSliceBox::from_boxed_unchecked(value.tail.into()) };
+
+        Ok(Self { head: value.head, tail })
+    }
+}
+
+impl<T> From<SlimNonEmpty<T>> for SlimSliceBox<T> {
+    fn from(value: SlimNonEmpty<T>) -> Self {
+        // Construct `[head] ++ tail`.
+        let mut vec = Vec::with_capacity(1 + value.tail.len());
+        vec.push(value.head);
+        vec.append(&mut value.tail.into());
+
+        // SAFETY: By (invariant) `tail.len() < u32::MAX`
+        // we also know that `1 + tail.len() <= u32::MAX`
+        // thus `vec.len() <= u32::MAX` which is our safety requirement.
+        unsafe { Self::from_boxed_unchecked(vec.into()) }
+    }
+}
+
+// =============================================================================
 // String buffer
 // =============================================================================
 
@@ -429,6 +533,13 @@ impl<A> FromIterator<A> for SlimSliceBoxCollected<A> {
 pub struct SlimStrBox {
     /// The underlying byte slice.
     raw: SlimSliceBox<u8>,
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for SlimStrBox {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.deref())
+    }
 }
 
 impl SlimStrBox {

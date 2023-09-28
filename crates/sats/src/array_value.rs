@@ -1,9 +1,7 @@
 use crate::{
-    static_assert_size, AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SatsString, SatsVec,
-    SumValue, F32, F64,
+    static_assert_size, AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SatsNonEmpty, SatsString,
+    SatsVec, SumValue, F32, F64,
 };
-use itertools::Itertools;
-use nonempty::NonEmpty;
 use std::fmt;
 
 /// An array value in "monomorphized form".
@@ -202,12 +200,12 @@ impl_from_array!(SatsString, String);
 impl_from_array!(ArrayValue, Array);
 impl_from_array!(MapValue, Map);
 
-impl<T> From<NonEmpty<T>> for ArrayValue
+impl<T> From<SatsNonEmpty<T>> for ArrayValue
 where
-    ArrayValue: From<Vec<T>>,
+    ArrayValue: From<SatsVec<T>>,
 {
-    fn from(vec: NonEmpty<T>) -> Self {
-        vec.into_iter().collect_vec().into()
+    fn from(value: SatsNonEmpty<T>) -> Self {
+        SatsVec::from(value).into()
     }
 }
 

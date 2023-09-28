@@ -4,6 +4,7 @@ use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_lib::ProductType;
 
 use serde_with::serde_as;
+use spacetimedb_sats::{ProductValue, SatsString};
 
 struct Sats;
 
@@ -109,6 +110,6 @@ pub struct OneOffQueryResponseJson {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct OneOffTableJson {
-    pub table_name: String,
-    pub rows: Vec<Vec<AlgebraicValue>>,
+    pub table_name: SatsString,
+    pub rows: Vec<ProductValue>,
 }

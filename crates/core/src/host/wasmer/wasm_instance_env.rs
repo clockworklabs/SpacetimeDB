@@ -1,11 +1,13 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
+use crate::db::datastore::traits::ColId;
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::{err_to_errno, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers};
 use bytes::Bytes;
 use itertools::Itertools;
+use nonempty::NonEmpty;
 use spacetimedb_sats::slim_slice::LenTooLong;
 use spacetimedb_sats::SatsString;
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
@@ -395,6 +397,13 @@ impl WasmInstanceEnv {
             // Read the column ids on which to create an index from WASM memory.
             // This may be one column or an index on several columns.
             let cols = mem.read_bytes(&caller, col_ids, col_len)?;
+
+            let cols = NonEmpty::from_vec(cols)
+                .expect("Attempt to create an index with zero columns")
+                .map(|x| ColId(x as u32));
+            let cols = cols
+                .try_into()
+                .expect("The number of columns in the index exceeded `u32::MAX`");
 
             caller
                 .data()
