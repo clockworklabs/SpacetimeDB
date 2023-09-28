@@ -17,6 +17,12 @@ pub fn cli() -> clap::Command {
                 .help("The domain or address of the database to print logs from"),
         )
         .arg(
+            Arg::new("server")
+                .long("server")
+                .short('s')
+                .help("The nickname, host name or URL of the server hosting the database"),
+        )
+        .arg(
             Arg::new("identity")
                 .long("identity")
                 .short('i')
@@ -79,24 +85,31 @@ struct LogsParams {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let num_lines = args.get_one::<u32>("num_lines").copied();
     let database = args.get_one::<String>("database").unwrap();
     let follow = args.get_flag("follow");
 
     let cloned_config = config.clone();
     let identity = cloned_config.resolve_name_to_identity(args.get_one::<String>("identity").map(|x| x.as_str()))?;
-    let auth_header = get_auth_header(&mut config, false, identity.as_deref())
+    let auth_header = get_auth_header(&mut config, false, identity.as_deref(), server)
         .await
         .map(|x| x.0);
 
-    let address = database_address(&config, database).await?;
+    let address = database_address(&config, database, server).await?;
 
     // TODO: num_lines should default to like 10 if follow is specified?
     let query_parms = LogsParams { num_lines, follow };
 
-    let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", config.get_host_url(), address));
+    let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", config.get_host_url(server)?, address));
     let builder = add_auth_header_opt(builder, &auth_header);
-    let res = builder.query(&query_parms).send().await?.error_for_status()?;
+    let res = builder.query(&query_parms).send().await?;
+    let status = res.status();
+
+    if status.is_client_error() || status.is_server_error() {
+        let err = res.text().await?;
+        anyhow::bail!(err)
+    }
 
     let term_color = if std::io::stderr().is_terminal() {
         termcolor::ColorChoice::Auto

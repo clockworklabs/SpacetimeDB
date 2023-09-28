@@ -939,3 +939,45 @@ impl SubscriptionAppliedCallbacks {
         self.callbacks.invoke((), state);
     }
 }
+
+/// Manages running `on_disconnect` callbacks when a connection closes.
+pub(crate) struct DisconnectCallbacks {
+    /// Any `on_disconnect` callbacks to run after a connection closes.
+    callbacks: CallbackMap<()>,
+}
+
+impl DisconnectCallbacks {
+    /// Construct a `DisconnectCallbacks` for a connection.
+    ///
+    /// The background worker will be spawned in `runtime`.
+    pub(crate) fn new(runtime: &runtime::Handle) -> Self {
+        DisconnectCallbacks {
+            callbacks: CallbackMap::spawn(runtime),
+        }
+    }
+
+    /// Register an on-disconnect callback to run when a connection ends.
+    pub(crate) fn register_on_disconnect(&mut self, mut callback: impl FnMut() + Send + 'static) -> CallbackId<()> {
+        self.callbacks.insert(Box::new(move |()| callback()))
+    }
+
+    /// Register an on-disconnect callback which will run at most once,
+    /// then de-register itself.
+    pub(crate) fn register_on_disconnect_oneshot(
+        &mut self,
+        callback: impl FnOnce() + Send + 'static,
+    ) -> CallbackId<()> {
+        self.callbacks.insert_oneshot(move |()| callback())
+    }
+
+    /// Unregister a previously-registered on-disconnect callback identified by `id`.
+    pub(crate) fn unregister_on_disconnect(&mut self, id: CallbackId<()>) {
+        self.callbacks.remove(id);
+    }
+
+    /// Invoke any on-disconnect callbacks within the final cache state
+    /// before the connection ended.
+    pub(crate) fn handle_disconnect(&mut self, state: ClientCacheView) {
+        self.callbacks.invoke((), state);
+    }
+}

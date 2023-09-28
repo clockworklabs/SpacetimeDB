@@ -199,10 +199,15 @@ pub fn autogen_rust_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> String 
 
     print_file_header(out);
 
+    // Pass this file into `gen_and_print_imports` to avoid recursively importing self
+    // for recursive types.
+    let file_name = name.to_case(Case::Snake);
+    let this_file = (file_name.as_str(), name);
+
     // For some reason, deref coercion doesn't work on `&sum_type.variants` here - rustc
     // wants to pass it as `&Vec<_>`, not `&[_]`. The slicing index `[..]` forces passing
     // as a slice.
-    gen_and_print_imports(ctx, out, &sum_type.variants[..], generate_imports_variants);
+    gen_and_print_imports(ctx, out, &sum_type.variants[..], generate_imports_variants, this_file);
 
     out.newline();
 
@@ -238,16 +243,6 @@ fn write_enum_variant(ctx: &GenCtx, out: &mut Indenter, variant: &SumTypeVariant
             // Foo,
             // ```
             writeln!(out, ",").unwrap();
-        }
-        AlgebraicType::Product(ProductType { elements }) => {
-            // If the contained type is a non-empty product, i.e. this variant is
-            // struct-like, write it with braces and named fields.
-            write_struct_type_fields_in_braces(
-                ctx, out, elements,
-                // Do not `pub`-qualify fields because enum fields are always public, and
-                // rustc errors on the redundant `pub`.
-                false,
-            );
         }
         otherwise => {
             // If the contained type is not a product, i.e. this variant has a single
@@ -352,6 +347,16 @@ pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDef) -> String {
 //    - Complicated because `HashMap` is not `Hash`.
 // - others?
 
+pub fn rust_type_file_name(type_name: &str) -> String {
+    let filename = type_name.replace('.', "").to_case(Case::Snake);
+    filename + ".rs"
+}
+
+pub fn rust_reducer_file_name(type_name: &str) -> String {
+    let filename = type_name.replace('.', "").to_case(Case::Snake);
+    filename + "_reducer.rs"
+}
+
 const STRUCT_DERIVES: &[&str] = &["#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]"];
 
 fn print_struct_derives(output: &mut Indenter) {
@@ -363,7 +368,15 @@ fn begin_rust_struct_def_shared(ctx: &GenCtx, out: &mut Indenter, name: &str, el
 
     print_spacetimedb_imports(out);
 
-    gen_and_print_imports(ctx, out, elements, generate_imports_elements);
+    // Pass this file into `gen_and_print_imports` to avoid recursively importing self
+    // for recursive types.
+    //
+    // The file_name will be incorrect for reducer arg structs, but that doesn't matter
+    // because it's impossible for a reducer arg struct to be recursive.
+    let file_name = name.to_case(Case::Snake);
+    let this_file = (file_name.as_str(), name);
+
+    gen_and_print_imports(ctx, out, elements, generate_imports_elements, this_file);
 
     out.newline();
 
@@ -1100,17 +1113,35 @@ fn generate_imports(ctx: &GenCtx, imports: &mut Imports, ty: &AlgebraicType) {
     }
 }
 
-fn print_imports(out: &mut Indenter, imports: Imports) {
+/// Print `use super::` imports for each of the `imports`, except `this_file`.
+///
+/// `this_file` is passed and excluded for the case of recursive types:
+/// without it, the definition for a type like `struct Foo { foos: Vec<Foo> }`
+/// would attempt to include `import super::foo::Foo`, which fails to compile.
+fn print_imports(out: &mut Indenter, imports: Imports, this_file: (&str, &str)) {
     for (module_name, type_name) in imports {
-        writeln!(out, "use super::{}::{};", module_name, type_name).unwrap();
+        if (module_name.as_str(), type_name.as_str()) != this_file {
+            writeln!(out, "use super::{}::{};", module_name, type_name).unwrap();
+        }
     }
 }
 
-fn gen_and_print_imports<Roots, SearchFn>(ctx: &GenCtx, out: &mut Indenter, roots: Roots, search_fn: SearchFn)
-where
+/// Use `search_function` on `roots` to detect required imports, then print them with `print_imports`.
+///
+/// `this_file` is passed and excluded for the case of recursive types:
+/// without it, the definition for a type like `struct Foo { foos: Vec<Foo> }`
+/// would attempt to include `import super::foo::Foo`, which fails to compile.
+fn gen_and_print_imports<Roots, SearchFn>(
+    ctx: &GenCtx,
+    out: &mut Indenter,
+    roots: Roots,
+    search_fn: SearchFn,
+    this_file: (&str, &str),
+) where
     SearchFn: FnOnce(&GenCtx, &mut Imports, Roots),
 {
     let mut imports = HashSet::new();
     search_fn(ctx, &mut imports, roots);
-    print_imports(out, imports);
+
+    print_imports(out, imports, this_file);
 }

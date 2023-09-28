@@ -1,0 +1,7 @@
+disallowed-macros = [
+    { path = "std::print",    reason = "print blocks on a global mutex for synchronization, and its output cannot be filtered. Use a log macro instead, or apply #[allow(disallowed-macros)] if this is test or CLI code." },
+    { path = "std::println",  reason = "println blocks on a global mutex for synchronization, and its output cannot be filtered. Use a log macro instead, or apply #[allow(disallowed-macros)] if this is test or CLI code." },
+    { path = "std::eprint",   reason = "eprint blocks on a global mutex for synchronization, and its output cannot be filtered. Use a log macro instead, or apply #[allow(disallowed-macros)] if this is test or CLI code." },
+    { path = "std::eprintln", reason = "eprintln blocks on a global mutex for synchronization, and its output cannot be filtered. Use a log macro instead, or apply #[allow(disallowed-macros)] if this is test or CLI code." },
+    { path = "std::dbg",      reason = "dbg is a debugging tool and should never be committed into the repository." },
+]

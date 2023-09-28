@@ -100,7 +100,7 @@ pub trait RelOps {
 
     /// Utility to collect the results into a [Vec]
     #[inline]
-    fn collect_vec(mut self) -> Result<Vec<ProductValue>, ErrorVm>
+    fn collect_vec(mut self) -> Result<Vec<RelValue>, ErrorVm>
     where
         Self: Sized,
     {
@@ -109,7 +109,7 @@ pub trait RelOps {
         let mut result = Vec::with_capacity(estimate);
 
         while let Some(row) = self.next()? {
-            result.push(row.data.clone());
+            result.push(row);
         }
 
         Ok(result)
@@ -162,6 +162,7 @@ where
         self.count
     }
 
+    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         let filter = &mut self.predicate;
         while let Some(v) = self.iter.next()? {
@@ -205,11 +206,12 @@ where
         self.count
     }
 
+    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         let extract = &mut self.extractor;
         if let Some(v) = self.iter.next()? {
             let row = extract(v.as_val_ref())?;
-            return Ok(Some(RelValue::new(&self.head, &row)));
+            return Ok(Some(RelValue::new(row, None)));
         }
         Ok(None)
     }
@@ -262,6 +264,7 @@ where
         self.count
     }
 
+    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
         if !self.filled {
             self.map = HashMap::with_capacity(self.rhs.row_count().min);
@@ -290,7 +293,7 @@ where
                 if let Some(rhs) = rvv.pop() {
                     if (self.predicate)(lhs.as_val_ref(), rhs.as_val_ref())? {
                         self.count.add_exact(1);
-                        return Ok(Some(lhs.clone().extend(&self.head, rhs)));
+                        return Ok(Some(lhs.clone().extend(rhs)));
                     }
                 }
             }

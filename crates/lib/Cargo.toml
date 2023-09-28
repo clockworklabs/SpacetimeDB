@@ -23,8 +23,10 @@ spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.6.1" }
 spacetimedb-sats = { path = "../sats", version = "0.6.1" }
 
 anyhow.workspace = true
+bitflags.workspace = true
 chrono = { workspace = true, optional = true }
 clap = {workspace = true, optional = true }
+derive_more.workspace = true
 enum-as-inner.workspace = true
 hex.workspace = true
 itertools.workspace = true
@@ -32,6 +34,7 @@ serde = { workspace = true, optional = true }
 serde_with = {workspace = true, optional = true }
 sha3.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 rand.workspace = true

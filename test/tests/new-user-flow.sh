@@ -35,7 +35,7 @@ pub fn say_hello() {
 EOF
 
 ## Publish your module
-run_test cargo run publish -s -d --project-path "$PROJECT_PATH" --clear-database
+run_test cargo run publish -S -d --project-path "$PROJECT_PATH" --clear-database
 ADDRESS="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
 # We have to give the database some time to setup our instance
@@ -47,7 +47,7 @@ run_test cargo run logs "$ADDRESS"
 if [ "$(grep -c "Hello, World!" "$TEST_OUT")" != 1 ]; then exit 1; fi
 
 ## Calling functions with arguments
-run_test cargo run call "$ADDRESS" add '["Tyler"]'
+run_test cargo run call "$ADDRESS" add Tyler
 run_test cargo run call "$ADDRESS" say_hello
 run_test cargo run logs "$ADDRESS"
 

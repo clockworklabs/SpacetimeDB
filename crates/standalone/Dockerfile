@@ -2,8 +2,11 @@
 
 ARG CARGO_PROFILE=release
 
-FROM rust:1.69.0 AS chef
-RUN cargo install cargo-chef@0.1.56 --locked
+
+FROM rust:1.72.0 AS chef
+RUN rust_target=$(rustc -vV | awk '/^host:/{ print $2 }') && \
+  curl https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-$rust_target.tgz -fL | tar xz -C $CARGO_HOME/bin
+RUN cargo binstall -y cargo-chef@0.1.56
 WORKDIR /usr/src/app
 
 FROM chef AS planner
@@ -14,8 +17,8 @@ FROM chef AS builder
 
 RUN apt-get update && apt-get install -y protobuf-compiler
 
-RUN cargo install cargo-watch@8.4.0
-RUN cargo install flamegraph@0.6.2
+RUN cargo binstall -y cargo-watch@8.4.0
+RUN cargo binstall -y flamegraph@0.6.2
 
 COPY --from=planner /usr/src/app/recipe.json .
 

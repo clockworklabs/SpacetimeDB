@@ -20,7 +20,7 @@ pub struct ProductTypeMeta {
 impl ProductTypeMeta {
     pub fn new(columns: ProductType) -> Self {
         Self {
-            attr: vec![ColumnIndexAttribute::UnSet; columns.elements.len()],
+            attr: vec![ColumnIndexAttribute::UNSET; columns.elements.len()],
             columns,
         }
     }
@@ -100,12 +100,9 @@ impl ProductTypeMeta {
         &'a self,
         row: &'a mut ProductValue,
     ) -> impl Iterator<Item = (ColumnDef, &'a mut AlgebraicValue)> + 'a {
-        self.iter().zip(row.elements.iter_mut()).filter(|(col, _)| {
-            matches!(
-                col.attr,
-                ColumnIndexAttribute::Identity | ColumnIndexAttribute::AutoInc | ColumnIndexAttribute::PrimaryKeyAuto
-            )
-        })
+        self.iter()
+            .zip(row.elements.iter_mut())
+            .filter(|(col, _)| col.attr.is_autoinc())
     }
 }
 
@@ -118,14 +115,5 @@ impl From<ProductType> for ProductTypeMeta {
 impl From<ProductTypeMeta> for ProductType {
     fn from(value: ProductTypeMeta) -> Self {
         value.columns
-    }
-}
-
-impl<'a> FromIterator<&'a (&'a str, AlgebraicType, ColumnIndexAttribute)> for ProductTypeMeta {
-    fn from_iter<T: IntoIterator<Item = &'a (&'a str, AlgebraicType, ColumnIndexAttribute)>>(iter: T) -> Self {
-        Self::with_attributes(
-            iter.into_iter()
-                .map(|(name, ty, attr)| (ProductTypeElement::new(ty.clone(), Some(name.to_string())), *attr)),
-        )
     }
 }

@@ -1,6 +1,9 @@
-use crate::callbacks::{CredentialStore, DbCallbacks, ReducerCallbacks, SubscriptionAppliedCallbacks};
+use crate::callbacks::{
+    CredentialStore, DbCallbacks, DisconnectCallbacks, ReducerCallbacks, SubscriptionAppliedCallbacks,
+};
 use crate::client_api_messages;
 use crate::client_cache::{ClientCache, ClientCacheView, RowCallbackReminders};
+use crate::global_connection::CLIENT_CACHE;
 use crate::identity::Credentials;
 use crate::reducer::{AnyReducerEvent, Reducer};
 use crate::spacetime_module::SpacetimeModule;
@@ -51,11 +54,12 @@ pub struct BackgroundDbConnection {
     /// and without changes to the state invalidating or altering the snapshot.
     ///
     /// None if not yet connected.
-    pub(crate) client_cache: Option<SharedCell<ClientCacheView>>,
+    pub(crate) client_cache: SharedCell<Option<ClientCacheView>>,
 
     pub(crate) db_callbacks: SharedCell<DbCallbacks>,
     pub(crate) reducer_callbacks: SharedCell<ReducerCallbacks>,
     pub(crate) subscription_callbacks: SharedCell<SubscriptionAppliedCallbacks>,
+    pub(crate) disconnect_callbacks: SharedCell<DisconnectCallbacks>,
 }
 
 // When called from within an async context, return a handle to it (and no
@@ -136,19 +140,19 @@ fn process_event(
 /// the message handler will apply the changes within an `update_client_cache` call,
 /// then invoke callbacks on the resulting `ClientCacheView`.
 fn update_client_cache(
-    client_cache: &Mutex<ClientCacheView>,
+    client_cache: &Mutex<Option<ClientCacheView>>,
     update: impl FnOnce(&mut ClientCache),
 ) -> ClientCacheView {
     let mut cache_lock = client_cache.lock().expect("ClientCache Mutex is poisoned");
     // Make a new state starting from the one in `cache_lock`.
     // `new_state` is not yet shared, and so can be mutated.
-    let mut new_state = ClientCache::clone(&cache_lock);
+    let mut new_state = ClientCache::clone(cache_lock.as_ref().unwrap());
     // Advance `new_state` to hold any changes.
     update(&mut new_state);
     // Make `new_state` shared, and store it back into `cache_lock`.
-    *cache_lock = Arc::new(new_state);
+    *cache_lock = Some(Arc::new(new_state));
     // Return the new state.
-    Arc::clone(&cache_lock)
+    Option::clone(&cache_lock).unwrap()
 }
 
 fn process_transaction_update(
@@ -156,7 +160,7 @@ fn process_transaction_update(
         subscription_update,
         event,
     }: client_api_messages::TransactionUpdate,
-    client_cache: &Mutex<ClientCacheView>,
+    client_cache: &Mutex<Option<ClientCacheView>>,
     db_callbacks: &Mutex<DbCallbacks>,
     reducer_callbacks: &Mutex<ReducerCallbacks>,
 ) {
@@ -187,11 +191,12 @@ fn process_transaction_update(
 // `ClientCache`, `ReducerCallbacks` and `Credentials`, rather than references.
 async fn receiver_loop(
     mut recv: mpsc::UnboundedReceiver<client_api_messages::Message>,
-    client_cache: SharedCell<ClientCacheView>,
+    client_cache: SharedCell<Option<ClientCacheView>>,
     db_callbacks: SharedCell<DbCallbacks>,
     reducer_callbacks: SharedCell<ReducerCallbacks>,
     credentials: SharedCell<CredentialStore>,
     subscription_callbacks: SharedCell<SubscriptionAppliedCallbacks>,
+    disconnect_callbacks: SharedCell<DisconnectCallbacks>,
 ) {
     while let Some(msg) = recv.next().await {
         match msg {
@@ -224,13 +229,19 @@ async fn receiver_loop(
                 r#type: Some(client_api_messages::message::Type::IdentityToken(ident)),
             } => {
                 log::info!("Message IdentityToken");
-                let state = Arc::clone(&client_cache.lock().expect("ClientCache Mutex is poisoned"));
+                let state = Option::clone(&client_cache.lock().expect("ClientCache Mutex is poisoned")).unwrap();
                 let mut credentials_lock = credentials.lock().expect("Credentials Mutex is poisoned");
                 credentials_lock.handle_identity_token(ident, state);
             }
             other => log::info!("Unknown message: {:?}", other),
         }
     }
+    let final_state = client_cache.lock().expect("ClientCache Mutex is poisoned");
+    let final_state = ClientCacheView::clone(final_state.as_ref().unwrap());
+    disconnect_callbacks
+        .lock()
+        .expect("DisconnectCallbacks Mutex is poisoned")
+        .handle_disconnect(final_state);
 }
 
 impl BackgroundDbConnection {
@@ -244,6 +255,7 @@ impl BackgroundDbConnection {
         let reducer_callbacks = Arc::new(Mutex::new(ReducerCallbacks::without_handle_event(handle.clone())));
         let credentials = Arc::new(Mutex::new(CredentialStore::without_credentials(&handle)));
         let subscription_callbacks = Arc::new(Mutex::new(SubscriptionAppliedCallbacks::new(&handle)));
+        let disconnect_callbacks = Arc::new(Mutex::new(DisconnectCallbacks::new(&handle)));
 
         Ok(BackgroundDbConnection {
             runtime,
@@ -252,17 +264,18 @@ impl BackgroundDbConnection {
             websocket_loop_handle: None,
             recv_handle: None,
             credentials,
-            client_cache: None,
+            client_cache: Arc::clone(&CLIENT_CACHE),
             db_callbacks,
             reducer_callbacks,
             subscription_callbacks,
+            disconnect_callbacks,
         })
     }
 
     fn spawn_receiver(
         &self,
         recv: mpsc::UnboundedReceiver<client_api_messages::Message>,
-        client_cache: SharedCell<ClientCacheView>,
+        client_cache: SharedCell<Option<ClientCacheView>>,
     ) -> JoinHandle<()> {
         self.handle.spawn(receiver_loop(
             recv,
@@ -271,6 +284,7 @@ impl BackgroundDbConnection {
             self.reducer_callbacks.clone(),
             self.credentials.clone(),
             self.subscription_callbacks.clone(),
+            self.disconnect_callbacks.clone(),
         ))
     }
 
@@ -305,14 +319,22 @@ impl BackgroundDbConnection {
             self.handle
                 .block_on(DbConnection::connect(spacetimedb_uri, db_name, credentials.as_ref()))
         })?;
-        let client_cache = Arc::new(Mutex::new(Arc::new(ClientCache::new(module.clone()))));
+
+        let client_cache = Arc::new(ClientCache::new(module.clone()));
+
+        {
+            // Set the global `CLIENT_CACHE` to our newly-constructed cache.
+            // Do this inside a short scope to avoid holding the lock unnecessarily.
+            let mut client_cache_lock = self.client_cache.lock().expect("ClientCache mutex is poisoned");
+            *client_cache_lock = Some(client_cache);
+        }
+
         let (websocket_loop_handle, recv_chan, send_chan) = connection.spawn_message_loop(&self.handle);
-        let recv_handle = self.spawn_receiver(recv_chan, client_cache.clone());
+        let recv_handle = self.spawn_receiver(recv_chan, self.client_cache.clone());
 
         self.send_chan = Some(send_chan);
         self.websocket_loop_handle = Some(websocket_loop_handle);
         self.recv_handle = Some(recv_handle);
-        self.client_cache = Some(client_cache);
 
         self.reducer_callbacks
             .lock()
@@ -328,7 +350,6 @@ impl BackgroundDbConnection {
 
     pub fn disconnect(&mut self) {
         self.send_chan = None;
-        self.client_cache = None;
         if let Some(h) = self.websocket_loop_handle.take() {
             let _ = self.handle.block_on(h);
         }

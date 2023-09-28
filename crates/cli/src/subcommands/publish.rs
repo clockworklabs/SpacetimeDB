@@ -2,15 +2,15 @@ use anyhow::bail;
 use clap::Arg;
 use clap::ArgAction::SetTrue;
 use clap::ArgMatches;
-use reqwest::Url;
+use reqwest::{StatusCode, Url};
 use spacetimedb_lib::name::PublishOp;
 use spacetimedb_lib::name::{is_address, parse_domain_name, PublishResult};
 use std::fs;
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::util::init_default;
 use crate::util::{add_auth_header_opt, get_auth_header};
+use crate::util::{init_default, unauth_error_context};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("publish")
@@ -70,7 +70,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("skip_clippy")
                 .long("skip_clippy")
-                .short('s')
+                .short('S')
                 .action(SetTrue)
                 .env("SPACETIME_SKIP_CLIPPY")
                 .value_parser(clap::builder::FalseyValueParser::new())
@@ -87,11 +87,18 @@ pub fn cli() -> clap::Command {
             Arg::new("name|address")
                 .help("A valid domain or address for this database"),
         )
+        .arg(
+            Arg::new("server")
+                .long("server")
+                .short('s')
+                .help("The nickname, domain name or URL of the server to host the database."),
+        )
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let cloned_config = config.clone();
+    let server = args.get_one::<String>("server").map(|s| s.as_str());
     let identity = cloned_config.resolve_name_to_identity(args.get_one::<String>("identity").map(|s| s.as_str()))?;
     let name_or_address = args.get_one::<String>("name|address");
     let path_to_project = args.get_one::<PathBuf>("path_to_project").unwrap();
@@ -134,7 +141,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let program_bytes = fs::read(path_to_wasm)?;
 
     let mut builder = reqwest::Client::new().post(Url::parse_with_params(
-        format!("{}/database/publish", config.get_host_url()).as_str(),
+        format!("{}/database/publish", config.get_host_url(server)?).as_str(),
         query_params,
     )?);
 
@@ -143,11 +150,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
     //  easily create a new identity with an email
     let identity = if !anon_identity {
-        if identity.is_none() && config.default_identity().is_none() {
-            init_default(&mut config, None).await?;
+        if identity.is_none() && config.default_identity(server).is_err() {
+            init_default(&mut config, None, server).await?;
         }
 
-        let (auth_header, chosen_identity) = get_auth_header(&mut config, anon_identity, identity.as_deref())
+        let (auth_header, chosen_identity) = get_auth_header(&mut config, anon_identity, identity.as_deref(), server)
             .await
             .unzip();
 
@@ -158,6 +165,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     };
 
     let res = builder.body(program_bytes).send().await?;
+    if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
+        if let Some(identity) = &identity {
+            let err = res.text().await?;
+            return unauth_error_context(
+                Err(anyhow::anyhow!(err)),
+                &identity.to_hex(),
+                config.server_nick_or_host(server)?,
+            );
+        }
+    }
     if res.status().is_client_error() || res.status().is_server_error() {
         let err = res.text().await?;
         bail!(err)

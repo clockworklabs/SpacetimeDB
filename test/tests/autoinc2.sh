@@ -54,9 +54,9 @@ EOF
   [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
   IDENT="$(grep "reated new database" "$TEST_OUT" | awk 'NF>1{print $NF}')"
 
-  run_test cargo run call "$IDENT" update '["Robert", 2]'
-  run_test cargo run call "$IDENT" add_new '["Success"]'
-  if run_test cargo run call "$IDENT" add_new '["Failure"]' ; then
+  run_test cargo run call "$IDENT" update Robert 2
+  run_test cargo run call "$IDENT" add_new Success
+  if run_test cargo run call "$IDENT" add_new Failure ; then
     # This add_new call should have failed. Its possible there was a duplicate insert
     cargo run logs "$IDENT"
     cargo run sql "$IDENT" 'SELECT * FROM Person'
@@ -68,6 +68,8 @@ EOF
   [[ "$(grep 'Robert' "$TEST_OUT" | tail -n 4)" =~ .*Hello,\ 2:Robert! ]]
   [[ "$(grep 'Success' "$TEST_OUT" | tail -n 4)" =~ .*Hello,\ 1:Success! ]]
   [[ "$(grep 'World' "$TEST_OUT" | tail -n 4)" =~ .*Hello,\ World! ]]
+
+  clear_project
 }
 
 do_test u8

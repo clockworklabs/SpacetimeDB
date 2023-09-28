@@ -3,6 +3,7 @@
 //!
 //! `+` == std::math::add
 //!
+use derive_more::From;
 use spacetimedb_lib::de::Deserialize;
 use spacetimedb_lib::ser::Serialize;
 use std::fmt;
@@ -91,13 +92,13 @@ impl From<OpLogic> for &str {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash, From)]
 pub enum OpQuery {
     Cmp(OpCmp),
     Logic(OpLogic),
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, From)]
 pub enum Op {
     Cmp(OpCmp),
     Logic(OpLogic),
@@ -108,42 +109,6 @@ pub enum Op {
 impl Op {
     pub fn is_logical(&self) -> bool {
         matches!(self, Op::Cmp(_) | Op::Logic(_))
-    }
-}
-
-impl From<OpCmp> for Op {
-    fn from(op: OpCmp) -> Self {
-        Op::Cmp(op)
-    }
-}
-
-impl From<OpCmp> for OpQuery {
-    fn from(op: OpCmp) -> Self {
-        OpQuery::Cmp(op)
-    }
-}
-
-impl From<OpLogic> for Op {
-    fn from(op: OpLogic) -> Self {
-        Op::Logic(op)
-    }
-}
-
-impl From<OpLogic> for OpQuery {
-    fn from(op: OpLogic) -> Self {
-        OpQuery::Logic(op)
-    }
-}
-
-impl From<OpUnary> for Op {
-    fn from(op: OpUnary) -> Self {
-        Op::Unary(op)
-    }
-}
-
-impl From<OpMath> for Op {
-    fn from(op: OpMath) -> Self {
-        Op::Math(op)
     }
 }
 

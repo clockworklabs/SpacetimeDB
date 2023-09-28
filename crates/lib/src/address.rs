@@ -24,8 +24,14 @@ impl Display for Address {
 impl Address {
     const ABBREVIATION_LEN: usize = 16;
 
+    pub const ZERO: Self = Self(0);
+
     pub fn from_arr(arr: &[u8; 16]) -> Self {
         Self(u128::from_be_bytes(*arr))
+    }
+
+    pub fn zero() -> Self {
+        Self(0)
     }
 
     pub fn from_hex(hex: &str) -> Result<Self, anyhow::Error> {
@@ -61,6 +67,16 @@ impl Address {
     #[allow(dead_code)]
     pub fn to_ipv6_string(self) -> String {
         self.to_ipv6().to_string()
+    }
+
+    pub fn to_u128(&self) -> u128 {
+        self.0
+    }
+}
+
+impl From<u128> for Address {
+    fn from(value: u128) -> Self {
+        Self(value)
     }
 }
 

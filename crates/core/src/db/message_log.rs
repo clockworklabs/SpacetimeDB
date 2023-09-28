@@ -31,7 +31,7 @@ pub struct MessageLog {
     segments: Vec<Segment>,
     total_size: u64,
     open_segment_file: BufWriter<File>,
-    open_segment_max_offset: u64,
+    pub open_segment_max_offset: u64,
     open_segment_size: u64,
 }
 
@@ -269,6 +269,8 @@ impl<'a> Iterator for MessageLogIter<'a> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::disallowed_macros)]
+
     use super::MessageLog;
     use spacetimedb_lib::error::ResultTest;
     use tempdir::{self, TempDir};

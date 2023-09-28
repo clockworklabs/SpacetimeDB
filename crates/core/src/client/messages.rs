@@ -1,8 +1,14 @@
+use base64::Engine;
 use prost::Message as _;
+use spacetimedb_client_api_messages::client_api::{OneOffQueryResponse, OneOffTable};
+use spacetimedb_lib::relation::MemTable;
 
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::identity::Identity;
-use crate::json::client_api::{EventJson, FunctionCallJson, IdentityTokenJson, MessageJson, TransactionUpdateJson};
+use crate::json::client_api::{
+    EventJson, FunctionCallJson, IdentityTokenJson, MessageJson, OneOffQueryResponseJson, OneOffTableJson,
+    TransactionUpdateJson,
+};
 use crate::protobuf::client_api::{event, message, Event, FunctionCall, IdentityToken, Message, TransactionUpdate};
 
 use super::{DataMessage, Protocol};
@@ -174,6 +180,54 @@ where
                 .get_or_insert_with(|| self.msg.serialize_binary().encode_to_vec())
                 .clone()
                 .into(),
+        }
+    }
+}
+
+pub struct OneOffQueryResponseMessage {
+    pub message_id: Vec<u8>,
+    pub error: Option<String>,
+    pub results: Vec<MemTable>,
+}
+
+impl ServerMessage for OneOffQueryResponseMessage {
+    fn serialize_text(self) -> MessageJson {
+        MessageJson::OneOffQueryResponse(OneOffQueryResponseJson {
+            message_id_base64: base64::engine::general_purpose::STANDARD.encode(self.message_id),
+            error: self.error,
+            result: self
+                .results
+                .into_iter()
+                .map(|table| OneOffTableJson {
+                    table_name: table.head.table_name,
+                    rows: table.data.into_iter().map(|row| row.data.elements).collect(),
+                })
+                .collect(),
+        })
+    }
+
+    fn serialize_binary(self) -> Message {
+        Message {
+            r#type: Some(message::Type::OneOffQueryResponse(OneOffQueryResponse {
+                message_id: self.message_id,
+                error: self.error.unwrap_or_default(),
+                tables: self
+                    .results
+                    .into_iter()
+                    .map(|table| OneOffTable {
+                        table_name: table.head.table_name,
+                        row: table
+                            .data
+                            .into_iter()
+                            .map(|row| {
+                                let mut row_bytes = Vec::new();
+                                row.data.encode(&mut row_bytes);
+                                row_bytes
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            })),
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::client::ClientActorId;
-use crate::db::datastore::traits::{IndexDef, IndexId};
+use crate::db::datastore::traits::{IndexDef, IndexId, TableId};
 use hex::FromHexError;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::error::{LibError, RelationError};
@@ -60,13 +60,15 @@ pub enum IndexError {
     IndexAlreadyExists(IndexDef, String),
     #[error("Column not found: {0:?}")]
     ColumnNotFound(IndexDef),
-    #[error("Unique constraint violation '{}' in table '{}': column: '{}' value: {}", constraint_name, table_name, col_name, value.to_satn())]
+    #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, col_names, value.to_satn())]
     UniqueConstraintViolation {
         constraint_name: String,
         table_name: String,
-        col_name: String,
+        col_names: Vec<String>,
         value: AlgebraicValue,
     },
+    #[error("Attempt to define a index with more than 1 auto_inc column: Table: {0:?}, Columns: {1:?}")]
+    OneAutoInc(TableId, Vec<String>),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -176,6 +178,12 @@ impl DBError {
             }
         }
         None
+    }
+}
+
+impl From<DBError> for ErrorVm {
+    fn from(err: DBError) -> Self {
+        ErrorVm::Other(err.into())
     }
 }
 

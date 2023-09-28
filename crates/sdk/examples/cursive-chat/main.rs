@@ -4,7 +4,7 @@ use module_bindings::*;
 use spacetimedb_sdk::{
     disconnect,
     identity::{identity, load_credentials, once_on_connect, save_credentials, Credentials, Identity},
-    on_subscription_applied,
+    on_disconnect, on_subscription_applied,
     reducer::Status,
     subscribe,
     table::{TableType, TableWithPrimaryKey},
@@ -101,6 +101,8 @@ enum UiMessage {
         /// The server error message, to be included in the dialog.
         reason: String,
     },
+    /// Our connection has ended.
+    ConnectionClosed,
 }
 
 type UiSend = mpsc::UnboundedSender<UiMessage>;
@@ -129,7 +131,10 @@ fn register_callbacks(send: UiSend) {
     on_set_name(on_name_set(send.clone()));
 
     // When we fail to send a message, print a warning.
-    on_send_message(on_message_sent(send));
+    on_send_message(on_message_sent(send.clone()));
+
+    // When our connection closes, show a dialog, then exit the process.
+    on_disconnect(on_disconnected(send.clone()));
 }
 
 // ## Save credentials to a file
@@ -277,6 +282,15 @@ fn on_message_sent(send: UiSend) -> impl FnMut(&Identity, &Status, &String) {
             })
             .unwrap();
         }
+    }
+}
+
+// ## Dialog and exit when disconnected
+
+/// Our `on_disconnect` callback: show a dialog, then exit the process
+fn on_disconnected(send: UiSend) -> impl FnMut() {
+    move || {
+        send.unbounded_send(UiMessage::ConnectionClosed).unwrap();
     }
 }
 
@@ -599,6 +613,13 @@ fn process_ui_message(siv: &mut CursiveRunner<CursiveRunnable>, message: UiMessa
                         .child(TextView::new(rejected_name)),
                 )
                 .dismiss_button("Ok"),
+            );
+            Some(true)
+        }
+
+        UiMessage::ConnectionClosed => {
+            siv.add_layer(
+                Dialog::around(TextView::new("Connection closed.")).button("Exit", |_| std::process::exit(0)),
             );
             Some(true)
         }

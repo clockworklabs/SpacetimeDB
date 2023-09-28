@@ -1,0 +1,3 @@
+# Overwrite the root's disallowed-macros,
+# as sqltest is allowed to use println and friends.
+disallowed-macros = []

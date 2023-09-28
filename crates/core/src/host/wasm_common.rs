@@ -285,7 +285,7 @@ impl BufferIdx {
     }
 }
 
-decl_index!(BufferIterIdx => Box<dyn Iterator<Item = Result<bytes::Bytes, NodesError>> + Send>);
+decl_index!(BufferIterIdx => Box<dyn Iterator<Item = Result<bytes::Bytes, NodesError>> + Send + Sync>);
 pub(super) type BufferIters = ResourceSlab<BufferIterIdx>;
 
 pub mod errnos {
@@ -329,7 +329,7 @@ pub fn err_to_errno(err: &NodesError) -> Option<u16> {
             DBError::Index(IndexError::UniqueConstraintViolation {
                 constraint_name: _,
                 table_name: _,
-                col_name: _,
+                col_names: _,
                 value: _,
             }) => Some(errnos::UNIQUE_ALREADY_EXISTS),
             _ => None,

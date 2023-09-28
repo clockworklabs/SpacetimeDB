@@ -6,7 +6,7 @@ use crate::tasks::rust::build_rust;
 
 use self::csharp::build_csharp;
 
-pub(crate) fn build(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
+pub fn build(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
     let lang = util::detect_module_language(project_path);
     match lang {
         ModuleLanguage::Rust => build_rust(project_path, skip_clippy, build_debug),

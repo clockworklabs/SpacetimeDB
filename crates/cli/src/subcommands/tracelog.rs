@@ -19,13 +19,31 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
         clap::Command::new("get")
             .about("Retrieve a copy of the trace log for a database, if tracing is turned on")
             .arg(Arg::new("database").required(true))
-            .arg(Arg::new("outputfile").required(true).help("path to write tracelog to")),
+            .arg(Arg::new("outputfile").required(true).help("path to write tracelog to"))
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .short('s')
+                    .help("The nickname, host name or URL of the server running tracing"),
+            ),
         clap::Command::new("stop")
             .about("Stop tracing on a given database")
-            .arg(Arg::new("database").required(true)),
+            .arg(Arg::new("database").required(true))
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .short('s')
+                    .help("The nickname, host name or URL of the server running tracing"),
+            ),
         clap::Command::new("replay")
             .about("Replay a tracelog on a temporary fresh DB instance on the server")
-            .arg(Arg::new("tracefile").required(true).help("path to read tracelog from")),
+            .arg(Arg::new("tracefile").required(true).help("path to read tracelog from"))
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .short('s')
+                    .help("The nickname, host name or URL of the server running tracing"),
+            ),
     ]
 }
 
@@ -45,11 +63,12 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
 pub async fn exec_replay(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let tracefile = args.get_one::<String>("tracefile").unwrap();
+    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     match std::fs::read(tracefile) {
         Ok(o) => {
             let client = reqwest::Client::new();
             let res = client
-                .post(format!("{}/tracelog/replay", config.get_host_url()))
+                .post(format!("{}/tracelog/replay", config.get_host_url(server)?))
                 .body(o)
                 .send()
                 .await?;
@@ -70,11 +89,16 @@ pub async fn exec_replay(config: Config, args: &ArgMatches) -> Result<(), anyhow
 
 pub async fn exec_stop(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
-    let address = database_address(&config, database).await?;
+    let server = args.get_one::<String>("server").map(|s| s.as_ref());
+    let address = database_address(&config, database, server).await?;
 
     let client = reqwest::Client::new();
     let res = client
-        .post(format!("{}/tracelog/database/{}/stop", config.get_host_url(), address))
+        .post(format!(
+            "{}/tracelog/database/{}/stop",
+            config.get_host_url(server)?,
+            address
+        ))
         .send()
         .await?
         .error_for_status()?;
@@ -93,11 +117,16 @@ pub async fn exec_stop(config: Config, args: &ArgMatches) -> Result<(), anyhow::
 
 pub async fn exec_get(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
-    let address = database_address(&config, database).await?;
+    let server = args.get_one::<String>("server").map(|s| s.as_ref());
+    let address = database_address(&config, database, server).await?;
 
     let client = reqwest::Client::new();
     let res = client
-        .get(format!("{}/tracelog/database/{}", config.get_host_url(), address))
+        .get(format!(
+            "{}/tracelog/database/{}",
+            config.get_host_url(server)?,
+            address
+        ))
         .send()
         .await?;
 

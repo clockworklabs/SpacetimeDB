@@ -45,7 +45,7 @@ impl WasmerModule {
         WasmerModule { module, engine }
     }
 
-    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(3, 0);
+    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(4, 0);
 
     fn imports(&self, store: &mut Store, env: &FunctionEnv<WasmInstanceEnv>) -> Imports {
         const _: () = assert!(WasmerModule::IMPLEMENTED_ABI.eq(spacetimedb_lib::MODULE_ABI_VERSION));
@@ -161,7 +161,7 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
     type Instance = WasmerInstance;
 
     fn instantiate(&self, env: InstanceEnv, func_names: &FuncNames) -> Result<Self::Instance, InitializationError> {
-        let mut store = Store::new(&self.engine);
+        let mut store = Store::new(self.engine.clone());
         let env = WasmInstanceEnv {
             instance_env: env,
             mem: None,

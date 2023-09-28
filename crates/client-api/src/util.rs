@@ -15,7 +15,7 @@ use spacetimedb::address::Address;
 use spacetimedb_lib::name::DomainName;
 
 use crate::routes::database::DomainParsingRejection;
-use crate::{log_and_500, ControlNodeDelegate};
+use crate::{log_and_500, ControlStateReadAccess};
 
 pub struct ByteStringBody(pub ByteString);
 
@@ -94,7 +94,7 @@ impl NameOrAddress {
     /// i.e. no corresponding [`Address`] exists.
     pub async fn try_resolve(
         &self,
-        ctx: &(impl ControlNodeDelegate + ?Sized),
+        ctx: &(impl ControlStateReadAccess + ?Sized),
     ) -> axum::response::Result<Result<ResolvedAddress, DomainName>> {
         Ok(match self {
             Self::Address(addr) => Ok(ResolvedAddress {
@@ -103,7 +103,7 @@ impl NameOrAddress {
             }),
             Self::Name(name) => {
                 let domain = name.parse().map_err(DomainParsingRejection)?;
-                let address = ctx.spacetime_dns(&domain).await.map_err(log_and_500)?;
+                let address = ctx.lookup_address(&domain).map_err(log_and_500)?;
                 match address {
                     Some(address) => Ok(ResolvedAddress {
                         address,
@@ -118,7 +118,10 @@ impl NameOrAddress {
     /// A variant of [`Self::try_resolve()`] which maps to a 400 (Bad Request)
     /// response if `self` is a [`NameOrAddress::Name`] for which no
     /// corresponding [`Address`] is found in the SpacetimeDB DNS.
-    pub async fn resolve(&self, ctx: &(impl ControlNodeDelegate + ?Sized)) -> axum::response::Result<ResolvedAddress> {
+    pub async fn resolve(
+        &self,
+        ctx: &(impl ControlStateReadAccess + ?Sized),
+    ) -> axum::response::Result<ResolvedAddress> {
         self.try_resolve(ctx).await?.map_err(|_| StatusCode::BAD_REQUEST.into())
     }
 }
@@ -168,5 +171,11 @@ impl ResolvedAddress {
 impl From<ResolvedAddress> for Address {
     fn from(value: ResolvedAddress) -> Self {
         value.address
+    }
+}
+
+impl From<ResolvedAddress> for (Address, Option<DomainName>) {
+    fn from(ResolvedAddress { address, domain }: ResolvedAddress) -> Self {
+        (address, domain)
     }
 }
