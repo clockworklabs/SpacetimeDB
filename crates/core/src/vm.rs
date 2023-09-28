@@ -1,13 +1,13 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
-use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
+use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId};
+use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, SequenceId, TableDef};
 use crate::db::relational_db::RelationalDB;
 use itertools::Itertools;
 use nonempty::NonEmpty;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{DbTable, FieldExpr, Relation};
+use spacetimedb_lib::relation::{DbTable, FieldExpr, FieldName, Relation};
 use spacetimedb_lib::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
 use spacetimedb_lib::table::ProductTypeMeta;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
@@ -29,43 +29,39 @@ pub fn build_query<'a>(
     tx: &'a MutTxId,
     query: QueryCode,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
-    let q = match &query.table {
-        Table::MemTable(x) => SourceExpr::MemTable(x.clone()),
-        Table::DbTable(x) => SourceExpr::DbTable(x.clone()),
-    };
+    let db_table = matches!(&query.table, Table::DbTable(_));
+    let mut result = get_table(stdb, tx, query.table.into())?;
 
-    let mut ops = query.query.into_iter();
-    let first = ops.next();
-
-    // If the first operation is an index scan, open an index cursor, else a table cursor.
-    let (mut result, ops) = if let Some(Query::IndexScan(IndexScan {
-        table,
-        col_id,
-        lower_bound,
-        upper_bound,
-    })) = first
-    {
-        (
-            iter_by_col_range(stdb, tx, table, col_id, (lower_bound, upper_bound))?,
-            ops.collect(),
-        )
-    } else if let Some(op) = first {
-        (get_table(stdb, tx, q)?, std::iter::once(op).chain(ops).collect())
-    } else {
-        (get_table(stdb, tx, q)?, vec![])
-    };
-
-    for op in ops {
+    for op in query.query {
         result = match op {
-            Query::IndexScan(_) => {
-                unreachable!()
+            Query::IndexScan(IndexScan {
+                table,
+                col_id,
+                lower_bound,
+                upper_bound,
+            }) if db_table => iter_by_col_range(stdb, tx, table, col_id, (lower_bound, upper_bound))?,
+            Query::IndexScan(index_scan) => {
+                let header = result.head().clone();
+                let cmp: ColumnOp = index_scan.into();
+                let iter = result.select(move |row| cmp.compare(row, &header));
+                Box::new(iter)
             }
+            Query::IndexJoin(join) => Box::new(IndexSemiJoin {
+                probe_side: build_query(stdb, tx, join.probe_side.into())?,
+                probe_field: join.probe_field,
+                index_header: join.index_header,
+                index_table: join.index_table,
+                index_col: join.index_col,
+                index_iter: None,
+                db: stdb,
+                tx,
+            }) as Box<IterRows<'_>>,
             Query::Select(cmp) => {
                 let header = result.head().clone();
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
-            Query::Project(cols) => {
+            Query::Project(cols, _) => {
                 if cols.is_empty() {
                     result
                 } else {
@@ -132,6 +128,63 @@ fn iter_by_col_range<'a>(
 ) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
     let iter = db.iter_by_col_range(tx, table.table_id, col_id, range)?;
     Ok(Box::new(IndexCursor::new(table, iter)?) as Box<IterRows<'_>>)
+}
+
+// An index join operator that returns matching rows from the index side.
+pub struct IndexSemiJoin<'a, Rhs: RelOps> {
+    // An iterator for the probe side.
+    // The values returned will be used to probe the index.
+    pub probe_side: Rhs,
+    // The field whose value will be used to probe the index.
+    pub probe_field: FieldName,
+    // The header for the index side of the join.
+    // Also the return header since we are returning values from the index side.
+    pub index_header: Header,
+    // The table id on which the index is defined.
+    pub index_table: u32,
+    // The column id for which the index is defined.
+    pub index_col: u32,
+    // An iterator for the index side.
+    // A new iterator will be instantiated for each row on the probe side.
+    pub index_iter: Option<IterByColEq<'a>>,
+    // A reference to the database.
+    pub db: &'a RelationalDB,
+    // A reference to the current transaction.
+    pub tx: &'a MutTxId,
+}
+
+impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
+    fn head(&self) -> &Header {
+        &self.index_header
+    }
+
+    fn row_count(&self) -> RowCount {
+        RowCount::unknown()
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
+        // Return a value from the current index iterator, if not exhausted.
+        if let Some(value) = self.index_iter.as_mut().and_then(|iter| iter.next()) {
+            return Ok(Some(value.into()));
+        }
+        // Otherwise probe the index with a row from the probe side.
+        while let Some(row) = self.probe_side.next()? {
+            if let Some(pos) = self.probe_side.head().column_pos(&self.probe_field) {
+                if let Some(value) = row.data.elements.get(pos) {
+                    let table_id = self.index_table;
+                    let col_id = self.index_col;
+                    let value = value.clone();
+                    let mut index_iter = self.db.iter_by_col_eq(self.tx, table_id, col_id, value)?;
+                    if let Some(value) = index_iter.next() {
+                        self.index_iter = Some(index_iter);
+                        return Ok(Some(value.into()));
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
 }
 
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it

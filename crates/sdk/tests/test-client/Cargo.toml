@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 spacetimedb-sdk = { path = "../.." }
+test-counter = { path = "../test-counter" }
 tokio.workspace = true
 anyhow.workspace = true
 env_logger.workspace = true

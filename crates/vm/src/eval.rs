@@ -409,12 +409,15 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
             Query::IndexScan(_) => {
                 panic!("index scans unsupported on memory tables")
             }
+            Query::IndexJoin(_) => {
+                panic!("index joins unsupported on memory tables")
+            }
             Query::Select(cmp) => {
                 let header = result.head().clone();
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
-            Query::Project(cols) => {
+            Query::Project(cols, _) => {
                 if cols.is_empty() {
                     result
                 } else {
@@ -749,7 +752,7 @@ mod tests {
         let field = table.get_field(0).unwrap().clone();
 
         let source = query(table.clone());
-        let q = source.clone().with_project(&[field.into()]);
+        let q = source.clone().with_project(&[field.into()], None);
         let head = q.source.head();
 
         let result = run_ast(p, q.into());
@@ -761,7 +764,7 @@ mod tests {
         );
 
         let field = FieldName::positional(&table.head.table_name, 1);
-        let q = source.with_project(&[field.clone().into()]);
+        let q = source.with_project(&[field.clone().into()], None);
 
         let result = run_ast(p, q.into());
         assert_eq!(
@@ -887,7 +890,10 @@ mod tests {
             .with_select_cmp(OpCmp::LtEq, location_x.clone(), scalar(32.0f32))
             .with_select_cmp(OpCmp::Gt, location_z.clone(), scalar(0.0f32))
             .with_select_cmp(OpCmp::LtEq, location_z.clone(), scalar(32.0f32))
-            .with_project(&[player_entity_id.clone().into(), player_inventory_id.clone().into()]);
+            .with_project(
+                &[player_entity_id.clone().into(), player_inventory_id.clone().into()],
+                None,
+            );
 
         let result = run_query(p, q.into());
 
@@ -913,7 +919,7 @@ mod tests {
             .with_select_cmp(OpCmp::LtEq, location_x, scalar(32.0f32))
             .with_select_cmp(OpCmp::Gt, location_z.clone(), scalar(0.0f32))
             .with_select_cmp(OpCmp::LtEq, location_z, scalar(32.0f32))
-            .with_project(&[inv_inventory_id.into(), inv_name.into()]);
+            .with_project(&[inv_inventory_id.into(), inv_name.into()], None);
 
         let result = run_query(p, q.into());
 

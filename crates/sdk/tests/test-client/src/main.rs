@@ -13,7 +13,6 @@ mod module_bindings;
 
 use module_bindings::*;
 
-mod test_counter;
 use test_counter::TestCounter;
 
 mod simple_test_table;

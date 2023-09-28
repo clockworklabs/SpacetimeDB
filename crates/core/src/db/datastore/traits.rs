@@ -218,6 +218,19 @@ impl TableSchema {
         }
     }
 
+    /// Check if there is an index for this [FieldName]
+    ///
+    /// Warning: It ignores the `table_name`
+    pub fn get_index_by_field(&self, field: &FieldName) -> Option<&IndexSchema> {
+        let ColumnSchema { col_id, .. } = self.get_column_by_field(field)?;
+        self.indexes.iter().find(
+            |IndexSchema {
+                 cols: NonEmpty { head: index_col, tail },
+                 ..
+             }| tail.is_empty() && index_col == col_id,
+        )
+    }
+
     pub fn get_column(&self, pos: usize) -> Option<&ColumnSchema> {
         self.columns.get(pos)
     }
