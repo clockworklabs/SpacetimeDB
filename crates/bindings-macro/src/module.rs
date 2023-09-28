@@ -394,7 +394,10 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
                     }
                 }
             });
-            quote!(match self { #(#arms)* })
+            quote!(match self {
+                #(#arms)*
+                _ => unreachable!(),
+            })
         }
     };
     quote! {

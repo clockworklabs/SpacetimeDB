@@ -29,12 +29,4 @@ static partial class Module
             new Disconnected { identity = e.Sender }.Insert();
         };
     }
-
-    [SpacetimeDB.Reducer]
-    /// Due to a bug in SATS' `derive(Desrialize)`
-    /// https://github.com/clockworklabs/SpacetimeDB/issues/325 ,
-    /// Rust module bindings fail to compile for modules which define zero reducers
-    /// (not counting init, update, connect, disconnect).
-    /// Adding this useless empty reducer causes the module bindings to compile.
-    public static void UselessEmptyReducer() {}
 }

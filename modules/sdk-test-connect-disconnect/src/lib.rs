@@ -29,11 +29,3 @@ pub fn identity_connected(ctx: ReducerContext) {
 pub fn identity_disconnected(ctx: ReducerContext) {
     Disconnected::insert(Disconnected { identity: ctx.sender });
 }
-
-#[spacetimedb(reducer)]
-/// Due to a bug in SATS' `derive(Desrialize)`
-/// https://github.com/clockworklabs/SpacetimeDB/issues/325 ,
-/// Rust module bindings fail to compile for modules which define zero reducers
-/// (not counting init, update, connect, disconnect).
-/// Adding this useless empty reducer causes the module bindings to compile.
-pub fn useless_empty_reducer() {}
