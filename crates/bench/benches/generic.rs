@@ -148,6 +148,9 @@ fn insert_1<DB: BenchDatabase, T: BenchTable + RandomTable>(
     let id = format!("insert_1/{table_params}/load={load}");
     let data = create_sequential::<T>(0xdeadbeef, load + 1, 1000);
 
+    // Each iteration performs one transaction.
+    g.throughput(criterion::Throughput::Elements(1));
+
     g.bench_function(&id, |b| {
         bench_harness(
             b,
@@ -180,6 +183,9 @@ fn insert_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
 ) -> ResultBench<()> {
     let id = format!("insert_bulk/{table_params}/load={load}/count={count}");
     let data = create_sequential::<T>(0xdeadbeef, load + count, 1000);
+
+    // Each iteration performs one transaction, though it inserts many rows.
+    g.throughput(criterion::Throughput::Elements(1));
 
     g.bench_function(&id, |b| {
         bench_harness(
@@ -216,6 +222,10 @@ fn iterate<DB: BenchDatabase, T: BenchTable + RandomTable>(
     let data = create_sequential::<T>(0xdeadbeef, count, 1000);
 
     db.insert_bulk(table_id, data)?;
+
+    // Each iteration performs a single transaction,
+    // though it iterates across many rows.
+    g.throughput(criterion::Throughput::Elements(1));
 
     g.bench_function(&id, |b| {
         bench_harness(
@@ -260,6 +270,9 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
     let data = create_sequential::<T>(0xdeadbeef, load, buckets as u64);
 
     db.insert_bulk(&table_id, data.clone())?;
+
+    // Each iteration performs a single transaction.
+    g.throughput(criterion::Throughput::Elements(1));
 
     // We loop through all buckets found in the sample data.
     // This mildly increases variance on the benchmark, but makes "mean_result_count" more accurate.
@@ -307,6 +320,9 @@ fn find<DB: BenchDatabase, T: BenchTable + RandomTable>(
     let data = create_sequential::<T>(0xdeadbeef, load, buckets as u64);
 
     db.insert_bulk(&table_id, data.clone())?;
+
+    // Each iteration performs a single transaction.
+    g.throughput(criterion::Throughput::Elements(1));
 
     // We loop through all buckets found in the sample data.
     // This mildly increases variance on the benchmark, but makes "mean_result_count" more accurate.
