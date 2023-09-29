@@ -159,11 +159,11 @@ tokio-postgres = { version = "0.7.8" , features = ["with-chrono-0_4"] }
 tokio-tungstenite = { version = "0.19", features = ["native-tls"] }
 toml = "0.5"
 tower-http = { version = "0.4.1", features = ["cors"]}
-tracing = "0.1"
+tracing = "0.1.37"
 tracing-appender = "0.2.2"
-tracing-core = "0.1"
-tracing-flame = "0.2"
-tracing-log = "0.1"
+tracing-core = "0.1.31"
+tracing-flame = "0.2.0"
+tracing-log = "0.1.3"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 url = "2.3.1"
 urlencoding = "2.1.2"
@@ -182,7 +182,7 @@ wasmtime = { version = "7", default-features = false, features = ["cranelift"] }
 # We use the "ondemand" feature to allow connecting after the start,
 # and reconnecting, from the tracy client to the database.
 # TODO(George): Need to be able to remove "broadcast" in some build configurations.
-tracing-tracy = { version = "0.10.2", features = [ "enable", "system-tracing", "context-switch-tracing", "sampling", "code-transfer", "broadcast", "ondemand" ]}
+tracing-tracy = { version = "0.10.3", features = [ "enable", "system-tracing", "context-switch-tracing", "sampling", "code-transfer", "broadcast", "ondemand" ]}
 
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.

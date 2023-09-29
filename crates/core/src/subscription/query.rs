@@ -24,7 +24,7 @@ pub struct Query {
 }
 
 impl Query {
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip_all, fields(table = table.table_name))]
     pub fn queries_of_table_id<'a>(&'a self, table: &'a DatabaseTableUpdate) -> impl Iterator<Item = QueryExpr> + '_ {
         self.queries.iter().filter_map(move |x| {
             if x.source.get_db_table().map(|x| x.table_id) == Some(table.table_id) {

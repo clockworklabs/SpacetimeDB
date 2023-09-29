@@ -43,7 +43,7 @@ impl InstanceEnv {
         }
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(skip_all, fields(reducer=reducer))]
     pub fn schedule(
         &self,
         reducer: String,
@@ -143,7 +143,7 @@ impl InstanceEnv {
     /// where the column identified by `cols` equates to `value`.
     ///
     /// Returns an error if no columns were deleted or if the column wasn't found.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(skip(self, value))]
     pub fn delete_by_col_eq(&self, table_id: u32, col_id: u32, value: &[u8]) -> Result<u32, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;

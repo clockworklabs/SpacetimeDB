@@ -442,7 +442,7 @@ impl RelationalDB {
     /// Returns the `index_id`
     ///
     /// NOTE: It loads the data from the table into it before returning
-    #[tracing::instrument(skip(self, tx))]
+    #[tracing::instrument(skip(self, tx, index), fields(index=index.name))]
     pub fn create_index(&self, tx: &mut MutTxId, index: IndexDef) -> Result<IndexId, DBError> {
         self.inner.create_index_mut_tx(tx, index)
     }
@@ -466,7 +466,7 @@ impl RelationalDB {
     /// where the column data identified by `cols` matches `value`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    #[tracing::instrument(skip(self, tx))]
+    #[tracing::instrument(skip(self, tx, value))]
     pub fn iter_by_col_eq<'a>(
         &'a self,
         tx: &'a MutTxId,
@@ -494,7 +494,7 @@ impl RelationalDB {
             .iter_by_col_range_mut_tx(tx, TableId(table_id), ColId(col_id), range)
     }
 
-    #[tracing::instrument(skip(self, tx))]
+    #[tracing::instrument(skip(self, tx, row))]
     pub fn insert(&self, tx: &mut MutTxId, table_id: u32, row: ProductValue) -> Result<ProductValue, DBError> {
         measure(&RDB_INSERT_TIME, table_id);
         self.inner.insert_mut_tx(tx, TableId(table_id), row)
@@ -538,7 +538,7 @@ impl RelationalDB {
     }
 
     /// Add a [Sequence] into the database instance, generates a stable [SequenceId] for it that will persist on restart.
-    #[tracing::instrument(skip(self, tx))]
+    #[tracing::instrument(skip(self, tx, seq), fields(seq=seq.sequence_name))]
     pub fn create_sequence(&self, tx: &mut MutTxId, seq: SequenceDef) -> Result<SequenceId, DBError> {
         self.inner.create_sequence_mut_tx(tx, seq)
     }
