@@ -277,32 +277,32 @@ pub fn delete_unique_location_by_id(id: u32) {
 // ---------- clear table ----------
 #[spacetimedb(reducer)]
 pub fn clear_table_unique_person() {
-    UniquePerson::delete(|_| true);
+    unimplemented!("Modules currently have no interface to clear a table");
 }
 
 #[spacetimedb(reducer)]
 pub fn clear_table_non_unique_person() {
-    NonUniquePerson::delete(|_| true);
+    unimplemented!("Modules currently have no interface to clear a table");
 }
 
 #[spacetimedb(reducer)]
 pub fn clear_table_multi_index_person() {
-    MultiIndexPerson::delete(|_| true);
+    unimplemented!("Modules currently have no interface to clear a table");
 }
 
 #[spacetimedb(reducer)]
 pub fn clear_table_unique_location() {
-    UniqueLocation::delete(|_| true);
+    unimplemented!("Modules currently have no interface to clear a table");
 }
 
 #[spacetimedb(reducer)]
 pub fn clear_table_non_unique_location() {
-    NonUniqueLocation::delete(|_| true);
+    unimplemented!("Modules currently have no interface to clear a table");
 }
 
 #[spacetimedb(reducer)]
 pub fn clear_table_multi_index_location() {
-    MultiIndexLocation::delete(|_| true);
+    unimplemented!("Modules currently have no interface to clear a table");
 }
 // ---------- count ----------
 
