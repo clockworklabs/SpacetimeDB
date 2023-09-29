@@ -1,5 +1,7 @@
 #[doc(hidden)]
 pub mod callbacks;
+#[doc(hidden)]
+pub mod spacetime_module;
 
 pub mod identity;
 pub mod reducer;

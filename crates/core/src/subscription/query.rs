@@ -449,6 +449,88 @@ mod tests {
     }
 
     #[test]
+    fn test_eval_incr_for_index_join() -> ResultTest<()> {
+        let (db, _) = make_test_db()?;
+        let mut tx = db.begin_tx();
+
+        // Create table [lhs] with index on [b]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(1, "b")];
+        let lhs_id = create_table(&db, &mut tx, "lhs", schema, indexes)?;
+
+        // Create table [rhs] with no indexes
+        let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
+        let rhs_id = create_table(&db, &mut tx, "rhs", schema, &[])?;
+
+        // Should be answered using an index semijion
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c = 3";
+        let mut exp = compile_sql(&db, &tx, sql)?;
+
+        let Some(CrudExpr::Query(query)) = exp.pop() else {
+            panic!("unexpected query {:#?}", exp[0]);
+        };
+
+        let query = QuerySet(vec![Query { queries: vec![query] }]);
+
+        for i in 0..10 {
+            // Insert into lhs
+            let row = product!(i as u64, i as u64);
+            db.insert(&mut tx, lhs_id, row)?;
+
+            // Insert into rhs
+            let row = product!(i as u64, i as u64);
+            db.insert(&mut tx, rhs_id, row)?;
+        }
+
+        let mut updates = Vec::new();
+
+        // An update event for the left table that matches the query
+        let lhs_row = product!(11u64, 3u64);
+        let lhs_key = lhs_row.to_data_key().to_bytes();
+        let lhs_op = TableOp {
+            op_type: 0,
+            row: lhs_row,
+            row_pk: lhs_key,
+        };
+        updates.push(DatabaseTableUpdate {
+            table_id: lhs_id,
+            table_name: "lhs".into(),
+            ops: vec![lhs_op],
+        });
+
+        // An update event for the right table that matches the query
+        let rhs_row = product!(12u64, 3u64);
+        let rhs_key = rhs_row.to_data_key().to_bytes();
+        let rhs_op = TableOp {
+            op_type: 0,
+            row: rhs_row,
+            row_pk: rhs_key,
+        };
+        updates.push(DatabaseTableUpdate {
+            table_id: rhs_id,
+            table_name: "rhs".into(),
+            ops: vec![rhs_op],
+        });
+
+        let update = DatabaseUpdate { tables: updates };
+        let result = query.eval_incr(&db, &mut tx, &update, AuthCtx::for_testing())?;
+
+        assert_eq!(result.tables.len(), 1);
+
+        let update = &result.tables[0];
+
+        assert_eq!(update.ops.len(), 1);
+        assert_eq!(update.table_id, lhs_id);
+
+        let op = &update.ops[0];
+
+        assert_eq!(op.op_type, 0);
+        assert_eq!(op.row, product!(11u64, 3u64));
+        assert_eq!(op.row_pk, product!(11u64, 3u64).to_data_key().to_bytes());
+        Ok(())
+    }
+
+    #[test]
     fn test_subscribe() -> ResultTest<()> {
         let (db, _tmp_dir) = make_test_db()?;
         let mut tx = db.begin_tx();

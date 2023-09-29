@@ -6,11 +6,11 @@ license-file = "LICENSE"
 description = "Bench library/utility for SpacetimeDB"
 
 [[bench]]
-name = "db"
+name = "special"
 harness = false
 
 [[bench]]
-name = "modules"
+name = "generic"
 harness = false
 
 [lib]
@@ -23,6 +23,8 @@ spacetimedb-standalone = { path = "../standalone" }
 spacetimedb-client-api = { path = "../client-api" }
 spacetimedb-testing = { path = "../testing" }
 
+ahash.workspace = true
+log.workspace = true
 clap.workspace = true
 rusqlite.workspace = true
 criterion.workspace = true
@@ -30,5 +32,10 @@ tempdir.workspace = true
 rand.workspace = true
 tokio.workspace = true
 serde_json.workspace = true
+serde.workspace = true
 anyhow.workspace = true
+anymap.workspace = true
 byte-unit.workspace = true
+futures.workspace = true
+tracing-subscriber.workspace = true
+lazy_static.workspace = true

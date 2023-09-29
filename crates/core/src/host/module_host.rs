@@ -218,6 +218,7 @@ pub trait Module: Send + Sync + 'static {
         caller_identity: Identity,
         query: String,
     ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
+    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
 
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
@@ -228,9 +229,14 @@ pub trait Module: Send + Sync + 'static {
 pub trait ModuleInstance: Send + 'static {
     fn trapped(&self) -> bool;
 
-    fn init_database(&mut self, args: ArgsTuple) -> anyhow::Result<ReducerCallResult>;
+    // TODO(kim): The `fence` arg below is to thread through the fencing token
+    // (see [`crate::db::datastore::traits::MutProgrammable`]). This trait
+    // should probably be generic over the type of token, but that turns out a
+    // bit unpleasant at the moment. So we just use the widest possible integer.
 
-    fn update_database(&mut self) -> anyhow::Result<UpdateDatabaseResult>;
+    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult>;
+
+    fn update_database(&mut self, fence: u128) -> anyhow::Result<UpdateDatabaseResult>;
 
     fn call_reducer(
         &mut self,
@@ -263,13 +269,13 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
     fn trapped(&self) -> bool {
         self.inst.trapped()
     }
-    fn init_database(&mut self, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
-        let ret = self.inst.init_database(args);
+    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
+        let ret = self.inst.init_database(fence, args);
         self.check_trap();
         ret
     }
-    fn update_database(&mut self) -> anyhow::Result<UpdateDatabaseResult> {
-        let ret = self.inst.update_database();
+    fn update_database(&mut self, fence: u128) -> anyhow::Result<UpdateDatabaseResult> {
+        let ret = self.inst.update_database(fence);
         self.check_trap();
         ret
     }
@@ -317,6 +323,7 @@ trait DynModuleHost: Send + Sync + 'static {
         caller_identity: Identity,
         query: String,
     ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
+    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
     fn start(&self);
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
@@ -387,6 +394,10 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         query: String,
     ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError> {
         self.module.one_off_query(caller_identity, query)
+    }
+
+    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+        self.module.clear_table(table_name)
     }
 
     fn start(&self) {
@@ -565,18 +576,20 @@ impl ModuleHost {
         Ok(self.info().log_tx.subscribe())
     }
 
-    pub async fn init_database(&self, args: ReducerArgs) -> Result<ReducerCallResult, InitDatabaseError> {
+    pub async fn init_database(&self, fence: u128, args: ReducerArgs) -> Result<ReducerCallResult, InitDatabaseError> {
         let args = match self.catalog().get_reducer("__init__") {
             Some(schema) => args.into_tuple(schema)?,
             _ => ArgsTuple::default(),
         };
-        self.call(|inst| inst.init_database(args))
+        self.call(move |inst| inst.init_database(fence, args))
             .await?
             .map_err(InitDatabaseError::Other)
     }
 
-    pub async fn update_database(&self) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        self.call(|inst| inst.update_database()).await?.map_err(Into::into)
+    pub async fn update_database(&self, fence: u128) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        self.call(move |inst| inst.update_database(fence))
+            .await?
+            .map_err(Into::into)
     }
 
     pub async fn exit(&self) {
@@ -598,6 +611,14 @@ impl ModuleHost {
     ) -> Result<Vec<MemTable>, anyhow::Error> {
         let result = self.inner.one_off_query(caller_identity, query)?;
         Ok(result)
+    }
+
+    /// FIXME(jgilles): this is a temporary workaround for deleting not currently being supported
+    /// for tables without primary keys. It is only used in the benchmarks.
+    /// Note: this doesn't drop the table, it just clears it!
+    pub async fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+        self.inner.clear_table(table_name)?;
+        Ok(())
     }
 
     pub fn downgrade(&self) -> WeakModuleHost {

@@ -80,22 +80,24 @@ pub trait RelOps {
     ///
     /// It is the equivalent of a `INNER JOIN` clause on SQL.
     #[inline]
-    fn join_inner<P, KeyLhs, KeyRhs, Rhs>(
+    fn join_inner<Pred, Proj, KeyLhs, KeyRhs, Rhs>(
         self,
         with: Rhs,
+        head: Header,
         key_lhs: KeyLhs,
         key_rhs: KeyRhs,
-        predicate: P,
-    ) -> Result<JoinInner<Self, Rhs, KeyLhs, KeyRhs, P>, ErrorVm>
+        predicate: Pred,
+        project: Proj,
+    ) -> Result<JoinInner<Self, Rhs, KeyLhs, KeyRhs, Pred, Proj>, ErrorVm>
     where
         Self: Sized,
-        P: FnMut(RelValueRef, RelValueRef) -> Result<bool, ErrorVm>,
+        Pred: FnMut(RelValueRef, RelValueRef) -> Result<bool, ErrorVm>,
+        Proj: FnMut(RelValue, RelValue) -> RelValue,
         KeyLhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
         KeyRhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
         Rhs: RelOps,
     {
-        let head = self.head().extend(with.head());
-        Ok(JoinInner::new(head, self, with, key_lhs, key_rhs, predicate))
+        Ok(JoinInner::new(head, self, with, key_lhs, key_rhs, predicate, project))
     }
 
     /// Utility to collect the results into a [Vec]
@@ -218,21 +220,30 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct JoinInner<Lhs, Rhs, KeyLhs, KeyRhs, P> {
+pub struct JoinInner<Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
     pub(crate) head: Header,
     pub(crate) count: RowCount,
     pub(crate) lhs: Lhs,
     pub(crate) rhs: Rhs,
     pub(crate) key_lhs: KeyLhs,
     pub(crate) key_rhs: KeyRhs,
-    pub(crate) predicate: P,
+    pub(crate) predicate: Pred,
+    pub(crate) projection: Proj,
     map: HashMap<ProductValue, Vec<RelValue>>,
     filled: bool,
     left: Option<RelValue>,
 }
 
-impl<Lhs, Rhs, KeyLhs, KeyRhs, P> JoinInner<Lhs, Rhs, KeyLhs, KeyRhs, P> {
-    pub fn new(head: Header, lhs: Lhs, rhs: Rhs, key_lhs: KeyLhs, key_rhs: KeyRhs, predicate: P) -> Self {
+impl<Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> JoinInner<Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
+    pub fn new(
+        head: Header,
+        lhs: Lhs,
+        rhs: Rhs,
+        key_lhs: KeyLhs,
+        key_rhs: KeyRhs,
+        predicate: Pred,
+        projection: Proj,
+    ) -> Self {
         Self {
             head,
             count: RowCount::unknown(),
@@ -242,19 +253,21 @@ impl<Lhs, Rhs, KeyLhs, KeyRhs, P> JoinInner<Lhs, Rhs, KeyLhs, KeyRhs, P> {
             key_lhs,
             key_rhs,
             predicate,
+            projection,
             filled: false,
             left: None,
         }
     }
 }
 
-impl<Lhs, Rhs, KeyLhs, KeyRhs, P> RelOps for JoinInner<Lhs, Rhs, KeyLhs, KeyRhs, P>
+impl<Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> RelOps for JoinInner<Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj>
 where
     Lhs: RelOps,
     Rhs: RelOps,
     KeyLhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
     KeyRhs: FnMut(RelValueRef) -> Result<ProductValue, ErrorVm>,
-    P: FnMut(RelValueRef, RelValueRef) -> Result<bool, ErrorVm>,
+    Pred: FnMut(RelValueRef, RelValueRef) -> Result<bool, ErrorVm>,
+    Proj: FnMut(RelValue, RelValue) -> RelValue,
 {
     fn head(&self) -> &Header {
         &self.head
@@ -293,7 +306,7 @@ where
                 if let Some(rhs) = rvv.pop() {
                     if (self.predicate)(lhs.as_val_ref(), rhs.as_val_ref())? {
                         self.count.add_exact(1);
-                        return Ok(Some(lhs.clone().extend(rhs)));
+                        return Ok(Some((self.projection)(lhs, rhs)));
                     }
                 }
             }

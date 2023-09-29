@@ -2,11 +2,10 @@ mod energy_monitor;
 pub mod routes;
 pub mod subcommands;
 pub mod util;
-mod worker_db;
 
 use crate::subcommands::start::ProgramMode;
 use crate::subcommands::{start, version};
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use energy_monitor::StandaloneEnergyMonitor;
@@ -16,7 +15,7 @@ use openssl::pkey::PKey;
 use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
-use spacetimedb::control_db::ControlDb;
+use spacetimedb::control_db::{self, ControlDb};
 use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::db::{db_metrics, Config};
@@ -26,7 +25,6 @@ use spacetimedb::host::UpdateOutcome;
 use spacetimedb::host::{scheduler::Scheduler, HostController};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, IdentityEmail, Node};
-use spacetimedb::messages::worker_db::DatabaseInstanceState;
 use spacetimedb::module_host_context::ModuleHostContext;
 use spacetimedb::object_db::ObjectDb;
 use spacetimedb::sendgrid_controller::SendGridController;
@@ -37,10 +35,8 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use worker_db::WorkerDb;
 
 pub struct StandaloneEnv {
-    worker_db: WorkerDb,
     control_db: ControlDb,
     db_inst_ctx_controller: DatabaseInstanceContextController,
     object_db: ObjectDb,
@@ -56,7 +52,6 @@ pub struct StandaloneEnv {
 
 impl StandaloneEnv {
     pub async fn init(config: Config) -> anyhow::Result<Arc<Self>> {
-        let worker_db = WorkerDb::init()?;
         let object_db = ObjectDb::init()?;
         let db_inst_ctx_controller = DatabaseInstanceContextController::new();
         let control_db = ControlDb::new()?;
@@ -65,7 +60,6 @@ impl StandaloneEnv {
         let client_actor_index = ClientActorIndex::new();
         let (public_key, private_key, public_key_bytes) = get_or_create_keys()?;
         let this = Arc::new(Self {
-            worker_db,
             control_db,
             db_inst_ctx_controller,
             object_db,
@@ -196,7 +190,7 @@ impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
     }
 
     async fn load_module_host_context(&self, db: Database, instance_id: u64) -> anyhow::Result<ModuleHostContext> {
-        self.load_module_host_context_inner(db, instance_id).await
+        self.load_module_host_context(db, instance_id).await
     }
 }
 
@@ -340,6 +334,9 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             return Ok(());
         };
         if &database.identity != identity {
+            // TODO: `PermissionDenied` should be a variant of `Error`,
+            //       so we can match on it and return better error responses
+            //       from HTTP endpoints.
             return Err(anyhow!(
                 "Permission denied: `{}` does not own database `{}`",
                 identity.to_hex(),
@@ -429,7 +426,7 @@ impl StandaloneEnv {
 
     async fn delete_database_instance(&self, database_instance_id: u64) -> Result<(), anyhow::Error> {
         self.control_db.delete_database_instance(database_instance_id)?;
-        self.on_delete_database_instance(database_instance_id).await;
+        self.on_delete_database_instance(database_instance_id).await?;
 
         Ok(())
     }
@@ -490,31 +487,50 @@ impl StandaloneEnv {
     }
 
     async fn on_insert_database_instance(&self, instance: &DatabaseInstance) -> Result<(), anyhow::Error> {
-        let state = self.worker_db.get_database_instance_state(instance.id).unwrap();
-        if let Some(mut state) = state {
-            if !state.initialized {
-                // Start and init the service
-                self.init_module_on_database_instance(instance.database_id, instance.id)
-                    .await?;
-                state.initialized = true;
-                self.worker_db.upsert_database_instance_state(state).unwrap();
-            } else {
-                self.start_module_on_database_instance(instance.database_id, instance.id)
-                    .await?;
+        let database = self
+            .control_db
+            .get_database_by_id(instance.database_id)?
+            .ok_or_else(|| {
+                anyhow!(
+                    "unknown database: id: {}, instance: {}",
+                    instance.database_id,
+                    instance.id
+                )
+            })?;
+        let ctx = self.load_module_host_context(database.clone(), instance.id).await?;
+        let stdb = &ctx.dbic.relational_db;
+        let tx = stdb.begin_tx();
+        match stdb.program_hash(&tx) {
+            Err(e) => {
+                stdb.rollback_tx(tx);
+                Err(e.into())
             }
-            Ok(())
-        } else {
-            // Start and init the service
-            let mut state = DatabaseInstanceState {
-                database_instance_id: instance.id,
-                initialized: false,
-            };
-            state.initialized = true;
-            self.worker_db.upsert_database_instance_state(state.clone()).unwrap();
-            self.init_module_on_database_instance(instance.database_id, instance.id)
-                .await?;
-            self.worker_db.upsert_database_instance_state(state).unwrap();
-            Ok(())
+
+            Ok(maybe_hash) => {
+                // Release tx due to locking semantics and acquire a control db
+                // lock instead.
+                stdb.commit_tx(tx)?;
+                let lock = self.lock_database_instance_for_update(instance.id)?;
+
+                if let Some(hash) = maybe_hash {
+                    ensure!(
+                        hash == database.program_bytes_address,
+                        "database already initialized with module {} (requested: {})",
+                        hash,
+                        database.program_bytes_address,
+                    );
+                    if !self.host_controller.has_module_host(&ctx) {
+                        log::info!("Re-spawing database (module: {})", hash);
+                        self.host_controller.spawn_module_host(ctx).await?;
+                    } else {
+                        log::info!("Database already initialized with module {}", hash);
+                    }
+                } else {
+                    self.host_controller.init_module_host(lock.token() as u128, ctx).await?;
+                }
+
+                Ok(())
+            }
         }
     }
 
@@ -522,55 +538,99 @@ impl StandaloneEnv {
         &self,
         instance: &DatabaseInstance,
     ) -> Result<Option<UpdateDatabaseResult>, anyhow::Error> {
-        let state = self.worker_db.get_database_instance_state(instance.id)?;
-        match state {
-            Some(state) if state.initialized => self
-                .update_module_on_database_instance(instance.database_id, instance.id)
-                .await
-                .map(Some),
+        let database = self
+            .control_db
+            .get_database_by_id(instance.database_id)?
+            .ok_or_else(|| {
+                anyhow!(
+                    "unknown database: id: {}, instance: {}",
+                    instance.database_id,
+                    instance.id
+                )
+            })?;
 
-            _ => self.on_insert_database_instance(instance).await.map(|()| None),
-        }
-    }
+        let ctx = self.load_module_host_context(database.clone(), instance.id).await?;
+        let stdb = &ctx.dbic.relational_db;
+        let tx = stdb.begin_tx();
 
-    async fn on_delete_database_instance(&self, instance_id: u64) {
-        let state = self.worker_db.get_database_instance_state(instance_id).unwrap();
-        if let Some(_state) = state {
-            // TODO(cloutiertyler): We should think about how to clean up
-            // database instances which have been deleted. This will just drop
-            // them from memory, but will not remove them from disk.  We need
-            // some kind of database lifecycle manager long term.
-            let (_, scheduler) = self.db_inst_ctx_controller.remove(instance_id).unzip();
-            self.host_controller.delete_module_host(instance_id).await.unwrap();
-            if let Some(scheduler) = scheduler {
-                scheduler.clear();
+        match stdb.program_hash(&tx) {
+            Err(e) => {
+                stdb.rollback_tx(tx);
+                Err(e.into())
+            }
+
+            Ok(maybe_hash) => {
+                // Release tx due to locking semantics and acquire a control db
+                // lock instead.
+                stdb.commit_tx(tx)?;
+                let lock = self.lock_database_instance_for_update(instance.id)?;
+
+                match maybe_hash {
+                    None => {
+                        log::warn!(
+                            "Update requested on non-initialized database, initializing with module {}",
+                            database.program_bytes_address
+                        );
+                        self.host_controller.init_module_host(lock.token() as u128, ctx).await?;
+                        Ok(None)
+                    }
+                    Some(hash) if hash == database.program_bytes_address => {
+                        log::info!("Database up-to-date with module {}", hash);
+                        Ok(None)
+                    }
+                    Some(hash) => {
+                        log::info!("Updating database from {} to {}", hash, database.program_bytes_address);
+                        let UpdateOutcome {
+                            module_host: _,
+                            update_result,
+                        } = self
+                            .host_controller
+                            .update_module_host(lock.token() as u128, ctx)
+                            .await?;
+                        Ok(Some(update_result))
+                    }
+                }
             }
         }
     }
 
-    async fn load_module_host_context(
-        &self,
-        database_id: u64,
-        instance_id: u64,
-    ) -> Result<ModuleHostContext, anyhow::Error> {
-        let database = if let Some(database) = self.control_db.get_database_by_id(database_id)? {
-            database
-        } else {
-            return Err(anyhow::anyhow!(
-                "Unknown database/instance: {}/{}",
-                database_id,
-                instance_id
-            ));
-        };
-        self.load_module_host_context_inner(database, instance_id).await
+    async fn on_delete_database_instance(&self, instance_id: u64) -> anyhow::Result<()> {
+        // Technically, delete doesn't require locking if a database instance
+        // cannot be resurrected after deletion. That, however, is not
+        // necessarily true currently (see TODO below).
+        let lock = self.lock_database_instance_for_update(instance_id)?;
+
+        // TODO(cloutiertyler): We should think about how to clean up
+        // database instances which have been deleted. This will just drop
+        // them from memory, but will not remove them from disk.  We need
+        // some kind of database lifecycle manager long term.
+        let (_, scheduler) = self.db_inst_ctx_controller.remove(instance_id).unzip();
+        self.host_controller
+            .delete_module_host(lock.token() as u128, instance_id)
+            .await
+            .unwrap();
+        if let Some(scheduler) = scheduler {
+            scheduler.clear();
+        }
+
+        Ok(())
     }
 
-    async fn load_module_host_context_inner(
+    fn lock_database_instance_for_update(&self, instance_id: u64) -> anyhow::Result<control_db::Lock> {
+        let key = format!("database_instance/{}", instance_id);
+        Ok(self.control_db.lock(key)?)
+    }
+
+    async fn load_module_host_context(
         &self,
         database: Database,
         instance_id: u64,
     ) -> anyhow::Result<ModuleHostContext> {
-        let program_bytes = self.object_db.get_object(&database.program_bytes_address)?.unwrap();
+        let program_bytes = self
+            .object_db
+            .get_object(&database.program_bytes_address)
+            .context("failed to load module program")?
+            .ok_or_else(|| anyhow!("missing object: {}", database.program_bytes_address.to_hex()))?;
 
         let root_db_path = stdb_path("worker_node/database_instances");
 
@@ -604,32 +664,6 @@ impl StandaloneEnv {
         };
 
         Ok(mhc)
-    }
-
-    async fn init_module_on_database_instance(&self, database_id: u64, instance_id: u64) -> Result<(), anyhow::Error> {
-        let module_host_context = self.load_module_host_context(database_id, instance_id).await?;
-        let _address = self.host_controller.init_module_host(module_host_context).await?;
-        Ok(())
-    }
-
-    async fn start_module_on_database_instance(&self, database_id: u64, instance_id: u64) -> Result<(), anyhow::Error> {
-        let module_host_context = self.load_module_host_context(database_id, instance_id).await?;
-        let _address = self.host_controller.add_module_host(module_host_context).await?;
-        Ok(())
-    }
-
-    async fn update_module_on_database_instance(
-        &self,
-        database_id: u64,
-        instance_id: u64,
-    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        let module_host_context = self.load_module_host_context(database_id, instance_id).await?;
-        let UpdateOutcome {
-            module_host: _,
-            update_result,
-        } = self.host_controller.update_module_host(module_host_context).await?;
-
-        Ok(update_result)
     }
 }
 

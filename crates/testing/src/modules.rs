@@ -1,19 +1,24 @@
-use std::cell::OnceCell;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::OnceLock;
 
 use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::address::Address;
-use spacetimedb::client::{ClientActorId, ClientConnection, Protocol};
+
+use prost::Message;
+use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol};
 use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, FsyncPolicy, Storage};
+use spacetimedb::protobuf::client_api;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
+use spacetimedb_lib::sats;
+
 use spacetimedb_standalone::StandaloneEnv;
 
-fn start_runtime() -> Runtime {
+pub fn start_runtime() -> Runtime {
     Builder::new_multi_thread().enable_all().build().unwrap()
 }
 
@@ -40,17 +45,24 @@ pub struct ModuleHandle {
 }
 
 impl ModuleHandle {
-    // TODO(drogus): args here is a string, but it might be nice to use a more specific type here,
-    // sth along the lines of Vec<serde_json::Value>
-    pub async fn call_reducer(&self, reducer: &str, args: String) -> anyhow::Result<()> {
-        let args = format!(r#"{{"call": {{"fn": "{reducer}", "args": {args}}}}}"#);
+    pub async fn call_reducer_json(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
+        let args = serde_json::to_string(&args)?;
+        let args = format!("{{\"call\": {{\"fn\": \"{reducer}\", \"args\": {args} }} }}");
         self.send(args).await
     }
 
-    // TODO(drogus): not sure if it's the best name, maybe it should be about calling
-    // a reducer?
-    pub async fn send(&self, json: String) -> anyhow::Result<()> {
-        self.client.handle_message(json).await.map_err(Into::into)
+    pub async fn call_reducer_binary(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
+        let message = client_api::Message {
+            r#type: Some(client_api::message::Type::FunctionCall(client_api::FunctionCall {
+                reducer: reducer.to_string(),
+                arg_bytes: sats::bsatn::to_vec(&args)?,
+            })),
+        };
+        self.send(message.encode_to_vec()).await
+    }
+
+    pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {
+        self.client.handle_message(message).await.map_err(Into::into)
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
@@ -62,7 +74,7 @@ impl ModuleHandle {
 pub struct CompiledModule {
     name: String,
     path: PathBuf,
-    program_bytes: OnceCell<Vec<u8>>,
+    program_bytes: OnceLock<Vec<u8>>,
 }
 
 impl CompiledModule {
@@ -71,7 +83,7 @@ impl CompiledModule {
         Self {
             name: name.to_owned(),
             path,
-            program_bytes: OnceCell::new(),
+            program_bytes: OnceLock::new(),
         }
     }
 
@@ -79,37 +91,32 @@ impl CompiledModule {
         &self.path
     }
 
-    pub fn with_module_async<O, R, F>(&self, routine: R)
+    pub fn with_module_async<O, R, F>(&self, config: Config, routine: R)
     where
         R: FnOnce(ModuleHandle) -> F,
         F: Future<Output = O>,
     {
         with_runtime(move |runtime| {
             runtime.block_on(async {
-                let module = self.load_module().await;
+                let module = self.load_module(config).await;
+
                 routine(module).await;
             });
         });
     }
 
-    pub fn with_module<F>(&self, func: F)
+    pub fn with_module<F>(&self, config: Config, func: F)
     where
         F: FnOnce(&Runtime, &ModuleHandle),
     {
         with_runtime(move |runtime| {
-            let module = runtime.block_on(async { self.load_module().await });
+            let module = runtime.block_on(async { self.load_module(config).await });
 
             func(runtime, &module);
         });
     }
 
-    async fn load_module(&self) -> ModuleHandle {
-        // For testing, persist to disk by default, as many tests
-        // exercise functionality like restarting the database.
-        let storage = Storage::Disk;
-        let fsync = FsyncPolicy::Never;
-        let config = Config { storage, fsync };
-
+    pub async fn load_module(&self, config: Config) -> ModuleHandle {
         let paths = FilesLocal::temp(&self.name);
         // The database created in the `temp` folder can't be randomized,
         // so it persists after running the test.
@@ -160,3 +167,10 @@ impl CompiledModule {
         }
     }
 }
+
+/// For testing, persist to disk by default, as many tests
+/// exercise functionality like restarting the database.
+pub static DEFAULT_CONFIG: Config = Config {
+    storage: Storage::Disk,
+    fsync: FsyncPolicy::Never,
+};

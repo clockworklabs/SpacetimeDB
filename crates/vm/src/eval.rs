@@ -457,6 +457,7 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
 
                 let iter = lhs.join_inner(
                     rhs,
+                    col_lhs_header.extend(&col_rhs_header),
                     move |row| {
                         let f = row.get(&key_lhs, &key_lhs_header);
                         Ok(f.into())
@@ -470,6 +471,7 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
                         let r = r.get(&col_rhs, &col_rhs_header);
                         Ok(l == r)
                     },
+                    move |l, r| l.extend(r),
                 )?;
                 Box::new(iter)
             }
