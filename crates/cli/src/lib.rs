@@ -31,6 +31,7 @@ pub fn get_subcommands() -> Vec<Command> {
         init::cli(),
         build::cli(),
         server::cli(),
+        upgrade::cli(),
         #[cfg(feature = "standalone")]
         start::cli(ProgramMode::CLI),
     ]

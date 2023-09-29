@@ -1,6 +1,6 @@
 use clap::{Arg, ArgAction::SetTrue, ArgMatches};
 
-const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 use crate::config::Config;
 

@@ -155,6 +155,8 @@ strum = { version = "0.25.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
 syntect = { version = "5.0.0", default-features = false, features = ["default-fancy"] }
 tabled = "0.14.0"
+tar = "0.4"
+tempdir = "0.3.7"
 tempfile = "3.8"
 termcolor = "1.2.0"
 thiserror = "1.0.37"
