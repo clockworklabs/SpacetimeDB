@@ -216,6 +216,7 @@ pub trait Module: Send + Sync + 'static {
         caller_identity: Identity,
         query: String,
     ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
+    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
 
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
@@ -316,6 +317,7 @@ trait DynModuleHost: Send + Sync + 'static {
         caller_identity: Identity,
         query: String,
     ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError>;
+    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
     fn start(&self);
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
@@ -386,6 +388,10 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         query: String,
     ) -> Result<Vec<spacetimedb_lib::relation::MemTable>, DBError> {
         self.module.one_off_query(caller_identity, query)
+    }
+
+    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+        self.module.clear_table(table_name)
     }
 
     fn start(&self) {
@@ -596,6 +602,14 @@ impl ModuleHost {
     ) -> Result<Vec<MemTable>, anyhow::Error> {
         let result = self.inner.one_off_query(caller_identity, query)?;
         Ok(result)
+    }
+
+    /// FIXME(jgilles): this is a temporary workaround for deleting not currently being supported
+    /// for tables without primary keys. It is only used in the benchmarks.
+    /// Note: this doesn't drop the table, it just clears it!
+    pub async fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+        self.inner.clear_table(table_name)?;
+        Ok(())
     }
 
     pub fn downgrade(&self) -> WeakModuleHost {

@@ -277,6 +277,21 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
             )
         })
     }
+
+    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+        let db = &*self.worker_database_instance.relational_db;
+        db.with_auto_commit(|tx| {
+            let tables = db.get_all_tables(tx)?;
+            for table in tables {
+                if table.table_name != table_name {
+                    continue;
+                }
+
+                db.clear_table(tx, table.table_id)?;
+            }
+            Ok(())
+        })
+    }
 }
 
 /// Somewhat ad-hoc wrapper around [`DatabaseLogger`] which allows to inject
