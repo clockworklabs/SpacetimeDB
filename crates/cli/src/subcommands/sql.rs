@@ -1,5 +1,8 @@
+use std::time::Instant;
+
 use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson};
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches};
+use colored::Colorize;
 use reqwest::RequestBuilder;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::sats::{satn, Typespace};
@@ -73,7 +76,17 @@ pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<C
     })
 }
 
+fn print_stats(now: Instant, rows: &[usize]) {
+    println!();
+    println!("{}: {:.2?}.", "[Elapsed  ]".red().bold(), now.elapsed());
+    for (result, count) in rows.iter().enumerate() {
+        println!("{}: {count} rows.", format!("[Result {result:>2}]").blue().bold());
+    }
+}
+
 pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), anyhow::Error> {
+    let now = Instant::now();
+
     let json = builder
         .body(sql.to_owned())
         .send()
@@ -86,9 +99,12 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), an
 
     // Print only `OK for empty tables as it's likely a command like `INSERT`.
     if stmt_result_json.is_empty() {
+        print_stats(now, &[]);
         println!("OK");
         return Ok(());
     };
+
+    let mut count = Vec::with_capacity(stmt_result_json.len());
 
     for (i, stmt_result) in stmt_result_json.iter().enumerate() {
         let StmtResultJson { schema, rows } = &stmt_result;
@@ -101,6 +117,8 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), an
                 .enumerate()
                 .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}"))),
         );
+
+        count.push(rows.len());
 
         let typespace = Typespace::default();
         let ty = typespace.with_type(schema);
@@ -122,6 +140,8 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), an
             println!("{}", table);
         }
     }
+
+    print_stats(now, &count);
 
     Ok(())
 }
