@@ -8,6 +8,7 @@ use crate::host::scheduler::Scheduler;
 use crate::sql;
 use anyhow::Context;
 use bytes::Bytes;
+use nonempty::NonEmpty;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, IndexType, ModuleDef};
@@ -300,6 +301,11 @@ struct SystemLogger<'a> {
 }
 
 impl SystemLogger<'_> {
+    fn info(&mut self, msg: &str) {
+        self.inner
+            .write(crate::database_logger::LogLevel::Info, &Self::record(msg), &())
+    }
+
     fn warn(&mut self, msg: &str) {
         self.inner
             .write(crate::database_logger::LogLevel::Warn, &Self::record(msg), &())
@@ -349,10 +355,11 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     }
 
     #[tracing::instrument(skip(args))]
-    fn init_database(&mut self, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
+    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
         let stdb = &*self.database_instance_context().relational_db;
         let mut tx = stdb.begin_tx();
         for table in self.info.catalog.values().filter_map(EntityDef::as_table) {
+            self.system_logger().info(&format!("Creating table `{}`", table.name));
             tx = stdb
                 .with_auto_rollback(tx, |tx| {
                     let schema = self.schema_for(table)?;
@@ -365,6 +372,13 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                     e
                 })?;
         }
+
+        // Set the module hash. Morally, this should be done _after_ calling
+        // the `init` reducer, but that consumes our transaction context.
+        tx = stdb
+            .with_auto_rollback(tx, |tx| stdb.set_program_hash(tx, fence, self.info.module_hash))
+            .map(|(tx, ())| tx)?;
+
         let rcr = match self.info.reducers.get_index_of(INIT_DUNDER) {
             None => {
                 stdb.commit_tx(tx)?;
@@ -376,17 +390,20 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             }
 
             Some(reducer_id) => {
+                self.system_logger().info("Invoking `init` reducer");
                 let caller_identity = self.database_instance_context().identity;
                 let client = None;
                 self.call_reducer_internal(Some(tx), caller_identity, client, reducer_id, args)
             }
         };
 
+        self.system_logger().info("Database initialized");
+
         Ok(rcr)
     }
 
     #[tracing::instrument(skip_all)]
-    fn update_database(&mut self) -> Result<UpdateDatabaseResult, anyhow::Error> {
+    fn update_database(&mut self, fence: u128) -> Result<UpdateDatabaseResult, anyhow::Error> {
         let stdb = &*self.database_instance_context().relational_db;
         let mut tx = stdb.begin_tx();
 
@@ -396,15 +413,20 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             tx = stdb
                 .with_auto_rollback::<_, _, DBError>(tx, |tx| {
                     for (name, schema) in updates.new_tables {
+                        self.system_logger().info(&format!("Creating table `{}`", name));
                         stdb.create_table(tx, schema)
                             .with_context(|| format!("failed to create table {}", name))?;
                     }
 
                     for index_id in updates.indexes_to_drop {
+                        self.system_logger()
+                            .info(&format!("Dropping index with id {}", index_id.0));
                         stdb.drop_index(tx, index_id)?;
                     }
 
                     for index_def in updates.indexes_to_create {
+                        self.system_logger()
+                            .info(&format!("Creating index `{}`", index_def.name));
                         stdb.create_index(tx, index_def)?;
                     }
 
@@ -414,11 +436,17 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         } else {
             stdb.rollback_tx(tx);
             self.system_logger()
-                .error("module update rejected due to schema mismatch");
+                .error("Module update rejected due to schema mismatch");
             return Ok(Err(UpdateDatabaseError::IncompatibleSchema {
                 tables: updates.tainted_tables,
             }));
         }
+
+        // Update the module hash. Morally, this should be done _after_ calling
+        // the `update` reducer, but that consumes our transaction context.
+        tx = stdb
+            .with_auto_rollback(tx, |tx| stdb.set_program_hash(tx, fence, self.info.module_hash))
+            .map(|(tx, ())| tx)?;
 
         let update_result = match self.info.reducers.get_index_of(UPDATE_DUNDER) {
             None => {
@@ -427,6 +455,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             }
 
             Some(reducer_id) => {
+                self.system_logger().info("Invoking `update` reducer");
                 let caller_identity = self.database_instance_context().identity;
                 let client = None;
                 let res =
@@ -434,6 +463,8 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 Some(res)
             }
         };
+
+        self.system_logger().info("Database updated");
 
         Ok(Ok(UpdateDatabaseSuccess {
             update_result,
@@ -735,7 +766,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             let mut index_for_column = None;
             for index in table.indexes.iter() {
                 let [index_col_id] = *index.col_ids else {
-                    anyhow::bail!("multi-column indexes not yet supported")
+                    //Ignore multi-column indexes
+                    continue;
                 };
                 if index_col_id as usize != col_id {
                     continue;
@@ -755,7 +787,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }
                 let index = IndexDef {
                     table_id: 0, // Will be ignored
-                    col_id: col_id as u32,
+                    cols: NonEmpty::new(col_id as u32),
                     name: index.name.clone(),
                     is_unique: col_attr.is_unique(),
                 };
@@ -765,7 +797,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 // anyway.
                 let index = IndexDef {
                     table_id: 0, // Will be ignored
-                    col_id: col_id as u32,
+                    cols: NonEmpty::new(col_id as u32),
                     name: format!("{}_{}_unique", table.name, col.col_name),
                     is_unique: true,
                 };

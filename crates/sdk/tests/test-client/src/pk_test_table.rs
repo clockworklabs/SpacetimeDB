@@ -1,8 +1,8 @@
 use crate::module_bindings::*;
-use crate::test_counter::TestCounter;
 use anyhow::anyhow;
 use spacetimedb_sdk::table::TableWithPrimaryKey;
 use std::sync::Arc;
+use test_counter::TestCounter;
 
 pub trait PkTestTable: TableWithPrimaryKey {
     fn as_value(&self) -> i32;

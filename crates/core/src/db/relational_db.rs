@@ -1,8 +1,8 @@
 use super::commit_log::CommitLog;
 use super::datastore::locking_tx_datastore::{Data, DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
 use super::datastore::traits::{
-    ColId, DataRow, IndexDef, IndexId, MutTx, MutTxDatastore, SequenceDef, SequenceId, TableDef, TableId, TableSchema,
-    TxData,
+    ColId, DataRow, IndexDef, IndexId, MutProgrammable, MutTx, MutTxDatastore, Programmable, SequenceDef, SequenceId,
+    TableDef, TableId, TableSchema, TxData,
 };
 use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
@@ -12,10 +12,11 @@ use crate::db::db_metrics::{RDB_DELETE_BY_REL_TIME, RDB_DROP_TABLE_TIME, RDB_INS
 use crate::db::messages::commit::Commit;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
 use crate::db::ostorage::ObjectDB;
-use crate::error::{DBError, DatabaseError, TableError};
+use crate::error::{DBError, DatabaseError, IndexError, TableError};
 use crate::hash::Hash;
 use crate::util::prometheus_handle::HistogramVecHandle;
 use fs2::FileExt;
+use nonempty::NonEmpty;
 use prometheus::HistogramVec;
 use spacetimedb_lib::ColumnIndexAttribute;
 use spacetimedb_lib::{data_key::ToDataKey, PrimaryKey};
@@ -397,15 +398,23 @@ impl RelationalDB {
         &self,
         tx: &mut MutTxId,
         table_id: u32,
-        col_id: u32,
-    ) -> Result<Option<ColumnIndexAttribute>, DBError> {
+        cols: &NonEmpty<u32>,
+    ) -> Result<ColumnIndexAttribute, DBError> {
         let table = self.inner.schema_for_table_mut_tx(tx, TableId(table_id))?;
-        let Some(column) = table.columns.get(col_id as usize) else {
-            return Ok(None);
+        let columns = table.project_not_empty(cols)?;
+        // Verify we don't have more than 1 auto_inc in the list of columns
+        let autoinc = columns.iter().filter(|x| x.is_autoinc).count();
+        let is_autoinc = if autoinc < 2 {
+            autoinc == 1
+        } else {
+            return Err(DBError::Index(IndexError::OneAutoInc(
+                TableId(table_id),
+                columns.iter().map(|x| x.col_name.clone()).collect(),
+            )));
         };
-        let unique_index = table.indexes.iter().find(|x| x.col_id == col_id).map(|x| x.is_unique);
+        let unique_index = table.indexes.iter().find(|x| &x.cols == cols).map(|x| x.is_unique);
         let mut attr = ColumnIndexAttribute::UNSET;
-        if column.is_autoinc {
+        if is_autoinc {
             attr |= ColumnIndexAttribute::AUTO_INC;
         }
         if let Some(is_unique) = unique_index {
@@ -415,21 +424,17 @@ impl RelationalDB {
                 ColumnIndexAttribute::INDEXED
             };
         }
-        Ok(Some(attr))
+        Ok(attr)
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn index_id_from_name(&self, tx: &MutTxId, index_name: &str) -> Result<Option<u32>, DBError> {
-        self.inner
-            .index_id_from_name_mut_tx(tx, index_name)
-            .map(|x| x.map(|x| x.0))
+    pub fn index_id_from_name(&self, tx: &MutTxId, index_name: &str) -> Result<Option<IndexId>, DBError> {
+        self.inner.index_id_from_name_mut_tx(tx, index_name)
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn sequence_id_from_name(&self, tx: &MutTxId, sequence_name: &str) -> Result<Option<u32>, DBError> {
-        self.inner
-            .sequence_id_from_name_mut_tx(tx, sequence_name)
-            .map(|x| x.map(|x| x.0))
+    pub fn sequence_id_from_name(&self, tx: &MutTxId, sequence_name: &str) -> Result<Option<SequenceId>, DBError> {
+        self.inner.sequence_id_from_name_mut_tx(tx, sequence_name)
     }
 
     /// Adds the [index::BTreeIndex] into the [ST_INDEXES_NAME] table
@@ -458,13 +463,13 @@ impl RelationalDB {
 
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
-    /// where the column data identified by `col_id` matches `value`.
+    /// where the column data identified by `cols` matches `value`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
     #[tracing::instrument(skip(self, tx))]
     pub fn iter_by_col_eq<'a>(
         &'a self,
-        tx: &'a mut MutTxId,
+        tx: &'a MutTxId,
         table_id: u32,
         col_id: u32,
         value: AlgebraicValue,
@@ -475,7 +480,7 @@ impl RelationalDB {
 
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
-    /// where the column data identified by `col_id` matches what is within `range`.
+    /// where the column data identified by `cols` matches what is within `range`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
     pub fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
@@ -539,13 +544,13 @@ impl RelationalDB {
 
     /// Generated the next value for the [SequenceId]
     #[tracing::instrument(skip_all)]
-    pub fn next_sequence(&mut self, tx: &mut MutTxId, seq_id: SequenceId) -> Result<i128, DBError> {
+    pub fn next_sequence(&self, tx: &mut MutTxId, seq_id: SequenceId) -> Result<i128, DBError> {
         self.inner.get_next_sequence_value_mut_tx(tx, seq_id)
     }
 
     /// Add a [Sequence] into the database instance, generates a stable [SequenceId] for it that will persist on restart.
     #[tracing::instrument(skip(self, tx))]
-    pub fn create_sequence(&mut self, tx: &mut MutTxId, seq: SequenceDef) -> Result<SequenceId, DBError> {
+    pub fn create_sequence(&self, tx: &mut MutTxId, seq: SequenceDef) -> Result<SequenceId, DBError> {
         self.inner.create_sequence_mut_tx(tx, seq)
     }
 
@@ -553,6 +558,31 @@ impl RelationalDB {
     #[tracing::instrument(skip(self, tx))]
     pub fn drop_sequence(&self, tx: &mut MutTxId, seq_id: SequenceId) -> Result<(), DBError> {
         self.inner.drop_sequence_mut_tx(tx, seq_id)
+    }
+
+    /// Retrieve the [`Hash`] of the program (SpacetimeDB module) currently
+    /// associated with the database.
+    ///
+    /// A `None` result indicates that the database is not fully initialized
+    /// yet.
+    pub fn program_hash(&self, tx: &MutTxId) -> Result<Option<Hash>, DBError> {
+        self.inner.program_hash(tx)
+    }
+
+    /// Update the [`Hash`] of the program (SpacetimeDB module) currently
+    /// associated with the database.
+    ///
+    /// The operation runs within the transactional context `tx`.
+    ///
+    /// The fencing token `fence` must be greater than in any previous
+    /// invocations of this method, and is typically obtained from a locking
+    /// service.
+    ///
+    /// The method **MUST** be called within the transaction context which
+    /// ensures that any lifecycle reducers (`init`, `update`) are invoked. That
+    /// is, an impl of [`crate::host::ModuleInstance`].
+    pub(crate) fn set_program_hash(&self, tx: &mut MutTxId, fence: u128, hash: Hash) -> Result<(), DBError> {
+        self.inner.set_program_hash(tx, fence, hash)
     }
 }
 
@@ -601,6 +631,7 @@ pub(crate) mod tests_utils {
 mod tests {
     #![allow(clippy::disallowed_macros)]
 
+    use nonempty::NonEmpty;
     use std::sync::{Arc, Mutex};
 
     use crate::address::Address;
@@ -995,7 +1026,7 @@ mod tests {
             }],
             indexes: vec![IndexDef {
                 table_id: 0,
-                col_id: 0,
+                cols: NonEmpty::new(0),
                 name: "MyTable_my_col_idx".to_string(),
                 is_unique: false,
             }],
@@ -1037,7 +1068,7 @@ mod tests {
             }],
             indexes: vec![IndexDef {
                 table_id: 0,
-                col_id: 0,
+                cols: NonEmpty::new(0),
                 name: "MyTable_my_col_idx".to_string(),
                 is_unique: true,
             }],
@@ -1084,7 +1115,7 @@ mod tests {
             }],
             indexes: vec![IndexDef {
                 table_id: 0,
-                col_id: 0,
+                cols: NonEmpty::new(0),
                 name: "MyTable_my_col_idx".to_string(),
                 is_unique: true,
             }],
@@ -1147,19 +1178,19 @@ mod tests {
             indexes: vec![
                 IndexDef {
                     table_id: 0,
-                    col_id: 0,
+                    cols: NonEmpty::new(0),
                     name: "MyTable_col1_idx".to_string(),
                     is_unique: true,
                 },
                 IndexDef {
                     table_id: 0,
-                    col_id: 2,
+                    cols: NonEmpty::new(2),
                     name: "MyTable_col3_idx".to_string(),
                     is_unique: false,
                 },
                 IndexDef {
                     table_id: 0,
-                    col_id: 3,
+                    cols: NonEmpty::new(3),
                     name: "MyTable_col4_idx".to_string(),
                     is_unique: true,
                 },
@@ -1217,7 +1248,7 @@ mod tests {
             }],
             indexes: vec![IndexDef {
                 table_id: 0,
-                col_id: 0,
+                cols: NonEmpty::new(0),
                 name: "MyTable_my_col_idx".to_string(),
                 is_unique: true,
             }],

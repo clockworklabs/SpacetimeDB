@@ -47,7 +47,7 @@ run_test cargo run logs "$ADDRESS"
 if [ "$(grep -c "Hello, World!" "$TEST_OUT")" != 1 ]; then exit 1; fi
 
 ## Calling functions with arguments
-run_test cargo run call "$ADDRESS" add '["Tyler"]'
+run_test cargo run call "$ADDRESS" add Tyler
 run_test cargo run call "$ADDRESS" say_hello
 run_test cargo run logs "$ADDRESS"
 

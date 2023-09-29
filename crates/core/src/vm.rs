@@ -1,12 +1,13 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 use crate::db::cursor::{CatalogCursor, IndexCursor, TableCursor};
-use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{ColumnDef, IndexDef, IndexId, SequenceId, TableDef};
+use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId};
+use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef};
 use crate::db::relational_db::RelationalDB;
 use itertools::Itertools;
+use nonempty::NonEmpty;
 use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::{DbTable, FieldExpr, Relation};
+use spacetimedb_lib::relation::{DbTable, FieldExpr, FieldName, Relation};
 use spacetimedb_lib::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
 use spacetimedb_lib::table::ProductTypeMeta;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
@@ -18,54 +19,53 @@ use spacetimedb_vm::expr::*;
 use spacetimedb_vm::program::{ProgramRef, ProgramVm};
 use spacetimedb_vm::rel_ops::RelOps;
 use std::collections::HashMap;
+use std::ops::RangeBounds;
 
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
 #[tracing::instrument(skip_all)]
 pub fn build_query<'a>(
     stdb: &'a RelationalDB,
-    tx: &'a mut MutTxId,
+    tx: &'a MutTxId,
     query: QueryCode,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
-    let q = match &query.table {
-        Table::MemTable(x) => SourceExpr::MemTable(x.clone()),
-        Table::DbTable(x) => SourceExpr::DbTable(x.clone()),
-    };
+    let db_table = matches!(&query.table, Table::DbTable(_));
+    let mut result = get_table(stdb, tx, query.table.into())?;
 
-    //TODO HACK: Turn all inner tables in joins to in-memory to avoid borrow checker
-    let mut query = query;
-
-    for q in &mut query.query {
-        if let Query::JoinInner(q) = q {
-            let table_access = q.rhs.table_access();
-            let rhs = get_table(stdb, tx, q.rhs.clone())?;
-            q.rhs = SourceExpr::MemTable(MemTable::new(&q.rhs.head(), table_access, &rhs.collect_vec()?));
-        }
-    }
-
-    let mut ops = query.query.into_iter();
-    let first = ops.next();
-
-    // If the first operation is an index scan, open an index cursor, else a table cursor.
-    let (mut result, ops) = if let Some(Query::IndexScan(col_id, value, table)) = first {
-        (get_index_cursor(stdb, tx, table, col_id, value)?, ops.collect())
-    } else if let Some(op) = first {
-        (get_table(stdb, tx, q)?, std::iter::once(op).chain(ops).collect())
-    } else {
-        (get_table(stdb, tx, q)?, vec![])
-    };
-
-    for op in ops {
+    for op in query.query {
         result = match op {
-            Query::IndexScan(_, _, _) => {
-                unreachable!()
+            Query::IndexScan(IndexScan {
+                table,
+                col_id,
+                lower_bound,
+                upper_bound,
+            }) if db_table => iter_by_col_range(stdb, tx, table, col_id, (lower_bound, upper_bound))?,
+            Query::IndexScan(index_scan) => {
+                let header = result.head().clone();
+                let cmp: ColumnOp = index_scan.into();
+                let iter = result.select(move |row| cmp.compare(row, &header));
+                Box::new(iter)
+            }
+            Query::IndexJoin(join) if db_table => Box::new(IndexSemiJoin::new(
+                stdb,
+                tx,
+                build_query(stdb, tx, join.probe_side.into())?,
+                join.probe_field,
+                join.index_header,
+                join.index_table,
+                join.index_col,
+            )),
+            Query::IndexJoin(join) => {
+                let join: JoinExpr = join.into();
+                let iter = join_inner(stdb, tx, result, join, true)?;
+                Box::new(iter)
             }
             Query::Select(cmp) => {
                 let header = result.head().clone();
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
-            Query::Project(cols) => {
+            Query::Project(cols, _) => {
                 if cols.is_empty() {
                     result
                 } else {
@@ -74,48 +74,63 @@ pub fn build_query<'a>(
                     Box::new(iter)
                 }
             }
-            Query::JoinInner(q) => {
-                //Pick the smaller set to be at the left
-                let col_lhs = FieldExpr::Name(q.col_lhs);
-                let col_rhs = FieldExpr::Name(q.col_rhs);
-                let key_lhs = col_lhs.clone();
-                let key_rhs = col_rhs.clone();
-
-                let rhs = match q.rhs {
-                    SourceExpr::MemTable(x) => {
-                        Box::new(RelIter::new(x.head.clone(), x.row_count(), x)) as Box<IterRows<'_>>
-                    }
-                    SourceExpr::DbTable(_) => {
-                        unreachable!()
-                    }
-                };
-                let lhs = result;
-                let key_lhs_header = lhs.head().clone();
-                let key_rhs_header = rhs.head().clone();
-                let col_lhs_header = lhs.head().clone();
-                let col_rhs_header = rhs.head().clone();
-
-                let iter = lhs.join_inner(
-                    rhs,
-                    move |row| {
-                        let f = row.get(&key_lhs, &key_lhs_header);
-                        Ok(f.into())
-                    },
-                    move |row| {
-                        let f = row.get(&key_rhs, &key_rhs_header);
-                        Ok(f.into())
-                    },
-                    move |l, r| {
-                        let l = l.get(&col_lhs, &col_lhs_header);
-                        let r = r.get(&col_rhs, &col_rhs_header);
-                        Ok(l == r)
-                    },
-                )?;
+            Query::JoinInner(join) => {
+                let iter = join_inner(stdb, tx, result, join, false)?;
                 Box::new(iter)
             }
         }
     }
     Ok(result)
+}
+
+fn join_inner<'a>(
+    db: &'a RelationalDB,
+    tx: &'a MutTxId,
+    lhs: impl RelOps + 'a,
+    rhs: JoinExpr,
+    semi: bool,
+) -> Result<impl RelOps + 'a, ErrorVm> {
+    let col_lhs = FieldExpr::Name(rhs.col_lhs);
+    let col_rhs = FieldExpr::Name(rhs.col_rhs);
+    let key_lhs = col_lhs.clone();
+    let key_rhs = col_rhs.clone();
+
+    let rhs = build_query(db, tx, rhs.rhs.into())?;
+    let key_lhs_header = lhs.head().clone();
+    let key_rhs_header = rhs.head().clone();
+    let col_lhs_header = lhs.head().clone();
+    let col_rhs_header = rhs.head().clone();
+
+    let header = if semi {
+        col_lhs_header.clone()
+    } else {
+        col_lhs_header.extend(&col_rhs_header)
+    };
+
+    lhs.join_inner(
+        rhs,
+        header,
+        move |row| {
+            let f = row.get(&key_lhs, &key_lhs_header);
+            Ok(f.into())
+        },
+        move |row| {
+            let f = row.get(&key_rhs, &key_rhs_header);
+            Ok(f.into())
+        },
+        move |l, r| {
+            let l = l.get(&col_lhs, &col_lhs_header);
+            let r = r.get(&col_rhs, &col_rhs_header);
+            Ok(l == r)
+        },
+        move |l, r| {
+            if semi {
+                l
+            } else {
+                l.extend(r)
+            }
+        },
+    )
 }
 
 fn get_table<'a>(stdb: &'a RelationalDB, tx: &'a MutTxId, query: SourceExpr) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
@@ -130,15 +145,95 @@ fn get_table<'a>(stdb: &'a RelationalDB, tx: &'a MutTxId, query: SourceExpr) -> 
     })
 }
 
-fn get_index_cursor<'a>(
+fn iter_by_col_range<'a>(
     db: &'a RelationalDB,
-    tx: &'a mut MutTxId,
+    tx: &'a MutTxId,
     table: DbTable,
     col_id: u32,
-    value: AlgebraicValue,
+    range: impl RangeBounds<AlgebraicValue> + 'a,
 ) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
-    let iter = db.iter_by_col_eq(tx, table.table_id, col_id, value)?;
+    let iter = db.iter_by_col_range(tx, table.table_id, col_id, range)?;
     Ok(Box::new(IndexCursor::new(table, iter)?) as Box<IterRows<'_>>)
+}
+
+// An index join operator that returns matching rows from the index side.
+pub struct IndexSemiJoin<'a, Rhs: RelOps> {
+    // An iterator for the probe side.
+    // The values returned will be used to probe the index.
+    pub probe_side: Rhs,
+    // The field whose value will be used to probe the index.
+    pub probe_field: FieldName,
+    // The header for the index side of the join.
+    // Also the return header since we are returning values from the index side.
+    pub index_header: Header,
+    // The table id on which the index is defined.
+    pub index_table: u32,
+    // The column id for which the index is defined.
+    pub index_col: u32,
+    // An iterator for the index side.
+    // A new iterator will be instantiated for each row on the probe side.
+    pub index_iter: Option<IterByColEq<'a>>,
+    // A reference to the database.
+    pub db: &'a RelationalDB,
+    // A reference to the current transaction.
+    pub tx: &'a MutTxId,
+}
+
+impl<'a, Rhs: RelOps> IndexSemiJoin<'a, Rhs> {
+    pub fn new(
+        db: &'a RelationalDB,
+        tx: &'a MutTxId,
+        probe_side: Rhs,
+        probe_field: FieldName,
+        index_header: Header,
+        index_table: u32,
+        index_col: u32,
+    ) -> Self {
+        IndexSemiJoin {
+            db,
+            tx,
+            probe_side,
+            probe_field,
+            index_header,
+            index_table,
+            index_col,
+            index_iter: None,
+        }
+    }
+}
+
+impl<'a, Rhs: RelOps> RelOps for IndexSemiJoin<'a, Rhs> {
+    fn head(&self) -> &Header {
+        &self.index_header
+    }
+
+    fn row_count(&self) -> RowCount {
+        RowCount::unknown()
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
+        // Return a value from the current index iterator, if not exhausted.
+        if let Some(value) = self.index_iter.as_mut().and_then(|iter| iter.next()) {
+            return Ok(Some(value.into()));
+        }
+        // Otherwise probe the index with a row from the probe side.
+        while let Some(row) = self.probe_side.next()? {
+            if let Some(pos) = self.probe_side.head().column_pos(&self.probe_field) {
+                if let Some(value) = row.data.elements.get(pos) {
+                    let table_id = self.index_table;
+                    let col_id = self.index_col;
+                    let value = value.clone();
+                    let mut index_iter = self.db.iter_by_col_eq(self.tx, table_id, col_id, value)?;
+                    if let Some(value) = index_iter.next() {
+                        self.index_iter = Some(index_iter);
+                        return Ok(Some(value.into()));
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
 }
 
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it
@@ -234,7 +329,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             if meta.is_unique() {
                 indexes.push(IndexDef {
                     table_id: 0, // Ignored
-                    col_id: i as u32,
+                    cols: NonEmpty::new(i as u32),
                     name: format!("{}_{}_idx", table_name, i),
                     is_unique: true,
                 });
@@ -267,12 +362,12 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             }
             DbType::Index => {
                 if let Some(id) = self.db.index_id_from_name(self.tx, name)? {
-                    self.db.drop_index(self.tx, IndexId(id))?;
+                    self.db.drop_index(self.tx, id)?;
                 }
             }
             DbType::Sequence => {
                 if let Some(id) = self.db.sequence_id_from_name(self.tx, name)? {
-                    self.db.drop_sequence(self.tx, SequenceId(id))?;
+                    self.db.drop_sequence(self.tx, id)?;
                 }
             }
         }
@@ -371,7 +466,7 @@ impl RelOps for TableCursor<'_> {
     }
 }
 
-impl RelOps for IndexCursor<'_> {
+impl<R: RangeBounds<AlgebraicValue>> RelOps for IndexCursor<'_, R> {
     fn head(&self) -> &Header {
         &self.table.head
     }
@@ -619,7 +714,7 @@ pub(crate) mod tests {
                 index_id: index_id.0,
                 index_name: "idx_1",
                 table_id,
-                col_id: 0,
+                cols: NonEmpty::new(0),
                 is_unique: true,
             })
                 .into(),

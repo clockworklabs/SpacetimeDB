@@ -706,6 +706,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "connect_disconnect_client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "spacetimedb-sdk",
+ "test-counter",
+]
+
+[[package]]
 name = "console"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2509,6 +2518,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "nonempty"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aeaf4ad7403de93e699c191202f017118df734d3850b01e13a3a8b2e6953d3c9"
+
+[[package]]
 name = "nu-ansi-term"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4134,6 +4149,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetime-module"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "spacetimedb"
 version = "0.6.1"
 dependencies = [
@@ -4299,6 +4322,7 @@ dependencies = [
  "jsonwebtoken",
  "lazy_static",
  "log",
+ "nonempty",
  "once_cell",
  "openssl",
  "parking_lot 0.12.1",
@@ -4393,6 +4417,7 @@ dependencies = [
  "enum-as-inner",
  "hex",
  "itertools",
+ "nonempty",
  "proptest",
  "rand 0.8.5",
  "serde",
@@ -4794,7 +4819,15 @@ dependencies = [
  "anyhow",
  "env_logger",
  "spacetimedb-sdk",
+ "test-counter",
  "tokio",
+]
+
+[[package]]
+name = "test-counter"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]

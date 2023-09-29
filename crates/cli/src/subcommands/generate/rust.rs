@@ -745,23 +745,11 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 ///    Row callbacks are passed an optional `ReducerEvent` as an additional argument,
 ///    so they can know what reducer caused the row to change.
 ///
-/// 3. `fn handle_table_update`, which dispatches on table name to find the appropriate type
-///    to parse the rows and insert or remove them into/from the
-///    `spacetimedb_sdk::client_cache::ClientCache`. The other SDKs avoid needing
-///    such a dispatch function by dynamically discovering the set of table types,
-///    e.g. using C#'s `AppDomain`. Rust's type system prevents this.
+/// 3. `struct Module`, which implements `SpacetimeModule`.
+///    The methods on `SpacetimeModule` implement passing appropriate type parameters
+///    to various SDK internal functions.
 ///
-/// 4. `fn invoke_row_callbacks`, which is invoked after `handle_table_update` and `handle_resubscribe`
-///    to distribute a new client cache state and an optional `ReducerEvent`
-///    to the `DbCallbacks` worker alongside each row callback for the preceding table change.
-///
-/// 5. `fn handle_resubscribe`, which serves the same role as `handle_table_update`, but for
-///    re-subscriptions in a `SubscriptionUpdate` following an outgoing `Subscribe`.
-///
-/// 6. `fn handle_event`, which serves the same role as `handle_table_update`, but for
-///    reducers.
-///
-/// 7. `fn connect`, which invokes
+/// 4. `fn connect`, which invokes
 ///    `spacetimedb_sdk::background_connection::BackgroundDbConnection::connect`
 ///    to connect to a remote database, and passes the `handle_row_update`
 ///    and `handle_event` functions so the `BackgroundDbConnection` can spawn workers
@@ -796,23 +784,7 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<Vec<(String,
 
     out.newline();
 
-    // Define `fn handle_table_update`.
-    print_handle_table_update_defn(ctx, out, items);
-
-    out.newline();
-
-    // Define `fn invoke_row_callbacks`.
-    print_invoke_row_callbacks_defn(out, items);
-
-    out.newline();
-
-    // Define `fn handle_resubscribe`.
-    print_handle_resubscribe_defn(out, items);
-
-    out.newline();
-
-    // Define `fn handle_event`.
-    print_handle_event_defn(out, items);
+    print_spacetime_module_struct_defn(ctx, out, items);
 
     out.newline();
 
@@ -830,6 +802,7 @@ const DISPATCH_IMPORTS: &[&str] = &[
     "use spacetimedb_sdk::callbacks::{DbCallbacks, ReducerCallbacks};",
     "use spacetimedb_sdk::reducer::AnyReducerEvent;",
     "use spacetimedb_sdk::global_connection::with_connection_mut;",
+    "use spacetimedb_sdk::spacetime_module::SpacetimeModule;",
     "use std::sync::Arc;",
 ];
 
@@ -877,16 +850,50 @@ fn print_module_reexports(out: &mut Indenter, items: &[GenItem]) {
     }
 }
 
-/// Define the `handle_table_update` function,
-/// which dispatches on the table name in a `TableUpdate` message
-/// to call an appropriate method on the `ClientCache`.
-fn print_handle_table_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
-    // Muffle unused warning for handle_table_update, which is not supposed to be visible to
+/// Define a unit struct which implements `SpacetimeModule`,
+/// with methods responsible for supplying type parameters to various functions.
+///
+/// `SpacetimeModule`'s methods are:
+///
+/// - `handle_table_update`, which dispatches on table name to find the appropriate type
+///    to parse the rows and insert or remove them into/from the
+///    `spacetimedb_sdk::client_cache::ClientCache`. The other SDKs avoid needing
+///    such a dispatch function by dynamically discovering the set of table types,
+///    e.g. using C#'s `AppDomain`. Rust's type system prevents this.
+///
+/// - `invoke_row_callbacks`, which is invoked after `handle_table_update` and `handle_resubscribe`
+///    to distribute a new client cache state and an optional `ReducerEvent`
+///    to the `DbCallbacks` worker alongside each row callback for the preceding table change.
+///
+/// - `handle_resubscribe`, which serves the same role as `handle_table_update`, but for
+///    re-subscriptions in a `SubscriptionUpdate` following an outgoing `Subscribe`.
+///
+/// - `handle_event`, which serves the same role as `handle_table_update`, but for
+///    reducers.
+fn print_spacetime_module_struct_defn(ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
+    // Muffle unused warning for `Module`, which is not supposed to be visible to
     // users. It will be used if and only if `connect` is used, so that unused warning is
     // sufficient, and not as confusing.
     writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    writeln!(out, "pub struct Module;").unwrap();
     out.delimited_block(
-        "fn handle_table_update(table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
+        "impl SpacetimeModule for Module {",
+        |out| {
+            print_handle_table_update_defn(ctx, out, items);
+            print_invoke_row_callbacks_defn(out, items);
+            print_handle_event_defn(out, items);
+            print_handle_resubscribe_defn(out, items);
+        },
+        "}\n",
+    );
+}
+
+/// Define the `handle_table_update` method,
+/// which dispatches on the table name in a `TableUpdate` message
+/// to call an appropriate method on the `ClientCache`.
+fn print_handle_table_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
+    out.delimited_block(
+        "fn handle_table_update(&self, table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
         |out| {
             writeln!(out, "let table_name = &table_update.table_name[..];").unwrap();
             out.delimited_block(
@@ -921,10 +928,8 @@ fn print_handle_table_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[Gen
 /// Define the `invoke_row_callbacks` function,
 /// which does `RowCallbackReminders::invoke_callbacks` on each table type defined in the `items`.
 fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
-    // Like `handle_table_update`, muffle unused warning for `invoke_row_callbacks`.
-    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     out.delimited_block(
-        "fn invoke_row_callbacks(reminders: &mut RowCallbackReminders, worker: &mut DbCallbacks, reducer_event: Option<Arc<AnyReducerEvent>>, state: &Arc<ClientCache>) {",
+        "fn invoke_row_callbacks(&self, reminders: &mut RowCallbackReminders, worker: &mut DbCallbacks, reducer_event: Option<Arc<AnyReducerEvent>>, state: &Arc<ClientCache>) {",
         |out| {
             for table in iter_table_items(items) {
                 writeln!(
@@ -943,10 +948,8 @@ fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
 /// which dispatches on the table name in a `TableUpdate`
 /// to invoke `ClientCache::handle_resubscribe_for_type` with an appropriate type arg.
 fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
-    // Like `handle_table_update`, muffle unused warning for `handle_resubscribe`.
-    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     out.delimited_block(
-        "fn handle_resubscribe(new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
+        "fn handle_resubscribe(&self, new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
         |out| {
             writeln!(out, "let table_name = &new_subs.table_name[..];").unwrap();
             out.delimited_block(
@@ -977,10 +980,8 @@ fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
 /// which dispatches on the reducer name in an `Event`
 /// to `ReducerCallbacks::handle_event_of_type` with an appropriate type argument.
 fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
-    // Like `handle_table_update`, muffle unused warning for `handle_event`.
-    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     out.delimited_block(
-        "fn handle_event(event: Event, reducer_callbacks: &mut ReducerCallbacks, state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {",
+        "fn handle_event(&self, event: Event, reducer_callbacks: &mut ReducerCallbacks, state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {",
         |out| {
             out.delimited_block(
                 "let Some(function_call) = &event.function_call else {",
@@ -1040,7 +1041,7 @@ where
             |out| {
                 writeln!(
                     out,
-                    "connection.connect(spacetimedb_uri, db_name, credentials, handle_table_update, handle_resubscribe, invoke_row_callbacks, handle_event)?;"
+                    "connection.connect(spacetimedb_uri, db_name, credentials, Arc::new(Module))?;"
                 ).unwrap();
                 writeln!(out, "Ok(())").unwrap();
             },
