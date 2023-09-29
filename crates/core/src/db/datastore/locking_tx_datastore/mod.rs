@@ -29,7 +29,7 @@ use super::{
 
 use crate::db::datastore::system_tables::{
     st_constraints_schema, st_module_schema, table_name_is_system, StConstraintRow, SystemTables,
-    CONSTRAINT_ID_SEQUENCE_ID, ST_CONSTRAINTS_ID, ST_CONSTRAINT_ROW_TYPE,
+    CONSTRAINT_ID_SEQUENCE_ID, ST_CONSTRAINTS_ID, ST_CONSTRAINT_ROW_TYPE, ST_MODULE_ROW_TYPE,
 };
 use crate::{
     db::datastore::traits::{TxOp, TxRecord},
@@ -1599,6 +1599,13 @@ impl Locking {
         datastore.bootstrap_system_table(st_constraints_schema())?;
         datastore.bootstrap_system_table(st_indexes_schema())?;
         datastore.bootstrap_system_table(st_sequences_schema())?;
+        // TODO(kim): We need to make sure to have ST_MODULE in the committed
+        // state. `bootstrap_system_table` initializes the others lazily, but
+        // it doesn't know about `ST_MODULE_ROW_TYPE`. Perhaps the committed
+        // state should be initialized eagerly here?
+        datastore
+            .committed_state
+            .get_or_create_table(ST_MODULE_ID, &ST_MODULE_ROW_TYPE, &st_module_schema());
         datastore.bootstrap_system_table(st_module_schema())?;
 
         // The database tables are now initialized with the correct data.
