@@ -92,8 +92,12 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             host.spawn_module_host(dbic).await.map_err(log_and_500)?
         }
     };
+
+    if let Err(e) = module.call_identity_connected_disconnected(caller_identity, true).await {
+        return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into());
+    }
     let result = match module.call_reducer(caller_identity, None, &reducer, args).await {
-        Ok(rcr) => rcr,
+        Ok(rcr) => Ok(rcr),
         Err(e) => {
             let status_code = match e {
                 ReducerCallError::Args(_) => {
@@ -108,19 +112,31 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             };
 
             log::debug!("Error while invoking reducer {:#}", e);
-            return Err((status_code, format!("{:#}", anyhow::anyhow!(e))).into());
+            Err((status_code, format!("{:#}", anyhow::anyhow!(e))))
         }
     };
 
-    let (status, body) = reducer_outcome_response(&identity, &reducer, result.outcome);
-    Ok((
-        status,
-        TypedHeader(SpacetimeIdentity(caller_identity)),
-        TypedHeader(SpacetimeIdentityToken(caller_identity_token)),
-        TypedHeader(SpacetimeEnergyUsed(result.energy_used)),
-        TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
-        body,
-    ))
+    if let Err(e) = module
+        .call_identity_connected_disconnected(caller_identity, false)
+        .await
+    {
+        return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into());
+    }
+
+    match result {
+        Ok(result) => {
+            let (status, body) = reducer_outcome_response(&identity, &reducer, result.outcome);
+            Ok((
+                status,
+                TypedHeader(SpacetimeIdentity(caller_identity)),
+                TypedHeader(SpacetimeIdentityToken(caller_identity_token)),
+                TypedHeader(SpacetimeEnergyUsed(result.energy_used)),
+                TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
+                body,
+            ))
+        }
+        Err(e) => Err((e.0, e.1).into()),
+    }
 }
 
 fn reducer_outcome_response(identity: &Identity, reducer: &str, outcome: ReducerOutcome) -> (StatusCode, String) {
