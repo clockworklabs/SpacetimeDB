@@ -966,14 +966,9 @@ fn autogen_csharp_access_funcs_for_struct(
                 }
             }
             AlgebraicType::Sum(sum) => {
-                if let Some(inner_ty) = sum.as_option() {
-                    match inner_ty {
-                        Builtin(b) => match maybe_primitive(b) {
-                            MaybePrimitive::Primitive(ty) => (format!("{:?}", b), ty, true),
-                            _ => {
-                                continue;
-                            }
-                        },
+                if let Some(Builtin(b)) = sum.as_option() {
+                    match maybe_primitive(b) {
+                        MaybePrimitive::Primitive(ty) => (format!("{:?}", b), ty, true),
                         _ => {
                             continue;
                         }
