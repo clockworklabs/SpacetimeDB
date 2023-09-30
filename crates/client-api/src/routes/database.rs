@@ -103,12 +103,20 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     // HTTP callers always need an address to provide to connect/disconnect,
     // so generate one if none was provided.
-    let client_address = client_address.map(Address::from).unwrap_or_else(generate_random_address);
+    let client_address = client_address
+        .map(Address::from)
+        .unwrap_or_else(generate_random_address);
 
-    if let Err(e) = module.call_identity_connected_disconnected(caller_identity, client_address, true).await {
+    if let Err(e) = module
+        .call_identity_connected_disconnected(caller_identity, client_address, true)
+        .await
+    {
         return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into());
     }
-    let result = match module.call_reducer(caller_identity, Some(client_address), None, &reducer, args).await {
+    let result = match module
+        .call_reducer(caller_identity, Some(client_address), None, &reducer, args)
+        .await
+    {
         Ok(rcr) => Ok(rcr),
         Err(e) => {
             let status_code = match e {
