@@ -35,7 +35,7 @@ fn main() {
         };
         sub_applied_one_row_result(check());
     });
-    once_on_connect(move |_| {
+    once_on_connect(move |_, _| {
         subscribe_result(subscribe(&["SELECT * FROM Connected;"]));
     });
 
@@ -68,7 +68,7 @@ fn main() {
         };
         sub_applied_one_row_result(check());
     });
-    once_on_connect(move |_| {
+    once_on_connect(move |_, _| {
         subscribe_result(subscribe(&["SELECT * FROM Disconnected;"]));
     });
 

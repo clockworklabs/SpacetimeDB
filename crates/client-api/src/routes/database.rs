@@ -21,6 +21,7 @@ use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType};
 use spacetimedb::sql::execute::execute;
+use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::name::{self, DnsLookupResponse, DomainName, DomainParsingError, PublishOp, PublishResult};
 use spacetimedb_lib::recovery::{RecoveryCode, RecoveryCodeResponse};
@@ -33,6 +34,7 @@ use crate::auth::{
     SpacetimeAuth, SpacetimeAuthHeader, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros, SpacetimeIdentity,
     SpacetimeIdentityToken,
 };
+use crate::routes::subscribe::generate_random_address;
 use crate::util::{ByteStringBody, NameOrAddress};
 use crate::{log_and_500, ControlStateDelegate, DatabaseDef, NodeDelegate};
 
@@ -51,6 +53,11 @@ pub struct CallParams {
     reducer: String,
 }
 
+#[derive(Deserialize)]
+pub struct CallQueryParams {
+    client_address: Option<AddressForUrl>,
+}
+
 pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     auth: SpacetimeAuthHeader,
@@ -58,6 +65,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         name_or_address,
         reducer,
     }): Path<CallParams>,
+    Query(CallQueryParams { client_address }): Query<CallQueryParams>,
     ByteStringBody(body): ByteStringBody,
 ) -> axum::response::Result<impl IntoResponse> {
     let SpacetimeAuth {
@@ -93,10 +101,22 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         }
     };
 
-    if let Err(e) = module.call_identity_connected_disconnected(caller_identity, true).await {
+    // HTTP callers always need an address to provide to connect/disconnect,
+    // so generate one if none was provided.
+    let client_address = client_address
+        .map(Address::from)
+        .unwrap_or_else(generate_random_address);
+
+    if let Err(e) = module
+        .call_identity_connected_disconnected(caller_identity, client_address, true)
+        .await
+    {
         return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into());
     }
-    let result = match module.call_reducer(caller_identity, None, &reducer, args).await {
+    let result = match module
+        .call_reducer(caller_identity, Some(client_address), None, &reducer, args)
+        .await
+    {
         Ok(rcr) => Ok(rcr),
         Err(e) => {
             let status_code = match e {
@@ -117,7 +137,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     };
 
     if let Err(e) = module
-        .call_identity_connected_disconnected(caller_identity, false)
+        .call_identity_connected_disconnected(caller_identity, client_address, false)
         .await
     {
         return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into());
@@ -579,7 +599,7 @@ pub struct DNSParams {
 
 #[derive(Deserialize)]
 pub struct ReverseDNSParams {
-    database_address: Address,
+    database_address: AddressForUrl,
 }
 
 #[derive(Deserialize)]
@@ -608,6 +628,8 @@ pub async fn reverse_dns<S: ControlStateDelegate>(
     State(ctx): State<S>,
     Path(ReverseDNSParams { database_address }): Path<ReverseDNSParams>,
 ) -> axum::response::Result<impl IntoResponse> {
+    let database_address = Address::from(database_address);
+
     let names = ctx.reverse_lookup(&database_address).map_err(log_and_500)?;
 
     let response = name::ReverseDNSResponse { names };
@@ -748,6 +770,7 @@ pub struct PublishDatabaseQueryParams {
     #[serde(default)]
     clear: bool,
     name_or_address: Option<NameOrAddress>,
+    client_address: Option<AddressForUrl>,
 }
 
 pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
@@ -757,7 +780,13 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     auth: SpacetimeAuthHeader,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
-    let PublishDatabaseQueryParams { name_or_address, clear } = query_params;
+    let PublishDatabaseQueryParams {
+        name_or_address,
+        clear,
+        client_address,
+    } = query_params;
+
+    let client_address = client_address.map(Address::from);
 
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail.
@@ -803,6 +832,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     let maybe_updated = ctx
         .publish_database(
             &auth.identity,
+            client_address,
             DatabaseDef {
                 address: db_addr,
                 program_bytes: body.into(),
@@ -841,7 +871,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
 
 #[derive(Deserialize)]
 pub struct DeleteDatabaseParams {
-    address: Address,
+    address: AddressForUrl,
 }
 
 pub async fn delete_database<S: ControlStateDelegate>(
@@ -850,6 +880,8 @@ pub async fn delete_database<S: ControlStateDelegate>(
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
     let auth = auth_or_unauth(auth)?;
+
+    let address = Address::from(address);
 
     ctx.delete_database(&auth.identity, &address)
         .await
@@ -861,7 +893,7 @@ pub async fn delete_database<S: ControlStateDelegate>(
 #[derive(Deserialize)]
 pub struct SetNameQueryParams {
     domain: String,
-    address: Address,
+    address: AddressForUrl,
 }
 
 pub async fn set_name<S: ControlStateDelegate>(
@@ -870,6 +902,8 @@ pub async fn set_name<S: ControlStateDelegate>(
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse> {
     let auth = auth_or_unauth(auth)?;
+
+    let address = Address::from(address);
 
     let database = ctx
         .get_database_by_address(&address)

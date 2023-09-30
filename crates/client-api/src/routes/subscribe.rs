@@ -2,7 +2,7 @@ use std::mem;
 use std::pin::pin;
 use std::time::Duration;
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::TypedHeader;
 use futures::{SinkExt, StreamExt};
@@ -12,6 +12,8 @@ use spacetimedb::client::messages::{IdentityTokenMessage, ServerMessage};
 use spacetimedb::client::{ClientActorId, ClientClosed, ClientConnection, DataMessage, MessageHandleError, Protocol};
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::future_queue;
+use spacetimedb_lib::address::AddressForUrl;
+use spacetimedb_lib::Address;
 use tokio::sync::mpsc;
 
 use crate::auth::{SpacetimeAuthHeader, SpacetimeIdentity, SpacetimeIdentityToken};
@@ -31,9 +33,23 @@ pub struct SubscribeParams {
     pub name_or_address: NameOrAddress,
 }
 
+#[derive(Deserialize)]
+pub struct SubscribeQueryParams {
+    pub client_address: Option<AddressForUrl>,
+}
+
+// TODO: is this a reasonable way to generate client addresses?
+//       For DB addresses, [`ControlDb::alloc_spacetime_address`]
+//       maintains a global counter, and hashes the next value from that counter
+//       with some constant salt.
+pub fn generate_random_address() -> Address {
+    Address::from_arr(&rand::random())
+}
+
 pub async fn handle_websocket<S>(
     State(ctx): State<S>,
     Path(SubscribeParams { name_or_address }): Path<SubscribeParams>,
+    Query(SubscribeQueryParams { client_address }): Query<SubscribeQueryParams>,
     forwarded_for: Option<TypedHeader<XForwardedFor>>,
     auth: SpacetimeAuthHeader,
     ws: WebSocketUpgrade,
@@ -43,7 +59,18 @@ where
 {
     let auth = auth.get_or_create(&ctx).await?;
 
-    let address = name_or_address.resolve(&ctx).await?.into();
+    let client_address = client_address
+        .map(Address::from)
+        .unwrap_or_else(generate_random_address);
+
+    if client_address == Address::__dummy() {
+        Err((
+            StatusCode::BAD_REQUEST,
+            "Invalid client address: the all-zeros Address is reserved.",
+        ))?;
+    }
+
+    let db_address = name_or_address.resolve(&ctx).await?.into();
 
     let (res, ws_upgrade, protocol) =
         ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
@@ -52,8 +79,9 @@ where
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
     // to connect to multiple modules
+
     let database = ctx
-        .get_database_by_address(&address)
+        .get_database_by_address(&db_address)
         .unwrap()
         .ok_or(StatusCode::BAD_REQUEST)?;
     let database_instance = ctx
@@ -79,6 +107,7 @@ where
 
     let client_id = ClientActorId {
         identity: auth.identity,
+        address: client_address,
         name: ctx.client_actor_index().next_client_name(),
     };
 
@@ -123,6 +152,7 @@ where
         let message = IdentityTokenMessage {
             identity: auth.identity,
             identity_token,
+            address: client_address,
         };
         if let Err(ClientClosed) = client.send_message(message).await {
             log::warn!("client closed before identity token was sent")
@@ -250,7 +280,7 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
     let _ = client.module.subscription().remove_subscriber(client.id);
     let _ = client
         .module
-        .call_identity_connected_disconnected(client.id.identity, false)
+        .call_identity_connected_disconnected(client.id.identity, client.id.address, false)
         .await;
 }
 

@@ -65,6 +65,9 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
         AlgebraicType::Product(p) if p.is_identity() => {
             write!(out, "Identity").unwrap();
         }
+        AlgebraicType::Product(p) if p.is_address() => {
+            write!(out, "Address").unwrap();
+        }
         AlgebraicType::Product(ProductType { elements }) => {
             print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {
                 if let Some(name) = &elem.name {
@@ -86,6 +89,9 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
                 //       on generated types, and notably, `HashMap` is not itself `Hash`,
                 //       so any type that holds a `Map` cannot derive `Hash` and cannot
                 //       key a `Map`.
+                // UPDATE: No, `AlgebraicType::Map` is supposed to be `BTreeMap`. Fix this.
+                //         This will require deriving `Ord` for generated types,
+                //         and is likely to be a big headache.
                 write!(out, "HashMap::<").unwrap();
                 write_type(ctx, out, &ty.key_ty);
                 write!(out, ", ").unwrap();
@@ -155,6 +161,7 @@ const ALLOW_UNUSED: &str = "#[allow(unused)]";
 const SPACETIMEDB_IMPORTS: &[&str] = &[
     ALLOW_UNUSED,
     "use spacetimedb_sdk::{",
+    "\tAddress,",
     "\tsats::{ser::Serialize, de::Deserialize},",
     "\ttable::{TableType, TableIter, TableWithPrimaryKey},",
     "\treducer::{Reducer, ReducerCallbackId, Status},",
@@ -632,7 +639,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     write!(
         out,
-        "pub fn on_{}(mut __callback: impl FnMut(&Identity, &Status",
+        "pub fn on_{}(mut __callback: impl FnMut(&Identity, Option<Address>, &Status",
         func_name
     )
     .unwrap();
@@ -646,7 +653,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
         |out| {
             write!(out, "{}", type_name).unwrap();
             out.delimited_block(
-                "::on_reducer(move |__identity, __status, __args| {",
+                "::on_reducer(move |__identity, __addr, __status, __args| {",
                 |out| {
                     write!(out, "let ").unwrap();
                     print_reducer_struct_literal(out, reducer);
@@ -655,6 +662,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
                         "__callback(",
                         |out| {
                             writeln!(out, "__identity,").unwrap();
+                            writeln!(out, "__addr,").unwrap();
                             writeln!(out, "__status,").unwrap();
                             for arg_name in iter_reducer_arg_names(reducer) {
                                 writeln!(out, "{},", arg_name.unwrap()).unwrap();
@@ -675,7 +683,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     writeln!(out, "{}", ALLOW_UNUSED).unwrap();
     write!(
         out,
-        "pub fn once_on_{}(__callback: impl FnOnce(&Identity, &Status",
+        "pub fn once_on_{}(__callback: impl FnOnce(&Identity, Option<Address>, &Status",
         func_name
     )
     .unwrap();
@@ -689,7 +697,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
         |out| {
             write!(out, "{}", type_name).unwrap();
             out.delimited_block(
-                "::once_on_reducer(move |__identity, __status, __args| {",
+                "::once_on_reducer(move |__identity, __addr, __status, __args| {",
                 |out| {
                     write!(out, "let ").unwrap();
                     print_reducer_struct_literal(out, reducer);
@@ -698,6 +706,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
                         "__callback(",
                         |out| {
                             writeln!(out, "__identity,").unwrap();
+                            writeln!(out, "__addr,").unwrap();
                             writeln!(out, "__status,").unwrap();
                             for arg_name in iter_reducer_arg_names(reducer) {
                                 writeln!(out, "{},", arg_name.unwrap()).unwrap();

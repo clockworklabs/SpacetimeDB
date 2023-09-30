@@ -138,6 +138,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
     async fn publish_database(
         &self,
         identity: &Identity,
+        publisher_address: Option<Address>,
         spec: DatabaseDef,
     ) -> spacetimedb::control_db::Result<Option<UpdateDatabaseResult>>;
 
@@ -240,9 +241,10 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for ArcEnv<T> 
     async fn publish_database(
         &self,
         identity: &Identity,
+        publisher_address: Option<Address>,
         spec: DatabaseDef,
     ) -> spacetimedb::control_db::Result<Option<UpdateDatabaseResult>> {
-        self.0.publish_database(identity, spec).await
+        self.0.publish_database(identity, publisher_address, spec).await
     }
 
     async fn delete_database(&self, identity: &Identity, address: &Address) -> spacetimedb::control_db::Result<()> {
@@ -392,9 +394,10 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
     async fn publish_database(
         &self,
         identity: &Identity,
+        publisher_address: Option<Address>,
         spec: DatabaseDef,
     ) -> spacetimedb::control_db::Result<Option<UpdateDatabaseResult>> {
-        (**self).publish_database(identity, spec).await
+        (**self).publish_database(identity, publisher_address, spec).await
     }
 
     async fn delete_database(&self, identity: &Identity, address: &Address) -> spacetimedb::control_db::Result<()> {

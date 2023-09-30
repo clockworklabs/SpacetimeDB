@@ -368,10 +368,23 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
     };
 
     let generated_function = quote! {
-        fn __reducer(__sender: spacetimedb::sys::Buffer, __timestamp: u64, __args: &[u8]) -> spacetimedb::sys::Buffer {
+        // NOTE: double-underscoring names here is unnecessary, as Rust macros are hygienic.
+        fn __reducer(
+            __sender: spacetimedb::sys::Buffer,
+            __caller_address: spacetimedb::sys::Buffer,
+            __timestamp: u64,
+            __args: &[u8]
+        ) -> spacetimedb::sys::Buffer {
             #(spacetimedb::rt::assert_reducerarg::<#arg_tys>();)*
             #(spacetimedb::rt::assert_reducerret::<#ret_ty>();)*
-            spacetimedb::rt::invoke_reducer(#func_name, __sender, __timestamp, __args, |_res| { #epilogue })
+            spacetimedb::rt::invoke_reducer(
+                #func_name,
+                __sender,
+                __caller_address,
+                __timestamp,
+                __args,
+                |_res| { #epilogue },
+            )
         }
     };
 
@@ -889,8 +902,12 @@ fn spacetimedb_connect_disconnect(item: TokenStream, connect: bool) -> syn::Resu
     let emission = quote! {
         const _: () = {
             #[export_name = #connect_disconnect_symbol]
-            extern "C" fn __connect_disconnect(__sender: spacetimedb::sys::Buffer, __timestamp: u64) -> spacetimedb::sys::Buffer {
-                spacetimedb::rt::invoke_connection_func(#func_name, __sender, __timestamp)
+            extern "C" fn __connect_disconnect(
+                __sender: spacetimedb::sys::Buffer,
+                __caller_address: spacetimedb::sys::Buffer,
+                __timestamp: u64,
+            ) -> spacetimedb::sys::Buffer {
+                spacetimedb::rt::invoke_connection_func(#func_name, __sender, __caller_address, __timestamp)
             }
         };
 

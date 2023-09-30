@@ -1,7 +1,7 @@
 use base64::Engine;
 use prost::Message as _;
 use spacetimedb_client_api_messages::client_api::{OneOffQueryResponse, OneOffTable};
-use spacetimedb_lib::relation::MemTable;
+use spacetimedb_lib::{relation::MemTable, Address};
 
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::identity::Identity;
@@ -29,6 +29,7 @@ pub trait ServerMessage: Sized {
 pub struct IdentityTokenMessage {
     pub identity: Identity,
     pub identity_token: String,
+    pub address: Address,
 }
 
 impl ServerMessage for IdentityTokenMessage {
@@ -36,6 +37,7 @@ impl ServerMessage for IdentityTokenMessage {
         MessageJson::IdentityToken(IdentityTokenJson {
             identity: self.identity.to_hex(),
             token: self.identity_token,
+            address: self.address.to_hex(),
         })
     }
     fn serialize_binary(self) -> Message {
@@ -43,6 +45,7 @@ impl ServerMessage for IdentityTokenMessage {
             r#type: Some(message::Type::IdentityToken(IdentityToken {
                 identity: self.identity.as_bytes().to_vec(),
                 token: self.identity_token,
+                address: self.address.as_slice().to_vec(),
             })),
         }
     }
@@ -72,6 +75,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
             },
             energy_quanta_used: event.energy_quanta_used.0,
             message: errmsg,
+            caller_address: event.caller_address.unwrap_or(Address::ZERO).to_hex(),
         };
 
         let subscription_update = database_update.into_json();
@@ -100,6 +104,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
             message: errmsg,
             energy_quanta_used: event.energy_quanta_used.0 as i64,
             host_execution_duration_micros: event.host_execution_duration.as_micros() as u64,
+            caller_address: event.caller_address.unwrap_or(Address::zero()).as_slice().to_vec(),
         };
 
         let subscription_update = database_update.into_protobuf();

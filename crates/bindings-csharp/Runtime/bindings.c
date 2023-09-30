@@ -434,33 +434,37 @@ static Buffer return_result_buf(MonoObject* str) {
 
 __attribute__((export_name("__call_reducer__"))) Buffer __call_reducer__(
     uint32_t id,
-    Buffer sender_,
+    Buffer sender_id_,
+    Buffer sender_address_,
     uint64_t timestamp,
     Buffer args_) {
-  MonoArray* sender = stdb_buffer_consume(sender_);
+  MonoArray* sender_id = stdb_buffer_consume(sender_id_);
+  MonoArray* sender_address = stdb_buffer_consume(sender_address_);
   MonoArray* args = stdb_buffer_consume(args_);
 
   return return_result_buf(INVOKE_DOTNET_METHOD(
       "SpacetimeDB.Runtime.dll", "SpacetimeDB.Module", "FFI", "CallReducer",
-      NULL, &id, sender, &timestamp, args));
+      NULL, &id, sender_id, sender_address, &timestamp, args));
 }
 
 __attribute__((export_name("__identity_connected__"))) Buffer
-__identity_connected__(Buffer sender_, uint64_t timestamp) {
-  MonoArray* sender = stdb_buffer_consume(sender_);
+__identity_connected__(Buffer sender_id_, Buffer sender_address_, uint64_t timestamp) {
+  MonoArray* sender_id = stdb_buffer_consume(sender_id_);
+  MonoArray* sender_address = stdb_buffer_consume(sender_address_);
 
   return return_result_buf(
       INVOKE_DOTNET_METHOD("SpacetimeDB.Runtime.dll", "SpacetimeDB", "Runtime",
-                           "IdentityConnected", NULL, sender, &timestamp));
+                           "IdentityConnected", NULL, sender_id, sender_address, &timestamp));
 }
 
 __attribute__((export_name("__identity_disconnected__"))) Buffer
-__identity_disconnected__(Buffer sender_, uint64_t timestamp) {
-  MonoArray* sender = stdb_buffer_consume(sender_);
+__identity_disconnected__(Buffer sender_id_, Buffer sender_address_, uint64_t timestamp) {
+  MonoArray* sender_id = stdb_buffer_consume(sender_id_);
+  MonoArray* sender_address = stdb_buffer_consume(sender_address_);
 
   return return_result_buf(
       INVOKE_DOTNET_METHOD("SpacetimeDB.Runtime.dll", "SpacetimeDB", "Runtime",
-                           "IdentityDisconnected", NULL, sender, &timestamp));
+                           "IdentityDisconnected", NULL, sender_id, sender_address, &timestamp));
 }
 
 // Shims to avoid dependency on WASI in the generated Wasm file.

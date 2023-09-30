@@ -23,7 +23,9 @@ use crate::{
     reducer::{AnyReducerEvent, Reducer, Status},
     spacetime_module::SpacetimeModule,
     table::TableType,
+    Address,
 };
+use anyhow::Context;
 use anymap::{any::Any, Map};
 use futures::stream::StreamExt;
 use futures_channel::mpsc;
@@ -137,12 +139,12 @@ impl<Args> std::fmt::Debug for CallbackId<Args> {
 // - `Credentials` -> `&Credentials`, for `on_connect`.
 // - `()` -> `()`, for `on_subscription_applied`.
 // - `(T, T, U)` -> `(&T, &T, U)`, for `TableWithPrimaryKey::on_update`.
-// - `(Identity, Status, R)` -> `(&Identity, &Status, &R)`, for `Reducer::on_reducer`.
+// - `(Identity, Option<Address>, Status, R)` -> `(&Identity, Option<Address>, &Status, &R)`, for `Reducer::on_reducer`.
 
-impl OwnedArgs for Credentials {
-    type Borrowed<'a> = &'a Credentials;
-    fn borrow(&self) -> &Credentials {
-        self
+impl OwnedArgs for (Credentials, Address) {
+    type Borrowed<'a> = (&'a Credentials, Address);
+    fn borrow(&self) -> (&Credentials, Address) {
+        (&self.0, self.1)
     }
 }
 
@@ -178,13 +180,13 @@ impl<T: TableType> OwnedArgs for (T, T, Option<Arc<AnyReducerEvent>>) {
     }
 }
 
-impl<R> OwnedArgs for (Identity, Status, R)
+impl<R> OwnedArgs for (Identity, Option<Address>, Status, R)
 where
     R: Send + 'static,
 {
-    type Borrowed<'a> = (&'a Identity, &'a Status, &'a R);
-    fn borrow(&self) -> (&Identity, &Status, &R) {
-        (&self.0, &self.1, &self.2)
+    type Borrowed<'a> = (&'a Identity, Option<Address>, &'a Status, &'a R);
+    fn borrow(&self) -> (&Identity, Option<Address>, &Status, &R) {
+        (&self.0, self.1, &self.2, &self.3)
     }
 }
 
@@ -450,9 +452,9 @@ fn uncurry_update_callback<Row, ReducerEvent>(
 ///
 /// This function is intended specifically for `Reducer::on_reducer` callbacks.
 fn uncurry_reducer_callback<R>(
-    mut f: impl for<'a> FnMut(&'a Identity, &'a Status, &'a R) + Send + 'static,
-) -> impl for<'a> FnMut((&'a Identity, &'a Status, &'a R)) + Send + 'static {
-    move |(identity, status, reducer)| f(identity, status, reducer)
+    mut f: impl for<'a> FnMut(&'a Identity, Option<Address>, &'a Status, &'a R) + Send + 'static,
+) -> impl for<'a> FnMut((&'a Identity, Option<Address>, &'a Status, &'a R)) + Send + 'static {
+    move |(identity, address, status, reducer)| f(identity, address, status, reducer)
 }
 
 /// A collection of registered callbacks for `on_insert`, `on_delete` and `on_update` events
@@ -684,9 +686,9 @@ impl ReducerCallbacks {
         self.module = Some(module);
     }
 
-    pub(crate) fn find_callbacks<R: Reducer>(&mut self) -> &mut CallbackMap<(Identity, Status, R)> {
+    pub(crate) fn find_callbacks<R: Reducer>(&mut self) -> &mut CallbackMap<(Identity, Option<Address>, Status, R)> {
         self.callbacks
-            .entry::<CallbackMap<(Identity, Status, R)>>()
+            .entry::<CallbackMap<(Identity, Option<Address>, Status, R)>>()
             .or_insert_with(|| CallbackMap::spawn(&self.runtime))
     }
 
@@ -705,6 +707,7 @@ impl ReducerCallbacks {
     ) -> Option<Arc<AnyReducerEvent>> {
         let client_api_messages::Event {
             caller_identity,
+            caller_address,
             function_call: Some(function_call),
             status,
             message,
@@ -715,6 +718,12 @@ impl ReducerCallbacks {
             return None;
         };
         let identity = Identity::from_bytes(caller_identity);
+        let address = Address::from_slice(caller_address);
+        let address = if address == Address::zero() {
+            None
+        } else {
+            Some(address)
+        };
         let Some(status) = parse_status(status, message) else {
             log::warn!("Received Event with unknown status {:?}", status);
             return None;
@@ -727,7 +736,7 @@ impl ReducerCallbacks {
             Ok(instance) => {
                 // TODO: should reducer callbacks' `OwnedArgs` impl take an `Arc<R>` rather than an `R`?
                 self.find_callbacks::<R>()
-                    .invoke((identity, status, instance.clone()), state);
+                    .invoke((identity, address, status, instance.clone()), state);
                 Some(Arc::new(wrap(instance)))
             }
         }
@@ -738,8 +747,8 @@ impl ReducerCallbacks {
     // TODO: reduce monomorphization by accepting `Box<Callback>` instead of `impl Callback`
     pub(crate) fn register_on_reducer<R: Reducer>(
         &mut self,
-        callback: impl FnMut(&Identity, &Status, &R) + Send + 'static,
-    ) -> CallbackId<(Identity, Status, R)> {
+        callback: impl FnMut(&Identity, Option<Address>, &Status, &R) + Send + 'static,
+    ) -> CallbackId<(Identity, Option<Address>, Status, R)> {
         self.find_callbacks::<R>()
             .insert(Box::new(uncurry_reducer_callback(callback)))
     }
@@ -752,14 +761,14 @@ impl ReducerCallbacks {
     // since [`CallbackMap::insert_oneshot`] boxes its wrapper callback.
     pub(crate) fn register_on_reducer_oneshot<R: Reducer>(
         &mut self,
-        callback: impl FnOnce(&Identity, &Status, &R) + Send + 'static,
-    ) -> CallbackId<(Identity, Status, R)> {
+        callback: impl FnOnce(&Identity, Option<Address>, &Status, &R) + Send + 'static,
+    ) -> CallbackId<(Identity, Option<Address>, Status, R)> {
         self.find_callbacks::<R>()
-            .insert_oneshot(move |(identity, status, args)| callback(identity, status, args))
+            .insert_oneshot(move |(identity, address, status, args)| callback(identity, address, status, args))
     }
 
     /// Unregister a previously-registered on-reducer callback identified by `id`.
-    pub(crate) fn unregister_on_reducer<R: Reducer>(&mut self, id: CallbackId<(Identity, Status, R)>) {
+    pub(crate) fn unregister_on_reducer<R: Reducer>(&mut self, id: CallbackId<(Identity, Option<Address>, Status, R)>) {
         self.find_callbacks::<R>().remove(id);
     }
 
@@ -792,11 +801,46 @@ pub(crate) struct CredentialStore {
     /// from the database.
     credentials: Option<Credentials>,
 
+    address: Option<Address>,
+
     /// Any `on_connect` callbacks to run when credentials become available.
-    callbacks: CallbackMap<Credentials>,
+    callbacks: CallbackMap<(Credentials, Address)>,
 }
 
 impl CredentialStore {
+    pub(crate) fn use_saved_address(&mut self, file: &str) -> anyhow::Result<Address> {
+        if let Some(address) = self.address {
+            panic!(
+                "Cannot use_saved_address when an address has already been generated. Generated address: {:?}",
+                address
+            );
+        }
+        match std::fs::read(file) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let file = AsRef::<std::path::Path>::as_ref(file);
+                let addr = Address::from_arr(&rand::random());
+                let addr_bytes = bsatn::to_vec(&addr).context("Error serializing Address")?;
+
+                if let Some(parent) = file.parent() {
+                    if parent != AsRef::<std::path::Path>::as_ref("") {
+                        std::fs::create_dir_all(parent).context("Error creating parent directory for address file")?;
+                    }
+                }
+
+                std::fs::write(file, addr_bytes).context("Error writing Address to file")?;
+
+                self.address = Some(addr);
+                Ok(addr)
+            }
+            Err(e) => Err(e).context("Error reading BSATN-encoded Address from file"),
+            Ok(file_contents) => {
+                let addr = bsatn::from_slice::<Address>(&file_contents)
+                    .context("Error decoding BSATN-encoded Address from file")?;
+                self.address = Some(addr);
+                Ok(addr)
+            }
+        }
+    }
     /// Construct a `CredentialStore` for a not-yet-connected `BackgroundDbConnection`
     /// containing no credentials.
     ///
@@ -804,6 +848,7 @@ impl CredentialStore {
     pub(crate) fn without_credentials(runtime: &runtime::Handle) -> Self {
         CredentialStore {
             credentials: None,
+            address: None,
             callbacks: CallbackMap::spawn(runtime),
         }
     }
@@ -815,26 +860,38 @@ impl CredentialStore {
         self.credentials = credentials;
     }
 
+    pub(crate) fn get_or_init_address(&mut self) -> Address {
+        if let Some(addr) = self.address {
+            addr
+        } else {
+            let addr = Address::from_arr(&rand::random());
+            self.address = Some(addr);
+            addr
+        }
+    }
+
     /// Register an on-connect callback to run when the client's `Credentials` become available.
     // TODO: reduce monomorphization by accepting `Box<Callback>` instead of `impl Callback`
     pub(crate) fn register_on_connect(
         &mut self,
-        callback: impl FnMut(&Credentials) + Send + 'static,
-    ) -> CallbackId<Credentials> {
-        self.callbacks.insert(Box::new(callback))
+        mut callback: impl FnMut(&Credentials, Address) + Send + 'static,
+    ) -> CallbackId<(Credentials, Address)> {
+        self.callbacks
+            .insert(Box::new(move |(creds, addr)| callback(creds, addr)))
     }
 
     /// Register an on-connect callback which will run at most once,
     /// then unregister itself.
     pub(crate) fn register_on_connect_oneshot(
         &mut self,
-        callback: impl FnOnce(&Credentials) + Send + 'static,
-    ) -> CallbackId<Credentials> {
-        self.callbacks.insert_oneshot(callback)
+        callback: impl FnOnce(&Credentials, Address) + Send + 'static,
+    ) -> CallbackId<(Credentials, Address)> {
+        self.callbacks
+            .insert_oneshot(move |(creds, addr)| callback(creds, addr))
     }
 
     /// Unregister a previously-registered on-connect callback identified by `id`.
-    pub(crate) fn unregister_on_connect(&mut self, id: CallbackId<Credentials>) {
+    pub(crate) fn unregister_on_connect(&mut self, id: CallbackId<(Credentials, Address)>) {
         self.callbacks.remove(id);
     }
 
@@ -847,9 +904,14 @@ impl CredentialStore {
     ///
     /// Either way, invoke any on-connect callbacks with the received credentials.
     pub(crate) fn handle_identity_token(&mut self, msg: client_api_messages::IdentityToken, state: ClientCacheView) {
-        let client_api_messages::IdentityToken { identity, token } = msg;
-        if identity.is_empty() || token.is_empty() {
-            log::warn!("Received IdentityToken message with emtpy identity and/or empty token");
+        let client_api_messages::IdentityToken {
+            identity,
+            token,
+            address,
+        } = msg;
+        if identity.is_empty() || token.is_empty() || address.is_empty() {
+            // TODO: panic?
+            log::warn!("Received IdentityToken message with emtpy identity, token and/or address");
             return;
         }
 
@@ -858,7 +920,17 @@ impl CredentialStore {
             token: Token { string: token },
         };
 
-        self.callbacks.invoke(creds.clone(), state);
+        let address = Address::from_slice(&address);
+
+        if Some(address) != self.address {
+            log::error!(
+                "Address provided by the server does not match local record. Server: {:?} Local: {:?}",
+                address,
+                self.address,
+            );
+        }
+
+        self.callbacks.invoke((creds.clone(), address), state);
 
         if let Some(existing_creds) = &self.credentials {
             // If we already have credentials, make sure that they match. Log an error if
@@ -891,6 +963,11 @@ impl CredentialStore {
     /// Return the current connection's `Credentials`, if they are stored.
     pub(crate) fn credentials(&self) -> Option<Credentials> {
         self.credentials.clone()
+    }
+
+    /// Return the current connection's `Address`, if it is stored.
+    pub(crate) fn address(&self) -> Option<Address> {
+        self.address
     }
 }
 

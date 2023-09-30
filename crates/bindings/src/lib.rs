@@ -23,6 +23,7 @@ pub use spacetimedb_bindings_macro::{duration, query, spacetimedb, TableType};
 pub use sats::SpacetimeType;
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::sats;
+pub use spacetimedb_lib::Address;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::Identity;
 pub use timestamp::Timestamp;
@@ -51,6 +52,14 @@ pub struct ReducerContext {
     pub sender: Identity,
     /// The time at which the reducer was started.
     pub timestamp: Timestamp,
+    /// The `Address` of the client that invoked the reducer.
+    ///
+    /// `None` if no `Address` was supplied to the `/database/call` HTTP endpoint,
+    /// or via the CLI's `spacetime call` subcommand.
+    ///
+    /// For automatic reducers, i.e. `init`, `update` and scheduled reducers,
+    /// this will be the module's `Address`.
+    pub address: Option<Address>,
 }
 
 impl ReducerContext {
@@ -59,6 +68,7 @@ impl ReducerContext {
         Self {
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
+            address: None,
         }
     }
 }

@@ -46,6 +46,21 @@ fn update_identity() {
 }
 
 #[test]
+fn insert_address() {
+    make_test("insert_address").run();
+}
+
+#[test]
+fn delete_address() {
+    make_test("delete_address").run();
+}
+
+#[test]
+fn update_address() {
+    make_test("delete_address").run();
+}
+
+#[test]
 fn on_reducer() {
     make_test("on_reducer").run();
 }
@@ -90,6 +105,11 @@ fn should_fail() {
 fn reauth() {
     make_test("reauth_part_1").run();
     make_test("reauth_part_2").run();
+}
+
+#[test]
+fn reconnect_same_address() {
+    make_test("reconnect_same_address").run();
 }
 
 #[test]

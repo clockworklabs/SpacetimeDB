@@ -16,7 +16,7 @@ use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
 use spacetimedb_lib::relation::MemTable;
-use spacetimedb_lib::{ReducerDef, TableDef};
+use spacetimedb_lib::{Address, ReducerDef, TableDef};
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
 use std::collections::HashMap;
 use std::fmt;
@@ -186,6 +186,7 @@ pub struct ModuleFunctionCall {
 pub struct ModuleEvent {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
+    pub caller_address: Option<Address>,
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
     pub energy_quanta_used: EnergyDiff,
@@ -195,6 +196,7 @@ pub struct ModuleEvent {
 #[derive(Debug)]
 pub struct ModuleInfo {
     pub identity: Identity,
+    pub address: Address,
     pub module_hash: Hash,
     pub typespace: Typespace,
     pub reducers: IndexMap<String, ReducerDef>,
@@ -239,12 +241,13 @@ pub trait ModuleInstance: Send + 'static {
     fn call_reducer(
         &mut self,
         caller_identity: Identity,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_id: usize,
         args: ArgsTuple,
     ) -> ReducerCallResult;
 
-    fn call_connect_disconnect(&mut self, identity: Identity, connected: bool);
+    fn call_connect_disconnect(&mut self, identity: Identity, caller_address: Address, connected: bool);
 }
 
 // TODO: figure out how we want to handle traps. maybe it should just not return to the LendingPool and
@@ -279,16 +282,19 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
     fn call_reducer(
         &mut self,
         caller_identity: Identity,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_id: usize,
         args: ArgsTuple,
     ) -> ReducerCallResult {
-        let ret = self.inst.call_reducer(caller_identity, client, reducer_id, args);
+        let ret = self
+            .inst
+            .call_reducer(caller_identity, caller_address, client, reducer_id, args);
         self.check_trap();
         ret
     }
-    fn call_connect_disconnect(&mut self, identity: Identity, connected: bool) {
-        self.inst.call_connect_disconnect(identity, connected);
+    fn call_connect_disconnect(&mut self, identity: Identity, caller_address: Address, connected: bool) {
+        self.inst.call_connect_disconnect(identity, caller_address, connected);
         self.check_trap();
     }
 }
@@ -503,15 +509,17 @@ impl ModuleHost {
     pub async fn call_identity_connected_disconnected(
         &self,
         caller_identity: Identity,
+        caller_address: Address,
         connected: bool,
     ) -> Result<(), NoSuchModule> {
-        self.call(move |inst| inst.call_connect_disconnect(caller_identity, connected))
+        self.call(move |inst| inst.call_connect_disconnect(caller_identity, caller_address, connected))
             .await
     }
 
     async fn call_reducer_inner(
         &self,
         caller_identity: Identity,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_name: &str,
         args: ReducerArgs,
@@ -524,7 +532,7 @@ impl ModuleHost {
 
         let args = args.into_tuple(self.info.typespace.with_type(schema))?;
 
-        self.call(move |inst| inst.call_reducer(caller_identity, client, reducer_id, args))
+        self.call(move |inst| inst.call_reducer(caller_identity, caller_address, client, reducer_id, args))
             .await
             .map_err(Into::into)
     }
@@ -532,12 +540,13 @@ impl ModuleHost {
     pub async fn call_reducer(
         &self,
         caller_identity: Identity,
+        caller_address: Option<Address>,
         client: Option<ClientConnectionSender>,
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let res = self
-            .call_reducer_inner(caller_identity, client, reducer_name, args)
+            .call_reducer_inner(caller_identity, caller_address, client, reducer_name, args)
             .await;
 
         let log_message = match &res {

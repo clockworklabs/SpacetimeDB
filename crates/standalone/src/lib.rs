@@ -274,6 +274,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
     async fn publish_database(
         &self,
         identity: &Identity,
+        publisher_address: Option<Address>,
         spec: spacetimedb_client_api::DatabaseDef,
     ) -> spacetimedb::control_db::Result<Option<UpdateDatabaseResult>> {
         let existing_db = self.control_db.get_database_by_address(&spec.address)?;
@@ -283,6 +284,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 address: spec.address,
                 num_replicas: spec.num_replicas,
                 program_bytes_address,
+                publisher_address,
                 ..existing.clone()
             },
             None => Database {
@@ -292,6 +294,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 host_type: HostType::Wasmer,
                 num_replicas: spec.num_replicas,
                 program_bytes_address,
+                publisher_address,
             },
         };
 

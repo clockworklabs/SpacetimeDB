@@ -313,11 +313,19 @@ impl BackgroundDbConnection {
         IntoUri: TryInto<http::Uri>,
         <IntoUri as TryInto<http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
     {
+        let client_address = {
+            let mut lock = self.credentials.lock().expect("CredentialStore Mutex is poisoned");
+            lock.get_or_init_address()
+        };
         // `block_in_place` is required here, as tokio won't allow us to call
         // `block_on` if it would block the current thread of an outer runtime
         let connection = tokio::task::block_in_place(|| {
-            self.handle
-                .block_on(DbConnection::connect(spacetimedb_uri, db_name, credentials.as_ref()))
+            self.handle.block_on(DbConnection::connect(
+                spacetimedb_uri,
+                db_name,
+                credentials.as_ref(),
+                client_address,
+            ))
         })?;
 
         let client_cache = Arc::new(ClientCache::new(module.clone()));

@@ -106,7 +106,9 @@ impl ClientConnection {
         // TODO: Right now this is connecting clients directly to an instance, but their requests should be
         // logically subscribed to the database, not any particular instance. We should handle failover for
         // them and stuff. Not right now though.
-        module.call_identity_connected_disconnected(id.identity, true).await?;
+        module
+            .call_identity_connected_disconnected(id.identity, id.address, true)
+            .await?;
 
         // Buffer up to 64 client messages
         let (sendtx, sendrx) = mpsc::channel::<DataMessage>(64);
@@ -150,7 +152,13 @@ impl ClientConnection {
 
     pub async fn call_reducer(&self, reducer: &str, args: ReducerArgs) -> Result<ReducerCallResult, ReducerCallError> {
         self.module
-            .call_reducer(self.id.identity, Some(self.sender()), reducer, args)
+            .call_reducer(
+                self.id.identity,
+                Some(self.id.address),
+                Some(self.sender()),
+                reducer,
+                args,
+            )
             .await
     }
 

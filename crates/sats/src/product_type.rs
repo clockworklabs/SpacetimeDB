@@ -53,6 +53,22 @@ impl ProductType {
             _ => false,
         }
     }
+
+    /// Returns whether this is the special case of `spacetimedb_lib::Address`.
+    pub fn is_address(&self) -> bool {
+        match &*self.elements {
+            [ProductTypeElement {
+                name: Some(name),
+                algebraic_type,
+            }] => name == "__address_bytes" && algebraic_type.is_bytes(),
+            _ => false,
+        }
+    }
+
+    /// Returns whether this is a special known type, currently `Address` or `Identity`.
+    pub fn is_special(&self) -> bool {
+        self.is_identity() || self.is_address()
+    }
 }
 
 impl<I: Into<ProductTypeElement>> FromIterator<I> for ProductType {

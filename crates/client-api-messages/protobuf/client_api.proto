@@ -28,7 +28,7 @@ message Message {
     }
 }
 
-/// Received by database from client to inform of user's identity and token.
+/// Received by database from client to inform of user's identity, token and client address.
 ///
 /// The database will always send an `IdentityToken` message
 /// as the first message for a new WebSocket connection.
@@ -39,6 +39,7 @@ message Message {
 message IdentityToken {
     bytes identity = 1;
     string token = 2;
+    bytes address = 3;
 }
 
 // TODO: Evaluate if it makes sense for this to also include the
@@ -110,6 +111,15 @@ message Subscribe {
 /// - `energy_quanta_used` and `host_execution_duration_micros` seem self-explanatory;
 ///   they describe the amount of energy credits consumed by running the reducer,
 ///   and how long it took to run.
+///
+/// - `callerAddress` is the 16-byte address of the user who requested the reducer run.
+///                   The all-zeros address is a sentinel which denotes no address.
+///                   `init` and `update` reducers will have a `callerAddress`
+///                   if and only if one was provided to the `publish` HTTP endpoint.
+///                   Scheduled reducers will never have a `callerAddress`.
+///                   Reducers invoked by HTTP will have a `callerAddress`
+///                   if and only if one was provided to the `call` HTTP endpoint.
+///                   Reducers invoked by WebSocket will always have a `callerAddress`.
 message Event {
     enum Status {
         committed = 0;
@@ -128,6 +138,8 @@ message Event {
     int64 energy_quanta_used = 6;
 
     uint64 host_execution_duration_micros = 7;
+
+    bytes callerAddress = 8;
 }
 
 // TODO: Maybe call this StateUpdate if it's implied to be a subscription update

@@ -125,7 +125,8 @@ impl CompiledModule {
         crate::set_key_env_vars(&paths);
         let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
         let identity = env.create_identity().await.unwrap();
-        let address = env.create_address().await.unwrap();
+        let db_address = env.create_address().await.unwrap();
+        let client_address = env.create_address().await.unwrap();
 
         let program_bytes = self
             .program_bytes
@@ -134,8 +135,9 @@ impl CompiledModule {
 
         env.publish_database(
             &identity,
+            Some(client_address),
             DatabaseDef {
-                address,
+                address: db_address,
                 program_bytes,
                 num_replicas: 1,
             },
@@ -143,11 +145,12 @@ impl CompiledModule {
         .await
         .unwrap();
 
-        let database = env.get_database_by_address(&address).unwrap().unwrap();
+        let database = env.get_database_by_address(&db_address).unwrap().unwrap();
         let instance = env.get_leader_database_instance_by_database(database.id).unwrap();
 
         let client_id = ClientActorId {
             identity,
+            address: client_address,
             name: env.client_actor_index().next_client_name(),
         };
 
@@ -160,7 +163,7 @@ impl CompiledModule {
         ModuleHandle {
             _env: env,
             client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module),
-            db_address: address,
+            db_address,
         }
     }
 }

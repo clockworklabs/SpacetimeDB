@@ -1,6 +1,7 @@
 use spacetimedb_sdk::{
-    identity::{identity, load_credentials, once_on_connect, save_credentials},
-    once_on_subscription_applied,
+    disconnect,
+    identity::{address, identity, load_credentials, once_on_connect, save_credentials},
+    once_on_disconnect, once_on_subscription_applied,
     reducer::Status,
     subscribe,
     table::TableType,
@@ -66,6 +67,10 @@ fn main() {
         "delete_identity" => exec_delete_identity(),
         "update_identity" => exec_update_identity(),
 
+        "insert_address" => exec_insert_address(),
+        "delete_address" => exec_delete_address(),
+        "update_address" => exec_update_address(),
+
         "on_reducer" => exec_on_reducer(),
         "fail_reducer" => exec_fail_reducer(),
 
@@ -85,6 +90,8 @@ fn main() {
         "reauth_part_2" => exec_reauth_part_2(),
 
         "should_fail" => exec_should_fail(),
+
+        "reconnect_same_address" => exec_reconnect_same_address(),
 
         _ => panic!("Unknown test: {}", test),
     }
@@ -125,6 +132,7 @@ fn assert_all_tables_empty() -> anyhow::Result<()> {
 
     assert_table_empty::<OneString>()?;
     assert_table_empty::<OneIdentity>()?;
+    assert_table_empty::<OneAddress>()?;
 
     assert_table_empty::<OneSimpleEnum>()?;
     assert_table_empty::<OneEnumWithPayload>()?;
@@ -153,6 +161,7 @@ fn assert_all_tables_empty() -> anyhow::Result<()> {
 
     assert_table_empty::<VecString>()?;
     assert_table_empty::<VecIdentity>()?;
+    assert_table_empty::<VecAddress>()?;
 
     assert_table_empty::<VecSimpleEnum>()?;
     assert_table_empty::<VecEnumWithPayload>()?;
@@ -178,6 +187,7 @@ fn assert_all_tables_empty() -> anyhow::Result<()> {
 
     assert_table_empty::<UniqueString>()?;
     assert_table_empty::<UniqueIdentity>()?;
+    assert_table_empty::<UniqueAddress>()?;
 
     assert_table_empty::<PkU8>()?;
     assert_table_empty::<PkU16>()?;
@@ -195,6 +205,7 @@ fn assert_all_tables_empty() -> anyhow::Result<()> {
 
     assert_table_empty::<PkString>()?;
     assert_table_empty::<PkIdentity>()?;
+    assert_table_empty::<PkAddress>()?;
 
     assert_table_empty::<LargeTable>()?;
 
@@ -220,6 +231,7 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM OneF64;",
     "SELECT * FROM OneString;",
     "SELECT * FROM OneIdentity;",
+    "SELECT * FROM OneAddress;",
     "SELECT * FROM OneSimpleEnum;",
     "SELECT * FROM OneEnumWithPayload;",
     "SELECT * FROM OneUnitStruct;",
@@ -241,6 +253,7 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM VecF64;",
     "SELECT * FROM VecString;",
     "SELECT * FROM VecIdentity;",
+    "SELECT * FROM VecAddress;",
     "SELECT * FROM VecSimpleEnum;",
     "SELECT * FROM VecEnumWithPayload;",
     "SELECT * FROM VecUnitStruct;",
@@ -260,6 +273,7 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM UniqueBool;",
     "SELECT * FROM UniqueString;",
     "SELECT * FROM UniqueIdentity;",
+    "SELECT * FROM UniqueAddress;",
     "SELECT * FROM PkU8;",
     "SELECT * FROM PkU16;",
     "SELECT * FROM PkU32;",
@@ -273,6 +287,7 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM PkBool;",
     "SELECT * FROM PkString;",
     "SELECT * FROM PkIdentity;",
+    "SELECT * FROM PkAddress;",
     "SELECT * FROM LargeTable;",
     "SELECT * FROM TableHoldsTable;",
 ];
@@ -317,7 +332,7 @@ fn exec_insert_primitive() {
         });
     }
 
-    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
     conn_result(connect(LOCALHOST, &name, None));
 
@@ -358,7 +373,7 @@ fn exec_delete_primitive() {
         });
     }
 
-    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
     conn_result(connect(LOCALHOST, &name, None));
 
@@ -401,7 +416,7 @@ fn exec_update_primitive() {
         });
     }
 
-    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
     conn_result(connect(LOCALHOST, &name, None));
 
@@ -430,7 +445,7 @@ fn exec_insert_identity() {
         });
     }
 
-    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
     conn_result(connect(LOCALHOST, &name, None));
 
@@ -458,7 +473,7 @@ fn exec_delete_identity() {
         });
     }
 
-    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
     conn_result(connect(LOCALHOST, &name, None));
 
@@ -488,7 +503,94 @@ fn exec_update_identity() {
         });
     }
 
-    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
+
+    assert_all_tables_empty().unwrap();
+}
+
+/// This tests that we can serialize and deserialize `Address` in various contexts.
+fn exec_insert_address() {
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        once_on_subscription_applied(move || {
+            insert_one::<OneAddress>(&test_counter, address().unwrap());
+
+            sub_applied_nothing_result(assert_all_tables_empty());
+        });
+    }
+
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
+}
+
+/// This test doesn't add much alongside `exec_insert_address` and `exec_delete_primitive`,
+/// but it's here for symmetry.
+fn exec_delete_address() {
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        once_on_subscription_applied(move || {
+            insert_then_delete_one::<UniqueAddress>(&test_counter, address().unwrap(), 0xbeef);
+
+            sub_applied_nothing_result(assert_all_tables_empty());
+        });
+    }
+
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
+
+    assert_all_tables_empty().unwrap();
+}
+
+/// This tests that we can distinguish between `on_delete` and `on_update` events
+/// for tables with `Address` primary keys.
+fn exec_update_address() {
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        once_on_subscription_applied(move || {
+            insert_update_delete_one::<PkAddress>(&test_counter, address().unwrap(), 0xbeef, 0xbabe);
+
+            sub_applied_nothing_result(assert_all_tables_empty());
+        });
+    }
+
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
     conn_result(connect(LOCALHOST, &name, None));
 
@@ -512,16 +614,23 @@ fn exec_on_reducer() {
 
     let value = 128;
 
-    once_on_insert_one_u_8(move |caller, status, arg| {
+    once_on_insert_one_u_8(move |caller_id, caller_addr, status, arg| {
         let run_checks = || {
             if *arg != value {
                 anyhow::bail!("Unexpected reducer argument. Expected {} but found {}", value, *arg);
             }
-            if *caller != identity().unwrap() {
+            if *caller_id != identity().unwrap() {
                 anyhow::bail!(
-                    "Unexpected caller. Expected:\n{:?}\nFound:\n{:?}",
+                    "Unexpected caller_id. Expected:\n{:?}\nFound:\n{:?}",
                     identity().unwrap(),
-                    caller
+                    caller_id
+                );
+            }
+            if caller_addr != Some(address().unwrap()) {
+                anyhow::bail!(
+                    "Unexpected caller_addr. Expected:\n{:?}\nFound:\n{:?}",
+                    address().unwrap(),
+                    caller_addr
                 );
             }
             if !matches!(status, Status::Committed) {
@@ -546,7 +655,7 @@ fn exec_on_reducer() {
         sub_applied_nothing_result(assert_all_tables_empty());
     });
 
-    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
     conn_result(connect(LOCALHOST, &name, None));
 
@@ -571,7 +680,7 @@ fn exec_fail_reducer() {
     let initial_data = 0xbeef;
     let fail_data = 0xbabe;
 
-    once_on_insert_pk_u_8(move |caller, status, arg_key, arg_val| {
+    once_on_insert_pk_u_8(move |caller_id, caller_addr, status, arg_key, arg_val| {
         let run_checks = || {
             if *arg_key != key {
                 anyhow::bail!("Unexpected reducer argument. Expected {} but found {}", key, *arg_key);
@@ -580,14 +689,21 @@ fn exec_fail_reducer() {
                 anyhow::bail!(
                     "Unexpected reducer argument. Expected {} but found {}",
                     initial_data,
-                    *arg_val
+                    *arg_val,
                 );
             }
-            if *caller != identity().unwrap() {
+            if *caller_id != identity().unwrap() {
                 anyhow::bail!(
-                    "Unexpected caller. Expected:\n{:?}\nFound:\n{:?}",
+                    "Unexpected caller_id. Expected:\n{:?}\nFound:\n{:?}",
                     identity().unwrap(),
-                    caller
+                    caller_id,
+                );
+            }
+            if caller_addr != Some(address().unwrap()) {
+                anyhow::bail!(
+                    "Unexpected caller_addr. Expected:\n{:?}\nFound:\n{:?}",
+                    address().unwrap(),
+                    caller_addr,
                 );
             }
             if !matches!(status, Status::Committed) {
@@ -610,7 +726,7 @@ fn exec_fail_reducer() {
 
         reducer_success_result(run_checks());
 
-        once_on_insert_pk_u_8(move |caller, status, arg_key, arg_val| {
+        once_on_insert_pk_u_8(move |caller_id, caller_addr, status, arg_key, arg_val| {
             let run_checks = || {
                 if *arg_key != key {
                     anyhow::bail!("Unexpected reducer argument. Expected {} but found {}", key, *arg_key);
@@ -622,12 +738,19 @@ fn exec_fail_reducer() {
                         *arg_val
                     );
                 }
-                if *caller != identity().unwrap() {
+                if *caller_id != identity().unwrap() {
                     anyhow::bail!(
-                        "Unexpected caller. Expected:\n{:?}\nFound:\n{:?}",
+                        "Unexpected caller_id. Expected:\n{:?}\nFound:\n{:?}",
                         identity().unwrap(),
-                        caller
+                        caller_id,
                     );
+                }
+                if caller_addr != Some(address().unwrap()) {
+                    anyhow::bail!(
+                        "Unexpected caller_addr. Expected:\n{:?}\nFound:\n{:?}",
+                        address().unwrap(),
+                        caller_addr,
+                    )
                 }
                 if !matches!(status, Status::Failed(_)) {
                     anyhow::bail!("Unexpected status. Expected Failed but found {:?}", status);
@@ -659,7 +782,7 @@ fn exec_fail_reducer() {
         sub_applied_nothing_result(assert_all_tables_empty());
     });
 
-    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
     conn_result(connect(LOCALHOST, &name, None));
 
@@ -705,7 +828,7 @@ fn exec_insert_vec() {
         });
     }
 
-    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
     conn_result(connect(LOCALHOST, &name, None));
 
@@ -746,6 +869,7 @@ fn exec_insert_struct() {
                     m: -1.0,
                     n: "string".to_string(),
                     o: identity().unwrap(),
+                    p: address().unwrap(),
                 },
             );
             insert_one::<OneEveryVecStruct>(
@@ -766,6 +890,7 @@ fn exec_insert_struct() {
                     m: vec![0.0, -0.5, 0.5, -1.5, 1.5],
                     n: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
                     o: vec![identity().unwrap()],
+                    p: vec![address().unwrap()],
                 },
             );
 
@@ -789,6 +914,7 @@ fn exec_insert_struct() {
                     m: -1.0,
                     n: "string".to_string(),
                     o: identity().unwrap(),
+                    p: address().unwrap(),
                 }],
             );
             insert_one::<VecEveryVecStruct>(
@@ -809,6 +935,7 @@ fn exec_insert_struct() {
                     m: vec![0.0, -0.5, 0.5, -1.5, 1.5],
                     n: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
                     o: vec![identity().unwrap()],
+                    p: vec![address().unwrap()],
                 }],
             );
 
@@ -816,7 +943,7 @@ fn exec_insert_struct() {
         });
     }
 
-    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
     conn_result(connect(LOCALHOST, &name, None));
 
@@ -844,7 +971,7 @@ fn exec_insert_simple_enum() {
         });
     }
 
-    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
     conn_result(connect(LOCALHOST, &name, None));
 
@@ -899,7 +1026,7 @@ fn exec_insert_enum_with_payload() {
         });
     }
 
-    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
     conn_result(connect(LOCALHOST, &name, None));
 
@@ -962,6 +1089,7 @@ fn exec_insert_long_table() {
                 m: 1.0,
                 n: "string".to_string(),
                 o: identity().unwrap(),
+                p: address().unwrap(),
             };
             let every_vec_struct = EveryVecStruct {
                 a: vec![0],
@@ -979,6 +1107,7 @@ fn exec_insert_long_table() {
                 m: vec![1.0],
                 n: vec!["string".to_string()],
                 o: vec![identity().unwrap()],
+                p: vec![address().unwrap()],
             };
 
             let every_primitive_dup = every_primitive_struct.clone();
@@ -1044,7 +1173,7 @@ fn exec_insert_long_table() {
         });
     }
 
-    once_on_connect(move |_| sub_result(subscribe(SUBSCRIBE_ALL)));
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
     conn_result(connect(LOCALHOST, &name, None));
 
@@ -1067,7 +1196,7 @@ fn exec_resubscribe() {
         sub_applied_result(assert_all_tables_empty());
     });
 
-    once_on_connect(|_| {
+    once_on_connect(|_, _| {
         subscribe_result(subscribe(SUBSCRIBE_ALL));
     });
 
@@ -1170,7 +1299,7 @@ fn exec_reauth_part_1() {
     let connect_result = test_counter.add_test("connect");
     let save_result = test_counter.add_test("save-credentials");
 
-    once_on_connect(|creds| {
+    once_on_connect(|creds, _| {
         save_result(save_credentials(".spacetime_rust_sdk_test", creds));
     });
 
@@ -1196,7 +1325,7 @@ fn exec_reauth_part_2() {
 
     let creds_dup = creds.clone();
 
-    once_on_connect(move |received_creds| {
+    once_on_connect(move |received_creds, _| {
         let run_checks = || {
             assert_eq_or_bail!(creds_dup, *received_creds);
             Ok(())
@@ -1206,6 +1335,54 @@ fn exec_reauth_part_2() {
     });
 
     connect_result(connect(LOCALHOST, &name, Some(creds)));
+
+    test_counter.wait_for_all();
+}
+
+fn exec_reconnect_same_address() {
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let connect_result = test_counter.add_test("connect");
+    let read_addr_result = test_counter.add_test("read_addr");
+
+    let name_dup = name.clone();
+    once_on_connect(move |_, received_address| {
+        let my_address = address().unwrap();
+        let run_checks = || {
+            assert_eq_or_bail!(my_address, received_address);
+            Ok(())
+        };
+
+        read_addr_result(run_checks());
+    });
+
+    connect_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
+
+    let my_address = address().unwrap();
+
+    let test_counter = TestCounter::new();
+    let reconnect_result = test_counter.add_test("reconnect");
+    let addr_after_reconnect_result = test_counter.add_test("addr_after_reconnect");
+
+    once_on_disconnect(move || {
+        once_on_connect(move |_, received_address| {
+            let my_address_2 = address().unwrap();
+            let run_checks = || {
+                assert_eq_or_bail!(my_address, received_address);
+                assert_eq_or_bail!(my_address, my_address_2);
+                Ok(())
+            };
+
+            addr_after_reconnect_result(run_checks());
+        });
+
+        reconnect_result(connect(LOCALHOST, &name_dup, None));
+    });
+
+    disconnect();
 
     test_counter.wait_for_all();
 }
