@@ -3,10 +3,11 @@ use std::ops::Deref;
 use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::protobuf::client_api::Subscribe;
 use crate::worker_metrics::{CONNECTED_CLIENTS, WEBSOCKET_SENT, WEBSOCKET_SENT_MSG_SIZE};
+use derive_more::From;
 use futures::prelude::*;
 use tokio::sync::mpsc;
 
-use super::messages::ServerMessage;
+use super::messages::{OneOffQueryResponseMessage, ServerMessage};
 use super::{message_handlers, ClientActorId, MessageHandleError};
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
@@ -68,7 +69,7 @@ impl Deref for ClientConnection {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, From)]
 pub enum DataMessage {
     Text(String),
     Binary(Vec<u8>),
@@ -85,18 +86,6 @@ impl DataMessage {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-}
-
-impl From<String> for DataMessage {
-    fn from(text: String) -> Self {
-        DataMessage::Text(text)
-    }
-}
-
-impl From<Vec<u8>> for DataMessage {
-    fn from(bin: Vec<u8>) -> Self {
-        DataMessage::Binary(bin)
     }
 }
 
@@ -117,7 +106,9 @@ impl ClientConnection {
         // TODO: Right now this is connecting clients directly to an instance, but their requests should be
         // logically subscribed to the database, not any particular instance. We should handle failover for
         // them and stuff. Not right now though.
-        module.call_identity_connected_disconnected(id.identity, true).await?;
+        module
+            .call_identity_connected_disconnected(id.identity, id.address, true)
+            .await?;
 
         // Buffer up to 64 client messages
         let (sendtx, sendrx) = mpsc::channel::<DataMessage>(64);
@@ -161,11 +152,36 @@ impl ClientConnection {
 
     pub async fn call_reducer(&self, reducer: &str, args: ReducerArgs) -> Result<ReducerCallResult, ReducerCallError> {
         self.module
-            .call_reducer(self.id.identity, Some(self.sender()), reducer, args)
+            .call_reducer(
+                self.id.identity,
+                Some(self.id.address),
+                Some(self.sender()),
+                reducer,
+                args,
+            )
             .await
     }
 
     pub fn subscribe(&self, subscription: Subscribe) -> Result<(), NoSuchModule> {
         self.module.subscription().add_subscriber(self.sender(), subscription)
+    }
+
+    pub async fn one_off_query(&self, query: &str, message_id: &[u8]) -> Result<(), anyhow::Error> {
+        let result = self.module.one_off_query(self.id.identity, query.to_owned()).await;
+        let message_id = message_id.to_owned();
+        let response = match result {
+            Ok(results) => OneOffQueryResponseMessage {
+                message_id,
+                error: None,
+                results,
+            },
+            Err(err) => OneOffQueryResponseMessage {
+                message_id,
+                error: Some(format!("{}", err)),
+                results: Vec::new(),
+            },
+        };
+        self.send_message(response).await?;
+        Ok(())
     }
 }

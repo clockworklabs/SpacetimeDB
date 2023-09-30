@@ -21,10 +21,14 @@ message Message {
         IdentityToken identityToken = 5;
         // client -> database, register SQL queries on which to receive updates.
         Subscribe subscribe = 6;
+        // client -> database, send a one-off SQL query without establishing a subscription.
+        OneOffQuery oneOffQuery = 7;
+        // database -> client, return results to a one off SQL query.
+        OneOffQueryResponse oneOffQueryResponse = 8;
     }
 }
 
-/// Received by database from client to inform of user's identity and token.
+/// Received by database from client to inform of user's identity, token and client address.
 ///
 /// The database will always send an `IdentityToken` message
 /// as the first message for a new WebSocket connection.
@@ -35,6 +39,7 @@ message Message {
 message IdentityToken {
     bytes identity = 1;
     string token = 2;
+    bytes address = 3;
 }
 
 // TODO: Evaluate if it makes sense for this to also include the
@@ -106,6 +111,15 @@ message Subscribe {
 /// - `energy_quanta_used` and `host_execution_duration_micros` seem self-explanatory;
 ///   they describe the amount of energy credits consumed by running the reducer,
 ///   and how long it took to run.
+///
+/// - `callerAddress` is the 16-byte address of the user who requested the reducer run.
+///                   The all-zeros address is a sentinel which denotes no address.
+///                   `init` and `update` reducers will have a `callerAddress`
+///                   if and only if one was provided to the `publish` HTTP endpoint.
+///                   Scheduled reducers will never have a `callerAddress`.
+///                   Reducers invoked by HTTP will have a `callerAddress`
+///                   if and only if one was provided to the `call` HTTP endpoint.
+///                   Reducers invoked by WebSocket will always have a `callerAddress`.
 message Event {
     enum Status {
         committed = 0;
@@ -124,6 +138,8 @@ message Event {
     int64 energy_quanta_used = 6;
 
     uint64 host_execution_duration_micros = 7;
+
+    bytes callerAddress = 8;
 }
 
 // TODO: Maybe call this StateUpdate if it's implied to be a subscription update
@@ -190,4 +206,34 @@ message TableRowOperation {
 message TransactionUpdate {
     Event event = 1;
     SubscriptionUpdate subscriptionUpdate = 2;
+}
+
+/// A one-off query submission.
+///
+/// Query should be a "SELECT * FROM Table WHERE ...". Other types of queries will be rejected.
+/// Multiple such semicolon-delimited queries are allowed.
+///
+/// One-off queries are identified by a client-generated messageID.
+/// To avoid data leaks, the server will NOT cache responses to messages based on UUID!
+/// It also will not check for duplicate IDs. They are just a way to match responses to messages. 
+message OneOffQuery {
+    bytes messageId = 1;
+    string queryString = 2;
+}
+
+/// A one-off query response.
+/// Will contain either one error or multiple response rows.
+/// At most one of these messages will be sent in reply to any query.
+///
+/// The messageId will be identical to the one sent in the original query.
+message OneOffQueryResponse {
+    bytes messageId = 1;
+    string error = 2;
+    repeated OneOffTable tables = 3;
+}
+
+/// A table included as part of a one-off query.
+message OneOffTable {
+    string tableName = 2;
+    repeated bytes row = 4;
 }

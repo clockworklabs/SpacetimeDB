@@ -1,15 +1,12 @@
 use serde_json::Value;
 use serial_test::serial;
-use spacetimedb_testing::modules::{compile, with_module_async};
+use spacetimedb_testing::modules::{CompiledModule, DEFAULT_CONFIG};
 
 // The tests MUST be run in sequence because they read the OS environment
 // and can cause a race when run in parallel.
 
-#[test]
-#[serial]
-fn test_calling_a_reducer() {
-    compile("spacetimedb-quickstart");
-    with_module_async("spacetimedb-quickstart", |module| async move {
+fn test_calling_a_reducer_in_module(module_name: &'static str) {
+    CompiledModule::compile(module_name).with_module_async(DEFAULT_CONFIG, |module| async move {
         let json = r#"{"call": {"fn": "add", "args": ["Tyrion"]}}"#.to_string();
         module.send(json).await.unwrap();
         let json = r#"{"call": {"fn": "say_hello", "args": []}}"#.to_string();
@@ -18,20 +15,31 @@ fn test_calling_a_reducer() {
         let lines = module.read_log(Some(10)).await;
         let lines: Vec<&str> = lines.trim().split('\n').collect();
 
-        assert_eq!(lines.len(), 2);
+        assert_eq!(lines.len(), 4);
 
-        let json: Value = serde_json::from_str(lines[0]).unwrap();
+        let json: Value = serde_json::from_str(lines[2]).unwrap();
         assert_eq!(json["message"], Value::String("Hello, Tyrion!".to_string()));
-        let json: Value = serde_json::from_str(lines[1]).unwrap();
+        let json: Value = serde_json::from_str(lines[3]).unwrap();
         assert_eq!(json["message"], Value::String("Hello, World!".to_string()));
     });
 }
 
 #[test]
 #[serial]
+fn test_calling_a_reducer() {
+    test_calling_a_reducer_in_module("spacetimedb-quickstart");
+}
+
+#[test]
+#[serial]
+fn test_calling_a_reducer_csharp() {
+    test_calling_a_reducer_in_module("spacetimedb-quickstart-cs");
+}
+
+#[test]
+#[serial]
 fn test_calling_a_reducer_with_private_table() {
-    compile("rust-wasm-test");
-    with_module_async("rust-wasm-test", |module| async move {
+    CompiledModule::compile("rust-wasm-test").with_module_async(DEFAULT_CONFIG, |module| async move {
         let json = r#"{"call": {"fn": "add_private", "args": ["Tyrion"]}}"#.to_string();
         module.send(json).await.unwrap();
         let json = r#"{"call": {"fn": "query_private", "args": []}}"#.to_string();
@@ -40,11 +48,11 @@ fn test_calling_a_reducer_with_private_table() {
         let lines = module.read_log(Some(10)).await;
         let lines: Vec<&str> = lines.trim().split('\n').collect();
 
-        assert_eq!(lines.len(), 2);
+        assert_eq!(lines.len(), 8);
 
-        let json: Value = serde_json::from_str(lines[0]).unwrap();
+        let json: Value = serde_json::from_str(lines[6]).unwrap();
         assert_eq!(json["message"], Value::String("Private, Tyrion!".to_string()));
-        let json: Value = serde_json::from_str(lines[1]).unwrap();
+        let json: Value = serde_json::from_str(lines[7]).unwrap();
         assert_eq!(json["message"], Value::String("Private, World!".to_string()));
     });
 }

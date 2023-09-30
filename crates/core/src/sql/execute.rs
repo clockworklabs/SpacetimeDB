@@ -446,7 +446,7 @@ pub(crate) mod tests {
         let mut result = result.first().unwrap().clone();
 
         let row = product!(scalar(2u64), scalar("test"));
-        input.data.push(RelValue::new(&input.head, &row, None));
+        input.data.push(RelValue::new(row, None));
         input.data.sort();
         result.data.sort();
 
@@ -528,7 +528,7 @@ pub(crate) mod tests {
 
         let mut change = input;
         change.data.clear();
-        change.data.push(RelValue::new(&change.head, &row, None));
+        change.data.push(RelValue::new(row, None));
 
         assert_eq!(
             change.as_without_table_name(),

@@ -4,15 +4,21 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+spacetimedb-cli = { path = "../cli", version = "0.6.1" }
 spacetimedb-lib = { path = "../lib", version = "0.6.1" }
 spacetimedb-core = { path = "../core", version = "0.6.1" }
 spacetimedb-standalone = { path = "../standalone", version = "0.6.1" }
 spacetimedb-client-api = { path = "../client-api", version = "0.6.1" }
 
 anyhow.workspace = true
+clap.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 wasmbin.workspace = true
+duct.workspace = true
+lazy_static.workspace = true
+rand.workspace = true
+prost.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true

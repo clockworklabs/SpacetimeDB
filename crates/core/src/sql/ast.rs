@@ -101,25 +101,13 @@ pub enum Column {
 /// The list of expressions for `SELECT expr1, expr2...` determining what data to extract.
 #[derive(Debug, Clone)]
 pub struct Selection {
-    pub(crate) clauses: Vec<ColumnOp>,
-}
-
-impl Default for Selection {
-    fn default() -> Self {
-        Self::new()
-    }
+    pub(crate) clause: ColumnOp,
 }
 
 impl Selection {
-    pub fn new() -> Self {
-        Self { clauses: Vec::new() }
-    }
-
-    pub fn with_cmp(self, op: OpQuery, lhs: ColumnOp, rhs: ColumnOp) -> Self {
-        let mut x = self;
-        let cmp = ColumnOp::cmp(op, lhs, rhs);
-        x.clauses.push(cmp);
-        x
+    pub fn with_cmp(op: OpQuery, lhs: ColumnOp, rhs: ColumnOp) -> Self {
+        let cmp = ColumnOp::new(op, lhs, rhs);
+        Selection { clause: cmp }
     }
 }
 
@@ -322,7 +310,7 @@ fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlE
         SqlExpr::BinaryOp { left, op, right } => {
             let (op, lhs, rhs) = compile_bin_op(table, op, left, right)?;
 
-            return Ok(ColumnOp::cmp(op, lhs, rhs));
+            return Ok(ColumnOp::new(op, lhs, rhs));
         }
         SqlExpr::Nested(x) => {
             return compile_expr_value(table, field, *x);
@@ -396,14 +384,14 @@ fn compile_bin_op(
     Ok((op, lhs, rhs))
 }
 
-fn _compile_where(table: &From, filter: SqlExpr, selection: Selection) -> Result<Option<Selection>, PlanError> {
+fn _compile_where(table: &From, filter: SqlExpr) -> Result<Option<Selection>, PlanError> {
     match filter {
         SqlExpr::BinaryOp { left, op, right } => {
             let (op, lhs, rhs) = compile_bin_op(table, op, left, right)?;
 
-            Ok(Some(selection.with_cmp(op, lhs, rhs)))
+            Ok(Some(Selection::with_cmp(op, lhs, rhs)))
         }
-        SqlExpr::Nested(x) => _compile_where(table, *x, selection),
+        SqlExpr::Nested(x) => _compile_where(table, *x),
         x => Err(PlanError::Unsupported {
             feature: format!("Unsupported in WHERE: {x}."),
         }),
@@ -413,8 +401,7 @@ fn _compile_where(table: &From, filter: SqlExpr, selection: Selection) -> Result
 /// Compiles the `WHERE` clause
 fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selection>, PlanError> {
     if let Some(filter) = filter {
-        let selection = Selection::new();
-        _compile_where(table, filter, selection)
+        _compile_where(table, filter)
     } else {
         Ok(None)
     }

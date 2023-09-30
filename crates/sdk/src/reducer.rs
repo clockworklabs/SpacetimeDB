@@ -1,6 +1,7 @@
 use crate::callbacks::CallbackId;
 use crate::global_connection::{with_connection, with_reducer_callbacks};
 use crate::identity::Identity;
+use crate::Address;
 use anyhow::Result;
 use spacetimedb_sats::{de::DeserializeOwned, ser::Serialize};
 use std::any::Any;
@@ -14,7 +15,7 @@ pub enum Status {
 
 #[derive(Copy, Clone)]
 pub struct ReducerCallbackId<R> {
-    id: CallbackId<(Identity, Status, R)>,
+    id: CallbackId<(Identity, Option<Address>, Status, R)>,
 }
 
 // Any bound so these can be keys in an `AnyMap` to store callbacks.
@@ -39,7 +40,9 @@ pub trait Reducer: DeserializeOwned + Serialize + Any + Send + Sync + Clone {
     //
     /// The returned `ReducerCallbackId` can be passed to `remove_on_reducer` to
     /// unregister the callback.
-    fn on_reducer(callback: impl FnMut(&Identity, &Status, &Self) + Send + 'static) -> ReducerCallbackId<Self> {
+    fn on_reducer(
+        callback: impl FnMut(&Identity, Option<Address>, &Status, &Self) + Send + 'static,
+    ) -> ReducerCallbackId<Self> {
         let id = with_reducer_callbacks(|callbacks| callbacks.register_on_reducer::<Self>(callback));
         ReducerCallbackId { id }
     }
@@ -49,7 +52,9 @@ pub trait Reducer: DeserializeOwned + Serialize + Any + Send + Sync + Clone {
     /// The `callback` will run at most once, then unregister itself.
     /// It can also be unregistered by passing the returned `ReducerCallbackId`
     /// to `remove_on_reducer`.
-    fn once_on_reducer(callback: impl FnOnce(&Identity, &Status, &Self) + Send + 'static) -> ReducerCallbackId<Self> {
+    fn once_on_reducer(
+        callback: impl FnOnce(&Identity, Option<Address>, &Status, &Self) + Send + 'static,
+    ) -> ReducerCallbackId<Self> {
         let id = with_reducer_callbacks(|callbacks| callbacks.register_on_reducer_oneshot::<Self>(callback));
         ReducerCallbackId { id }
     }

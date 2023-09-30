@@ -406,15 +406,23 @@ pub type IterRows<'a> = dyn RelOps + 'a;
 pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<IterRows<'_>>, ErrorVm> {
     for q in query {
         result = match q {
+            Query::IndexScan(_) => {
+                panic!("index scans unsupported on memory tables")
+            }
+            Query::IndexJoin(_) => {
+                panic!("index joins unsupported on memory tables")
+            }
             Query::Select(cmp) => {
-                let iter = result.select(move |row| cmp.compare(row));
+                let header = result.head().clone();
+                let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
-            Query::Project(cols) => {
+            Query::Project(cols, _) => {
                 if cols.is_empty() {
                     result
                 } else {
-                    let iter = result.project(&cols.clone(), move |row| Ok(row.project(&cols)?))?;
+                    let header = result.head().clone();
+                    let iter = result.project(&cols.clone(), move |row| Ok(row.project(&cols, &header)?))?;
                     Box::new(iter)
                 }
             }
@@ -424,10 +432,10 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
                 let col_rhs = FieldExpr::Name(q.col_rhs);
                 let key_lhs = col_lhs.clone();
                 let key_rhs = col_rhs.clone();
-                let row_rhs = q.rhs.row_count();
+                let row_rhs = q.rhs.source.row_count();
 
-                let head = q.rhs.head();
-                let rhs = match q.rhs {
+                let head = q.rhs.source.head();
+                let rhs = match q.rhs.source {
                     SourceExpr::MemTable(x) => Box::new(RelIter::new(head, row_rhs, x)) as Box<IterRows<'_>>,
                     SourceExpr::DbTable(_) => {
                         // let iter = stdb.scan(tx, x.table_id)?;
@@ -439,23 +447,31 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
                     }
                 };
 
+                let rhs = build_query(rhs, q.rhs.query)?;
+
                 let lhs = result;
+                let key_lhs_header = lhs.head().clone();
+                let key_rhs_header = rhs.head().clone();
+                let col_lhs_header = lhs.head().clone();
+                let col_rhs_header = rhs.head().clone();
 
                 let iter = lhs.join_inner(
                     rhs,
+                    col_lhs_header.extend(&col_rhs_header),
                     move |row| {
-                        let f = row.get(&key_lhs);
+                        let f = row.get(&key_lhs, &key_lhs_header);
                         Ok(f.into())
                     },
                     move |row| {
-                        let f = row.get(&key_rhs);
+                        let f = row.get(&key_rhs, &key_rhs_header);
                         Ok(f.into())
                     },
-                    move |lhs, rhs| {
-                        let lhs = lhs.get(&col_lhs);
-                        let rhs = rhs.get(&col_rhs);
-                        Ok(lhs == rhs)
+                    move |l, r| {
+                        let l = l.get(&col_lhs, &col_lhs_header);
+                        let r = r.get(&col_rhs, &col_rhs_header);
+                        Ok(l == r)
                     },
+                    move |l, r| l.extend(r),
                 )?;
                 Box::new(iter)
             }
@@ -540,6 +556,8 @@ pub fn create_game_data() -> GameData {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::disallowed_macros)]
+
     use super::*;
     use crate::dsl::{prefix_op, query, value};
     use crate::program::Program;
@@ -720,7 +738,7 @@ mod tests {
         let head = q.source.head();
 
         let result = run_ast(p, q.into());
-        let row = RelValue::new(&head, &scalar(1).into(), None);
+        let row = RelValue::new(scalar(1).into(), None);
         assert_eq!(
             result,
             Code::Table(MemTable::new(&head, StAccess::Public, &[row])),
@@ -736,11 +754,11 @@ mod tests {
         let field = table.get_field(0).unwrap().clone();
 
         let source = query(table.clone());
-        let q = source.clone().with_project(&[field.into()]);
+        let q = source.clone().with_project(&[field.into()], None);
         let head = q.source.head();
 
         let result = run_ast(p, q.into());
-        let row = RelValue::new(&head, &input.into(), None);
+        let row = RelValue::new(input.into(), None);
         assert_eq!(
             result,
             Code::Table(MemTable::new(&head, StAccess::Public, &[row])),
@@ -748,7 +766,7 @@ mod tests {
         );
 
         let field = FieldName::positional(&table.head.table_name, 1);
-        let q = source.with_project(&[field.clone().into()]);
+        let q = source.with_project(&[field.clone().into()], None);
 
         let result = run_ast(p, q.into());
         assert_eq!(
@@ -874,7 +892,10 @@ mod tests {
             .with_select_cmp(OpCmp::LtEq, location_x.clone(), scalar(32.0f32))
             .with_select_cmp(OpCmp::Gt, location_z.clone(), scalar(0.0f32))
             .with_select_cmp(OpCmp::LtEq, location_z.clone(), scalar(32.0f32))
-            .with_project(&[player_entity_id.clone().into(), player_inventory_id.clone().into()]);
+            .with_project(
+                &[player_entity_id.clone().into(), player_inventory_id.clone().into()],
+                None,
+            );
 
         let result = run_query(p, q.into());
 
@@ -900,7 +921,7 @@ mod tests {
             .with_select_cmp(OpCmp::LtEq, location_x, scalar(32.0f32))
             .with_select_cmp(OpCmp::Gt, location_z.clone(), scalar(0.0f32))
             .with_select_cmp(OpCmp::LtEq, location_z, scalar(32.0f32))
-            .with_project(&[inv_inventory_id.into(), inv_name.into()]);
+            .with_project(&[inv_inventory_id.into(), inv_name.into()], None);
 
         let result = run_query(p, q.into());
 

@@ -530,11 +530,12 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.0.79"
+version = "1.0.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50d30906286121d95be3d479533b458f87493b30a4b5f79a607db8f5d11aa91f"
+checksum = "f1174fb0b6ec23863f8b971027804a42614e347eafb0a95bf0b12cdae21fc4d0"
 dependencies = [
  "jobserver",
+ "libc",
 ]
 
 [[package]]
@@ -706,6 +707,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "connect_disconnect_client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "spacetimedb-sdk",
+ "test-counter",
+]
+
+[[package]]
 name = "console"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -717,6 +727,12 @@ dependencies = [
  "unicode-width",
  "windows-sys 0.45.0",
 ]
+
+[[package]]
+name = "convert_case"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 
 [[package]]
 name = "convert_case"
@@ -1192,6 +1208,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive_more"
+version = "0.99.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fb810d30a7c1953f91334de7244731fc3f3c10d7fe163338a35b9f640960321"
+dependencies = [
+ "convert_case 0.4.0",
+ "proc-macro2",
+ "quote",
+ "rustc_version",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1367,6 +1396,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.22",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85cdab6a89accf66733ad5a1693a4dcced6aeff64602b634530dd73c1f3ee9f0"
+dependencies = [
+ "humantime",
+ "is-terminal",
+ "log",
+ "regex",
+ "termcolor",
 ]
 
 [[package]]
@@ -2475,6 +2517,12 @@ dependencies = [
  "memchr",
  "minimal-lexical",
 ]
+
+[[package]]
+name = "nonempty"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aeaf4ad7403de93e699c191202f017118df734d3850b01e13a3a8b2e6953d3c9"
 
 [[package]]
 name = "nu-ansi-term"
@@ -3619,6 +3667,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
+name = "rustc_version"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfa0f585226d2e68097d4f95d113b15b83a82e819ab25717ec0590d9584ef366"
+dependencies = [
+ "semver",
+]
+
+[[package]]
 name = "rustix"
 version = "0.36.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3741,6 +3798,15 @@ name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
+
+[[package]]
+name = "sdk-test-module"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "spacetimedb",
+]
 
 [[package]]
 name = "seahash"
@@ -4085,10 +4151,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetime-module"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "spacetimedb"
 version = "0.6.1"
 dependencies = [
  "bytes",
+ "derive_more",
  "log",
  "once_cell",
  "rand 0.8.5",
@@ -4102,12 +4177,18 @@ dependencies = [
 name = "spacetimedb-bench"
 version = "0.6.1"
 dependencies = [
+ "ahash 0.8.3",
  "anyhow",
+ "anymap",
  "byte-unit",
  "clap 4.3.10",
  "criterion",
+ "futures",
+ "lazy_static",
+ "log",
  "rand 0.8.5",
  "rusqlite",
+ "serde",
  "serde_json",
  "spacetimedb-client-api",
  "spacetimedb-core",
@@ -4116,6 +4197,7 @@ dependencies = [
  "spacetimedb-testing",
  "tempdir",
  "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -4145,7 +4227,7 @@ dependencies = [
  "cargo_metadata",
  "clap 4.3.10",
  "colored",
- "convert_case",
+ "convert_case 0.6.0",
  "dirs",
  "duct",
  "email_address",
@@ -4182,6 +4264,7 @@ dependencies = [
  "bytes",
  "bytestring",
  "chrono",
+ "derive_more",
  "email_address",
  "futures",
  "http",
@@ -4225,6 +4308,7 @@ dependencies = [
  "clap 4.3.10",
  "criterion",
  "crossbeam-channel",
+ "derive_more",
  "dirs",
  "email_address",
  "flate2",
@@ -4240,6 +4324,7 @@ dependencies = [
  "jsonwebtoken",
  "lazy_static",
  "log",
+ "nonempty",
  "once_cell",
  "openssl",
  "parking_lot 0.12.1",
@@ -4248,6 +4333,7 @@ dependencies = [
  "prost",
  "prost-build",
  "rand 0.8.5",
+ "rayon-core",
  "regex",
  "rocksdb",
  "rusqlite",
@@ -4298,6 +4384,7 @@ dependencies = [
  "bytes",
  "chrono",
  "clap 4.3.10",
+ "derive_more",
  "enum-as-inner",
  "hex",
  "insta",
@@ -4328,9 +4415,11 @@ dependencies = [
  "arrayvec",
  "bytes",
  "decorum",
+ "derive_more",
  "enum-as-inner",
  "hex",
  "itertools",
+ "nonempty",
  "proptest",
  "rand 0.8.5",
  "serde",
@@ -4356,9 +4445,11 @@ dependencies = [
  "lazy_static",
  "log",
  "prost",
+ "rand 0.8.5",
  "spacetimedb-client-api-messages",
  "spacetimedb-lib",
  "spacetimedb-sats",
+ "spacetimedb-testing",
  "tokio",
  "tokio-tungstenite 0.19.0",
 ]
@@ -4391,8 +4482,14 @@ name = "spacetimedb-testing"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap 4.3.10",
+ "duct",
+ "lazy_static",
+ "prost",
+ "rand 0.8.5",
  "serde_json",
  "serial_test",
+ "spacetimedb-cli",
  "spacetimedb-client-api",
  "spacetimedb-core",
  "spacetimedb-lib",
@@ -4406,6 +4503,7 @@ name = "spacetimedb-vm"
 version = "0.6.1"
 dependencies = [
  "anyhow",
+ "derive_more",
  "spacetimedb-lib",
  "spacetimedb-sats",
  "tempdir",
@@ -4483,6 +4581,7 @@ dependencies = [
  "chrono",
  "clap 4.3.10",
  "console",
+ "derive_more",
  "fs-err",
  "futures",
  "glob",
@@ -4714,6 +4813,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be55cf8942feac5c765c2c993422806843c9a9a45d4d5c407ad6dd2ea95eb9b6"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "test-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "spacetimedb-sdk",
+ "test-counter",
+ "tokio",
+]
+
+[[package]]
+name = "test-counter"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]
@@ -5086,9 +5203,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-tracy"
-version = "0.10.2"
+version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55c48ef3e655220d4e43a6be44aa84f078c3004357251cab45f9cc15551a593e"
+checksum = "fc6c7bf057d67aa107e076129a4f331aaac47ec379952d9f0775c6b1d838ee97"
 dependencies = [
  "tracing-core",
  "tracing-subscriber",
@@ -5097,9 +5214,9 @@ dependencies = [
 
 [[package]]
 name = "tracy-client"
-version = "0.15.2"
+version = "0.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "434ecabbda9f67eeea1eab44d52f4a20538afa3e2c2770f2efc161142b25b608"
+checksum = "03684af8fb393cc7903210d868e4cb9f5c1e156737be38f52c4217fb21b86bf6"
 dependencies = [
  "loom",
  "once_cell",
@@ -5108,9 +5225,9 @@ dependencies = [
 
 [[package]]
 name = "tracy-client-sys"
-version = "0.21.0"
+version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d99f5fc382239d08b6bf05bb6206a585bfdb988c878f2499081d0f285ef7819"
+checksum = "2cb915ea3af048554640d76dd6f1492589a6401a41a30d789b983c1ec280455a"
 dependencies = [
  "cc",
 ]

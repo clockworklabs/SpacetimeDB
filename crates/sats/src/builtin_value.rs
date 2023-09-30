@@ -2,6 +2,8 @@ use crate::algebraic_value::AlgebraicValue;
 use crate::builtin_type::BuiltinType;
 use crate::{AlgebraicType, ArrayType};
 use enum_as_inner::EnumAsInner;
+use itertools::Itertools;
+use nonempty::NonEmpty;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -348,6 +350,16 @@ impl_from_array!(F64, F64);
 impl_from_array!(String, String);
 impl_from_array!(ArrayValue, Array);
 impl_from_array!(MapValue, Map);
+
+impl<T: Clone> From<NonEmpty<T>> for ArrayValue
+where
+    ArrayValue: From<Vec<T>>,
+{
+    fn from(v: NonEmpty<T>) -> Self {
+        let arr = v.iter().cloned().collect_vec();
+        arr.into()
+    }
+}
 
 impl ArrayValue {
     /// Returns `self` as `&dyn Debug`.

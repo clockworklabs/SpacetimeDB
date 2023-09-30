@@ -124,7 +124,7 @@ impl MessageLog {
         Ok(())
     }
 
-    #[tracing::instrument(skip(message))]
+    #[tracing::instrument(skip_all)]
     pub fn append(&mut self, message: impl AsRef<[u8]>) -> Result<(), DBError> {
         let message = message.as_ref();
         let mess_size = message.len() as u32;
@@ -269,6 +269,8 @@ impl<'a> Iterator for MessageLogIter<'a> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::disallowed_macros)]
+
     use super::MessageLog;
     use spacetimedb_lib::error::ResultTest;
     use tempdir::{self, TempDir};

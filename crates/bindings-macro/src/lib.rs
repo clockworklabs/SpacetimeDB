@@ -368,10 +368,23 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
     };
 
     let generated_function = quote! {
-        fn __reducer(__sender: spacetimedb::sys::Buffer, __timestamp: u64, __args: &[u8]) -> spacetimedb::sys::Buffer {
+        // NOTE: double-underscoring names here is unnecessary, as Rust macros are hygienic.
+        fn __reducer(
+            __sender: spacetimedb::sys::Buffer,
+            __caller_address: spacetimedb::sys::Buffer,
+            __timestamp: u64,
+            __args: &[u8]
+        ) -> spacetimedb::sys::Buffer {
             #(spacetimedb::rt::assert_reducerarg::<#arg_tys>();)*
             #(spacetimedb::rt::assert_reducerret::<#ret_ty>();)*
-            spacetimedb::rt::invoke_reducer(#func_name, __sender, __timestamp, __args, |_res| { #epilogue })
+            spacetimedb::rt::invoke_reducer(
+                #func_name,
+                __sender,
+                __caller_address,
+                __timestamp,
+                __args,
+                |_res| { #epilogue },
+            )
         }
     };
 
@@ -711,20 +724,6 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         }
     };
 
-    let db_delete = quote! {
-        #[allow(unused_variables)]
-        pub fn delete(f: fn (#original_struct_ident) -> bool) -> usize {
-            panic!("Delete using a function is not supported yet!");
-        }
-    };
-
-    let db_update = quote! {
-        #[allow(unused_variables)]
-        pub fn update(value: #original_struct_ident) -> bool {
-            panic!("Update using a value is not supported yet!");
-        }
-    };
-
     let db_iter = quote! {
         #[allow(unused_variables)]
         pub fn iter() -> spacetimedb::TableIter<Self> {
@@ -828,8 +827,6 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
 
         impl #original_struct_ident {
             #db_insert
-            #db_delete
-            #db_update
             #(#unique_filter_funcs)*
             #(#unique_update_funcs)*
             #(#unique_delete_funcs)*
@@ -848,7 +845,10 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-        println!("{}", emission);
+        {
+            #![allow(clippy::disallowed_macros)]
+            println!("{}", emission);
+        }
     }
 
     Ok(emission)
@@ -871,7 +871,10 @@ fn spacetimedb_index(
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-        println!("{}", output);
+        {
+            #![allow(clippy::disallowed_macros)]
+            println!("{}", output);
+        }
     }
 
     Ok(output)
@@ -899,8 +902,12 @@ fn spacetimedb_connect_disconnect(item: TokenStream, connect: bool) -> syn::Resu
     let emission = quote! {
         const _: () = {
             #[export_name = #connect_disconnect_symbol]
-            extern "C" fn __connect_disconnect(__sender: spacetimedb::sys::Buffer, __timestamp: u64) -> spacetimedb::sys::Buffer {
-                spacetimedb::rt::invoke_connection_func(#func_name, __sender, __timestamp)
+            extern "C" fn __connect_disconnect(
+                __sender: spacetimedb::sys::Buffer,
+                __caller_address: spacetimedb::sys::Buffer,
+                __timestamp: u64,
+            ) -> spacetimedb::sys::Buffer {
+                spacetimedb::rt::invoke_connection_func(#func_name, __sender, __caller_address, __timestamp)
             }
         };
 
@@ -908,7 +915,10 @@ fn spacetimedb_connect_disconnect(item: TokenStream, connect: bool) -> syn::Resu
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-        println!("{}", emission);
+        {
+            #![allow(clippy::disallowed_macros)]
+            println!("{}", emission);
+        }
     }
 
     Ok(emission)
@@ -975,7 +985,10 @@ pub fn schema_type(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         };
 
         if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-            println!("{}", emission);
+            {
+                #![allow(clippy::disallowed_macros)]
+                println!("{}", emission);
+            }
         }
 
         Ok(emission)
