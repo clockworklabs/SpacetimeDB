@@ -354,7 +354,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         self.trapped
     }
 
-    #[tracing::instrument(skip(args))]
+    #[tracing::instrument(skip(self, args), fields(db_id=self.instance.instance_env().dbic.database_id))]
     fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
         let stdb = &*self.database_instance_context().relational_db;
         let mut tx = stdb.begin_tx();
