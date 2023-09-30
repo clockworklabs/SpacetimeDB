@@ -342,7 +342,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                         type Output = __Variant;
 
                         fn variant_names(&self, names: &mut dyn #spacetimedb_lib::de::ValidNames) {
-                            names.extend([#(#variant_names,)*])
+                            names.extend::<&[&str]>(&[#(#variant_names,)*])
                         }
 
                         fn visit_tag<E: #spacetimedb_lib::de::Error>(self, __tag: u8) -> Result<Self::Output, E> {
@@ -394,7 +394,10 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
                     }
                 }
             });
-            quote!(match self { #(#arms)* })
+            quote!(match self {
+                #(#arms)*
+                _ => unreachable!(),
+            })
         }
     };
     quote! {
