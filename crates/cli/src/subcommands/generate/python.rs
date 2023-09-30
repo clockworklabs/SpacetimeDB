@@ -294,7 +294,12 @@ fn autogen_python_product_table_common(
                             continue;
                         }
                     }
-                    AlgebraicType::Ref(_) | AlgebraicType::Sum(_) => {
+                    AlgebraicType::Sum(sum) => {
+                        if sum.as_option().is_none() {
+                            continue;
+                        }
+                    }
+                    AlgebraicType::Ref(_) => {
                         // TODO: We don't allow filtering on enums or tuples right now, its possible we may consider it for the future.
                         continue;
                     }

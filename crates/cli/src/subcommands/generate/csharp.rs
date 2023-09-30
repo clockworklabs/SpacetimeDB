@@ -963,29 +963,41 @@ fn autogen_csharp_access_funcs_for_struct(
         let field_type = &field.algebraic_type;
         let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
 
-        let (field_type, csharp_field_type) = match field_type {
+        let (field_type, csharp_field_type, is_option) = match field_type {
             AlgebraicType::Product(product) => {
                 if product.is_identity() {
-                    ("Identity".into(), "SpacetimeDB.Identity")
+                    ("Identity".into(), "SpacetimeDB.Identity", false)
                 } else if product.is_address() {
-                    ("Address".into(), "SpacetimeDB.Address")
+                    ("Address".into(), "SpacetimeDB.Address", false)
                 } else {
                     // TODO: We don't allow filtering on tuples right now,
                     //       it's possible we may consider it for the future.
                     continue;
                 }
             }
-            AlgebraicType::Ref(_) | AlgebraicType::Sum(_) => {
+            AlgebraicType::Sum(sum) => {
+                if let Some(Builtin(b)) = sum.as_option() {
+                    match maybe_primitive(b) {
+                        MaybePrimitive::Primitive(ty) => (format!("{:?}", b), ty, true),
+                        _ => {
+                            continue;
+                        }
+                    }
+                } else {
+                    continue;
+                }
+            }
+            AlgebraicType::Ref(_) => {
                 // TODO: We don't allow filtering on enums or tuples right now;
                 //       it's possible we may consider it for the future.
                 continue;
             }
             AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-                MaybePrimitive::Primitive(ty) => (format!("{:?}", b), ty),
+                MaybePrimitive::Primitive(ty) => (format!("{:?}", b), ty, false),
                 MaybePrimitive::Array(ArrayType { elem_ty }) => {
                     if let Some(BuiltinType::U8) = elem_ty.as_builtin() {
                         // Do allow filtering for byte arrays
-                        ("Bytes".into(), "byte[]")
+                        ("Bytes".into(), "byte[]", false)
                     } else {
                         // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
                         continue;
@@ -1039,6 +1051,13 @@ fn autogen_csharp_access_funcs_for_struct(
                             output,
                             "var compareValue = Identity.From(productValue.elements[{}].AsProductValue().elements[0].AsBytes());",
                             col_i
+                        )
+                        .unwrap();
+                    } else if is_option {
+                        writeln!(
+                            output,
+                            "var compareValue = ({})(productValue.elements[{}].AsSumValue().tag == 1 ? null : productValue.elements[{}].AsSumValue().value.As{}());",
+                            csharp_field_type, col_i, col_i, field_type
                         )
                         .unwrap();
                     } else if field_type == "Address" {
