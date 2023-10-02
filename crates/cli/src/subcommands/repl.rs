@@ -71,7 +71,7 @@ pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
                 sql => {
                     rl.add_history_entry(sql).ok();
 
-                    if let Err(err) = run_sql(api.sql(), sql).await {
+                    if let Err(err) = run_sql(api.sql(), sql, true).await {
                         eprintln!("{}", err.to_string().red())
                     }
                 }
