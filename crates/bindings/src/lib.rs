@@ -7,6 +7,7 @@ mod impls;
 mod logger;
 #[doc(hidden)]
 pub mod rt;
+pub mod time_span;
 mod timestamp;
 
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};

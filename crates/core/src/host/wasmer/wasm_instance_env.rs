@@ -3,7 +3,10 @@
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
-use crate::host::wasm_common::{err_to_errno, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers};
+use crate::host::wasm_common::{
+    err_to_errno, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers, TimingSpan, TimingSpanIdx,
+    TimingSpanSet,
+};
 use bytes::Bytes;
 use itertools::Itertools;
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
@@ -17,6 +20,7 @@ pub(super) struct WasmInstanceEnv {
     pub mem: Option<Mem>,
     pub buffers: Buffers,
     pub iters: BufferIters,
+    pub timing_spans: TimingSpanSet,
 }
 
 type WasmResult<T> = Result<T, WasmError>;
@@ -561,6 +565,41 @@ impl WasmInstanceEnv {
             .read_bytes(&caller, data, data_len)
             .map_err(mem_err)?;
         Ok(caller.data_mut().buffers.insert(buf.into()).0)
+    }
+
+    pub fn span_start(mut caller: FunctionEnvMut<'_, Self>, name: WasmPtr<u8>, name_len: u32) -> RtResult<u32> {
+        let name = caller
+            .data()
+            .mem()
+            .read_bytes(&caller, name, name_len)
+            .map_err(mem_err)?;
+        Ok(caller.data_mut().timing_spans.insert(TimingSpan::new(name)).0)
+    }
+
+    pub fn span_end(mut caller: FunctionEnvMut<'_, Self>, span_id: u32) -> RtResult<()> {
+        let span = caller
+            .data_mut()
+            .timing_spans
+            .take(TimingSpanIdx(span_id))
+            .ok_or_else(|| RuntimeError::new("no such timing span"))?;
+
+        let elapsed = span.start.elapsed();
+
+        let name = String::from_utf8_lossy(&span.name);
+        let message = format!("Timing span {:?}: {:?}", name, elapsed);
+
+        let record = Record {
+            target: None,
+            filename: None,
+            line_number: None,
+            message: &message,
+        };
+        caller.data().instance_env.console_log(
+            crate::database_logger::LogLevel::Info,
+            &record,
+            &WasmerBacktraceProvider,
+        );
+        Ok(())
     }
 }
 
