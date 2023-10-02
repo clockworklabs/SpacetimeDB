@@ -7,7 +7,7 @@ Currently, the bindings are generated using only one of those two modules,
 chosen arbitrarily on each test run.
 The two tests which use this client, 
 `connect_disconnect_callbacks` and `connect_disconnect_callbacks_csharp`,
-are not intended to test codegeneration.
+are not intended to test code generation.
 
 The goal of the two tests is to verify that module-side `connect` and `disconnect` events
 fire when an SDK connects or disconnects via WebSocket,
