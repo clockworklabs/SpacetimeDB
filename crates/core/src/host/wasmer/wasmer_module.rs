@@ -6,8 +6,8 @@ use crate::host::wasm_common::*;
 use crate::host::{EnergyQuanta, Timestamp};
 use bytes::Bytes;
 use wasmer::{
-    imports, AsStoreMut, Engine, ExternType, Function, FunctionEnv, Imports, Instance, Module, RuntimeError, Store,
-    TypedFunction,
+    imports, AsStoreMut, Engine, ExternType, FromToNativeWasmType, Function, FunctionEnv, Imports, Instance, Module,
+    RuntimeError, Store, TypedFunction,
 };
 use wasmer_middlewares::metering as wasmer_metering;
 
@@ -40,6 +40,8 @@ pub struct WasmerModule {
     engine: Engine,
 }
 
+const WASI_NS: &str = "wasi_snapshot_preview1";
+
 impl WasmerModule {
     pub fn new(module: Module, engine: Engine) -> Self {
         WasmerModule { module, engine }
@@ -49,6 +51,31 @@ impl WasmerModule {
 
     fn imports(&self, store: &mut Store, env: &FunctionEnv<WasmInstanceEnv>) -> Imports {
         const _: () = assert!(WasmerModule::IMPLEMENTED_ABI.eq(spacetimedb_lib::MODULE_ABI_VERSION));
+        let wasi_imports = self
+            .module
+            .imports()
+            .filter_map(|i| {
+                if i.module() == WASI_NS {
+                    let name = i.name().to_owned();
+                    let func_ty = i.ty().func()?.clone();
+                    Some((name, func_ty))
+                } else {
+                    None
+                }
+            })
+            .map(|(name, func_ty)| {
+                let func = match name.as_str() {
+                    // "clock_time_get" => Function::new_typed_with_env(store, env, WasmInstanceEnv::wasi_clock_time_get),
+                    // "clock_res_get" => Function::new_typed_with_env(store, env, WasmInstanceEnv::wasi_clock_res_get),
+                    "fd_write" => Function::new_typed_with_env(store, env, WasmInstanceEnv::wasi_fd_write),
+                    // for all unsupported Wasm imports, generate a dynamically typed shim that conforms to the imported type and returns ENOSYS
+                    _ => Function::new_with_env(store, env, func_ty, |_, _| {
+                        Ok(vec![wasmer_wasix_types::wasi::Errno::Nosys.to_native().into()])
+                    }),
+                };
+                (name, func.into())
+            })
+            .collect::<Vec<_>>();
         imports! {
             "spacetime" => {
                 "_schedule_reducer" => Function::new_typed_with_env(store, env, WasmInstanceEnv::schedule_reducer),
@@ -130,7 +157,8 @@ impl WasmerModule {
                 "_buffer_len" => Function::new_typed_with_env(store, env, WasmInstanceEnv::buffer_len),
                 "_buffer_consume" => Function::new_typed_with_env(store, env, WasmInstanceEnv::buffer_consume),
                 "_buffer_alloc" => Function::new_typed_with_env(store, env, WasmInstanceEnv::buffer_alloc),
-            }
+            },
+            WASI_NS => wasi_imports,
         }
     }
 }
@@ -162,19 +190,14 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
 
     fn instantiate(&self, env: InstanceEnv, func_names: &FuncNames) -> Result<Self::Instance, InitializationError> {
         let mut store = Store::new(self.engine.clone());
-        let env = WasmInstanceEnv {
-            instance_env: env,
-            mem: None,
-            buffers: Default::default(),
-            iters: Default::default(),
-        };
+        let env = WasmInstanceEnv::new(env);
         let env = FunctionEnv::new(&mut store, env);
         let imports = self.imports(&mut store, &env);
         let instance = Instance::new(&mut store, &self.module, &imports)
             .map_err(|err| InitializationError::Instantiation(err.into()))?;
 
         let mem = Mem::extract(&instance.exports).unwrap();
-        env.as_mut(&mut store).mem = Some(mem);
+        env.as_mut(&mut store).init_mem(mem);
 
         // Note: this budget is just for initializers
         let budget = EnergyQuanta::DEFAULT_BUDGET.as_points();

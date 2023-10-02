@@ -1,22 +1,26 @@
 #![allow(clippy::too_many_arguments)]
 
-use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
+use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::{err_to_errno, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers};
 use bytes::Bytes;
 use itertools::Itertools;
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
+use wasmer_wasix_types::wasi;
 
 use crate::host::instance_env::InstanceEnv;
 
 use super::{Mem, WasmError};
 
+type WasiIoVec = wasmer_wasix_types::types::__wasi_ciovec_t<wasmer::Memory32>;
+
 pub(super) struct WasmInstanceEnv {
     pub instance_env: InstanceEnv,
-    pub mem: Option<Mem>,
+    mem: Option<Mem>,
     pub buffers: Buffers,
-    pub iters: BufferIters,
+    iters: BufferIters,
+    wasi_outs: WasiOuts,
 }
 
 type WasmResult<T> = Result<T, WasmError>;
@@ -34,6 +38,21 @@ fn mem_err(err: MemoryAccessError) -> RuntimeError {
 /// Wraps an `InstanceEnv` with the magic necessary to push
 /// and pull bytes from webassembly memory.
 impl WasmInstanceEnv {
+    pub fn new(instance_env: InstanceEnv) -> Self {
+        Self {
+            instance_env,
+            mem: None,
+            buffers: Default::default(),
+            iters: Default::default(),
+            wasi_outs: Default::default(),
+        }
+    }
+
+    pub fn init_mem(&mut self, mem: Mem) {
+        assert!(self.mem.is_none());
+        self.mem = Some(mem);
+    }
+
     /// Returns a reference to the memory, assumed to be initialized.
     pub fn mem(&self) -> Mem {
         self.mem.clone().expect("Initialized memory")
@@ -561,6 +580,129 @@ impl WasmInstanceEnv {
             .read_bytes(&caller, data, data_len)
             .map_err(mem_err)?;
         Ok(caller.data_mut().buffers.insert(buf.into()).0)
+    }
+
+    // pub fn wasi_clock_time_get(
+    //     caller: FunctionEnvMut<'_, Self>,
+    //     clock_id: wasi::ClockId,
+    //     precision: wasi::Timestamp,
+    //     result: WasmPtr<wasi::Timestamp>,
+    // ) -> RtResult<wasi::Errno> {
+    //     Self::cvt_ret(caller, "clock_time_get", out, |caller, _mem| {
+    //         let time = caller.data().instance_env.clock_time_get(clock_id)?;
+    //         Ok(time.0)
+    //     })
+    // }
+
+    pub fn wasi_fd_write(
+        mut caller: FunctionEnvMut<'_, Self>,
+        fd: wasi::Fd,
+        iovs: WasmPtr<WasiIoVec>,
+        iovs_len: wasi::Size,
+        nwritten_out: WasmPtr<wasi::Size>,
+    ) -> wasi::Errno {
+        let (state, store) = caller.data_and_store_mut();
+        let mem_view = state.mem().view(&store);
+        let Some(out) = state.wasi_outs.by_fd_mut(fd) else {
+            return wasi::Errno::Badf;
+        };
+        match out.fd_write(&mem_view, iovs, iovs_len, nwritten_out) {
+            Ok(()) => {
+                out.flush(&state.instance_env);
+                wasi::Errno::Success
+            }
+            Err(err) => {
+                log::error!("fd_write failed with memory access error: {err:#}");
+                wasi::Errno::Memviolation
+            }
+        }
+    }
+}
+
+pub(super) struct WasiOuts {
+    stdout: WasiOut,
+    stderr: WasiOut,
+}
+
+impl Default for WasiOuts {
+    fn default() -> Self {
+        Self {
+            stdout: WasiOut::new(LogLevel::Info),
+            stderr: WasiOut::new(LogLevel::Warn),
+        }
+    }
+}
+
+impl WasiOuts {
+    fn by_fd_mut(&mut self, fd: wasi::Fd) -> Option<&mut WasiOut> {
+        use wasmer_wasix_types::types::file as wasi_file;
+
+        Some(match fd {
+            wasi_file::__WASI_STDOUT_FILENO => &mut self.stdout,
+            wasi_file::__WASI_STDERR_FILENO => &mut self.stderr,
+            _ => return None,
+        })
+    }
+}
+
+struct WasiOut {
+    level: LogLevel,
+    buf: Vec<u8>,
+}
+
+impl WasiOut {
+    pub fn new(level: LogLevel) -> Self {
+        Self { level, buf: Vec::new() }
+    }
+
+    pub fn fd_write(
+        &mut self,
+        mem_view: &wasmer::MemoryView,
+        iovs: WasmPtr<WasiIoVec>,
+        iovs_len: wasi::Size,
+        nwritten_out: WasmPtr<wasi::Size>,
+    ) -> Result<(), MemoryAccessError> {
+        let mut nwritten = 0;
+        for iovec in iovs.slice(mem_view, iovs_len)?.iter() {
+            let iovec = iovec.read()?;
+            self.fd_write_single(mem_view, iovec)?;
+            nwritten += iovec.buf_len;
+        }
+        nwritten_out.write(mem_view, nwritten)?;
+        Ok(())
+    }
+
+    fn fd_write_single(&mut self, mem_view: &wasmer::MemoryView, iovec: WasiIoVec) -> Result<(), MemoryAccessError> {
+        let buf = &mut self.buf;
+        let extra_len = iovec.buf_len as usize;
+        buf.reserve(extra_len);
+        mem_view.read_uninit(iovec.buf.into(), &mut buf.spare_capacity_mut()[..extra_len])?;
+        unsafe {
+            buf.set_len(buf.len() + extra_len);
+        }
+        Ok(())
+    }
+
+    fn flush(&mut self, instance_env: &InstanceEnv) {
+        let buf = &mut self.buf;
+        let mut lines = buf.split(|&b| b == b'\n');
+        // ignore the content after last `\n...` - it's an incomplete line not ready to be flushed
+        let incomplete_line = lines.next_back().unwrap_or_default();
+        for line in lines {
+            instance_env.console_log(
+                self.level,
+                &Record {
+                    target: Some("wasi"),
+                    filename: None,
+                    line_number: None,
+                    message: &String::from_utf8_lossy(line),
+                },
+                &WasmerBacktraceProvider,
+            );
+        }
+        // reuse buffer by shifting the incomplete line to the beginning
+        let flushed_size = unsafe { incomplete_line.as_ptr().offset_from(buf.as_ptr()) } as usize;
+        buf.drain(..flushed_size);
     }
 }
 

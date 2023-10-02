@@ -90,6 +90,7 @@ wasmer.workspace = true
 wasmparser.workspace = true
 # Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
 rocksdb = {workspace = true, optional = true}
+wasmer-wasix-types = "0.14.0"
 
 [features]
 # Optional storage engines.
