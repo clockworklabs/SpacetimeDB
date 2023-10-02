@@ -7,11 +7,16 @@ use std::{collections::HashSet, fs::create_dir_all, sync::Mutex};
 use crate::invoke_cli;
 use crate::modules::{module_path, CompiledModule};
 use std::path::Path;
+use tempfile::TempDir;
 
 pub fn ensure_standalone_process() {
     lazy_static! {
-        static ref JOIN_HANDLE: Mutex<Option<JoinHandle<()>>> =
-            Mutex::new(Some(std::thread::spawn(|| invoke_cli(&["start"]))));
+        // TODO: this leaks the tempdir, as dtors for lazy_statics never run.
+        static ref STANDALONE_PATH: TempDir = TempDir::with_prefix("stdb-sdk-test").expect("Failed to create tempdir");
+        static ref JOIN_HANDLE: Mutex<Option<JoinHandle<()>>> = {
+            std::env::set_var("STDB_PATH", STANDALONE_PATH.path());
+            Mutex::new(Some(std::thread::spawn(|| invoke_cli(&["start"]))))
+        };
     }
 
     let mut join_handle = JOIN_HANDLE.lock().unwrap();
