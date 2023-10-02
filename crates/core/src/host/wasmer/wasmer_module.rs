@@ -5,7 +5,7 @@ use crate::host::wasm_common::module_host_actor::{AbiVersionError, DescribeError
 use crate::host::wasm_common::*;
 use crate::host::{EnergyQuanta, Timestamp};
 use bytes::Bytes;
-use spacetimedb_lib::VersionTuple;
+use spacetimedb_lib::{Address, Identity, VersionTuple};
 use wasmer::{
     imports, AsStoreMut, Engine, ExternType, Function, FunctionEnv, Imports, Instance, Module, RuntimeError, Store,
     TypedFunction, WasmPtr,
@@ -303,8 +303,8 @@ impl module_host_actor::WasmInstance for WasmerInstance {
         &mut self,
         reducer_id: usize,
         budget: EnergyQuanta,
-        sender_identity: &[u8; 32],
-        sender_address: &[u8; 16],
+        sender_identity: &Identity,
+        sender_address: &Address,
         timestamp: Timestamp,
         arg_bytes: Bytes,
     ) -> module_host_actor::ExecuteResult<Self::Trap> {
@@ -312,8 +312,8 @@ impl module_host_actor::WasmInstance for WasmerInstance {
             CALL_REDUCER_DUNDER,
             budget,
             [
-                sender_identity.to_vec().into(),
-                sender_address.to_vec().into(),
+                Bytes::copy_from_slice(sender_identity.as_bytes()),
+                Bytes::copy_from_slice(sender_address.as_slice()),
                 arg_bytes,
             ],
             |func, store, [sender_identity, sender_address, args]| {

@@ -78,8 +78,8 @@ impl Address {
         Self::from_arr(&dst)
     }
 
-    pub fn as_slice(&self) -> [u8; 16] {
-        self.__address_bytes
+    pub fn as_slice(&self) -> &[u8; 16] {
+        &self.__address_bytes
     }
 
     pub fn to_ipv6(self) -> Ipv6Addr {

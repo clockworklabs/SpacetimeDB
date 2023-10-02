@@ -60,8 +60,8 @@ pub trait WasmInstance: Send + Sync + 'static {
         &mut self,
         reducer_id: usize,
         budget: EnergyQuanta,
-        sender_identity: &[u8; 32],
-        sender_address: &[u8; 16],
+        sender_identity: &Identity,
+        sender_address: &Address,
         timestamp: Timestamp,
         arg_bytes: Bytes,
     ) -> ExecuteResult<Self::Trap>;
@@ -596,7 +596,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let energy_fingerprint = EnergyMonitorFingerprint {
             module_hash: self.info.module_hash,
             module_identity: self.info.identity,
-            caller_identity: *op.sender,
+            caller_identity: *op.sender_identity,
             reducer_name: func_ident,
         };
 

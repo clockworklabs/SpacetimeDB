@@ -510,6 +510,7 @@ impl ModuleHost {
             .call_reducer_inner(
                 caller_identity,
                 Some(caller_address),
+                None,
                 if connected {
                     "__identity_connected__"
                 } else {

@@ -119,14 +119,6 @@ const CALL_REDUCER_SIG: StaticFuncSig = FuncSig::new(
         WasmType::I32, // Result buffer
     ],
 );
-const CONN_DISCONN_SIG: StaticFuncSig = FuncSig::new(
-    &[
-        WasmType::I32, // Sender `Identity` buffer
-        WasmType::I32, // Sender `Address` buffer
-        WasmType::I64, // Timestamp
-    ],
-    &[WasmType::I32],
-);
 
 #[derive(thiserror::Error, Debug)]
 pub enum ValidationError {
