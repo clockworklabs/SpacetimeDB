@@ -1,4 +1,3 @@
-pub mod abi;
 pub mod module_host_actor;
 
 use crate::error::{DBError, IndexError, NodesError};
@@ -226,7 +225,6 @@ impl FuncNames {
 #[error(transparent)]
 pub enum ModuleCreationError {
     WasmCompileError(anyhow::Error),
-    Abi(#[from] abi::AbiVersionError),
     Init(#[from] module_host_actor::InitializationError),
 }
 
