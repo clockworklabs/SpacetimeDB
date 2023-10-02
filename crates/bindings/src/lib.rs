@@ -7,8 +7,8 @@ mod impls;
 mod logger;
 #[doc(hidden)]
 pub mod rt;
-mod timestamp;
 pub mod time_span;
+mod timestamp;
 
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
