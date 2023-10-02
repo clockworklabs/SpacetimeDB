@@ -212,6 +212,24 @@ pub mod raw {
         /// Creates a buffer of size `data_len` in the host environment.
         /// The buffer is initialized with the contents at the `data` WASM pointer.
         pub fn _buffer_alloc(data: *const u8, data_len: usize) -> Buffer;
+
+        /// Begin a timing span.
+        ///
+        /// When the returned `u32` span ID is passed to [`_span_end`],
+        /// the duration between the calls will be printed to the module's logs.
+        ///
+        /// The slice (`name`, `name_len`) must be valid UTF-8 bytes.
+        pub fn _span_start(name: *const u8, name_len: usize) -> u32;
+
+        /// End a timing span.
+        ///
+        /// The `span_id` must be the result of a call to `_span_start`.
+        /// The duration between the two calls will be computed and printed to the module's logs.
+        ///
+        /// Behavior is unspecified
+        /// if `_span_end` is called on a `span_id` which is not the result of a call to `_span_start`,
+        /// or if `_span_end` is called multiple times with the same `span_id`.
+        pub fn _span_end(span_id: u32);
     }
 
     /// What strategy does the database index use?
