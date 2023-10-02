@@ -819,13 +819,9 @@ fn print_dispatch_imports(out: &mut Indenter) {
     print_lines(out, DISPATCH_IMPORTS);
 }
 
-fn is_init(reducer: &ReducerDef) -> bool {
-    reducer.name == "__init__"
-}
-
 fn iter_reducer_items(items: &[GenItem]) -> impl Iterator<Item = &ReducerDef> {
     items.iter().filter_map(|item| match item {
-        GenItem::Reducer(reducer) if !is_init(reducer) => Some(reducer),
+        GenItem::Reducer(reducer) => Some(reducer),
         _ => None,
     })
 }
@@ -838,10 +834,10 @@ fn iter_table_items(items: &[GenItem]) -> impl Iterator<Item = &TableDef> {
 }
 
 fn iter_module_names(items: &[GenItem]) -> impl Iterator<Item = String> + '_ {
-    items.iter().filter_map(|item| match item {
-        GenItem::Table(table) => Some(table.name.to_case(Case::Snake)),
-        GenItem::TypeAlias(ty) => Some(ty.name.to_case(Case::Snake)),
-        GenItem::Reducer(reducer) => (!is_init(reducer)).then_some(reducer_module_name(reducer)),
+    items.iter().map(|item| match item {
+        GenItem::Table(table) => table.name.to_case(Case::Snake),
+        GenItem::TypeAlias(ty) => ty.name.to_case(Case::Snake),
+        GenItem::Reducer(reducer) => reducer_module_name(reducer),
     })
 }
 
@@ -1067,19 +1063,15 @@ fn print_reducer_event_defn(out: &mut Indenter, items: &[GenItem]) {
     out.delimited_block(
         "pub enum ReducerEvent {",
         |out| {
-            for item in items {
-                if let GenItem::Reducer(reducer) = item {
-                    if !is_init(reducer) {
-                        writeln!(
-                            out,
-                            "{}({}::{}),",
-                            reducer_variant_name(reducer),
-                            reducer_module_name(reducer),
-                            reducer_type_name(reducer),
-                        )
-                        .unwrap();
-                    }
-                }
+            for reducer in iter_reducer_items(items) {
+                writeln!(
+                    out,
+                    "{}({}::{}),",
+                    reducer_variant_name(reducer),
+                    reducer_module_name(reducer),
+                    reducer_type_name(reducer),
+                )
+                .unwrap();
             }
         },
         "}\n",
