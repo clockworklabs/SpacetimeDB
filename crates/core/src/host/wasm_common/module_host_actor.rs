@@ -609,8 +609,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             self.instance.call_reducer(
                 op.id,
                 budget,
-                &op.sender_identity,
-                &op.sender_address,
+                op.sender_identity,
+                op.sender_address,
                 op.timestamp,
                 op.arg_bytes,
             )
