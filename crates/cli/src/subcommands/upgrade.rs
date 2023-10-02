@@ -56,7 +56,7 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
             version
         ),
     };
-    let release: Release = reqwest::blocking::get(&url)?.json()?;
+    let release: Release = reqwest::blocking::get(url)?.json()?;
 
     if release.tag_name == version::CLI_VERSION {
         println!("You're already running the latest version: {}", version::CLI_VERSION);
@@ -90,7 +90,7 @@ pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
         temp_path.clone()
     };
 
-    fs::copy(&new_exe_path, &current_exe_path)?;
+    fs::copy(&new_exe_path, current_exe_path)?;
 
     fs::remove_file(&temp_path)?;
     if download_name.ends_with(".tar.gz") {
