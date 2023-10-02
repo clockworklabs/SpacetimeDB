@@ -11,10 +11,14 @@ use tempfile::TempDir;
 
 pub fn ensure_standalone_process() {
     lazy_static! {
-        // TODO: this leaks the tempdir, as dtors for lazy_statics never run.
-        static ref STANDALONE_PATH: TempDir = TempDir::with_prefix("stdb-sdk-test").expect("Failed to create tempdir");
         static ref JOIN_HANDLE: Mutex<Option<JoinHandle<()>>> = {
-            std::env::set_var("STDB_PATH", STANDALONE_PATH.path());
+            let stdb_path = TempDir::with_prefix("stdb-sdk-test")
+                .expect("Failed to create tempdir")
+                // TODO: This leaks the tempdir.
+                //       We need the tempdir to live for the duration of the process,
+                //       and all the options for post-`main` cleanup seem sketchy.
+                .into_path();
+            std::env::set_var("STDB_PATH", stdb_path);
             Mutex::new(Some(std::thread::spawn(|| invoke_cli(&["start"]))))
         };
     }
