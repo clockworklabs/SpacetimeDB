@@ -19,6 +19,7 @@ duct.workspace = true
 lazy_static.workspace = true
 rand.workspace = true
 prost.workspace = true
+tempfile.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
