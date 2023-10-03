@@ -34,7 +34,7 @@ use alloc::boxed::Box;
 /// can run a module declaring `X.Y` if and only if `X == A && Y <= B`.
 /// So, the minor version is intended for backwards-compatible changes, e.g. adding a new function,
 /// and the major version is for fully breaking changes.
-pub const ABI_VERSION: u32 = 0x0004_0000;
+pub const ABI_VERSION: u32 = 0x0005_0000;
 
 /// Provides a raw set of sys calls which abstractions can be built atop of.
 pub mod raw {
