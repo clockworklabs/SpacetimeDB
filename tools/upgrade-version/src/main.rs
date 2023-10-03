@@ -14,7 +14,12 @@ use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 use walkdir::WalkDir;
 
-static IGNORE_FILES: [&'static str; 1] = ["crates/testing/Cargo.toml"];
+static IGNORE_FILES: [&'static str; 1] = [
+    "crates/sdk/tests/connect_disconnect_client/Cargo.toml",
+    "crates/sdk/tests/test-client/Cargo.toml",
+    "crates/sdk/tests/test-counter/Cargo.toml",
+    "crates/sqltest/Cargo.toml",
+];
 
 fn find_files(start_dir: &str, name: &str) -> Vec<String> {
     let mut files = Vec::new();
@@ -43,7 +48,8 @@ fn process_crate_toml(path: &PathBuf, upgrade_version: &str) {
     let file = File::open(path).expect(format!("File not found: {}", path.to_string_lossy()).as_str());
     let reader = BufReader::new(file);
     let mut temp_file = NamedTempFile::new().expect("Failed to create temporary file!");
-    let state = FileProcessState::Package;
+    let mut state = FileProcessState::Package;
+    let re = Regex::new(r#"(version = ")([^"]+)"#).unwrap();
 
     for line_result in reader.lines() {
         match line_result {
@@ -51,8 +57,8 @@ fn process_crate_toml(path: &PathBuf, upgrade_version: &str) {
                 let new_line = match state {
                     FileProcessState::Package => {
                         if line.contains("version = ") {
-                            let re = Regex::new(r#"(version = ")([^"]+)""#).unwrap();
-                            re.replace(&line, format!("$1{}", upgrade_version).as_str()).into()
+                            re.replace(&line, format!("version = \"{}", upgrade_version).as_str())
+                                .into()
                         } else if line.contains("[dependencies]") {
                             state = FileProcessState::Dependencies;
                             line
@@ -63,8 +69,8 @@ fn process_crate_toml(path: &PathBuf, upgrade_version: &str) {
                     FileProcessState::Dependencies => {
                         if line.starts_with("spacetimedb") {
                             // Match the version number and capture it
-                            let re = Regex::new(r#"(version = ")([^"]+)""#).unwrap();
-                            re.replace(&line, format!("$1{}", upgrade_version).as_str()).into()
+                            re.replace(&line, format!("version = \"{}", upgrade_version).as_str())
+                                .into()
                         } else {
                             line
                         }
