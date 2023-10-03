@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 use walkdir::WalkDir;
 
-static IGNORE_FILES: [&'static str; 1] = [
+static IGNORE_FILES: [&'static str; 4] = [
     "crates/sdk/tests/connect_disconnect_client/Cargo.toml",
     "crates/sdk/tests/test-client/Cargo.toml",
     "crates/sdk/tests/test-counter/Cargo.toml",
@@ -87,6 +87,26 @@ fn process_crate_toml(path: &PathBuf, upgrade_version: &str) {
     fs::rename(temp_file.path(), path).expect("Failed to overwrite source file.");
 }
 
+fn process_license_file(upgrade_version: &str) {
+    let file = File::open("LICENSE.txt").expect(format!("File not found: {}", path.to_string_lossy()).as_str());
+    let reader = BufReader::new(file);
+    let mut temp_file = NamedTempFile::new().expect("Failed to create temporary file!");
+    let re = Regex::new(r"(^Licensed Work:\s+SpacetimeDB )([\d\.]+)").unwrap();
+
+    for line_result in reader.lines() {
+        match line_result {
+            Ok(line) => {
+                let new_line = re.replace(&text, format!("$1{}", new_version).as_str());
+                writeln!(temp_file, "{}", new_line).unwrap();
+            }
+            Err(e) => eprintln!("Error reading line: {}", e),
+        }
+    }
+
+    // Rename the temporary file to replace the original file
+    fs::rename(temp_file.path(), path).expect("Failed to overwrite source file.");
+}
+
 fn main() {
     let matches = Command::new("upgrade-version")
         .version("1.0")
@@ -116,7 +136,9 @@ fn main() {
     }
 
     let cargo_files = find_files("crates", "Cargo.toml");
+    cargo_files.append(find_files("crates", "Cargo._toml"));
     for file in cargo_files {
         process_crate_toml(&PathBuf::from(file), version);
     }
+    process_license_file(version);
 }
