@@ -46,7 +46,7 @@ impl WasmerModule {
         WasmerModule { module, engine }
     }
 
-    pub const IMPLEMENTED_ABI: VersionTuple = VersionTuple::new(4, 0);
+    pub const IMPLEMENTED_ABI: VersionTuple = VersionTuple::new(5, 0);
 
     fn imports(&self, store: &mut Store, env: &FunctionEnv<WasmInstanceEnv>) -> Imports {
         const _: () = assert!(WasmerModule::IMPLEMENTED_ABI.eq(spacetimedb_lib::MODULE_ABI_VERSION));
