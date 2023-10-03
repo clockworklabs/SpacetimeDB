@@ -246,15 +246,17 @@ impl InstanceEnv {
         Ok(table_id)
     }
 
-    /// Creates an index of type `index_type`,
+    /// Creates an index of type `index_type` and name `index_name`,
     /// on a product of the given columns in `col_ids`,
     /// in the table identified by `table_id`.
     ///
-    /// Currently only btree index type are supported.
+    /// Currently only single-column-indices are supported.
+    /// That is, `col_ids.len() == 1`, or the call will panic.
     ///
-    /// The `table_name` is used together with the column ids to construct the name of the index.
-    /// As only single-column-indices are supported right now,
-    /// the name will be in the format `{table_name}_{cols}`.
+    /// Another limitation is on the `index_type`.
+    /// Only `btree` indices are supported as of now, i.e., `index_type == 0`.
+    /// When `index_type == 1` is passed, the call will happen
+    /// and on `index_type > 1`, an error is returned.
     #[tracing::instrument(skip_all)]
     pub fn create_index(
         &self,
