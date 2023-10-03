@@ -133,7 +133,7 @@ fn main() {
         .arg(
             Arg::new("spacetime-path")
                 .value_parser(clap::value_parser!(PathBuf))
-                .default_value(".")
+                .default_value("../..")
                 .long("spacetime-path")
                 .help("The path to SpacetimeDB"),
         )
