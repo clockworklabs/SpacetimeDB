@@ -65,7 +65,7 @@ pub mod raw {
         /// - a table with the provided `table_id` doesn't exist
         /// - the slice `(name, name_len)` is not valid UTF-8
         /// - `name + name_len` overflows a 64-bit address.
-        /// - writing to `out` overflows a 64-bit integer
+        /// - writing to `out` overflows a 32-bit integer
         pub fn _get_table_id(name: *const u8, name_len: usize, out: *mut u32) -> u16;
 
         /// Creates an index with the name `index_name` and type `index_type`,
@@ -146,7 +146,7 @@ pub mod raw {
         /// - `(value, value_len)` doesn't decode from BSATN to an `AlgebraicValue`
         ///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
         /// - `value + value_len` overflows a 64-bit integer
-        /// - writing to `out` would overflow a 64-bit integer
+        /// - writing to `out` would overflow a 32-bit integer
         pub fn _delete_by_col_eq(table_id: u32, col_id: u32, value: *const u8, value_len: usize, out: *mut u32) -> u16;
 
         /*
@@ -171,7 +171,6 @@ pub mod raw {
         ///
         /// Returns an error if
         /// - a table with the provided `table_id` doesn't exist
-        /// - writing to `out` overflows an 64-bit integer
         pub fn _iter_start(table_id: u32, out: *mut BufferIter) -> u16;
 
         /// Like [`_iter_start`], start iteration on each row,
@@ -187,7 +186,6 @@ pub mod raw {
         /// - a table with the provided `table_id` doesn't exist
         /// - `(filter, filter_len)` doesn't decode to a filter expression
         /// - `filter + filter_len` overflows a 64-bit integer
-        /// - writing to `out` overflows a 64-bit integer
         pub fn _iter_start_filtered(table_id: u32, filter: *const u8, filter_len: usize, out: *mut BufferIter) -> u16;
 
         /// Advances the registered iterator with the index given by `iter_key`.
@@ -246,7 +244,6 @@ pub mod raw {
         /// - the `time` delay exceeds `64^6 - 1` milliseconds from now
         /// - `name` does not point to valid UTF-8
         /// - `name + name_len` or `args + args_len` overflow a 64-bit integer
-        /// - writing to `out` overflows a 64-bit integer
         pub fn _schedule_reducer(
             name: *const u8,
             name_len: usize,

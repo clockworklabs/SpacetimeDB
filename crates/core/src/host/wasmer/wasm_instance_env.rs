@@ -81,7 +81,7 @@ impl WasmInstanceEnv {
     /// This method should be used as opposed to a manual implementation,
     /// as it helps with upholding the safety invariants of [`bindings_sys::call`].
     ///
-    /// Returns an error if writing `T` to `out` overflows a 64-bit integer.
+    /// Returns an error if writing `T` to `out` errors.
     fn cvt_ret<T: ValueType>(
         caller: FunctionEnvMut<'_, Self>,
         func: &'static str,
@@ -276,7 +276,7 @@ impl WasmInstanceEnv {
     /// - `(value, value_len)` doesn't decode from BSATN to an `AlgebraicValue`
     ///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
     /// - `value + value_len` overflows a 64-bit integer
-    /// - writing to `out` would overflow a 64-bit integer
+    /// - writing to `out` would overflow a 32-bit integer
     #[tracing::instrument(skip_all)]
     pub fn delete_by_col_eq(
         caller: FunctionEnvMut<'_, Self>,
@@ -379,7 +379,7 @@ impl WasmInstanceEnv {
     /// - a table with the provided `table_id` doesn't exist
     /// - the slice `(name, name_len)` is not valid UTF-8
     /// - `name + name_len` overflows a 64-bit address.
-    /// - writing to `out` overflows a 64-bit integer
+    /// - writing to `out` overflows a 32-bit integer
     #[tracing::instrument(skip_all)]
     pub fn get_table_id(
         caller: FunctionEnvMut<'_, Self>,
@@ -484,7 +484,6 @@ impl WasmInstanceEnv {
     ///
     /// Returns an error if
     /// - a table with the provided `table_id` doesn't exist
-    /// - writing to `out` overflows an 64-bit integer
     // #[tracing::instrument(skip_all)]
     pub fn iter_start(caller: FunctionEnvMut<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u16> {
         Self::cvt_ret(caller, "iter_start", out, |mut caller, _mem| {
@@ -512,7 +511,6 @@ impl WasmInstanceEnv {
     /// - a table with the provided `table_id` doesn't exist
     /// - `(filter, filter_len)` doesn't decode to a filter expression
     /// - `filter + filter_len` overflows a 64-bit integer
-    /// - writing to `out` overflows a 64-bit integer
     // #[tracing::instrument(skip_all)]
     pub fn iter_start_filtered(
         caller: FunctionEnvMut<'_, Self>,
@@ -545,7 +543,7 @@ impl WasmInstanceEnv {
     ///
     /// Returns an error if
     /// - `iter` does not identify a registered `BufferIter`
-    /// - writing to `out` would overflow a 64-bit integer
+    /// - writing to `out` would overflow a 32-bit integer
     /// - advancing the iterator resulted in an error
     // #[tracing::instrument(skip_all)]
     pub fn iter_next(caller: FunctionEnvMut<'_, Self>, iter_key: u32, out: WasmPtr<BufferIdx>) -> RtResult<u16> {
