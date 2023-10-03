@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson};
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches};
 use reqwest::RequestBuilder;
@@ -73,7 +75,23 @@ pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<C
     })
 }
 
-pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), anyhow::Error> {
+// Need to report back timings from each query from the backend instead of infer here...
+fn print_row_count(rows: usize, with_stats: bool) {
+    if with_stats {
+        let txt = if rows == 1 { "row" } else { "rows" };
+        println!("({rows} {txt})");
+    }
+}
+
+fn print_timings(now: Instant, with_stats: bool) {
+    if with_stats {
+        println!("Time: {:.2?}", now.elapsed());
+    }
+}
+
+pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool) -> Result<(), anyhow::Error> {
+    let now = Instant::now();
+
     let json = builder
         .body(sql.to_owned())
         .send()
@@ -86,6 +104,7 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), an
 
     // Print only `OK for empty tables as it's likely a command like `INSERT`.
     if stmt_result_json.is_empty() {
+        print_timings(now, with_stats);
         println!("OK");
         return Ok(());
     };
@@ -121,7 +140,9 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str) -> Result<(), an
         } else {
             println!("{}", table);
         }
+        print_row_count(rows.len(), with_stats);
     }
+    print_timings(now, with_stats);
 
     Ok(())
 }
@@ -138,7 +159,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         let con = parse_req(config, args).await?;
         let api = ClientApi::new(con);
 
-        run_sql(api.sql(), query).await?;
+        run_sql(api.sql(), query, false).await?;
     }
     Ok(())
 }
