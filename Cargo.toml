@@ -24,6 +24,7 @@ members = [
   "crates/sdk/tests/test-counter",
   "crates/sdk/tests/test-client",
   "crates/sdk/tests/connect_disconnect_client",
+  "tools/upgrade-version",
 ]
 default-members = ["crates/cli"]
 # cargo feature graph resolver. v2 is default in edition2021 but workspace
