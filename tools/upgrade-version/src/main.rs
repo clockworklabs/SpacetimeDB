@@ -10,21 +10,25 @@ use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tempfile::NamedTempFile;
 use walkdir::WalkDir;
 
-static IGNORE_FILES: [&'static str; 4] = [
+static IGNORE_FILES: [&'static str; 5] = [
     "crates/sdk/tests/connect_disconnect_client/Cargo.toml",
     "crates/sdk/tests/test-client/Cargo.toml",
     "crates/sdk/tests/test-counter/Cargo.toml",
     "crates/sqltest/Cargo.toml",
+    "crates/testing/Cargo.toml",
 ];
 
 fn find_files(start_dir: &str, name: &str) -> Vec<String> {
     let mut files = Vec::new();
     for entry in WalkDir::new(start_dir).into_iter().filter_map(|e| e.ok()) {
         if entry.file_type().is_file() && entry.path().file_name() == Some(OsStr::new(name)) {
+            if IGNORE_FILES.contains(&entry.path().to_string_lossy().as_ref()) {
+                continue;
+            }
             files.push(entry.path().to_string_lossy().to_string());
         }
     }
@@ -36,13 +40,7 @@ enum FileProcessState {
     Dependencies,
 }
 
-fn process_crate_toml(path: &PathBuf, upgrade_version: &str) {
-    for file in IGNORE_FILES {
-        if file == path.to_string_lossy() {
-            println!("Ignoring file: {}", path.to_string_lossy());
-            return;
-        }
-    }
+fn process_crate_toml(path: &PathBuf, upgrade_version: &str, upgrade_package_version: bool) {
     println!("Processing file: {}", path.to_string_lossy());
 
     let file = File::open(path).expect(format!("File not found: {}", path.to_string_lossy()).as_str());
@@ -56,7 +54,7 @@ fn process_crate_toml(path: &PathBuf, upgrade_version: &str) {
             Ok(line) => {
                 let new_line = match state {
                     FileProcessState::Package => {
-                        if line.contains("version = ") {
+                        if line.contains("version = ") && upgrade_package_version {
                             re.replace(&line, format!("version = \"{}", upgrade_version).as_str())
                                 .into()
                         } else if line.contains("[dependencies]") {
@@ -68,9 +66,13 @@ fn process_crate_toml(path: &PathBuf, upgrade_version: &str) {
                     }
                     FileProcessState::Dependencies => {
                         if line.starts_with("spacetimedb") {
-                            // Match the version number and capture it
-                            re.replace(&line, format!("version = \"{}", upgrade_version).as_str())
-                                .into()
+                            if !line.contains("{") {
+                                format!("spacetimedb = \"{}\"", upgrade_version)
+                            } else {
+                                // Match the version number and capture it
+                                re.replace(&line, format!("version = \"{}", upgrade_version).as_str())
+                                    .into()
+                            }
                         } else {
                             line
                         }
@@ -88,7 +90,8 @@ fn process_crate_toml(path: &PathBuf, upgrade_version: &str) {
 }
 
 fn process_license_file(upgrade_version: &str) {
-    let file = File::open("LICENSE.txt").expect(format!("File not found: {}", path.to_string_lossy()).as_str());
+    let path = "LICENSE.txt";
+    let file = File::open(path).expect(format!("File not found: {}", path).as_str());
     let reader = BufReader::new(file);
     let mut temp_file = NamedTempFile::new().expect("Failed to create temporary file!");
     let re = Regex::new(r"(^Licensed Work:\s+SpacetimeDB )([\d\.]+)").unwrap();
@@ -96,7 +99,15 @@ fn process_license_file(upgrade_version: &str) {
     for line_result in reader.lines() {
         match line_result {
             Ok(line) => {
-                let new_line = re.replace(&text, format!("$1{}", new_version).as_str());
+                let new_line = if line.starts_with("Licensed Work") {
+                    re.replace(
+                        &line,
+                        format!("{}{}", &re.captures(&line).unwrap()[1], upgrade_version).as_str(),
+                    )
+                    .into()
+                } else {
+                    line
+                };
                 writeln!(temp_file, "{}", new_line).unwrap();
             }
             Err(e) => eprintln!("Error reading line: {}", e),
@@ -135,10 +146,13 @@ fn main() {
         return;
     }
 
-    let cargo_files = find_files("crates", "Cargo.toml");
-    cargo_files.append(find_files("crates", "Cargo._toml"));
-    for file in cargo_files {
-        process_crate_toml(&PathBuf::from(file), version);
+    for file in find_files("crates", "Cargo.toml") {
+        process_crate_toml(&PathBuf::from(file), version, true);
     }
+    for file in find_files("crates", "Cargo._toml") {
+        process_crate_toml(&PathBuf::from(file), version, false);
+    }
+
+    process_crate_toml(&PathBuf::from("crates/testing/Cargo.toml"), version, false);
     process_license_file(version);
 }
