@@ -1,4 +1,3 @@
-use base64::Engine;
 use prost::Message as _;
 use spacetimedb_client_api_messages::client_api::{OneOffQueryResponse, OneOffTable};
 use spacetimedb_lib::{relation::MemTable, Address};
@@ -198,7 +197,7 @@ pub struct OneOffQueryResponseMessage {
 impl ServerMessage for OneOffQueryResponseMessage {
     fn serialize_text(self) -> MessageJson {
         MessageJson::OneOffQueryResponse(OneOffQueryResponseJson {
-            message_id_base64: base64::engine::general_purpose::STANDARD.encode(self.message_id),
+            message_id_base64: simple_base64::encode(self.message_id),
             error: self.error,
             result: self
                 .results

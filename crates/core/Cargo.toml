@@ -26,7 +26,7 @@ spacetimedb-client-api-messages = { path = "../client-api-messages", version = "
 anyhow.workspace = true
 async-trait.workspace = true
 backtrace.workspace = true
-base64.workspace = true
+simple-base64.workspace = true
 bytes.workspace = true
 bytestring.workspace = true
 clap.workspace = true

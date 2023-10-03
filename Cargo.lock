@@ -4063,6 +4063,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "420acb44afdae038210c99e69aae24109f32f15500aa708e81d46c9f29d55fcf"
 
 [[package]]
+name = "simple-base64"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e124c5aa3994a402e8f10d7c4d1241298277d53dad230d82b97d56b0ac6eca5"
+
+[[package]]
 name = "simple_asn1"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4220,7 +4226,6 @@ name = "spacetimedb-cli"
 version = "0.6.1"
 dependencies = [
  "anyhow",
- "base64 0.21.2",
  "cargo_metadata",
  "clap 4.3.10",
  "colored",
@@ -4237,6 +4242,7 @@ dependencies = [
  "rustyline",
  "serde",
  "serde_json",
+ "simple-base64",
  "slab",
  "spacetimedb-core",
  "spacetimedb-lib",
@@ -4299,7 +4305,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "backtrace",
- "base64 0.21.2",
  "bytes",
  "bytestring",
  "clap 4.3.10",
@@ -4343,6 +4348,7 @@ dependencies = [
  "serde_path_to_error",
  "serde_with",
  "sha1",
+ "simple-base64",
  "slab",
  "sled",
  "spacetimedb-client-api-messages",
@@ -4431,7 +4437,6 @@ version = "0.6.1"
 dependencies = [
  "anyhow",
  "anymap",
- "base64 0.21.2",
  "cursive",
  "futures",
  "futures-channel",
@@ -4443,6 +4448,7 @@ dependencies = [
  "log",
  "prost",
  "rand 0.8.5",
+ "simple-base64",
  "spacetimedb-client-api-messages",
  "spacetimedb-lib",
  "spacetimedb-sats",

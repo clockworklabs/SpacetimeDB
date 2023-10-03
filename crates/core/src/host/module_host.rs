@@ -12,7 +12,6 @@ use crate::protobuf::client_api::{table_row_operation, SubscriptionUpdate, Table
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
-use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
 use spacetimedb_lib::relation::MemTable;
@@ -128,7 +127,7 @@ impl DatabaseUpdate {
                         .ops
                         .into_iter()
                         .map(|op| {
-                            let row_pk = BASE_64_STD.encode(&op.row_pk);
+                            let row_pk = simple_base64::encode(&op.row_pk);
                             TableRowOperationJson {
                                 op: if op.op_type == 1 {
                                     "insert".into()

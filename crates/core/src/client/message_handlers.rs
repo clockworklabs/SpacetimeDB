@@ -5,7 +5,6 @@ use crate::host::{EnergyDiff, ReducerArgs, Timestamp};
 use crate::identity::Identity;
 use crate::protobuf::client_api::{message, FunctionCall, Message, Subscribe};
 use crate::worker_metrics::{WEBSOCKET_REQUESTS, WEBSOCKET_REQUEST_MSG_SIZE};
-use base64::Engine;
 use bytes::Bytes;
 use bytestring::ByteString;
 use prost::Message as _;
@@ -23,7 +22,7 @@ pub enum MessageHandleError {
     #[error(transparent)]
     TextDecode(#[from] serde_json::Error),
     #[error(transparent)]
-    Base64Decode(#[from] base64::DecodeError),
+    Base64Decode(#[from] simple_base64::DecodeError),
 
     #[error(transparent)]
     Execution(#[from] MessageExecutionError),
@@ -104,10 +103,7 @@ async fn handle_text(client: &ClientConnection, message: String) -> Result<(), M
             query_string: ref query,
             message_id,
         } => {
-            let _ = std::mem::replace(
-                &mut message_id_,
-                base64::engine::general_purpose::STANDARD.decode(&message_id[..])?,
-            );
+            let _ = std::mem::replace(&mut message_id_, simple_base64::decode(&message_id[..])?);
             DecodedMessage::OneOffQuery {
                 query_string: &query[..],
                 message_id: &message_id_[..],
