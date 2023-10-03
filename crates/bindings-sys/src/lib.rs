@@ -34,7 +34,7 @@ use alloc::boxed::Box;
 /// can run a module declaring `X.Y` if and only if `X == A && Y <= B`.
 /// So, the minor version is intended for backwards-compatible changes, e.g. adding a new function,
 /// and the major version is for fully breaking changes.
-pub const ABI_VERSION: u32 = 0x0004_0000;
+pub const ABI_VERSION: u32 = 0x0005_0000;
 
 /// Provides a raw set of sys calls which abstractions can be built atop of.
 pub mod raw {
@@ -395,10 +395,6 @@ pub mod raw {
             /// Required. id is an index into the `ModuleDef.reducers` returned from `__describe_module__`.
             /// args is a bsatn-encoded product value defined by the schema at `reducers[id]`.
             fn __call_reducer__(id: usize, sender: Identity, timestamp: Timestamp, args: Buffer) -> Result;
-            /// Optional. Called when a client connects to the database.
-            fn __identity_connected__(sender: Identity, timestamp: Timestamp) -> Result;
-            /// Optional. Called when a client disconnects to the database.
-            fn __identity_disconnected__(sender: Identity, timestamp: Timestamp) -> Result;
             /// Currently unused?
             fn __migrate_database__XXXX(sender: Identity, timestamp: Timestamp, something: Buffer) -> Result;
         }

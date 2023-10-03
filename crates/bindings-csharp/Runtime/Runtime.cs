@@ -276,37 +276,6 @@ public static class Runtime
         }
     }
 
-    public static event Action<DbEventArgs>? OnConnect;
-    public static event Action<DbEventArgs>? OnDisconnect;
-
-    // Note: this is accessed by C bindings.
-    private static string? IdentityConnected(byte[] sender_identity, byte[] sender_address, ulong timestamp)
-    {
-        try
-        {
-            OnConnect?.Invoke(new(sender_identity, sender_address, timestamp));
-            return null;
-        }
-        catch (Exception e)
-        {
-            return e.ToString();
-        }
-    }
-
-    // Note: this is accessed by C bindings.
-    private static string? IdentityDisconnected(byte[] sender_identity, byte[] sender_address, ulong timestamp)
-    {
-        try
-        {
-            OnDisconnect?.Invoke(new(sender_identity, sender_address, timestamp));
-            return null;
-        }
-        catch (Exception e)
-        {
-            return e.ToString();
-        }
-    }
-
     [MethodImpl(MethodImplOptions.InternalCall)]
     private extern static void ScheduleReducer(
         string name,

@@ -67,20 +67,6 @@ pub fn create_index(index_name: &str, table_id: u32, index_type: sys::raw::Index
     cvt_result(result.map_err(cvt_errno))
 }
 
-/// Runs the on-connect function `f` provided with a new reducer context
-/// created from `sender` and `timestamp`.
-pub fn invoke_connection_func<R: ReducerResult>(
-    f: impl Fn(ReducerContext) -> R,
-    sender: Buffer,
-    client_address: Buffer,
-    timestamp: u64,
-) -> Buffer {
-    let ctx = assemble_context(sender, timestamp, client_address);
-
-    let res = with_timestamp_set(ctx.timestamp, || f(ctx).into_result());
-    cvt_result(res)
-}
-
 /// Creates a reducer context from the given `sender`, `timestamp` and `client_address`.
 ///
 /// `sender` must contain 32 bytes, from which we will read an `Identity`.
@@ -205,9 +191,9 @@ pub trait ReducerArg<'de> {}
 impl<'de, T: Deserialize<'de>> ReducerArg<'de> for T {}
 impl ReducerArg<'_> for ReducerContext {}
 /// Assert that `T: ReducerArg`.
-pub fn assert_reducerarg<'de, T: ReducerArg<'de>>() {}
+pub fn assert_reducer_arg<'de, T: ReducerArg<'de>>() {}
 /// Assert that `T: ReducerResult`.
-pub fn assert_reducerret<T: ReducerResult>() {}
+pub fn assert_reducer_ret<T: ReducerResult>() {}
 /// Assert that `T: TableType`.
 pub const fn assert_table<T: TableType>() {}
 

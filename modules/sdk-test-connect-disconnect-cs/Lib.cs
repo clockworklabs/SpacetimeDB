@@ -1,6 +1,5 @@
 using SpacetimeDB.Module;
 using static SpacetimeDB.Runtime;
-using System.Runtime.CompilerServices;
 
 static partial class Module
 {
@@ -16,17 +15,15 @@ static partial class Module
         public Identity identity;
     }
 
-    [ModuleInitializer]
-    public static void Init()
+    [SpacetimeDB.Reducer(ReducerKind.Connect)]
+    public static void OnConnect(DbEventArgs e)
     {
-        OnConnect += (e) =>
-        {
-            new Connected { identity = e.Sender }.Insert();
-        };
+        new Connected { identity = e.Sender }.Insert();
+    }
 
-        OnDisconnect += (e) =>
-        {
-            new Disconnected { identity = e.Sender }.Insert();
-        };
+    [SpacetimeDB.Reducer(ReducerKind.Disconnect)]
+    public static void OnDisconnect(DbEventArgs e)
+    {
+        new Disconnected { identity = e.Sender }.Insert();
     }
 }

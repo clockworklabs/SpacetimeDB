@@ -779,5 +779,5 @@ __preinit__10_init_csharp() {
 
 // __attribute__((export_name("SPACETIME_ABI_VERSION"))) -
 // doesn't work on non-functions, must specify on command line
-const uint32_t SPACETIME_ABI_VERSION = /* 4.0 */ (4 << 16) | 0;
+const uint32_t SPACETIME_ABI_VERSION = /* 5.0 */ (5 << 16) | 0;
 const uint8_t SPACETIME_ABI_VERSION_IS_ADDR = 1;
