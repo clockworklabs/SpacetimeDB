@@ -57,6 +57,27 @@ cargo bench -- 'mem/.*/unique'
 ```
 Will run benchmarks involving unique primary keys against all databases, without writing to disc.
 
+## Pretty report
+To generate a nicely formatted markdown report, you can use the "summarize" binary.
+This is used on CI (see [`../../.github/workflows/benchmarks.yml`](../../.github/workflows/benchmarks.yml)).
+
+To generate a report without comparisons, use:
+```bash
+cargo bench --bench generic --bench special -- --save-baseline current
+cargo run --bin summarize markdown-report current
+```
+
+To compare to another branch, do:
+```bash
+git checkout master
+cargo bench --bench generic --bench special -- --save-baseline base
+git checkout high-octane-feature-branch
+cargo bench --bench generic --bench special -- --save-baseline current
+cargo run --bin summarize markdown-report current base
+```
+
+Of course, this will take about an hour, so it might be better to let the CI do it for you.
+
 ## Adding more
 
 There are two ways to write benchmarks:
@@ -97,12 +118,6 @@ There are also some scripts that rely on external tools to extract data from the
 cargo install critcmp
 ```
 
-The simplest way to use critcmp is to save two baselines with Criterion's benchmark harness and then compare them. For example:
-```bash
-cargo bench -- --save-baseline before
-cargo bench -- --save-baseline change
-critcmp before change
-```
 
 ### OSX Only
 

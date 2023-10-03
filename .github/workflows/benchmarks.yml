@@ -2,13 +2,17 @@ on:
   push:
     branches:
       - master
-      - kazimuth/benchwrangle
+  
   workflow_dispatch:
     inputs:
       pr_number:
         description: 'Pull Request Number'
         required: false
         default: ''
+
+  # note: the "benchmarks please" comments aren't dispatched here,
+  # there's a script running on one of our internal servers that reads those and then
+  # dispatches to this workflow using the workflow_dispatch there.
 
 name: Benchmarks
 
@@ -40,6 +44,7 @@ jobs:
           PR_DATA=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.inputs.pr_number }} --jq '{ baseRefName: .base.ref, headRefName: .head.ref }')
           echo "PR_BASE_REF=$(echo $PR_DATA | jq -r '.baseRefName')" >> $GITHUB_ENV
           echo "PR_HEAD_REF=$(echo $PR_DATA | jq -r '.headRefName')" >> $GITHUB_ENV
+
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -68,19 +73,87 @@ jobs:
         run: |
           rustup component add clippy
 
-      - name: Criterion compare base branch
-        if: ${{ env.PR_BASE_REF }}
-        uses: clockworklabs/criterion-compare-action@main
-        with:
-          cwd: "crates/bench"
-          branchName: ${{ env.PR_BASE_REF }}
+      - name: Master; run bench
+        if: github.ref == 'ref/head/master'
+        working-directory: crates/bench/
+        run: |
+          echo "Running benchmarks with sqlite"
+          cargo bench --bench generic --bench special -- --save-baseline master
+          cargo run --bin summarize pack master
 
-      - name: Criterion compare previous commit
-        if: env.PR_BASE_REF == ''
-        uses: clockworklabs/criterion-compare-action@main
+      # https://docs.github.com/en/actions/using-workflows/storing-workflow-data-as-artifacts
+      - name: Master; upload packed bench results
+        if: github.ref == 'ref/head/master'
+        uses: actions/upload-artifact@v3
         with:
-          cwd: "crates/bench"
-          branchName: "HEAD~1"
+          name: master_packed_bench_json-${{ github.sha }}
+          path: target/criterion/master.json
+      
+      # TODO: can we optionally download if it only might fail?
+      #- name: PR; download bench results for compare
+      #  if: ${{ env.PR_BASE_REF }}
+      #  uses: actions/github-script@v6  
+      #  with:
+      #    github-token: ${{secrets.GITHUB_TOKEN}}
+      #    script: |
+      #      try {
+      #        let artifact = github.rest.actions.getArtifact({
+      #          owner: "clockwork",
+      #          repo: "SpacetimeDB",
+      #          
+      #        })
+      #      }
+
+      - name: PR; run bench
+        if: ${{ env.PR_BASE_REF }}
+        working-directory: crates/bench/
+        run: |
+          echo "Running benchmarks without sqlite"
+          # have to pass explicit names, otherwise it will try to run the tests and fail for some reason...
+          cargo bench --bench generic --bench special -- --save-baseline branch '(special|stdb_module|stdb_raw)'
+          cargo run --bin summarize pack branch
+
+      - name: PR; compare benchmarks
+        if: ${{ env.PR_BASE_REF }}
+        working-directory: crates/bench/
+        run: |
+          if [ -e target/criterion/master.json ]; then
+            cargo run --bin summarize markdown-report branch.json master.json --report-name report
+          else
+            cargo run --bin summarize markdown-report branch.json --report-name report
+          fi
+
+      # https://stackoverflow.com/questions/58066966/commenting-a-pull-request-in-a-github-action
+      # https://github.com/boa-dev/criterion-compare-action/blob/main/main.js
+      - name: test comment
+        if: ${{ env.PR_BASE_REF }}
+        uses: actions/github-script@v6  
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            let stuff = require('fs').readFileSync('target/criterion/report.md', 'utf8');
+            let body = `<details><summary>Benchmark results</summary>\n\n${stuff}\n\n</details>`;
+            let number = parseInt(process.env.PR_NUMBER);
+            core.info("context: issue number: "+number)
+
+            try {
+              const { data: comment } = await github.rest.issues.createComment({
+                owner: "clockworklabs",
+                repo: "SpacetimeDB",
+                issue_number: number,
+                body: body,
+              });
+              core.info(
+                `Created comment id '${comment.id}' on issue '${number}' in 'clockworklabs/SpacetimeDB'.`
+              );
+              core.setOutput("comment-id", comment.id);
+            } catch (err) {
+              core.warning(`Failed to comment: ${err}`);
+              core.info("Commenting is not possible from forks.");
+              core.info("Logging here instead.");
+              console.log(body);
+            }
+
 
       - name: Clean up
         if: always()

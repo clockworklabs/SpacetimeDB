@@ -29,7 +29,7 @@ fn custom_module_benchmarks(c: &mut Criterion) {
     let args = ProductValue {
         elements: vec![AlgebraicValue::Builtin(BuiltinValue::String("0".repeat(65536)))],
     };
-    c.bench_function("stdb_module/large_arguments/64KiB", |b| {
+    c.bench_function("special/stdb_module/large_arguments/64KiB", |b| {
         b.iter_batched(
             || args.clone(),
             |args| runtime.block_on(async { module.call_reducer_binary("fn_with_1_args", args).await.unwrap() }),
@@ -41,7 +41,7 @@ fn custom_module_benchmarks(c: &mut Criterion) {
         let args = ProductValue {
             elements: vec![AlgebraicValue::Builtin(BuiltinValue::U32(n))],
         };
-        c.bench_function(&format!("stdb_module/print_bulk/lines={n}"), |b| {
+        c.bench_function(&format!("special/stdb_module/print_bulk/lines={n}"), |b| {
             b.iter_batched(
                 || args.clone(),
                 |args| runtime.block_on(async { module.call_reducer_binary("print_many_things", args).await.unwrap() }),
@@ -54,7 +54,7 @@ fn custom_module_benchmarks(c: &mut Criterion) {
 fn serialize_benchmarks<T: BenchTable + RandomTable>(c: &mut Criterion) {
     let name = T::name_snake_case();
     let count = 100;
-    let mut group = c.benchmark_group("serialize");
+    let mut group = c.benchmark_group("special/serialize");
     group.throughput(criterion::Throughput::Elements(count));
 
     let data = create_sequential::<T>(0xdeadbeef, count as u32, 100);

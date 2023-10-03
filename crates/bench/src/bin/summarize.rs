@@ -45,7 +45,7 @@ enum Command {
         /// Otherwise, read from the loose criterion files in the filesystem.
         baseline_old: Option<String>,
 
-        /// Report will be written to this file. If not specified, will be written to stdout.
+        /// Report will be written to `{target_dir}/criterion/{report_name}.md`.
         #[arg(long = "report-name", required = false)]
         report_name: Option<String>,
     },
