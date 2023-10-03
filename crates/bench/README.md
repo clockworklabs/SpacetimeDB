@@ -64,6 +64,8 @@ There are two ways to write benchmarks:
 - Targeted, non-generic benchmarks (`benches/special.rs`)
 - Generic over database backends (`benches/generic.rs`)
 
+See the following sections for how to write these.
+
 ### Targeted benchmarks
 These are regular [Criterion.rs](https://github.com/bheisler/criterion.rs) benchmarks. Nothing fancy, do whatever you like with these. Put them in `benches/special.rs`.
 
