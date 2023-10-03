@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+
 extern crate clap;
 extern crate walkdir;
 
@@ -15,7 +17,7 @@ use std::path::PathBuf;
 use tempfile::NamedTempFile;
 use walkdir::WalkDir;
 
-static IGNORE_FILES: [&'static str; 5] = [
+static IGNORE_FILES: [&str; 5] = [
     "crates/sdk/tests/connect_disconnect_client/Cargo.toml",
     "crates/sdk/tests/test-client/Cargo.toml",
     "crates/sdk/tests/test-counter/Cargo.toml",
@@ -44,7 +46,7 @@ enum FileProcessState {
 fn process_crate_toml(path: &PathBuf, upgrade_version: &str, upgrade_package_version: bool) {
     println!("Processing file: {}", path.to_string_lossy());
 
-    let file = File::open(path).expect(format!("File not found: {}", path.to_string_lossy()).as_str());
+    let file = File::open(path).unwrap_or_else(|_| panic!("File not found: {}", path.to_string_lossy()));
     let reader = BufReader::new(file);
     let mut temp_file = NamedTempFile::new().expect("Failed to create temporary file!");
     let mut state = FileProcessState::Package;
@@ -67,7 +69,7 @@ fn process_crate_toml(path: &PathBuf, upgrade_version: &str, upgrade_package_ver
                     }
                     FileProcessState::Dependencies => {
                         if line.starts_with("spacetimedb") {
-                            if !line.contains("{") {
+                            if !line.contains('{') {
                                 format!("spacetimedb = \"{}\"", upgrade_version)
                             } else {
                                 // Match the version number and capture it
@@ -92,7 +94,7 @@ fn process_crate_toml(path: &PathBuf, upgrade_version: &str, upgrade_package_ver
 
 fn process_license_file(upgrade_version: &str) {
     let path = "LICENSE.txt";
-    let file = File::open(path).expect(format!("File not found: {}", path).as_str());
+    let file = File::open(path).unwrap_or_else(|_| panic!("File not found: {}", path));
     let reader = BufReader::new(file);
     let mut temp_file = NamedTempFile::new().expect("Failed to create temporary file!");
     let re = Regex::new(r"(^Licensed Work:\s+SpacetimeDB )([\d\.]+)").unwrap();
