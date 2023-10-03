@@ -2,6 +2,7 @@ extern crate clap;
 extern crate walkdir;
 
 use clap::{Arg, Command};
+use duct::cmd;
 use regex::Regex;
 use std::env;
 use std::ffi::OsStr;
@@ -149,10 +150,14 @@ fn main() {
     for file in find_files("crates", "Cargo.toml") {
         process_crate_toml(&PathBuf::from(file), version, true);
     }
+    for file in find_files("modules", "Cargo.toml") {
+        process_crate_toml(&PathBuf::from(file), version, false);
+    }
     for file in find_files("crates", "Cargo._toml") {
         process_crate_toml(&PathBuf::from(file), version, false);
     }
 
     process_crate_toml(&PathBuf::from("crates/testing/Cargo.toml"), version, false);
     process_license_file(version);
+    cmd!("cargo", "check").run().expect("Cargo check failed!");
 }

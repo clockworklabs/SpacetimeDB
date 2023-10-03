@@ -10,3 +10,4 @@ walkdir = "2"
 tempfile.workspace = true
 clap.workspace = true
 regex.workspace = true
+duct.workspace = true
