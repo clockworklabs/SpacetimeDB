@@ -1,4 +1,4 @@
-use super::commit_log::CommitLog;
+use super::commit_log::{CommitLog, CommitLogView};
 use super::datastore::locking_tx_datastore::{Data, DataRef, Iter, IterByColEq, IterByColRange, MutTxId, RowId};
 use super::datastore::traits::{
     ColId, DataRow, IndexDef, IndexId, MutProgrammable, MutTx, MutTxDatastore, Programmable, SequenceDef, SequenceId,
@@ -8,6 +8,7 @@ use super::message_log::MessageLog;
 use super::ostorage::memory_object_db::MemoryObjectDB;
 use super::relational_operators::Relation;
 use crate::address::Address;
+use crate::db::commit_log;
 use crate::db::db_metrics::{RDB_DELETE_BY_REL_TIME, RDB_DROP_TABLE_TIME, RDB_INSERT_TIME, RDB_ITER_TIME};
 use crate::db::messages::commit::Commit;
 use crate::db::ostorage::hashmap_object_db::HashMapObjectDB;
@@ -102,9 +103,10 @@ impl RelationalDB {
             if let Some(message_log) = &message_log {
                 let message_log = message_log.lock().unwrap();
                 let max_offset = message_log.open_segment_max_offset;
-                for message in message_log.iter() {
+                for commit in commit_log::Iter::from(message_log.segments()) {
+                    let commit = commit?;
+
                     segment_index += 1;
-                    let (commit, _) = Commit::decode(message);
                     last_hash = commit.parent_commit_hash;
                     last_commit_offset = Some(commit.commit_offset);
                     for transaction in commit.transactions {
@@ -170,6 +172,11 @@ impl RelationalDB {
 
         log::trace!("[{}] DATABASE: OPENED", address);
         Ok(db)
+    }
+
+    /// Obtain a read-only view of this database's [`CommitLog`].
+    pub fn commit_log(&self) -> CommitLogView {
+        CommitLogView::from(&self.commit_log)
     }
 
     // pub fn reset_hard(&mut self, message_log: Arc<Mutex<MessageLog>>) -> Result<(), DBError> {

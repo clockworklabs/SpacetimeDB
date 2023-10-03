@@ -9,7 +9,6 @@ use spacetimedb_sdk::{
 
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::large_enum_variant)]
-#[rustfmt::skip]
 mod module_bindings;
 
 use module_bindings::*;

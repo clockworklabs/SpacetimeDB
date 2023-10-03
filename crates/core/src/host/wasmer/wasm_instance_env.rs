@@ -3,7 +3,10 @@
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
-use crate::host::wasm_common::{err_to_errno, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers};
+use crate::host::wasm_common::{
+    err_to_errno, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers, TimingSpan, TimingSpanIdx,
+    TimingSpanSet,
+};
 use bytes::Bytes;
 use itertools::Itertools;
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
@@ -17,6 +20,7 @@ pub(super) struct WasmInstanceEnv {
     pub mem: Option<Mem>,
     pub buffers: Buffers,
     pub iters: BufferIters,
+    pub timing_spans: TimingSpanSet,
 }
 
 type WasmResult<T> = Result<T, WasmError>;
@@ -76,6 +80,8 @@ impl WasmInstanceEnv {
     ///
     /// This method should be used as opposed to a manual implementation,
     /// as it helps with upholding the safety invariants of [`bindings_sys::call`].
+    ///
+    /// Returns an error if writing `T` to `out` errors.
     fn cvt_ret<T: ValueType>(
         caller: FunctionEnvMut<'_, Self>,
         func: &'static str,
@@ -89,21 +95,27 @@ impl WasmInstanceEnv {
 
     /// Reads a string from WASM memory starting at `ptr` and lasting `len` bytes.
     ///
-    /// Returns an error if there were memory access issues
-    /// or if the string was not valid UTF-8.
+    /// Returns an error if:
+    /// - `ptr + len` overflows a 64-bit address.
+    /// - the string was not valid UTF-8
     fn read_string(caller: &FunctionEnvMut<'_, Self>, mem: &Mem, ptr: WasmPtr<u8>, len: u32) -> RtResult<String> {
         let bytes = mem.read_bytes(&caller, ptr, len)?;
         String::from_utf8(bytes).map_err(|_| RuntimeError::new("name must be utf8"))
     }
 
-    /// Schedule the reducer `(name, name_len)` to be executed asynchronously,
-    /// passing it `(args, args_len)`, at the given `time`.
+    /// Schedules a reducer to be called asynchronously at `time`.
     ///
-    /// This can be thought of as `setTimeout` in JS.
-    /// Note that `time = 0` can still mean that `cancel_reducer` has an effect due to threading.
+    /// The reducer is named as the valid UTF-8 slice `(name, name_len)`,
+    /// and is passed the slice `(args, args_len)` as its argument.
     ///
-    /// The scheduled reducer is assigned a generated `id`, which is written to the pointer `out`.
-    /// Note that `name` must point to valid UTF-8 or a `RuntimeError` will occur.
+    /// A generated schedule id is assigned to the reducer.
+    /// This id is written to the pointer `out`.
+    ///
+    /// Returns an error if
+    /// - the `time` delay exceeds `64^6 - 1` milliseconds from now
+    /// - `name` does not point to valid UTF-8
+    /// - `name + name_len` or `args + args_len` overflow a 64-bit integer
+    /// - writing to `out` overflows a 64-bit integer
     #[tracing::instrument(skip_all)]
     pub fn schedule_reducer(
         caller: FunctionEnvMut<'_, Self>,
@@ -141,7 +153,7 @@ impl WasmInstanceEnv {
         .map(|_| ())
     }
 
-    /// Cancel a reducer that was scheduled with `id`.
+    /// Unschedule a reducer using the same `id` generated as when it was scheduled.
     ///
     /// This assumes that the reducer hasn't already been executed.
     #[tracing::instrument(skip_all)]
@@ -149,9 +161,20 @@ impl WasmInstanceEnv {
         caller.data().instance_env.cancel_reducer(ScheduledReducerId(id))
     }
 
-    /// Log at `level` a `message` occuring in `filename:line_number` with `target`.
+    /// Log at `level` a `message` message occuring in `filename:line_number`
+    /// with [`target`] being the module path at the `log!` invocation site.
     ///
     /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.
+    ///
+    /// The `target` and `filename` pointers are ignored by passing `NULL`.
+    /// The line number is ignored if `line_number == u32::MAX`.
+    ///
+    /// No message is logged if
+    /// - `target != NULL && target + target_len > u64::MAX`
+    /// - `filename != NULL && filename + filename_len > u64::MAX`
+    /// - `message + message_len > u64::MAX`
+    ///
+    /// [`target`]: https://docs.rs/log/latest/log/struct.Record.html#method.target
     #[tracing::instrument(skip_all)]
     pub fn console_log(
         caller: FunctionEnvMut<'_, Self>,
@@ -200,22 +223,29 @@ impl WasmInstanceEnv {
         })();
     }
 
-    /// Insert a row, into the table identified by `table_id`,
-    /// where the row is read from the byte slice `row_ptr` in WASM memory,
+    /// Inserts a row into the table identified by `table_id`,
+    /// where the row is read from the byte slice `row` in WASM memory,
     /// lasting `row_len` bytes.
+    ///
+    /// The `(row, row_len)` slice must be a BSATN-encoded `ProductValue`
+    /// matching the table's `ProductType` row-schema.
+    /// The `row` pointer is written to with the inserted row re-encoded.
+    /// This is due to auto-incrementing columns.
+    ///
+    /// Returns an error if
+    /// - a table with the provided `table_id` doesn't exist
+    /// - there were unique constraint violations
+    /// - `row + row_len` overflows a 64-bit integer
+    /// - `(row, row_len)` doesn't decode from BSATN to a `ProductValue`
+    ///   according to the `ProductType` that the table's schema specifies.
     #[tracing::instrument(skip_all)]
-    pub fn insert(
-        caller: FunctionEnvMut<'_, Self>,
-        table_id: u32,
-        row_ptr: WasmPtr<u8>,
-        row_len: u32,
-    ) -> RtResult<u16> {
+    pub fn insert(caller: FunctionEnvMut<'_, Self>, table_id: u32, row: WasmPtr<u8>, row_len: u32) -> RtResult<u16> {
         Self::cvt(caller, "insert", |caller, mem| {
             // Read the row from WASM memory into a buffer.
-            let mut row_buffer = mem.read_bytes(&caller, row_ptr, row_len)?;
+            let mut row_buffer = mem.read_bytes(&caller, row, row_len)?;
 
             // Insert the row into the DB. We get back the decoded version.
-            // Then re-encode and write that back into WASM memory at `row_ptr`.
+            // Then re-encode and write that back into WASM memory at `row`.
             // We're doing this because of autoinc.
             let new_row = caller.data().instance_env.insert(table_id, &row_buffer)?;
             row_buffer.clear();
@@ -225,7 +255,7 @@ impl WasmInstanceEnv {
                 row_len as usize,
                 "autoinc'd row is different encoded size from original row"
             );
-            mem.set_bytes(&caller, row_ptr, row_len, &row_buffer)?;
+            mem.set_bytes(&caller, row, row_len, &row_buffer)?;
             Ok(())
         })
     }
@@ -234,12 +264,19 @@ impl WasmInstanceEnv {
     /// where the column identified by `cols` matches the byte string,
     /// in WASM memory, pointed to at by `value`.
     ///
-    /// Matching is defined by decoding of `value` to an `AlgebraicValue`
+    /// Matching is defined by BSATN-decoding `value` to an `AlgebraicValue`
     /// according to the column's schema and then `Ord for AlgebraicValue`.
     ///
     /// The number of rows deleted is written to the WASM pointer `out`.
     ///
-    /// Returns an error if no columns were deleted or if the column wasn't found.
+    /// Returns an error if
+    /// - a table with the provided `table_id` doesn't exist
+    /// - no columns were deleted
+    /// - `col_id` does not identify a column of the table,
+    /// - `(value, value_len)` doesn't decode from BSATN to an `AlgebraicValue`
+    ///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
+    /// - `value + value_len` overflows a 64-bit integer
+    /// - writing to `out` would overflow a 32-bit integer
     #[tracing::instrument(skip_all)]
     pub fn delete_by_col_eq(
         caller: FunctionEnvMut<'_, Self>,
@@ -338,7 +375,11 @@ impl WasmInstanceEnv {
     ///
     /// The table id is written into the `out` pointer.
     ///
-    /// Errors if the table does not exist.
+    /// Returns an error if
+    /// - a table with the provided `table_id` doesn't exist
+    /// - the slice `(name, name_len)` is not valid UTF-8
+    /// - `name + name_len` overflows a 64-bit address.
+    /// - writing to `out` overflows a 32-bit integer
     #[tracing::instrument(skip_all)]
     pub fn get_table_id(
         caller: FunctionEnvMut<'_, Self>,
@@ -364,10 +405,14 @@ impl WasmInstanceEnv {
     ///
     /// Currently only single-column-indices are supported
     /// and they may only be of the btree index type.
-    /// In the former case, the function will panic,
-    /// and in latter, an error is returned.
     ///
-    /// Returns an error when a table with the provided `table_id` doesn't exist.
+    /// Returns an error if
+    /// - a table with the provided `table_id` doesn't exist
+    /// - the slice `(index_name, index_name_len)` is not valid UTF-8
+    /// - `index_name + index_name_len` or `col_ids + col_len` overflow a 64-bit integer
+    /// - `index_type > 1`
+    ///
+    /// Panics if `index_type == 1` or `col_ids.len() != 1`.
     #[tracing::instrument(skip_all)]
     pub fn create_index(
         caller: FunctionEnvMut<'_, Self>,
@@ -398,12 +443,19 @@ impl WasmInstanceEnv {
     /// where the row has a column, identified by `cols`,
     /// with data matching the byte string, in WASM memory, pointed to at by `val`.
     ///
-    /// Matching is defined by decoding of `value` to an `AlgebraicValue`
+    /// Matching is defined BSATN-decoding `val` to an `AlgebraicValue`
     /// according to the column's schema and then `Ord for AlgebraicValue`.
     ///
-    /// The rows found are bsatn encoded and then concatenated.
+    /// The rows found are BSATN-encoded and then concatenated.
     /// The resulting byte string from the concatenation is written
     /// to a fresh buffer with the buffer's identifier written to the WASM pointer `out`.
+    ///
+    /// Returns an error if
+    /// - a table with the provided `table_id` doesn't exist
+    /// - `col_id` does not identify a column of the table,
+    /// - `(val, val_len)` cannot be decoded to an `AlgebraicValue`
+    ///   typed at the `AlgebraicType` of the column,
+    /// - `val + val_len` overflows a 64-bit integer
     #[tracing::instrument(skip_all)]
     pub fn iter_by_col_eq(
         caller: FunctionEnvMut<'_, Self>,
@@ -429,6 +481,9 @@ impl WasmInstanceEnv {
     ///
     /// The iterator is registered in the host environment
     /// under an assigned index which is written to the `out` pointer provided.
+    ///
+    /// Returns an error if
+    /// - a table with the provided `table_id` doesn't exist
     // #[tracing::instrument(skip_all)]
     pub fn iter_start(caller: FunctionEnvMut<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u16> {
         Self::cvt_ret(caller, "iter_start", out, |mut caller, _mem| {
@@ -451,6 +506,11 @@ impl WasmInstanceEnv {
     ///
     /// The iterator is registered in the host environment
     /// under an assigned index which is written to the `out` pointer provided.
+    ///
+    /// Returns an error if
+    /// - a table with the provided `table_id` doesn't exist
+    /// - `(filter, filter_len)` doesn't decode to a filter expression
+    /// - `filter + filter_len` overflows a 64-bit integer
     // #[tracing::instrument(skip_all)]
     pub fn iter_start_filtered(
         caller: FunctionEnvMut<'_, Self>,
@@ -480,6 +540,11 @@ impl WasmInstanceEnv {
     /// The buffer's index is returned and written to the `out` pointer.
     /// If there are no elements left, an invalid buffer index is written to `out`.
     /// On failure however, the error is returned.
+    ///
+    /// Returns an error if
+    /// - `iter` does not identify a registered `BufferIter`
+    /// - writing to `out` would overflow a 32-bit integer
+    /// - advancing the iterator resulted in an error
     // #[tracing::instrument(skip_all)]
     pub fn iter_next(caller: FunctionEnvMut<'_, Self>, iter_key: u32, out: WasmPtr<BufferIdx>) -> RtResult<u16> {
         Self::cvt_ret(caller, "iter_next", out, |mut caller, _mem| {
@@ -516,7 +581,10 @@ impl WasmInstanceEnv {
         })
     }
 
-    /// Returns the length (number of bytes) of the `buffer`.
+    /// Returns the length (number of bytes) of buffer `bufh` without
+    /// transferring ownership of the data into the function.
+    ///
+    /// The `bufh` must have previously been allocating using `_buffer_alloc`.
     ///
     /// Returns an error if the buffer does not exist.
     // #[tracing::instrument(skip_all)]
@@ -529,30 +597,38 @@ impl WasmInstanceEnv {
             .ok_or_else(|| RuntimeError::new("no such buffer"))
     }
 
-    /// Consumes the `buffer` and moves its contents into the slice `(ptr, len)`.
+    /// Consumes the `buffer`,
+    /// moving its contents to the slice `(dst, dst_len)`.
     ///
-    /// Returns an error if the buffer does not exist.
+    /// Returns an error if
+    /// - the buffer does not exist
+    /// - `dst + dst_len` overflows a 64-bit integer
     // #[tracing::instrument(skip_all)]
     pub fn buffer_consume(
         mut caller: FunctionEnvMut<'_, Self>,
         buffer: u32,
-        ptr: WasmPtr<u8>,
-        len: u32,
+        dst: WasmPtr<u8>,
+        dst_len: u32,
     ) -> RtResult<()> {
         let buf = caller
             .data_mut()
             .buffers
             .take(BufferIdx(buffer))
             .ok_or_else(|| RuntimeError::new("no such buffer"))?;
-        ptr.slice(&caller.data().mem().view(&caller), len)
+        dst.slice(&caller.data().mem().view(&caller), dst_len)
             .and_then(|slice| slice.write_slice(&buf))
             .map_err(mem_err)
     }
 
-    /// Creates a buffer of size `data_len`.
-    /// The buffer is initialized with the contents at the `data` WASM pointer.
+    /// Creates a buffer of size `data_len` in the host environment.
+    ///
+    /// The contents of the byte slice pointed to by `data`
+    /// and lasting `data_len` bytes
+    /// is written into the newly initialized buffer.
     ///
     /// The buffer is registered in the host environment and is indexed by the returned `u32`.
+    ///
+    /// Returns an error if `data + data_len` overflows a 64-bit integer.
     // #[tracing::instrument(skip_all)]
     pub fn buffer_alloc(mut caller: FunctionEnvMut<'_, Self>, data: WasmPtr<u8>, data_len: u32) -> RtResult<u32> {
         let buf = caller
@@ -561,6 +637,41 @@ impl WasmInstanceEnv {
             .read_bytes(&caller, data, data_len)
             .map_err(mem_err)?;
         Ok(caller.data_mut().buffers.insert(buf.into()).0)
+    }
+
+    pub fn span_start(mut caller: FunctionEnvMut<'_, Self>, name: WasmPtr<u8>, name_len: u32) -> RtResult<u32> {
+        let name = caller
+            .data()
+            .mem()
+            .read_bytes(&caller, name, name_len)
+            .map_err(mem_err)?;
+        Ok(caller.data_mut().timing_spans.insert(TimingSpan::new(name)).0)
+    }
+
+    pub fn span_end(mut caller: FunctionEnvMut<'_, Self>, span_id: u32) -> RtResult<()> {
+        let span = caller
+            .data_mut()
+            .timing_spans
+            .take(TimingSpanIdx(span_id))
+            .ok_or_else(|| RuntimeError::new("no such timing span"))?;
+
+        let elapsed = span.start.elapsed();
+
+        let name = String::from_utf8_lossy(&span.name);
+        let message = format!("Timing span {:?}: {:?}", name, elapsed);
+
+        let record = Record {
+            target: None,
+            filename: None,
+            line_number: None,
+            message: &message,
+        };
+        caller.data().instance_env.console_log(
+            crate::database_logger::LogLevel::Info,
+            &record,
+            &WasmerBacktraceProvider,
+        );
+        Ok(())
     }
 }
 

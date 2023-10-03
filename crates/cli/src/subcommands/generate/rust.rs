@@ -990,7 +990,7 @@ fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
 /// to `ReducerCallbacks::handle_event_of_type` with an appropriate type argument.
 fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
     out.delimited_block(
-        "fn handle_event(&self, event: Event, reducer_callbacks: &mut ReducerCallbacks, state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {",
+        "fn handle_event(&self, event: Event, _reducer_callbacks: &mut ReducerCallbacks, _state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {",
         |out| {
             out.delimited_block(
                 "let Some(function_call) = &event.function_call else {",
@@ -998,13 +998,21 @@ fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
                     .unwrap(),
                 "};\n",
             );
+
+            // If the module defines no reducers,
+            // we'll generate a single match arm, the fallthrough.
+            // Clippy doesn't like this, as it could be a `let` binding,
+            // but we're not going to add logic to handle that case,
+            // so just quiet the lint.
+            writeln!(out, "#[allow(clippy::match_single_binding)]").unwrap();
+
             out.delimited_block(
                 "match &function_call.reducer[..] {",
                 |out| {
                     for reducer in iter_reducer_items(items) {
                         writeln!(
                             out,
-                            "{:?} => reducer_callbacks.handle_event_of_type::<{}::{}, ReducerEvent>(event, state, ReducerEvent::{}),",
+                            "{:?} => _reducer_callbacks.handle_event_of_type::<{}::{}, ReducerEvent>(event, _state, ReducerEvent::{}),",
                             reducer.name,
                             reducer_module_name(reducer),
                             reducer_type_name(reducer),

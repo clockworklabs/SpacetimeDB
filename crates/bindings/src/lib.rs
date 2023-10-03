@@ -7,6 +7,7 @@ mod impls;
 mod logger;
 #[doc(hidden)]
 pub mod rt;
+pub mod time_span;
 mod timestamp;
 
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
@@ -172,14 +173,18 @@ pub fn insert<T: TableType>(table_id: u32, row: T) -> T::InsertResult {
 /// Matching is defined by decoding of `value` to an `AlgebraicValue`
 /// according to the column's schema and then `Ord for AlgebraicValue`.
 ///
-/// The rows found are bsatn encoded and then concatenated.
+/// The rows found are BSATN encoded and then concatenated.
 /// The resulting byte string from the concatenation is written
 /// to a fresh buffer with a handle to it returned as a `Buffer`.
 ///
-/// Panics when serialization fails.
+/// Panics if
+/// - BSATN serialization fails
+/// - there were unique constraint violations
+/// - `row` doesn't decode from BSATN to a `ProductValue`
+///   according to the `ProductType` that the table's schema specifies
 pub fn iter_by_col_eq(table_id: u32, col_id: u8, val: &impl Serialize) -> Result<Buffer> {
     with_row_buf(|bytes| {
-        // Encode `val` as bsatn into `bytes` and then use that.
+        // Encode `val` as BSATN into `bytes` and then use that.
         bsatn::to_writer(bytes, val).unwrap();
         sys::iter_by_col_eq(table_id, col_id as u32, bytes)
     })
@@ -191,14 +196,20 @@ pub fn iter_by_col_eq(table_id: u32, col_id: u8, val: &impl Serialize) -> Result
 /// Matching is defined by decoding of `value` to an `AlgebraicValue`
 /// according to the column's schema and then `Ord for AlgebraicValue`.
 ///
-/// Returns the number of rows deleted
-/// or an error if no columns were deleted or if the column wasn't found.
+/// Returns the number of rows deleted.
+///
+/// Returns an error if
+/// - a table with the provided `table_id` doesn't exist
+/// - no columns were deleted
+/// - `col_id` does not identify a column of the table,
+/// - `value` doesn't decode from BSATN to an `AlgebraicValue`
+///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
 ///
 /// Panics when serialization fails.
-pub fn delete_by_col_eq(table_id: u32, col_id: u8, eq_value: &impl Serialize) -> Result<u32> {
+pub fn delete_by_col_eq(table_id: u32, col_id: u8, value: &impl Serialize) -> Result<u32> {
     with_row_buf(|bytes| {
-        // Encode `val` as bsatn into `bytes` and then use that.
-        bsatn::to_writer(bytes, eq_value).unwrap();
+        // Encode `value` as BSATN into `bytes` and then use that.
+        bsatn::to_writer(bytes, value).unwrap();
         sys::delete_by_col_eq(table_id, col_id.into(), bytes)
     })
 }

@@ -131,6 +131,8 @@ impl WasmerModule {
                 "_buffer_len" => Function::new_typed_with_env(store, env, WasmInstanceEnv::buffer_len),
                 "_buffer_consume" => Function::new_typed_with_env(store, env, WasmInstanceEnv::buffer_consume),
                 "_buffer_alloc" => Function::new_typed_with_env(store, env, WasmInstanceEnv::buffer_alloc),
+                "_span_start" => Function::new_typed_with_env(store, env, WasmInstanceEnv::span_start),
+                "_span_end" => Function::new_typed_with_env(store, env, WasmInstanceEnv::span_end),
             }
         }
     }
@@ -168,6 +170,7 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
             mem: None,
             buffers: Default::default(),
             iters: Default::default(),
+            timing_spans: Default::default(),
         };
         let env = FunctionEnv::new(&mut store, env);
         let imports = self.imports(&mut store, &env);

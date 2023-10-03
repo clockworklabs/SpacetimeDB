@@ -1,5 +1,7 @@
 pub mod module_host_actor;
 
+use std::time::Instant;
+
 use crate::error::{DBError, IndexError, NodesError};
 
 pub const CALL_REDUCER_DUNDER: &str = "__call_reducer__";
@@ -300,6 +302,23 @@ impl BufferIdx {
 
 decl_index!(BufferIterIdx => Box<dyn Iterator<Item = Result<bytes::Bytes, NodesError>> + Send + Sync>);
 pub(super) type BufferIters = ResourceSlab<BufferIterIdx>;
+
+pub(super) struct TimingSpan {
+    pub start: Instant,
+    pub name: Vec<u8>,
+}
+
+impl TimingSpan {
+    pub fn new(name: Vec<u8>) -> Self {
+        Self {
+            start: Instant::now(),
+            name,
+        }
+    }
+}
+
+decl_index!(TimingSpanIdx => TimingSpan);
+pub(super) type TimingSpanSet = ResourceSlab<TimingSpanIdx>;
 
 pub mod errnos {
     /// NOTE! This is copied from the bindings-sys crate.

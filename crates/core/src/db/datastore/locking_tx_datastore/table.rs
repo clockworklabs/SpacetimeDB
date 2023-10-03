@@ -39,6 +39,7 @@ impl Table {
         Some(row)
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) fn get_row(&self, row_id: &RowId) -> Option<&ProductValue> {
         self.rows.get(row_id)
     }
