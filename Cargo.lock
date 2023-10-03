@@ -4160,7 +4160,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "bytes",
  "derive_more",
@@ -4175,7 +4175,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bench"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "ahash 0.8.3",
  "anyhow",
@@ -4202,7 +4202,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "bitflags 2.3.3",
  "humantime",
@@ -4213,14 +4213,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "getrandom",
 ]
 
 [[package]]
 name = "spacetimedb-cli"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "base64 0.21.2",
@@ -4256,7 +4256,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4288,7 +4288,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api-messages"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "prost",
  "prost-build",
@@ -4297,7 +4297,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-core"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4377,7 +4377,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-lib"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "bitflags 2.3.3",
@@ -4410,7 +4410,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sats"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "arrayvec",
  "bytes",
@@ -4430,7 +4430,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sdk"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "anymap",
@@ -4456,7 +4456,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-standalone"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4500,7 +4500,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-vm"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "derive_more",
