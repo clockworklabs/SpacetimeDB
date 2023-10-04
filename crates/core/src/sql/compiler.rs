@@ -1,5 +1,6 @@
 use nonempty::NonEmpty;
 use std::collections::HashMap;
+use tracing::info;
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{IndexSchema, TableSchema};
@@ -16,8 +17,9 @@ use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, IndexJoin, JoinExpr
 use spacetimedb_vm::operator::OpCmp;
 
 /// Compile the `SQL` expression into a `ast`
-#[tracing::instrument(skip(db, tx))]
+#[tracing::instrument(skip_all)]
 pub fn compile_sql(db: &RelationalDB, tx: &MutTxId, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
+    info!(sql = sql_text);
     let ast = compile_to_ast(db, tx, sql_text)?;
 
     let mut results = Vec::with_capacity(ast.len());

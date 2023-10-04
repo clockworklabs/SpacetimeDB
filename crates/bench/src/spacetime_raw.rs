@@ -5,6 +5,8 @@ use crate::{
 };
 use spacetimedb::db::datastore::traits::{IndexDef, TableDef};
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
+use spacetimedb::sql::execute::run;
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use std::hint::black_box;
 use tempdir::TempDir;
@@ -97,6 +99,18 @@ impl BenchDatabase for SpacetimeRaw {
             for row in self.db.iter(tx, *table_id)? {
                 black_box(row);
             }
+            Ok(())
+        })
+    }
+
+    fn sql_select(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
+        self.db.with_auto_commit(|tx| {
+            let table_name = self.db.table_name_from_id(tx, *table_id)?.unwrap();
+
+            let sql_query = format!("SELECT * FROM {table_name}");
+
+            run(&self.db, tx, &sql_query, AuthCtx::for_testing())?;
+
             Ok(())
         })
     }

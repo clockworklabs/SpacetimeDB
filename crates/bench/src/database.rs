@@ -38,6 +38,10 @@ pub trait BenchDatabase: Sized {
     /// Note: this can be non-generic because none of the implementations use the relevant generic argument.
     fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()>;
 
+    /// Perform a `SELECT * FROM table`
+    /// Note: this can be non-generic because none of the implementations use the relevant generic argument.
+    fn sql_select(&mut self, table_id: &Self::TableId) -> ResultBench<()>;
+
     /// Filter the table on the specified column index for the specified value.
     fn filter<T: BenchTable>(
         &mut self,

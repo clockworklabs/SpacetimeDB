@@ -214,6 +214,10 @@ impl BenchDatabase for SQLite {
         commit.execute(())?;
         Ok(())
     }
+
+    fn sql_select(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
+        self.iterate(table_id)
+    }
 }
 
 /// Note: The rusqlite transaction API just invokes these statements,

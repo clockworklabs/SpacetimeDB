@@ -20,6 +20,7 @@ use spacetimedb_vm::program::{ProgramRef, ProgramVm};
 use spacetimedb_vm::rel_ops::RelOps;
 use std::collections::HashMap;
 use std::ops::RangeBounds;
+use tracing::debug;
 
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
@@ -259,8 +260,10 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
+    #[tracing::instrument(skip_all, fields(table= query.table.table_name()))]
     fn _eval_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
         let table_access = query.table.table_access();
+        debug!(table = query.table.table_name());
 
         let result = build_query(self.db, self.tx, query)?;
         let head = result.head().clone();

@@ -3,6 +3,7 @@ use spacetimedb_lib::relation::MemTable;
 use spacetimedb_lib::{ProductType, ProductValue};
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
+use tracing::info;
 
 use crate::database_instance_context_controller::DatabaseInstanceContextController;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -27,6 +28,7 @@ pub fn execute(
     sql_text: String,
     auth: AuthCtx,
 ) -> Result<Vec<MemTable>, DBError> {
+    info!(sql = sql_text);
     if let Some((database_instance_context, _)) = db_inst_ctx_controller.get(database_instance_id) {
         database_instance_context
             .relational_db
@@ -52,7 +54,7 @@ fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBErr
     Ok(())
 }
 
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(skip(db, tx, auth))]
 pub fn execute_single_sql(
     db: &RelationalDB,
     tx: &mut MutTxId,
@@ -80,6 +82,7 @@ pub fn execute_sql(
     let p = &mut DbProgram::new(db, tx, auth);
     let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
 
+    info!(query = ?q);
     let mut result = Vec::with_capacity(total);
     collect_result(&mut result, run_ast(p, q).into())?;
     Ok(result)
@@ -87,12 +90,7 @@ pub fn execute_sql(
 
 /// Run the `SQL` string using the `auth` credentials
 #[tracing::instrument(skip_all)]
-pub(crate) fn run(
-    db: &RelationalDB,
-    tx: &mut MutTxId,
-    sql_text: &str,
-    auth: AuthCtx,
-) -> Result<Vec<MemTable>, DBError> {
+pub fn run(db: &RelationalDB, tx: &mut MutTxId, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let ast = compile_sql(db, tx, sql_text)?;
     execute_sql(db, tx, ast, auth)
 }

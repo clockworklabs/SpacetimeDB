@@ -171,6 +171,18 @@ impl BenchDatabase for SpacetimeModule {
         })
     }
 
+    fn sql_select(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
+        let SpacetimeModule { runtime, module } = self;
+        let module = module.as_mut().unwrap();
+        let table_name = &table_id.pascal_case;
+        let sql = format!("SELECT * FROM  {table_name}");
+        let id = module.client.id.identity;
+        runtime.block_on(async move {
+            module.client.module.one_off_query(id, sql).await?;
+            Ok(())
+        })
+    }
+
     fn filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,

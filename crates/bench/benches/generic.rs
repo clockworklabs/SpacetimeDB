@@ -69,6 +69,7 @@ fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(g: &mut Group, db
     for (index_strategy, table_id, table_params) in &tables {
         if *index_strategy == IndexStrategy::Unique {
             iterate::<DB, T>(g, table_params, db, table_id, 100)?;
+            sql_select::<DB, T>(g, table_params, db, table_id, 100)?;
 
             if table_params.contains("person") {
                 // perform "find" benchmarks
@@ -202,6 +203,38 @@ fn insert_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
             },
             |db, to_insert| {
                 db.insert_bulk(&table_id, to_insert)?;
+                Ok(())
+            },
+        )
+    });
+    db.clear_table(table_id)?;
+    Ok(())
+}
+
+#[inline(never)]
+fn sql_select<DB: BenchDatabase, T: BenchTable + RandomTable>(
+    g: &mut Group,
+    table_params: &str,
+    db: &mut DB,
+    table_id: &DB::TableId,
+    count: u32,
+) -> ResultBench<()> {
+    let id = format!("sql_select/{table_params}/count={count}");
+    let data = create_sequential::<T>(0xdeadbeef, count, 1000);
+
+    db.insert_bulk(table_id, data)?;
+
+    // Each iteration performs a single transaction,
+    // though it iterates across many rows.
+    g.throughput(criterion::Throughput::Elements(1));
+
+    g.bench_function(&id, |b| {
+        bench_harness(
+            b,
+            db,
+            |_| Ok(()),
+            |db, _| {
+                db.sql_select(table_id)?;
                 Ok(())
             },
         )
