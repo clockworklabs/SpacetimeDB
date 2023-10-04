@@ -10,13 +10,13 @@ use spacetimedb_bench::{
 };
 use spacetimedb_lib::{sats::BuiltinType, AlgebraicType};
 fn criterion_benchmark(c: &mut Criterion) {
-    // bench_suite::<sqlite::SQLite>(c, true).unwrap();
-    // bench_suite::<spacetime_raw::SpacetimeRaw>(c, true).unwrap();
-    // bench_suite::<spacetime_module::SpacetimeModule>(c, true).unwrap();
-    //
-    // bench_suite::<sqlite::SQLite>(c, false).unwrap();
-    // bench_suite::<spacetime_raw::SpacetimeRaw>(c, false).unwrap();
-    // bench_suite::<spacetime_module::SpacetimeModule>(c, false).unwrap();
+    bench_suite::<sqlite::SQLite>(c, true).unwrap();
+    bench_suite::<spacetime_raw::SpacetimeRaw>(c, true).unwrap();
+    bench_suite::<spacetime_module::SpacetimeModule>(c, true).unwrap();
+
+    bench_suite::<sqlite::SQLite>(c, false).unwrap();
+    bench_suite::<spacetime_raw::SpacetimeRaw>(c, false).unwrap();
+    bench_suite::<spacetime_module::SpacetimeModule>(c, false).unwrap();
 }
 
 #[inline(never)]
