@@ -51,11 +51,6 @@ jobs:
           target: wasm32-unknown-unknown
           override: true
 
-      - name: Build
-        working-directory: crates/bench/
-        run: |
-          cargo build --release
-
       - name: Install clippy for module build
         run: |
           rustup component add clippy
