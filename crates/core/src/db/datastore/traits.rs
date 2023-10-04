@@ -119,10 +119,10 @@ impl From<IndexSchema> for IndexDef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColumnSchema {
-    pub(crate) table_id: u32,
-    pub(crate) col_id: u32,
-    pub(crate) col_name: String,
-    pub(crate) col_type: AlgebraicType,
+    pub table_id: u32,
+    pub col_id: u32,
+    pub col_name: String,
+    pub col_type: AlgebraicType,
     pub(crate) is_autoinc: bool,
 }
 
@@ -198,9 +198,9 @@ pub struct ConstraintDef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableSchema {
-    pub(crate) table_id: u32,
-    pub(crate) table_name: String,
-    pub(crate) columns: Vec<ColumnSchema>,
+    pub table_id: u32,
+    pub table_name: String,
+    pub columns: Vec<ColumnSchema>,
     pub(crate) indexes: Vec<IndexSchema>,
     pub(crate) constraints: Vec<ConstraintSchema>,
     pub(crate) table_type: StTableType,

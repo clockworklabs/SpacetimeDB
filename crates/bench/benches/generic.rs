@@ -73,10 +73,12 @@ fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(g: &mut Group, db
 
             if table_params.contains("person") {
                 // perform "find" benchmarks
+                sql_find::<DB, T>(g, db, table_id, index_strategy, BENCH_PKEY_INDEX, 1000, 100)?;
                 find::<DB, T>(g, db, table_id, index_strategy, BENCH_PKEY_INDEX, 1000, 100)?;
             }
         } else {
             // perform "filter" benchmarks
+            sql_where::<DB, T>(g, db, table_id, index_strategy, 1, 1000, 100)?;
             filter::<DB, T>(g, db, table_id, index_strategy, 1, 1000, 100)?;
         }
     }
@@ -123,7 +125,7 @@ fn bench_harness<
 
 #[inline(never)]
 fn empty<DB: BenchDatabase>(g: &mut Group, db: &mut DB) -> ResultBench<()> {
-    let id = format!("empty");
+    let id = "empty".to_string();
     g.bench_function(&id, |b| {
         bench_harness(
             b,
@@ -160,11 +162,11 @@ fn insert_1<DB: BenchDatabase, T: BenchTable + RandomTable>(
                 let mut data = data.clone();
                 db.clear_table(table_id)?;
                 let row = data.pop().unwrap();
-                db.insert_bulk(&table_id, data)?;
+                db.insert_bulk(table_id, data)?;
                 Ok(row)
             },
             |db, row| {
-                db.insert(&table_id, row)?;
+                db.insert(table_id, row)?;
                 Ok(())
             },
         )
@@ -197,12 +199,12 @@ fn insert_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
                 db.clear_table(table_id)?;
                 let to_insert = data.split_off(load as usize);
                 if !data.is_empty() {
-                    db.insert_bulk(&table_id, data)?;
+                    db.insert_bulk(table_id, data)?;
                 }
                 Ok(to_insert)
             },
             |db, to_insert| {
-                db.insert_bulk(&table_id, to_insert)?;
+                db.insert_bulk(table_id, to_insert)?;
                 Ok(())
             },
         )
@@ -302,7 +304,7 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
 
     let data = create_sequential::<T>(0xdeadbeef, load, buckets as u64);
 
-    db.insert_bulk(&table_id, data.clone())?;
+    db.insert_bulk(table_id, data.clone())?;
 
     // Each iteration performs a single transaction.
     g.throughput(criterion::Throughput::Elements(1));
@@ -323,7 +325,64 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
                 Ok(value)
             },
             |db, value| {
-                db.filter::<T>(&table_id, column_index, value)?;
+                db.filter::<T>(table_id, column_index, value)?;
+                Ok(())
+            },
+        )
+    });
+    db.clear_table(table_id)?;
+    Ok(())
+}
+
+/// Implements both "filter" and "find" benchmarks.
+#[inline(never)]
+fn sql_where<DB: BenchDatabase, T: BenchTable + RandomTable>(
+    g: &mut Group,
+    db: &mut DB,
+    table_id: &DB::TableId,
+    index_strategy: &IndexStrategy,
+    column_index: u32,
+    load: u32,
+    buckets: u32,
+) -> ResultBench<()> {
+    let filter_column_type = match &T::product_type().elements[column_index as usize].algebraic_type {
+        AlgebraicType::Builtin(BuiltinType::String) => "string",
+        AlgebraicType::Builtin(BuiltinType::U32) => "u32",
+        AlgebraicType::Builtin(BuiltinType::U64) => "u64",
+        _ => unimplemented!(),
+    };
+    let mean_result_count = load / buckets;
+    let indexed = match index_strategy {
+        IndexStrategy::MultiIndex => "indexed",
+        IndexStrategy::NonUnique => "non_indexed",
+        _ => unimplemented!(),
+    };
+    let id = format!("sql_where/{filter_column_type}/{indexed}/load={load}/count={mean_result_count}");
+
+    let data = create_sequential::<T>(0xdeadbeef, load, buckets as u64);
+
+    db.insert_bulk(table_id, data.clone())?;
+
+    // Each iteration performs a single transaction.
+    g.throughput(criterion::Throughput::Elements(1));
+
+    // We loop through all buckets found in the sample data.
+    // This mildly increases variance on the benchmark, but makes "mean_result_count" more accurate.
+    // Note that all databases have EXACTLY the same sample data.
+    let mut i = 0;
+
+    g.bench_function(&id, |b| {
+        bench_harness(
+            b,
+            db,
+            |_| {
+                // pick something to look for
+                let value = data[i].clone().into_product_value().elements[column_index as usize].clone();
+                i = (i + 1) % load as usize;
+                Ok(value)
+            },
+            |db, value| {
+                db.sql_where::<T>(table_id, column_index, value)?;
                 Ok(())
             },
         )
@@ -352,7 +411,7 @@ fn find<DB: BenchDatabase, T: BenchTable + RandomTable>(
 
     let data = create_sequential::<T>(0xdeadbeef, load, buckets as u64);
 
-    db.insert_bulk(&table_id, data.clone())?;
+    db.insert_bulk(table_id, data.clone())?;
 
     // Each iteration performs a single transaction.
     g.throughput(criterion::Throughput::Elements(1));
@@ -372,7 +431,56 @@ fn find<DB: BenchDatabase, T: BenchTable + RandomTable>(
                 Ok(value)
             },
             |db, value| {
-                db.filter::<T>(&table_id, column_id, value)?;
+                db.filter::<T>(table_id, column_id, value)?;
+                Ok(())
+            },
+        )
+    });
+    db.clear_table(table_id)?;
+    Ok(())
+}
+
+/// Implements both "filter" and "find" benchmarks.
+#[inline(never)]
+fn sql_find<DB: BenchDatabase, T: BenchTable + RandomTable>(
+    g: &mut Group,
+    db: &mut DB,
+    table_id: &DB::TableId,
+    index_strategy: &IndexStrategy,
+    column_id: u32,
+    load: u32,
+    buckets: u32,
+) -> ResultBench<()> {
+    assert_eq!(
+        *index_strategy,
+        IndexStrategy::Unique,
+        "find benchmarks require unique key"
+    );
+    let id = format!("sql_where_find_unique/u32/load={load}");
+
+    let data = create_sequential::<T>(0xdeadbeef, load, buckets as u64);
+
+    db.insert_bulk(table_id, data.clone())?;
+
+    // Each iteration performs a single transaction.
+    g.throughput(criterion::Throughput::Elements(1));
+
+    // We loop through all buckets found in the sample data.
+    // This mildly increases variance on the benchmark, but makes "mean_result_count" more accurate.
+    // Note that all benchmarks use exactly the same sample data.
+    let mut i = 0;
+
+    g.bench_function(&id, |b| {
+        bench_harness(
+            b,
+            db,
+            |_| {
+                let value = data[i].clone().into_product_value().elements[column_id as usize].clone();
+                i = (i + 1) % load as usize;
+                Ok(value)
+            },
+            |db, value| {
+                db.sql_where::<T>(table_id, column_id, value)?;
                 Ok(())
             },
         )

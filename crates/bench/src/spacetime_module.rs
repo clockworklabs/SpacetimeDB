@@ -1,4 +1,5 @@
 use spacetimedb::db::{Config, FsyncPolicy, Storage};
+use spacetimedb_lib::sats::BuiltinValue;
 use spacetimedb_lib::{sats::ArrayValue, AlgebraicValue, ProductValue};
 use spacetimedb_testing::modules::{start_runtime, CompiledModule, ModuleHandle};
 use tokio::runtime::Runtime;
@@ -171,18 +172,6 @@ impl BenchDatabase for SpacetimeModule {
         })
     }
 
-    fn sql_select(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
-        let SpacetimeModule { runtime, module } = self;
-        let module = module.as_mut().unwrap();
-        let table_name = &table_id.pascal_case;
-        let sql = format!("SELECT * FROM  {table_name}");
-        let id = module.client.id.identity;
-        runtime.block_on(async move {
-            module.client.module.one_off_query(id, sql).await?;
-            Ok(())
-        })
-    }
-
     fn filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,
@@ -200,6 +189,51 @@ impl BenchDatabase for SpacetimeModule {
             module
                 .call_reducer_binary(&reducer_name, ProductValue { elements: vec![value] })
                 .await?;
+            Ok(())
+        })
+    }
+
+    fn sql_select(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
+        let SpacetimeModule { runtime, module } = self;
+        let module = module.as_mut().unwrap();
+        let table_name = &table_id.pascal_case;
+        let sql = format!("SELECT * FROM  {table_name}");
+        let id = module.client.id.identity;
+        runtime.block_on(async move {
+            module.client.module.one_off_query(id, sql).await?;
+            Ok(())
+        })
+    }
+
+    fn sql_where<T: BenchTable>(
+        &mut self,
+        table_id: &Self::TableId,
+        column_index: u32,
+        value: AlgebraicValue,
+    ) -> ResultBench<()> {
+        let column = T::product_type()
+            .elements
+            .swap_remove(column_index as usize)
+            .name
+            .unwrap();
+
+        let value = match value.as_builtin().unwrap() {
+            BuiltinValue::U32(x) => x.to_string(),
+            BuiltinValue::U64(x) => x.to_string(),
+            BuiltinValue::String(x) => format!("'{}'", x),
+            _ => {
+                unreachable!()
+            }
+        };
+
+        let SpacetimeModule { runtime, module } = self;
+        let module = module.as_mut().unwrap();
+        let table_name = &table_id.pascal_case;
+        let sql_query = format!("SELECT * FROM {table_name} WHERE {column} = {value}");
+
+        let id = module.client.id.identity;
+        runtime.block_on(async move {
+            module.client.module.one_off_query(id, sql_query).await?;
             Ok(())
         })
     }

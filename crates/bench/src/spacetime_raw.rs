@@ -7,6 +7,7 @@ use spacetimedb::db::datastore::traits::{IndexDef, TableDef};
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
 use spacetimedb::sql::execute::run;
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::sats::BuiltinValue;
 use spacetimedb_lib::AlgebraicValue;
 use std::hint::black_box;
 use tempdir::TempDir;
@@ -103,6 +104,20 @@ impl BenchDatabase for SpacetimeRaw {
         })
     }
 
+    fn filter<T: BenchTable>(
+        &mut self,
+        table_id: &Self::TableId,
+        column_index: u32,
+        value: AlgebraicValue,
+    ) -> ResultBench<()> {
+        self.db.with_auto_commit(|tx| {
+            for row in self.db.iter_by_col_eq(tx, *table_id, column_index, value)? {
+                black_box(row);
+            }
+            Ok(())
+        })
+    }
+
     fn sql_select(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         self.db.with_auto_commit(|tx| {
             let table_name = self.db.table_name_from_id(tx, *table_id)?.unwrap();
@@ -115,16 +130,34 @@ impl BenchDatabase for SpacetimeRaw {
         })
     }
 
-    fn filter<T: BenchTable>(
+    fn sql_where<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,
         column_index: u32,
         value: AlgebraicValue,
     ) -> ResultBench<()> {
         self.db.with_auto_commit(|tx| {
-            for row in self.db.iter_by_col_eq(tx, *table_id, column_index, value)? {
-                black_box(row);
-            }
+            let column = T::product_type()
+                .elements
+                .swap_remove(column_index as usize)
+                .name
+                .unwrap();
+
+            let table_name = self.db.table_name_from_id(tx, *table_id)?.unwrap();
+
+            let value = match value.as_builtin().unwrap() {
+                BuiltinValue::U32(x) => x.to_string(),
+                BuiltinValue::U64(x) => x.to_string(),
+                BuiltinValue::String(x) => format!("'{}'", x),
+                _ => {
+                    unreachable!()
+                }
+            };
+
+            let sql_query = format!("SELECT * FROM {table_name} WHERE {column} = {value}");
+
+            run(&self.db, tx, &sql_query, AuthCtx::for_testing())?;
+
             Ok(())
         })
     }

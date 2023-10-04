@@ -29,6 +29,8 @@ impl BenchDatabase for SQLite {
         "sqlite"
     }
 
+    type TableId = String;
+
     fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
     where
         Self: Sized,
@@ -52,8 +54,6 @@ impl BenchDatabase for SQLite {
             _temp_dir: temp_dir,
         })
     }
-
-    type TableId = String;
 
     /// We derive the SQLite schema from the AlgebraicType of the table.
     fn create_table<T: BenchTable>(
@@ -217,6 +217,15 @@ impl BenchDatabase for SQLite {
 
     fn sql_select(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
         self.iterate(table_id)
+    }
+
+    fn sql_where<T: BenchTable>(
+        &mut self,
+        table_id: &Self::TableId,
+        column_index: u32,
+        value: AlgebraicValue,
+    ) -> ResultBench<()> {
+        self.filter::<T>(table_id, column_index, value)
     }
 }
 
