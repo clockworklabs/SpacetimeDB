@@ -193,8 +193,13 @@ namespace SpacetimeDB.SATS
     }
 
     [SpacetimeDB.Type]
-    public partial struct BuiltinType
+    public partial struct AlgebraicType
         : SpacetimeDB.TaggedEnum<(
+            AlgebraicTypeRef TypeRef,
+            SumType Sum,
+            ProductType Product,
+            AlgebraicType Array,
+            MapType Map,
             Unit Bool,
             Unit I8,
             Unit U8,
@@ -208,68 +213,81 @@ namespace SpacetimeDB.SATS
             Unit U128,
             Unit F32,
             Unit F64,
-            Unit String,
-            AlgebraicType Array,
-            MapType Map
+            Unit String
         )>
     {
+        public static implicit operator AlgebraicType(AlgebraicTypeRef typeRef)
+        {
+            return new AlgebraicType { TypeRef = typeRef };
+        }
+
+        public static implicit operator AlgebraicType(SumType sum)
+        {
+            return new AlgebraicType { Sum = sum };
+        }
+
+        public static implicit operator AlgebraicType(ProductType product)
+        {
+            return new AlgebraicType { Product = product };
+        }
+
         public static readonly TypeInfo<bool> BoolTypeInfo = new TypeInfo<bool>(
-            new BuiltinType { Bool = default },
+            new AlgebraicType { Bool = default },
             (reader) => reader.ReadBoolean(),
             (writer, value) => writer.Write(value)
         );
 
         public static readonly TypeInfo<sbyte> I8TypeInfo = new TypeInfo<sbyte>(
-            new BuiltinType { I8 = default },
+            new AlgebraicType { I8 = default },
             (reader) => reader.ReadSByte(),
             (writer, value) => writer.Write(value)
         );
 
         public static readonly TypeInfo<byte> U8TypeInfo = new TypeInfo<byte>(
-            new BuiltinType { U8 = default },
+            new AlgebraicType { U8 = default },
             (reader) => reader.ReadByte(),
             (writer, value) => writer.Write(value)
         );
 
         public static readonly TypeInfo<short> I16TypeInfo = new TypeInfo<short>(
-            new BuiltinType { I16 = default },
+            new AlgebraicType { I16 = default },
             (reader) => reader.ReadInt16(),
             (writer, value) => writer.Write(value)
         );
 
         public static readonly TypeInfo<ushort> U16TypeInfo = new TypeInfo<ushort>(
-            new BuiltinType { U16 = default },
+            new AlgebraicType { U16 = default },
             (reader) => reader.ReadUInt16(),
             (writer, value) => writer.Write(value)
         );
 
         public static readonly TypeInfo<int> I32TypeInfo = new TypeInfo<int>(
-            new BuiltinType { I32 = default },
+            new AlgebraicType { I32 = default },
             (reader) => reader.ReadInt32(),
             (writer, value) => writer.Write(value)
         );
 
         public static readonly TypeInfo<uint> U32TypeInfo = new TypeInfo<uint>(
-            new BuiltinType { U32 = default },
+            new AlgebraicType { U32 = default },
             (reader) => reader.ReadUInt32(),
             (writer, value) => writer.Write(value)
         );
 
         public static readonly TypeInfo<long> I64TypeInfo = new TypeInfo<long>(
-            new BuiltinType { I64 = default },
+            new AlgebraicType { I64 = default },
             (reader) => reader.ReadInt64(),
             (writer, value) => writer.Write(value)
         );
 
         public static readonly TypeInfo<ulong> U64TypeInfo = new TypeInfo<ulong>(
-            new BuiltinType { U64 = default },
+            new AlgebraicType { U64 = default },
             (reader) => reader.ReadUInt64(),
             (writer, value) => writer.Write(value)
         );
 
 #if NET7_0_OR_GREATER
         public static readonly TypeInfo<Int128> I128TypeInfo = new TypeInfo<Int128>(
-            new BuiltinType { I128 = default },
+            new AlgebraicType { I128 = default },
             (reader) => new Int128(reader.ReadUInt64(), reader.ReadUInt64()),
             (writer, value) =>
             {
@@ -279,7 +297,7 @@ namespace SpacetimeDB.SATS
         );
 
         public static readonly TypeInfo<UInt128> U128TypeInfo = new TypeInfo<UInt128>(
-            new BuiltinType { U128 = default },
+            new AlgebraicType { U128 = default },
             (reader) => new UInt128(reader.ReadUInt64(), reader.ReadUInt64()),
             (writer, value) =>
             {
@@ -290,19 +308,19 @@ namespace SpacetimeDB.SATS
 #endif
 
         public static readonly TypeInfo<float> F32TypeInfo = new TypeInfo<float>(
-            new BuiltinType { F32 = default },
+            new AlgebraicType { F32 = default },
             (reader) => reader.ReadSingle(),
             (writer, value) => writer.Write(value)
         );
 
         public static readonly TypeInfo<double> F64TypeInfo = new TypeInfo<double>(
-            new BuiltinType { F64 = default },
+            new AlgebraicType { F64 = default },
             (reader) => reader.ReadDouble(),
             (writer, value) => writer.Write(value)
         );
 
         public static readonly TypeInfo<byte[]> BytesTypeInfo = new TypeInfo<byte[]>(
-            new BuiltinType { Array = U8TypeInfo.AlgebraicType },
+            new AlgebraicType { Array = U8TypeInfo.AlgebraicType },
             (reader) =>
             {
                 var length = reader.ReadInt32();
@@ -316,7 +334,7 @@ namespace SpacetimeDB.SATS
         );
 
         public static readonly TypeInfo<string> StringTypeInfo = new TypeInfo<string>(
-            new BuiltinType { String = default },
+            new AlgebraicType { String = default },
             (reader) => Encoding.UTF8.GetString(BytesTypeInfo.Read(reader)),
             (writer, value) => BytesTypeInfo.Write(writer, Encoding.UTF8.GetBytes(value))
         );
@@ -350,7 +368,7 @@ namespace SpacetimeDB.SATS
             where A : ICollection<T>
         {
             return new TypeInfo<A>(
-                new BuiltinType { Array = elementTypeInfo.AlgebraicType },
+                new AlgebraicType { Array = elementTypeInfo.AlgebraicType },
                 (reader) => create(ReadEnumerable(reader, elementTypeInfo.Read)),
                 (writer, array) => WriteEnumerable(writer, array, elementTypeInfo.Write)
             );
@@ -366,7 +384,7 @@ namespace SpacetimeDB.SATS
             where K : notnull
         {
             return new TypeInfo<Dictionary<K, V>>(
-                new BuiltinType { Map = new MapType(key.AlgebraicType, value.AlgebraicType) },
+                new AlgebraicType { Map = new MapType(key.AlgebraicType, value.AlgebraicType) },
                 (reader) =>
                     ReadEnumerable(
                             reader,
@@ -419,36 +437,6 @@ namespace SpacetimeDB.SATS
             enumTypeInfoCache[typeof(T)] = typeInfo;
 
             return typeInfo;
-        }
-    }
-
-    [SpacetimeDB.Type]
-    public partial struct AlgebraicType
-        : SpacetimeDB.TaggedEnum<(
-            SumType Sum,
-            ProductType Product,
-            BuiltinType Builtin,
-            AlgebraicTypeRef TypeRef
-        )>
-    {
-        public static implicit operator AlgebraicType(SumType sum)
-        {
-            return new AlgebraicType { Sum = sum };
-        }
-
-        public static implicit operator AlgebraicType(ProductType product)
-        {
-            return new AlgebraicType { Product = product };
-        }
-
-        public static implicit operator AlgebraicType(BuiltinType builtin)
-        {
-            return new AlgebraicType { Builtin = builtin };
-        }
-
-        public static implicit operator AlgebraicType(AlgebraicTypeRef typeRef)
-        {
-            return new AlgebraicType { TypeRef = typeRef };
         }
     }
 
