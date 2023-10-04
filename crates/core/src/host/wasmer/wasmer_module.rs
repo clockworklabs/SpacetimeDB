@@ -5,7 +5,7 @@ use crate::host::wasm_common::module_host_actor::{AbiVersionError, DescribeError
 use crate::host::wasm_common::*;
 use crate::host::{EnergyQuanta, Timestamp};
 use bytes::Bytes;
-use spacetimedb_lib::VersionTuple;
+use spacetimedb_lib::{Address, Identity, VersionTuple};
 use wasmer::{
     imports, AsStoreMut, Engine, ExternType, Function, FunctionEnv, Imports, Instance, Module, RuntimeError, Store,
     TypedFunction, WasmPtr,
@@ -46,7 +46,7 @@ impl WasmerModule {
         WasmerModule { module, engine }
     }
 
-    pub const IMPLEMENTED_ABI: VersionTuple = VersionTuple::new(4, 0);
+    pub const IMPLEMENTED_ABI: VersionTuple = VersionTuple::new(5, 0);
 
     fn imports(&self, store: &mut Store, env: &FunctionEnv<WasmInstanceEnv>) -> Imports {
         const _: () = assert!(WasmerModule::IMPLEMENTED_ABI.eq(spacetimedb_lib::MODULE_ABI_VERSION));
@@ -306,8 +306,8 @@ impl module_host_actor::WasmInstance for WasmerInstance {
         &mut self,
         reducer_id: usize,
         budget: EnergyQuanta,
-        sender_identity: &[u8; 32],
-        sender_address: &[u8; 16],
+        sender_identity: &Identity,
+        sender_address: &Address,
         timestamp: Timestamp,
         arg_bytes: Bytes,
     ) -> module_host_actor::ExecuteResult<Self::Trap> {
@@ -315,8 +315,8 @@ impl module_host_actor::WasmInstance for WasmerInstance {
             CALL_REDUCER_DUNDER,
             budget,
             [
-                sender_identity.to_vec().into(),
-                sender_address.to_vec().into(),
+                Bytes::copy_from_slice(sender_identity.as_bytes()),
+                Bytes::copy_from_slice(sender_address.as_slice()),
                 arg_bytes,
             ],
             |func, store, [sender_identity, sender_address, args]| {
@@ -328,28 +328,6 @@ impl module_host_actor::WasmInstance for WasmerInstance {
                     timestamp.0,
                     args.0,
                 )
-            },
-        )
-    }
-
-    fn call_connect_disconnect(
-        &mut self,
-        connect: bool,
-        budget: EnergyQuanta,
-        sender_identity: &[u8; 32],
-        sender_address: &[u8; 16],
-        timestamp: Timestamp,
-    ) -> module_host_actor::ExecuteResult<Self::Trap> {
-        self.call_tx_function::<(u32, u32, u64), 2>(
-            if connect {
-                IDENTITY_CONNECTED_DUNDER
-            } else {
-                IDENTITY_DISCONNECTED_DUNDER
-            },
-            budget,
-            [sender_identity.to_vec().into(), sender_address.to_vec().into()],
-            |func, store, [sender_identity, sender_address]| {
-                func.call(store, sender_identity.0, sender_address.0, timestamp.0)
             },
         )
     }

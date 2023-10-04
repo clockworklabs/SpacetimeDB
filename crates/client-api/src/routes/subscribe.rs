@@ -10,7 +10,6 @@ use http::{HeaderValue, StatusCode};
 use serde::Deserialize;
 use spacetimedb::client::messages::{IdentityTokenMessage, ServerMessage};
 use spacetimedb::client::{ClientActorId, ClientClosed, ClientConnection, DataMessage, MessageHandleError, Protocol};
-use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::future_queue;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::Address;
@@ -137,9 +136,8 @@ where
         let actor = |client, sendrx| ws_client_actor(client, ws, sendrx);
         let client = match ClientConnection::spawn(client_id, protocol, instance_id, module, actor).await {
             Ok(s) => s,
-            Err(NoSuchModule) => {
-                // debug here should be fine because we *just* found a module, so this should be really rare
-                log::warn!("ModuleHost died while we were connecting");
+            Err(e) => {
+                log::warn!("ModuleHost died while we were connecting: {e:#}");
                 return;
             }
         };

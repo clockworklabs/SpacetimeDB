@@ -15,9 +15,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Compile Aarch64 Docker
         run: |
-          docker build --platform=linux/amd64 -f crates/cli/Dockerfile -t cli .
+          docker buildx build --platform=linux/arm64 -f crates/cli/Dockerfile -t cli .
           mkdir build
           id=$(docker create cli)
           docker cp $id:/usr/local/bin/spacetime - > build/spacetime.linux-arm64.tar

@@ -97,7 +97,7 @@ impl ClientConnection {
         database_instance_id: u64,
         module: ModuleHost,
         actor: F,
-    ) -> Result<ClientConnection, NoSuchModule>
+    ) -> Result<ClientConnection, ReducerCallError>
     where
         F: FnOnce(ClientConnection, mpsc::Receiver<DataMessage>) -> Fut,
         Fut: Future<Output = ()> + Send + 'static,

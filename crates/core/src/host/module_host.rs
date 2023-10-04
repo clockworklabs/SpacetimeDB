@@ -246,8 +246,6 @@ pub trait ModuleInstance: Send + 'static {
         reducer_id: usize,
         args: ArgsTuple,
     ) -> ReducerCallResult;
-
-    fn call_connect_disconnect(&mut self, identity: Identity, caller_address: Address, connected: bool);
 }
 
 // TODO: figure out how we want to handle traps. maybe it should just not return to the LendingPool and
@@ -292,10 +290,6 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
             .call_reducer(caller_identity, caller_address, client, reducer_id, args);
         self.check_trap();
         ret
-    }
-    fn call_connect_disconnect(&mut self, identity: Identity, caller_address: Address, connected: bool) {
-        self.inst.call_connect_disconnect(identity, caller_address, connected);
-        self.check_trap();
     }
 }
 
@@ -511,9 +505,24 @@ impl ModuleHost {
         caller_identity: Identity,
         caller_address: Address,
         connected: bool,
-    ) -> Result<(), NoSuchModule> {
-        self.call(move |inst| inst.call_connect_disconnect(caller_identity, caller_address, connected))
+    ) -> Result<(), ReducerCallError> {
+        match self
+            .call_reducer_inner(
+                caller_identity,
+                Some(caller_address),
+                None,
+                if connected {
+                    "__identity_connected__"
+                } else {
+                    "__identity_disconnected__"
+                },
+                ReducerArgs::Nullary,
+            )
             .await
+        {
+            Ok(_) | Err(ReducerCallError::NoSuchReducer) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     async fn call_reducer_inner(

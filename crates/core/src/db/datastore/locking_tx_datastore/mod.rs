@@ -277,6 +277,7 @@ impl TxState {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     pub fn get_row_op(&self, table_id: &TableId, row_id: &RowId) -> RowState {
         if let Some(true) = self.delete_tables.get(table_id).map(|set| set.contains(row_id)) {
             return RowState::Delete;
@@ -290,6 +291,7 @@ impl TxState {
             .unwrap_or(RowState::Absent)
     }
 
+    #[tracing::instrument(skip_all)]
     pub fn get_row(&self, table_id: &TableId, row_id: &RowId) -> Option<&ProductValue> {
         if Some(true) == self.delete_tables.get(table_id).map(|set| set.contains(row_id)) {
             return None;
@@ -1731,10 +1733,13 @@ enum ScanStage<'a> {
 
 impl Iterator for Iter<'_> {
     type Item = DataRef;
+
+    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match &mut self.stage {
                 ScanStage::Start => {
+                    let _span = tracing::debug_span!("ScanStage::Start").entered();
                     if let Some(table) = self.inner.committed_state.tables.get(&self.table_id) {
                         self.stage = ScanStage::Committed {
                             iter: table.rows.iter(),
@@ -1747,6 +1752,7 @@ impl Iterator for Iter<'_> {
                     };
                 }
                 ScanStage::Committed { iter } => {
+                    let _span = tracing::debug_span!("ScanStage::Committed").entered();
                     for (row_id, row) in iter {
                         match self
                             .inner
@@ -1779,6 +1785,7 @@ impl Iterator for Iter<'_> {
                     }
                 }
                 ScanStage::CurrentTx { iter } => {
+                    let _span = tracing::debug_span!("ScanStage::CurrentTx").entered();
                     if let Some((id, row)) = iter.next() {
                         return Some(DataRef::new(id.0, row.clone()));
                     }
@@ -1800,6 +1807,8 @@ pub struct IndexSeekIterInner<'a> {
 
 impl Iterator for IndexSeekIterInner<'_> {
     type Item = DataRef;
+
+    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(row_id) = self.inserted_rows.next() {
             return Some(DataRef::new(
@@ -1834,6 +1843,7 @@ pub struct CommittedIndexIter<'a> {
 impl Iterator for CommittedIndexIter<'_> {
     type Item = DataRef;
 
+    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(row_id) = self.committed_rows.find(|row_id| {
             !self
@@ -1851,6 +1861,7 @@ impl Iterator for CommittedIndexIter<'_> {
 
 /// Retrieve a commited row. Panics if `table_id` and `row_id` do not identify an actually
 /// present row.
+#[tracing::instrument(skip_all)]
 fn get_committed_row(state: &CommittedState, table_id: &TableId, row_id: &RowId) -> DataRef {
     DataRef::new(
         row_id.0,
@@ -1878,6 +1889,7 @@ pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
 impl<R: RangeBounds<AlgebraicValue>> Iterator for IterByColRange<'_, R> {
     type Item = DataRef;
 
+    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             IterByColRange::Scan(range) => range.next(),
@@ -1896,6 +1908,7 @@ pub struct ScanIterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
 impl<R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'_, R> {
     type Item = DataRef;
 
+    #[tracing::instrument(skip_all)]
     fn next(&mut self) -> Option<Self::Item> {
         for data_ref in &mut self.scan_iter {
             let row = data_ref.view();
