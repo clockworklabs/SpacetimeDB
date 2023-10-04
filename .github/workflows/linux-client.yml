@@ -17,7 +17,7 @@ jobs:
 
       - name: Compile Aarch64 Docker
         run: |
-          docker build --platform=linux/amd64 -f crates/cli/Dockerfile -t cli .
+          docker build --platform=linux/aarch64 -f crates/cli/Dockerfile -t cli .
           mkdir build
           id=$(docker create cli)
           docker cp $id:/usr/local/bin/spacetime - > build/spacetime.linux-arm64.tar
