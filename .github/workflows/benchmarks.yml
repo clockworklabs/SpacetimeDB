@@ -18,7 +18,7 @@ env:
 jobs:
   benchmark:
     name: run benchmarks
-    runs-on: benchmarks-runner
+    runs-on: bare-metal
     steps:
       - name: Checkout sources for a PR
         if: ${{ github.event.inputs.ref }}
