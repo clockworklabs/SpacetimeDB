@@ -2,7 +2,7 @@ on:
   push:
     branches:
       - master
-      - kazimuth/benchwrangle
+      - drogus/benchmarks-improvements
   workflow_dispatch:
     inputs:
       pr_number:
@@ -18,7 +18,7 @@ env:
 jobs:
   benchmark:
     name: run benchmarks
-    runs-on: self-hosted
+    runs-on: benchmarks
     steps:
       - name: Checkout sources for a PR
         if: ${{ github.event.inputs.ref }}
@@ -86,5 +86,3 @@ jobs:
         if: always()
         run: |
           rm -fr /stdb/*
-
-
