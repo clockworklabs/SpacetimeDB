@@ -18,7 +18,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Compile Aarch64 Docker
+      - name: Compile Arm64 Docker
         run: |
           docker buildx build --platform=linux/arm64 -f crates/cli/Dockerfile -t cli .
           mkdir build
