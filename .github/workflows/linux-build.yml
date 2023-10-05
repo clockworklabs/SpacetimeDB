@@ -4,12 +4,10 @@ on:
   push:
     tags:
       - '**'
-    branches:
-      - master
 
 jobs:
   linux-client:
-    runs-on: ubuntu-latest
+    runs-on: bare-metal
 
     steps:
       - name: Checkout
