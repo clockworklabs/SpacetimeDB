@@ -50,29 +50,20 @@ jobs:
           target: wasm32-unknown-unknown
           override: true
 
-      - name: Install clippy for module build
+      - name: Install clippy and critcmp
         run: |
           rustup component add clippy
+          cargo install critcmp
 
       - name: Disable CPU boost
         run: echo "0" | sudo tee /sys/devices/system/cpu/cpufreq/boost
 
-      - name: Criterion compare base branch
+      - name: Run criterion
         if: ${{ env.PR_BASE_REF }}
-        uses: clockworklabs/criterion-compare-action@main
-        with:
-          cwd: "crates/bench"
-          branchName: ${{ env.PR_BASE_REF }}
-
-      - name: Criterion compare previous commit
-        if: env.PR_BASE_REF == ''
-        uses: clockworklabs/criterion-compare-action@main
-        with:
-          cwd: "crates/bench"
-          branchName: "HEAD~1"
-
-      - name: Extract criterion results
         run: |
+          mkdir criterion-results
+          cargo bench -- --save-baseline changes
+
           FILENAME=""
 
           if [[ -n "$PR_NUMBER" ]]; then
@@ -80,7 +71,7 @@ jobs:
           else
             FILENAME=$GITHUB_SHA
           fi
-          mkdir criterion-results
+ 
           critcmp --export changes > criterion-results/$FILENAME.json
 
       - name: Upload criterion results to DO spaces
