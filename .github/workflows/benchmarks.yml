@@ -51,6 +51,10 @@ jobs:
           target: wasm32-unknown-unknown
           override: true
 
+      - name: Extract branch name
+        shell: bash
+        run: echo "BRANCH_NAME=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_ENV
+
       - name: Install clippy and critcmp
         run: |
           rustup component add clippy
@@ -63,6 +67,7 @@ jobs:
         run: cd crates/bench && cargo bench -- --save-baseline changes
 
       - name: Save results
+        shell: bash
         run: |
           mkdir criterion-results
 
@@ -72,6 +77,8 @@ jobs:
             FILENAME="pr-$PR_NUMBER"
           else
             FILENAME=$GITHUB_SHA
+            # if we're not in a PR also export with the branch name
+            critcmp --export changes > criterion-results/${BRANCH_NAME//\//-}.json
           fi
  
           critcmp --export changes > criterion-results/$FILENAME.json
