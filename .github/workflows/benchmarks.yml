@@ -71,6 +71,27 @@ jobs:
           cwd: "crates/bench"
           branchName: "HEAD~1"
 
+      - name: Extract criterion results
+        run: |
+          FILENAME=""
+
+          if [[ -n "$PR_NUMBER" ]]; then
+            FILENAME="pr-$PR_NUMBER"
+          else
+            FILENAME=$GITHUB_SHA
+          fi
+          mkdir criterion-results
+          critcmp --export changes > criterion-results/$FILENAME.json
+
+      - name: Upload criterion results to DO spaces
+        uses: shallwefootball/s3-upload-action@master
+        with:
+          aws_key_id: ${{ secrets.AWS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
+          aws_bucket: "spacetimedb-ci-benchmarks"
+          source_dir: criterion-results
+          endpoint: https://nyc3.digitaloceanspaces.com
+          destination_dir: benchmarks
       - name: Clean up
         if: always()
         run: |
