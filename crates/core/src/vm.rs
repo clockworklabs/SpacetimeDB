@@ -260,7 +260,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    #[tracing::instrument(skip_all, fields(table= query.table.table_name()))]
+    #[tracing::instrument(skip_all)]
     fn _eval_query(&mut self, query: QueryCode) -> Result<Code, ErrorVm> {
         let table_access = query.table.table_access();
         debug!(table = query.table.table_name());

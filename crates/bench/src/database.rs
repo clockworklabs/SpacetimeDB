@@ -1,3 +1,4 @@
+use spacetimedb::db::datastore::traits::TableSchema;
 use spacetimedb_lib::AlgebraicValue;
 
 use crate::schemas::{BenchTable, IndexStrategy};
@@ -18,6 +19,9 @@ pub trait BenchDatabase: Sized {
         Self: Sized;
 
     fn create_table<T: BenchTable>(&mut self, table_style: IndexStrategy) -> ResultBench<Self::TableId>;
+
+    /// Return table metadata so we can remove this from the hot path
+    fn get_table<T: BenchTable>(&mut self, table_id: &Self::TableId) -> ResultBench<TableSchema>;
 
     /// Should not drop the table, only delete all the rows.
     fn clear_table(&mut self, table_id: &Self::TableId) -> ResultBench<()>;
@@ -41,20 +45,20 @@ pub trait BenchDatabase: Sized {
     /// Filter the table on the specified column index for the specified value.
     fn filter<T: BenchTable>(
         &mut self,
-        table_id: &Self::TableId,
+        table: &TableSchema,
         column_index: u32,
         value: AlgebraicValue,
     ) -> ResultBench<()>;
 
     /// Perform a `SELECT * FROM table`
     /// Note: this can be non-generic because none of the implementations use the relevant generic argument.
-    fn sql_select(&mut self, table_id: &Self::TableId) -> ResultBench<()>;
+    fn sql_select(&mut self, table: &TableSchema) -> ResultBench<()>;
 
     /// Perform a `SELECT * FROM table WHERE column = value`
     /// Note: this can be non-generic because none of the implementations use the relevant generic argument.
     fn sql_where<T: BenchTable>(
         &mut self,
-        table_id: &Self::TableId,
+        table: &TableSchema,
         column_index: u32,
         value: AlgebraicValue,
     ) -> ResultBench<()>;

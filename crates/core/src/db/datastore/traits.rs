@@ -123,7 +123,7 @@ pub struct ColumnSchema {
     pub col_id: u32,
     pub col_name: String,
     pub col_type: AlgebraicType,
-    pub(crate) is_autoinc: bool,
+    pub is_autoinc: bool,
 }
 
 impl From<&ColumnSchema> for spacetimedb_lib::table::ColumnDef {
@@ -201,10 +201,10 @@ pub struct TableSchema {
     pub table_id: u32,
     pub table_name: String,
     pub columns: Vec<ColumnSchema>,
-    pub(crate) indexes: Vec<IndexSchema>,
-    pub(crate) constraints: Vec<ConstraintSchema>,
-    pub(crate) table_type: StTableType,
-    pub(crate) table_access: StAccess,
+    pub indexes: Vec<IndexSchema>,
+    pub constraints: Vec<ConstraintSchema>,
+    pub table_type: StTableType,
+    pub table_access: StAccess,
 }
 
 impl TableSchema {

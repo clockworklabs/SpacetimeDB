@@ -82,7 +82,6 @@ pub fn execute_sql(
     let p = &mut DbProgram::new(db, tx, auth);
     let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
 
-    info!(query = ?q);
     let mut result = Vec::with_capacity(total);
     collect_result(&mut result, run_ast(p, q).into())?;
     Ok(result)
