@@ -60,9 +60,11 @@ jobs:
         run: echo "0" | sudo tee /sys/devices/system/cpu/cpufreq/boost
 
       - name: Run criterion
+        run: cd crates/bench && cargo bench -- --save-baseline changes
+
+      - name: Save results
         run: |
           mkdir criterion-results
-          cargo bench -- --save-baseline changes
 
           FILENAME=""
 
