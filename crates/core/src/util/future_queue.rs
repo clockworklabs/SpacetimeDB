@@ -39,6 +39,11 @@ where
     pub fn push_unpin(&mut self, item: T) {
         self.queue.push_back(item)
     }
+    pub fn clear(self: Pin<&mut Self>) {
+        let mut me = self.project();
+        me.queue.clear();
+        me.fut.set(Fuse::terminated());
+    }
 }
 
 impl<T, F, Fut> Stream for FutureQueue<T, F, Fut>
