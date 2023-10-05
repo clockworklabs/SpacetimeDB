@@ -1629,6 +1629,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         output.indent(1);
     }
 
+    writeln!(output, "[ReducerClass]").unwrap();
     writeln!(output, "public partial class Reducer").unwrap();
     writeln!(output, "{{").unwrap();
     {
