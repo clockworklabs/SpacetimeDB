@@ -171,7 +171,7 @@ fn generate_markdown_report(old: data::BaseBenchmarks, new: data::BaseBenchmarks
     - `multi_index`: non-unique index on every column
 - schemas:
     - `person(id: u32, name: String, age: u64)`
-    - `location(id: u32, name: String, age: u64)`
+    - `location(id: u32, x: u64, y: u64)`
 
 All throughputs are single-threaded.
 
@@ -297,7 +297,7 @@ All throughputs are single-threaded.
 /// `r"(?x) (?P<db>[^/]+) / (?P<on_disk>[^/]+) / insert_1 / (?P<schema>[^/]+) / (?P<index_type>[^/]+) / load = (?P<load>[^/]+)"`
 ///
 /// Some strings are treated specially:
-/// - `on_disk -> 💿`, `mem -> 🧠`
+/// - `disk -> 💿`, `mem -> 🧠`
 fn extract_benchmarks_to_table(
     pattern: &str,
     old: &data::BaseBenchmarks,
@@ -461,7 +461,7 @@ lazy_static::lazy_static! {
 fn emojify(text: &str) -> String {
     EMOJI
         .replace_all(text, |cap: &Captures| match &cap[0] {
-            "on_disk" => "💿",
+            "disk" => "💿",
             "mem" => "🧠",
             _ => unimplemented!(),
         })
