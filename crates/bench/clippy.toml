@@ -1,1 +1,2 @@
+# we use println in summarize.rs, don't complain about it
 disallowed-macros = []
