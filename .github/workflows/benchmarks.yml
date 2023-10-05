@@ -2,6 +2,7 @@ on:
   push:
     branches:
       - master
+      - drogus/benchmarks-improvements
   workflow_dispatch:
     inputs:
       pr_number:
