@@ -167,7 +167,7 @@ tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
 tokio-tungstenite = { version = "0.19", features = ["native-tls"] }
 toml = "0.5"
 tower-http = { version = "0.4.1", features = ["cors"] }
-tracing = "0.1.37"
+tracing = { version = "0.1.37", features = ["release_max_level_off"] }
 tracing-appender = "0.2.2"
 tracing-core = "0.1.31"
 tracing-flame = "0.2.0"
