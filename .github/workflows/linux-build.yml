@@ -8,31 +8,51 @@ on:
       - master
 
 jobs:
-  linux-client:
+  linux-amd64-client:
     runs-on: bare-metal
 
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Compile Aarch64 Docker
-        run: |
-          docker buildx build --platform=linux/arm64 -f crates/cli/Dockerfile -t cli .
-          mkdir build
-          id=$(docker create cli)
-          docker cp $id:/usr/local/bin/spacetime - > build/spacetime.linux-arm64.tar
-          docker rm -v $id
-          cd build
-          gzip spacetime.linux-arm64.tar
-
       - name: Compile x86
         run: |
+          export PATH=$HOME/.cargo/bin:$PATH
           cargo build --release -p spacetimedb-cli
+          mkdir build
           mv target/release/spacetime build/spacetime
           cd build && tar -czf spacetime.linux-amd64.tar.gz spacetime
+          rm spacetime
+
+      - name: Extract branch name
+        shell: bash
+        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
+        id: extract_branch
+
+      - name: Upload to DO Spaces
+        uses: shallwefootball/s3-upload-action@master
+        with:
+          aws_key_id: ${{ secrets.AWS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
+          aws_bucket: ${{ vars.AWS_BUCKET }}
+          source_dir: build
+          endpoint: https://nyc3.digitaloceanspaces.com
+          destination_dir: ${{ steps.extract_branch.outputs.branch }}
+
+  linux-arm64-client:
+    runs-on: arm-runner
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Compile ARM64
+        run: |
+          export PATH=$HOME/.cargo/bin:$PATH
+          cargo build --release -p spacetimedb-cli
+          mkdir build
+          mv target/release/spacetime build/spacetime
+          cd build && tar -czf spacetime.linux-arm64.tar.gz spacetime
           rm spacetime
 
       - name: Extract branch name
