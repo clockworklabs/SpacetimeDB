@@ -64,24 +64,28 @@ jobs:
         run: echo "0" | sudo tee /sys/devices/system/cpu/cpufreq/boost
 
       - name: Run criterion
-        run: cd crates/bench && cargo bench -- --save-baseline changes
-
-      - name: Save results
         shell: bash
         run: |
-          mkdir criterion-results
-
           FILENAME=""
 
           if [[ -n "$PR_NUMBER" ]]; then
             FILENAME="pr-$PR_NUMBER"
           else
             FILENAME=$GITHUB_SHA
-            # if we're not in a PR also export with the branch name
-            critcmp --export changes > criterion-results/${BRANCH_NAME//\//-}.json
           fi
  
-          critcmp --export changes > criterion-results/$FILENAME.json
+          pushd crates/bench
+          cargo bench -- --save-baseline $FILENAME
+          popd
+
+          mkdir criterion-results
+
+          if [[ -z "$PR_NUMBER" ]]; then
+            # if we're not in a PR also export with the branch name
+            critcmp --export $FILENAME > criterion-results/${BRANCH_NAME//\//-}.json
+          fi
+
+          critcmp --export $FILENAME > criterion-results/$FILENAME.json
 
       - name: Upload criterion results to DO spaces
         uses: shallwefootball/s3-upload-action@master
