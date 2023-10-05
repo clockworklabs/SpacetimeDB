@@ -9,7 +9,7 @@ on:
 
 jobs:
   docker:
-    runs-on: spacetimedb-runner
+    runs-on: bare-metal
     name: Build DockerHub Container
     steps:
       - name: Checkout
