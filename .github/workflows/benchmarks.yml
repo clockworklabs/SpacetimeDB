@@ -60,7 +60,6 @@ jobs:
         run: echo "0" | sudo tee /sys/devices/system/cpu/cpufreq/boost
 
       - name: Run criterion
-        if: ${{ env.PR_BASE_REF }}
         run: |
           mkdir criterion-results
           cargo bench -- --save-baseline changes
