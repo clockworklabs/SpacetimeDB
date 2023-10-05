@@ -966,9 +966,9 @@ fn autogen_csharp_access_funcs_for_struct(
         let (field_type, csharp_field_type, is_option) = match field_type {
             AlgebraicType::Product(product) => {
                 if product.is_identity() {
-                    ("Identity".into(), "SpacetimeDB.Identity", false)
+                    ("Identity".into(), "SpacetimeDB.Identity".into(), false)
                 } else if product.is_address() {
-                    ("Address".into(), "SpacetimeDB.Address", false)
+                    ("Address".into(), "SpacetimeDB.Address".into(), false)
                 } else {
                     // TODO: We don't allow filtering on tuples right now,
                     //       it's possible we may consider it for the future.
@@ -978,7 +978,7 @@ fn autogen_csharp_access_funcs_for_struct(
             AlgebraicType::Sum(sum) => {
                 if let Some(Builtin(b)) = sum.as_option() {
                     match maybe_primitive(b) {
-                        MaybePrimitive::Primitive(ty) => (format!("{:?}", b), ty, true),
+                        MaybePrimitive::Primitive(ty) => (format!("{:?}", b), format!("{}?", ty), true),
                         _ => {
                             continue;
                         }
@@ -993,11 +993,11 @@ fn autogen_csharp_access_funcs_for_struct(
                 continue;
             }
             AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-                MaybePrimitive::Primitive(ty) => (format!("{:?}", b), ty, false),
+                MaybePrimitive::Primitive(ty) => (format!("{:?}", b), ty.into(), false),
                 MaybePrimitive::Array(ArrayType { elem_ty }) => {
                     if let Some(BuiltinType::U8) = elem_ty.as_builtin() {
                         // Do allow filtering for byte arrays
-                        ("Bytes".into(), "byte[]", false)
+                        ("Bytes".into(), "byte[]".into(), false)
                     } else {
                         // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
                         continue;
