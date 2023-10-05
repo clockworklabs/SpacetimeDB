@@ -64,28 +64,63 @@ jobs:
         run: echo "0" | sudo tee /sys/devices/system/cpu/cpufreq/boost
 
       - name: Run criterion
+        id: run-criterion
         shell: bash
         run: |
-          FILENAME=""
+          git fetch
+
+          CHANGES_ID=""
+          BASE_ID=""
 
           if [[ -n "$PR_NUMBER" ]]; then
-            FILENAME="pr-$PR_NUMBER"
+            CHANGES_ID="pr-$PR_NUMBER"
+            BASE_ID=$PR_BASE_REF
           else
-            FILENAME=$GITHUB_SHA
+            CHANGES_ID=$GITHUB_SHA
+            BASE_ID=$(git rev-parse HEAD~1)
           fi
- 
+
           pushd crates/bench
-          cargo bench -- --save-baseline $FILENAME
+          cargo bench -- --save-baseline $CHANGES_ID
           popd
 
           mkdir criterion-results
 
           if [[ -z "$PR_NUMBER" ]]; then
             # if we're not in a PR also export with the branch name
-            critcmp --export $FILENAME > criterion-results/${BRANCH_NAME//\//-}.json
+            critcmp --export $CHANGES_ID > criterion-results/${BRANCH_NAME//\//-}.json
           fi
 
-          critcmp --export $FILENAME > criterion-results/$FILENAME.json
+          critcmp --export $CHANGES_ID > criterion-results/$CHANGES_ID.json
+
+          echo "CHANGES_ID=$CHANGES_ID" >> $GITHUB_ENV
+          echo "BASE_ID=$BASE_ID" >> $GITHUB_ENV
+
+      - uses: actions/github-script@v5
+        if: github.event.inputs.pr_number
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const {CHANGES_ID, BASE_ID} = process.env
+            github.rest.issues.createComment({
+              issue_number: github.event.inputs.pr_number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `[Benchmarks compare](https://benchmarks.spacetimedb.com/compare/${CHANGES_ID},${BASE_ID})`
+            })
+
+      - uses: actions/github-script@v5
+        if: "! github.event.inputs.pr_number"
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const {CHANGES_ID, BASE_ID} = process.env
+            github.rest.repos.createCommitComment({
+              commit_sha: context.sha,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `[Benchmarks compare](https://benchmarks.spacetimedb.com/compare/${CHANGES_ID},${BASE_ID})`
+            })
 
       - name: Upload criterion results to DO spaces
         uses: shallwefootball/s3-upload-action@master
