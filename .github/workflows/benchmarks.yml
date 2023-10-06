@@ -1,7 +1,5 @@
 on:
   push:
-    branches:
-      - master
   
   workflow_dispatch:
     inputs:
@@ -65,16 +63,24 @@ jobs:
       - name: Disable CPU boost
         run: echo "0" | sudo tee /sys/devices/system/cpu/cpufreq/boost
 
-      - name: Master; run bench
-        if: github.ref == 'ref/head/master'
+      - name: Extract branch name
+        if: "! github.event.inputs.pr_number"
+        shell: bash
+        run: |
+          BRANCH_NAME=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+          echo "NORMALIZED_BRANCH_NAME=${BRANCH_NAME//\//-}" >> $GITHUB_ENV
+
+      - name: Branch; run bench
+        if: "! github.event.inputs.pr_number"
         working-directory: crates/bench/
         run: |
           echo "Running benchmarks with sqlite"
-          cargo bench --bench generic --bench special -- --save-baseline master
-          cargo run --bin summarize pack master
+          cargo bench --bench generic --bench special -- --save-baseline $NORMALIZED_BRANCH_NAME
+          cargo run --bin summarize pack $NORMALIZED_BRANCH_NAME
           mkdir criterion-results
-          cp target/criterion/master.json criterion-results/
-          cp target/criterion/master.json criterion-results/$GITHUB_SHA.json
+          cp target/criterion/NORMALIZED_BRANCH_NAME.json criterion-results/
+          cp target/criterion/NORMALIZED_BRANCH_NAME.json criterion-results/$GITHUB_SHA.json
 
       # TODO: can we optionally download if it only might fail?
       #- name: PR; download bench results for compare
@@ -106,8 +112,8 @@ jobs:
         if: github.event.inputs.pr_number
         working-directory: crates/bench/
         run: |
-          if [ -e target/criterion/master.json ]; then
-            cargo run --bin summarize markdown-report branch.json master.json --report-name report
+          if [ -e target/criterion/$NORMALIZED_BRANCH_NAME.json ]; then
+            cargo run --bin summarize markdown-report branch.json $NORMALIZED_BRANCH_NAME.json --report-name report
           else
             cargo run --bin summarize markdown-report branch.json --report-name report
           fi
