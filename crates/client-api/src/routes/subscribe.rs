@@ -186,11 +186,11 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
             //       change this if you don't know what that means.
 
             // If we have a result from handling a past message to report,
-            // grap it to handle in the next `match`.
+            // grab it to handle in the next `match`.
             Some(res) = handle_queue.next() => Item::HandleResult(res),
 
             // If we've received an incoming message,
-            // grap it to handle in the next `match`.
+            // grab it to handle in the next `match`.
             message = ws.next() => match message {
                 Some(Ok(m)) => Item::Message(ClientMessage::from_message(m)),
                 Some(Err(error)) => {
