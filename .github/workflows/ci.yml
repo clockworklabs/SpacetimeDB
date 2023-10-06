@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
+      - name: Export cargo path
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
       - name: Start containers
         run: docker compose up -d
       - name: Run smoketests
@@ -25,11 +27,16 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
+      - name: Export cargo path
+        run: |
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          dotnet nuget locals all --clear
 
       - uses: dsherret/rust-toolchain-file@v1
 
       - name: Create /stdb dir
         run: |
+          sudo rm -fr /stdb || true
           sudo mkdir /stdb
           sudo chmod 777 /stdb
 
@@ -42,6 +49,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
+      - name: Export cargo path
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
@@ -57,6 +66,8 @@ jobs:
     runs-on: bare-metal
     steps:
       - uses: actions/checkout@v3
+      - name: Export cargo path
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
