@@ -31,6 +31,7 @@ import {
   TableRowOperation_OperationType,
 } from "./client_api";
 import BinaryReader from "./binary_reader";
+import OperationsMap from "./operations_map";
 
 export {
   ProductValue,
@@ -169,7 +170,7 @@ class Table {
     if (this.entityClass.primaryKey !== undefined) {
       const pkName = this.entityClass.primaryKey;
       const inserts: any[] = [];
-      const deleteMap = new Map();
+      const deleteMap = new OperationsMap<any, DBOp>();
       for (const dbOp of dbOps) {
         if (dbOp.type === "insert") {
           inserts.push(dbOp);

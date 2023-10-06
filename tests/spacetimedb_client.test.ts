@@ -2,6 +2,7 @@ import { SpacetimeDBClient, ReducerEvent } from "../src/spacetimedb";
 import { Identity } from "../src/identity";
 import WebsocketTestAdapter from "../src/websocket_test_adapter";
 import Player from "./types/player";
+import User from "./types/user";
 import Point from "./types/point";
 import CreatePlayerReducer from "./types/create_player_reducer";
 
@@ -283,7 +284,7 @@ describe("SpacetimeDBClient", () => {
                 {
                   op: "delete",
                   row_pk: "abcdef",
-                  row: ["player-2", "Jamie", [0, 0]],
+                  row: ["player-2", "Jaime", [0, 0]],
                 },
                 {
                   op: "insert",
@@ -299,7 +300,7 @@ describe("SpacetimeDBClient", () => {
     wsAdapter.sendToClient({ data: transactionUpdate });
 
     expect(updates).toHaveLength(2);
-    expect(updates[1]["oldPlayer"].name).toBe("Jamie");
+    expect(updates[1]["oldPlayer"].name).toBe("Jaime");
     expect(updates[1]["newPlayer"].name).toBe("Kingslayer");
   });
 
@@ -363,5 +364,125 @@ describe("SpacetimeDBClient", () => {
     wsAdapter.sendToClient({ data: transactionUpdate });
 
     expect(callbackLog).toEqual(["Player", "CreatePlayerReducer"]);
+  });
+
+  test("it calls onUpdate callback when a record is added with a subscription update and then with a transaction update when the PK is of type Identity", async () => {
+    const client = new SpacetimeDBClient(
+      "ws://127.0.0.1:1234",
+      "db",
+      undefined,
+      "json"
+    );
+    const wsAdapter = new WebsocketTestAdapter();
+    client._setCreateWSFn((_url: string, _protocol: string) => {
+      return wsAdapter;
+    });
+
+    let called = false;
+    client.onConnect(() => {
+      called = true;
+    });
+
+    await client.connect();
+    wsAdapter.acceptConnection();
+
+    const tokenMessage = {
+      data: {
+        IdentityToken: {
+          identity: "an-identity",
+          token: "a-token",
+        },
+      },
+    };
+    wsAdapter.sendToClient(tokenMessage);
+
+    const updates: { oldUser: User; newUser: User }[] = [];
+    User.onUpdate((oldUser: User, newUser: User) => {
+      updates.push({
+        oldUser,
+        newUser,
+      });
+    });
+
+    const subscriptionMessage = {
+      SubscriptionUpdate: {
+        table_updates: [
+          {
+            table_id: 35,
+            table_name: "User",
+            table_row_operations: [
+              {
+                op: "delete",
+                row_pk: "abcd123",
+                row: [
+                  "41db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008",
+                  "drogus",
+                ],
+              },
+              {
+                op: "insert",
+                row_pk: "def456",
+                row: [
+                  "41db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008",
+                  "mr.drogus",
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    wsAdapter.sendToClient({ data: subscriptionMessage });
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0]["oldUser"].username).toBe("drogus");
+    expect(updates[0]["newUser"].username).toBe("mr.drogus");
+
+    const transactionUpdate = {
+      TransactionUpdate: {
+        event: {
+          timestamp: 1681391805281203,
+          status: "committed",
+          caller_identity: "identity-0",
+          function_call: {
+            reducer: "create_user",
+            args: '["A User",[0.2, 0.3]]',
+          },
+          energy_quanta_used: 33841000,
+          message: "",
+        },
+        subscription_update: {
+          table_updates: [
+            {
+              table_id: 35,
+              table_name: "User",
+              table_row_operations: [
+                {
+                  op: "delete",
+                  row_pk: "abcdef",
+                  row: [
+                    "11db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008",
+                    "jaime",
+                  ],
+                },
+                {
+                  op: "insert",
+                  row_pk: "123456",
+                  row: [
+                    "11db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008",
+                    "kingslayer",
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    };
+    wsAdapter.sendToClient({ data: transactionUpdate });
+
+    expect(updates).toHaveLength(2);
+    expect(updates[1]["oldUser"].username).toBe("jaime");
+    expect(updates[1]["newUser"].username).toBe("kingslayer");
   });
 });
