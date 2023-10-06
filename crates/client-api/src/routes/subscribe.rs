@@ -169,8 +169,12 @@ const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
 async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut sendrx: mpsc::Receiver<DataMessage>) {
     let mut liveness_check_interval = tokio::time::interval(LIVELINESS_TIMEOUT);
     let mut got_pong = true;
+
+    // Build a queue of incoming messages to handle,
+    // to be processed one at a time, in the order they're received.
     // TODO: do we want this to have a fixed capacity? or should it be unbounded
     let mut handle_queue = pin!(future_queue(|message| client.handle_message(message)));
+
     let mut closed = false;
     loop {
         enum Item {
@@ -180,7 +184,13 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
         let message = tokio::select! {
             // NOTE: all of the futures for these branches **must** be cancel safe. do not
             //       change this if you don't know what that means.
+
+            // If we have a result from handling a past message to report,
+            // grab it to handle in the next `match`.
             Some(res) = handle_queue.next() => Item::HandleResult(res),
+
+            // If we've received an incoming message,
+            // grab it to handle in the next `match`.
             message = ws.next() => match message {
                 Some(Ok(m)) => Item::Message(ClientMessage::from_message(m)),
                 Some(Err(error)) => {
@@ -190,6 +200,9 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
                 // the client sent us a close frame
                 None => break,
             },
+
+            // If we have an outgoing message to send, send it off.
+            // No incoming `message` to handle, so `continue`.
             Some(message) = sendrx.recv() => {
                 if closed {
                     // TODO: this isn't great. when we receive a close request from the peer,
@@ -204,6 +217,8 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
                 }
                 continue;
             }
+
+            // If the module has exited, close the websocket.
             () = client.module.exited(), if !closed => {
                 if let Err(e) = ws.close(Some(CloseFrame { code: CloseCode::Away, reason: "module exited".into() })).await {
                     log::warn!("error closing: {e:#}")
@@ -211,7 +226,10 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
                 closed = true;
                 continue;
             }
+
+            // If it's time to send a ping...
             _ = liveness_check_interval.tick() => {
+                // If we received a pong at some point, send a fresh ping.
                 if mem::take(&mut got_pong) {
                     if let Err(e) = ws.send(WsMessage::Ping(Vec::new())).await {
                         log::warn!("error sending ping: {e:#}");
@@ -224,6 +242,13 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
                 }
             }
         };
+
+        // Handle the incoming message we grabbed in the previous `select!`.
+
+        // TODO: Data flow appears to not require `enum Item` or this distinct `match`,
+        //       since `Item::HandleResult` comes from exactly one `select!` branch,
+        //       and `Item::Message` comes from exactly one distinct `select!` branch.
+        //       Consider merging this `match` with the previous `select!`.
         match message {
             Item::Message(ClientMessage::Message(message)) => handle_queue.as_mut().push(message),
             Item::HandleResult(res) => {
@@ -250,6 +275,7 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
             }
             Item::Message(ClientMessage::Ping(_message)) => {
                 log::trace!("Received ping from client {}", client.id);
+                // TODO: should we respond with a `Pong`?
             }
             Item::Message(ClientMessage::Pong(_message)) => {
                 log::trace!("Received heartbeat from client {}", client.id);
@@ -274,7 +300,9 @@ async fn ws_client_actor(client: ClientConnection, mut ws: WebSocketStream, mut 
     log::debug!("Client connection ended");
     sendrx.close();
 
-    // clear the queue before we go on to clean up, or else we can get a situation like:
+    // Clear the incoming message queue before we go to clean up.
+    // Otherwise, we can be left with a stale future which never gets awaited,
+    // which can lead to bugs like:
     // https://rust-lang.github.io/wg-async/vision/submitted_stories/status_quo/aws_engineer/solving_a_deadlock.html
     handle_queue.clear();
 
