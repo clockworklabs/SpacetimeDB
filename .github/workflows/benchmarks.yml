@@ -42,9 +42,6 @@ jobs:
         if: github.event.inputs.pr_number
         run: |
           echo "PR_NUMBER=${{ github.event.inputs.pr_number }}" >> $GITHUB_ENV
-          PR_DATA=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.inputs.pr_number }} --jq '{ baseRefName: .base.ref, headRefName: .head.ref }')
-          echo "PR_BASE_REF=$(echo $PR_DATA | jq -r '.baseRefName')" >> $GITHUB_ENV
-          echo "PR_HEAD_REF=$(echo $PR_DATA | jq -r '.headRefName')" >> $GITHUB_ENV
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
@@ -79,7 +76,7 @@ jobs:
 
       # TODO: can we optionally download if it only might fail?
       #- name: PR; download bench results for compare
-      #  if: ${{ env.PR_BASE_REF }}
+      #  if: github.event.inputs.pr_number
       #  uses: actions/github-script@v6  
       #  with:
       #    github-token: ${{secrets.GITHUB_TOKEN}}
@@ -93,7 +90,7 @@ jobs:
       #      }
 
       - name: PR; run bench
-        if: ${{ env.PR_BASE_REF }}
+        if: github.event.inputs.pr_number
         working-directory: crates/bench/
         run: |
           echo "Running benchmarks without sqlite"
@@ -104,7 +101,7 @@ jobs:
           cp target/criterion/branch.json criterion-results/pr-$PR_NUMBER.json
 
       - name: PR; compare benchmarks
-        if: ${{ env.PR_BASE_REF }}
+        if: github.event.inputs.pr_number
         working-directory: crates/bench/
         run: |
           if [ -e target/criterion/master.json ]; then
