@@ -54,17 +54,6 @@ jobs:
           target: wasm32-unknown-unknown
           override: true
 
-      - name: ⚡ Cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
-
       - name: Build
         working-directory: crates/bench/
         run: |
