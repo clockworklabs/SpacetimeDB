@@ -1,7 +1,5 @@
 on:
   push:
-    branches:
-      - master
   
   workflow_dispatch:
     inputs:
@@ -22,8 +20,11 @@ env:
 jobs:
   benchmark:
     name: run benchmarks
-    runs-on: self-hosted
+    runs-on: benchmarks-runner
     steps:
+      - name: Enable CPU boost
+        run: echo "1" | sudo tee /sys/devices/system/cpu/cpufreq/boost
+
       - name: Checkout sources for a PR
         if: ${{ github.event.inputs.ref }}
         uses: actions/checkout@v3
@@ -73,6 +74,9 @@ jobs:
         run: |
           rustup component add clippy
 
+      - name: Disable CPU boost
+        run: echo "0" | sudo tee /sys/devices/system/cpu/cpufreq/boost
+
       - name: Master; run bench
         if: github.ref == 'ref/head/master'
         working-directory: crates/bench/
@@ -80,15 +84,10 @@ jobs:
           echo "Running benchmarks with sqlite"
           cargo bench --bench generic --bench special -- --save-baseline master
           cargo run --bin summarize pack master
+          mkdir criterion-results
+          cp target/criterion/master.json criterion-results/
+          cp target/criterion/master.json criterion-results/$GITHUB_SHA.json
 
-      # https://docs.github.com/en/actions/using-workflows/storing-workflow-data-as-artifacts
-      - name: Master; upload packed bench results
-        if: github.ref == 'ref/head/master'
-        uses: actions/upload-artifact@v3
-        with:
-          name: master_packed_bench_json-${{ github.sha }}
-          path: target/criterion/master.json
-      
       # TODO: can we optionally download if it only might fail?
       #- name: PR; download bench results for compare
       #  if: ${{ env.PR_BASE_REF }}
@@ -112,6 +111,8 @@ jobs:
           # have to pass explicit names, otherwise it will try to run the tests and fail for some reason...
           cargo bench --bench generic --bench special -- --save-baseline branch '(special|stdb_module|stdb_raw)'
           cargo run --bin summarize pack branch
+          mkdir criterion-results
+          cp target/criterion/branch.json criterion-results/pr-$PR_NUMBER.json
 
       - name: PR; compare benchmarks
         if: ${{ env.PR_BASE_REF }}
@@ -123,30 +124,65 @@ jobs:
             cargo run --bin summarize markdown-report branch.json --report-name report
           fi
 
+      # this will work for both PR and master
+      - name: Upload criterion results to DO spaces
+        uses: shallwefootball/s3-upload-action@master
+        with:
+          aws_key_id: ${{ secrets.AWS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
+          aws_bucket: "spacetimedb-ci-benchmarks"
+          source_dir: criterion-results
+          endpoint: https://nyc3.digitaloceanspaces.com
+          destination_dir: benchmarks
+
+      - name: Fetch markdown summary PR
+        if: github.event.inputs.pr_number
+        run: |
+          curl -sS https://benchmarks.spacetimedb.com/compare/master/pr-$PR_NUMBER > report.md
+
+      - name: Fetch markdown summary PR
+        if: "! github.event.inputs.pr_number"
+        run: |
+          git fetch
+          old=$(git rev-parse HEAD~1)
+          curl -sS https://benchmarks.spacetimedb.com/compare/$old/$GITHUB_SHA > report.md
+
       # https://stackoverflow.com/questions/58066966/commenting-a-pull-request-in-a-github-action
       # https://github.com/boa-dev/criterion-compare-action/blob/main/main.js
       - name: test comment
-        if: ${{ env.PR_BASE_REF }}
-        uses: actions/github-script@v6  
+        uses: actions/github-script@v6
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
-            let stuff = require('fs').readFileSync('target/criterion/report.md', 'utf8');
+            let stuff = require('fs').readFileSync('report.md', 'utf8');
             let body = `<details><summary>Benchmark results</summary>\n\n${stuff}\n\n</details>`;
-            let number = parseInt(process.env.PR_NUMBER);
-            core.info("context: issue number: "+number)
 
             try {
-              const { data: comment } = await github.rest.issues.createComment({
-                owner: "clockworklabs",
-                repo: "SpacetimeDB",
-                issue_number: number,
-                body: body,
-              });
-              core.info(
-                `Created comment id '${comment.id}' on issue '${number}' in 'clockworklabs/SpacetimeDB'.`
-              );
-              core.setOutput("comment-id", comment.id);
+              if (process.env.PR_NUMBER) {
+                let number = parseInt(process.env.PR_NUMBER);
+                core.info("context: issue number: "+number)
+                const { data: comment } = await github.rest.issues.createComment({
+                  owner: "clockworklabs",
+                  repo: "SpacetimeDB",
+                  issue_number: number,
+                  body: body,
+                });
+                core.info(
+                  `Created comment id '${comment.id}' on issue '${number}' in 'clockworklabs/SpacetimeDB'.`
+                );
+                core.setOutput("comment-id", comment.id);
+              } else {
+                const { data: comment } = github.rest.repos.createCommitComment({
+                  commit_sha: context.sha,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: body
+                })
+                core.info(
+                  `Created comment id '${comment.id}' on commit '${context.sha}' in 'clockworklabs/SpacetimeDB'.`
+                );
+                core.setOutput("comment-id", comment.id);
+              }
             } catch (err) {
               core.warning(`Failed to comment: ${err}`);
               core.info("Commenting is not possible from forks.");
