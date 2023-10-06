@@ -73,14 +73,15 @@ jobs:
 
       - name: Branch; run bench
         if: "! github.event.inputs.pr_number"
-        working-directory: crates/bench/
         run: |
           echo "Running benchmarks with sqlite"
+          pushd crates/bench
           cargo bench --bench generic --bench special -- --save-baseline $NORMALIZED_BRANCH_NAME
           cargo run --bin summarize pack $NORMALIZED_BRANCH_NAME
+          popd
           mkdir criterion-results
-          cp target/criterion/NORMALIZED_BRANCH_NAME.json criterion-results/
-          cp target/criterion/NORMALIZED_BRANCH_NAME.json criterion-results/$GITHUB_SHA.json
+          cp target/criterion/$NORMALIZED_BRANCH_NAME.json criterion-results/
+          cp target/criterion/$NORMALIZED_BRANCH_NAME.json criterion-results/$GITHUB_SHA.json
 
       # TODO: can we optionally download if it only might fail?
       #- name: PR; download bench results for compare
@@ -99,12 +100,13 @@ jobs:
 
       - name: PR; run bench
         if: github.event.inputs.pr_number
-        working-directory: crates/bench/
         run: |
           echo "Running benchmarks without sqlite"
           # have to pass explicit names, otherwise it will try to run the tests and fail for some reason...
+          pushd crates/bench
           cargo bench --bench generic --bench special -- --save-baseline branch '(special|stdb_module|stdb_raw)'
           cargo run --bin summarize pack branch
+          popd
           mkdir criterion-results
           cp target/criterion/branch.json criterion-results/pr-$PR_NUMBER.json
 
