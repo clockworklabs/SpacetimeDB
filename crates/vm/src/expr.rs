@@ -9,7 +9,7 @@ use spacetimedb_lib::Identity;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
+use spacetimedb_sats::{ProductValue, SatsString, Typespace, WithTypespace};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
@@ -414,13 +414,13 @@ pub enum CrudExpr {
         query: QueryExpr,
     },
     CreateTable {
-        name: String,
+        name: SatsString,
         columns: ProductTypeMeta,
         table_type: StTableType,
         table_access: StAccess,
     },
     Drop {
-        name: String,
+        name: SatsString,
         kind: DbType,
         table_access: StAccess,
     },
@@ -1016,13 +1016,13 @@ pub enum CrudExprOpt {
         query: QueryExprOpt,
     },
     CreateTable {
-        name: String,
+        name: SatsString,
         columns: ProductTypeMeta,
         table_type: StTableType,
         table_access: StAccess,
     },
     Drop {
-        name: String,
+        name: SatsString,
         kind: DbType,
         table_access: StAccess,
     },
@@ -1057,7 +1057,7 @@ impl fmt::Display for SourceExpr {
             SourceExpr::MemTable(x) => {
                 let ty = &AlgebraicType::Product(x.head().ty());
                 for row in &x.data {
-                    let val = AlgebraicValue::Product(row.data.clone());
+                    let val = row.data.clone().into();
                     let x = fmt_value(ty, &val);
                     write!(f, "{x}")?;
                 }
@@ -1286,13 +1286,13 @@ pub enum CrudCode {
         query: QueryCode,
     },
     CreateTable {
-        name: String,
+        name: SatsString,
         columns: ProductTypeMeta,
         table_type: StTableType,
         table_access: StAccess,
     },
     Drop {
-        name: String,
+        name: SatsString,
         kind: DbType,
         table_access: StAccess,
     },

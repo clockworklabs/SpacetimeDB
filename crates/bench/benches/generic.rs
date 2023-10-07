@@ -9,7 +9,7 @@ use spacetimedb_bench::{
     schemas::{create_sequential, BenchTable, IndexStrategy, Location, Person, RandomTable, BENCH_PKEY_INDEX},
     spacetime_module, spacetime_raw, sqlite, ResultBench,
 };
-use spacetimedb_lib::{sats::BuiltinType, AlgebraicType};
+use spacetimedb_lib::sats::AlgebraicType;
 fn criterion_benchmark(c: &mut Criterion) {
     bench_suite::<sqlite::SQLite>(c, true).unwrap();
     bench_suite::<spacetime_raw::SpacetimeRaw>(c, true).unwrap();
@@ -294,9 +294,9 @@ fn _filter_setup<DB: BenchDatabase, T: BenchTable + RandomTable>(
     buckets: u32,
 ) -> ResultBench<(String, TableSchema, Vec<T>)> {
     let filter_column_type = match &T::product_type().elements[column_index as usize].algebraic_type {
-        AlgebraicType::Builtin(BuiltinType::String) => "string",
-        AlgebraicType::Builtin(BuiltinType::U32) => "u32",
-        AlgebraicType::Builtin(BuiltinType::U64) => "u64",
+        AlgebraicType::String => "string",
+        AlgebraicType::U32 => "u32",
+        AlgebraicType::U64 => "u64",
         _ => unimplemented!(),
     };
     let mean_result_count = load / buckets;

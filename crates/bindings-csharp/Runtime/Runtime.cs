@@ -206,11 +206,11 @@ public static class Runtime
                 // We need to set type info to inlined identity type as `generate` CLI currently can't recognise type references for built-ins.
                 new SpacetimeDB.SATS.ProductType
                 {
-                    { "__identity_bytes", SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.AlgebraicType }
+                    { "__identity_bytes", SpacetimeDB.SATS.AlgebraicType.BytesTypeInfo.AlgebraicType }
                 },
-                reader => new(SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.Read(reader)),
+                reader => new(SpacetimeDB.SATS.AlgebraicType.BytesTypeInfo.Read(reader)),
                 (writer, value) =>
-                    SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.Write(writer, value.bytes)
+                    SpacetimeDB.SATS.AlgebraicType.BytesTypeInfo.Write(writer, value.bytes)
             );
 
         public static SpacetimeDB.SATS.TypeInfo<Identity> GetSatsTypeInfo() => satsTypeInfo;
@@ -243,7 +243,7 @@ public static class Runtime
                 // We need to set type info to inlined address type as `generate` CLI currently can't recognise type references for built-ins.
                 new SpacetimeDB.SATS.ProductType
                 {
-                  { "__address_bytes", SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.AlgebraicType }
+                  { "__address_bytes", SpacetimeDB.SATS.AlgebraicType.BytesTypeInfo.AlgebraicType }
                 },
                 // Concern: We use this "packed" representation (as Bytes)
                 //          in the caller_id field of reducer arguments,
@@ -252,9 +252,9 @@ public static class Runtime
                 //          It's possible that these happen to be identical
                 //          because BSATN is minimally self-describing,
                 //          but that doesn't seem like something we should count on.
-                reader => new(SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.Read(reader)),
+                reader => new(SpacetimeDB.SATS.AlgebraicType.BytesTypeInfo.Read(reader)),
                 (writer, value) =>
-                    SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.Write(writer, value.bytes)
+                    SpacetimeDB.SATS.AlgebraicType.BytesTypeInfo.Write(writer, value.bytes)
             );
 
         public static SpacetimeDB.SATS.TypeInfo<Address> GetSatsTypeInfo() => satsTypeInfo;

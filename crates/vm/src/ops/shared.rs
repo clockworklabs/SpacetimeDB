@@ -9,5 +9,5 @@ where
 }
 
 pub(crate) fn to_bool(of: &AlgebraicValue) -> Option<bool> {
-    of.as_builtin().and_then(|x| x.as_bool()).copied()
+    of.as_bool().copied()
 }

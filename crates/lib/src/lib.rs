@@ -1,25 +1,18 @@
 use auth::StAccess;
 use auth::StTableType;
-use sats::impl_serialize;
-pub use spacetimedb_sats::buffer;
+use sats::SatsString;
+use spacetimedb_sats::impl_serialize;
+
 pub mod address;
+pub mod auth;
 pub mod data_key;
-pub mod filter;
-pub mod identity;
-pub use spacetimedb_sats::de;
 pub mod error;
+pub mod filter;
 pub mod hash;
+pub mod identity;
 pub mod name;
 pub mod operator;
 pub mod primary_key;
-pub use spacetimedb_sats::ser;
-pub mod type_def {
-    pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
-}
-pub mod type_value {
-    pub use spacetimedb_sats::{AlgebraicValue, ProductValue};
-}
-pub mod auth;
 #[cfg(feature = "serde")]
 pub mod recovery;
 pub mod relation;
@@ -28,17 +21,15 @@ pub mod table;
 pub mod util;
 pub mod version;
 
-pub use spacetimedb_sats::bsatn;
-
 pub use address::Address;
 pub use data_key::DataKey;
 pub use hash::Hash;
 pub use identity::Identity;
 pub use primary_key::PrimaryKey;
-pub use type_def::*;
-pub use type_value::{AlgebraicValue, ProductValue};
-
-pub use spacetimedb_sats as sats;
+pub use spacetimedb_sats::{
+    self as sats, bsatn, buffer, de, ser, str, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement,
+    ProductValue, SatsStr, SumType,
+};
 
 pub const MODULE_ABI_VERSION: VersionTuple = VersionTuple::new(5, 0);
 
@@ -93,10 +84,10 @@ extern crate self as spacetimedb_lib;
 //WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub struct TableDef {
-    pub name: String,
+    pub name: SatsString,
     /// data should always point to a ProductType in the typespace
     pub data: sats::AlgebraicTypeRef,
-    pub column_attrs: Vec<ColumnIndexAttribute>,
+    pub column_attrs: Box<[ColumnIndexAttribute]>,
     pub indexes: Vec<IndexDef>,
     pub table_type: StTableType,
     pub table_access: StAccess,
@@ -104,8 +95,8 @@ pub struct TableDef {
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 pub struct ReducerDef {
-    pub name: String,
-    pub args: Vec<ProductTypeElement>,
+    pub name: SatsString,
+    pub args: Box<[ProductTypeElement]>,
 }
 
 impl ReducerDef {
@@ -164,7 +155,7 @@ impl_serialize!([] ReducerArgsWithSchema<'_>, (self, ser) => {
     use itertools::Itertools;
     use ser::SerializeSeqProduct;
     let mut seq = ser.serialize_seq_product(self.value.elements.len())?;
-    for (value, elem) in self.value.elements.iter().zip_eq(&self.ty.ty().args) {
+    for (value, elem) in self.value.elements.iter().zip_eq(&*self.ty.ty().args) {
         seq.serialize_element(&self.ty.with(&elem.algebraic_type).with_value(value))?;
     }
     seq.end()
@@ -187,15 +178,15 @@ pub enum MiscModuleExport {
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 pub struct TypeAlias {
-    pub name: String,
+    pub name: SatsString,
     pub ty: sats::AlgebraicTypeRef,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub struct IndexDef {
-    pub name: String,
+    pub name: SatsString,
     pub ty: IndexType,
-    pub col_ids: Vec<u8>,
+    pub col_ids: Box<[u8]>,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]

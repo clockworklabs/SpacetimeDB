@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
+use crate::db::datastore::traits::ColId;
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::{
@@ -9,6 +10,8 @@ use crate::host::wasm_common::{
 };
 use bytes::Bytes;
 use itertools::Itertools;
+use nonempty::NonEmpty;
+use spacetimedb_sats::SatsString;
 use wasmer::{FunctionEnvMut, MemoryAccessError, RuntimeError, ValueType, WasmPtr};
 
 use crate::host::instance_env::InstanceEnv;
@@ -98,9 +101,15 @@ impl WasmInstanceEnv {
     /// Returns an error if:
     /// - `ptr + len` overflows a 64-bit address.
     /// - the string was not valid UTF-8
-    fn read_string(caller: &FunctionEnvMut<'_, Self>, mem: &Mem, ptr: WasmPtr<u8>, len: u32) -> RtResult<String> {
+    fn read_sats_string(
+        caller: &FunctionEnvMut<'_, Self>,
+        mem: &Mem,
+        ptr: WasmPtr<u8>,
+        len: u32,
+    ) -> RtResult<SatsString> {
         let bytes = mem.read_bytes(&caller, ptr, len)?;
-        String::from_utf8(bytes).map_err(|_| RuntimeError::new("name must be utf8"))
+        let string = String::from_utf8(bytes).map_err(|_| RuntimeError::new("name must be utf8"))?;
+        Ok(SatsString::from_string(string))
     }
 
     /// Schedules a reducer to be called asynchronously at `time`.
@@ -128,7 +137,7 @@ impl WasmInstanceEnv {
     ) -> RtResult<()> {
         Self::cvt_ret(caller, "schedule_reducer", out, |caller, mem| {
             // Read the index name as a string from `(name, name_len)`.
-            let name = Self::read_string(&caller, mem, name, name_len)?;
+            let name = Self::read_sats_string(&caller, mem, name, name_len)?;
 
             // Read the reducer's arguments as a byte slice.
             let args = mem.read_bytes(&caller, args, args_len)?;
@@ -389,7 +398,7 @@ impl WasmInstanceEnv {
     ) -> RtResult<u16> {
         Self::cvt_ret(caller, "get_table_id", out, |caller, mem| {
             // Read the table name from WASM memory.
-            let name = Self::read_string(&caller, mem, name, name_len)?;
+            let name = Self::read_sats_string(&caller, mem, name, name_len)?;
 
             // Query the table id.
             Ok(caller.data().instance_env.get_table_id(name)?)
@@ -425,11 +434,18 @@ impl WasmInstanceEnv {
     ) -> RtResult<u16> {
         Self::cvt(caller, "create_index", |caller, mem| {
             // Read the index name from WASM memory.
-            let index_name = Self::read_string(&caller, mem, index_name, index_name_len)?;
+            let index_name = Self::read_sats_string(&caller, mem, index_name, index_name_len)?;
 
             // Read the column ids on which to create an index from WASM memory.
             // This may be one column or an index on several columns.
             let cols = mem.read_bytes(&caller, col_ids, col_len)?;
+
+            let cols = NonEmpty::from_vec(cols)
+                .expect("Attempt to create an index with zero columns")
+                .map(|x| ColId(x as u32));
+            let cols = cols
+                .try_into()
+                .expect("The number of columns in the index exceeded `u32::MAX`");
 
             caller
                 .data()

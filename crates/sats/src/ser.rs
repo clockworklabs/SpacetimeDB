@@ -128,6 +128,8 @@ pub trait Serializer: Sized {
 
 pub use spacetimedb_bindings_macro::Serialize;
 
+use crate::slim_slice::SlimStr;
+
 /// A **data structure** that can be serialized into any data format supported by SATS.
 ///
 /// In most cases, implementations of `Serialize` may be `#[derive(Serialize)]`d.
@@ -249,7 +251,11 @@ pub trait SerializeNamedProduct {
     type Error: Error;
 
     /// Serialize a named product `element` with `name`.
-    fn serialize_element<T: Serialize + ?Sized>(&mut self, name: Option<&str>, elem: &T) -> Result<(), Self::Error>;
+    fn serialize_element<T: Serialize + ?Sized>(
+        &mut self,
+        name: Option<SlimStr<'_>>,
+        elem: &T,
+    ) -> Result<(), Self::Error>;
 
     /// Consumes and finalizes the product serializer returning the `Self::Ok` data.
     fn end(self) -> Result<Self::Ok, Self::Error>;
@@ -283,7 +289,11 @@ impl<S: SerializeSeqProduct> SerializeNamedProduct for ForwardNamedToSeqProduct<
     type Ok = S::Ok;
     type Error = S::Error;
 
-    fn serialize_element<T: Serialize + ?Sized>(&mut self, _name: Option<&str>, elem: &T) -> Result<(), Self::Error> {
+    fn serialize_element<T: Serialize + ?Sized>(
+        &mut self,
+        _name: Option<SlimStr<'_>>,
+        elem: &T,
+    ) -> Result<(), Self::Error> {
         self.tup.serialize_element(elem)
     }
 

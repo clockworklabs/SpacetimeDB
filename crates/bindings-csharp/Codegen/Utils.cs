@@ -60,23 +60,23 @@ static class Utils
             INamedTypeSymbol namedType
                 => type.SpecialType switch
                 {
-                    SpecialType.System_Boolean => "SpacetimeDB.SATS.BuiltinType.BoolTypeInfo",
-                    SpecialType.System_SByte => "SpacetimeDB.SATS.BuiltinType.I8TypeInfo",
-                    SpecialType.System_Byte => "SpacetimeDB.SATS.BuiltinType.U8TypeInfo",
-                    SpecialType.System_Int16 => "SpacetimeDB.SATS.BuiltinType.I16TypeInfo",
-                    SpecialType.System_UInt16 => "SpacetimeDB.SATS.BuiltinType.U16TypeInfo",
-                    SpecialType.System_Int32 => "SpacetimeDB.SATS.BuiltinType.I32TypeInfo",
-                    SpecialType.System_UInt32 => "SpacetimeDB.SATS.BuiltinType.U32TypeInfo",
-                    SpecialType.System_Int64 => "SpacetimeDB.SATS.BuiltinType.I64TypeInfo",
-                    SpecialType.System_UInt64 => "SpacetimeDB.SATS.BuiltinType.U64TypeInfo",
+                    SpecialType.System_Boolean => "SpacetimeDB.SATS.AlgebraicType.BoolTypeInfo",
+                    SpecialType.System_SByte => "SpacetimeDB.SATS.AlgebraicType.I8TypeInfo",
+                    SpecialType.System_Byte => "SpacetimeDB.SATS.AlgebraicType.U8TypeInfo",
+                    SpecialType.System_Int16 => "SpacetimeDB.SATS.AlgebraicType.I16TypeInfo",
+                    SpecialType.System_UInt16 => "SpacetimeDB.SATS.AlgebraicType.U16TypeInfo",
+                    SpecialType.System_Int32 => "SpacetimeDB.SATS.AlgebraicType.I32TypeInfo",
+                    SpecialType.System_UInt32 => "SpacetimeDB.SATS.AlgebraicType.U32TypeInfo",
+                    SpecialType.System_Int64 => "SpacetimeDB.SATS.AlgebraicType.I64TypeInfo",
+                    SpecialType.System_UInt64 => "SpacetimeDB.SATS.AlgebraicType.U64TypeInfo",
                     SpecialType.System_Single
-                        => "SpacetimeDB.SATS.BuiltinType.F32TypeInfo",
-                    SpecialType.System_Double => "SpacetimeDB.SATS.BuiltinType.F64TypeInfo",
-                    SpecialType.System_String => "SpacetimeDB.SATS.BuiltinType.StringTypeInfo",
+                        => "SpacetimeDB.SATS.AlgebraicType.F32TypeInfo",
+                    SpecialType.System_Double => "SpacetimeDB.SATS.AlgebraicType.F64TypeInfo",
+                    SpecialType.System_String => "SpacetimeDB.SATS.AlgebraicType.StringTypeInfo",
                     SpecialType.None when type.ToString() == "System.Int128"
-                        => "SpacetimeDB.SATS.BuiltinType.I128TypeInfo",
+                        => "SpacetimeDB.SATS.AlgebraicType.I128TypeInfo",
                     SpecialType.None when type.ToString() == "System.UInt128"
-                        => "SpacetimeDB.SATS.BuiltinType.U128TypeInfo",
+                        => "SpacetimeDB.SATS.AlgebraicType.U128TypeInfo",
                     SpecialType.None
                         when namedType.EnumUnderlyingType is not null
                             // check that enums also have [SpacetimeDB.Type]
@@ -88,12 +88,12 @@ static class Utils
                                         a.AttributeClass?.ToDisplayString()
                                         == "SpacetimeDB.TypeAttribute"
                                 )
-                        => $"SpacetimeDB.SATS.BuiltinType.MakeEnum<{type}>()",
+                        => $"SpacetimeDB.SATS.AlgebraicType.MakeEnum<{type}>()",
                     SpecialType.None
                         => $"{type.OriginalDefinition.ToString() switch
                     {
-                        "System.Collections.Generic.List<T>" => "SpacetimeDB.SATS.BuiltinType.MakeList",
-                        "System.Collections.Generic.Dictionary<TKey, TValue>" => "SpacetimeDB.SATS.BuiltinType.MakeMap",
+                        "System.Collections.Generic.List<T>" => "SpacetimeDB.SATS.AlgebraicType.MakeList",
+                        "System.Collections.Generic.Dictionary<TKey, TValue>" => "SpacetimeDB.SATS.AlgebraicType.MakeMap",
                         // If we're here, then this is nullable value type like `int?`.
                         "System.Nullable<T>" => $"SpacetimeDB.SATS.SumType.MakeValueOption",
                         var name when name.StartsWith("System.") => throw new InvalidOperationException(
@@ -109,8 +109,8 @@ static class Utils
             IArrayTypeSymbol arrayType
                 => arrayType.ElementType is INamedTypeSymbol namedType
                 && namedType.SpecialType == SpecialType.System_Byte
-                    ? "SpacetimeDB.SATS.BuiltinType.BytesTypeInfo"
-                    : $"SpacetimeDB.SATS.BuiltinType.MakeArray({GetTypeInfo(arrayType.ElementType)})",
+                    ? "SpacetimeDB.SATS.AlgebraicType.BytesTypeInfo"
+                    : $"SpacetimeDB.SATS.AlgebraicType.MakeArray({GetTypeInfo(arrayType.ElementType)})",
             _ => throw new InvalidOperationException($"Unsupported type {type}")
         };
     }

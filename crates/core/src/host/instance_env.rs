@@ -1,4 +1,3 @@
-use nonempty::NonEmpty;
 use parking_lot::{Mutex, MutexGuard};
 use spacetimedb_lib::{bsatn, ProductValue};
 use std::ops::DerefMut;
@@ -7,7 +6,7 @@ use std::sync::Arc;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{DataRow, IndexDef};
+use crate::db::datastore::traits::{ColId, DataRow, IndexDef};
 use crate::error::{IndexError, NodesError};
 use crate::util::ResultInspectExt;
 
@@ -18,7 +17,7 @@ use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::relation::{FieldExpr, FieldName};
-use spacetimedb_sats::{ProductType, Typespace};
+use spacetimedb_sats::{ProductType, SatsNonEmpty, SatsString, Typespace};
 use spacetimedb_vm::expr::{Code, ColumnOp};
 
 #[derive(Clone)]
@@ -43,10 +42,10 @@ impl InstanceEnv {
         }
     }
 
-    #[tracing::instrument(skip_all, fields(reducer=reducer))]
+    #[tracing::instrument(skip_all, fields(reducer = &*reducer))]
     pub fn schedule(
         &self,
-        reducer: String,
+        reducer: SatsString,
         args: Vec<u8>,
         time: Timestamp,
     ) -> Result<ScheduledReducerId, ScheduleError> {
@@ -234,16 +233,13 @@ impl InstanceEnv {
     ///
     /// Errors with `TableNotFound` if the table does not exist.
     #[tracing::instrument(skip_all)]
-    pub fn get_table_id(&self, table_name: String) -> Result<u32, NodesError> {
+    pub fn get_table_id(&self, table_name: SatsString) -> Result<u32, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
         // Query the table id from the name.
-        let table_id = stdb
-            .table_id_from_name(tx, &table_name)?
-            .ok_or(NodesError::TableNotFound)?;
-
-        Ok(table_id)
+        stdb.table_id_from_name(tx, table_name)?
+            .ok_or(NodesError::TableNotFound)
     }
 
     /// Creates an index of type `index_type` and name `index_name`,
@@ -260,10 +256,10 @@ impl InstanceEnv {
     #[tracing::instrument(skip_all)]
     pub fn create_index(
         &self,
-        index_name: String,
+        index_name: SatsString,
         table_id: u32,
         index_type: u8,
-        col_ids: Vec<u8>,
+        col_ids: SatsNonEmpty<ColId>,
     ) -> Result<(), NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
@@ -278,16 +274,12 @@ impl InstanceEnv {
             _ => return Err(NodesError::BadIndexType(index_type)),
         };
 
-        let cols = NonEmpty::from_slice(&col_ids)
-            .expect("Attempt to create an index with zero columns")
-            .map(|x| x as u32);
-
-        let is_unique = stdb.column_attrs(tx, table_id, &cols)?.is_unique();
+        let is_unique = stdb.column_attrs(tx, table_id, &col_ids)?.is_unique();
 
         let index = IndexDef {
-            table_id,
-            cols,
             name: index_name,
+            table_id,
+            cols: col_ids,
             is_unique,
         };
 

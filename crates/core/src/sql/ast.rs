@@ -2,7 +2,8 @@ use spacetimedb_lib::auth::{StAccess, StTableType};
 use spacetimedb_lib::error::RelationError;
 use spacetimedb_lib::table::{ColumnDef, ProductTypeMeta};
 use spacetimedb_lib::ColumnIndexAttribute;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement};
+use spacetimedb_sats::slim_slice::try_into;
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductTypeElement, SatsString};
 use sqlparser::ast::{
     Assignment, BinaryOperator, ColumnDef as SqlColumnDef, ColumnOption, DataType, ExactNumberInfo, Expr as SqlExpr,
     GeneratedAs, HiveDistributionStyle, Ident, JoinConstraint, JoinOperator, ObjectName, ObjectType, Query, Select,
@@ -144,7 +145,7 @@ impl From {
 
         // Check if the field are inverted:
         // FROM t1 JOIN t2 ON t2.id = t1.id
-        let on = if on.rhs.table() == x.root.table_name && x.root.get_column_by_field(&on.rhs).is_some() {
+        let on = if on.rhs.table() == &*x.root.table_name && x.root.get_column_by_field(&on.rhs).is_some() {
             OnExpr {
                 op: on.op.reverse(),
                 lhs: on.rhs,
@@ -171,9 +172,10 @@ impl From {
         }))
     }
 
-    /// Returns all the table names as a `Vec<String>`, including the ones inside the joins.
-    pub fn table_names(&self) -> Vec<String> {
-        self.iter_tables().map(|x| x.table_name.clone()).collect()
+    /// Returns all the table names as a `Vec<String>`,
+    /// including the ones inside the joins.
+    pub fn table_names(&self) -> impl Iterator<Item = &str> {
+        self.iter_tables().map(|x| &*x.table_name)
     }
 
     /// Returns all the fields matching `f` as a `Vec<FromField>`,
@@ -202,7 +204,7 @@ impl From {
 
                 Err(PlanError::UnknownField {
                     field: FieldName::named(field.table.unwrap_or("?"), field.field),
-                    tables: self.table_names(),
+                    tables: self.table_names().map(|n| n.to_owned()).collect(),
                 })
             }
             1 => Ok(fields[0].clone()),
@@ -236,13 +238,13 @@ pub enum SqlAst {
         selection: Option<Selection>,
     },
     CreateTable {
-        table: String,
+        table: SatsString,
         columns: ProductTypeMeta,
         table_type: StTableType,
         table_access: StAccess,
     },
     Drop {
-        name: String,
+        name: SatsString,
         kind: DbType,
         table_access: StAccess,
     },
@@ -297,8 +299,7 @@ fn compile_expr_value(table: &From, field: Option<&ProductTypeElement>, of: SqlE
         }
         SqlExpr::Value(x) => FieldExpr::Value(match x {
             Value::Number(value, is_long) => infer_number(field, &value, is_long)?,
-            Value::SingleQuotedString(s) => AlgebraicValue::String(s),
-            Value::DoubleQuotedString(s) => AlgebraicValue::String(s),
+            Value::SingleQuotedString(s) | Value::DoubleQuotedString(s) => AlgebraicValue::String(try_into(s)?),
             Value::Boolean(x) => AlgebraicValue::Bool(x),
             Value::Null => AlgebraicValue::OptionNone(),
             x => {
@@ -411,8 +412,9 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
 ///
 /// Fails if the table `name` and/or `table_id` is not found
 fn find_table(db: &RelationalDB, tx: &MutTxId, t: Table) -> Result<TableSchema, PlanError> {
+    let name = try_into(t.name.clone())?;
     let table_id = db
-        .table_id_from_name(tx, &t.name)?
+        .table_id_from_name(tx, name)?
         .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
     if !db.inner.table_id_exists(tx, &TableId(table_id)) {
         return Err(PlanError::UnknownTable { table: t.name });
@@ -720,7 +722,7 @@ fn column_size(column: &SqlColumnDef) -> Option<u64> {
 
 /// Infer the column [AlgebraicType] from the [DataType] + `is_null` definition
 //NOTE: We don't support `SERIAL` as recommended in https://wiki.postgresql.org/wiki/Don%27t_Do_This#Don.27t_use_serial
-fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Result<AlgebraicType, PlanError> {
+fn column_def_type(named: &str, is_null: bool, data_type: &DataType) -> Result<AlgebraicType, PlanError> {
     let ty = match data_type {
         DataType::Char(_) | DataType::Varchar(_) | DataType::Nvarchar(_) | DataType::Text | DataType::String => {
             AlgebraicType::String
@@ -802,7 +804,7 @@ fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, ColumnIndexAttribu
 
 /// Compiles the `CREATE TABLE ...` clause
 fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst, PlanError> {
-    let table = table.name;
+    let table_name: SatsString = try_into(table.name)?;
     let mut columns = ProductTypeMeta::with_capacity(cols.len());
 
     for col in cols {
@@ -812,16 +814,16 @@ fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst,
             });
         }
 
-        let name = col.name.to_string();
+        let name: SatsString = try_into(col.name.to_string())?;
         let (is_null, attr) = compile_column_option(&col)?;
         let ty = column_def_type(&name, is_null, &col.data_type)?;
 
-        columns.push(&name, ty, attr);
+        columns.push(name, ty, attr);
     }
 
     Ok(SqlAst::CreateTable {
-        table_access: StAccess::for_name(&table),
-        table,
+        table_access: StAccess::for_name(&table_name),
+        table: table_name,
         columns,
         table_type: StTableType::User,
     })
@@ -839,7 +841,7 @@ fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError
         }
     };
 
-    let name = name.to_string();
+    let name: SatsString = try_into(name.to_string())?;
     Ok(SqlAst::Drop {
         table_access: StAccess::for_name(&name),
         name,

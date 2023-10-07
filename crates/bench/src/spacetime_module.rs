@@ -1,6 +1,5 @@
 use spacetimedb::db::datastore::traits::TableSchema;
 use spacetimedb::db::{Config, FsyncPolicy, Storage};
-use spacetimedb_lib::sats::BuiltinValue;
 use spacetimedb_lib::{sats::ArrayValue, AlgebraicValue, ProductValue};
 use spacetimedb_testing::modules::{start_runtime, CompiledModule, ModuleHandle};
 use tokio::runtime::Runtime;
@@ -150,10 +149,14 @@ impl BenchDatabase for SpacetimeModule {
     }
 
     fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()> {
+        let rows = rows
+            .into_iter()
+            .map(|row| row.into_product_value())
+            .collect::<Box<[_]>>()
+            .try_into()
+            .unwrap();
         let args = ProductValue {
-            elements: vec![AlgebraicValue::Builtin(spacetimedb_lib::sats::BuiltinValue::Array {
-                val: ArrayValue::Product(rows.into_iter().map(|row| row.into_product_value()).collect()),
-            })],
+            elements: [AlgebraicValue::Array(ArrayValue::Product(rows))].into(),
         };
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
@@ -193,7 +196,12 @@ impl BenchDatabase for SpacetimeModule {
 
         runtime.block_on(async move {
             module
-                .call_reducer_binary(&reducer_name, ProductValue { elements: vec![value] })
+                .call_reducer_binary(
+                    &reducer_name,
+                    ProductValue {
+                        elements: [value].into(),
+                    },
+                )
                 .await?;
             Ok(())
         })
@@ -218,10 +226,10 @@ impl BenchDatabase for SpacetimeModule {
     ) -> ResultBench<()> {
         let column = &table.columns[column_index as usize].col_name;
 
-        let value = match value.as_builtin().unwrap() {
-            BuiltinValue::U32(x) => x.to_string(),
-            BuiltinValue::U64(x) => x.to_string(),
-            BuiltinValue::String(x) => format!("'{}'", x),
+        let value = match value {
+            AlgebraicValue::U32(x) => x.to_string(),
+            AlgebraicValue::U64(x) => x.to_string(),
+            AlgebraicValue::String(x) => format!("'{}'", x),
             _ => {
                 unreachable!()
             }

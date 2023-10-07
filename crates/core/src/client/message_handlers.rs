@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::time::Duration;
 
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
@@ -10,6 +11,8 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use prost::Message as _;
 use spacetimedb_lib::Address;
+use spacetimedb_sats::slim_slice::{try_into, LenTooLong};
+use spacetimedb_sats::{string, SatsStr, SatsString};
 
 use super::messages::{ServerMessage, TransactionUpdateMessage};
 use super::{ClientConnection, DataMessage};
@@ -24,6 +27,9 @@ pub enum MessageHandleError {
     TextDecode(#[from] serde_json::Error),
     #[error(transparent)]
     Base64Decode(#[from] base64::DecodeError),
+
+    #[error(transparent)]
+    LenTooLong(#[from] LenTooLong),
 
     #[error(transparent)]
     Execution(#[from] MessageExecutionError),
@@ -54,6 +60,7 @@ async fn handle_binary(client: &ClientConnection, message_buf: Vec<u8>) -> Resul
     let message = match message.r#type {
         Some(message::Type::FunctionCall(FunctionCall { ref reducer, arg_bytes })) => {
             let args = ReducerArgs::Bsatn(arg_bytes.into());
+            let reducer = try_into(reducer.deref())?;
             DecodedMessage::Call { reducer, args }
         }
         Some(message::Type::Subscribe(subscription)) => DecodedMessage::Subscribe(subscription),
@@ -96,8 +103,9 @@ async fn handle_text(client: &ClientConnection, message: String) -> Result<(), M
     let mut message_id_ = Vec::new();
     let msg = match msg {
         RawJsonMessage::Call { ref func, args } => {
+            let reducer = try_into(func.deref())?;
             let args = ReducerArgs::Json(message.slice_ref(args.get()));
-            DecodedMessage::Call { reducer: func, args }
+            DecodedMessage::Call { reducer, args }
         }
         RawJsonMessage::Subscribe { query_strings } => DecodedMessage::Subscribe(Subscribe { query_strings }),
         RawJsonMessage::OneOffQuery {
@@ -122,7 +130,7 @@ async fn handle_text(client: &ClientConnection, message: String) -> Result<(), M
 
 enum DecodedMessage<'a> {
     Call {
-        reducer: &'a str,
+        reducer: SatsStr<'a>,
         args: ReducerArgs,
     },
     Subscribe(Subscribe),
@@ -136,7 +144,7 @@ impl DecodedMessage<'_> {
     async fn handle(self, client: &ClientConnection) -> Result<(), MessageExecutionError> {
         let res = match self {
             DecodedMessage::Call { reducer, args } => {
-                let res = client.call_reducer(reducer, args).await;
+                let res = client.call_reducer(&reducer, args).await;
                 res.map(drop).map_err(|e| (Some(reducer), e.into()))
             }
             DecodedMessage::Subscribe(subscription) => client.subscribe(subscription).map_err(|e| (None, e.into())),
@@ -146,7 +154,7 @@ impl DecodedMessage<'_> {
             } => client.one_off_query(query, message_id).await.map_err(|err| (None, err)),
         };
         res.map_err(|(reducer, err)| MessageExecutionError {
-            reducer: reducer.map(str::to_owned),
+            reducer: reducer.map(Into::into),
             caller_identity: client.id.identity,
             caller_address: Some(client.id.address),
             err,
@@ -154,11 +162,11 @@ impl DecodedMessage<'_> {
     }
 }
 
-/// An error that arises from executing a message.  
+/// An error that arises from executing a message.
 #[derive(thiserror::Error, Debug)]
 #[error("error executing message (reducer: {reducer:?}) (err: {err:?})")]
 pub struct MessageExecutionError {
-    pub reducer: Option<String>,
+    pub reducer: Option<SatsString>,
     pub caller_identity: Identity,
     pub caller_address: Option<Address>,
     #[source]
@@ -172,7 +180,7 @@ impl MessageExecutionError {
             caller_identity: self.caller_identity,
             caller_address: self.caller_address,
             function_call: ModuleFunctionCall {
-                reducer: self.reducer.unwrap_or_else(|| "<none>".to_owned()),
+                reducer: self.reducer.unwrap_or_else(|| string("<none>")),
                 args: Default::default(),
             },
             status: EventStatus::Failed(format!("{:#}", self.err)),

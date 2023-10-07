@@ -1,5 +1,6 @@
 use spacetimedb_sats::de::Deserialize;
 use spacetimedb_sats::ser::Serialize;
+use spacetimedb_sats::SatsString;
 
 use crate::host::Timestamp;
 
@@ -47,7 +48,7 @@ pub struct CreateTable {
 */
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GetTableId {
-    pub table_name: String,
+    pub table_name: SatsString,
     pub result_table_id: u32,
 }
 #[derive(Clone, Serialize, Deserialize)]
@@ -57,7 +58,7 @@ pub struct Iter {
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CreateIndex {
-    pub index_name: String,
+    pub index_name: SatsString,
     pub table_id: u32,
     pub index_type: u32,
     pub col_ids: Vec<u32>,

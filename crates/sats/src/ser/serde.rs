@@ -2,7 +2,10 @@ use std::fmt;
 
 use ::serde::ser as serde;
 
-use crate::ser::{self, Serializer};
+use crate::{
+    ser::{self, Serializer},
+    slim_slice::SlimStr,
+};
 
 /// Converts any [`serde::Serializer`] to a SATS [`Serializer`]
 /// so that Serde's data formats can be reused.
@@ -201,12 +204,12 @@ impl<S: serde::SerializeMap> ser::SerializeNamedProduct for SerializeNamedProduc
 
     fn serialize_element<T: ser::Serialize + ?Sized>(
         &mut self,
-        name: Option<&str>,
+        name: Option<SlimStr<'_>>,
         elem: &T,
     ) -> Result<(), Self::Error> {
         let name = name.ok_or_else(|| ser::Error::custom("tuple element has no name"))?;
         self.map
-            .serialize_entry(name, SerializeWrapper::from_ref(elem))
+            .serialize_entry(&*name, SerializeWrapper::from_ref(elem))
             .map_err(SerdeError)
     }
 

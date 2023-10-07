@@ -240,6 +240,7 @@ impl<'de, V: super::FieldNameVisitor<'de>> serde::Visitor<'de> for FieldNameVisi
     }
 
     fn visit_str<E: serde::Error>(self, v: &str) -> Result<Self::Value, E> {
+        let v = v.try_into().map_err(|_| E::custom("str len overflowed `u32::MAX`"))?;
         self.visitor.visit(v).map_err(unwrap_error)
     }
 }
@@ -339,7 +340,7 @@ impl<'de, E: super::Error> super::VariantAccess<'de> for NoneAccess<E> {
     type Error = E;
     fn deserialize_seed<T: super::DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
         use crate::algebraic_value::de::*;
-        seed.deserialize(ValueDeserializer::new(crate::AlgebraicValue::UNIT))
+        seed.deserialize(ValueDeserializer::new(crate::AlgebraicValue::unit()))
             .map_err(|err| match err {
                 ValueDeserializeError::MismatchedType => E::custom("mismatched type"),
                 ValueDeserializeError::Custom(err) => E::custom(err),

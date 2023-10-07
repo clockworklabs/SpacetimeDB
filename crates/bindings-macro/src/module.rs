@@ -126,7 +126,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
         SatsTypeData::Product(fields) => {
             let fields = fields.iter().map(|field| {
                 let field_name = match &field.name {
-                    Some(name) => quote!(Some(#name.to_owned())),
+                    Some(name) => quote!(Some(spacetimedb::sats::string(#name))),
                     None => quote!(None),
                 };
                 let ty = field.ty;
@@ -135,7 +135,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
                     algebraic_type: <#ty as spacetimedb::SpacetimeType>::make_type(__typespace),
                 })
             });
-            quote!(spacetimedb::sats::AlgebraicType::product(vec![#(#fields),*]))
+            quote!(spacetimedb::sats::AlgebraicType::product([#(#fields),*].into()))
         }
         SatsTypeData::Sum(variants) => {
             let unit = syn::Type::Tuple(syn::TypeTuple {
@@ -146,18 +146,21 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
                 let variant_name = &var.name;
                 let ty = var.ty.unwrap_or(&unit);
                 quote!(spacetimedb::sats::SumTypeVariant {
-                    name: Some(#variant_name.to_owned()),
+                    name: Some(spacetimedb::sats::string(#variant_name)),
                     algebraic_type: <#ty as spacetimedb::SpacetimeType>::make_type(__typespace),
                 })
             });
-            quote!(spacetimedb::sats::AlgebraicType::sum(vec![#(#variants),*]))
+            quote!(spacetimedb::sats::AlgebraicType::sum([#(#variants),*].into()))
             // todo!()
         } // syn::Data::Union(u) => return Err(syn::Error::new(u.union_token.span, "unions not supported")),
     };
 
     let (impl_generics, ty_generics, where_clause) = ty.generics.split_for_impl();
     let ty_name = if gen_type_alias {
-        quote!(Some(#ty_name))
+        quote!(Some({
+            const NAME: &spacetimedb::sats::SatsStr<'_> = &spacetimedb::sats::str(#ty_name);
+            NAME
+        }))
     } else {
         quote!(None)
     };
@@ -269,10 +272,10 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                             names.extend::<&[&str]>(&[#(#field_strings),*])
                         }
 
-                        fn visit<__E: #spacetimedb_lib::de::Error>(self, name: &str) -> Result<Self::Output, __E> {
-                            match name {
+                        fn visit<__E: #spacetimedb_lib::de::Error>(self, name: #spacetimedb_lib::SatsStr<'_>) -> Result<Self::Output, __E> {
+                            match &*name {
                                 #(#field_strings => Ok(__ProductFieldIdent::#field_names),)*
-                                _ => Err(#spacetimedb_lib::de::Error::unknown_field_name(name, &self)),
+                                name => Err(#spacetimedb_lib::de::Error::unknown_field_name(name, &self)),
                             }
                         }
                     }
@@ -352,9 +355,9 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                             }
                         }
                         fn visit_name<E: #spacetimedb_lib::de::Error>(self, __name: &str) -> Result<Self::Output, E> {
-                            match __name {
+                            match &*__name {
                                 #(#variant_names => Ok(__Variant::#variant_idents),)*
-                                _ => Err(#spacetimedb_lib::de::Error::unknown_variant_name(__name, &self)),
+                                __name => Err(#spacetimedb_lib::de::Error::unknown_variant_name(__name, &self)),
                             }
                         }
                     }
@@ -376,7 +379,7 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
             let nfields = fields.len();
             quote! {
                 let mut __prod = __serializer.serialize_named_product(#nfields)?;
-                #(#spacetimedb_lib::ser::SerializeNamedProduct::serialize_element::<#tys>(&mut __prod, Some(#fieldnamestrings), &self.#fieldnames)?;)*
+                #(#spacetimedb_lib::ser::SerializeNamedProduct::serialize_element::<#tys>(&mut __prod, Some(#spacetimedb_lib::str(#fieldnamestrings)), &self.#fieldnames)?;)*
                 #spacetimedb_lib::ser::SerializeNamedProduct::end(__prod)
             }
         }

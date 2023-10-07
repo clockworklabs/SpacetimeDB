@@ -1,7 +1,7 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::product_type::ProductType;
-use crate::ArrayValue;
-use nonempty::NonEmpty;
+use crate::slim_slice::{LenTooLong, SlimSliceBoxCollected};
+use crate::{static_assert_size, ArrayValue, SatsStr, SatsVec};
 
 /// A product value is made of a a list of
 /// "elements" / "fields" / "factors" of other `AlgebraicValue`s.
@@ -10,8 +10,13 @@ use nonempty::NonEmpty;
 #[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct ProductValue {
     /// The values that make up this product value.
-    pub elements: Vec<AlgebraicValue>,
+    pub elements: SatsVec<AlgebraicValue>,
 }
+
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(ProductValue, 8);
+#[cfg(not(target_arch = "wasm32"))]
+static_assert_size!(ProductValue, 12);
 
 /// Constructs a product value from a list of fields with syntax `product![v1, v2, ...]`.
 ///
@@ -20,7 +25,7 @@ pub struct ProductValue {
 macro_rules! product {
     [$($elems:expr),*$(,)?] => {
         $crate::ProductValue {
-            elements: vec![$($crate::AlgebraicValue::from($elems)),*]
+            elements: [$($crate::AlgebraicValue::from($elems)),*].into()
         }
     }
 }
@@ -29,14 +34,29 @@ impl ProductValue {
     /// Returns a product value constructed from the given values in `elements`.
     pub fn new(elements: &[AlgebraicValue]) -> Self {
         Self {
-            elements: elements.into(),
+            elements: elements.iter().cloned().collect::<SlimSliceBoxCollected<_>>().unwrap(),
         }
+    }
+}
+
+impl TryFrom<Vec<AlgebraicValue>> for ProductValue {
+    type Error = LenTooLong<Vec<AlgebraicValue>>;
+
+    fn try_from(value: Vec<AlgebraicValue>) -> Result<Self, Self::Error> {
+        let elements = value.try_into()?;
+        Ok(Self { elements })
+    }
+}
+
+impl From<SatsVec<AlgebraicValue>> for ProductValue {
+    fn from(elements: SatsVec<AlgebraicValue>) -> Self {
+        ProductValue { elements }
     }
 }
 
 impl FromIterator<AlgebraicValue> for ProductValue {
     fn from_iter<T: IntoIterator<Item = AlgebraicValue>>(iter: T) -> Self {
-        let elements = iter.into_iter().collect();
+        let elements = iter.into_iter().collect::<SlimSliceBoxCollected<_>>().unwrap();
         Self { elements }
     }
 }
@@ -92,21 +112,6 @@ impl ProductValue {
         Ok(fields)
     }
 
-    /// This utility function is designed to project fields based on the supplied `indexes`.
-    ///
-    /// **Important:**
-    ///
-    /// The resulting [AlgebraicValue] will wrap into a [ProductValue] when projecting multiple
-    /// fields, otherwise it will consist of a single [AlgebraicValue].
-    ///
-    /// **Parameters:**
-    /// - `indexes`: A [NonEmpty<u32>] containing the indexes of fields to be projected.
-    ///
-    pub fn project_not_empty(&self, indexes: &NonEmpty<u32>) -> Result<AlgebraicValue, InvalidFieldError> {
-        let indexes: Vec<_> = indexes.iter().map(|x| (*x as usize, None)).collect();
-        self.project(&indexes)
-    }
-
     /// Extracts the `value` at field of `self` identified by `index`
     /// and then runs it through the function `f` which possibly returns a `T` derived from `value`.
     pub fn extract_field<'a, T>(
@@ -145,22 +150,23 @@ impl ProductValue {
 
     /// Interprets the value at field of `self` identified by `index` as a `i128`.
     pub fn field_as_i128(&self, index: usize, named: Option<&'static str>) -> Result<i128, InvalidFieldError> {
-        self.extract_field(index, named, |f| f.as_i128().copied())
+        self.extract_field(index, named, |f| f.as_i128().map(|x| **x))
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `u128`.
     pub fn field_as_u128(&self, index: usize, named: Option<&'static str>) -> Result<u128, InvalidFieldError> {
-        self.extract_field(index, named, |f| f.as_u128().copied())
+        self.extract_field(index, named, |f| f.as_u128().map(|x| **x))
     }
 
     /// Interprets the value at field of `self` identified by `index` as a string slice.
-    pub fn field_as_str(&self, index: usize, named: Option<&'static str>) -> Result<&str, InvalidFieldError> {
-        self.extract_field(index, named, |f| f.as_string().map(|x| x.as_str()))
+    pub fn field_as_str(&self, index: usize, named: Option<&'static str>) -> Result<&SatsStr<'_>, InvalidFieldError> {
+        self.extract_field(index, named, |f| f.as_string())
+            .map(|s| s.shared_ref())
     }
 
     /// Interprets the value at field of `self` identified by `index` as a byte slice.
     pub fn field_as_bytes(&self, index: usize, named: Option<&'static str>) -> Result<&[u8], InvalidFieldError> {
-        self.extract_field(index, named, |f| f.as_bytes().map(|x| x.as_slice()))
+        self.extract_field(index, named, |f| f.as_bytes())
     }
 
     /// Interprets the value at field of `self` identified by `index` as a array.

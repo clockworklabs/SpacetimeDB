@@ -2,7 +2,7 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SumTypeVariant};
+use crate::{static_assert_size, AlgebraicType, AlgebraicValue, ProductTypeElement, SatsVec, SumTypeVariant};
 
 /// A structural sum type.
 ///
@@ -34,18 +34,17 @@ pub struct SumType {
     /// The possible variants of the sum type.
     ///
     /// The order is relevant as it defines the tags of the variants at runtime.
-    pub variants: Vec<SumTypeVariant>,
+    pub variants: SatsVec<SumTypeVariant>,
 }
+
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(SumType, 8);
+#[cfg(not(target_arch = "wasm32"))]
+static_assert_size!(SumType, 12);
 
 impl SumType {
     /// Returns a sum type with these possible `variants`.
-    pub const fn new(variants: Vec<SumTypeVariant>) -> Self {
-        Self { variants }
-    }
-
-    /// Returns a sum type of unnamed variants taken from `types`.
-    pub fn new_unnamed(types: Vec<AlgebraicType>) -> Self {
-        let variants = types.into_iter().map(|ty| ty.into()).collect::<Vec<_>>();
+    pub const fn new(variants: SatsVec<SumTypeVariant>) -> Self {
         Self { variants }
     }
 
@@ -74,16 +73,14 @@ impl SumType {
 
 impl MetaType for SumType {
     fn meta_type() -> AlgebraicType {
-        AlgebraicType::product(vec![ProductTypeElement::new_named(
-            AlgebraicType::array(SumTypeVariant::meta_type()),
-            "variants",
-        )])
+        let variants = ProductTypeElement::new_named(AlgebraicType::array(SumTypeVariant::meta_type()), "variants");
+        AlgebraicType::product([variants].into())
     }
 }
 
 impl SumType {
     pub fn as_value(&self) -> AlgebraicValue {
-        self.serialize(ValueSerializer).unwrap_or_else(|x| match x {})
+        self.serialize(ValueSerializer).expect("unexpected `len >= u32::MAX`")
     }
 
     pub fn from_value(value: &AlgebraicValue) -> Result<SumType, ValueDeserializeError> {

@@ -30,9 +30,9 @@ pub struct Identity {
     __identity_bytes: [u8; 32],
 }
 
-impl_st!([] Identity, _ts => AlgebraicType::product(vec![
+impl_st!([] Identity, _ts => AlgebraicType::product([
     ProductTypeElement::new_named(AlgebraicType::bytes(), "__identity_bytes")
-]));
+].into()));
 
 impl Identity {
     const ABBREVIATION_LEN: usize = 16;

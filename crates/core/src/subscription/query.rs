@@ -24,7 +24,7 @@ pub struct Query {
 }
 
 impl Query {
-    #[tracing::instrument(skip_all, fields(table = table.table_name))]
+    #[tracing::instrument(skip_all, fields(table = &*table.table_name))]
     pub fn queries_of_table_id<'a>(&'a self, table: &'a DatabaseTableUpdate) -> impl Iterator<Item = QueryExpr> + '_ {
         self.queries.iter().filter_map(move |x| {
             if x.source.get_db_table().map(|x| x.table_id) == Some(table.table_id) {
@@ -45,10 +45,11 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
     let mut q = of;
     let table_access = q.source.table_access();
 
-    let mut t = match &q.source {
-        SourceExpr::MemTable(x) => MemTable::new(&x.head, table_access, &[]),
-        SourceExpr::DbTable(table) => MemTable::new(&table.head, table_access, &[]),
+    let head = match &q.source {
+        SourceExpr::MemTable(x) => &x.head,
+        SourceExpr::DbTable(table) => &table.head,
     };
+    let mut t = MemTable::new(head.clone(), table_access, vec![]);
 
     if let Some(pos) = t.head.find_pos_by_name(OP_TYPE_FIELD_NAME) {
         t.data.extend(data.ops.iter().map(|row| {
@@ -62,13 +63,16 @@ pub fn to_mem_table(of: QueryExpr, data: &DatabaseTableUpdate) -> QueryExpr {
             FieldName::named(&t.head.table_name, OP_TYPE_FIELD_NAME),
             AlgebraicType::U8,
         ));
-        for row in &data.ops {
-            let mut new = row.row.clone();
-            new.elements.push(row.op_type.into());
+        t.data.extend(data.ops.iter().map(|row| {
+            let es = &row.row.elements;
+            let mut new = Vec::with_capacity(es.len());
+            new.extend(es.iter().cloned());
+            new.push(row.op_type.into());
+            let new = new.try_into().unwrap();
+
             let mut bytes: &[u8] = row.row_pk.as_ref();
-            t.data
-                .push(RelValue::new(new, Some(DataKey::decode(&mut bytes).unwrap())));
-        }
+            RelValue::new(new, Some(DataKey::decode(&mut bytes).unwrap()))
+        }));
     }
 
     q.source = SourceExpr::MemTable(t);
@@ -145,21 +149,22 @@ pub fn compile_read_only_query(
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Deref;
+
     use super::*;
-    use crate::db::datastore::traits::{ColumnDef, IndexDef, TableDef, TableSchema};
+    use crate::db::datastore::traits::{ColId, ColumnDef, IndexDef, TableDef, TableSchema};
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, TableOp};
     use crate::sql::execute::run;
     use crate::subscription::subscription::QuerySet;
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
-    use nonempty::NonEmpty;
     use spacetimedb_lib::auth::{StAccess, StTableType};
     use spacetimedb_lib::data_key::ToDataKey;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::FieldName;
     use spacetimedb_lib::Identity;
-    use spacetimedb_sats::{product, BuiltinType, ProductType, ProductValue};
+    use spacetimedb_sats::{product, string, ProductType, ProductValue};
     use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
 
@@ -170,28 +175,23 @@ mod tests {
         schema: &[(&str, AlgebraicType)],
         indexes: &[(u32, &str)],
     ) -> ResultTest<u32> {
-        let table_name = name.to_string();
+        let table_name = string(name);
         let table_type = StTableType::User;
         let table_access = StAccess::Public;
 
         let columns = schema
             .iter()
             .map(|(col_name, col_type)| ColumnDef {
-                col_name: col_name.to_string(),
+                col_name: string(col_name),
                 col_type: col_type.clone(),
                 is_autoinc: false,
             })
-            .collect_vec();
+            .collect();
 
         let indexes = indexes
             .iter()
-            .map(|(col_id, index_name)| IndexDef {
-                table_id: 0,
-                cols: NonEmpty::new(*col_id),
-                name: index_name.to_string(),
-                is_unique: false,
-            })
-            .collect_vec();
+            .map(|(col_id, index_name)| IndexDef::new(string(index_name), 0, ColId(*col_id), false))
+            .collect();
 
         let schema = TableDef {
             table_name,
@@ -218,17 +218,17 @@ mod tests {
 
         let op = TableOp {
             op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
+            row_pk: row.to_data_key().to_bytes().into(),
             row: row.clone(),
         };
 
         let data = DatabaseTableUpdate {
             table_id,
-            table_name: table_name.to_string(),
-            ops: vec![op],
+            table_name: string(table_name),
+            ops: [op].into(),
         };
 
-        let q = QueryExpr::new(db_table((&schema).into(), table_name, table_id));
+        let q = QueryExpr::new(db_table((&schema).into(), string(table_name), table_id));
 
         Ok((schema, table, data, q))
     }
@@ -244,8 +244,8 @@ mod tests {
             "_inventory"
         };
 
-        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
-        let row = product!(1u64, "health");
+        let head = ProductType::from_iter([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
+        let row = product!(1u64, string("health"));
 
         let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
 
@@ -265,8 +265,8 @@ mod tests {
         tx: &mut MutTxId,
     ) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr)> {
         let table_name = "player";
-        let head = ProductType::from_iter([("player_id", BuiltinType::U64), ("name", BuiltinType::String)]);
-        let row = product!(2u64, "jhon doe");
+        let head = ProductType::from_iter([("player_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
+        let row = product!(2u64, string("jhon doe"));
 
         let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
 
@@ -356,7 +356,7 @@ mod tests {
         let (db, _) = make_test_db()?;
         let mut tx = db.begin_tx();
 
-        let schema = ProductType::from_iter([("u8", BuiltinType::U8)]);
+        let schema = ProductType::from_iter([("u8", AlgebraicType::U8)]);
         let row = product!(1u8);
 
         // generate row id from row
@@ -366,19 +366,19 @@ mod tests {
         let table_id = create_table_with_rows(&db, &mut tx, "test", schema.clone(), &[])?;
 
         // select * from test
-        let query = QueryExpr::new(db_table(schema.clone(), "test", table_id));
+        let query = QueryExpr::new(db_table(schema.clone(), string("test"), table_id));
         let query = QuerySet(vec![Query { queries: vec![query] }]);
 
         let op = TableOp {
             op_type: 0,
-            row_pk: id1.clone(),
+            row_pk: id1.clone().into(),
             row: row.clone(),
         };
 
         let update = DatabaseTableUpdate {
             table_id,
-            table_name: "test".into(),
-            ops: vec![op],
+            table_name: string("test"),
+            ops: [op].into(),
         };
 
         let update = DatabaseUpdate { tables: vec![update] };
@@ -387,7 +387,7 @@ mod tests {
         let id2 = &result.tables[0].ops[0].row_pk;
 
         // check that both row ids are the same
-        assert_eq!(id1, id2);
+        assert_eq!(id1.deref(), id2.deref());
         Ok(())
     }
 
@@ -419,7 +419,7 @@ mod tests {
             let row_pk = row.to_data_key().to_bytes();
             ops.push(TableOp {
                 op_type: 0,
-                row_pk,
+                row_pk: row_pk.into(),
                 row,
             })
         }
@@ -427,8 +427,8 @@ mod tests {
         let update = DatabaseUpdate {
             tables: vec![DatabaseTableUpdate {
                 table_id,
-                table_name: "test".into(),
-                ops,
+                table_name: string("test"),
+                ops: ops.into(),
             }],
         };
 
@@ -444,7 +444,10 @@ mod tests {
 
         assert_eq!(op.op_type, 0);
         assert_eq!(op.row, product!(13u64, 3u64));
-        assert_eq!(op.row_pk, product!(13u64, 3u64).to_data_key().to_bytes());
+        assert_eq!(
+            op.row_pk,
+            product!(13u64, 3u64).to_data_key().to_bytes().into_boxed_slice()
+        );
         Ok(())
     }
 
@@ -490,12 +493,12 @@ mod tests {
         let lhs_op = TableOp {
             op_type: 0,
             row: lhs_row,
-            row_pk: lhs_key,
+            row_pk: lhs_key.into(),
         };
         updates.push(DatabaseTableUpdate {
             table_id: lhs_id,
-            table_name: "lhs".into(),
-            ops: vec![lhs_op],
+            table_name: string("lhs"),
+            ops: [lhs_op].into(),
         });
 
         // An update event for the right table that matches the query
@@ -504,12 +507,12 @@ mod tests {
         let rhs_op = TableOp {
             op_type: 0,
             row: rhs_row,
-            row_pk: rhs_key,
+            row_pk: rhs_key.into(),
         };
         updates.push(DatabaseTableUpdate {
             table_id: rhs_id,
-            table_name: "rhs".into(),
-            ops: vec![rhs_op],
+            table_name: string("rhs"),
+            ops: [rhs_op].into(),
         });
 
         let update = DatabaseUpdate { tables: updates };
@@ -526,7 +529,10 @@ mod tests {
 
         assert_eq!(op.op_type, 0);
         assert_eq!(op.row, product!(11u64, 3u64));
-        assert_eq!(op.row_pk, product!(11u64, 3u64).to_data_key().to_bytes());
+        assert_eq!(
+            op.row_pk,
+            product!(11u64, 3u64).to_data_key().to_bytes().into_boxed_slice()
+        );
         Ok(())
     }
 
@@ -558,11 +564,11 @@ mod tests {
         assert_eq!(schema.table_type, StTableType::User);
         assert_eq!(schema.table_access, StAccess::Private);
 
-        let row = product!(1u64, "health");
+        let row = product!(1u64, string("health"));
         check_query(&db, &table, &mut tx, &q, &data)?;
 
         //SELECT * FROM inventory
-        let q_all = QueryExpr::new(db_table((&schema).into(), "_inventory", schema.table_id));
+        let q_all = QueryExpr::new(db_table((&schema).into(), string("_inventory"), schema.table_id));
         //SELECT * FROM inventory WHERE inventory_id = 1
         let q_id =
             q_all
@@ -578,22 +584,24 @@ mod tests {
             },
         ]);
 
+        let row_pk: Box<[u8]> = row.to_data_key().to_bytes().into();
+
         let row1 = TableOp {
             op_type: 0,
-            row_pk: row.to_data_key().to_bytes(),
+            row_pk: row_pk.clone(),
             row: row.clone(),
         };
 
         let row2 = TableOp {
             op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
+            row_pk,
             row: row.clone(),
         };
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: "_inventory".to_string(),
-            ops: vec![row1, row2],
+            table_name: string("_inventory"),
+            ops: [row1, row2].into(),
         };
 
         let update = DatabaseUpdate {
@@ -602,7 +610,7 @@ mod tests {
 
         check_query_incr(&db, &mut tx, &s, &update, 3, &[row])?;
 
-        let q = QueryExpr::new(db_table((&schema).into(), "_inventory", schema.table_id));
+        let q = QueryExpr::new(db_table((&schema).into(), string("_inventory"), schema.table_id));
 
         let q = to_mem_table(q, &data);
         //Try access the private table
@@ -639,7 +647,7 @@ mod tests {
         let (schema, _table, _data, _q) = make_inv(&db, &mut tx, StAccess::Private)?;
 
         //SELECT * FROM inventory
-        let q_all = QueryExpr::new(db_table((&schema).into(), "inventory", schema.table_id));
+        let q_all = QueryExpr::new(db_table((&schema).into(), string("inventory"), schema.table_id));
         //SELECT * FROM inventory WHERE inventory_id = 1
         let q_id =
             q_all
@@ -655,26 +663,27 @@ mod tests {
             },
         ]);
 
-        check_query_eval(&db, &mut tx, &s, 3, &[product!(1u64, "health")])?;
+        check_query_eval(&db, &mut tx, &s, 3, &[product!(1u64, string("health"))])?;
 
-        let row = product!(1u64, "health");
+        let row = product!(1u64, string("health"));
 
+        let row_pk: Box<[u8]> = row.to_data_key().to_bytes().into();
         let row1 = TableOp {
             op_type: 0,
-            row_pk: row.to_data_key().to_bytes(),
+            row_pk: row_pk.clone(),
             row: row.clone(),
         };
 
         let row2 = TableOp {
             op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
+            row_pk,
             row: row.clone(),
         };
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: "inventory".to_string(),
-            ops: vec![row1, row2],
+            table_name: string("inventory"),
+            ops: [row1, row2].into(),
         };
 
         let update = DatabaseUpdate { tables: vec![data] };
@@ -759,8 +768,8 @@ mod tests {
 
         let (schema_1, _, _, _) = make_inv(&db, &mut tx, StAccess::Public)?;
         let (schema_2, _, _, _) = make_player(&db, &mut tx)?;
-        let row_1 = product!(1u64, "health");
-        let row_2 = product!(2u64, "jhon doe");
+        let row_1 = product!(1u64, string("health"));
+        let row_2 = product!(2u64, string("jhon doe"));
 
         let s = QuerySet(vec![compile_read_only_query(
             &db,
@@ -773,34 +782,34 @@ mod tests {
 
         let row1 = TableOp {
             op_type: 0,
-            row_pk: row_1.to_data_key().to_bytes(),
+            row_pk: row_1.to_data_key().to_bytes().into(),
             row: row_1,
         };
 
         let row2 = TableOp {
             op_type: 1,
-            row_pk: row_2.to_data_key().to_bytes(),
+            row_pk: row_2.to_data_key().to_bytes().into(),
             row: row_2,
         };
 
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,
-            table_name: "inventory".to_string(),
-            ops: vec![row1],
+            table_name: string("inventory"),
+            ops: [row1].into(),
         };
 
         let data2 = DatabaseTableUpdate {
             table_id: schema_2.table_id,
-            table_name: "player".to_string(),
-            ops: vec![row2],
+            table_name: string("player"),
+            ops: [row2].into(),
         };
 
         let update = DatabaseUpdate {
             tables: vec![data1, data2],
         };
 
-        let row_1 = product!(1u64, "health");
-        let row_2 = product!(2u64, "jhon doe");
+        let row_1 = product!(1u64, string("health"));
+        let row_2 = product!(2u64, string("jhon doe"));
         check_query_incr(&db, &mut tx, &s, &update, 2, &[row_1, row_2])?;
 
         Ok(())

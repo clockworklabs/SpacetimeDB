@@ -3,10 +3,12 @@
 use proptest::prelude::*;
 use proptest::proptest;
 use spacetimedb_sats::buffer::DecodeError;
-use spacetimedb_sats::builtin_value::{F32, F64};
+use spacetimedb_sats::ArrayValue;
+use spacetimedb_sats::SatsString;
+use spacetimedb_sats::SatsVec;
 use spacetimedb_sats::{
-    meta_type::MetaType, product, AlgebraicType, AlgebraicValue, BuiltinValue, ProductType, ProductTypeElement,
-    ProductValue,
+    meta_type::MetaType, product, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, F32,
+    F64,
 };
 
 #[test]
@@ -23,33 +25,31 @@ fn check_type(ty: &AlgebraicType) {
     assert_eq!(direct, through_value);
 }
 
+fn array_value<T>(vec: Vec<T>) -> AlgebraicValue
+where
+    ArrayValue: From<SatsVec<T>>,
+{
+    AlgebraicValue::Array(SatsVec::from_vec(vec).into())
+}
+
 fn array_values() -> impl Strategy<Value = AlgebraicValue> {
     prop_oneof![
-        prop::collection::vec(0u8..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0i16..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0u16..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0i32..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0u32..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0i64..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0u64..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0i128..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0u128..10, 0..10).prop_map(AlgebraicValue::ArrayOf),
-        prop::collection::vec(0..10, 0..10).prop_map(|x| {
-            let bools: Vec<_> = x.into_iter().map(|x| x == 0).collect();
-            AlgebraicValue::ArrayOf(bools)
-        }),
-        prop::collection::vec(0i32..10, 0..10).prop_map(|x| {
-            let strs: Vec<_> = x.into_iter().map(|x| x.to_string()).collect();
-            AlgebraicValue::ArrayOf(strs)
-        }),
-        prop::collection::vec(0i32..10, 0..10).prop_map(|x| {
-            let floats: Vec<_> = x.into_iter().map(|x| F32::from_inner(x as f32)).collect();
-            AlgebraicValue::ArrayOf(floats)
-        }),
-        prop::collection::vec(0i32..10, 0..10).prop_map(|x| {
-            let floats: Vec<_> = x.into_iter().map(|x| F64::from_inner(x as f64)).collect();
-            AlgebraicValue::ArrayOf(floats)
-        }),
+        prop::collection::vec(0u8..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0i16..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0u16..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0i32..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0u32..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0i64..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0u64..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0i128..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0u128..10, 0..10).prop_map(array_value),
+        prop::collection::vec(0..10, 0..10).prop_map(|x| array_value(x.into_iter().map(|x| x == 0).collect())),
+        prop::collection::vec(0i32..10, 0..10)
+            .prop_map(|x| array_value(x.into_iter().map(|x| SatsString::from_string(x.to_string())).collect())),
+        prop::collection::vec(0i32..10, 0..10)
+            .prop_map(|x| array_value(x.into_iter().map(|x| F32::from_inner(x as f32)).collect())),
+        prop::collection::vec(0i32..10, 0..10)
+            .prop_map(|x| array_value(x.into_iter().map(|x| F64::from_inner(x as f64)).collect())),
     ]
 }
 
@@ -64,15 +64,13 @@ fn builtin_values() -> impl Strategy<Value = AlgebraicValue> {
         any::<u32>().prop_map(AlgebraicValue::U32),
         any::<i64>().prop_map(AlgebraicValue::I64),
         any::<u64>().prop_map(AlgebraicValue::U64),
-        any::<i128>().prop_map(AlgebraicValue::I128),
-        any::<u128>().prop_map(AlgebraicValue::U128),
-        any::<f32>().prop_map(|x| AlgebraicValue::F32(x.into())),
-        any::<f64>().prop_map(|x| AlgebraicValue::F64(x.into())),
-        "[0-1]+".prop_map(|x| {
-            let x = x.into_bytes();
-            AlgebraicValue::Bytes(x)
-        }),
-        ".*".prop_map(AlgebraicValue::String),
+        any::<i128>().prop_map(Into::into),
+        any::<u128>().prop_map(Into::into),
+        any::<f32>().prop_map(Into::into),
+        any::<f64>().prop_map(Into::into),
+        "[0-1]+".prop_map(|x| array_value(x.into_bytes())),
+        ".*".prop_filter("overflowed u32::MAX", |x| x.len() <= u32::MAX as usize)
+            .prop_map(|x| AlgebraicValue::String(SatsString::from_string(x)))
     ]
 }
 
@@ -93,8 +91,7 @@ fn algebraic_values() -> impl Strategy<Value = AlgebraicValue> {
                         AlgebraicValue::OptionNone()
                     }
                 }),
-                prop::collection::btree_map(inner.clone(), inner.clone(), 1..2)
-                    .prop_map(|val| { BuiltinValue::Map { val }.into() }),
+                prop::collection::btree_map(inner.clone(), inner.clone(), 1..2).prop_map(AlgebraicValue::map),
                 prop::collection::vec(inner, 0..10).prop_map(|val| {
                     let product = ProductValue::from_iter(val.into_iter());
                     AlgebraicValue::Product(product)
@@ -106,7 +103,7 @@ fn algebraic_values() -> impl Strategy<Value = AlgebraicValue> {
 
 fn round_trip(value: AlgebraicValue) -> Result<(ProductValue, ProductValue), DecodeError> {
     let ty = value.type_of();
-    let schema = ProductType::new(vec![ProductTypeElement::new(ty, Some("x".to_string()))]);
+    let schema = ProductType::new([ProductTypeElement::new_named(ty, "x")].into());
 
     let row = product!(value);
 

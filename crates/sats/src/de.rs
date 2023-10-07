@@ -225,6 +225,11 @@ pub trait Error: Sized {
             Self::custom(format_args!("unknown variant `{name}`, there are no variants"))
         }
     }
+
+    /// The length `len` exceeded `u32::MAX`.
+    fn len_too_long(len: usize) -> Self {
+        Self::custom(format_args!("length `{len}` exceeded `u32::MAX`"))
+    }
 }
 
 /// Turns a closure `impl Fn(&mut Formatter) -> Result` into a `Display`able object.
@@ -379,7 +384,7 @@ pub trait FieldNameVisitor<'de> {
     /// Provides the visitor the chance to add valid names into `names`.
     fn field_names(&self, names: &mut dyn ValidNames);
 
-    fn visit<E: Error>(self, name: &str) -> Result<Self::Output, E>;
+    fn visit<E: Error>(self, name: SlimStr<'_>) -> Result<Self::Output, E>;
 }
 
 /// A trait for types storing a set of valid names.
@@ -591,6 +596,7 @@ pub trait DeserializeSeed<'de> {
 }
 
 use crate::de::impls::BorrowedSliceVisitor;
+use crate::slim_slice::SlimStr;
 pub use spacetimedb_bindings_macro::Deserialize;
 
 /// A **datastructure** that can be deserialized from any data format supported by SATS.

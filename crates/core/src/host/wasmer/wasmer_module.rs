@@ -239,7 +239,7 @@ impl module_host_actor::WasmInstancePre for WasmerModule {
                         .buffers
                         .take(errbuf)
                         .unwrap_or_else(|| "unknown error".as_bytes().into());
-                    let errbuf = crate::util::string_from_utf8_lossy_owned(errbuf.into()).into();
+                    let errbuf = crate::util::string_from_utf8_lossy_owned(errbuf.into());
                     // TODO: catch this and return the error message to the http client
                     return Err(InitializationError::Setup(errbuf));
                 }
@@ -374,7 +374,7 @@ impl WasmerInstance {
                     .buffers
                     .take(errbuf)
                     .ok_or_else(|| RuntimeError::new("invalid buffer handle"))?;
-                Err(crate::util::string_from_utf8_lossy_owned(errmsg.into()).into())
+                Err(crate::util::string_from_utf8_lossy_owned(errmsg.into()))
             })
         });
         self.env.as_mut(store).buffers.clear();

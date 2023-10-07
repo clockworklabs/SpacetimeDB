@@ -233,7 +233,7 @@ fn entity_description_json(description: WithTypespace<EntityDef>, expand: bool) 
                 json!(description.with(&table.data).resolve_refs()?.as_product()?)
             }
             EntityDef::Reducer(r) => json!({
-                "name": r.name,
+                "name": &*r.name,
                 "elements": r.args,
             }),
         };
@@ -585,7 +585,11 @@ where
         .into_iter()
         .map(|result| StmtResultJson {
             schema: result.head.ty(),
-            rows: result.data.into_iter().map(|x| x.data.elements).collect::<Vec<_>>(),
+            rows: result
+                .data
+                .into_iter()
+                .map(|x| x.data.elements.into())
+                .collect::<Vec<_>>(),
         })
         .collect::<Vec<_>>();
 

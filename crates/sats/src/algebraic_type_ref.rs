@@ -1,4 +1,4 @@
-use crate::{algebraic_type::AlgebraicType, impl_deserialize, impl_serialize, meta_type::MetaType};
+use crate::{algebraic_type::AlgebraicType, impl_deserialize, impl_serialize, meta_type::MetaType, static_assert_size};
 use std::fmt::Display;
 
 /// A reference to an [`AlgebraicType`] within a `Typespace`.
@@ -10,6 +10,8 @@ pub struct AlgebraicTypeRef(
     /// The index into the specific `Typespace`'s list of types.
     pub u32,
 );
+
+static_assert_size!(AlgebraicTypeRef, 4);
 
 impl AlgebraicTypeRef {
     /// Returns the index into the specific `Typespace`'s list of types.

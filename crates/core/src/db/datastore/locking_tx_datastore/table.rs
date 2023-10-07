@@ -1,10 +1,9 @@
 use super::{
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
-    RowId,
+    project_not_empty, RowId,
 };
 use crate::db::datastore::traits::{ColId, TableSchema};
-use nonempty::NonEmpty;
-use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue, SatsNonEmpty};
 use std::{
     collections::{BTreeMap, HashMap},
     ops::RangeBounds,
@@ -13,14 +12,14 @@ use std::{
 pub(crate) struct Table {
     pub(crate) row_type: ProductType,
     pub(crate) schema: TableSchema,
-    pub(crate) indexes: HashMap<NonEmpty<ColId>, BTreeIndex>,
+    pub(crate) indexes: HashMap<SatsNonEmpty<ColId>, BTreeIndex>,
     pub(crate) rows: BTreeMap<RowId, ProductValue>,
 }
 
 impl Table {
     pub(crate) fn insert_index(&mut self, mut index: BTreeIndex) {
         index.build_from_rows(self.scan_rows()).unwrap();
-        self.indexes.insert(index.cols.clone().map(ColId), index);
+        self.indexes.insert(index.cols.clone(), index);
     }
 
     pub(crate) fn insert(&mut self, row_id: RowId, row: ProductValue) {
@@ -33,7 +32,7 @@ impl Table {
     pub(crate) fn delete(&mut self, row_id: &RowId) -> Option<ProductValue> {
         let row = self.rows.remove(row_id)?;
         for (cols, index) in self.indexes.iter_mut() {
-            let col_value = row.project_not_empty(&cols.clone().map(|x| x.0)).unwrap();
+            let col_value = project_not_empty(&row, cols).unwrap();
             index.delete(&col_value, row_id)
         }
         Some(row)
@@ -63,9 +62,9 @@ impl Table {
     /// Matching is defined by `Ord for AlgebraicValue`.
     pub(crate) fn index_seek(
         &self,
-        cols: NonEmpty<ColId>,
+        cols: &SatsNonEmpty<ColId>,
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> Option<BTreeIndexRangeIter<'_>> {
-        self.indexes.get(&cols).map(|index| index.seek(range))
+        self.indexes.get(cols).map(|index| index.seek(range))
     }
 }

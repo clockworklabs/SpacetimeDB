@@ -1,7 +1,7 @@
 use derive_more::{From, Into};
 use std::fmt::{self, Write as _};
 
-use crate::ser;
+use crate::{ser, slim_slice::SlimStr};
 
 /// An extension trait for [`Serialize`](ser::Serialize) providing formatting methods.
 pub trait Satn: ser::Serialize {
@@ -426,7 +426,7 @@ impl<'a, 'b> ser::SerializeNamedProduct for NamedFormatter<'a, 'b> {
 
     fn serialize_element<T: ser::Serialize + ?Sized>(
         &mut self,
-        name: Option<&str>,
+        name: Option<SlimStr<'_>>,
         elem: &T,
     ) -> Result<(), Self::Error> {
         let res = self.f.entry(|mut f| {

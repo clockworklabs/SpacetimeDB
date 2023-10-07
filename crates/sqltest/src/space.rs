@@ -8,7 +8,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::MemTable;
 use spacetimedb_sats::meta_type::MetaType;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, BuiltinType, BuiltinValue};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use sqllogictest::{AsyncDB, ColumnType, DBOutput};
 use std::fs;
 use std::io::Write;
@@ -30,23 +30,21 @@ impl ColumnType for Kind {
 
     fn to_char(&self) -> char {
         match &self.0 {
-            AlgebraicType::Builtin(x) => match x {
-                BuiltinType::I8
-                | BuiltinType::U8
-                | BuiltinType::U16
-                | BuiltinType::I16
-                | BuiltinType::I32
-                | BuiltinType::U32
-                | BuiltinType::I64
-                | BuiltinType::U64
-                | BuiltinType::I128
-                | BuiltinType::U128 => 'I',
-                BuiltinType::F32 | BuiltinType::F64 => 'R',
-                BuiltinType::String => 'T',
-                BuiltinType::Bool => 'B',
-                BuiltinType::Array(_) | BuiltinType::Map(_) => '?',
-            },
-            _ => '!',
+            AlgebraicType::Map(_) | AlgebraicType::Array(_) => '?',
+            AlgebraicType::I8
+            | AlgebraicType::U8
+            | AlgebraicType::U16
+            | AlgebraicType::I16
+            | AlgebraicType::I32
+            | AlgebraicType::U32
+            | AlgebraicType::I64
+            | AlgebraicType::U64
+            | AlgebraicType::I128
+            | AlgebraicType::U128 => 'I',
+            AlgebraicType::F32 | AlgebraicType::F64 => 'R',
+            AlgebraicType::String => 'T',
+            AlgebraicType::Bool => 'B',
+            AlgebraicType::Ref(_) | AlgebraicType::Sum(_) | AlgebraicType::Product(_) => '!',
         }
     }
 }
@@ -101,8 +99,6 @@ impl AsyncDB for SpaceDb {
     type ColumnType = Kind;
 
     async fn run(&mut self, sql: &str) -> Result<DBOutput<Self::ColumnType>, Self::Error> {
-        let mut output: Vec<_> = vec![];
-
         let is_query_sql = {
             let lower_sql = sql.trim_start().to_ascii_lowercase();
             lower_sql.starts_with("select")
@@ -115,38 +111,34 @@ impl AsyncDB for SpaceDb {
 
         let header = r.head.fields.iter().map(|x| Kind(x.algebraic_type.clone())).collect();
 
-        for row in r.data {
-            let mut row_vec = vec![];
-
-            for value in row.data.elements {
-                let value = match value {
-                    AlgebraicValue::Builtin(x) => match x {
-                        BuiltinValue::Bool(x) => {
-                            //for compat with sqlite...
-                            if x { "1" } else { "0" }.to_string()
-                        }
-                        BuiltinValue::I8(x) => x.to_string(),
-                        BuiltinValue::U8(x) => x.to_string(),
-                        BuiltinValue::I16(x) => x.to_string(),
-                        BuiltinValue::U16(x) => x.to_string(),
-                        BuiltinValue::I32(x) => x.to_string(),
-                        BuiltinValue::U32(x) => x.to_string(),
-                        BuiltinValue::I64(x) => x.to_string(),
-                        BuiltinValue::U64(x) => x.to_string(),
-                        BuiltinValue::I128(x) => x.to_string(),
-                        BuiltinValue::U128(x) => x.to_string(),
-                        BuiltinValue::F32(x) => format!("{:?}", x.as_ref()),
-                        BuiltinValue::F64(x) => format!("{:?}", x.as_ref()),
-                        BuiltinValue::String(x) => format!("'{}'", x),
+        let output: Vec<Vec<_>> = r
+            .data
+            .into_iter()
+            .map(|row| {
+                row.data
+                    .elements
+                    .iter()
+                    .map(|value| match value {
+                        AlgebraicValue::Bool(x) => if *x { "1" } else { "0" }.to_string(),
+                        // ^-- For compat with sqlite.
+                        AlgebraicValue::I8(x) => x.to_string(),
+                        AlgebraicValue::U8(x) => x.to_string(),
+                        AlgebraicValue::I16(x) => x.to_string(),
+                        AlgebraicValue::U16(x) => x.to_string(),
+                        AlgebraicValue::I32(x) => x.to_string(),
+                        AlgebraicValue::U32(x) => x.to_string(),
+                        AlgebraicValue::I64(x) => x.to_string(),
+                        AlgebraicValue::U64(x) => x.to_string(),
+                        AlgebraicValue::I128(x) => x.to_string(),
+                        AlgebraicValue::U128(x) => x.to_string(),
+                        AlgebraicValue::F32(x) => format!("{:?}", x.as_ref()),
+                        AlgebraicValue::F64(x) => format!("{:?}", x.as_ref()),
+                        AlgebraicValue::String(x) => format!("'{}'", x),
                         x => x.to_satn(),
-                    },
-                    x => x.to_satn(),
-                };
-                row_vec.push(value);
-            }
-
-            output.push(row_vec);
-        }
+                    })
+                    .collect()
+            })
+            .collect();
 
         Ok(DBOutput::Rows {
             types: header,

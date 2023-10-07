@@ -1,6 +1,6 @@
 use crate::{
-    AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
-    SumTypeVariant, WithTypespace,
+    slim_slice::SlimSliceBoxCollected, AlgebraicType, AlgebraicTypeRef, ArrayType, MapType, ProductType,
+    ProductTypeElement, SumType, SumTypeVariant, WithTypespace,
 };
 
 /// Resolver for [`AlgebraicTypeRef`]s within a structure.
@@ -65,41 +65,45 @@ impl ResolveRefs for AlgebraicType {
     type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
         match this.ty() {
-            AlgebraicType::Sum(sum) => this.with(sum)._resolve_refs(state).map(Self::Sum),
-            AlgebraicType::Product(prod) => this.with(prod)._resolve_refs(state).map(Self::Product),
-            AlgebraicType::Builtin(b) => this.with(b)._resolve_refs(state).map(Self::Builtin),
-            AlgebraicType::Ref(r) => this.with(r)._resolve_refs(state),
-        }
-    }
-}
-
-impl ResolveRefs for BuiltinType {
-    type Output = Self;
-    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        match this.ty() {
-            BuiltinType::Array(ty) => this.with(ty)._resolve_refs(state).map(Self::Array),
-            BuiltinType::Map(m) => this.with(m)._resolve_refs(state).map(Self::Map),
+            Self::Ref(r) => this.with(r)._resolve_refs(state),
+            Self::Sum(sum) => this.with(sum)._resolve_refs(state).map(Self::Sum),
+            Self::Product(prod) => this.with(prod)._resolve_refs(state).map(Self::Product),
+            Self::Array(ty) => this.with(ty)._resolve_refs(state).map(Self::Array),
+            Self::Map(m) => this.with(&**m)._resolve_refs(state).map(|x| Self::Map(Box::new(x))),
             // These types are plain and cannot have refs in them.
-            x => Some(x.clone()),
+            Self::Bool
+            | Self::I8
+            | Self::U8
+            | Self::I16
+            | Self::U16
+            | Self::I32
+            | Self::U32
+            | Self::I64
+            | Self::U64
+            | Self::I128
+            | Self::U128
+            | Self::F32
+            | Self::F64
+            | Self::String => Some(this.ty().clone()),
         }
     }
 }
 
 impl ResolveRefs for ArrayType {
-    type Output = ArrayType;
+    type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        Some(ArrayType {
+        Some(Self {
             elem_ty: Box::new(this.map(|m| &*m.elem_ty)._resolve_refs(state)?),
         })
     }
 }
 
 impl ResolveRefs for MapType {
-    type Output = MapType;
+    type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        Some(MapType {
-            key_ty: Box::new(this.map(|m| &*m.key_ty)._resolve_refs(state)?),
-            ty: Box::new(this.map(|m| &*m.ty)._resolve_refs(state)?),
+        Some(Self {
+            key_ty: this.map(|m| &m.key_ty)._resolve_refs(state)?,
+            ty: this.map(|m| &m.ty)._resolve_refs(state)?,
         })
     }
 }
@@ -112,7 +116,8 @@ impl ResolveRefs for ProductType {
             .elements
             .iter()
             .map(|el| this.with(el)._resolve_refs(state))
-            .collect::<Option<_>>()?;
+            .collect::<Option<SlimSliceBoxCollected<_>>>()?
+            .unwrap();
         Some(ProductType { elements })
     }
 }
@@ -120,7 +125,7 @@ impl ResolveRefs for ProductType {
 impl ResolveRefs for ProductTypeElement {
     type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        Some(ProductTypeElement {
+        Some(Self {
             algebraic_type: this.map(|e| &e.algebraic_type)._resolve_refs(state)?,
             name: this.ty().name.clone(),
         })
@@ -135,15 +140,16 @@ impl ResolveRefs for SumType {
             .variants
             .iter()
             .map(|v| this.with(v)._resolve_refs(state))
-            .collect::<Option<_>>()?;
-        Some(SumType { variants })
+            .collect::<Option<SlimSliceBoxCollected<_>>>()?
+            .unwrap();
+        Some(Self { variants })
     }
 }
 
 impl ResolveRefs for SumTypeVariant {
     type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        Some(SumTypeVariant {
+        Some(Self {
             algebraic_type: this.map(|v| &v.algebraic_type)._resolve_refs(state)?,
             name: this.ty().name.clone(),
         })

@@ -1,6 +1,7 @@
 use crate::operator::{Op, OpLogic};
 use crate::types::Ty;
 use spacetimedb_lib::error::{AuthError, RelationError};
+use spacetimedb_sats::slim_slice::LenTooLong;
 use spacetimedb_sats::AlgebraicValue;
 use std::fmt;
 use thiserror::Error;
@@ -20,6 +21,8 @@ pub enum ErrorType {
     FieldBool(AlgebraicValue),
     #[error("Error Parsing `{value}` into type [{ty}]: {err}")]
     Parse { value: String, ty: String, err: String },
+    #[error("{0}")]
+    LenTooLong(LenTooLong),
 }
 
 /// Vm Errors
