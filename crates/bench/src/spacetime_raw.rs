@@ -7,9 +7,8 @@ use spacetimedb::db::datastore::traits::{IndexDef, TableDef, TableSchema};
 use spacetimedb::db::relational_db::{open_db, RelationalDB};
 use spacetimedb::error::DBError;
 use spacetimedb::sql::execute::run;
-use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::sats::BuiltinValue;
 use spacetimedb_lib::AlgebraicValue;
+use spacetimedb_lib::{identity::AuthCtx, sats::BuiltinValue};
 use std::hint::black_box;
 use tempdir::TempDir;
 
@@ -150,10 +149,10 @@ impl BenchDatabase for SpacetimeRaw {
 
             let table_name = &table.table_name;
 
-            let value = match value.as_builtin().unwrap() {
-                BuiltinValue::U32(x) => x.to_string(),
-                BuiltinValue::U64(x) => x.to_string(),
-                BuiltinValue::String(x) => format!("'{}'", x),
+            let value = match value {
+                AlgebraicValue::Builtin(BuiltinValue::U32(x)) => x.to_string(),
+                AlgebraicValue::Builtin(BuiltinValue::U64(x)) => x.to_string(),
+                AlgebraicValue::Builtin(BuiltinValue::String(x)) => format!("'{}'", x),
                 _ => {
                     unreachable!()
                 }

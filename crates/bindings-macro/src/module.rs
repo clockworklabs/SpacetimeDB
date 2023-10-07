@@ -126,16 +126,23 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
         SatsTypeData::Product(fields) => {
             let fields = fields.iter().map(|field| {
                 let field_name = match &field.name {
-                    Some(name) => quote!(Some(#name.to_owned())),
+                    Some(name) => quote!(Some(#name)),
                     None => quote!(None),
                 };
                 let ty = field.ty;
-                quote!(spacetimedb::sats::ProductTypeElement {
-                    name: #field_name,
-                    algebraic_type: <#ty as spacetimedb::SpacetimeType>::make_type(__typespace),
-                })
+                quote!((
+                    #field_name,
+                    <#ty as spacetimedb::SpacetimeType>::make_type(__typespace),
+                ))
             });
-            quote!(spacetimedb::sats::AlgebraicType::product(vec![#(#fields),*]))
+            let len = fields.len();
+            quote!(
+                spacetimedb::sats::AlgebraicType::product::<
+                    [(Option<&str>, spacetimedb::sats::AlgebraicType); #len]
+                >(
+                    [#(#fields),*]
+                )
+            )
         }
         SatsTypeData::Sum(variants) => {
             let unit = syn::Type::Tuple(syn::TypeTuple {
@@ -145,12 +152,19 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
             let variants = variants.iter().map(|var| {
                 let variant_name = &var.name;
                 let ty = var.ty.unwrap_or(&unit);
-                quote!(spacetimedb::sats::SumTypeVariant {
-                    name: Some(#variant_name.to_owned()),
-                    algebraic_type: <#ty as spacetimedb::SpacetimeType>::make_type(__typespace),
-                })
+                quote!((
+                    #variant_name,
+                    <#ty as spacetimedb::SpacetimeType>::make_type(__typespace),
+                ))
             });
-            quote!(spacetimedb::sats::AlgebraicType::sum(vec![#(#variants),*]))
+            let len = variants.len();
+            quote!(
+                spacetimedb::sats::AlgebraicType::sum::<
+                    [(&str, spacetimedb::sats::AlgebraicType); #len]
+                >(
+                    [#(#variants),*]
+                )
+            )
             // todo!()
         } // syn::Data::Union(u) => return Err(syn::Error::new(u.union_token.span, "unions not supported")),
     };

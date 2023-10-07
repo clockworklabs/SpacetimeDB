@@ -120,7 +120,7 @@ impl ResolveRefs for ProductType {
 impl ResolveRefs for ProductTypeElement {
     type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        Some(ProductTypeElement {
+        Some(Self {
             algebraic_type: this.map(|e| &e.algebraic_type)._resolve_refs(state)?,
             name: this.ty().name.clone(),
         })
@@ -143,7 +143,7 @@ impl ResolveRefs for SumType {
 impl ResolveRefs for SumTypeVariant {
     type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        Some(SumTypeVariant {
+        Some(Self {
             algebraic_type: this.map(|v| &v.algebraic_type)._resolve_refs(state)?,
             name: this.ty().name.clone(),
         })

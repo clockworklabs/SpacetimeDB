@@ -1,5 +1,5 @@
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
-use spacetimedb_sats::{impl_st, AlgebraicType, ProductTypeElement};
+use spacetimedb_sats::{impl_st, AlgebraicType};
 use std::{fmt, str::FromStr};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -30,9 +30,7 @@ pub struct Identity {
     __identity_bytes: [u8; 32],
 }
 
-impl_st!([] Identity, _ts => AlgebraicType::product(vec![
-    ProductTypeElement::new_named(AlgebraicType::bytes(), "__identity_bytes")
-]));
+impl_st!([] Identity, _ts => AlgebraicType::product([("__identity_bytes", AlgebraicType::bytes())]));
 
 impl Identity {
     const ABBREVIATION_LEN: usize = 16;

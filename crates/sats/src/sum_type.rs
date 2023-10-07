@@ -2,7 +2,7 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SumTypeVariant};
+use crate::{AlgebraicType, AlgebraicValue, SumTypeVariant};
 
 /// A structural sum type.
 ///
@@ -72,12 +72,35 @@ impl SumType {
     }
 }
 
+impl From<Vec<SumTypeVariant>> for SumType {
+    fn from(fields: Vec<SumTypeVariant>) -> Self {
+        SumType::new(fields)
+    }
+}
+impl<const N: usize> From<[SumTypeVariant; N]> for SumType {
+    fn from(fields: [SumTypeVariant; N]) -> Self {
+        SumType::new(fields.into())
+    }
+}
+impl<const N: usize> From<[(Option<&str>, AlgebraicType); N]> for SumType {
+    fn from(fields: [(Option<&str>, AlgebraicType); N]) -> Self {
+        fields.map(|(s, t)| SumTypeVariant::new(t, s.map(<_>::into))).into()
+    }
+}
+impl<const N: usize> From<[(&str, AlgebraicType); N]> for SumType {
+    fn from(fields: [(&str, AlgebraicType); N]) -> Self {
+        fields.map(|(s, t)| SumTypeVariant::new_named(t, s)).into()
+    }
+}
+impl<const N: usize> From<[AlgebraicType; N]> for SumType {
+    fn from(fields: [AlgebraicType; N]) -> Self {
+        fields.map(SumTypeVariant::from).into()
+    }
+}
+
 impl MetaType for SumType {
     fn meta_type() -> AlgebraicType {
-        AlgebraicType::product(vec![ProductTypeElement::new_named(
-            AlgebraicType::array(SumTypeVariant::meta_type()),
-            "variants",
-        )])
+        AlgebraicType::product([("variants", AlgebraicType::array(SumTypeVariant::meta_type()))])
     }
 }
 

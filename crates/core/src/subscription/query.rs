@@ -159,7 +159,7 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::FieldName;
     use spacetimedb_lib::Identity;
-    use spacetimedb_sats::{product, BuiltinType, ProductType, ProductValue};
+    use spacetimedb_sats::{product, ProductType, ProductValue};
     use spacetimedb_vm::dsl::{db_table, mem_table, scalar};
     use spacetimedb_vm::operator::OpCmp;
 
@@ -244,7 +244,7 @@ mod tests {
             "_inventory"
         };
 
-        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
 
         let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
@@ -265,7 +265,7 @@ mod tests {
         tx: &mut MutTxId,
     ) -> ResultTest<(TableSchema, MemTable, DatabaseTableUpdate, QueryExpr)> {
         let table_name = "player";
-        let head = ProductType::from_iter([("player_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let head = ProductType::from([("player_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(2u64, "jhon doe");
 
         let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
@@ -356,7 +356,7 @@ mod tests {
         let (db, _) = make_test_db()?;
         let mut tx = db.begin_tx();
 
-        let schema = ProductType::from_iter([("u8", BuiltinType::U8)]);
+        let schema = ProductType::from([("u8", AlgebraicType::U8)]);
         let row = product!(1u8);
 
         // generate row id from row

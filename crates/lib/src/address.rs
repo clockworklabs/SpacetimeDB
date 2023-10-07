@@ -1,6 +1,6 @@
 use anyhow::Context as _;
 use hex::FromHex as _;
-use sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType, ProductTypeElement};
+use sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use std::{fmt, net::Ipv6Addr};
 
@@ -20,9 +20,7 @@ pub struct Address {
     __address_bytes: [u8; 16],
 }
 
-impl_st!([] Address, _ts => AlgebraicType::product(vec![
-    ProductTypeElement::new_named(AlgebraicType::bytes(), "__address_bytes")
-]));
+impl_st!([] Address, _ts => AlgebraicType::product([("__address_bytes", AlgebraicType::bytes())]));
 
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

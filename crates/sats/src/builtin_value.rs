@@ -169,24 +169,24 @@ impl ArrayValue {
     /// Determines (infers / synthesises) the type of the value.
     pub(crate) fn type_of(&self) -> ArrayType {
         let elem_ty = Box::new(match self {
-            ArrayValue::Sum(v) => Self::first_type_of(v, AlgebraicValue::type_of_sum),
-            ArrayValue::Product(v) => Self::first_type_of(v, AlgebraicValue::type_of_product),
-            ArrayValue::Bool(_) => AlgebraicType::Bool,
-            ArrayValue::I8(_) => AlgebraicType::I8,
-            ArrayValue::U8(_) => AlgebraicType::U8,
-            ArrayValue::I16(_) => AlgebraicType::I16,
-            ArrayValue::U16(_) => AlgebraicType::U16,
-            ArrayValue::I32(_) => AlgebraicType::I32,
-            ArrayValue::U32(_) => AlgebraicType::U32,
-            ArrayValue::I64(_) => AlgebraicType::I64,
-            ArrayValue::U64(_) => AlgebraicType::U64,
-            ArrayValue::I128(_) => AlgebraicType::I128,
-            ArrayValue::U128(_) => AlgebraicType::U128,
-            ArrayValue::F32(_) => AlgebraicType::F32,
-            ArrayValue::F64(_) => AlgebraicType::F64,
-            ArrayValue::String(_) => AlgebraicType::String,
-            ArrayValue::Array(v) => Self::first_type_of(v, |a| AlgebraicType::Builtin(BuiltinType::Array(a.type_of()))),
-            ArrayValue::Map(v) => Self::first_type_of(v, AlgebraicValue::type_of_map),
+            Self::Sum(v) => Self::first_type_of(v, AlgebraicValue::type_of_sum),
+            Self::Product(v) => Self::first_type_of(v, AlgebraicValue::type_of_product),
+            Self::Bool(_) => AlgebraicType::Bool,
+            Self::I8(_) => AlgebraicType::I8,
+            Self::U8(_) => AlgebraicType::U8,
+            Self::I16(_) => AlgebraicType::I16,
+            Self::U16(_) => AlgebraicType::U16,
+            Self::I32(_) => AlgebraicType::I32,
+            Self::U32(_) => AlgebraicType::U32,
+            Self::I64(_) => AlgebraicType::I64,
+            Self::U64(_) => AlgebraicType::U64,
+            Self::I128(_) => AlgebraicType::I128,
+            Self::U128(_) => AlgebraicType::U128,
+            Self::F32(_) => AlgebraicType::F32,
+            Self::F64(_) => AlgebraicType::F64,
+            Self::String(_) => AlgebraicType::String,
+            Self::Array(v) => Self::first_type_of(v, |a| AlgebraicType::Builtin(BuiltinType::Array(a.type_of()))),
+            Self::Map(v) => Self::first_type_of(v, AlgebraicValue::type_of_map),
         });
         ArrayType { elem_ty }
     }
@@ -194,30 +194,30 @@ impl ArrayValue {
     /// Helper for `type_of` above.
     /// Infers the `AlgebraicType` from the first element by running `then` on it.
     fn first_type_of<T>(arr: &[T], then: impl FnOnce(&T) -> AlgebraicType) -> AlgebraicType {
-        arr.first().map(then).unwrap_or_else(|| AlgebraicType::NEVER_TYPE)
+        arr.first().map(then).unwrap_or_else(AlgebraicType::never)
     }
 
     /// Returns the length of the array.
     pub fn len(&self) -> usize {
         match self {
-            ArrayValue::Sum(v) => v.len(),
-            ArrayValue::Product(v) => v.len(),
-            ArrayValue::Bool(v) => v.len(),
-            ArrayValue::I8(v) => v.len(),
-            ArrayValue::U8(v) => v.len(),
-            ArrayValue::I16(v) => v.len(),
-            ArrayValue::U16(v) => v.len(),
-            ArrayValue::I32(v) => v.len(),
-            ArrayValue::U32(v) => v.len(),
-            ArrayValue::I64(v) => v.len(),
-            ArrayValue::U64(v) => v.len(),
-            ArrayValue::I128(v) => v.len(),
-            ArrayValue::U128(v) => v.len(),
-            ArrayValue::F32(v) => v.len(),
-            ArrayValue::F64(v) => v.len(),
-            ArrayValue::String(v) => v.len(),
-            ArrayValue::Array(v) => v.len(),
-            ArrayValue::Map(v) => v.len(),
+            Self::Sum(v) => v.len(),
+            Self::Product(v) => v.len(),
+            Self::Bool(v) => v.len(),
+            Self::I8(v) => v.len(),
+            Self::U8(v) => v.len(),
+            Self::I16(v) => v.len(),
+            Self::U16(v) => v.len(),
+            Self::I32(v) => v.len(),
+            Self::U32(v) => v.len(),
+            Self::I64(v) => v.len(),
+            Self::U64(v) => v.len(),
+            Self::I128(v) => v.len(),
+            Self::U128(v) => v.len(),
+            Self::F32(v) => v.len(),
+            Self::F64(v) => v.len(),
+            Self::String(v) => v.len(),
+            Self::Array(v) => v.len(),
+            Self::Map(v) => v.len(),
         }
     }
 
@@ -266,24 +266,24 @@ impl ArrayValue {
     /// Optionally allocates the backing `Vec<_>`s with `capacity`.
     pub fn push(&mut self, val: AlgebraicValue, capacity: Option<usize>) -> Result<(), AlgebraicValue> {
         match (self, val) {
-            (ArrayValue::Sum(v), AlgebraicValue::Sum(val)) => v.push(val),
-            (ArrayValue::Product(v), AlgebraicValue::Product(val)) => v.push(val),
-            (ArrayValue::Bool(v), AlgebraicValue::Builtin(BuiltinValue::Bool(val))) => v.push(val),
-            (ArrayValue::I8(v), AlgebraicValue::Builtin(BuiltinValue::I8(val))) => v.push(val),
-            (ArrayValue::U8(v), AlgebraicValue::Builtin(BuiltinValue::U8(val))) => v.push(val),
-            (ArrayValue::I16(v), AlgebraicValue::Builtin(BuiltinValue::I16(val))) => v.push(val),
-            (ArrayValue::U16(v), AlgebraicValue::Builtin(BuiltinValue::U16(val))) => v.push(val),
-            (ArrayValue::I32(v), AlgebraicValue::Builtin(BuiltinValue::I32(val))) => v.push(val),
-            (ArrayValue::U32(v), AlgebraicValue::Builtin(BuiltinValue::U32(val))) => v.push(val),
-            (ArrayValue::I64(v), AlgebraicValue::Builtin(BuiltinValue::I64(val))) => v.push(val),
-            (ArrayValue::U64(v), AlgebraicValue::Builtin(BuiltinValue::U64(val))) => v.push(val),
-            (ArrayValue::I128(v), AlgebraicValue::Builtin(BuiltinValue::I128(val))) => v.push(val),
-            (ArrayValue::U128(v), AlgebraicValue::Builtin(BuiltinValue::U128(val))) => v.push(val),
-            (ArrayValue::F32(v), AlgebraicValue::Builtin(BuiltinValue::F32(val))) => v.push(val),
-            (ArrayValue::F64(v), AlgebraicValue::Builtin(BuiltinValue::F64(val))) => v.push(val),
-            (ArrayValue::String(v), AlgebraicValue::Builtin(BuiltinValue::String(val))) => v.push(val),
-            (ArrayValue::Array(v), AlgebraicValue::Builtin(BuiltinValue::Array { val })) => v.push(val),
-            (ArrayValue::Map(v), AlgebraicValue::Builtin(BuiltinValue::Map { val })) => v.push(val),
+            (Self::Sum(v), AlgebraicValue::Sum(val)) => v.push(val),
+            (Self::Product(v), AlgebraicValue::Product(val)) => v.push(val),
+            (Self::Bool(v), AlgebraicValue::Builtin(BuiltinValue::Bool(val))) => v.push(val),
+            (Self::I8(v), AlgebraicValue::Builtin(BuiltinValue::I8(val))) => v.push(val),
+            (Self::U8(v), AlgebraicValue::Builtin(BuiltinValue::U8(val))) => v.push(val),
+            (Self::I16(v), AlgebraicValue::Builtin(BuiltinValue::I16(val))) => v.push(val),
+            (Self::U16(v), AlgebraicValue::Builtin(BuiltinValue::U16(val))) => v.push(val),
+            (Self::I32(v), AlgebraicValue::Builtin(BuiltinValue::I32(val))) => v.push(val),
+            (Self::U32(v), AlgebraicValue::Builtin(BuiltinValue::U32(val))) => v.push(val),
+            (Self::I64(v), AlgebraicValue::Builtin(BuiltinValue::I64(val))) => v.push(val),
+            (Self::U64(v), AlgebraicValue::Builtin(BuiltinValue::U64(val))) => v.push(val),
+            (Self::I128(v), AlgebraicValue::Builtin(BuiltinValue::I128(val))) => v.push(val),
+            (Self::U128(v), AlgebraicValue::Builtin(BuiltinValue::U128(val))) => v.push(val),
+            (Self::F32(v), AlgebraicValue::Builtin(BuiltinValue::F32(val))) => v.push(val),
+            (Self::F64(v), AlgebraicValue::Builtin(BuiltinValue::F64(val))) => v.push(val),
+            (Self::String(v), AlgebraicValue::Builtin(BuiltinValue::String(val))) => v.push(val),
+            (Self::Array(v), AlgebraicValue::Builtin(BuiltinValue::Array { val })) => v.push(val),
+            (Self::Map(v), AlgebraicValue::Builtin(BuiltinValue::Map { val })) => v.push(val),
             (me, val) if me.is_empty() => *me = Self::from_one_with_capacity(val, capacity),
             (_, val) => return Err(val),
         }
@@ -466,7 +466,7 @@ impl Iterator for ArrayValueIntoIter {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            ArrayValueIntoIter::Sum(it) => it.next().map(AlgebraicValue::Sum),
+            ArrayValueIntoIter::Sum(it) => it.next().map(Into::into),
             ArrayValueIntoIter::Product(it) => it.next().map(Into::into),
             ArrayValueIntoIter::Bool(it) => it.next().map(Into::into),
             ArrayValueIntoIter::I8(it) => it.next().map(Into::into),
@@ -479,11 +479,11 @@ impl Iterator for ArrayValueIntoIter {
             ArrayValueIntoIter::U64(it) => it.next().map(Into::into),
             ArrayValueIntoIter::I128(it) => it.next().map(Into::into),
             ArrayValueIntoIter::U128(it) => it.next().map(Into::into),
-            ArrayValueIntoIter::F32(it) => it.next().map(|f| f32::from(f).into()),
-            ArrayValueIntoIter::F64(it) => it.next().map(|f| f64::from(f).into()),
+            ArrayValueIntoIter::F32(it) => it.next().map(Into::into),
+            ArrayValueIntoIter::F64(it) => it.next().map(Into::into),
             ArrayValueIntoIter::String(it) => it.next().map(Into::into),
-            ArrayValueIntoIter::Array(it) => it.next().map(AlgebraicValue::ArrayOf),
-            ArrayValueIntoIter::Map(it) => it.next().map(AlgebraicValue::map),
+            ArrayValueIntoIter::Array(it) => it.next().map(Into::into),
+            ArrayValueIntoIter::Map(it) => it.next().map(Into::into),
         }
     }
 }
@@ -514,7 +514,7 @@ impl Iterator for ArrayValueIterCloned<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            ArrayValueIterCloned::Sum(it) => it.next().cloned().map(AlgebraicValue::Sum),
+            ArrayValueIterCloned::Sum(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::Product(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::Bool(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::I8(it) => it.next().cloned().map(Into::into),
@@ -527,11 +527,11 @@ impl Iterator for ArrayValueIterCloned<'_> {
             ArrayValueIterCloned::U64(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::I128(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::U128(it) => it.next().cloned().map(Into::into),
-            ArrayValueIterCloned::F32(it) => it.next().map(|f| f32::from(*f).into()),
-            ArrayValueIterCloned::F64(it) => it.next().map(|f| f64::from(*f).into()),
+            ArrayValueIterCloned::F32(it) => it.next().cloned().map(Into::into),
+            ArrayValueIterCloned::F64(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::String(it) => it.next().cloned().map(Into::into),
-            ArrayValueIterCloned::Array(it) => it.next().cloned().map(AlgebraicValue::ArrayOf),
-            ArrayValueIterCloned::Map(it) => it.next().cloned().map(AlgebraicValue::map),
+            ArrayValueIterCloned::Array(it) => it.next().cloned().map(Into::into),
+            ArrayValueIterCloned::Map(it) => it.next().cloned().map(Into::into),
         }
     }
 }

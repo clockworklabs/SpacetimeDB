@@ -6,7 +6,6 @@ use crate::operator::*;
 use spacetimedb_sats::algebraic_type::map_notation::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::builtin_type::BuiltinType;
 
 /// Describe a `type`. In the case of [Ty::Unknown] the type of [Expr] is
 /// not yet know and should be resolved by the type-checker.
@@ -43,12 +42,6 @@ impl fmt::Display for Ty {
     }
 }
 
-impl From<BuiltinType> for Ty {
-    fn from(x: BuiltinType) -> Self {
-        Ty::Val(x.into())
-    }
-}
-
 pub trait TypeOf {
     fn type_of(&self) -> Ty;
 }
@@ -67,25 +60,25 @@ impl TypeOf for AlgebraicValue {
 
 pub(crate) fn ty_op(op: Op) -> Vec<Ty> {
     match op {
-        Op::Cmp(_) | Op::Logic(_) => vec![BuiltinType::Bool.into()],
+        Op::Cmp(_) | Op::Logic(_) => vec![AlgebraicType::Bool.into()],
         Op::Unary(x) => match x {
-            OpUnary::Not => vec![BuiltinType::Bool.into()],
+            OpUnary::Not => vec![AlgebraicType::Bool.into()],
         },
         Op::Math(_) => vec![
-            BuiltinType::I8.into(),
-            BuiltinType::U8.into(),
-            BuiltinType::I16.into(),
-            BuiltinType::U16.into(),
-            BuiltinType::I32.into(),
-            BuiltinType::U32.into(),
-            BuiltinType::I32.into(),
-            BuiltinType::U32.into(),
-            BuiltinType::I64.into(),
-            BuiltinType::U64.into(),
-            BuiltinType::I128.into(),
-            BuiltinType::U128.into(),
-            BuiltinType::F32.into(),
-            BuiltinType::F64.into(),
+            AlgebraicType::I8.into(),
+            AlgebraicType::U8.into(),
+            AlgebraicType::I16.into(),
+            AlgebraicType::U16.into(),
+            AlgebraicType::I32.into(),
+            AlgebraicType::U32.into(),
+            AlgebraicType::I32.into(),
+            AlgebraicType::U32.into(),
+            AlgebraicType::I64.into(),
+            AlgebraicType::U64.into(),
+            AlgebraicType::I128.into(),
+            AlgebraicType::U128.into(),
+            AlgebraicType::F32.into(),
+            AlgebraicType::F64.into(),
         ],
     }
 }

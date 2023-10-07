@@ -5,8 +5,7 @@ use proptest::proptest;
 use spacetimedb_sats::buffer::DecodeError;
 use spacetimedb_sats::builtin_value::{F32, F64};
 use spacetimedb_sats::{
-    meta_type::MetaType, product, AlgebraicType, AlgebraicValue, BuiltinValue, ProductType, ProductTypeElement,
-    ProductValue,
+    meta_type::MetaType, product, AlgebraicType, AlgebraicValue, BuiltinValue, ProductType, ProductValue,
 };
 
 #[test]
@@ -106,7 +105,7 @@ fn algebraic_values() -> impl Strategy<Value = AlgebraicValue> {
 
 fn round_trip(value: AlgebraicValue) -> Result<(ProductValue, ProductValue), DecodeError> {
     let ty = value.type_of();
-    let schema = ProductType::new(vec![ProductTypeElement::new(ty, Some("x".to_string()))]);
+    let schema = ProductType::from([("x", ty)]);
 
     let row = product!(value);
 

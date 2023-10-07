@@ -52,29 +52,15 @@ impl BenchTable for Person {
     }
 
     fn product_type() -> sats::ProductType {
-        sats::ProductType::new(vec![
-            sats::ProductTypeElement {
-                name: Some("id".to_string()),
-                algebraic_type: sats::AlgebraicType::Builtin(sats::BuiltinType::U32),
-            },
-            sats::ProductTypeElement {
-                name: Some("name".to_string()),
-                algebraic_type: sats::AlgebraicType::Builtin(sats::BuiltinType::String),
-            },
-            sats::ProductTypeElement {
-                name: Some("age".to_string()),
-                algebraic_type: sats::AlgebraicType::Builtin(sats::BuiltinType::U64),
-            },
-        ])
+        [
+            ("id", sats::AlgebraicType::U32),
+            ("name", sats::AlgebraicType::String),
+            ("age", sats::AlgebraicType::U64),
+        ]
+        .into()
     }
     fn into_product_value(self) -> sats::ProductValue {
-        sats::ProductValue {
-            elements: vec![
-                sats::AlgebraicValue::Builtin(sats::BuiltinValue::U32(self.id)),
-                sats::AlgebraicValue::Builtin(sats::BuiltinValue::String(self.name)),
-                sats::AlgebraicValue::Builtin(sats::BuiltinValue::U64(self.age)),
-            ],
-        }
+        sats::product![self.id, self.name, self.age]
     }
 
     type SqliteParams = (u32, String, u64);
@@ -92,29 +78,15 @@ impl BenchTable for Location {
     }
 
     fn product_type() -> sats::ProductType {
-        sats::ProductType::new(vec![
-            sats::ProductTypeElement {
-                name: Some("id".to_string()),
-                algebraic_type: sats::AlgebraicType::Builtin(sats::BuiltinType::U32),
-            },
-            sats::ProductTypeElement {
-                name: Some("x".to_string()),
-                algebraic_type: sats::AlgebraicType::Builtin(sats::BuiltinType::U64),
-            },
-            sats::ProductTypeElement {
-                name: Some("y".to_string()),
-                algebraic_type: sats::AlgebraicType::Builtin(sats::BuiltinType::U64),
-            },
-        ])
+        [
+            ("id", sats::AlgebraicType::U32),
+            ("x", sats::AlgebraicType::U64),
+            ("y", sats::AlgebraicType::U64),
+        ]
+        .into()
     }
     fn into_product_value(self) -> sats::ProductValue {
-        sats::ProductValue {
-            elements: vec![
-                sats::AlgebraicValue::Builtin(sats::BuiltinValue::U32(self.id)),
-                sats::AlgebraicValue::Builtin(sats::BuiltinValue::U64(self.x)),
-                sats::AlgebraicValue::Builtin(sats::BuiltinValue::U64(self.y)),
-            ],
-        }
+        sats::product![self.id, self.x, self.y]
     }
 
     type SqliteParams = (u32, u64, u64);

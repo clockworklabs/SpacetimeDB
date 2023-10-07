@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use spacetimedb_lib::relation::{FieldExpr, MemTable, RelIter, Relation, Table};
 use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::builtin_type::BuiltinType;
 use spacetimedb_sats::{product, ProductType, ProductValue};
 
 use crate::dsl::{bin_op, call_fn, if_, mem_table, scalar, var};
@@ -532,20 +531,20 @@ pub struct GameData {
 // Used internally for testing  SQL JOINS
 #[doc(hidden)]
 pub fn create_game_data() -> GameData {
-    let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+    let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
     let row = product!(1u64, "health");
     let inv = mem_table(head, [row]);
 
-    let head = ProductType::from_iter([("entity_id", BuiltinType::U64), ("inventory_id", BuiltinType::U64)]);
+    let head = ProductType::from([("entity_id", AlgebraicType::U64), ("inventory_id", AlgebraicType::U64)]);
     let row1 = product!(100u64, 1u64);
     let row2 = product!(200u64, 1u64);
     let row3 = product!(300u64, 1u64);
     let player = mem_table(head, [row1, row2, row3]);
 
-    let head = ProductType::from_iter([
-        ("entity_id", BuiltinType::U64),
-        ("x", BuiltinType::F32),
-        ("z", BuiltinType::F32),
+    let head = ProductType::from([
+        ("entity_id", AlgebraicType::U64),
+        ("x", AlgebraicType::F32),
+        ("z", AlgebraicType::F32),
     ]);
     let row1 = product!(100u64, 0.0f32, 32.0f32);
     let row2 = product!(100u64, 1.0f32, 31.0f32);
@@ -789,7 +788,7 @@ mod tests {
         };
 
         //The expected result
-        let inv = ProductType::from_iter([(None, BuiltinType::I32), (Some("0_0"), BuiltinType::I32)]);
+        let inv = ProductType::from([(None, AlgebraicType::I32), (Some("0_0"), AlgebraicType::I32)]);
         let row = product!(scalar(1), scalar(1));
         let input = mem_table(inv, vec![row]);
 
@@ -803,7 +802,7 @@ mod tests {
     fn test_query_logic() {
         let p = &mut Program::new(AuthCtx::for_testing());
 
-        let inv = ProductType::from_iter([("id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let inv = ProductType::from([("id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
         let row = product!(scalar(1u64), scalar("health"));
 
@@ -829,7 +828,7 @@ mod tests {
     fn test_query() {
         let p = &mut Program::new(AuthCtx::for_testing());
 
-        let inv = ProductType::from_iter([("id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let inv = ProductType::from([("id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
         let row = product!(scalar(1u64), scalar("health"));
 
@@ -844,10 +843,10 @@ mod tests {
         };
 
         //The expected result
-        let inv = ProductType::from_iter([
-            (None, BuiltinType::U64),
-            (Some("id"), BuiltinType::U64),
-            (Some("name"), BuiltinType::String),
+        let inv = ProductType::from([
+            (None, AlgebraicType::U64),
+            (Some("id"), AlgebraicType::U64),
+            (Some("name"), AlgebraicType::String),
         ]);
         let row = product!(scalar(1u64), scalar("health"), scalar(1u64), scalar("health"));
         let input = mem_table(inv, vec![row]);
@@ -899,7 +898,7 @@ mod tests {
 
         let result = run_query(p, q.into());
 
-        let head = ProductType::from_iter([("entity_id", BuiltinType::U64), ("inventory_id", BuiltinType::U64)]);
+        let head = ProductType::from([("entity_id", AlgebraicType::U64), ("inventory_id", AlgebraicType::U64)]);
         let row1 = product!(100u64, 1u64);
         let input = mem_table(head, [row1]);
 
@@ -925,7 +924,7 @@ mod tests {
 
         let result = run_query(p, q.into());
 
-        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row1 = product!(1u64, "health");
         let input = mem_table(head, [row1]);
 
