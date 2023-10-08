@@ -236,7 +236,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
 
     let mut q = query(db_table_raw(
         ProductType::from(&table.root),
-        &table.root.table_name,
+        table.root.table_name.clone(),
         table.root.table_id,
         table.root.table_type,
         table.root.table_access,
@@ -246,7 +246,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
         for join in joins {
             match join {
                 Join::Inner { rhs, on } => {
-                    let t = db_table(rhs.into(), &rhs.table_name, rhs.table_id);
+                    let t = db_table(rhs.into(), rhs.table_name.clone(), rhs.table_id);
                     match on.op {
                         OpCmp::Eq => {}
                         x => unreachable!("Unsupported operator `{x}` for joins"),
@@ -357,7 +357,7 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
     }
 
     DbTable::new(
-        &Header::new(&table.table_name, &new),
+        Header::new(table.table_name.clone(), new),
         table.table_id,
         table.table_type,
         table.table_access,

@@ -135,7 +135,7 @@ fn join_inner<'a>(
 }
 
 fn get_table<'a>(stdb: &'a RelationalDB, tx: &'a MutTxId, query: SourceExpr) -> Result<Box<dyn RelOps + 'a>, ErrorVm> {
-    let head = query.head();
+    let head = query.head().clone();
     let row_count = query.row_count();
     Ok(match query {
         SourceExpr::MemTable(x) => Box::new(RelIter::new(head, row_count, x)) as Box<IterRows<'_>>,
@@ -269,7 +269,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         let head = result.head().clone();
         let rows: Vec<_> = result.collect_vec()?;
 
-        Ok(Code::Table(MemTable::new(&head, table_access, &rows)))
+        Ok(Code::Table(MemTable::new(head, table_access, rows)))
     }
 
     fn _execute_insert(&mut self, table: &Table, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
@@ -415,7 +415,7 @@ impl ProgramVm for DbProgram<'_, '_> {
                     deleted.data.clone().into_iter().map(|row| row.data).collect_vec(),
                 )?;
 
-                let to_insert = mem_table(table.head(), deleted.data.into_iter().map(|row| row.data));
+                let to_insert = mem_table(table.head().clone(), deleted.data.into_iter().map(|row| row.data));
                 insert.table = Table::MemTable(to_insert);
 
                 let result = self.insert_query(&table, insert)?;
@@ -538,7 +538,7 @@ pub(crate) mod tests {
                     .iter()
                     .enumerate()
                     .map(|(i, e)| ColumnDef {
-                        col_name: e.name.clone().unwrap_or(i.to_string()),
+                        col_name: e.name.clone().unwrap_or_else(|| i.to_string()),
                         col_type: e.algebraic_type.clone(),
                         is_autoinc: false,
                     })
@@ -582,7 +582,7 @@ pub(crate) mod tests {
         let row = product!(1u64, "health");
         let table_id = create_table_from_program(p, "inventory", head.clone(), &[row])?;
 
-        let inv = db_table(head, "inventory", table_id);
+        let inv = db_table(head, "inventory".to_owned(), table_id);
 
         let data = MemTable::from_value(scalar(1u64));
         let rhs = data.get_field(0).unwrap().clone();

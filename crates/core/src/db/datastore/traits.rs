@@ -287,7 +287,7 @@ impl From<&TableSchema> for ProductType {
 impl From<&TableSchema> for SourceExpr {
     fn from(value: &TableSchema) -> Self {
         SourceExpr::DbTable(DbTable::new(
-            &Header::from_product_type(&value.table_name, value.into()),
+            Header::from_product_type(value.table_name.clone(), value.into()),
             value.table_id,
             value.table_type,
             value.table_access,
@@ -297,13 +297,13 @@ impl From<&TableSchema> for SourceExpr {
 
 impl From<&TableSchema> for DbTable {
     fn from(value: &TableSchema) -> Self {
-        DbTable::new(&value.into(), value.table_id, value.table_type, value.table_access)
+        DbTable::new(value.into(), value.table_id, value.table_type, value.table_access)
     }
 }
 
 impl From<&TableSchema> for Header {
     fn from(value: &TableSchema) -> Self {
-        Header::from_product_type(&value.table_name, value.into())
+        Header::from_product_type(value.table_name.clone(), value.into())
     }
 }
 

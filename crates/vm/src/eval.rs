@@ -433,7 +433,7 @@ pub fn build_query(mut result: Box<IterRows>, query: Vec<Query>) -> Result<Box<I
                 let key_rhs = col_rhs.clone();
                 let row_rhs = q.rhs.source.row_count();
 
-                let head = q.rhs.source.head();
+                let head = q.rhs.source.head().clone();
                 let rhs = match q.rhs.source {
                     SourceExpr::MemTable(x) => Box::new(RelIter::new(head, row_rhs, x)) as Box<IterRows<'_>>,
                     SourceExpr::DbTable(_) => {
@@ -734,13 +734,13 @@ mod tests {
 
         let q = query(input).with_select_cmp(OpCmp::Eq, field, scalar(1));
 
-        let head = q.source.head();
+        let head = q.source.head().clone();
 
         let result = run_ast(p, q.into());
         let row = RelValue::new(scalar(1).into(), None);
         assert_eq!(
             result,
-            Code::Table(MemTable::new(&head, StAccess::Public, &[row])),
+            Code::Table(MemTable::new(head, StAccess::Public, [row].into())),
             "Query"
         );
     }
@@ -754,13 +754,13 @@ mod tests {
 
         let source = query(table.clone());
         let q = source.clone().with_project(&[field.into()], None);
-        let head = q.source.head();
+        let head = q.source.head().clone();
 
         let result = run_ast(p, q.into());
         let row = RelValue::new(input.into(), None);
         assert_eq!(
             result,
-            Code::Table(MemTable::new(&head, StAccess::Public, &[row])),
+            Code::Table(MemTable::new(head.clone(), StAccess::Public, [row].into())),
             "Project"
         );
 
