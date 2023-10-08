@@ -2,10 +2,7 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{
-    impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductTypeElement,
-    SumTypeVariant,
-};
+use crate::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicValue, SumTypeVariant};
 use enum_as_inner::EnumAsInner;
 
 /// Represents the built-in types in SATS.
@@ -91,9 +88,8 @@ impl MapType {
 
 impl MetaType for BuiltinType {
     fn meta_type() -> AlgebraicType {
-        let zero_ref = || AlgebraicType::Ref(AlgebraicTypeRef(0));
         // TODO: sats(rename_all = "lowercase"), otherwise json won't work.
-        AlgebraicType::sum(vec![
+        AlgebraicType::sum([
             SumTypeVariant::unit("bool"),
             SumTypeVariant::unit("i8"),
             SumTypeVariant::unit("u8"),
@@ -108,12 +104,9 @@ impl MetaType for BuiltinType {
             SumTypeVariant::unit("f32"),
             SumTypeVariant::unit("f64"),
             SumTypeVariant::unit("string"),
-            SumTypeVariant::new_named(zero_ref(), "array"),
+            SumTypeVariant::new_named(AlgebraicType::ZERO_REF, "array"),
             SumTypeVariant::new_named(
-                AlgebraicType::product(vec![
-                    ProductTypeElement::new_named(zero_ref(), "key_ty"),
-                    ProductTypeElement::new_named(zero_ref(), "ty"),
-                ]),
+                AlgebraicType::product([("key_ty", AlgebraicType::ZERO_REF), ("ty", AlgebraicType::ZERO_REF)]),
                 "map",
             ),
         ])

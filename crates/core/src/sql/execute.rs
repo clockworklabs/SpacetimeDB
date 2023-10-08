@@ -1,6 +1,6 @@
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::MemTable;
-use spacetimedb_lib::{ProductType, ProductValue};
+use spacetimedb_sats::{ProductType, ProductValue};
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use tracing::info;
@@ -104,7 +104,7 @@ pub(crate) mod tests {
     use spacetimedb_lib::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::{Header, RelValue};
-    use spacetimedb_sats::{product, AlgebraicType, BuiltinType, ProductType};
+    use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_vm::dsl::{mem_table, scalar};
     use spacetimedb_vm::eval::create_game_data;
     use tempdir::TempDir;
@@ -118,7 +118,7 @@ pub(crate) mod tests {
         let (db, tmp_dir) = make_test_db()?;
 
         let mut tx = db.begin_tx();
-        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let rows: Vec<_> = (1..=total_rows).map(|i| product!(i, format!("health{i}"))).collect();
         create_table_with_rows(&db, &mut tx, "inventory", head.clone(), &rows)?;
         db.commit_tx(tx)?;
@@ -165,7 +165,7 @@ pub(crate) mod tests {
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
 
-        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64)]);
+        let head = ProductType::from([("inventory_id", AlgebraicType::U64)]);
         let row = product!(1u64);
         let input = mem_table(head, vec![row]);
 
@@ -186,8 +186,8 @@ pub(crate) mod tests {
 
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
-        let schema = ProductType::from_iter([BuiltinType::I32]);
-        let row = product!(scalar(1));
+        let schema = ProductType::from([AlgebraicType::I32]);
+        let row = product!(1);
         let input = mem_table(schema, vec![row]);
 
         assert_eq!(result.as_without_table_name(), input.as_without_table_name(), "Scalar");
@@ -389,7 +389,7 @@ pub(crate) mod tests {
         WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32",
         )?[0];
 
-        let head = ProductType::from_iter([("entity_id", BuiltinType::U64), ("inventory_id", BuiltinType::U64)]);
+        let head = ProductType::from([("entity_id", AlgebraicType::U64), ("inventory_id", AlgebraicType::U64)]);
         let row1 = product!(100u64, 1u64);
         let input = mem_table(head, [row1]);
 
@@ -413,7 +413,7 @@ pub(crate) mod tests {
         WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32",
         )?[0];
 
-        let head = ProductType::from_iter([("inventory_id", BuiltinType::U64), ("name", BuiltinType::String)]);
+        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row1 = product!(1u64, "health");
         let input = mem_table(head, [row1]);
 

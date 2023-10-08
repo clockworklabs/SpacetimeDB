@@ -90,7 +90,7 @@ pub struct SerializeArrayValue {
 
 impl ser::SerializeArray for SerializeArrayValue {
     type Ok = AlgebraicValue;
-    type Error = Infallible;
+    type Error = <ValueSerializer as ser::Serializer>::Error;
 
     fn serialize_element<T: ser::Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
         self.array
@@ -112,7 +112,7 @@ pub struct SerializeMapValue {
 
 impl ser::SerializeMap for SerializeMapValue {
     type Ok = AlgebraicValue;
-    type Error = Infallible;
+    type Error = <ValueSerializer as ser::Serializer>::Error;
 
     fn serialize_entry<K: ser::Serialize + ?Sized, V: ser::Serialize + ?Sized>(
         &mut self,
@@ -137,7 +137,7 @@ pub struct SerializeProductValue {
 
 impl ser::SerializeSeqProduct for SerializeProductValue {
     type Ok = AlgebraicValue;
-    type Error = Infallible;
+    type Error = <ValueSerializer as ser::Serializer>::Error;
 
     fn serialize_element<T: ser::Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
         self.elements.push(elem.serialize(ValueSerializer)?);

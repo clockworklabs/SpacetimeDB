@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 use crate::builtin_value::{F32, F64};
 use crate::{
-    AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, BuiltinType, BuiltinValue, MapType, MapValue, ProductType,
+    AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, BuiltinType, MapType, MapValue, ProductType,
     ProductTypeElement, ProductValue, SumType, SumValue, WithTypespace,
 };
 
@@ -300,40 +300,36 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
         match self.ty() {
-            AlgebraicType::Sum(sum) => self.with(sum).deserialize(deserializer).map(AlgebraicValue::Sum),
-            AlgebraicType::Product(prod) => self.with(prod).deserialize(deserializer).map(AlgebraicValue::Product),
-            AlgebraicType::Builtin(b) => self.with(b).deserialize(deserializer).map(AlgebraicValue::Builtin),
+            AlgebraicType::Sum(sum) => self.with(sum).deserialize(deserializer).map(Into::into),
+            AlgebraicType::Product(prod) => self.with(prod).deserialize(deserializer).map(Into::into),
+            AlgebraicType::Builtin(b) => self.with(b).deserialize(deserializer),
             AlgebraicType::Ref(r) => self.resolve(*r).deserialize(deserializer),
         }
     }
 }
 
 impl<'de> DeserializeSeed<'de> for WithTypespace<'_, BuiltinType> {
-    type Output = BuiltinValue;
+    type Output = AlgebraicValue;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
-        Ok(match self.ty() {
-            BuiltinType::Bool => BuiltinValue::Bool(bool::deserialize(deserializer)?),
-            BuiltinType::I8 => BuiltinValue::I8(i8::deserialize(deserializer)?),
-            BuiltinType::U8 => BuiltinValue::U8(u8::deserialize(deserializer)?),
-            BuiltinType::I16 => BuiltinValue::I16(i16::deserialize(deserializer)?),
-            BuiltinType::U16 => BuiltinValue::U16(u16::deserialize(deserializer)?),
-            BuiltinType::I32 => BuiltinValue::I32(i32::deserialize(deserializer)?),
-            BuiltinType::U32 => BuiltinValue::U32(u32::deserialize(deserializer)?),
-            BuiltinType::I64 => BuiltinValue::I64(i64::deserialize(deserializer)?),
-            BuiltinType::U64 => BuiltinValue::U64(u64::deserialize(deserializer)?),
-            BuiltinType::I128 => BuiltinValue::I128(i128::deserialize(deserializer)?),
-            BuiltinType::U128 => BuiltinValue::U128(u128::deserialize(deserializer)?),
-            BuiltinType::F32 => BuiltinValue::F32(f32::deserialize(deserializer)?.into()),
-            BuiltinType::F64 => BuiltinValue::F64(f64::deserialize(deserializer)?.into()),
-            BuiltinType::String => BuiltinValue::String(String::deserialize(deserializer)?),
-            BuiltinType::Array(ty) => BuiltinValue::Array {
-                val: self.with(ty).deserialize(deserializer)?,
-            },
-            BuiltinType::Map(ty) => BuiltinValue::Map {
-                val: self.with(ty).deserialize(deserializer)?,
-            },
-        })
+        match self.ty() {
+            BuiltinType::Bool => bool::deserialize(deserializer).map(Into::into),
+            BuiltinType::I8 => i8::deserialize(deserializer).map(Into::into),
+            BuiltinType::U8 => u8::deserialize(deserializer).map(Into::into),
+            BuiltinType::I16 => i16::deserialize(deserializer).map(Into::into),
+            BuiltinType::U16 => u16::deserialize(deserializer).map(Into::into),
+            BuiltinType::I32 => i32::deserialize(deserializer).map(Into::into),
+            BuiltinType::U32 => u32::deserialize(deserializer).map(Into::into),
+            BuiltinType::I64 => i64::deserialize(deserializer).map(Into::into),
+            BuiltinType::U64 => u64::deserialize(deserializer).map(Into::into),
+            BuiltinType::I128 => i128::deserialize(deserializer).map(Into::into),
+            BuiltinType::U128 => u128::deserialize(deserializer).map(Into::into),
+            BuiltinType::F32 => f32::deserialize(deserializer).map(Into::into),
+            BuiltinType::F64 => f64::deserialize(deserializer).map(Into::into),
+            BuiltinType::String => String::deserialize(deserializer).map(Into::into),
+            BuiltinType::Array(ty) => self.with(ty).deserialize(deserializer).map(Into::into),
+            BuiltinType::Map(ty) => self.with(ty).deserialize(deserializer).map(Into::into),
+        }
     }
 }
 

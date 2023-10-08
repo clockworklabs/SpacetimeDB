@@ -668,7 +668,7 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
+        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         stdb.create_table(&mut tx, schema)?;
         stdb.commit_tx(tx)?;
@@ -682,7 +682,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
 
-        let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
+        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         stdb.create_table(&mut tx, schema)?;
 
@@ -715,7 +715,7 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
+        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         let table_id = stdb.create_table(&mut tx, schema)?;
         let t_id = stdb.table_id_from_name(&tx, "MyTable")?;
@@ -728,7 +728,7 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
+        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         stdb.create_table(&mut tx, schema)?;
         let table_id = stdb.table_id_from_name(&tx, "MyTable")?.unwrap();
@@ -743,7 +743,7 @@ mod tests {
         let (stdb, _tmp_dir) = make_test_db()?;
 
         let mut tx = stdb.begin_tx();
-        let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
+        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         stdb.create_table(&mut tx, schema.clone())?;
         let result = stdb.create_table(&mut tx, schema);
@@ -757,7 +757,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
 
-        let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
+        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -781,7 +781,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
 
-        let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
+        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -807,7 +807,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
 
-        let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
+        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -831,7 +831,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
 
-        let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
+        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -857,7 +857,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
 
-        let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
+        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         let table_id = stdb.create_table(&mut tx, schema)?;
         stdb.rollback_tx(tx);
@@ -874,7 +874,7 @@ mod tests {
 
         let mut tx = stdb.begin_tx();
 
-        let mut schema = TableDef::from(ProductType::from_iter([("my_col", AlgebraicType::I32)]));
+        let mut schema = TableDef::from(ProductType::from([("my_col", AlgebraicType::I32)]));
         schema.table_name = "MyTable".to_string();
         let table_id = stdb.create_table(&mut tx, schema)?;
         stdb.commit_tx(tx)?;

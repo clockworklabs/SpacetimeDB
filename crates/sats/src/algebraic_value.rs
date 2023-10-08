@@ -43,7 +43,9 @@ impl AlgebraicValue {
     /// The canonical unit value defined as the nullary product value `()`.
     ///
     /// The type of `UNIT` is `()`.
-    pub const UNIT: Self = Self::product(Vec::new());
+    pub fn unit() -> Self {
+        Self::product([].into())
+    }
 
     /// Interpret the value as a `bool` or `None` if it isn't a `bool` value.
     #[inline]
@@ -358,7 +360,7 @@ impl AlgebraicValue {
     /// The `none` variant is assigned the tag `1`.
     #[inline]
     pub fn OptionNone() -> Self {
-        Self::sum(1, Self::UNIT)
+        Self::sum(1, Self::unit())
     }
 
     /// Returns an [`AlgebraicValue`] representing a sum value with `tag` and `value`.
@@ -389,24 +391,24 @@ impl AlgebraicValue {
         //   To assign this a correct type we either have to store the type with the value
         //   or alternatively, we must have polymorphic variants (see row polymorphism)
         //   *and* derive the correct variant name.
-        AlgebraicType::product(vec![x.value.type_of().into()])
+        AlgebraicType::product([x.value.type_of()])
     }
 
     /// Returns the [`AlgebraicType`] of the product value `x`.
     pub(crate) fn type_of_product(x: &ProductValue) -> AlgebraicType {
-        AlgebraicType::product(x.elements.iter().map(|x| x.type_of().into()).collect())
+        AlgebraicType::product(x.elements.iter().map(|x| x.type_of().into()).collect::<Vec<_>>())
     }
 
     /// Returns the [`AlgebraicType`] of the map with key type `k` and value type `v`.
     pub(crate) fn type_of_map(val: &BTreeMap<Self, Self>) -> AlgebraicType {
         AlgebraicType::product(if let Some((k, v)) = val.first_key_value() {
-            vec![k.type_of().into(), v.type_of().into()]
+            [k.type_of(), v.type_of()]
         } else {
             // TODO(centril): What is the motivation for this?
             //   I think this requires a soundness argument.
             //   I could see that it is OK with the argument that this is an empty map
             //   under the requirement that we cannot insert elements into the map.
-            vec![AlgebraicType::NEVER_TYPE.into(); 2]
+            [AlgebraicType::never(), AlgebraicType::never()]
         })
     }
 
@@ -463,9 +465,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::satn::Satn;
-    use crate::{
-        AlgebraicType, AlgebraicValue, ArrayValue, ProductTypeElement, Typespace, ValueWithType, WithTypespace,
-    };
+    use crate::{AlgebraicType, AlgebraicValue, ArrayValue, Typespace, ValueWithType, WithTypespace};
 
     fn in_space<'a, T: crate::Value>(ts: &'a Typespace, ty: &'a T::Type, val: &'a T) -> ValueWithType<'a, T> {
         WithTypespace::new(ts, ty).with_value(val)
@@ -473,17 +473,17 @@ mod tests {
 
     #[test]
     fn unit() {
-        let val = AlgebraicValue::UNIT;
-        let unit = AlgebraicType::UNIT_TYPE;
+        let val = AlgebraicValue::unit();
+        let unit = AlgebraicType::unit();
         let typespace = Typespace::new(vec![]);
         assert_eq!(in_space(&typespace, &unit, &val).to_satn(), "()");
     }
 
     #[test]
     fn product_value() {
-        let product_type = AlgebraicType::product(vec![ProductTypeElement::new_named(AlgebraicType::I32, "foo")]);
+        let product_type = AlgebraicType::product([("foo", AlgebraicType::I32)]);
         let typespace = Typespace::new(vec![]);
-        let product_value = AlgebraicValue::product(vec![AlgebraicValue::I32(42)]);
+        let product_value = AlgebraicValue::product([AlgebraicValue::I32(42)].into());
         assert_eq!(
             "(foo = 42)",
             in_space(&typespace, &product_type, &product_value).to_satn(),
@@ -492,7 +492,7 @@ mod tests {
 
     #[test]
     fn option_some() {
-        let option = AlgebraicType::option(AlgebraicType::NEVER_TYPE);
+        let option = AlgebraicType::option(AlgebraicType::never());
         let sum_value = AlgebraicValue::OptionNone();
         let typespace = Typespace::new(vec![]);
         assert_eq!("(none = ())", in_space(&typespace, &option, &sum_value).to_satn(),);
