@@ -171,7 +171,7 @@ impl ProgramVm for Program {
     fn eval_query(&mut self, query: CrudCode) -> Result<Code, ErrorVm> {
         match query {
             CrudCode::Query(query) => {
-                let head = query.head();
+                let head = query.head().clone();
                 let row_count = query.row_count();
                 let table_access = query.table.table_access();
                 let result = match query.table {
@@ -186,7 +186,7 @@ impl ProgramVm for Program {
                 let head = result.head().clone();
                 let rows: Vec<_> = result.collect_vec()?;
 
-                Ok(Code::Table(MemTable::new(&head, table_access, &rows)))
+                Ok(Code::Table(MemTable::new(head, table_access, rows)))
             }
             CrudCode::Insert { .. } => {
                 todo!()

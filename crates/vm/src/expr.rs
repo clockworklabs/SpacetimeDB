@@ -333,7 +333,7 @@ impl SourceExpr {
 }
 
 impl Relation for SourceExpr {
-    fn head(&self) -> Header {
+    fn head(&self) -> &Header {
         match self {
             SourceExpr::MemTable(x) => x.head(),
             SourceExpr::DbTable(x) => x.head(),
@@ -1057,8 +1057,7 @@ impl fmt::Display for SourceExpr {
             SourceExpr::MemTable(x) => {
                 let ty = &AlgebraicType::Product(x.head().ty());
                 for row in &x.data {
-                    let val = AlgebraicValue::Product(row.data.clone());
-                    let x = fmt_value(ty, &val);
+                    let x = fmt_value(ty, &row.data.clone().into());
                     write!(f, "{x}")?;
                 }
                 Ok(())
@@ -1262,7 +1261,7 @@ impl AuthAccess for QueryCode {
 }
 
 impl Relation for QueryCode {
-    fn head(&self) -> Header {
+    fn head(&self) -> &Header {
         self.table.head()
     }
 
