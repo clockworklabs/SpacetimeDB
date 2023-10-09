@@ -85,7 +85,7 @@ impl SystemTables {
 }
 
 // WARNING: In order to keep a stable schema, don't change the discriminant of the fields
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum StTableFields {
     TableId = 0,
     TableName = 1,
@@ -106,7 +106,7 @@ impl StTableFields {
 }
 
 // WARNING: In order to keep a stable schema, don't change the discriminant of the fields
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum StColumnFields {
     TableId = 0,
     ColId = 1,
@@ -183,7 +183,7 @@ impl StSequenceFields {
 }
 
 // WARNING: In order to keep a stable schema, don't change the discriminant of the fields
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum StConstraintFields {
     ConstraintId = 0,
     ConstraintName = 1,
@@ -206,7 +206,7 @@ impl StConstraintFields {
 }
 
 // WARNING: In order to keep a stable schema, don't change the discriminant of the fields
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum StModuleFields {
     ProgramHash = 0,
     Kind = 1,
@@ -223,12 +223,24 @@ impl StModuleFields {
     }
 }
 
+fn col_schema(table_id: TableId, id: u32, name: &str, col_type: AlgebraicType, is_autoinc: bool) -> ColumnSchema {
+    ColumnSchema {
+        table_id: table_id.0,
+        col_id: id,
+        col_name: name.into(),
+        col_type,
+        is_autoinc,
+    }
+}
+
 /// System Table [ST_TABLES_NAME]
 ///
 /// | table_id: u32 | table_name: String | table_type: String | table_access: String |
 /// |---------------|--------------------| ------------------ | -------------------- |
 /// | 4             | "customers"        | "user"             | "public"             |
 pub fn st_table_schema() -> TableSchema {
+    let col_schema = |tf: StTableFields, ty, auto_inc| col_schema(ST_TABLES_ID, tf as u32, tf.name(), ty, auto_inc);
+
     TableSchema {
         table_id: ST_TABLES_ID.0,
         table_name: ST_TABLES_NAME.into(),
@@ -248,36 +260,13 @@ pub fn st_table_schema() -> TableSchema {
                 is_unique: true,
             },
         ],
-        columns: vec![
-            ColumnSchema {
-                table_id: ST_TABLES_ID.0,
-                col_id: StTableFields::TableId as u32,
-                col_name: StTableFields::TableId.name().into(),
-                col_type: AlgebraicType::U32,
-                is_autoinc: true,
-            },
-            ColumnSchema {
-                table_id: ST_TABLES_ID.0,
-                col_id: StTableFields::TableName as u32,
-                col_name: StTableFields::TableName.name().into(),
-                col_type: AlgebraicType::String,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_TABLES_ID.0,
-                col_id: StTableFields::TableType as u32,
-                col_name: StTableFields::TableType.name().into(),
-                col_type: AlgebraicType::String,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_TABLES_ID.0,
-                col_id: StTableFields::TablesAccess as u32,
-                col_name: StTableFields::TablesAccess.name().into(),
-                col_type: AlgebraicType::String,
-                is_autoinc: false,
-            },
-        ],
+        columns: [
+            col_schema(StTableFields::TableId, AlgebraicType::U32, true),
+            col_schema(StTableFields::TableName, AlgebraicType::String, false),
+            col_schema(StTableFields::TableType, AlgebraicType::String, false),
+            col_schema(StTableFields::TablesAccess, AlgebraicType::String, false),
+        ]
+        .into(),
         constraints: vec![],
         table_type: StTableType::System,
         table_access: StAccess::Public,
@@ -293,47 +282,19 @@ pub static ST_TABLE_ROW_TYPE: Lazy<ProductType> =
 /// |---------------|--------|-----------------------|------------------|------------------|
 /// | 1             | 0      | AlgebraicType->0b0101 | "id"             | true             |
 pub fn st_columns_schema() -> TableSchema {
+    let col_schema = |cf: StColumnFields, ty, auto_inc| col_schema(ST_COLUMNS_ID, cf as u32, cf.name(), ty, auto_inc);
+
     TableSchema {
         table_id: ST_COLUMNS_ID.0,
         table_name: ST_COLUMNS_NAME.into(),
         indexes: vec![],
         columns: vec![
             // TODO(cloutiertyler): (table_id, col_id) should be have a unique constraint
-            ColumnSchema {
-                table_id: ST_COLUMNS_ID.0,
-                col_id: StColumnFields::TableId as u32,
-                col_name: StColumnFields::TableId.name().to_string(),
-                col_type: AlgebraicType::U32,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_COLUMNS_ID.0,
-                col_id: StColumnFields::ColId as u32,
-                col_name: StColumnFields::ColId.name().to_string(),
-                col_type: AlgebraicType::U32,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_COLUMNS_ID.0,
-                col_id: StColumnFields::ColType as u32,
-                col_name: StColumnFields::ColType.name().to_string(),
-                col_type: AlgebraicType::bytes(),
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_COLUMNS_ID.0,
-                col_id: StColumnFields::ColName as u32,
-                col_name: StColumnFields::ColName.name().to_string(),
-                col_type: AlgebraicType::String,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_COLUMNS_ID.0,
-                col_id: StColumnFields::IsAutoInc as u32,
-                col_name: StColumnFields::IsAutoInc.name().to_string(),
-                col_type: AlgebraicType::Bool,
-                is_autoinc: false,
-            },
+            col_schema(StColumnFields::TableId, AlgebraicType::U32, false),
+            col_schema(StColumnFields::ColId, AlgebraicType::U32, false),
+            col_schema(StColumnFields::ColType, AlgebraicType::bytes(), false),
+            col_schema(StColumnFields::ColName, AlgebraicType::String, false),
+            col_schema(StColumnFields::IsAutoInc, AlgebraicType::Bool, false),
         ],
         constraints: vec![ConstraintSchema {
             constraint_id: ST_CONSTRAINT_ID_INDEX_HACK,
@@ -357,6 +318,8 @@ pub static ST_COLUMNS_ROW_TYPE: Lazy<ProductType> =
 /// |---------------|---------------|---------------------|--------------------|----------------------|
 /// | 1             | 1             | [1]                 | "ix_sample"        | 0                    |
 pub fn st_indexes_schema() -> TableSchema {
+    let col_schema = |id, name, ty, auto_inc| col_schema(ST_INDEXES_ID, id, name, ty, auto_inc);
+
     TableSchema {
         table_id: ST_INDEXES_ID.0,
         table_name: ST_INDEXES_NAME.into(),
@@ -368,43 +331,14 @@ pub fn st_indexes_schema() -> TableSchema {
             index_name: "index_id_idx".into(),
             is_unique: true,
         }],
-        columns: vec![
-            ColumnSchema {
-                table_id: ST_INDEXES_ID.0,
-                col_id: 0,
-                col_name: "index_id".into(),
-                col_type: AlgebraicType::U32,
-                is_autoinc: true,
-            },
-            ColumnSchema {
-                table_id: ST_INDEXES_ID.0,
-                col_id: 1,
-                col_name: "table_id".into(),
-                col_type: AlgebraicType::U32,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_INDEXES_ID.0,
-                col_id: 2,
-                col_name: "cols".into(),
-                col_type: AlgebraicType::array(AlgebraicType::U32),
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_INDEXES_ID.0,
-                col_id: 3,
-                col_name: "index_name".into(),
-                col_type: AlgebraicType::String,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_INDEXES_ID.0,
-                col_id: 4,
-                col_name: "is_unique".into(),
-                col_type: AlgebraicType::Bool,
-                is_autoinc: false,
-            },
-        ],
+        columns: [
+            col_schema(0, "index_id", AlgebraicType::U32, true),
+            col_schema(1, "table_id", AlgebraicType::U32, false),
+            col_schema(2, "cols", AlgebraicType::array(AlgebraicType::U32), false),
+            col_schema(3, "index_name", AlgebraicType::String, false),
+            col_schema(4, "is_unique", AlgebraicType::Bool, false),
+        ]
+        .into(),
         constraints: vec![],
         table_type: StTableType::System,
         table_access: StAccess::Public,
@@ -420,6 +354,8 @@ pub static ST_INDEX_ROW_TYPE: Lazy<ProductType> =
 /// |-------------|-------------------|-----------|-------|-----------|-----------|----------|--------|-----------|
 /// | 1           | "seq_customer_id" | 1         | 100   | 10        | 1200      | 1        | 1      | 200       |
 pub(crate) fn st_sequences_schema() -> TableSchema {
+    let col_schema = |id, name, ty, autoinc| col_schema(ST_SEQUENCES_ID, id, name, ty, autoinc);
+
     TableSchema {
         table_id: ST_SEQUENCES_ID.0,
         table_name: ST_SEQUENCES_NAME.into(),
@@ -431,71 +367,18 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
             index_name: "sequences_id_idx".into(),
             is_unique: true,
         }],
-        columns: vec![
-            ColumnSchema {
-                table_id: ST_SEQUENCES_ID.0,
-                col_id: 0,
-                col_name: "sequence_id".into(),
-                col_type: AlgebraicType::U32,
-                is_autoinc: true,
-            },
-            ColumnSchema {
-                table_id: ST_SEQUENCES_ID.0,
-                col_id: 1,
-                col_name: "sequence_name".into(),
-                col_type: AlgebraicType::String,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_SEQUENCES_ID.0,
-                col_id: 2,
-                col_name: "table_id".into(),
-                col_type: AlgebraicType::U32,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_SEQUENCES_ID.0,
-                col_id: 3,
-                col_name: "col_id".into(),
-                col_type: AlgebraicType::U32,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_SEQUENCES_ID.0,
-                col_id: 4,
-                col_name: "increment".into(),
-                col_type: AlgebraicType::I128,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_SEQUENCES_ID.0,
-                col_id: 5,
-                col_name: "start".into(),
-                col_type: AlgebraicType::I128,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_SEQUENCES_ID.0,
-                col_id: 6,
-                col_name: "min_value".into(),
-                col_type: AlgebraicType::I128,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_SEQUENCES_ID.0,
-                col_id: 7,
-                col_name: "max_malue".into(),
-                col_type: AlgebraicType::I128,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_SEQUENCES_ID.0,
-                col_id: 8,
-                col_name: "allocated".into(),
-                col_type: AlgebraicType::I128,
-                is_autoinc: false,
-            },
-        ],
+        columns: [
+            col_schema(0, "sequence_id", AlgebraicType::U32, true),
+            col_schema(1, "sequence_name", AlgebraicType::String, false),
+            col_schema(2, "table_id", AlgebraicType::U32, false),
+            col_schema(3, "col_id", AlgebraicType::U32, false),
+            col_schema(4, "increment", AlgebraicType::I128, false),
+            col_schema(5, "start", AlgebraicType::I128, false),
+            col_schema(6, "min_value", AlgebraicType::I128, false),
+            col_schema(7, "max_value", AlgebraicType::I128, false),
+            col_schema(8, "allocated", AlgebraicType::I128, false),
+        ]
+        .into(),
         constraints: vec![],
         table_type: StTableType::System,
         table_access: StAccess::Public,
@@ -511,6 +394,9 @@ pub static ST_SEQUENCE_ROW_TYPE: Lazy<ProductType> =
 /// |---------------|-------------------- -|-----------|-------|-----------|
 /// | 1             | "unique_customer_id" | 1         | 100   | [1, 4]        |
 pub(crate) fn st_constraints_schema() -> TableSchema {
+    let col_schema =
+        |cf: StConstraintFields, ty, autoinc| col_schema(ST_CONSTRAINTS_ID, cf as u32, cf.name(), ty, autoinc);
+
     TableSchema {
         table_id: ST_CONSTRAINTS_ID.0,
         table_name: ST_CONSTRAINTS_NAME.into(),
@@ -522,43 +408,18 @@ pub(crate) fn st_constraints_schema() -> TableSchema {
             index_name: "constraint_id_idx".into(),
             is_unique: true,
         }],
-        columns: vec![
-            ColumnSchema {
-                table_id: ST_CONSTRAINTS_ID.0,
-                col_id: StConstraintFields::ConstraintId as u32,
-                col_name: StConstraintFields::ConstraintId.name().into(),
-                col_type: AlgebraicType::U32,
-                is_autoinc: true,
-            },
-            ColumnSchema {
-                table_id: ST_CONSTRAINTS_ID.0,
-                col_id: StConstraintFields::ConstraintName as u32,
-                col_name: StConstraintFields::ConstraintName.name().into(),
-                col_type: AlgebraicType::String,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_CONSTRAINTS_ID.0,
-                col_id: StConstraintFields::Kind as u32,
-                col_name: StConstraintFields::Kind.name().into(),
-                col_type: AlgebraicType::U32,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_CONSTRAINTS_ID.0,
-                col_id: StConstraintFields::TableId as u32,
-                col_name: StConstraintFields::TableId.name().into(),
-                col_type: AlgebraicType::U32,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_CONSTRAINTS_ID.0,
-                col_id: StConstraintFields::Columns as u32,
-                col_name: StConstraintFields::Columns.name().into(),
-                col_type: AlgebraicType::array(AlgebraicType::U32),
-                is_autoinc: false,
-            },
-        ],
+        columns: [
+            col_schema(StConstraintFields::ConstraintId, AlgebraicType::U32, true),
+            col_schema(StConstraintFields::ConstraintName, AlgebraicType::String, false),
+            col_schema(StConstraintFields::Kind, AlgebraicType::U32, false),
+            col_schema(StConstraintFields::TableId, AlgebraicType::U32, false),
+            col_schema(
+                StConstraintFields::Columns,
+                AlgebraicType::array(AlgebraicType::U32),
+                false,
+            ),
+        ]
+        .into(),
         constraints: vec![],
         table_type: StTableType::System,
         table_access: StAccess::Public,
@@ -581,33 +442,22 @@ pub static ST_CONSTRAINT_ROW_TYPE: Lazy<ProductType> =
 /// |---------------------|----------|-------|
 /// | [250, 207, 5, ...]  | 0        | 42    |
 pub(crate) fn st_module_schema() -> TableSchema {
+    let col_schema = |mf: StModuleFields, ty, autoinc| col_schema(ST_MODULE_ID, mf as u32, mf.name(), ty, autoinc);
+
     TableSchema {
         table_id: ST_MODULE_ID.0,
         table_name: ST_MODULE_NAME.into(),
         indexes: vec![],
-        columns: vec![
-            ColumnSchema {
-                table_id: ST_MODULE_ID.0,
-                col_id: StModuleFields::ProgramHash as u32,
-                col_name: StModuleFields::ProgramHash.name().into(),
-                col_type: AlgebraicType::array(AlgebraicType::U8),
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_MODULE_ID.0,
-                col_id: StModuleFields::Kind as u32,
-                col_name: StModuleFields::Kind.name().into(),
-                col_type: AlgebraicType::U8,
-                is_autoinc: false,
-            },
-            ColumnSchema {
-                table_id: ST_MODULE_ID.0,
-                col_id: StModuleFields::Epoch as u32,
-                col_name: StModuleFields::Epoch.name().into(),
-                col_type: AlgebraicType::U128,
-                is_autoinc: false,
-            },
-        ],
+        columns: [
+            col_schema(
+                StModuleFields::ProgramHash,
+                AlgebraicType::array(AlgebraicType::U8),
+                false,
+            ),
+            col_schema(StModuleFields::Kind, AlgebraicType::U8, false),
+            col_schema(StModuleFields::Epoch, AlgebraicType::U128, false),
+        ]
+        .into(),
         constraints: vec![],
         table_type: StTableType::System,
         table_access: StAccess::Public,
