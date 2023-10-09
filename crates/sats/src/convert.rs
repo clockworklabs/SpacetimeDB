@@ -1,8 +1,6 @@
-use crate::algebraic_type::AlgebraicType;
-use crate::algebraic_value::AlgebraicValue;
-use crate::builtin_type::BuiltinType;
-use crate::builtin_value::{BuiltinValue, F32, F64};
-use crate::{ArrayValue, MapValue, ProductType, ProductValue, SumValue};
+use crate::algebraic_value::{F32, F64};
+use crate::{AlgebraicType, AlgebraicValue, ArrayValue, MapValue, ProductType, ProductValue, SumValue};
+use crate::{BuiltinType, BuiltinValue};
 
 impl From<BuiltinType> for AlgebraicType {
     fn from(x: BuiltinType) -> Self {

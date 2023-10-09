@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 // use crate::type_value::{ElementValue, EnumValue};
 // use crate::{ProductTypeElement, SumType, PrimitiveType, ReducerDef, ProductType, ProductValue, AlgebraicType, AlgebraicValue};
 
-use crate::builtin_value::{F32, F64};
+use crate::algebraic_value::{F32, F64};
 use crate::{
     AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, BuiltinType, MapType, MapValue, ProductType,
     ProductTypeElement, ProductValue, SumType, SumValue, WithTypespace,

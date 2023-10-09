@@ -2,7 +2,7 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicValue, SumTypeVariant};
+use crate::{AlgebraicType, AlgebraicValue, ArrayType, MapType, SumTypeVariant};
 use enum_as_inner::EnumAsInner;
 
 /// Represents the built-in types in SATS.
@@ -52,40 +52,6 @@ pub enum BuiltinType {
     Map(MapType),
 }
 
-/// An array type is a homegeneous product type of dynamic length.
-///
-/// That is, it is a product type
-/// where every element / factor / field is of the same type
-/// and where the length is statically unknown.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct ArrayType {
-    /// The base type every element of the array has.
-    pub elem_ty: Box<AlgebraicType>,
-}
-
-impl_serialize!([] ArrayType, (self, ser) => self.elem_ty.serialize(ser));
-impl_deserialize!([] ArrayType, de => Deserialize::deserialize(de).map(|elem_ty| Self { elem_ty }));
-
-/// A map type from keys of type `key_ty` to values of type `ty`.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[sats(crate = crate)]
-pub struct MapType {
-    /// The key type of the map.
-    pub key_ty: Box<AlgebraicType>,
-    /// The value type of the map.
-    pub ty: Box<AlgebraicType>,
-}
-
-impl MapType {
-    /// Returns a map type with keys of type `key` and values of type `value`.
-    pub fn new(key: AlgebraicType, value: AlgebraicType) -> Self {
-        Self {
-            key_ty: Box::new(key),
-            ty: Box::new(value),
-        }
-    }
-}
-
 impl MetaType for BuiltinType {
     fn meta_type() -> AlgebraicType {
         // TODO: sats(rename_all = "lowercase"), otherwise json won't work.
@@ -104,11 +70,8 @@ impl MetaType for BuiltinType {
             SumTypeVariant::unit("f32"),
             SumTypeVariant::unit("f64"),
             SumTypeVariant::unit("string"),
-            SumTypeVariant::new_named(AlgebraicType::ZERO_REF, "array"),
-            SumTypeVariant::new_named(
-                AlgebraicType::product([("key_ty", AlgebraicType::ZERO_REF), ("ty", AlgebraicType::ZERO_REF)]),
-                "map",
-            ),
+            SumTypeVariant::new_named(ArrayType::meta_type(), "array"),
+            SumTypeVariant::new_named(MapType::meta_type(), "map"),
         ])
     }
 }
