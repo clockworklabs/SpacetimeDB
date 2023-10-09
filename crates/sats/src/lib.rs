@@ -1,6 +1,7 @@
 pub mod algebraic_type;
 mod algebraic_type_ref;
 pub mod algebraic_value;
+pub mod array_type;
 pub mod bsatn;
 pub mod buffer;
 pub mod builtin_type;
@@ -22,7 +23,8 @@ pub mod typespace;
 pub use algebraic_type::AlgebraicType;
 pub use algebraic_type_ref::AlgebraicTypeRef;
 pub use algebraic_value::AlgebraicValue;
-pub use builtin_type::{ArrayType, BuiltinType, MapType};
+pub use array_type::ArrayType;
+pub use builtin_type::{BuiltinType, MapType};
 pub use builtin_value::{ArrayValue, BuiltinValue, MapValue};
 pub use product_type::ProductType;
 pub use product_type_element::ProductTypeElement;
