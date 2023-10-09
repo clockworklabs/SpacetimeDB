@@ -78,7 +78,7 @@ impl ResolveRefs for BuiltinType {
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
         match this.ty() {
             BuiltinType::Array(ty) => this.with(ty)._resolve_refs(state).map(Self::Array),
-            BuiltinType::Map(m) => this.with(m)._resolve_refs(state).map(Self::Map),
+            BuiltinType::Map(m) => this.with(&**m)._resolve_refs(state).map(Box::new).map(Self::Map),
             // These types are plain and cannot have refs in them.
             x => Some(x.clone()),
         }
@@ -95,11 +95,11 @@ impl ResolveRefs for ArrayType {
 }
 
 impl ResolveRefs for MapType {
-    type Output = MapType;
+    type Output = Self;
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        Some(MapType {
-            key_ty: Box::new(this.map(|m| &*m.key_ty)._resolve_refs(state)?),
-            ty: Box::new(this.map(|m| &*m.ty)._resolve_refs(state)?),
+        Some(Self {
+            key_ty: this.map(|m| &m.key_ty)._resolve_refs(state)?,
+            ty: this.map(|m| &m.ty)._resolve_refs(state)?,
         })
     }
 }

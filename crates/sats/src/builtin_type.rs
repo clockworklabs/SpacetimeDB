@@ -49,7 +49,7 @@ pub enum BuiltinType {
     /// The type of map values consisting of a key type `key_ty` and value `ty`.
     /// Values [`BuiltinValue::Map(map)`](crate::BuiltinValue::Map) will have this type.
     /// The order of entries in a map value is observable.
-    Map(MapType),
+    Map(Box<MapType>),
 }
 
 impl MetaType for BuiltinType {

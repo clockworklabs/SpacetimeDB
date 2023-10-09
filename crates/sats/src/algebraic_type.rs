@@ -224,8 +224,7 @@ impl AlgebraicType {
 
     /// Returns a map type from the type `key` to the type `value`.
     pub fn map(key: Self, value: Self) -> Self {
-        let value = MapType::new(key, value);
-        AlgebraicType::Builtin(BuiltinType::Map(value))
+        AlgebraicType::Builtin(BuiltinType::Map(Box::new(MapType::new(key, value))))
     }
 
     /// Returns a sum type of unit variants with names taken from `var_names`.

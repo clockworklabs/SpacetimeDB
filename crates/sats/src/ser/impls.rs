@@ -173,7 +173,7 @@ impl_serialize!([] ValueWithType<'_, BuiltinValue>, (self, ser) => match (self.v
     (BuiltinValue::F64(v), BuiltinType::F64) => ser.serialize_f64((*v).into()),
     (BuiltinValue::String(s), BuiltinType::String) => ser.serialize_str(s),
     (BuiltinValue::Array { val }, BuiltinType::Array(ty)) => self.with(ty, val).serialize(ser),
-    (BuiltinValue::Map { val }, BuiltinType::Map(ty)) => self.with(ty, val).serialize(ser),
+    (BuiltinValue::Map { val }, BuiltinType::Map(ty)) => self.with(&**ty, val).serialize(ser),
     (val, ty) => panic!("mismatched value and schema: {val:?} {ty:?}"),
 });
 impl_serialize!(
@@ -221,7 +221,7 @@ impl_serialize!([] ValueWithType<'_, ArrayValue>, (self, ser) => match (self.val
     (ArrayValue::Array(v), AlgebraicType::Builtin(BuiltinType::Array(ty))) => {
         self.with(ty, v).serialize(ser)
     }
-    (ArrayValue::Map(v), AlgebraicType::Builtin(BuiltinType::Map(m))) => self.with(m, v).serialize(ser),
+    (ArrayValue::Map(v), AlgebraicType::Builtin(BuiltinType::Map(m))) => self.with(&**m, v).serialize(ser),
     (val, _) if val.is_empty() => ser.serialize_array(0)?.end(),
     (val, ty) => panic!("mismatched value and schema: {val:?} {ty:?}"),
 });
@@ -230,7 +230,7 @@ impl_serialize!([] ValueWithType<'_, MapValue>, (self, ser) => {
     let MapType { key_ty, ty } = self.ty();
     let mut map = ser.serialize_map(val.len())?;
     for (key, val) in val {
-        map.serialize_entry(&self.with(&**key_ty, key), &self.with(&**ty, val))?;
+        map.serialize_entry(&self.with(key_ty, key), &self.with(ty, val))?;
     }
     map.end()
 });
