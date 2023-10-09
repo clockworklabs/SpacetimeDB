@@ -328,7 +328,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, BuiltinType> {
             BuiltinType::F64 => f64::deserialize(deserializer).map(Into::into),
             BuiltinType::String => String::deserialize(deserializer).map(Into::into),
             BuiltinType::Array(ty) => self.with(ty).deserialize(deserializer).map(Into::into),
-            BuiltinType::Map(ty) => self.with(ty).deserialize(deserializer).map(Into::into),
+            BuiltinType::Map(ty) => self.with(&**ty).deserialize(deserializer).map(Into::into),
         }
     }
 }
@@ -466,7 +466,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(ArrayValue::Array),
                 AlgebraicType::Builtin(BuiltinType::Map(ty)) => deserializer
-                    .deserialize_array_seed(BasicVecVisitor, self.with(ty))
+                    .deserialize_array_seed(BasicVecVisitor, self.with(&**ty))
                     .map(ArrayValue::Map),
             };
         }
@@ -478,7 +478,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, MapType> {
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
         let MapType { key_ty, ty } = self.ty();
-        deserializer.deserialize_map_seed(BasicMapVisitor, self.with(&**key_ty), self.with(&**ty))
+        deserializer.deserialize_map_seed(BasicMapVisitor, self.with(key_ty), self.with(ty))
     }
 }
 
