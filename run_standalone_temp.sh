@@ -25,7 +25,7 @@ trap cleanup EXIT
 
 cp crates/standalone/log.conf "$STDB_PATH/log.conf"
 # -i differs between GNU and BSD sed, so use a temp file
-sed 's/spacetimedb=debug/spacetimedb=trace/g' "$STDB_PATH/log.conf" > "$STDB_PATH/log.conf.tmp" && \
+sed 's/spacetimedb=debug/spacetimedb=debug/g' "$STDB_PATH/log.conf" > "$STDB_PATH/log.conf.tmp" && \
     mv "$STDB_PATH/log.conf.tmp" "$STDB_PATH/log.conf"
 
 export SPACETIMEDB_LOG_CONFIG="$STDB_PATH/log.conf"
@@ -35,4 +35,4 @@ export SPACETIMEDB_TRACY=1
 echo "DATABASE AT ${STDB_PATH}"
 echo "LOGS AT $STDB_PATH/logs"
 
-cargo run -p spacetimedb-standalone -- start -l 127.0.0.1:3000 --enable-tracy
+cargo run -p spacetimedb-standalone -- start -l 127.0.0.1:3000

@@ -1488,6 +1488,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fixed_bitmaps"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab96a926e4a8b304e4bee94122e2e1305e954d794974931148d81ab354d32975"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "fixedbitset"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4308,6 +4317,7 @@ dependencies = [
  "derive_more",
  "dirs",
  "email_address",
+ "fixed_bitmaps",
  "flate2",
  "fs2",
  "futures",

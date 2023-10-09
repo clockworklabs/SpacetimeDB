@@ -1,3 +1,4 @@
+//#![feature(trusted_len)]
 use std::path::{Path, PathBuf};
 
 use once_cell::sync::Lazy;

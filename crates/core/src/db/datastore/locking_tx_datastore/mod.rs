@@ -44,6 +44,7 @@ use crate::{
     error::{DBError, IndexError, TableError},
 };
 
+use crate::db::datastore::locking_tx_datastore::table::{RowPk, RowsIterator};
 use anyhow::anyhow;
 use derive_more::Into;
 use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
@@ -139,7 +140,7 @@ impl CommittedState {
         self.tables.entry(table_id).or_insert_with(|| Table {
             row_type: row_type.clone(),
             schema: schema.clone(),
-            rows: BTreeMap::new(),
+            rows: Default::default(),
             indexes: HashMap::new(),
         })
     }
@@ -156,20 +157,22 @@ impl CommittedState {
             commit_table.row_type = table.row_type;
             commit_table.schema = table.schema;
 
-            tx_data.records.extend(table.rows.into_iter().map(|(row_id, row)| {
-                commit_table.insert(row_id, row.clone());
-                let pv = row;
-                let bytes = match row_id.0 {
-                    DataKey::Data(data) => Arc::new(data.to_vec()),
-                    DataKey::Hash(_) => memory.get(&row_id.0).unwrap().clone(),
-                };
-                TxRecord {
-                    op: TxOp::Insert(bytes),
-                    table_id,
-                    key: row_id.0,
-                    product_value: pv,
-                }
-            }));
+            tx_data
+                .records
+                .extend(table.rows.into_iter().map(|RowPk { key: row_id, row }| {
+                    commit_table.insert(*row_id, row.clone());
+                    let pv = row;
+                    let bytes = match row_id.0 {
+                        DataKey::Data(data) => Arc::new(data.to_vec()),
+                        DataKey::Hash(_) => memory.get(&row_id.0).unwrap().clone(),
+                    };
+                    TxRecord {
+                        op: TxOp::Insert(bytes),
+                        table_id,
+                        key: row_id.0,
+                        product_value: pv.clone(),
+                    }
+                }));
 
             // Add all newly created indexes to the committed state
             for (_, index) in table.indexes {
@@ -251,6 +254,17 @@ struct TxState {
     delete_tables: BTreeMap<TableId, BTreeSet<RowId>>,
 }
 
+enum RowState2 {
+    /// The row is present because it has been inserted in the
+    /// current transaction.
+    Insert,
+    /// The row is absent because it has been deleted in the
+    /// current transaction.
+    Delete,
+    /// The row is not present in the table.
+    Absent,
+}
+
 /// Represents whether a row has been previously committed, inserted
 /// or deleted this transaction, or simply not present at all.
 enum RowState {
@@ -273,6 +287,26 @@ impl TxState {
             insert_tables: BTreeMap::new(),
             delete_tables: BTreeMap::new(),
         }
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub fn get_row_op2(
+        &self,
+        table_inserted: Option<&Table>,
+        table_deleted: Option<&BTreeSet<RowId>>,
+        row_id: &RowId,
+    ) -> RowState2 {
+        if let Some(true) = table_deleted.map(|set| set.contains(row_id)) {
+            return RowState2::Delete;
+        }
+        let Some(_) = table_inserted else {
+            return RowState2::Absent;
+        };
+        // table
+        //     .get_row(row_id)
+        //     .map(|_| RowState2::Insert)
+        //     .unwrap_or(RowState2::Absent)
+        RowState2::Absent
     }
 
     #[tracing::instrument(skip_all)]
@@ -572,7 +606,7 @@ impl Inner {
                         row_type,
                         schema,
                         indexes: HashMap::new(),
-                        rows: BTreeMap::new(),
+                        rows: Default::default(),
                     },
                 );
             }
@@ -784,7 +818,7 @@ impl Inner {
                 row_type,
                 schema,
                 indexes: HashMap::new(),
-                rows: BTreeMap::new(),
+                rows: Default::default(),
             },
         );
         Ok(())
@@ -1013,7 +1047,7 @@ impl Inner {
                     row_type,
                     schema,
                     indexes: HashMap::new(),
-                    rows: BTreeMap::new(),
+                    rows: Default::default(),
                 },
             );
             self.tx_state
@@ -1251,7 +1285,7 @@ impl Inner {
                         )
                     })
                     .collect::<HashMap<_, _>>(),
-                rows: BTreeMap::new(),
+                rows: Default::default(),
             };
             self.tx_state.as_mut().unwrap().insert_tables.insert(table_id, table);
             self.tx_state.as_ref().unwrap().get_insert_table(&table_id).unwrap()
@@ -1640,7 +1674,7 @@ impl Locking {
                 row_type: row_type.clone(),
                 schema,
                 indexes: HashMap::new(),
-                rows: BTreeMap::new(),
+                rows: Default::default(),
             });
             match write.operation {
                 Operation::Delete => {
@@ -1692,46 +1726,57 @@ impl traits::Tx for Locking {
 }
 
 pub struct Iter<'a> {
-    table_id: TableId,
-    inner: &'a Inner,
+    //table_id: TableId,
+    //inner: &'a Inner,
     stage: ScanStage<'a>,
+    state: Option<&'a TxState>,
+    table_committed: Option<&'a Table>,
+    table_insert: Option<&'a Table>,
+    table_deleted: Option<&'a BTreeSet<RowId>>,
 }
 
 impl<'a> Iter<'a> {
     fn new(table_id: TableId, inner: &'a Inner) -> Self {
+        let state = inner.tx_state.as_ref();
+        let table_committed = inner.committed_state.tables.get(&table_id);
+        let table_insert = inner
+            .tx_state
+            .as_ref()
+            .and_then(|tx_state| tx_state.insert_tables.get(&table_id));
+        let table_deleted = state.and_then(|x| x.delete_tables.get(&table_id));
         Self {
-            table_id,
-            inner,
+            //table_id,
+            //inner,
             stage: ScanStage::Start,
+            state,
+            table_committed,
+            table_insert,
+            table_deleted,
         }
     }
 }
 
 enum ScanStage<'a> {
     Start,
-    CurrentTx {
-        iter: std::collections::btree_map::Iter<'a, RowId, ProductValue>,
-    },
-    Committed {
-        iter: std::collections::btree_map::Iter<'a, RowId, ProductValue>,
-    },
+    CurrentTx { iter: RowsIterator<'a> },
+    Committed { iter: RowsIterator<'a> },
 }
 
-impl Iterator for Iter<'_> {
+impl<'a> Iterator for Iter<'a> {
     type Item = DataRef;
 
     #[tracing::instrument(skip_all)]
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match &mut self.stage {
                 ScanStage::Start => {
                     let _span = tracing::debug_span!("ScanStage::Start").entered();
-                    if let Some(table) = self.inner.committed_state.tables.get(&self.table_id) {
+                    if let Some(table) = self.table_committed {
                         self.stage = ScanStage::Committed {
                             iter: table.rows.iter(),
                         };
-                    } else if let Some(table) = self.inner.tx_state.as_ref().unwrap().insert_tables.get(&self.table_id)
-                    {
+                    } else if let Some(table) = self.table_insert {
                         self.stage = ScanStage::CurrentTx {
                             iter: table.rows.iter(),
                         };
@@ -1739,30 +1784,25 @@ impl Iterator for Iter<'_> {
                 }
                 ScanStage::Committed { iter } => {
                     let _span = tracing::debug_span!("ScanStage::Committed").entered();
-                    for (row_id, row) in iter {
-                        match self
-                            .inner
-                            .tx_state
-                            .as_ref()
-                            .map(|tx_state| tx_state.get_row_op(&self.table_id, row_id))
-                        {
-                            Some(RowState::Committed(_)) => unreachable!("a row cannot be committed in a tx state"),
-                            Some(RowState::Insert(_)) => (), // Do nothing, we'll get it in the next stage
-                            Some(RowState::Delete) => (),    // Skip it, it's been deleted
-                            Some(RowState::Absent) => {
-                                return Some(DataRef::new(row_id.0, row.clone()));
-                            }
-                            None => {
-                                return Some(DataRef::new(row_id.0, row.clone()));
-                            }
-                        }
+                    if let Some(row_pk) = iter.next() {
+                        return Some(DataRef::new(row_pk.key.0, row_pk.row.clone()));
                     }
-                    if let Some(table) = self
-                        .inner
-                        .tx_state
-                        .as_ref()
-                        .and_then(|tx_state| tx_state.insert_tables.get(&self.table_id))
-                    {
+                    // for row_pk in iter {
+                    //     match self
+                    //         .state
+                    //         .map(|tx_state| tx_state.get_row_op2(self.table_insert, self.table_deleted, &row_pk.key))
+                    //     {
+                    //         Some(RowState2::Insert) => (), // Do nothing, we'll get it in the next stage
+                    //         Some(RowState2::Delete) => (), // Skip it, it's been deleted
+                    //         Some(RowState2::Absent) => {
+                    //             return Some(DataRef::new(row_pk.key.0, row_pk.row.clone()));
+                    //         }
+                    //         None => {
+                    //             return Some(DataRef::new(row_pk.key.0, row_pk.row.clone()));
+                    //         }
+                    //     }
+                    // }
+                    if let Some(table) = self.table_insert {
                         self.stage = ScanStage::CurrentTx {
                             iter: table.rows.iter(),
                         };
@@ -1772,14 +1812,23 @@ impl Iterator for Iter<'_> {
                 }
                 ScanStage::CurrentTx { iter } => {
                     let _span = tracing::debug_span!("ScanStage::CurrentTx").entered();
-                    if let Some((id, row)) = iter.next() {
-                        return Some(DataRef::new(id.0, row.clone()));
+                    if let Some(row) = iter.next() {
+                        return Some(DataRef::new(row.key.0, row.row.clone()));
                     }
                     break;
                 }
             }
         }
         None
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let total_rows = self.table_committed.map(|x| x.rows.len()).unwrap_or_default()
+            + self.table_insert.map(|x| x.rows.len()).unwrap_or_default()
+            - self.table_deleted.map(|x| x.len()).unwrap_or_default();
+
+        //dbg!(total_rows);
+        (total_rows, Some(total_rows))
     }
 }
 
@@ -1900,7 +1949,7 @@ impl<R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'_, R> {
             let row = data_ref.view();
             let value = &row.elements[self.col_id.0 as usize];
             if self.range.contains(value) {
-                return Some(data_ref);
+                return Some(data_ref.into());
             }
         }
         None
@@ -2152,8 +2201,10 @@ impl traits::MutProgrammable for Locking {
 #[cfg(test)]
 mod tests {
     use super::{ColId, Locking, StTableRow};
+    use crate::db::datastore::locking_tx_datastore::table::RowPk;
+    use crate::db::datastore::locking_tx_datastore::RowId;
     use crate::db::datastore::system_tables::{StConstraintRow, ST_CONSTRAINTS_ID};
-    use crate::db::datastore::traits::IndexId;
+    use crate::db::datastore::traits::{IndexId, TxDatastore};
     use crate::{
         db::datastore::{
             locking_tx_datastore::{
@@ -2167,12 +2218,14 @@ mod tests {
     };
     use itertools::Itertools;
     use nonempty::NonEmpty;
+    use spacetimedb_lib::data_key::ToDataKey;
     use spacetimedb_lib::{
         auth::{StAccess, StTableType},
         error::ResultTest,
         ColumnIndexAttribute,
     };
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue};
+    use std::time::Instant;
 
     fn u32_str_u32(a: u32, b: &str, c: u32) -> ProductValue {
         product![a, b, c]
@@ -2335,6 +2388,62 @@ mod tests {
             ]
         );
         datastore.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    #[test]
+    fn test_iter() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = datastore.begin_mut_tx();
+        let schema = basic_table_schema();
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let total = 10000;
+        let mut rows = Vec::with_capacity(total);
+        for i in 0..total {
+            let row = ProductValue::from_iter(vec![
+                AlgebraicValue::U32(0), // 0 will be ignored.
+                AlgebraicValue::String(format!("val {i}")),
+                AlgebraicValue::U32((18 * i) as u32),
+            ]);
+            rows.push(RowPk {
+                key: RowId(row.to_data_key()),
+                row: row.clone(),
+            });
+            datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        }
+
+        let mut result_stdb = Vec::with_capacity(1000);
+        let mut result_stdb_rows = result_stdb.clone();
+        let mut result_vec = result_stdb.clone();
+
+        for _ in 0..1000 {
+            let now = Instant::now();
+            let _table_rows = datastore.iter_tx(&tx, table_id)?.collect::<Vec<_>>();
+            let elapsed = now.elapsed();
+            result_stdb.push(elapsed);
+
+            let table_rows = datastore.iter_tx(&tx, table_id)?.table_insert.unwrap();
+            let now = Instant::now();
+
+            let _table_rows: Vec<_> = std::hint::black_box(table_rows.rows.iter().collect());
+            //.map(|x| x.row.clone())
+            let elapsed = now.elapsed();
+            result_stdb_rows.push(elapsed);
+
+            // dbg!(table_rows);
+            let now = Instant::now();
+            let _table_rows: Vec<_> = std::hint::black_box(rows.iter().collect());
+            let elapsed = now.elapsed();
+            result_vec.push(elapsed);
+        }
+
+        result_stdb.sort();
+        println!("Elapsed STDB: {:.2?}", result_stdb.last().unwrap());
+        result_stdb_rows.sort();
+        println!("Elapsed STDB ROWs: {:.2?}", result_stdb_rows.last().unwrap());
+        result_vec.sort();
+        println!("Elapsed STDB Vec: {:.2?}", result_vec.last().unwrap());
+
         Ok(())
     }
 
