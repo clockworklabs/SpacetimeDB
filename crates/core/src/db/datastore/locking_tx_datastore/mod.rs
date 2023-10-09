@@ -53,7 +53,7 @@ use spacetimedb_lib::{
     relation::RelValue,
     DataKey, Hash,
 };
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, BuiltinValue, ProductType, ProductValue};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -1168,18 +1168,18 @@ impl Inner {
     /// Check if the value is one of the `numeric` types and is `0`.
     fn can_replace_with_sequence(value: &AlgebraicValue) -> bool {
         match value {
-            AlgebraicValue::Builtin(BuiltinValue::I8(x)) => *x == 0,
-            AlgebraicValue::Builtin(BuiltinValue::U8(x)) => *x == 0,
-            AlgebraicValue::Builtin(BuiltinValue::I16(x)) => *x == 0,
-            AlgebraicValue::Builtin(BuiltinValue::U16(x)) => *x == 0,
-            AlgebraicValue::Builtin(BuiltinValue::I32(x)) => *x == 0,
-            AlgebraicValue::Builtin(BuiltinValue::U32(x)) => *x == 0,
-            AlgebraicValue::Builtin(BuiltinValue::I64(x)) => *x == 0,
-            AlgebraicValue::Builtin(BuiltinValue::U64(x)) => *x == 0,
-            AlgebraicValue::Builtin(BuiltinValue::I128(x)) => *x == 0,
-            AlgebraicValue::Builtin(BuiltinValue::U128(x)) => *x == 0,
-            AlgebraicValue::Builtin(BuiltinValue::F32(x)) => *x == 0.0,
-            AlgebraicValue::Builtin(BuiltinValue::F64(x)) => *x == 0.0,
+            AlgebraicValue::I8(x) => *x == 0,
+            AlgebraicValue::U8(x) => *x == 0,
+            AlgebraicValue::I16(x) => *x == 0,
+            AlgebraicValue::U16(x) => *x == 0,
+            AlgebraicValue::I32(x) => *x == 0,
+            AlgebraicValue::U32(x) => *x == 0,
+            AlgebraicValue::I64(x) => *x == 0,
+            AlgebraicValue::U64(x) => *x == 0,
+            AlgebraicValue::I128(x) => *x == 0,
+            AlgebraicValue::U128(x) => *x == 0,
+            AlgebraicValue::F32(x) => *x == 0.0,
+            AlgebraicValue::F64(x) => *x == 0.0,
             _ => false,
         }
     }

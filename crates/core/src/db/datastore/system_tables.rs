@@ -798,7 +798,7 @@ impl<Name: AsRef<str>> From<&StIndexRow<Name>> for ProductValue {
         product![
             x.index_id,
             x.table_id,
-            AlgebraicValue::ArrayOf(x.cols.clone()),
+            ArrayValue::from(x.cols.clone()),
             AlgebraicValue::String(x.index_name.as_ref().to_string()),
             x.is_unique
         ]
@@ -941,11 +941,11 @@ impl<'a> TryFrom<&'a ProductValue> for StConstraintRow<&'a str> {
 impl<Name: AsRef<str>> From<&StConstraintRow<Name>> for ProductValue {
     fn from(x: &StConstraintRow<Name>) -> Self {
         product![
-            AlgebraicValue::U32(x.constraint_id),
+            x.constraint_id,
             AlgebraicValue::String(x.constraint_name.as_ref().to_string()),
-            AlgebraicValue::U8(x.kind.bits()),
-            AlgebraicValue::U32(x.table_id),
-            AlgebraicValue::ArrayOf(x.columns.clone())
+            x.kind.bits(),
+            x.table_id,
+            ArrayValue::from(x.columns.clone())
         ]
     }
 }

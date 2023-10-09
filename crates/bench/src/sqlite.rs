@@ -8,7 +8,7 @@ use ahash::AHashMap;
 use lazy_static::lazy_static;
 use rusqlite::Connection;
 use spacetimedb::db::datastore::traits::TableSchema;
-use spacetimedb_lib::{sats::BuiltinValue, AlgebraicType, AlgebraicValue, ProductType};
+use spacetimedb_lib::sats::{AlgebraicType, AlgebraicValue, ProductType};
 use std::{
     fmt::Write,
     hint::black_box,
@@ -188,19 +188,19 @@ impl BenchDatabase for SQLite {
 
         begin.execute(())?;
         match value {
-            AlgebraicValue::Builtin(BuiltinValue::String(value)) => {
+            AlgebraicValue::String(value) => {
                 for _ in stmt.query_map((&*value,), |row| {
                     black_box(row);
                     Ok(())
                 })? {}
             }
-            AlgebraicValue::Builtin(BuiltinValue::U32(value)) => {
+            AlgebraicValue::U32(value) => {
                 for _ in stmt.query_map((value,), |row| {
                     black_box(row);
                     Ok(())
                 })? {}
             }
-            AlgebraicValue::Builtin(BuiltinValue::U64(value)) => {
+            AlgebraicValue::U64(value) => {
                 for _ in stmt.query_map((value,), |row| {
                     black_box(row);
                     Ok(())

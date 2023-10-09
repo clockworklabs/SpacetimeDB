@@ -1,6 +1,6 @@
 use spacetimedb::db::datastore::traits::TableSchema;
 use spacetimedb::db::{Config, FsyncPolicy, Storage};
-use spacetimedb_lib::sats::{product, BuiltinValue};
+use spacetimedb_lib::sats::product;
 use spacetimedb_lib::{sats::ArrayValue, AlgebraicValue, ProductValue};
 use spacetimedb_testing::modules::{start_runtime, CompiledModule, ModuleHandle};
 use tokio::runtime::Runtime;
@@ -150,9 +150,8 @@ impl BenchDatabase for SpacetimeModule {
     }
 
     fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()> {
-        let args = product![AlgebraicValue::ArrayOf(ArrayValue::Product(
-            rows.into_iter().map(|row| row.into_product_value()).collect(),
-        ))];
+        let rows = rows.into_iter().map(|row| row.into_product_value()).collect();
+        let args = product![ArrayValue::Product(rows)];
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
         let reducer_name = format!("insert_bulk_{}", table_id.snake_case);
@@ -217,9 +216,9 @@ impl BenchDatabase for SpacetimeModule {
         let column = &table.columns[column_index as usize].col_name;
 
         let value = match value {
-            AlgebraicValue::Builtin(BuiltinValue::U32(x)) => x.to_string(),
-            AlgebraicValue::Builtin(BuiltinValue::U64(x)) => x.to_string(),
-            AlgebraicValue::Builtin(BuiltinValue::String(x)) => format!("'{}'", x),
+            AlgebraicValue::U32(x) => x.to_string(),
+            AlgebraicValue::U64(x) => x.to_string(),
+            AlgebraicValue::String(x) => format!("'{}'", x),
             _ => {
                 unreachable!()
             }
