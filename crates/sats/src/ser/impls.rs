@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use crate::algebraic_value::{F32, F64};
 use crate::{
     AlgebraicType, AlgebraicValue, ArrayValue, BuiltinType, BuiltinValue, MapType, MapValue, ProductValue, SumValue,
     ValueWithType,
@@ -66,8 +67,8 @@ impl Serialize for u8 {
     }
 }
 
-impl_serialize!([] crate::builtin_value::F32, (self, ser) => f32::from(*self).serialize(ser));
-impl_serialize!([] crate::builtin_value::F64, (self, ser) => f64::from(*self).serialize(ser));
+impl_serialize!([] F32, (self, ser) => f32::from(*self).serialize(ser));
+impl_serialize!([] F64, (self, ser) => f64::from(*self).serialize(ser));
 impl_serialize!([T: Serialize] Vec<T>, (self, ser)  => (**self).serialize(ser));
 impl_serialize!([T: Serialize] [T], (self, ser) => T::__serialize_array(self, ser));
 impl_serialize!([T: Serialize, const N: usize] [T; N], (self, ser) => T::__serialize_array(self, ser));

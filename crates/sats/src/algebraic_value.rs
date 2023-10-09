@@ -3,9 +3,14 @@ pub mod ser;
 use std::collections::BTreeMap;
 use std::ops::{Bound, RangeBounds};
 
-use crate::builtin_value::{F32, F64};
 use crate::{AlgebraicType, ArrayValue, BuiltinType, BuiltinValue, ProductValue, SumValue};
 use enum_as_inner::EnumAsInner;
+
+/// Totally ordered [`f32`] allowing all IEEE-754 floating point values.
+pub type F32 = decorum::Total<f32>;
+
+/// Totally ordered [`f64`] allowing all IEEE-754 floating point values.
+pub type F64 = decorum::Total<f64>;
 
 /// A value in SATS typed at some [`AlgebraicType`].
 ///

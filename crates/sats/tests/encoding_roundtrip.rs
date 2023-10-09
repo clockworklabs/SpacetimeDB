@@ -2,8 +2,8 @@
 
 use proptest::prelude::*;
 use proptest::proptest;
+use spacetimedb_sats::algebraic_value::{F32, F64};
 use spacetimedb_sats::buffer::DecodeError;
-use spacetimedb_sats::builtin_value::{F32, F64};
 use spacetimedb_sats::{
     meta_type::MetaType, product, AlgebraicType, AlgebraicValue, BuiltinValue, ProductType, ProductValue,
 };
