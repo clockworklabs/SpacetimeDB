@@ -1,8 +1,7 @@
 use crate::algebraic_value::{F32, F64};
 use crate::builtin_type::BuiltinType;
-use crate::{AlgebraicValue, ArrayValue};
+use crate::{ArrayValue, MapValue};
 use enum_as_inner::EnumAsInner;
-use std::collections::BTreeMap;
 
 /// A built-in value of a [`BuiltinType`].
 #[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -69,13 +68,6 @@ pub enum BuiltinValue {
     /// Where insertion order is relevant,
     /// a [`BuiltinValue::Array`] with `(key, value)` pairs can be used instead.
     Map { val: MapValue },
-}
-
-/// A map value `AlgebraicValue` → `AlgebraicValue`.
-pub type MapValue = BTreeMap<AlgebraicValue, AlgebraicValue>;
-
-impl crate::Value for MapValue {
-    type Type = crate::MapType;
 }
 
 impl BuiltinValue {
