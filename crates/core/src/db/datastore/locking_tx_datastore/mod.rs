@@ -2151,9 +2151,9 @@ impl traits::MutProgrammable for Locking {
 
 #[cfg(test)]
 mod tests {
-    use super::{ColId, Locking, StTableRow};
+    use super::{ColId, Locking, MutTxId, StTableRow};
     use crate::db::datastore::system_tables::{StConstraintRow, ST_CONSTRAINTS_ID};
-    use crate::db::datastore::traits::IndexId;
+    use crate::db::datastore::traits::{IndexId, TableId};
     use crate::{
         db::datastore::{
             locking_tx_datastore::{
@@ -2281,6 +2281,14 @@ mod tests {
         }
     }
 
+    fn setup_table() -> ResultTest<(Locking, MutTxId, TableId)> {
+        let datastore = get_datastore()?;
+        let mut tx = datastore.begin_mut_tx();
+        let schema = basic_table_schema();
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        Ok((datastore, tx, table_id))
+    }
+
     #[test]
     fn test_bootstrapping_sets_up_tables() -> ResultTest<()> {
         let datastore = get_datastore()?;
@@ -2400,10 +2408,7 @@ mod tests {
 
     #[test]
     fn test_create_table_pre_commit() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, tx, table_id) = setup_table()?;
         let table_rows = datastore
             .iter_by_col_eq_mut_tx(&tx, ST_TABLES_ID, ColId(0), table_id.into())?
             .map(|x| StTableRow::try_from(x.view()).unwrap().to_owned())
@@ -2435,10 +2440,7 @@ mod tests {
 
     #[test]
     fn test_create_table_post_commit() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx(tx)?;
         let tx = datastore.begin_mut_tx();
         let table_rows = datastore
@@ -2472,10 +2474,7 @@ mod tests {
 
     #[test]
     fn test_create_table_post_rollback() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, tx, table_id) = setup_table()?;
         datastore.rollback_mut_tx(tx);
         let tx = datastore.begin_mut_tx();
         let table_rows = datastore
@@ -2495,10 +2494,7 @@ mod tests {
 
     #[test]
     fn test_schema_for_table_pre_commit() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, tx, table_id) = setup_table()?;
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
         #[rustfmt::skip]
         assert_eq!(schema, TableSchema {
@@ -2522,10 +2518,7 @@ mod tests {
 
     #[test]
     fn test_schema_for_table_post_commit() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx(tx)?;
         let tx = datastore.begin_mut_tx();
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
@@ -2551,10 +2544,7 @@ mod tests {
 
     #[test]
     fn test_schema_for_table_alter_indexes() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx(tx)?;
 
         let mut tx = datastore.begin_mut_tx();
@@ -2608,10 +2598,7 @@ mod tests {
 
     #[test]
     fn test_schema_for_table_rollback() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, tx, table_id) = setup_table()?;
         datastore.rollback_mut_tx(tx);
         let tx = datastore.begin_mut_tx();
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id);
@@ -2621,10 +2608,7 @@ mod tests {
 
     #[test]
     fn test_insert_pre_commit() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         let rows = datastore
@@ -2638,10 +2622,7 @@ mod tests {
 
     #[test]
     fn test_insert_wrong_schema_pre_commit() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, mut tx, table_id) = setup_table()?;
         let row = ProductValue::from_iter(vec![
             AlgebraicValue::U32(0), // 0 will be ignored.
             AlgebraicValue::String("Foo".to_string()),
@@ -2658,10 +2639,7 @@ mod tests {
 
     #[test]
     fn test_insert_post_commit() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, mut tx, table_id) = setup_table()?;
         // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, u32_str_u32(0, "Foo", 18))?;
         datastore.commit_mut_tx(tx)?;
@@ -2677,10 +2655,7 @@ mod tests {
 
     #[test]
     fn test_insert_post_rollback() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, tx, table_id) = setup_table()?;
         let row = u32_str_u32(15, "Foo", 18); // 15 is ignored.
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
@@ -2698,10 +2673,7 @@ mod tests {
 
     #[test]
     fn test_insert_commit_delete_insert() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx(tx)?;
@@ -2727,10 +2699,7 @@ mod tests {
 
     #[test]
     fn test_insert_delete_insert_delete_insert() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         for _ in 0..2 {
@@ -2755,10 +2724,7 @@ mod tests {
 
     #[test]
     fn test_unique_constraint_pre_commit() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
@@ -2782,10 +2748,7 @@ mod tests {
 
     #[test]
     fn test_unique_constraint_post_commit() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
         datastore.commit_mut_tx(tx)?;
@@ -2811,10 +2774,7 @@ mod tests {
 
     #[test]
     fn test_unique_constraint_post_rollback() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
@@ -2833,10 +2793,7 @@ mod tests {
 
     #[test]
     fn test_create_index_pre_commit() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx();
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
@@ -2889,10 +2846,7 @@ mod tests {
 
     #[test]
     fn test_create_index_post_commit() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx(tx)?;
@@ -2946,10 +2900,7 @@ mod tests {
 
     #[test]
     fn test_create_index_post_rollback() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx(tx)?;
@@ -2995,12 +2946,8 @@ mod tests {
 
     #[test]
     fn test_update_reinsert() -> ResultTest<()> {
-        let datastore = get_datastore()?;
-
+        let (datastore, mut tx, table_id) = setup_table()?;
         // Insert a row and commit the tx.
-        let mut tx = datastore.begin_mut_tx();
-        let schema = basic_table_schema();
-        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
                                              // Because of autoinc columns, we will get a slightly different
                                              // value than the one we inserted.
