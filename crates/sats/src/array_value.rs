@@ -1,52 +1,63 @@
-use crate::{AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SumValue, F32, F64};
-use nonempty::NonEmpty;
+use crate::{
+    static_assert_size, AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SatsNonEmpty, SatsString,
+    SatsVec, SumValue, F32, F64,
+};
 use std::fmt;
 
 /// An array value in "monomorphized form".
 ///
 /// Arrays are represented in this way monomorphized fashion for efficiency
-/// rather than unnecessary indirections and tags of `AlgebraicValue`.
+/// rather than unnecessary indirections and tags of `Box<[AlgebraicValue]>`.
 /// We can do this as we know statically that the type of each element is the same
 /// as arrays are homogenous dynamically sized product types.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum ArrayValue {
     /// An array of [`SumValue`](crate::SumValue)s.
-    Sum(Vec<SumValue>),
+    Sum(SatsVec<SumValue>),
     /// An array of [`ProductValue`](crate::ProductValue)s.
-    Product(Vec<ProductValue>),
+    Product(SatsVec<ProductValue>),
     /// An array of [`bool`]s.
-    Bool(Vec<bool>),
+    Bool(SatsVec<bool>),
     /// An array of [`i8`]s.
-    I8(Vec<i8>),
+    I8(SatsVec<i8>),
     /// An array of [`u8`]s.
-    U8(Vec<u8>),
+    U8(SatsVec<u8>),
     /// An array of [`i16`]s.
-    I16(Vec<i16>),
+    I16(SatsVec<i16>),
     /// An array of [`u16`]s.
-    U16(Vec<u16>),
+    U16(SatsVec<u16>),
     /// An array of [`i32`]s.
-    I32(Vec<i32>),
+    I32(SatsVec<i32>),
     /// An array of [`u32`]s.
-    U32(Vec<u32>),
+    U32(SatsVec<u32>),
     /// An array of [`i64`]s.
-    I64(Vec<i64>),
+    I64(SatsVec<i64>),
     /// An array of [`u64`]s.
-    U64(Vec<u64>),
+    U64(SatsVec<u64>),
     /// An array of [`i128`]s.
-    I128(Vec<i128>),
+    I128(SatsVec<i128>),
     /// An array of [`u128`]s.
-    U128(Vec<u128>),
+    U128(SatsVec<u128>),
     /// An array of totally ordered [`F32`]s.
-    F32(Vec<F32>),
+    F32(SatsVec<F32>),
     /// An array of totally ordered [`F64`]s.
-    F64(Vec<F64>),
+    F64(SatsVec<F64>),
     /// An array of UTF-8 strings.
-    String(Vec<String>),
+    String(SatsVec<SatsString>),
     /// An array of arrays.
-    Array(Vec<ArrayValue>),
+    Array(SatsVec<ArrayValue>),
     /// An array of maps.
-    Map(Vec<MapValue>),
+    Map(SatsVec<MapValue>),
 }
+
+// The size is that of `SatsVec<T>`,
+// 12 bytes on 64-bit and 8 on 32-bit,
+// and 1 byte for the tag,
+// giving us a grand total of 9 or 13.
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(ArrayValue, 9);
+#[cfg(not(target_arch = "wasm32"))]
+static_assert_size!(ArrayValue, 13);
 
 impl crate::Value for ArrayValue {
     type Type = ArrayType;
@@ -156,14 +167,14 @@ macro_rules! impl_from_array {
     ($el:ty, $var:ident) => {
         impl<const N: usize> From<[$el; N]> for ArrayValue {
             fn from(v: [$el; N]) -> Self {
-                let vec: Vec<_> = v.into();
+                let vec: SatsVec<_> = v.into();
                 vec.into()
             }
         }
 
         // Exists for convenience.
-        impl From<Vec<$el>> for ArrayValue {
-            fn from(v: Vec<$el>) -> Self {
+        impl From<SatsVec<$el>> for ArrayValue {
+            fn from(v: SatsVec<$el>) -> Self {
                 Self::$var(v)
             }
         }
@@ -185,16 +196,16 @@ impl_from_array!(i128, I128);
 impl_from_array!(u128, U128);
 impl_from_array!(F32, F32);
 impl_from_array!(F64, F64);
-impl_from_array!(String, String);
+impl_from_array!(SatsString, String);
 impl_from_array!(ArrayValue, Array);
 impl_from_array!(MapValue, Map);
 
-impl<T> From<NonEmpty<T>> for ArrayValue
+impl<T> From<SatsNonEmpty<T>> for ArrayValue
 where
-    ArrayValue: From<Vec<T>>,
+    ArrayValue: From<SatsVec<T>>,
 {
-    fn from(value: NonEmpty<T>) -> Self {
-        Vec::from(value).into()
+    fn from(value: SatsNonEmpty<T>) -> Self {
+        SatsVec::from(value).into()
     }
 }
 
@@ -291,7 +302,7 @@ pub enum ArrayValueIntoIter {
     /// An iterator on a [`F64`] array.
     F64(std::vec::IntoIter<F64>),
     /// An iterator on an array of UTF-8 strings.
-    String(std::vec::IntoIter<String>),
+    String(std::vec::IntoIter<SatsString>),
     /// An iterator on an array of arrays.
     Array(std::vec::IntoIter<ArrayValue>),
     /// An iterator on an array of maps.
@@ -341,7 +352,7 @@ pub enum ArrayValueIterCloned<'a> {
     U128(std::slice::Iter<'a, u128>),
     F32(std::slice::Iter<'a, F32>),
     F64(std::slice::Iter<'a, F64>),
-    String(std::slice::Iter<'a, String>),
+    String(std::slice::Iter<'a, SatsString>),
     Array(std::slice::Iter<'a, ArrayValue>),
     Map(std::slice::Iter<'a, MapValue>),
 }

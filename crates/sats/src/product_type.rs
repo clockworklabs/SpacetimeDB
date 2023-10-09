@@ -2,7 +2,10 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::ValueSerializer;
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, ValueWithType, WithTypespace};
+use crate::{
+    static_assert_size, from_string, AlgebraicType, AlgebraicValue, ProductTypeElement, SatsVec, ValueWithType,
+    WithTypespace,
+};
 
 /// A structural product type  of the factors given by `elements`.
 ///
@@ -34,12 +37,17 @@ pub struct ProductType {
     ///
     /// These factors can either be named or unnamed.
     /// When all the factors are unnamed, we can regard this as a plain tuple type.
-    pub elements: Vec<ProductTypeElement>,
+    pub elements: SatsVec<ProductTypeElement>,
 }
+
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(ProductType, 8);
+#[cfg(not(target_arch = "wasm32"))]
+static_assert_size!(ProductType, 12);
 
 impl ProductType {
     /// Returns a product type with the given `elements` as its factors.
-    pub const fn new(elements: Vec<ProductTypeElement>) -> Self {
+    pub const fn new(elements: SatsVec<ProductTypeElement>) -> Self {
         Self { elements }
     }
 
@@ -49,7 +57,7 @@ impl ProductType {
             [ProductTypeElement {
                 name: Some(name),
                 algebraic_type,
-            }] => name == check && algebraic_type.is_bytes(),
+            }] => name == &check && algebraic_type.is_bytes(),
             _ => false,
         }
     }
@@ -70,29 +78,8 @@ impl ProductType {
     }
 }
 
-impl<I: Into<ProductTypeElement>> FromIterator<I> for ProductType {
-    fn from_iter<T: IntoIterator<Item = I>>(iter: T) -> Self {
-        Self::new(iter.into_iter().map(Into::into).collect())
-    }
-}
-impl<'a, I: Into<AlgebraicType>> FromIterator<(&'a str, I)> for ProductType {
-    fn from_iter<T: IntoIterator<Item = (&'a str, I)>>(iter: T) -> Self {
-        iter.into_iter()
-            .map(|(name, ty)| ProductTypeElement::new_named(ty.into(), name))
-            .collect()
-    }
-}
-
-impl<'a, I: Into<AlgebraicType>> FromIterator<(Option<&'a str>, I)> for ProductType {
-    fn from_iter<T: IntoIterator<Item = (Option<&'a str>, I)>>(iter: T) -> Self {
-        iter.into_iter()
-            .map(|(name, ty)| ProductTypeElement::new(ty.into(), name.map(str::to_string)))
-            .collect()
-    }
-}
-
-impl From<Vec<ProductTypeElement>> for ProductType {
-    fn from(fields: Vec<ProductTypeElement>) -> Self {
+impl From<SatsVec<ProductTypeElement>> for ProductType {
+    fn from(fields: SatsVec<ProductTypeElement>) -> Self {
         ProductType::new(fields)
     }
 }
@@ -103,17 +90,17 @@ impl<const N: usize> From<[ProductTypeElement; N]> for ProductType {
 }
 impl<const N: usize> From<[(Option<&str>, AlgebraicType); N]> for ProductType {
     fn from(fields: [(Option<&str>, AlgebraicType); N]) -> Self {
-        fields.into_iter().collect()
+        fields.map(|(n, t)| ProductTypeElement::new(t, n.map(from_string))).into()
     }
 }
 impl<const N: usize> From<[(&str, AlgebraicType); N]> for ProductType {
     fn from(fields: [(&str, AlgebraicType); N]) -> Self {
-        fields.into_iter().collect()
+        fields.map(|(n, t)| ProductTypeElement::new_named(t, n)).into()
     }
 }
 impl<const N: usize> From<[AlgebraicType; N]> for ProductType {
     fn from(fields: [AlgebraicType; N]) -> Self {
-        fields.into_iter().collect()
+        fields.map(ProductTypeElement::from).into()
     }
 }
 
@@ -125,7 +112,7 @@ impl MetaType for ProductType {
 
 impl ProductType {
     pub fn as_value(&self) -> AlgebraicValue {
-        self.serialize(ValueSerializer).unwrap_or_else(|x| match x {})
+        self.serialize(ValueSerializer).expect("unexpected `len >= u32::MAX`")
     }
 
     pub fn from_value(value: &AlgebraicValue) -> Result<ProductType, ValueDeserializeError> {
@@ -136,7 +123,7 @@ impl ProductType {
 impl<'a> WithTypespace<'a, ProductType> {
     #[inline]
     pub fn elements(&self) -> ElementsWithTypespace<'a> {
-        self.iter_with(&self.ty().elements)
+        self.iter_with(&*self.ty().elements)
     }
 
     #[inline]

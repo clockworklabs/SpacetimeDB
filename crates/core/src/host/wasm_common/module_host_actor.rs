@@ -1,13 +1,3 @@
-use anyhow::{anyhow, Context};
-use bytes::Bytes;
-use std::sync::Arc;
-use std::time::Duration;
-
-use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, Address, ModuleDef};
-use spacetimedb_vm::expr::CrudExpr;
-
 use super::instrumentation::CallTimes;
 use super::*;
 use crate::database_instance_context::DatabaseInstanceContext;
@@ -30,7 +20,15 @@ use crate::sql;
 use crate::subscription::module_subscription_actor::ModuleSubscriptionManager;
 use crate::util::{const_unwrap, ResultInspectExt};
 use crate::worker_metrics::WORKER_METRICS;
+use anyhow::{anyhow, Context};
+use bytes::Bytes;
+use spacetimedb_lib::buffer::DecodeError;
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::{bsatn, Address, ModuleDef};
 use spacetimedb_sats::db::def::TableDef;
+use spacetimedb_vm::expr::CrudExpr;
+use std::sync::Arc;
+use std::time::Duration;
 
 pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
@@ -91,7 +89,7 @@ pub enum InitializationError {
     #[error(transparent)]
     Validation(#[from] ValidationError),
     #[error("setup function returned an error: {0}")]
-    Setup(Box<str>),
+    Setup(String),
     #[error("wasm trap while calling {func:?}")]
     RuntimeError {
         #[source]
@@ -475,14 +473,15 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let dbic = self.database_instance_context();
         let stdb = &*dbic.relational_db.clone();
         let address = dbic.address;
-        let reducer_name = &*self.info.reducers[reducer_id].name;
+        let reducer_name = &self.info.reducers[reducer_id].name;
+        let reducer_name_str = &**reducer_name;
         WORKER_METRICS
             .reducer_count
-            .with_label_values(&address, reducer_name)
+            .with_label_values(&address, reducer_name_str)
             .inc();
 
         let _outer_span = tracing::trace_span!("call_reducer",
-            reducer_name,
+            reducer_name_str,
             %caller_identity,
             caller_address = caller_address_opt.map(tracing::field::debug),
         )
@@ -536,7 +535,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             // If we can't get your reducer done in a single frame we should debug it.
             tracing::debug!(
                 message = "Long running reducer finished executing",
-                reducer_name,
+                reducer_name_str,
                 ?timings.total_duration,
             );
         }
@@ -544,10 +543,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         WORKER_METRICS
             .reducer_compute_time
-            .with_label_values(&address, reducer_name)
+            .with_label_values(&address, reducer_name_str)
             .observe(timings.total_duration.as_secs_f64());
 
-        let ctx = ExecutionContext::reducer(address, reducer_name);
+        let ctx = ExecutionContext::reducer(address, reducer_name_str);
         let status = match call_result {
             Err(err) => {
                 stdb.rollback_tx(&ctx, tx);
@@ -568,7 +567,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
                 log::info!("reducer returned error: {errmsg}");
 
-                EventStatus::Failed(errmsg.into())
+                EventStatus::Failed(errmsg)
             }
             Ok(Ok(())) => {
                 if let Some((tx_data, bytes_written)) = stdb.commit_tx(&ctx, tx).unwrap() {

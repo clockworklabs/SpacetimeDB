@@ -6,7 +6,7 @@ use crate::{
 use ahash::AHashMap;
 use lazy_static::lazy_static;
 use rusqlite::Connection;
-use spacetimedb_lib::sats::{AlgebraicType, AlgebraicValue, ProductType};
+use spacetimedb_lib::sats::{AlgebraicType, AlgebraicValue, ProductType, SatsString};
 use std::{
     fmt::Write,
     hint::black_box,
@@ -25,6 +25,8 @@ impl BenchDatabase for SQLite {
     fn name() -> &'static str {
         "sqlite"
     }
+
+    type TableId = SatsString;
 
     fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
     where
@@ -49,8 +51,6 @@ impl BenchDatabase for SQLite {
             _temp_dir: temp_dir,
         })
     }
-
-    type TableId = String;
 
     /// We derive the SQLite schema from the AlgebraicType of the table.
     fn create_table<T: BenchTable>(
@@ -91,7 +91,7 @@ impl BenchDatabase for SQLite {
         log::info!("SQLITE: `{statement}`");
         self.db.execute_batch(&statement)?;
 
-        Ok(table_name)
+        Ok(SatsString::from_string(table_name))
     }
 
     fn clear_table(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
@@ -172,8 +172,7 @@ impl BenchDatabase for SQLite {
         value: AlgebraicValue,
     ) -> ResultBench<()> {
         let statement = memo_query(BenchName::Filter, table_id, || {
-            let column = T::product_type()
-                .elements
+            let column = Vec::from(T::product_type().elements)
                 .swap_remove(column_index as usize)
                 .name
                 .unwrap();

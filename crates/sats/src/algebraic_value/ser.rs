@@ -1,7 +1,7 @@
-use std::convert::Infallible;
-
+use super::AlgebraicValue;
 use crate::ser::{self, ForwardNamedToSeqProduct};
-use crate::{AlgebraicValue, ArrayValue, MapValue, F32, F64};
+use spacetimedb_data_structures::slim_slice::{try_into, LenTooLong};
+use crate::{ArrayValue, MapValue, SatsSlice, SatsString, F32, F64};
 
 /// An implementation of [`Serializer`](ser::Serializer)
 /// where the output of serialization is an `AlgebraicValue`.
@@ -17,7 +17,7 @@ macro_rules! method {
 
 impl ser::Serializer for ValueSerializer {
     type Ok = AlgebraicValue;
-    type Error = Infallible;
+    type Error = LenTooLong;
 
     type SerializeArray = SerializeArrayValue;
     type SerializeMap = SerializeMapValue;
@@ -39,10 +39,10 @@ impl ser::Serializer for ValueSerializer {
     method!(serialize_f64 -> f64);
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::String(v.to_owned()))
+        try_into(v).map(AlgebraicValue::String)
     }
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::Bytes(v.to_owned()))
+        try_into(v).map(|v: SatsSlice<_>| AlgebraicValue::Bytes(v.into()))
     }
 
     fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error> {
@@ -99,8 +99,7 @@ impl ser::SerializeArray for SerializeArrayValue {
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        let array: ArrayValue = self.array.try_into().unwrap_or_else(|e| match e {});
-        Ok(array.into())
+        try_into(self.array).map(AlgebraicValue::Array)
     }
 }
 
@@ -138,7 +137,7 @@ enum ArrayValueBuilder {
     /// An array of totally ordered [`F64`]s.
     F64(Vec<F64>),
     /// An array of UTF-8 strings.
-    String(Vec<String>),
+    String(Vec<SatsString>),
     /// An array of arrays.
     Array(Vec<ArrayValue>),
     /// An array of maps.
@@ -189,7 +188,7 @@ impl ArrayValueBuilder {
         match val {
             AlgebraicValue::Sum(x) => vec(x, capacity).into(),
             AlgebraicValue::Product(x) => vec(x, capacity).into(),
-            AlgebraicValue::Map(x) => vec(x, capacity).into(),
+            AlgebraicValue::Map(x) => vec(*x, capacity).into(),
             AlgebraicValue::Bool(x) => vec(x, capacity).into(),
             AlgebraicValue::I8(x) => vec(x, capacity).into(),
             AlgebraicValue::U8(x) => vec(x, capacity).into(),
@@ -199,8 +198,8 @@ impl ArrayValueBuilder {
             AlgebraicValue::U32(x) => vec(x, capacity).into(),
             AlgebraicValue::I64(x) => vec(x, capacity).into(),
             AlgebraicValue::U64(x) => vec(x, capacity).into(),
-            AlgebraicValue::I128(x) => vec(x, capacity).into(),
-            AlgebraicValue::U128(x) => vec(x, capacity).into(),
+            AlgebraicValue::I128(x) => vec(*x, capacity).into(),
+            AlgebraicValue::U128(x) => vec(*x, capacity).into(),
             AlgebraicValue::F32(x) => vec(x, capacity).into(),
             AlgebraicValue::F64(x) => vec(x, capacity).into(),
             AlgebraicValue::String(x) => vec(x, capacity).into(),
@@ -217,7 +216,7 @@ impl ArrayValueBuilder {
         match (self, val) {
             (Self::Sum(v), AlgebraicValue::Sum(val)) => v.push(val),
             (Self::Product(v), AlgebraicValue::Product(val)) => v.push(val),
-            (Self::Map(v), AlgebraicValue::Map(val)) => v.push(val),
+            (Self::Map(v), AlgebraicValue::Map(val)) => v.push(*val),
             (Self::Bool(v), AlgebraicValue::Bool(val)) => v.push(val),
             (Self::I8(v), AlgebraicValue::I8(val)) => v.push(val),
             (Self::U8(v), AlgebraicValue::U8(val)) => v.push(val),
@@ -227,8 +226,8 @@ impl ArrayValueBuilder {
             (Self::U32(v), AlgebraicValue::U32(val)) => v.push(val),
             (Self::I64(v), AlgebraicValue::I64(val)) => v.push(val),
             (Self::U64(v), AlgebraicValue::U64(val)) => v.push(val),
-            (Self::I128(v), AlgebraicValue::I128(val)) => v.push(val),
-            (Self::U128(v), AlgebraicValue::U128(val)) => v.push(val),
+            (Self::I128(v), AlgebraicValue::I128(val)) => v.push(*val),
+            (Self::U128(v), AlgebraicValue::U128(val)) => v.push(*val),
             (Self::F32(v), AlgebraicValue::F32(val)) => v.push(val),
             (Self::F64(v), AlgebraicValue::F64(val)) => v.push(val),
             (Self::String(v), AlgebraicValue::String(val)) => v.push(val),
@@ -240,28 +239,30 @@ impl ArrayValueBuilder {
     }
 }
 
-impl From<ArrayValueBuilder> for ArrayValue {
-    fn from(value: ArrayValueBuilder) -> Self {
+impl TryFrom<ArrayValueBuilder> for ArrayValue {
+    type Error = LenTooLong<ArrayValueBuilder>;
+
+    fn try_from(value: ArrayValueBuilder) -> Result<Self, Self::Error> {
         use ArrayValueBuilder::*;
         match value {
-            Sum(v) => Self::Sum(v),
-            Product(v) => Self::Product(v),
-            Bool(v) => Self::Bool(v),
-            I8(v) => Self::I8(v),
-            U8(v) => Self::U8(v),
-            I16(v) => Self::I16(v),
-            U16(v) => Self::U16(v),
-            I32(v) => Self::I32(v),
-            U32(v) => Self::U32(v),
-            I64(v) => Self::I64(v),
-            U64(v) => Self::U64(v),
-            I128(v) => Self::I128(v),
-            U128(v) => Self::U128(v),
-            F32(v) => Self::F32(v),
-            F64(v) => Self::F64(v),
-            String(v) => Self::String(v),
-            Array(v) => Self::Array(v),
-            Map(v) => Self::Map(v),
+            Sum(v) => v.try_into().map(Self::Sum).map_err(|e| e.map(Sum)),
+            Product(v) => v.try_into().map(Self::Product).map_err(|e| e.map(Product)),
+            Bool(v) => v.try_into().map(Self::Bool).map_err(|e| e.map(Bool)),
+            I8(v) => v.try_into().map(Self::I8).map_err(|e| e.map(I8)),
+            U8(v) => v.try_into().map(Self::U8).map_err(|e| e.map(U8)),
+            I16(v) => v.try_into().map(Self::I16).map_err(|e| e.map(I16)),
+            U16(v) => v.try_into().map(Self::U16).map_err(|e| e.map(U16)),
+            I32(v) => v.try_into().map(Self::I32).map_err(|e| e.map(I32)),
+            U32(v) => v.try_into().map(Self::U32).map_err(|e| e.map(U32)),
+            I64(v) => v.try_into().map(Self::I64).map_err(|e| e.map(I64)),
+            U64(v) => v.try_into().map(Self::U64).map_err(|e| e.map(U64)),
+            I128(v) => v.try_into().map(Self::I128).map_err(|e| e.map(I128)),
+            U128(v) => v.try_into().map(Self::U128).map_err(|e| e.map(U128)),
+            F32(v) => v.try_into().map(Self::F32).map_err(|e| e.map(F32)),
+            F64(v) => v.try_into().map(Self::F64).map_err(|e| e.map(F64)),
+            String(v) => v.try_into().map(Self::String).map_err(|e| e.map(String)),
+            Array(v) => v.try_into().map(Self::Array).map_err(|e| e.map(Array)),
+            Map(v) => v.try_into().map(Self::Map).map_err(|e| e.map(Map)),
         }
     }
 }
@@ -298,7 +299,7 @@ impl_from_array!(i128, I128);
 impl_from_array!(u128, U128);
 impl_from_array!(F32, F32);
 impl_from_array!(F64, F64);
-impl_from_array!(String, String);
+impl_from_array!(SatsString, String);
 impl_from_array!(ArrayValue, Array);
 impl_from_array!(MapValue, Map);
 
@@ -342,6 +343,6 @@ impl ser::SerializeSeqProduct for SerializeProductValue {
         Ok(())
     }
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::product(self.elements))
+        try_into(self.elements).map(AlgebraicValue::product)
     }
 }

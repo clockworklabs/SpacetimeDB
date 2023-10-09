@@ -25,6 +25,7 @@ pub mod sum_type;
 pub mod sum_type_variant;
 pub mod sum_value;
 pub mod typespace;
+mod util;
 
 pub use algebraic_type::AlgebraicType;
 pub use algebraic_type_ref::AlgebraicTypeRef;
@@ -37,10 +38,28 @@ pub use map_value::MapValue;
 pub use product_type::ProductType;
 pub use product_type_element::ProductTypeElement;
 pub use product_value::ProductValue;
+pub use spacetimedb_data_structures;
 pub use sum_type::SumType;
 pub use sum_type_variant::SumTypeVariant;
 pub use sum_value::SumValue;
 pub use typespace::{SpacetimeType, Typespace};
+
+/// Constructs a `SatsString` given a string literal of `N` bytes in length.
+#[macro_export]
+macro_rules! nstr {
+    ($lit:literal) => {{
+        let s: $crate::SatsString = $crate::spacetimedb_data_structures::nstr!($lit).into();
+        s
+    }};
+}
+
+pub use spacetimedb_data_structures::slim_slice::{from_slice, from_slice_mut, from_str, from_str_mut, from_string};
+pub use spacetimedb_data_structures::slim_slice::{
+    SlimNonEmptyBox as SatsNonEmpty, SlimSlice as SatsSlice, SlimSliceBox as SatsVec, SlimSliceMut as SatsSliceMut,
+};
+pub use spacetimedb_data_structures::slim_slice::{
+    SlimStr as SatsStr, SlimStrBox as SatsString, SlimStrMut as SatsStrMut,
+};
 
 /// The `Value` trait provides an abstract notion of a value.
 ///
@@ -50,7 +69,7 @@ pub trait Value {
     type Type;
 }
 
-impl<T: Value> Value for Vec<T> {
+impl<T: Value> Value for SatsVec<T> {
     // TODO(centril/phoebe): This looks weird; shouldn't it be ArrayType?
     type Type = T::Type;
 }
@@ -107,7 +126,7 @@ impl<'a, T: Value> ValueWithType<'a, T> {
     }
 }
 
-impl<'a, T: Value> ValueWithType<'a, Vec<T>> {
+impl<'a, T: Value> ValueWithType<'a, SatsVec<T>> {
     pub fn iter(&self) -> impl Iterator<Item = ValueWithType<'_, T>> {
         self.value().iter().map(|val| ValueWithType { ty: self.ty, val })
     }

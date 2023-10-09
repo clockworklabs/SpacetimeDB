@@ -1,18 +1,18 @@
-use std::collections::HashMap;
-use tracing::info;
-
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
+use spacetimedb_data_structures::slim_slice::try_into;
 use spacetimedb_primitives::ColId;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ProductTypeMeta, TableSchema};
 use spacetimedb_sats::relation::{self, DbTable, FieldExpr, FieldName, Header};
-use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_sats::{AlgebraicValue, SatsString, SatsVec};
 use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
+use std::collections::HashMap;
+use tracing::info;
 
 /// Compile the `SQL` expression into a `ast`
 #[tracing::instrument(skip_all)]
@@ -100,7 +100,7 @@ pub enum IndexArgument {
 }
 
 /// Compiles a `SELECT ...` clause
-fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection>) -> Result<QueryExpr, PlanError> {
+fn compile_select(table: From, project: SatsVec<Column>, selection: Option<Selection>) -> Result<QueryExpr, PlanError> {
     let mut not_found = Vec::with_capacity(project.len());
     let mut col_ids = Vec::new();
     let mut qualified_wildcards = Vec::new();
@@ -115,7 +115,11 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
             Column::QualifiedWildcard { table: name } => {
                 if let Some(t) = table.iter_tables().find(|x| x.table_name == name) {
                     for c in t.columns.iter() {
-                        col_ids.push(FieldName::named(&t.table_name, &c.col_name).into());
+                        let field_name = FieldName::Name {
+                            table: t.table_name.clone(),
+                            field: c.col_name.clone(),
+                        };
+                        col_ids.push(field_name.into());
                     }
                     qualified_wildcards.push(t.table_id);
                 } else {
@@ -125,11 +129,12 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
             Column::Wildcard => {}
         }
     }
+    let col_ids: SatsVec<_> = try_into(col_ids)?;
 
     if !not_found.is_empty() {
         return Err(PlanError::UnknownFields {
             fields: not_found,
-            tables: table.table_names(),
+            tables: table.table_names().map(|n| n.to_owned()).collect(),
         });
     }
 
@@ -167,15 +172,14 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
     } else {
         None
     };
-    q = q.with_project(&col_ids, qualified_wildcard);
+    q = q.with_project(col_ids.shared_ref(), qualified_wildcard);
 
     Ok(q)
 }
 
 /// Builds the schema description [DbTable] from the [TableSchema] and their list of columns
-fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
+fn compile_columns(table: &TableSchema, columns: SatsVec<FieldName>) -> DbTable {
     let mut new = Vec::with_capacity(columns.len());
-
     for col in columns.into_iter() {
         if let Some(x) = table.get_column_by_field(&col) {
             let field = FieldName::named(&table.table_name, &x.col_name);
@@ -183,6 +187,7 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
             new.push(relation::Column::new(field, x.col_type.clone(), x.col_id, indexed));
         }
     }
+    let new = SatsVec::from_vec(new);
 
     DbTable::new(
         Header::new(table.table_name.clone(), new),
@@ -195,8 +200,8 @@ fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
 /// Compiles a `INSERT ...` clause
 fn compile_insert(
     table: TableSchema,
-    columns: Vec<FieldName>,
-    values: Vec<Vec<FieldExpr>>,
+    columns: SatsVec<FieldName>,
+    values: Vec<SatsVec<FieldExpr>>,
 ) -> Result<CrudExpr, PlanError> {
     let db_table = compile_columns(&table, columns);
 
@@ -236,7 +241,7 @@ fn compile_update(
 
 /// Compiles a `CREATE TABLE ...` clause
 fn compile_create_table(
-    name: String,
+    name: SatsString,
     columns: ProductTypeMeta,
     table_type: StTableType,
     table_access: StAccess,
@@ -250,7 +255,7 @@ fn compile_create_table(
 }
 
 /// Compiles a `DROP ...` clause
-fn compile_drop(name: String, kind: DbType, table_access: StAccess) -> Result<CrudExpr, PlanError> {
+fn compile_drop(name: SatsString, kind: DbType, table_access: StAccess) -> Result<CrudExpr, PlanError> {
     Ok(CrudExpr::Drop {
         name,
         kind,
@@ -297,13 +302,14 @@ mod tests {
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::host::module_host::{DatabaseTableUpdate, TableOp};
     use crate::subscription::query;
+    use spacetimedb_data_structures::slim_slice::SlimSliceBoxCollected;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_primitives::TableId;
     use spacetimedb_sats::data_key::ToDataKey;
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, TableDef};
     use spacetimedb_sats::relation::MemTable;
-    use spacetimedb_sats::{product, AlgebraicType};
+    use spacetimedb_sats::{from_string, nstr, product, AlgebraicType};
     use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
 
     fn create_table(
@@ -313,22 +319,23 @@ mod tests {
         schema: &[(&str, AlgebraicType)],
         indexes: &[(ColId, &str)],
     ) -> ResultTest<TableId> {
-        let table_name = name.to_string();
+        let table_name = from_string(name);
         let table_type = StTableType::User;
         let table_access = StAccess::Public;
 
         let columns = schema
             .iter()
             .map(|(col_name, col_type)| ColumnDef {
-                col_name: col_name.to_string(),
+                col_name: from_string(col_name),
                 col_type: col_type.clone(),
                 is_autoinc: false,
             })
-            .collect();
+            .collect::<SlimSliceBoxCollected<_>>()
+            .unwrap();
 
         let indexes = indexes
             .iter()
-            .map(|(col_id, index_name)| IndexDef::new(index_name.to_string(), 0.into(), *col_id, false))
+            .map(|(col_id, index_name)| IndexDef::new(from_string(index_name), 0.into(), *col_id, false))
             .collect();
 
         let schema = TableDef {
@@ -682,10 +689,10 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, "b");
-        assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(lhs_field, &"b");
+        assert_eq!(rhs_field, &"b");
+        assert_eq!(lhs_table, &"lhs");
+        assert_eq!(rhs_table, &"rhs");
         Ok(())
     }
 
@@ -732,8 +739,8 @@ mod tests {
             panic!("unexpected left hand side {:#?}", **lhs);
         };
 
-        assert_eq!(table, "lhs");
-        assert_eq!(field, "a");
+        assert_eq!(table, &"lhs");
+        assert_eq!(field, &"a");
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
             panic!("unexpected right hand side {:#?}", **rhs);
@@ -762,10 +769,10 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, "b");
-        assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(lhs_field, &"b");
+        assert_eq!(rhs_field, &"b");
+        assert_eq!(lhs_table, &"lhs");
+        assert_eq!(rhs_table, &"rhs");
         assert!(rhs.is_empty());
         Ok(())
     }
@@ -822,10 +829,10 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, "b");
-        assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(lhs_field, &"b");
+        assert_eq!(rhs_field, &"b");
+        assert_eq!(lhs_table, &"lhs");
+        assert_eq!(rhs_table, &"rhs");
 
         // The selection should be pushed onto the rhs of the join
         let Query::Select(ColumnOp::Cmp {
@@ -841,8 +848,8 @@ mod tests {
             panic!("unexpected left hand side {:#?}", **lhs);
         };
 
-        assert_eq!(table, "rhs");
-        assert_eq!(field, "c");
+        assert_eq!(table, &"rhs");
+        assert_eq!(field, &"c");
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
             panic!("unexpected right hand side {:#?}", **rhs);
@@ -915,10 +922,10 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(lhs_field, "b");
-        assert_eq!(rhs_field, "b");
-        assert_eq!(lhs_table, "lhs");
-        assert_eq!(rhs_table, "rhs");
+        assert_eq!(lhs_field, &"b");
+        assert_eq!(rhs_field, &"b");
+        assert_eq!(lhs_table, &"lhs");
+        assert_eq!(rhs_table, &"rhs");
 
         assert_eq!(1, rhs.len());
 
@@ -992,8 +999,8 @@ mod tests {
         assert_eq!(table_id, rhs_id);
         assert_eq!(index_table, lhs_id);
         assert_eq!(index_col, 1.into());
-        assert_eq!(probe_field, "b");
-        assert_eq!(probe_table, "rhs");
+        assert_eq!(probe_field, &"b");
+        assert_eq!(probe_table, &"rhs");
 
         assert_eq!(2, rhs.len());
 
@@ -1021,8 +1028,8 @@ mod tests {
             panic!("unexpected left hand side {:#?}", field);
         };
 
-        assert_eq!(table, "rhs");
-        assert_eq!(field, "d");
+        assert_eq!(table, &"rhs");
+        assert_eq!(field, &"d");
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **value else {
             panic!("unexpected right hand side {:#?}", value);
@@ -1062,17 +1069,17 @@ mod tests {
         let row = product!(0u64, 0u64);
         let insert = TableOp {
             op_type: 1,
-            row_pk: row.to_data_key().to_bytes(),
+            row_pk: row.to_data_key().to_bytes().into(),
             row,
         };
         let insert = DatabaseTableUpdate {
             table_id: lhs_id,
-            table_name: String::from("lhs"),
+            table_name: nstr!("lhs"),
             ops: vec![insert],
         };
 
         // Optimize the query plan for the incremental update.
-        let expr = query::to_mem_table(expr, &insert);
+        let expr = query::to_mem_table(expr, &insert)?;
         let expr = expr.optimize();
 
         let QueryExpr {
@@ -1117,8 +1124,8 @@ mod tests {
         // Assert that original index and probe tables have been swapped.
         assert_eq!(index_table, rhs_id);
         assert_eq!(index_col, 0.into());
-        assert_eq!(probe_field, "b");
-        assert_eq!(probe_table, "lhs");
+        assert_eq!(probe_field, &"b");
+        assert_eq!(probe_table, &"lhs");
         Ok(())
     }
 }

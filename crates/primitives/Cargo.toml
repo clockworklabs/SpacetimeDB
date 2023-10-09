@@ -6,5 +6,6 @@ license-file = "LICENSE"
 description = "Primitives such as TableId and ColumnIndexAttribute"
 
 [dependencies]
-nonempty.workspace = true
+spacetimedb-data-structures = { path = "../data-structures", version = "0.7.3" }
+
 bitflags.workspace = true

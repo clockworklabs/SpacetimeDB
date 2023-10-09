@@ -14,6 +14,7 @@ proptest = ["dep:proptest", "dep:proptest-derive"]
 
 [dependencies]
 spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.7.3" }
+spacetimedb-data-structures = { path = "../data-structures", version = "0.7.3" }
 spacetimedb-primitives = { path = "../primitives", version = "0.7.3" }
 
 arrayvec.workspace = true
@@ -23,7 +24,6 @@ derive_more.workspace = true
 enum-as-inner.workspace = true
 hex.workspace = true
 itertools.workspace = true
-nonempty.workspace = true
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }

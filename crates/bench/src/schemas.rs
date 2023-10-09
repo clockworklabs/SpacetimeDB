@@ -1,4 +1,4 @@
-use spacetimedb_lib::sats;
+use spacetimedb_lib::sats::{self, product, SatsString};
 use std::fmt::Debug;
 use std::hash::Hash;
 
@@ -60,7 +60,7 @@ impl BenchTable for Person {
         .into()
     }
     fn into_product_value(self) -> sats::ProductValue {
-        sats::product![self.id, self.name, self.age]
+        sats::product![self.id, SatsString::from_string(self.name), self.age]
     }
 
     type SqliteParams = (u32, String, u64);
@@ -86,7 +86,7 @@ impl BenchTable for Location {
         .into()
     }
     fn into_product_value(self) -> sats::ProductValue {
-        sats::product![self.id, self.x, self.y]
+        product![self.id, self.x, self.y]
     }
 
     type SqliteParams = (u32, u64, u64);

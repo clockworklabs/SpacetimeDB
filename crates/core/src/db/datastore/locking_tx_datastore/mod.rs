@@ -33,23 +33,26 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use anyhow::anyhow;
-use nonempty::NonEmpty;
 use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
+use spacetimedb_data_structures::slim_slice::{try_into, SlimSliceBoxCollected};
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId};
-use spacetimedb_sats::data_key::{DataKey, ToDataKey};
-use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::relation::RelValue;
+use spacetimedb_sats::{
+    data_key::{DataKey, ToDataKey},
+    SatsNonEmpty, SatsString,
+};
 use spacetimedb_sats::{
     db::auth::{StAccess, StTableType},
     AlgebraicType, AlgebraicValue, ProductType, ProductValue,
 };
+use spacetimedb_sats::{db::def::*, SatsStr, SatsVec};
 use std::time::{Duration, Instant};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashMap},
-    ops::{Deref, RangeBounds},
+    ops::RangeBounds,
     sync::Arc,
     vec,
 };
@@ -76,7 +79,7 @@ pub enum SequenceError {
     #[error("Sequence ID `{0}` still had no values left after allocation.")]
     UnableToAllocate(SequenceId),
     #[error("Autoinc constraint on table {0:?} spans more than one column: {1:?}")]
-    MultiColumnAutoInc(TableId, NonEmpty<ColId>),
+    MultiColumnAutoInc(TableId, SatsNonEmpty<ColId>),
 }
 
 const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 4_096;
@@ -195,7 +198,7 @@ impl CommittedState {
     pub fn index_seek<'a>(
         &'a self,
         table_id: &TableId,
-        cols: &NonEmpty<ColId>,
+        cols: &SatsNonEmpty<ColId>,
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> Option<BTreeIndexRangeIter<'a>> {
         if let Some(table) = self.tables.get(table_id) {
@@ -309,7 +312,7 @@ impl TxState {
     pub fn index_seek<'a>(
         &'a self,
         table_id: &TableId,
-        cols: &NonEmpty<ColId>,
+        cols: &SatsNonEmpty<ColId>,
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> Option<BTreeIndexRangeIter<'a>> {
         self.insert_tables.get(table_id)?.index_seek(cols, range)
@@ -397,7 +400,7 @@ impl Inner {
                 col_type: col.col_type,
                 is_autoinc: col.is_autoinc,
             };
-            let row = ProductValue::from(row);
+            let row = ProductValue::try_from(row).map_err(DBError::LenTooLong)?;
             let data_key = row.to_data_key();
             {
                 let st_columns =
@@ -433,7 +436,7 @@ impl Inner {
                 );
                 let row = StSequenceRow {
                     sequence_id: seq_id,
-                    sequence_name: format!("{}_seq", col_name),
+                    sequence_name: SatsString::from_string(format!("{}_seq", col_name)),
                     table_id: col.table_id,
                     col_id: col.col_id,
                     increment: 1,
@@ -465,7 +468,7 @@ impl Inner {
         indexes.extend(schema.constraints.into_iter().map(|constraint| {
             assert_eq!(constraint.columns.len(), 1, "Constraints only supported for 1 column.");
 
-            let index_name = format!("idx_{}", &constraint.constraint_name);
+            let index_name = SatsString::from_string(format!("idx_{}", &constraint.constraint_name));
 
             let row = StConstraintRow {
                 constraint_id: constraint.constraint_id,
@@ -492,7 +495,7 @@ impl Inner {
                 x if x.has_unique() => IndexSchema {
                     index_id,
                     table_id,
-                    cols: NonEmpty::new(first_col_id),
+                    cols: SatsNonEmpty::new(first_col_id),
                     index_name,
                     is_unique: true,
                     index_type: IndexType::BTree,
@@ -500,7 +503,7 @@ impl Inner {
                 x if x.has_indexed() => IndexSchema {
                     index_id,
                     table_id,
-                    cols: NonEmpty::new(first_col_id),
+                    cols: SatsNonEmpty::new(first_col_id),
                     index_name,
                     is_unique: false,
                     index_type: IndexType::BTree,
@@ -714,12 +717,12 @@ impl Inner {
         Ok(())
     }
 
-    fn sequence_id_from_name(&self, seq_name: &str) -> super::Result<Option<SequenceId>> {
+    fn sequence_id_from_name(&self, seq_name: SatsString) -> super::Result<Option<SequenceId>> {
         self.iter_by_col_eq(
             &ExecutionContext::internal(self.database_address),
             &ST_SEQUENCES_ID,
             StSequenceFields::SequenceName,
-            AlgebraicValue::String(seq_name.to_owned()),
+            seq_name.into(),
         )
         .map(|mut iter| {
             iter.next()
@@ -728,7 +731,7 @@ impl Inner {
     }
 
     fn create_table(&mut self, table_schema: TableDef) -> super::Result<TableId> {
-        let table_name = table_schema.table_name.as_str();
+        let table_name = &*table_schema.table_name;
         log::trace!("TABLE CREATING: {table_name}");
 
         if table_name_is_system(table_name) {
@@ -757,13 +760,15 @@ impl Inner {
                 col_name: col.col_name,
                 col_type: col.col_type,
                 is_autoinc: col.is_autoinc,
-            };
-            self.insert(ST_COLUMNS_ID, row.into())?;
+            }
+            .try_into()?;
+            self.insert(ST_COLUMNS_ID, row)?;
 
             // Insert create the sequence for the autoinc column
             if let Some(col_name) = col_name_for_autoinc {
+                let sequence_name = try_into(format!("{}_{}_seq", table_name, col_name))?;
                 let sequence_def = SequenceDef {
-                    sequence_name: format!("{}_{}_seq", table_name, col_name),
+                    sequence_name,
                     table_id,
                     col_id,
                     increment: 1,
@@ -827,12 +832,13 @@ impl Inner {
                 .columns
                 .iter()
                 .map(|col| col.col_type.clone().into())
-                .collect(),
-            Cow::Owned(table_schema) => table_schema
-                .columns
+                .collect::<SlimSliceBoxCollected<_>>()
+                .unwrap(),
+            Cow::Owned(table_schema) => Vec::from(table_schema.columns)
                 .into_iter()
                 .map(|col| col.col_type.into())
-                .collect(),
+                .collect::<SlimSliceBoxCollected<_>>()
+                .unwrap(),
         };
         Ok(Cow::Owned(ProductType { elements }))
     }
@@ -849,7 +855,7 @@ impl Inner {
         let ctx = ExecutionContext::internal(self.database_address);
 
         // Look up the table_name for the table in question.
-        let table_id_col = NonEmpty::new(StTableFields::TableId.col_id());
+        let table_id_col = StTableFields::TableId.col_id().into();
 
         // TODO(george): As part of the bootstrapping process, we add a bunch of rows
         // and only at very end do we patch things up and create table metadata, indexes,
@@ -870,7 +876,7 @@ impl Inner {
             .ok_or_else(|| TableError::IdNotFound(ST_TABLES_ID, table_id.0))?;
 
         let el = StTableRow::try_from(row.view())?;
-        let table_name = el.table_name.to_owned();
+        let table_name = el.table_name.to_owned().into();
         let table_id = el.table_id;
 
         // Look up the columns for the table in question.
@@ -890,6 +896,7 @@ impl Inner {
         }
 
         columns.sort_by_key(|col| col.col_id);
+        let columns = SatsVec::from_vec(columns);
 
         // Look up the indexes for the table in question.
         let mut indexes = Vec::new();
@@ -948,7 +955,7 @@ impl Inner {
         Ok(())
     }
 
-    fn rename_table(&mut self, table_id: TableId, new_name: &str) -> super::Result<()> {
+    fn rename_table(&mut self, table_id: TableId, new_name: SatsString) -> super::Result<()> {
         // Update the table's name in st_tables.
         let ctx = ExecutionContext::internal(self.database_address);
         let mut row_iter = self.iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableId, table_id.into())?;
@@ -957,9 +964,15 @@ impl Inner {
             .next()
             .ok_or_else(|| TableError::IdNotFound(ST_TABLES_ID, table_id.0))?;
         let row_id = RowId(*row.id);
-        let mut el = StTableRow::try_from(row.view())?;
-        el.table_name = new_name;
-        let new_row = el.to_owned().into();
+        let el = StTableRow::try_from(row.view())?;
+        let new_row = StTableRow {
+            table_name: new_name,
+            // Boring copy:
+            table_id: el.table_id,
+            table_type: el.table_type,
+            table_access: el.table_access,
+        }
+        .into();
 
         assert!(
             row_iter.next().is_none(),
@@ -978,12 +991,12 @@ impl Inner {
         Ok(())
     }
 
-    fn table_id_from_name(&self, table_name: &str) -> super::Result<Option<TableId>> {
+    fn table_id_from_name(&self, table_name: SatsString) -> super::Result<Option<TableId>> {
         self.iter_by_col_eq(
             &ExecutionContext::internal(self.database_address),
             &ST_TABLES_ID,
             StTableFields::TableName,
-            AlgebraicValue::String(table_name.to_owned()),
+            table_name.into(),
         )
         .map(|mut iter| {
             iter.next()
@@ -991,11 +1004,15 @@ impl Inner {
         })
     }
 
-    fn table_name_from_id<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> super::Result<Option<&str>> {
+    fn table_name_from_id<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        table_id: TableId,
+    ) -> super::Result<Option<&'a SatsStr<'a>>> {
         self.iter_by_col_eq(ctx, &ST_TABLES_ID, StTableFields::TableId, table_id.into())
             .map(|mut iter| {
                 iter.next()
-                    .map(|row| row.view().elements[1].as_string().unwrap().deref())
+                    .map(|row| row.view().elements[1].as_string().unwrap().shared_ref())
             })
     }
 
@@ -1128,12 +1145,12 @@ impl Inner {
         }
     }
 
-    fn index_id_from_name(&self, index_name: &str) -> super::Result<Option<IndexId>> {
+    fn index_id_from_name(&self, index_name: SatsString) -> super::Result<Option<IndexId>> {
         self.iter_by_col_eq(
             &ExecutionContext::internal(self.database_address),
             &ST_INDEXES_ID,
             StIndexFields::IndexName,
-            AlgebraicValue::String(index_name.to_owned()),
+            index_name.into(),
         )
         .map(|mut iter| {
             iter.next()
@@ -1165,18 +1182,6 @@ impl Inner {
             .map(|tx_state| tx_state.insert_tables.contains_key(table_id))
             .unwrap_or(false)
             || self.committed_state.tables.contains_key(table_id)
-    }
-
-    fn algebraic_type_is_numeric(ty: &AlgebraicType) -> bool {
-        matches!(*ty, |AlgebraicType::I8| AlgebraicType::U8
-            | AlgebraicType::I16
-            | AlgebraicType::U16
-            | AlgebraicType::I32
-            | AlgebraicType::U32
-            | AlgebraicType::I64
-            | AlgebraicType::U64
-            | AlgebraicType::I128
-            | AlgebraicType::U128)
     }
 
     fn sequence_value_to_algebraic_value(ty: &AlgebraicType, sequence_value: i128) -> AlgebraicValue {
@@ -1228,7 +1233,7 @@ impl Inner {
         if let Some((col_id, sequence_id)) = col_to_update {
             let col_idx = col_id.idx();
             let col = &schema.columns[col_idx];
-            if !Self::algebraic_type_is_numeric(&col.col_type) {
+            if !col.col_type.is_numeric() {
                 return Err(SequenceError::NotInteger {
                     col: format!("{}.{}", &schema.table_name, &col.col_name),
                     found: col.col_type.clone(),
@@ -1461,7 +1466,7 @@ impl Inner {
         &'a self,
         ctx: &'a ExecutionContext,
         table_id: &TableId,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<SatsNonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> super::Result<IterByColEq<'_>> {
         self.iter_by_col_range(ctx, table_id, cols.into(), value)
@@ -1474,7 +1479,7 @@ impl Inner {
         &'a self,
         ctx: &'a ExecutionContext,
         table_id: &TableId,
-        cols: NonEmpty<ColId>,
+        cols: SatsNonEmpty<ColId>,
         range: R,
     ) -> super::Result<IterByColRange<'a, R>> {
         // We have to index_seek in both the committed state and the current tx state.
@@ -2004,7 +2009,7 @@ impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRange<'a, R> {
 
 pub struct ScanIterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
     scan_iter: Iter<'a>,
-    cols: NonEmpty<ColId>,
+    cols: SatsNonEmpty<ColId>,
     range: R,
 }
 
@@ -2043,7 +2048,7 @@ impl TxDatastore for Locking {
         ctx: &'a ExecutionContext,
         tx: &'a Self::TxId,
         table_id: TableId,
-        cols: NonEmpty<ColId>,
+        cols: SatsNonEmpty<ColId>,
         range: R,
     ) -> super::Result<Self::IterByColRange<'a, R>> {
         self.iter_by_col_range_mut_tx(ctx, tx, table_id, cols, range)
@@ -2054,7 +2059,7 @@ impl TxDatastore for Locking {
         ctx: &'a ExecutionContext,
         tx: &'a Self::TxId,
         table_id: TableId,
-        cols: NonEmpty<ColId>,
+        cols: SatsNonEmpty<ColId>,
         value: AlgebraicValue,
     ) -> super::Result<Self::IterByColEq<'a>> {
         self.iter_by_col_eq_mut_tx(ctx, tx, table_id, cols, value)
@@ -2187,7 +2192,12 @@ impl MutTxDatastore for Locking {
         tx.lock.drop_table(table_id)
     }
 
-    fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> super::Result<()> {
+    fn rename_table_mut_tx(
+        &self,
+        tx: &mut Self::MutTxId,
+        table_id: TableId,
+        new_name: SatsString,
+    ) -> super::Result<()> {
         tx.lock.rename_table(table_id, new_name)
     }
 
@@ -2195,7 +2205,7 @@ impl MutTxDatastore for Locking {
         tx.lock.table_exists(table_id)
     }
 
-    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> super::Result<Option<TableId>> {
+    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: SatsString) -> super::Result<Option<TableId>> {
         tx.lock.table_id_from_name(table_name)
     }
 
@@ -2204,7 +2214,7 @@ impl MutTxDatastore for Locking {
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTxId,
         table_id: TableId,
-    ) -> super::Result<Option<&'a str>> {
+    ) -> super::Result<Option<&'a SatsStr<'a>>> {
         tx.lock.table_name_from_id(ctx, table_id)
     }
 
@@ -2216,7 +2226,7 @@ impl MutTxDatastore for Locking {
         tx.lock.drop_index(index_id)
     }
 
-    fn index_id_from_name_mut_tx(&self, tx: &Self::MutTxId, index_name: &str) -> super::Result<Option<IndexId>> {
+    fn index_id_from_name_mut_tx(&self, tx: &Self::MutTxId, index_name: SatsString) -> super::Result<Option<IndexId>> {
         tx.lock.index_id_from_name(index_name)
     }
 
@@ -2235,7 +2245,7 @@ impl MutTxDatastore for Locking {
     fn sequence_id_from_name_mut_tx(
         &self,
         tx: &Self::MutTxId,
-        sequence_name: &str,
+        sequence_name: SatsString,
     ) -> super::Result<Option<SequenceId>> {
         tx.lock.sequence_id_from_name(sequence_name)
     }
@@ -2254,7 +2264,7 @@ impl MutTxDatastore for Locking {
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTxId,
         table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<SatsNonEmpty<ColId>>,
         range: R,
     ) -> super::Result<Self::IterByColRange<'a, R>> {
         tx.lock.iter_by_col_range(ctx, &table_id, cols.into(), range)
@@ -2265,7 +2275,7 @@ impl MutTxDatastore for Locking {
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTxId,
         table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<SatsNonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> super::Result<Self::IterByColEq<'a>> {
         tx.lock.iter_by_col_eq(ctx, &table_id, cols, value)
@@ -2380,7 +2390,7 @@ mod tests {
     use itertools::Itertools;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_primitives::Constraints;
-    use spacetimedb_sats::product;
+    use spacetimedb_sats::{from_string, nstr, product};
 
     /// Utility to query the system tables and return their concrete table row
     pub struct SystemTableQuery<'a> {
@@ -2394,7 +2404,7 @@ mod tests {
     }
 
     impl SystemTableQuery<'_> {
-        pub fn scan_st_tables(&self) -> Result<Vec<StTableRow<String>>> {
+        pub fn scan_st_tables(&self) -> Result<Vec<StTableRow<SatsString>>> {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_TABLES_ID)?
@@ -2405,9 +2415,9 @@ mod tests {
 
         pub fn scan_st_tables_by_col(
             &self,
-            cols: impl Into<NonEmpty<ColId>>,
+            cols: impl Into<SatsNonEmpty<ColId>>,
             value: AlgebraicValue,
-        ) -> Result<Vec<StTableRow<String>>> {
+        ) -> Result<Vec<StTableRow<SatsString>>> {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, &ST_TABLES_ID, cols, value)?
@@ -2416,7 +2426,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow<String>>> {
+        pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow<SatsString>>> {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_COLUMNS_ID)?
@@ -2427,9 +2437,9 @@ mod tests {
 
         pub fn scan_st_columns_by_col(
             &self,
-            cols: impl Into<NonEmpty<ColId>>,
+            cols: impl Into<SatsNonEmpty<ColId>>,
             value: AlgebraicValue,
-        ) -> Result<Vec<StColumnRow<String>>> {
+        ) -> Result<Vec<StColumnRow<SatsString>>> {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, &ST_COLUMNS_ID, cols, value)?
@@ -2438,7 +2448,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow<String>>> {
+        pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow<SatsString>>> {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_CONSTRAINTS_ID)?
@@ -2447,7 +2457,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow<String>>> {
+        pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow<SatsString>>> {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_SEQUENCES_ID)?
@@ -2456,7 +2466,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow<String>>> {
+        pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow<SatsString>>> {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_INDEXES_ID)?
@@ -2467,14 +2477,14 @@ mod tests {
     }
 
     fn u32_str_u32(a: u32, b: &str, c: u32) -> ProductValue {
-        product![a, b, c]
+        product![a, from_string(b), c]
     }
 
     fn get_datastore() -> super::super::Result<Locking> {
         Locking::bootstrap(Address::zero())
     }
 
-    fn col(col: u32) -> NonEmpty<ColId> {
+    fn col(col: u32) -> SatsNonEmpty<ColId> {
         ColId::from(col).into()
     }
 
@@ -2489,13 +2499,13 @@ mod tests {
         name: &'a str,
         unique: bool,
     }
-    impl From<IndexRow<'_>> for StIndexRow<String> {
+    impl From<IndexRow<'_>> for StIndexRow<SatsString> {
         fn from(value: IndexRow<'_>) -> Self {
             Self {
                 index_id: value.id.into(),
                 table_id: value.table.into(),
                 cols: col(value.col),
-                index_name: value.name.into(),
+                index_name: from_string(value.name),
                 is_unique: value.unique,
                 index_type: IndexType::BTree,
             }
@@ -2508,11 +2518,11 @@ mod tests {
         ty: StTableType,
         access: StAccess,
     }
-    impl From<TableRow<'_>> for StTableRow<String> {
+    impl From<TableRow<'_>> for StTableRow<SatsString> {
         fn from(value: TableRow<'_>) -> Self {
             Self {
                 table_id: value.id.into(),
-                table_name: value.name.into(),
+                table_name: from_string(value.name),
                 table_type: value.ty,
                 table_access: value.access,
             }
@@ -2526,12 +2536,12 @@ mod tests {
         ty: AlgebraicType,
         autoinc: bool,
     }
-    impl From<ColRow<'_>> for StColumnRow<String> {
+    impl From<ColRow<'_>> for StColumnRow<SatsString> {
         fn from(value: ColRow<'_>) -> Self {
             Self {
                 table_id: value.table.into(),
                 col_id: value.pos.into(),
-                col_name: value.name.into(),
+                col_name: from_string(value.name),
                 col_type: value.ty,
                 is_autoinc: value.autoinc,
             }
@@ -2542,7 +2552,7 @@ mod tests {
             Self {
                 table_id: value.table.into(),
                 col_id: value.pos.into(),
-                col_name: value.name.to_string(),
+                col_name: from_string(value.name),
                 col_type: value.ty,
                 is_autoinc: value.autoinc,
             }
@@ -2551,7 +2561,7 @@ mod tests {
     impl From<ColRow<'_>> for ColumnDef {
         fn from(value: ColRow<'_>) -> Self {
             Self {
-                col_name: value.name.to_string(),
+                col_name: from_string(value.name),
                 col_type: value.ty,
                 is_autoinc: value.autoinc,
             }
@@ -2565,11 +2575,11 @@ mod tests {
         col_pos: u32,
         start: i128,
     }
-    impl From<SequenceRow<'_>> for StSequenceRow<String> {
+    impl From<SequenceRow<'_>> for StSequenceRow<SatsString> {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: value.name.to_string(),
+                sequence_name: from_string(value.name),
                 table_id: value.table.into(),
                 col_id: value.col_pos.into(),
                 increment: 1,
@@ -2594,7 +2604,7 @@ mod tests {
                 index_id: value.id.into(),
                 table_id: value.table.into(),
                 cols: col(value.col),
-                index_name: value.name.to_string(),
+                index_name: from_string(value.name),
                 is_unique: value.unique,
                 index_type: IndexType::BTree,
             }
@@ -2612,22 +2622,23 @@ mod tests {
 
     fn basic_table_schema() -> TableDef {
         TableDef {
-            table_name: "Foo".into(),
-            columns: map_array(basic_table_schema_cols()),
-            indexes: vec![
+            table_name: nstr!("Foo"),
+            columns: map_array(basic_table_schema_cols()).try_into().unwrap(),
+            indexes: [
                 IndexDef::new(
-                    "id_idx".into(),
+                    nstr!("id_idx"),
                     0.into(), // Ignored
                     0.into(),
                     true,
                 ),
                 IndexDef::new(
-                    "name_idx".into(),
+                    nstr!("name_idx"),
                     0.into(), // Ignored
                     1.into(),
                     true,
                 ),
-            ],
+            ]
+            .into(),
             table_type: StTableType::User,
             table_access: StAccess::Public,
         }
@@ -2636,15 +2647,15 @@ mod tests {
     fn basic_table_schema_created(table_id: TableId) -> TableSchema {
         TableSchema {
             table_id,
-            table_name: "Foo".into(),
+            table_name: nstr!("Foo"),
             #[rustfmt::skip]
-            columns: map_array(basic_table_schema_cols()),
+            columns: map_array(basic_table_schema_cols()).try_into().unwrap(),
             #[rustfmt::skip]
             indexes: map_array([
                 IdxSchema { id: 6, table: 6, col: 0, name: "id_idx", unique: true },
                 IdxSchema { id: 7, table: 6, col: 1, name: "name_idx", unique: true },
             ]),
-            constraints: vec![],
+            constraints: [].into(),
             table_type: StTableType::User,
             table_access: StAccess::Public,
         }
@@ -2740,7 +2751,7 @@ mod tests {
         #[rustfmt::skip]
         assert_eq!(query.scan_st_constraints()?, vec![StConstraintRow {
             constraint_id: 5.into(),
-            constraint_name: "ct_columns_table_id".to_string(),
+            constraint_name: nstr!("ct_columns_table_id"),
             constraints: Constraints::indexed(),
             table_id: 1.into(),
             columns: col(0),
@@ -2843,7 +2854,7 @@ mod tests {
             "no indexes should be left in the schema post-commit"
         );
 
-        datastore.create_index_mut_tx(&mut tx, IndexDef::new("id_idx".into(), 6.into(), 0.into(), true))?;
+        datastore.create_index_mut_tx(&mut tx, IndexDef::new(nstr!("id_idx"), 6.into(), 0.into(), true))?;
 
         let expected_indexes = [IdxSchema {
             id: 8,
@@ -2896,7 +2907,10 @@ mod tests {
     #[test]
     fn test_insert_wrong_schema_pre_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
-        let row = product!(0, "Foo");
+        let row = product![
+            0u32, // 0 will be ignored.
+            from_string("Foo"),
+        ];
         assert!(datastore.insert_mut_tx(&mut tx, table_id, row).is_err());
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![]);
@@ -3030,7 +3044,7 @@ mod tests {
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx();
-        let index_def = IndexDef::new("age_idx".to_string(), table_id, 2.into(), true);
+        let index_def = IndexDef::new(nstr!("age_idx"), table_id, 2.into(), true);
         datastore.create_index_mut_tx(&mut tx, index_def)?;
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
@@ -3071,7 +3085,7 @@ mod tests {
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx();
-        let index_def = IndexDef::new("age_idx".to_string(), table_id, 2.into(), true);
+        let index_def = IndexDef::new(nstr!("age_idx"), table_id, 2.into(), true);
         datastore.create_index_mut_tx(&mut tx, index_def)?;
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx();
@@ -3115,7 +3129,7 @@ mod tests {
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx();
-        let index_def = IndexDef::new("age_idx".to_string(), table_id, 2.into(), true);
+        let index_def = IndexDef::new(nstr!("age_idx"), table_id, 2.into(), true);
         datastore.create_index_mut_tx(&mut tx, index_def)?;
         datastore.rollback_mut_tx_for_test(tx);
         let mut tx = datastore.begin_mut_tx();

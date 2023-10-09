@@ -1,4 +1,4 @@
-use crate::{AlgebraicType, AlgebraicValue, MapType, ProductType, ProductValue};
+use crate::{AlgebraicType, AlgebraicValue, MapType, MapValue, ProductType, ProductValue, SatsVec};
 use spacetimedb_primitives::{ColId, ConstraintId, IndexId, SequenceId, TableId};
 
 impl crate::Value for AlgebraicValue {
@@ -38,11 +38,12 @@ macro_rules! built_in_into {
         }
     };
 }
-
+built_in_into!(u128, U128);
+built_in_into!(i128, I128);
 built_in_into!(f32, F32);
 built_in_into!(f64, F64);
-built_in_into!(&str, String);
-built_in_into!(&[u8], Bytes);
+built_in_into!(MapValue, Map);
+built_in_into!(SatsVec<u8>, Bytes);
 
 macro_rules! system_id {
     ($name:ident) => {

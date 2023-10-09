@@ -1,15 +1,13 @@
-use nonempty::NonEmpty;
-use std::borrow::Cow;
-use std::{ops::RangeBounds, sync::Arc};
-
 use super::{system_tables::StTableRow, Result};
 use crate::db::datastore::system_tables::ST_TABLES_ID;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
-use spacetimedb_sats::DataKey;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_sats::{DataKey, SatsNonEmpty, SatsStr, SatsString};
+use std::borrow::Cow;
+use std::{ops::RangeBounds, sync::Arc};
 
 /// Operations in a transaction are either Inserts or Deletes.
 /// Inserts report the byte objects they inserted, to be persisted
@@ -94,7 +92,7 @@ pub trait TxDatastore: DataRow + Tx {
         ctx: &'a ExecutionContext,
         tx: &'a Self::TxId,
         table_id: TableId,
-        cols: NonEmpty<ColId>,
+        cols: SatsNonEmpty<ColId>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
 
@@ -103,7 +101,7 @@ pub trait TxDatastore: DataRow + Tx {
         ctx: &'a ExecutionContext,
         tx: &'a Self::TxId,
         table_id: TableId,
-        cols: NonEmpty<ColId>,
+        cols: SatsNonEmpty<ColId>,
         value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
 
@@ -128,15 +126,15 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     ) -> Result<Cow<'tx, ProductType>>;
     fn schema_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTxId, table_id: TableId) -> Result<Cow<'tx, TableSchema>>;
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId) -> Result<()>;
-    fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: &str) -> Result<()>;
+    fn rename_table_mut_tx(&self, tx: &mut Self::MutTxId, table_id: TableId, new_name: SatsString) -> Result<()>;
     fn table_id_exists(&self, tx: &Self::MutTxId, table_id: &TableId) -> bool;
-    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: &str) -> Result<Option<TableId>>;
+    fn table_id_from_name_mut_tx(&self, tx: &Self::MutTxId, table_name: SatsString) -> Result<Option<TableId>>;
     fn table_name_from_id_mut_tx<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTxId,
         table_id: TableId,
-    ) -> Result<Option<&'a str>>;
+    ) -> Result<Option<&'a SatsStr<'a>>>;
     fn get_all_tables_mut_tx<'tx>(
         &self,
         ctx: &ExecutionContext,
@@ -155,7 +153,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     // Indexes
     fn create_index_mut_tx(&self, tx: &mut Self::MutTxId, index: IndexDef) -> Result<IndexId>;
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTxId, index_id: IndexId) -> Result<()>;
-    fn index_id_from_name_mut_tx(&self, tx: &Self::MutTxId, index_name: &str) -> super::Result<Option<IndexId>>;
+    fn index_id_from_name_mut_tx(&self, tx: &Self::MutTxId, index_name: SatsString) -> super::Result<Option<IndexId>>;
 
     // TODO: Index data
     // - index_scan_mut_tx
@@ -169,7 +167,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn sequence_id_from_name_mut_tx(
         &self,
         tx: &Self::MutTxId,
-        sequence_name: &str,
+        sequence_name: SatsString,
     ) -> super::Result<Option<SequenceId>>;
 
     // Data
@@ -184,7 +182,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTxId,
         table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<SatsNonEmpty<ColId>>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
     fn iter_by_col_eq_mut_tx<'a>(
@@ -192,7 +190,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTxId,
         table_id: TableId,
-        cols: impl Into<NonEmpty<ColId>>,
+        cols: impl Into<SatsNonEmpty<ColId>>,
         value: AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a>>;
     fn get_mut_tx<'a>(
@@ -252,87 +250,77 @@ pub trait MutProgrammable: MutTxDatastore {
 
 #[cfg(test)]
 mod tests {
-    use nonempty::NonEmpty;
     use spacetimedb_primitives::ColId;
     use spacetimedb_sats::db::attr::ColumnAttribute;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::{IndexType, AUTO_TABLE_ID};
-    use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, ProductTypeElement, Typespace};
+    use spacetimedb_sats::{nstr, AlgebraicType, AlgebraicTypeRef, ProductType, ProductTypeElement, Typespace};
 
     use super::{ColumnDef, IndexDef, TableDef};
 
     #[test]
     fn test_tabledef_from_lib_tabledef() -> anyhow::Result<()> {
         let lib_table_def = spacetimedb_lib::TableDef {
-            name: "Person".into(),
+            name: nstr!("Person"),
             data: AlgebraicTypeRef(0),
-            column_attrs: vec![ColumnAttribute::IDENTITY, ColumnAttribute::UNSET],
+            column_attrs: [ColumnAttribute::IDENTITY, ColumnAttribute::UNSET].into(),
             indexes: vec![
-                IndexDef::new_cols(
-                    "id_and_name".into(),
-                    AUTO_TABLE_ID,
-                    false,
-                    NonEmpty::from_slice(&[0.into(), 1.into()]).unwrap(),
-                ),
-                IndexDef::new_cols(
-                    "just_name".into(),
-                    AUTO_TABLE_ID,
-                    false,
-                    NonEmpty::from_slice(&[1.into()]).unwrap(),
-                ),
+                IndexDef::new_cols(nstr!("id_and_name"), AUTO_TABLE_ID, false, [0, 1].map(Into::into)),
+                IndexDef::new_cols(nstr!("just_name"), AUTO_TABLE_ID, false, ColId(1)),
             ],
             table_type: StTableType::User,
             table_access: StAccess::Public,
         };
-        let row_type = ProductType::new(vec![
-            ProductTypeElement {
-                name: Some("id".into()),
-                algebraic_type: AlgebraicType::U32,
-            },
-            ProductTypeElement {
-                name: Some("name".into()),
-                algebraic_type: AlgebraicType::String,
-            },
-        ]);
+        let row_type = ProductType::new(
+            [
+                ProductTypeElement {
+                    name: Some(nstr!("id")),
+                    algebraic_type: AlgebraicType::U32,
+                },
+                ProductTypeElement {
+                    name: Some(nstr!("name")),
+                    algebraic_type: AlgebraicType::String,
+                },
+            ]
+            .into(),
+        );
 
         let mut datastore_schema =
             spacetimedb_lib::TableDef::into_table_def(Typespace::new(vec![row_type.into()]).with_type(&lib_table_def))?;
         let mut expected_schema = TableDef {
-            table_name: "Person".into(),
-            columns: vec![
+            table_name: nstr!("Person"),
+            columns: [
                 ColumnDef {
-                    col_name: "id".into(),
+                    col_name: nstr!("id"),
                     col_type: AlgebraicType::U32,
                     is_autoinc: true,
                 },
                 ColumnDef {
-                    col_name: "name".into(),
+                    col_name: nstr!("name"),
                     col_type: AlgebraicType::String,
                     is_autoinc: false,
                 },
-            ],
+            ]
+            .into(),
             indexes: vec![
                 IndexDef {
                     table_id: AUTO_TABLE_ID,
                     cols: ColId(0).into(),
-                    name: "Person_id_unique".into(),
+                    name: nstr!("Person_id_unique"),
                     is_unique: true,
                     index_type: IndexType::BTree,
                 },
                 IndexDef {
                     table_id: AUTO_TABLE_ID,
-                    cols: NonEmpty {
-                        head: ColId(0),
-                        tail: [ColId(1)].into(),
-                    },
-                    name: "id_and_name".into(),
+                    cols: [0, 1].map(ColId).into(),
+                    name: nstr!("id_and_name"),
                     is_unique: false,
                     index_type: IndexType::BTree,
                 },
                 IndexDef {
                     table_id: AUTO_TABLE_ID,
                     cols: ColId(1).into(),
-                    name: "just_name".into(),
+                    name: nstr!("just_name"),
                     is_unique: false,
                     index_type: IndexType::BTree,
                 },

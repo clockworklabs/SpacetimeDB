@@ -4,13 +4,17 @@ use crate::sats::db::auth::{StAccess, StTableType};
 use crate::sats::db::def::{IndexDef, AUTO_TABLE_ID};
 use crate::timestamp::with_timestamp_set;
 use crate::{sys, ReducerContext, ScheduleToken, SpacetimeType, TableType, Timestamp};
-use nonempty::NonEmpty;
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
-use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
+use spacetimedb_lib::sats::{
+    from_string, impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement,
+};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, Address, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDef, TypeAlias};
-use spacetimedb_primitives::TableId;
+use spacetimedb_lib::{
+    bsatn, Address, Identity, MiscModuleExport, ModuleDef, ReducerDef, SatsStr, TableDef, TypeAlias,
+};
+use spacetimedb_primitives::{TableId};
+use spacetimedb_sats::{from_slice, SatsNonEmpty, SatsVec};
 use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
 use std::fmt;
@@ -269,13 +273,13 @@ macro_rules! impl_reducer {
                 #[allow(non_snake_case, irrefutable_let_patterns)]
                 let [.., $($T),*] = Info::ARG_NAMES else { panic!() };
                 ReducerDef {
-                    name: Info::NAME.into(),
-                    args: vec![
+                    name: from_string(Info::NAME),
+                    args: [
                         $(ProductTypeElement {
-                            name: $T.map(str::to_owned),
+                            name: $T.map(from_string),
                             algebraic_type: <$T>::make_type(_typespace),
                         }),*
-                    ],
+                    ].into(),
                 }
             }
         }
@@ -404,18 +408,17 @@ pub fn register_table<T: TableType>() {
         let data = *T::make_type(module).as_ref().unwrap();
 
         let indexes = T::COLUMN_ATTRS.iter().zip(T::INDEXES.iter()).map(|(attr, idx)| {
-            IndexDef::new_cols(
-                idx.name.into(),
-                AUTO_TABLE_ID,
-                attr.has_unique(),
-                NonEmpty::from_slice(idx.col_ids).unwrap_or_default().map(Into::into),
-            )
+            let cols: Vec<_> = idx.col_ids.iter().copied().map(|c| c.into()).collect();
+            let cols: SatsVec<_> = cols.try_into().unwrap();
+            let cols = SatsNonEmpty::try_from(cols).unwrap();
+
+            IndexDef::new_cols(from_string(idx.name), AUTO_TABLE_ID, attr.has_unique(), cols)
         });
 
         let schema = TableDef {
-            name: T::TABLE_NAME.into(),
+            name: from_string(T::TABLE_NAME),
             data,
-            column_attrs: T::COLUMN_ATTRS.to_owned(),
+            column_attrs: from_slice(T::COLUMN_ATTRS).into(),
             indexes: indexes.collect(),
             table_type: StTableType::User,
             table_access: StAccess::for_name(T::TABLE_NAME),
@@ -448,7 +451,7 @@ impl TypespaceBuilder for ModuleBuilder {
     fn add(
         &mut self,
         typeid: TypeId,
-        name: Option<&'static str>,
+        name: Option<&'static SatsStr<'static>>,
         make_ty: impl FnOnce(&mut Self) -> AlgebraicType,
     ) -> AlgebraicType {
         let r = match self.type_map.entry(typeid) {
@@ -462,7 +465,7 @@ impl TypespaceBuilder for ModuleBuilder {
                 // Alias provided? Relate `name -> slot_ref`.
                 if let Some(name) = name {
                     self.module.misc_exports.push(MiscModuleExport::TypeAlias(TypeAlias {
-                        name: name.to_owned(),
+                        name: name.into(),
                         ty: slot_ref,
                     }));
                 }

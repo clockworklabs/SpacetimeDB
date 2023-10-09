@@ -1,6 +1,6 @@
 use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, WithTypespace};
+use crate::{static_assert_size, from_string, AlgebraicType, SatsStr, SatsString, WithTypespace};
 
 /// A factor / element of a product type.
 ///
@@ -16,32 +16,39 @@ pub struct ProductTypeElement {
     /// As our type system is structural,
     /// a type like `{ foo: U8 }`, where `foo: U8` is the `ProductTypeElement`,
     /// is inequal to `{ bar: U8 }`, although their `algebraic_type`s (`U8`) match.
-    pub name: Option<String>,
+    pub name: Option<SatsString>,
     /// The type of the element.
     ///
     /// Only values of this type can be stored in the element.
     pub algebraic_type: AlgebraicType,
 }
 
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(ProductTypeElement, 20);
+#[cfg(not(target_arch = "wasm32"))]
+static_assert_size!(ProductTypeElement, 32);
+
 impl ProductTypeElement {
     /// Returns an element with the given `name` and `algebraic_type`.
-    pub const fn new(algebraic_type: AlgebraicType, name: Option<String>) -> Self {
+    pub const fn new(algebraic_type: AlgebraicType, name: Option<SatsString>) -> Self {
         Self { algebraic_type, name }
     }
 
     /// Returns a named element with `name` and `algebraic_type`.
-    pub fn new_named(algebraic_type: AlgebraicType, name: impl Into<String>) -> Self {
-        Self::new(algebraic_type, Some(name.into()))
+    ///
+    /// Panics when `name.len() > u32::MAX`.
+    pub fn new_named(algebraic_type: AlgebraicType, name: &str) -> Self {
+        Self::new(algebraic_type, Some(from_string(name)))
     }
 
     /// Returns the name of the field.
-    pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    pub fn name(&self) -> Option<&SatsStr<'_>> {
+        self.name.as_ref().map(|n| n.shared_ref())
     }
 
     /// Returns whether the field has the given name.
     pub fn has_name(&self, name: &str) -> bool {
-        self.name() == Some(name)
+        self.name().map(|n| &**n) == Some(name)
     }
 }
 

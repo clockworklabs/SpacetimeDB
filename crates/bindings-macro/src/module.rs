@@ -171,7 +171,10 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
 
     let (impl_generics, ty_generics, where_clause) = ty.generics.split_for_impl();
     let ty_name = if gen_type_alias {
-        quote!(Some(#ty_name))
+        quote!(Some({
+            const NAME: &spacetimedb::sats::SatsStr<'_> = &spacetimedb::sats::from_str(#ty_name);
+            NAME
+        }))
     } else {
         quote!(None)
     };
@@ -283,10 +286,10 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                             names.extend::<&[&str]>(&[#(#field_strings),*])
                         }
 
-                        fn visit<__E: #spacetimedb_lib::de::Error>(self, name: &str) -> Result<Self::Output, __E> {
-                            match name {
+                        fn visit<__E: #spacetimedb_lib::de::Error>(self, name: #spacetimedb_lib::SatsStr<'_>) -> Result<Self::Output, __E> {
+                            match &*name {
                                 #(#field_strings => Ok(__ProductFieldIdent::#field_names),)*
-                                _ => Err(#spacetimedb_lib::de::Error::unknown_field_name(name, &self)),
+                                name => Err(#spacetimedb_lib::de::Error::unknown_field_name(name, &self)),
                             }
                         }
                     }
@@ -366,9 +369,9 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                             }
                         }
                         fn visit_name<E: #spacetimedb_lib::de::Error>(self, __name: &str) -> Result<Self::Output, E> {
-                            match __name {
+                            match &*__name {
                                 #(#variant_names => Ok(__Variant::#variant_idents),)*
-                                _ => Err(#spacetimedb_lib::de::Error::unknown_variant_name(__name, &self)),
+                                __name => Err(#spacetimedb_lib::de::Error::unknown_variant_name(__name, &self)),
                             }
                         }
                     }
@@ -390,7 +393,7 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
             let nfields = fields.len();
             quote! {
                 let mut __prod = __serializer.serialize_named_product(#nfields)?;
-                #(#spacetimedb_lib::ser::SerializeNamedProduct::serialize_element::<#tys>(&mut __prod, Some(#fieldnamestrings), &self.#fieldnames)?;)*
+                #(#spacetimedb_lib::ser::SerializeNamedProduct::serialize_element::<#tys>(&mut __prod, Some(#spacetimedb_lib::from_str(#fieldnamestrings)), &self.#fieldnames)?;)*
                 #spacetimedb_lib::ser::SerializeNamedProduct::end(__prod)
             }
         }

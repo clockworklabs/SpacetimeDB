@@ -6,6 +6,7 @@ mod impls;
 pub mod serde;
 
 use std::fmt;
+use crate::SatsStr;
 
 /// A **data format** that can deserialize any data structure supported by SATs.
 ///
@@ -127,6 +128,7 @@ pub trait Serializer: Sized {
 }
 
 pub use spacetimedb_bindings_macro::Serialize;
+use spacetimedb_data_structures::slim_slice::LenTooLong;
 
 /// A **data structure** that can be serialized into any data format supported by SATS.
 ///
@@ -172,6 +174,12 @@ impl Error for String {
 impl Error for std::convert::Infallible {
     fn custom<T: fmt::Display>(msg: T) -> Self {
         panic!("error generated for Infallible serializer: {msg}")
+    }
+}
+
+impl<A> Error for LenTooLong<A> {
+    fn custom<T: fmt::Display>(_: T) -> Self {
+        unimplemented!()
     }
 }
 
@@ -249,7 +257,11 @@ pub trait SerializeNamedProduct {
     type Error: Error;
 
     /// Serialize a named product `element` with `name`.
-    fn serialize_element<T: Serialize + ?Sized>(&mut self, name: Option<&str>, elem: &T) -> Result<(), Self::Error>;
+    fn serialize_element<T: Serialize + ?Sized>(
+        &mut self,
+        name: Option<SatsStr<'_>>,
+        elem: &T,
+    ) -> Result<(), Self::Error>;
 
     /// Consumes and finalizes the product serializer returning the `Self::Ok` data.
     fn end(self) -> Result<Self::Ok, Self::Error>;
@@ -283,7 +295,11 @@ impl<S: SerializeSeqProduct> SerializeNamedProduct for ForwardNamedToSeqProduct<
     type Ok = S::Ok;
     type Error = S::Error;
 
-    fn serialize_element<T: Serialize + ?Sized>(&mut self, _name: Option<&str>, elem: &T) -> Result<(), Self::Error> {
+    fn serialize_element<T: Serialize + ?Sized>(
+        &mut self,
+        _name: Option<SatsStr<'_>>,
+        elem: &T,
+    ) -> Result<(), Self::Error> {
         self.tup.serialize_element(elem)
     }
 

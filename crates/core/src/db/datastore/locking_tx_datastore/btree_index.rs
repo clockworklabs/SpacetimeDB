@@ -1,10 +1,10 @@
 use super::RowId;
 use crate::db::datastore::locking_tx_datastore::table::Table;
 use crate::error::{DBError, IndexError};
-use nonempty::NonEmpty;
 use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_sats::data_key::{DataKey, ToDataKey};
 use spacetimedb_sats::db::def::{IndexSchema, IndexType};
-use spacetimedb_sats::{data_key::ToDataKey, AlgebraicValue, DataKey, ProductValue};
+use spacetimedb_sats::{AlgebraicValue, ProductValue, SatsNonEmpty, SatsString};
 use std::{
     collections::{btree_set, BTreeSet},
     ops::{Bound, RangeBounds},
@@ -90,8 +90,8 @@ impl BTreeIndexRangeIter<'_> {
 pub(crate) struct BTreeIndex {
     pub(crate) index_id: IndexId,
     pub(crate) table_id: TableId,
-    pub(crate) cols: NonEmpty<ColId>,
-    pub(crate) name: String,
+    pub(crate) cols: SatsNonEmpty<ColId>,
+    pub(crate) name: SatsString,
     pub(crate) is_unique: bool,
     idx: BTreeSet<IndexKey>,
 }
@@ -100,8 +100,8 @@ impl BTreeIndex {
     pub(crate) fn new(
         index_id: IndexId,
         table_id: TableId,
-        cols: NonEmpty<ColId>,
-        name: String,
+        cols: SatsNonEmpty<ColId>,
+        name: SatsString,
         is_unique: bool,
     ) -> Self {
         Self {

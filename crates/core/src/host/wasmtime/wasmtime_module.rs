@@ -127,7 +127,7 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
                         .data_mut()
                         .take_buffer(errbuf)
                         .unwrap_or_else(|| "unknown error".as_bytes().into());
-                    let errbuf = crate::util::string_from_utf8_lossy_owned(errbuf.into()).into();
+                    let errbuf = crate::util::string_from_utf8_lossy_owned(errbuf.into());
                     // TODO: catch this and return the error message to the http client
                     return Err(InitializationError::Setup(errbuf));
                 }

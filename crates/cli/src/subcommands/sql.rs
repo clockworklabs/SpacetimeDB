@@ -1,15 +1,13 @@
-use std::time::Instant;
-
 use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson};
+use crate::config::Config;
+use crate::util::{database_address, get_auth_header_only};
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches};
 use itertools::Itertools;
 use reqwest::RequestBuilder;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::sats::{satn, Typespace};
+use std::time::Instant;
 use tabled::settings::Style;
-
-use crate::config::Config;
-use crate::util::{database_address, get_auth_header_only};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
@@ -129,13 +127,12 @@ fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<tabled::
     let StmtResultJson { schema, rows } = stmt_result;
 
     let mut builder = tabled::builder::Builder::default();
-    builder.set_header(
-        schema
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}"))),
-    );
+    builder.set_header(schema.elements.iter().enumerate().map(|(i, e)| {
+        e.name
+            .clone()
+            .map(|n| n.into())
+            .unwrap_or_else(|| format!("column {i}"))
+    }));
 
     let ty = Typespace::EMPTY.with_type(schema);
     for row in rows {

@@ -3,8 +3,8 @@ use std::ops::{Index, IndexMut};
 
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_type_ref::AlgebraicTypeRef;
-use crate::WithTypespace;
 use crate::{de::Deserialize, ser::Serialize};
+use crate::{SatsStr, WithTypespace};
 
 /// A `Typespace` represents the typing context in SATS.
 ///
@@ -105,7 +105,7 @@ pub trait TypespaceBuilder {
     fn add(
         &mut self,
         typeid: TypeId,
-        name: Option<&'static str>,
+        name: Option<&'static SatsStr<'static>>,
         make_ty: impl FnOnce(&mut Self) -> AlgebraicType,
     ) -> AlgebraicType;
 }

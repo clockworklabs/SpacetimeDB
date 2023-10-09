@@ -62,7 +62,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
         let Self { event, database_update } = self;
         let (status_str, errmsg) = match &event.status {
             EventStatus::Committed(_) => ("committed", String::new()),
-            EventStatus::Failed(errmsg) => ("failed", errmsg.clone()),
+            EventStatus::Failed(errmsg) => ("failed", errmsg.to_string()),
             EventStatus::OutOfEnergy => ("out_of_energy", String::new()),
         };
 
@@ -71,7 +71,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
             status: status_str.to_string(),
             caller_identity: event.caller_identity,
             function_call: FunctionCallJson {
-                reducer: event.function_call.reducer.to_owned(),
+                reducer: event.function_call.reducer.clone().into(),
                 args: event.function_call.args.get_json().clone(),
             },
             energy_quanta_used: event.energy_quanta_used.0,
@@ -90,7 +90,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
         let Self { event, database_update } = self;
         let (status, errmsg) = match &event.status {
             EventStatus::Committed(_) => (event::Status::Committed, String::new()),
-            EventStatus::Failed(errmsg) => (event::Status::Failed, errmsg.clone()),
+            EventStatus::Failed(errmsg) => (event::Status::Failed, errmsg.to_string()),
             EventStatus::OutOfEnergy => (event::Status::OutOfEnergy, String::new()),
         };
 
@@ -99,7 +99,7 @@ impl ServerMessage for TransactionUpdateMessage<'_> {
             status: status.into(),
             caller_identity: event.caller_identity.to_vec(),
             function_call: Some(FunctionCall {
-                reducer: event.function_call.reducer.to_owned(),
+                reducer: event.function_call.reducer.clone().into(),
                 arg_bytes: event.function_call.args.get_bsatn().clone().into(),
             }),
             message: errmsg,
@@ -205,8 +205,8 @@ impl ServerMessage for OneOffQueryResponseMessage {
                 .results
                 .into_iter()
                 .map(|table| OneOffTableJson {
-                    table_name: table.head.table_name,
-                    rows: table.data.into_iter().map(|row| row.data.elements).collect(),
+                    table_name: table.head.table_name.into(),
+                    rows: table.data.into_iter().map(|row| row.data).collect(),
                 })
                 .collect(),
         })
@@ -221,7 +221,7 @@ impl ServerMessage for OneOffQueryResponseMessage {
                     .results
                     .into_iter()
                     .map(|table| OneOffTable {
-                        table_name: table.head.table_name,
+                        table_name: table.head.table_name.into(),
                         row: table
                             .data
                             .into_iter()

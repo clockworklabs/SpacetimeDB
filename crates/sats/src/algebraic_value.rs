@@ -1,7 +1,7 @@
 pub mod de;
 pub mod ser;
 
-use crate::{AlgebraicType, ArrayValue, MapValue, ProductValue, SumValue};
+use crate::{static_assert_size, AlgebraicType, ArrayValue, MapValue, ProductValue, SatsString, SatsVec, SumValue};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use std::ops::{Bound, RangeBounds};
@@ -63,7 +63,7 @@ pub enum AlgebraicValue {
     ///
     /// We box the `MapValue` to reduce size
     /// and because we assume that map values will be uncommon.
-    Map(MapValue),
+    Map(Box<MapValue>),
     /// A [`bool`] value of type [`AlgebraicType::Bool`].
     Bool(bool),
     /// An [`i8`] value of type [`AlgebraicType::I8`].
@@ -85,11 +85,11 @@ pub enum AlgebraicValue {
     /// An [`i128`] value of type [`AlgebraicType::I128`].
     ///
     /// We box these up as they allow us to shrink `AlgebraicValue`.
-    I128(i128),
+    I128(Box<i128>),
     /// A [`u128`] value of type [`AlgebraicType::U128`].
     ///
     /// We box these up as they allow us to shrink `AlgebraicValue`.
-    U128(u128),
+    U128(Box<u128>),
     /// A totally ordered [`F32`] value of type [`AlgebraicType::F32`].
     ///
     /// All floating point values defined in IEEE-754 are supported.
@@ -107,8 +107,13 @@ pub enum AlgebraicValue {
     /// A UTF-8 string value of type [`AlgebraicType::String`].
     ///
     /// Uses Rust's standard representation of strings.
-    String(String),
+    String(SatsString),
 }
+
+#[cfg(target_arch = "wasm32")]
+static_assert_size!(AlgebraicValue, 16);
+#[cfg(not(target_arch = "wasm32"))]
+static_assert_size!(AlgebraicValue, 16);
 
 #[allow(non_snake_case)]
 impl AlgebraicValue {
@@ -128,14 +133,15 @@ impl AlgebraicValue {
         Self::product([].into())
     }
 
-    /// Returns an [`AlgebraicValue`] representing `v: Vec<u8>`.
+    /// Returns an [`AlgebraicValue`] representing `v: SatsVec<u8>`.
     #[inline]
-    pub const fn Bytes(v: Vec<u8>) -> Self {
+    pub const fn Bytes(v: SatsVec<u8>) -> Self {
         Self::Array(ArrayValue::U8(v))
     }
 
-    /// Converts `self` into a byte string, if applicable.
-    pub fn into_bytes(self) -> Result<Vec<u8>, Self> {
+    /// Convert the value into a `SatsVec<u8>`
+    /// or `Err(self)` if it doesn't match an `AlgebraicValue::Bytes(_)`.
+    pub fn into_bytes(self) -> Result<SatsVec<u8>, Self> {
         match self {
             Self::Array(ArrayValue::U8(v)) => Ok(v),
             _ => Err(self),
@@ -165,13 +171,13 @@ impl AlgebraicValue {
     }
 
     /// Returns an [`AlgebraicValue`] representing a product value with the given `elements`.
-    pub const fn product(elements: Vec<Self>) -> Self {
+    pub const fn product(elements: SatsVec<Self>) -> Self {
         Self::Product(ProductValue { elements })
     }
 
     /// Returns an [`AlgebraicValue`] representing a map value defined by the given `map`.
     pub fn map(map: MapValue) -> Self {
-        Self::Map(map)
+        Self::Map(Box::new(map))
     }
 
     /// Returns the [`AlgebraicType`] of the sum value `x`.
@@ -191,7 +197,7 @@ impl AlgebraicValue {
 
     /// Returns the [`AlgebraicType`] of the product value `x`.
     pub(crate) fn type_of_product(x: &ProductValue) -> AlgebraicType {
-        AlgebraicType::product(x.elements.iter().map(|x| x.type_of().into()).collect::<Vec<_>>())
+        AlgebraicType::product(x.elements.map_borrowed(|x| x.type_of().into()))
     }
 
     /// Returns the [`AlgebraicType`] of the map with key type `k` and value type `v`.
@@ -245,8 +251,8 @@ impl AlgebraicValue {
             Self::U32(x) => x == 0,
             Self::I64(x) => x == 0,
             Self::U64(x) => x == 0,
-            Self::I128(x) => x == 0,
-            Self::U128(x) => x == 0,
+            Self::I128(ref x) => **x == 0,
+            Self::U128(ref x) => **x == 0,
             Self::F32(x) => x == 0.0,
             Self::F64(x) => x == 0.0,
             _ => false,
@@ -323,7 +329,7 @@ mod tests {
     #[test]
     fn array() {
         let array = AlgebraicType::array(AlgebraicType::U8);
-        let value = AlgebraicValue::Array(ArrayValue::Sum(Vec::new()));
+        let value = AlgebraicValue::Array(ArrayValue::Sum([].into()));
         let typespace = Typespace::new(vec![]);
         assert_eq!(in_space(&typespace, &array, &value).to_satn(), "[]");
     }

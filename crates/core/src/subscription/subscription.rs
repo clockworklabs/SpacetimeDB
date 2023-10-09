@@ -220,7 +220,7 @@ impl QuerySet {
                             .or_insert_with(|| (table.table_name.clone(), vec![]));
 
                         // Replace table reference in original query plan with virtual MemTable
-                        let plan = query::to_mem_table(expr.clone(), table);
+                        let plan = query::to_mem_table(expr.clone(), table)?;
 
                         // Evaluate the new plan and capture the new row operations
                         for op in eval_incremental(relational_db, tx, &auth, &plan)?
@@ -232,7 +232,7 @@ impl QuerySet {
                 }
 
                 Semijoin => {
-                    if let Some(plan) = IncrementalJoin::new(expr, database_update.tables.iter())? {
+                    if let Some(plan) = IncrementalJoin::new(expr, &database_update.tables)? {
                         let table_id = plan.lhs.table.table_id;
                         let header = &plan.lhs.table.head;
 
@@ -296,7 +296,7 @@ impl QuerySet {
                         }
                         seen.insert((t.table_id, row_pk));
 
-                        let row_pk = row_pk.to_bytes();
+                        let row_pk = row_pk.to_bytes().into();
                         let row = row.data;
                         table_row_operations.push(TableOp {
                             op_type: 1, // Insert
@@ -332,7 +332,7 @@ impl From<Op> for TableOp {
     fn from(op: Op) -> Self {
         Self {
             op_type: op.op_type,
-            row_pk: op.row_pk.to_bytes(),
+            row_pk: op.row_pk.to_bytes().into(),
             row: op.row,
         }
     }
@@ -368,7 +368,8 @@ fn eval_incremental(
             result.data.into_iter().map(move |mut row| {
                 // Remove the hidden field OP_TYPE_FIELD_NAME, see [`query::to_mem_table`].
                 // This must be done before calculating the row PK.
-                let op_type = if let AlgebraicValue::U8(op) = row.data.elements.remove(pos_op_type) {
+                let mut elems: Vec<_> = row.data.elements.into();
+                let op_type = if let AlgebraicValue::U8(op) = elems.remove(pos_op_type) {
                     op
                 } else {
                     panic!(
@@ -376,6 +377,7 @@ fn eval_incremental(
                         result.head.table_name
                     );
                 };
+                row.data = elems.try_into().unwrap();
                 let row_pk = pk_for_row(&row);
                 Op {
                     op_type,
@@ -439,10 +441,7 @@ impl<'a> IncrementalJoin<'a> {
     /// updates partitioned into the respective [`JoinSide`].
     ///
     /// An error is returned if the expression is not well-formed.
-    pub fn new(
-        expr: &'a QueryExpr,
-        updates: impl Iterator<Item = &'a DatabaseTableUpdate>,
-    ) -> anyhow::Result<Option<Self>> {
+    pub fn new(expr: &'a QueryExpr, updates: &[DatabaseTableUpdate]) -> anyhow::Result<Option<Self>> {
         let mut lhs = expr
             .source
             .get_db_table()
@@ -451,7 +450,7 @@ impl<'a> IncrementalJoin<'a> {
                 updates: DatabaseTableUpdate {
                     table_id: table.table_id,
                     table_name: table.head.table_name.clone(),
-                    ops: vec![],
+                    ops: [].into(),
                 },
             })
             .context("expression without physical source table")?;
@@ -465,7 +464,7 @@ impl<'a> IncrementalJoin<'a> {
                         updates: DatabaseTableUpdate {
                             table_id: table.table_id,
                             table_name: table.head.table_name.clone(),
-                            ops: vec![],
+                            ops: [].into(),
                         },
                     })
                 }
@@ -473,13 +472,30 @@ impl<'a> IncrementalJoin<'a> {
             })
             .context("rhs table not found")?;
 
+        // Pre-compute lengths.
+        let mut len_lhs_ops = 0;
+        let mut len_rhs_ops = 0;
         for update in updates {
+            let len = update.ops.len();
             if update.table_id == lhs.table.table_id {
-                lhs.updates.ops.extend(update.ops.iter().cloned());
-            } else if update.table_id == rhs.table.table_id {
-                rhs.updates.ops.extend(update.ops.iter().cloned());
+                len_lhs_ops += len;
+            } else {
+                len_rhs_ops += len;
             }
         }
+        // Concatenate the ops.
+        let mut lhs_ops = Vec::with_capacity(len_lhs_ops);
+        let mut rhs_ops = Vec::with_capacity(len_rhs_ops);
+        for update in updates {
+            let ops = update.ops.iter().cloned();
+            if update.table_id == lhs.table.table_id {
+                lhs_ops.extend(ops);
+            } else if update.table_id == rhs.table.table_id {
+                rhs_ops.extend(ops);
+            }
+        }
+        lhs.updates.ops = lhs_ops;
+        rhs.updates.ops = rhs_ops;
 
         if lhs.updates.ops.is_empty() && rhs.updates.ops.is_empty() {
             Ok(None)
@@ -529,7 +545,7 @@ impl<'a> IncrementalJoin<'a> {
         let mut inserts = {
             // Replan query after replacing left table with virtual table,
             // since join order may need to be reversed.
-            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.inserts()).optimize();
+            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.inserts())?.optimize();
             let rhs_virt = self.to_mem_table_rhs(self.rhs.inserts());
 
             // {A+ join B}
@@ -555,7 +571,7 @@ impl<'a> IncrementalJoin<'a> {
         let mut deletes = {
             // Replan query after replacing left table with virtual table,
             // since join order may need to be reversed.
-            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.deletes()).optimize();
+            let lhs_virt = query::to_mem_table(self.expr.clone(), &self.lhs.deletes())?.optimize();
             let rhs_virt = self.to_mem_table_rhs(self.rhs.deletes());
 
             // {A- join B}
@@ -574,7 +590,7 @@ impl<'a> IncrementalJoin<'a> {
                     })
                 });
             // {A- join B-}
-            let c = eval_incremental(db, tx, auth, &query::to_mem_table(rhs_virt, &self.lhs.deletes()))?;
+            let c = eval_incremental(db, tx, auth, &query::to_mem_table(rhs_virt, &self.lhs.deletes())?)?;
             // {A- join B} U {A join B-} U {A- join B-}
             let mut set = a.map(|op| (op.row_pk, op)).collect::<HashMap<PrimaryKey, Op>>();
             set.extend(b.map(|op| (op.row_pk, op)));

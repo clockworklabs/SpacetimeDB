@@ -5,15 +5,16 @@ use crate::db::datastore::locking_tx_datastore::{IterByColEq, MutTxId};
 use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
 use itertools::Itertools;
+use spacetimedb_data_structures::slim_slice::try_into;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, ProductTypeMeta, TableDef};
 use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, RelValueRef, Relation};
 use spacetimedb_sats::relation::{Header, MemTable, RelIter, RelValue, RowCount, Table};
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_sats::{AlgebraicValue, ProductValue, SatsString, SatsVec};
 use spacetimedb_vm::env::EnvDb;
-use spacetimedb_vm::errors::ErrorVm;
+use spacetimedb_vm::errors::{ErrorType, ErrorVm};
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::*;
 use spacetimedb_vm::program::{ProgramRef, ProgramVm};
@@ -43,7 +44,7 @@ pub fn build_query<'a>(
                 upper_bound,
             }) if db_table => {
                 assert_eq!(columns.len(), 1, "Only support single column IndexScan");
-                let col_id = columns.head;
+                let col_id = columns[0];
                 iter_by_col_range(ctx, stdb, tx, table, col_id, (lower_bound, upper_bound))?
             }
             Query::IndexScan(index_scan) => {
@@ -62,7 +63,7 @@ pub fn build_query<'a>(
             Query::IndexJoin(join)
                 if !db_table
                     && matches!(join.probe_side.source, SourceExpr::MemTable(_))
-                    && join.probe_side.source.table_name() != result.head().table_name =>
+                    && join.probe_side.source.table_name() != &*result.head().table_name =>
             {
                 let join: JoinExpr = join.into();
                 let iter = join_inner(ctx, stdb, tx, result, join, true)?;
@@ -102,7 +103,10 @@ pub fn build_query<'a>(
                     result
                 } else {
                     let header = result.head().clone();
-                    let iter = result.project(&cols.clone(), move |row| Ok(row.project(&cols, &header)?))?;
+                    let cols2 = cols.clone();
+                    let iter = result.project(cols2.shared_ref(), move |row| {
+                        Ok(row.project(cols.shared_ref(), &header)?)
+                    })?;
                     Box::new(iter)
                 }
             }
@@ -134,10 +138,12 @@ fn join_inner<'a>(
     let col_lhs_header = lhs.head().clone();
     let col_rhs_header = rhs.head().clone();
 
+    let map_len_err = |e| ErrorVm::Type(ErrorType::LenTooLong(e));
+
     let header = if semi {
         col_lhs_header.clone()
     } else {
-        col_lhs_header.extend(&col_rhs_header)
+        col_lhs_header.extend(&col_rhs_header).map_err(map_len_err)?
     };
 
     lhs.join_inner(
@@ -158,9 +164,9 @@ fn join_inner<'a>(
         },
         move |l, r| {
             if semi {
-                l
+                Ok(l)
             } else {
-                l.extend(r)
+                l.extend(r).map_err(|e| e.forget()).map_err(map_len_err)
             }
         },
     )
@@ -363,34 +369,35 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 
     fn create_table(
         &mut self,
-        table_name: &str,
+        table_name: SatsString,
         columns: ProductTypeMeta,
         table_type: StTableType,
         table_access: StAccess,
     ) -> Result<Code, ErrorVm> {
-        let mut cols = Vec::new();
+        let mut cols = Vec::with_capacity(columns.columns.len());
         let mut indexes = Vec::new();
-        for (i, column) in columns.columns.elements.iter().enumerate() {
+        for (i, column) in columns.columns.into_iter().enumerate() {
             let meta = columns.attr[i];
             if meta.has_unique() {
                 indexes.push(IndexDef::new(
-                    format!("{}_{}_idx", table_name, i),
+                    SatsString::from_string(format!("{}_{}_idx", table_name, i)),
                     0.into(), // Ignored
                     i.into(),
                     true,
                 ));
             }
             cols.push(ColumnDef {
-                col_name: column.name.clone().unwrap_or(i.to_string()),
+                col_name: column.name.unwrap_or_else(|| SatsString::from_string(i.to_string())),
                 col_type: column.algebraic_type.clone(),
                 is_autoinc: meta.has_autoinc(),
             })
         }
+        let columns = try_into(cols).map_err(ErrorType::LenTooLong)?;
         self.db.create_table(
             self.tx,
             TableDef {
-                table_name: table_name.to_string(),
-                columns: cols,
+                table_name,
+                columns,
                 indexes,
                 table_type,
                 table_access,
@@ -399,7 +406,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         Ok(Code::Pass)
     }
 
-    fn drop(&mut self, name: &str, kind: DbType) -> Result<Code, ErrorVm> {
+    fn drop(&mut self, name: SatsString, kind: DbType) -> Result<Code, ErrorVm> {
         match kind {
             DbType::Table => {
                 if let Some(id) = self.db.table_id_from_name(self.tx, name)? {
@@ -490,6 +497,8 @@ impl ProgramVm for DbProgram<'_, '_> {
                                 }
                             })
                             .collect();
+                        // SAFETY: `elements.len() <= u32::MAX` due to invariant of `row.data.elements`.
+                        let elements = unsafe { SatsVec::from_boxed_unchecked(elements) };
 
                         ProductValue { elements }
                     })
@@ -507,17 +516,14 @@ impl ProgramVm for DbProgram<'_, '_> {
                 table_type,
                 table_access,
             } => {
-                let result = self.create_table(&name, columns, table_type, table_access)?;
+                let result = self.create_table(name, columns, table_type, table_access)?;
                 Ok(result)
             }
             CrudCode::Drop {
                 name,
                 kind,
                 table_access: _,
-            } => {
-                let result = self.drop(&name, kind)?;
-                Ok(result)
-            }
+            } => self.drop(name, kind),
         }
     }
 
@@ -591,13 +597,14 @@ pub(crate) mod tests {
     };
     use crate::db::relational_db::tests_utils::make_test_db;
     use crate::execution_context::ExecutionContext;
-    use nonempty::NonEmpty;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_primitives::TableId;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType};
     use spacetimedb_sats::relation::{DbTable, FieldName};
-    use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
+    use spacetimedb_sats::{
+        from_string, nstr, product, AlgebraicType, ProductType, ProductValue, SatsNonEmpty, SatsString,
+    };
     use spacetimedb_vm::dsl::*;
     use spacetimedb_vm::eval::run_ast;
     use spacetimedb_vm::operator::OpCmp;
@@ -609,20 +616,22 @@ pub(crate) mod tests {
         schema: ProductType,
         rows: &[ProductValue],
     ) -> ResultTest<TableId> {
+        let mut i = 0;
+        let columns = schema.elements.map_borrowed(|e| {
+            let col_name = e.name.clone().unwrap_or_else(|| SatsString::from_string(i.to_string()));
+            i += 1;
+            ColumnDef {
+                col_name,
+                col_type: e.algebraic_type.clone(),
+                is_autoinc: false,
+            }
+        });
+
         let table_id = db.create_table(
             tx,
             TableDef {
-                table_name: table_name.to_string(),
-                columns: schema
-                    .elements
-                    .iter()
-                    .enumerate()
-                    .map(|(i, e)| ColumnDef {
-                        col_name: e.name.clone().unwrap_or_else(|| i.to_string()),
-                        col_type: e.algebraic_type.clone(),
-                        is_autoinc: false,
-                    })
-                    .collect(),
+                table_name: from_string(table_name),
+                columns,
                 indexes: vec![],
                 table_type: StTableType::User,
                 table_access: StAccess::for_name(table_name),
@@ -660,7 +669,7 @@ pub(crate) mod tests {
         let p = &mut DbProgram::new(&ctx, &stdb, &mut tx, AuthCtx::for_testing());
 
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
-        let row = product!(1u64, "health");
+        let row = product!(1u64, nstr!("health"));
         let table_id = create_table_from_program(p, "inventory", head.clone(), &[row])?;
 
         let inv = db_table(head, table_id);
@@ -681,7 +690,7 @@ pub(crate) mod tests {
             (Some("name"), AlgebraicType::String),
             (None, AlgebraicType::U64),
         ]);
-        let row = product!(scalar(1u64), scalar("health"), scalar(1u64));
+        let row = product!(1u64, nstr!("health"), 1u64);
         let input = mem_table(inv, vec![row]);
 
         assert_eq!(result.data, input.data, "Inventory");
@@ -710,15 +719,15 @@ pub(crate) mod tests {
 
         let q = query(&st_table_schema()).with_select_cmp(
             OpCmp::Eq,
-            FieldName::named(ST_TABLES_NAME, StTableFields::TableName.name()),
-            scalar(ST_TABLES_NAME),
+            FieldName::named(&ST_TABLES_NAME, StTableFields::TableName.name()),
+            scalar(SatsString::from(ST_TABLES_NAME)),
         );
         check_catalog(
             p,
-            ST_TABLES_NAME,
+            &ST_TABLES_NAME,
             StTableRow {
                 table_id: ST_TABLES_ID,
-                table_name: ST_TABLES_NAME.to_string(),
+                table_name: ST_TABLES_NAME.into(),
                 table_type: StTableType::System,
                 table_access: StAccess::Public,
             }
@@ -743,17 +752,17 @@ pub(crate) mod tests {
         let q = query(&st_columns_schema())
             .with_select_cmp(
                 OpCmp::Eq,
-                FieldName::named(ST_COLUMNS_NAME, StColumnFields::TableId.name()),
+                FieldName::named(&ST_COLUMNS_NAME, StColumnFields::TableId.name()),
                 scalar(ST_COLUMNS_ID),
             )
             .with_select_cmp(
                 OpCmp::Eq,
-                FieldName::named(ST_COLUMNS_NAME, StColumnFields::ColId.name()),
+                FieldName::named(&ST_COLUMNS_NAME, StColumnFields::ColId.name()),
                 scalar(StColumnFields::TableId as u32),
             );
         check_catalog(
             p,
-            ST_COLUMNS_NAME,
+            &ST_COLUMNS_NAME,
             StColumnRow {
                 table_id: ST_COLUMNS_ID,
                 col_id: StColumnFields::TableId.col_id(),
@@ -761,7 +770,8 @@ pub(crate) mod tests {
                 col_type: AlgebraicType::U32,
                 is_autoinc: false,
             }
-            .into(),
+            .try_into()
+            .unwrap(),
             q,
             (&st_columns_schema()).into(),
         );
@@ -776,7 +786,7 @@ pub(crate) mod tests {
         let (db, _tmp_dir) = make_test_db()?;
 
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
-        let row = product!(1u64, "health");
+        let row = product!(1u64, nstr!("health"));
 
         let mut tx = db.begin_tx();
         let ctx = ExecutionContext::default();
@@ -784,24 +794,24 @@ pub(crate) mod tests {
         db.commit_tx(&ctx, tx)?;
 
         let mut tx = db.begin_tx();
-        let index = IndexDef::new("idx_1".into(), table_id, 0.into(), true);
+        let index = IndexDef::new(nstr!("idx_1"), table_id, 0.into(), true);
         let index_id = db.create_index(&mut tx, index)?;
 
         let p = &mut DbProgram::new(&ctx, &db, &mut tx, AuthCtx::for_testing());
 
         let q = query(&st_indexes_schema()).with_select_cmp(
             OpCmp::Eq,
-            FieldName::named(ST_INDEXES_NAME, StIndexFields::IndexName.name()),
-            scalar("idx_1"),
+            FieldName::named(&ST_INDEXES_NAME, StIndexFields::IndexName.name()),
+            scalar(nstr!("idx_1")),
         );
         check_catalog(
             p,
-            ST_INDEXES_NAME,
+            &ST_INDEXES_NAME,
             StIndexRow {
                 index_id,
-                index_name: "idx_1".to_owned(),
+                index_name: nstr!("idx_1"),
                 table_id,
-                cols: NonEmpty::new(0.into()),
+                cols: SatsNonEmpty::new(0.into()),
                 is_unique: true,
                 index_type: IndexType::BTree,
             }
@@ -825,15 +835,15 @@ pub(crate) mod tests {
 
         let q = query(&st_sequences_schema()).with_select_cmp(
             OpCmp::Eq,
-            FieldName::named(ST_SEQUENCES_NAME, StSequenceFields::TableId.name()),
+            FieldName::named(&ST_SEQUENCES_NAME, StSequenceFields::TableId.name()),
             scalar(ST_SEQUENCES_ID.0),
         );
         check_catalog(
             p,
-            ST_SEQUENCES_NAME,
+            &ST_SEQUENCES_NAME,
             StSequenceRow {
                 sequence_id: 1.into(),
-                sequence_name: "sequence_id_seq".to_owned(),
+                sequence_name: nstr!("sequence_id_seq"),
                 table_id: 2.into(),
                 col_id: 0.into(),
                 increment: 1,

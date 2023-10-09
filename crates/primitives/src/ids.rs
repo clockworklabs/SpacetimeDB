@@ -1,6 +1,6 @@
 //! Provides identifiers such as `TableId`.
 use core::fmt;
-use nonempty::NonEmpty;
+use spacetimedb_data_structures::slim_slice::SafelyExchangeable;
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(transparent)]
@@ -24,6 +24,11 @@ pub struct ConstraintId(pub u32);
 
 macro_rules! system_id {
     ($name:ident) => {
+        // SAFETY: $name is a `repr(transparent)` newtype around `u32`.
+        unsafe impl SafelyExchangeable<u32> for $name {}
+        // SAFETY: $name is a `repr(transparent)` newtype around `u32`.
+        unsafe impl SafelyExchangeable<$name> for u32 {}
+
         impl $name {
             pub fn idx(self) -> usize {
                 self.0 as usize
@@ -58,11 +63,6 @@ macro_rules! system_id {
         impl From<u8> for $name {
             fn from(value: u8) -> Self {
                 Self(value as u32)
-            }
-        }
-        impl From<$name> for NonEmpty<$name> {
-            fn from(value: $name) -> Self {
-                NonEmpty::new(value)
             }
         }
         impl fmt::Display for $name {

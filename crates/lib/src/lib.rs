@@ -1,4 +1,9 @@
+use std::ops::Deref;
+use std::slice::from_ref;
+
 use anyhow::Context;
+use sats::{SatsString, SatsVec};
+use spacetimedb_data_structures::slim_slice::try_into;
 use spacetimedb_primitives::ColId;
 use spacetimedb_sats::db::attr::ColumnAttribute;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
@@ -31,7 +36,7 @@ pub use primary_key::PrimaryKey;
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
 pub use spacetimedb_sats::relation;
 pub use spacetimedb_sats::DataKey;
-pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
+pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, from_str, ser, SatsStr};
 pub use type_def::*;
 pub use type_value::{AlgebraicValue, ProductValue};
 
@@ -89,10 +94,10 @@ extern crate self as spacetimedb_lib;
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 #[sats(crate = crate)]
 pub struct TableDef {
-    pub name: String,
+    pub name: SatsString,
     /// data should always point to a ProductType in the typespace
     pub data: sats::AlgebraicTypeRef,
-    pub column_attrs: Vec<ColumnAttribute>,
+    pub column_attrs: SatsVec<ColumnAttribute>,
     pub indexes: Vec<IndexDef>,
     pub table_type: StTableType,
     pub table_access: StAccess,
@@ -115,7 +120,7 @@ impl TableDef {
         // their respective column attributes.
         let mut columns = Vec::with_capacity(schema.elements.len());
         let mut indexes = Vec::new();
-        for (col_id, (ty, col_attr)) in std::iter::zip(&schema.elements, &table.column_attrs).enumerate() {
+        for (col_id, (ty, col_attr)) in std::iter::zip(&*schema.elements, &*table.column_attrs).enumerate() {
             let col = ColumnDef {
                 col_name: ty.name.clone().context("column without name")?,
                 col_type: ty.algebraic_type.clone(),
@@ -124,7 +129,7 @@ impl TableDef {
 
             let index_for_column = table.indexes.iter().find(|index| {
                 // Ignore multi-column indexes
-                index.cols.tail.is_empty() && index.cols.head.idx() == col_id
+                index.cols.deref() == from_ref(&col_id.into())
             });
 
             // If there's an index defined for this column already, use it,
@@ -132,9 +137,10 @@ impl TableDef {
             let index_info = if let Some(index) = index_for_column {
                 Some((index.name.clone(), index.index_type))
             } else if col_attr.has_unique() {
-                // If you didn't find an index, but the column is unique then create a unique btree index
-                // anyway.
-                Some((format!("{}_{}_unique", table.name, col.col_name), IndexType::BTree))
+                // If you didn't find an index,
+                // but the column is unique then create a unique btree index anyway.
+                let name = try_into(format!("{}_{}_unique", table.name, col.col_name))?;
+                Some((name, IndexType::BTree))
             } else {
                 None
             };
@@ -153,6 +159,9 @@ impl TableDef {
             }
             columns.push(col);
         }
+        // SAFETY: `.elements.len() <= u32::MAX` is statically known
+        // and `.zip(..).map(..)` changes nothing.
+        let columns = unsafe { SatsVec::from_boxed_unchecked(columns.into()) };
 
         // Multi-column indexes cannot be unique (yet), so just add them.
         let multi_col_indexes = table.indexes.iter().filter_map(|index| {
@@ -179,8 +188,8 @@ impl TableDef {
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 pub struct ReducerDef {
-    pub name: String,
-    pub args: Vec<ProductTypeElement>,
+    pub name: SatsString,
+    pub args: SatsVec<ProductTypeElement>,
 }
 
 impl ReducerDef {
@@ -223,11 +232,11 @@ impl<'de> de::ProductVisitor<'de> for ReducerDeserialize<'_> {
     }
 
     fn visit_seq_product<A: de::SeqProductAccess<'de>>(self, tup: A) -> Result<Self::Output, A::Error> {
-        de::visit_seq_product(self.0.map(|r| &*r.args), &self, tup)
+        de::visit_seq_product(self.0.map(|r| r.args.shared_ref()), &self, tup)
     }
 
     fn visit_named_product<A: de::NamedProductAccess<'de>>(self, tup: A) -> Result<Self::Output, A::Error> {
-        de::visit_named_product(self.0.map(|r| &*r.args), &self, tup)
+        de::visit_named_product(self.0.map(|r| r.args.shared_ref()), &self, tup)
     }
 }
 
@@ -239,7 +248,7 @@ impl_serialize!([] ReducerArgsWithSchema<'_>, (self, ser) => {
     use itertools::Itertools;
     use ser::SerializeSeqProduct;
     let mut seq = ser.serialize_seq_product(self.value.elements.len())?;
-    for (value, elem) in self.value.elements.iter().zip_eq(&self.ty.ty().args) {
+    for (value, elem) in self.value.elements.iter().zip_eq(&*self.ty.ty().args) {
         seq.serialize_element(&self.ty.with(&elem.algebraic_type).with_value(value))?;
     }
     seq.end()
@@ -262,6 +271,6 @@ pub enum MiscModuleExport {
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 pub struct TypeAlias {
-    pub name: String,
+    pub name: SatsString,
     pub ty: sats::AlgebraicTypeRef,
 }
