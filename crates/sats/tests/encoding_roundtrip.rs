@@ -32,7 +32,7 @@ fn array_value<T>(vec: Vec<T>) -> AlgebraicValue
 where
     ArrayValue: From<Vec<T>>,
 {
-    AlgebraicValue::ArrayOf(vec)
+    AlgebraicValue::Array(vec.into())
 }
 
 fn array_values() -> impl Strategy<Value = AlgebraicValue> {

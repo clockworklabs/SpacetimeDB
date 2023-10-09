@@ -487,7 +487,7 @@ mod tests {
         auth::{StAccess, StTableType},
         error::ResultTest,
     };
-    use spacetimedb_sats::{AlgebraicType, BuiltinValue};
+    use spacetimedb_sats::AlgebraicType;
     use spacetimedb_vm::expr::{IndexScan, JoinExpr, Query};
 
     use crate::db::{
@@ -852,8 +852,8 @@ mod tests {
         let Query::IndexScan(IndexScan {
             table: DbTable { table_id, .. },
             col_id: 0,
-            lower_bound: Bound::Included(AlgebraicValue::Builtin(BuiltinValue::U64(3))),
-            upper_bound: Bound::Included(AlgebraicValue::Builtin(BuiltinValue::U64(3))),
+            lower_bound: Bound::Included(AlgebraicValue::U64(3)),
+            upper_bound: Bound::Included(AlgebraicValue::U64(3)),
         }) = query[0]
         else {
             panic!("unexpected operator {:#?}", query[0]);
@@ -937,7 +937,7 @@ mod tests {
         assert_eq!(table, "lhs");
         assert_eq!(field, "a");
 
-        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::Builtin(BuiltinValue::U64(3)))) = **rhs else {
+        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
             panic!("unexpected right hand side {:#?}", **rhs);
         };
 
@@ -1046,7 +1046,7 @@ mod tests {
         assert_eq!(table, "rhs");
         assert_eq!(field, "c");
 
-        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::Builtin(BuiltinValue::U64(3)))) = **rhs else {
+        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
             panic!("unexpected right hand side {:#?}", **rhs);
         };
         Ok(())
@@ -1088,8 +1088,8 @@ mod tests {
         let Query::IndexScan(IndexScan {
             table: DbTable { table_id, .. },
             col_id: 0,
-            lower_bound: Bound::Included(AlgebraicValue::Builtin(BuiltinValue::U64(3))),
-            upper_bound: Bound::Included(AlgebraicValue::Builtin(BuiltinValue::U64(3))),
+            lower_bound: Bound::Included(AlgebraicValue::U64(3)),
+            upper_bound: Bound::Included(AlgebraicValue::U64(3)),
         }) = query[0]
         else {
             panic!("unexpected operator {:#?}", query[0]);
@@ -1132,7 +1132,7 @@ mod tests {
             table: DbTable { table_id, .. },
             col_id: 1,
             lower_bound: Bound::Unbounded,
-            upper_bound: Bound::Excluded(AlgebraicValue::Builtin(BuiltinValue::U64(4))),
+            upper_bound: Bound::Excluded(AlgebraicValue::U64(4)),
         }) = rhs[0]
         else {
             panic!("unexpected operator {:#?}", rhs[0]);
@@ -1209,8 +1209,8 @@ mod tests {
         let Query::IndexScan(IndexScan {
             table: DbTable { table_id, .. },
             col_id: 1,
-            lower_bound: Bound::Excluded(AlgebraicValue::Builtin(BuiltinValue::U64(2))),
-            upper_bound: Bound::Excluded(AlgebraicValue::Builtin(BuiltinValue::U64(4))),
+            lower_bound: Bound::Excluded(AlgebraicValue::U64(2)),
+            upper_bound: Bound::Excluded(AlgebraicValue::U64(4)),
         }) = rhs[0]
         else {
             panic!("unexpected operator {:#?}", rhs[0]);
@@ -1235,7 +1235,7 @@ mod tests {
         assert_eq!(table, "rhs");
         assert_eq!(field, "d");
 
-        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::Builtin(BuiltinValue::U64(3)))) = **value else {
+        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **value else {
             panic!("unexpected right hand side {:#?}", value);
         };
         Ok(())

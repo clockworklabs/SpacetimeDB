@@ -1,14 +1,12 @@
 use crate::algebraic_value::{F32, F64};
-use crate::{AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SumValue};
-use crate::{BuiltinType, BuiltinValue};
-use itertools::Itertools;
+use crate::{AlgebraicType, AlgebraicValue, ArrayType, BuiltinType, MapValue, ProductValue, SumValue};
 use nonempty::NonEmpty;
 use std::fmt;
 
 /// An array value in "monomorphized form".
 ///
 /// Arrays are represented in this way monomorphized fashion for efficiency
-/// rather than unnecessary indirections and tags of `Vec<AlgebraicValue>`.
+/// rather than unnecessary indirections and tags of `AlgebraicValue`.
 /// We can do this as we know statically that the type of each element is the same
 /// as arrays are homogenous dynamically sized product types.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -117,69 +115,6 @@ impl ArrayValue {
         self.len() == 0
     }
 
-    /// Returns a singleton array with `val` as its only element.
-    ///
-    /// Optionally allocates the backing `Vec<_>`s with `capacity`.
-    fn from_one_with_capacity(val: AlgebraicValue, capacity: Option<usize>) -> Self {
-        fn vec<T>(e: T, c: Option<usize>) -> Vec<T> {
-            let mut vec = c.map_or(Vec::new(), Vec::with_capacity);
-            vec.push(e);
-            vec
-        }
-
-        match val {
-            AlgebraicValue::Sum(x) => vec(x, capacity).into(),
-            AlgebraicValue::Product(x) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::Bool(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::I8(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::U8(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::I16(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::U16(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::I32(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::U32(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::I64(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::U64(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::I128(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::U128(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::F32(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::F64(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::String(x)) => vec(x, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::Array { val }) => vec(val, capacity).into(),
-            AlgebraicValue::Builtin(BuiltinValue::Map { val }) => vec(val, capacity).into(),
-        }
-    }
-
-    /// Pushes the value `val` onto the array `self`
-    /// or returns back `Err(val)` if there was a type mismatch
-    /// between the base type of the array and `val`.
-    ///
-    /// Optionally allocates the backing `Vec<_>`s with `capacity`.
-    pub fn push(&mut self, val: AlgebraicValue, capacity: Option<usize>) -> Result<(), AlgebraicValue> {
-        match (self, val) {
-            (Self::Sum(v), AlgebraicValue::Sum(val)) => v.push(val),
-            (Self::Product(v), AlgebraicValue::Product(val)) => v.push(val),
-            (Self::Bool(v), AlgebraicValue::Builtin(BuiltinValue::Bool(val))) => v.push(val),
-            (Self::I8(v), AlgebraicValue::Builtin(BuiltinValue::I8(val))) => v.push(val),
-            (Self::U8(v), AlgebraicValue::Builtin(BuiltinValue::U8(val))) => v.push(val),
-            (Self::I16(v), AlgebraicValue::Builtin(BuiltinValue::I16(val))) => v.push(val),
-            (Self::U16(v), AlgebraicValue::Builtin(BuiltinValue::U16(val))) => v.push(val),
-            (Self::I32(v), AlgebraicValue::Builtin(BuiltinValue::I32(val))) => v.push(val),
-            (Self::U32(v), AlgebraicValue::Builtin(BuiltinValue::U32(val))) => v.push(val),
-            (Self::I64(v), AlgebraicValue::Builtin(BuiltinValue::I64(val))) => v.push(val),
-            (Self::U64(v), AlgebraicValue::Builtin(BuiltinValue::U64(val))) => v.push(val),
-            (Self::I128(v), AlgebraicValue::Builtin(BuiltinValue::I128(val))) => v.push(val),
-            (Self::U128(v), AlgebraicValue::Builtin(BuiltinValue::U128(val))) => v.push(val),
-            (Self::F32(v), AlgebraicValue::Builtin(BuiltinValue::F32(val))) => v.push(val),
-            (Self::F64(v), AlgebraicValue::Builtin(BuiltinValue::F64(val))) => v.push(val),
-            (Self::String(v), AlgebraicValue::Builtin(BuiltinValue::String(val))) => v.push(val),
-            (Self::Array(v), AlgebraicValue::Builtin(BuiltinValue::Array { val })) => v.push(val),
-            (Self::Map(v), AlgebraicValue::Builtin(BuiltinValue::Map { val })) => v.push(val),
-            (me, val) if me.is_empty() => *me = Self::from_one_with_capacity(val, capacity),
-            (_, val) => return Err(val),
-        }
-        Ok(())
-    }
-
     /// Returns a cloning iterator on the elements of `self` as `AlgebraicValue`s.
     pub fn iter_cloned(&self) -> ArrayValueIterCloned {
         match self {
@@ -208,12 +143,20 @@ impl ArrayValue {
 impl Default for ArrayValue {
     /// The default `ArrayValue` is an empty array of sum values.
     fn default() -> Self {
-        Self::from(Vec::<crate::SumValue>::default())
+        Self::from(<[crate::SumValue; 0]>::default())
     }
 }
 
 macro_rules! impl_from_array {
     ($el:ty, $var:ident) => {
+        impl<const N: usize> From<[$el; N]> for ArrayValue {
+            fn from(v: [$el; N]) -> Self {
+                let vec: Vec<_> = v.into();
+                vec.into()
+            }
+        }
+
+        // Exists for convenience.
         impl From<Vec<$el>> for ArrayValue {
             fn from(v: Vec<$el>) -> Self {
                 Self::$var(v)
@@ -241,13 +184,12 @@ impl_from_array!(String, String);
 impl_from_array!(ArrayValue, Array);
 impl_from_array!(MapValue, Map);
 
-impl<T: Clone> From<NonEmpty<T>> for ArrayValue
+impl<T> From<NonEmpty<T>> for ArrayValue
 where
     ArrayValue: From<Vec<T>>,
 {
-    fn from(v: NonEmpty<T>) -> Self {
-        let arr = v.iter().cloned().collect_vec();
-        arr.into()
+    fn from(value: NonEmpty<T>) -> Self {
+        Vec::from(value).into()
     }
 }
 
