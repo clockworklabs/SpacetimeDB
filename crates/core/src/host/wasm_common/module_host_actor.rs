@@ -718,6 +718,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .collect::<anyhow::Result<_>>()?;
 
         let mut indexes = Vec::new();
+
+        // Build single-column index definitions, determining `is_unique` from
+        // their respective column attributes.
         for (col_id, col) in columns.iter().enumerate() {
             let mut index_for_column = None;
             for index in table.indexes.iter() {
@@ -760,6 +763,21 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 indexes.push(index);
             }
         }
+
+        // Multi-column indexes cannot be unique (yet), so just add them.
+        let multi_col_indexes = table.indexes.iter().filter_map(|index| {
+            if index.col_ids.len() > 1 {
+                Some(IndexDef {
+                    table_id: 0,
+                    cols: NonEmpty::collect(index.col_ids.iter().map(|i| *i as u32))?,
+                    name: index.name.clone(),
+                    is_unique: false,
+                })
+            } else {
+                None
+            }
+        });
+        indexes.extend(multi_col_indexes);
 
         Ok(TableDef {
             table_name: table.name.clone(),
